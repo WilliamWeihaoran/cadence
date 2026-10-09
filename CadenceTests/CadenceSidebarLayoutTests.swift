@@ -455,25 +455,38 @@ struct SidebarStaticDestinationBridgeTests {
         #expect(customisable.subtracting(rendered).isEmpty)
     }
 
-    /// **Nothing labels the iPad sidebar's lists region, and the Lists page still has a door
-    /// (T-1275).**
+    /// **Nothing labels the iPad sidebar's lists region, the region itself carries the create
+    /// door, and the Lists *row* is gone (T-1275 → T-3073).**
     ///
-    /// The owner: *"on ipados on the left sidebar there shouldnt be a section called just lists cuz
-    /// we're gonna show all the lists there anyways"* — the standing page-header rule at sidebar
-    /// scale. `listsRegion` drew an `iOSSidebarButton` for `.lists` immediately above its
-    /// `ScrollView`, which is where a heading goes.
+    /// The owner, twice. First: *"on ipados on the left sidebar there shouldnt be a section called
+    /// just lists cuz we're gonna show all the lists there anyways"* — the standing page-header
+    /// rule at sidebar scale, which moved an `iOSSidebarButton` for `.lists` out of the heading
+    /// position and into the secondary nav group below the region (T-1275). Then: *"in ipados side
+    /// bar, we're still showing 'lists' on the bottom with a green icon. remove that"*.
     ///
-    /// **The second half is why this is a pin and not a deletion.** `iOSListsView` is the only
-    /// surface in the app that creates an area or a project, so the row is also the only route to
-    /// list creation at regular width; the sidebar's own context menu edits an existing list and
-    /// Settings → Lists only reopens and deletes one. So the row moved below the region, into the
-    /// secondary nav group, where it is a destination among destinations rather than a label over
-    /// rows. Delete it from there and list creation becomes unreachable on iPad — the shape of
-    /// T-1113 on the other platform.
+    /// **The second request could not be honoured on its own, and this test is why.**
+    /// `iOSListsView` is the only surface that draws `iOSListCreateButtonsRow`, which is the only
+    /// way to make an Area or a Project; the sidebar's context menu edits an existing list,
+    /// Settings → Lists only reopens and deletes ones that already exist, and T-2054's
+    /// `+`-dragged-onto-a-group needs a group that already exists and is not an affordance a fresh
+    /// install can see. So the row was the only door, and deleting it alone is T-1113's shape on
+    /// the other platform — a region that drew nothing on a fresh install taking the only route to
+    /// a list sheet with it.
+    ///
+    /// **So the door moved into the region before the row left**, in `SidebarView`'s own shape
+    /// rather than a new idiom: a `+` on every context header (macOS, T-559) and an "Add first
+    /// list" row when there are no sections at all (macOS, T-1113). Those two cover the whole
+    /// state space — no contexts and no lists draws the row, and anything that puts a list on
+    /// screen puts a header with a `+` above it, the catch-all "Other" included.
+    ///
+    /// Both halves are asserted together on purpose. Either one alone is satisfied by a tree
+    /// nobody wants: the door without the removal is the clutter the owner asked about, and the
+    /// removal without the door is a sidebar that cannot make a list.
     ///
     /// **`.lists` stays out of `CadenceSidebarLayout`'s shared groups**, which is the convergence
-    /// half: macOS has no Lists page, and its column heads its own list region with nothing.
-    @Test func theIPadListsRegionIsHeadedByNothingAndTheListsPageKeepsItsRow() throws {
+    /// half: macOS has no Lists page, and its column heads its own list region with nothing. It is
+    /// still a *destination* — see `theListsDestinationStillResolvesForEveryCallerThatPushesIt`.
+    @Test func theIPadListsRegionCarriesTheCreateDoorAndTheListsRowIsGone() throws {
         let code = CadenceSourceScan.codeOnly(try cadenceTestSource("Cadence/iOS/iOSRootSidebar.swift"))
         #expect(code.contains("struct iOSSidebar: View"), "non-vacuity: wrong file read")
 
@@ -492,15 +505,130 @@ struct SidebarStaticDestinationBridgeTests {
         #expect(region.contains("emptyListsRow"),
                 "the region stopped saying what is missing when it holds nothing")
 
-        // The door, in the group below the region, on both styles.
-        #expect(code.contains("[.lists] + CadenceSidebarLayout.secondaryRowDestinations"))
-        #expect(code.contains("[.lists] + CadenceSidebarLayout.secondaryDestinations"))
+        // --- The door. Both branches, because they cover different states of the same region.
+        #expect(region.contains("let onCreateList: (UUID?) -> Void"),
+                "the lists region takes no create closure, so list creation is unreachable from the sidebar")
+        #expect(region.contains("onCreateList(section.contextID)"),
+                "no context header offers a + any more, so list creation is unreachable from a populated sidebar")
+        #expect(region.contains("private var addFirstListButton: some View"),
+                "the first-list door is gone, so list creation is unreachable on a fresh install")
+        #expect(region.contains("onCreateList(nil)"),
+                "the first-list door asks for nothing, so list creation is unreachable on a fresh install")
+
+        // The `+` is the column's existing 26pt plate with a 44pt hit area, not a new control and
+        // not a 44pt box that would push `CadenceSidebarContextHeaderRhythm`'s four terms around.
+        let section = try #require(
+            CadenceSourceScan.declarationBody(
+                "private func listSection(_ section: CadenceSidebarLists.Section) -> some View",
+                in: region
+            )
+        )
+        #expect(section.contains("iOSSidebarGlyphButton("),
+                "the context header's + stopped being the column's own glyph button")
+
+        // --- The row. Gone from both compositions, and the exemption that kept it gone with it.
+        #expect(!code.contains("[.lists] + CadenceSidebarLayout.secondaryRowDestinations"),
+                "the Lists row is back in the expanded column's secondary group")
+        #expect(!code.contains("[.lists] + CadenceSidebarLayout.secondaryDestinations"),
+                "the Lists row is back in the rail's secondary stack")
+        let visibility = try cadenceFunctionBody(
+            "private func isVisibleSecondaryRow(_ destination: CadenceFeatureDestination) -> Bool",
+            in: code
+        )
+        #expect(visibility.contains("resolvedDestinations(in: .secondary).contains(destination)"),
+                "non-vacuity: read something other than the visibility predicate")
+        #expect(!visibility.contains(".lists"),
+                "a secondary row is exempt from the user's hidden set again — T-1274's exemption was for the row that is now gone")
 
         // And not by widening the shared list, which macOS reads too.
         #expect(!CadenceSidebarLayout.navigationDestinations.contains(.lists))
         #expect(CadenceFeatureDestination.lists.macSidebarItem == nil)
-        // The row still lights up when it is the selection: `navRow` answers `.lists` with itself.
+        // `.lists` still answers for itself, so a selection landing on it lights no wrong row.
         #expect(CadenceSidebarLayout.navRow(for: .lists) == .lists)
+    }
+
+    /// **The row went; the destination did not (T-3073).**
+    ///
+    /// `.lists` was never only a row. `CadenceShellNavigationBridge` projects a selected area or
+    /// project onto it when the shell widens — *"landing on Lists is the same room one door out;
+    /// landing on Today is the bug"* — and `iOSRootView` routes it to `iOSListsView`. Removing the
+    /// row touched neither, and this says so, because the failure would be silent: a selection
+    /// landing on a destination nothing routes shows a blank pane rather than an error.
+    ///
+    /// `selectionFallback` is asserted rather than assumed. `moveSelectionOffAHiddenRow` runs on
+    /// every layout change and is the one thing that could evict a `.lists` selection now that no
+    /// row renders it. It does not, because the fallback only fires for destinations that are in
+    /// `navigationDestinations`, and `.lists` deliberately never was — which means the guard that
+    /// protects the destination is the same fact that keeps it out of the shared groups.
+    @Test func theListsDestinationStillResolvesForEveryCallerThatPushesIt() throws {
+        // Nothing moves a selection off `.lists`, however the visible rows are arranged.
+        for rows in [[], CadenceSidebarLayout.navigationDestinations, [CadenceFeatureDestination.today]] {
+            #expect(CadenceSidebarLayout.selectionFallback(for: .lists, visibleRows: rows) == nil,
+                    "a .lists selection is now evicted by the row layout, and no row will put it back")
+        }
+
+        // The regular-width router still has an arm for it.
+        let root = CadenceSourceScan.codeOnly(try cadenceTestSource("Cadence/iOS/iOSRootView.swift"))
+        #expect(root.contains("iOSListsView()"), "non-vacuity: wrong file read")
+        #expect(root.contains("case .lists:"),
+                "the regular-width detail router lost its Lists arm — the projection lands on a blank pane")
+
+        // And the compact shell, which is where an area or a project is pushed from.
+        let compact = CadenceSourceScan.codeOnly(try cadenceTestSource("Cadence/iOS/iOSCompactTabShell.swift"))
+        #expect(compact.contains("case .lists:"), "the compact shell lost its Lists arm")
+
+        // The projection itself: an area or a project still answers `.lists` rather than nothing.
+        // Read from source rather than called, because this suite compiles on macOS and
+        // `iOSSidebarItem` is declared behind `#if os(iOS)`.
+        let sidebarSource = CadenceSourceScan.codeOnly(
+            try cadenceTestSource("Cadence/iOS/iOSRootSidebar.swift")
+        )
+        let projection = try cadenceFunctionBody(
+            "var featureDestination: CadenceFeatureDestination?",
+            in: sidebarSource
+        )
+        #expect(projection.contains("case .lists, .area, .project: return .lists"),
+                "a selected area or project stopped projecting onto Lists when the shell widens")
+    }
+
+    /// **The door has to reach a presenter, not just a closure (T-3073).**
+    ///
+    /// The test above pins the `+`; this pins the other end of the same wire, which is where a
+    /// break looks like nothing at all — a `+` that is drawn, is tappable, and opens no sheet.
+    ///
+    /// Both hosts, because `iOSSidebarListsRegion` is drawn by the iPad column *and* by the iPhone
+    /// Tasks index, and a door wired on one of them is a door missing on the other.
+    ///
+    /// The seed is asserted with it. A `+` on a context header that opened the editor on "No
+    /// context" would contradict the drag T-2054 put on that same header, which does inherit the
+    /// group; two affordances on one region answering differently is worse than one affordance.
+    @Test func bothTouchHostsCarryTheCreateDoorThroughToTheListEditor() throws {
+        for path in ["Cadence/iOS/iOSRootSidebar.swift", "Cadence/iOS/iOSTasksTabView.swift"] {
+            let code = CadenceSourceScan.codeOnly(try cadenceTestSource(path))
+            #expect(code.contains("iOSSidebarListsRegion("), "non-vacuity: \(path) stopped drawing the region")
+            #expect(code.contains("onCreateList: { contextID in"),
+                    "\(path) draws the lists region's + and hands it nothing to do")
+            #expect(code.contains("mode: .newArea,"),
+                    "\(path)'s + no longer opens the editor on a new list")
+            #expect(code.contains("contexts.first { $0.id == id }"),
+                    "\(path)'s + stopped resolving the context it was tapped on, so the seed is dropped")
+            #expect(code.contains("seededContext: request.seededContext"),
+                    "\(path) presents the editor without the group the + was tapped on")
+        }
+
+        // The request type itself, which exists so the mode and the seed cannot be written apart.
+        let sidebar = CadenceSourceScan.codeOnly(try cadenceTestSource("Cadence/iOS/iOSRootSidebar.swift"))
+        #expect(sidebar.contains("struct iOSSidebarListEditorRequest: Identifiable"))
+        #expect(sidebar.contains("var seededContext: Context?"))
+
+        // And the surface it opens is still the one that actually creates a list, which is the
+        // claim the whole ticket rests on: `iOSListEditorSheet` is where `.newArea` / `.newProject`
+        // are committed, and its first control is the Area/Project segment, so one + reaches both
+        // and this column does not need the Lists page's two buttons to say it twice.
+        let editor = CadenceSourceScan.codeOnly(try cadenceTestSource("Cadence/iOS/iOSListEditorViews.swift"))
+        #expect(editor.contains("struct iOSListEditorSheet: View"), "non-vacuity: wrong file read")
+        #expect(editor.contains("selection: $createsProject"),
+                "the new-list sheet lost its Area/Project segment, so a single + no longer reaches both")
     }
 
     /// **T-1287: Settings offered Focus a drag handle that moved nothing.**

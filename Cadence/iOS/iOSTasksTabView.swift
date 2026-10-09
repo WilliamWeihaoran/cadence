@@ -48,7 +48,10 @@ struct iOSTasksTabView: View {
     /// The same preference macOS's Settings → Sidebar colour picker writes, so a retinted Today is
     /// retinted on the phone too.
     @AppStorage(CadencePreferenceKeys.sidebarTabColors) private var sidebarTabColorsRaw = CadencePreferenceKeys.emptySidebarPreference
-    @State private var editorMode: iOSListEditorMode?
+    /// The same request the iPad column hands its shell, and the same reason for it being one
+    /// value: this index draws `iOSSidebarListsRegion` too, so its `+` seeds a context the same
+    /// way or it seeds nothing.
+    @State private var editorRequest: iOSSidebarListEditorRequest?
 
     /// The column vocabulary at full width. The rail is an iPad-only compression — there is no
     /// width here that could produce one.
@@ -71,8 +74,8 @@ struct iOSTasksTabView: View {
         .background(Theme.bg.ignoresSafeArea())
         .cadenceScaledTypography()
         .iOSHidesCompactNavigationBar()
-        .sheet(item: $editorMode) { mode in
-            iOSListEditorSheet(mode: mode)
+        .sheet(item: $editorRequest) { request in
+            iOSListEditorSheet(mode: request.mode, seededContext: request.seededContext)
                 .cadenceFixedTypography()
         }
         // **Mandatory, and silent when it is missing.** A `NavigationPath` push of a type the
@@ -133,7 +136,18 @@ struct iOSTasksTabView: View {
                 isSelected: { _ in false },
                 onSelect: { path.append(route(for: $0)) },
                 onEdit: { item in
-                    if let mode = listEditorMode(for: item) { editorMode = mode }
+                    if let mode = listEditorMode(for: item) {
+                        editorRequest = iOSSidebarListEditorRequest(mode: mode)
+                    }
+                },
+                // The phone reaches Lists through the More tab rather than through a row in this
+                // index, so this `+` is a second door here and the only one on iPad. It is drawn
+                // from the same view either way: one region, one create affordance, one spelling.
+                onCreateList: { contextID in
+                    editorRequest = iOSSidebarListEditorRequest(
+                        mode: .newArea,
+                        seededContext: contextID.flatMap { id in contexts.first { $0.id == id } }
+                    )
                 }
             )
         }

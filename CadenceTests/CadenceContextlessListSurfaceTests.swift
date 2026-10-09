@@ -798,31 +798,49 @@ struct CadenceContextlessListSurfaceTests {
         #expect(CadenceSourceScan.matchCount("ForEach\\(listSections\\)", in: region) == 0)
     }
 
-    /// One row, two callers, and no third spelling of it.
+    /// One row per column, one spelling of the words, and no third of either.
     ///
-    /// The empty-context row and the empty-store row differ only in which context the sheet opens
-    /// on — which is the caller's closure — so a second copy would be a near-duplicate of a button
-    /// that already exists. The sweep is over the whole app target because that is the only way to
-    /// see a third one appear.
+    /// On macOS the empty-context row and the empty-store row differ only in which context the
+    /// sheet opens on — which is the caller's closure — so a second copy there would be a
+    /// near-duplicate of a button that already exists.
+    ///
+    /// **The touch column draws its own button and that is not a third copy (T-3073).** It cannot
+    /// share `SidebarAddFirstListButton`: that one is sized for a pointer off `SidebarMetrics`,
+    /// lives behind `#if os(macOS)`, and the touch row has to be a 44pt target off
+    /// `iOSSidebarMetrics`. What the two must not be allowed to disagree about is the *words*, and
+    /// those are `CadenceEmptyStateCopy.addFirstListAction` — one declaration, read by both. The
+    /// sweep is over the whole app target because that is the only way to see a third of either
+    /// appear.
     @Test func theAddFirstListRowIsOneComponentBothCallersShare() throws {
         let componentsPath = "Cadence/macOS/Views/SidebarComponents.swift"
         let components = CadenceSourceScan.strippingComments(try cadenceTestSource(componentsPath))
         #expect(components.contains("struct SidebarAddFirstListButton: View {"))
+
+        let copyPath = "Cadence/Shared/CadenceEmptyStateCopy.swift"
+        #expect(CadenceEmptyStateCopy.addFirstListAction == "Add first list")
 
         let files = try cadenceAppSwiftFiles()
         #expect(files.count >= 400, "the app-target sweep found almost nothing, so it proves nothing")
 
         var callers: [String] = []
         var spellsTheWords: [String] = []
+        var readsTheCopy: [String] = []
         for path in files {
             let code = CadenceSourceScan.strippingComments(try cadenceTestSource(path))
             if CadenceSourceScan.matchCount("SidebarAddFirstListButton\\s*[({]", in: code) > 0 {
                 callers.append(path)
             }
             if code.contains("\"Add first list\"") { spellsTheWords.append(path) }
+            if code.contains("CadenceEmptyStateCopy.addFirstListAction") { readsTheCopy.append(path) }
         }
 
         #expect(callers.sorted() == [componentsPath, "Cadence/macOS/Views/SidebarView.swift"])
-        #expect(spellsTheWords == [componentsPath])
+        // The literal is declared once and typed nowhere else.
+        #expect(spellsTheWords == [copyPath])
+        // And read by exactly the two buttons that draw the row — the Mac's and the touch column's.
+        #expect(readsTheCopy.sorted() == [
+            "Cadence/iOS/iOSRootSidebar.swift",
+            componentsPath,
+        ].sorted())
     }
 }

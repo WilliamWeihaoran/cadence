@@ -10,7 +10,7 @@ struct iPadMacStyleRootShell<Content: View>: View {
     @AppStorage("ios.sidebar.collapsed") private var isSidebarCollapsed = false
     @State private var isDrawerPresented = false
     /// The editor's presenter must survive hiding the navigation.
-    @State private var listEditorMode: iOSListEditorMode?
+    @State private var listEditorRequest: iOSSidebarListEditorRequest?
     /// The capture `+` the shell draws **only while the drawer is modal** — see `drawerCaptureButton`.
     @State private var drawerCapture = iOSCaptureInteraction(placement: .bottomTrailing)
 
@@ -35,7 +35,7 @@ struct iPadMacStyleRootShell<Content: View>: View {
                 iOSSidebar(
                     selection: navigationSelection(isDrawerMode: isDrawerMode),
                     style: .expanded,
-                    onCreateList: { listEditorMode = $0 },
+                    onCreateList: { listEditorRequest = $0 },
                     onCollapse: { setSidebarVisible(false, isDrawerMode: isDrawerMode) }
                 )
                 .frame(width: drawerWidth, height: proxy.size.height)
@@ -112,8 +112,8 @@ struct iPadMacStyleRootShell<Content: View>: View {
         }
         .background(Theme.bg.ignoresSafeArea())
         .ignoresSafeArea(.container)
-        .sheet(item: $listEditorMode) { mode in
-            iOSListEditorSheet(mode: mode)
+        .sheet(item: $listEditorRequest) { request in
+            iOSListEditorSheet(mode: request.mode, seededContext: request.seededContext)
         }
         // The composers the drawer's own `+` asks for. Mounted on the shell rather than on a page
         // for the same reason the phone's is mounted on `iOSCompactRootShell`: the control it
@@ -184,6 +184,30 @@ struct iPadMacStyleRootShell<Content: View>: View {
     }
 }
 
+/// What a sidebar control asks its host to present: the list editor's mode, and the context the
+/// control was attached to.
+///
+/// **One value rather than two pieces of `@State`.** `.sheet(item:)` reads the seed at
+/// presentation time, so a mode written into one `@State` and a context written into another
+/// would agree only by the order SwiftUI happened to apply them — and the failure would be a
+/// sheet that opens on the wrong group, which looks correct on screen. That is the exact failure
+/// mode T-2054 was filed against at the other end of the same wire.
+///
+/// `seededContext` carries `iOSListEditorSheet.seededContext`'s rule, not a second one: it is the
+/// context the sheet *opens on*, which the sheet's own Context row then states and can change.
+/// `nil` opens on "No context", which is what every call site did before this type existed.
+struct iOSSidebarListEditorRequest: Identifiable {
+    let mode: iOSListEditorMode
+    var seededContext: Context?
+
+    /// The mode's identity plus the seed's, so opening the same mode on two different groups
+    /// re-presents the sheet rather than reusing the one already up.
+    var id: String {
+        guard let seededContext else { return mode.id }
+        return "\(mode.id)-\(seededContext.id)"
+    }
+}
+
 /// The iPad shell's navigation column: app header, primary nav, the scrolling lists region,
 /// secondary nav.
 ///
@@ -197,7 +221,7 @@ struct iPadMacStyleRootShell<Content: View>: View {
 struct iOSSidebar: View {
     @Binding var selection: iOSSidebarItem?
     let style: iOSSidebarStyle
-    let onCreateList: (iOSListEditorMode) -> Void
+    let onCreateList: (iOSSidebarListEditorRequest) -> Void
     let onCollapse: () -> Void
 
     @Query(sort: \Context.order) private var contexts: [Context]
@@ -324,13 +348,23 @@ struct iOSSidebar: View {
             iOSSidebarRailDivider()
                 .padding(.horizontal, style.horizontalPadding)
 
-            // Expanded: Settings and Focus collapse to one row of two glyphs, and since T-1274
-            // the only labelled row left down here is Lists — Goals and Habits are nav rows in the
-            // group at the top. Rail is already all glyphs at 58pt, where two across plus the gap
-            // does not fit, so it keeps them stacked.
+            // Expanded: Settings and Focus collapse to one row of two glyphs, and since T-3073
+            // there is no labelled row left down here at all — Goals and Habits are nav rows in
+            // the group at the top, and Lists is the region above rather than a row below it.
+            // Rail is already all glyphs at 58pt, where two across plus the gap does not fit, so
+            // it keeps them stacked.
+            //
+            // The emptiness is guarded rather than assumed, exactly as `SidebarView.bottomGroup`
+            // guards it: `navGroup` of nothing is still a padded stack, so an unguarded call
+            // spends `groupSpacing` of dead height above the footer for a group that draws
+            // nothing — and a future destination placed below the lists would find the row back.
             if style == .expanded {
-                navGroup(secondaryRowDestinations, counts: counts)
-                    .padding(.top, iOSSidebarMetrics.groupSpacing)
+                let secondaryRows = secondaryRowDestinations
+
+                if !secondaryRows.isEmpty {
+                    navGroup(secondaryRows, counts: counts)
+                        .padding(.top, iOSSidebarMetrics.groupSpacing)
+                }
 
                 footerGlyphRow
                     .padding(.horizontal, style.horizontalPadding)
@@ -384,41 +418,43 @@ struct iOSSidebar: View {
 
     // MARK: - Nav groups
 
-    /// `CadenceSidebarLayout`'s secondary rows, with **Lists** ahead of them.
+    /// `CadenceSidebarLayout`'s secondary rows, and **nothing prepended to them (T-3073)**.
     ///
-    /// **Lists is iOS-only and cannot be in the shared list.** macOS has no Lists page at all — it
-    /// creates a list from the `+` on a context header and reads archived ones nowhere — so
-    /// `CadenceSidebarLayout.secondaryDestinations` must not grow a destination one platform cannot
-    /// route. This is the same single exception the row has always been; what changed is only
-    /// where it sits (T-1275).
+    /// This list carried `.lists` ahead of the shared rows from T-1275 until now, and the prepend
+    /// was load-bearing rather than decorative: `iOSListsView` is the only surface that draws
+    /// `iOSListCreateButtonsRow`, so for as long as this row was the only thing selecting `.lists`
+    /// at regular width, deleting it made list creation unreachable — T-1113's shape on the other
+    /// platform.
     ///
-    /// It used to head the scrolling lists region, which made it read as that region's heading:
-    /// *"on ipados on the left sidebar there shouldnt be a section called just lists cuz we're
-    /// gonna show all the lists there anyways"*. Below the region it is a destination among
-    /// destinations, which is what it always was — and the macOS column, which heads its list
-    /// region with nothing, is the one this converges on rather than diverges from.
+    /// The owner asked for the row to go — *"in ipados side bar, we're still showing 'lists' on
+    /// the bottom with a green icon. remove that"* — and it goes **because the door moved into the
+    /// region above**, not because the regression stopped being one. `iOSSidebarListsRegion` now
+    /// carries a `+` on every context header and an "Add first list" row when it holds nothing at
+    /// all, which is exactly what `SidebarView` has drawn on macOS since T-559/T-1113. Delete
+    /// those and list creation is unreachable again; `theIPadListsRegionCarriesTheCreateDoorAndTheListsRowIsGone`
+    /// is the pin.
     ///
-    /// **Deleting it outright was the literal reading and it is a regression.** `iOSListsView` is
-    /// the only surface in the app that creates an area or a project
-    /// (`iOSListCreateButtonsRow`), and this row is its only door at regular width — the sidebar's
-    /// own context menu offers *edit*, and Settings' Lists category only reopens and deletes ones
-    /// that already exist. Removing the door is the shape of T-1113 on the other platform, where a
-    /// region that drew nothing on a fresh install took the only route to `CreateListSheet` with it.
+    /// `.lists` survives as a *destination* — `iOSRootView` still routes it and
+    /// `CadenceShellNavigationBridge` still projects a selected area or project onto it when the
+    /// shell widens — it simply has no row of its own any more. It is still out of
+    /// `CadenceSidebarLayout`'s shared groups, because macOS has no Lists page to route to.
     private var secondaryRowDestinations: [CadenceFeatureDestination] {
-        ([.lists] + CadenceSidebarLayout.secondaryRowDestinations).filter(isVisibleSecondaryRow)
+        CadenceSidebarLayout.secondaryRowDestinations.filter(isVisibleSecondaryRow)
     }
 
-    /// The rail's stack, which keeps all four secondary glyphs rather than splitting two into a
-    /// footer row. Same prepend, same reason.
+    /// The rail's stack, which keeps all the secondary glyphs rather than splitting two into a
+    /// footer row. Same list, same reason.
     private var secondaryDestinations: [CadenceFeatureDestination] {
-        ([.lists] + CadenceSidebarLayout.secondaryDestinations).filter(isVisibleSecondaryRow)
+        CadenceSidebarLayout.secondaryDestinations.filter(isVisibleSecondaryRow)
     }
 
-    /// Whether a row below the lists survives the user's hidden set (T-1274). `.lists` always
-    /// does: it is this platform's own row, nothing in Settings offers a handle for it, and it is
-    /// the only door to the one surface that creates a list.
+    /// Whether a row below the lists survives the user's hidden set (T-1274).
+    ///
+    /// There is no exception left in it. `.lists` was one from T-1274 to T-3073 — it is this
+    /// platform's own row and Settings offers no handle for it, so the hidden set could only ever
+    /// have hidden it by accident — and the row it protected no longer exists.
     private func isVisibleSecondaryRow(_ destination: CadenceFeatureDestination) -> Bool {
-        destination == .lists || resolvedDestinations(in: .secondary).contains(destination)
+        resolvedDestinations(in: .secondary).contains(destination)
     }
 
     private func navGroup(
@@ -451,7 +487,22 @@ struct iOSSidebar: View {
             style: style,
             isSelected: { selection == $0.selectionItem },
             onSelect: { selection = $0.selectionItem },
-            onEdit: { item in editorMode(for: item).map(onCreateList) }
+            onEdit: { item in
+                editorMode(for: item)
+                    .map { onCreateList(iOSSidebarListEditorRequest(mode: $0)) }
+            },
+            // The tap half of T-2054's drag, and since T-3073 the column's only create door.
+            // `.newArea` is the editor's *entry* mode, not a decision: the first control in the
+            // sheet is its Area/Project segment, so one `+` reaches both — which is why this
+            // column does not need the Lists page's two buttons to say the same thing twice.
+            onCreateList: { contextID in
+                onCreateList(
+                    iOSSidebarListEditorRequest(
+                        mode: .newArea,
+                        seededContext: contextID.flatMap { id in contexts.first { $0.id == id } }
+                    )
+                )
+            }
         )
     }
 
@@ -495,6 +546,14 @@ struct iOSSidebarListsRegion: View {
     let isSelected: (CadenceSidebarLists.Item) -> Bool
     let onSelect: (CadenceSidebarLists.Item) -> Void
     let onEdit: (CadenceSidebarLists.Item) -> Void
+    /// **The region's create door (T-3073).** Takes the context the `+` was attached to, or `nil`
+    /// from the catch-all and from the first-list row, which is the same `nil` the region's own
+    /// drop target already hands `CadenceTaskDropSupport.newListDropKey(contextID:)`.
+    ///
+    /// A `UUID?` rather than a `Context`, for the reason every other closure here is a closure:
+    /// this view holds values, not model objects, and two hosts draw it. Each resolves the id
+    /// against its own query.
+    let onCreateList: (UUID?) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -565,11 +624,28 @@ struct iOSSidebarListsRegion: View {
                 // header chains off the same `Size.standard` figures — so the glyphs were never the
                 // half that differed. What differed is the room: 14pt above and 7pt below, which
                 // with the stack's own `rowSpacing` is the Mac's 26 above and 9 below.
-                SectionEyebrowLabel(text: section.title)
-                    .lineLimit(1)
-                    .padding(.horizontal, iOSSidebarMetrics.rowHorizontalPadding)
-                    .padding(.top, iOSSidebarMetrics.contextHeaderTopPadding)
-                    .padding(.bottom, iOSSidebarMetrics.contextHeaderBottomPadding)
+                //
+                // **Label, spacer, `+` — `ContextSection`'s own line, now on both columns
+                // (T-3073).** The glyph is `iOSSidebarGlyphButton`, which is this column's
+                // existing 26pt plate with a 44pt hit area, so the header gains a touch target
+                // without gaining a touch target's *height*: none of
+                // `CadenceSidebarContextHeaderRhythm`'s four terms moves.
+                HStack(spacing: iOSSidebarMetrics.iconLabelSpacing) {
+                    SectionEyebrowLabel(text: section.title)
+                        .lineLimit(1)
+
+                    Spacer(minLength: iOSSidebarMetrics.listTrailingItemSpacing)
+
+                    iOSSidebarGlyphButton(
+                        systemImage: "plus",
+                        label: "Add list to \(section.title)"
+                    ) {
+                        onCreateList(section.contextID)
+                    }
+                }
+                .padding(.horizontal, iOSSidebarMetrics.rowHorizontalPadding)
+                .padding(.top, iOSSidebarMetrics.contextHeaderTopPadding)
+                .padding(.bottom, iOSSidebarMetrics.contextHeaderBottomPadding)
             }
 
             ForEach(section.items) { item in
@@ -610,19 +686,65 @@ struct iOSSidebarListsRegion: View {
         }
     }
 
-    /// A statement, not a button. The way to make a list is the Lists row below the region, which
-    /// is pinned and so is always on screen — and, since T-2054, a `+` dropped on this region.
-    /// A third create affordance drawn here would be a button on an empty state that already says
-    /// what is missing, and still `CadenceEmptyStateCopy`'s one spelling of that sentence.
+    /// A statement **and**, since T-3073, a button — `SidebarAddFirstListButton`'s job on the
+    /// touch column.
+    ///
+    /// It was a statement alone, and the reason given was that the way to make a list is the Lists
+    /// row pinned below the region. That row is gone, so the sentence that justified drawing
+    /// nothing here is the sentence that now requires drawing something: a fresh install has no
+    /// contexts and no lists, this row is the whole of what the region draws, and a create door
+    /// that only appears once something has been created is T-1113 exactly.
+    ///
+    /// The statement stays above the button rather than being replaced by it, because it is
+    /// `CadenceEmptyStateCopy`'s one spelling of *what is missing* and the button says only what
+    /// to do about it.
     @ViewBuilder
     private var emptyListsRow: some View {
         if style == .expanded {
-            Text(CadenceEmptyStateCopy.listsTitle(isNarrowed: false))
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(Theme.dim)
-                .padding(.horizontal, iOSSidebarMetrics.rowHorizontalPadding)
-                .padding(.vertical, 6)
+            VStack(alignment: .leading, spacing: 6) {
+                Text(CadenceEmptyStateCopy.listsTitle(isNarrowed: false))
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(Theme.dim)
+
+                addFirstListButton
+            }
+            .padding(.horizontal, iOSSidebarMetrics.rowHorizontalPadding)
+            .padding(.vertical, 6)
         }
+    }
+
+    /// The macOS column's "Add first list" row, in this column's vocabulary: an
+    /// `iOSSidebarListRow`-shaped plate on no context, so an empty region and a populated one
+    /// share a left edge and a corner radius.
+    private var addFirstListButton: some View {
+        Button {
+            onCreateList(nil)
+        } label: {
+            HStack(spacing: iOSSidebarMetrics.iconLabelSpacing) {
+                Image(systemName: "plus.circle")
+                    .font(.system(size: iOSSidebarMetrics.iconSize, weight: .semibold))
+                    .frame(width: iOSSidebarMetrics.iconSlotWidth)
+
+                Text(CadenceEmptyStateCopy.addFirstListAction)
+                    .font(.system(size: iOSSidebarMetrics.labelFontSize, weight: .medium))
+                    .lineLimit(1)
+
+                Spacer(minLength: iOSSidebarMetrics.listTrailingItemSpacing)
+            }
+            .foregroundStyle(Theme.dim)
+            .frame(height: iOSSidebarMetrics.buttonHeight)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, iOSSidebarMetrics.rowHorizontalPadding)
+            .background(
+                RoundedRectangle(
+                    cornerRadius: iOSSidebarMetrics.selectedCornerRadius,
+                    style: .continuous
+                )
+                .fill(Theme.surfaceElevated.opacity(0.55))
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.iosPressable)
     }
 }
 

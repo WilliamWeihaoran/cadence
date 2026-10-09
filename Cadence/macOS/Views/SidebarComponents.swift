@@ -315,7 +315,7 @@ struct SidebarAddFirstListButton: View {
             HStack(spacing: 6) {
                 Image(systemName: "plus.circle")
                     .font(.system(size: SidebarMetrics.listIconSize, weight: .semibold))
-                Text("Add first list")
+                Text(CadenceEmptyStateCopy.addFirstListAction)
                     .font(.system(size: SidebarMetrics.listLabelFontSize, weight: .medium))
                 Spacer(minLength: SidebarMetrics.listTrailingGap)
             }

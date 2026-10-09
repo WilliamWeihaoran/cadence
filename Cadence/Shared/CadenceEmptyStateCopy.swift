@@ -290,4 +290,15 @@ nonisolated enum CadenceEmptyStateCopy {
     static func listsTitle(isNarrowed: Bool) -> String {
         isNarrowed ? "No matching lists" : "No lists yet"
     }
+
+    /// **The create row both sidebars draw when their lists region holds nothing** — macOS's
+    /// `SidebarAddFirstListButton` (T-1113) and the touch column's `addFirstListButton` (T-3073).
+    ///
+    /// Here rather than on either component, for the reason this type exists at all: the two
+    /// columns cannot share the *button* — one is sized for a pointer off `SidebarMetrics` and one
+    /// for a finger off `iOSSidebarMetrics` — but they must not be allowed to disagree about the
+    /// words. It is the action, not a statement of what is missing, so it sits beside
+    /// `listsTitle(isNarrowed:)` rather than replacing it: the touch column says both, one under
+    /// the other.
+    static let addFirstListAction = "Add first list"
 }
