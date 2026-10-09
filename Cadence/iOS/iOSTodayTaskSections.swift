@@ -29,10 +29,9 @@ struct iOSTodayRolloverNotice {
 // itself — and only the last says it where you can act on it. The cards also navigated *away* from
 // the day, which is the opposite of what a triage page is for.
 //
-// `CadenceTodayOverdueSummarySupport` and `CadenceTodayOverdueSummaryCards` are **not** deleted
-// here. Removing a shared component is its own change with its own test fallout and the owner
-// asked for the bands, not the files; they have no production caller left on either platform, and
-// T-3076's ledger entry names them so the next pass does not have to rediscover that.
+// The shared derivation, `CadenceTodayOverdueSummarySupport`, is gone too (T-3078).
+// `CadenceTodayOverdueSummaryCards` and `iOSTodayOverdueListSheet` below are not: they have no
+// caller, but two tests under the Codex lease pin them, so they wait on that lease.
 
 /// Today's list of counted task groups — **the** one, for both hosts.
 ///

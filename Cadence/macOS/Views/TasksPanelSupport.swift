@@ -30,12 +30,9 @@ enum TaskGroupingMode: String, CaseIterable, Identifiable {
 }
 
 // `TodayOverdueListSummary` and `TodayOverdueSectionSummary` were declared here, and derived in
-// `TasksPanelDerivedState.init`, with zero readers under `Cadence/iOS/`. Both are
-// `CadenceTodayOverdueListSummary` / `CadenceTodayOverdueSectionSummary` in
-// `Shared/CadenceTodayOverdueSummarySupport.swift` now (T-195, second half), together with the
-// `sectionConfigs` walk that builds them — and this panel is rewired onto them rather than left
-// beside them. They carry the list's `colorHex` rather than a resolved `Color`, which is what lets
-// `CadenceTodayOverdueSummarySurfaceTests` recompute the whole derivation without SwiftUI.
+// `TasksPanelDerivedState.init`, until T-195 moved them to `Shared/`. Today no longer draws
+// past-due cards on either platform (T-3076), so the shared derivation and this panel's two
+// `openOverdue…Summary` hops onto `ListNavigationManager` are gone too (T-3078).
 
 /// What a `MacTaskRow` suppresses, and it is down to one thing.
 ///
@@ -265,39 +262,6 @@ enum TasksPanelSupport {
 
     static func taskID(from payload: String) -> UUID? {
         TaskDragPayload.taskID(from: payload)
-    }
-
-    /// The tap target for a past-due **list** card.
-    ///
-    /// *Which* list and *which* page is `CadenceTodayOverdueSummarySupport.openRequest(for:)`, so
-    /// iOS's Today lands on the same page from the same card. What stays here is the hop —
-    /// `ListNavigationManager` is macOS-only, and is the one genuinely platform-shaped piece of
-    /// this feature.
-    static func openOverdueListSummary(
-        _ summary: CadenceTodayOverdueListSummary,
-        listNavigationManager: ListNavigationManager
-    ) {
-        guard let request = CadenceTodayOverdueSummarySupport.openRequest(for: summary) else { return }
-        open(request, listNavigationManager: listNavigationManager)
-    }
-
-    static func openOverdueSectionSummary(
-        _ summary: CadenceTodayOverdueSectionSummary,
-        listNavigationManager: ListNavigationManager
-    ) {
-        guard let request = CadenceTodayOverdueSummarySupport.openRequest(for: summary) else { return }
-        open(request, listNavigationManager: listNavigationManager)
-    }
-
-    /// One translation from the shared request to the macOS router, so the two cards above cannot
-    /// disagree about how a request is spent.
-    private static func open(_ request: CadenceListOpenRequest, listNavigationManager: ListNavigationManager) {
-        switch request.target {
-        case .project(let projectID):
-            listNavigationManager.open(projectID: projectID, page: request.page, sectionName: request.sectionName)
-        case .area(let areaID):
-            listNavigationManager.open(areaID: areaID, page: request.page, sectionName: request.sectionName)
-        }
     }
 
     /// Today's and All Tasks'/Inbox's row drop — both panels reach this one function.

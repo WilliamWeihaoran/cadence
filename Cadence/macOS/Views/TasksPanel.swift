@@ -289,8 +289,8 @@ struct TasksPanel: View {
         // says it where you can act on it. The cards also navigated *away* from the day, which is
         // the opposite of what a triage page is for.
         //
-        // `CadenceTodayOverdueSummarySupport` and its two cards are untouched: **iOS's Today still
-        // draws both bands**, so this is a macOS call-site removal, not a component deletion.
+        // iOS's Today dropped both bands too (T-3076), and the shared derivation behind them went
+        // in T-3078; see `Shared/CadenceTodayOverdueSummarySupport.swift` for what is left and why.
 
         todayGroupSections(derived: derived, showsRollover: showsRollover)
     }

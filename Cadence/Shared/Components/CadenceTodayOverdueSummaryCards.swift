@@ -16,8 +16,12 @@ nonisolated enum CadenceOverdueSummaryMetrics {
 /// **The tap target is a closure, and that is the point.** macOS's action hops
 /// `ListNavigationManager`, which is macOS-only; iOS's presents the list detail. Neither reaches
 /// for a manager from inside the card, so the one genuinely platform-shaped piece of this feature
-/// stays outside the shared view. What both sides agree on is `CadenceListOpenRequest`, which the
-/// host builds from `CadenceTodayOverdueSummarySupport.openRequest(for:)`.
+/// stays outside the shared view.
+///
+/// **Neither card has a caller now** (T-3076 removed both platforms' bands; T-3078 the derivation
+/// that fed them). This file outlives them only because `CadenceCodexTaskSummaryTypographyTests`,
+/// under the Codex lease, pins its contents — and `CadenceOverdueSummaryCaption` and
+/// `CadenceOverdueSummaryMetrics` by symbol.
 
 /// Shared chrome for both cards: a neutral surface with one hover layer at one radius.
 ///
