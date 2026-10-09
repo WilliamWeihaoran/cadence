@@ -1548,3 +1548,27 @@ finds zero files passes for the wrong reason.
 **Recorded so it is not re-derived:** `GlobalSearchCategory.meetingNotes`'s raw value stays
 `"Event Notes"` and stays hand-typed. If the owner ever renames the Notes event tab, that string is a
 deliberate second decision, not an oversight — and this paragraph is the reason it was left.
+
+### T-3091 — ANSWERED: parity, not fullness. `Oct 14`. The Mac does not change.
+
+Codex asked this twice because the answer was only ever written into `docs/TODO.md`, which Codex
+does not read. That is the coordinator's distribution error. The answer lives here now.
+
+**Mobile matches the Mac's actual output, unchanged.** Use
+`DateFormatters.shortDateString(from:)` exactly as `Cadence/macOS/Views/ListDetailView.swift:291`
+does. It renders **`Oct 14`** — `shortDate` is `MMM d` at `Cadence/Shared/DateFormatters.swift:160`.
+
+**Do not use a fuller formatter, and do not change the Mac.** `mediumDate` (`MMM d, yyyy`, `:168`)
+exists; adopting it on either platform would *break* the parity this ticket exists to create. And
+Codex is right that the shared formatter must not change globally — nothing here asks for that.
+
+**Why the ticket contradicted itself, recorded so the next reader does not re-derive it.** The entry
+first said "and the full date" while also requiring Mac parity. The Mac's own output *is* `Oct 14`,
+so it demanded parity and not-parity in one sentence. The owner's decision was *"add it to mobile"* —
+parity. What they rejected was a phone-specific **divergent** abbreviation and the third date
+vocabulary that comes with it. The phrase "the iPad and Mac keep the full date" was the
+coordinator's loose wording for "the existing format" inside the option text, never a decision about
+length. **Parity, not fullness.** T-3091 was corrected at `fb42ae22`.
+
+**Codex was right to stop and ask rather than pick one reading.** A spec that requires two
+incompatible things is not a thing to resolve by choosing the more plausible half.
