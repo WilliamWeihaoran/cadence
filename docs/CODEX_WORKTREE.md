@@ -98,6 +98,7 @@ Cadence/Shared/CadenceSavedLinkPersistence.swift
 CadenceTests/CadenceSavedLinkPersistenceTests.swift
 Cadence/macOS/Views/LinksView.swift
 CadenceTests/CadenceInboxRemindersSurfaceTests.swift
+CadenceTests/CadenceSharedConstantReuseSweepTests.swift
 ```
 
 ### LEASE WIDENED 2026-10-09 (third batch) — three paths so [[T-3085]]'s shared wording has somewhere to live
@@ -1467,3 +1468,40 @@ shape is how the next reader gets this wrong.
 every other suite and test in `CadenceInboxRemindersSurfaceTests.swift` — including the
 `RemindersConnectionState.resolve` tests and the task-group-header tests above `:313`, which share
 the file and have nothing to do with T-3031.
+
+### T-3086 Mac half — one more test path, because the sweep that proves the reuse is scoped to iOS
+
+**`CadenceTests/CadenceSharedConstantReuseSweepTests.swift` — GRANTED, narrowly, for
+`CadenceNotesTabVocabularyReuseTests.theNotesTabPhrasesAreTypedOnceAndOnlyInTheSharedVocabulary`
+and nothing else in the file.**
+
+The shared type landed at `db2f214d` (`CadenceNotesTabVocabulary`, in
+`Cadence/Shared/CadenceNotePlanningSupport.swift:57`). The reuse test that proves the four phrases
+are typed once currently walks `Cadence/iOS` only, because when it was written the Mac was still on
+the far side of the fence. Routing `NotesView.swift` through the shared type without widening that
+walk would land the Mac half with **no guard against it drifting straight back** — the walk would
+keep passing while `NotesView.swift` re-typed all four phrases by hand. Widen the root set to
+include `Cadence/macOS`.
+
+**The rest of the file is out of scope.** It hosts the general shared-constant sweep, whose harvest
+reads `static let` / `func` / `var` declarations; these three readings are *instance* properties, so
+that sweep walks past them and `CadenceNotesTabVocabularyReuseTests` exists beside it rather than
+inside it. Do not fold one into the other and do not change the general sweep's harvest — that is a
+much wider blast radius than this ticket, and the agent that landed the mobile half deliberately
+left it alone.
+
+**Keep the non-vacuity control.** A walk that is widened to a second root must still prove it read
+that root — a scanned-file floor, or an assertion that the Mac's own file was seen. A sweep that
+silently finds zero files in `Cadence/macOS` passes for the wrong reason and is worse than not
+widening it.
+
+**No rendered Mac string may change.** The vocabulary was built from the Mac's own words — tab strip
+and column headings alike — so this is a de-duplication, not a copy change. `NotesPage.title` →
+`label`, the four `NotesListHeader(title:)` calls → `columnTitle`.
+
+**Do not reach for `usesFullLabels(isRegularWidth:headerWidth:)` on the Mac.** It exists for the
+mobile fork, where Today's Notes inspector is regular width but bottoms out at 320pt. The Mac has
+the room and uses `label` unconditionally.
+
+**`NoteKind.meeting`'s raw value is persisted in `Note.kindRaw` and the shared type does not touch
+it.** Keep it that way: the display vocabulary must not reach the persisted one.
