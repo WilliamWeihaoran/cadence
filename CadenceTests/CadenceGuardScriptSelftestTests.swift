@@ -658,6 +658,29 @@ struct CadenceGuardScriptSelftestTests {
     static let buildRunnerRefusals = [
         "UNKNOWN-SUITE",
         "PARTIAL-SCOPE",
+        // T-3080, and it is pinned SEPARATELY from `PARTIAL-SCOPE` above rather than folded into
+        // it, because folding it in is precisely what would let it be deleted unnoticed: the
+        // preflight half satisfies `body.contains("PARTIAL-SCOPE")` on its own, so a later edit
+        // that removed the postflight call would leave every pin in this file green.
+        //
+        // The defect it answers is placement, not detection. T-1076's notice fires correctly and
+        // it fires in the PREFLIGHT -- before the drift check, before a test-host queue that has
+        // reached forty minutes, before the build -- and `== xcb result ==` said nothing about it.
+        // The result block is what a run is actually read from, so on 2026-10-08 a scoped run over
+        // `CadenceSidebarLayoutTests` ended `22 tests in 1 suite passed`, exit 0, with the THIRTEEN
+        // tests that had just been written sitting unexecuted in the same file's other suite. In a
+        // repository where every change is mutation-proved, that is the worst shape available: the
+        // scoped run that proves the kill never ran the tests that would have failed.
+        //
+        // Like `PARTIAL-SCOPE` and `INTERACTIVE-SKIPPED` it REPORTS and does not gate, and that is
+        // the half most likely to be "tightened" later. 39 files in this target declare more than
+        // one suite and scoping to one of them is the ordinary daily invocation; a gate on it would
+        // fail the ordinary case, and agents route around those -- taking the notice with them.
+        // Section 14b induces it over a REAL `xcb.sh <id> test` on the production path, asserts it
+        // inside the slice of the output that begins at `== xcb result`, keeps a non-vacuity check
+        // that the preflight half still fires exactly once before the build, and keeps a
+        // file-scoped-in-full CONTROL silent.
+        "PARTIAL-SCOPE-UNRUN",
         "VACUOUS-COUNT",
         "WARNING-BASELINE",
         "NO-SUCH-SIMULATOR",

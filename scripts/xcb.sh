@@ -735,6 +735,12 @@ suite_started_guard() {  # $1 = log, $2 = test result lines, $3... = the run's o
   return $verdict
 }
 
+# What the partial-scope half of the resolver found, carried out of the PREFLIGHT so the
+# POSTFLIGHT can say it again (T-3080). One `suite<TAB>count<TAB>file` entry per skipped sibling.
+# Global because the two readers are ~3,700 lines apart in one script, and empty on every run that
+# scopes nothing, scopes a whole file, or scopes a suite that is alone in its file.
+typeset -ga PARTIAL_SCOPE_SKIPPED=()
+
 # Exit 8 on an unknown suite, 0 otherwise. Prints the partial-scope notice as a side effect.
 resolve_only_testing() {
   local -a filters; filters=("$@")
@@ -837,6 +843,12 @@ resolve_only_testing() {
       [[ -n "${is_requested[$sib]:-}" ]] && continue
       skipped+=("$sib")
       (( total += suite_count[$sib] ))
+      # The same finding, in a form the postflight can print without re-reading the index
+      # (T-3080). Recorded here rather than recomputed there for the reason `suite_started_guard`
+      # splits its two inputs: this one is a fact about the INVOCATION, settled before the build,
+      # and a second reading taken forty minutes later could disagree with the run it describes
+      # because a sibling agent edited the test tree in between.
+      PARTIAL_SCOPE_SKIPPED+=("$sib"$'\t'"${suite_count[$sib]}"$'\t'"$file")
     done
     (( ${#skipped} )) || continue
     reported+=("$file")
@@ -850,7 +862,67 @@ resolve_only_testing() {
     say "   normal. It matters if you scoped by FILENAME meaning the file: then the run goes"
     say "   green over a fraction of it, and the zero-test guard cannot see that (it only fires"
     say "   at zero). Add the lines above if you meant the whole file."
+    say "   Said again in this run's RESULT block, because that is where a green run is read (T-3080)."
   done
+  return 0
+}
+
+
+# --- the PARTIAL-SCOPE restatement (T-3080) ----------------------------------
+# THE NOTICE ABOVE IS NOT MISSING AND IT IS NOT WRONG. It is in the wrong half of the run.
+#
+# `resolve_only_testing` deliberately runs in the PREFLIGHT -- ahead of the drift check, ahead of a
+# test-host queue that has been reaching forty minutes, ahead of a build -- because a name that
+# selects nothing should not cost all three to discover. The cost of that placement is that the
+# notice is printed once, minutes and thousands of lines before `== xcb result`, and the result
+# block says nothing about it. The result block is the part of a run that is actually read: it is
+# what an agent scrolls to, what a brief quotes, and what gets piped to `tail`.
+#
+# MEASURED, 2026-10-08 23:25. `xcb.sh listsdoor test -only-testing:CadenceTests/CadenceSidebarLayoutTests`
+# ended `✔ Test run with 22 tests in 1 suite passed`, XCODEBUILD_EXIT=0 -- over a file whose OTHER
+# suite, `SidebarStaticDestinationBridgeTests`, held the THIRTEEN tests that had just been written
+# for the change being validated. The preflight had said so. Nothing after it did, and the agent
+# recorded a green run that executed none of its new tests. That is the T-552 shape one notch
+# quieter: not a run that executed nothing, but a run that executed everything except the point.
+#
+# WHY THAT IS THE DANGEROUS KIND. Every agent here is told to mutation-prove its work, and the
+# whole protocol is "break it, watch the scoped run go red, restore". A scope that silently omits
+# the suite the mutation lives in returns green for the mutated tree, which reads as a SURVIVING
+# mutation -- or, worse, the mutation is in the product and the surviving tests pass anyway, so the
+# kill is recorded against tests that never ran.
+#
+# IT REPORTS AND IT DOES NOT GATE, which is the same decision T-1076 made for the preflight half
+# and T-1741 made for `INTERACTIVE-SKIPPED`, re-taken rather than inherited. 39 files in this
+# target declare more than one top-level suite, and scoping to one of them on purpose is the
+# ordinary, correct, daily invocation; a gate on it would fail the ordinary case, and a guard that
+# fails the ordinary case is one agents learn to route around -- which costs the notice too. What
+# was missing here was never severity. It was placement, and placement is free.
+#
+# Its own tag, `PARTIAL-SCOPE-UNRUN`, so it can be pinned separately: `PARTIAL-SCOPE` alone is
+# satisfied by the preflight half, so a later edit that deleted this call would leave every
+# existing pin green.
+partial_scope_postflight() {   # $1 = test result lines, for the sentence that names them
+  (( ${#PARTIAL_SCOPE_SKIPPED} )) || return 0
+  local ran="${1:-}"
+  local entry sib count file
+  local -i total=0
+  for entry in "${PARTIAL_SCOPE_SKIPPED[@]}"; do
+    count="${${entry#*$'\t'}%%$'\t'*}"
+    (( total += count ))
+  done
+  say ""
+  say "!! PARTIAL-SCOPE-UNRUN (T-3080): this run left $(n_tests $total) unexecuted, in ${#PARTIAL_SCOPE_SKIPPED} suite(s)"
+  say "   of a file it DID run -- so none of them are in the count above:"
+  for entry in "${PARTIAL_SCOPE_SKIPPED[@]}"; do
+    sib="${entry%%$'\t'*}"; count="${${entry#*$'\t'}%%$'\t'*}"; file="${entry##*$'\t'}"
+    say "     -only-testing:CadenceTests/$sib   ($(n_tests $count))   [$file]"
+  done
+  say "   Said in the preflight too, and said again HERE because this block is what a green run"
+  say "   is read from. It is NOT a failure: a file holding several suites is normal and scoping"
+  say "   to one of them is an ordinary request."
+  say "   It IS a failure of evidence if you scoped by FILENAME meaning the whole file -- \"test"
+  say "   result lines: $ran\" then describes a fraction of it, and a mutation living in the suites"
+  say "   above survived this run while looking killed. Add the lines above and re-run."
   return 0
 }
 
@@ -3944,6 +4016,65 @@ selftest_only_testing() {
        || $(print -r -- "$rw_control" | grep -c '== xcb result') != 1 ]] && print 1 || print 0 ) "$rw_control"
 
   say ""
+  say " 14b. the partial-scope finding reaches the RESULT BLOCK, not only the preflight (T-3080)"
+  # A REAL `xcb.sh <id> test` on the production path, against a stub xcodebuild and a stub lock,
+  # because the whole finding is about WHERE in a run the notice lands. Section 2 already proves
+  # the preflight half fires; asserting the same string again would have passed over the defect,
+  # which is that the string is printed before the build and never again. So every check below is
+  # taken over the slice of the output that starts at `== xcb result`.
+  local ps_out="" ps_tail=""
+  local -i ps_rc=0
+  mkdir -p "$ws/ps/root/scripts" "$ws/ps/tmp"
+  cp -- "$here" "$ws/ps/root/scripts/xcb.sh"
+  print -rl -- '#!/bin/zsh' 'exit 0' > "$ws/ps/root/scripts/test-host-lock.sh"
+  chmod +x "$ws/ps/root/scripts/test-host-lock.sh"
+  # Identity labels, so the stub log can spell the suites by type name and section 9's guard stays
+  # satisfied for whichever of them the run requested.
+  print -rl -- $'AlphaTests\tAlphaTests' \
+               $'AlphaHelperTests\tAlphaHelperTests' \
+               $'SoloTests\tSoloTests' > "$ws/ps/labels.tsv"
+  # BOTH suites start in the log, deliberately: the run that asks for one of them must still be
+  # told about the other, and reading the log for that answer would get it wrong here.
+  print -rl -- '#!/bin/zsh' \
+    'print -r -- "Command line invocation:"' \
+    'print -r -- "Suite AlphaTests started."' \
+    'print -r -- "✔ Test somethingReal() passed after 0.001 seconds."' \
+    'print -r -- "Suite AlphaHelperTests started."' \
+    'print -r -- "✔ Test aHelper() passed after 0.001 seconds."' \
+    'print -r -- "** TEST SUCCEEDED **"' > "$ws/ps/xcodebuild"
+  chmod +x "$ws/ps/xcodebuild"
+  ps_run() {   # $@ = the -only-testing: flags under test
+    XCODEBUILD="$ws/ps/xcodebuild" TMPDIR="$ws/ps/tmp/" CADENCE_STALL_POLL=1 CADENCE_SKIP_IOS_LEG=1 \
+      CADENCE_SUITE_FILES="$ws/index.tsv" CADENCE_SUITE_LABELS="$ws/ps/labels.tsv" \
+      CADENCE_ALLOW_LOCKED_SCREEN_UI_RUN=1 CADENCE_ALLOW_AUTOMATION_PROMPT=1 CADENCE_ALLOW_WARNINGS= \
+      zsh "$ws/ps/root/scripts/xcb.sh" psprobe test -scheme Cadence -destination 'platform=macOS' \
+      "$@" -derivedDataPath "$ws/ps/tmp/cadence-dd-psprobe" >"$ws/ps/out" 2>&1
+    ps_rc=$?
+    ps_out="$(cat "$ws/ps/out" 2>/dev/null)"
+    ps_tail="$(print -r -- "$ps_out" | sed -n '/== xcb result/,$p')"
+  }
+
+  ps_run -only-testing:CadenceTests/AlphaTests
+  check "a green scoped run says PARTIAL-SCOPE-UNRUN in its RESULT block, not just its preflight" \
+    $( [[ "$ps_tail" == *PARTIAL-SCOPE-UNRUN* ]] && print 1 || print 0 ) "$ps_out"
+  check "...and the result block names the skipped sibling, its count and its file" \
+    $( [[ "$ps_tail" == *AlphaHelperTests* && "$ps_tail" == *"(7 tests)"* && "$ps_tail" == *AlphaTests.swift* ]] && print 1 || print 0 ) "$ps_tail"
+  check "...and quotes this run's own result-line count beside it, so the two are read together" \
+    $( [[ "$ps_tail" == *"test result lines: 2"* && "$ps_tail" == *"result lines: 2\" then describes a fraction"* ]] && print 1 || print 0 ) "$ps_tail"
+  # NON-VACUITY, and the reason this check is not redundant with the first: the fix must ADD a
+  # reading, not move the preflight one down past the forty-minute lock queue it exists to avoid.
+  check "...while the PREFLIGHT half still fires before the build, exactly once" \
+    $( [[ $(print -r -- "$ps_out" | grep -c 'PARTIAL-SCOPE (T-1076)') == 1 \
+       && $(print -r -- "$ps_out" | sed -n '1,/== xcb result/p' | grep -c 'PARTIAL-SCOPE (T-1076)') == 1 ]] && print 1 || print 0 ) "$ps_out"
+  check "...and it REPORTS rather than gates: the run still exits 0 (T-1076's decision, re-taken)" \
+    $( (( ps_rc == 0 )) && [[ "$ps_tail" == *"XCODEBUILD_EXIT=0"* ]] && print 1 || print 0 ) "exit $ps_rc: $ps_tail"
+  # The control that keeps it from becoming noise. Without it, a restatement printed on every run
+  # would pass every check above and would be scrolled past within a week.
+  ps_run -only-testing:CadenceTests/AlphaTests -only-testing:CadenceTests/AlphaHelperTests
+  check "CONTROL: a file scoped in FULL says nothing, in the result block or anywhere else" \
+    $( (( ps_rc == 0 )) && [[ "$ps_out" != *PARTIAL-SCOPE* ]] && print 1 || print 0 ) "exit $ps_rc: $ps_out"
+
+  say ""
   say " 15. the test-host lease ends with the primary run, not with the postflight (T-2086)"
   # A real `xcb.sh <id> test` against a stub lock whose `release` records WHERE IN THE RUN'S OWN
   # OUTPUT it was called: whether the result block had started, and whether the closing release-dd
@@ -4721,6 +4852,12 @@ if (( IS_TEST_RUN )); then
     # see `suite_started_guard`. Only reached when RAN > 0: a wholly empty run is the case above.
     suite_started_guard "$LOG" "$RAN" "${run_args[@]}" || { (( STATUS == 0 )) && STATUS=$SUITE_GATE_EXIT }
   fi
+  # The preflight's partial-scope finding, said again where a green run is read (T-3080). Outside
+  # the RAN branch and BELOW both guards above, because it is the quietest of the three and the
+  # only one that can be true of a run that is entirely green: zero tests is the empty-run guard's
+  # finding, a requested suite that contributed nothing is T-667's, and a suite nobody requested
+  # at all -- living in a file this run did execute -- is this one. It never touches $STATUS.
+  partial_scope_postflight "$RAN"
   # After both, and outside the RAN branch on purpose (T-1741): a run whose every test skipped has
   # RAN == 0 and is refused above, and the interactive opt-in is the likeliest reason it did --
   # so the report that names it must not be the one thing that branch omits.
