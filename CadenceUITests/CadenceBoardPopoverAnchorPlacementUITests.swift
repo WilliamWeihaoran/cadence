@@ -262,8 +262,15 @@ final class CadenceBoardPopoverAnchorPlacementUITests: XCTestCase {
         // exactly how T-1954 was mis-filed: in both launches that "proved" one, the control was
         // absent too, so those launches had drawn no UI whatsoever. Roughly 2 in 40 launches do
         // that, and the cause is open as T-2020.
+        //
+        // **Scoped to `.buttons`, which is the form the measurement used.** The only readings of
+        // this control that exist are `CadenceSeededSidebarTimingUITests.firstSeen`'s, and that
+        // asks `app.buttons`. A descendant-wide match asks a weaker question — it would call a
+        // launch non-blank on any element at all carrying the identifier — so the four control
+        // sites are held to the one spelling by
+        // `CadenceTestTargetHygieneTests.everyBlankLaunchControlAsksTheSameQuestionAsTheMeasurement`.
         XCTAssertTrue(
-            element(ID.todayDestinationControl).waitForExistence(timeout: CadenceUITestBounds.firstPaint),
+            app.buttons.element(identified: ID.todayDestinationControl).waitForExistence(timeout: CadenceUITestBounds.firstPaint),
             "the sidebar drew no static Today row, so this launch drew no UI at all — nothing "
             + "below is evidence about the seed. See T-2020."
         )
@@ -480,8 +487,15 @@ final class CadenceBoardPopoverAnchorPlacementUITests: XCTestCase {
         // exactly how T-1954 was mis-filed: in both launches that "proved" one, the control was
         // absent too, so those launches had drawn no UI whatsoever. Roughly 2 in 40 launches do
         // that, and the cause is open as T-2020.
+        //
+        // **Scoped to `.buttons`, which is the form the measurement used.** The only readings of
+        // this control that exist are `CadenceSeededSidebarTimingUITests.firstSeen`'s, and that
+        // asks `app.buttons`. A descendant-wide match asks a weaker question — it would call a
+        // launch non-blank on any element at all carrying the identifier — so the four control
+        // sites are held to the one spelling by
+        // `CadenceTestTargetHygieneTests.everyBlankLaunchControlAsksTheSameQuestionAsTheMeasurement`.
         XCTAssertTrue(
-            element(ID.todayDestinationControl).waitForExistence(timeout: CadenceUITestBounds.firstPaint),
+            app.buttons.element(identified: ID.todayDestinationControl).waitForExistence(timeout: CadenceUITestBounds.firstPaint),
             "the sidebar drew no static Today row, so this launch drew no UI at all — nothing "
             + "below is evidence about the seed. See T-2020."
         )

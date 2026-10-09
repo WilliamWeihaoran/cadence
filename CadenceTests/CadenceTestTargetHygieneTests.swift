@@ -1406,6 +1406,106 @@ struct CadenceTestTargetHygieneTests {
             #expect(listed.contains(expected), "the non-product-tree manifest no longer names \(expected)")
         }
     }
+
+    // MARK: - T-2020: the blank-launch control, asked one way
+
+    /// Every **reading** of the blank-launch control in a file, as `(line, text)`.
+    ///
+    /// A reading is a `waitForExistence` on `sidebar.destination.today` — spelled either as the
+    /// literal or through the `todayDestinationControl` constant four suites declare for it. The
+    /// constant's own declaration is not a reading, and neither is the measurement in
+    /// `CadenceSeededSidebarTimingUITests`, which does not wait: that one is pinned separately in
+    /// `everyBlankLaunchControlAsksTheSameQuestionAsTheMeasurement` because it is what the
+    /// spelling is calibrated against.
+    private static func blankLaunchControlReadings(in source: String) -> [(line: Int, text: String)] {
+        source.components(separatedBy: "\n").enumerated().compactMap { index, line in
+            guard line.contains("waitForExistence") else { return nil }
+            guard line.contains("todayDestination") || line.contains("sidebar.destination.today") else {
+                return nil
+            }
+            return (index + 1, line.trimmingCharacters(in: .whitespaces))
+        }
+    }
+
+    /// The detector, against both witnesses, before it is believed about the target.
+    ///
+    /// The second pair is the load-bearing one: a detector that could not tell `app.buttons` from
+    /// a descendant-wide match would report zero offenders forever and the sweep below would be a
+    /// statement about the detector rather than about the four control sites.
+    @Test func theBlankLaunchControlDetectorTellsAScopedReadingFromAWideOne() {
+        let scoped = "app.buttons.element(identified: ID.todayDestinationControl).waitForExistence(timeout: t)"
+        let wide = "element(ID.todayDestinationControl).waitForExistence(timeout: t)"
+        let declaration = #"static let todayDestinationControl = "sidebar.destination.today""#
+        let unrelated = "app.buttons.element(identified: ID.seededAreaRow).waitForExistence(timeout: t)"
+
+        #expect(Self.blankLaunchControlReadings(in: scoped).count == 1,
+                "the detector cannot see a reading written through the constant")
+        #expect(Self.blankLaunchControlReadings(in: wide).count == 1,
+                "the detector cannot see the descendant-wide spelling, which is the one it exists to find")
+        #expect(Self.blankLaunchControlReadings(in: declaration).isEmpty,
+                "the detector reads the constant's declaration as a reading of it")
+        #expect(Self.blankLaunchControlReadings(in: unrelated).isEmpty,
+                "the detector fires on a wait that is not the control at all")
+
+        #expect(Self.blankLaunchControlReadings(in: scoped).allSatisfy { $0.text.contains("app.buttons") },
+                "the scoped witness is not recognised as scoped")
+        #expect(Self.blankLaunchControlReadings(in: wide).contains { !$0.text.contains("app.buttons") },
+                "the wide witness is not recognised as wide")
+    }
+
+    /// **[[T-2020]]: the four control sites did not ask the same question.**
+    ///
+    /// `CadenceTodayRowCrushUITests` and `CadenceInspectorHeaderPanelPlacementUITests` scoped the
+    /// control to `app.buttons`, which is what the only measurement of it —
+    /// `CadenceSeededSidebarTimingUITests.firstSeen` — does.
+    /// `CadenceBoardPopoverAnchorPlacementUITests` (both sites) and
+    /// `CadenceUnmeasuredTrailingPopoverPlacementUITests` matched any descendant. The weaker form
+    /// would call a launch non-blank on a non-button element carrying that identifier, which is
+    /// the opposite of what a control is for. Collapsed onto the `.buttons` form; this holds it.
+    ///
+    /// The measurement is asserted too. Without it the rule is a preference: `.buttons` is the
+    /// right spelling only because it is the one the 40 launches behind T-2020 were read through.
+    @Test func everyBlankLaunchControlAsksTheSameQuestionAsTheMeasurement() throws {
+        let read = CadenceSourceScan.strippedSourceReader()
+        var readings: [String] = []
+        var wide: [String] = []
+        for path in try CadenceSourceScan.swiftFiles(under: "CadenceUITests").sorted() {
+            for hit in Self.blankLaunchControlReadings(in: try read(path)) {
+                readings.append("\(path):\(hit.line)")
+                if !hit.text.contains("app.buttons") {
+                    wide.append("\(path):\(hit.line): \(hit.text)")
+                }
+            }
+        }
+
+        // Non-vacuity: seven readings existed when this was written, and a sweep that found none
+        // would pass the emptiness check below by having read nothing.
+        #expect(
+            readings.count >= 7,
+            "the sweep found only \(readings.count) readings of the blank-launch control: \(readings)"
+        )
+        #expect(
+            wide.isEmpty,
+            """
+            blank-launch control readings that are NOT scoped to `app.buttons`. A descendant-wide \
+            match calls a launch non-blank on any element carrying the identifier, so it is a \
+            weaker control than the measurement it stands in for (T-2020):
+            \(wide.joined(separator: "\n"))
+            """
+        )
+
+        let timing = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("CadenceUITests/CadenceSeededSidebarTimingUITests.swift")
+        )
+        let measurement = try #require(
+            CadenceSourceScan.functionBody(named: "firstSeen", in: timing),
+            "CadenceSeededSidebarTimingUITests.firstSeen is gone, so the spelling above is calibrated against nothing"
+        )
+        #expect(
+            measurement.contains("app.buttons"),
+            "the measurement no longer reads the control through app.buttons, so the control sites are now pinned to the wrong spelling"
+        )
+    }
 }
 
 // MARK: - Reading the test target

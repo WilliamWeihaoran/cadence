@@ -393,9 +393,16 @@ final class CadenceUnmeasuredTrailingPopoverPlacementUITests: XCTestCase {
     /// sidebar at all. Roughly 2 in 40 launches draw no UI whatsoever (T-2020), and a suite that
     /// waits only on a seeded row files those as a defect in whatever it was looking for. That is
     /// exactly how T-1954 was mis-filed.
+    ///
+    /// **Scoped to `.buttons`, which is the form the measurement used.** The only readings of this
+    /// control that exist are `CadenceSeededSidebarTimingUITests.firstSeen`'s, and that asks
+    /// `app.buttons`. A descendant-wide match asks a weaker question — it would call a launch
+    /// non-blank on any element at all carrying the identifier — so the four control sites are
+    /// held to the one spelling by
+    /// `CadenceTestTargetHygieneTests.everyBlankLaunchControlAsksTheSameQuestionAsTheMeasurement`.
     private func openCalendar() throws {
         XCTAssertTrue(
-            probe(ID.todayDestinationControl).waitForExistence(timeout: CadenceUITestBounds.firstPaint),
+            app.buttons.element(identified: ID.todayDestinationControl).waitForExistence(timeout: CadenceUITestBounds.firstPaint),
             "the sidebar drew no static Today row, so this launch drew no UI at all — nothing below is "
             + "evidence about the seed, the seam, or any popover. See T-2020."
         )
