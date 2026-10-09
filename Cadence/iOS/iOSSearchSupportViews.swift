@@ -240,6 +240,10 @@ struct iOSSearchScopePicker: View {
 struct iOSSearchResultGroup<Row: View>: View {
     let title: String
     let count: Int
+    /// The row that ends a capped section: what it reads, and what tapping it does. `nil` when the
+    /// section is already listing every match, so a section drawing all of its results cannot
+    /// accidentally draw a "0 more results" row.
+    var continuation: iOSSearchResultContinuation?
     @ViewBuilder let row: (Int) -> Row
 
     var body: some View {
@@ -251,15 +255,68 @@ struct iOSSearchResultGroup<Row: View>: View {
                 ForEach(0..<count, id: \.self) { index in
                     row(index)
 
-                    if index < count - 1 {
+                    // The continuation row is inside the same card as the results, so the last
+                    // result needs a rule under it too when one follows.
+                    if index < count - 1 || continuation != nil {
                         iOSRowDivider(leadingInset: 46)
                     }
+                }
+
+                if let continuation {
+                    iOSSearchMoreResultsRow(continuation: continuation)
                 }
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 4)
             .cadenceCard(background: Theme.surface, cornerRadius: Theme.radiusCard, shadowRadius: 10, shadowY: 4)
         }
+    }
+}
+
+/// The count row at the foot of a capped search section (T-3089).
+struct iOSSearchResultContinuation {
+    /// `CadenceSearchResultCap.continuationLabel(hidden:)`'s sentence — "38 more results".
+    ///
+    /// The sentence rather than the number, and the row below reads it for its accessibility
+    /// label too: a second copy of the count here is a second place for the row and the
+    /// announcement to disagree about how many results are waiting.
+    let label: String
+    /// Reveals the rest **in place**. There is no screen to push; see `CadenceSearchResultCap`.
+    let reveal: () -> Void
+}
+
+/// Ends a section whose results were capped, and expands it where it stands.
+///
+/// It is drawn inside the same card as the rows it is talking about rather than under it: the
+/// thing the user is deciding about is this list, and a control floating beside the card would
+/// read as a page-level action.
+private struct iOSSearchMoreResultsRow: View {
+    let continuation: iOSSearchResultContinuation
+
+    var body: some View {
+        Button(action: continuation.reveal) {
+            HStack(spacing: 12) {
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Theme.blue)
+                    // The icon tile's width, so the label starts on the same vertical as every
+                    // result title above it.
+                    .frame(width: 34)
+
+                Text(continuation.label)
+                    .cadenceFont(.rowTitle, base: 15, weight: .semibold)
+                    .foregroundStyle(Theme.blue)
+                    .lineLimit(1)
+
+                Spacer(minLength: 0)
+            }
+            .padding(.vertical, 10)
+            .frame(minHeight: 44)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.iosPressable)
+        .accessibilityLabel("Show \(continuation.label)")
+        .accessibilityHint("Adds the remaining results to this section.")
     }
 }
 

@@ -37,6 +37,12 @@ struct iOSSearchView: View {
     /// were always correct, because `List` does not extend row activation to plain buttons.
     @State private var pushedListRoute: iOSListRoute?
     @State private var pushedDestination: CadenceFeatureDestination?
+    /// Which sections the reader has expanded past `sectionResultCap`, keyed by section title.
+    ///
+    /// Scoped to one result set and cleared by `resultSetIdentity` below: the 38 results a
+    /// section was withholding are a fact about *this* query, and a section left expanded would
+    /// hand the next search an uncapped list that nobody asked for.
+    @State private var expandedSections: Set<String> = []
 
     private var trimmedQuery: String {
         query.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -75,6 +81,18 @@ struct iOSSearchView: View {
     /// shows.
     private var showsProgress: Bool {
         scope == .all || scope == .progress
+    }
+
+    /// Everything that changes which results a section holds. Narrower than
+    /// `calendarSearchRequestID` on one axis and wider on another: the Completed toggle rewrites
+    /// the Tasks section without touching EventKit, and an EventKit store bump does not invalidate
+    /// a reader's decision to expand the Tasks section.
+    private var resultSetIdentity: String {
+        [
+            trimmedQuery,
+            scope.rawValue,
+            includeCompletedTasks ? "completed" : "active"
+        ].joined(separator: "|")
     }
 
     private var calendarSearchRequestID: String {
@@ -340,6 +358,9 @@ struct iOSSearchView: View {
         .task(id: calendarSearchRequestID) {
             refreshCalendarSearchEvents()
         }
+        .onChange(of: resultSetIdentity) { _, _ in
+            expandedSections.removeAll()
+        }
         // `item:` rather than `for:`. Besides being what the button rows above need, this keeps
         // Search from registering a *second* destination for either type in the iPhone stack,
         // where `iOSCompactHomeView` already registers `CadenceFeatureDestination` and a pushed
@@ -485,12 +506,40 @@ struct iOSSearchView: View {
         CadenceFeatureDestination.allCases.filter { $0 != .search }
     }
 
+    /// How many results a section lists before its count row. Unchanged by T-3089 — the cap was
+    /// never the complaint, its silence was.
+    private var sectionResultCap: Int {
+        isSearching ? 24 : 8
+    }
+
     @ViewBuilder
     private func resultSection(_ title: String, results: [iOSSearchResult]) -> some View {
         if !results.isEmpty {
-            let visible = Array(results.prefix(isSearching ? 24 : 8))
+            let isExpanded = expandedSections.contains(title)
+            let visible = Array(results.prefix(CadenceSearchResultCap.visibleCount(
+                total: results.count,
+                cap: sectionResultCap,
+                isExpanded: isExpanded
+            )))
+            // Both numbers come off the same uncapped array, so the rows and the sentence under
+            // them cannot describe different searches.
+            let hidden = CadenceSearchResultCap.hiddenCount(
+                total: results.count,
+                cap: sectionResultCap,
+                isExpanded: isExpanded
+            )
             Section {
-                iOSSearchResultGroup(title: title, count: visible.count) { index in
+                iOSSearchResultGroup(
+                    title: title,
+                    count: visible.count,
+                    continuation: hidden.flatMap { hidden in
+                        CadenceSearchResultCap.continuationLabel(hidden: hidden).map { label in
+                            iOSSearchResultContinuation(label: label) {
+                                expandedSections.insert(title)
+                            }
+                        }
+                    }
+                ) { index in
                     searchResultRow(visible[index])
                 }
             }

@@ -194,6 +194,12 @@ enum CadenceTaskSurfaceOptions {
     ///
     /// Takes the two counts rather than the array so the caption cannot be computed from a
     /// different list than the one that was capped.
+    ///
+    /// **There is a third line in this family since T-3089**, and it is the one the first
+    /// paragraph above says did not exist: `CadenceSearchResultCap.continuationLabel(hidden:)`'s
+    /// "38 more results". A capped *search* section now does have a show-more, so it gets neither
+    /// of these two — not "+38 more", which is a chip strip's shorthand, and not "Showing 24 of
+    /// 62", which is what a list says when nothing can be done about it.
     static func overflowCaption(shown: Int, total: Int) -> String? {
         guard total > shown else { return nil }
         return "Showing \(shown) of \(total)"
