@@ -313,20 +313,19 @@ struct CadenceInboxRemindersSurfaceTests {
 
     // MARK: - T-256: isRestricted reaches every live consumer
 
-    /// The manager exposes the live status directly, with no session fold — a restriction is a
-    /// device policy, not something the in-app prompt can produce or reverse, so there is nothing
-    /// here for `deniedInThisSession` to have an opinion about (contrast `isDenied`, which does
-    /// fold a session record in, per its own doc comment).
+    /// The live comparison follows a process-level disarm guard, not a session fold. A disarmed
+    /// process answers false without asking TCC; otherwise restriction is read live because it
+    /// is device policy, not something the in-app prompt can produce or reverse. There is nothing
+    /// here for `deniedInThisSession` to opine on, unlike `isDenied`.
     @Test func theManagerReadsRestrictedLiveWithNoSessionFold() throws {
         let source = try strippingComments(sourceFile("Cadence/Services/CadenceRemindersManager.swift"))
         #expect(source.contains("var isRestricted: Bool"), "RemindersManager stopped exposing isRestricted")
-        #expect(
-            source.range(
-                of: "isRestricted:\\s*Bool\\s*\\{\\s*EKEventStore\\.authorizationStatus\\(for:\\s*\\.reminder\\)\\s*==\\s*\\.restricted",
-                options: .regularExpression
-            ) != nil,
-            "RemindersManager.isRestricted no longer reads the live EventKit status directly"
-        )
+        let getter = try cadenceFunctionBody("var isRestricted: Bool", in: source)
+        let gate = try #require(getter.range(of: "guard !isEventKitDisarmed else { return false }"))
+        let live = try #require(getter.range(of: "EKEventStore.authorizationStatus(for: .reminder) == .restricted"))
+        #expect(gate.lowerBound < live.lowerBound)
+        #expect(getter.contains("return EKEventStore.authorizationStatus(for: .reminder) == .restricted"))
+        #expect(!getter.contains("deniedInThisSession"))
     }
 
     /// **T-254: the fold happens once**, and this is scoped to the one function that performs it,
@@ -509,9 +508,9 @@ struct CadenceInboxRemindersSurfaceTests {
     }
 
     /// **The wiring, scoped to the one method.** `requestAccess()` had two exits returning `false`
-    /// and only the post-prompt one recorded the refusal; the count below is what stops a third
-    /// appearing. There is no bare `return false` left in the method at all — the bookkeeping
-    /// cannot be skipped by adding one.
+    /// and only the post-prompt one recorded the refusal. The two native refusals stay counted;
+    /// the third exit, `finishDisarmedAccessRequest`, ends a disarmed request without a denial.
+    /// Each is named and counted, so no fourth exit can silently skip the bookkeeping.
     @Test func requestAccessAnswersFalseOnlyThroughItsOneRefusal() throws {
         let source = try strippingComments(sourceFile("Cadence/Services/CadenceRemindersManager.swift"))
         let body = try cadenceFunctionBody("func requestAccess() async -> Bool", in: source)
@@ -532,6 +531,22 @@ struct CadenceInboxRemindersSurfaceTests {
             body.components(separatedBy: "refuse(recordingDenial:").count - 1 == 2,
             "requestAccess no longer answers false through exactly its two shared refusals"
         )
+
+        #expect(body.components(separatedBy: "finishDisarmedAccessRequest()").count - 1 == 1)
+        #expect(body.contains("guard !isEventKitDisarmed else {\n            return finishDisarmedAccessRequest()"))
+        let returns = #"\breturn\b"#
+        #expect(CadenceSourceScan.matchCount(returns, in: "return true") == 1)
+        #expect(CadenceSourceScan.matchCount(returns, in: "returnedValue") == 0)
+        #expect(CadenceSourceScan.matchCount(returns, in: body) == 5, "two success exits and three named false exits; no fourth false exit")
+        let disarmed = try cadenceFunctionBody("private func finishDisarmedAccessRequest() -> Bool", in: source)
+        #expect(disarmed.contains("isAuthorized = false"))
+        #expect(disarmed.contains("stopObserving()"))
+        #expect(disarmed.contains("adopt([])"))
+        #expect(disarmed.contains("return false"))
+        #expect(!disarmed.contains("deniedInThisSession"))
+        #expect(!disarmed.contains("refuse("))
+        #expect(!disarmed.contains("EKEventStore"))
+        #expect(!disarmed.contains("store."))
 
         let refusal = try cadenceFunctionBody(
             "private func refuse(recordingDenial recordsDenial: Bool) -> Bool",
