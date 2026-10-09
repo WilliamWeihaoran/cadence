@@ -1436,3 +1436,34 @@ is already complete — `isDisarmedForThisProcess` is at `:60-62` and the file's
 **Everything else in `CadenceInboxRemindersSurfaceTests.swift` is out of scope.** The
 `RemindersConnectionState.resolve` tests above `:515` and every other suite in the file are untouched
 by this grant.
+
+### T-3031, second guard in the same file — `theManagerReadsRestrictedLiveWithNoSessionFold` at `:316-330`
+
+**GRANTED, additively, on top of the `:515-533` grant above. The file's scope is now those two
+tests and nothing else in it.**
+
+Codex measured this one on a compiling run rather than predicting it, and it is real. The assertion
+at `:323` is a regular expression whose `\{\s*EKEventStore` requires `isRestricted`'s getter body to
+**open immediately** with the live read. A disarm guard ahead of that read is not a different
+spelling of the same shape — it is a different shape, and the regex correctly stops matching. The
+guard was written when the only thing that could precede the read was nothing.
+
+**What the edit must preserve, and why each piece is load-bearing:**
+
+- **The live comparison itself stays byte-identical.** `EKEventStore.authorizationStatus(for: .reminder) == .restricted` is the whole point of the test: a restriction is device policy, and the manager must read it live rather than cache it. The grant moves what may come *before* that expression, never the expression.
+- **The non-vacuity control stays.** `#expect(source.contains("var isRestricted: Bool"))` at `:321` is what stops the regex assertion passing because the property was deleted. Keep it.
+- **`deniedInThisSession` is PROHIBITED in this getter, explicitly.** This is the sharpest part of Codex's request and it is right. The doc comment's argument is that `.restricted` has nothing for a session record to have an opinion about — unlike `isDenied`, which deliberately folds one in. A disarm guard is a new early-exit in a getter that previously had none, and the next reader's obvious move is to fold session state into it. Pin the absence now, while the reason is still written down directly above.
+- **The disarm exit answers `false`, not `true`.** A disarmed process is not restricted; it simply never asked. Returning `true` would make the UI assert a device policy that may not exist.
+
+**And the flags must stay coherent with each other under disarm.** `theManagerFoldsAllThreeFlagsIntoTheOneConnectionState` at `:338-348` is **NOT granted and must stay green unedited**: it pins `connectionState` to resolve from all three of `isAuthorized` / `isDenied` / `isRestricted`. If disarm drives all three to `false`, the fold must still land on the state that honestly describes a process that never reached TCC — not on anything that reads as authorized. If making that true requires touching the fold or the resolver, **stop and ask**; that is a product-behaviour question about what a disarmed launch shows the user, and it is not inside this grant.
+
+**Update the doc comment above the test.** It currently says the manager "exposes the live status
+directly, with no session fold". After the change that is true of the *comparison* but no longer of
+the *getter*, which now has a gate in front of it. Say so, and say that the gate is a process-level
+disarm and not a session record — same reason as the `:515-533` grant: a stale comment over a changed
+shape is how the next reader gets this wrong.
+
+**Still not granted:** `Cadence/Services/CadenceEventKitLaunchGate.swift` (complete already), and
+every other suite and test in `CadenceInboxRemindersSurfaceTests.swift` — including the
+`RemindersConnectionState.resolve` tests and the task-group-header tests above `:313`, which share
+the file and have nothing to do with T-3031.
