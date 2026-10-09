@@ -126,6 +126,13 @@ final class CadenceDeepLinkManager {
     /// logbook standing open.
     var revealedCompletedTaskID: UUID?
 
+    /// The token of the route a root view has already navigated to ([[T-3049]]).
+    ///
+    /// `@ObservationIgnored` for the reason `CadenceRemindersManager.reconcileLedger` is: nothing
+    /// renders from it, and an observed write out of `.onAppear` would invalidate every view
+    /// tracking this manager for a value none of them reads.
+    @ObservationIgnored private(set) var appliedRouteToken: UUID?
+
     private init() {}
 
     func handle(_ url: URL) {
@@ -140,6 +147,32 @@ final class CadenceDeepLinkManager {
         case .habits, .goals, .calendar:
             pendingTaskID = nil
         }
+    }
+
+    /// The standing route if no root has applied it yet, claimed so that no root applies it twice.
+    ///
+    /// **[[T-3049]]: a root needs two triggers and neither one is sufficient alone.** A root
+    /// watches `route?.token` with `.onChange`, which does **not** fire for a value that is
+    /// already set when the view first renders. A reminder tap that *cold-launches* the app runs
+    /// `handle(_:)` before any root exists, so the route is recorded and then never applied — the
+    /// tap opens the app and leaves the user wherever they were, which is the whole defect
+    /// [[T-3049]] (1) set out to fix for a running app. Reading the route from `.onAppear` as well
+    /// closes that, but `.onAppear` fires again on **every** re-appearance — a reopened macOS
+    /// window, a shell swapped on an iPad size-class change — and re-applying a route the user has
+    /// since navigated away from is its own defect. Claiming the token is what makes the pair
+    /// exactly-once instead of either never or repeatedly.
+    ///
+    /// A *repeat* tap on the same reminder still routes: `handle(_:)` mints a fresh `token` for
+    /// every URL it accepts, so an identical `deepLink` arrives here as a new route.
+    ///
+    /// **It deliberately does not clear `route`.** `iOSCalendarView` reads the standing route in
+    /// `standingCalendarDeepLinkDateKey` *after* the root has routed to the calendar page;
+    /// clearing here would leave that page on its remembered date, which is exactly the defect
+    /// [[T-369]] fixed.
+    func takeUnappliedRoute() -> CadenceDeepLink? {
+        guard let route, route.token != appliedRouteToken else { return nil }
+        appliedRouteToken = route.token
+        return route.deepLink
     }
 
     func clearPendingTask(_ taskID: UUID) {

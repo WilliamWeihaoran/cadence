@@ -178,4 +178,90 @@ struct NotificationTapRoutingTests {
             )
         }
     }
+
+    // MARK: - T-3049, the residue: a tap that COLD-LAUNCHES the app
+
+    /// A root watches `route?.token` with `.onChange`, and `.onChange` does not fire for a value
+    /// that is already set when the view first renders. A reminder tap that launches the app runs
+    /// `handle(_:)` before any root exists, so without an appear-time read the route is recorded
+    /// and never applied. `takeUnappliedRoute()` is the appear-time read.
+    @Test func aRouteStandingBeforeTheRootRendersIsStillClaimedByIt() throws {
+        let manager = CadenceDeepLinkManager.shared
+        manager.route = nil
+        _ = manager.takeUnappliedRoute()
+
+        let taskID = UUID()
+        manager.handle(try #require(URL(string: "cadence://task/\(taskID.uuidString)")))
+
+        #expect(
+            manager.takeUnappliedRoute() == .task(taskID),
+            "a route recorded before the root appeared is not offered to it, so a cold-launch tap goes nowhere (T-3049)"
+        )
+    }
+
+    /// The other half of the same guard, and the reason the appear-time read is not just a second
+    /// call site: `.onAppear` fires again on every re-appearance — a re-opened macOS window — and
+    /// re-applying a route the user navigated away from half an hour ago is its own defect.
+    @Test func anAlreadyClaimedRouteIsNotAppliedASecondTimeWhenTheRootAppearsAgain() throws {
+        let manager = CadenceDeepLinkManager.shared
+        manager.route = nil
+        _ = manager.takeUnappliedRoute()
+
+        manager.handle(try #require(URL(string: "cadence://habits")))
+        #expect(manager.takeUnappliedRoute() == .habits)
+
+        #expect(
+            manager.takeUnappliedRoute() == nil,
+            "the standing route was handed out twice, so re-opening the window re-navigates (T-3049)"
+        )
+        #expect(
+            manager.route?.deepLink == .habits,
+            "claiming the route cleared it, which strands iOSCalendarView.standingCalendarDeepLinkDateKey (T-369)"
+        )
+    }
+
+    /// Claiming is per-token, not per-link: `handle(_:)` mints a fresh token for every URL it
+    /// accepts, so tapping the *same* reminder twice is two routes and routes twice.
+    @Test func aRepeatTapOnTheSameReminderIsANewRouteAndRoutesAgain() throws {
+        let manager = CadenceDeepLinkManager.shared
+        manager.route = nil
+        _ = manager.takeUnappliedRoute()
+
+        let url = try #require(URL(string: "cadence://today"))
+        manager.handle(url)
+        #expect(manager.takeUnappliedRoute() == .today)
+        #expect(manager.takeUnappliedRoute() == nil)
+
+        manager.handle(url)
+        #expect(
+            manager.takeUnappliedRoute() == .today,
+            "a second tap on the same reminder was swallowed as already-applied (T-3049)"
+        )
+    }
+
+    /// The macOS wiring, which `CadenceTests` cannot drive: the appear-time call exists, and the
+    /// handler reads through the claim rather than through `route` directly.
+    @Test func theMacRootReadsAStandingDeepLinkRouteWhenItAppears() throws {
+        let source = try CadenceCommitSurfaceScan.scanned("Cadence/macOS/macOSRootView.swift")
+        let onAppear = try cadenceFunctionBody(".onAppear", in: source)
+
+        #expect(
+            onAppear.contains("macOSRootLifecycleSupport.handleAppear("),
+            "the reader did not return macOSRootView's .onAppear block"
+        )
+        #expect(
+            onAppear.contains("handleDeepLinkRoute()"),
+            "macOSRootView's .onAppear no longer applies a route that was standing before it rendered (T-3049)"
+        )
+
+        let handler = try cadenceFunctionBody("private func handleDeepLinkRoute()", in: source)
+        #expect(
+            handler.contains("deepLinkManager.takeUnappliedRoute()"),
+            "handleDeepLinkRoute no longer claims the route, so .onAppear and .onChange both apply it (T-3049)"
+        )
+        #expect(
+            !handler.contains("deepLinkManager.route?.deepLink"),
+            "handleDeepLinkRoute still reads the route directly, which re-navigates on every re-appearance (T-3049)"
+        )
+    }
 }
