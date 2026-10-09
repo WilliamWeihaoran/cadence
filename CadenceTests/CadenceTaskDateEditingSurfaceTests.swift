@@ -215,9 +215,18 @@ struct CadenceTaskDateEditingSurfaceTests {
         "Cadence/macOS/Views/TaskInspectorContentSupportViews.swift",
         "Cadence/macOS/Views/TasksPanelSupport.swift",
         "Cadence/iOS/iOSTaskRowActionViews.swift",
-        "Cadence/iOS/iOSTodaySchedulePanel.swift",
+        // `Cadence/iOS/iOSTodaySchedulePanel.swift` was here for the clear-time control on its
+        // hour rows. [[T-3081]] made Today's pane draw `iOSCalendarTimelineGrid`, so that control
+        // is `iOSCalendarTimelineViews`' now and the pane edits no date at all — it would fail the
+        // positive "names the wrapper" half below for the right reason, which is why it is removed
+        // rather than loosened.
         "Cadence/iOS/iOSTaskDetailSheet.swift",
-        "Cadence/iOS/iOSCalendarBoardView.swift"
+        "Cadence/iOS/iOSCalendarBoardView.swift",
+        // Where the clear-time edit moved to. [[T-3081]] put Today's pane on
+        // `iOSCalendarTimelineGrid`, and the grid decides — from its span, on the condition
+        // `iOSTimelineTaskBlock.onClearTime` already stated — whether the block offers the control
+        // at all. One surface instead of two, and it is routed like every other.
+        "Cadence/iOS/iOSCalendarTimelineViews.swift"
     ]
 
     /// A raw write to one of the three date/time fields. `[^=]` at the end is what keeps

@@ -101,8 +101,17 @@ struct CadenceCalendarCaptureClearanceTests {
 
         // Scope proof: the slice is the function, not the file. `formBundle(from:adding:)` is the
         // declaration directly above it and gridScroller only passes its *reference*.
-        #expect(scroller.contains("iOSCalendarTimelineDayColumn("))
+        //
+        // The needle is `dayColumn(for:`, not `iOSCalendarTimelineDayColumn(`: since [[T-3081]] the
+        // grid draws two spans — a scrolling run of days and Today's single pinned column — and
+        // builds the column itself in one shared helper so the two cannot drift. The scroller
+        // calls that helper; the helper names the view.
+        #expect(scroller.contains("dayColumn(for: "))
         #expect(scroller.contains("CadenceTaskMutationSupport.insertBundle") == false)
+        #expect(
+            timeline.contains("iOSCalendarTimelineDayColumn("),
+            "non-vacuity: the helper the scroller calls no longer builds the column"
+        )
 
         #expect(scroller.components(separatedBy: ".contentMargins(").count - 1 == 1)
 
@@ -117,7 +126,7 @@ struct CadenceCalendarCaptureClearanceTests {
         let canvasContent = try #require(
             CadenceSourceScan.declarationBody("ScrollView(.vertical)", in: insideHorizontal)
         )
-        #expect(canvasContent.contains("iOSCalendarTimelineDayColumn("))
+        #expect(canvasContent.contains("dayColumn(for: "))
         #expect(
             canvasContent.contains(".contentMargins(") == false,
             "the clearance is inside the canvas's content rather than on the canvas"

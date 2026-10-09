@@ -1034,3 +1034,201 @@ struct CadenceCalendarDayBoundarySnapTests {
         #expect(width > container * 0.5)
     }
 }
+
+/// **Today's right-hand pane and the Calendar page draw the same timeline ([[T-3081]]).**
+///
+/// The owner reported three defects on the iPad Today view's timeline pane, in one sentence: a `+`
+/// could not be held and dragged onto it to open the creation panel, it showed none of the day's
+/// calendar events although the Calendar page showed them, and it could not be pinched. One cause.
+/// Today's pane was a *second* timed surface — `iOSSchedulePanel` drawing 24 `iOSScheduleHourRow`s
+/// — which queried `AppTask` and `TaskBundle` and never opened EventKit at all, registered no
+/// `iOSNewTaskDropTarget`, and had no container for `MagnifyGesture` to sit on. All three are
+/// properties of `iOSCalendarTimelineGrid`'s day column and of the container its pinch is attached
+/// to, so the owner's decision was that the pane *becomes* that grid, pinned to today.
+///
+/// These are the re-fork alarm. `bothTimedGridsAttachTheOneSharedDayBoundaryBehaviour` above is the
+/// shape: one declaration, named call sites, and an absence everywhere else — so growing a second
+/// hour grid back on Today goes red rather than quietly re-introducing the three defects.
+struct CadenceTodayTimelinePaneTests {
+    private static let gridFile = "Cadence/iOS/iOSCalendarTimelineViews.swift"
+    private static let paneFile = "Cadence/iOS/iOSTodaySchedulePanel.swift"
+    private static let calendarFile = "Cadence/iOS/iOSCalendarView.swift"
+
+    private func read(_ path: String) throws -> String {
+        CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(path))
+    }
+
+    /// One grid, two call sites, and no second one anywhere in the iOS tree.
+    @Test func todaysPaneAndTheCalendarPageDrawTheOneTimedGrid() throws {
+        let grid = try read(Self.gridFile)
+        let pane = try read(Self.paneFile)
+        let calendar = try read(Self.calendarFile)
+
+        // Declared once, where the Calendar page's grid has always been declared.
+        #expect(grid.contains("struct iOSCalendarTimelineGrid: View"))
+        #expect(grid.contains("private struct iOSCalendarTimelineDayColumn: View"))
+
+        // Built by both surfaces, exactly once each.
+        #expect(
+            CadenceSourceScan.matchCount(#"iOSCalendarTimelineGrid\("#, in: calendar) == 1,
+            "the Calendar page no longer builds the shared timed grid exactly once"
+        )
+        #expect(
+            CadenceSourceScan.matchCount(#"iOSCalendarTimelineGrid\("#, in: pane) == 1,
+            "Today's timeline pane no longer builds the shared timed grid exactly once"
+        )
+
+        // Both spans reach the column through one call, so the drop target, the event blocks and
+        // the pinched `hourHeight` cannot be present on one surface and absent on the other.
+        #expect(grid.contains("private func dayColumn(for date: Date, colWidth: CGFloat)"))
+        #expect(
+            CadenceSourceScan.matchCount(#"iOSCalendarTimelineDayColumn\("#, in: grid) == 1,
+            "the grid builds its day column in more than one place again"
+        )
+        #expect(
+            CadenceSourceScan.matchCount(#"dayColumn\(for: "#, in: grid) == 2,
+            "the two spans no longer reach the one day column"
+        )
+
+        // And the hour ladder is built in exactly one file in the product tree. This is the sweep
+        // that catches a re-fork by construction rather than by name: a second 24-hour grid has to
+        // enumerate the hours, and `CadenceScheduleSupport.calendarHours` is the only enumeration.
+        let swept = try CadenceSourceScan.swiftFiles(under: "Cadence")
+        #expect(swept.count > 400, "non-vacuity: the sweep walked \(swept.count) files")
+        let declarers = try swept.filter { path in
+            CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile(path))
+                .contains("CadenceScheduleSupport.calendarHours")
+        }
+        #expect(
+            declarers == [Self.gridFile],
+            "a second surface walks the timed grid's hours itself: \(declarers)"
+        )
+    }
+
+    /// The pane is fixed to today, and its date is the day key rather than a stored selection.
+    @Test func todaysTimelinePaneIsPinnedToTodayAndCannotPageDays() throws {
+        let pane = try read(Self.paneFile)
+        let grid = try read(Self.gridFile)
+
+        // The span, and the two bindings a pane with nowhere to go hands in as constants.
+        #expect(pane.contains("span: .singleDay"))
+        #expect(pane.contains("leadingDate: .constant(today)"))
+        #expect(pane.contains("selectedDate: .constant(today)"))
+
+        // The date is the day key, read from the clock on every pass — not state, not a preference.
+        #expect(pane.contains("DateFormatters.todayKey()"))
+        #expect(
+            CadenceSourceScan.matchCount(#"@State private var \w+: Date"#, in: pane) == 0,
+            "Today's pane stores a date of its own, so it can drift off today"
+        )
+        #expect(
+            CadenceSourceScan.matchCount(#"@AppStorage\([^)]*[Dd]ate"#, in: pane) == 0,
+            "Today's pane persists a date, so it can reopen on a day that is not today"
+        )
+
+        // **Day snapping is inert because there is nothing for it to attach to.** The behaviour
+        // lives on the horizontal scroller, and a single-day grid builds none: its canvas is the
+        // vertical scroll view alone. Pinned both ways — the behaviour is inside `gridScroller`,
+        // and `singleDayCanvas` carries no horizontal scroll view and no scroll target behaviour.
+        let singleDay = try #require(
+            CadenceSourceScan.declarationBody(
+                "private func singleDayCanvas(colWidth: CGFloat, canvasHeight: CGFloat) -> some View",
+                in: grid
+            )
+        )
+        #expect(singleDay.contains("ScrollView(.vertical)"))
+        #expect(CadenceSourceScan.matchCount(#"ScrollView\(\.horizontal"#, in: singleDay) == 0)
+        #expect(CadenceSourceScan.matchCount("scrollTargetBehavior", in: singleDay) == 0)
+        #expect(CadenceSourceScan.matchCount("DayBoundaryScrollTargetBehavior", in: singleDay) == 0)
+
+        let scroller = try #require(
+            CadenceSourceScan.declarationBody("private func gridScroller(", in: grid)
+        )
+        #expect(scroller.contains("ScrollView(.horizontal)"))
+        #expect(
+            scroller.contains(".scrollTargetBehavior(DayBoundaryScrollTargetBehavior(dayWidth: colWidth))"),
+            "the day snap left the scroller it is about"
+        )
+
+        // The pane itself has no horizontal scroller either, so there is no second place for one.
+        #expect(CadenceSourceScan.matchCount(#"ScrollView\(\.horizontal"#, in: pane) == 0)
+    }
+
+    /// The three behaviours the owner reported missing, each pinned where it actually lives.
+    @Test func todaysTimelinePaneCarriesTheCreationDragEventsAndThePinch() throws {
+        let pane = try read(Self.paneFile)
+        let grid = try read(Self.gridFile)
+        let column = try #require(
+            CadenceSourceScan.declarationBody("private struct iOSCalendarTimelineDayColumn: View", in: grid)
+        )
+
+        // (1) The hold-and-drag creation panel. The `+` is the page's
+        // (`iOSTodayView.iOSFloatingCreateTaskButton`); what the pane has to supply is the landing
+        // place, and that is on the column both spans build.
+        #expect(column.contains(".iOSNewTaskDropTarget("))
+        #expect(column.contains("CadenceCaptureDropSlotRule("))
+        let today = try read("Cadence/iOS/iOSTodayView.swift")
+        #expect(today.contains(".iOSFloatingCreateTaskButton()"))
+
+        // (2) The day's events. The column draws them, and the pane is what fetches them.
+        #expect(column.contains("ForEach(timedEvents, id: \\.calendarItemIdentifier)"))
+        #expect(column.contains("iOSCalendarEventBlock(event: event"))
+        #expect(pane.contains("calendarManager.fetchEvents(for: today)"))
+        #expect(pane.contains("eventsByDate: [todayKey: todayEvents]"))
+
+        // (3) The pinch. It is a `simultaneousGesture` on the grid's container — outside the span
+        // branch, so both surfaces carry it — writing the one stored multiplier the pane also reads.
+        #expect(grid.contains(".simultaneousGesture("))
+        #expect(grid.contains("MagnifyGesture(minimumScaleDelta: 0.01)"))
+        #expect(pane.contains("@AppStorage(CadenceCalendarZoom.storageKey)"))
+        #expect(pane.contains("zoom: $zoomLevel"))
+
+        // And the pane grew none of the three for itself.
+        #expect(CadenceSourceScan.matchCount("MagnifyGesture", in: pane) == 0)
+        #expect(CadenceSourceScan.matchCount("iOSNewTaskDropTarget", in: pane) == 0)
+        #expect(CadenceSourceScan.matchCount("EKEventStore", in: pane) == 0)
+    }
+
+    /// **The event source, pinned by itself** — the owner's most serious symptom was events
+    /// silently missing, and a missing event looks like an empty day rather than like a failure.
+    ///
+    /// Two halves, because either one alone fails open. The pane must *fetch* through the shared
+    /// manager (which owns the app's single `EKEventStore`, the authorization state, the
+    /// visible-calendar filter and the `EKEventStoreChanged` version that drives the refresh), and
+    /// it must *hand what it fetched to the grid* — a fetch whose result reaches no `eventsByDate`
+    /// is the defect this ticket fixed, spelled differently.
+    @Test func theTodayPaneFetchesTodaysEventsAndHandsThemToTheGrid() throws {
+        let pane = try read(Self.paneFile)
+
+        // Non-vacuity: the right file, past the stripper, still holding the pane.
+        #expect(pane.contains("struct iOSSchedulePanel: View"))
+
+        // The fetch: the shared manager, authorization-gated, for today and for no other day.
+        #expect(pane.contains("@Environment(iOSCalendarManager.self) private var calendarManager"))
+        #expect(pane.contains("guard calendarManager.isAuthorized else"))
+        #expect(
+            CadenceSourceScan.matchCount(#"calendarManager\.fetchEvents\(for: today\)"#, in: pane) == 1,
+            "Today's pane no longer fetches the day's events"
+        )
+
+        // Re-run when the store changes, when access changes, and when the day does.
+        #expect(pane.contains("onChange(of: calendarManager.storeVersion, initial: true)"))
+        #expect(pane.contains("onChange(of: calendarManager.isAuthorized)"))
+        #expect(pane.contains("onChange(of: todayKey)"))
+        #expect(
+            CadenceSourceScan.matchCount(#"refreshTodayEvents\(\)"#, in: pane) == 4,
+            "a refresh trigger was added or lost without this pin following it"
+        )
+
+        // The hand-over: what was fetched is what the grid is given, keyed on the day it drew.
+        #expect(
+            CadenceSourceScan.matchCount(#"eventsByDate: \[todayKey: todayEvents\]"#, in: pane) == 1,
+            "the fetched events no longer reach the grid"
+        )
+        #expect(pane.contains("todayEvents = calendarManager.fetchEvents(for: today)"))
+        #expect(
+            CadenceSourceScan.matchCount(#"eventsByDate: \[:\]"#, in: pane) == 0,
+            "Today's pane hands the grid an empty event window again"
+        )
+    }
+}

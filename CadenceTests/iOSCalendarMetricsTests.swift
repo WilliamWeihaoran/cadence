@@ -98,46 +98,52 @@ struct iOSCalendarMetricsTests {
         )
     }
 
-    /// **T-588: the read that `hourHeight`'s doc used to only claim.**
+    /// **T-588 finished: there is no second set of hour figures to keep in step.**
     ///
-    /// Today's timeline (`iOSSchedulePanel`, in `iOSTodaySchedulePanel.swift`) is inside
-    /// `#if os(iOS)` and cannot be referenced from this macOS-built target, so
-    /// `anHourIsOneHeightOnEveryTimedSurface` above can only pin *this* file's 58 and says so in
-    /// its own doc — "`iOSSchedulePanel.rowHeight` is the other half and cannot be read from
-    /// here". That is precisely how the other half came to be a second hand-typed literal, with
-    /// three figures duplicated and one of them (the trailing inset, 9 against 8) already drifted.
+    /// That ticket found Today's timeline re-typing three of this file's numbers — the hour height,
+    /// the hour-label size and the label's trailing inset — and settled them onto reads, because a
+    /// macOS-built target cannot compile `Cadence/iOS/` and so cannot pin a reference by value. A
+    /// read is better than a literal and it is still two surfaces agreeing to agree: the drift it
+    /// replaced (9 against 8 on the inset) is exactly what a second *drawing* of the same ladder
+    /// produces however its constants arrive.
     ///
-    /// A reference cannot be pinned by a value comparison the target cannot compile, so this pins
-    /// the *text*: the panel names this type for all three, and holds no bare literal that a
-    /// fourth copy would have to be spelled as. Comments are blanked first — `strippingComments`
-    /// and not `codeOnly`, because `codeOnly` blanks string literals too and half of what is being
-    /// searched for here is prose-adjacent.
-    @Test func theTodayTimelineReadsItsHourFiguresFromHere() throws {
+    /// [[T-3081]] removes the second drawing. `iOSSchedulePanel` builds `iOSCalendarTimelineGrid`
+    /// now, pinned to today, so Today's hour rail **is** the Calendar's hour rail and the question
+    /// of whether they agree cannot be asked. This pins that: the pane names the grid, and it names
+    /// no hour figure, no hour ladder and no hour row of its own for a fourth copy to grow back in.
+    @Test func theTodayTimelineDrawsTheCalendarsOwnGridRatherThanItsOwnHours() throws {
         let panel = CadenceSourceScan.strippingComments(
             try CadenceSourceScan.sourceFile("Cadence/iOS/iOSTodaySchedulePanel.swift")
         )
 
         // Non-vacuity: the read reached the right file, and the comment stripper left the code.
         #expect(panel.contains("struct iOSSchedulePanel: View"))
-        #expect(panel.contains("private var rowHeight: CGFloat"))
+        #expect(panel.contains("quickCreateStartMin"))
 
-        #expect(panel.contains("iOSCalendarTimelineMetrics.hourHeight"))
-        #expect(panel.contains("iOSCalendarTimelineMetrics.hourLabelSize"))
-        #expect(panel.contains("iOSCalendarTimelineMetrics.hourLabelTrailingInset"))
+        // The positive half. One grid, pinned to one day, and the pane hands it the day.
+        #expect(
+            CadenceSourceScan.matchCount("iOSCalendarTimelineGrid\\(", in: panel) == 1,
+            "Today's pane no longer builds the Calendar's timed grid"
+        )
+        #expect(panel.contains("span: .singleDay"))
 
-        // The three literals the references replaced. `58` is the hour, `11`/`10` the label size
-        // and `9`/`7` the inset; the row's own `rowHeight > 50` ramp is what carried the dead
-        // halves, and it is gone with them.
+        // And no hour vocabulary of its own: the three T-588 figures, the ladder weights, the
+        // row that used to carry them, and the height the row was measured in.
+        #expect(CadenceSourceScan.matchCount("iOSCalendarTimelineMetrics\\.", in: panel) == 0)
+        #expect(CadenceSourceScan.matchCount("CadenceCalendarHourLadderMetrics\\.", in: panel) == 0)
+        #expect(CadenceSourceScan.matchCount("iOSScheduleHourRow", in: panel) == 0)
+        #expect(CadenceSourceScan.matchCount("rowHeight", in: panel) == 0)
         #expect(!panel.contains("rowHeight > 50"))
         #expect(!panel.contains("rowHeight: CGFloat { 58 }"))
-        // Positive and counted rather than only negative: a needle that has stopped matching reads
-        // as "no offenders" against every `!contains` above, which is the hollow half of a scan.
-        #expect(
-            CadenceSourceScan.matchCount(
-                "rowHeight: CGFloat \\{ iOSCalendarTimelineMetrics\\.hourHeight \\}",
-                in: panel
-            ) == 1
+
+        // The figures themselves are still read, by the one surface that draws them.
+        let grid = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/iOS/iOSCalendarTimelineViews.swift")
         )
+        #expect(grid.contains("struct iOSCalendarTimeRail: View"))
+        #expect(grid.contains("iOSCalendarTimelineMetrics.hourHeight"))
+        #expect(grid.contains("iOSCalendarTimelineMetrics.hourLabelSize"))
+        #expect(grid.contains("iOSCalendarTimelineMetrics.hourLabelTrailingInset"))
     }
 
     /// The hour rail's width still ramps — it is in `CadenceCalendarWeekGridLayout`, where it is
@@ -236,61 +242,52 @@ struct iOSCalendarMetricsTests {
         )
     }
 
-    /// **T-596: the fourth figure of the same pair, and the one that had drifted furthest.**
+    /// **The hour ladder is drawn once, and Today no longer has one to keep in step.**
     ///
-    /// `theTodayTimelineReadsItsHourFiguresFromHere` above pins the three T-588 settled — the hour,
-    /// the label size, the label's inset. The ladder's *lines* were the ones left: Today drew a 1pt
-    /// rule at 0.55/0.25 where the Calendar grid drew a 0.5pt one at 0.46/0.20, on the identical
-    /// `% 3` cadence, with the identical 0.9/0.45 on the labels beside them. The cadence was copied
-    /// and the weights were not, which is what a `% 3` written twice buys.
+    /// T-596's defect was not a wrong number: Today drew a 1pt rule at 0.55/0.25 where the Calendar
+    /// grid drew a 0.5pt one at 0.46/0.20, on the identical `% 3` cadence, with the identical
+    /// 0.9/0.45 on the labels beside them. The cadence was copied and the weights were not.
+    /// T-1129 hoisted cadence and weights into `CadenceCalendarHourLadderMetrics` so both
+    /// platforms read one rule; [[T-3081]] removes Today's ladder outright, because its pane draws
+    /// the Calendar's own grid now.
     ///
-    /// Also here because it is the same file and the same shape: one 7pt radius spelled two ways,
-    /// `Theme.radiusControl - 3` on the "Creating here" marker and a bare `cornerRadius: 7` on the
-    /// slot chip twelve views down. T-616 named that 7pt step `Theme.radiusControlCompact` and
-    /// swept both spellings onto it — the token, not `radiusControl - 3`, is now the one this file
-    /// should read at both sites (`CadenceRadiusControlCompactSweepTests` owns the app-wide sweep;
-    /// this assertion is scoped to the one file this suite already had open).
-    @Test func theTodayTimelineDrawsTheSameHourLadder() throws {
-        let panel = CadenceSourceScan.strippingComments(
-            try CadenceSourceScan.sourceFile("Cadence/iOS/iOSTodaySchedulePanel.swift")
+    /// So this is the same assertion pointed at the file that still draws the ladder, plus the
+    /// negative on the pane. `CalendarTimelineRangeTests.theHourCadenceIsDerivedOnceAndEveryTimedSurfaceReadsIt`
+    /// owns the tree-wide sweep; this one is scoped to the pair of files this suite already has open.
+    @Test func theTimedGridDrawsTheOneSharedHourLadderAndTodayDrawsNone() throws {
+        let grid = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/iOS/iOSCalendarTimelineViews.swift")
         )
 
-        // Non-vacuity: the right file, and the row that draws the ladder.
-        #expect(panel.contains("private struct iOSScheduleHourRow: View"))
+        // Non-vacuity: the right file, and the two views that draw the ladder.
+        #expect(grid.contains("private struct iOSCalendarTimelineColumnGridLines: View"))
+        #expect(grid.contains("private struct iOSCalendarTimeRail: View"))
 
-        // The ladder left this file's vocabulary in T-1129, when the Mac grew the same rung: the
-        // cadence and its two weights are `CadenceCalendarHourLadderMetrics` now, read by both
-        // platforms. The figures are unchanged; what moved is where they are stated.
-        #expect(panel.contains("CadenceCalendarHourLadderMetrics.ruleOpacity(hour: hour)"))
-        #expect(panel.contains("CadenceCalendarHourLadderMetrics.labelOpacity(hour: hour)"))
-        #expect(panel.contains("iOSCalendarHairlineMetrics.width"))
+        #expect(grid.contains("CadenceCalendarHourLadderMetrics.ruleOpacity(hour: hour)"))
+        #expect(grid.contains("CadenceCalendarHourLadderMetrics.labelOpacity(hour: hour)"))
+        #expect(grid.contains("iOSCalendarHairlineMetrics.width"))
 
-        // The cadence is *not* spelled here at all any more — neither as a literal nor through a
+        // The cadence is not spelled there at all — neither as a literal nor through a
         // per-platform alias. Two reads of the shared weight functions, and no local modulo.
         #expect(
             CadenceSourceScan.matchCount(
                 "CadenceCalendarHourLadderMetrics\\.(rule|label)Opacity",
-                in: panel
+                in: grid
             ) == 2
         )
-        #expect(CadenceSourceScan.matchCount("hourEmphasisInterval", in: panel) == 0)
-        #expect(CadenceSourceScan.matchCount("% 3 == 0", in: panel) == 0)
-        #expect(!panel.contains("0.55 : 0.25"))
-        #expect(!panel.contains("0.9 : 0.45"))
+        #expect(CadenceSourceScan.matchCount("hourEmphasisInterval", in: grid) == 0)
+        #expect(CadenceSourceScan.matchCount("% 3 == 0", in: grid) == 0)
+        #expect(!grid.contains("0.55 : 0.25"))
+        #expect(!grid.contains("0.9 : 0.45"))
 
-        // One 7pt radius, one spelling — the file's only hardcoded radius is gone, and the old
-        // `radiusControl - 3` derivation is gone with it: the site reads the named token.
-        //
-        // **One site, not two, since T-1273.** The pair was the "Creating here" marker and the
-        // ready-to-schedule slot chip twelve views down; the chip went with the whole stack, so
-        // what is left is the marker. The count stays asserted rather than loosened to `> 0`: the
-        // thing this line is guarding against is a *second* spelling appearing, and `> 0` cannot
-        // see one.
-        #expect(CadenceSourceScan.matchCount("cornerRadius: 7", in: panel) == 0)
-        #expect(CadenceSourceScan.matchCount("Theme\\.radiusControl - 3", in: panel) == 0)
-        #expect(
-            CadenceSourceScan.matchCount("Theme\\.radiusControlCompact", in: panel) == 1
+        // And Today's pane draws no ladder, no rung and no hour of its own to put one on.
+        let panel = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/iOS/iOSTodaySchedulePanel.swift")
         )
+        #expect(panel.contains("struct iOSSchedulePanel: View"), "non-vacuity: wrong file")
+        #expect(CadenceSourceScan.matchCount("CadenceCalendarHourLadderMetrics", in: panel) == 0)
+        #expect(CadenceSourceScan.matchCount("iOSCalendarHairlineMetrics", in: panel) == 0)
+        #expect(CadenceSourceScan.matchCount("CadenceScheduleSupport.calendarHours", in: panel) == 0)
     }
 
     // MARK: - The hairlines (T-595)
@@ -601,7 +598,7 @@ struct iOSCalendarMetricsTests {
     /// would read the developer's Language & Region setting and go red on a British Mac, which is
     /// the [[T-1115]] shape. What survives the statement is the claim the test is actually for:
     /// the shared formatter and the deleted four-liner agree.
-    @Test func bothIOSHourRailsFormatTheirLabelsWithTheSharedTimeFormatter() throws {
+    @Test func theOneIOSHourRailFormatsItsLabelsWithTheSharedTimeFormatter() throws {
         for hour in 0..<24 {
             let retired: String
             if hour == 0 { retired = "12 AM" }
@@ -635,10 +632,17 @@ struct iOSCalendarMetricsTests {
         )
         #expect(timeline.contains("Text(TimeFormatters.timeString(from: hour * 60))"))
 
+        // **One iOS rail, not two, since [[T-3081]].** Today's pane had a second hour rail —
+        // `iOSScheduleHourRow`'s leading label column — and it is gone with the hour-row grid it
+        // belonged to: the pane builds `iOSCalendarTimelineGrid` now, so the rail read above is
+        // the one Today draws as well. Asserted as an absence rather than dropped, because the
+        // failure this half has to catch is a *second* rail growing back on that pane.
         let panel = CadenceSourceScan.strippingComments(
             try CadenceSourceScan.sourceFile("Cadence/iOS/iOSTodaySchedulePanel.swift")
         )
-        #expect(panel.contains("TimeFormatters.timeString(from: hour * 60)"))
+        #expect(panel.contains("struct iOSSchedulePanel: View"), "non-vacuity: wrong file")
+        #expect(panel.contains("iOSCalendarTimelineGrid("))
+        #expect(CadenceSourceScan.matchCount(#"TimeFormatters\.timeString\(from: hour"#, in: panel) == 0)
     }
 
     // MARK: - T-601(c): one priority ramp

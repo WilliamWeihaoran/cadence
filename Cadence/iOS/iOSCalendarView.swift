@@ -362,7 +362,7 @@ struct iOSCalendarView: View {
             iOSCalendarTimelineGrid(
                 leadingDate: $anchorDate,
                 selectedDate: $selectedDate,
-                visibleDayCount: visibleDayCount,
+                span: .scrollingDays(visibleDayCount: visibleDayCount),
                 scheduledTasksByDate: scheduledTasksByDate,
                 unscheduledTasksByDate: unscheduledTasksByDate,
                 bundlesByDate: bundlesByDate,

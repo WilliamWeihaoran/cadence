@@ -153,8 +153,13 @@ struct CadenceRadiusControlCompactSweepTests {
                 "Cadence/iOS/iOSDesignSystem.swift",
                 "RoundedRectangle\\(cornerRadius: Theme\\.radiusControlCompact, style: \\.continuous\\)"
             ),
+            // Was `Cadence/iOS/iOSTodaySchedulePanel.swift` — its one site was the "Creating here"
+            // marker on `iOSScheduleHourRow`, and [[T-3081]] deleted that grid when Today's pane
+            // became `iOSCalendarTimelineGrid`. Re-pointed at another `, style: .continuous`
+            // conversion rather than dropped, because the shape this entry pins is the *spelling*
+            // with the style argument, which is the one the sweep below cannot distinguish.
             (
-                "Cadence/iOS/iOSTodaySchedulePanel.swift",
+                "Cadence/macOS/Sheets/CreateTaskSheet.swift",
                 "cornerRadius: Theme\\.radiusControlCompact, style: \\.continuous"
             ),
         ]

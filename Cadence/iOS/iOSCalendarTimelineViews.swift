@@ -14,6 +14,31 @@ final class iOSCalendarTimelineScrollState {
     var verticalOffset: CGFloat = 0
 }
 
+/// What `iOSCalendarTimelineGrid` draws across its horizontal axis.
+///
+/// **This is the whole of the difference between the app's two timed iOS surfaces**, and it is
+/// stated as one value rather than left to two views because the previous arrangement was a fork:
+/// Today's pane had its own hour grid — `iOSScheduleHourRow`, a flow of 24 rows — which drew tasks
+/// and bundles and **no EventKit events at all**, offered no create-drag drop target and carried no
+/// pinch. Three of the owner's reports in one place, every one of them a thing the Calendar's grid
+/// had already solved. See [[T-3081]].
+///
+/// A span is not a *date*: the day a single-day grid shows is `leadingDate`, exactly as it is for
+/// a scrolling one. What the span decides is whether there is anywhere else to go.
+enum iOSCalendarTimelineSpan: Equatable {
+    /// A scrolling run of day columns through `CadenceCalendarTimelineWindow`, `visibleDayCount` of
+    /// them on screen at once. The Calendar page's Week and 2 Weeks.
+    case scrollingDays(visibleDayCount: Int)
+    /// Exactly one column, fixed to `leadingDate`. Today's timeline pane.
+    ///
+    /// **No horizontal scroll view is built**, which is how `DayBoundaryScrollTargetBehavior` is
+    /// kept off a surface with nothing to settle between: the behaviour is attached inside
+    /// `gridScroller`, and a single-day grid never builds one. The day window, the leading-column
+    /// report and the recentring go with it, so a single-day grid never writes `leadingDate` back
+    /// and its caller may hand in a constant.
+    case singleDay
+}
+
 /// The timed calendar grid: an hour rail down the left, a pinned row of day headers across the top,
 /// and a day canvas that scrolls in both directions under both of them.
 ///
@@ -45,6 +70,15 @@ final class iOSCalendarTimelineScrollState {
 /// which matters for more than tidiness: this canvas already carries a horizontal scroller, a
 /// vertical scroller, a per-column tap and now a pinch, and gesture collisions are this app's most
 /// repeated bug. A follower that is not a scroll view adds no fifth recognizer.
+///
+/// ## Two call sites, one grid
+///
+/// The Calendar page draws it as a scrolling run of days; Today's timeline pane draws it as one
+/// fixed column — see `iOSCalendarTimelineSpan`. Nothing about a *day* differs between them: the
+/// column, its blocks, its create gesture, its drop target, its now line, the hour rail and the
+/// pinch are the same code reached through `dayColumn(for:colWidth:)`. What the span selects is
+/// only the chrome around the column — whether there is a horizontal scroller to page days with,
+/// and whether a day header band stands over it.
 struct iOSCalendarTimelineGrid: View {
     /// The column at the leading edge — read as "which day am I looking at", written to jump.
     ///
@@ -53,9 +87,8 @@ struct iOSCalendarTimelineGrid: View {
     /// edge.
     @Binding var leadingDate: Date
     @Binding var selectedDate: Date
-    /// How many columns should be on screen — `CadenceCalendarWeekGridLayout.visibleDayCount(for:)`.
-    /// It no longer decides how many days *exist*; see `CadenceCalendarTimelineWindow`.
-    let visibleDayCount: Int
+    /// A scrolling run of days, or the one day `leadingDate` names. See `iOSCalendarTimelineSpan`.
+    let span: iOSCalendarTimelineSpan
     let scheduledTasksByDate: [String: [AppTask]]
     let unscheduledTasksByDate: [String: [AppTask]]
     let bundlesByDate: [String: [TaskBundle]]
@@ -109,13 +142,34 @@ struct iOSCalendarTimelineGrid: View {
     /// day column would like to be — and for nothing the grid draws itself. Everything else comes
     /// from `iOSCalendarTimelineMetrics`, which takes no width.
     private var isRegularWidth: Bool { horizontalSizeClass == .regular }
+    private var isSingleDay: Bool { span == .singleDay }
+    /// How many columns should be on screen — `CadenceCalendarWeekGridLayout.visibleDayCount(for:)`
+    /// on the Calendar page. It no longer decides how many days *exist*; see
+    /// `CadenceCalendarTimelineWindow`. A single-day grid is one by definition, which is also what
+    /// makes `placeInitialScroll` open it on today's own hour rather than on a week's first block.
+    private var visibleDayCount: Int {
+        switch span {
+        case .scrollingDays(let count): count
+        case .singleDay: 1
+        }
+    }
     private var baseHourHeight: CGFloat { iOSCalendarTimelineMetrics.hourHeight }
     private var effectiveZoom: Double { CadenceCalendarZoom.clamp(pinchZoom ?? zoom) }
     private var hourHeight: CGFloat {
         CadenceCalendarZoom.hourHeight(base: baseHourHeight, zoom: effectiveZoom)
     }
+    /// Zero on a single-day grid, and the rail reads the same number, so the two cannot disagree
+    /// about where hour zero starts.
+    ///
+    /// **A band there would be the page's own title said twice.** The header names a weekday and a
+    /// day number and lists the day's unscheduled tasks; Today's pane stands beside a task column
+    /// headed `iPadTodayTaskHeader` — the same date, and those same untimed tasks listed in full —
+    /// so it would restate both in 76pt of a pane that is 320pt wide. That is the page-header rule
+    /// (`AGENTS.md`, "Non-Negotiable Patterns"), and it is also what T-1273 removed the pane's
+    /// "Ready to Schedule" stack for, on exactly the argument that the column across the divider is
+    /// already showing them.
     private var dayHeaderHeight: CGFloat {
-        iOSCalendarTimelineMetrics.dayHeaderHeight
+        isSingleDay ? 0 : iOSCalendarTimelineMetrics.dayHeaderHeight
     }
     private var timelineHeight: CGFloat {
         CGFloat(CadenceScheduleSupport.calendarHourCount) * hourHeight
@@ -155,7 +209,11 @@ struct iOSCalendarTimelineGrid: View {
                 )
                 .frame(width: railWidth)
 
-                gridScroller(colWidth: colWidth, contentWidth: contentWidth, canvasHeight: canvasHeight)
+                if isSingleDay {
+                    singleDayCanvas(colWidth: colWidth, canvasHeight: canvasHeight)
+                } else {
+                    gridScroller(colWidth: colWidth, contentWidth: contentWidth, canvasHeight: canvasHeight)
+                }
             }
             // On the container, not on the scroll views, and `simultaneousGesture` rather than
             // `highPriorityGesture`. A magnification gesture needs two fingers, so it can never
@@ -170,7 +228,9 @@ struct iOSCalendarTimelineGrid: View {
             .onChange(of: colWidth) { _, newWidth in
                 // A rotation or a sidebar fold changes the column width under a scroll offset that
                 // was measured in the old one. Without this the leading column silently becomes a
-                // different day.
+                // different day. Nothing to correct on a single-day grid: its one column *is* the
+                // viewport, so a width change re-lays it out and no offset is carrying a date.
+                guard !isSingleDay else { return }
                 horizontalScrollPosition.scrollTo(
                     x: CadenceCalendarTimelineWindow.scrollOffsetX(forIndex: leadingIndex, columnWidth: newWidth)
                 )
@@ -212,6 +272,89 @@ struct iOSCalendarTimelineGrid: View {
         }
     }
 
+    /// One day's column, wherever it is being drawn.
+    ///
+    /// **Both spans build the column through here, and that is the point of the span existing at
+    /// all.** The three behaviours the owner reported missing from Today — the create-drag drop
+    /// target, the EventKit blocks and the pinch's `hourHeight` reaching every block — are
+    /// properties of this column and of the container the pinch is attached to, not of the
+    /// scroller around them. A second spelling of this call is how Today came to have a timeline
+    /// that drew neither events nor a drop target in the first place.
+    private func dayColumn(for date: Date, colWidth: CGFloat) -> some View {
+        let key = DateFormatters.dateKey(from: date)
+        return iOSCalendarTimelineDayColumn(
+            date: date,
+            tasks: CadenceScheduleSupport.items(on: key, in: scheduledTasksByDate),
+            bundles: CadenceScheduleSupport.items(on: key, in: bundlesByDate),
+            events: CadenceScheduleSupport.items(on: key, in: eventsByDate),
+            allTasks: allTasks,
+            colWidth: colWidth,
+            hourHeight: hourHeight,
+            workHoursStartMinute: workHoursStartMinute,
+            workHoursEndMinute: workHoursEndMinute,
+            onCreateAt: onCreateAt,
+            onClearTime: clearsTime,
+            onFormBundleFromTasks: formBundle(from:adding:)
+        )
+    }
+
+    /// The block's "put this back with the untimed work" corner, on the span that has somewhere to
+    /// put it back *to*.
+    ///
+    /// `iOSTimelineTaskBlock.onClearTime`'s own doc has always stated this condition, and it used
+    /// to be enforced by which of two *views* built the block: Today's pane passed a closure and
+    /// the Calendar grid passed `nil`. One grid draws both now, so the condition is asked of the
+    /// span instead — and it is the same condition word for word. A single-day grid is Today's
+    /// pane, which is only ever built at the two-pane width, so the task column the cleared task
+    /// lands in is on screen one divider to the left. A scrolling grid is the Calendar page, which
+    /// shows whichever day you scrolled to and has no task column beside it, so the control is
+    /// absent rather than disabled.
+    private var clearsTime: ((AppTask) -> Void)? {
+        guard isSingleDay else { return nil }
+        return { task in
+            CadenceTaskDateEditing.clearScheduledTime(task, in: modelContext)
+        }
+    }
+
+    /// The one-column canvas: a vertical scroll view and nothing else.
+    ///
+    /// **Three gestures live on this pane and none of them is the one that was missing.** Reading
+    /// them from the outside in: the pinch is a `simultaneousGesture` on the `HStack` two frames up
+    /// — two fingers, so it can never claim the one-finger pan this scroll view needs, and it never
+    /// has to be handed *through* a scroll view, which is the note on `body` and the reason it is
+    /// placed there rather than here. The vertical drag is this scroll view's own. The long-press
+    /// -then-drag that opens the creation panel belongs to the page's floating `+`
+    /// (`iOSFloatingCreateTaskButton`, which Today already installs): the finger starts on the
+    /// button, not on this canvas, so what this pane has to supply is a *landing place*, and that
+    /// is `iOSNewTaskDropTarget` on the column — a drop destination, not a recognizer. So there is
+    /// no three-way conflict to arbitrate: one pan, one two-finger gesture, and a drop whose touch
+    /// was claimed somewhere else entirely. The column's own `SpatialTapGesture` is the fourth and
+    /// it is a tap, which a scroll view yields on anyway.
+    ///
+    /// **No `contentMargins` here, unlike `gridScroller`.** That restatement exists because the
+    /// grid's vertical canvas is nested inside a *horizontal* scroller that eats the page-level
+    /// value (T-2066). There is no outer scroller here, so Today's page-level write — the one
+    /// `iOSFloatingCreateTaskLayer` makes for the same corner `+` — reaches this scroll view
+    /// directly, and restating it would inset the canvas by the button's footprint twice.
+    private func singleDayCanvas(colWidth: CGFloat, canvasHeight: CGFloat) -> some View {
+        ScrollView(.vertical) {
+            dayColumn(for: leadingDate, colWidth: colWidth)
+        }
+        .frame(height: canvasHeight)
+        .scrollIndicators(.hidden)
+        .scrollPosition($verticalScrollPosition)
+        .onScrollGeometryChange(for: CGFloat.self) { geometry in
+            geometry.contentOffset.y
+        } action: { _, offset in
+            scrollState.verticalOffset = offset
+        }
+        .onScrollGeometryChange(for: CGFloat.self) { geometry in
+            geometry.contentSize.height
+        } action: { _, contentHeight in
+            placeInitialScroll(contentHeight: contentHeight)
+        }
+    }
+
     private func gridScroller(colWidth: CGFloat, contentWidth: CGFloat, canvasHeight: CGFloat) -> some View {
         let range = CadenceCalendarTimelineWindow.renderedIndexRange(
             leadingIndex: leadingIndex,
@@ -245,22 +388,8 @@ struct iOSCalendarTimelineGrid: View {
                 ScrollView(.vertical) {
                     ZStack(alignment: .topLeading) {
                         ForEach(range, id: \.self) { index in
-                            let date = date(at: index)
-                            let key = DateFormatters.dateKey(from: date)
-                            iOSCalendarTimelineDayColumn(
-                                date: date,
-                                tasks: CadenceScheduleSupport.items(on: key, in: scheduledTasksByDate),
-                                bundles: CadenceScheduleSupport.items(on: key, in: bundlesByDate),
-                                events: CadenceScheduleSupport.items(on: key, in: eventsByDate),
-                                allTasks: allTasks,
-                                colWidth: colWidth,
-                                hourHeight: hourHeight,
-                                workHoursStartMinute: workHoursStartMinute,
-                                workHoursEndMinute: workHoursEndMinute,
-                                onCreateAt: onCreateAt,
-                                onFormBundleFromTasks: formBundle(from:adding:)
-                            )
-                            .offset(x: CGFloat(index) * colWidth)
+                            dayColumn(for: date(at: index), colWidth: colWidth)
+                                .offset(x: CGFloat(index) * colWidth)
                         }
                     }
                     .frame(width: contentWidth, height: timelineHeight, alignment: .topLeading)
@@ -399,6 +528,10 @@ struct iOSCalendarTimelineGrid: View {
     /// exactly that on the first build of this change: Week opened on the window's first day —
     /// seven months behind the anchor, the same distance and the same cause as the Board's bug.
     private func alignWindow(to date: Date, animated: Bool = false) {
+        // A single-day grid has no window: its one column is `leadingDate`, read straight out of
+        // the binding by `singleDayCanvas`. Building one would leave `windowStart`/`leadingIndex`
+        // carrying a position for a scroll view that is not in the tree.
+        guard !isSingleDay else { return }
         let start = CadenceCalendarTimelineWindow.windowStart(for: date, calendar: calendar)
         let target = CadenceCalendarTimelineWindow.index(for: date, windowStart: start, calendar: calendar)
         windowStart = start
@@ -769,6 +902,9 @@ private struct iOSCalendarTimelineDayColumn: View {
     let workHoursStartMinute: Int
     let workHoursEndMinute: Int
     let onCreateAt: (String, Int) -> Void
+    /// Non-`nil` only where a cleared task has a visible place to land — see
+    /// `iOSCalendarTimelineGrid.clearsTime`, which is the one decision of it in the app.
+    let onClearTime: ((AppTask) -> Void)?
     /// `(target, dragged)` — the argument order `CadenceTaskMutationSupport.insertBundle(from:adding:)`
     /// takes, so the block that was dropped *on* stays the one that supplies the slot. Same spelling
     /// as `iOSCalendarBoardDayColumn`'s.
@@ -818,6 +954,7 @@ private struct iOSCalendarTimelineDayColumn: View {
                     task: task,
                     startMin: range.start,
                     endMin: range.end,
+                    onClearTime: onClearTime.map { clear in { clear(task) } },
                     bundleFormingDrop: bundleFormingDrop(onto: task)
                 )
                 .frame(width: colWidth - 18, height: blockHeight(start: range.start, end: range.end))

@@ -1,110 +1,120 @@
 #if os(iOS)
+import EventKit
 import SwiftData
 import SwiftUI
 
 /// Today's timeline, hosted in the two-pane inspector. It draws no header of its own:
-/// `iPadTodayInspectorSwitcher` sits directly above it with "Timeline" lit up in it. The
-/// `showsHeader` flag that used to switch one on existed for the three-pane Today layout, where
-/// this pane stood beside two others; that layout is gone.
+/// `iPadTodayInspectorSwitcher` sits directly above it with "Timeline" lit up in it.
 ///
-/// **It had a compact ramp, and the compact half of it could not be reached.** `rowHeight` was
-/// `regular ? 58 : 48` and the grid's trailing gutter `regular ? 12 : 8`, but this pane is only ever
-/// built by `iOSTodayView.inspectorPanelContent`, which only `twoPaneTodayLayout` reaches, which
-/// `CadenceTodayLayoutSupport.layout` only returns at regular width. Two dead branches carrying two
-/// numbers nobody had ever seen — the same defect `iOSTodayView`'s deleted `todayRowDensity`
-/// had, in the same file family. The regular figures are the only ones that ever drew, so they are
-/// the ones that stay.
+/// **It IS the Calendar's timeline, pinned to today ([[T-3081]]).** This pane used to own a second
+/// timed surface — `iOSScheduleHourRow`, a flow of 24 hour rows — and the owner reported three
+/// things wrong with it in one sentence: a `+` could not be dragged onto it, it showed none of the
+/// day's calendar events, and it could not be pinched. All three were the same defect. The hour-row
+/// grid queried `AppTask` and `TaskBundle` and **never opened EventKit at all**, so there was no
+/// event to drop anywhere; it carried no `iOSNewTaskDropTarget`, so a dragged `+` had nothing to
+/// land on; and `MagnifyGesture` was attached to `iOSCalendarTimelineGrid`'s container, which this
+/// pane did not build. Every one of the three is a property of the Calendar's day column, and the
+/// fix the owner chose is to draw that column rather than to re-grow three behaviours beside it —
+/// this repository's documented failure mode being a rule re-spelled per surface and then drifting
+/// (the DST family, the day-snapping fork, and T-588's own three hand-typed hour figures, which
+/// were this exact pair of files).
 ///
-/// **T-1273: the pane is the grid, and nothing else.** A "Ready to Schedule" stack used to stand
-/// above the hour rows — up to four of today's untimed tasks, each a title, an estimate and three
-/// suggested-start chips — so on a real day the first hour this pane drew was 1 PM, and the pane
-/// whose whole subject is *when* opened on a list of things with no when. The owner was offered
-/// four ways to shrink it and chose to remove it: the same tasks are listed in the task column one
-/// divider to the left, on screen at the only width this pane is ever built at, so nothing became
-/// unreachable. What went with it is the staging area a task could be dragged out of, which was the
-/// stated cost. Placing an untimed task is now the grid's own gesture — tap the hour you want it
-/// in — which is the one this pane already taught in its empty state.
+/// So the pane is now a thin adapter: it names today, it reads the day's events, it hands the grid
+/// the same `CadenceScheduleSupport` dictionaries the Calendar page hands it, and it owns the
+/// composer that the grid's create gesture opens. `iOSCalendarTimelineSpan.singleDay` is the one
+/// thing it asks the grid to do differently, and that is a statement about *paging*, not about what
+/// a day looks like: one column, no horizontal scroller, so no day snapping, no day header band and
+/// no second date on a screen whose task column is already headed with it.
+///
+/// **The zoom is the Calendar's own stored multiplier, deliberately.** One `@AppStorage` key, so a
+/// pinch here and a pinch there are the same control on the same number — which is the rule T-588
+/// already settled for the hour *height* in prose ("the app's one answer to how tall an hour on an
+/// iOS timeline is") and which only now has one expression rather than two.
 struct iOSSchedulePanel: View {
     @Environment(\.modelContext) private var modelContext
+    /// The one EventKit reader on iOS. Today's pane never opens a store of its own — see
+    /// `refreshTodayEvents`, which is the whole of this pane's calendar access.
+    @Environment(iOSCalendarManager.self) private var calendarManager
     @Query(sort: \AppTask.order) private var allTasks: [AppTask]
     @Query private var allBundles: [TaskBundle]
+    /// Shared with the Calendar page through `CadenceCalendarZoom.storageKey`. See the type note.
+    @AppStorage(CadenceCalendarZoom.storageKey) private var zoomLevel = CadenceCalendarZoom.defaultZoom
+    /// Today's events, cached rather than fetched from `body`.
+    ///
+    /// **T-570's rule, restated on the surface that now needs it.** A synchronous EventKit
+    /// predicate query in a computed property runs on every body pass, which here would mean once
+    /// per frame of a pinch. One day's fetch, re-run only when the store changes or the day does.
+    @State private var todayEvents: [EKEvent] = []
     @State private var quickCreateStartMin: Int?
     @State private var quickCreateTitle = ""
     @State private var quickCreateError: String?
-    /// See `placeInitialScroll(contentHeight:proxy:)`. Not persisted anywhere, deliberately.
-    @State private var didPlaceInitialScroll = false
 
     private var todayKey: String {
         DateFormatters.todayKey()
     }
 
-    private var scheduledTasks: [AppTask] {
-        CadenceScheduleSupport.scheduledTasks(on: todayKey, from: allTasks, includeCompleted: false, excludeBundled: false)
+    private var today: Date {
+        Calendar.current.startOfDay(for: Date())
     }
 
-    private var todayBundles: [TaskBundle] {
-        CadenceScheduleSupport.bundles(on: todayKey, from: allBundles, includeCompleted: false)
+    /// **Read, not re-derived.** These are the identical calls `iOSCalendarView` makes for the same
+    /// grid, so a block that is on the Calendar's today column is on this pane and the other way
+    /// about. A narrower query here — "today's tasks only" — is what would let the two surfaces
+    /// disagree about what a scheduled task is.
+    private var scheduledTasksByDate: [String: [AppTask]] {
+        CadenceScheduleSupport.tasksByScheduledDate(allTasks, includeCompleted: false)
+    }
+
+    private var bundlesByDate: [String: [TaskBundle]] {
+        CadenceScheduleSupport.bundlesByDate(allBundles, includeCompleted: false)
     }
 
     /// Drives the one-line hint, and it is about the *grid*, not the day: the hint's job is to say
     /// that tapping an hour is what fills the grid, so it stays for as long as the grid is empty —
     /// which is also the only time there is room for it. It goes the moment the first block lands,
     /// by which point the gesture has been used.
+    ///
+    /// **Events count towards "empty" now**, which they could not before, because the pane could
+    /// not see them: a day with three meetings and no Cadence task is not a day with nothing on it,
+    /// and "No timed blocks yet" printed over three drawn blocks would be the pane contradicting
+    /// itself.
     private var hasNoBlocks: Bool {
-        scheduledTasks.isEmpty && todayBundles.isEmpty
+        CadenceScheduleSupport.items(on: todayKey, in: scheduledTasksByDate).isEmpty
+            && CadenceScheduleSupport.items(on: todayKey, in: bundlesByDate).isEmpty
+            && todayEvents.allSatisfy(\.isAllDay)
     }
-
-    /// The scroll target for the inline composer. See `quickCreateComposer(for:)`.
-    private static let quickCreateAnchorID = "schedule.quickCreate"
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // A plain scroll view, not a `ZStack` with the empty hint floated over it. The hint was
-            // a card laid across the middle of the grid, hiding two hours of rows and their
-            // controls outright — `.allowsHitTesting(false)` kept them tappable but left them
-            // invisible, which is worse than an empty state that is simply not there. It is one
-            // line at the top of the scrolled content now, so it can never cover a row.
-            ScrollViewReader { proxy in
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 0) {
-                        if hasNoBlocks {
-                            Text(iOSSchedulePanelCopy.emptyScheduleHint)
-                                .font(.system(size: 12, weight: .medium))
-                                .foregroundStyle(Theme.dim)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(.horizontal, 16)
-                                .padding(.top, 12)
-                                .padding(.bottom, 14)
-                        }
-
-                        ForEach(CadenceScheduleSupport.calendarHours, id: \.self) { hour in
-                            VStack(alignment: .leading, spacing: 0) {
-                                iOSScheduleHourRow(
-                                    hour: hour,
-                                    tasks: tasks(in: hour),
-                                    bundles: bundles(in: hour),
-                                    rowHeight: rowHeight,
-                                    selectedStartMin: quickCreateStartMin,
-                                    onSelectStart: selectQuickCreateStart
-                                )
-
-                                quickCreateComposer(for: hour)
-                            }
-                            .id(hour)
-                        }
-                    }
-                    .padding(.trailing, 12)
-                }
-                .scrollIndicators(.hidden)
-                .onScrollGeometryChange(for: CGFloat.self) { geometry in
-                    geometry.contentSize.height
-                } action: { _, contentHeight in
-                    placeInitialScroll(contentHeight: contentHeight, proxy: proxy)
-                }
-                .onChange(of: quickCreateStartMin) { _, newValue in
-                    revealQuickCreate(startMin: newValue, proxy: proxy)
-                }
+            if hasNoBlocks {
+                Text(iOSSchedulePanelCopy.emptyScheduleHint)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(Theme.dim)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 16)
+                    .padding(.top, 12)
+                    .padding(.bottom, 10)
             }
+
+            iOSCalendarTimelineGrid(
+                // Constant on both: a single-day grid builds no horizontal scroller, so nothing in
+                // it reports a leading column back or moves a selection, and a `@State` date here
+                // would be a stored selection that only ever held one value. The day key is the
+                // subject — `DateFormatters.todayKey()` — and `today` is that key as a `Date`.
+                leadingDate: .constant(today),
+                selectedDate: .constant(today),
+                span: .singleDay,
+                scheduledTasksByDate: scheduledTasksByDate,
+                // The day header is the only thing that draws these and a single-day grid has none.
+                unscheduledTasksByDate: [:],
+                bundlesByDate: bundlesByDate,
+                eventsByDate: [todayKey: todayEvents],
+                allTasks: allTasks,
+                zoom: $zoomLevel,
+                onCreateAt: { _, startMin in selectQuickCreateStart(startMin) }
+            )
+
+            quickCreateComposer
         }
         // **T-586.** `Theme.surface`, and it ignores the safe area, because this pane and
         // `iOSNotesView` are the two halves of one rail: the switcher above them selects between
@@ -114,19 +124,35 @@ struct iOSSchedulePanel: View {
         // beside the rail draws, what `iOSNotesView` draws everywhere it is hosted, and the one of
         // the two this pane could change without changing a page that also stands alone.
         .background(Theme.surface.ignoresSafeArea())
+        .onChange(of: calendarManager.storeVersion, initial: true) { _, _ in
+            refreshTodayEvents()
+        }
+        .onChange(of: calendarManager.isAuthorized) { _, _ in
+            refreshTodayEvents()
+        }
+        // The midnight rollover. The day key is read from the clock, so the pane's subject changes
+        // without anything telling it; this is the same `scenePhase` test the Calendar page uses to
+        // flush its position, read the other way round.
+        .onChange(of: todayKey) { _, _ in
+            refreshTodayEvents()
+        }
     }
 
-    /// The composer, drawn under the hour lane that was tapped rather than above the whole grid.
+    /// The composer, docked under the grid rather than inserted into it.
     ///
-    /// It used to be a sibling of the `ScrollView` in the outer `VStack`, so opening it inserted
-    /// ~130pt *above* the grid: every hour row slid down by a composer's height, and the 11 PM lane
-    /// you had just aimed at was somewhere near 8 PM by the time the composer appeared — at the top
-    /// of the pane, nowhere near the tap. That was survivable when the grid ran 6 AM to 11 PM and
-    /// mostly visible at once; with 24 rows it is the whole interaction. Inline, the row you tapped
-    /// does not move at all, and the composer opens directly beneath it saying which hour it is for.
+    /// It used to open inline, directly beneath the hour row that was tapped, and that placement
+    /// was load-bearing *for that grid*: an hour row is a flow, so a composer inserted above the
+    /// fold pushed every later hour down and the lane you had just aimed at slid out from under
+    /// your finger. The Calendar's day column is not a flow — every block is placed absolutely over
+    /// a fixed ladder — so nothing above or below the tapped minute moves when this appears, and
+    /// there is no row to open "beneath" in the first place. Docking it at the foot of the pane
+    /// keeps the grid still, which is the property the inline placement was bought for.
+    ///
+    /// It still names the minute it will create at, which is what makes a docked bar legible: the
+    /// tap is a quarter-hour (`CadenceScheduleSupport.timelineMinute`), and the bar says so.
     @ViewBuilder
-    private func quickCreateComposer(for hour: Int) -> some View {
-        if let quickCreateStartMin, quickCreateStartMin == hour * 60 {
+    private var quickCreateComposer: some View {
+        if let quickCreateStartMin {
             iOSScheduleQuickCreateBar(
                 startMin: quickCreateStartMin,
                 title: $quickCreateTitle,
@@ -134,10 +160,8 @@ struct iOSSchedulePanel: View {
                 create: createScheduledTask,
                 cancel: cancelQuickCreate
             )
-            .padding(.leading, 12)
-            .padding(.trailing, 4)
+            .padding(.horizontal, 10)
             .padding(.bottom, 12)
-            .id(Self.quickCreateAnchorID)
             // **T-589.** "Add a title first." used to stay red under the field while you typed the
             // title it was asking for. `selectQuickCreateStart` and `cancelQuickCreate` were the
             // only two clears, so the one edit that answers the complaint — typing — did not.
@@ -152,71 +176,19 @@ struct iOSSchedulePanel: View {
         }
     }
 
-    /// Scrolls the minimum amount that makes the composer visible, and only when it is not — that
-    /// is what `anchor: nil` means. Tapping a lane in the middle of the pane therefore moves
-    /// nothing; tapping the last lane at the bottom edge lifts the composer into view instead of
-    /// opening it below the fold. Deferred a runloop turn because the composer is not in the
-    /// layout at the instant the selection changes.
-    private func revealQuickCreate(startMin: Int?, proxy: ScrollViewProxy) {
-        guard startMin != nil else { return }
-        DispatchQueue.main.async {
-            proxy.scrollTo(Self.quickCreateAnchorID, anchor: nil)
+    /// One day's events, through the shared manager and nothing else.
+    ///
+    /// `iOSCalendarManager` owns the app's single `EKEventStore`, the authorization state, the
+    /// visible-calendar filter and the `EKEventStoreChanged` observer that drives `storeVersion`.
+    /// This pane opens no store, requests no access and names no calendar; it asks for a day and is
+    /// handed what the Calendar page would be handed for the same day. That is also what makes the
+    /// disarmed-launch gate ([[T-3031]]) cover this surface for free.
+    private func refreshTodayEvents() {
+        guard calendarManager.isAuthorized else {
+            if !todayEvents.isEmpty { todayEvents = [] }
+            return
         }
-    }
-
-    /// **Read, not re-typed (T-588).** `iOSCalendarTimelineMetrics.hourHeight`'s own doc already
-    /// claimed this: *"58 is `iOSSchedulePanel.rowHeight` — the app's one answer to how tall an
-    /// hour on an iOS timeline is."* It was a second hand-typed 58, and prose is not a reference —
-    /// the Calendar grid and this pane draw the same `iOSTimelineTaskBlock`, so a change to one 58
-    /// would have silently made the same scheduled task a different number of points tall on the
-    /// two timed surfaces of one iPad. `iOSCalendarMetricsTests` holds it to the read.
-    private var rowHeight: CGFloat { iOSCalendarTimelineMetrics.hourHeight }
-
-    /// Opens the pane near the hour that matters. The grid is the whole day now, and a scroll view
-    /// opens at the top of its content — so left alone this pane would open at midnight, which is
-    /// a worse place to land than the 06:00 it replaced. The rule is
-    /// `CadenceScheduleSupport.initialTimelineHour`; this pane always shows today, so it always
-    /// takes the "current hour, one hour of context above it" branch.
-    ///
-    /// **It keeps the clock, and that is a decision rather than an oversight** ([[T-1281]]).
-    /// T-1271 put "the span's first timed item" *above* "now" on the Calendar's timeline, and the
-    /// obvious reading is that this pane is one surface behind. It is not, because the two rules
-    /// are answering about different spans. The Calendar draws a week the user navigated to: "now"
-    /// is one column in seven there and may not be drawn at all, so the earliest block is the only
-    /// thing that reliably says where the content is. This pane draws **one** column and it is
-    /// always today — "now" is not a column here, it is the subject — and the red rule this pane
-    /// also draws is standing in it, saying why the view is where it is. The day's first block
-    /// winning would mean a pane opened at 09:00 all afternoon, with the hours you are actually in
-    /// scrolled off the bottom, which is the same complaint T-1271 fixed pointing the other way.
-    /// A pane with nothing on it opens on the empty hour you are in, which reads as "nothing on
-    /// now" — true, and one flick from the rest of the day.
-    ///
-    /// So `firstTimedMinute` is deliberately **not** passed, and `showsToday: true` is the whole
-    /// argument list. The two iPad timelines share the arithmetic and differ in which rung it
-    /// lands on, because they differ in what they are showing.
-    ///
-    /// Driven by the scroll view's own reported content height rather than `onAppear`, for the
-    /// reason `ecaf80f` records: `onAppear` can run before the content has a size, and a scroll
-    /// against nothing silently does nothing while looking like it worked. Nothing here is written
-    /// to defaults — the hour is recomputed on every open, so a bad placement costs one screen and
-    /// can never compound into a saved anchor.
-    private func placeInitialScroll(contentHeight: CGFloat, proxy: ScrollViewProxy) {
-        guard !didPlaceInitialScroll,
-              contentHeight >= CGFloat(CadenceScheduleSupport.calendarHourCount) * rowHeight
-        else { return }
-        didPlaceInitialScroll = true
-
-        proxy.scrollTo(CadenceScheduleSupport.initialTimelineHour(showsToday: true), anchor: .top)
-    }
-
-    /// Every real minute-of-day now has a row of its own, so nothing is clamped in practice; see
-    /// `CadenceScheduleSupport.timelineHourRow` for why the clamp is still there.
-    private func tasks(in hour: Int) -> [AppTask] {
-        CadenceScheduleSupport.tasks(inHourRow: hour, from: scheduledTasks)
-    }
-
-    private func bundles(in hour: Int) -> [TaskBundle] {
-        CadenceScheduleSupport.bundles(inHourRow: hour, from: todayBundles)
+        todayEvents = calendarManager.fetchEvents(for: today)
     }
 
     private func selectQuickCreateStart(_ startMin: Int) {
@@ -350,209 +322,6 @@ private struct iOSScheduleQuickCreateBar: View {
         .onAppear {
             isFocused = true
         }
-    }
-}
-
-private struct iOSScheduleHourRow: View {
-    let hour: Int
-    let tasks: [AppTask]
-    let bundles: [TaskBundle]
-    let rowHeight: CGFloat
-    let selectedStartMin: Int?
-    let onSelectStart: (Int) -> Void
-
-    @Environment(\.modelContext) private var modelContext
-
-    private var hasItems: Bool {
-        !tasks.isEmpty || !bundles.isEmpty
-    }
-
-    private var startMin: Int {
-        hour * 60
-    }
-
-    private var isSelectedForCreate: Bool {
-        selectedStartMin == startMin
-    }
-
-    var body: some View {
-        HStack(alignment: .top, spacing: 0) {
-            // The hour rail, at the Calendar grid's own figures rather than a second copy of them
-            // (T-588). Both were `rowHeight > 50 ? … : …` ramps, and neither had a reachable lower
-            // branch: `rowHeight` is `iOSCalendarTimelineMetrics.hourHeight`, 58, on every pane
-            // this view is ever built on — the same dead compact ramp this file's own header
-            // records deleting from `rowHeight` itself, three lines further down the same row.
-            //
-            // **The trailing inset was 9 here against the rail's 8**, which is the drift a stated
-            // invariant with nothing enforcing it produces. 8 is the figure that stays: it is what
-            // `iOSCalendarTimelineMetrics.hourLabelTrailingInset` documents (the narrow rail is
-            // the one with no slack in it, and `theHourLabelFitsTheNarrowRail` measures the label
-            // against it), it is what the Calendar's rail already draws on both platforms' widths,
-            // and taking 9 instead would mean moving the surface with the measurement to match the
-            // surface without one. The label shifts 1pt right on Today's timeline.
-            Text(hourLabel)
-                .font(.system(size: iOSCalendarTimelineMetrics.hourLabelSize, weight: .medium))
-                .foregroundStyle(
-                    isSelectedForCreate
-                        ? Theme.blue
-                        : Theme.dim.opacity(
-                            CadenceCalendarHourLadderMetrics.labelOpacity(hour: hour)
-                        )
-                )
-                .frame(width: 50, alignment: .trailing)
-                .padding(.trailing, iOSCalendarTimelineMetrics.hourLabelTrailingInset)
-                .padding(.top, -6)
-
-            VStack(alignment: .leading, spacing: 5) {
-                // **The rule was copied and the weights were not (T-596).** This drew a 1pt line at
-                // 0.55/0.25 while the Calendar grid drew a 0.5pt one at 0.46/0.20 — the identical
-                // `% 3` cadence on both, and the identical 0.9/0.45 on the labels beside them, which
-                // is what made the line the accident rather than the decision. The cadence and its
-                // weights are one read now (`CadenceCalendarHourLadderMetrics`, T-1129), which is
-                // what stops the next surface — the Mac's, as it turned out — repeating the split.
-                //
-                // The Calendar's figures are the ones that stay, on T-588's grounds: that ticket
-                // already settled three figures of this exact pair (`hourHeight`, `hourLabelSize`,
-                // `hourLabelTrailingInset`) in the Calendar's favour, and 0.5pt is a hairline where
-                // 1pt is two device pixels at 2x — twice the weight for a line whose whole job is to
-                // be underneath the schedule rather than in it.
-                Rectangle()
-                    .fill(
-                        isSelectedForCreate
-                            ? Theme.blue.opacity(0.58)
-                            : Theme.borderSubtle.opacity(
-                                CadenceCalendarHourLadderMetrics.ruleOpacity(hour: hour)
-                            )
-                    )
-                    .frame(height: iOSCalendarHairlineMetrics.width)
-
-                if hasItems {
-                    VStack(alignment: .leading, spacing: 5) {
-                        // The same two blocks the Calendar screen's day columns draw. `false` because
-                        // an hour row sizes to its content rather than handing each block an exact
-                        // height — see `iOSTimelineTaskBlock.fillsAvailableHeight`.
-                        ForEach(bundles) { bundle in
-                            iOSTimelineBundleBlock(bundle: bundle, fillsAvailableHeight: false)
-                        }
-
-                        ForEach(tasks) { task in
-                            iOSTimelineTaskBlock(
-                                task: task,
-                                startMin: task.scheduledStartMin,
-                                endMin: task.scheduledEndMin,
-                                fillsAvailableHeight: false,
-                                // Only this pane offers it, and T-1273 changed where a cleared
-                                // task lands rather than whether it lands anywhere: it used to
-                                // fall back into the "Ready to Schedule" stack directly above this
-                                // grid, and that stack is gone. It falls back into the task column
-                                // across the divider instead — Today's untimed tasks, on screen
-                                // beside this pane at the only width this pane is built at. The
-                                // control's wording names that column now (T-1286); it named the
-                                // stack for one commit longer than the stack existed.
-                                onClearTime: {
-                                    CadenceTaskDateEditing.clearScheduledTime(task, in: modelContext)
-                                }
-                            )
-                        }
-                    }
-                    .padding(.top, 5)
-                } else {
-                    // The empty hour *is* the control. This used to be a visible "+ Add" chip, and
-                    // because every hour of an unplanned day is empty, one identical chip per hour
-                    // stacked down the pane was the loudest thing in it — a column of controls
-                    // shouting over the schedule they were meant to frame. The lane takes the whole
-                    // row as its tap target and draws nothing until it is the hour being created
-                    // in, which is the only one with something to say.
-                    Button {
-                        onSelectStart(startMin)
-                    } label: {
-                        // `Color.clear`, not the marker with a `.frame` on it: an unselected lane's
-                        // marker is an `EmptyView`, which SwiftUI elides from the view tree along
-                        // with the frame and `contentShape` hung off it — the lane laid out at the
-                        // right height and swallowed every tap. A `Color` is a real, hit-testable
-                        // layer at zero visual cost.
-                        Color.clear
-                            .frame(maxWidth: .infinity, minHeight: laneHeight)
-                            .overlay(alignment: .topLeading) { creatingMarker }
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Create timed task at \(hourLabel)")
-                }
-            }
-            .overlay(alignment: .topLeading) { nowLine }
-        }
-        .frame(minHeight: rowHeight, alignment: .top)
-        .padding(.leading, 4)
-    }
-
-    /// The red rule at the current minute, the same one macOS's Schedule panel has always drawn
-    /// ([[T-1131]]) — `CadenceTimelineNowLine`, not a second copy of it.
-    ///
-    /// **It is per hour row rather than one rule over the pane, because this grid is a flow.** The
-    /// Calendar's day column is a `ZStack` of absolutely placed blocks over a ladder of fixed
-    /// 58pt hours, so one overlay can place itself anywhere on it. Here a row is
-    /// `minHeight: rowHeight` and *grows* with the blocks in it, so no expression over `rowHeight`
-    /// locates 13:30 once any hour above 13:00 has something in it. Scoping the rule to the row
-    /// that owns the hour makes the question local: the row is the hour, so the fraction is of this
-    /// row's own measured height, whatever it grew to.
-    ///
-    /// The window is this one hour, which is what keeps 24 rows from drawing 24 rules: every other
-    /// row's `isVisible` is false all day. They each still carry the schedule — one
-    /// `TimelineView(.periodic)` per row, at `CadenceTimelineNowLineSupport.tickInterval`, the
-    /// Mac's own 15 seconds and not a tighter one. That is deliberate, and the alternative is
-    /// worse rather than better: a single pane-level clock would have to invalidate the `ForEach`
-    /// that owns all 24 rows, redrawing every block, gesture and lane on the pane every 15
-    /// seconds, where this redraws 24 leaves that compute one `dateComponents` and return
-    /// `EmptyView`. The schedules are all minted in the same pass with the same period, so they
-    /// share a phase and the OS coalesces them into one wakeup rather than 24.
-    ///
-    /// `showDot: true` and a zero inset: the dot is the split macOS already has between its
-    /// Schedule panel and its Calendar page, and this pane is the Schedule panel's opposite number.
-    /// See `iOSCalendarTimelineMetrics.nowLineInset` for why the inset differs from the grid's.
-    @ViewBuilder
-    private var nowLine: some View {
-        GeometryReader { proxy in
-            CadenceTimelineNowLine(
-                day: Date(),
-                totalWidth: proxy.size.width,
-                startHour: hour,
-                endHour: hour + 1,
-                leadingInset: 0,
-                trailingInset: 0,
-                showDot: true,
-                yOffset: { minute in
-                    (minute - CGFloat(hour * 60)) / 60 * proxy.size.height
-                }
-            )
-        }
-    }
-
-    /// The lane fills the row: rule, the `VStack`'s own 5pt gap, then everything left. Floored at
-    /// the 44pt touch minimum so a shorter row still gives a finger somewhere to land.
-    private var laneHeight: CGFloat {
-        max(44, rowHeight - 6)
-    }
-
-    @ViewBuilder
-    private var creatingMarker: some View {
-        if isSelectedForCreate {
-            HStack(spacing: 6) {
-                Image(systemName: "plus.circle.fill")
-                    .font(.system(size: 10, weight: .bold))
-                Text("Creating here")
-                    .font(.system(size: 10, weight: .bold))
-            }
-            .foregroundStyle(Theme.blue)
-            .padding(.horizontal, 8)
-            .frame(height: 24)
-            .background(Theme.blue.opacity(0.12))
-            .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControlCompact, style: .continuous))
-        }
-    }
-
-    private var hourLabel: String {
-        TimeFormatters.timeString(from: hour * 60)
     }
 }
 

@@ -930,18 +930,25 @@ struct CalendarTimelineRangeTests {
             )
         }
 
-        // The two iOS rails, which had the cadence first and must not have been left behind by the
+        // The iOS rail, which had the cadence first and must not have been left behind by the
         // hoist. Read as text: `Cadence/iOS/` is invisible to this macOS-built target.
-        for relativePath in [
-            "Cadence/iOS/iOSCalendarTimelineViews.swift",
-            "Cadence/iOS/iOSTodaySchedulePanel.swift"
-        ] {
-            let source = CadenceSourceScan.strippingComments(
-                try CadenceSourceScan.sourceFile(relativePath)
-            )
-            #expect(source.contains("CadenceCalendarHourLadderMetrics.labelOpacity(hour: hour)"))
-            #expect(CadenceSourceScan.matchCount("hourLabelMutedOpacity", in: source) == 0)
-        }
+        //
+        // **One, not two, since [[T-3081]].** Today's pane used to draw a second rail of its own
+        // inside `iOSScheduleHourRow`; it builds `iOSCalendarTimelineGrid` now, so the rail below
+        // is the rail Today draws. The pane is still read, as an absence, because the thing this
+        // loop exists to catch is a surface growing its own ladder back.
+        let iosRail = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/iOS/iOSCalendarTimelineViews.swift")
+        )
+        #expect(iosRail.contains("CadenceCalendarHourLadderMetrics.labelOpacity(hour: hour)"))
+        #expect(CadenceSourceScan.matchCount("hourLabelMutedOpacity", in: iosRail) == 0)
+
+        let todayPane = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/iOS/iOSTodaySchedulePanel.swift")
+        )
+        #expect(todayPane.contains("iOSCalendarTimelineGrid("), "non-vacuity: Today draws no grid")
+        #expect(CadenceSourceScan.matchCount("CadenceCalendarHourLadderMetrics", in: todayPane) == 0)
+        #expect(CadenceSourceScan.matchCount("hourLabelMutedOpacity", in: todayPane) == 0)
     }
 
     /// **The cadence is spelled in exactly one file in the product tree, and it is the shared one.**
@@ -986,8 +993,12 @@ struct CalendarTimelineRangeTests {
             "Cadence/macOS/Views/TimelineDayCanvasSupportViews.swift",
             "Cadence/macOS/Views/CalendarPageComponents.swift",
             "Cadence/macOS/Views/SchedulePanelSupportViews.swift",
-            "Cadence/iOS/iOSCalendarTimelineViews.swift",
-            "Cadence/iOS/iOSTodaySchedulePanel.swift"
+            // `Cadence/iOS/iOSTodaySchedulePanel.swift` was the fifth reader and is not one any
+            // more: [[T-3081]] made Today's pane build `iOSCalendarTimelineGrid` instead of its own
+            // hour rows, so it reads the ladder through the file below rather than beside it. The
+            // sweep above is what keeps that honest — a pane that started spelling a cadence again
+            // would be an offender there, not a missing name here.
+            "Cadence/iOS/iOSCalendarTimelineViews.swift"
         ] {
             let source = CadenceSourceScan.strippingComments(
                 try CadenceSourceScan.sourceFile(relativePath)
@@ -1057,14 +1068,19 @@ struct CalendarTimelineRangeTests {
     /// that function reads `Locale.hourCycle` — one clock face across four rails and two platforms,
     /// chosen by the user's *24-Hour Time* setting rather than by which window they are in.
     ///
-    /// A positive assertion on all four, not an absence check on two: the failure this has to catch
-    /// is a fifth rail, or one of these four going back to spelling its own label, and "no file
+    /// A positive assertion on every rail, not an absence check on two: the failure this has to
+    /// catch is a new rail, or one of these going back to spelling its own label, and "no file
     /// contains the old string" would pass on a file that had simply been renamed.
+    ///
+    /// **Three rails now, not four ([[T-3081]]).** Today's pane drew the fourth, inside
+    /// `iOSScheduleHourRow`; it builds `iOSCalendarTimelineGrid` instead, so the iOS rail named
+    /// below is the one both iOS timed surfaces draw. The pane keeps a line of its own at the foot
+    /// of this test, as an absence, so a rail growing back there is still caught.
     @Test func everyHourRailInTheAppNamesItsHourThroughTimeFormatters() throws {
-        // The two spellings the four rails have been retired from, as regexes, each checked
-        // against a string that must match and one that must not before it is trusted over the
-        // tree. `bareHourText` is what both Mac rails drew; `bareHourLabel` is the computed
-        // property the Schedule panel wrapped its copy in.
+        // The two spellings the rails have been retired from, as regexes, each checked against a
+        // string that must match and one that must not before it is trusted over the tree.
+        // `bareHourText` is what both Mac rails drew; `bareHourLabel` is the computed property the
+        // Schedule panel wrapped its copy in.
         let bareHourText = #"Text\("\\\(hour\)"\)"#
         let bareHourLabel = #"hourLabel: String \{ "\\\(hour\)" \}"#
         #expect(CadenceSourceScan.matchCount(bareHourText, in: ##"Text("\(hour)")"##) == 1)
@@ -1082,8 +1098,7 @@ struct CalendarTimelineRangeTests {
         let rails: [(path: String, declaration: String)] = [
             ("Cadence/macOS/Views/CalendarPageComponents.swift", "struct CalTimeRailLabel: View {"),
             ("Cadence/macOS/Views/SchedulePanelSupportViews.swift", "struct ScheduleTimeRailRow: View {"),
-            ("Cadence/iOS/iOSCalendarTimelineViews.swift", "struct iOSCalendarTimeRail: View {"),
-            ("Cadence/iOS/iOSTodaySchedulePanel.swift", "struct iOSScheduleHourRow: View {")
+            ("Cadence/iOS/iOSCalendarTimelineViews.swift", "struct iOSCalendarTimeRail: View {")
         ]
 
         for rail in rails {
@@ -1108,7 +1123,16 @@ struct CalendarTimelineRangeTests {
             )
         }
 
-        // And the face itself, from the formatter the four of them now share. 13:00 is `1 PM` or
+        // Today's pane draws no rail of its own: it builds the grid whose rail is pinned above.
+        let todayPane = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/iOS/iOSTodaySchedulePanel.swift")
+        )
+        #expect(todayPane.contains("iOSCalendarTimelineGrid("), "non-vacuity: Today draws no grid")
+        #expect(CadenceSourceScan.matchCount(bareHourText, in: todayPane) == 0)
+        #expect(CadenceSourceScan.matchCount(bareHourLabel, in: todayPane) == 0)
+        #expect(CadenceSourceScan.matchCount("struct iOSScheduleHourRow", in: todayPane) == 0)
+
+        // And the face itself, from the formatter they all now share. 13:00 is `1 PM` or
         // `13:00` according to the clock the locale names — the two readings that used to be a
         // difference between two devices and are now a difference between two settings.
         #expect(TimeFormatters.timeString(from: 13 * 60, locale: CadenceTestClocks.twelveHour) == "1 PM")

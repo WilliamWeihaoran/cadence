@@ -192,8 +192,11 @@ struct CadenceTimelineNowLineTests {
     @Test func everyTimedSurfaceDrawsItsNowLineWithTheSharedComponent() throws {
         let callSites: [(path: String, anchor: String)] = [
             ("Cadence/macOS/Views/TimelineTaskBlockSupportViews.swift", "struct TimelineCurrentTimeOverlay: View {"),
-            ("Cadence/iOS/iOSCalendarTimelineViews.swift", "struct iOSCalendarTimelineDayColumn: View {"),
-            ("Cadence/iOS/iOSTodaySchedulePanel.swift", "struct iOSScheduleHourRow: View {")
+            // **Two surfaces, not three, since [[T-3081]].** Today's pane drew the third through
+            // `iOSScheduleHourRow`'s per-row overlay; it builds `iOSCalendarTimelineGrid` now, so
+            // the rule it shows is the day column's, one line above. The pane is still read below,
+            // as an absence, so a second drawing cannot grow back there unnoticed.
+            ("Cadence/iOS/iOSCalendarTimelineViews.swift", "struct iOSCalendarTimelineDayColumn: View {")
         ]
 
         for site in callSites {
@@ -217,6 +220,13 @@ struct CadenceTimelineNowLineTests {
                 "\(site.path) schedules its own periodic tick instead of the component's"
             )
         }
+
+        let todayPane = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/iOS/iOSTodaySchedulePanel.swift")
+        )
+        #expect(todayPane.contains("iOSCalendarTimelineGrid("), "non-vacuity: Today draws no grid")
+        #expect(CadenceSourceScan.matchCount("CadenceTimelineNowLine\\(", in: todayPane) == 0)
+        #expect(CadenceSourceScan.matchCount(#"TimelineView\(\.periodic"#, in: todayPane) == 0)
 
         // The component itself, and the one place the schedule may be written.
         let component = CadenceSourceScan.strippingComments(

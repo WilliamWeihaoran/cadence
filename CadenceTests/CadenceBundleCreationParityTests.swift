@@ -271,21 +271,27 @@ struct CadenceBundleCreationParityTests {
         #expect(occurrences(of: "struct iOSBundleFormingDrop", in: timeline) == 0)
     }
 
-    /// **Today's schedule pane is not given the gesture, and that is a decision.** It draws the same
-    /// `iOSTimelineTaskBlock` — so a change to the block reaches it — but it stacks blocks inside
-    /// hour rows rather than positioning them on a canvas, and it already spends the block's trailing
-    /// corner on `onClearTime`. Passing no opt-in means it installs no drag recognizer at all, which
-    /// is the whole reason the modifiers are in an `if let` branch rather than always-on returning
-    /// `false`: `isTargeted` fires whether or not the closure accepts a drop, so an always-attached
-    /// version would light up blocks on a pane with nothing to bundle them with.
+    /// **Today's schedule pane draws no block of its own at all, which is the stronger form of the
+    /// same decision.**
+    ///
+    /// It used to draw `iOSTimelineTaskBlock` itself, stacked inside hour rows, and was deliberately
+    /// passed no `bundleFormingDrop`: the opt-in is an `if let` rather than an always-on closure
+    /// returning `false` because `isTargeted` fires whether or not a drop is accepted, so an
+    /// always-attached version would light up blocks on a pane with nothing to bundle them with.
+    ///
+    /// [[T-3081]] replaced the hour rows with `iOSCalendarTimelineGrid` pinned to today, so the
+    /// pane now builds no block, installs no recognizer and makes no opt-in decision — the grid
+    /// does, once, for both of its spans. The assertion is therefore the same three absences plus a
+    /// fourth, and the non-vacuity moves to the grid the pane builds.
     @Test func todaysSchedulePaneInstallsNoDragMeshOfItsOwn() throws {
         let source = try strippingBundleTestComments(sourceFile("Cadence/iOS/iOSTodaySchedulePanel.swift"))
 
         #expect(occurrences(of: "bundleFormingDrop", in: source) == 0)
         #expect(occurrences(of: ".draggable(", in: source) == 0)
         #expect(occurrences(of: ".dropDestination(", in: source) == 0)
-        // Non-vacuity: it really does draw the block this ticket changed.
-        #expect(occurrences(of: "iOSTimelineTaskBlock(", in: source) == 1)
+        #expect(occurrences(of: "iOSTimelineTaskBlock(", in: source) == 0)
+        // Non-vacuity: it really does draw the grid that owns the gesture this ticket changed.
+        #expect(occurrences(of: "iOSCalendarTimelineGrid(", in: source) == 1)
     }
 
     /// A nested card that claimed the drag has to tell the column, or the column's own
