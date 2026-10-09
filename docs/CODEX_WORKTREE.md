@@ -99,6 +99,7 @@ CadenceTests/CadenceSavedLinkPersistenceTests.swift
 Cadence/macOS/Views/LinksView.swift
 CadenceTests/CadenceInboxRemindersSurfaceTests.swift
 CadenceTests/CadenceSharedConstantReuseSweepTests.swift
+Cadence/macOS/Views/ListNotesView.swift
 ```
 
 ### LEASE WIDENED 2026-10-09 (third batch) — three paths so [[T-3085]]'s shared wording has somewhere to live
@@ -1505,3 +1506,45 @@ the room and uses `label` unconditionally.
 
 **`NoteKind.meeting`'s raw value is persisted in `Note.kindRaw` and the shared type does not touch
 it.** Keep it that way: the display vocabulary must not reach the persisted one.
+
+### T-3086: the two sites the widened sweep catches — one GRANTED, one OUT OF SCOPE
+
+Codex asked rather than assuming, and the two answers are opposite.
+
+**`Cadence/macOS/Views/ListNotesView.swift` — GRANTED, narrowly, for the `CollapsibleNoteSection(title:)`
+argument at `:279` and nothing else in the file.** That heading is a fourth hand-typed `"Event Notes"`
+on a notes surface and it means the same thing the vocabulary means, so it belongs to the type. Route
+it through `CadenceNotesTabVocabulary.events.columnTitle` — `columnTitle`, not `label`, because this
+is a list heading above a set of notes, which is exactly what `columnTitle` was minted for. The
+rendered string does not change. Nothing else in `ListNotesView.swift` moves: not
+`filteredEventNotes`, not the collapse state, not `ListEventNoteSectionRows`.
+
+**`GlobalSearchCategory` at `GlobalSearchSupportViews.swift:11` — NOT approved, and the sweep's root
+set must not reach it.** Two independent reasons, either one sufficient:
+
+1. **It cannot be done as described.** The enum is `String`-backed and its raw value *is* the display
+   string. Swift requires a raw value to be a compile-time literal, so
+   `case meetingNotes = CadenceNotesTabVocabulary.events.columnTitle` does not compile. A
+   "display-only conversion" here is really: drop the `String` backing or add a separate display
+   property, then re-point every read of `rawValue`. That is a restructuring of a search type, not a
+   de-duplication of a word, and it is not what this ticket is.
+2. **They are not the same thing.** `GlobalSearchCategory` is a taxonomy of eight *search result
+   groups* — `Commands`, `Pages`, `Areas`, `Projects`, `Tasks`, `Calendar Events`, `Event Notes`,
+   `Notes`. Seven have nothing to do with the Notes page. Binding one of the eight to the Notes tab
+   vocabulary would mean renaming a Notes *tab* silently renames a *search category*, and would leave
+   the enum reading its own words for seven cases and another type's for one. Two surfaces that share
+   a string today are not thereby one concept.
+
+**So: scope the sweep by its ROOT SET, not by exemptions.** Codex is right to refuse to add
+exemptions — an exemption list is a place for the next drift to hide. Instead the walk covers the
+surfaces that render the notes vocabulary — the Notes page on both platforms plus the one list
+heading granted above — rather than all of `Cadence/macOS`. A root set states what the sweep is
+*about*; an exemption list states what it has given up on.
+
+**Keep the non-vacuity control either way.** A walk over a named root set must still prove it read
+those roots — a scanned-file floor, or an assertion naming a file it must have seen. A sweep that
+finds zero files passes for the wrong reason.
+
+**Recorded so it is not re-derived:** `GlobalSearchCategory.meetingNotes`'s raw value stays
+`"Event Notes"` and stays hand-typed. If the owner ever renames the Notes event tab, that string is a
+deliberate second decision, not an oversight — and this paragraph is the reason it was left.
