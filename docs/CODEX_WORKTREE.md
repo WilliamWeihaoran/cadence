@@ -96,6 +96,52 @@ Cadence/macOS/Views/NotesView.swift
 Cadence/iOS/iOSTodayCompactViews.swift
 ```
 
+### INSTRUCTION 2026-10-09 — [[T-3085]] on a path Codex already holds: a saved link deletes with no confirmation on mobile
+
+No new grant. `Cadence/iOS/iOSListSupportViews.swift` matches the standing
+`Cadence/iOS/iOSList*.swift` glob, which is why agent `linkdelete` stopped rather than editing it —
+and it stopped correctly: **both the swipe button and `delete(_:)` live inside that one file, so no
+half of this change lands outside the fence.** The owner has decided it, so it comes to Codex.
+
+**The defect, verified in source by two readers, not relayed.** macOS `LinksView.swift:80-83` presents
+`Delete Link?` / *This will permanently delete "&lt;title&gt;".* and `deleteLink(_:)` is reachable only
+from that confirm closure. Mobile `iOSListSupportViews.swift:692-696` calls `delete(link)` straight
+out of a `.swipeActions` button, which goes through `CadenceSavedLinkPersistence.delete` —
+`modelContext.delete` plus `commitDelete` — so **one gesture commits to the store and to CloudKit**.
+`allowsFullSwipe: false` costs a flick a second tap but names nothing and cannot be answered "no".
+
+**It is not undoable, checked rather than assumed.** No `holdUndo` on the saved-link path (its only
+callers are `CadenceListDeleteHelpers.swift:127` and `CadenceTaskMutationSupport.swift:843`), no
+toast, no Recently Deleted. Model-level undo is deliberately absent app-wide — [[T-367]] removed
+`modelContext.undoManager` on purpose. The rollback inside `CadenceSavedLinkPersistence.delete` is
+*failure* handling; a successful delete is final. And the direct swipe was never chosen deliberately:
+the saved-link history ([[T-327]], [[T-507]], [[T-509]]) is entirely about whether a write lands or
+is reported, never about whether it is confirmed.
+
+**The design, recorded so it is not re-derived.** Follow `iOSNoteDeletionSupport.swift`'s shape: a
+`View` extension over a `Binding<SavedLink?>`, the swipe sets the binding and nothing else, so exactly
+one `CadenceSavedLinkPersistence.delete` call site survives behind exactly one presenter. Use
+**`.alert("Delete Link?")` weight, not the full modal sheet** — a note or list delete earns the sheet
+because it is a cascade with a summary; a saved link is one trivial object, and
+`iOSTaskDetailSheet.swift:88` already establishes the light idiom. **It must name the link**, and the
+sentence should move into `CadenceSavedLinkPersistence` beside `saveFailureNotice` /
+`deleteFailureNotice` so the two platforms cannot drift on wording the way they drifted on the scheme
+check in T-509. Keep `delete(_:)`'s existing `actionError` reporting — the confirmation gates it, it
+does not replace it. Pins belong in `CadenceTests/CadenceSavedLinkPersistenceTests.swift`, which is
+**not** leased and already source-scans both link surfaces.
+
+**Explicitly NOT in scope: the card styling.** Codex's audit bullet welded a cosmetic difference to a
+destructive one. Only the deletion half loses data. Mobile's links are plain `List` rows sharing the
+Lists page's one deliberate `iOSListRowChrome()` treatment; carding them would make that panel the
+only carded surface on the page. The owner decided the deletion, not the chrome.
+
+**Worth folding in while you are there:** that panel uses raw `.swipeActions` rather than the shared
+`iOSSwipeActionsModifier` / `iOSListRowSwipeActions` the same file's list rows adopted after the
+"swipe did nothing on iPad" defect (`iOSListSupportViews.swift:49-55`). It is not discarded today
+because the panel builds its own `List`, but a future re-host in a `ScrollView` would make the swipe
+silently vanish.
+
+
 ### LEASE WIDENED 2026-10-09 — five wiring paths, so the approved parity fixes are not left inert
 
 Codex asked for these by name to finish work already granted on 2026-10-08, and the ask is the right
