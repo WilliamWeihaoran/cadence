@@ -9,19 +9,17 @@ struct NotesView: View {
         case notepad
         case meeting
 
-        /// User-facing label, deliberately separate from the case name.
-        ///
-        /// `meeting` keeps its case name because `NoteKind.meeting`'s raw value is persisted in
-        /// `Note.kindRaw` — renaming the model case would orphan every existing meeting note.
-        /// Only the label reads "Event Notes".
-        var title: String {
+        /// Display vocabulary is separate from the unchanged persisted note kinds.
+        var vocabulary: CadenceNotesTabVocabulary {
             switch self {
-            case .daily: return "Daily"
-            case .weekly: return "Weekly"
-            case .notepad: return "Notepad"
-            case .meeting: return "Event Notes"
+            case .daily: return .today
+            case .weekly: return .week
+            case .notepad: return .notepad
+            case .meeting: return .events
             }
         }
+
+        var title: String { vocabulary.label }
 
         /// The kind this tab lists. The fold state is keyed by `NoteKind` so the four columns
         /// remember their own folds — see `CadenceNotesFoldState`.
@@ -124,7 +122,7 @@ private struct DailyNotesPage: View {
     var body: some View {
         HSplitView {
             VStack(spacing: 0) {
-                NotesListHeader(title: "Daily Notes", onPickDate: openNote(forDate:))
+                NotesListHeader(title: NotesView.NotesPage.daily.vocabulary.columnTitle, onPickDate: openNote(forDate:))
 
                 if listedNotes.isEmpty {
                     Spacer()
@@ -230,7 +228,7 @@ private struct WeeklyNotesPage: View {
             VStack(spacing: 0) {
                 // The picker takes a day, not a week: weeks have no handle you can point at, and
                 // "the week containing this date" is how anyone actually locates one.
-                NotesListHeader(title: "Weekly Notes", onPickDate: openNote(forDate:))
+                NotesListHeader(title: NotesView.NotesPage.weekly.vocabulary.columnTitle, onPickDate: openNote(forDate:))
 
                 if listedNotes.isEmpty {
                     Spacer()
@@ -341,7 +339,7 @@ private struct NotepadPage: View {
     var body: some View {
         HSplitView {
             VStack(spacing: 0) {
-                NotesListHeader(title: "Notepad", onCreate: createNote)
+                NotesListHeader(title: NotesView.NotesPage.notepad.vocabulary.columnTitle, onCreate: createNote)
 
                 if notes.isEmpty {
                     Spacer()
@@ -460,7 +458,7 @@ private struct MeetingNotesPage: View {
     var body: some View {
         HSplitView {
             VStack(spacing: 0) {
-                NotesListHeader(title: "Event Notes")
+                NotesListHeader(title: NotesView.NotesPage.meeting.vocabulary.columnTitle)
 
                 // Deliberately unfiltered, and deliberately without a date picker. The hide-empty
                 // rule exists because daily/weekly notes are created *for* you, one per period,

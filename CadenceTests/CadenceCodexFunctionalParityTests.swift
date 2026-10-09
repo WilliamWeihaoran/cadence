@@ -3,6 +3,34 @@ import Testing
 @testable import Cadence
 
 struct CadenceCodexFunctionalParityTests {
+    @Test func macNotesUsesFullSharedVocabularyWithoutChangingKindsOrOrder() throws {
+        #expect(NotesView.NotesPage.allCases.map(\.vocabulary) == CadenceNotesTabVocabulary.allCases)
+        #expect(NotesView.NotesPage.allCases.map(\.title) == ["Daily", "Weekly", "Notepad", "Event Notes"])
+        #expect(NotesView.NotesPage.allCases.map(\.noteKind) == [.daily, .weekly, .permanent, .meeting])
+        #expect(NoteKind.meeting.rawValue == "meeting")
+        let source = try CadenceSourceScan.strippedSourceReader()("Cadence/macOS/Views/NotesView.swift")
+        let page = try #require(CadenceSourceScan.declarationBody("enum NotesPage", in: source))
+        #expect(page.contains("var title: String { vocabulary.label }"))
+        #expect(source.contains("ForEach(NotesPage.allCases, id: \\.self)"))
+        #expect(source.contains("CadenceQuietTabButton(title: page.title,"))
+        #expect(!source.contains("usesFullLabels("))
+        #expect(!source.contains("shortLabel"))
+        for (declaration, tab) in [
+            ("DailyNotesPage", "daily"), ("WeeklyNotesPage", "weekly"),
+            ("NotepadPage", "notepad"), ("MeetingNotesPage", "meeting")
+        ] {
+            let body = try #require(CadenceSourceScan.declarationBody("private struct \(declaration): View", in: source))
+            #expect(body.contains("NotesListHeader(title: NotesView.NotesPage.\(tab).vocabulary.columnTitle"))
+            #expect(!body.contains("NotesListHeader(title: \""))
+        }
+        let list = try CadenceSourceScan.strippedSourceReader()("Cadence/macOS/Views/ListNotesView.swift")
+        let section = try #require(CadenceSourceScan.declarationBody("private var eventNoteSection: some View", in: list))
+        #expect(section.contains("title: CadenceNotesTabVocabulary.events.columnTitle,"))
+        #expect(section.contains("count: filteredEventNotes.count,"))
+        #expect(section.contains("isCollapsed: $isEventNotesCollapsed"))
+        #expect(section.contains("ListEventNoteSectionRows("))
+    }
+
     @Test func boardEventActionReachesTheExistingProtectedEditor() throws {
         let read = CadenceSourceScan.strippedSourceReader()
         let board = try read("Cadence/iOS/iOSCalendarBoardView.swift")

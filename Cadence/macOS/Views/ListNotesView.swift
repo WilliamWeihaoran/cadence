@@ -276,7 +276,7 @@ struct ListNotesView: View {
     private var eventNoteSection: some View {
         if !filteredEventNotes.isEmpty {
             CollapsibleNoteSection(
-                title: "Event Notes",
+                title: CadenceNotesTabVocabulary.events.columnTitle,
                 count: filteredEventNotes.count,
                 isCollapsed: $isEventNotesCollapsed
             ) {
