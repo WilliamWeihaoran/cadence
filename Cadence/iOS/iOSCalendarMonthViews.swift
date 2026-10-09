@@ -309,10 +309,28 @@ private struct iOSCalendarMonthDayCell: View {
     private let calendar = Calendar.current
     private var isToday: Bool { calendar.isDateInToday(date) }
     private var isCurrentMonth: Bool { calendar.isDate(date, equalTo: displayMonth, toGranularity: .month) }
-    private var visibleBundles: [TaskBundle] { Array(bundles.prefix(3)) }
-    private var visibleEvents: [EKEvent] { Array(events.prefix(max(0, 4 - visibleBundles.count))) }
-    private var visibleTasks: [AppTask] { Array(tasks.prefix(max(0, 5 - visibleBundles.count - visibleEvents.count))) }
-    private var overflow: Int { max(0, tasks.count + bundles.count + events.count - visibleTasks.count - visibleBundles.count - visibleEvents.count) }
+    /// Chip slots this cell draws before the "+N more" line. A fixed count rather than macOS's
+    /// height-derived one: these rows have a `minHeight` and no fixed height, so there is no row
+    /// budget to divide.
+    private static let chipCapacity = 5
+
+    /// Who gets those slots. The ordering is `CadenceCalendarMonthCellPriority`'s and is shared
+    /// with macOS's `MonthDayCell`; it replaces three hardcoded per-kind caps (3 bundles,
+    /// `4 - bundles` events, `5 - bundles - events` tasks) that spelled the same events-before-
+    /// tasks intent without ever stating it, and that macOS had drifted the other way from.
+    private var split: CadenceCalendarMonthCellPriority.Split {
+        CadenceCalendarMonthCellPriority.split(
+            bundles: bundles.count,
+            events: events.count,
+            tasks: tasks.count,
+            capacity: Self.chipCapacity
+        )
+    }
+
+    private var visibleBundles: [TaskBundle] { Array(bundles.prefix(split.bundles)) }
+    private var visibleEvents: [EKEvent] { Array(events.prefix(split.events)) }
+    private var visibleTasks: [AppTask] { Array(tasks.prefix(split.tasks)) }
+    private var overflow: Int { split.hidden }
 
     /// `MonthCalendarPanel`'s treatment, via `CadenceCalendarDayBadge` — this cell used to have it
     /// inverted, giving today the solid fill and the selection the wash.

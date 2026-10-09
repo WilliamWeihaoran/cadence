@@ -318,9 +318,19 @@ struct MonthDayCell: View {
             totalItems: bundles.count + tasks.count + events.count,
             rowHeight: rowHeight
         )
-        let bundleChips = Array(bundles.prefix(layout.visible))
-        let taskChips = Array(tasks.prefix(max(0, layout.visible - bundleChips.count)))
-        let eventChips = Array(events.prefix(max(0, layout.visible - bundleChips.count - taskChips.count)))
+        // `chipLayout` says how many slots there are; `CadenceCalendarMonthCellPriority` says who
+        // gets them. This cell used to fill them bundles → tasks → events, so a crowded day hid
+        // its events and kept its tasks — see that type for why the owner reversed it, and why
+        // both platforms now ask the same function.
+        let split = CadenceCalendarMonthCellPriority.split(
+            bundles: bundles.count,
+            events: events.count,
+            tasks: tasks.count,
+            capacity: layout.visible
+        )
+        let bundleChips = Array(bundles.prefix(split.bundles))
+        let eventChips = Array(events.prefix(split.events))
+        let taskChips = Array(tasks.prefix(split.tasks))
 
         return VStack(alignment: .leading, spacing: CalendarMonthCellLayout.headerChipSpacing) {
             MonthDayNumberLabel(
@@ -344,14 +354,16 @@ struct MonthDayCell: View {
                 ForEach(bundleChips) { bundle in
                     MonthBundleChip(bundle: bundle)
                 }
-                ForEach(taskChips) { task in
-                    MonthTaskChip(task: task, dayKey: dateKey)
-                }
+                // Drawn in the same order they were ranked, and in the same order the iOS cell
+                // draws them: what survives the cut reads top-down as what matters most.
                 ForEach(eventChips) { event in
                     MonthEventChip(event: event)
                 }
-                if layout.overflow > 0 {
-                    Text(CadenceTaskSurfaceOptions.moreLabel(hidden: layout.overflow))
+                ForEach(taskChips) { task in
+                    MonthTaskChip(task: task, dayKey: dateKey)
+                }
+                if split.hidden > 0 {
+                    Text(CadenceTaskSurfaceOptions.moreLabel(hidden: split.hidden))
                         .font(.system(size: 9))
                         .foregroundStyle(Theme.dim)
                         .padding(.horizontal, 5)
