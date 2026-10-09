@@ -9,6 +9,7 @@ enum GlobalSearchCategory: String, CaseIterable {
     case tasks = "Tasks"
     case events = "Calendar Events"
     case meetingNotes = "Event Notes"
+    case notes = "Notes"
 }
 
 enum GlobalSearchDestination: Hashable {
@@ -19,6 +20,7 @@ enum GlobalSearchDestination: Hashable {
     case task(UUID)
     case event(String)
     case eventNote(UUID)
+    case note(UUID)
 }
 
 /// `CaseIterable` since T-1940, so "every command the palette declares has a row" is a claim a

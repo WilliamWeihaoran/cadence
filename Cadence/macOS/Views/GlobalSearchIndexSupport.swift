@@ -33,15 +33,17 @@ enum GlobalSearchIndexSupport {
         appendSection(.projects, results: projectResults(projects: projects, query: query), into: &sections)
         appendSection(.tasks, results: taskResults(tasks: tasks, query: query), into: &sections)
         appendSection(.events, results: eventResults, into: &sections)
+        let taskTitles = MarkdownTaskEmbedTitleCache.titles(for: tasks)
         appendSection(
             .meetingNotes,
             results: eventNoteResults(
                 notes: notes,
                 query: query,
-                taskTitles: MarkdownTaskEmbedTitleCache.titles(for: tasks)
+                taskTitles: taskTitles
             ),
             into: &sections
         )
+        appendSection(.notes, results: noteResults(notes: notes, query: query, taskTitles: taskTitles), into: &sections)
 
         return GlobalSearchIndexedSource(sections: sections)
     }
@@ -284,6 +286,29 @@ enum GlobalSearchIndexSupport {
                 icon: "doc.text",
                 tintHex: Theme.purpleHex,
                 destination: .eventNote(note.id)
+            )
+        }, query: query, preparedQuery: preparedQuery).prefix(query.isEmpty ? 8 : 12))
+    }
+
+    static func noteResults(notes: [Note], query: String, taskTitles: [UUID: String]) -> [GlobalSearchResult] {
+        let preparedQuery = CadenceSearchMatcher.PreparedQuery(query)
+        let candidates = notes.filter { NotesNavigationManager.page(for: $0.kind) != nil && $0.kind != .meeting }
+        return Array(rankedResults(candidates.compactMap { note in
+            let title = note.displayTitle
+            let subtitle: String
+            switch note.kind {
+            case .daily: subtitle = "Daily • \(note.dateKey)"
+            case .weekly: subtitle = "Weekly • \(note.weekKey)"
+            case .permanent: subtitle = "Notepad"
+            case .list, .meeting: return nil
+            }
+            let content = MarkdownTaskEmbedTitleCache.resolving(note.content, titles: taskTitles)
+            let tags = CadenceSearchTagSupport.text(for: note.sortedTags)
+            guard matches(query: preparedQuery, fields: [title, content, subtitle, tags]) else { return nil }
+            return GlobalSearchResult(
+                id: CadenceSearchIdentity.note(note.id), category: .notes,
+                title: title, subtitle: subtitle, icon: "doc.text",
+                tintHex: Theme.purpleHex, destination: .note(note.id)
             )
         }, query: query, preparedQuery: preparedQuery).prefix(query.isEmpty ? 8 : 12))
     }

@@ -1750,13 +1750,19 @@ struct CadenceNotesTabVocabularyReuseTests {
         )
         #expect(sharedHits == ["Cadence/Shared/CadenceNotePlanningSupport.swift"])
 
-        let iosHits = try instrument.sweep(
-            try CadenceSourceScan.swiftFiles(under: "Cadence/iOS"),
-            atLeast: 80,
-            including: "Cadence/iOS/iOSNotesView.swift",
+        // Notes vocabulary renderers, not the independently named search taxonomy.
+        let rendererPaths = [
+            "Cadence/iOS/iOSNotesView.swift",
+            "Cadence/macOS/Views/NotesView.swift",
+            "Cadence/macOS/Views/ListNotesView.swift"
+        ]
+        let rendererHits = try instrument.sweep(
+            rendererPaths,
+            atLeast: 3,
+            including: "Cadence/macOS/Views/NotesView.swift",
             read: read
         )
-        #expect(iosHits.isEmpty, "the iOS Notes surface is re-typing the Mac's words: \(iosHits)")
+        #expect(rendererHits.isEmpty, "a Notes vocabulary renderer is re-typing the shared words: \(rendererHits)")
 
         // Inside the owner, each phrase is typed once per *reading* that uses it, and no more.
         // "Event Notes" is twice because the tab's full label and its list column's heading are

@@ -618,6 +618,8 @@ struct iOSListLinksPanel: View {
     /// by the form closing.
     @State private var actionError: String?
 
+    @State private var linkToDelete: SavedLink?
+
     private var links: [SavedLink] {
         if let area {
             return allLinks.filter { $0.area?.id == area.id }
@@ -691,7 +693,7 @@ struct iOSListLinksPanel: View {
                         .listRowSeparatorTint(Theme.borderSubtle)
                         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
                             Button(role: .destructive) {
-                                delete(link)
+                                linkToDelete = link
                             } label: {
                                 Label("Delete", systemImage: "trash")
                             }
@@ -704,6 +706,7 @@ struct iOSListLinksPanel: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(Theme.bg)
+        .iOSSavedLinkDeletion(link: $linkToDelete, perform: delete)
     }
 
     private func addLink() {
@@ -749,6 +752,33 @@ struct iOSListLinksPanel: View {
             actionError = nil
         } catch {
             actionError = CadenceSavedLinkPersistence.deleteFailureNotice
+        }
+    }
+}
+
+extension View {
+    func iOSSavedLinkDeletion(link: Binding<SavedLink?>, perform: @escaping (SavedLink) -> Void) -> some View {
+        modifier(iOSSavedLinkDeletionModifier(link: link, perform: perform))
+    }
+}
+
+private struct iOSSavedLinkDeletionModifier: ViewModifier {
+    @Binding var link: SavedLink?
+    let perform: (SavedLink) -> Void
+
+    private var isPresented: Binding<Bool> {
+        Binding(get: { link != nil }, set: { if !$0 { link = nil } })
+    }
+
+    func body(content: Content) -> some View {
+        content.alert(CadenceSavedLinkPersistence.deleteConfirmationTitle, isPresented: isPresented, presenting: link) { selected in
+            Button("Delete", role: .destructive) {
+                perform(selected)
+                link = nil
+            }
+            Button("Cancel", role: .cancel) { link = nil }
+        } message: { selected in
+            Text(CadenceSavedLinkPersistence.deleteConfirmationMessage(title: selected.title))
         }
     }
 }

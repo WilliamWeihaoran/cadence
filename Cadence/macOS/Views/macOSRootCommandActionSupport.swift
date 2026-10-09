@@ -129,6 +129,12 @@ enum RootCommandActionSupport {
         case .eventNote(let noteID):
             context.notesNavigationManager.openMeetingNote(id: noteID)
             context.setSelection(.notes)
+        case .note(let noteID):
+            let descriptor = FetchDescriptor<Note>(predicate: #Predicate { $0.id == noteID })
+            guard let note = (try? context.modelContext.fetch(descriptor))?.first,
+                  NotesNavigationManager.page(for: note.kind) != nil else { break }
+            context.notesNavigationManager.openNote(id: note.id, kind: note.kind)
+            context.setSelection(.notes)
         }
 
         context.globalSearchManager.dismiss()

@@ -9,19 +9,17 @@ struct NotesView: View {
         case notepad
         case meeting
 
-        /// User-facing label, deliberately separate from the case name.
-        ///
-        /// `meeting` keeps its case name because `NoteKind.meeting`'s raw value is persisted in
-        /// `Note.kindRaw` — renaming the model case would orphan every existing meeting note.
-        /// Only the label reads "Event Notes".
-        var title: String {
+        /// Display vocabulary is separate from the unchanged persisted note kinds.
+        var vocabulary: CadenceNotesTabVocabulary {
             switch self {
-            case .daily: return "Daily"
-            case .weekly: return "Weekly"
-            case .notepad: return "Notepad"
-            case .meeting: return "Event Notes"
+            case .daily: return .today
+            case .weekly: return .week
+            case .notepad: return .notepad
+            case .meeting: return .events
             }
         }
+
+        var title: String { vocabulary.label }
 
         /// The kind this tab lists. The fold state is keyed by `NoteKind` so the four columns
         /// remember their own folds — see `CadenceNotesFoldState`.
@@ -37,7 +35,17 @@ struct NotesView: View {
 
     @Environment(NotesNavigationManager.self) private var notesNavigationManager
     @State private var page: NotesPage = .daily
-    @State private var requestedMeetingNoteID: UUID?
+    @State private var requestedNoteID: UUID?
+
+    enum RequestedSelection {
+        @discardableResult
+        static func apply(_ requestedID: inout UUID?, selection: inout UUID?, notes: [Note]) -> Bool {
+            guard let id = requestedID, notes.contains(where: { $0.id == id }) else { return false }
+            selection = id
+            requestedID = nil
+            return true
+        }
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -61,13 +69,13 @@ struct NotesView: View {
             Group {
                 switch page {
                 case .daily:
-                    DailyNotesPage()
+                    DailyNotesPage(requestedNoteID: $requestedNoteID)
                 case .weekly:
-                    WeeklyNotesPage()
+                    WeeklyNotesPage(requestedNoteID: $requestedNoteID)
                 case .notepad:
-                    NotepadPage()
+                    NotepadPage(requestedNoteID: $requestedNoteID)
                 case .meeting:
-                    MeetingNotesPage(requestedNoteID: $requestedMeetingNoteID)
+                    MeetingNotesPage(requestedNoteID: $requestedNoteID)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -82,12 +90,13 @@ struct NotesView: View {
     private func applyPendingNavigationIfNeeded() {
         guard let request = notesNavigationManager.request else { return }
         page = request.page
-        requestedMeetingNoteID = request.eventNoteID
+        requestedNoteID = request.noteID ?? request.eventNoteID
         notesNavigationManager.clear()
     }
 }
 
 private struct DailyNotesPage: View {
+    @Binding var requestedNoteID: UUID?
     @Query(sort: \Note.updatedAt, order: .reverse) private var allNotes: [Note]
     @Query(sort: \AppTask.order) private var allTasks: [AppTask]
     @Environment(\.modelContext) private var modelContext
@@ -113,7 +122,7 @@ private struct DailyNotesPage: View {
     var body: some View {
         HSplitView {
             VStack(spacing: 0) {
-                NotesListHeader(title: "Daily Notes", onPickDate: openNote(forDate:))
+                NotesListHeader(title: NotesView.NotesPage.daily.vocabulary.columnTitle, onPickDate: openNote(forDate:))
 
                 if listedNotes.isEmpty {
                     Spacer()
@@ -158,10 +167,21 @@ private struct DailyNotesPage: View {
                 NotesEditorPlaceholder(title: CadenceEmptyStateCopy.selectNoteTitle)
             }
         }
-        .onAppear { openNote(forDateKey: DateFormatters.todayKey()) }
+        .onAppear {
+            if !applyRequestedSelection() { openNote(forDateKey: DateFormatters.todayKey()) }
+        }
+        .onChange(of: requestedNoteID) { _, _ in
+            applyRequestedSelection()
+        }
         .onChange(of: notes.map(\.id)) { _, _ in
             normalizeSelection()
+            applyRequestedSelection()
         }
+    }
+
+    @discardableResult
+    private func applyRequestedSelection() -> Bool {
+        NotesView.RequestedSelection.apply(&requestedNoteID, selection: &selectedNoteID, notes: notes)
     }
 
     private func openNote(forDate date: Date) {
@@ -183,6 +203,7 @@ private struct DailyNotesPage: View {
 }
 
 private struct WeeklyNotesPage: View {
+    @Binding var requestedNoteID: UUID?
     @Query(sort: \Note.updatedAt, order: .reverse) private var allNotes: [Note]
     @Query(sort: \AppTask.order) private var allTasks: [AppTask]
     @Environment(\.modelContext) private var modelContext
@@ -207,7 +228,7 @@ private struct WeeklyNotesPage: View {
             VStack(spacing: 0) {
                 // The picker takes a day, not a week: weeks have no handle you can point at, and
                 // "the week containing this date" is how anyone actually locates one.
-                NotesListHeader(title: "Weekly Notes", onPickDate: openNote(forDate:))
+                NotesListHeader(title: NotesView.NotesPage.weekly.vocabulary.columnTitle, onPickDate: openNote(forDate:))
 
                 if listedNotes.isEmpty {
                     Spacer()
@@ -252,10 +273,21 @@ private struct WeeklyNotesPage: View {
                 NotesEditorPlaceholder(title: CadenceEmptyStateCopy.selectWeekTitle)
             }
         }
-        .onAppear { openNote(forWeekKey: DateFormatters.currentWeekKey()) }
+        .onAppear {
+            if !applyRequestedSelection() { openNote(forWeekKey: DateFormatters.currentWeekKey()) }
+        }
+        .onChange(of: requestedNoteID) { _, _ in
+            applyRequestedSelection()
+        }
         .onChange(of: notes.map(\.id)) { _, _ in
             normalizeSelection()
+            applyRequestedSelection()
         }
+    }
+
+    @discardableResult
+    private func applyRequestedSelection() -> Bool {
+        NotesView.RequestedSelection.apply(&requestedNoteID, selection: &selectedNoteID, notes: notes)
     }
 
     private func openNote(forDate date: Date) {
@@ -287,6 +319,7 @@ private struct WeeklyNotesPage: View {
 ///
 /// No new `NoteKind` was introduced.
 private struct NotepadPage: View {
+    @Binding var requestedNoteID: UUID?
     @Query(sort: \Note.updatedAt, order: .reverse) private var allNotes: [Note]
     @Query(sort: \AppTask.order) private var allTasks: [AppTask]
     @Environment(\.modelContext) private var modelContext
@@ -306,7 +339,7 @@ private struct NotepadPage: View {
     var body: some View {
         HSplitView {
             VStack(spacing: 0) {
-                NotesListHeader(title: "Notepad", onCreate: createNote)
+                NotesListHeader(title: NotesView.NotesPage.notepad.vocabulary.columnTitle, onCreate: createNote)
 
                 if notes.isEmpty {
                     Spacer()
@@ -346,10 +379,21 @@ private struct NotepadPage: View {
                 NotesEditorPlaceholder(title: CadenceEmptyStateCopy.selectNoteTitle)
             }
         }
-        .onAppear { loadOrCreateNotepad() }
+        .onAppear {
+            if !applyRequestedSelection() { loadOrCreateNotepad() }
+        }
+        .onChange(of: requestedNoteID) { _, _ in
+            applyRequestedSelection()
+        }
         .onChange(of: notes.map(\.id)) { _, _ in
             normalizeSelection()
+            applyRequestedSelection()
         }
+    }
+
+    @discardableResult
+    private func applyRequestedSelection() -> Bool {
+        NotesView.RequestedSelection.apply(&requestedNoteID, selection: &selectedNoteID, notes: notes)
     }
 
     /// Opens the newest note, creating the first one if the store has none. Uses the shared
@@ -414,7 +458,7 @@ private struct MeetingNotesPage: View {
     var body: some View {
         HSplitView {
             VStack(spacing: 0) {
-                NotesListHeader(title: "Event Notes")
+                NotesListHeader(title: NotesView.NotesPage.meeting.vocabulary.columnTitle)
 
                 // Deliberately unfiltered, and deliberately without a date picker. The hide-empty
                 // rule exists because daily/weekly notes are created *for* you, one per period,

@@ -46,7 +46,8 @@ final class RemindersManager {
     private(set) var deniedInThisSession = false
 
     var isDenied: Bool {
-        RemindersConnectionState.isDenied(
+        guard !isEventKitDisarmed else { return false }
+        return RemindersConnectionState.isDenied(
             status: EKEventStore.authorizationStatus(for: .reminder),
             deniedInThisSession: deniedInThisSession
         )
@@ -59,7 +60,8 @@ final class RemindersManager {
     /// answers "will a request button do anything", and the answer is no either way — so callers
     /// that need to tell the two apart check `isRestricted` first.
     var isRestricted: Bool {
-        EKEventStore.authorizationStatus(for: .reminder) == .restricted
+        guard !isEventKitDisarmed else { return false }
+        return EKEventStore.authorizationStatus(for: .reminder) == .restricted
     }
 
     /// **The one fold, read by every reminders surface.** `RemindersConnectionState` is what the
@@ -109,12 +111,15 @@ final class RemindersManager {
     @ObservationIgnored private var publication = RemindersPublicationGuard()
 
     private let store: EKEventStore
+    // Fixed at init: agent/UI launches cannot reach the owner's Reminders store.
+    private let isEventKitDisarmed: Bool
     private let fetchIncompleteReminders: RemindersFetch
     private var storeObserver: NSObjectProtocol?
 
     private init() {
         let store = EKEventStore()
         self.store = store
+        self.isEventKitDisarmed = CadenceEventKitLaunchGate.isDisarmedForThisProcess
         self.fetchIncompleteReminders = { publish in
             let predicate = store.predicateForIncompleteReminders(
                 withDueDateStarting: nil,
@@ -139,8 +144,10 @@ final class RemindersManager {
     /// Reminders grant, so re-deriving would clear `isAuthorized` before the first fetch could ever
     /// be issued. Calling `refreshAuthorizationState()` on such an instance is therefore a faithful
     /// way to test what losing the grant does to a fetch already in flight.
-    init(fetchIncompleteReminders: @escaping RemindersFetch, startsAuthorized: Bool) {
+    init(fetchIncompleteReminders: @escaping RemindersFetch, startsAuthorized: Bool, launchEnvironment: [String: String]? = nil) {
         self.store = EKEventStore()
+        self.isEventKitDisarmed = launchEnvironment.map { CadenceEventKitLaunchGate.isDisarmed(in: $0) }
+            ?? CadenceEventKitLaunchGate.isDisarmedForThisProcess
         self.fetchIncompleteReminders = fetchIncompleteReminders
         self.isAuthorized = startsAuthorized
     }
@@ -150,10 +157,16 @@ final class RemindersManager {
     /// every status that used to pass here. This also matches `CalendarManager`.
     func refreshAuthorizationState() {
         reconcileLedger.authorizationRefreshes += 1
+        guard !isEventKitDisarmed else {
+            isAuthorized = false
+            stopObserving()
+            adopt([])
+            return
+        }
         let status = EKEventStore.authorizationStatus(for: .reminder)
         isAuthorized = status == .fullAccess
 
-        if isAuthorized {
+        if isAuthorized, !isEventKitDisarmed {
             // A real grant retires the session record — it can only ever add a denial the cached
             // status has not caught up with, never contradict one it has.
             deniedInThisSession = false
@@ -173,12 +186,15 @@ final class RemindersManager {
     /// again for anything else, because `RemindersConnectionState` folds an unrecognised status
     /// into `.notDetermined` and offers **Allow Access** over an arm that cannot prompt.
     ///
-    /// Both exits go through `refuse(recordingDenial:)` now, and what to record comes from
+    /// Both native refusals go through `refuse(recordingDenial:)`, and what to record comes from
     /// `RemindersAccessRequestPlan` rather than from a second `deniedInThisSession = true` written
-    /// out in a second branch. There is no bare `return false` left in this method, which is the
-    /// point: the bookkeeping cannot be skipped by adding one.
+    /// out in a second branch. A disarmed launch instead uses `finishDisarmedAccessRequest`:
+    /// nothing asked TCC, so there is no user denial to record. All three exits are counted.
     @discardableResult
     func requestAccess() async -> Bool {
+        guard !isEventKitDisarmed else {
+            return finishDisarmedAccessRequest()
+        }
         switch RemindersAccessRequestPlan.forStatus(EKEventStore.authorizationStatus(for: .reminder)) {
         case .alreadyAuthorized:
             refreshAuthorizationState()
@@ -217,7 +233,14 @@ final class RemindersManager {
         return true
     }
 
-    /// The one way `requestAccess()` answers `false`.
+    private func finishDisarmedAccessRequest() -> Bool {
+        isAuthorized = false
+        stopObserving()
+        adopt([])
+        return false
+    }
+
+    /// The one way a native access refusal answers `false`.
     ///
     /// Records the refusal for the rest of this launch when the plan says to — see
     /// `RemindersAccessRequestPlan.cannotAsk(recordsDenial:)` for the one status that says not to —
@@ -232,7 +255,7 @@ final class RemindersManager {
 
     func reload() {
         reconcileLedger.reloadRequests += 1
-        guard isAuthorized else {
+        guard isAuthorized, !isEventKitDisarmed else {
             adopt([])
             return
         }
@@ -287,6 +310,7 @@ final class RemindersManager {
     /// resolution says nothing itself), and an unresolvable identifier refetches.
     @discardableResult
     func completeReminder(id: String) -> AppleReminderCompletionOutcome {
+        guard !isEventKitDisarmed else { return .notAuthorized }
         // Not queried at all while unauthorized — `refusal` answers `.notAuthorized` first
         // regardless, and an unauthorized store has nothing to say about an identifier.
         let reminder = isAuthorized ? store.calendarItem(withIdentifier: id) as? EKReminder : nil
@@ -340,13 +364,14 @@ final class RemindersManager {
     }
 
     private func startObserving() {
-        guard storeObserver == nil else { return }
+        guard !isEventKitDisarmed, storeObserver == nil else { return }
         storeObserver = NotificationCenter.default.addObserver(
             forName: .EKEventStoreChanged,
             object: store,
             queue: .main
         ) { [weak self] _ in
-            self?.reload()
+            guard let self, !self.isEventKitDisarmed else { return }
+            self.reload()
         }
     }
 
@@ -355,6 +380,8 @@ final class RemindersManager {
         NotificationCenter.default.removeObserver(storeObserver)
         self.storeObserver = nil
     }
+
+    var isObservingStoreChanges: Bool { storeObserver != nil }
 
     /// `nonisolated` because `fetchReminders` already calls this from EventKit's background
     /// completion queue — the annotation states where the work actually happens rather than

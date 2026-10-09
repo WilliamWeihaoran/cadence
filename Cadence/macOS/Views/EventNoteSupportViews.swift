@@ -8,6 +8,7 @@ final class NotesNavigationManager {
     struct Request: Equatable {
         var page: NotesView.NotesPage
         var eventNoteID: UUID?
+        var noteID: UUID? = nil
         var token: UUID = UUID()
     }
 
@@ -19,6 +20,21 @@ final class NotesNavigationManager {
 
     func openMeetingNote(id: UUID) {
         request = Request(page: .meeting, eventNoteID: id)
+    }
+
+    static func page(for kind: NoteKind) -> NotesView.NotesPage? {
+        switch kind {
+        case .daily: return .daily
+        case .weekly: return .weekly
+        case .permanent: return .notepad
+        case .meeting: return .meeting
+        case .list: return nil
+        }
+    }
+
+    func openNote(id: UUID, kind: NoteKind) {
+        guard let page = Self.page(for: kind) else { return }
+        request = Request(page: page, eventNoteID: nil, noteID: id)
     }
 
     func clear() {
