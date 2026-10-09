@@ -354,8 +354,9 @@ struct CadenceSidebarMetricsTests {
     ///
     /// `Cadence/iOS/` is invisible to this macOS-built target, so this is a source read, with a
     /// non-vacuity control naming a declaration that must be in the file. Counting rather than
-    /// merely containing: `buttonHeight` carries the nav row's three frames — the expanded label,
-    /// the rail glyph and the rail row — and a fourth would mean a list row took it back.
+    /// merely containing: `buttonHeight` carries the nav row's one surviving frame — the expanded
+    /// label's — and a second would mean either a list row took it back or a rail branch returned.
+    /// It read three until T-3079 deleted `iOSSidebarStyle.rail`; see the count's own comment.
     @Test func theTouchListRowDrawsTheListHeightAndTheNavRowsKeepTheirs() throws {
         let file = CadenceSourceScan.strippingComments(
             try CadenceSourceScan.sourceFile("Cadence/iOS/iOSRootSidebar.swift")
@@ -378,8 +379,14 @@ struct CadenceSidebarMetricsTests {
             CadenceSourceScan.declarationBody("struct iOSSidebarButton: View", in: file)
         )
         #expect(
-            CadenceSourceScan.matchCount("iOSSidebarMetrics\\.buttonHeight", in: navRow) == 3,
-            "the sidebar's nav row no longer spends buttonHeight on its three frames"
+            // **One, not three, since T-3079.** The nav row spent `buttonHeight` on three frames
+            // while `iOSSidebarStyle.rail` existed: the expanded row, the rail's glyph frame and
+            // the rail container. T-3079 deleted `.rail` and both `railLabel` bodies on the
+            // owner's instruction, so two of the three went with the drawing they sized. The
+            // survivor is the expanded row's own `.frame(height:)` at the end of `expandedLabel`.
+            // Do not "restore" the 3: a second one here would mean a rail branch came back.
+            CadenceSourceScan.matchCount("iOSSidebarMetrics\\.buttonHeight", in: navRow) == 1,
+            "the sidebar's nav row no longer spends buttonHeight on its expanded row's frame"
         )
         #expect(
             !navRow.contains("iOSSidebarMetrics.listRowHeight"),

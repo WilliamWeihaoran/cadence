@@ -297,7 +297,12 @@ private struct iOSSearchMoreResultsRow: View {
         Button(action: continuation.reveal) {
             HStack(spacing: 12) {
                 Image(systemName: "chevron.down")
-                    .font(.system(size: 13, weight: .semibold))
+                    // The companion text's role, which is `CadenceTypography`'s rule for a glyph:
+                    // there is no separate glyph curve, and a chevron that grew on a different
+                    // ramp from the sentence it points at would stop lining up with it. The base
+                    // stays the 13 it already drew — a role owns a curve and a default base, not
+                    // the only base — so this is a no-op at `DynamicTypeSize.large`.
+                    .cadenceFont(.rowTitle, base: 13, weight: .semibold)
                     .foregroundStyle(Theme.blue)
                     // The icon tile's width, so the label starts on the same vertical as every
                     // result title above it.
