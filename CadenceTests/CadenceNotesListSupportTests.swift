@@ -348,11 +348,11 @@ struct CadenceNotesListSupportTests {
     /// Notes". The tab the fold is filed under has to be that same case, or a folded Event Notes
     /// month would be filed under a kind nothing reads.
     @Test func theEventsTabIsFiledUnderTheMeetingKind() {
-        #expect(CadenceMobileNotesTab.events.noteKind == .meeting)
+        #expect(CadenceNotesTabVocabulary.events.noteKind == .meeting)
         #expect(NoteKind.meeting.rawValue == "meeting")
-        #expect(CadenceMobileNotesTab.today.noteKind == .daily)
-        #expect(CadenceMobileNotesTab.week.noteKind == .weekly)
-        #expect(CadenceMobileNotesTab.notepad.noteKind == .permanent)
+        #expect(CadenceNotesTabVocabulary.today.noteKind == .daily)
+        #expect(CadenceNotesTabVocabulary.week.noteKind == .weekly)
+        #expect(CadenceNotesTabVocabulary.notepad.noteKind == .permanent)
     }
 
     // MARK: - The call sites

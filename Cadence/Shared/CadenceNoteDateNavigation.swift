@@ -16,7 +16,7 @@ enum CadenceNoteDateNavigation {
     ///
     /// `nil` rather than the string "Notes": the fallback is the *host's* word, and only the host
     /// knows it.
-    static func title(for tab: CadenceMobileNotesTab, dayKey: String, calendar: Calendar = .current) -> String? {
+    static func title(for tab: CadenceNotesTabVocabulary, dayKey: String, calendar: Calendar = .current) -> String? {
         switch tab {
         case .today:
             return dayLabel(forDayKey: dayKey)
@@ -56,7 +56,7 @@ enum CadenceNoteDateNavigation {
     /// True when the panel is showing the note it would have shown before this control existed.
     /// The header uses it to decide whether the title needs a "jump back" affordance beside it —
     /// a date picker with no way home is a trap on a phone.
-    static func isCurrentPeriod(tab: CadenceMobileNotesTab, dayKey: String, today: String = DateFormatters.todayKey()) -> Bool {
+    static func isCurrentPeriod(tab: CadenceNotesTabVocabulary, dayKey: String, today: String = DateFormatters.todayKey()) -> Bool {
         switch tab {
         case .today:
             return dayKey == today
@@ -78,7 +78,7 @@ enum CadenceNoteDateNavigation {
     /// Whether the tab's note is addressed by a day key at all. Notepad is one standing note and
     /// Event Notes is a list, so neither takes a date — the picker is hidden rather than disabled,
     /// because there is nothing to pick.
-    static func supportsDateSelection(_ tab: CadenceMobileNotesTab) -> Bool {
+    static func supportsDateSelection(_ tab: CadenceNotesTabVocabulary) -> Bool {
         switch tab {
         case .today, .week: return true
         case .notepad, .events: return false

@@ -1061,7 +1061,7 @@ struct NotepadNoteListRow: View {
 
 // MARK: - Tab → kind
 
-extension CadenceMobileNotesTab {
+extension CadenceNotesTabVocabulary {
     /// The `NoteKind` this tab lists.
     ///
     /// Declared here rather than on the enum because the fold state is keyed by `NoteKind` and this
