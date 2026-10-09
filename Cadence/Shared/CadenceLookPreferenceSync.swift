@@ -97,7 +97,11 @@ final class CadenceLookPreferenceSync {
         // Before the early return, not after it: the flag means "this device has read the record
         // set", and an empty set is a reading. See `hasAdopted`.
         hasAdopted = true
-        guard let record = CadenceLookPreferenceStore.current(from: records) else { return [] }
+        // The whole row set read as one look, not just the winning row (T-3040). When a startup
+        // write has already minted a row that outranks an import the device had not read yet, the
+        // import is still there and still carries the owner's accent, tints and pairs; `resolved`
+        // is what reads them back out of it. For the ordinary one-row case it is exactly the row.
+        guard let record = CadenceLookPreferenceStore.resolved(from: records) else { return [] }
         var changed: Set<String> = []
 
         for (key, value) in CadenceLookPreferenceStore.mirrorWrites(
@@ -187,13 +191,17 @@ final class CadenceLookPreferenceSync {
     /// local change tries again.
     func publish(records: [LookPreference], in modelContext: ModelContext, now: Date = Date()) {
         guard hasAdopted else { return }
-        let record = CadenceLookPreferenceStore.current(from: records)
+        // Against the folded reading rather than the winning row alone (T-3040), so a pair this
+        // device recovered from a losing row is part of what a write starts from and rides up into
+        // the winner on the next real change. The fold is not itself a change: `pendingWrite`
+        // compares the candidate with the same reading, so nothing publishes just for having read.
+        let record = CadenceLookPreferenceStore.resolved(from: records)
         guard let pending = CadenceLookPreferenceStore.pendingWrite(
             accentPaletteID: accentDefaults.string(forKey: CadenceAccentPaletteStore.defaultsKey) ?? "",
             sidebarTabColorsRaw: defaults.string(forKey: CadencePreferenceKeys.sidebarTabColors) ?? "",
             currentMirrors: CadenceLookPreferenceStore.currentMirrors(in: defaults, on: platform),
             currentCalendarMirrors: CadenceLookPreferenceStore.currentCalendarMirrors(in: defaults),
-            record: record,
+            resolved: record,
             on: platform
         ) else { return }
 

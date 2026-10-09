@@ -853,4 +853,155 @@ struct CadenceLookPreferenceTests {
             }
         }
     }
+
+    // MARK: - T-3040's residual: what a minted row costs once it has already won
+
+    /// **The clause `hasAdopted` cannot shut, and this does not claim to shut it either.**
+    ///
+    /// Nothing in-process can tell *"no row has downloaded yet"* from *"no row has ever existed"*
+    /// while a cold CloudKit import is in flight, so a device that touches a setting inside that
+    /// window still mints a row stamped `now`, and the import still arrives stamped older and still
+    /// loses `current(from:)`. That ordering is not fixed here and nothing below asserts that it is.
+    /// What is asserted is the **cost**: the imported row is still in the store — the model's
+    /// *Duplicates* note is why nothing deletes it — so the month of choices it carries is readable
+    /// instead of outranked into silence.
+    ///
+    /// The fixture is the lost case exactly: the minted row is newer and says one thing, about the
+    /// one chip this device touched; the import is older and carries the accent, the tints and two
+    /// pairs this device has never had an opinion about.
+    @Test func anImportThatLostToAMintedRowStillGivesBackEverythingTheMintedRowIsSilentAbout() throws {
+        try withTemporaryDefaults("look-fold") { defaults in
+            try withTemporaryDefaults("look-fold-accent") { accents in
+                let minted = LookPreference(
+                    taskPresentationRaw: "allTasks.mode=priority",
+                    updatedAt: Date(timeIntervalSince1970: 10_000)
+                )
+                let imported = LookPreference(
+                    accentPaletteID: "ember",
+                    sidebarTabColorsRaw: "inbox=#FF0000",
+                    taskPresentationRaw: "allTasks.mode=listOrder;allTasks.grouping=project;inbox.mode=priority",
+                    calendarPresentationRaw: "workHours.start=480;workHours.end=1020",
+                    updatedAt: Date(timeIntervalSince1970: 1_000)
+                )
+
+                let sync = CadenceLookPreferenceSync(defaults: defaults, accentDefaults: accents, platform: .macOS)
+                let changed = sync.adopt(records: [minted, imported], applyAccent: false)
+
+                // The winner still wins everything it names: this device moved the All Tasks chip
+                // and is not second-guessed by a row a month older that happens to mention it.
+                #expect(
+                    defaults.string(forKey: CadencePreferenceKeys.allTasksSortField) == TaskSortField.priority.rawValue,
+                    "a losing row overrode a key the winner names"
+                )
+                // And everything the winner is silent about comes back.
+                #expect(defaults.string(forKey: CadencePreferenceKeys.allTasksGroupingMode) == "project")
+                #expect(
+                    defaults.string(forKey: CadencePreferenceKeys.inboxSortField) == TaskSortField.priority.rawValue
+                )
+                #expect(defaults.string(forKey: CadencePreferenceKeys.sidebarTabColors) == "inbox=#FF0000")
+                #expect(defaults.integer(forKey: CalendarWorkHoursPreferences.startMinuteKey) == 480)
+                #expect(defaults.integer(forKey: CalendarWorkHoursPreferences.endMinuteKey) == 1_020)
+                #expect(
+                    changed.contains(CadenceAccentPaletteStore.defaultsKey),
+                    "the palette the owner picked a month ago stayed lost"
+                )
+                #expect(Store.resolved(from: [minted, imported])?.accentPaletteID == "ember")
+
+                // Non-vacuity: a key NO row names is still left exactly where this device had it,
+                // which is the absent-key rule the fold must not have widened into "take anything".
+                #expect(defaults.object(forKey: CadencePreferenceKeys.todaySortMode) == nil)
+            }
+        }
+    }
+
+    /// The fold can only ADD, and both directions of that are pinned here rather than inferred:
+    /// a key the winner names is the winner's however old the row that disagrees, and the newest
+    /// loser wins among losers. Pure, so it says what the grammar does without a container.
+    @Test func foldingPrefersTheWinnerThenTheNewestLoserAndNeverTheOtherWayRound() {
+        let winner = LookPreference(
+            taskPresentationRaw: "allTasks.grouping=none",
+            updatedAt: Date(timeIntervalSince1970: 300)
+        )
+        let middle = LookPreference(
+            accentPaletteID: "glacier",
+            taskPresentationRaw: "allTasks.grouping=project;inbox.mode=priority",
+            updatedAt: Date(timeIntervalSince1970: 200)
+        )
+        let oldest = LookPreference(
+            accentPaletteID: "ember",
+            taskPresentationRaw: "inbox.mode=listOrder;today.mode=doDate",
+            updatedAt: Date(timeIntervalSince1970: 100)
+        )
+
+        let folded = Store.resolved(from: [oldest, winner, middle])
+        #expect(folded?.taskPresentationRaw == "allTasks.grouping=none;inbox.mode=priority;today.mode=doDate")
+        #expect(folded?.accentPaletteID == "glacier", "an older row outranked a newer one")
+        #expect(folded?.sidebarTabColorsRaw.isEmpty == true, "a field no row names was invented")
+        #expect(Store.resolved(from: []) == nil)
+
+        // One row folds to itself, which is the case every ordinary device is in.
+        #expect(Store.resolved(from: [winner])?.taskPresentationRaw == "allTasks.grouping=none")
+        // And the row a write goes into is still the head of the same order, spelled once.
+        #expect(Store.current(from: [oldest, winner, middle])?.id == winner.id)
+        #expect(Store.ordered(from: [oldest, winner, middle]).map(\.id) == [winner.id, middle.id, oldest.id])
+    }
+
+    /// **Reading is not writing.** The fold must not look like a change: if it did, every launch
+    /// over a two-row store would bump `updatedAt` and ship a write to the other two devices for
+    /// having read. And it must not mint a third row either, which is the bound
+    /// `aLateDeployDeliveringTwoRowsCostsALookAndNeverTheStore` holds for the un-folded path.
+    ///
+    /// Then the second half, which is where the recovery becomes durable: the next change the
+    /// owner actually makes carries the recovered pairs up into the winning row, because
+    /// `pendingWrite` starts from the folded reading rather than from the winner alone.
+    @Test func theFoldPublishesNothingByItselfAndRidesUpOnTheNextRealChange() throws {
+        try withTemporaryDefaults("look-fold-publish") { defaults in
+            try withTemporaryDefaults("look-fold-publish-accent") { accents in
+                let container = try CadenceTestStore.container()
+                let context = ModelContext(container)
+                let minted = LookPreference(
+                    taskPresentationRaw: "allTasks.mode=priority",
+                    updatedAt: Date(timeIntervalSince1970: 10_000)
+                )
+                let imported = LookPreference(
+                    accentPaletteID: "ember",
+                    sidebarTabColorsRaw: "inbox=#FF0000",
+                    taskPresentationRaw: "allTasks.grouping=project",
+                    updatedAt: Date(timeIntervalSince1970: 1_000)
+                )
+                context.insert(minted)
+                context.insert(imported)
+                try context.save()
+
+                let rows = try context.fetch(FetchDescriptor<LookPreference>())
+                let sync = CadenceLookPreferenceSync(defaults: defaults, accentDefaults: accents, platform: .macOS)
+                sync.adopt(records: rows, applyAccent: false)
+                sync.publish(records: rows, in: context, now: Date(timeIntervalSince1970: 20_000))
+
+                let afterReading = try ModelContext(container).fetch(FetchDescriptor<LookPreference>())
+                #expect(afterReading.count == 2, "reading the losing row minted a third")
+                #expect(
+                    Store.current(from: afterReading)?.updatedAt == Date(timeIntervalSince1970: 10_000),
+                    "the fold published itself as a change"
+                )
+                #expect(
+                    Store.current(from: afterReading)?.taskPresentationRaw == "allTasks.mode=priority",
+                    "the fold rewrote the winning row for nothing"
+                )
+
+                // Now a real local change, and the recovered pairs go up with it.
+                defaults.set("Custom", forKey: CadencePreferenceKeys.allTasksSortField)
+                sync.publish(records: rows, in: context, now: Date(timeIntervalSince1970: 30_000))
+
+                let afterChange = try ModelContext(container).fetch(FetchDescriptor<LookPreference>())
+                #expect(afterChange.count == 2, "the change minted a third row")
+                let winner = try #require(Store.current(from: afterChange))
+                #expect(winner.taskPresentationRaw == "allTasks.grouping=project;allTasks.mode=listOrder")
+                #expect(winner.accentPaletteID == "ember", "the recovered palette was dropped on the next write")
+                #expect(winner.sidebarTabColorsRaw == "inbox=#FF0000")
+                #expect(afterChange.contains { $0.accentPaletteID == "ember" && $0.taskPresentationRaw == "allTasks.grouping=project" },
+                        "the losing row was deleted")
+            }
+        }
+    }
 }

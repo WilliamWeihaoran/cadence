@@ -80,14 +80,91 @@ enum CadenceLookPreferenceStore {
 
     // MARK: - Which record
 
-    /// The row every device must agree on when more than one exists. Newest edit wins;
-    /// `id.uuidString` breaks a tie so two devices reading the same pair pick the same row rather
-    /// than each picking its own and writing over the other forever.
-    static func current(from records: [LookPreference]) -> LookPreference? {
-        records.max { lhs, rhs in
-            if lhs.updatedAt != rhs.updatedAt { return lhs.updatedAt < rhs.updatedAt }
-            return lhs.id.uuidString < rhs.id.uuidString
+    /// Every row, newest first, with `id.uuidString` breaking a tie — one strict total order, so
+    /// three devices handed the same rows walk them in the same sequence rather than each picking
+    /// its own.
+    static func ordered(from records: [LookPreference]) -> [LookPreference] {
+        records.sorted { lhs, rhs in
+            if lhs.updatedAt != rhs.updatedAt { return lhs.updatedAt > rhs.updatedAt }
+            return lhs.id.uuidString > rhs.id.uuidString
         }
+    }
+
+    /// The row every device must agree on when more than one exists, and the row a write goes
+    /// into. Newest edit wins; the tie-break is `ordered(from:)`'s, spelled once there so the row
+    /// that wins and the row that leads the fold below cannot drift apart.
+    static func current(from records: [LookPreference]) -> LookPreference? {
+        ordered(from: records).first
+    }
+
+    /// The whole row set read as one look: the winner's own values, plus — for anything the winner
+    /// is **silent** about — the newest loser that is not silent (T-3040).
+    ///
+    /// **This is not the race guard and does not pretend to be one.** `CadenceLookPreferenceSync`'s
+    /// `hasAdopted` stops a startup write from minting a row ahead of this launch's first adopt;
+    /// what it cannot stop is the clause that ticket left open, because nothing in-process can tell
+    /// *"no row has downloaded yet"* from *"no row has ever existed"* while a cold CloudKit import
+    /// is still in flight. A device that touches a setting inside that window still mints, and the
+    /// import then arrives stamped older and **loses `current(from:)` forever**. This does not make
+    /// that ordering any less possible. It makes its cost recoverable: the imported row is still
+    /// there — `LookPreference`'s own *Duplicates* note is why nothing deletes it — so a month of
+    /// the owner's choices can be read back out of it instead of being outranked into silence.
+    ///
+    /// **Silence is per field, and per *key* inside the two pair maps.** That is the whole of the
+    /// safety argument, because it means the fold can only ever ADD:
+    ///
+    /// - A key the winner names is the winner's, whatever a loser says. A device that genuinely
+    ///   moved a chip is not second-guessed by an older row that happens to mention the same key.
+    /// - A key no row names stays absent, which `mirrorWrites` already reads as "leave this device
+    ///   exactly as the person left it".
+    /// - Only a key the winner has never carried is filled from a loser — and the winner having
+    ///   never carried it means the device that wrote the winner had nothing to say about it.
+    ///
+    /// Empty is silence for the two plain strings, which is the same reading `adopt`, `pendingWrite`
+    /// and `currentMirrors` each already take of an empty value: *never chosen here*, never *chosen
+    /// to be nothing*. A minted row carries an empty accent and empty tints precisely because the
+    /// minting device never chose either, so those are the two fields the import gets back first.
+    ///
+    /// **Nothing is deleted and nothing is written by reading.** The losers stay inert exactly as
+    /// the model's *Duplicates* note requires; the fold is a read. It becomes durable only when the
+    /// next genuine local change publishes, because `pendingWrite` starts from this reading rather
+    /// than from the winning row alone — so the recovered pairs ride up into the winner on a write
+    /// that was happening anyway, and no row's `updatedAt` is bumped for the fold itself.
+    struct Resolved: Sendable, Equatable {
+        var accentPaletteID: String
+        var sidebarTabColorsRaw: String
+        var taskPresentationRaw: String
+        var calendarPresentationRaw: String
+    }
+
+    /// `nil` only when there is no row at all — which is the same answer `current(from:)` gives, so
+    /// the mint decision below reads exactly as it did before.
+    static func resolved(from records: [LookPreference]) -> Resolved? {
+        let ordered = ordered(from: records)
+        guard let winner = ordered.first else { return nil }
+
+        var accentPaletteID = winner.accentPaletteID
+        var sidebarTabColorsRaw = winner.sidebarTabColorsRaw
+        var task = pairs(fromRaw: winner.taskPresentationRaw)
+        var calendar = pairs(fromRaw: winner.calendarPresentationRaw)
+
+        for loser in ordered.dropFirst() {
+            if accentPaletteID.isEmpty { accentPaletteID = loser.accentPaletteID }
+            if sidebarTabColorsRaw.isEmpty { sidebarTabColorsRaw = loser.sidebarTabColorsRaw }
+            for (key, value) in pairs(fromRaw: loser.taskPresentationRaw) where task[key] == nil {
+                task[key] = value
+            }
+            for (key, value) in pairs(fromRaw: loser.calendarPresentationRaw) where calendar[key] == nil {
+                calendar[key] = value
+            }
+        }
+
+        return Resolved(
+            accentPaletteID: accentPaletteID,
+            sidebarTabColorsRaw: sidebarTabColorsRaw,
+            taskPresentationRaw: raw(from: task),
+            calendarPresentationRaw: raw(from: calendar)
+        )
     }
 
     // MARK: - The mirror table
@@ -368,6 +445,40 @@ enum CadenceLookPreferenceStore {
         currentMirrors: [String: String],
         currentCalendarMirrors: [String: String] = [:],
         record: LookPreference?,
+        on platform: Platform = .current
+    ) -> (
+        accentPaletteID: String,
+        sidebarTabColorsRaw: String,
+        taskPresentationRaw: String,
+        calendarPresentationRaw: String
+    )? {
+        pendingWrite(
+            accentPaletteID: accentPaletteID,
+            sidebarTabColorsRaw: sidebarTabColorsRaw,
+            currentMirrors: currentMirrors,
+            currentCalendarMirrors: currentCalendarMirrors,
+            resolved: record.map {
+                Resolved(
+                    accentPaletteID: $0.accentPaletteID,
+                    sidebarTabColorsRaw: $0.sidebarTabColorsRaw,
+                    taskPresentationRaw: $0.taskPresentationRaw,
+                    calendarPresentationRaw: $0.calendarPresentationRaw
+                )
+            },
+            on: platform
+        )
+    }
+
+    /// The same question asked of the whole row set rather than of one row (T-3040). `publish`
+    /// takes this spelling, so a pair recovered from a loser by ``resolved(from:)`` is part of
+    /// `stored` here — which is what carries it up into the winning row on the next real change,
+    /// and what stops the fold from reading as a change in its own right.
+    static func pendingWrite(
+        accentPaletteID: String,
+        sidebarTabColorsRaw: String,
+        currentMirrors: [String: String],
+        currentCalendarMirrors: [String: String] = [:],
+        resolved record: Resolved?,
         on platform: Platform = .current
     ) -> (
         accentPaletteID: String,
