@@ -20,6 +20,16 @@ compact. The full former guide is preserved at `../../docs/IOS_AGENTS_REFERENCE.
   (`NO-SUCH-SIMULATOR`, exit 10) and names the ones it does, before building — so the name above is
   a convenience, not the guard. The macOS test target never compiles this directory, so skipping
   this gate means an iOS change was never compiled at all (T-1282).
+- **An iOS UI test runs through `CadenceUITestsOnly`, never through `Cadence`** (T-2074).
+  `xcodebuild` builds every testable in the scheme whatever `-only-testing:` says, and `CadenceTests`
+  cannot compile for iOS — 35 files open with a bare `import AppKit`, so `-scheme Cadence` on an iOS
+  destination dies at `CadenceAccentPaletteTests.swift:1:8` with 0 tests run. The shared
+  `CadenceUITestsOnly` scheme holds `CadenceUITests` alone: `scripts/simulator-claim.sh claim <id>`,
+  then `scripts/xcb.sh <id> test -scheme CadenceUITestsOnly -destination 'platform=iOS Simulator,id=<udid>'
+  -only-testing:CadenceUITests/<Suite>`. Measured 2026-10-09: 2 tests, 0 failures, 27.9 s against
+  exit 65 and 0 test result lines through `Cadence`. It needs no automation-mode grant; that is the
+  macOS half (T-2049). Pinned by
+  `CadenceBuildInvocationHygieneTests.theUITestsOnlySchemeHoldsTheUITargetAloneSoAnIOSRunNeverBuildsTheMacOnlyUnitTarget`.
 
 ## Current Shape
 

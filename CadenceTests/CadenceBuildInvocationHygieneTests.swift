@@ -1134,6 +1134,57 @@ struct CadenceBuildInvocationHygieneTests {
         }
     }
 
+    /// **The scheme that lets an iOS UI test run at all** ([[T-2074]]).
+    ///
+    /// `xcodebuild` builds every testable in the scheme whatever `-only-testing:` says, and
+    /// `CadenceTests` cannot compile for iOS — 35 of its files open with a bare `import AppKit`,
+    /// and `CadenceAccentPaletteTests.swift:1:8` fails dependency scanning before anything else
+    /// runs. Measured again 2026-10-09: `-scheme Cadence` on `platform=iOS Simulator` with
+    /// `-only-testing:CadenceUITests/CadenceIOSSeededStoreUITests` exits 65 with **1 compile error
+    /// and 0 test result lines**, on exactly that module dependency; the same filter through
+    /// `CadenceUITestsOnly` executes **2 tests, 0 failures, 27.9 s**.
+    ///
+    /// So the whole property is *which testables the scheme holds*, and it is pinned in both
+    /// directions. The second half is the control that matters: this is a SECOND scheme, not a
+    /// narrowing of the one everything else uses — a "fix" that removed `CadenceTests` from
+    /// `Cadence.xcscheme` would satisfy the first three checks and silently stop the unit suite
+    /// running anywhere, including CI.
+    @Test func theUITestsOnlySchemeHoldsTheUITargetAloneSoAnIOSRunNeverBuildsTheMacOnlyUnitTarget() throws {
+        let uiOnly = try CadenceSourceScan.sourceFile(
+            "Cadence.xcodeproj/xcshareddata/xcschemes/CadenceUITestsOnly.xcscheme"
+        )
+        let main = try CadenceSourceScan.sourceFile(
+            "Cadence.xcodeproj/xcshareddata/xcschemes/Cadence.xcscheme"
+        )
+
+        // Non-vacuity first: both are read by path, and an empty string would satisfy every
+        // `!contains` below while proving nothing.
+        #expect(uiOnly.count > 1_000, "CadenceUITestsOnly.xcscheme read as \(uiOnly.count) bytes")
+        #expect(main.count > 1_000, "Cadence.xcscheme read as \(main.count) bytes")
+
+        #expect(
+            uiOnly.contains("BlueprintName = \"CadenceUITests\""),
+            "the UI-only scheme no longer holds CadenceUITests, so it tests nothing"
+        )
+        #expect(
+            !uiOnly.contains("BlueprintName = \"CadenceTests\""),
+            "the UI-only scheme holds CadenceTests again, which cannot compile for iOS (T-2074)"
+        )
+        // T-1116: the TestAction pins the zone, and a second scheme that forgot it would give
+        // date-dependent tests a different answer from the one every other run gets.
+        #expect(
+            uiOnly.contains("key = \"TZ\"") && uiOnly.contains("value = \"UTC\""),
+            "the UI-only scheme's TestAction does not pin TZ=UTC (T-1116)"
+        )
+
+        // The control: the main scheme still runs both targets.
+        #expect(
+            main.contains("BlueprintName = \"CadenceTests\"")
+                && main.contains("BlueprintName = \"CadenceUITests\""),
+            "Cadence.xcscheme lost a testable -- the UI-only scheme is an ADDITION, not a narrowing"
+        )
+    }
+
     // MARK: - T-1516 witnesses
 
     /// ONE real diagnostic, whole, out of a `build-for-testing` log of this repository captured
