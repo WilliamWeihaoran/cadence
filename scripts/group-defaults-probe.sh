@@ -2,7 +2,8 @@
 # T-1176. DID A LAUNCH WRITE THE APP-GROUP SUITE? READ IT THE ONE WAY THAT CAN ANSWER.
 #
 #   ./scripts/group-defaults-probe.sh sample [<record-file>]   # exit 0 read, 3 absent, 2 refused
-#   ./scripts/group-defaults-probe.sh compare <before> <after> # exit 0 UNMOVED, 1 MOVED, 3 NO-SAMPLE
+#   ./scripts/group-defaults-probe.sh compare <before> <after> # exit 0 UNMOVED, 1 MOVED,
+#                                                             #   4 RE-ENCODED, 3 NO-SAMPLE
 #   ./scripts/group-defaults-probe.sh selftest
 #
 # WHY THIS EXISTS, AND WHY IT IS AN INSTRUMENT RATHER THAN A FIX
@@ -29,8 +30,16 @@
 # record path that looks like it lands in the group container, a backups folder or the Recovery
 # store is refused outright (`REFUSING-TO-WRITE`).
 #
-# **It does not attribute the change to a writer.** `MOVED` says this file differs between two
-# readings and nothing more. cfprefsd, the owner's own `Cadence.app` and an agent's launched build
+# **A byte difference is not a key difference, and the verdict says which it was.** `MOVED` means
+# the file differs AND at least one of the four keys moved with it; `RE-ENCODED` (exit 4) means the
+# bytes differ and not one key does. That second verdict is not fastidiousness -- it was measured
+# live on the owner's own suite on 2026-10-09, sha256 `81c4a4ac...` -> `9eae14a7...` at 135 bytes
+# both times with all four keys identical to the character. cfprefsd re-encodes a binary plist when
+# it likes, so reported as MOVED that reading would answer T-1176's question wrongly, in the
+# expensive direction, on the one reading the owner's window is being spent to get.
+#
+# **It does not attribute the change to a writer either.** `MOVED` says this file differs between
+# two readings and that a key moved; it does not say who moved it. cfprefsd, the owner's own `Cadence.app` and an agent's launched build
 # all write this suite, and the file records none of them, so every verdict carries
 # `NOT AN ATTRIBUTION` and each sample records whether the owner's app was up when it was taken.
 # A reading taken while their copy is running cannot answer T-1176 at all, and says so rather than
@@ -158,7 +167,7 @@ gdp_value() {  # $1 = plist, $2 = key -> the value, or nothing when the key is a
 # something. What is worth protecting in that container is `Data/Library` (the preferences and the
 # store), `Data/Documents`, and the private store roots under `CadenceUITestStores`; `Data/tmp`
 # below those is scratch and `run-macos-app.sh stop` deletes it whole. Measured 2026-10-09;
-# `CadenceGroupDefaultsProbeSelftestTests` is what runs this script in that host, and section 6
+# `CadenceGuardScriptSelftestTests` is what runs this script in that host, and section 6
 # holds the discrimination in both directions rather than just the refusal.
 gdp_refuse_write_target() {  # $1 = record path
   local target="$1"
@@ -212,7 +221,7 @@ gdp_key_value() {  # $1 = record, $2 = key
 }
 
 group_defaults_compare() {  # $1 = before record, $2 = after record
-  local before="$1" after="$2" f key b a moved=0
+  local before="$1" after="$2" f key b a moved=0 keys_moved=0
   for f in "$before" "$after"; do
     if [[ ! -r "$f" ]]; then
       say "  group-defaults: NO-SAMPLE -- '$f' is not readable; nothing was compared."
@@ -233,16 +242,25 @@ group_defaults_compare() {  # $1 = before record, $2 = after record
   for key in $GDP_KEYS; do
     b="$(gdp_key_value "$before" "$key")" || b="(not sampled)"
     a="$(gdp_key_value "$after" "$key")" || a="(not sampled)"
-    if [[ "$b" == "ABSENT" && "$a" != "ABSENT" ]]; then say "  key $key: CREATED (absent -> $a)"
-    elif [[ "$b" != "ABSENT" && "$a" == "ABSENT" ]]; then say "  key $key: REMOVED ($b -> absent)"
-    elif [[ "$b" != "$a" ]]; then say "  key $key: CHANGED ($b -> $a)"
+    if [[ "$b" == "ABSENT" && "$a" != "ABSENT" ]]; then say "  key $key: CREATED (absent -> $a)"; keys_moved=1
+    elif [[ "$b" != "ABSENT" && "$a" == "ABSENT" ]]; then say "  key $key: REMOVED ($b -> absent)"; keys_moved=1
+    elif [[ "$b" != "$a" ]]; then say "  key $key: CHANGED ($b -> $a)"; keys_moved=1
     else say "  key $key: HELD ($a)"; fi
   done
 
   [[ "$(gdp_field "$before" sha256)" != "$(gdp_field "$after" sha256)" ]] && moved=1
 
-  if (( moved )); then
-    say "  group-defaults: MOVED -- the file differs between the two readings."
+  if (( moved && keys_moved )); then
+    say "  group-defaults: MOVED -- the file differs and at least one of the four keys moved with it."
+  elif (( moved )); then
+    say "  group-defaults: RE-ENCODED -- the file's BYTES differ and not one of the four keys does."
+    say "              This is a real reading, not a rounding error, and it is the false MOVED this"
+    say "              tool would otherwise hand you. Measured live 2026-10-09 on the owner's own"
+    say "              suite: sha256 81c4a4ac... -> 9eae14a7..., 135 bytes BOTH times, all four keys"
+    say "              identical to the character. cfprefsd rewrites a binary plist whenever it"
+    say "              feels like it, and a rewrite can permute the bytes without touching a value,"
+    say "              so a sha256 difference on its own does NOT mean a launch wrote these keys --"
+    say "              which is the one sentence T-1176 is trying to be able to say."
   else
     say "  group-defaults: UNMOVED -- byte-identical between the two readings."
   fi
@@ -255,7 +273,8 @@ group_defaults_compare() {  # $1 = before record, $2 = after record
       unknown) say "              ATTRIBUTION WITHHELD: whether the owner's Cadence was running could not be read at ${f:t} (the process list was denied), which is not the same as 'it was not'." ;;
     esac
   done
-  (( moved )) && return 1
+  (( moved && keys_moved )) && return 1
+  (( moved )) && return 4
   return 0
 }
 
@@ -354,6 +373,21 @@ exit 3' > "$ws/pgrep-blind"; chmod +x "$ws/pgrep-blind"
     $( (( rc == 1 )) && [[ "$out" == *"group-defaults: MOVED"* && "$out" == *"cadence.widgets.lastReloadAt: CHANGED"* ]] && print 1 || print 0 ) "exit $rc: $out"
   check "a verdict carries NOT AN ATTRIBUTION and names no writer" \
     $( [[ "$out" == *"NOT AN ATTRIBUTION"* ]] && print 1 || print 0 ) "$out"
+
+  # The other half of the verdict, and the live reading that earned it. A byte difference is NOT a
+  # key difference: on 2026-10-09 the owner's own suite went 81c4a4ac... -> 9eae14a7... at 135 bytes
+  # both times with all four keys identical, because cfprefsd re-encodes a binary plist whenever it
+  # likes. Reported as MOVED, that is the false positive that would answer T-1176 wrongly.
+  write_plist "$ws/fixtures/e.plist" "1791260184.86859" '	<key>cadence.unrelated.setting</key>
+	<string>x</string>'
+  touch -t 200001010101.01 "$ws/fixtures/e.plist"
+  probe "$ws/fixtures/e.plist" sample "$ws/records/e"
+  probe NONE compare "$ws/records/a" "$ws/records/e"
+  check "different bytes, every tracked key HELD -> RE-ENCODED (exit 4), never MOVED" \
+    $( (( rc == 4 )) && [[ "$out" == *"group-defaults: RE-ENCODED"* && "$out" != *"group-defaults: MOVED"* ]] && print 1 || print 0 ) "exit $rc: $out"
+  probe NONE compare "$ws/records/a" "$ws/records/c"
+  check "different bytes AND a key that moved -> MOVED (exit 1), never RE-ENCODED" \
+    $( (( rc == 1 )) && [[ "$out" == *"group-defaults: MOVED"* && "$out" != *"RE-ENCODED"* ]] && print 1 || print 0 ) "exit $rc: $out"
 
   say "-- 3. absent and present are different facts: two of the three keys do not exist yet"
   write_plist "$ws/fixtures/d.plist" "1791260184.86859" '	<key>cadence.widgets.today.recentlyCompletedTasks</key>
