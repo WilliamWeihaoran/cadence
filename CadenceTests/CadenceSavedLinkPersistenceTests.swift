@@ -47,7 +47,11 @@ struct CadenceSavedLinkPersistenceTests {
         #expect(modifier.contains("CadenceSavedLinkPersistence.deleteConfirmationMessage(title: selected.title)"))
         let mac = try read("Cadence/macOS/Views/LinksView.swift")
         #expect(mac.contains("struct LinksView: View"))
-        #expect(mac.contains("title: \"Delete Link?\""))
+        // T-3095: the Mac reads the shared constant rather than re-typing it, the way
+        // `TimelineBundleBlock` already reads `TaskBundle.deleteConfirmationTitle`. Pinning the
+        // literal here contradicted `noCallSiteRetypesASharedStringConstant`, which forbids exactly
+        // that re-typing; both platforms now read one constant and the rendered words are unchanged.
+        #expect(mac.contains("title: CadenceSavedLinkPersistence.deleteConfirmationTitle"))
         #expect(mac.contains("message: CadenceSavedLinkPersistence.deleteConfirmationMessage(title: link.title)"))
         #expect(mac.contains("deleteLink(link)"))
     }

@@ -78,7 +78,7 @@ struct LinksView: View {
                         ForEach(links) { link in
                             LinkRow(link: link) {
                                 deleteConfirmationManager.present(
-                                    title: "Delete Link?",
+                                    title: CadenceSavedLinkPersistence.deleteConfirmationTitle,
                                     message: CadenceSavedLinkPersistence.deleteConfirmationMessage(title: link.title)
                                 ) {
                                     deleteLink(link)

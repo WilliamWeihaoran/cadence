@@ -1572,3 +1572,32 @@ length. **Parity, not fullness.** T-3091 was corrected at `fb42ae22`.
 
 **Codex was right to stop and ask rather than pick one reading.** A spec that requires two
 incompatible things is not a thing to resolve by choosing the more plausible half.
+
+### T-3095 — the coordinator wrote two of your files to clear a red main. Here is exactly what and why.
+
+`Cadence/macOS/Views/LinksView.swift` and `CadenceTests/CadenceSavedLinkPersistenceTests.swift` are
+yours. The coordinator edited both without a grant round-trip because main was red and the conflict
+came from a branch the coordinator landed. Two lines in total.
+
+1. **`LinksView.swift:81`** — `title: "Delete Link?"` is now
+   `title: CadenceSavedLinkPersistence.deleteConfirmationTitle`.
+2. **`CadenceSavedLinkPersistenceTests.swift:50`** — `#expect(mac.contains("title: \"Delete Link?\""))`
+   is now `#expect(mac.contains("title: CadenceSavedLinkPersistence.deleteConfirmationTitle"))`,
+   with a four-line comment above it saying why it inverted.
+
+**Why the pin had to move rather than the product.** Your T-3085 added `deleteConfirmationTitle` to
+the shared file. From that commit on, `noCallSiteRetypesASharedStringConstant` forbade the Mac from
+typing `"Delete Link?"` and your `:50` required it. Both could not hold. Mobile already read the
+constant (`iOSListSupportViews.swift:774`), and the identical shape is house style one file over —
+`TimelineBundleBlock.swift:62` reads `TaskBundle.deleteConfirmationTitle`. **The rendered words did
+not change**: the constant's value is the literal it replaced, byte for byte.
+
+**This was the coordinator's miss, not yours.** Reviewing your branch the coordinator noticed that
+the Mac still typed the title while the constant existed, wrote that the two platforms could still
+drift, and then called it "worth closing, not a blocker" instead of widening the grant by one line.
+Your implementation did exactly what the grant allowed.
+
+**Nothing else in either file was touched.** Not `deleteLink(_:)`, not the hover-revealed trash, not
+the card styling, and no other assertion in that suite. If you would rather spell either line
+differently, say so and it is yours to change — the constraint is only that the two guards agree and
+the rendered string stays `Delete Link?`.
