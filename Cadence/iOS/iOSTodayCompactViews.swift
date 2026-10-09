@@ -103,7 +103,8 @@ struct iOSCompactTodayView: View {
             iOSTaskViewOptionsBar(
                 sortMode: $sortMode,
                 showCompleted: $showCompleted,
-                completedCount: summary.completedCount
+                completedCount: summary.completedCount,
+                showsCompletedControl: false
             )
             .padding(.vertical, 2)
         }

@@ -37,7 +37,17 @@ struct NotesView: View {
 
     @Environment(NotesNavigationManager.self) private var notesNavigationManager
     @State private var page: NotesPage = .daily
-    @State private var requestedMeetingNoteID: UUID?
+    @State private var requestedNoteID: UUID?
+
+    enum RequestedSelection {
+        @discardableResult
+        static func apply(_ requestedID: inout UUID?, selection: inout UUID?, notes: [Note]) -> Bool {
+            guard let id = requestedID, notes.contains(where: { $0.id == id }) else { return false }
+            selection = id
+            requestedID = nil
+            return true
+        }
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -61,13 +71,13 @@ struct NotesView: View {
             Group {
                 switch page {
                 case .daily:
-                    DailyNotesPage()
+                    DailyNotesPage(requestedNoteID: $requestedNoteID)
                 case .weekly:
-                    WeeklyNotesPage()
+                    WeeklyNotesPage(requestedNoteID: $requestedNoteID)
                 case .notepad:
-                    NotepadPage()
+                    NotepadPage(requestedNoteID: $requestedNoteID)
                 case .meeting:
-                    MeetingNotesPage(requestedNoteID: $requestedMeetingNoteID)
+                    MeetingNotesPage(requestedNoteID: $requestedNoteID)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -82,12 +92,13 @@ struct NotesView: View {
     private func applyPendingNavigationIfNeeded() {
         guard let request = notesNavigationManager.request else { return }
         page = request.page
-        requestedMeetingNoteID = request.eventNoteID
+        requestedNoteID = request.noteID ?? request.eventNoteID
         notesNavigationManager.clear()
     }
 }
 
 private struct DailyNotesPage: View {
+    @Binding var requestedNoteID: UUID?
     @Query(sort: \Note.updatedAt, order: .reverse) private var allNotes: [Note]
     @Query(sort: \AppTask.order) private var allTasks: [AppTask]
     @Environment(\.modelContext) private var modelContext
@@ -158,10 +169,21 @@ private struct DailyNotesPage: View {
                 NotesEditorPlaceholder(title: CadenceEmptyStateCopy.selectNoteTitle)
             }
         }
-        .onAppear { openNote(forDateKey: DateFormatters.todayKey()) }
+        .onAppear {
+            if !applyRequestedSelection() { openNote(forDateKey: DateFormatters.todayKey()) }
+        }
+        .onChange(of: requestedNoteID) { _, _ in
+            applyRequestedSelection()
+        }
         .onChange(of: notes.map(\.id)) { _, _ in
             normalizeSelection()
+            applyRequestedSelection()
         }
+    }
+
+    @discardableResult
+    private func applyRequestedSelection() -> Bool {
+        NotesView.RequestedSelection.apply(&requestedNoteID, selection: &selectedNoteID, notes: notes)
     }
 
     private func openNote(forDate date: Date) {
@@ -183,6 +205,7 @@ private struct DailyNotesPage: View {
 }
 
 private struct WeeklyNotesPage: View {
+    @Binding var requestedNoteID: UUID?
     @Query(sort: \Note.updatedAt, order: .reverse) private var allNotes: [Note]
     @Query(sort: \AppTask.order) private var allTasks: [AppTask]
     @Environment(\.modelContext) private var modelContext
@@ -252,10 +275,21 @@ private struct WeeklyNotesPage: View {
                 NotesEditorPlaceholder(title: CadenceEmptyStateCopy.selectWeekTitle)
             }
         }
-        .onAppear { openNote(forWeekKey: DateFormatters.currentWeekKey()) }
+        .onAppear {
+            if !applyRequestedSelection() { openNote(forWeekKey: DateFormatters.currentWeekKey()) }
+        }
+        .onChange(of: requestedNoteID) { _, _ in
+            applyRequestedSelection()
+        }
         .onChange(of: notes.map(\.id)) { _, _ in
             normalizeSelection()
+            applyRequestedSelection()
         }
+    }
+
+    @discardableResult
+    private func applyRequestedSelection() -> Bool {
+        NotesView.RequestedSelection.apply(&requestedNoteID, selection: &selectedNoteID, notes: notes)
     }
 
     private func openNote(forDate date: Date) {
@@ -287,6 +321,7 @@ private struct WeeklyNotesPage: View {
 ///
 /// No new `NoteKind` was introduced.
 private struct NotepadPage: View {
+    @Binding var requestedNoteID: UUID?
     @Query(sort: \Note.updatedAt, order: .reverse) private var allNotes: [Note]
     @Query(sort: \AppTask.order) private var allTasks: [AppTask]
     @Environment(\.modelContext) private var modelContext
@@ -346,10 +381,21 @@ private struct NotepadPage: View {
                 NotesEditorPlaceholder(title: CadenceEmptyStateCopy.selectNoteTitle)
             }
         }
-        .onAppear { loadOrCreateNotepad() }
+        .onAppear {
+            if !applyRequestedSelection() { loadOrCreateNotepad() }
+        }
+        .onChange(of: requestedNoteID) { _, _ in
+            applyRequestedSelection()
+        }
         .onChange(of: notes.map(\.id)) { _, _ in
             normalizeSelection()
+            applyRequestedSelection()
         }
+    }
+
+    @discardableResult
+    private func applyRequestedSelection() -> Bool {
+        NotesView.RequestedSelection.apply(&requestedNoteID, selection: &selectedNoteID, notes: notes)
     }
 
     /// Opens the newest note, creating the first one if the store has none. Uses the shared

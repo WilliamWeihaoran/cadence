@@ -23,6 +23,12 @@ import SwiftData
 /// over `PersistentModel`; what stays here is the part that really is about links — the two
 /// notices the macOS list shows.
 enum CadenceSavedLinkPersistence {
+    static let deleteConfirmationTitle = "Delete Link?"
+
+    static func deleteConfirmationMessage(title: String) -> String {
+        "This will permanently delete \"\(title)\"."
+    }
+
     /// Shown when the insert could not be committed. The link is gone again by then, so the
     /// sentence is about the save rather than about the row.
     static let saveFailureNotice = "Couldn't save this link."

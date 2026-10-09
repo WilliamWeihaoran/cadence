@@ -79,7 +79,7 @@ struct LinksView: View {
                             LinkRow(link: link) {
                                 deleteConfirmationManager.present(
                                     title: "Delete Link?",
-                                    message: "This will permanently delete \"\(link.title)\"."
+                                    message: CadenceSavedLinkPersistence.deleteConfirmationMessage(title: link.title)
                                 ) {
                                     deleteLink(link)
                                 }

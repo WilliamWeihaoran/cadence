@@ -17,6 +17,41 @@ import Testing
 @MainActor
 struct CadenceSavedLinkPersistenceTests {
 
+    @Test func deletionConfirmationCopyIsByteIdenticalToTheExistingMacSentence() {
+        #expect(CadenceSavedLinkPersistence.deleteConfirmationTitle == "Delete Link?")
+        for title in ["Docs", "", "Quoted \"title\"", "First\nSecond"] {
+            #expect(CadenceSavedLinkPersistence.deleteConfirmationMessage(title: title)
+                == "This will permanently delete \"\(title)\".")
+        }
+    }
+
+    @Test func mobileLinkDeletionIsReachableOnlyAfterNamedConfirmation() throws {
+        let read = CadenceSourceScan.strippedSourceReader()
+        let mobile = try read("Cadence/iOS/iOSListSupportViews.swift")
+        let panel = try #require(CadenceSourceScan.declarationBody("struct iOSListLinksPanel: View", in: mobile))
+        let swipe = try #require(CadenceSourceScan.declarationBody(".swipeActions(edge: .trailing, allowsFullSwipe: false)", in: panel))
+        #expect(swipe.contains("linkToDelete = link"))
+        #expect(!swipe.contains("delete(link)"))
+        #expect(panel.contains(".iOSSavedLinkDeletion(link: $linkToDelete, perform: delete)"))
+        #expect(panel.components(separatedBy: "perform: delete").count - 1 == 1)
+        #expect(panel.components(separatedBy: "CadenceSavedLinkPersistence.delete(").count - 1 == 1)
+        let deletion = try #require(CadenceSourceScan.functionBody(named: "delete", in: panel))
+        #expect(deletion.contains("try CadenceSavedLinkPersistence.delete(link, in: modelContext)"))
+        #expect(deletion.contains("actionError = CadenceSavedLinkPersistence.deleteFailureNotice"))
+        let modifier = try #require(CadenceSourceScan.declarationBody("private struct iOSSavedLinkDeletionModifier: ViewModifier", in: mobile))
+        #expect(modifier.contains("content.alert(CadenceSavedLinkPersistence.deleteConfirmationTitle"))
+        #expect(modifier.contains("presenting: link"))
+        #expect(modifier.contains("Button(\"Delete\", role: .destructive) {\n                perform(selected)"))
+        #expect(modifier.contains("Button(\"Cancel\", role: .cancel) { link = nil }"))
+        #expect(modifier.components(separatedBy: "perform(selected)").count - 1 == 1)
+        #expect(modifier.contains("CadenceSavedLinkPersistence.deleteConfirmationMessage(title: selected.title)"))
+        let mac = try read("Cadence/macOS/Views/LinksView.swift")
+        #expect(mac.contains("struct LinksView: View"))
+        #expect(mac.contains("title: \"Delete Link?\""))
+        #expect(mac.contains("message: CadenceSavedLinkPersistence.deleteConfirmationMessage(title: link.title)"))
+        #expect(mac.contains("deleteLink(link)"))
+    }
+
     /// The delete. A second context must stop seeing the link, and must have stopped seeing it
     /// before anything else runs — not eventually, when autosave gets round to it.
     @Test func aDeletedLinkIsGoneFromTheStoreAndNotJustFromItsContext() throws {

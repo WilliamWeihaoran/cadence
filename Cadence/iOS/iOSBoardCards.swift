@@ -255,6 +255,10 @@ struct iOSBoardTaskCard: View {
         CadenceTypeScale.size(.rowTitle, base: 13, at: dynamicTypeSize, scaling: scaling)
     }
 
+    private var isSettled: Bool {
+        CadenceTaskCompletionState.resolve(task: task).isSettled
+    }
+
     private var completionFrame: CGFloat {
         CadenceTypeScale.height(30, holding: .rowTitle, textBase: 13, at: dynamicTypeSize, scaling: scaling)
     }
@@ -322,8 +326,8 @@ struct iOSBoardTaskCard: View {
 
                 Text(TaskTitleSupport.displayTitle(task.title, fallback: TaskTitleSupport.defaultCompactDisplayTitle))
                     .cadenceFont(.rowTitle, base: isRegularWidth ? 15 : 14, weight: .medium)
-                    .foregroundStyle(task.isDone ? Theme.dim : Theme.text)
-                    .strikethrough(task.isDone, color: Theme.dim)
+                    .foregroundStyle(isSettled ? Theme.dim : Theme.text)
+                    .strikethrough(isSettled, color: Theme.dim)
                     .lineLimit(wraps ? nil : 2)
                     .fixedSize(horizontal: false, vertical: scaling == .enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -360,7 +364,7 @@ struct iOSBoardTaskCard: View {
         .background {
             ZStack {
                 cardShape.fill(Theme.surfaceElevated.opacity(0.82))
-                cardShape.fill(listColor.opacity(task.isDone ? 0.05 : 0.12))
+                cardShape.fill(listColor.opacity(isSettled ? 0.05 : 0.12))
                 if isBundleFormingTargeted {
                     cardShape.fill(Theme.amber.opacity(0.16))
                 }

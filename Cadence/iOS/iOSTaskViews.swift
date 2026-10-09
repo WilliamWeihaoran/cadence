@@ -601,6 +601,7 @@ struct iOSTaskViewOptionsBar: View {
     /// edge of its page header — where an internal `Spacer` would fight the host's own for the
     /// leftover width and leave the sort chip floating in the middle of the row.
     var spreads = true
+    var showsCompletedControl = true
     @State private var showSortPicker = false
 
     /// **One size, at every width.** These two were 13pt/12pt-padded on a regular width and
@@ -648,21 +649,23 @@ struct iOSTaskViewOptionsBar: View {
                 Spacer()
             }
 
-            Button {
-                showCompleted.toggle()
-            } label: {
-                Text(completedCount > 0 ? "Completed \(completedCount)" : "Completed")
-                    .cadenceFont(.controlLabel, base: Self.fontSize)
-                    .foregroundStyle(showCompleted ? Theme.text : Theme.dim)
-                    .padding(.horizontal, Self.horizontalPadding)
-                    .fixedSize(horizontal: false, vertical: stacks)
-                    .frame(minHeight: height)
-                    .background(showCompleted ? Theme.surfaceElevated.opacity(0.72) : Theme.surfaceElevated.opacity(0.36))
-                    .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
+            if showsCompletedControl {
+                Button {
+                    showCompleted.toggle()
+                } label: {
+                    Text(completedCount > 0 ? "Completed \(completedCount)" : "Completed")
+                        .cadenceFont(.controlLabel, base: Self.fontSize)
+                        .foregroundStyle(showCompleted ? Theme.text : Theme.dim)
+                        .padding(.horizontal, Self.horizontalPadding)
+                        .fixedSize(horizontal: false, vertical: stacks)
+                        .frame(minHeight: height)
+                        .background(showCompleted ? Theme.surfaceElevated.opacity(0.72) : Theme.surfaceElevated.opacity(0.36))
+                        .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
+                }
+                .buttonStyle(.iosPressable)
+                .disabled(completedCount == 0)
+                .opacity(completedCount == 0 ? 0.45 : 1)
             }
-            .buttonStyle(.iosPressable)
-            .disabled(completedCount == 0)
-            .opacity(completedCount == 0 ? 0.45 : 1)
         }
         .tint(Theme.blue)
     }

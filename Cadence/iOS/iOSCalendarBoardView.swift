@@ -41,6 +41,7 @@ struct iOSCalendarBoardPlanner: View {
     /// this board that can name a refusal. Same alert macOS's `TimelineDayCanvas` already shows for
     /// the identical gesture.
     @State private var bundleCreateFailed = false
+    @State private var selectedEvent: iOSCalendarEventSelection?
 
     private let calendar = Calendar.current
     private let renderDays = CalendarBoardPlannerSupport.plannerRenderDayCount
@@ -98,6 +99,9 @@ struct iOSCalendarBoardPlanner: View {
         GeometryReader { geometry in
             board(columnWidth: columnWidth(containerWidth: geometry.size.width))
         }
+        .sheet(item: $selectedEvent) { selection in
+            iOSCalendarEventEditSheet(event: selection.event)
+        }
         .alert(CadenceTaskMutationSupport.bundleCreateFailureAlertTitle, isPresented: $bundleCreateFailed) {
             Button("OK", role: .cancel) {}
         } message: {
@@ -119,6 +123,7 @@ struct iOSCalendarBoardPlanner: View {
                         events: eventsByDate[dateKey] ?? [],
                         allTasks: allTasks,
                         allBundles: allBundles,
+                        onOpenEvent: { selectedEvent = iOSCalendarEventSelection(event: $0) },
                         onAddTask: { onAddItem(dateKey) },
                         onDropTaskOnDay: { task in schedule(task, on: dateKey) },
                         onDropBundleOnDay: { bundle in move(bundle, on: dateKey) },
@@ -298,6 +303,7 @@ private struct iOSCalendarBoardDayColumn: View {
     let events: [EKEvent]
     let allTasks: [AppTask]
     let allBundles: [TaskBundle]
+    let onOpenEvent: (EKEvent) -> Void
     let onAddTask: () -> Void
     let onDropTaskOnDay: (AppTask) -> Void
     let onDropBundleOnDay: (TaskBundle) -> Void
@@ -479,7 +485,12 @@ private struct iOSCalendarBoardDayColumn: View {
     private func columnItemView(_ item: iOSCalendarBoardColumnItem) -> some View {
         switch item {
         case .event(let item):
-            iOSCalendarBoardEventCard(item: item)
+            Button {
+                onOpenEvent(item.event)
+            } label: {
+                iOSCalendarBoardEventCard(item: item)
+            }
+            .buttonStyle(.iosPressable)
         case .bundle(let bundle):
             iOSCalendarBoardBundleCard(
                 bundle: bundle,
