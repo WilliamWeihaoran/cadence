@@ -676,8 +676,8 @@ struct SidebarStaticDestinationBridgeTests {
     /// Pinned as an **equality against the figures the Mac draws**, not as a second set of
     /// literals, because "the same as macOS" is the requirement. A literal `== 26` here would keep
     /// passing through a legitimate retune of the Mac and let the columns re-fork silently, which
-    /// is the defect `rowHeightIsTheOnlyFigureThatDiffersBySurface` already refuses for the row
-    /// metrics.
+    /// is the defect `rowHeightAndListRowHeightAreTheOnlyFiguresThatDifferBySurface` already
+    /// refuses for the row metrics.
     ///
     /// The one asymmetry is `touchHeaderBottomPadding`, and it exists so the *gap* can be
     /// symmetric: macOS opens a populated context with a transparent `leadingDropZoneHeight` drag

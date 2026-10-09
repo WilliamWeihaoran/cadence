@@ -259,20 +259,31 @@ struct CadenceSidebarMetricsTests {
     private let desktop = CadenceSidebarMetrics.metrics(for: .desktop)
     private let tablet = CadenceSidebarMetrics.metrics(for: .tablet)
 
-    /// **Row height is the only figure allowed to differ, and it must.** 32pt is right under a
-    /// pointer; a finger needs 44, and a nav row is the most-tapped control in the iPad shell.
-    /// Flattening this would read as a tidy-up and be an ergonomic regression.
-    @Test func rowHeightIsTheOnlyFigureThatDiffersBySurface() {
+    /// **The table has exactly two deliberate surface splits, and both are row heights.**
+    ///
+    /// `rowHeight` was the only one until T-3072. 32pt is right under a pointer; a finger needs
+    /// 44, and a nav row is the most-tapped control in the iPad shell, so flattening *that* would
+    /// read as a tidy-up and be an ergonomic regression. `listRowHeight` is the second: the owner
+    /// asked for the Mac's tighter list rhythm, a macOS list row states no height at all (it is
+    /// its label plus `listRowVerticalPadding`), and the touch column answers with a chosen 36.
+    ///
+    /// The shape of the check is what matters and it is unchanged: every other figure is the same
+    /// object with those two fields swapped, so rebuilding the desktop struct out of the tablet's
+    /// remaining fifteen is what makes a *new* divergence fail here rather than only the figures
+    /// someone remembered to assert. It stays exhaustive because the memberwise initialiser
+    /// requires every stored field to be named — two new splits could not hide in it, and nor
+    /// could a new field that quietly forked.
+    @Test func rowHeightAndListRowHeightAreTheOnlyFiguresThatDifferBySurface() {
         #expect(desktop.rowHeight == CadenceSidebarMetrics.pointerRowHeight)
         #expect(tablet.rowHeight == CadenceSidebarMetrics.touchRowHeight)
         #expect(desktop.rowHeight != tablet.rowHeight)
 
-        // Everything else is the same object with that one field changed. Rebuilding the desktop
-        // struct out of the tablet's other fifteen figures and expecting equality is what makes a
-        // *new* divergence fail here, rather than only the figures someone remembered to assert.
-        // Nineteen before T-2084 took the colour bar's three and T-3072 took `sectionSpacing` to
-        // `CadenceSidebarContextHeaderRhythm`; the shape of the check is unchanged, and it is still
-        // exhaustive because the compiler requires every stored field to be named.
+        #expect(desktop.listRowHeight == nil)
+        #expect(tablet.listRowHeight == CadenceSidebarMetrics.touchListRowHeight)
+        #expect(desktop.listRowHeight != tablet.listRowHeight)
+
+        // Nineteen fields before T-2084 took the colour bar's three, T-3072 took `sectionSpacing`
+        // to `CadenceSidebarContextHeaderRhythm` and the same ticket added `listRowHeight` back.
         #expect(
             desktop
                 == CadenceSidebarRowMetrics(
@@ -287,12 +298,92 @@ struct CadenceSidebarMetricsTests {
                     badgeLeadingGap: tablet.badgeLeadingGap,
                     secondaryIconOpacity: tablet.secondaryIconOpacity,
                     groupSpacing: tablet.groupSpacing,
+                    listRowHeight: desktop.listRowHeight,
                     listLabelFontSize: tablet.listLabelFontSize,
                     listDueDateIconSize: tablet.listDueDateIconSize,
                     listDueDateFontSize: tablet.listDueDateFontSize,
                     listDueDateSpacing: tablet.listDueDateSpacing,
                     listTrailingItemSpacing: tablet.listTrailingItemSpacing
                 )
+        )
+    }
+
+    /// **The assertion that protects the ergonomics: the nav rows did not move (T-3072.)**
+    ///
+    /// The tighter list row is the whole of the change the owner asked for, and the obvious way to
+    /// get it wrong is to shrink `rowHeight` instead — which would take Today, Tasks, Calendar and
+    /// Notes down with it on both iPhone and iPad. 44 is a **literal** here on purpose, unlike
+    /// every other figure in this suite: it is Apple's published minimum rather than something
+    /// this table derives, so a pin that read it out of the table would move whenever the table
+    /// did and claim nothing at all.
+    @Test func theTouchNavRowsDidNotMove() {
+        #expect(CadenceSidebarMetrics.touchRowHeight == 44)
+        #expect(tablet.rowHeight == 44)
+        #expect(tablet.rowHeight != tablet.listRowHeight)
+    }
+
+    /// **Why the touch list row is 36 and not the Mac's ~30 (T-3072).**
+    ///
+    /// Stated as named relationships rather than a second literal, so a retune moves the argument
+    /// with the number instead of leaving a stale `== 36` passing beside a changed table:
+    ///
+    /// - it is **tighter than a nav row**, which is the thing that was asked for: *"make the
+    ///   spacing between lists tighter vertically (make it the same as mac os)"*;
+    /// - it is **above `pointerRowHeight`**, which is the floor this table already wrote down —
+    ///   `rowHeight`'s own note says a finger cannot land on a 32pt target, so the Mac's ~30 is
+    ///   not available however tidy it would look, and a value level with 32 is not either;
+    /// - and the desktop column still states **no** list-row height, because a macOS list row is
+    ///   intrinsic. That `nil` is the honest answer and not an oversight; it is also why this
+    ///   split cannot be expressed as "both surfaces, different numbers".
+    ///
+    /// The licence to go under 44 at all is the row's *other* axis: 44×44 describes a discrete
+    /// control small in both directions, and this row spans the column. It does not generalise to
+    /// the nav glyphs, which is what `theTouchNavRowsDidNotMove` holds.
+    @Test func theTouchListRowIsTighterThanANavRowAndStillAboveThePointerFloor() throws {
+        let listRowHeight = try #require(tablet.listRowHeight)
+        #expect(listRowHeight == CadenceSidebarMetrics.touchListRowHeight)
+        #expect(CadenceSidebarMetrics.touchListRowHeight < CadenceSidebarMetrics.touchRowHeight)
+        #expect(CadenceSidebarMetrics.touchListRowHeight > CadenceSidebarMetrics.pointerRowHeight)
+        #expect(desktop.listRowHeight == nil)
+    }
+
+    /// **And the two heights reach the rows they are for.** The model above can be right while the
+    /// view reads the wrong constant, which is exactly the mutation this ticket was asked to prove
+    /// against: `iOSSidebarListRow` drew `buttonHeight` until T-3072, so a revert is a one-token
+    /// edit that no value-type assertion would see.
+    ///
+    /// `Cadence/iOS/` is invisible to this macOS-built target, so this is a source read, with a
+    /// non-vacuity control naming a declaration that must be in the file. Counting rather than
+    /// merely containing: `buttonHeight` carries the nav row's three frames — the expanded label,
+    /// the rail glyph and the rail row — and a fourth would mean a list row took it back.
+    @Test func theTouchListRowDrawsTheListHeightAndTheNavRowsKeepTheirs() throws {
+        let file = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/iOS/iOSRootSidebar.swift")
+        )
+        #expect(file.contains("struct iOSSidebarListRow: View"), "non-vacuity: wrong file")
+
+        let listRow = try #require(
+            CadenceSourceScan.declarationBody("struct iOSSidebarListRow: View", in: file)
+        )
+        #expect(
+            listRow.contains(".frame(height: iOSSidebarMetrics.listRowHeight)"),
+            "the sidebar's list row stopped drawing the list height"
+        )
+        #expect(
+            !listRow.contains("iOSSidebarMetrics.buttonHeight"),
+            "the sidebar's list row is back on the nav row's 44pt height"
+        )
+
+        let navRow = try #require(
+            CadenceSourceScan.declarationBody("struct iOSSidebarButton: View", in: file)
+        )
+        #expect(
+            CadenceSourceScan.matchCount("iOSSidebarMetrics\\.buttonHeight", in: navRow) == 3,
+            "the sidebar's nav row no longer spends buttonHeight on its three frames"
+        )
+        #expect(
+            !navRow.contains("iOSSidebarMetrics.listRowHeight"),
+            "a nav row took the list rows' shorter height, dropping it below the 44pt touch minimum"
         )
     }
 

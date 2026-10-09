@@ -709,9 +709,12 @@ enum iOSSidebarStyle: Equatable {
 /// `Shared/` and both files read them. The colour bar's three figures are not among them any more:
 /// the bar itself was removed on both platforms by T-2084.
 ///
-/// `buttonHeight` is the single exception, and it is `CadenceSidebarMetrics`' exception rather than
-/// this file's: 44pt because a nav row is the most-tapped control in this shell, where macOS's 32
-/// is right under a pointer.
+/// `buttonHeight` and `listRowHeight` are the two exceptions, and they are
+/// `CadenceSidebarMetrics`' exceptions rather than this file's. `buttonHeight` is 44pt because a
+/// nav row is the most-tapped control in this shell, where macOS's 32 is right under a pointer.
+/// `listRowHeight` is 36 (T-3072) because the owner asked for the Mac's tighter list rhythm and a
+/// full-width row can give some of it back without dropping to a height a finger misses — the
+/// trade is argued on `CadenceSidebarRowMetrics.listRowHeight`, not here.
 enum iOSSidebarMetrics {
     private static let shared = CadenceSidebarMetrics.metrics(for: .tablet)
 
@@ -729,6 +732,15 @@ enum iOSSidebarMetrics {
 
     // MARK: List rows
 
+    /// **An Area/Project row is shorter than a nav row here, and only here (T-3072).**
+    /// `buttonHeight` still carries every nav row at 44; this carries the list rows alone, so the
+    /// column reads as a fixed nav group above a denser scrolling list region — which is where the
+    /// owner was looking when they asked for it.
+    ///
+    /// Read from the shared constant rather than `shared.listRowHeight`, which is `Optional`
+    /// because macOS states no list-row height at all: a `??` here would silently fall back to
+    /// some other figure the day the table changed, and this surface has exactly one answer.
+    static let listRowHeight: CGFloat = CadenceSidebarMetrics.touchListRowHeight
     static let listDueDateIconSize: CGFloat = shared.listDueDateIconSize
     static let listDueDateFontSize: CGFloat = shared.listDueDateFontSize
     static let listDueDateSpacing: CGFloat = shared.listDueDateSpacing
@@ -1064,7 +1076,11 @@ struct iOSSidebarListRow: View {
                     railLabel
                 }
             }
-            .frame(height: iOSSidebarMetrics.buttonHeight)
+            // A list row, not a nav row: `listRowHeight`, not `buttonHeight` (T-3072). The height
+            // is still fixed and still the whole hit region — the row keeps one shape for its
+            // selection fill, its `contentShape` and its `+`-drop frame, so nothing here is sized
+            // against something else that would now disagree.
+            .frame(height: iOSSidebarMetrics.listRowHeight)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(rowShape.fill(isSelected ? Theme.surfaceHighlight : Color.clear))
             .contentShape(rowShape)

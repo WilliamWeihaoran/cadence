@@ -3,8 +3,9 @@ import SwiftUI
 /// Which sidebar column a figure is for.
 ///
 /// Two tiers, not one, for the reason `CadencePageHeaderSurface` has three: the platforms differ
-/// in *input*, not in taste. Everything a pointer and a finger can share is shared here; the one
-/// figure that genuinely cannot is `rowHeight`, and it is the only one that differs.
+/// in *input*, not in taste. Everything a pointer and a finger can share is shared here; the two
+/// figures that genuinely cannot are `rowHeight` and `listRowHeight`, and they are the only two
+/// that differ.
 ///
 /// There is no `.compact` tier because there is no compact sidebar — the iPhone has a tab bar.
 nonisolated enum CadenceSidebarSurface: String, CaseIterable, Sendable {
@@ -40,10 +41,13 @@ nonisolated enum CadenceSidebarSurface: String, CaseIterable, Sendable {
 nonisolated struct CadenceSidebarRowMetrics: Equatable, Sendable {
     // MARK: Nav rows
 
-    /// **The one figure the two surfaces do not share.** 32pt is right under a pointer, which can
-    /// land on a 32pt target as easily as a 44pt one; a finger cannot, and a nav row is the
-    /// most-tapped control in the iPad shell. Flattening this to 32 would be a legible tidy-up and
-    /// a real ergonomic regression, so it stays split and says so.
+    /// **The first of the two figures the two surfaces do not share, and the one that may not
+    /// move.** 32pt is right under a pointer, which can land on a 32pt target as easily as a 44pt
+    /// one; a finger cannot, and a nav row is the most-tapped control in the iPad shell.
+    /// Flattening this to 32 would be a legible tidy-up and a real ergonomic regression, so it
+    /// stays split and says so. The *list* rows are a separate question and T-3072 answered it
+    /// separately — see `listRowHeight`; this figure still carries Today, Tasks, Calendar, Notes
+    /// and every other nav destination at 44.
     let rowHeight: CGFloat
     let cornerRadius: CGFloat
     let rowSpacing: CGFloat
@@ -65,6 +69,33 @@ nonisolated struct CadenceSidebarRowMetrics: Equatable, Sendable {
 
     // MARK: List rows
 
+    /// **The second figure the two surfaces do not share, and the only one that is absent on one
+    /// of them (T-3072).**
+    ///
+    /// `nil` on the desktop, because a macOS list row has no height to state: it is a 13pt label
+    /// plus `SidebarMetrics.listRowVerticalPadding` on each edge, about 30pt, and nothing fixes
+    /// it. The touch column does fix one, because a fixed frame is how it draws a tap target — so
+    /// this is a figure that has to be *chosen* rather than inherited, which is why it is written
+    /// down here with its argument instead of appearing as a frame in a view.
+    ///
+    /// **The owner asked for the Mac's ~30 and this is 36, deliberately.** *"make the spacing
+    /// between lists tighter vertically (make it the same as mac os)"* — but 30 is below the 32
+    /// that `rowHeight`'s own note already says a finger cannot land on, so copying the Mac
+    /// exactly would trade a density complaint for a mis-tap. What a list row has that a nav
+    /// glyph does not is the **other axis**: Apple's 44×44 minimum describes a discrete control a
+    /// finger must land *on*, small in both directions, and this row is 244pt wide in a 264pt
+    /// column with only its height in question. That asymmetry is the whole of the licence to go
+    /// under 44, and it does not extend to 30: 36 clears the table's own written floor by four
+    /// points rather than sitting a run of pixels under it.
+    ///
+    /// So eight of the fourteen points asked for, which over a ten-list column gives 80pt back to
+    /// the one region in this sidebar that scrolls. If the owner wants the other six, this is the
+    /// single constant to move — the argument against moving it is recorded here rather than lost,
+    /// which is the point of writing it down.
+    ///
+    /// **Not a licence for the nav rows.** `rowHeight` stays 44 on touch and
+    /// `theTouchNavRowsDidNotMove` is red the moment it does not.
+    let listRowHeight: CGFloat?
     let listLabelFontSize: CGFloat
     let listDueDateIconSize: CGFloat
     let listDueDateFontSize: CGFloat
@@ -75,8 +106,12 @@ nonisolated struct CadenceSidebarRowMetrics: Equatable, Sendable {
 nonisolated enum CadenceSidebarMetrics {
     /// A pointer can land on a 32pt row.
     static let pointerRowHeight: CGFloat = 32
-    /// A finger needs 44. See `CadenceSidebarRowMetrics.rowHeight`.
+    /// A finger needs 44 for a nav row. See `CadenceSidebarRowMetrics.rowHeight`.
     static let touchRowHeight: CGFloat = 44
+    /// What a touch **list** row is instead, the sidebar's second and last surface split. Why 36
+    /// and not the Mac's ~30, and why a full-width row may go under 44 at all, is argued in full
+    /// on `CadenceSidebarRowMetrics.listRowHeight` — that is the doc to read before changing this.
+    static let touchListRowHeight: CGFloat = 36
 
     static func metrics(for surface: CadenceSidebarSurface) -> CadenceSidebarRowMetrics {
         CadenceSidebarRowMetrics(
@@ -91,6 +126,7 @@ nonisolated enum CadenceSidebarMetrics {
             badgeLeadingGap: 8,
             secondaryIconOpacity: 0.8,
             groupSpacing: 8,
+            listRowHeight: surface == .desktop ? nil : touchListRowHeight,
             listLabelFontSize: 13,
             listDueDateIconSize: 9,
             listDueDateFontSize: 10,
