@@ -97,6 +97,7 @@ Cadence/iOS/iOSTodayCompactViews.swift
 Cadence/Shared/CadenceSavedLinkPersistence.swift
 CadenceTests/CadenceSavedLinkPersistenceTests.swift
 Cadence/macOS/Views/LinksView.swift
+CadenceTests/CadenceInboxRemindersSurfaceTests.swift
 ```
 
 ### LEASE WIDENED 2026-10-09 (third batch) — three paths so [[T-3085]]'s shared wording has somewhere to live
@@ -1392,3 +1393,46 @@ is the list `clearStoredState` sweeps — adding a kind means adding it there to
 **Retire these three when T-168 lands.** T-2054's and T-122's retirements belong to their own
 grants. Ask before touching any path not listed.
 
+
+## T-3031 — the Reminders launch gate needs its own exit, and the guard that forbids one
+
+**`CadenceTests/CadenceInboxRemindersSurfaceTests.swift` — GRANTED, narrowly, for
+`requestAccessAnswersFalseOnlyThroughItsOneRefusal` at `:515-533` and nothing else in the file.**
+
+Codex found this before writing a line of it, and the finding is correct at source. The test pins
+`requestAccess()` to **zero** bare `return false` and **exactly two** `refuse(recordingDenial:)`
+calls. T-3031's disarmed exit has to answer `false`, so it reddens the first check as a bare return
+and the second check as a third refusal. There is no third way to write it. The guard is doing its
+job; it was written before a non-denial exit existed.
+
+**The exit is not a denial and must not be recorded as one.** `refuse(recordingDenial:)` is the
+*bookkeeping* path — it exists because a user said no at the TCC prompt. A process that is disarmed
+by `CadenceEventKitLaunchGate.isDisarmedForThisProcess` never reached TCC and the user never
+answered. Routing it through `refuse` would write a denial the user did not make, and that denial
+outlives the process in the surface state. So the shape is a **third, separately named exit**, not a
+third refusal and not a `recordingDenial: false` argument.
+
+**On "I won't hide the exit in another helper to evade the guard" — right instinct, and the grant
+asks for the opposite of hiding.** The comment above the test says the bookkeeping "cannot be
+skipped by adding one [bare return]", and a helper whose only purpose is to launder a bare return
+out of the scanned body is exactly that evasion. A helper that is *named for what it does* and
+*separately pinned by count* is not: it converts an unnamed hole into a counted, named exit that a
+fourth one cannot slip past. The test must be able to tell the two apart by reading the source, which
+is the whole premise of this suite.
+
+**What the edit must preserve.** Both existing authorization-refusal checks stay, with their
+numbers unchanged — bare `return false` stays at **0**, `refuse(recordingDenial:` stays at **2** —
+and both non-vacuity controls stay: the `RemindersAccessRequestPlan.forStatus(` requirement and the
+`!body.contains("status == .notDetermined")` guard against a hand-written pre-prompt exit. The new
+assertions are additive: the disarmed exit appears **exactly once**, by name, and its own body
+records no denial and opens no `EKEventStore`. Update the doc comment above the test so it describes
+three exits and says which one is not a refusal — a stale comment over a changed count is how the
+next reader gets this wrong.
+
+**Not granted, and not needed:** `Cadence/Services/CadenceEventKitLaunchGate.swift`. The gate side
+is already complete — `isDisarmedForThisProcess` is at `:60-62` and the file's own doc already names
+`RemindersManager` as the uncovered surface. Anything added there would be dead code.
+
+**Everything else in `CadenceInboxRemindersSurfaceTests.swift` is out of scope.** The
+`RemindersConnectionState.resolve` tests above `:515` and every other suite in the file are untouched
+by this grant.
