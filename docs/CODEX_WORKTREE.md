@@ -86,7 +86,62 @@ Cadence/Services/CadenceTodayWidgetSupport.swift
 Cadence/iOS/iOSCompactTabShell.swift
 Cadence/iOS/iOSRootView.swift
 Cadence/macOS/Views/CalendarEventPresentationSupport.swift
+Cadence/iOS/iOSCalendarBoardView.swift
+Cadence/iOS/iOSBoardCards.swift
+Cadence/macOS/Views/GlobalSearchIndexSupport.swift
 ```
+
+### LEASE WIDENED 2026-10-08 — three paths for Codex's own parity audit, plus one instruction on a path it already holds
+
+Codex delivered a read-only iOS/macOS parity audit against `c3d5dbdc` and asked for exact lease paths
+before implementing. The owner triaged it and chose: **Codex takes all three of its high-value
+functional findings.** Additive: three patterns in, none out.
+
+**Verified before granting**, because the audit's own caveat says concurrent sidebar and Today edits
+appeared during it and to recheck against current main: all three paths exist on HEAD, none was
+already in the fence, and none is held by an agent in flight (`listrowheight` and `listsdoor` hold
+`iOSRootSidebar.swift` and `CadenceSidebarMetrics.swift`; `todaytrim`, `sidebarspacing` and `daysnap`
+have landed).
+
+**(1) `Cadence/iOS/iOSCalendarBoardView.swift` — mobile Calendar Board event cards are inert.** Mac
+cards open `CalendarEventEditPopover` (`CalendarBoardItemSupportViews.swift:186`); mobile renders a
+display-only card with no activation callback (`:479`). Reuse the existing mobile event
+inspector/editor route rather than building a second one, and carry read-only-calendar behaviour
+across — an event on a subscribed calendar must refuse the same way it refuses on the Mac. Check the
+caller as well as the card: a card that gains a callback nobody wires is not a fix.
+
+**(2) `Cadence/iOS/iOSBoardCards.swift` — cancelled cards still look active.** The glyph recognises
+cancellation but title contrast, strike-through and background attenuation check only `isDone`
+(`:323`). Mac dims cancelled titles (`KanbanCardView.swift:552`) and ordinary mobile task rows
+already use the shared settled-state decision — **use that same shared decision, do not add a third
+spelling of "settled".** This is not the completed-section membership issue, which is already fixed;
+do not re-open that.
+
+**(3) `Cadence/macOS/Views/GlobalSearchIndexSupport.swift` — Mac search omits daily, weekly and
+notepad notes.** Mac filters note candidates to `kind == .meeting` (`:259`); mobile searches every
+non-blank kind (`iOSSearchView.swift:195`). **This is the one the owner cares about most**: their Mac
+archive holds 97 notes including 16 legacy daily notes and 9 documents, and today none of those is
+findable from the Mac. Extend the note candidates **and** the destination resolution — a hit that
+cannot be opened is half a fix — preserving task-embed title resolution, tags, ranking and identity.
+`iOSSearchView.swift` is **reference only and is NOT granted**: read it to match behaviour, do not
+edit it.
+
+**(4) [[T-3077]] — `Cadence/iOS/iOSTaskViews.swift`, which Codex ALREADY holds.** No new grant; this
+is an instruction on an existing one. Agent `todaytrim` landed the owner's Today changes in
+`69b9d60b` but could not remove the "Completed N" chip, because it is drawn unconditionally inside
+`iOSTaskViewOptionsBar` (`:651-665`) in that leased file. The fix it identified, which Codex should
+take: add `var showsCompletedControl = true` beside `spreads`, wrap the trailing `Button` in it, and
+pass `false` from `iOSCompactTodayView.optionsBar` **only**. Do **not** flip
+`CadenceTaskSurfaceOptions.options(for: .today).showsCompletedToggle` — macOS's `TasksPanel` reads
+it and the owner scoped this change to the phone. Today already reads correctly either way, because
+the chip and the new chevron write the same state; this removes the second control, not a bug.
+
+**Deliberately NOT granted, because the owner has not decided them**: the Focus checkmark semantics
+(Mac logs adjustable time, mobile completes immediately), list-detail per-container memory, and the
+month-cell priority policy. All three are product decisions the audit itself flagged as such. The
+visual batch — Kanban card geometry, list-detail gutters, markdown rhythm — is also not granted:
+several of those divergences are deliberate and the audit says so.
+
 
 ### LEASE NARROWED 2026-10-07 — `CalendarManager.swift` comes OUT, so [[T-3032]] can be fixed
 
