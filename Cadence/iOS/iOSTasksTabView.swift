@@ -53,8 +53,7 @@ struct iOSTasksTabView: View {
     /// way or it seeds nothing.
     @State private var editorRequest: iOSSidebarListEditorRequest?
 
-    /// The column vocabulary at full width. The rail is an iPad-only compression — there is no
-    /// width here that could produce one.
+    /// The column vocabulary, which since T-3079 is the only one `iOSSidebarStyle` has.
     private let style: iOSSidebarStyle = .expanded
 
     var body: some View {
