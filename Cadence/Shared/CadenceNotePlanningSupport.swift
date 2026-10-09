@@ -8,21 +8,6 @@ enum CadenceCoreNoteTab: String, CaseIterable, Identifiable {
 
     var id: Self { self }
 
-    var compactTitle: String {
-        switch self {
-        case .today: return "Today"
-        case .week: return "Week"
-        case .notepad: return "Notepad"
-        }
-    }
-
-    /// The label the mobile notes header uses now that the tab strip shares one row with the
-    /// page title. See `CadenceMobileNotesTab.shortLabel` for why these are shorter than
-    /// `compactTitle`.
-    var shortLabel: String {
-        CadenceMobileNotesTab(coreTab: self).shortLabel
-    }
-
     var noteKind: NoteKind {
         switch self {
         case .today: return .daily
@@ -32,7 +17,22 @@ enum CadenceCoreNoteTab: String, CaseIterable, Identifiable {
     }
 }
 
-/// The four tabs the iOS Notes surface offers, in order.
+/// The four standing note kinds the Notes surfaces offer as tabs — **and the one place their names
+/// and their order are written down** (T-3086).
+///
+/// **One vocabulary, three spellings before this.** The Mac's tab strip said `Daily` / `Weekly` /
+/// `Notepad` / `Event Notes` as literals on `NotesView.NotesPage.title`; its own list columns said
+/// `Daily Notes` / `Weekly Notes` / `Notepad` / `Event Notes` as four more literals a few hundred
+/// lines down; and mobile said `Daily` / `Weekly` / `Events` / `Pad` as a third set here. Two of the
+/// four words differed on two of the three surfaces, and nothing could have caught a fourth copy.
+/// `label`, `columnTitle` and `shortLabel` are those three readings with one owner, and the case
+/// order below is the fourth thing that had forked.
+///
+/// **The order is the Mac's, and mobile moved to meet it.** `allCases` ran `today, week, events,
+/// notepad` here against the Mac's `daily, weekly, notepad, meeting` — the last two tabs
+/// transposed, so the same strip put Notepad third on one platform and fourth on the other. This
+/// is the Mac's order; changing it moves mobile tap targets, which is why it was an owner decision
+/// rather than a tidy-up.
 ///
 /// **One set, every host.** `iOSNotesView` is the phone's Notes tab, the iPad sidebar's Notes
 /// destination and the Today inspector's Notes pane, and the strip is the same in all three. It was
@@ -40,40 +40,103 @@ enum CadenceCoreNoteTab: String, CaseIterable, Identifiable {
 /// Event Notes was unreachable from it. See `iOSNotesView` for why the fourth tab belongs in a pane
 /// that narrow.
 ///
-/// This exists as a shared type — rather than the private enum the compact notes view used to
-/// carry — because the labels have a width budget that is worth asserting on: the tab strip shares
-/// one row with the back control and the word "Notes", instead of sitting on a row of its own under
-/// a title that just repeated the selected tab.
-///
-/// `shortLabel` is deliberately *not* the note kind's name. "Event Notes" and "Notepad" are the
-/// two that do not fit beside the title on a 402pt phone, so they read "Events" and "Pad" here.
-/// **Only the label changes.** `NoteKind.meeting`'s raw value is persisted in `Note.kindRaw` and
-/// is untouched by this type.
+/// **Which of the two labels a surface draws is a width, not a platform.** See
+/// `usesFullLabels(isRegularWidth:headerWidth:)` and `fullLabelMinimumHeaderWidth`: the iPad's
+/// Notes pane reads the Mac's words, the phone reads the abbreviations, and Today's 320pt Notes
+/// inspector — regular width, and narrower than the phone's row budget — reads them too. That is
+/// the measurement, not a concession: the iOS guide's "iPhone and iPad share one style; they differ
+/// by layout" rule is about row, chip and header *vocabulary*, and this type is that vocabulary —
+/// one set of words with a documented short form, the way `TaskBundle.shortLabel` is "Block".
 ///
 /// The first two read "Daily" and "Weekly", not "Today" and "Week". They used to name a moment
 /// because the surface only had one: both notes were pinned to the current day. Now that the
 /// header carries a date picker, a tab reading "Today" could sit lit up beside a title reading
 /// "Aug 13" — the header contradicting itself. The tab names the *kind* of note; the date beside
-/// it names which one. This is also what the macOS Notes page has always called them.
-enum CadenceMobileNotesTab: String, CaseIterable, Identifiable {
+/// it names which one. The case names keep the older spelling on purpose: `coreTab` maps them
+/// one-for-one onto `CadenceCoreNoteTab`, and a case name is not a word anybody reads on screen.
+enum CadenceNotesTabVocabulary: String, CaseIterable, Identifiable {
     case today
     case week
-    case events
     case notepad
+    case events
 
     var id: Self { self }
 
-    /// Nothing here may exceed this, or the strip stops fitting beside the title on the narrowest
-    /// supported phone. Asserted in `CadenceTests`.
+    /// The tab's name, in full. **These are macOS's four words, and they are the words.** The Mac's
+    /// `NotesView.NotesPage.title` spelled them as its own literals; a surface with the room for
+    /// them reads them from here instead, so the two cannot drift into two vocabularies again.
+    var label: String {
+        switch self {
+        case .today: return "Daily"
+        case .week: return "Weekly"
+        case .notepad: return "Notepad"
+        case .events: return "Event Notes"
+        }
+    }
+
+    /// Nothing in `shortLabel` may exceed this, or the strip stops fitting beside the title on the
+    /// narrowest supported phone. Asserted in `CadenceTests`.
     static let shortLabelCharacterBudget = 6
 
+    /// The least header width a surface needs before it may draw `label` instead of `shortLabel`.
+    ///
+    /// **Measured, not chosen.** The binding case is the Notepad tab, because its title is the
+    /// constant word "Notes" under a `.fixedSize()` and so cannot give ground the way a date can:
+    /// "Notes" (48.2pt at 17pt bold) + 8pt of stack spacing + the 8pt `Spacer` minimum + 8pt more
+    /// + the full-label strip at the regular 12pt inset (306.9pt: each label at 13pt semibold plus
+    /// two insets, floored at 44, 2pt apart) + four 44pt trailing controls at 8pt spacing (new
+    /// note, template, AI, export) + the header's own 14pt gutters = **615.1pt**. 620 is that with
+    /// five points of slack.
+    ///
+    /// The *dated* tabs ask for more on paper — a week straddling two months reads "Aug 31 – Sep 6"
+    /// and wants 649pt — but that title is deliberately not `fixedSize`, and `iOSNotesHeader` says
+    /// outright that when the row is over budget the date is the one that may shorten and the tab
+    /// strip is not. So the dated case degrades as designed; the Notepad case is the one that would
+    /// push the row, and it is the one this number is cut from.
+    ///
+    /// **Both sides of this are live hosts.** The iPad's Notes pane is 646pt at its narrowest
+    /// (an 11" iPad in portrait, 834pt less the 188pt shell sidebar) and clears it; Today's Notes
+    /// inspector is 320pt at its floor — regular width, and the whole reason this is a width and
+    /// not a size class. At 320 the full-label strip alone overruns the row by ~15pt, which is the
+    /// pushed row this threshold exists to refuse.
+    static let fullLabelMinimumHeaderWidth: CGFloat = 620
+
+    /// The tab's name where there is not room for `label`. Deliberately *not* the note kind's name:
+    /// "Event Notes" and "Notepad" are the two that do not fit beside the title on a 402pt phone,
+    /// so they read "Events" and "Pad" there. **Only the label changes.** `NoteKind.meeting`'s raw
+    /// value is persisted in `Note.kindRaw` and is untouched by this type.
     var shortLabel: String {
         switch self {
         case .today: return "Daily"
         case .week: return "Weekly"
-        case .events: return "Events"
         case .notepad: return "Pad"
+        case .events: return "Events"
         }
+    }
+
+    /// The heading of the list column that indexes this kind. macOS's Notes page draws one above
+    /// each of its four lists; iOS's index column has no heading of its own, so this is read by the
+    /// Mac alone — and is here, rather than beside those lists, because it is the third spelling of
+    /// the same four things and the one most likely to drift next.
+    var columnTitle: String {
+        switch self {
+        case .today: return "Daily Notes"
+        case .week: return "Weekly Notes"
+        case .notepad: return "Notepad"
+        case .events: return "Event Notes"
+        }
+    }
+
+    /// Whether a header of this width, at this size class, has the room for `label`.
+    ///
+    /// **`headerWidth <= 0` means "not measured yet" and answers `false`.** This is the opposite
+    /// call from `CadenceNotesListMetrics.layout`, which assumes two columns for one frame to avoid
+    /// flashing the phone's form on an iPad, and the costs are what differ: guessing wrong there
+    /// shows the right content in the wrong arrangement, guessing wrong here draws a strip wider
+    /// than the row it sits in. A frame of "Pad" is cheaper than a frame of a pushed row.
+    static func usesFullLabels(isRegularWidth: Bool, headerWidth: CGFloat) -> Bool {
+        guard isRegularWidth, headerWidth > 0 else { return false }
+        return headerWidth >= fullLabelMinimumHeaderWidth
     }
 
     /// `nil` for the one tab that is a list of notes rather than a single standing note.
@@ -81,8 +144,8 @@ enum CadenceMobileNotesTab: String, CaseIterable, Identifiable {
         switch self {
         case .today: return .today
         case .week: return .week
-        case .events: return nil
         case .notepad: return .notepad
+        case .events: return nil
         }
     }
 

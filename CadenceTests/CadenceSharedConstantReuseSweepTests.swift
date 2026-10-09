@@ -1697,3 +1697,99 @@ func cadenceStaticComputedVarBodies(in source: String) -> [(name: String, body: 
     }
     return bodies
 }
+
+
+// MARK: - The Notes tab vocabulary (T-3086)
+
+/// **The one shape this file's automatic harvest cannot see.**
+///
+/// `cadenceSharedStringConstants()` reads `static let`, `static func` and `static var` bodies.
+/// `CadenceNotesTabVocabulary`'s three readings — `label`, `shortLabel` and `columnTitle` — are
+/// *instance* computed properties keyed on the tab, because the thing being shared is a mapping
+/// rather than a constant, so the harvest walks straight past them. The single-occurrence claim is
+/// therefore made here by hand, in the file whose subject it is, rather than left unmade.
+///
+/// **What it covers, and the half it does not.** The three multi-word phrases are the decidable
+/// ones: "Daily", "Weekly" and "Notepad" are also a habit frequency, a recurrence rule and an enum
+/// raw value elsewhere in the tree, exactly the collision this file's 12-character floor exists to
+/// avoid. "Event Notes", "Daily Notes" and "Weekly Notes" name nothing else.
+///
+/// `Cadence/macOS/Views/NotesView.swift` still types its own four tab labels *and* its own four
+/// column headings — the two literal sets this type was minted to replace. That file is under the
+/// standing Codex lease, so routing it through `CadenceNotesTabVocabulary` is T-3086's remaining
+/// leg; when it lands, the walk below widens from `Cadence/iOS` to `Cadence/macOS` as well and the
+/// sentence above goes with it.
+@MainActor
+struct CadenceNotesTabVocabularyReuseTests {
+
+    private static let phrases = ["Event Notes", "Daily Notes", "Weekly Notes"]
+
+    private func phraseInstrument() throws -> CadenceScanInstrument {
+        try CadenceScanInstrument(
+            "notes-tab-vocabulary-phrase",
+            fires: #"case .events: return "Event Notes""#,
+            andNotOn: #"case .events: return tab.label"#,
+            by: { source in
+                Self.phrases.contains { source.contains("\"\($0)\"") }
+            }
+        )
+    }
+
+    /// The three phrases are typed in exactly one file, and it is the shared type.
+    @Test func theNotesTabPhrasesAreTypedOnceAndOnlyInTheSharedVocabulary() throws {
+        let instrument = try phraseInstrument()
+        let read = { (path: String) in
+            CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(path))
+        }
+
+        let sharedHits = try instrument.sweep(
+            try CadenceSourceScan.swiftFiles(under: "Cadence/Shared"),
+            atLeast: 120,
+            including: "Cadence/Shared/CadenceNotePlanningSupport.swift",
+            read: read
+        )
+        #expect(sharedHits == ["Cadence/Shared/CadenceNotePlanningSupport.swift"])
+
+        let iosHits = try instrument.sweep(
+            try CadenceSourceScan.swiftFiles(under: "Cadence/iOS"),
+            atLeast: 80,
+            including: "Cadence/iOS/iOSNotesView.swift",
+            read: read
+        )
+        #expect(iosHits.isEmpty, "the iOS Notes surface is re-typing the Mac's words: \(iosHits)")
+
+        // Inside the owner, each phrase is typed once per *reading* that uses it, and no more.
+        // "Event Notes" is twice because the tab's full label and its list column's heading are
+        // genuinely the same words — which is the one coincidence the Mac got right and is worth
+        // being able to see change.
+        let vocabulary = try read("Cadence/Shared/CadenceNotePlanningSupport.swift")
+        let expected = ["Event Notes": 2, "Daily Notes": 1, "Weekly Notes": 1]
+        #expect(Set(expected.keys) == Set(Self.phrases))
+        for (phrase, count) in expected {
+            #expect(
+                CadenceSourceScan.matchCount("\"\(phrase)\"", in: vocabulary) == count,
+                "\(phrase) is typed a different number of times inside its own owner"
+            )
+        }
+    }
+
+    /// The render site itself types none of the eight readings — it asks the tab for them.
+    ///
+    /// The non-vacuity witness is `"Notes"`: `iOSNotesDateTitle`'s fallback word is still a literal
+    /// in this file, so a read that found no string literals at all would fail here rather than
+    /// pass the loop below over nothing.
+    @Test func theIOSNotesHeaderTypesNoneOfTheTabWordsItself() throws {
+        let raw = try CadenceSourceScan.sourceFile("Cadence/iOS/iOSNotesView.swift")
+        let source = CadenceSourceScan.strippingComments(raw)
+        #expect(source != raw)
+        #expect(source.count == raw.count)
+        #expect(CadenceSourceScan.matchCount(#""Notes""#, in: source) >= 1)
+
+        for word in ["Daily", "Weekly", "Notepad", "Pad", "Events", "Event Notes", "Daily Notes", "Weekly Notes"] {
+            #expect(
+                CadenceSourceScan.matchCount("\"\(word)\"", in: source) == 0,
+                "iOSNotesView types \(word) instead of reading CadenceNotesTabVocabulary"
+            )
+        }
+    }
+}

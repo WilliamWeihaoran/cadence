@@ -81,7 +81,7 @@ struct iOSNotesView: View {
     @Environment(iOSCalendarManager.self) private var calendarManager
     @Query(sort: \Note.updatedAt, order: .reverse) private var allNotes: [Note]
     @Query(sort: \AppTask.order) private var allTasks: [AppTask]
-    @State private var activeTab: CadenceMobileNotesTab = .today
+    @State private var activeTab: CadenceNotesTabVocabulary = .today
     /// Which row is lit in the sidebar, and — at regular width — which note the pane beside it
     /// holds. Resolved against the tab's **unfiltered** notes rather than the listed ones, exactly
     /// as macOS's pages do: a day you jumped to from the date picker but have not written in yet
@@ -269,6 +269,7 @@ struct iOSNotesView: View {
     private var notesHeader: some View {
         iOSNotesHeader(
             showsTitle: showsTitle,
+            hostWidth: hostWidth,
             selection: $activeTab,
             onBack: backAction,
             title: {
@@ -895,8 +896,9 @@ struct iOSNoteTemplateMenu: View {
 /// The title is deliberately *not* the selected tab. It used to be, under an eyebrow that also
 /// read NOTES, directly above a strip where the same tab was highlighted again — three ways of
 /// saying one thing, over two rows. The strip stays a plain row rather than a scroller: the labels
-/// (`CadenceMobileNotesTab.shortLabel`) are budgeted to fit beside the title on the narrowest
-/// phone, and a strip that has to be scrolled sideways to find a tab is the problem this replaced.
+/// are budgeted to fit beside the title on the narrowest phone — `CadenceNotesTabVocabulary` holds
+/// both readings and the width that selects between them — and a strip that has to be scrolled
+/// sideways to find a tab is the problem this replaced.
 ///
 /// The title is now the *date* on the two dated tabs, and it is also the control that changes it —
 /// see `iOSNotesDateTitle`. That is the only place it could go: at 390pt this row already holds a
@@ -905,11 +907,15 @@ struct iOSNoteTemplateMenu: View {
 private struct iOSNotesHeader<Title: View, Trailing: View>: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     var showsTitle = true
+    /// The width this row has been handed, from `iOSNotesView`'s own `onGeometryChange`. Read only
+    /// by `usesFullLabels`; see `CadenceNotesTabVocabulary.fullLabelMinimumHeaderWidth` for why the
+    /// label fork needs a number and not just the size class.
+    var hostWidth: CGFloat = 0
     /// The strip took its tabs as an array of value types while two hosts offered two different
     /// sets. There is one host and one set now, so it takes the selection directly — an
     /// intermediate model whose only job was to let the sets differ is a fork with the fork
     /// removed.
-    @Binding var selection: CadenceMobileNotesTab
+    @Binding var selection: CadenceNotesTabVocabulary
     /// Set on a pushed compact screen whose navigation bar is hidden. See
     /// `iOSHidesCompactNavigationBar()`.
     var onBack: (() -> Void)? = nil
@@ -922,6 +928,18 @@ private struct iOSNotesHeader<Title: View, Trailing: View>: View {
 
     private var isRegularWidth: Bool {
         horizontalSizeClass == .regular
+    }
+
+    /// Full words, or the phone's abbreviations.
+    ///
+    /// **The same `isRegularWidth` the inset below already forks on, and a width on top of it.**
+    /// Regular width alone is not the question "is there room on this row": the iPad's Notes pane
+    /// is 646pt at its narrowest and has room to spare, while Today's Notes inspector is *also*
+    /// regular width and bottoms out at 320pt — narrower than the 390pt phone, and ~15pt short of
+    /// the full-label strip on its own. Both are hosts of this view. The arithmetic and the two
+    /// measurements are on `CadenceNotesTabVocabulary.fullLabelMinimumHeaderWidth`.
+    private var usesFullLabels: Bool {
+        CadenceNotesTabVocabulary.usesFullLabels(isRegularWidth: isRegularWidth, headerWidth: hostWidth)
     }
 
     var body: some View {
@@ -944,9 +962,9 @@ private struct iOSNotesHeader<Title: View, Trailing: View>: View {
             }
 
             HStack(spacing: iOSNotesTabMetrics.spacing) {
-                ForEach(CadenceMobileNotesTab.allCases) { tab in
+                ForEach(CadenceNotesTabVocabulary.allCases) { tab in
                     iOSQuietTabButton(
-                        title: tab.shortLabel,
+                        title: usesFullLabels ? tab.label : tab.shortLabel,
                         isSelected: selection == tab,
                         horizontalPadding: isRegularWidth
                             ? iOSNotesTabMetrics.horizontalPadding
@@ -998,7 +1016,7 @@ private struct iOSNotesHeader<Title: View, Trailing: View>: View {
 /// here is the Notes-specific half: which tabs have a date at all, what that date reads as, and the
 /// constant word the other two fall back to.
 struct iOSNotesDateTitle: View {
-    let tab: CadenceMobileNotesTab
+    let tab: CadenceNotesTabVocabulary
     /// The constant word to fall back to on a tab with no date.
     var fallback: String = "Notes"
     @Binding var dayKey: String

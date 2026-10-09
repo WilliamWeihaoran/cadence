@@ -119,6 +119,10 @@ struct macOSRootView: View {
                 modelContext: currentModelContext,
                 installKeyMonitorIfNeeded: installKeyMonitorIfNeeded
             )
+            // T-3049: the `.onChange` below never sees a route that was already standing when this
+            // view first rendered, which is the shape of a reminder tap that cold-launches the app.
+            // `takeUnappliedRoute()` is what keeps this from re-routing on a re-opened window.
+            handleDeepLinkRoute()
         }
         .onDisappear {
             pendingAppDataRefresh?.cancel()
@@ -288,7 +292,9 @@ struct macOSRootView: View {
     /// row, disarms `pendingTaskID` when Today will not show it, and answers with a page that
     /// will — see `CadenceDeepLinkResolutionSupport`.
     private func handleDeepLinkRoute() {
-        guard let route = deepLinkManager.route?.deepLink else { return }
+        // `takeUnappliedRoute()`, not `route?.deepLink`: this is reached from `.onAppear` as well
+        // as from `.onChange`, and exactly one of them should win for any one route (T-3049).
+        guard let route = deepLinkManager.takeUnappliedRoute() else { return }
         let destination = deepLinkManager.resolvedDestination(
             for: route,
             modelContext: currentModelContext
