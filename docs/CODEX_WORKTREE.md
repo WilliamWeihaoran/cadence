@@ -94,7 +94,39 @@ Cadence/macOS/Views/macOSRootCommandActionSupport.swift
 Cadence/macOS/Views/EventNoteSupportViews.swift
 Cadence/macOS/Views/NotesView.swift
 Cadence/iOS/iOSTodayCompactViews.swift
+Cadence/Shared/CadenceSavedLinkPersistence.swift
+CadenceTests/CadenceSavedLinkPersistenceTests.swift
+Cadence/macOS/Views/LinksView.swift
 ```
+
+### LEASE WIDENED 2026-10-09 (third batch) — three paths so [[T-3085]]'s shared wording has somewhere to live
+
+Codex asked for exactly the three paths the T-3085 instruction below already prescribes, which is the
+right ask: that instruction says the sentence moves into `CadenceSavedLinkPersistence` and the pins go
+in `CadenceSavedLinkPersistenceTests`, and neither is reachable from the leased mobile file. Granting
+the presenter without them would strand the shared-wording half. Additive: three in, none out.
+
+**`Cadence/Shared/CadenceSavedLinkPersistence.swift`** — for the confirmation title and sentence,
+beside the existing `saveFailureNotice` / `deleteFailureNotice`. **Do not change what `delete(_:)`
+does.** Its `modelContext.delete` + `commitDelete` and its `actionError` reporting stay exactly as
+they are: the confirmation gates that call, it does not replace or wrap it.
+
+**`CadenceTests/CadenceSavedLinkPersistenceTests.swift`** — for the pins. It already source-scans both
+link surfaces (there is an `iOSListLinksPanel` scan around `:220-261`), so extend it rather than
+starting a new suite.
+
+**`Cadence/macOS/Views/LinksView.swift` — granted for ONE edit and nothing else.** Replace the literal
+at `:82` with the shared helper. **The rendered string must be byte-identical before and after**:
+today it is `"This will permanently delete \"\(link.title)\"."` under the title `"Delete Link?"`, and
+macOS behaviour must not change by so much as a full stop — this grant exists so the two platforms
+cannot drift on wording, not to retune the Mac's copy. Nothing else in that file moves: not the
+hover-revealed trash, not `deleteLink(_:)`'s reachability from the confirm closure only, not the
+card styling.
+
+**Still out of scope, restated because this grant touches the Mac:** the link-row chrome. The owner
+decided the deletion, not the styling, and mobile's plain rows are the Lists page's one deliberate
+treatment. Delete-failure reporting is likewise unchanged on both platforms.
+
 
 ### INSTRUCTION 2026-10-09 — [[T-3085]] on a path Codex already holds: a saved link deletes with no confirmation on mobile
 
