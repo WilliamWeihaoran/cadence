@@ -305,8 +305,16 @@ runner_hung_refusal() {
   say "     3. log show --last 20m --predicate 'process == \"testmanagerd\"'"
   say "        \"requested transport for IDE\" with no reply after it is this failure."
   say "   Measured 2026-10-03: it began at 20:43 EDT and took every agent's runs, unit and UI,"
-  say "   after a full 5520-test unit run had passed at 20:19. Restarting testmanagerd or"
-  say "   rebooting is an admin change to this Mac and the OWNER's call -- report it and stop."
+  say "   after a full 5520-test unit run had passed at 20:19. Then it CLEARED ON ITS OWN --"
+  say "   re-measured 2026-10-04 10:30-11:25 (5,538 tests in 468 suites, five runs across four"
+  say "   agents) and again 2026-10-06 under three concurrent runs at load average 52, with zero"
+  say "   occurrences. The two remedies this used to be escalated FOR are ruled out by measurement:"
+  say "   the Mac had NOT rebooted (kern.boottime Sep 16) and testmanagerd was NEVER restarted"
+  say "   (pid 88831 from Sep 30, alive straight through the incident). Why it recovered is not"
+  say "   established and no cause should be asserted for it."
+  say "   So: RE-RUN FIRST, and do not escalate this to the owner on the first hit. Restarting"
+  say "   testmanagerd or rebooting is an admin change to this Mac and the OWNER's call either"
+  say "   way -- raise it only once a re-run has died the same way."
 }
 
 # Everything the caller needs to fix an empty run, printed where the empty run happened.
@@ -3277,6 +3285,18 @@ selftest_only_testing() {
     $( [[ "$aout" == *"UNIT runs as well as UI runs"* ]] && print 1 || print 0 ) "$aout"
   check "...and it asks whether an automation prompt is standing, because that wedges UNIT runs (T-2070)" \
     $( [[ "$aout" == *"./scripts/xcb.sh check-automation"* ]] && print 1 || print 0 ) "$aout"
+  # T-2049's last half, and it is a CORRECTION of this refusal rather than an addition to it. The
+  # sentence stopped reproducing the morning after it was written -- 5,538 tests in 468 suites on
+  # 2026-10-04, re-checked 2026-10-06 under three concurrent runs -- while the Mac had never
+  # rebooted and testmanagerd had never been restarted, so neither remedy an escalation would ASK
+  # FOR had been applied. The refusal nevertheless still ended at "report it and stop", sending an
+  # agent to the owner over a condition a re-run clears. docs/AGENTS_REFERENCE.md had carried the
+  # correction ("re-run first; do not escalate it to the owner on the first hit") since 2026-10-06
+  # and recorded that this line still carried the superseded instruction.
+  check "...and it says to RE-RUN FIRST, because the sentence stopped reproducing (T-2049)" \
+    $( [[ "$aout" == *"RE-RUN FIRST"* && "$aout" == *"first hit"* ]] && print 1 || print 0 ) "$aout"
+  check "...and it no longer ends at the escalate-immediately instruction 2026-10-04 superseded (T-2049)" \
+    $( [[ "$aout" != *"OWNER's call -- report it and stop"* ]] && print 1 || print 0 ) "$aout"
   run_tlog "$ws/runner-hung.log" 0
   check "CONTROL: the hung-runner sentence under exit 0 is not the environmental refusal" \
     $( (( arc == 4 )) && [[ "$aout" == *"takes a SUITE name"* && "$aout" != *"TEST HOST never connected"* ]] && print 1 || print 0 ) "exit $arc: $aout"
