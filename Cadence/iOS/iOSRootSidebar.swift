@@ -348,11 +348,9 @@ struct iOSSidebar: View {
             iOSSidebarRailDivider()
                 .padding(.horizontal, style.horizontalPadding)
 
-            // Expanded: Settings and Focus collapse to one row of two glyphs, and since T-3073
-            // there is no labelled row left down here at all — Goals and Habits are nav rows in
-            // the group at the top, and Lists is the region above rather than a row below it.
-            // Rail is already all glyphs at 58pt, where two across plus the gap does not fit, so
-            // it keeps them stacked.
+            // Settings and Focus collapse to one row of two glyphs, and since T-3073 there is
+            // no labelled row left down here at all — Goals and Habits are nav rows in the group
+            // at the top, and Lists is the region above rather than a row below it.
             //
             // The emptiness is guarded rather than assumed, exactly as `SidebarView.bottomGroup`
             // guards it: `navGroup` of nothing is still a padded stack, so an unguarded call
@@ -369,10 +367,6 @@ struct iOSSidebar: View {
                 footerGlyphRow
                     .padding(.horizontal, style.horizontalPadding)
                     .padding(.top, iOSSidebarMetrics.rowSpacing)
-                    .padding(.bottom, 12)
-            } else {
-                navGroup(secondaryDestinations, counts: counts)
-                    .padding(.top, iOSSidebarMetrics.groupSpacing)
                     .padding(.bottom, 12)
             }
         }
@@ -440,12 +434,6 @@ struct iOSSidebar: View {
     /// `CadenceSidebarLayout`'s shared groups, because macOS has no Lists page to route to.
     private var secondaryRowDestinations: [CadenceFeatureDestination] {
         CadenceSidebarLayout.secondaryRowDestinations.filter(isVisibleSecondaryRow)
-    }
-
-    /// The rail's stack, which keeps all the secondary glyphs rather than splitting two into a
-    /// footer row. Same list, same reason.
-    private var secondaryDestinations: [CadenceFeatureDestination] {
-        CadenceSidebarLayout.secondaryDestinations.filter(isVisibleSecondaryRow)
     }
 
     /// Whether a row below the lists survives the user's hidden set (T-1274).
@@ -802,21 +790,21 @@ extension CadenceFeatureDestination {
 
 // MARK: - Style and metrics
 
+/// **One case since T-3079**, and deliberately still an enum.
+///
+/// `.rail` was an icon-rail spelling of this column for a narrow window, and it was unreachable:
+/// every construction site hardcodes `.expanded`, and nothing called the `style(for:)` that
+/// computed it. Reachable it would still not have drawn a rail — `CadenceRootShellLayout`'s
+/// narrow-window answer is a *drawer* whose width is `min(expandedWidth, width)`, so the column
+/// would have been 264pt wide with rail-width glyphs in it. A genuine icon rail, if one is ever
+/// wanted, gets designed against that layout rather than resurrected from this.
+///
+/// Collapsing the remaining case away at every call site is a separate change, not this one.
 enum iOSSidebarStyle: Equatable {
-    case rail
     case expanded
-
-    /// Full window width, not the sidebar's own column width. The threshold and the two widths live
-    /// in `CadenceRootShellLayout` so the shell's arithmetic and this enum cannot drift — the shell
-    /// sizing the detail from one number while the column drew itself at another is exactly how a
-    /// pane ended up pushing the sidebar off-screen.
-    static func style(for width: CGFloat) -> iOSSidebarStyle {
-        CadenceRootShellLayout.usesExpandedSidebar(windowWidth: width) ? .expanded : .rail
-    }
 
     var horizontalPadding: CGFloat {
         switch self {
-        case .rail: return 8
         case .expanded: return 10
         }
     }
@@ -934,14 +922,6 @@ struct iOSSidebarHeader: View {
                 collapseButton
             }
             .frame(minHeight: 44)
-        } else {
-            VStack(spacing: 4) {
-                iOSIconTile(systemImage: "circle.hexagongrid.fill", color: Theme.blue, size: 28, iconSize: 14)
-                    .accessibilityHidden(true)
-                searchButton
-                collapseButton
-            }
-            .frame(maxWidth: .infinity)
         }
     }
 
@@ -1091,16 +1071,13 @@ struct iOSSidebarButton: View {
         Button(action: action) {
             if style == .expanded {
                 expandedLabel
-            } else {
-                railLabel
             }
         }
         .buttonStyle(.iosPressable)
         // T-1445, the same rule macOS's `SidebarNavRow` reads: the badge is drawn by the shared
         // `CadenceSidebarCountLabel`, which is `accessibilityHidden`, so the row is the only place
         // the number can be announced — and it has to say *what* it counts, because Today's is an
-        // overdue tally and the Today page's header badge is a different one. The rail style needs
-        // it more than the expanded one, not less: there the title is not drawn at all.
+        // overdue tally and the Today page's header badge is a different one.
         .accessibilityLabel(CadenceSidebarLayout.rowAccessibilityLabel(title, count: count))
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
@@ -1129,26 +1106,6 @@ struct iOSSidebarButton: View {
         .padding(.horizontal, iOSSidebarMetrics.rowHorizontalPadding)
         .frame(height: iOSSidebarMetrics.buttonHeight)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(selectionLayer)
-        .contentShape(selectionShape)
-    }
-
-    private var railLabel: some View {
-        ZStack(alignment: .topTrailing) {
-            Image(systemName: systemImage)
-                .font(.system(size: iOSSidebarMetrics.iconSize, weight: .semibold))
-                .foregroundStyle(glyphColor)
-                .frame(maxWidth: .infinity)
-                .frame(height: iOSSidebarMetrics.buttonHeight)
-
-            if let count {
-                CadenceSidebarCountLabel(count: count)
-                    .padding(.trailing, 2)
-                    .padding(.top, 3)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .center)
-        .frame(height: iOSSidebarMetrics.buttonHeight)
         .background(selectionLayer)
         .contentShape(selectionShape)
     }
@@ -1194,8 +1151,6 @@ struct iOSSidebarListRow: View {
             Group {
                 if style == .expanded {
                     expandedLabel
-                } else {
-                    railLabel
                 }
             }
             // A list row, not a nav row: `listRowHeight`, not `buttonHeight` (T-3072). The height
@@ -1241,17 +1196,6 @@ struct iOSSidebarListRow: View {
             }
         }
         .padding(.horizontal, iOSSidebarMetrics.rowHorizontalPadding)
-    }
-
-    /// At rail width there is no room for a name, so the initial is the whole row. It used to be
-    /// the initial *plus* the colour bar; the bar went from both styles together (T-2084), which
-    /// leaves the letter carrying the row on its own — the rail is a folded column, and a reader who
-    /// needs to tell two lists apart there unfolds it.
-    private var railLabel: some View {
-        Text(String(displayName.prefix(1)).uppercased())
-            .font(.system(size: 13, weight: .semibold))
-            .foregroundStyle(isSelected ? Theme.text : Theme.muted)
-            .frame(maxWidth: .infinity)
     }
 
     /// Bare tinted text rather than a filled pill: as a capsule this annotation carried more weight

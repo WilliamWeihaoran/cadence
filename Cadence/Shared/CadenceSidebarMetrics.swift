@@ -11,8 +11,7 @@ import SwiftUI
 nonisolated enum CadenceSidebarSurface: String, CaseIterable, Sendable {
     /// The macOS column, driven by a pointer.
     case desktop
-    /// The iPad column at regular width, driven by a finger. `iOSSidebarStyle.rail` narrows the
-    /// column but does not change any figure here.
+    /// The iPad column at regular width, driven by a finger.
     case tablet
 }
 
