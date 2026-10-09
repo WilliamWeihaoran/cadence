@@ -89,7 +89,46 @@ Cadence/macOS/Views/CalendarEventPresentationSupport.swift
 Cadence/iOS/iOSCalendarBoardView.swift
 Cadence/iOS/iOSBoardCards.swift
 Cadence/macOS/Views/GlobalSearchIndexSupport.swift
+Cadence/macOS/Views/GlobalSearchSupportViews.swift
+Cadence/macOS/Views/macOSRootCommandActionSupport.swift
+Cadence/macOS/Views/EventNoteSupportViews.swift
+Cadence/macOS/Views/NotesView.swift
+Cadence/iOS/iOSTodayCompactViews.swift
 ```
+
+### LEASE WIDENED 2026-10-09 — five wiring paths, so the approved parity fixes are not left inert
+
+Codex asked for these by name to finish work already granted on 2026-10-08, and the ask is the right
+one: four of the five exist because **a search hit that cannot be opened is half a fix**, which is
+what that grant already told it. Granting the index without the destination would have shipped
+exactly the inert result the grant warned against. Additive: five patterns in, none out.
+
+**The ticket ids Codex asked for: [[T-3082]], [[T-3083]], [[T-3084]]** — filed in the same commit as
+this grant, one per finding, each carrying the audit's file:line evidence and the conditions the
+2026-10-08 grant attached. Codex should fold its inbox entries into those three ids and allocate no
+new ones.
+
+**Four paths for [[T-3084]], the Mac note-search fix.** `GlobalSearchSupportViews.swift` for the
+ordinary-note destination and category; `macOSRootCommandActionSupport.swift` to resolve the selected
+note; `EventNoteSupportViews.swift` for the kind-aware navigation request; `NotesView.swift` to select
+requested ids in Daily, Weekly and Notepad. **`NotesView.swift` is the one to be careful in** — it is
+the Mac's whole notes surface, and selecting a requested id must not disturb what it already does on
+open. Granted for the selection path, not for a re-layout of that page.
+
+**One path for [[T-3077]], the Completed chip.** `iOSTodayCompactViews.swift`, **for exactly one
+edit**: passing `showsCompletedControl: false` from `iOSCompactTodayView.optionsBar`. The flag itself
+goes in `iOSTaskViews.swift`, which Codex already holds. Do not change anything else in that file —
+agent `todaytrim` landed the owner's Today header changes there in `69b9d60b` and the ledger entry
+explains each one. In particular do **not** restore `eyebrowDetail:` and do **not** flip
+`CadenceTaskSurfaceOptions.options(for: .today).showsCompletedToggle`, which macOS reads.
+
+**Still NOT granted, and these are now owner-DECIDED rather than undecided** — Codex should not start
+them until they are filed with paths: Focus checkmark semantics (**the owner chose mobile's immediate
+complete; the Mac moves to match**), list-detail memory (**the owner chose the Mac's per-container
+behaviour; mobile moves to match**), Saved Links deletion (**the owner chose the Mac's confirmation;
+mobile's direct swipe-delete goes**), and the Notes label vocabulary (**Mac's naming wins**). The
+month-cell priority policy and the search-truncation difference are still open questions.
+
 
 ### LEASE WIDENED 2026-10-08 — three paths for Codex's own parity audit, plus one instruction on a path it already holds
 
