@@ -1283,3 +1283,404 @@ enum CadenceCommentSymbolClaim {
         )
     }
 }
+
+// MARK: - T-3087: a comment naming a symbol in another language
+
+/// **A Swift comment that names a Python, shell or YAML symbol, checked against the script it is
+/// about ([[T-3087]]).**
+///
+/// Both halves above resolve a backticked name against Swift: declarations through `SymbolIndex`,
+/// call sites through `calledNames(inCode:)`. A name that lives in a script is invisible to both,
+/// so it could neither be an offender nor be ledgered. The sharp edge was [[T-3018]]'s own repair:
+/// `CadenceMCPWriteFenceTests` once wrote the smoke test's helper in call shape, the Swift sweep
+/// went red for the wrong reason, and the prescribed fix (drop the parentheses) left the sentence
+/// true and guarded by nothing.
+///
+/// **The rule, read off the prose rather than a list of files:**
+///
+/// 1. A comment **block** is a run of consecutive lines that carry comment text, from the
+///    `comments` half of `CadenceCommentSymbolClaim.partition`.
+/// 2. A block is *about* a script when one of its backticked spans names one: a repository path
+///    ending in a script extension (an optional `:<line>` suffix is allowed) that exists on disk,
+///    or a bare file name that is the basename of exactly one repository script.
+/// 3. In such a block, a backticked span is a **claim** when it is shaped like a script-language
+///    name rather than a Swift one: dotted identifiers, an optional trailing pair of parentheses,
+///    and at least one component that is snake case, screaming snake case, or a dunder. Swift
+///    names in this repository are camel case, so this is what keeps a Swift type mentioned in
+///    the same paragraph out of it.
+/// 4. A claim **resolves** when every component of it is declared in the comment-blanked text of
+///    one of the scripts the block names — a Python `def`, `class`, assignment or import binding,
+///    a shell or awk function, a shell assignment, or a YAML key — or, for a screaming-snake
+///    environment name, is read there as `$NAME`, `${NAME` or a quoted literal.
+///
+/// **Why the block and not the sentence.** The ticket's own sketch said "the surrounding
+/// sentence", and measured that drops one of the five names it listed: the write fence's scope
+/// note names `MCPClient.__init__` three bullets below the sentence that names
+/// `docs/screenshots/seed-screenshot-data.py`. The block is the smallest unit that keeps all five.
+///
+/// **What it cannot see.** A script named without backticks (several comments write
+/// `agent-commit.sh's` as plain text in code lines rather than prose), a camel-case script name,
+/// and whether the claim is *about* the right script when a block names several — the per-block
+/// union is the price of not parsing English. Those land in `crossLanguageLedger` when they
+/// matter, with the reason written down.
+enum CadenceCrossLanguageCommentClaim {
+
+    struct Claim: Hashable {
+        let span: String
+        let line: Int
+        let scripts: [String]
+        let resolves: Bool
+    }
+
+    static let scriptExtensions: Set<String> = ["py", "sh", "bash", "zsh", "yml", "yaml"]
+
+    private static let identifier = "[A-Za-z_][A-Za-z0-9_]*"
+
+    /// The comment blocks of `source`, each with the 1-based line it starts on and its text.
+    static func commentBlocks(in source: String) -> [(line: Int, text: String)] {
+        let lines = CadenceCommentSymbolClaim.partition(source).comments.components(separatedBy: "\n")
+        var blocks: [(line: Int, text: String)] = []
+        var start: Int?
+        var buffer: [String] = []
+        for (index, line) in lines.enumerated() {
+            if line.trimmingCharacters(in: .whitespaces).isEmpty {
+                if let begun = start { blocks.append((begun, buffer.joined(separator: "\n"))) }
+                start = nil
+                buffer = []
+            } else {
+                if start == nil { start = index + 1 }
+                buffer.append(line)
+            }
+        }
+        if let begun = start { blocks.append((begun, buffer.joined(separator: "\n"))) }
+        return blocks
+    }
+
+    static func backtickedSpans(in text: String) -> [String] {
+        guard let regex = try? NSRegularExpression(pattern: "`([^`\\n]+)`") else { return [] }
+        let nsText = text as NSString
+        return regex.matches(in: text, range: NSRange(location: 0, length: nsText.length))
+            .map { nsText.substring(with: $0.range(at: 1)) }
+    }
+
+    /// The script-path part of `span` when it is spelled like one, line suffix removed.
+    static func scriptPathSpelling(_ span: String) -> String? {
+        guard let regex = try? NSRegularExpression(pattern: "^([A-Za-z0-9_./-]+)(?::[0-9,-]+)?$"),
+              let match = regex.firstMatch(in: span, range: NSRange(span.startIndex..., in: span)),
+              let range = Range(match.range(at: 1), in: span)
+        else { return nil }
+        let path = String(span[range])
+        guard let ext = path.split(separator: ".").last, path.contains("."),
+              scriptExtensions.contains(String(ext).lowercased())
+        else { return nil }
+        return path
+    }
+
+    /// `true` when `span` is shaped like a script-language name (rule 3).
+    static func isClaimShaped(_ span: String) -> Bool {
+        let pattern = "^\(identifier)(?:\\.\(identifier))*(?:\\(\\))?$"
+        guard span.range(of: pattern, options: .regularExpression) != nil else { return false }
+        return components(of: span).contains { component in
+            let inner = component.trimmingCharacters(in: CharacterSet(charactersIn: "_"))
+            let dunder = component.count > 4 && component.hasPrefix("__") && component.hasSuffix("__")
+            return dunder || inner.contains("_")
+        }
+    }
+
+    static func components(of span: String) -> [String] {
+        let bare = span.hasSuffix("()") ? String(span.dropLast(2)) : span
+        return bare.components(separatedBy: ".")
+    }
+
+    /// `true` when `name` is declared — or, for an environment name, read — in `script`, which
+    /// must already be comment-blanked (rule 4).
+    static func isDeclared(_ name: String, in script: String) -> Bool {
+        let n = NSRegularExpression.escapedPattern(for: name)
+        var patterns = [
+            "^[ \\t]*(?:async[ \\t]+)?def[ \\t]+\(n)[ \\t]*\\(",
+            "^[ \\t]*class[ \\t]+\(n)\\b",
+            "^[ \\t]*(?:function[ \\t]+)?\(n)[ \\t]*\\(\\)",
+            "\\bfunction[ \\t]+\(n)\\b",
+            "(?<![A-Za-z0-9_])\(n)[\"']?\\]?[ \\t]*=(?!=)",
+            "^[ \\t]*(?:from[ \\t]+\\S+[ \\t]+)?import[ \\t]+[^\\n]*\\b\(n)\\b",
+            "\\bas[ \\t]+\(n)\\b",
+            "\\bfor[ \\t]+\(n)[ \\t]+in\\b",
+            "^[ \\t]*-?[ \\t]*\(n):",
+        ]
+        if name == name.uppercased(), name.contains("_") {
+            patterns.append("\\$\\{?\(n)(?![A-Za-z0-9_])")
+            patterns.append("[\"']\(n)[\"']")
+        }
+        let range = NSRange(script.startIndex..., in: script)
+        return patterns.contains { pattern in
+            guard let regex = try? NSRegularExpression(pattern: pattern, options: [.anchorsMatchLines]) else {
+                return false
+            }
+            return regex.firstMatch(in: script, range: range) != nil
+        }
+    }
+
+    /// Every claim in `source`. `resolve` turns a script spelling into a repository path or `nil`;
+    /// `script` returns that path's comment-blanked text.
+    static func claims(
+        in source: String,
+        resolve: (String) -> String?,
+        script: (String) -> String?
+    ) -> [Claim] {
+        var found: [Claim] = []
+        for block in commentBlocks(in: source) {
+            let spans = backtickedSpans(in: block.text)
+            let scripts = Array(Set(spans.compactMap { scriptPathSpelling($0).flatMap(resolve) })).sorted()
+            guard !scripts.isEmpty else { continue }
+            let texts = scripts.compactMap(script)
+            var seen: Set<String> = []
+            for span in spans where isClaimShaped(span) && seen.insert(span).inserted {
+                let resolves = components(of: span).allSatisfy { component in
+                    texts.contains { isDeclared(component, in: $0) }
+                }
+                found.append(Claim(span: span, line: block.line, scripts: scripts, resolves: resolves))
+            }
+        }
+        return found
+    }
+
+    /// The fixture pair the instrument is built on: the same sentence, once naming the helper the
+    /// fixture script declares and once naming one it does not.
+    static let fixtureScriptPath = "fixtures/seed.py"
+    static let fixtureScript = """
+        import tempfile
+        REFUSED = ("Library/Containers/com.haoranwei.Cadence",)
+        def prepare_store():
+            return tempfile.TemporaryDirectory()
+        """
+    static let positiveWitness = """
+        /// `fixtures/seed.py` builds its store through `prepare_stores`.
+        enum CadenceCrossLanguageWitness {}
+        """
+    static let negativeWitness = """
+        /// `fixtures/seed.py` builds its store through `prepare_store`.
+        enum CadenceCrossLanguageWitness {}
+        """
+
+    static func fixtureClaims(_ source: String) -> [Claim] {
+        claims(
+            in: source,
+            resolve: { $0 == fixtureScriptPath ? $0 : nil },
+            script: { $0 == fixtureScriptPath ? CadenceSourceScan.strippingHashComments(fixtureScript) : nil }
+        )
+    }
+}
+
+/// The sweep for [[T-3087]], and the ledger it is checked against. Its own suite so the test index
+/// files it under a name; it reads the same five roots as `CadenceCommentSymbolClaimTests`.
+@Suite struct CadenceCrossLanguageCommentClaimTests {
+
+    private static let sourceRoots = [
+        "Cadence", "CadenceTests", "CadenceWidgets", "CadenceMCPServer", "CadenceUITests"
+    ]
+
+    private static func allSources() throws -> [(path: String, text: String)] {
+        try sourceRoots
+            .flatMap { try CadenceSourceScan.swiftFiles(under: $0) }
+            .sorted()
+            .map { (path: $0, text: try CadenceSourceScan.sourceFile($0)) }
+    }
+
+    /// Claims that do not resolve and are not drift, each with its reason. Set equality both ways:
+    /// a new unresolved claim fails, and so does an entry whose claim has gone.
+    static let crossLanguageDeliberateAbsences = [
+        // "sets the store id and not `CADENCE_UI_TEST_MODE`": the absence is the claim.
+        "Cadence/Services/CadenceUITestStoreDirectory.swift `CADENCE_UI_TEST_MODE`",
+        "CadenceTests/CadenceUITestStoreDirectoryTests.swift `CADENCE_UI_TEST_MODE`",
+        // "there is no `update_tag` arm": adding one makes this entry stale, which is the point.
+        "CadenceTests/CadenceWriteServiceTests.swift `update_tag`",
+    ]
+
+    static let crossLanguageNonSymbols = [
+        // A system call and an architecture name, not script symbols.
+        "CadenceTests/CadenceBuildInvocationHygieneTests.swift `x86_64`",
+        "CadenceTests/CadenceGuardScriptSelftestTests.swift `posix_spawn`",
+        "CadenceTests/CadenceTestHostSandboxCapabilityTests.swift `posix_spawn`",
+        // A prefix, spelled with its trailing underscore.
+        "CadenceTests/CadenceAgentDefaultsIsolationTests.swift `SIMCTL_CHILD_`",
+    ]
+
+    static let crossLanguageNamedOutsideTheProse = [
+        // The script passes it as `SIMCTL_CHILD_CADENCE_UI_TEST_STORE_ID`, which `simctl` strips.
+        "Cadence/Shared/CadenceDefaults.swift `CADENCE_UI_TEST_STORE_ID`",
+        // These four live in a script the block names only in code (simulator-claim.sh,
+        // ledger-lag-check.sh, test-host-lock.sh) while it backticks a different one.
+        "CadenceTests/CadenceGuardScriptSelftestTests.swift `CADENCE_LOCK_SELFTEST_TARGET`",
+        "CadenceTests/CadenceGuardScriptSelftestTests.swift `CADENCE_SIMCTL`",
+        "CadenceTests/CadenceGuardScriptSelftestTests.swift `CADENCE_SIM_CLAIMS_DIR`",
+        "CadenceTests/CadenceGuardScriptSelftestTests.swift `partial_named_here`",
+    ]
+
+    static var crossLanguageLedger: [String] {
+        (crossLanguageDeliberateAbsences + crossLanguageNonSymbols + crossLanguageNamedOutsideTheProse).sorted()
+    }
+
+    /// The five names [[T-3087]] was filed over. Each must be read as a claim AND resolve, so a
+    /// reader that silently stopped seeing the write fence's prose is red rather than clean.
+    static let crossLanguageWitnessFile = "CadenceTests/CadenceMCPWriteFenceTests.swift"
+    static let crossLanguageWitnessSpans = [
+        "MCPClient.__init__", "REFUSED_SUBSTRINGS", "guard_store_path", "prepare_fixture_store", "temp_store",
+    ]
+
+    /// The sweep. Every claim-shaped span in a comment block that names a repository script is
+    /// declared in that script, or is ledgered.
+    @Test func everyCommentNamingAScriptSymbolNamesOneTheScriptDeclaresOrIsLedgered() throws {
+        let sources = try Self.allSources()
+        let root = CadenceSourceScan.repositoryRoot()
+        let scriptPaths = try CadenceMCPWriteFenceTests.repositoryScriptPaths()
+        var byBasename: [String: [String]] = [:]
+        for path in scriptPaths {
+            byBasename[(path as NSString).lastPathComponent, default: []].append(path)
+        }
+        let resolve: (String) -> String? = { spelling in
+            if spelling.contains("/") {
+                return FileManager.default.fileExists(atPath: root.appendingPathComponent(spelling).path)
+                    ? spelling : nil
+            }
+            guard let matches = byBasename[spelling], matches.count == 1 else { return nil }
+            return matches[0]
+        }
+        var scriptCache: [String: String] = [:]
+        let script: (String) -> String? = { path in
+            if let cached = scriptCache[path] { return cached }
+            guard let raw = try? CadenceSourceScan.sourceFile(path) else { return nil }
+            let blanked = CadenceSourceScan.strippingHashComments(raw)
+            scriptCache[path] = blanked
+            return blanked
+        }
+
+        let instrument = try CadenceScanInstrument(
+            "comment names a script symbol the script does not declare",
+            fires: CadenceCrossLanguageCommentClaim.positiveWitness,
+            andNotOn: CadenceCrossLanguageCommentClaim.negativeWitness
+        ) { source in
+            CadenceCrossLanguageCommentClaim.fixtureClaims(source).contains { !$0.resolves }
+        }
+        try instrument.checkWalk(sources.map(\.path), atLeast: 800, including: Self.crossLanguageWitnessFile)
+
+        var claimCount = 0
+        var resolvedCount = 0
+        var filesWithClaims: Set<String> = []
+        var found: Set<String> = []
+        var witnessResolved: Set<String> = []
+        for source in sources {
+            let claims = CadenceCrossLanguageCommentClaim.claims(in: source.text, resolve: resolve, script: script)
+            guard !claims.isEmpty else { continue }
+            filesWithClaims.insert(source.path)
+            for claim in claims {
+                claimCount += 1
+                if claim.resolves {
+                    resolvedCount += 1
+                    if source.path == Self.crossLanguageWitnessFile { witnessResolved.insert(claim.span) }
+                } else {
+                    found.insert("\(source.path) `\(claim.span)`")
+                }
+            }
+        }
+
+        // Non-vacuity: the basename index, the claims and the resolver all have to still work.
+        #expect(byBasename.count >= 25, "the script index holds \(byBasename.count) basenames")
+        #expect(filesWithClaims.count >= 10, "only \(filesWithClaims.count) files hold a script claim")
+        #expect(claimCount >= 30, "the sweep read \(claimCount) script claims")
+        #expect(resolvedCount > found.count, "resolved \(resolvedCount) of \(claimCount); the resolver stopped matching")
+        let missingWitnesses = Set(Self.crossLanguageWitnessSpans).subtracting(witnessResolved)
+        #expect(
+            missingWitnesses.isEmpty,
+            "\(Self.crossLanguageWitnessFile) no longer names, or no longer resolves: \(missingWitnesses.sorted())"
+        )
+
+        let ledger = Set(Self.crossLanguageLedger)
+        let unlisted = found.subtracting(ledger).sorted()
+        #expect(
+            unlisted.isEmpty,
+            "a comment names a script symbol that the script it names does not declare: \(unlisted)"
+        )
+        let stale = ledger.subtracting(found).sorted()
+        #expect(stale.isEmpty, "the cross-language ledger names a claim that is no longer unresolved: \(stale)")
+    }
+
+    /// The rule on fixtures, so a red run separates "the rule is wrong" from "a comment is wrong".
+    @Test func theCrossLanguageReaderTakesScriptShapedNamesAndChecksEachDeclarationForm() {
+        typealias Rule = CadenceCrossLanguageCommentClaim
+        // Shape: script-language names in, Swift names and expressions out.
+        for span in ["prepare_fixture_store", "REFUSED_SUBSTRINGS", "MCPClient.__init__", "guard_store_path()"] {
+            #expect(Rule.isClaimShaped(span), "\(span) is a script name")
+        }
+        for span in ["CadenceSourceScan", "partition", "guard_store_path(args.store)", "_private", "a.b"] {
+            #expect(!Rule.isClaimShaped(span), "\(span) is not a script name")
+        }
+        // Script spellings, with and without a line suffix; a Swift file is not one.
+        #expect(Rule.scriptPathSpelling("plugins/cadence-mcp/scripts/smoke-test.py:195-196")
+            == "plugins/cadence-mcp/scripts/smoke-test.py")
+        #expect(Rule.scriptPathSpelling("agent-commit.sh") == "agent-commit.sh")
+        #expect(Rule.scriptPathSpelling("Cadence/Shared/Theme.swift") == nil)
+
+        // Every declaration form, and the two that must not count.
+        let python = CadenceSourceScan.strippingHashComments("""
+            import tempfile
+            from pathlib import Path as P
+            class MCPClient:
+                def __init__(self):
+                    pass
+            REFUSED_SUBSTRINGS = ("x",)
+            with prepare() as temp_store:
+                for row_item in rows:
+                    env["CADENCE_MCP_STORE_URL"] = "y"
+            # def commented_out_helper():
+            if lookup_value == 3:
+                pass
+            """)
+        for name in ["tempfile", "P", "MCPClient", "__init__", "REFUSED_SUBSTRINGS", "temp_store",
+                     "row_item", "CADENCE_MCP_STORE_URL"] {
+            #expect(Rule.isDeclared(name, in: python), "\(name) is declared in the python fixture")
+        }
+        #expect(!Rule.isDeclared("commented_out_helper", in: python), "a commented-out def is not a declaration")
+        #expect(!Rule.isDeclared("lookup_value", in: python), "a comparison is not an assignment")
+
+        let shell = CadenceSourceScan.strippingHashComments("""
+            ledger_closed_ids() {
+              awk 'function closure_visible(s) { return s }'
+            }
+            local scratch_dir=/tmp/x
+            SIMCTL=${CADENCE_SIMCTL:-xcrun}
+            jobs:
+              ios-build:
+                runs_on: macos
+            #   CADENCE_UI_TEST_STORE_ID=..
+            """)
+        for name in ["ledger_closed_ids", "closure_visible", "scratch_dir", "CADENCE_SIMCTL", "runs_on"] {
+            #expect(Rule.isDeclared(name, in: shell), "\(name) is declared in the shell fixture")
+        }
+        #expect(!Rule.isDeclared("CADENCE_UI_TEST_STORE_ID", in: shell), "a header comment is not a declaration")
+
+        // End to end: a block naming the fixture script, a renamed helper, and a Swift name beside it.
+        let source = """
+            /// `fixtures/seed.py` calls `prepare_store` and then `prepare_stores`, from
+            /// `CadenceMCPStorePreparation`.
+            enum CadenceCrossLanguageFixture {}
+            /// `prepare_stores` with no script named in its block is not read at all.
+            enum CadenceCrossLanguageFixtureTwo {}
+            """
+        let claims = Rule.fixtureClaims(source)
+        #expect(claims.map(\.span) == ["prepare_store", "prepare_stores"])
+        #expect(claims.map(\.resolves) == [true, false])
+        #expect(claims.allSatisfy { $0.scripts == [Rule.fixtureScriptPath] && $0.line == 1 })
+    }
+
+    @Test func theCrossLanguageLedgerIsWellFormed() {
+        let ledger = Self.crossLanguageLedger
+        #expect(Set(ledger).count == ledger.count, "an entry is listed twice")
+        for entry in ledger {
+            let parts = entry.components(separatedBy: " `")
+            #expect(parts.count == 2 && entry.hasSuffix("`"), "malformed entry: \(entry)")
+            if let path = parts.first {
+                #expect((try? CadenceSourceScan.sourceFile(path)) != nil, "ledger names a missing file: \(path)")
+            }
+        }
+    }
+}
