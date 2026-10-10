@@ -168,7 +168,7 @@ Before treating a red run as a code regression, check:
 - **`CadenceUITests` was never flaky — it cannot pass while the Mac's screen is locked (T-563).**
   `app.launch()` then fails ~60s in on whichever line called it; `xcb.sh` refuses such a run and the
   tests skip themselves, so a red UI run **is** evidence. Measurements: `docs/AGENTS_REFERENCE.md`.
-- Compile failures that name your file are real until proven otherwise.
+- Compile failures that name your file are real until proven otherwise. **A warning or red in a file you did not touch may be a sibling mid-mutation of the shared tree** (T-3071, T-3092): `git diff --stat` that file and re-run; mutations belong in a scratch tree or worktree, never the shared checkout (`docs/SUBAGENT_RUNBOOK.md` §4).
 - **Count hosts with `pgrep -f '^/Applications/.*/xcodebuild( .*)? test(-without-building)?( |$)'`** — anchored, so
   the poller is not counted, and action-as-a-token, because `xcb.sh` puts the action **last** (T-1162, calibrated).
 - **A quiet run is not a dead run. Ask `./scripts/xcb.sh run-state <id>` before you start a second one (T-2071).**

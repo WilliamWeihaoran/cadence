@@ -132,6 +132,28 @@ struct AgentContextBudgetTests {
         }
     }
 
+    /// T-3071 (a) and T-3092. A hand mutation in the shared checkout is shared state: a full run
+    /// read a mutated `scripts/xcb.sh` and went red (T-3071), and a sibling's iOS leg compiled a
+    /// mutated Swift file and reported its warnings as its own (T-3092). The rule lives in the
+    /// runbook; the triage list every red run starts from has to ask the question, or the reader
+    /// blames its own work. Both halves are pinned by their wording, one assertion per document.
+    @Test func theSharedCheckoutMutationRuleIsStatedInTheRunbookAndAskedByTheTriageList() throws {
+        let runbook = try repositoryFile("docs/SUBAGENT_RUNBOOK.md")
+        let root = try repositoryFile("AGENTS.md")
+
+        for rule in [
+            "Never hand-mutate a tracked file in the shared checkout",
+            "Prefer a warning-free mutation",
+        ] {
+            #expect(runbook.contains(rule), "the runbook no longer states: \(rule)")
+        }
+        #expect(
+            root.contains("may be a sibling mid-mutation of the shared tree")
+                && root.contains("never the shared checkout (`docs/SUBAGENT_RUNBOOK.md` §4)"),
+            "root AGENTS.md's red-run triage no longer asks whether a sibling is mid-mutation"
+        )
+    }
+
     @Test func longClaudeReferenceRemainsExplicitlyArchived() throws {
         let reference = try repositoryFile("docs/CLAUDE_REFERENCE.md")
 

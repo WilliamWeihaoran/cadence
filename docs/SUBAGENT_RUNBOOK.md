@@ -136,7 +136,8 @@ under the same bundle id as your debug build. Every rule in this section is abou
   tool cap cuts a batch mid-mutation — and kill it by the pid in `<scratch>/runner.pid`.
 - **Never hand-mutate a tracked file in the shared checkout, guard scripts above all** (T-3071).
   A full run read `scripts/xcb.sh` mid-mutation and went red; restored before exit, no drift check saw it.
-  Mutate an `agent-scratch.sh new <id>` tree or a worktree.
+  Mutate an `agent-scratch.sh new <id>` tree or a worktree. **Prefer a warning-free mutation** (T-3092):
+  one that compiles with warnings breaks every sibling's zero-warning baseline while it is applied.
 - **Never `kill -9` a runner that mutates a tree.** `SIGKILL` skips the restore trap and strands the
   mutation in the tree; `SIGTERM` is not the safe alternative it looks like. Kill the runner's
   `test-host-lock.sh acquire` child too, or the orphan takes the lock with nothing left to run.
