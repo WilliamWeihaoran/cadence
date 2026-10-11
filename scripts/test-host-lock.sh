@@ -716,19 +716,42 @@ exit 1' > "$root/fakepgrep"; chmod +x "$root/fakepgrep"
 
     # 3. A KILLED WAITER DOES NOT BLOCK THE QUEUE. SIGKILL, so no trap can help:
     #    the ticket has to be pruned by the next waiter that looks.
+    #
+    #    T-3097: EVERY WAIT HERE IS ON A CONDITION, NEVER A FIXED SLEEP. This used to be `sleep 2`
+    #    twice, a 4s lease and a 40-poll ceiling, and it went red once inside a full CadenceTests
+    #    run at load average 13-16 across 102 machine-sleep entries ("queue stalled behind the dead
+    #    ticket") and green on an immediate rerun. The 4s lease was the trap: holder2 is held by
+    #    this live shell, but once the handoff stretched past the lease the head of the queue
+    #    reached the reclaim branch, and inside the App-Sandboxed host the blind `pgrep` makes it
+    #    REFUSE and exit (mode 6) -- so `alive` left the queue for a reason that is not about the
+    #    prune at all. So for this mode:
+    #      * LEASE is bumped far past the ceiling, so the reclaim branch is never reached and load
+    #        can only make the trial slower, never change its answer;
+    #      * TICKET_STALE is bumped too, so the only thing that can remove the dead ticket inside
+    #        the ceiling is the `kill -0` liveness half of `prune_queue` -- the half SIGKILL needs.
+    #        At the selftest's 10s the age half would rescue a broken liveness check unseen;
+    #      * the fixture is checked, not assumed: the zombie's ticket is at the HEAD and alive's is
+    #        behind it before the kill, or the trial says the fixture did not set up.
+    saved_lease=$CADENCE_LOCK_LEASE saved_stale=$CADENCE_LOCK_TICKET_STALE
+    export CADENCE_LOCK_LEASE=600 CADENCE_LOCK_TICKET_STALE=600
     "$SELF" acquire 30 holder2 >/dev/null || { print -r -- "selftest: could not retake the lock"; exit 2; }
-    "$SELF" acquire 90 zombie >/dev/null 2>&1 & zpid=$!   # the script itself, so SIGKILL lands on the waiter
-    sleep 2
+    "$SELF" acquire 600 zombie >/dev/null 2>&1 & zpid=$!   # the script itself, so SIGKILL lands on the waiter
+    for _ in {1..120}; do (( $(queue_names | wc -l) >= 1 )) && break; sleep 0.5; done
     survivor="$root/survivor"; : > "$survivor"
-    ( "$SELF" acquire 60 alive >/dev/null 2>&1 && print -r -- ok >> "$survivor" \
+    ( "$SELF" acquire 600 alive >/dev/null 2>&1 && print -r -- ok >> "$survivor" \
       && "$SELF" release alive >/dev/null 2>&1; : ) &
     kids+=($!)
-    sleep 2
+    for _ in {1..120}; do (( $(queue_names | wc -l) >= 2 )) && break; sleep 0.5; done
+    head_pid=""; read -r head_pid _ < "$QUEUE/$(queue_names | head -1)" 2>/dev/null
+    kw_queued=$(queue_names | wc -l | tr -d ' ')
     kill -9 $zpid 2>/dev/null; wait $zpid 2>/dev/null
     "$SELF" release holder2 >/dev/null
-    for _ in {1..40}; do [[ -s "$survivor" ]] && break; sleep 1; done
-    if [[ -s "$survivor" ]]; then print -r -- "PASS killed-waiter: the waiter behind a SIGKILLed one still got the lock"
+    for _ in {1..60}; do [[ -s "$survivor" ]] && break; sleep 1; done
+    if [[ "$head_pid" != "$zpid" ]] || (( kw_queued < 2 )); then
+      print -r -- "FAIL killed-waiter: fixture did not set up (head ticket pid '$head_pid', zombie $zpid, $kw_queued queued)"; (( fails++ ))
+    elif [[ -s "$survivor" ]]; then print -r -- "PASS killed-waiter: the waiter behind a SIGKILLed one still got the lock"
     else print -r -- "FAIL killed-waiter: queue stalled behind the dead ticket"; (( fails++ )); fi
+    export CADENCE_LOCK_LEASE=$saved_lease CADENCE_LOCK_TICKET_STALE=$saved_stale
 
     cleanup_kids; rm -rf "$CADENCE_LOCK_DIR" "$CADENCE_LOCK_DIR.queue"
 
@@ -945,9 +968,29 @@ exit 0' > "$root/blindps"; chmod +x "$root/blindps"
     #    one element and no CPU, and `$!` is the `cat`. A fifo would do the same job but needs an
     #    `exec <>` redirection, and a FAILED `exec` redirection exits a non-interactive zsh --
     #    which in a sandbox that forbids `mkfifo` would take the whole selftest with it.
+    #
+    #    T-3097: SPAWNED IS NOT VISIBLE. `spawn_fake` used to `sleep 0.4` and assume the `exec -a`
+    #    had landed; under load it had not, and the probe counted a process that was still the
+    #    forked subshell. It now waits on the condition itself -- the fake's pid appears in
+    #    `pgrep -f` over a marker every fixture's argv carries (`$root`) -- up to a 60s ceiling.
+    #    A `pgrep` that cannot read the process list at all (exit >= 2: the App-Sandboxed host,
+    #    where this property is tolerated) ends the wait at once, because that condition never
+    #    clears. The `sleep` lives past the ceiling so a slow spawn cannot outlive its own fixture,
+    #    and `kill_fake` reaps it (`pkill -P $$ -x sleep`: this shell's own direct `sleep` child,
+    #    which no other mode has running here); its fds go to /dev/null so a lingering one could
+    #    never hold the caller's stdout or stderr open.
     fakepid=0
-    spawn_fake() { ( exec sleep 12 ) | ( exec -a "$*" /bin/cat ) > /dev/null & fakepid=$!; sleep 0.4 }
-    kill_fake()  { kill $fakepid 2>/dev/null; wait $fakepid 2>/dev/null }
+    spawn_fake() {
+      local seen rc
+      ( exec sleep 90 </dev/null 2>/dev/null ) | ( exec -a "$*" /bin/cat ) > /dev/null & fakepid=$!
+      for _ in {1..120}; do
+        seen=$(pgrep -f "$root" 2>/dev/null); rc=$?
+        (( rc >= 2 )) && break
+        [[ $'\n'"$seen"$'\n' == *$'\n'"$fakepid"$'\n'* ]] && break
+        sleep 0.5
+      done
+    }
+    kill_fake()  { kill $fakepid 2>/dev/null; wait $fakepid 2>/dev/null; pkill -P $$ -x sleep 2>/dev/null }
     count_with() { pgrep -f "$1" 2>/dev/null | grep -c '^[0-9]' }
     typeset -a probs; probs=()
     #    (a) THE T-1162 CASE: how xcb.sh really launches a test run, action LAST behind
