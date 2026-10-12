@@ -405,5 +405,91 @@ struct TaskWorkflowRecurrenceTests {
         #expect(subFloorNext.estimatedMinutes == AppTask.minimumTimelineDurationMinutes)
         #expect(subFloorNext.timelineDurationMinutes == 5)
     }
+
+    // MARK: - 10. Month-end anchors survive a short month (T-3103)
+
+    /// Completes each occurrence on its own date `hops` times and returns the dates the chain
+    /// produced, origin first. Completing on the day keeps the catch-up rule out of it, so every
+    /// date here is decided by the period shift alone.
+    private func completeOnTime(
+        _ origin: AppTask,
+        hops: Int,
+        in context: ModelContext
+    ) throws -> (due: [String], scheduled: [String]) {
+        var due = [origin.dueDate]
+        var scheduled = [origin.scheduledDate]
+        var current = origin
+        for _ in 0..<hops {
+            let onTheDay = try #require(DateFormatters.date(from: current.dueDate))
+            CadenceTaskRecurrenceWorkflowSupport.markDone(current, in: context, now: onTheDay)
+            try context.save()
+            current = try #require(try spawnedTask(for: current, in: context))
+            due.append(current.dueDate)
+            scheduled.append(current.scheduledDate)
+        }
+        return (due, scheduled)
+    }
+
+    @Test func monthlyTaskDueOnThe31stComesBackToThe31stAfterAShortMonth() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+
+        let rent = makeRecurringTask(title: "Pay rent", rule: .monthly, dueDate: "2026-01-31", scheduledDate: "2026-01-31")
+        context.insert(rent)
+        try context.save()
+
+        let chain = try completeOnTime(rent, hops: 5, in: context)
+        let expected = ["2026-01-31", "2026-02-28", "2026-03-31", "2026-04-30", "2026-05-31", "2026-06-30"]
+        #expect(chain.due == expected)
+        #expect(chain.scheduled == expected)
+    }
+
+    @Test func yearlyTaskFromALeapDayComesBackToFebruary29th() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+
+        let leap = makeRecurringTask(rule: .yearly, dueDate: "2028-02-29")
+        context.insert(leap)
+        try context.save()
+
+        let chain = try completeOnTime(leap, hops: 4, in: context)
+        #expect(chain.due == ["2028-02-29", "2029-02-28", "2030-02-28", "2031-02-28", "2032-02-29"])
+    }
+
+    @Test func monthlySeriesStartedOnAShortMonthEndKeepsItsOwnDay() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+
+        // Started on the 30th, so the 30th is the anchor: Apr 30 is not a clamp of anything.
+        let thirtieth = makeRecurringTask(rule: .monthly, dueDate: "2026-04-30")
+        // Started on Jan 30: Feb 28 is a clamp of the 30th, not the 31st.
+        let januaryThirtieth = makeRecurringTask(rule: .monthly, dueDate: "2026-01-30")
+        context.insert(thirtieth)
+        context.insert(januaryThirtieth)
+        try context.save()
+
+        #expect(try completeOnTime(thirtieth, hops: 3, in: context).due
+            == ["2026-04-30", "2026-05-30", "2026-06-30", "2026-07-30"])
+        #expect(try completeOnTime(januaryThirtieth, hops: 2, in: context).due
+            == ["2026-01-30", "2026-02-28", "2026-03-30"])
+    }
+
+    @Test func lateMonthlyCompletionStillCatchesUpFromTodayRatherThanTheAnchor() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+
+        let rent = makeRecurringTask(rule: .monthly, dueDate: "2026-01-31")
+        context.insert(rent)
+        try context.save()
+        let february = try #require(try completeOnTime(rent, hops: 1, in: context).due.last)
+        #expect(february == "2026-02-28")
+
+        let februaryTask = try #require(try spawnedTask(for: rent, in: context))
+        let lateNow = try #require(DateFormatters.date(from: "2026-03-03"))
+        CadenceTaskRecurrenceWorkflowSupport.markDone(februaryTask, in: context, now: lateNow)
+        try context.save()
+        let next = try #require(try spawnedTask(for: februaryTask, in: context))
+        #expect(next.dueDate == "2026-04-03")
+    }
 }
 #endif

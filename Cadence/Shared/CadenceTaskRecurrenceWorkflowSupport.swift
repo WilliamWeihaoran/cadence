@@ -144,7 +144,7 @@ nonisolated enum CadenceTaskRecurrenceWorkflowSupport {
         ensureRecurrenceSeriesMetadata(for: task)
 
         guard !task.recurrenceHasEnded else { return nil }
-        let plannedDates = plannedNextDates(for: task, now: now)
+        let plannedDates = plannedNextDates(for: task, in: context, now: now)
         guard task.shouldSpawnNextOccurrence(nextDateKey: plannedDates.anchorKey(now: now)) else { return nil }
 
         let nextTask = makeNextRecurringTask(from: task, dates: plannedDates)
@@ -348,14 +348,24 @@ nonisolated enum CadenceTaskRecurrenceWorkflowSupport {
         }
     }
 
-    private static func plannedNextDates(for task: AppTask, now: Date) -> PlannedRecurrenceDates {
+    private static func plannedNextDates(for task: AppTask, in context: ModelContext, now: Date) -> PlannedRecurrenceDates {
         var planned = PlannedRecurrenceDates()
         let todayKey = DateFormatters.dateKey(from: now)
         if !task.dueDate.isEmpty {
-            planned.dueDate = nextRecurrenceDateKey(from: task.dueDate, todayKey: todayKey, recurrence: task.recurrenceRule) ?? task.dueDate
+            planned.dueDate = nextRecurrenceDateKey(
+                from: task.dueDate,
+                todayKey: todayKey,
+                recurrence: task.recurrenceRule,
+                anchorDay: { recurrenceAnchorDay(of: task, field: \.dueDate, in: context) }
+            ) ?? task.dueDate
         }
         if !task.scheduledDate.isEmpty {
-            planned.scheduledDate = nextRecurrenceDateKey(from: task.scheduledDate, todayKey: todayKey, recurrence: task.recurrenceRule) ?? task.scheduledDate
+            planned.scheduledDate = nextRecurrenceDateKey(
+                from: task.scheduledDate,
+                todayKey: todayKey,
+                recurrence: task.recurrenceRule,
+                anchorDay: { recurrenceAnchorDay(of: task, field: \.scheduledDate, in: context) }
+            ) ?? task.scheduledDate
         }
         return planned
     }
@@ -437,36 +447,122 @@ nonisolated enum CadenceTaskRecurrenceWorkflowSupport {
     /// A daily/weekly/etc. task completed long after it was last due (e.g. a week-stale daily task)
     /// should catch up to today rather than advancing by one period from its stale date, which would
     /// just produce another still-overdue occurrence.
-    private static func nextRecurrenceDateKey(from key: String, todayKey: String, recurrence: TaskRecurrenceRule) -> String? {
+    ///
+    /// `anchorDay` is only consulted when the occurrence's own date wins (T-3103): a catch-up from
+    /// today deliberately restarts the cadence on today's day, so the series' old day-of-month no
+    /// longer applies.
+    private static func nextRecurrenceDateKey(
+        from key: String,
+        todayKey: String,
+        recurrence: TaskRecurrenceRule,
+        anchorDay: () -> Int?
+    ) -> String? {
         guard recurrence != .none else { return nil }
-        let anchorKey = max(key, todayKey)
-        return shiftedDateKey(anchorKey, recurrence: recurrence)
+        guard key >= todayKey else { return shiftedDateKey(todayKey, recurrence: recurrence, anchorDay: nil) }
+        return shiftedDateKey(key, recurrence: recurrence, anchorDay: anchorDay())
     }
 
-    private static func shiftedDateKey(_ key: String, recurrence: TaskRecurrenceRule) -> String? {
+    /// One period forward. `.monthly` and `.yearly` land on `anchorDay` (or the key's own day when
+    /// it is nil), **clamped** to the target month's length — the same rule the habit engine uses
+    /// for `frequencyDays = [31]` (`HabitStreakTests`, "Pay rent"). Clamping per hop, rather than
+    /// letting `Calendar.date(byAdding: .month, ...)` clamp and then carrying the clamped day
+    /// forward, is what lets Jan 31 -> Feb 28 come back to Mar 31 instead of sticking on the 28th
+    /// for ever (T-3103).
+    private static func shiftedDateKey(_ key: String, recurrence: TaskRecurrenceRule, anchorDay: Int? = nil) -> String? {
         guard recurrence != .none, let date = DateFormatters.date(from: key) else { return nil }
-        let calendar = Calendar.current
-        let component: Calendar.Component
-        let value: Int
 
         switch recurrence {
         case .none:
             return key
-        case .daily:
-            component = .day
-            value = 1
-        case .weekly:
-            component = .weekOfYear
-            value = 1
-        case .monthly:
-            component = .month
-            value = 1
-        case .yearly:
-            component = .year
-            value = 1
+        case .daily, .weekly:
+            let calendar = Calendar.current
+            let component: Calendar.Component = recurrence == .daily ? .day : .weekOfYear
+            guard let next = calendar.date(byAdding: component, value: 1, to: date) else { return nil }
+            return DateFormatters.dateKey(from: next)
+        case .monthly, .yearly:
+            let calendar = DateFormatters.storageCalendar(inheritingTimeZoneFrom: Calendar.current)
+            let parts = calendar.dateComponents([.year, .month, .day], from: date)
+            guard let year = parts.year, let month = parts.month, let day = parts.day else { return nil }
+            let monthsAhead = recurrence == .monthly ? 1 : 12
+            let zeroBasedMonth = month - 1 + monthsAhead
+            let targetYear = year + zeroBasedMonth / 12
+            let targetMonth = zeroBasedMonth % 12 + 1
+            guard let firstOfTarget = calendar.date(from: DateComponents(year: targetYear, month: targetMonth, day: 1)),
+                  let length = calendar.range(of: .day, in: .month, for: firstOfTarget)?.count
+            else { return nil }
+            let targetDay = min(anchorDay ?? day, length)
+            guard let next = calendar.date(from: DateComponents(year: targetYear, month: targetMonth, day: targetDay))
+            else { return nil }
+            return DateFormatters.dateKey(from: next, calendar: calendar)
         }
 
-        guard let next = calendar.date(byAdding: component, value: value, to: date) else { return nil }
-        return DateFormatters.dateKey(from: next)
+    private static func recurrencePredecessor(of task: AppTask, in context: ModelContext) -> AppTask? {
+        guard let sourceID = task.recurrenceSourceTaskID else { return nil }
+        var descriptor = FetchDescriptor<AppTask>(predicate: #Predicate<AppTask> { $0.id == sourceID })
+        descriptor.fetchLimit = 1
+        return try? context.fetch(descriptor).first
     }
 }
+    }
+
+    /// The day of the month a monthly/yearly series is really anchored on, recovered from the
+    /// occurrence chain because a task stores no anchor of its own (T-3103).
+    ///
+    /// A date can only be a *clamp* if it is the last day of a month shorter than 31 days — Feb 28,
+    /// Apr 30, Feb 29 in a leap year. Only then is the predecessor worth reading: if it sits exactly
+    /// one period earlier on a day at least as late, the series was anchored there and this date is
+    /// that day clamped. The walk repeats while the recovered day could itself still be a clamp,
+    /// which matters for `.yearly` from Feb 29 (Feb 28 three years running, then Feb 29 again).
+    ///
+    /// It stops at anything that breaks the shape — no predecessor (deleted, or the series origin),
+    /// an empty field, a gap other than one period (a catch-up restarted the cadence), or an earlier
+    /// day (the user moved the occurrence) — and returns the day it has. So a series that was
+    /// *started* on Feb 28 or Apr 30 keeps that day, and a lost history degrades to the clamped day,
+    /// which is what every series did before this.
+    private static func recurrenceAnchorDay(
+        of task: AppTask,
+        field: KeyPath<AppTask, String>,
+        in context: ModelContext
+    ) -> Int? {
+        let recurrence = task.recurrenceRule
+        guard recurrence == .monthly || recurrence == .yearly,
+              var current = storageDayParts(task[keyPath: field])
+        else { return nil }
+
+        var anchor = current.day
+        var cursor = task
+        var seen: Set<UUID> = [task.id]
+        for _ in 0..<maxAnchorWalkHops {
+            guard anchor < 31, anchor == current.monthLength,
+                  let predecessor = recurrencePredecessor(of: cursor, in: context),
+                  seen.insert(predecessor.id).inserted,
+                  let previous = storageDayParts(predecessor[keyPath: field]),
+                  previous.monthIndex + (recurrence == .monthly ? 1 : 12) == current.monthIndex,
+                  previous.day >= anchor
+            else { break }
+            anchor = previous.day
+            current = previous
+            cursor = predecessor
+        }
+        return anchor
+    }
+
+    /// Feb 29 -> Feb 28 (x3) -> Feb 29 is the longest legitimate walk; the cap only guards a
+    /// corrupted chain.
+    private static let maxAnchorWalkHops = 8
+
+    private struct StorageDayParts {
+        let monthIndex: Int  // year * 12 + (month - 1), so "one month earlier" is subtraction
+        let day: Int
+        let monthLength: Int
+    }
+
+    private static func storageDayParts(_ key: String) -> StorageDayParts? {
+        guard !key.isEmpty, let date = DateFormatters.date(from: key) else { return nil }
+        let calendar = DateFormatters.storageCalendar(inheritingTimeZoneFrom: Calendar.current)
+        let parts = calendar.dateComponents([.year, .month, .day], from: date)
+        guard let year = parts.year, let month = parts.month, let day = parts.day,
+              let length = calendar.range(of: .day, in: .month, for: date)?.count
+        else { return nil }
+        return StorageDayParts(monthIndex: year * 12 + (month - 1), day: day, monthLength: length)
+    }

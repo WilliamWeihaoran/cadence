@@ -113,7 +113,10 @@ struct TasksPanel: View {
         return CadenceTaskSortMode.migratedFromMacOSTodaySortField(legacy)
     }
 
-    private var todayKey: String { DateFormatters.todayKey() }
+    /// Read through `observedDay` so this body depends on the day, and is re-run at midnight by
+    /// `.cadenceTracksDayChanges` below rather than whenever something else happens to (T-3104).
+    @State private var observedDay = CadenceObservedDay()
+    private var todayKey: String { observedDay.todayKey }
 
     /// Expensive: four filters, a full sort, a `sectionConfigs` decode per active list, and a
     /// pass over every completed task ever created. Build it **once per body pass** and thread
@@ -212,6 +215,7 @@ struct TasksPanel: View {
             .onChange(of: localSortMode) { _, v in
                 CadenceDefaults.store.set(v.rawValue, forKey: Self.sortModeDefaultsKey)
             }
+            .cadenceTracksDayChanges($observedDay)
     }
 
     private func panelShell(derived: TasksPanelDerivedState, showsRollover: Bool) -> some View {

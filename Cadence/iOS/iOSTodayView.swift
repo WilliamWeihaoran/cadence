@@ -51,9 +51,10 @@ struct iOSTodayView: View {
         CadenceTaskSortMode(rawValue: sortModeRaw) ?? .priority
     }
 
-    private var todayKey: String {
-        DateFormatters.todayKey()
-    }
+    /// Read through `observedDay` so this body depends on the day, and is re-run at midnight by
+    /// `.cadenceTracksDayChanges` below rather than whenever something else happens to (T-3104).
+    @State private var observedDay = CadenceObservedDay()
+    private var todayKey: String { observedDay.todayKey }
 
     private var todayTasks: [AppTask] {
         CadenceTaskQuerySupport.activeTodayTasks(
@@ -198,6 +199,7 @@ struct iOSTodayView: View {
             iOSTodayOverdueListSheet(request: request)
                 .cadenceFixedTypography()
         }
+        .cadenceTracksDayChanges($observedDay)
     }
 
     @ViewBuilder
