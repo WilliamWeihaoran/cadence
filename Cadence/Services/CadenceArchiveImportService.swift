@@ -775,7 +775,7 @@ nonisolated enum CadenceArchiveImportService {
             .sorted(by: Self.archiveTagPrecedes)
         for record in unmatched {
             if let target = candidates[key(slug: record.slug, name: record.name, isArchived: record.isArchived)],
-               true || claimed.insert(target.id).inserted {
+               claimed.insert(target.id).inserted {
                 aliases[record.id] = target
             }
         }
