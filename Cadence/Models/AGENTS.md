@@ -43,9 +43,12 @@ additive optional property on an already-deployed model is **not** the safer rou
 
 **Schema first, then the writer.** Test the final additive model in Development → deploy its
 types, fields and indexes to Production → test there → *then* publish the build that writes it.
-`CD_SidebarLayoutPreference`, `CD_LookPreference`, `CD_NoteTemplatePreference` and
-`CD_LookPreference.calendarPresentationRaw` are undeployed today; record an owed deploy
-in `docs/apple-release-readiness.md`, which is where the owner reads it. **Never take a model back
+Nothing is owed today: `CD_SidebarLayoutPreference`, `CD_LookPreference`,
+`CD_NoteTemplatePreference` and `CD_LookPreference.calendarPresentationRaw` were deployed and
+verified by the owner in the CloudKit Console on 2026-10-02 (T-3117). Record the next owed deploy
+in `docs/apple-release-readiness.md`, which is where the owner reads it, and read its CloudKit
+row before trusting any status here — it carries the verification and the reason a missing
+**field** can be invisible in the deployment diff. **Never take a model back
 out of `CadenceSchema` to quieten a red sync test** (T-1294 rejected that by name), and **degrade
 to a device-local fallback and add no notice** — nothing can tell "not deployed" from "no row has
 synced yet", and `CadenceSidebarLayoutPreferenceStore` (T-1274) is the worked example. TN3164, the
