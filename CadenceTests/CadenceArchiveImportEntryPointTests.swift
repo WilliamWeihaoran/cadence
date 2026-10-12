@@ -723,6 +723,44 @@ struct CadenceArchiveImportEntryPointTests {
         #expect(!sentence.lowercased().contains("restore"))
     }
 
+    /// T-3131: once more than tasks are compared, the note and the result sentence name each kind
+    /// in plain words, agree with the total, and leave a kind at zero out.
+    @Test func theMatchedDifferencesNoteNamesEachKindThatDiffers() throws {
+        func plan(_ differing: [String: Int]) -> CadenceArchiveImportPlan {
+            CadenceArchiveImportPlan(
+                mode: .mergeKeepingExistingRows,
+                insertCountsByEntityName: [:],
+                matchedCountsByEntityName: ["AppTask": 4, "Note": 4, "SavedLink": 4],
+                entityNamesOnlyInTheArchive: [],
+                linkedCalendarCount: 0,
+                differingMatchedCountsByEntityName: differing
+            )
+        }
+
+        let one = try #require(CadenceArchiveImportPresentation.matchedDifferencesNote(
+            plan(["AppTask": 0, "Note": 1, "SavedLink": 0])))
+        #expect(one.hasPrefix("1 note already here differs from this archive and would be left as it is."))
+
+        let pair = try #require(CadenceArchiveImportPresentation.matchedDifferencesNote(
+            plan(["AppTask": 1, "SavedLink": 1])))
+        #expect(pair.hasPrefix("1 task and 1 saved link already here differ from this archive and would be left as they are."))
+
+        let many = try #require(CadenceArchiveImportPresentation.matchedDifferencesNote(
+            plan(["AppTask": 1, "Note": 2, "SavedLink": 1, "Subtask": 0])))
+        #expect(many.hasPrefix("1 task, 2 notes and 1 saved link already here differ from this archive"))
+        #expect(many.hasSuffix("replace them with the archive's copy."))
+
+        let outcome = CadenceArchiveImportOutcome(
+            plan: plan(["Area": 1, "Subtask": 2]),
+            insertedRecordCount: 0,
+            overwrittenRecordCount: 0,
+            skippedRecordCount: 12,
+            notesFoldedFromLegacyRows: 0
+        )
+        #expect(CadenceArchiveImportPresentation.outcomeMessage(outcome)
+            .contains("1 area and 2 subtasks here differ from the archive and were left as they are."))
+    }
+
     /// Both previews draw it, and neither retypes it.
     @Test func bothImportPreviewsDrawTheMatchedDifferencesNote() throws {
         for path in [

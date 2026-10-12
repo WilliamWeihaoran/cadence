@@ -258,8 +258,8 @@ nonisolated enum CadenceArchiveImportPresentation {
             """
     }
 
-    /// **T-3111.** Matched tasks whose copy here is not the archive's, said only where the mode
-    /// will leave them that way.
+    /// **T-3111, T-3131.** Matched rows whose copy here is not the archive's, said only where the
+    /// mode will leave them that way, and named by kind — "1 task, 2 notes and 1 saved link".
     ///
     /// Without it a merge over a task that lost its area and tags reads exactly like a re-import
     /// that had nothing to do: "already has all N records … would change nothing". Both are true
@@ -274,11 +274,40 @@ nonisolated enum CadenceArchiveImportPresentation {
         let one = count == 1
         let overwrite = modeTitle(.restoreOverwritingExistingRows)
         return """
-            \(count) \(one ? "task" : "tasks") already here \(one ? "differs" : "differ") from this \
+            \(differingRows(plan)) already here \(one ? "differs" : "differ") from this \
             archive and would be left as \(one ? "it is" : "they are"). Choose \(overwrite) to \
             replace \(one ? "it" : "them") with the archive's copy.
             """
     }
+
+    /// "1 task", or "2 tasks, 1 note and 1 saved link": the plan's differing rows by kind, in the
+    /// order the app's own lists put them, each kind at zero left out. The verb that follows agrees
+    /// with the total, which is why the callers decide it and not this.
+    ///
+    /// A table rather than `entityTitle`, because these are nouns inside a sentence ("saved link",
+    /// not "Saved links") and a kind compared later without a row here still reads as "records".
+    static func differingRows(_ plan: CadenceArchiveImportPlan) -> String {
+        let counts = plan.differingMatchedCountsByEntityName.filter { $0.value > 0 }
+        let known = differingRowNouns.map(\.entityName)
+        var phrases: [String] = []
+        for entry in differingRowNouns {
+            guard let count = counts[entry.entityName] else { continue }
+            phrases.append("\(count) \(count == 1 ? entry.one : entry.many)")
+        }
+        let unnamed = counts.filter { !known.contains($0.key) }.values.reduce(0, +)
+        if unnamed > 0 { phrases.append(unnamed == 1 ? "1 other record" : "\(unnamed) other records") }
+        guard let last = phrases.popLast() else { return records(0) }
+        return phrases.isEmpty ? last : phrases.joined(separator: ", ") + " and " + last
+    }
+
+    private static let differingRowNouns: [(entityName: String, one: String, many: String)] = [
+        ("Area", "area", "areas"),
+        ("Project", "project", "projects"),
+        ("AppTask", "task", "tasks"),
+        ("Subtask", "subtask", "subtasks"),
+        ("Note", "note", "notes"),
+        ("SavedLink", "saved link", "saved links"),
+    ]
 
     // MARK: - Outcomes
 
@@ -302,12 +331,11 @@ nonisolated enum CadenceArchiveImportPresentation {
         case (let inserted, let overwritten):
             sentence = "Imported \(records(inserted)) and replaced \(records(overwritten))."
         }
-        // T-3111: the same fact as `matchedDifferencesNote`, in the past tense, so a merge that
-        // declined to repair a task does not end on "Nothing changed" alone.
+        // T-3111, T-3131: the same fact as `matchedDifferencesNote`, in the past tense, so a merge
+        // that declined to repair a row does not end on "Nothing changed" alone.
         if outcome.plan.mode == .mergeKeepingExistingRows, outcome.plan.totalDifferingMatchedCount > 0 {
-            let differing = outcome.plan.totalDifferingMatchedCount
-            let one = differing == 1
-            sentence += " \(differing) \(one ? "task" : "tasks") here \(one ? "differs" : "differ") from the archive and \(one ? "was" : "were") left as \(one ? "it is" : "they are")."
+            let one = outcome.plan.totalDifferingMatchedCount == 1
+            sentence += " \(differingRows(outcome.plan)) here \(one ? "differs" : "differ") from the archive and \(one ? "was" : "were") left as \(one ? "it is" : "they are")."
         }
         if outcome.notesFoldedFromLegacyRows > 0 {
             let folded = outcome.notesFoldedFromLegacyRows

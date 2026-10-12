@@ -374,7 +374,11 @@ struct CadenceNoteFolderSurfaceTests {
             // be made at all.
             "Cadence/Shared/CadenceListNoteFiling.swift:3",
             // `self.folderPath = folderPath` in the initializer.
-            "Cadence/Models/Note.swift:1"
+            "Cadence/Models/Note.swift:1",
+            // T-3131: `matchedNoteDiffers` normalizes the ARCHIVE RECORD's folder (a value copy,
+            // never the model) through `CadenceNoteFolderPath.normalized`, so a re-import compares
+            // equal to what filing stored. Still the one normalizer; no model write.
+            "Cadence/Services/CadenceArchiveImportService.swift:1"
         ].sorted())
     }
 

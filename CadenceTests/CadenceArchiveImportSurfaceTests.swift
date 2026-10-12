@@ -1376,7 +1376,178 @@ struct CadenceArchiveImportSurfaceTests {
         #expect(plan.differingMatchedCountsByEntityName["AppTask"] == 0)
     }
 
+    // MARK: - Matched rows that differ, beyond tasks (T-3131)
+
+    /// The kinds the plan compares. A key outside this set would be a kind nobody normalised; an
+    /// absent one reads as *not compared*.
+    private static let comparedKinds: Set<String> = ["AppTask", "Area", "Project", "Subtask", "Note", "SavedLink"]
+
+    /// The no-op re-import, for every compared kind: each one matched at least once, and none of
+    /// them counted as differing.
+    @Test func anIdenticalReImportHasNoDifferenceInAnyComparedKind() throws {
+        let (archive, destination, _) = try Self.importedCopyOfTheWholeSchema()
+
+        let plan = try CadenceArchiveImportService.plan(archive, in: destination)
+
+        #expect(Set(plan.differingMatchedCountsByEntityName.keys) == Self.comparedKinds)
+        for name in Self.comparedKinds.sorted() {
+            #expect((plan.matchedCountsByEntityName[name] ?? 0) >= 1, "no matched \(name) to compare")
+            #expect(plan.differingMatchedCountsByEntityName[name] == 0, "an identical \(name) counted as differing")
+        }
+        #expect(plan.totalDifferingMatchedCount == 0)
+    }
+
+    /// One damaged field or link, each on its own fresh copy, counts exactly once and only in its
+    /// own kind — so a relationship CloudKit nullified is visible for every compared kind.
+    @Test func oneDamagedFieldOrLinkCountsExactlyOnceInItsOwnKind() throws {
+        let edits: [(kind: String, label: String, edit: (ModelContext) throws -> Void)] = [
+            ("Area", "area lost its context", { try #require(try Self.one(Area.self, in: $0)).context = nil }),
+            ("Area", "area renamed", { try #require(try Self.one(Area.self, in: $0)).name = "Renamed" }),
+            ("Project", "project lost its area", { try #require(try Self.one(Project.self, in: $0)).area = nil }),
+            ("Project", "project description", { try #require(try Self.one(Project.self, in: $0)).desc = "Changed" }),
+            ("Subtask", "subtask lost its task", { try #require(try Self.one(Subtask.self, in: $0)).parentTask = nil }),
+            ("Subtask", "subtask ticked", { try #require(try Self.one(Subtask.self, in: $0)).isDone.toggle() }),
+            ("Note", "note lost its area", { try Self.kitchenNote(in: $0).area = nil }),
+            ("Note", "note lost its tags", { try Self.kitchenNote(in: $0).tags = [] }),
+            ("Note", "note refiled", { try Self.kitchenNote(in: $0).folderPath = "Elsewhere" }),
+            ("Note", "note body", { try Self.kitchenNote(in: $0).content = "# Kitchen, edited" }),
+            ("SavedLink", "saved link lost its project", { try #require(try Self.one(SavedLink.self, in: $0)).project = nil }),
+            ("SavedLink", "saved link URL", { try #require(try Self.one(SavedLink.self, in: $0)).url = "https://example.com/other" }),
+        ]
+        for (kind, label, edit) in edits {
+            let (archive, destination, _) = try Self.importedCopyOfTheWholeSchema()
+            try edit(destination)
+            try destination.save()
+
+            let plan = try CadenceArchiveImportService.plan(archive, in: destination)
+            #expect(plan.differingMatchedCountsByEntityName[kind] == 1, "\(label) did not count")
+            #expect(plan.totalDifferingMatchedCount == 1, "\(label) counted somewhere else too")
+            #expect(plan.changesAnything == false, "\(label): merge still writes nothing to a matched row")
+        }
+    }
+
+    /// The importer rewrites a saved link's URL on the way in (T-3106). Re-planning the same
+    /// archive must compare against what the importer stored, not the archive's raw string.
+    @Test func aSavedLinkURLTheImporterNormalizedIsNotADifference() throws {
+        let source = ModelContext(try CadenceTestStore.container())
+        source.insert(SavedLink(title: "Bare", url: "  example.com/recipe  "))
+        source.insert(SavedLink(title: "File", url: "file:///Applications"))
+        try source.save()
+        let archive = try CadenceDataExportService.makeArchive(in: source)
+        let destination = ModelContext(try CadenceTestStore.container())
+        try CadenceArchiveImportService.apply(archive, in: destination)
+
+        let stored = Set(try destination.fetch(FetchDescriptor<SavedLink>()).map(\.url))
+        #expect(stored.isDisjoint(with: archive.savedLinks.map(\.url)), "the importer did not rewrite these URLs")
+
+        let plan = try CadenceArchiveImportService.plan(archive, in: destination)
+        #expect(plan.matchedCountsByEntityName["SavedLink"] == 2)
+        #expect(plan.differingMatchedCountsByEntityName["SavedLink"] == 0)
+    }
+
+    /// The importer files a note through the shared folder normalizer. A hand-edited path stored
+    /// tidied is the archive's note, not a different one.
+    @Test func aNoteFolderTheImporterFiledIsNotADifference() throws {
+        let source = ModelContext(try CadenceTestStore.container())
+        let note = Note(kind: .list, title: "Plan", content: "# Plan")
+        note.folderPath = " /Planning/ "
+        source.insert(note)
+        try source.save()
+        let archive = try CadenceDataExportService.makeArchive(in: source)
+        let destination = ModelContext(try CadenceTestStore.container())
+        try CadenceArchiveImportService.apply(archive, in: destination)
+
+        let stored = try #require(try Self.one(Note.self, in: destination))
+        #expect(stored.folderPath != archive.notes[0].folderPath, "the importer did not refile this note")
+
+        let plan = try CadenceArchiveImportService.plan(archive, in: destination)
+        #expect(plan.matchedCountsByEntityName["Note"] == 1)
+        #expect(plan.differingMatchedCountsByEntityName["Note"] == 0)
+    }
+
+    /// A note's tags are wired as a set, as a task's are: the archive's ids in another order are
+    /// not a different note.
+    @Test func noteTagOrderIsNotADifference() throws {
+        let (_, destination, _) = try Self.importedCopyOfTheWholeSchema()
+        let note = try Self.kitchenNote(in: destination)
+        let second = Tag(name: "weekend")
+        destination.insert(second)
+        note.tags = (note.tags ?? []) + [second]
+        try destination.save()
+        var archive = try CadenceDataExportService.makeArchive(in: destination)
+        let index = try #require(archive.notes.firstIndex { $0.id == note.id })
+        #expect(archive.notes[index].tagIDs.count == 2)
+        archive.notes[index].tagIDs.reverse()
+
+        let plan = try CadenceArchiveImportService.plan(archive, in: destination)
+        #expect(plan.differingMatchedCountsByEntityName["Note"] == 0)
+    }
+
+    /// An area's and a project's `loggedMinutes` are raised from the focus sessions by both modes,
+    /// like a task's `actualMinutes`, so the raised figure is not a difference.
+    @Test func aListsFocusTotalTheImporterRaisedIsNotADifference() throws {
+        let source = ModelContext(try CadenceTestStore.container())
+        let area = Area(name: "Home")
+        let project = Project(name: "Kitchen")
+        let onArea = FocusSessionLog(minutes: 25, previousMinutes: 0, loggedAt: Date(), dayKey: "2026-02-02")
+        onArea.area = area
+        let onProject = FocusSessionLog(minutes: 40, previousMinutes: 0, loggedAt: Date(), dayKey: "2026-02-02")
+        onProject.project = project
+        for model in [area, project, onArea, onProject] as [any PersistentModel] { source.insert(model) }
+        try source.save()
+        let archive = try CadenceDataExportService.makeArchive(in: source)
+        let destination = ModelContext(try CadenceTestStore.container())
+        try CadenceArchiveImportService.apply(archive, in: destination)
+
+        let storedArea = try #require(try Self.one(Area.self, in: destination))
+        let storedProject = try #require(try Self.one(Project.self, in: destination))
+        #expect(storedArea.loggedMinutes > archive.areas[0].loggedMinutes, "the import raised no area total")
+        #expect(storedProject.loggedMinutes > archive.projects[0].loggedMinutes, "the import raised no project total")
+
+        let plan = try CadenceArchiveImportService.plan(archive, in: destination)
+        #expect(plan.differingMatchedCountsByEntityName["Area"] == 0)
+        #expect(plan.differingMatchedCountsByEntityName["Project"] == 0)
+    }
+
+    /// The legacy fold after the commit fills an empty dated note from its legacy row. That note
+    /// is still the archive's: overwriting would empty it and the fold would fill it again. A later
+    /// edit to the filled body is a real difference, and counts.
+    @Test func anEmptyDailyNoteTheLegacyFoldFilledIsNotADifference() throws {
+        let source = ModelContext(try CadenceTestStore.container())
+        source.insert(Note(kind: .daily, title: "2026-02-03", dateKey: "2026-02-03"))
+        let legacy = DailyNote(date: "2026-02-03")
+        legacy.content = "Notes from that day"
+        source.insert(legacy)
+        try source.save()
+        let archive = try CadenceDataExportService.makeArchive(in: source)
+        #expect(archive.notes.count == 1)
+        #expect(archive.notes[0].content.isEmpty)
+
+        let destination = ModelContext(try CadenceTestStore.container())
+        let outcome = try CadenceArchiveImportService.apply(archive, in: destination)
+        #expect(outcome.notesFoldedFromLegacyRows == 1)
+        let filled = try #require(try Self.one(Note.self, in: destination))
+        #expect(filled.content == "Notes from that day", "the fold did not fill the placeholder")
+        #expect(filled.legacySourceID == legacy.id.uuidString)
+
+        let plan = try CadenceArchiveImportService.plan(archive, in: destination)
+        #expect(plan.matchedCountsByEntityName["Note"] == 1)
+        #expect(plan.differingMatchedCountsByEntityName["Note"] == 0)
+
+        filled.content = "Rewritten since the restore"
+        try destination.save()
+        let edited = try CadenceArchiveImportService.plan(archive, in: destination)
+        #expect(edited.differingMatchedCountsByEntityName["Note"] == 1)
+    }
+
     // MARK: - Helpers
+
+    /// The fixture's one note seeded directly, with an area and a tag — the other five came from
+    /// the legacy fold and carry neither.
+    private static func kitchenNote(in modelContext: ModelContext) throws -> Note {
+        try #require(try modelContext.fetch(FetchDescriptor<Note>()).first { $0.title == "Kitchen notes" })
+    }
+
 
     /// The whole schema, exported and imported into a fresh store, with the destination's copy of
     /// the one task. The two stores are the archive's identical twins until a test edits one.

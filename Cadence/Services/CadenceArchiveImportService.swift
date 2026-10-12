@@ -501,12 +501,32 @@ nonisolated enum CadenceArchiveImportService {
             matches[name] = ids.intersection(existing).count
         }
 
-        // [[T-3111]]. Read-only: this compares, it writes nothing, and it does not change what
-        // either mode does to the rows it counts.
-        let differingTasks = archive.tasks.filter { record in
-            guard let present = destination.tasks[record.id] else { return false }
-            return matchedTaskDiffers(record, from: present)
-        }.count
+        // [[T-3111]], [[T-3131]]. Read-only: this compares, it writes nothing, and it does not
+        // change what either mode does to the rows it counts.
+        func differing<Record: Identifiable, Model>(
+            _ records: [Record],
+            _ present: [UUID: Model],
+            _ differs: (Record, Model) -> Bool
+        ) -> Int where Record.ID == UUID {
+            records.filter { record in
+                guard let model = present[record.id] else { return false }
+                return differs(record, model)
+            }.count
+        }
+        let differingCounts: [String: Int] = [
+            "AppTask": differing(archive.tasks, destination.tasks, matchedTaskDiffers),
+            "Area": differing(archive.areas, destination.areas, matchedAreaDiffers),
+            "Project": differing(archive.projects, destination.projects, matchedProjectDiffers),
+            "Subtask": differing(archive.subtasks, destination.subtasks, matchedSubtaskDiffers),
+            "Note": differing(archive.notes, destination.notes) { record, present in
+                matchedNoteDiffers(
+                    record,
+                    from: present,
+                    foldedFrom: legacyFoldSource(of: present, in: archive, against: destination)
+                )
+            },
+            "SavedLink": differing(archive.savedLinks, destination.savedLinks, matchedSavedLinkDiffers),
+        ]
 
         let buildEntities = Set(CadenceSchema.schema.entities.map(\.name))
         return CadenceArchiveImportPlan(
@@ -518,7 +538,7 @@ nonisolated enum CadenceArchiveImportService {
                 .sorted(),
             linkedCalendarCount: archive.areas.filter { !$0.linkedCalendarID.isEmpty }.count
                 + archive.projects.filter { !$0.linkedCalendarID.isEmpty }.count,
-            differingMatchedCountsByEntityName: ["AppTask": differingTasks]
+            differingMatchedCountsByEntityName: differingCounts
         )
     }
 
@@ -539,6 +559,128 @@ nonisolated enum CadenceArchiveImportService {
         var incoming = record
         var current = CadenceArchiveTask(present)
         current.actualMinutes = incoming.actualMinutes
+        incoming.tagIDs = incoming.tagIDs.sorted { $0.uuidString < $1.uuidString }
+        current.tagIDs = current.tagIDs.sorted { $0.uuidString < $1.uuidString }
+        return incoming != current
+    }
+
+    /// `matchedTaskDiffers` for an area ([[T-3131]]): every field `write` copies, and the context
+    /// link. `loggedMinutes` is left out for the reason `actualMinutes` is — it is the focus-session
+    /// total `reconcileFocusCounters` raises in both modes, not a field either one leaves or replaces.
+    nonisolated static func matchedAreaDiffers(_ record: CadenceArchiveArea, from present: Area) -> Bool {
+        var current = CadenceArchiveArea(present)
+        current.loggedMinutes = record.loggedMinutes
+        return record != current
+    }
+
+    /// `matchedAreaDiffers` for a project: the same fields, the same `loggedMinutes` exclusion, and
+    /// the area link beside the context one.
+    nonisolated static func matchedProjectDiffers(_ record: CadenceArchiveProject, from present: Project) -> Bool {
+        var current = CadenceArchiveProject(present)
+        current.loggedMinutes = record.loggedMinutes
+        return record != current
+    }
+
+    /// A subtask is written verbatim and wired to its parent task, so there is nothing to normalise.
+    nonisolated static func matchedSubtaskDiffers(_ record: CadenceArchiveSubtask, from present: Subtask) -> Bool {
+        record != CadenceArchiveSubtask(present)
+    }
+
+    /// A saved link's `url` is the one field `write` does not copy verbatim: it goes through
+    /// `importedSavedLinkURL` ([[T-3106]]). So the archive's string is compared as the importer would
+    /// store it — `" example.com "` restores as `"https://example.com"`, and that is not a difference.
+    nonisolated static func matchedSavedLinkDiffers(_ record: CadenceArchiveSavedLink, from present: SavedLink) -> Bool {
+        var incoming = record
+        incoming.url = importedSavedLinkURL(record.url)
+        return incoming != CadenceArchiveSavedLink(present)
+    }
+
+    /// One legacy row the post-commit fold may have poured into an empty dated note. See
+    /// `matchedNoteDiffers`.
+    nonisolated struct LegacyFoldSource: Equatable, Sendable {
+        /// `NoteMigrationService.LegacyKind`'s raw value — `"daily"` or `"weekly"`.
+        let kindRaw: String
+        let id: UUID
+        let content: String
+        let createdAt: Date
+        let updatedAt: Date
+    }
+
+    /// The legacy daily or weekly row `present` says it was filled from, read from this archive
+    /// first and from the store second — the two places the fold reads.
+    ///
+    /// The kind strings are `NoteMigrationService.LegacyKind`'s raw values, restated because that
+    /// enum is main-actor isolated by the target default and this importer is not. They cannot
+    /// drift silently: `anEmptyDailyNoteTheLegacyFoldFilledIsNotADifference` re-imports a filled
+    /// placeholder and goes red the moment these stop naming the fold's own kinds.
+    private nonisolated static func legacyFoldSource(
+        of present: Note,
+        in archive: CadenceArchive,
+        against destination: DestinationIndex
+    ) -> LegacyFoldSource? {
+        guard let id = UUID(uuidString: present.legacySourceID) else { return nil }
+        switch present.legacySourceKindRaw {
+        case "daily":
+            if let row = archive.legacyDailyNotes.first(where: { $0.id == id }) {
+                return LegacyFoldSource(kindRaw: "daily", id: id, content: row.content,
+                                        createdAt: row.createdAt, updatedAt: row.updatedAt)
+            }
+            if let model = destination.legacyDailyNotes[id] {
+                let row = CadenceArchiveDailyNote(model)
+                return LegacyFoldSource(kindRaw: "daily", id: id, content: row.content,
+                                        createdAt: row.createdAt, updatedAt: row.updatedAt)
+            }
+        case "weekly":
+            if let row = archive.legacyWeeklyNotes.first(where: { $0.id == id }) {
+                return LegacyFoldSource(kindRaw: "weekly", id: id, content: row.content,
+                                        createdAt: row.createdAt, updatedAt: row.updatedAt)
+            }
+            if let model = destination.legacyWeeklyNotes[id] {
+                let row = CadenceArchiveWeeklyNote(model)
+                return LegacyFoldSource(kindRaw: "weekly", id: id, content: row.content,
+                                        createdAt: row.createdAt, updatedAt: row.updatedAt)
+            }
+        default:
+            break
+        }
+        return nil
+    }
+
+    /// `matchedTaskDiffers` for a note ([[T-3131]]): every field `write` copies, and the area,
+    /// project and tag links. Three things the importer does on the way in are replayed on the
+    /// archive's copy first, so a store that was just imported from this archive compares equal:
+    ///
+    /// - **Folder filing.** `write` files the note through `CadenceListNoteFiling.fileWithoutCommitting`,
+    ///   which is `CadenceNoteFolderPath.normalized` — a hand-edited `"/Planning/"` is stored as
+    ///   `"Planning"`.
+    /// - **Tag order.** The importer wires tags as a set, exactly as for a task.
+    /// - **The legacy fold.** `apply` runs `NoteMigrationService` after the commit, and its one edit
+    ///   to a note that already exists is `restoreEmptyDatedNote`: an empty, untagged daily or
+    ///   weekly note with no legacy source is given the matching legacy row's content, the earlier
+    ///   `createdAt`, the later `updatedAt` and that row as its source. When `present` names such a
+    ///   row and the archive's copy is exactly such a placeholder, the same edit is applied to the
+    ///   archive's copy before comparing. Overwriting would put the empty body back and the fold
+    ///   would fill it again, so that is not a difference either mode resolves.
+    nonisolated static func matchedNoteDiffers(
+        _ record: CadenceArchiveNote,
+        from present: Note,
+        foldedFrom legacy: LegacyFoldSource? = nil
+    ) -> Bool {
+        var incoming = record
+        var current = CadenceArchiveNote(present)
+        incoming.folderPath = CadenceNoteFolderPath.normalized(record.folderPath)
+        if let legacy,
+           record.kindRaw == NoteKind.daily.rawValue || record.kindRaw == NoteKind.weekly.rawValue,
+           record.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+           record.tagIDs.isEmpty,
+           record.legacySourceKindRaw.isEmpty, record.legacySourceID.isEmpty,
+           !legacy.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            incoming.content = legacy.content
+            incoming.createdAt = min(record.createdAt, legacy.createdAt)
+            incoming.updatedAt = max(record.updatedAt, legacy.updatedAt)
+            incoming.legacySourceKindRaw = legacy.kindRaw
+            incoming.legacySourceID = legacy.id.uuidString
+        }
         incoming.tagIDs = incoming.tagIDs.sorted { $0.uuidString < $1.uuidString }
         current.tagIDs = current.tagIDs.sorted { $0.uuidString < $1.uuidString }
         return incoming != current
@@ -1343,9 +1485,10 @@ nonisolated struct CadenceArchiveImportPlan: Equatable, Sendable {
     ///
     /// The figure that tells a no-op re-import from a merge that declined to repair something: a
     /// task CloudKit stripped of its area and tags still matches by id, so merge counts it skipped
-    /// and leaves the links gone. Only `"AppTask"` is compared today, by
-    /// `CadenceArchiveImportService.matchedTaskDiffers`; an absent key means *not compared*, not
-    /// *identical*. Defaulted so a plan built without a store behind it reads as no differences.
+    /// and leaves the links gone. Compared today: `"AppTask"`, `"Area"`, `"Project"`, `"Subtask"`,
+    /// `"Note"` and `"SavedLink"`, each by its own comparator in `CadenceArchiveImportService`
+    /// (`matchedTaskDiffers`, `matchedNoteDiffers` and so on, [[T-3131]]); an absent key means *not compared*, not *identical*. Defaulted so a plan built
+    /// without a store behind it reads as no differences.
     var differingMatchedCountsByEntityName: [String: Int] = [:]
 
     var totalInsertCount: Int { insertCountsByEntityName.values.reduce(0, +) }
