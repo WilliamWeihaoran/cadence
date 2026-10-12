@@ -190,6 +190,33 @@ nonisolated enum CadenceStoreSupport {
     }
 
     /// A write-capable container for the shared store, opened only if the store is already there.
+    ///
+    /// **It opens a store the app has open with mirroring ON, and this one has mirroring OFF
+    /// ([[T-3108]]).** The default is `cloudKitDatabase: .none` while `PersistenceController`
+    /// opens the same `default.store` with `.private("iCloud.com.haoranwei.Cadence")`, and the
+    /// widget extension could not do otherwise if it wanted to: `CadenceWidgets.entitlements`
+    /// carries no `icloud-container-identifiers`, so there is no container for it to mirror to.
+    ///
+    /// **That does not mean the write is lost, and the sentence that said it might be named the
+    /// wrong mechanism.** `CadenceModelContainerFactory.swift` argues, about the MCP server and
+    /// under the still-open [[T-3018]], that *"a container with mirroring off does not maintain
+    /// the mirroring metadata the app's own container exports from"*. Measured, and pinned by
+    /// `CadenceSharedStoreWriteGateTests`'
+    /// `aWidgetWriteThroughTheMirroringOffGateEntersTheStoresPersistentHistory`: a SwiftData store
+    /// opened with `cloudKitDatabase: .none` records **persistent history** for its inserts and
+    /// updates exactly as a mirrored one does, a separate read-only container over the same file
+    /// reads those transactions back, and `author` is `nil` on every one of them — so nothing in
+    /// that stream distinguishes a widget write from a write the app itself made. Persistent
+    /// history is what a CloudKit export pass reads; per-record metadata is written by the
+    /// *exporting* container when it exports, which is the same state a row the app inserted is in.
+    ///
+    /// **What is left is latency, and it is unmeasured.** Some process holding a mirroring
+    /// delegate still has to run the export, and this one holds none — so a widget write leaves on
+    /// the app's next export pass rather than promptly. How long that is was not measured and
+    /// cannot be from here: no CloudKit call may be made in this repository, and [[T-2010]]
+    /// records that even the *delivery* of a mirroring event needs a two-device run. Whether the
+    /// extension should carry its own iCloud entitlement instead is an owner decision, open
+    /// rather than settled in passing.
     nonisolated static func makeSharedWriteContainer(
         cloudKitDatabase: ModelConfiguration.CloudKitDatabase = .none,
         storeDirectoryURL: URL? = nil,

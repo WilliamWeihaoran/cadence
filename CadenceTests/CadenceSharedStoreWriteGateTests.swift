@@ -129,6 +129,92 @@ struct CadenceSharedStoreWriteGateTests {
         #expect(try taskTitles(inStoreDirectory: storeDirectory) == ["Captured from a widget", "Existing task"])
     }
 
+    // MARK: - What a mirroring-off write leaves behind for the app's mirrored container
+
+    /// **A widget write lands in the same persistent-history stream an app write lands in
+    /// ([[T-3108]]).**
+    ///
+    /// `makeSharedWriteContainer` defaults to `cloudKitDatabase: .none` and opens the same
+    /// `default.store` the app opens with `.private("iCloud.com.haoranwei.Cadence")`
+    /// (`PersistenceController.swift`). [[T-3108]] filed that as possible permanent loss on the
+    /// strength of a sentence written about the MCP server in `CadenceModelContainerFactory.swift`:
+    /// *"a container with mirroring off does not maintain the mirroring metadata the app's own
+    /// container exports from."* **That sentence names the wrong mechanism, and this test is the
+    /// measurement that says so.** SwiftData records persistent history for a store opened with
+    /// `cloudKitDatabase: .none` exactly as for a mirrored one, and a CloudKit export pass consumes
+    /// *that stream* — not metadata the writing container maintains.
+    ///
+    /// **Both halves run through the shipping path**: `CaptureTaskIntent.captureTask` and
+    /// `CompleteTaskIntent.completeTask`, the two `perform()` bodies
+    /// `everyIntentThatOpensTheStoreOpensItThroughTheGate` counts, over a container from the real
+    /// gate. The history is read back through a **separate, read-only** container, because a stream
+    /// only the writing container could see would be worth nothing to the app.
+    ///
+    /// **`author` is `nil` on every transaction, and that is the point rather than a detail.** A
+    /// widget write carries no transaction author, so nothing in the stream distinguishes it from a
+    /// write the app itself made. `bundleIdentifier` is the one field that differs between the two
+    /// processes, and nothing here or in the platform's documented behaviour filters an export on it.
+    ///
+    /// **What this does NOT establish.** No CloudKit call was made and none may be. That
+    /// `NSPersistentCloudKitContainer` exports from this stream is platform behaviour taken from
+    /// outside this tree, and *when* it next runs an export pass over it is unmeasured — [[T-2010]]
+    /// records that even the delivery of a mirroring event needs a two-device run. What this test
+    /// removes is the **loss** mechanism. The **latency** question is untouched and still open.
+    @Test func aWidgetWriteThroughTheMirroringOffGateEntersTheStoresPersistentHistory() throws {
+        let storeDirectory = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: storeDirectory) }
+        try seedRealStore(in: storeDirectory, taskTitle: "Existing task")
+
+        // Non-empty before the widget writes anything, so a helper that silently read nothing back
+        // could not carry the two deltas below.
+        let seeded = try historyTransactions(inStoreDirectory: storeDirectory)
+        #expect(!seeded.isEmpty, "the seed's own write left no history to measure against")
+
+        let container = try CadenceStoreSupport.makeSharedWriteContainer(storeDirectoryURL: storeDirectory)
+        let context = ModelContext(container)
+
+        try CaptureTaskIntent.captureTask(title: "Captured from a widget", planForToday: false, in: context)
+        let afterCapture = try historyTransactions(inStoreDirectory: storeDirectory)
+        #expect(afterCapture.count > seeded.count, "the capture left no transaction behind")
+        #expect(changeKinds(in: Array(afterCapture.dropFirst(seeded.count))).contains("insert(AppTask)"))
+
+        let captured = try #require(
+            try context.fetch(FetchDescriptor<AppTask>()).first { $0.title == "Captured from a widget" }
+        )
+        #expect(try CompleteTaskIntent.completeTask(taskID: captured.id.uuidString, in: context))
+
+        let afterCompletion = try historyTransactions(inStoreDirectory: storeDirectory)
+        #expect(afterCompletion.count > afterCapture.count, "the completion left no transaction behind")
+        #expect(changeKinds(in: Array(afterCompletion.dropFirst(afterCapture.count))).contains("update(AppTask)"))
+
+        #expect(
+            afterCompletion.allSatisfy { $0.author == nil },
+            "a widget write that announced itself as one would be distinguishable from an app write"
+        )
+    }
+
+    /// The store's own persistent history, read through a container that did not write it and
+    /// cannot write it.
+    private func historyTransactions(inStoreDirectory directoryURL: URL) throws -> [DefaultHistoryTransaction] {
+        let container = try CadenceStoreSupport.makePrimaryContainer(
+            allowsSave: false,
+            cloudKitDatabase: .none,
+            storeURL: directoryURL.appendingPathComponent(CadenceStoreSupport.storeFilename)
+        )
+        return try ModelContext(container).fetchHistory(HistoryDescriptor<DefaultHistoryTransaction>())
+    }
+
+    private func changeKinds(in transactions: [DefaultHistoryTransaction]) -> [String] {
+        transactions.flatMap(\.changes).map { change in
+            switch change {
+            case .insert(let inserted): return "insert(\(inserted.changedPersistentIdentifier.entityName))"
+            case .update(let updated): return "update(\(updated.changedPersistentIdentifier.entityName))"
+            case .delete(let deleted): return "delete(\(deleted.changedPersistentIdentifier.entityName))"
+            @unknown default: return "unknown"
+            }
+        }
+    }
+
     // MARK: - The other thing the app does before it opens the store
 
     @Test func aScheduledRestoreRefusesOutOfProcessWritesUntilTheAppAppliesIt() throws {
