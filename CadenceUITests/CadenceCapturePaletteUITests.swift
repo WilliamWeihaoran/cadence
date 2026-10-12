@@ -52,6 +52,78 @@ final class CadenceCapturePaletteUITests: XCTestCase {
         }
     }
 
+    /// Provision only our private directories; offline SwiftData fixtures replace these stores
+    /// while the app is stopped, before the separate measurement test is run.
+    func testPrepareLoadMeasurementStoreDirectories() throws {
+        try requireLargeStoreMeasurement()
+        for count in [0, 100, 2_000] {
+            _ = try launchAndFindTabBarPlus(storeID: loadStoreID(count))
+            print("CAPTURE-LOAD-PREPARED count=\(count) storeID=\(loadStoreID(count))")
+            app.terminate()
+        }
+    }
+
+    func testLargeStoreHoldSweepOnIndexAndTaskList() throws {
+        try requireLargeStoreMeasurement()
+        for count in [0, 100, 2_000] {
+            _ = try launchAndFindTabBarPlus(storeID: loadStoreID(count))
+            if count > 0 {
+                XCTAssertTrue(app.buttons["Tasks, \(count) open tasks"].waitForExistence(timeout: 5),
+                              "The app did not load the verified fixture population")
+            }
+            for page in ["index", "task-list"] {
+                if page == "task-list" {
+                    let screen = app.windows.firstMatch.frame
+                    let rows = app.buttons.matching(NSPredicate(
+                        format: "label == %@ OR label BEGINSWITH %@", "Tasks", "Tasks, "
+                    )).allElementsBoundByIndex.filter {
+                        $0.isHittable && $0.frame.midY < screen.minY + screen.height * 0.75
+                    }
+                    XCTAssertEqual(rows.count, 1, "No unique Tasks destination above the tab bar")
+                    try XCTUnwrap(rows.first).coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+                    XCTAssertTrue(app.buttons["All"].waitForExistence(timeout: 5))
+                    attach("load-\(count)-task-list-entry")
+                    if count > 0 {
+                        let task = app.descendants(matching: .any).matching(NSPredicate(
+                            format: "label CONTAINS %@", "Capture load task 0"
+                        )).firstMatch
+                        XCTAssertTrue(task.waitForExistence(timeout: 5), "The seeded task list is not rendered")
+                        XCTAssertTrue(task.isHittable, "A seeded row must actually be visible")
+                    }
+                }
+                attach("load-\(count)-\(page)-before")
+                for duration in [0.1, 0.25, 0.4, 0.6, 0.9, 1.2] {
+                    let plus = app.buttons["New Task"]
+                    XCTAssertTrue(plus.isHittable)
+                    print("CAPTURE-LOAD-BEGIN count=\(count) page=\(page) seconds=\(duration) epoch=\(Date().timeIntervalSince1970)")
+                    plus.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).press(forDuration: duration)
+                    let openedTask = app.navigationBars["New task"].waitForExistence(timeout: 2)
+                    print("CAPTURE-LOAD-RESULT count=\(count) page=\(page) seconds=\(duration) openedTask=\(openedTask)")
+                    attach("load-\(count)-\(page)-\(duration)-after")
+                    if openedTask {
+                        app.buttons["Cancel"].tap()
+                        XCTAssertTrue(app.buttons["New Task"].waitForExistence(timeout: 5))
+                    } else {
+                        XCTAssertTrue(plus.isHittable)
+                    }
+                }
+            }
+            app.terminate()
+        }
+    }
+
+    private func loadStoreID(_ count: Int) -> String {
+        "codex-t3147-load-20261012-\(count)"
+    }
+
+    private func requireLargeStoreMeasurement() throws {
+        let marker = FileManager.default.temporaryDirectory
+            .appendingPathComponent("codex-t3147-large-store-opt-in")
+        guard FileManager.default.fileExists(atPath: marker.path) else {
+            throw XCTSkip("Large-store measurement requires verified offline fixtures and opt-in at \(marker.path)")
+        }
+    }
+
     func testStationaryHoldThenSlideUpReachesEventCapture() throws {
         let plus = try launchAndFindTabBarPlus()
         let start = plus.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
@@ -92,10 +164,10 @@ final class CadenceCapturePaletteUITests: XCTestCase {
         }
     }
 
-    private func launchAndFindTabBarPlus() throws -> XCUIElement {
+    private func launchAndFindTabBarPlus(storeID: String = "capture-\(UUID().uuidString)") throws -> XCUIElement {
         app = XCUIApplication()
         app.launchEnvironment["CADENCE_LOCAL_STORE_ONLY"] = "1"
-        CadenceUITestEnvironment.isolateStoreAndPreferences(app, storeID: "capture-\(UUID().uuidString)")
+        CadenceUITestEnvironment.isolateStoreAndPreferences(app, storeID: storeID)
         app.launch()
         XCTAssertTrue(app.wait(for: .runningForeground, timeout: CadenceUITestBounds.foreground))
         let buttons = app.buttons.matching(identifier: "New Task")
