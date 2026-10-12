@@ -356,6 +356,35 @@ struct PersistenceController {
         return value as? Error
     }
 
+    /// What the [[T-1366]] ledger records for the integrity repair, given the report the launch
+    /// is about to act on ([[T-3116]] (3)).
+    ///
+    /// **A repair that threw between passes is recorded as partially applied, because the launch
+    /// commits it.** `DataIntegrityRepairService.repair` runs its passes in sequence on the one
+    /// shared context with `saveChanges: false`, and the only `try` after a mutation sits between
+    /// passes; so a throw there leaves the passes that finished pending, `repairAndRecordFailure`
+    /// hands back `changed == true, success == false`, and `performStartupMaintenance` saves them
+    /// because `changedStore` reads `changed`. Every pass is whole in itself — the merges contain
+    /// no throwing call — so what reaches disk is complete passes, never half a merge. This used to
+    /// say `passReportedFailure` for that launch too, which read as "nothing applied" over a store
+    /// that had been changed and saved: the ledger and the store disagreed.
+    ///
+    /// **Recording it, rather than not saving it, is the smaller correct fix.** Not saving cannot
+    /// be done by skipping the save alone: the context is shared, so a later pass's change or any
+    /// later `save()` commits the repair's pending passes anyway. It would need a `rollback()`,
+    /// which also discards the note migration's and the tag sync's pending edits — so one pass
+    /// that keeps throwing would keep every other pass from ever landing, over passes that are
+    /// idempotent and complete. The outcome stays `.refused`, so the launch still lists the stage
+    /// among its failures; the note says the finished passes were applied, and the
+    /// `maintenanceSave` stage after it says whether they reached disk. Vocabulary, never content.
+    static func integrityRepairVerdict(for report: DataIntegrityRepairReport?) -> CadenceStartupStageVerdict {
+        guard let report else { return .refused("noReport") }
+        guard report.success else {
+            return .refused(report.changed ? "passFailedAfterApplyingFinishedPasses" : "passReportedFailure")
+        }
+        return report.changed ? .changed(nil) : .noChange
+    }
+
     /// Every pass a launch runs against the store it just opened.
     ///
     /// **Not `private`, and `defaults` is not a convenience (T-1108).** The empty-store suite used
@@ -450,9 +479,7 @@ struct PersistenceController {
                 removingForkedOccurrences: CadenceForkedOccurrenceRemover.removeAndCancelReminders
             )
         } classifying: { report in
-            guard let report else { return .refused("noReport") }
-            guard report.success else { return .refused("passReportedFailure") }
-            return report.changed ? .changed(nil) : .noChange
+            integrityRepairVerdict(for: report)
         }
         // T-621's store-wide pass, safe here by the same argument the repair above uses: it only
         // ever raises a counter and is a pure function of the counter and the ledger's rows, so a
@@ -1791,6 +1818,28 @@ enum StoreBackupManager {
         return Int64(values?.totalFileAllocatedSize ?? values?.fileAllocatedSize ?? 0)
     }
 
+    /// Whether a sweep must spare this backup — the **one** statement of the
+    /// rule, read by both `cleanUpAutomaticBackups` and `deleteAllBackups` ([[T-3116]] (1)).
+    ///
+    /// Two backups are named by something the user will read, and neither may be swept: the one a
+    /// restore is scheduled from, and — T-3045 — the one a live `FailedRestoreRecord` names.
+    /// `quarantinePendingRestore` clears the pending key on the same launch whose startup backup
+    /// then runs the retention sweep, so exempting the pending URL alone left the backup the
+    /// failed-restore banner points at removable a few lines later. `deleteAllBackups` used to
+    /// exempt neither, so clearing backups with a restore staged turned the next launch's restore
+    /// into a quarantine of a source that was no longer there.
+    ///
+    /// Answered as a predicate over standardized **paths**, not a set of URLs: a directory URL's
+    /// equality turns on whether it carries a trailing slash, and the two callers build theirs two
+    /// different ways (`listBackups` from a directory listing, `deleteAllBackups` from names).
+    static func protectedBackupPredicate(defaults: UserDefaults = CadenceDefaults.store) -> (URL) -> Bool {
+        let protectedPaths = Set([
+            pendingRestoreURL(defaults: defaults),
+            lastFailedRestore(defaults: defaults)?.backupURL,
+        ].compactMap { $0?.standardizedFileURL.path })
+        return { protectedPaths.contains($0.standardizedFileURL.path) }
+    }
+
     @discardableResult
     static func cleanUpAutomaticBackups() throws -> Int {
         try cleanUpAutomaticBackups(storeDirectoryURL: defaultStoreDirectoryURL())
@@ -1803,18 +1852,10 @@ enum StoreBackupManager {
         defaults: UserDefaults = CadenceDefaults.store
     ) throws -> Int {
         try refuseUnlessBackupWriteAllowed(in: storeDirectoryURL)
-        // Two backups are named by something the user will read, and neither may be retention
-        // fodder: the one a restore is scheduled from, and — T-3045 — the one a live
-        // `FailedRestoreRecord` names. `quarantinePendingRestore` clears the pending key on the
-        // same launch whose startup backup then runs this sweep, so exempting the pending URL
-        // alone left the backup the failed-restore banner points at removable a few lines later.
-        let protectedURLs = Set([
-            pendingRestoreURL(defaults: defaults),
-            lastFailedRestore(defaults: defaults)?.backupURL,
-        ].compactMap { $0?.standardizedFileURL })
+        let isProtected = protectedBackupPredicate(defaults: defaults)
         let removableBackups = automaticBackupSnapshotsToRemove(
             listBackups(storeDirectoryURL: storeDirectoryURL, fileManager: fileManager)
-        ).filter { !protectedURLs.contains($0.url.standardizedFileURL) }
+        ).filter { !isProtected($0.url) }
         for snapshot in removableBackups {
             try fileManager.removeItem(at: snapshot.url)
         }
@@ -1879,17 +1920,39 @@ enum StoreBackupManager {
         return retained.count
     }
 
+    /// Remove every backup except the ones `protectedBackupPredicate` spares ([[T-3116]] (1)).
+    ///
+    /// With nothing protected — the privacy reset's case, which clears the pending restore and the
+    /// failed-restore record **before** it calls this — the whole backups directory goes, exactly
+    /// as it always did, stray files included. With a restore staged or a failed restore on
+    /// record, everything in the directory goes except that backup: the next launch's restore
+    /// still has its source, and the banner still names a folder that exists.
+    ///
+    /// - Returns: how many backups were removed, which is no longer every backup listed.
     @discardableResult
-    static func deleteAllBackups(storeDirectoryURL: URL) throws -> Int {
+    static func deleteAllBackups(
+        storeDirectoryURL: URL,
+        fileManager: FileManager = .default,
+        defaults: UserDefaults = CadenceDefaults.store
+    ) throws -> Int {
         try refuseUnlessBackupWriteAllowed(in: storeDirectoryURL)
-        let snapshots = listBackups(storeDirectoryURL: storeDirectoryURL)
+        let isProtected = protectedBackupPredicate(defaults: defaults)
+        let removedSnapshotCount = listBackups(storeDirectoryURL: storeDirectoryURL, fileManager: fileManager)
+            .filter { !isProtected($0.url) }
+            .count
         let backupRootURL = backupRootURL(for: storeDirectoryURL)
+        guard fileManager.fileExists(atPath: backupRootURL.path) else { return removedSnapshotCount }
 
-        if FileManager.default.fileExists(atPath: backupRootURL.path) {
-            try FileManager.default.removeItem(at: backupRootURL)
+        let entries = try fileManager.contentsOfDirectory(atPath: backupRootURL.path)
+            .map { backupRootURL.appendingPathComponent($0) }
+        if entries.contains(where: isProtected) {
+            for entry in entries where !isProtected(entry) {
+                try fileManager.removeItem(at: entry)
+            }
+        } else {
+            try fileManager.removeItem(at: backupRootURL)
         }
-
-        return snapshots.count
+        return removedSnapshotCount
     }
 
     /// - Parameter storeDirectoryURL: the store this restore is aimed at, `nil` for the real one.

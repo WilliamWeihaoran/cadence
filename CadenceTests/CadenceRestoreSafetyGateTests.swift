@@ -128,6 +128,68 @@ struct CadenceRestoreSafetyGateTests {
         }
     }
 
+    // MARK: - T-3116 (1): clearing every backup spares the two a restore still names
+
+    /// With a restore staged, `deleteAllBackups` removes every other backup and leaves the source
+    /// — and the next launch's restore then still lands, which is the behaviour the exemption buys.
+    @Test func deleteAllBackupsSparesTheStagedRestoreSourceAndTheRestoreStillLands() throws {
+        try withTemporaryDefaults("CadenceTests.restoreSafetyGate") { defaults in
+            let root = try makeStoreDirectory()
+            defer { try? FileManager.default.removeItem(at: root) }
+            let backups = try sevenPreRestoreBackups(in: root)
+            let selected = backups[2]
+            try seedStore(in: root, marker: "live")
+            try StoreBackupManager.scheduleRestore(from: selected, defaults: defaults, storeDirectoryURL: root)
+            let listedBefore = StoreBackupManager.listBackups(storeDirectoryURL: root).count
+            #expect(listedBefore == backups.count, "non-vacuity: the fixture holds \(listedBefore) backups")
+
+            let removed = try StoreBackupManager.deleteAllBackups(storeDirectoryURL: root, defaults: defaults)
+
+            #expect(removed == listedBefore - 1, "the count claims \(removed) of \(listedBefore) removed")
+            #expect(FileManager.default.fileExists(atPath: selected.path), "the staged restore's source was deleted")
+            for (index, backup) in backups.enumerated() where index != 2 {
+                #expect(!FileManager.default.fileExists(atPath: backup.path), "backup \(index) survived a delete-all")
+            }
+            #expect(
+                StoreBackupManager.listBackups(storeDirectoryURL: root).map(\.url.standardizedFileURL.path)
+                    == [selected.standardizedFileURL.path]
+            )
+
+            try StoreBackupManager.performPendingRestoreIfNeeded(storeDirectoryURL: root, defaults: defaults)
+            #expect(marker(in: root) == "historical-2", "the restore did not land from the spared source")
+            #expect(StoreBackupManager.lastFailedRestore(defaults: defaults) == nil)
+        }
+    }
+
+    /// A failed-restore record's backup is spared too, for exactly as long as the record lives —
+    /// and with nothing protected the whole directory goes, as the privacy reset needs.
+    @Test func deleteAllBackupsSparesTheFailedRestoreBackupUntilTheRecordIsCleared() throws {
+        try withTemporaryDefaults("CadenceTests.restoreSafetyGate") { defaults in
+            let root = try makeStoreDirectory()
+            defer { try? FileManager.default.removeItem(at: root) }
+            let backups = try sevenPreRestoreBackups(in: root)
+            let selected = try #require(backups.first)
+            try seedStore(in: root, marker: "live")
+            try failARestore(from: selected, in: root, defaults: defaults)
+            #expect(StoreBackupManager.pendingRestoreURL(defaults: defaults) == nil)
+            _ = try #require(StoreBackupManager.lastFailedRestore(defaults: defaults))
+            let listedBefore = StoreBackupManager.listBackups(storeDirectoryURL: root).count
+            #expect(listedBefore >= backups.count, "non-vacuity: the fixture holds \(listedBefore) backups")
+
+            let removedWhileRecorded = try StoreBackupManager.deleteAllBackups(storeDirectoryURL: root, defaults: defaults)
+            #expect(removedWhileRecorded == listedBefore - 1)
+            #expect(FileManager.default.fileExists(atPath: selected.path), "the backup the banner names was deleted")
+            #expect(backups.dropFirst().allSatisfy { !FileManager.default.fileExists(atPath: $0.path) })
+
+            StoreBackupManager.clearFailedRestore(defaults: defaults)
+            let removedAfterClearing = try StoreBackupManager.deleteAllBackups(storeDirectoryURL: root, defaults: defaults)
+            #expect(removedAfterClearing == 1)
+            #expect(!FileManager.default.fileExists(
+                atPath: root.appendingPathComponent("Cadence Store Backups", isDirectory: true).path
+            ), "with nothing protected the backups directory itself should go")
+        }
+    }
+
     // MARK: - T-3044 (c): the validity gate
 
     @Test func aRealSwiftDataStorePassesTheGateAndAnEmptyOrMissingFileDoesNot() throws {

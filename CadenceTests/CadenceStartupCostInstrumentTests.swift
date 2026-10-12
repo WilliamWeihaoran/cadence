@@ -326,6 +326,74 @@ struct CadenceStartupCostInstrumentTests {
         }
     }
 
+    // MARK: - T-3116 (3): a repair that threw between passes
+
+    /// **The ledger says something was applied exactly when the launch has something to commit.**
+    ///
+    /// `performStartupMaintenance` saves when `repairReport?.changed == true`, whatever `success`
+    /// says, so the verdict has to agree with that one bit: a repair that changed the store and
+    /// then threw is recorded as a refusal that *applied* its finished passes, never as the bare
+    /// `passReportedFailure` that reads as "nothing happened" over a store that was saved.
+    @Test func aRepairThatThrewAfterChangingTheStoreIsRecordedAsPartiallyApplied() {
+        func report(success: Bool, changed: Bool) -> DataIntegrityRepairReport {
+            var report = DataIntegrityRepairReport(
+                source: "test",
+                startedAt: Date(timeIntervalSince1970: 0),
+                finishedAt: Date(timeIntervalSince1970: 0),
+                success: success
+            )
+            if changed { report.duplicateNotesMerged = 1 }
+            return report
+        }
+        let partialNote = "passFailedAfterApplyingFinishedPasses"
+
+        let partial = PersistenceController.integrityRepairVerdict(for: report(success: false, changed: true))
+        #expect(partial.outcome == .refused, "a repair that threw is no longer listed among the failures")
+        #expect(partial.note == partialNote, "a repair whose finished passes are saved is recorded as \(partial.note as String?)")
+
+        let failed = PersistenceController.integrityRepairVerdict(for: report(success: false, changed: false))
+        #expect(failed.outcome == .refused)
+        #expect(failed.note == "passReportedFailure")
+        #expect(PersistenceController.integrityRepairVerdict(for: nil).note == "noReport")
+
+        // The agreement, as a relation over every report shape: "the ledger says something was
+        // applied" iff "the launch's save condition reads this report as a change".
+        for success in [true, false] {
+            for changed in [true, false] {
+                let candidate = report(success: success, changed: changed)
+                let verdict = PersistenceController.integrityRepairVerdict(for: candidate)
+                let ledgerSaysApplied = verdict.outcome == .changed || verdict.note == partialNote
+                #expect(
+                    ledgerSaysApplied == (candidate.changed == true),
+                    "success=\(success) changed=\(changed): ledger says applied=\(ledgerSaysApplied)"
+                )
+            }
+        }
+    }
+
+    /// The launch classifies the repair through that verdict and not an inline copy of it. A
+    /// source read, because no fixture can make the repair throw between passes on demand: the
+    /// only `try` there is a task-table fetch, and an in-memory store does not refuse one.
+    @Test func theLaunchClassifiesTheRepairThroughTheSharedVerdict() throws {
+        let source = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/Services/PersistenceController.swift")
+        )
+        let body = try #require(
+            CadenceSourceScan.functionBody(named: "performStartupMaintenance", in: source),
+            "performStartupMaintenance is gone or its braces do not balance, so this reads nothing"
+        )
+        #expect(body.count > 200, "the stripped body is too small to be the real one")
+        #expect(body.contains("DataIntegrityRepairService.repairAndRecordFailure"), "non-vacuity: the launch runs the repair")
+        #expect(
+            body.components(separatedBy: "integrityRepairVerdict(for:").count - 1 == 1,
+            "the launch no longer classifies the repair through integrityRepairVerdict(for:)"
+        )
+        #expect(
+            !body.contains("report.changed ? .changed(nil) : .noChange"),
+            "the launch spells the repair's classifier inline again"
+        )
+    }
+
     // MARK: - Fixtures
 
     private static func realStoreOpenFailure() throws -> Error? {

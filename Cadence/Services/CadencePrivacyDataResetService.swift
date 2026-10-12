@@ -324,6 +324,9 @@ enum PrivacyDataResetService {
         // so no user text is in it and a reset that skipped it would still be a reset that left a
         // number describing the deleted store behind.
         CadenceStartupCostLedger.clearStoredState()
+        // These two clears must stay ABOVE `removeStoredBackups()`: `deleteAllBackups` spares the
+        // backup a pending restore or a failed-restore record names ([[T-3116]] (1)), so clearing
+        // them after the sweep would leave a copy of the store behind a reset that deleted it.
         StoreBackupManager.clearPendingRestore()
         StoreBackupManager.clearFailedRestore()
         let backups = removeStoredBackups()
