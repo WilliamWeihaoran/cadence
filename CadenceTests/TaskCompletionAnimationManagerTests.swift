@@ -184,6 +184,86 @@ struct TaskCompletionAnimationManagerTests {
         #expect(next?.status == .todo)
     }
 
+    // MARK: - T-3098: the settle follows the task, not the injection
+
+    /// **The macOS context swap, simulated end to end.** `macOSRootView.refreshAppData()` replaces
+    /// the app's `ModelContext` when another process writes the store, and the `.onAppear` that
+    /// injected `manager.modelContext` is outside both `.id(dataRefreshID)` subtrees, so it never
+    /// re-runs: every row the user can see is re-fetched through the *replacement* context while
+    /// this manager still names the retired one.
+    ///
+    /// Two contexts over one in-memory container is that situation exactly. `retired` is the stale
+    /// injection; `live` is what the rebuilt subtree reads and therefore where the task the user
+    /// clicks actually lives. Committing the settle through `retired` leaves `task.status` dirty on
+    /// `live` and saves a context that has nothing to save — the completion simply never reaches
+    /// the store, which `audit`, a third context that can only see what was written, is here to
+    /// catch. The successor row goes the same way.
+    @Test func aSettleCommitsThroughTheContextTheTaskLivesInNotTheInjectedOne() async throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let retired = ModelContext(container)
+        let live = ModelContext(container)
+        let manager = TaskCompletionAnimationManager.shared
+        let injected = manager.modelContext
+        manager.modelContext = retired
+        defer { manager.modelContext = injected }
+
+        let seeded = AppTask(title: "water the plants")
+        seeded.recurrenceRule = .daily
+        seeded.scheduledDate = "2026-08-04"
+        retired.insert(seeded)
+        try retired.save()
+
+        // Re-fetched through the replacement context, which is the only way the rebuilt subtree
+        // can hand a row to the completion control after a refresh.
+        let task = try #require(
+            try live.fetch(FetchDescriptor<AppTask>()).first { $0.id == seeded.id }
+        )
+        #expect(task !== seeded)
+
+        manager.toggleCompletion(for: task)
+        try await waitOutTheFill { task.status == .done }
+        #expect(task.status == .done)
+
+        let audit = ModelContext(container)
+        let persisted = try #require(
+            try audit.fetch(FetchDescriptor<AppTask>()).first { $0.id == seeded.id }
+        )
+        #expect(
+            persisted.status == .done,
+            "the completion was committed through the retired context, so it never reached the store"
+        )
+        #expect(persisted.completedAt != nil)
+
+        let spawnedID = try #require(task.recurrenceSpawnedTaskID)
+        let successor = try audit.fetch(FetchDescriptor<AppTask>()).first { $0.id == spawnedID }
+        #expect(successor != nil)
+        #expect(successor?.status == .todo)
+    }
+
+    /// The injected context is still the fallback, and T-357's branch below it is still reachable.
+    /// A task registered in no context at all has nothing to ask, so `settleContext(for:)` must
+    /// answer with the injection rather than dropping to the series-skipping path.
+    @Test func aTaskWithNoContextOfItsOwnStillSettlesThroughTheInjectedOne() async throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let manager = TaskCompletionAnimationManager.shared
+        let injected = manager.modelContext
+        manager.modelContext = context
+        defer { manager.modelContext = injected }
+
+        let task = AppTask(title: "water the plants")
+        task.recurrenceRule = .daily
+        task.scheduledDate = "2026-08-04"
+        #expect(task.modelContext == nil)
+
+        manager.toggleCompletion(for: task)
+        try await waitOutTheFill { task.status == .done }
+
+        #expect(task.status == .done)
+        let next = try spawnedTask(for: task, in: context)
+        #expect(next != nil, "the injected fallback was lost, so the series stopped here")
+    }
+
     // MARK: - Helpers
 
     /// Waits for the fill's continuation to actually run, rather than for a fixed stretch of wall

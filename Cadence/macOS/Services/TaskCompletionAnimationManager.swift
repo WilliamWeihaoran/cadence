@@ -8,6 +8,15 @@ import SwiftData
 final class TaskCompletionAnimationManager {
     static let shared = TaskCompletionAnimationManager()
     static let animationDuration: TimeInterval = 2.5
+
+    /// The **last-resort** context for a settle, and nothing more (T-3098).
+    ///
+    /// `macOSRootLifecycleSupport.handleAppear` injects this once, at launch, from the root's
+    /// `currentModelContext`. `macOSRootView.refreshAppData()` then *replaces* that context
+    /// wholesale when another process writes the store, and the `.onAppear` that seeded this
+    /// never re-runs — it sits outside both `.id(dataRefreshID)` subtrees — so after the first
+    /// refresh this property names a context the UI has stopped using. See `settleContext(for:)`
+    /// for why that is now harmless.
     var modelContext: ModelContext?
 
     // Completion (green)
@@ -191,25 +200,46 @@ final class TaskCompletionAnimationManager {
         }
     }
 
+    /// The context a settle must be committed through: **the one the task itself lives in.**
+    ///
+    /// This used to read `modelContext ?? task.modelContext`, preferring the injected context, and
+    /// that precedence was the whole of T-3098. A settle is not a free-floating write — it edits
+    /// `task`, and `spawnNextOccurrenceIfNeeded` builds a successor that inherits `task`'s `area`,
+    /// `project`, `context`, `goal` and `tags` before `context.insert(nextTask)` runs. Those are
+    /// objects registered in whatever context owns `task`. Handing a *different* context to the
+    /// insert is the documented Core Data cross-context relationship fault, and when it does not
+    /// fault it commits through a context that is no longer the one the UI reads, so the edit the
+    /// user just made is left pending on a context nothing will ever save.
+    ///
+    /// Asking the task where it lives makes the rule "write the object in the context that owns
+    /// it", which holds whatever `refreshAppData()` did and *whenever* it did it — including a
+    /// swap that lands midway through the 2.5s fill, where re-seeding this property would instead
+    /// pair a freshly-swapped context with a task from the outgoing one. The injected context
+    /// stays as the fallback for the only case it can still answer: a task registered nowhere, so
+    /// `modelContext` is nil (T-357's branch keeps its own `else` below for when both are nil).
+    private func settleContext(for task: AppTask) -> ModelContext? {
+        task.modelContext ?? modelContext
+    }
+
     private func write(_ transition: StatusWrite, to task: AppTask) {
         var transaction = Transaction()
         transaction.disablesAnimations = true
         withTransaction(transaction) {
             switch transition {
             case .restored:
-                if let context = modelContext ?? task.modelContext {
+                if let context = settleContext(for: task) {
                     settle(in: context) { try TaskWorkflowService.commitMarkTodo(task, in: $0) }
                 } else {
                     CadenceTaskRecurrenceWorkflowSupport.settleWithoutAdvancingSeries(task, as: .todo)
                 }
             case .done:
-                if let context = modelContext ?? task.modelContext {
+                if let context = settleContext(for: task) {
                     settle(in: context) { try TaskWorkflowService.commitMarkDone(task, in: $0) }
                 } else {
                     CadenceTaskRecurrenceWorkflowSupport.settleWithoutAdvancingSeries(task, as: .done)
                 }
             case .cancelled:
-                if let context = modelContext ?? task.modelContext {
+                if let context = settleContext(for: task) {
                     settle(in: context) { try TaskWorkflowService.commitMarkCancelled(task, in: $0) }
                 } else {
                     CadenceTaskRecurrenceWorkflowSupport.settleWithoutAdvancingSeries(task, as: .cancelled)

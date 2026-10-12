@@ -265,6 +265,16 @@ struct macOSRootView: View {
         activeModelContext = CadenceModelContextRefresh.replacement(for: currentModelContext)
         dataRefreshID = UUID()
         hasPendingExternalDataRefresh = false
+        // T-3098. `dataRefreshID` is applied to the two subtrees above and to nothing else, so the
+        // `.onAppear` on this view — which seeds the app-wide singletons — does not re-run and the
+        // singletons are left holding model objects from the context just retired.
+        // `macOSRootDataRefreshSupport` says which holder gets re-resolved, which gets cleared, and
+        // which is deliberately left alone.
+        macOSRootDataRefreshSupport.adoptReplacementContext(
+            currentModelContext,
+            focusManager: focusManager,
+            hoveredTaskManager: hoveredTaskManager
+        )
         // Adopting an out-of-process write means adopting its *schedule*, not only its rows. A
         // task an MCP agent completed keeps its pending "due today" reminder, and one it just
         // scheduled has none, until some unrelated scene-phase checkpoint happens to sweep — so a
