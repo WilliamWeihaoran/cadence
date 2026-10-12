@@ -11,6 +11,7 @@ costs ~26M cached tokens. That single habit outweighs everything else on this pa
 So: **extract, do not open.** `sed -n '120,150p'`, `rg -n` with a tight pattern, or a `python3` slice.
 Open a whole file only when you are editing it. Never read `docs/TODO.md` or `docs/TODO_DONE.md` whole
 — your brief carries your ticket, and you touch the ledger only to write your own line.
+Same for the Codex lease: `./scripts/codex-land.sh lease` prints it in 2.4 KB; `docs/CODEX_WORKTREE.md` is 117 KB and you want 53 lines of it.
 
 ## Loop less
 

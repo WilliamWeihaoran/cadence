@@ -35,24 +35,7 @@ This is the main product surface. Most implemented functionality lives here.
 
 ## Build Check
 
-Run from the **repo root** — agent shells reset their working directory between calls, so a
-relative `-project ../Cadence.xcodeproj` will not resolve.
-
-```sh
-/Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild \
-  -project Cadence.xcodeproj -scheme Cadence -destination 'platform=macOS' \
-  -derivedDataPath /tmp/cadence-build-$$ build
-```
-
-```sh
-/Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild test \
-  -project Cadence.xcodeproj -scheme Cadence -destination 'platform=macOS' \
-  -derivedDataPath /tmp/cadence-test-$$ -only-testing:CadenceTests
-```
-
-Both flags are load-bearing and both are non-negotiables in the root `AGENTS.md`, which explains
-them: `-only-testing:CadenceTests` keeps `CadenceUITests` out of the run (it cannot launch headless
-and aborts everything, in a way that reads as a broken suite), and the private `-derivedDataPath`
-keeps a build from deleting the shared `Build/Products/` out from under a running app — every
-failure mode that causes is misattributed by default. Confirm the private path appears in the log
-before trusting a green run.
+Build through `scripts/xcb.sh <id> build|test`. The two invocations, the two load-bearing flags
+(`-only-testing:CadenceTests` and a private `-derivedDataPath`) and what each one is protecting
+against are in the root `AGENTS.md` — "Project Snapshot" and "Build And Run Safety" — and are not
+restated here, because a second copy is a second thing to keep in step.

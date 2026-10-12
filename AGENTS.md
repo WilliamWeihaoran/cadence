@@ -14,7 +14,7 @@ Primary target:
 - Scheme: `Cadence`
 - Platform: macOS
 
-Build from repo root with private DerivedData:
+Build from the **repo root** with private DerivedData — agent shells reset their working directory between calls, so a relative `-project ../Cadence.xcodeproj` will not resolve, and the private path must appear in the log before a green run means anything:
 
 ```sh
 /Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild \
@@ -52,7 +52,7 @@ The `TestAction` pins **`TZ=UTC`** (T-1116): zones via `CadenceTestTimeZones`, n
 - `CadenceWidgets/` - widget extension; the `Cadence` scheme already builds it.
 - `CadenceMCPServer/`, `plugins/cadence-mcp/` - separate MCP boundary.
 - `CadenceTests/` - unit tests. Look for an existing file before adding one.
-- `docs/` - shipped docs plus detailed agent references.
+- `docs/` - shipped docs plus detailed agent references. **Codex holds a write lease on some paths; before you edit one, ask `./scripts/codex-land.sh lease` (2.4 KB, parsed from the doc's authoritative `lease` block) rather than reading `docs/CODEX_WORKTREE.md` whole — that file is 117 KB and the lease is 53 lines of it. Read the doc itself only for a grant's reasoning or an instruction attached to a path.**
 
 ## Scoped Guides
 
