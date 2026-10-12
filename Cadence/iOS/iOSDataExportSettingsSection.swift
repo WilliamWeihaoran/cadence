@@ -27,6 +27,9 @@ struct iOSDataExportSettingsSection: View {
     @State private var isExporting = false
     @State private var exportedRecordCount = 0
     @State private var statusMessage: String?
+    /// Kept across the save panel so the success sentence cannot quietly drop the one thing a
+    /// recovery launch has to know: which store these bytes came from ([[T-3102]]).
+    @State private var provenanceNote: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -81,10 +84,11 @@ struct iOSDataExportSettingsSection: View {
         ) { result in
             switch result {
             case .success(let url):
-                statusMessage = CadenceDataExportPresentation.successMessage(
+                let saved = CadenceDataExportPresentation.successMessage(
                     recordCount: exportedRecordCount,
                     filename: url.lastPathComponent
                 )
+                statusMessage = [saved, provenanceNote].compactMap { $0 }.joined(separator: " ")
             case .failure(let error):
                 statusMessage = CadenceDataExportPresentation.failureMessage(error.localizedDescription)
             }
@@ -94,13 +98,30 @@ struct iOSDataExportSettingsSection: View {
 
     /// Encode first, present second. A failure then lands on this card rather than producing an
     /// empty file at a destination the user has already chosen.
+    ///
+    /// **Not `CadenceDataExportService.exportArchive(in: modelContext)` any more ([[T-3102]]).**
+    /// That reads the container the app *opened*, which is the user's store on every launch except
+    /// the one where this card matters most: a launch that fell back to a recovery store exported
+    /// an archive of nothing, and on this platform that was the whole escape route — iOS schedules
+    /// no restore, lists no backup, and has no Files route into the container, while Delete
+    /// Cadence Data on the screen below still reaches `deleteAllBackups()`. The decision about
+    /// which store to read lives in `PersistenceController`, with the search it reuses, so it can
+    /// be driven against real isolated stores by a macOS test target that never compiles this file.
     private func prepareArchiveExport() {
         do {
-            let outcome = try CadenceDataExportService.exportArchive(in: modelContext)
-            exportedRecordCount = outcome.recordCount
-            exportDocument = CadenceArchiveDocument(data: outcome.data)
+            let export = try PersistenceController.exportArchiveForDataSafety(
+                openedStoreContext: modelContext
+            )
+            exportedRecordCount = export.outcome.recordCount
+            exportDocument = CadenceArchiveDocument(data: export.outcome.data)
+            // Written before the save panel opens, not after: on a recovery launch the card behind
+            // this button is showing an empty store, so the provenance has to be readable at the
+            // moment the user decides whether the file is worth keeping.
+            provenanceNote = export.provenanceNote
+            statusMessage = export.provenanceNote
             isExporting = true
         } catch {
+            provenanceNote = nil
             statusMessage = CadenceDataExportPresentation.failureMessage(error.localizedDescription)
         }
     }

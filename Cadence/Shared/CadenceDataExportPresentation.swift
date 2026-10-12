@@ -71,6 +71,36 @@ nonisolated enum CadenceDataExportPresentation {
         "Export failed: \(reason)"
     }
 
+    /// **The two sentences a launch that opened a recovery store has to read before it exports
+    /// ([[T-3102]]).**
+    ///
+    /// Both are written the moment the archive is built, not after the file is saved, because the
+    /// reader's next decision is whether to trust the file at all — and on this one launch the
+    /// screen behind the button is showing an empty store, so a success message alone reads as
+    /// "there was nothing to export". The export is the only route off an iPhone: there is no
+    /// restore control on that platform and no Files route into the container, while Delete
+    /// Cadence Data reaches `deleteAllBackups()` from the same screen. So each sentence ends by
+    /// naming the one thing that must not happen next.
+    ///
+    /// Shared rather than written per platform for this enum's standing reason: a data-safety
+    /// claim written twice is a claim that comes to say two things.
+    static func readFromDiskNote(recordCount: Int, storePath: String) -> String {
+        """
+        Cadence is running on a recovery store, so the data on screen is not yours. This archive \
+        was read straight off this device's own store instead: \(recordCount) \
+        record\(recordCount == 1 ? "" : "s") from \(storePath). Save it somewhere outside Cadence \
+        before deleting anything.
+        """
+    }
+
+    /// The same launch, and the store on disk could not be read either — so the archive holds only
+    /// whatever the recovery store itself has.
+    static let onlyTheRecoveryStoreNote = """
+        Cadence is running on a recovery store and could not read your own store on this device, \
+        so this archive holds only what the recovery store has. Do not delete Cadence's data: that \
+        removes the local backups your own data may still be recoverable from.
+        """
+
     /// Shown where the *automatic* store backups are listed, because "there are backups" and
     /// "the backups are somewhere safe" are different claims and only the first was ever true.
     static let localBackupLocationNote = """

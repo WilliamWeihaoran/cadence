@@ -74,6 +74,28 @@ enum CadenceStartupIssueKind: String, Equatable, CaseIterable {
 
     /// Whether quitting the app loses whatever was written during this launch.
     var losesDataOnQuit: Bool { self == .inMemoryStore }
+
+    /// Whether the store Cadence has open is **not** the one holding the user's data ([[T-3102]]).
+    ///
+    /// Deliberately not `disablesCloudSync`, which is the near-miss that makes this its own
+    /// property: `.developmentBuild` disables sync and still has the person's real store open, in
+    /// its usual place, intact. Reading "no sync" as "not your data" there would send Settings →
+    /// Export looking on disk for a store it already has in hand.
+    ///
+    /// What the two cases here share is the thing an export has to know: every row the user cares
+    /// about is somewhere other than the context this launch would hand a view. `.recoveryStore`
+    /// means the real store is still on disk and could not be opened; `.inMemoryStore` means even
+    /// the recovery store could not be made, so there is nothing on disk from *this* launch at all
+    /// and the only data anywhere is the store that failed. In both, exporting what is on screen
+    /// writes an archive of the wrong store.
+    var theOpenStoreIsNotTheUsersData: Bool {
+        switch self {
+        case .recoveryStore, .inMemoryStore: return true
+        case .maintenanceSaveFailed, .restoreFailed, .restoreIncomplete, .backupFailed,
+             .developmentBuild:
+            return false
+        }
+    }
 }
 
 /// One recorded startup problem: what went wrong, and the message describing it.

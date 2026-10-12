@@ -459,12 +459,28 @@ struct CadenceDataExportSurfaceTests {
     /// The T-161 test for this ticket. Delete either call site and this fails; nothing else would,
     /// because the service is a static function with no view attached and iOS's section is
     /// invisible to a macOS-built test target.
+    ///
+    /// **The name moved in [[T-3102]] and the claim did not.** Both screens used to name the
+    /// exporter directly and hand it `@Environment(\.modelContext)` — the container this launch
+    /// opened, which is the user's store on every launch except the one where a Data Safety screen
+    /// matters most. They now take `PersistenceController.exportArchiveForDataSafety`, which reads
+    /// the opened context on an ordinary launch and the store on disk when this launch is sitting
+    /// on a recovery store. Still one entry point and still exactly one call per screen; what is
+    /// pinned is that neither platform goes back to exporting whatever happens to be open, so the
+    /// direct call is *forbidden* here rather than merely unmentioned.
     @Test func bothPlatformsReachTheExportFromDataSafety() throws {
         try expectExportCallSites(
-            of: "CadenceDataExportService.exportArchive",
+            of: "PersistenceController.exportArchiveForDataSafety",
             at: [
                 "Cadence/iOS/iOSDataExportSettingsSection.swift": 1,
                 "Cadence/macOS/Views/SettingsDataSafetySection.swift": 1,
+            ]
+        )
+        try expectExportCallSites(
+            of: "CadenceDataExportService.exportArchive",
+            at: [
+                "Cadence/iOS/iOSDataExportSettingsSection.swift": 0,
+                "Cadence/macOS/Views/SettingsDataSafetySection.swift": 0,
             ]
         )
         try expectExportCallSites(
@@ -531,9 +547,13 @@ struct CadenceDataExportSurfaceTests {
             exportSourceFile("Cadence/Services/PersistenceController.swift")
         )
         #expect(!search.contains("makeArchive"), "the recovery search builds the archive itself")
+        // Two since [[T-3102]], not one: `exportArchiveForDataSafety` is the second, and it is
+        // the *same* reach — the ordinary-launch branch's default `exportOpenedStore` argument,
+        // beside the recovery search's default `export:` argument. Neither encodes anything
+        // itself, which is what the two absence checks above this one hold.
         #expect(
-            CadenceSourceScan.matchCount("CadenceDataExportService\\.", in: search) == 1,
-            "the recovery search reaches the exporter more than once"
+            CadenceSourceScan.matchCount("CadenceDataExportService\\.", in: search) == 2,
+            "the recovery search reaches the exporter more than twice"
         )
 
         for path in [

@@ -652,6 +652,123 @@ struct PersistenceController {
         ))
     }
 
+    /// Which store Settings → Data Safety's archive was actually read out of ([[T-3102]]).
+    ///
+    /// Three cases and not two, because "the recovery store was the only thing readable" is a
+    /// different sentence from "your store was read off disk" and the user has to act differently
+    /// on them.
+    nonisolated enum DataSafetyExportSource: Equatable {
+        /// The ordinary launch: the container the app opened is the user's own store.
+        case theStoreThisLaunchOpened
+        /// This launch is on a recovery store, and the archive was read straight off disk from
+        /// the named store file instead.
+        case aStoreReadFromDisk(URL)
+        /// This launch is on a recovery store and **nothing** on disk could be exported, so the
+        /// archive holds only what the recovery store itself has — which is usually nothing.
+        case onlyTheRecoveryStoreThisLaunchOpened
+    }
+
+    /// One Settings → Export press: the bytes, and the provenance the copy beside them needs.
+    nonisolated struct DataSafetyExport: Equatable {
+        let outcome: CadenceDataExportOutcome
+        let source: DataSafetyExportSource
+        /// Stores that opened on the way and could not be exported, in the order they were tried.
+        /// Always empty on an ordinary launch.
+        let precedingFailures: [RecoveryExportFailure]
+
+        /// What the screen says about where these bytes came from, or `nil` on an ordinary launch
+        /// — naming the store the app is plainly running on is noise, and the success message a
+        /// view already shows carries the count and the filename.
+        ///
+        /// Here rather than in either Data Safety view so the mapping from provenance to sentence
+        /// is one mapping and is reachable from `CadenceTests`: the macOS test target never
+        /// compiles `Cadence/iOS/`, so a copy of this written in `iOSDataExportSettingsSection`
+        /// could only ever be checked by scanning its source for a string.
+        var provenanceNote: String? {
+            switch source {
+            case .theStoreThisLaunchOpened:
+                return nil
+            case .aStoreReadFromDisk(let storeURL):
+                return CadenceDataExportPresentation.readFromDiskNote(
+                    recordCount: outcome.recordCount,
+                    storePath: storeURL.path
+                )
+            case .onlyTheRecoveryStoreThisLaunchOpened:
+                return CadenceDataExportPresentation.onlyTheRecoveryStoreNote
+            }
+        }
+    }
+
+    /// **The archive Settings → Data Safety writes, taken from the store that holds the user's
+    /// data rather than from whichever store this launch managed to open ([[T-3102]]).**
+    ///
+    /// Both Data Safety screens used to export `@Environment(\.modelContext)` directly, which is
+    /// right on every launch but one. On a launch that fell back to `makeRecoveryContainer`, that
+    /// context is the empty recovery store: the one safety net on iOS — the only route off the
+    /// device, since `scheduleRestore` has no caller on this platform and `Info.plist` carries
+    /// neither `UIFileSharingEnabled` nor `LSSupportsOpeningDocumentsInPlace` — produced an
+    /// archive of nothing, while Delete Cadence Data went on reaching `deleteAllBackups()`. That
+    /// asymmetry is what turned a recoverable launch failure into an unrecoverable one.
+    ///
+    /// **Nothing new is opened to fix it.** `attemptRecoveryExport` already does exactly this job
+    /// for `CadenceTerminalRecoveryView`: read-only, CloudKit off, the launch's own store first
+    /// and the recovery directories after, stepping past a candidate that opens and will not
+    /// export (T-1099). A recovery launch is the *same* situation one failure earlier — the
+    /// CloudKit-backed open failed, and the store's own file is very often sitting there intact —
+    /// so this routes to the search that was already written, tested and shipping.
+    ///
+    /// **It can never return less than the old behaviour.** The recovery branch falls back to the
+    /// opened context when the search finds nothing exportable, which is byte-for-byte what this
+    /// used to do, and the ordinary branch is untouched: `theOpenStoreIsNotTheUsersData` is false
+    /// for every kind except `.recoveryStore` and `.inMemoryStore`, `.developmentBuild` included.
+    ///
+    /// The environment, temporary directory and file manager are passed through rather than
+    /// defaulted inside, for `attemptRecoveryExport`'s own T-1842 reason: the search resolves
+    /// *whose* store it reads, and a test must be able to hand it an isolated one.
+    static func exportArchiveForDataSafety(
+        openedStoreContext: ModelContext,
+        startupIssue: CadenceStartupIssue? = PersistenceController.startupIssue,
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        temporaryDirectory: URL = FileManager.default.temporaryDirectory,
+        fileManager: FileManager = .default,
+        exportOpenedStore: (ModelContext) throws -> CadenceDataExportOutcome = {
+            try CadenceDataExportService.exportArchive(in: $0)
+        }
+    ) throws -> DataSafetyExport {
+        guard startupIssue?.kind.theOpenStoreIsNotTheUsersData == true else {
+            return DataSafetyExport(
+                outcome: try exportOpenedStore(openedStoreContext),
+                source: .theStoreThisLaunchOpened,
+                precedingFailures: []
+            )
+        }
+
+        switch attemptRecoveryExport(
+            in: environment,
+            temporaryDirectory: temporaryDirectory,
+            fileManager: fileManager
+        ) {
+        case .exported(let export):
+            return DataSafetyExport(
+                outcome: CadenceDataExportOutcome(data: export.data, recordCount: export.recordCount),
+                source: .aStoreReadFromDisk(export.storeURL),
+                precedingFailures: export.precedingFailures
+            )
+        case .noStoreOpened:
+            return DataSafetyExport(
+                outcome: try exportOpenedStore(openedStoreContext),
+                source: .onlyTheRecoveryStoreThisLaunchOpened,
+                precedingFailures: []
+            )
+        case .everyOpenedStoreFailed(let failures):
+            return DataSafetyExport(
+                outcome: try exportOpenedStore(openedStoreContext),
+                source: .onlyTheRecoveryStoreThisLaunchOpened,
+                precedingFailures: failures
+            )
+        }
+    }
+
     /// The candidate list resolved for **this** launch, and the seam the redirect is asserted at
     /// ([[T-1842]]).
     ///

@@ -42,6 +42,9 @@ struct SettingsDataSafetySection: View {
     @State private var exportDocument: CadenceArchiveDocument?
     @State private var isExportingArchive = false
     @State private var exportedRecordCount = 0
+    /// Kept across the save panel so the success sentence cannot quietly drop the one thing a
+    /// recovery launch has to know: which store these bytes came from ([[T-3102]]).
+    @State private var exportProvenanceNote: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -268,10 +271,11 @@ struct SettingsDataSafetySection: View {
         ) { result in
             switch result {
             case .success(let url):
-                statusMessage = CadenceDataExportPresentation.successMessage(
+                let saved = CadenceDataExportPresentation.successMessage(
                     recordCount: exportedRecordCount,
                     filename: url.lastPathComponent
                 )
+                statusMessage = [saved, exportProvenanceNote].compactMap { $0 }.joined(separator: " ")
             case .failure(let error):
                 statusMessage = CadenceDataExportPresentation.failureMessage(error.localizedDescription)
             }
@@ -320,13 +324,29 @@ struct SettingsDataSafetySection: View {
     /// Builds the archive, then hands it to the system save panel. Encoding happens *before* the
     /// panel opens so a failure is reported in this pane rather than as an empty file the user has
     /// already chosen a home for.
+    ///
+    /// **Not `CadenceDataExportService.exportArchive(in: modelContext)` any more ([[T-3102]]).**
+    /// That reads the container this launch *opened*, which is the person's store on every launch
+    /// but one: after a fallback to `makeRecoveryContainer` it is the empty recovery store, and
+    /// the archive came out holding nothing. The Mac has a restore control a few rows below this
+    /// one, so it was never stranded the way the phone was — but the archive is the only copy that
+    /// outlives the app, and both screens take the same call deliberately, so that "export my
+    /// data" cannot come to mean two different things on two platforms.
     private func prepareArchiveExport() {
         do {
-            let outcome = try CadenceDataExportService.exportArchive(in: modelContext)
-            exportedRecordCount = outcome.recordCount
-            exportDocument = CadenceArchiveDocument(data: outcome.data)
+            let export = try PersistenceController.exportArchiveForDataSafety(
+                openedStoreContext: modelContext
+            )
+            exportedRecordCount = export.outcome.recordCount
+            exportDocument = CadenceArchiveDocument(data: export.outcome.data)
+            // Written before the panel opens, not after: on a recovery launch the pane behind this
+            // button is showing an empty store, so the provenance has to be readable at the moment
+            // the user decides whether the file is worth keeping.
+            exportProvenanceNote = export.provenanceNote
+            statusMessage = export.provenanceNote
             isExportingArchive = true
         } catch {
+            exportProvenanceNote = nil
             statusMessage = CadenceDataExportPresentation.failureMessage(error.localizedDescription)
         }
     }
