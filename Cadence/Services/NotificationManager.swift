@@ -43,20 +43,53 @@ final class NotificationManager: NSObject {
     @ObservationIgnored
     private lazy var center: UNUserNotificationCenter = .current()
 
+    /// **[[T-3113]].** The calls every side-effecting entry point below makes, behind one seam.
+    ///
+    /// For `shared` this is `CadenceSystemNotificationCentre`, which reads
+    /// `UNUserNotificationCenter.current()` inside each call — so constructing it touches nothing,
+    /// and every entry point's `isTestEnvironment` guard still runs before the OS is reached. A
+    /// test builds its own manager with `init(centre:defaults:)` and a fake; that is the only way
+    /// these bodies execute in a test host, and it never reaches the OS because the system centre
+    /// is `private` to this file and cannot be handed in.
+    private let centre: any CadenceNotificationCentre
+
+    /// True only for a manager built by `init(centre:defaults:)`. Each entry point's guard reads
+    /// `centreIsInjected || !Self.isTestEnvironment`, so for `shared` — where this is `false` —
+    /// the guard is exactly the `!Self.isTestEnvironment` it always was.
+    private let centreIsInjected: Bool
+
+    /// Where `reconcile` reads `notificationsEnabledDefaultsKey`. `CadenceDefaults.store` for
+    /// `shared`; a private suite for a test.
+    private let defaults: UserDefaults
+
     private override init() {
+        centre = CadenceSystemNotificationCentre()
+        centreIsInjected = false
+        defaults = CadenceDefaults.store
         super.init()
         guard !Self.isTestEnvironment else { return }
         center.delegate = self
         Task { await refreshAuthorizationState() }
     }
 
+    /// **[[T-3113]].** A manager that talks to `centre` instead of the OS, for tests.
+    ///
+    /// It sets no delegate and starts no initial authorization read, so nothing runs that the test
+    /// did not call. Not for production: the app has exactly one manager, `shared`.
+    init(centre: any CadenceNotificationCentre, defaults: UserDefaults) {
+        self.centre = centre
+        centreIsInjected = true
+        self.defaults = defaults
+        super.init()
+    }
+
     // MARK: - Authorization
 
     func refreshAuthorizationState() async {
-        guard !Self.isTestEnvironment else { return }
-        let settings = await center.notificationSettings()
-        isAuthorized = settings.authorizationStatus == .authorized || settings.authorizationStatus == .provisional
-        isDenied = settings.authorizationStatus == .denied
+        guard centreIsInjected || !Self.isTestEnvironment else { return }
+        let status = await centre.authorizationStatus()
+        isAuthorized = status == .authorized || status == .provisional
+        isDenied = status == .denied
     }
 
     /// The ONLY place in the app that should call `UNUserNotificationCenter.requestAuthorization`.
@@ -64,8 +97,8 @@ final class NotificationManager: NSObject {
     /// there's no jarring cold-launch permission prompt.
     @discardableResult
     func requestAuthorization() async -> Bool {
-        guard !Self.isTestEnvironment else { return false }
-        let granted = (try? await center.requestAuthorization(options: [.alert, .sound])) ?? false
+        guard centreIsInjected || !Self.isTestEnvironment else { return false }
+        let granted = (try? await centre.requestAuthorization(options: [.alert, .sound])) ?? false
         await refreshAuthorizationState()
         return granted
     }
@@ -77,8 +110,9 @@ final class NotificationManager: NSObject {
     /// call repeatedly from multiple trigger points (scenePhase checkpoints, task/habit
     /// create/complete/cancel/delete fast paths).
     ///
-    /// The diffing rules live in `NotificationReconcileDiff.make` because this method early-returns
-    /// under test; keep any new decision-making there rather than inline here.
+    /// The diffing rules live in `NotificationReconcileDiff.make`; keep any new decision-making there
+    /// rather than inline here. `shared` early-returns under test, so the body itself is driven only
+    /// through a fake-backed manager (`init(centre:defaults:)`, [[T-3113]]).
     ///
     /// An empty `tasks` array means "cancel everything", so callers must pass real fetched state —
     /// never a failed fetch coerced to an empty array. See `HabitNotificationReconcileSupport`.
@@ -95,7 +129,7 @@ final class NotificationManager: NSObject {
         dueReminderHour: Int = 9,
         dueReminderMinute: Int = 0
     ) async {
-        guard !Self.isTestEnvironment else { return }
+        guard centreIsInjected || !Self.isTestEnvironment else { return }
 
         // **[[T-3047]]: re-derive the permission before reading it.** `isAuthorized` used to move
         // in exactly three places — `init()`, `requestAuthorization()`, and the
@@ -127,7 +161,7 @@ final class NotificationManager: NSObject {
         // `pendingNotificationRequests()` read already below.
         await refreshAuthorizationState()
 
-        let notificationsEnabled = CadenceDefaults.store.bool(forKey: Self.notificationsEnabledDefaultsKey)
+        let notificationsEnabled = defaults.bool(forKey: Self.notificationsEnabledDefaultsKey)
         guard notificationsEnabled, isAuthorized else {
             lastReconcileRegistrationFailures = []
             await cancelAll()
@@ -141,18 +175,18 @@ final class NotificationManager: NSObject {
             dueReminderMinute: dueReminderMinute
         )
 
-        let pending = await center.pendingNotificationRequests()
+        let pendingIdentifiers = await centre.pendingIdentifiers()
         let diff = NotificationReconcileDiff.make(
             desired: plan.all,
-            pendingIdentifiers: pending.map(\.identifier)
+            pendingIdentifiers: pendingIdentifiers
         )
 
         if !diff.identifiersToRemove.isEmpty {
-            center.removePendingNotificationRequests(withIdentifiers: diff.identifiersToRemove)
+            centre.removePending(withIdentifiers: diff.identifiersToRemove)
         }
 
         lastReconcileRegistrationFailures = await Self.register(diff.requestsToAdd) { osRequest in
-            try await self.center.add(osRequest)
+            try await self.centre.add(osRequest)
         }
     }
 
@@ -205,18 +239,18 @@ final class NotificationManager: NSObject {
     /// Cancels a specific set of tasks' pending notifications directly — cheaper than a full
     /// reconcile when the caller already knows exactly which tasks were removed (e.g. deletion).
     func cancel(taskIDs: [UUID]) async {
-        guard !Self.isTestEnvironment, !taskIDs.isEmpty else { return }
+        guard centreIsInjected || !Self.isTestEnvironment, !taskIDs.isEmpty else { return }
         let identifiers = taskIDs.flatMap {
             [NotificationIdentifiers.taskStart(taskID: $0), NotificationIdentifiers.taskDue(taskID: $0)]
         }
-        center.removePendingNotificationRequests(withIdentifiers: identifiers)
+        centre.removePending(withIdentifiers: identifiers)
     }
 
     /// Cancels a specific set of habits' pending reminder notifications directly.
     func cancel(habitIDs: [UUID]) async {
-        guard !Self.isTestEnvironment, !habitIDs.isEmpty else { return }
+        guard centreIsInjected || !Self.isTestEnvironment, !habitIDs.isEmpty else { return }
         let identifiers = habitIDs.map { NotificationIdentifiers.habitReminder(habitID: $0) }
-        center.removePendingNotificationRequests(withIdentifiers: identifiers)
+        centre.removePending(withIdentifiers: identifiers)
     }
 
     /// Cancels these reminders **now**, from a delete that has already committed.
@@ -260,11 +294,11 @@ final class NotificationManager: NSObject {
     }
 
     func cancelAll() async {
-        guard !Self.isTestEnvironment else { return }
-        let pending = await center.pendingNotificationRequests()
-        let managedIDs = pending.map(\.identifier).filter(NotificationIdentifiers.isManaged)
+        guard centreIsInjected || !Self.isTestEnvironment else { return }
+        let pendingIdentifiers = await centre.pendingIdentifiers()
+        let managedIDs = pendingIdentifiers.filter(NotificationIdentifiers.isManaged)
         guard !managedIDs.isEmpty else { return }
-        center.removePendingNotificationRequests(withIdentifiers: managedIDs)
+        centre.removePending(withIdentifiers: managedIDs)
     }
 
     // MARK: - Helpers
@@ -351,6 +385,46 @@ struct CadenceLiveNotificationPurgeCentre: CadencePendingNotificationPurgeCentre
 
     func removePending(withIdentifiers identifiers: [String]) {
         UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: identifiers)
+    }
+}
+
+/// **[[T-3113]].** The notification-centre calls `NotificationManager`'s side-effecting entry points
+/// make — the purge's two, plus the authorization read, the authorization request and `add`.
+///
+/// Narrow on purpose, like the purge protocol it extends: it names exactly what the manager calls
+/// so a fake can record each call, and nothing the manager does not.
+@MainActor
+protocol CadenceNotificationCentre: CadencePendingNotificationPurgeCentre {
+    func authorizationStatus() async -> UNAuthorizationStatus
+    func requestAuthorization(options: UNAuthorizationOptions) async throws -> Bool
+    func add(_ request: UNNotificationRequest) async throws
+}
+
+/// The real centre behind `NotificationManager.shared` ([[T-3113]]).
+///
+/// `private` so that no test can hand it to `init(centre:defaults:)`: the only manager that holds
+/// it is `shared`, whose entry points all guard on `isTestEnvironment`. `current()` is read inside
+/// each call, as in `CadenceLiveNotificationPurgeCentre`, so constructing this touches nothing.
+@MainActor
+private struct CadenceSystemNotificationCentre: CadenceNotificationCentre {
+    func authorizationStatus() async -> UNAuthorizationStatus {
+        await UNUserNotificationCenter.current().notificationSettings().authorizationStatus
+    }
+
+    func requestAuthorization(options: UNAuthorizationOptions) async throws -> Bool {
+        try await UNUserNotificationCenter.current().requestAuthorization(options: options)
+    }
+
+    func pendingIdentifiers() async -> [String] {
+        await UNUserNotificationCenter.current().pendingNotificationRequests().map(\.identifier)
+    }
+
+    func removePending(withIdentifiers identifiers: [String]) {
+        UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: identifiers)
+    }
+
+    func add(_ request: UNNotificationRequest) async throws {
+        try await UNUserNotificationCenter.current().add(request)
     }
 }
 

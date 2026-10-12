@@ -54,27 +54,8 @@ struct NotificationRegistrationFailureTests {
         #expect(failures.isEmpty)
     }
 
-    /// The seam above is only the fix if `reconcile` actually routes its adds through it and keeps
-    /// the result, and if the cancel branch clears what an earlier pass left there.
-    @Test func theReconcileKeepsTheRefusalsOfItsOwnPassRatherThanSwallowingThem() throws {
-        let source = try CadenceCommitSurfaceScan.scanned("Cadence/Services/NotificationManager.swift")
-        let body = try cadenceFunctionBody("func reconcile(", in: source)
-
-        #expect(body.contains("let plan = NotificationPlan.build("), "non-vacuity: not reading the reconcile body")
-        #expect(
-            !body.contains("try? await center.add"),
-            "reconcile swallows the OS's refusal again, so a failed registration is unobservable (T-3049)"
-        )
-        #expect(
-            body.contains("lastReconcileRegistrationFailures = await Self.register(diff.requestsToAdd)"),
-            "reconcile no longer records the refusals of its own pass (T-3049)"
-        )
-
-        let clear = try #require(body.range(of: "lastReconcileRegistrationFailures = []"))
-        let cancel = try #require(body.range(of: "await cancelAll()"))
-        #expect(
-            clear.upperBound <= cancel.lowerBound,
-            "the cancel branch no longer clears the previous pass's refusals before it returns (T-3049)"
-        )
-    }
+    // That `reconcile` routes its adds through this seam, keeps its own pass's refusals, and clears
+    // them on the cancel branch is held behaviourally since [[T-3113]], by
+    // `NotificationManagerCentreSeamTests.reconcileRecordsTheRefusalsOfItsOwnPassAndTheCancelBranchClearsThem`;
+    // the grep of the reconcile body that stood in while it could not run under test is gone.
 }

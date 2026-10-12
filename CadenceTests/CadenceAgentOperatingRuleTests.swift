@@ -16,8 +16,10 @@ import Testing
 /// *"never schedule a real user notification — use the test seam"*, which implies an opt-in. There
 /// is no such seam: `NotificationManager.isTestEnvironment` reads `XCTestConfigurationFilePath`,
 /// `XCTestSessionIdentifier`, `XCODE_RUNNING_FOR_PREVIEWS` and `CadenceUITestSupport.isEnabled`,
-/// and every entry point guards on it, so suppression inside a test host is automatic and there is
-/// nothing to opt into. What an agent can actually do wrong is defeat that guard, or schedule from
+/// and every entry point of `shared` guards on it, so suppression inside a test host is automatic
+/// and there is nothing to opt into. ([[T-3113]]'s `init(centre:defaults:)` is not an opt-in to the
+/// OS either: it builds a separate manager over a fake, and the system centre is `private` to the
+/// manager's file so it cannot be passed in.) What an agent can actually do wrong is defeat that guard, or schedule from
 /// a process the guard does not cover — which is exactly what `CadenceWriteService`'s own header
 /// says about a command-line tool.
 struct CadenceAgentOperatingRuleTests {
@@ -80,13 +82,13 @@ struct CadenceAgentOperatingRuleTests {
             "touches the centre without the test-environment guard",
             fires: "    func schedule() async {\n        center.add(request)\n    }",
             andNotOn: "    func schedule() async {\n        guard !Self.isTestEnvironment else { return }\n        center.add(request)\n    }",
-            by: { $0.contains("center.") && !$0.contains("isTestEnvironment") }
+            by: { Self.touchesTheCentre($0) && !$0.contains("isTestEnvironment") }
         )
 
         let declarations = cadenceNotificationManagerDeclarations(stripped)
         #expect(declarations.count >= 9, "parsed only \(declarations.count) declarations")
 
-        let touching = declarations.filter { $0.body.contains("center.") }.map(\.name).sorted()
+        let touching = declarations.filter { Self.touchesTheCentre($0.body) }.map(\.name).sorted()
         #expect(
             touching == [
                 "cancel(habitIDs)",
@@ -108,6 +110,13 @@ struct CadenceAgentOperatingRuleTests {
             a test run would schedule against the user's real Notification Center (T-1386).
             """
         )
+    }
+
+    /// `center.` is the OS centre itself (`init()`'s delegate assignment); `centre.` is the
+    /// [[T-3113]] seam every other entry point now calls, which for `shared` is the OS centre.
+    /// Reading only the first spelling would let six entry points drop their guard unseen.
+    private static func touchesTheCentre(_ body: String) -> Bool {
+        body.contains("center.") || body.contains("centre.")
     }
 
     /// Suppression under test is automatic, and it is on **here** for the documented reason.

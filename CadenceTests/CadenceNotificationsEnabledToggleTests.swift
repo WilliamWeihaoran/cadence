@@ -330,50 +330,15 @@ struct CadenceNotificationsAuthorizationLifecycleTests {
     // MARK: - T-3047: the flag the reconcile acts on
 
     /// **The hook above is not enough, because it is attached to two surfaces and both of them are
-    /// the Settings pane.**
+    /// the Settings pane** — so `reconcile` re-derives `isAuthorized` itself before it reads it.
+    /// That half is held behaviourally since [[T-3113]], by
+    /// `NotificationManagerCentreSeamTests.reconcileActsOnTheAuthorizationTheOSReportsNowNotTheCachedFlag`,
+    /// which runs the reconcile body against a fake centre in both stale directions; the source-order
+    /// grep that stood in while the body could not run under test is gone.
     ///
-    /// `isAuthorized` moved in exactly three places before T-3047 — `init()`,
-    /// `requestAuthorization()`, and this hook — so outside Settings → Notifications it was a
-    /// cached answer to a question the OS lets the user change at any moment. `reconcile` is the
-    /// only other reader of the flag, and it is the one that acts on it: stale-`true` it passes its
-    /// guard and hands the OS requests that are refused into a `try?`, stale-`false` it takes the
-    /// `cancelAll()` branch and removes reminders the user has just re-permitted.
-    ///
-    /// **The order is the assertion, not the presence.** A refresh *after* the guard is the same
-    /// bug with an extra OS read in it, so this pins the two ranges against each other rather than
-    /// only asking whether the call is in the body. `reconcile` early-returns under test, so there
-    /// is no runtime instrument here; the scan is scoped to the one function body so a call that
-    /// drifts into a neighbouring declaration cannot keep it green.
-    @Test func theReconcileRederivesAuthorizationBeforeItReadsIt() throws {
-        let source = try CadenceCommitSurfaceScan.scanned("Cadence/Services/NotificationManager.swift")
-        let body = try cadenceFunctionBody("func reconcile(", in: source)
-
-        // Non-vacuity: this is the declaration that acts on the flag, and both of its branches are
-        // present in the span being read.
-        #expect(
-            body.contains("let plan = NotificationPlan.build("),
-            "non-vacuity: the scan is not reading the reconcile body"
-        )
-        #expect(body.contains("await cancelAll()"), "non-vacuity: the unauthorized branch is not in this span")
-
-        let refresh = try #require(
-            body.range(of: "await refreshAuthorizationState()"),
-            """
-            reconcile acts on NotificationManager.isAuthorized without re-deriving it, so a \
-            permission revoked outside Settings → Notifications leaves the app scheduling into a \
-            refusal and one granted there leaves every pass cancelling everything (T-3047)
-            """
-        )
-        let read = try #require(body.range(of: "guard notificationsEnabled, isAuthorized"))
-        #expect(
-            refresh.upperBound <= read.lowerBound,
-            "the re-derive landed after the guard that reads the flag, so the reconcile still runs one cycle on stale state (T-3047)"
-        )
-    }
-
     /// **The other half of the chain: a foreground transition actually reaches that reconcile.**
     ///
-    /// The re-derive above is only a fix for a permission changed in System Settings — or off a
+    /// That re-derive is only a fix for a permission changed in System Settings — or off a
     /// delivered banner — if the moment the user comes back runs `reconcile`. Both root views
     /// already reconcile on *becoming* active ([[T-312]] on iOS, [[T-3046]] on macOS), which is why
     /// T-3047 needed no new observer; this holds the link, so removing either arm fails here as a
