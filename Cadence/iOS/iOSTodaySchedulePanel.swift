@@ -49,8 +49,13 @@ struct iOSSchedulePanel: View {
     @State private var quickCreateTitle = ""
     @State private var quickCreateError: String?
 
+    /// The invalidation token for the day this pane draws (T-3120, after [[T-3104]]).
+    /// `iOSTodayView` builds this pane with no arguments, so its own midnight body pass does not
+    /// reach this one, and the `.onChange(of: todayKey)` below never saw the key move.
+    @State private var observedDay = CadenceObservedDay()
+
     private var todayKey: String {
-        DateFormatters.todayKey()
+        observedDay.todayKey
     }
 
     private var today: Date {
@@ -136,6 +141,7 @@ struct iOSSchedulePanel: View {
         .onChange(of: todayKey) { _, _ in
             refreshTodayEvents()
         }
+        .cadenceTracksDayChanges($observedDay)
     }
 
     /// The composer, docked under the grid rather than inserted into it.

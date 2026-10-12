@@ -92,7 +92,12 @@ struct SchedulePanel: View {
     /// `createBundle(title:startMin:endMin:adding:)`.
     @State private var bundleCreateFailed = false
 
-    private var todayKey: String { DateFormatters.todayKey() }
+    /// The invalidation token for the day this timeline draws (T-3120, after [[T-3104]]). Every
+    /// host builds this panel with constant arguments, so a host's own body pass at midnight does
+    /// not reach this one; the panel has to observe the day itself.
+    @State private var observedDay = CadenceObservedDay()
+
+    private var todayKey: String { observedDay.todayKey }
 
     private var scheduledTasks: [AppTask] {
         SchedulePanelDataSupport.scheduledTasks(from: allTasks, todayKey: todayKey)
@@ -246,6 +251,7 @@ struct SchedulePanel: View {
         } message: {
             Text(CadenceTaskMutationSupport.bundleSaveFailureNotice)
         }
+        .cadenceTracksDayChanges($observedDay)
         .onChange(of: calendarManager.storeVersion) {
             SchedulePanelDataSupport.syncLinkedTasks(
                 allTasks: allTasks,

@@ -1116,7 +1116,9 @@ struct CadenceTodayTimelinePaneTests {
         #expect(pane.contains("selectedDate: .constant(today)"))
 
         // The date is the day key, read from the clock on every pass — not state, not a preference.
-        #expect(pane.contains("DateFormatters.todayKey()"))
+        // Since T-3120 it is read through `CadenceObservedDay.todayKey`, which reads the clock on
+        // every access; the observed day is only the invalidation token.
+        #expect(pane.contains("observedDay.todayKey"))
         #expect(
             CadenceSourceScan.matchCount(#"@State private var \w+: Date"#, in: pane) == 0,
             "Today's pane stores a date of its own, so it can drift off today"

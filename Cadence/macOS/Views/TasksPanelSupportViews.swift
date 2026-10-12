@@ -62,9 +62,17 @@ struct TasksPanelHeader<Trailing: View>: View {
 
     private let title = "Today"
 
+    /// The header's own observer (T-3120). `TasksPanel` re-renders at midnight, but this row's
+    /// inputs are the day's counts, which can be identical on both days, so SwiftUI may keep the
+    /// old body and with it yesterday's date.
+    @State private var observedDay = CadenceObservedDay()
+
     /// The day itself — `DateFormatters.longDate`, uppercased by `SectionEyebrowLabel`, exactly as
-    /// both iOS Todays spell it.
-    private var eyebrow: String { DateFormatters.longDate.string(from: Date()) }
+    /// both iOS Todays spell it. The observed-day read is the dependency the observer invalidates.
+    private var eyebrow: String {
+        _ = observedDay.todayKey
+        return DateFormatters.longDate.string(from: Date())
+    }
 
     var body: some View {
         DesktopPageHeader(
@@ -83,6 +91,7 @@ struct TasksPanelHeader<Trailing: View>: View {
         ) {
             trailing
         }
+        .cadenceTracksDayChanges($observedDay)
     }
 }
 
