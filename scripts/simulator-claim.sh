@@ -196,6 +196,23 @@ cadence_standing_udid() {
     *) return 1 ;;
   esac
 }
+# What `boot` boots (T-3151). The standing iPhone first, then the first stock iPhone,
+# and EVERY candidate through the deny list. The name filter alone excluded both
+# standing devices (their names contain "cadence") and left the owner's iPhone 17 Pro
+# as the first match, so `boot --apply` booted exactly the device the claim loop and
+# the explicit-UDID path refuse -- measured 2026-10-12 by agent `plusrepro`.
+boot_target() {
+  local avail u
+  avail=$(${=SIMCTL} list devices available 2>/dev/null)
+  for u in $(cadence_standing_udid iphone) $(print -r -- "$avail" \
+      | grep -E '^ +iPhone [0-9]' | grep -viE 'agent|cadence' \
+      | sed -n 's/.*(\([0-9A-Fa-f-]\{8\}-[0-9A-Fa-f-]*\)).*/\1/p'); do
+    [[ "$avail" == *"($u)"* ]] || continue
+    (( ${CADENCE_SIM_DENY_UDIDS[(Ie)$u]} )) && continue
+    print -r -- "$u"; return 0
+  done
+  return 1
+}
 device_name() {
   ${=SIMCTL} list devices booted 2>/dev/null | grep -- "$1" \
     | sed 's/^ *//; s/ (.*//' | head -1
@@ -604,11 +621,9 @@ case "$CMD" in
       say "already booted: $(device_name ${booted[1]}) (${booted[1]}) -- not booting a second device."
       rm -rf "$BOOTLOCK"; exit 0
     fi
-    # A STOCK device, chosen by name from what is already in the pool. Never
-    # `simctl create`, and never a device whose name looks agent-made.
-    target=$(${=SIMCTL} list devices available 2>/dev/null \
-      | grep -E '^ +iPhone [0-9]' | grep -viE 'agent|cadence' \
-      | sed -n 's/.*(\([0-9A-Fa-f-]\{8\}-[0-9A-Fa-f-]*\)).*/\1/p' | head -1)
+    # The standing iPhone, else a STOCK device chosen by name from what is already in
+    # the pool, never a denied one (T-3151). Never `simctl create`.
+    target=$(boot_target)
     [[ -n "$target" ]] || { say "no stock iPhone available"; rm -rf "$BOOTLOCK"; exit 5 }
     say "== boot =="
     say "  target: $target"
@@ -686,6 +701,12 @@ if [[ "\$1 \$2 \$3" == "list devices booted" ]]; then
   print -r -- "    iPhone SelftestOwner (${FAKE_DENIED_UDID}) (Booted)"
   print -r -- "    iPhone SelftestFake (${FAKE_UDID}) (Booted)"
   print -r -- "    iPad SelftestSecond (${FAKE_SECOND_UDID}) (Booted)"
+fi
+if [[ "\$1 \$2 \$3" == "list devices available" ]]; then
+  print -r -- "-- iOS 18.0 --"
+  print -r -- "    iPhone 17 Pro (${FAKE_DENIED_UDID}) (Shutdown)"
+  [[ -n "\${SELFTEST_STANDING:-}" ]] && print -r -- "    Cadence-iPhone15 (CAD0F62C-5A83-4FE5-BEBB-5F567FD456B0) (Shutdown)"
+  print -r -- "    iPhone 16 (${FAKE_SECOND_UDID}) (Shutdown)"
 fi
 exit 0
 FAKESIMCTL
@@ -791,6 +812,19 @@ FAKESIMCTL
       print -r -- "FAIL deny-list-enforced: explicit request rc=$deny_rc (wanted 2); unqualified claim answered '${alloc_udid:-<nothing>}' (wanted $FAKE_UDID, NOT $FAKE_DENIED_UDID)"; (( fails++ ))
     fi
     rm -rf "$CADENCE_SIM_CLAIMS_DIR" "${CADENCE_SIM_CLAIMS_DIR}.queue"; mkdir -p "$CADENCE_SIM_CLAIMS_DIR"
+
+    # 2c. `boot` NEVER PICKS A DENIED DEVICE (T-3151). The denied fake is a stock-named
+    #     iPhone listed FIRST, which is what the owner's device looks like to the name
+    #     filter; the old picker returned it. In-process, with SIMCTL repointed inside
+    #     the substitution only -- this process's SIMCTL still names the real one, and its
+    #     deny list was built before CADENCE_SIM_DENY_EXTRA was exported, so append it there.
+    bt_stock=$(SIMCTL="/bin/zsh $root/fake-simctl"; CADENCE_SIM_DENY_UDIDS+=($FAKE_DENIED_UDID); boot_target)
+    bt_standing=$(SIMCTL="/bin/zsh $root/fake-simctl"; CADENCE_SIM_DENY_UDIDS+=($FAKE_DENIED_UDID); SELFTEST_STANDING=1; export SELFTEST_STANDING; boot_target)
+    if [[ "$bt_stock" == "$FAKE_SECOND_UDID" && "$bt_standing" == CAD0F62C-5A83-4FE5-BEBB-5F567FD456B0 ]]; then
+      print -r -- "PASS boot-target-denied: the denied device leads the available list and boot picked $bt_stock; with the standing iPhone present it picked $bt_standing"
+    else
+      print -r -- "FAIL boot-target-denied: stock pick '${bt_stock:-<nothing>}' (wanted $FAKE_SECOND_UDID, NOT $FAKE_DENIED_UDID); standing pick '${bt_standing:-<nothing>}' (wanted CAD0F62C-5A83-4FE5-BEBB-5F567FD456B0)"; (( fails++ ))
+    fi
 
     # 3. A `ps` THAT CANNOT ANSWER MUST NOT EMPTY THE QUEUE (T-1382). Property 2 above proves the
     #    queue drops a ticket whose waiter is genuinely gone. This is the case underneath it, and
