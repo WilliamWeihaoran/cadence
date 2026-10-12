@@ -970,7 +970,10 @@ struct CadencePrivacyDataResetSurfaceTests {
             "the backup sweep seam is gone"
         )
         for step in [
-            "StoreBackupManager.deleteAllBackups()",
+            // T-3126: the reset variant, which clears the pending restore and the failed-restore
+            // record before it sweeps. The plain `deleteAllBackups()` spares the backup either names
+            // (T-3116 (1)), so a reset routed through it leaves a copy of the store behind.
+            "StoreBackupManager.deleteAllBackupsForDataReset()",
             // T-1100: the store files a failed rollback retained are store data, and a reset that
             // left them behind would leave a copy of the database inside the emptied container.
             "StoreBackupManager.deleteRetainedUnrestoredOriginals()",
@@ -981,6 +984,10 @@ struct CadencePrivacyDataResetSurfaceTests {
             )
         }
         #expect(!sweep.contains("throw"), "the backup sweep can fail the reset again (T-1313)")
+        #expect(
+            !live.contains("StoreBackupManager.deleteAllBackups()"),
+            "the reset sweeps through the protective deleteAllBackups again, which spares a staged restore's backup (T-3126)"
+        )
     }
 
     // MARK: - The reset's second phase may not report a failure (T-1313)

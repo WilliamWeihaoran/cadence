@@ -1920,13 +1920,44 @@ enum StoreBackupManager {
         return retained.count
     }
 
+    /// The privacy reset's backup sweep: **every** backup, protected or not ([[T-3126]]).
+    ///
+    /// `deleteAllBackups` spares what a pending restore or a `FailedRestoreRecord` names
+    /// ([[T-3116]] (1)), which is right for Settings → clear backups and wrong for "Delete Account
+    /// & Data": a reset that left either record standing would leave a full copy of the store on
+    /// disk after saying everything was deleted. Both records are cleared **here, first**, so the
+    /// reset cannot get the order wrong by moving a line — it used to depend on two clears sitting
+    /// above this call in `PrivacyDataResetService`, held only by a comment. Clearing them is part
+    /// of the reset anyway: the restore they describe is of a store the reset just deleted.
+    ///
+    /// The records are cleared even when the store directory cannot be resolved or the sweep is
+    /// refused, as they were when the reset cleared them itself.
+    @discardableResult
+    static func deleteAllBackupsForDataReset() throws -> Int {
+        clearPendingRestore()
+        clearFailedRestore()
+        return try deleteAllBackups()
+    }
+
+    @discardableResult
+    static func deleteAllBackupsForDataReset(
+        storeDirectoryURL: URL,
+        fileManager: FileManager = .default,
+        defaults: UserDefaults = CadenceDefaults.store
+    ) throws -> Int {
+        clearPendingRestore(defaults: defaults, storeDirectoryURL: storeDirectoryURL)
+        clearFailedRestore(defaults: defaults)
+        return try deleteAllBackups(storeDirectoryURL: storeDirectoryURL, fileManager: fileManager, defaults: defaults)
+    }
+
     /// Remove every backup except the ones `protectedBackupPredicate` spares ([[T-3116]] (1)).
     ///
-    /// With nothing protected — the privacy reset's case, which clears the pending restore and the
-    /// failed-restore record **before** it calls this — the whole backups directory goes, exactly
-    /// as it always did, stray files included. With a restore staged or a failed restore on
-    /// record, everything in the directory goes except that backup: the next launch's restore
-    /// still has its source, and the banner still names a folder that exists.
+    /// With nothing protected — the privacy reset's case, reached through
+    /// `deleteAllBackupsForDataReset`, which clears both records first ([[T-3126]]) — the whole
+    /// backups directory goes, exactly as it always did, stray files included. With a restore
+    /// staged or a failed restore on record, everything in the directory goes except that backup:
+    /// the next launch's restore still has its source, and the banner still names a folder that
+    /// exists.
     ///
     /// - Returns: how many backups were removed, which is no longer every backup listed.
     @discardableResult

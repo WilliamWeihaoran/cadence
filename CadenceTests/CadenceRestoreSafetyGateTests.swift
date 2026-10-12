@@ -190,6 +190,63 @@ struct CadenceRestoreSafetyGateTests {
         }
     }
 
+    // MARK: - T-3126: the privacy reset's sweep takes every backup, whatever order it is called in
+
+    /// "Delete Account & Data" leaves no backup behind with a restore staged or a failed restore on
+    /// record — driven through the reset's own backup half, `removeStoredBackups`, with its default
+    /// sweep pointed at a temp store. Before [[T-3126]] this held only because two clears sat above
+    /// the call in `deleteCadenceDataAndLocalArtifacts`; the plain `deleteAllBackups` spares the
+    /// backup either record names ([[T-3116]] (1)), so the reset's sweep must clear them itself.
+    /// Two states, not one combined: `scheduleRestore` clears the failed-restore record, so the
+    /// app cannot hold both at once.
+    @Test func theDataResetsBackupSweepLeavesNoBackupWithARestoreStagedOrAFailedRestoreOnRecord() throws {
+        for staging in ["pending restore", "failed restore"] {
+            try withTemporaryDefaults("CadenceTests.restoreSafetyGate.reset") { defaults in
+                let root = try makeStoreDirectory()
+                defer { try? FileManager.default.removeItem(at: root) }
+                let backups = try sevenPreRestoreBackups(in: root)
+                let selected = backups[2]
+                try seedStore(in: root, marker: "live")
+                if staging == "pending restore" {
+                    try StoreBackupManager.scheduleRestore(from: selected, defaults: defaults, storeDirectoryURL: root)
+                    #expect(StoreBackupManager.pendingRestoreURL(defaults: defaults) != nil, "non-vacuity: \(staging)")
+                } else {
+                    try failARestore(from: selected, in: root, defaults: defaults)
+                    #expect(StoreBackupManager.lastFailedRestore(defaults: defaults) != nil, "non-vacuity: \(staging)")
+                }
+                // Non-vacuity: with this state on record the protective sweep really would spare one.
+                let isProtected = StoreBackupManager.protectedBackupPredicate(defaults: defaults)
+                #expect(backups.filter(isProtected).count == 1, "non-vacuity: \(staging) protects nothing")
+                let listedBefore = StoreBackupManager.listBackups(storeDirectoryURL: root).count
+                #expect(listedBefore >= backups.count, "non-vacuity: \(staging) fixture holds \(listedBefore)")
+
+                let outcome = PrivacyDataResetService.removeStoredBackups(
+                    deletingBackups: {
+                        try StoreBackupManager.deleteAllBackupsForDataReset(storeDirectoryURL: root, defaults: defaults)
+                    },
+                    deletingRetainedOriginals: {
+                        try StoreBackupManager.deleteRetainedUnrestoredOriginals(storeDirectoryURL: root)
+                    }
+                )
+
+                #expect(outcome.retainedBackupReason == nil, "\(staging): \(outcome.retainedBackupReason ?? "")")
+                #expect(outcome.removedBackupCount == listedBefore, "\(staging): removed \(outcome.removedBackupCount)")
+                #expect(
+                    StoreBackupManager.listBackups(storeDirectoryURL: root).count == 0,
+                    "\(staging): a reset left a backup of the store it deleted"
+                )
+                #expect(
+                    !FileManager.default.fileExists(
+                        atPath: root.appendingPathComponent("Cadence Store Backups", isDirectory: true).path
+                    ),
+                    "\(staging): the backups directory survived the reset"
+                )
+                #expect(StoreBackupManager.pendingRestoreURL(defaults: defaults) == nil)
+                #expect(StoreBackupManager.lastFailedRestore(defaults: defaults) == nil)
+            }
+        }
+    }
+
     // MARK: - T-3044 (c): the validity gate
 
     @Test func aRealSwiftDataStorePassesTheGateAndAnEmptyOrMissingFileDoesNot() throws {
