@@ -12,8 +12,8 @@
 #
 # `git add <specific paths>`, never `git add -A`, is the rule every brief carries. It was followed
 # every time and it is not sufficient: **the index is one object shared by every agent in the
-# checkout**, so a bare `git commit` takes whatever any of them staged. Four measured failures, and
-# the last three are the ones prose did not stop:
+# checkout**, so a bare `git commit` takes whatever any of them staged. Five measured failures, and
+# the last four are the ones prose did not stop:
 #
 #   1. A SIBLING'S HUNK IN YOUR COMMIT (Batch D). d1 staged a `git rm`; d2's next commit swept it
 #      in, so the deletion landed in 91d533c (T-637) rather than 5b0c2b8 (T-639). Nothing was lost,
@@ -30,6 +30,14 @@
 #      it. A required parameter gained by one composer was never passed by the other, and HEAD
 #      stopped compiling. Every protection we had guarded the file being written; none noticed that
 #      the hunk you declined to take arrived nowhere.
+#   5. AN ACCEPTED RECONSTRUCTION THAT WAS NOT VALID SWIFT (2026-10-12, T-3122). `b0a7ebce` carried
+#      a brace-mismatched `CadenceTaskRecurrenceWorkflowSupport.swift` for roughly twenty minutes.
+#      A heartbeat staged that path while *correctly* declining a sibling's in-flight hunks, and the
+#      reconstruction it committed put one method inside another's body. 4 is the hunk you declined
+#      arriving nowhere; this is the hunk you KEPT being invalid, which every guard built for 4 is
+#      on the wrong side of. The braces balanced, 87 and 87, so no counting check could see it, and
+#      the committing agent's own run was green because a sibling's uncommitted edit made its
+#      worktree copy parse. See SWIFT-PARSE-FAILED.
 #
 # So the incantation is here instead of in a paragraph. It refuses when the shared index holds a
 # path that is not yours, commits through a private index, **repairs the shared index afterwards**,
@@ -116,6 +124,21 @@
 #                        add the file to this commit. `--not-a-sweep <name>` is the escape, and it
 #                        should only ever be needed if the cheap precheck and the authoritative
 #                        Swift scan have drifted apart -- which is itself worth a ticket (T-1092).
+#   SWIFT-PARSE-FAILED   the STAGED blob of a `.swift` path in this commit does not parse. Not the
+#                        copy on your disk: the two differ exactly when you rebuilt the file as
+#                        `git show HEAD:<path>` plus your own hunks, and that is the shape that put
+#                        a file HEAD could not compile into `b0a7ebce` (T-3122) while the agent's
+#                        own tests were green. Braces balanced 87/87 in that one, so no counting
+#                        check stands in for this. There is deliberately no escape flag: unlike a
+#                        stale base or a dropped ticket, a commit that does not parse is never what
+#                        anybody meant.
+#   SWIFT-PARSE-UNAVAILABLE
+#                        no working Swift compiler was found, so the check above could not run.
+#                        Refused rather than skipped: a guard that vanishes with its tool is the
+#                        guard that was not there when `b0a7ebce` landed. `swift_parser` tries a
+#                        set DEVELOPER_DIR authoritatively (as xcrun does), then `xcrun -f swiftc`,
+#                        then the real toolchain binaries -- which is what the App-Sandboxed test
+#                        host needs, since `xcrun` itself is refused in there.
 #   REMOVES-HEAD-LINES   the staged content drops lines HEAD has, and you did not say how many.
 #                        `--removes <exact count>` acknowledges them. A reconstruction built on a
 #                        stale HEAD reverts a sibling's landed work in exactly this shape. The
@@ -293,6 +316,45 @@ if ! git --version >/dev/null 2>&1; then
         PATH="$_candidate:$PATH"; break
     done
 fi
+
+# The `swiftc` that T-3122's parse check below runs, or "" when this machine has none that works.
+#
+# `xcrun` alone is not enough, and the reason is the paragraph above: inside the App Sandbox the
+# macOS test host runs in, `xcrun` is refused outright ("cannot be used within an App Sandbox"),
+# while the REAL toolchain binaries spawn and run perfectly -- the split
+# `theXcrunShimsRefuseButTheRealToolsSpawn` measures in `CadenceTestHostSandboxCapabilityTests`.
+# Measured here too, and not cheaply: with `xcrun -f swiftc` as the only spelling, 23 checks of this
+# script's own selftest failed SWIFT-PARSE-UNAVAILABLE when run from that host, because every mode
+# that commits a `.swift` fixture lost its parser. So the shim is tried first and the real binary
+# is the fallback, exactly as `/usr/bin/git` is handled above.
+#
+# DEVELOPER_DIR, when it is set, is AUTHORITATIVE and there is no fall-through. That is xcrun's own
+# contract -- it errors on a DEVELOPER_DIR naming nothing rather than quietly using another
+# toolchain -- and keeping it means "this machine has no Swift compiler" is a state the selftest
+# can induce honestly, with the OS's own variable, instead of through an off switch invented here.
+# It is not a way to skip the check: a DEVELOPER_DIR that names nothing REFUSES the commit.
+swift_parser() {
+    local c
+    if [[ -n "${DEVELOPER_DIR:-}" ]]; then
+        for c in "$DEVELOPER_DIR/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc" \
+                 "$DEVELOPER_DIR/usr/bin/swiftc"; do
+            [[ -x "$c" ]] || continue
+            "$c" --version >/dev/null 2>&1 || continue
+            print -r -- "$c"; return 0
+        done
+        return 1
+    fi
+    c=$(xcrun -f swiftc 2>/dev/null)
+    if [[ -n "$c" && -x "$c" ]] && "$c" --version >/dev/null 2>&1; then print -r -- "$c"; return 0; fi
+    for c in "$(xcode-select -p 2>/dev/null)/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc" \
+             /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swiftc \
+             /Library/Developer/CommandLineTools/usr/bin/swiftc; do
+        [[ -x "$c" ]] || continue
+        "$c" --version >/dev/null 2>&1 || continue
+        print -r -- "$c"; return 0
+    done
+    return 1
+}
 
 usage() {
     say "usage: ./scripts/agent-commit.sh <id> -m <message> <path>[=<content-file>]..."
@@ -1785,6 +1847,117 @@ $(print -r -- "$sweep_out" | sed 's/^/    /')
         staged_content[$name]="$scratch/$(ledger_key "$name").staged"
         git cat-file -p "$blob" > "${staged_content[$name]}"
     done
+
+    # 2b. SWIFT-PARSE-FAILED (T-3122). The staged blob of every `.swift` path must parse.
+    #
+    #     `b0a7ebce` carried a brace-mismatched `Cadence/Shared/CadenceTaskRecurrenceWorkflowSupport`
+    #     `.swift` for about twenty minutes and every guard in this file passed it. A heartbeat
+    #     staged that path while *correctly* declining a sibling's in-flight hunks in the same file,
+    #     and the reconstruction it committed put `recurrencePredecessor` inside `shiftedDateKey`'s
+    #     body, closed the enum early and left the file with no final brace. Incident 4 in the
+    #     header is *the hunk you declined arrived nowhere*; this is *the hunk you kept was itself
+    #     invalid*, so the declined-hunk ledger below and the drift checks above are both satisfied
+    #     and both silent.
+    #
+    #     Why nothing cheaper finds it. **The braces BALANCED, 87 open and 87 close**, so a counting
+    #     check is blind to it -- a hand-spliced reconstruction moves a brace, it does not drop one.
+    #     And the committing agent's own verification was green (80 tests, 5 suites, 0 warnings)
+    #     because a sibling's UNCOMMITTED edit to the same file made the *worktree* copy parse. The
+    #     staged bytes and the worktree bytes differ exactly when this bug bites, which is why this
+    #     parses the STAGED blob and nothing on disk. The red was reachable only from a scratch
+    #     tree, a worktree, or CI.
+    #
+    #     It sits here, ahead of every coordination refusal below, because it is the one refusal no
+    #     sibling can cause: the bytes are the committer's own, the answer cannot change while they
+    #     read it, and nothing below is worth telling an agent whose commit does not compile.
+    #
+    #     ONE INVOCATION PER FILE, and that is load-bearing rather than lazy. Handing the whole set
+    #     to a single `swiftc` is 5.7x faster and WRONG: with one input file Swift allows top-level
+    #     code and with several it does not, so the two tracked script-style files under
+    #     `docs/audits/2026-09-20/request-queue/` parse clean alone and raise eight
+    #     `statements are not allowed at the top level` errors the moment they are batched with
+    #     anything else. A gate whose verdict on a file depends on how many OTHER files are in the
+    #     commit is a gate that gets switched off. Per-file is also exactly the command the refusal
+    #     below tells the agent to run, so the fix is verified with the thing that refused it.
+    #
+    #     COST, measured 2026-10-12 on this Mac: ~0.10s per file, no build, no DerivedData, no lock.
+    #     150 of the last 300 commits staged no `.swift` at all and pay nothing; the median
+    #     Swift-touching commit stages 3 (~0.31s sequential). The fan-out below takes the worst
+    #     commit in those 300 -- 46 files -- from 4.6s to 0.81s.
+    #
+    #     FALSE POSITIVES: none measured. All 1046 `.swift` files in HEAD were parsed one at a time
+    #     and all 1046 passed, under the toolchain's default language mode and again under
+    #     `-swift-version 6` (this project has targets on both 5.0 and 6.0). No `-swift-version` is
+    #     passed: the survey agreed in both modes, so the choice is not load-bearing, and the
+    #     default is what the `xcrun swiftc -parse <path>` in the refusal gives the agent.
+    local -a swift_names failed_parse
+    local swiftc_bin parse_root parse_file parse_dir parse_fanout parse_rc parse_line
+    swift_names=(); failed_parse=()
+    for name in "${names[@]}"; do
+        [[ "$name" == *.swift ]] || continue
+        [[ -n "${staged_content[$name]+x}" ]] || continue   # a deletion stages no content to parse
+        swift_names+=("$name")
+    done
+    if (( ${#swift_names} )); then
+        swiftc_bin=$(swift_parser) || swiftc_bin=""
+        if [[ -z "$swiftc_bin" ]]; then
+            rm -rf "$scratch"
+            refuse SWIFT-PARSE-UNAVAILABLE "no working Swift compiler was found, so the ${#swift_names} staged Swift
+  path(s) in this commit cannot be checked for syntax. Nothing was committed.
+  This gate does not skip itself quietly: a guard that disappears along with its tool is the guard
+  that was not there when b0a7ebce landed (T-3122). \`swift_parser\` tried DEVELOPER_DIR if it is
+  set (authoritatively, as xcrun does), then \`xcrun -f swiftc\`, then the real toolchain binaries
+  under \`xcode-select -p\`. Point one of those at a toolchain -- or unset a DEVELOPER_DIR that
+  names one that is not there -- and run it again."
+        fi
+        # The blob is copied under its REAL repo-relative path so swiftc's own diagnostics carry the
+        # name the agent knows, and the scratch prefix is then the only thing stripped off. It also
+        # HAS to end in `.swift`: swiftc rejects the `.staged` suffix as an unknown input type.
+        parse_root="$scratch/parse"
+        for name in "${swift_names[@]}"; do
+            parse_file="$parse_root/$name"
+            parse_dir="${parse_file:h}"
+            mkdir -p "$parse_dir" || { rm -rf "$scratch"; refuse SCRATCH "cannot make $parse_dir for the parse check" }
+            cp -- "${staged_content[$name]}" "$parse_file" || { rm -rf "$scratch"; refuse SCRATCH "cannot copy the staged blob of $name for the parse check" }
+        done
+        # Fanned out eight at a time rather than all at once, so a 46-file commit does not put 46
+        # frontends against a sibling's live `xcodebuild`. Each job records its own exit status,
+        # because `wait` reports the status of the LAST job and the failing one is rarely last.
+        parse_fanout=0
+        for name in "${swift_names[@]}"; do
+            parse_file="$parse_root/$name"
+            { "$swiftc_bin" -parse "$parse_file" > "$parse_file.err" 2>&1; print -r -- $? > "$parse_file.rc" } &
+            parse_fanout=$(( parse_fanout + 1 ))
+            if (( parse_fanout % 8 == 0 )); then wait; fi
+        done
+        wait
+        # Read back in the order the agent NAMED the paths, never the order the jobs finished: a
+        # refusal that reorders itself between runs is one the selftest below cannot assert.
+        for name in "${swift_names[@]}"; do
+            parse_file="$parse_root/$name"
+            if [[ -r "$parse_file.rc" ]]; then parse_rc=$(<"$parse_file.rc"); else parse_rc=1; fi
+            [[ "$parse_rc" == 0 ]] && continue
+            # The FIRST `<path>:<line>:<col>: error:` line. swiftc repeats the message inside the
+            # source snippet it prints underneath, on a line with no `path:line:col:` prefix, so
+            # anchoring on the stripped repo path takes the heading and not the echo.
+            parse_line=$(sed "s|^${parse_root}/||" "$parse_file.err" 2>/dev/null | grep -m1 -E "^${name}:[0-9]+:[0-9]+: error:")
+            [[ -n "$parse_line" ]] || parse_line="$name: swiftc exited $parse_rc without a diagnostic: $(grep -m1 . "$parse_file.err" 2>/dev/null)"
+            failed_parse+=("  $parse_line")
+        done
+        if (( ${#failed_parse} )); then
+            rm -rf "$scratch"
+            refuse SWIFT-PARSE-FAILED "the staged content of ${#failed_parse} of ${#swift_names} Swift path(s) in this commit does not parse. Nothing was committed.
+
+${(F)failed_parse}
+
+  That is the STAGED blob, not the copy on your disk. The two differ exactly when you rebuilt the
+  file as \`git show HEAD:<path>\` plus your own hunks -- which is the shape that put a file HEAD
+  could not compile into \`b0a7ebce\` while the agent's own tests were green (T-3122). Counting
+  braces proves nothing -- b0a7ebce's balanced, 87 and 87, and a spliced file's usually do.
+  Re-read \`git show HEAD:<path>\`, re-apply your hunks to it, and check the result with the same
+  command this used before running it again:  xcrun swiftc -parse <path>"
+        fi
+    fi
 
     # 3. A declined hunk that this commit does not carry either is stranded, and that is the Batch M
     #    failure that stopped HEAD compiling. Refuse unless it is in HEAD or in what you are staging.
@@ -4791,6 +4964,69 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>" ) >/dev/null 2>&1
               && $( cd "$ws" && git show HEAD:t3007/b9.txt ) == *"term work"* ]] \
            && ( cd "$ws" && git diff --cached --quiet HEAD ) >/dev/null 2>&1 && print 1 || print 0 ) \
         "exit $rc: $out / $( cd "$ws" && git diff --cached --name-status HEAD )"
+
+    say ""
+    say " mode 10 (SWIFT-PARSE-FAILED / SWIFT-PARSE-UNAVAILABLE) -- T-3122: a staged .swift blob that"
+    say "          does not parse must not land, and a valid one must still commit"
+    # `b0a7ebce` replayed in miniature, and the two properties that made it invisible are both in
+    # the fixture rather than in this comment. (1) The bad reconstruction's braces BALANCE -- 3 and
+    # 3, asserted below -- so every counting check passes it, exactly as 87/87 did. (2) The WORKTREE
+    # copy stays valid the whole way through: only the staged blob is broken, which is why the
+    # committing agent's own build and tests were green and said nothing about what landed.
+    ( cd "$ws" \
+        && print -rl -- 'enum Good {' '    static func a() -> Int {' '        return 1' '    }' '}' > good.swift \
+        && git add good.swift \
+        && git commit -qm "swift base
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>" ) >/dev/null 2>&1
+    # `b()` spliced in one line too early, so it is declared inside `a()`'s body. A pure INSERTION
+    # against HEAD, so REMOVES-HEAD-LINES has nothing to say and this mode is about one thing.
+    print -rl -- 'enum Good {' '    static func a() -> Int {' '        return 1' \
+        '    static func b() -> Int { 2 }' '    }' '}' > "$ws/bad-recon.swift"
+    check "the fixture's braces BALANCE, so no counting check could have caught it" \
+        $( [[ $(tr -cd '{' < "$ws/bad-recon.swift" | wc -c) == $(tr -cd '}' < "$ws/bad-recon.swift" | wc -c) ]] \
+           && print 1 || print 0 ) \
+        "open $(tr -cd '{' < "$ws/bad-recon.swift" | wc -c) close $(tr -cd '}' < "$ws/bad-recon.swift" | wc -c)"
+    prehead=$( cd "$ws" && git rev-parse HEAD )
+    out=$( cd "$ws" && zsh "$here" p1 -m "$M" good.swift="$ws/bad-recon.swift" 2>&1 ); rc=$?
+    check "a staged .swift blob that does not parse is refused" $(( rc == 3 )) "exit $rc: $out"
+    check "and the refusal names the path, the line and the error" \
+        $( [[ "$out" == *SWIFT-PARSE-FAILED* && "$out" == *"good.swift:4:"*": error: "* ]] && print 1 || print 0 ) "$out"
+    check "and it tells the agent the command to check the repair with" \
+        $( [[ "$out" == *"swiftc -parse"* ]] && print 1 || print 0 ) "$out"
+    check "nothing was committed" \
+        $( [[ $( cd "$ws" && git rev-parse HEAD ) == "$prehead" ]] && print 1 || print 0 ) \
+        "HEAD $prehead -> $( cd "$ws" && git rev-parse HEAD )"
+    # The control for the whole mode. A gate that refuses everything is not a fix, and a fixture
+    # that only ever induces the refusal cannot tell a working gate from a jammed one.
+    print -rl -- 'enum Good {' '    static func a() -> Int {' '        return 1' '    }' \
+        '    static func b() -> Int { 2 }' '}' > "$ws/good-recon.swift"
+    out=$( cd "$ws" && zsh "$here" p2 -m "$M" good.swift="$ws/good-recon.swift" 2>&1 ); rc=$?
+    check "a VALID .swift reconstruction down the same path still commits" \
+        $(( rc == 0 )) "exit $rc: $out"
+    check "and its content really is in HEAD" \
+        $( [[ $( cd "$ws" && git show HEAD:good.swift 2>/dev/null ) == *"static func b()"* ]] && print 1 || print 0 ) \
+        "$( cd "$ws" && git show HEAD:good.swift 2>&1 )"
+    # And the tool going missing must REFUSE, not wave the commit through. Induced with the OS's
+    # own variable rather than an off switch invented for the test: `swift_parser` treats a set
+    # DEVELOPER_DIR as authoritative and does not fall through to another toolchain, which is
+    # exactly xcrun's contract, so a DEVELOPER_DIR naming nothing really is a machine with no
+    # Swift compiler. Note which way it fails -- it REFUSES. DEVELOPER_DIR cannot skip this check.
+    prehead=$( cd "$ws" && git rev-parse HEAD )
+    out=$( cd "$ws" && DEVELOPER_DIR=/nonexistent-toolchain zsh "$here" p3 -m "$M" good.swift="$ws/bad-recon.swift" 2>&1 ); rc=$?
+    check "no Swift compiler refuses the commit rather than skipping the check" \
+        $( [[ $rc == 3 && "$out" == *SWIFT-PARSE-UNAVAILABLE* ]] && print 1 || print 0 ) "exit $rc: $out"
+    check "and that refusal committed nothing either" \
+        $( [[ $( cd "$ws" && git rev-parse HEAD ) == "$prehead" ]] && print 1 || print 0 ) \
+        "HEAD $prehead -> $( cd "$ws" && git rev-parse HEAD )"
+    # A non-Swift commit must not pay for any of this, and must not be dragged into it by a broken
+    # .swift sitting in the worktree: the check reads the paths this commit STAGES and nothing else.
+    ( cd "$ws" && cp "$ws/bad-recon.swift" good.swift )
+    ( cd "$ws" && print -r -- "another line" >> mine.txt )
+    out=$( cd "$ws" && zsh "$here" p4 -m "$M" mine.txt 2>&1 ); rc=$?
+    check "a commit naming no .swift path is unaffected by a broken one in the worktree" \
+        $(( rc == 0 )) "exit $rc: $out"
+    ( cd "$ws" && git checkout -q -- good.swift )
 
     # The precheck's own fixtures -- the helper-hop sweep, the fixed-file assertion, the sweep that
     # exists only inside a string literal, and both vacuity ends -- are asserted next door, and

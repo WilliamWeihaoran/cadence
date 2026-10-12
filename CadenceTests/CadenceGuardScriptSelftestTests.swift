@@ -224,6 +224,24 @@ struct CadenceGuardScriptSelftestTests {
         "SWEEP-MANIFEST-MISSING",
         "SWEEP-CHECK-MISSING",
         "SWEEP-CHECK-FAILED",
+        // T-3122, and it is the fifth measured failure in the script's own header: the one
+        // shape every guard built for the fourth is on the wrong side of. `DECLINED-HUNK-LOST`
+        // asks whether the hunk you declined arrived anywhere; nothing asked whether the hunk
+        // you KEPT was valid Swift. `b0a7ebce` carried a brace-mismatched
+        // `CadenceTaskRecurrenceWorkflowSupport.swift` for twenty minutes past every refusal
+        // above — the braces balanced 87/87, so no counting check could see it, and the
+        // committing agent's own run was green (80 tests, 5 suites, 0 warnings) because a
+        // sibling's UNCOMMITTED edit made the worktree copy parse. So the check reads the
+        // STAGED blob, which is the one thing true of the committed bytes and of nothing the
+        // agent tested. `SWIFT-PARSE-UNAVAILABLE` is the other half and the reason it is named
+        // here too: a gate that skips itself when `xcrun -f swiftc` finds nothing is a gate
+        // that is off, so mode 10 induces that honestly with a DEVELOPER_DIR pointing at
+        // nothing rather than through an env var this family reads. Naming both means deleting
+        // mode 10 goes red rather than quietly restoring the hole — and mode 10's control, a
+        // VALID reconstruction down the same path still committing, is the half that tells a
+        // working gate from one jammed shut.
+        "SWIFT-PARSE-FAILED",
+        "SWIFT-PARSE-UNAVAILABLE",
     ]
 
     /// Every refusal `scripts/agent-scratch.sh` makes (T-1094). The ticket was filed over work that
