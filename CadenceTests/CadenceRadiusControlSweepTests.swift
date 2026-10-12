@@ -151,10 +151,36 @@ struct CadenceRadiusControlSweepTests {
         }
     }
 
+    /// The three product roots this sweep walks, each with a measured non-vacuity floor and a
+    /// named witness.
+    ///
+    /// **T-3112.** Both callers of `remainingLiteralRadiusTenSites()` assert `isEmpty` — and
+    /// `CadenceSourceScan.swiftFiles(under:)` returns `[]` *silently* when the enumerator is nil,
+    /// so an empty walk and a clean tree were the same green run.
+    /// `theWidenedNeedleStillIgnoresEverythingItIgnoredBefore` is the sharper case: its own
+    /// comment calls this tree "the only negative witness with real coverage", a claim an empty
+    /// walk satisfies exactly.
+    ///
+    /// Per root, not over the concatenation: `Cadence/` alone clears any whole-tree floor, so a
+    /// combined floor cannot see one root dropping out. Measured 2026-10-11: 613 / 6 / 4 `.swift`
+    /// files. `Theme.swift` is the `Cadence` witness because it is the file the sweep deliberately
+    /// excludes — the exclusion means nothing unless the walk reached it.
+    static let sweptTrees: [(root: String, floor: Int, witness: String)] = [
+        ("Cadence", 500, CadenceRadiusControlSweepTests.themeDefinitionFile),
+        ("CadenceWidgets", 5, "CadenceWidgets/WidgetChrome.swift"),
+        ("CadenceMCPServer", 3, "CadenceMCPServer/CadenceMCPToolRouter.swift"),
+    ]
+
     static func remainingLiteralRadiusTenSites() throws -> [LiteralSite] {
-        let paths = try CadenceSourceScan.swiftFiles(under: "Cadence")
-            + CadenceSourceScan.swiftFiles(under: "CadenceWidgets")
-            + CadenceSourceScan.swiftFiles(under: "CadenceMCPServer")
+        // Walked through the self-checked instrument that runs this very needle, not beside it.
+        var paths: [String] = []
+        for tree in sweptTrees {
+            let files = try CadenceSourceScan.swiftFiles(under: tree.root)
+            try literalRadiusTenInstrument.checkWalk(
+                files, atLeast: tree.floor, including: tree.witness
+            )
+            paths += files
+        }
         return try paths.filter { $0 != themeDefinitionFile }.flatMap { path in
             unexemptedLiteralRadiusTenSites(in: try CadenceSourceScan.sourceFile(path), file: path)
         }

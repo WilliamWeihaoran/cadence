@@ -271,25 +271,67 @@ struct CadencePageHeaderMetricsTests {
         }
     }
 
+    /// Self-checked instrument for the override shape, and the only detector the sweep below runs
+    /// ([[T-3112]]): it fires on a `cornerRadius:` *inside* a tile's own argument list and not on
+    /// a tile call that leaves the corner alone.
+    static let tileCornerOverrideInstrument = try! CadenceScanInstrument(
+        "tileCallSitePassesItsOwnCorner",
+        fires: "CommitmentIconTile(symbol: \"flag\", size: 34, cornerRadius: 9)",
+        andNotOn: "CommitmentIconTile(symbol: \"flag\", size: 34)"
+    ) { code in
+        !tileCornerOverrides(in: code).isEmpty
+    }
+
+    @Test func theTileCornerOverrideInstrumentStillDiscriminates() {
+        #expect(Self.tileCornerOverrideInstrument.fires(on: "iOSIconTile(size: 28, cornerRadius: 8)"))
+        #expect(!Self.tileCornerOverrideInstrument.fires(on: "iOSIconTile(size: 28)"))
+        // A `cornerRadius:` in the *next* call along is not this call's override.
+        #expect(!Self.tileCornerOverrideInstrument.fires(
+            on: "iOSIconTile(size: 28)\nRoundedRectangle(cornerRadius: 8)"
+        ))
+    }
+
     /// **No call site overrides it.** Both tiles keep a `cornerRadius` escape hatch, and the history
     /// says an escape hatch is how a third geometry arrives: the macOS goals row passed
     /// `cornerRadius: 9` at 34pt while `HabitIconTile` next door computed 8.96, and one iOS call
     /// site passed `Theme.radiusControl` — the default — back in by hand. Both are gone. A future
     /// override is not forbidden, but it has to arrive as an edit to this list.
+    ///
+    /// **T-3112.** The walk is the shared `CadenceSourceScan.swiftFiles(under:)` rather than this
+    /// file's own private copy of it, and it is floored: that helper returns `[]` *silently* when
+    /// the enumerator is nil, and the assertion here is an `isEmpty`, so a walk that read nothing
+    /// used to report PASSED. 613 `.swift` files under `Cadence/` measured 2026-10-11; the witness
+    /// is the file that declares one of the two tiles, so the sweep cannot miss its own subject.
     @Test func noTileCallSitePassesItsOwnCorner() throws {
-        var overrides: [String] = []
+        let paths = try CadenceSourceScan.swiftFiles(under: "Cadence")
+        try Self.tileCornerOverrideInstrument.checkWalk(
+            paths,
+            atLeast: 500,
+            including: "Cadence/macOS/Views/CommitmentSharedViews.swift"
+        )
 
-        for path in try swiftFiles(under: "Cadence") {
+        var overrides: [String] = []
+        for path in paths {
             let code = strippingComments(try sourceFile(path))
-            for name in ["CommitmentIconTile(", "iOSIconTile("] {
-                for arguments in argumentLists(after: name, in: code) where arguments.contains("cornerRadius:") {
-                    overrides.append("\(path): \(name)")
-                }
+            for name in tileCornerOverrides(in: code) {
+                overrides.append("\(path): \(name)")
             }
         }
 
         #expect(overrides.isEmpty, "these call sites still pick their own tile corner: \(overrides)")
     }
+}
+
+/// Every tile constructor in `code` that is handed its own `cornerRadius:`, one entry per
+/// offending call. One spelling, shared by the sweep and by the instrument that self-checks it.
+private func tileCornerOverrides(in code: String) -> [String] {
+    var names: [String] = []
+    for name in ["CommitmentIconTile(", "iOSIconTile("] {
+        for arguments in argumentLists(after: name, in: code) where arguments.contains("cornerRadius:") {
+            names.append(name)
+        }
+    }
+    return names
 }
 
 /// Every balanced argument list following an occurrence of `opening` — so a `cornerRadius:` in the
@@ -311,21 +353,6 @@ private func argumentLists(after opening: String, in source: String) -> [String]
         results.append(String(source[match.upperBound..<index]))
     }
     return results
-}
-
-/// Enumerated by `enumerator(atPath:)` rather than `enumerator(at:)` on purpose: the URL variant
-/// yields absolute paths that `FileManager` has already resolved through the `/tmp` against
-/// `/private/tmp` symlink `#filePath` names literally.
-private func swiftFiles(under relativeDirectory: String) throws -> [String] {
-    let root = URL(fileURLWithPath: #filePath)
-        .deletingLastPathComponent()
-        .deletingLastPathComponent()
-    let directory = root.appendingPathComponent(relativeDirectory)
-    guard let enumerator = FileManager.default.enumerator(atPath: directory.path) else { return [] }
-    return enumerator.compactMap { element in
-        guard let relativePath = element as? String, relativePath.hasSuffix(".swift") else { return nil }
-        return "\(relativeDirectory)/\(relativePath)"
-    }
 }
 
 /// The source text of one top-level declaration, from its `struct` line to the next top-level

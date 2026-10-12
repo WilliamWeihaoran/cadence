@@ -30,6 +30,36 @@ struct CadenceRadiusControlCompactSweepTests {
     /// scanning it would make the test fail on the very fix it exists to describe.
     static let themeDefinitionFile = "Cadence/Shared/Theme.swift"
 
+    /// The three product roots this sweep walks, each with a measured non-vacuity floor and a
+    /// named witness.
+    ///
+    /// **T-3112.** `CadenceSourceScan.swiftFiles(under:)` returns `[]` *silently* when the
+    /// enumerator is nil, and every assertion below is an `isEmpty` — so a walk that read nothing
+    /// and a tree with no violations left are the same green run. A floor per root is what tells
+    /// them apart, and it is per root rather than over the concatenation because `Cadence/` alone
+    /// clears any whole-tree floor: the realistic failure is one root silently dropping out, not
+    /// all three. Measured 2026-10-11: 613 / 6 / 4 `.swift` files. Same shape, and the same
+    /// witnesses, as `AppStoreReviewReadinessTests`' own three-root guard.
+    static let sweptTrees: [(root: String, floor: Int, witness: String)] = [
+        ("Cadence", 500, CadenceRadiusControlCompactSweepTests.themeDefinitionFile),
+        ("CadenceWidgets", 5, "CadenceWidgets/WidgetChrome.swift"),
+        ("CadenceMCPServer", 3, "CadenceMCPServer/CadenceMCPToolRouter.swift"),
+    ]
+
+    /// Every `.swift` path under the three product roots, with each root's walk proved non-vacuous
+    /// through `instrument` before a single byte is read. `Theme.swift` is the `Cadence` witness on
+    /// purpose: it is the one file both sweeps below deliberately *exclude* from scanning, so the
+    /// walk has to have reached it for the exclusion to mean anything.
+    static func sweptPaths(provedBy instrument: CadenceScanInstrument) throws -> [String] {
+        var paths: [String] = []
+        for tree in sweptTrees {
+            let files = try CadenceSourceScan.swiftFiles(under: tree.root)
+            try instrument.checkWalk(files, atLeast: tree.floor, including: tree.witness)
+            paths += files
+        }
+        return paths
+    }
+
     /// Every `cornerRadius: 7` / `xRadius: 7` / `yRadius: 7` **call-site** literal, and every
     /// `someRadius(: CGFloat)? = 7` **declaration** of a named constant (the shape
     /// `kanbanCardCornerRadius`, `appMarkCornerRadius`, and the private
@@ -39,9 +69,11 @@ struct CadenceRadiusControlCompactSweepTests {
     /// string literal or comment cannot be counted as code.
     static func remainingLiteralRadiusSevenSites() throws -> [(file: String, line: Int, text: String)] {
         var hits: [(String, Int, String)] = []
-        let paths = try CadenceSourceScan.swiftFiles(under: "Cadence")
-            + CadenceSourceScan.swiftFiles(under: "CadenceWidgets")
-            + CadenceSourceScan.swiftFiles(under: "CadenceMCPServer")
+        // Walked through the self-checked instrument that runs this very needle ([[T-3112]]), not
+        // beside it: the detector was already proved live by
+        // `literalRadiusSevenInstrumentStillDiscriminates`, and this is the other half — proof that
+        // the walk it runs over is not empty.
+        let paths = try sweptPaths(provedBy: literalRadiusSevenInstrument)
         // The needle is `CadenceSourceScan.radiusLiteralPattern(7)`, which is the one the `10`
         // sweep runs too — one spelling, not two near-copies of it. Its anchoring is documented
         // there: `CadenceWidgets/WidgetChrome.swift` scales a *shadow blur* radius
@@ -71,9 +103,7 @@ struct CadenceRadiusControlCompactSweepTests {
     /// Every remaining `Theme.radiusControl - 3` spelling outside `Theme.swift`'s own definition.
     static func remainingRadiusControlMinusThreeSites() throws -> [(file: String, line: Int)] {
         var hits: [(String, Int)] = []
-        let paths = try CadenceSourceScan.swiftFiles(under: "Cadence")
-            + CadenceSourceScan.swiftFiles(under: "CadenceWidgets")
-            + CadenceSourceScan.swiftFiles(under: "CadenceMCPServer")
+        let paths = try sweptPaths(provedBy: radiusControlMinusThreeInstrument)
         for path in paths where path != themeDefinitionFile {
             let source = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile(path))
             for (index, line) in source.components(separatedBy: "\n").enumerated() {
@@ -92,6 +122,28 @@ struct CadenceRadiusControlCompactSweepTests {
     ) { text in
         // The needle the sweep runs, not a third spelling of it ([[T-1316]]).
         CadenceSourceScan.matchCount(CadenceSourceScan.radiusLiteralPattern(7), in: text) > 0
+    }
+
+    /// Self-checked instrument for the *second* spelling, which had none at all ([[T-3112]]):
+    /// fires on the arithmetic this sweep retires, not on the token it was converted to.
+    static let radiusControlMinusThreeInstrument = try! CadenceScanInstrument(
+        "radiusControlMinusThree",
+        fires: "RoundedRectangle(cornerRadius: Theme.radiusControl - 3)",
+        andNotOn: "RoundedRectangle(cornerRadius: Theme.radiusControlCompact)"
+    ) { text in
+        // The needle the sweep below runs, spelled once.
+        text.contains("radiusControl - 3")
+    }
+
+    @Test
+    func radiusControlMinusThreeInstrumentStillDiscriminates() throws {
+        #expect(Self.radiusControlMinusThreeInstrument.fires(on: "cornerRadius: Theme.radiusControl - 3"))
+        #expect(!Self.radiusControlMinusThreeInstrument.fires(on: "cornerRadius: Theme.radiusControlCompact"))
+        // The token's own declaration is the one place this spelling is allowed to live, and it is
+        // excluded by path rather than by needle — so the needle must still see it.
+        #expect(Self.radiusControlMinusThreeInstrument.fires(
+            on: "static let radiusControlCompact: CGFloat = radiusControl - 3"
+        ))
     }
 
     @Test
