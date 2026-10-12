@@ -1739,4 +1739,223 @@ struct CadenceArchiveImportSurfaceTests {
         // The five legacy rows folded into notes beside the one seeded directly.
         #expect(seeded.notes.count == 6)
     }
+
+    // MARK: - T-3116 part (4): overwrite losses on preference-shaped fields
+
+    /// A pre-[[T-1347]] archive has no calendar field, and an **overwrite** used to read that as
+    /// "the user has no calendar settings" and blank the destination's. The field being absent
+    /// says nothing; the row's own value stands. Everything the archive *does* carry still
+    /// overwrites, so this is not overwrite quietly turning into merge.
+    @Test func anOverwriteFromAnArchiveWithoutTheCalendarFieldKeepsTheCalendarPairsAlreadyHere() throws {
+        let (older, container, lookID) = try Self.lookRowsDisagreeing(stripCalendarField: true)
+        #expect(older.lookPreferenceRecords.first?.calendarPresentationRaw == nil,
+                "the archive still carries the field; this test proves nothing")
+
+        let outcome = try CadenceArchiveImportService.apply(
+            older, mode: .restoreOverwritingExistingRows, in: ModelContext(container)
+        )
+        #expect(outcome.overwrittenRecordCount >= 1)
+
+        let look = try #require(
+            try ModelContext(container).fetch(FetchDescriptor<LookPreference>()).first { $0.id == lookID }
+        )
+        #expect(look.calendarPresentationRaw == "workHours.start=540",
+                "an archive with no calendar field blanked the calendar settings on this device")
+        #expect(look.taskPresentationRaw == "allTasks.mode=dueDate", "overwrite stopped overwriting")
+    }
+
+    /// The control: a field that is **present** is the archive's copy, even when it is empty, so
+    /// overwrite still writes it. Only absence is left alone.
+    @Test func anOverwriteFromAnArchiveThatCarriesAnEmptyCalendarFieldStillWritesIt() throws {
+        let (archive, container, lookID) = try Self.lookRowsDisagreeing(stripCalendarField: false)
+        #expect(archive.lookPreferenceRecords.first?.calendarPresentationRaw == "")
+
+        try CadenceArchiveImportService.apply(
+            archive, mode: .restoreOverwritingExistingRows, in: ModelContext(container)
+        )
+
+        let look = try #require(
+            try ModelContext(container).fetch(FetchDescriptor<LookPreference>()).first { $0.id == lookID }
+        )
+        #expect(look.calendarPresentationRaw.isEmpty)
+    }
+
+    /// **The focus counter with no session rows behind it, and the sentence that has to admit it.**
+    ///
+    /// [[T-1114]] decided overwrite takes the archive's scalar and the ledger raise then covers the
+    /// sessions only this device holds. A counter with no rows at all — minutes banked before the
+    /// ledger existed — has nothing to be raised back to, so it ends at the archive's figure, and
+    /// that stays the decided behaviour. What this pins is that the overwrite copy now says so,
+    /// that merge (which never touches a matched counter) neither does it nor says it, and that
+    /// the two facts move together.
+    @Test func aCounterWithNoSessionRowsTakesTheArchivesFigureOnOverwriteAndTheCopySaysSo() throws {
+        let source = ModelContext(try CadenceTestStore.container())
+        let task = AppTask(title: "Old habit")
+        task.actualMinutes = 10
+        source.insert(task)
+        try source.save()
+        let archive = try CadenceDataExportService.makeArchive(in: source)
+        #expect(archive.focusSessions.isEmpty, "the fixture must have no session rows at all")
+
+        var minutesAfter: [CadenceArchiveImportMode: Int] = [:]
+        for mode in CadenceArchiveImportMode.allCases {
+            let container = try CadenceTestStore.container()
+            let destination = ModelContext(container)
+            let local = AppTask(title: "Old habit")
+            local.id = task.id
+            local.actualMinutes = 100
+            destination.insert(local)
+            try destination.save()
+
+            try CadenceArchiveImportService.apply(archive, mode: mode, in: destination)
+            minutesAfter[mode] = try #require(try Self.one(AppTask.self, in: ModelContext(container))).actualMinutes
+        }
+
+        #expect(minutesAfter[.mergeKeepingExistingRows] == 100)
+        #expect(minutesAfter[.restoreOverwritingExistingRows] == 10)
+
+        let caveat = CadenceArchiveImportPresentation.focusMinutesWithoutSessionsNote
+        #expect(
+            CadenceArchiveImportPresentation.modeExplanation(.restoreOverwritingExistingRows).contains(caveat),
+            "overwrite lowers a counter with no sessions behind it and its copy does not say so"
+        )
+        #expect(
+            !CadenceArchiveImportPresentation.modeExplanation(.mergeKeepingExistingRows).contains(caveat),
+            "merge never touches a matched counter and must not claim it does"
+        )
+    }
+
+    /// One look row under the same id in both stores, disagreeing on both pair maps. The
+    /// archive's calendar field is either removed (a pre-T-1347 file) or present and empty.
+    private static func lookRowsDisagreeing(
+        stripCalendarField: Bool
+    ) throws -> (CadenceArchive, ModelContainer, UUID) {
+        let source = ModelContext(try CadenceTestStore.container())
+        let archived = LookPreference(
+            accentPaletteID: "glacier",
+            taskPresentationRaw: "allTasks.mode=dueDate",
+            calendarPresentationRaw: ""
+        )
+        source.insert(archived)
+        try source.save()
+
+        let data = try CadenceDataExportService.encode(try CadenceDataExportService.makeArchive(in: source))
+        var json = try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+        var rows = try #require(json["lookPreferences"] as? [[String: Any]])
+        if stripCalendarField { rows[0].removeValue(forKey: "calendarPresentationRaw") }
+        json["lookPreferences"] = rows
+        let archive = try CadenceDataExportService.decode(try JSONSerialization.data(withJSONObject: json))
+
+        let container = try CadenceTestStore.container()
+        let destination = ModelContext(container)
+        let local = LookPreference(
+            accentPaletteID: "ember",
+            taskPresentationRaw: "today.mode=doDate",
+            calendarPresentationRaw: "workHours.start=540"
+        )
+        local.id = archived.id
+        destination.insert(local)
+        try destination.save()
+        return (archive, container, archived.id)
+    }
+
+    // MARK: - T-3110: a tag already here under another id
+
+    /// **The restore route's duplicate.** Between a reset and the import the user types `bug` in a
+    /// tag picker, minting it under a fresh id; the archive then brings its own `bug`. The import
+    /// now treats that as the row already here — one tag, carrying the archive's task — rather
+    /// than inserting a second `bug` identical in every picker that nothing would ever merge.
+    /// Merge keeps the tag already here exactly as it is, and the preview says "matched", not
+    /// "added", so a second run of the same file still reads as a no-op.
+    @Test func aMergeHangsTheArchivesTasksOnTheTagAlreadyHereRatherThanASecondOne() throws {
+        let (archive, container, local, restoredID) = try Self.restoreRouteWithATagTypedInBetween()
+
+        let plan = try CadenceArchiveImportService.plan(archive, in: ModelContext(container))
+        #expect(plan.insertCountsByEntityName["Tag"] == 0)
+        #expect(plan.matchedCountsByEntityName["Tag"] == 1)
+        #expect(plan.differingMatchedCountsByEntityName["AppTask"] == 0,
+                "a task on the tag already here reads as differing from the archive's copy on the matched tag")
+
+        try CadenceArchiveImportService.apply(archive, mode: .mergeKeepingExistingRows, in: ModelContext(container))
+
+        let reader = ModelContext(container)
+        let tags = try reader.fetch(FetchDescriptor<Cadence.Tag>())
+        #expect(tags.count == 1, "the import inserted a second tag with the same name")
+        let tag = try #require(tags.first)
+        #expect(tag.id == local.id, "merge replaced the tag already here")
+        #expect(tag.colorHex == "#6b7a99", "merge took the archive's copy of a row already here")
+        let task = try #require(try reader.fetch(FetchDescriptor<AppTask>()).first { $0.id == restoredID })
+        #expect(task.tags?.map(\.id) == [local.id], "the restored task is not on the tag the user sees")
+
+        let again = try CadenceArchiveImportService.plan(archive, in: ModelContext(container))
+        #expect(again.changesAnything == false, "a second import of the same file reads as a change")
+        #expect(again.differingMatchedCountsByEntityName["AppTask"] == 0,
+                "a task wired to the matched tag reads as differing from the archive")
+    }
+
+    /// Overwrite does to the matched tag what it does to any matched row — the archive's fields
+    /// replace these — and keeps this device's id, because other rows and devices point at it.
+    @Test func anOverwriteGivesTheTagAlreadyHereTheArchivesFieldsAndKeepsItsID() throws {
+        let (archive, container, local, _) = try Self.restoreRouteWithATagTypedInBetween()
+
+        try CadenceArchiveImportService.apply(
+            archive, mode: .restoreOverwritingExistingRows, in: ModelContext(container)
+        )
+
+        let tags = try ModelContext(container).fetch(FetchDescriptor<Cadence.Tag>())
+        #expect(tags.count == 1)
+        #expect(tags.first?.id == local.id)
+        #expect(tags.first?.colorHex == "#123456", "overwrite left this device's copy of a matched tag")
+        let tasks = try ModelContext(container).fetch(FetchDescriptor<AppTask>())
+        #expect(tasks.count == 2)
+        #expect(tasks.allSatisfy { $0.tags?.map(\.id) == [local.id] },
+                "an overwritten or restored task is not on the matched tag")
+    }
+
+    /// The limit: an archived and an active tag may share a slug and are not the duplicate a user
+    /// sees, and folding one into the other would decide whether the user's tag is archived —
+    /// the call [[T-528]] refused to let a merge make. Both rows stay.
+    @Test func anArchivedArchiveTagIsNotFoldedIntoAnActiveTagOfTheSameName() throws {
+        let (archive, container, _, _) = try Self.restoreRouteWithATagTypedInBetween(archiveTagIsArchived: true)
+
+        try CadenceArchiveImportService.apply(archive, in: ModelContext(container))
+
+        let tags = try ModelContext(container).fetch(FetchDescriptor<Cadence.Tag>())
+        #expect(tags.count == 2)
+        #expect(tags.filter(\.isArchived).count == 1, "the archive's archived tag lost its state")
+    }
+
+    /// A source store with `bug` (recoloured) on a task, exported; a destination holding the same
+    /// task — so the preview has a matched task to compare — and a `bug` minted under its own id.
+    private static func restoreRouteWithATagTypedInBetween(
+        archiveTagIsArchived: Bool = false
+    ) throws -> (CadenceArchive, ModelContainer, Cadence.Tag, UUID) {
+        let source = ModelContext(try CadenceTestStore.container())
+        let tag = Cadence.Tag(name: "bug", colorHex: "#123456", isArchived: archiveTagIsArchived)
+        let restored = AppTask(title: "Fix the crash")
+        let shared = AppTask(title: "Write the test")
+        // Whole seconds, so the destination's copy below is the archive's copy to the millisecond
+        // and the preview's only possible difference is the tag link under test.
+        shared.createdAt = Date(timeIntervalSince1970: 1_772_000_000)
+        source.insert(tag)
+        source.insert(restored)
+        source.insert(shared)
+        restored.tags = [tag]
+        shared.tags = [tag]
+        try source.save()
+        let archive = try CadenceDataExportService.makeArchive(in: source)
+
+        let container = try CadenceTestStore.container()
+        let destination = ModelContext(container)
+        let local = Cadence.Tag(name: "bug")
+        destination.insert(local)
+        let localShared = AppTask(title: "Write the test")
+        localShared.id = shared.id
+        localShared.createdAt = shared.createdAt
+        destination.insert(localShared)
+        localShared.tags = [local]
+        try destination.save()
+        #expect(local.id != tag.id)
+        return (archive, container, local, restored.id)
+    }
 }

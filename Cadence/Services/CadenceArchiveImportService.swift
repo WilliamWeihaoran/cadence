@@ -28,7 +28,10 @@ import SwiftData
 /// half-restored store duplicate the half that landed — the failure mode most likely to be
 /// *reached*, since a restore is something people retry. Keeping ids makes an import over the same
 /// store an update rather than a copy: `CadenceArchiveImportMode` then decides what "update"
-/// means, and both answers are non-destructive at row level.
+/// means, and both answers are non-destructive at row level. **One table also matches on more than
+/// its id:** a tag the destination already holds under another id — same stable slug, same
+/// archived state — is treated as that row rather than inserted beside it ([[T-3110]]); see
+/// `tagAliases(_:against:)`.
 ///
 /// **3. CloudKit.** This writes through whatever store the caller's `ModelContext` belongs to. On
 /// a synced device that means every inserted row is uploaded, so "restore my backup here" is
@@ -500,6 +503,23 @@ nonisolated enum CadenceArchiveImportService {
             inserts[name] = ids.subtracting(existing).count
             matches[name] = ids.intersection(existing).count
         }
+        // [[T-3110]]: a tag matched by its slug is a matched row, not an insert, so the preview
+        // says what `write` will do — and a second import of the same file still reads as a no-op.
+        let aliasedTags = tagAliases(archive, against: destination)
+        if !aliasedTags.isEmpty {
+            inserts["Tag", default: 0] -= aliasedTags.count
+            matches["Tag", default: 0] += aliasedTags.count
+        }
+        func tagsAliased(_ record: CadenceArchiveTask) -> CadenceArchiveTask {
+            var record = record
+            record.tagIDs = aliasedTagIDs(record.tagIDs, aliasedTags)
+            return record
+        }
+        func tagsAliased(_ record: CadenceArchiveNote) -> CadenceArchiveNote {
+            var record = record
+            record.tagIDs = aliasedTagIDs(record.tagIDs, aliasedTags)
+            return record
+        }
 
         // [[T-3111]], [[T-3131]]. Read-only: this compares, it writes nothing, and it does not
         // change what either mode does to the rows it counts.
@@ -514,13 +534,15 @@ nonisolated enum CadenceArchiveImportService {
             }.count
         }
         let differingCounts: [String: Int] = [
-            "AppTask": differing(archive.tasks, destination.tasks, matchedTaskDiffers),
+            "AppTask": differing(archive.tasks, destination.tasks) { record, present in
+                matchedTaskDiffers(tagsAliased(record), from: present)
+            },
             "Area": differing(archive.areas, destination.areas, matchedAreaDiffers),
             "Project": differing(archive.projects, destination.projects, matchedProjectDiffers),
             "Subtask": differing(archive.subtasks, destination.subtasks, matchedSubtaskDiffers),
             "Note": differing(archive.notes, destination.notes) { record, present in
                 matchedNoteDiffers(
-                    record,
+                    tagsAliased(record),
                     from: present,
                     foldedFrom: legacyFoldSource(of: present, in: archive, against: destination)
                 )
@@ -686,6 +708,86 @@ nonisolated enum CadenceArchiveImportService {
         return incoming != current
     }
 
+    // MARK: - Tags that are already here under another id
+
+    /// Each archive tag that is logically a tag the destination already holds, mapped to that
+    /// destination row ([[T-3110]]).
+    ///
+    /// **Why a tag, and only a tag, is matched on more than its id.** Every other table here has no
+    /// identity but its UUID. A tag has one the whole app already enforces: `TagSupport.resolution`
+    /// reuses the row carrying a typed name's slug rather than minting a second, and
+    /// `deduplicateTags` groups by the same `TagSupport.stableSlug`. The import was the one writer
+    /// left that inserts a second active `bug` beside the first — the file's own documented
+    /// restore route (reset, then import) reaches it as soon as the user opens a tag picker in
+    /// between — and since [[T-528]] nothing automatic merges the pair, so the user's tasks were
+    /// split across two tags identical in every picker.
+    ///
+    /// **Matched, not merged afterwards, and that is what keeps the importer's decisions.** A
+    /// `deduplicateTags` pass after the import would *delete* a row — decision 1 says an import
+    /// deletes nothing — and would pick the survivor by `preferredDuplicateTagSort`, letting a
+    /// freshly typed default-coloured `bug` outrank the user's recoloured one: [[T-528]]'s harm by
+    /// another route. Matching instead lets each mode keep its own meaning: merge leaves the tag
+    /// already here exactly as it is, overwrite replaces its fields with the archive's copy, and
+    /// neither deletes or re-ids anything. Re-running the import finds the same match, so
+    /// decision 2's "an import can run twice" still holds.
+    ///
+    /// Three limits, each deliberate:
+    /// - **Same archived state only.** An active and an archived tag may share a slug — both tag
+    ///   editors draw that case — and only the active one is in a picker, so they are not the
+    ///   duplicate the user sees. Folding one into the other would also decide whether the user's
+    ///   tag is archived, which is the call [[T-528]] refused to let a merge make.
+    /// - **Never onto a row the archive also carries by id.** That row is about to be matched by
+    ///   its own record, which in overwrite mode may rename it; aliasing a second record onto it
+    ///   would hang that record's tasks on whatever name it ends with. Such a record is inserted,
+    ///   as before.
+    /// - **Never between two archive records.** An archive that already holds two `bug` rows is
+    ///   restored as it was written; repairing the archive's own shape is not this importer's call.
+    ///
+    /// When several destination rows qualify, the lowest `order`, then the oldest, then the
+    /// smallest id wins — deterministic, so the preview and the write name the same row.
+    private nonisolated static func tagAliases(
+        _ archive: CadenceArchive,
+        against destination: DestinationIndex
+    ) -> [UUID: Tag] {
+        func key(slug: String, name: String, isArchived: Bool) -> String {
+            "\(isArchived ? "archived" : "active")|\(TagSupport.stableSlug(storedSlug: slug, name: name))"
+        }
+        let archiveIDs = Set(archive.tags.map(\.id))
+        var candidates: [String: Tag] = [:]
+        for tag in destination.tags.values where !archiveIDs.contains(tag.id) {
+            let slot = key(slug: tag.slug, name: tag.name, isArchived: tag.isArchived)
+            if let current = candidates[slot], !Self.tagPrecedes(tag, current) { continue }
+            candidates[slot] = tag
+        }
+        guard !candidates.isEmpty else { return [:] }
+        var aliases: [UUID: Tag] = [:]
+        for record in archive.tags where destination.tags[record.id] == nil {
+            if let target = candidates[key(slug: record.slug, name: record.name, isArchived: record.isArchived)] {
+                aliases[record.id] = target
+            }
+        }
+        return aliases
+    }
+
+    private nonisolated static func tagPrecedes(_ lhs: Tag, _ rhs: Tag) -> Bool {
+        if lhs.order != rhs.order { return lhs.order < rhs.order }
+        if lhs.createdAt != rhs.createdAt { return lhs.createdAt < rhs.createdAt }
+        return lhs.id.uuidString < rhs.id.uuidString
+    }
+
+    /// A record's tag ids as the destination's rows, each once. An aliased archive tag and the
+    /// destination tag it names are one row, so a task carrying both must not carry it twice.
+    private nonisolated static func resolvedTags(_ ids: [UUID], in tags: [UUID: Tag]) -> [Tag] {
+        var seen: Set<ObjectIdentifier> = []
+        return ids.compactMap { tags[$0] }.filter { seen.insert(ObjectIdentifier($0)).inserted }
+    }
+
+    /// The same translation for the preview, which compares ids rather than rows.
+    private nonisolated static func aliasedTagIDs(_ ids: [UUID], _ aliases: [UUID: Tag]) -> [UUID] {
+        var seen: Set<UUID> = []
+        return ids.map { aliases[$0]?.id ?? $0 }.filter { seen.insert($0).inserted }
+    }
+
     // MARK: - Writing
 
     /// Pass one: every row, as itself. Relationships are left alone here because a row's target may
@@ -774,25 +876,47 @@ nonisolated enum CadenceArchiveImportService {
             }
         )
 
+        // Computed before the upsert below inserts anything, so it reads exactly the destination
+        // `makePlan` read and the preview and the write agree on every aliased row.
+        let aliasedTags = tagAliases(archive, against: destination)
+        func copyTagFields(_ record: CadenceArchiveTag, onto model: Tag) {
+            // The stored `slug`, not `TagSupport.slug(for:)` recomputed. `Tag.init` derives a
+            // slug from the name, and a restore must return the row the user had rather than
+            // the row today's derivation would produce.
+            model.slug = record.slug
+            model.name = record.name
+            model.desc = record.desc
+            model.colorHex = record.colorHex
+            model.order = record.order
+            model.isArchived = record.isArchived
+            model.createdAt = record.createdAt
+            model.updatedAt = record.updatedAt
+        }
         _ = upsert(
-            archive.tags, into: &destination.tags,
+            archive.tags.filter { aliasedTags[$0.id] == nil }, into: &destination.tags,
             mode: mode, tally: &tally, in: modelContext,
             make: { _ in Tag(name: "") },
             fields: { record, model in
                 model.id = record.id
-                // The stored `slug`, not `TagSupport.slug(for:)` recomputed. `Tag.init` derives a
-                // slug from the name, and a restore must return the row the user had rather than
-                // the row today's derivation would produce.
-                model.slug = record.slug
-                model.name = record.name
-                model.desc = record.desc
-                model.colorHex = record.colorHex
-                model.order = record.order
-                model.isArchived = record.isArchived
-                model.createdAt = record.createdAt
-                model.updatedAt = record.updatedAt
+                copyTagFields(record, onto: model)
             }
         )
+        // [[T-3110]]: an archive tag that is the same tag as one already here — same stable slug,
+        // same archived state, under another id — is that row, not a second one beside it. Each
+        // mode then does to it what it does to any matched row, except that the destination's id
+        // is kept: other rows and other devices already point at it. Registering the alias is what
+        // makes `wire` hang the archive's tasks and notes on the existing tag.
+        for record in archive.tags {
+            guard let existing = aliasedTags[record.id] else { continue }
+            switch mode {
+            case .mergeKeepingExistingRows:
+                tally.skipped += 1
+            case .restoreOverwritingExistingRows:
+                copyTagFields(record, onto: existing)
+                tally.overwritten += 1
+            }
+            destination.tags[record.id] = existing
+        }
 
         _ = upsert(
             archive.taskBundles, into: &destination.taskBundles,
@@ -968,7 +1092,14 @@ nonisolated enum CadenceArchiveImportService {
                 model.accentPaletteID = record.accentPaletteID
                 model.sidebarTabColorsRaw = record.sidebarTabColorsRaw
                 model.taskPresentationRaw = record.taskPresentationRaw
-                model.calendarPresentationRaw = record.calendarPresentation
+                // [[T-3116]] part (4): an archive written before [[T-1347]] has no calendar field at
+                // all, which says nothing about the user's calendar settings — it does not say
+                // "none". So a missing field leaves the row's own value: the model default on an
+                // insert, and the destination's pairs on an overwrite, which used to blank them.
+                // A field that is present, even empty, is the archive's copy and is written.
+                if let calendarPresentationRaw = record.calendarPresentationRaw {
+                    model.calendarPresentationRaw = calendarPresentationRaw
+                }
                 model.createdAt = record.createdAt
                 model.updatedAt = record.updatedAt
             }
@@ -1179,7 +1310,7 @@ nonisolated enum CadenceArchiveImportService {
             model.goal = record.goalID.flatMap { destination.goals[$0] }
             model.context = record.contextID.flatMap { destination.contexts[$0] }
             model.bundle = record.bundleID.flatMap { destination.taskBundles[$0] }
-            model.tags = record.tagIDs.compactMap { destination.tags[$0] }
+            model.tags = resolvedTags(record.tagIDs, in: destination.tags)
         }
         for (record, model) in worklist.focusSessions {
             model.task = record.taskID.flatMap { destination.tasks[$0] }
@@ -1192,7 +1323,7 @@ nonisolated enum CadenceArchiveImportService {
         for (record, model) in worklist.notes {
             model.area = record.areaID.flatMap { destination.areas[$0] }
             model.project = record.projectID.flatMap { destination.projects[$0] }
-            model.tags = record.tagIDs.compactMap { destination.tags[$0] }
+            model.tags = resolvedTags(record.tagIDs, in: destination.tags)
         }
         for (record, model) in worklist.savedLinks {
             model.area = record.areaID.flatMap { destination.areas[$0] }

@@ -417,11 +417,18 @@ nonisolated enum TagSupport {
     }
 
     private static func stableSlug(for tag: Tag) -> String {
-        let normalized = slug(for: tag.slug)
-        if normalized != "tag" || tag.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+        stableSlug(storedSlug: tag.slug, name: tag.name)
+    }
+
+    /// The identity `deduplicateTags` groups by, from a stored slug and a name rather than a live
+    /// row — so `CadenceArchiveImportService` can ask it of an archive record that is not in any
+    /// store yet ([[T-3110]]) and the two can never disagree about which tags are "the same".
+    static func stableSlug(storedSlug: String, name: String) -> String {
+        let normalized = slug(for: storedSlug)
+        if normalized != "tag" || name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             return normalized
         }
-        return slug(for: tag.name)
+        return slug(for: name)
     }
 
     nonisolated private static func preferredDuplicateTagSort(_ lhs: Tag, _ rhs: Tag) -> Bool {
