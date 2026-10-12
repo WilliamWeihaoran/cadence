@@ -240,6 +240,76 @@ struct TaskCompletionAnimationManagerTests {
         #expect(successor?.status == .todo)
     }
 
+    /// **The crash candidate, with something real to cross.** The test above seeds a bare task, so
+    /// restoring the old precedence had no relationship to carry between contexts and could only
+    /// lose the write. This one gives the task the five things `makeNextRecurringTask` copies onto
+    /// the successor — `area`, `project`, `context`, `goal` and `tags` — before
+    /// `spawnNextOccurrenceIfNeeded` reaches `context.insert(nextTask)`.
+    ///
+    /// Reached through `live`, every one of those relationships resolves to `live`'s copy, so the
+    /// successor is built entirely out of `live` objects. Handing `retired` to the insert is then
+    /// the shape T-3098 leads with. Under the fix there is no second context in the picture at all:
+    /// the successor is built from `live` objects and inserted into `live`, and the audit context
+    /// — which can only see what was actually written — finds it wearing every relationship.
+    @Test func aRecurringTaskCarriesItsRelationshipsIntoTheSuccessorAcrossASwap() async throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let retired = ModelContext(container)
+        let live = ModelContext(container)
+        let manager = TaskCompletionAnimationManager.shared
+        let injected = manager.modelContext
+        manager.modelContext = retired
+        defer { manager.modelContext = injected }
+
+        let workContext = Context(name: "Home")
+        let area = Area(name: "Garden", context: workContext)
+        let project = Project(name: "Plants", context: workContext, area: area)
+        let goal = Goal(title: "Keep everything alive")
+        let tag = Tag(name: "watering")
+        let seeded = AppTask(title: "water the plants")
+        seeded.recurrenceRule = .daily
+        seeded.scheduledDate = "2026-08-04"
+        for model in [workContext, area, project, goal, tag, seeded] as [any PersistentModel] {
+            retired.insert(model)
+        }
+        seeded.context = workContext
+        seeded.area = area
+        seeded.project = project
+        seeded.goal = goal
+        seeded.tags = [tag]
+        try retired.save()
+
+        let task = try #require(
+            try live.fetch(FetchDescriptor<AppTask>()).first { $0.id == seeded.id }
+        )
+        #expect(task !== seeded)
+        // The relationships the successor will be built from are `live`'s, not `retired`'s. This is
+        // the premise the whole test rests on, so it is asserted rather than assumed.
+        #expect(task.area !== area)
+        #expect(task.project !== project)
+        #expect(task.context !== workContext)
+        #expect(task.sortedTags.first !== tag)
+
+        manager.toggleCompletion(for: task)
+        try await waitOutTheFill { task.status == .done }
+        #expect(task.status == .done)
+
+        let audit = ModelContext(container)
+        let persisted = try #require(
+            try audit.fetch(FetchDescriptor<AppTask>()).first { $0.id == seeded.id }
+        )
+        #expect(persisted.status == .done)
+
+        let spawnedID = try #require(task.recurrenceSpawnedTaskID)
+        let successor = try #require(
+            try audit.fetch(FetchDescriptor<AppTask>()).first { $0.id == spawnedID }
+        )
+        #expect(successor.area?.id == area.id)
+        #expect(successor.project?.id == project.id)
+        #expect(successor.context?.id == workContext.id)
+        #expect(successor.goal?.id == goal.id)
+        #expect(successor.sortedTags.map(\.id) == [tag.id])
+    }
+
     /// The injected context is still the fallback, and T-357's branch below it is still reachable.
     /// A task registered in no context at all has nothing to ask, so `settleContext(for:)` must
     /// answer with the injection rather than dropping to the series-skipping path.
