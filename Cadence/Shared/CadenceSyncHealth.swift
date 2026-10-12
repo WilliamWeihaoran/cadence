@@ -90,7 +90,11 @@ struct CadenceStartupIssue: Equatable {
 extension CadenceStartupIssue {
     var bannerTitle: String {
         switch kind {
-        case .recoveryStore: return "iCloud Sync Is Off"
+        // Not "iCloud Sync Is Off" ([[T-3107]]). That title was a near-copy of `.developmentBuild`'s,
+        // whose detail reassures that the data is intact, while this one means the opposite: the
+        // store on screen is not the user's, and `UnmanagedStoreDirectory` documents that nothing
+        // merges it back. The headline has to say that before the sync consequence does.
+        case .recoveryStore: return "Recovery Store — Not Your Data"
         case .inMemoryStore: return "Temporary Store — Changes Will Be Lost"
         case .maintenanceSaveFailed: return "Startup Maintenance Failed"
         case .restoreFailed: return "Backup Was Not Restored"
@@ -108,7 +112,7 @@ extension CadenceStartupIssue {
     var bannerDetail: String {
         switch kind {
         case .recoveryStore:
-            return "\(message) Changes made on this device will not sync to your other devices."
+            return "\(message) You are looking at a separate recovery store, not your Cadence data. Anything you add or change here stays on this device: it will not be merged back into your data or synced to your other devices."
         case .inMemoryStore:
             return "\(message) Nothing is saved to disk and nothing syncs — quitting Cadence discards this session."
         case .maintenanceSaveFailed:
@@ -140,8 +144,11 @@ extension CadenceStartupIssue {
         }
     }
 
+    /// `.recoveryStore` is critical without losing anything on quit ([[T-3107]]): what it puts at
+    /// risk is everything typed into it, which stays in a store nothing merges back. Toned as a
+    /// caution it read as the same news as `.developmentBuild`, whose data is the user's own.
     var bannerTone: CadenceSyncHealthTone {
-        kind.losesDataOnQuit ? .critical : .caution
+        kind.losesDataOnQuit || kind == .recoveryStore ? .critical : .caution
     }
 }
 

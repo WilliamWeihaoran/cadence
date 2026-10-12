@@ -564,6 +564,54 @@ struct CadenceListDeletionSurfaceTests {
         ])
     }
 
+    /// [[T-3115]] part 1: macOS shows `cascadeSentence` and no counts, so a category it leaves out
+    /// is one the desktop user is never told about. Every cascade deletes the list's `.list` notes
+    /// and the images only they pointed at; the sentence used to stop at "documents, and links".
+    /// This runs each cascade over a list holding one list note with one image and holds the
+    /// sentence for that kind to naming both — so the noun is pinned to what the cascade
+    /// demonstrably takes, not to a word list.
+    @Test func everyCascadeSentenceNamesTheNotesAndImagesItsCascadeDeletes() throws {
+        for kind in CadenceListDeletionKind.allCases {
+            let modelContext = ModelContext(try container())
+            let context = Context(name: "Work")
+            let area = Area(name: "Home", context: context)
+            let project = Project(name: "Ship", context: context, area: area)
+            let asset = imageAsset(41)
+            let note = Note(kind: .list, title: "Spec", content: imageMarkdown(asset))
+            switch kind {
+            case .project, .context: note.project = project
+            case .area: note.area = area
+            }
+            modelContext.insert(context)
+            modelContext.insert(area)
+            modelContext.insert(project)
+            modelContext.insert(asset)
+            modelContext.insert(note)
+            try modelContext.save()
+            #expect(try modelContext.fetch(FetchDescriptor<Note>()).count == 1)
+            #expect(try modelContext.fetch(FetchDescriptor<MarkdownImageAsset>()).count == 1)
+
+            let deleted: Bool
+            switch kind {
+            case .area: deleted = modelContext.deleteArea(area)
+            case .project: deleted = modelContext.deleteProject(project)
+            case .context: deleted = modelContext.deleteContext(context)
+            }
+            #expect(deleted, "\(kind) cascade refused")
+            try modelContext.save()
+
+            // What the cascade took ...
+            #expect(try modelContext.fetch(FetchDescriptor<Note>()).isEmpty, "\(kind) cascade left its list note")
+            #expect(try modelContext.fetch(FetchDescriptor<MarkdownImageAsset>()).isEmpty, "\(kind) cascade left the note's image")
+            // ... is what the sentence says it takes.
+            let sentence = kind.cascadeSentence
+            #expect(sentence.contains("notes"), "\(kind): \(sentence)")
+            #expect(sentence.contains("images"), "\(kind): \(sentence)")
+            #expect(sentence.contains("documents"), "\(kind): \(sentence)")
+            #expect(sentence.contains("links"), "\(kind): \(sentence)")
+        }
+    }
+
     /// The confirmation copy is the shared one, so the two platforms cannot come to describe the
     /// same cascade differently. macOS's three dialogs read it; nothing spells the sentence twice.
     @Test func bothPlatformsReadTheSameCascadeSentence() throws {

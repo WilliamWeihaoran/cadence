@@ -41,11 +41,11 @@ struct CadenceStartupIssueBannerModel: Equatable {
 
     /// The short form used by the collapsed pill.
     ///
-    /// `recoveryStore` reuses its full title because that title is already four words; the rest
-    /// are shortened. Every one of them still says what is broken.
+    /// Every one is shortened and every one still says what is broken. `recoveryStore` keeps the
+    /// half of its title that is about the data, not the store's name ([[T-3107]]).
     var collapsedTitle: String {
         switch issue.kind {
-        case .recoveryStore: return "iCloud Sync Is Off"
+        case .recoveryStore: return "Not Your Data"
         case .inMemoryStore: return "Changes Are Not Saved"
         case .maintenanceSaveFailed: return "Maintenance Failed"
         case .restoreFailed: return "Restore Did Not Run"

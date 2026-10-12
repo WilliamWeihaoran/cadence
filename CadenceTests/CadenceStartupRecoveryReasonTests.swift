@@ -276,9 +276,10 @@ struct CadenceStartupRecoveryReasonTests {
         )
 
         // The launch banner.
-        #expect(issue.bannerTitle == "iCloud Sync Is Off")
+        #expect(issue.bannerTitle == "Recovery Store — Not Your Data")
         #expect(issue.bannerDetail.contains(reason))
-        #expect(issue.bannerDetail.contains("will not sync to your other devices"))
+        #expect(issue.bannerDetail.contains("stays on this device"))
+        #expect(issue.bannerDetail.contains("synced to your other devices"))
 
         // Settings > iCloud Sync, on both platforms, through the one resolver they share.
         let health = CadenceSyncHealth.resolve(

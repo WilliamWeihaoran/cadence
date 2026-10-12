@@ -83,7 +83,7 @@ struct CadenceStartupIssueBannerTests {
     @Test func collapsedTitleIsSpecificToTheIssue() {
         let titles = allIssues.map { collapsed($0).collapsedTitle }
         #expect(Set(titles).count == allIssues.count)
-        #expect(collapsed(recovery).collapsedTitle == "iCloud Sync Is Off")
+        #expect(collapsed(recovery).collapsedTitle == "Not Your Data")
     }
 
     @Test func expandedBannerShowsTheFullTitleAndDetail() {
@@ -113,7 +113,7 @@ struct CadenceStartupIssueBannerTests {
             #expect(collapsed(issue).iconName == issue.bannerIcon)
         }
         #expect(collapsed(inMemory).tone == .critical)
-        #expect(collapsed(recovery).tone == .caution)
+        #expect(collapsed(recovery).tone == .critical)
     }
 
     // MARK: - Toggling

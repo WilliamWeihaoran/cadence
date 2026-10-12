@@ -5,7 +5,7 @@ import SwiftData
 ///
 /// The three sentences are the ones macOS's `confirmationDialog`s already showed, lifted here so
 /// the two platforms cannot come to describe the same cascade differently. They are deliberately
-/// *categorical* ("its tasks, projects, documents, and links") — `CadenceListDeletionSummary`
+/// *categorical* ("its tasks, projects, notes, documents, and links") — `CadenceListDeletionSummary`
 /// supplies the counts, and the two are shown together.
 enum CadenceListDeletionKind: String, CaseIterable, Sendable {
     case area
@@ -99,14 +99,21 @@ enum CadenceListDeletionKind: String, CaseIterable, Sendable {
         "Nothing else on this device is filed under this \(noun.lowercased()) — no tasks, notes or saved links will be lost."
     }
 
+    /// **Names every category the cascade takes, notes included ([[T-3115]] part 1).** All three
+    /// sentences used to stop at "documents, and links" (the context one at "tasks"), while every
+    /// cascade in `CadenceListDeleteHelpers` also deletes the list's `.list` notes and reclaims the
+    /// images only their markdown pointed at. "Documents" is the legacy model, not notes, so macOS
+    /// — which shows this sentence and no counts — never said that notes go. "Images embedded only
+    /// in them" is scoped on purpose: `deleteUnreferencedMarkdownImageAssets` keeps an image that
+    /// other markdown still references, so "its images" would over-claim.
     var cascadeSentence: String {
         switch self {
         case .area:
-            return "This permanently deletes the area and its tasks, projects, documents, and links."
+            return "This permanently deletes the area and its tasks, projects, notes, documents, and links, plus any images embedded only in them."
         case .project:
-            return "This permanently deletes the project and its tasks, documents, and links."
+            return "This permanently deletes the project and its tasks, notes, documents, and links, plus any images embedded only in them."
         case .context:
-            return "This permanently deletes the context and all its areas, projects, tasks, and retained legacy records."
+            return "This permanently deletes the context and all its areas, projects, tasks, notes, documents, links, and retained legacy records, plus any images embedded only in them."
         }
     }
 }

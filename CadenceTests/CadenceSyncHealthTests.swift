@@ -239,15 +239,50 @@ struct CadenceSyncHealthTests {
     }
 
     @Test func bannerCopyNamesTheConsequence() {
-        #expect(recovery.bannerDetail.contains("will not sync"))
+        #expect(recovery.bannerDetail.contains("not your Cadence data"))
+        #expect(recovery.bannerDetail.contains("stays on this device"))
+        #expect(recovery.bannerDetail.contains("will not be merged back"))
+        #expect(recovery.bannerDetail.contains("synced to your other devices"))
         #expect(inMemory.bannerDetail.contains("quitting Cadence discards this session"))
         #expect(maintenance.bannerDetail.contains("still syncing"))
     }
 
-    @Test func onlyTheInMemoryStoreIsCritical() {
-        #expect(recovery.bannerTone == .caution)
+    /// The recovery store is critical without losing anything on quit ([[T-3107]]): whatever is
+    /// typed into it is stranded there. Every other kind keeps the old rule, so this enumerates
+    /// the full case list rather than three samples.
+    @Test func theInMemoryAndRecoveryStoresAreTheOnlyCriticalBanners() {
+        #expect(recovery.bannerTone == .critical)
         #expect(maintenance.bannerTone == .caution)
         #expect(inMemory.bannerTone == .critical)
+        let critical = CadenceStartupIssueKind.allCases.filter {
+            CadenceStartupIssue(kind: $0, message: "m").bannerTone == .critical
+        }
+        #expect(Set(critical) == [.recoveryStore, .inMemoryStore])
+        // And the Settings card, which takes its tone from the same issue, agrees.
+        let health = CadenceSyncHealth.resolve(startupIssue: recovery, account: .available, pushRegistration: .registered)
+        #expect(health.tone == .critical)
+    }
+
+    /// [[T-3107]]: the two sync-off banners mean opposite things about the data on screen, so
+    /// they must not look alike in any of the three ways a glance reads them — tone, headline,
+    /// and what the detail says about the data.
+    @Test func theRecoveryBannerCannotBeMistakenForTheDevelopmentBuildBanner() {
+        let development = CadenceStartupIssue(kind: .developmentBuild, message: recovery.message)
+
+        #expect(recovery.bannerTone == .critical)
+        #expect(development.bannerTone == .caution)
+        #expect(recovery.bannerTone != development.bannerTone)
+
+        #expect(recovery.bannerTitle != development.bannerTitle)
+        // The old title was a suffix of the development one; neither may contain the other now.
+        #expect(!development.bannerTitle.contains(recovery.bannerTitle))
+        #expect(!recovery.bannerTitle.contains(development.bannerTitle))
+        #expect(recovery.bannerTitle.contains("Not Your Data"))
+
+        #expect(recovery.bannerDetail != development.bannerDetail)
+        #expect(recovery.bannerDetail.contains("stays on this device"))
+        #expect(!recovery.bannerDetail.contains("intact"))
+        #expect(development.bannerDetail.contains("intact"))
     }
 
     // MARK: - Level ordering
