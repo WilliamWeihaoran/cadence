@@ -378,6 +378,74 @@ struct DataIntegrityRepairServiceTests {
         #expect(Set(notes.first?.tags?.map(\.slug) ?? []) == ["daily", "review"])
     }
 
+    // MARK: - T-3115 part 3, references to the merged-away note
+
+    /// **A note merge re-points every reference to the copy it deletes.** Two daily notes for one
+    /// day merge; the emptier one (`loser`) is folded into the fuller one (`winner`) and deleted.
+    /// A list note, a task and a legacy daily row each reference the loser by id, and one note
+    /// references an unrelated note. After the repair the loser's id appears nowhere in the store,
+    /// the references resolve to the winner with their labels as written, and the unrelated
+    /// reference is byte-for-byte what it was.
+    @Test func mergingDuplicateNotesRedirectsEveryReferenceToTheMergedAwayCopy() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let modelContext = ModelContext(container)
+
+        let loser = Note(kind: .daily, title: "", content: "x", dateKey: "2026-10-01")
+        let winner = Note(
+            kind: .daily,
+            title: "Planning Day",
+            content: String(repeating: "Long body. ", count: 20),
+            dateKey: "2026-10-01"
+        )
+        let unrelated = Note(kind: .list, title: "Elsewhere", content: "Unrelated body")
+        let loserID = loser.id
+        let winnerID = winner.id
+        let unrelatedReference = "[[note:\(unrelated.id.uuidString)|Elsewhere]]"
+        let referrer = Note(
+            kind: .list,
+            title: "Index",
+            content: "See [[note:\(loserID.uuidString)|Old Day Label]] and \(unrelatedReference) and [[\(loserID.uuidString.lowercased())]]."
+        )
+        let task = AppTask(title: "Follow up")
+        task.notes = "From [[note:\(loserID.uuidString)|Old Day Label]]"
+        let legacy = DailyNote(date: "2026-09-30")
+        legacy.content = "Legacy [[note:\(loserID.uuidString)|Old Day Label]]"
+
+        for model in [loser, winner, unrelated, referrer] { modelContext.insert(model) }
+        modelContext.insert(task)
+        modelContext.insert(legacy)
+        try modelContext.save()
+
+        let report = try DataIntegrityRepairService.repairIfNeeded(in: modelContext, source: "test")
+
+        #expect(report.duplicateNotesMerged == 1)
+        let notes = try modelContext.fetch(FetchDescriptor<Note>())
+        #expect(notes.contains { $0.id == winnerID }, "the fixture pins the fuller note as the survivor")
+        #expect(!notes.contains { $0.id == loserID })
+        #expect(report.noteReferencesRedirected == 4)
+
+        let texts = try #require(CadenceMarkdownSourceInventory.liveMarkdownTexts(in: modelContext))
+        let loserMentions = texts.filter { $0.range(of: loserID.uuidString, options: .caseInsensitive) != nil }
+        #expect(loserMentions.count == 0, "a reference to the merged-away note survived the merge")
+
+        let referrerContent = try #require(notes.first { $0.id == referrer.id }?.content)
+        #expect(referrerContent.contains("[[note:\(winnerID.uuidString)|Old Day Label]]"))
+        #expect(referrerContent.contains(unrelatedReference))
+        #expect(referrerContent.contains("[[\(winnerID.uuidString)]]"))
+        let linked = NoteReferenceResolver.linkedNotes(noteID: referrer.id, content: referrerContent, in: notes)
+        #expect(linked.map(\.id) == [winnerID, unrelated.id, winnerID])
+        #expect(task.notes == "From [[note:\(winnerID.uuidString)|Old Day Label]]")
+        #expect(legacy.content == "Legacy [[note:\(winnerID.uuidString)|Old Day Label]]")
+    }
+
+    /// The fields the redirect rewrites are spelled in the repair service because the inventory is
+    /// not in `CadenceMCPServer`'s sources. This keeps the two lists from drifting: every inventory
+    /// source is either rewritten or is the one declared exception, the template override map.
+    @Test func theNoteReferenceRedirectCoversEveryMarkdownSourceButTheTemplateMap() {
+        let inventory = Set(CadenceMarkdownSourceInventory.Source.allCases.map(\.entityName))
+        #expect(DataIntegrityRepairService.noteReferenceRedirectEntityNames == inventory.subtracting(["NoteTemplatePreference"]))
+    }
+
     @Test func unkeyedMeetingNotesAreNotMerged() throws {
         let container = try CadenceModelContainerFactory.makeInMemoryContainer()
         let modelContext = ModelContext(container)

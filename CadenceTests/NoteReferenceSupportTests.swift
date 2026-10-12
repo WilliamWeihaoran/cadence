@@ -19,6 +19,26 @@ struct NoteReferenceSupportTests {
         #expect(references.map(\.noteID) == [nil, noteID])
     }
 
+    /// T-3115 part 3: only id-named note references to a redirected id change, and only their id.
+    @Test func redirectingNoteReferencesRewritesOnlyTheIdSlotOfMatchingReferences() {
+        let loser = UUID()
+        let survivor = UUID()
+        let other = UUID()
+        let content = """
+        [[note:\(loser.uuidString)|Kept Label]] [[ Note:\(loser.uuidString.lowercased()) ]] \
+        [[task:\(loser.uuidString)|A task]] [[note:\(other.uuidString)|Other]] [[Kept Label]]
+        """
+
+        let result = NoteReferenceParser.redirectingNoteReferences(in: content, redirects: [loser: survivor])
+
+        #expect(result.redirected == 2)
+        #expect(result.content == """
+        [[note:\(survivor.uuidString)|Kept Label]] [[ Note:\(survivor.uuidString) ]] \
+        [[task:\(loser.uuidString)|A task]] [[note:\(other.uuidString)|Other]] [[Kept Label]]
+        """)
+        #expect(NoteReferenceParser.redirectingNoteReferences(in: content, redirects: [:]).content == content)
+    }
+
     @Test func noteReferencesParseLegacyTitleAndStableIDForms() throws {
         let noteID = try #require(UUID(uuidString: "33333333-3333-3333-3333-333333333333"))
         let content = """

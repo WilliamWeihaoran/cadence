@@ -157,6 +157,50 @@ nonisolated enum NoteReferenceParser {
         "[[\(title.trimmingCharacters(in: .whitespacesAndNewlines))]]"
     }
 
+    /// **Re-points every id-named note reference in `content` whose id is a key of `redirects`**
+    /// ([[T-3115]] part 3), and returns the new text with how many references it changed.
+    ///
+    /// A note merge deletes the loser's row, and an id-named reference resolves to its row or to
+    /// nothing (`NoteReferenceTarget`) — so without this every `[[note:<loser>|Title]]` in the store
+    /// would go dead the moment the duplicate was folded into its survivor.
+    ///
+    /// It reuses this type's own pattern and `parseNoteReference`, so "what counts as a note
+    /// reference naming that id" is answered exactly as every resolver answers it: `[[note:id|T]]`,
+    /// `[[note:id]]` and the bare `[[id]]` form all qualify, `[[task:…]]` and title-only references
+    /// never do. Only the id slot is replaced; the label, the `note:` prefix's spelling and any
+    /// surrounding whitespace are left byte-for-byte as written. The id slot is the first
+    /// occurrence of the id in the reference, because the id precedes the label in every form.
+    nonisolated static func redirectingNoteReferences(
+        in content: String,
+        redirects: [UUID: UUID]
+    ) -> (content: String, redirected: Int) {
+        guard !redirects.isEmpty, content.contains("[["), let regex = wikiReferenceRegex else {
+            return (content, 0)
+        }
+        let ns = content as NSString
+        let output = NSMutableString(string: content)
+        var redirected = 0
+        // Reversed so each replacement leaves the ranges of the matches before it valid. A UUID
+        // string is the same length either way, but the loop should not depend on that.
+        for match in regex.matches(in: content, range: NSRange(location: 0, length: ns.length)).reversed() {
+            guard match.numberOfRanges > 1 else { continue }
+            let innerRange = match.range(at: 1)
+            let inner = ns.substring(with: innerRange)
+            let trimmed = inner.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty, !isTaskReferencePayload(trimmed) else { continue }
+            guard case .identified(let id) = parseNoteReference(trimmed).target,
+                  let survivor = redirects[id], survivor != id else { continue }
+            let idRange = (inner as NSString).range(of: id.uuidString, options: .caseInsensitive)
+            guard idRange.location != NSNotFound else { continue }
+            output.replaceCharacters(
+                in: NSRange(location: innerRange.location + idRange.location, length: idRange.length),
+                with: survivor.uuidString
+            )
+            redirected += 1
+        }
+        return (output as String, redirected)
+    }
+
     nonisolated private static func parseNoteReference(_ raw: String) -> NoteLinkReference {
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         let payload: String

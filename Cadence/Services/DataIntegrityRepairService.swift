@@ -26,6 +26,8 @@ nonisolated struct DataIntegrityRepairReport: Codable, Equatable {
     var movedLinks: Int = 0
     var movedGoalLinks: Int = 0
     var movedFocusSessions: Int = 0
+    /// [[T-3115]] part 3: `[[note:<merged-away id>|…]]` references re-pointed at the survivor.
+    var noteReferencesRedirected: Int = 0
 
     /// **How many `AppTask` rows this repair actually materialised, and `nil` when it read none.**
     ///
@@ -55,7 +57,8 @@ nonisolated struct DataIntegrityRepairReport: Codable, Equatable {
             movedDocuments > 0 ||
             movedLinks > 0 ||
             movedGoalLinks > 0 ||
-            movedFocusSessions > 0
+            movedFocusSessions > 0 ||
+            noteReferencesRedirected > 0
     }
 }
 
@@ -119,6 +122,7 @@ nonisolated extension DataIntegrityRepairReport {
         movedLinks = try container.decodeIfPresent(Int.self, forKey: .movedLinks) ?? 0
         movedGoalLinks = try container.decodeIfPresent(Int.self, forKey: .movedGoalLinks) ?? 0
         movedFocusSessions = try container.decodeIfPresent(Int.self, forKey: .movedFocusSessions) ?? 0
+        noteReferencesRedirected = try container.decodeIfPresent(Int.self, forKey: .noteReferencesRedirected) ?? 0
         taskRowsFetched = try container.decodeIfPresent(Int.self, forKey: .taskRowsFetched)
     }
 }
@@ -374,7 +378,7 @@ nonisolated enum DataIntegrityRepairService {
             }
         }
 
-        repairDuplicateNotes(in: store, modelContext: context, state: &state, report: &report)
+        try repairDuplicateNotes(in: store, modelContext: context, state: &state, report: &report)
         try repairDuplicateRecurrenceOccurrences(
             modelContext: context,
             remove: remove,
@@ -852,8 +856,9 @@ nonisolated enum DataIntegrityRepairService {
         modelContext: ModelContext,
         state: inout RepairState,
         report: inout DataIntegrityRepairReport
-    ) {
+    ) throws {
         let grouped = Dictionary(grouping: store.notes) { $0.canonicalKey }
+        var redirects: [UUID: UUID] = [:]
 
         for group in grouped.values where group.count > 1 {
             let liveNotes = group.filter { !state.deletedNotes.contains(ObjectIdentifier($0)) }
@@ -863,9 +868,102 @@ nonisolated enum DataIntegrityRepairService {
             }
 
             for duplicate in liveNotes where duplicate !== canonical {
+                guard !state.deletedNotes.contains(ObjectIdentifier(duplicate)) else { continue }
+                let mergedAwayID = duplicate.id
                 mergeNote(duplicate, into: canonical, modelContext: modelContext, state: &state, report: &report)
+                if mergedAwayID != canonical.id {
+                    redirects[mergedAwayID] = canonical.id
+                }
             }
         }
+
+        // T-3115 part 3. Inside this pass, so the re-pointed references land in the same save as
+        // the merge that would otherwise have stranded them.
+        guard !redirects.isEmpty else { return }
+        let liveNotes = store.notes.filter { !state.deletedNotes.contains(ObjectIdentifier($0)) }
+        let tasks = try fetchTasks(FetchDescriptor<AppTask>(), in: modelContext, report: &report)
+        report.noteReferencesRedirected += try redirectNoteReferences(
+            redirects,
+            in: modelContext,
+            notes: liveNotes,
+            tasks: tasks
+        )
+    }
+
+    /// The entities `redirectNoteReferences` rewrites, compared to `CadenceMarkdownSourceInventory`
+    /// by `DataIntegrityRepairServiceTests` so a new markdown source has to be decided here too.
+    static let noteReferenceRedirectEntityNames: Set<String> = [
+        "Note", "AppTask", "Document", "DailyNote", "WeeklyNote", "PermNote", "EventNote",
+    ]
+
+    /// **The one place a note merge re-points the references to the copy it deleted** ([[T-3115]]
+    /// part 3), and the function any future note-merging path must call in the same save.
+    ///
+    /// An id-named reference deliberately never falls back to its label (`NoteReferenceTarget`),
+    /// so a merge that drops the loser's UUID would otherwise leave every inbound
+    /// `[[note:<loser>|Title]]` dead for good. Every markdown field in the store that can hold one
+    /// is rewritten through `NoteReferenceParser.redirectingNoteReferences`, which changes the id
+    /// slot only and leaves the label as written.
+    ///
+    /// The fields are `CadenceMarkdownSourceInventory.Source` minus one: `Note.content`,
+    /// `AppTask.notes`, and the legacy `Document` / `DailyNote` / `WeeklyNote` / `PermNote` /
+    /// `EventNote` bodies (still live text; a not-yet-folded legacy row would otherwise carry a dead
+    /// reference into the `Note` it becomes). **Not** `NoteTemplatePreference.overridesRaw`: that
+    /// row is mirrored to `UserDefaults` by `CadenceNoteTemplatePreferenceStore`, and writing the
+    /// row behind the mirror's back is a second, worse bug than a stale id in a stencil. The
+    /// inventory is not compiled by `CadenceMCPServer`, which runs this service, so the list is
+    /// spelled here and `DataIntegrityRepairServiceTests` compares it to the inventory.
+    ///
+    /// `redirects` maps a merged-away id to its survivor; a chain (`a -> b`, `b -> c`) is followed
+    /// to its end. Rows already deleted in this context are skipped. Returns how many references
+    /// were re-pointed; a fetch failure throws, because a merge whose references could not be
+    /// re-pointed must not be saved as if they had been.
+    static func redirectNoteReferences(
+        _ redirects: [UUID: UUID],
+        in modelContext: ModelContext,
+        notes: [Note]? = nil,
+        tasks: [AppTask]? = nil
+    ) throws -> Int {
+        let resolved = resolvedRedirects(redirects)
+        guard !resolved.isEmpty else { return 0 }
+        var redirected = 0
+        func rewrite<Model: PersistentModel>(
+            _ rows: [Model],
+            at keyPath: ReferenceWritableKeyPath<Model, String>
+        ) {
+            for row in rows where !row.isDeleted {
+                let result = NoteReferenceParser.redirectingNoteReferences(
+                    in: row[keyPath: keyPath],
+                    redirects: resolved
+                )
+                guard result.redirected > 0 else { continue }
+                row[keyPath: keyPath] = result.content
+                redirected += result.redirected
+            }
+        }
+        rewrite(try notes ?? modelContext.fetch(FetchDescriptor<Note>()), at: \.content)
+        rewrite(try tasks ?? modelContext.fetch(FetchDescriptor<AppTask>()), at: \.notes)
+        rewrite(try modelContext.fetch(FetchDescriptor<Document>()), at: \.content)
+        rewrite(try modelContext.fetch(FetchDescriptor<DailyNote>()), at: \.content)
+        rewrite(try modelContext.fetch(FetchDescriptor<WeeklyNote>()), at: \.content)
+        rewrite(try modelContext.fetch(FetchDescriptor<PermNote>()), at: \.content)
+        rewrite(try modelContext.fetch(FetchDescriptor<EventNote>()), at: \.content)
+        return redirected
+    }
+
+    /// Follows each chain to the id that survives, and stops on a cycle rather than looping.
+    private static func resolvedRedirects(_ redirects: [UUID: UUID]) -> [UUID: UUID] {
+        var resolved: [UUID: UUID] = [:]
+        for start in redirects.keys {
+            var seen: Set<UUID> = [start]
+            var current = start
+            while let next = redirects[current], !seen.contains(next) {
+                seen.insert(next)
+                current = next
+            }
+            if current != start { resolved[start] = current }
+        }
+        return resolved
     }
 
     private static func mergeNote(
