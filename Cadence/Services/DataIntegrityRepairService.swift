@@ -204,7 +204,7 @@ nonisolated enum DataIntegrityRepairService {
     /// pass can read them rather than which table is big.** Every single read of `areas`,
     /// `projects`, `tasks`, `goals`, `documents`, `links`, `goalLinks` and `focusSessions` in this
     /// file sits inside `mergeContext` / `mergeArea` / `mergeProject` / `rePointTasksAlreadyIn` or
-    /// one of the three `*Score` helpers those call — and every one of those is reached only from
+    /// one of the two `*Score` helpers those call — and every one of those is reached only from
     /// the `group.count > 1` branch below, i.e. only when there is a duplicate container to merge.
     /// A launch over a store with no duplicate container used to fetch all eight anyway and read
     /// none of them. Splitting the type rather than making the fields optional is what makes that
@@ -218,9 +218,9 @@ nonisolated enum DataIntegrityRepairService {
 
     /// The tables a **container merge** reads, fetched only when there is a container to merge.
     ///
-    /// It carries the always-read tables rather than replacing them, because `contextScore` reads
-    /// `habits` and `areaScore` / `projectScore` read `notes`: a merge needs both halves and there
-    /// is exactly one fetch of each per repair either way.
+    /// It carries the always-read tables rather than replacing them, because `mergeContext`
+    /// re-points `habits` and `areaScore` / `projectScore` read `notes`: a merge needs both halves
+    /// and there is exactly one fetch of each per repair either way.
     private struct ContainerMergeStore {
         var base: RepairStore
         var tasks: [AppTask]
@@ -364,7 +364,7 @@ nonisolated enum DataIntegrityRepairService {
             let tasks = try fetchTasks(FetchDescriptor<AppTask>(), in: context, report: &report)
             let merging = try ContainerMergeStore(base: store, tasks: tasks, fetchedFrom: context)
             for group in duplicateContextGroups {
-                guard let canonical = group.max(by: { contextScore($0, in: merging) < contextScore($1, in: merging) }) else {
+                guard let canonical = canonicalContext(among: group) else {
                     continue
                 }
 
@@ -583,6 +583,8 @@ nonisolated enum DataIntegrityRepairService {
         report: inout DataIntegrityRepairReport
     ) {
         guard !state.deletedContexts.contains(ObjectIdentifier(duplicate)) else { return }
+
+        mergeContextFields(from: duplicate, into: canonical)
 
         for area in store.areas where area.context === duplicate && !state.deletedAreas.contains(ObjectIdentifier(area)) {
             _ = mergeArea(area, intoContext: canonical, in: store, modelContext: modelContext, state: &state, report: &report)
@@ -805,13 +807,29 @@ nonisolated enum DataIntegrityRepairService {
         }
     }
 
-    private static func contextScore(_ context: Context, in store: ContainerMergeStore) -> Int {
-        let areaCount = store.areas.filter { $0.context === context }.count
-        let projectCount = store.projects.filter { $0.context === context }.count
-        let taskCount = store.tasks.filter { $0.context === context }.count
-        let goalCount = store.goals.filter { $0.context === context }.count
-        let habitCount = store.habits.filter { $0.context === context }.count
-        return areaCount * 25 + projectCount * 20 + taskCount + goalCount * 10 + habitCount * 10 - context.order
+    /// Which copy of a same-named group survives the merge.
+    ///
+    /// **The lowest `id.uuidString`, and nothing else, because the rule has to give the same answer
+    /// on every device** ([[T-3101]]). It used to be a `contextScore` that counted the areas,
+    /// projects, tasks, goals and habits *this device could currently see*, minus `order` — every
+    /// term of which is local. `PersistenceController.performStartupMaintenance` runs this service
+    /// the instant the container opens, with no gate on CloudKit sync state ([[T-328]]), so two
+    /// devices part-way through importing the same pair score it oppositely, each deletes the copy
+    /// the other kept, and both deletes then sync: the group's children end up re-pointed at a row
+    /// that no longer exists anywhere, i.e. `context == nil` on every one of them. [[T-622]] states
+    /// the shape outright — a rule that reads local state "is not a tie-break, it is a second fork"
+    /// — and `CadenceTaskRecurrenceWorkflowSupport.collapsibleDuplicateOccurrences` has defended
+    /// the smaller case this way since. `id` is immutable, travels with the CloudKit record and is
+    /// totally ordered, so every device that can see the group computes the same survivor with no
+    /// coordination.
+    ///
+    /// **Nothing is lost by giving up the score**, which is why this is a strictly better rule
+    /// rather than a trade. `mergeContext` re-points all six of the duplicate's to-many
+    /// relationships into the survivor before deleting it, so the children go to the same place
+    /// whichever row wins; the score only ever decided which row's own *fields* were kept, and
+    /// `mergeContextFields` now carries what it can of those across instead.
+    private static func canonicalContext(among group: [Context]) -> Context? {
+        group.min { $0.id.uuidString < $1.id.uuidString }
     }
 
     private static func areaScore(_ area: Area, in store: ContainerMergeStore) -> Int {
@@ -949,6 +967,62 @@ nonisolated enum DataIntegrityRepairService {
     private static func normalizedName(_ context: Context) -> String {
         context.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
     }
+
+    /// Carries across what can be carried of the copy this merge is about to delete.
+    ///
+    /// [[T-3101]]: `mergeArea` and `mergeProject` have had a field merge since they were written
+    /// and `mergeContext` never did, so the loser's `colorHex`, `icon` and `order` went with the
+    /// row. Those are the marks that tell one list from another in the sidebar, and a merge that
+    /// drops them is why a user looking at the survivor cannot tell what happened.
+    ///
+    /// **The honest limit, stated rather than implied: one row holds one colour.** Where both
+    /// copies carry a colour the user chose, the loser's is still gone — there is nowhere to put
+    /// it. What this recovers is the case the audit actually describes, a *second* copy the user
+    /// decorated while the first was left as it was born;
+    /// `DataIntegrityRepairServiceTests.mergingDuplicateContextsKeepsTheDecorationOnlyTheDeletedCopyHad`
+    /// is the test for it. `unstyledContextColorHex` / `unstyledContextIcon` below are what make
+    /// "left as it was born" a question the store can answer; everything here reads only the two
+    /// rows' own fields, so two devices merging the same pair write the same result.
+    ///
+    /// **Two fields are deliberately not merged.**
+    /// - `name`: the group key is `normalizedName`, so both copies already hold the same name up
+    ///   to case and surrounding whitespace. There is no second name to keep, only a second
+    ///   spelling, and the survivor's is as good as the loser's.
+    /// - `isArchived`: `repair` groups `activeContexts` only, so every member of a group is
+    ///   already `false`. A line here would be unreachable, and an unreachable line is worse than
+    ///   the absent one it replaces.
+    private static func mergeContextFields(from source: Context, into target: Context) {
+        if target.colorHex == unstyledContextColorHex, source.colorHex != unstyledContextColorHex {
+            target.colorHex = source.colorHex
+        }
+        if target.icon == unstyledContextIcon, source.icon != unstyledContextIcon {
+            target.icon = source.icon
+        }
+        // Lower `order` is nearer the top of the sidebar, so the merged row keeps the more
+        // prominent of the two slots. `min` is commutative, which matters: it is the one field
+        // here whose answer must not depend on which copy the survivor rule happened to pick.
+        target.order = min(target.order, source.order)
+    }
+
+    /// The appearance `Context.init` gives a row nobody has styled.
+    ///
+    /// **A second spelling of the model's own defaults, and deliberately not a constant on
+    /// `Context`.** `Cadence/Models/*.swift`'s `colorHex` defaults are literals because
+    /// `CadenceMCPServer` compiles `Models/` and not `Theme.swift` ([[T-262]]), and
+    /// `CadenceSeedColourSourceTests.theSeedsMirrorModelDefaultsThatCannotReadTheToken` pins each
+    /// of those four files to the standard palette's blue *by its source text*. Pointing the
+    /// stored default at a named constant would have been a quiet rewrite of that guard, which is
+    /// not this ticket's to make.
+    ///
+    /// **So the drift is closed from the other end, behaviourally rather than by a second source
+    /// scan.** `DataIntegrityRepairServiceTests.mergingDuplicateContextsKeepsTheDecorationOnlyTheDeletedCopyHad`
+    /// builds its surviving copy with `Context(name:)` and **no** appearance arguments, so that row
+    /// carries whatever the model's defaults are on the day the test runs. Move either default and
+    /// these two stop matching it, the merge stops recognising an unstyled row, and that test goes
+    /// red naming the field — which is the signal a `#expect(a == b)` over two constants could not
+    /// give.
+    private static let unstyledContextColorHex = "#4a9eff"
+    private static let unstyledContextIcon = "square.stack.fill"
 
     private static func mergeAreaFields(from source: Area, into target: Area) {
         if target.desc.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {

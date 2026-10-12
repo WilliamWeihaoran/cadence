@@ -143,6 +143,191 @@ struct DataIntegrityRepairServiceTests {
         #expect((survivor.pursuits ?? []).count == 2)
     }
 
+    // MARK: - T-3101, which copy survives a context merge and what it carries
+
+    /// **The loser's own decoration is carried across instead of dropped.**
+    ///
+    /// `mergeArea` and `mergeProject` have had a field merge since they were written;
+    /// `mergeContext` had none, so `colorHex`, `icon` and `order` went into the delete with the
+    /// row. The survivor here is the copy that was never decorated — built with `Context(name:)`
+    /// and **no** appearance arguments, so it carries whatever `Context`'s own defaults are, plus
+    /// the seventh sidebar slot — and the copy about to be deleted is the one the user gave a
+    /// colour, an icon and the top slot. The defect is what the user is left looking at: a list
+    /// they never styled, holding every child of the one they did.
+    ///
+    /// **Building the survivor from the model's defaults rather than naming them is also what
+    /// pins `DataIntegrityRepairService`'s copy of those two values.** It has to hold its own
+    /// spelling of them (the reason is written out beside `unstyledContextColorHex`); move either
+    /// model default and this test, not a source scan, is what says so.
+    ///
+    /// Children hang off **both** copies, so this is a real merge over a real store and not a
+    /// field copy in isolation, and the last two assertions hold the merge itself: a field merge
+    /// that worked while the delete's `.nullify` orphaned the children would be no fix.
+    @Test func mergingDuplicateContextsKeepsTheDecorationOnlyTheDeletedCopyHad() throws {
+        #expect(PinnedContextID.lower.uuidString < PinnedContextID.higher.uuidString)
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let modelContext = ModelContext(container)
+
+        // Survives, by id, and holds nothing but what `init` gave it.
+        let plain = Context(name: "Work")
+        plain.id = PinnedContextID.lower
+        plain.order = 7
+        // Deleted by the merge, and the only copy carrying the user's choices. The trailing space
+        // and the lower-case `w` are the group key doing its own job: these are one group.
+        let decorated = Context(name: "work ", colorHex: "#22c55e", icon: "briefcase.fill")
+        decorated.id = PinnedContextID.higher
+        decorated.order = 1
+
+        modelContext.insert(plain)
+        modelContext.insert(decorated)
+        modelContext.insert(Area(name: "Ops", context: plain))
+        modelContext.insert(Area(name: "Hiring", context: decorated))
+        modelContext.insert(Habit(title: "Standup", context: decorated))
+        try modelContext.save()
+
+        let report = try DataIntegrityRepairService.repairIfNeeded(in: modelContext, source: "test")
+        #expect(report.duplicateContextsMerged == 1)
+
+        // A second `ModelContext` over the same container, so a field that looks merged only in
+        // the graph the merge just edited would still be caught.
+        let reopened = ModelContext(container)
+        let contexts = try reopened.fetch(FetchDescriptor<Context>())
+        #expect(contexts.count == 1)
+        let survivor = try #require(contexts.first)
+        #expect(survivor.id == PinnedContextID.lower)
+        #expect(survivor.colorHex == "#22c55e", "the deleted copy's colour was dropped outright")
+        #expect(survivor.icon == "briefcase.fill", "the deleted copy's icon was dropped outright")
+        #expect(survivor.order == 1, "the merged row keeps the nearer-the-top of the two slots")
+
+        let areas = try reopened.fetch(FetchDescriptor<Area>())
+        #expect(areas.count == 2)
+        #expect(areas.allSatisfy { $0.context?.id == survivor.id })
+        let habits = try reopened.fetch(FetchDescriptor<Habit>())
+        #expect(habits.allSatisfy { $0.context?.id == survivor.id })
+    }
+
+    /// **The other direction: a field the survivor chose is not overwritten by the loser's.**
+    ///
+    /// Without this, the simplest thing that passes the test above — assign the source's three
+    /// fields over the target's — does the same damage the other way round and nothing says so.
+    /// `order` is the exception and is stated as one: it is `min` of the two rather than either
+    /// row's, because it is the one field whose answer must not depend on which copy the survivor
+    /// rule happened to pick. Here the survivor already holds the lower slot, so `min` keeps it.
+    @Test func mergingDuplicateContextsLeavesTheSurvivorsOwnDecorationAlone() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let modelContext = ModelContext(container)
+
+        let chosen = Context(name: "Work", colorHex: "#e879f9", icon: "star.fill")
+        chosen.id = PinnedContextID.lower
+        chosen.order = 3
+        let other = Context(name: "Work", colorHex: "#22c55e", icon: "briefcase.fill")
+        other.id = PinnedContextID.higher
+        other.order = 9
+
+        modelContext.insert(chosen)
+        modelContext.insert(other)
+        modelContext.insert(Goal(title: "Outcome", context: other))
+        try modelContext.save()
+
+        let report = try DataIntegrityRepairService.repairIfNeeded(in: modelContext, source: "test")
+        #expect(report.duplicateContextsMerged == 1)
+
+        let reopened = ModelContext(container)
+        let survivor = try #require(try reopened.fetch(FetchDescriptor<Context>()).first)
+        #expect(survivor.id == PinnedContextID.lower)
+        #expect(survivor.colorHex == "#e879f9", "the survivor's own colour was overwritten")
+        #expect(survivor.icon == "star.fill", "the survivor's own icon was overwritten")
+        #expect(survivor.order == 3, "min(3, 9)")
+        let goals = try reopened.fetch(FetchDescriptor<Goal>())
+        #expect(goals.count == 1)
+        #expect(goals.allSatisfy { $0.context?.id == survivor.id })
+    }
+
+    /// **Which copy survives does not depend on the children this device can see.**
+    ///
+    /// The same pair of contexts — same two ids, same name — in two separate stores with opposite
+    /// child counts: in the first every area, project, goal, habit and task hangs off the higher
+    /// id, in the second off the lower one. That is not a contrived pair. `performStartupMaintenance`
+    /// runs this service the instant the container opens with no gate on CloudKit sync state
+    /// ([[T-328]]), so two devices part-way through importing the same fork *are* those two stores.
+    ///
+    /// The old rule was a `contextScore` over exactly those children, so it answered the two
+    /// stores oppositely: each device deleted the copy the other kept, and both deletes sync. What
+    /// is left is not a duplicate and not a merge — it is every child pointing at a row that
+    /// exists on neither device. [[T-622]] named the shape for the recurrence collapse and chose
+    /// the lowest `id.uuidString` for exactly this reason; this is the same rule one model up.
+    ///
+    /// Stated as "the two stores agree", not as "it is the lowest id", because agreement is the
+    /// property that matters — the second `#expect` then says *which* agreement, so a rule that
+    /// agreed by always keeping the fuller row would not slip through.
+    @Test func theSurvivingContextIsTheSameOnTwoDevicesThatSeeOppositeChildren() throws {
+        #expect(PinnedContextID.lower.uuidString < PinnedContextID.higher.uuidString)
+
+        struct MergeOutcome {
+            let survivor: UUID
+            let contextCount: Int
+            let merged: Int
+            let orphanedChildren: Int
+        }
+
+        func mergeStore(childrenOn loadedID: UUID) throws -> MergeOutcome {
+            let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+            let modelContext = ModelContext(container)
+
+            let low = Context(name: "Work")
+            low.id = PinnedContextID.lower
+            let high = Context(name: "Work")
+            high.id = PinnedContextID.higher
+            modelContext.insert(low)
+            modelContext.insert(high)
+
+            let loaded = loadedID == PinnedContextID.lower ? low : high
+            modelContext.insert(Area(name: "Ops", context: loaded))
+            modelContext.insert(Project(name: "Launch", context: loaded))
+            modelContext.insert(Goal(title: "Outcome", context: loaded))
+            modelContext.insert(Habit(title: "Standup", context: loaded))
+            for index in 0..<5 {
+                let task = AppTask(title: "Ballast \(index)")
+                task.context = loaded
+                modelContext.insert(task)
+            }
+            try modelContext.save()
+
+            let report = try DataIntegrityRepairService.repairIfNeeded(in: modelContext, source: "test")
+
+            let reopened = ModelContext(container)
+            let contexts = try reopened.fetch(FetchDescriptor<Context>())
+            let orphans = try reopened.fetch(FetchDescriptor<AppTask>()).filter { $0.context == nil }.count
+                + reopened.fetch(FetchDescriptor<Area>()).filter { $0.context == nil }.count
+                + reopened.fetch(FetchDescriptor<Goal>()).filter { $0.context == nil }.count
+                + reopened.fetch(FetchDescriptor<Habit>()).filter { $0.context == nil }.count
+            return MergeOutcome(
+                survivor: contexts.first?.id ?? UUID(),
+                contextCount: contexts.count,
+                merged: report.duplicateContextsMerged,
+                orphanedChildren: orphans
+            )
+        }
+
+        let deviceA = try mergeStore(childrenOn: PinnedContextID.higher)
+        let deviceB = try mergeStore(childrenOn: PinnedContextID.lower)
+
+        #expect(deviceA.merged == 1)
+        #expect(deviceB.merged == 1)
+        #expect(deviceA.contextCount == 1)
+        #expect(deviceB.contextCount == 1)
+        #expect(
+            deviceA.survivor == deviceB.survivor,
+            "two devices part-way through one import deleted opposite copies of the same pair"
+        )
+        #expect(
+            deviceA.survivor == PinnedContextID.lower,
+            "the rule is the lowest id, not the fuller row and not the emptier one"
+        )
+        #expect(deviceA.orphanedChildren == 0)
+        #expect(deviceB.orphanedChildren == 0)
+    }
+
     @Test func duplicateCanonicalNotesAreMergedWithoutDroppingContentOrTags() throws {
         let container = try CadenceModelContainerFactory.makeInMemoryContainer()
         let modelContext = ModelContext(container)
@@ -213,11 +398,14 @@ struct DataIntegrityRepairServiceTests {
     // MARK: - T-340, the tasks already in the surviving project
 
     /// **The merge branch.** Two `Work` contexts and a project present under each with the same
-    /// `id`, so `mergeProject` folds one into the other. `restoredWork` carries an extra area, and
-    /// that weight is load-bearing: without it the two `contextScore`s tie at 21, the source and
-    /// target roles are decided arbitrarily, and the resident task below gets re-pointed as an
-    /// *arrival* by the loop that already existed. The first version of this test did tie, and
-    /// passed against unmodified source while proving nothing.
+    /// `id`, so `mergeProject` folds one into the other. Which of the two is the merge *target* is
+    /// load-bearing here: with the roles decided arbitrarily the resident task below gets
+    /// re-pointed as an *arrival* by the loop that already existed, and the first version of this
+    /// test did exactly that — it passed against unmodified source while proving nothing. So the
+    /// ids are pinned and `restoredWork` is the lower one, which [[T-3101]]'s survivor rule makes
+    /// the canonical context and therefore `restoredProject` the target. (It used to be pinned by
+    /// giving `restoredWork` an extra area to win `contextScore` by; the area stays as ballast,
+    /// but it no longer decides anything.)
     ///
     /// The task arriving from the source was always re-pointed. The task *already* in the target
     /// carries no context at all under a project that has one, and nothing ever re-derived it —
@@ -227,9 +415,13 @@ struct DataIntegrityRepairServiceTests {
         let container = try CadenceModelContainerFactory.makeInMemoryContainer()
         let modelContext = ModelContext(container)
 
+        #expect(PinnedContextID.lower.uuidString < PinnedContextID.higher.uuidString)
         let oldWork = Context(name: "Work")
+        oldWork.id = PinnedContextID.higher
         oldWork.order = 0
         let restoredWork = Context(name: "Work")
+        // The pin, so `restoredWork` is canonical and `restoredProject` is therefore the target.
+        restoredWork.id = PinnedContextID.lower
         restoredWork.order = 0
 
         let sharedID = UUID()
@@ -237,7 +429,6 @@ struct DataIntegrityRepairServiceTests {
         oldProject.id = sharedID
         let restoredProject = Project(name: "Launch", context: restoredWork)
         restoredProject.id = sharedID
-        // Weight, so `restoredWork` is canonical and `restoredProject` is therefore the target.
         let restoredArea = Area(name: "General", context: restoredWork)
 
         let arriving = AppTask(title: "Arriving from the duplicate")
@@ -283,9 +474,13 @@ struct DataIntegrityRepairServiceTests {
         let container = try CadenceModelContainerFactory.makeInMemoryContainer()
         let modelContext = ModelContext(container)
 
+        #expect(PinnedContextID.lower.uuidString < PinnedContextID.higher.uuidString)
         let duplicate = Context(name: "Work")
+        duplicate.id = PinnedContextID.higher
         duplicate.order = 1
         let canonical = Context(name: "Work")
+        // The pin: [[T-3101]]'s survivor rule is the lowest id, so this is the canonical copy.
+        canonical.id = PinnedContextID.lower
         canonical.order = 0
 
         let sharedAreaID = UUID()
@@ -293,7 +488,9 @@ struct DataIntegrityRepairServiceTests {
         staleArea.id = sharedAreaID
         let canonicalArea = Area(name: "Operations", context: canonical)
         canonicalArea.id = sharedAreaID
-        // Weight, so `canonical` wins `contextScore` by more than the ordering term alone.
+        // Ballast. It used to be the weight that won `canonical` the `contextScore`; the id pin
+        // above decides that now, and the tasks are kept because the project below is reached
+        // through the area rather than directly.
         let ballast = AppTask(title: "Ballast")
         ballast.area = canonicalArea
         ballast.context = canonical
@@ -359,7 +556,9 @@ struct DataIntegrityRepairServiceTests {
         let restoredArea = Area(name: "Ops", context: restoredWork)
         restoredArea.id = sharedAreaID
         restoredArea.loggedMinutes = 50
-        // Weight, so `restoredWork` wins `contextScore` (25 vs 26) and `restoredArea` survives.
+        // Ballast. Which copy survives no longer depends on it ([[T-3101]]) and this test never
+        // depended on which: the two areas share an id, so the survivor carries `sharedAreaID`
+        // and `max(70, 80)` either way.
         let ballast = AppTask(title: "Ballast")
         ballast.context = restoredWork
 
@@ -417,7 +616,9 @@ struct DataIntegrityRepairServiceTests {
         let restoredProject = Project(name: "Launch", context: restoredWork)
         restoredProject.id = sharedProjectID
         restoredProject.loggedMinutes = 50
-        // Weight, so `restoredWork` wins `contextScore` (20 vs 45) and `restoredProject` survives.
+        // Ballast, and a different shape from the area test's deliberately. As there, which copy
+        // of the context survives does not decide this test ([[T-3101]]): the two projects share
+        // an id, so the survivor carries `sharedProjectID` and `max(70, 80)` either way.
         let restoredArea = Area(name: "General", context: restoredWork)
 
         modelContext.insert(oldWork)
@@ -1156,7 +1357,7 @@ struct DataIntegrityRepairServiceTests {
 
     /// The other side of the same bound, and the one that keeps it from being bought with a wrong
     /// answer: a store that **does** have a container to merge still reads every task row, because
-    /// `mergeContext` re-points tasks by identity and `contextScore` counts them.
+    /// `mergeContext` re-points tasks by identity and has to see the whole table to find them.
     ///
     /// The total is the whole table (the merge's fetch) plus the spawned occurrences (the
     /// recurrence pass's own, taken after it). Two fetches on a launch that found something to
@@ -1494,4 +1695,15 @@ struct DataIntegrityRepairServiceTests {
         #expect(removable == [fork.higherID])
     }
 
+}
+
+/// Two context ids whose `uuidString`s are ordered.
+///
+/// [[T-3101]] made the surviving copy of a same-named group the lowest `id.uuidString`, so a
+/// fixture that cares which copy survives has to *say* which — two `UUID()`s fall either way and a
+/// test built on them is a coin flip that passes most of the time. Every fixture below that reads
+/// the survivor's identity pins both ids from here and asserts the ordering it is relying on.
+private enum PinnedContextID {
+    static let lower = UUID(uuidString: "00000000-0000-0000-0000-00000000AAA1")!
+    static let higher = UUID(uuidString: "00000000-0000-0000-0000-00000000AAA2")!
 }
