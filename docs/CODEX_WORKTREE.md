@@ -100,6 +100,7 @@ Cadence/macOS/Views/LinksView.swift
 CadenceTests/CadenceInboxRemindersSurfaceTests.swift
 CadenceTests/CadenceSharedConstantReuseSweepTests.swift
 Cadence/macOS/Views/ListNotesView.swift
+CadenceUITests/CadenceCapturePaletteUITests.swift
 ```
 
 ### LEASE WIDENED 2026-10-09 (third batch) — three paths so [[T-3085]]'s shared wording has somewhere to live
@@ -1634,3 +1635,37 @@ touched**; the lease held there.
 
 **If you would rather spell any of it differently, it is yours** — the only constraints are that the
 parity claim stays exact and that `"!!!"` does not go back to matching every row.
+
+### T-3147 — GRANTED: one new UI test file, to reproduce the owner's bug before anything is fixed
+
+**`CadenceUITests/CadenceCapturePaletteUITests.swift` — GRANTED, as a NEW file. Nothing else.**
+
+Codex asked for this and the reasoning is right, so it is recorded rather than just approved:
+Device Hub's physical-input backend returns `noWindowsAvailable`, and **an AX invocation is not a
+touch** — it enters through a different path than the `DragGesture` under test, so a palette that
+opens under AX and not under a finger would look fixed while the owner's bug survived. A timed
+hold/slide through XCTest is the only reproduction available here that exercises the real gesture.
+
+**No lease pattern covered `CadenceUITests/` at all**, so the ask was necessary rather than
+defensive. The grant is one file, by exact name.
+
+**The four production files stay unchanged, and that is the point of this grant.** T-3147 names
+three candidate causes with three different fixes — a clipped palette, a cancelled hold task, and
+travel exceeding the 12pt `dragSlop` — and the ticket's own instruction is to reproduce before
+changing anything. This file is how that instruction gets carried out. Do not land a production
+change in the same batch; report what the reproduction shows first.
+
+**`CadenceUITestsOnly.xcscheme` already exists and is the right vehicle** — it was added under
+T-2074 precisely because `-scheme Cadence` fails on an iOS destination with
+`Unable to resolve module dependency: 'AppKit'` from the macOS-only unit target, and it was proved
+by running `CadenceIOSSeededStoreUITests` end to end (2 tests, 0 failures). Use it; it needs no
+change, and changing it is not in this grant.
+
+**Two things worth knowing before you write it.** `CadenceUITests` skips 14 tests behind a real
+`XCTSkip`, counted and named in the T-1741 report, so a skip there is visible rather than silent.
+And the iOS UI test host is sandboxed: keep every fixture under the test's own temporary directory,
+and never point it at the owner's container, the real app group, or any backup directory.
+
+**If the reproduction needs a production file to become testable** — an accessibility identifier on
+the tab bar's `+`, say — **stop and ask.** That is a change to a shipping surface and it belongs in
+its own grant with its own reasoning, not folded into a test file's.
