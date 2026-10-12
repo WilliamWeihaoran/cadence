@@ -83,4 +83,32 @@ nonisolated enum CadenceCalendarEventTiming {
             of: calendar.startOfDay(for: day)
         )
     }
+
+    // MARK: - An editor that holds its start as a `Date` ([[T-3119]])
+
+    /// The minute of day `date` reads on the wall in `calendar` — the number an hour/minute picker
+    /// shows for it.
+    static func minuteOfDay(of date: Date, calendar: Calendar = .current) -> Int {
+        let components = calendar.dateComponents([.hour, .minute], from: date)
+        return (components.hour ?? 0) * 60 + (components.minute ?? 0)
+    }
+
+    /// `start` with its **day** replaced by `newDay`'s and its time of day kept — what a date
+    /// picker writes back into an event editor.
+    ///
+    /// Resolved through `startDate(day:startMin:calendar:)` rather than by rebuilding
+    /// `DateComponents` and calling `Calendar.date(from:)`, because the two disagree on exactly the
+    /// 59 minutes 02:01-02:59 of a spring-forward day: `date(from:)` shifts each one an hour later
+    /// (02:30 becomes 03:30), while the rule above collapses all of them to 03:00, the instant the
+    /// gap closes. Measured over every minute of 2026-03-08 in `America/New_York`;
+    /// `CadenceCalendarEventTimingTests` pins the agreement count.
+    static func movingStart(_ start: Date, toDayOf newDay: Date, calendar: Calendar = .current) -> Date? {
+        startDate(day: newDay, startMin: minuteOfDay(of: start, calendar: calendar), calendar: calendar)
+    }
+
+    /// `start` with its **time of day** replaced by `minutes` and its day kept — what a time picker
+    /// writes back into an event editor. Same gap policy as `movingStart(_:toDayOf:calendar:)`.
+    static func settingStartMinute(_ minutes: Int, of start: Date, calendar: Calendar = .current) -> Date? {
+        startDate(day: start, startMin: minutes, calendar: calendar)
+    }
 }

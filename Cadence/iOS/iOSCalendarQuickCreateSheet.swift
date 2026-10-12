@@ -93,15 +93,11 @@ struct iOSCalendarQuickCreateSheet: View {
 
     private var startTimeMinutesBinding: Binding<Int> {
         Binding(
-            get: {
-                let comps = Calendar.current.dateComponents([.hour, .minute], from: startTime)
-                return (comps.hour ?? 0) * 60 + (comps.minute ?? 0)
-            },
+            get: { CadenceCalendarEventTiming.minuteOfDay(of: startTime) },
             set: { minutes in
-                var comps = Calendar.current.dateComponents([.year, .month, .day], from: startTime)
-                comps.hour = minutes / 60
-                comps.minute = minutes % 60
-                startTime = Calendar.current.date(from: comps) ?? startTime
+                // The shared gap policy: a minute inside the spring-forward gap collapses to 03:00
+                // rather than moving an hour later, and the event write reads it back (T-3119).
+                startTime = CadenceCalendarEventTiming.settingStartMinute(minutes, of: startTime) ?? startTime
             }
         )
     }
@@ -686,16 +682,15 @@ struct iOSCalendarQuickCreateSheet: View {
 
     private static func defaultStartTime(dateKey: String, startMinute: Int?) -> Date {
         let baseDate = DateFormatters.date(from: dateKey) ?? Date()
-        var components = Calendar.current.dateComponents([.year, .month, .day], from: baseDate)
+        let minute: Int
         if let startMinute {
-            components.hour = startMinute / 60
-            components.minute = startMinute % 60
+            minute = startMinute
         } else {
             let hour = Calendar.current.component(.hour, from: Date())
-            components.hour = min(max(hour + 1, CadenceScheduleSupport.calendarStartHour), CadenceScheduleSupport.calendarEndHour - 1)
-            components.minute = 0
+            minute = min(max(hour + 1, CadenceScheduleSupport.calendarStartHour), CadenceScheduleSupport.calendarEndHour - 1) * 60
         }
-        return Calendar.current.date(from: components) ?? baseDate
+        // The shared rule, so a slot inside the spring-forward gap opens at 03:00 (T-3119).
+        return CadenceCalendarEventTiming.settingStartMinute(minute, of: baseDate) ?? baseDate
     }
 }
 

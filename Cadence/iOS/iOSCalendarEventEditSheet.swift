@@ -45,27 +45,18 @@ struct iOSCalendarEventEditSheet: View {
         Binding(
             get: { startDate },
             set: { newDay in
-                let dayComps = Calendar.current.dateComponents([.year, .month, .day], from: newDay)
-                var comps = Calendar.current.dateComponents([.hour, .minute], from: startDate)
-                comps.year = dayComps.year
-                comps.month = dayComps.month
-                comps.day = dayComps.day
-                startDate = Calendar.current.date(from: comps) ?? startDate
+                // Through the shared rule, so a time inside the spring-forward gap collapses to
+                // 03:00 like every other start in the app instead of moving an hour later (T-3119).
+                startDate = CadenceCalendarEventTiming.movingStart(startDate, toDayOf: newDay) ?? startDate
             }
         )
     }
 
     private var startTimeMinutesBinding: Binding<Int> {
         Binding(
-            get: {
-                let comps = Calendar.current.dateComponents([.hour, .minute], from: startDate)
-                return (comps.hour ?? 0) * 60 + (comps.minute ?? 0)
-            },
+            get: { CadenceCalendarEventTiming.minuteOfDay(of: startDate) },
             set: { minutes in
-                var comps = Calendar.current.dateComponents([.year, .month, .day], from: startDate)
-                comps.hour = minutes / 60
-                comps.minute = minutes % 60
-                startDate = Calendar.current.date(from: comps) ?? startDate
+                startDate = CadenceCalendarEventTiming.settingStartMinute(minutes, of: startDate) ?? startDate
             }
         )
     }

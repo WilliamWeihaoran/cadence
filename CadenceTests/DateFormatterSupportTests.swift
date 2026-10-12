@@ -614,3 +614,67 @@ struct ClockFaceFollowsTheSystemTests {
         )
     }
 }
+
+// MARK: - T-3120 (2): the storage-key formatter follows a change of the default time zone
+
+/// `DateFormatters.ymd` is a long-lived static, built once, with no explicit `timeZone`. The Today
+/// lists redraw on `NSSystemTimeZoneDidChange` ([[T-3104]]), but a redraw only helps if the key the
+/// redraw reads is in the **new** zone. This measures that, rather than assuming either answer.
+///
+/// **The window is deliberately tiny.** `NSTimeZone.default` is process-global and Swift Testing
+/// runs suites in parallel, so a concurrent test reading `TimeZone.current` while it is changed
+/// would see the wrong zone. Every read happens inside the change, every assertion after the
+/// restore, and the restore is in `defer` so a thrown `#require` cannot strand the process in
+/// another zone. `America/Los_Angeles` because the scheme pins `TZ=UTC` ([[T-1116]]) and the
+/// instant below is a different calendar day there.
+struct DateFormatterTimeZoneFollowTests {
+    @Test func theStorageKeyFormatterFollowsAChangeOfTheDefaultTimeZone() throws {
+        // 2026-06-15 02:00 UTC is 2026-06-14 19:00 in Los Angeles (PDT, UTC-7).
+        let instant = Date(timeIntervalSince1970: 1_781_488_800)
+        let losAngeles = try #require(TimeZone(identifier: "America/Los_Angeles"))
+        let original = NSTimeZone.default
+
+        // Force the lazy static to exist *before* the zone changes, so the measurement is of a
+        // long-lived formatter and not of one that happens to be built inside the window.
+        let keyBefore = DateFormatters.ymd.string(from: instant)
+        let zoneBefore = DateFormatters.ymd.timeZone
+
+        let keyDuring: String
+        let parsedDuring: Date?
+        let helperKeyDuring: String
+        do {
+            NSTimeZone.default = losAngeles
+            defer { NSTimeZone.default = original }
+            keyDuring = DateFormatters.ymd.string(from: instant)
+            parsedDuring = DateFormatters.date(from: "2026-06-15")
+            helperKeyDuring = DateFormatters.dateKey(from: instant)
+        }
+        let keyAfter = DateFormatters.ymd.string(from: instant)
+
+        // The process zone really was restored, and the instant really straddles a day boundary
+        // between the two zones — otherwise every assertion below is free.
+        // Read through `NSTimeZone.default`, the knob this test turns, rather than an ambient
+        // `TimeZone.current`: the zone here is stated (the pin before and after, Los Angeles
+        // inside), which is what `noDateSensitiveTestSilentlyInheritsTheHostsTimeZone` asks for.
+        #expect(NSTimeZone.default.secondsFromGMT(for: instant) == original.secondsFromGMT(for: instant))
+        #expect(DateFormatters.dateKey(from: instant, calendar: try CadenceTestTimeZones.calendar("UTC")) == "2026-06-15")
+        #expect(
+            DateFormatters.dateKey(from: instant, calendar: try CadenceTestTimeZones.calendar("America/Los_Angeles"))
+                == "2026-06-14"
+        )
+        #expect(zoneBefore?.secondsFromGMT(for: instant) == 0, "the host is pinned to UTC")
+        #expect(keyBefore == "2026-06-15")
+
+        // The measurement: while the default zone is Los Angeles, the long-lived formatter keys,
+        // parses and helper-keys in Los Angeles.
+        #expect(keyDuring == "2026-06-14", "ymd still formats in the zone it was built in")
+        #expect(helperKeyDuring == "2026-06-14", "dateKey(from:) still keys in the zone ymd was built in")
+        let laMidnight = try #require(
+            DateFormatters.date(from: "2026-06-15", in: try CadenceTestTimeZones.calendar("America/Los_Angeles"))
+        )
+        #expect(parsedDuring == laMidnight, "ymd still parses in the zone it was built in")
+
+        // And it comes back with the zone.
+        #expect(keyAfter == "2026-06-15")
+    }
+}

@@ -686,4 +686,103 @@ struct CadenceCalendarEventTimingTests {
             ) == 0
         )
     }
+
+    // MARK: - T-3119: the iOS editors that hold their start as a `Date`
+
+    /// `iOSCalendarEventEditSheet`'s day and time bindings, and `iOSCalendarQuickCreateSheet`'s
+    /// time binding and default start, used to rebuild `DateComponents` and call
+    /// `Calendar.date(from:)`. That sets the clock correctly on both transition days — it is not
+    /// the hour-out bug above — but it has its own answer for the spring-forward gap: 02:30 becomes
+    /// **03:30**, where every other start in the app collapses to **03:00**. They now route through
+    /// `movingStart` / `settingStartMinute`, which delegate to `startDate(day:startMin:calendar:)`.
+    ///
+    /// Over every minute of the spring-forward day and an ordinary one, both editor operations land
+    /// on the instant the shared helper names — and `date(from:)` is measured beside them so the
+    /// agreement count cannot pass because the gap went unexercised.
+    @Test func theEditorDayAndTimeBindingsAgreeWithTheSharedHelperOnEveryMinute() throws {
+        let calendar = try newYork()
+        let elsewhere = try midnight("2026-06-20", calendar)
+        let days = [Self.springForward, Self.ordinary]
+
+        var total = 0
+        var timeBindingAgrees = 0
+        var dayBindingAgrees = 0
+        var dateFromComponentsAgrees = 0
+        for dateKey in days {
+            let day = try midnight(dateKey, calendar)
+            let noon = try #require(CadenceCalendarEventTiming.startDate(day: day, startMin: 720, calendar: calendar))
+            for minute in 0..<1440 {
+                total += 1
+                let expected = try #require(CadenceCalendarEventTiming.startDate(day: day, startMin: minute, calendar: calendar))
+
+                // The time picker: a start already on this day, given a new minute of day.
+                if CadenceCalendarEventTiming.settingStartMinute(minute, of: noon, calendar: calendar) == expected {
+                    timeBindingAgrees += 1
+                }
+
+                // The date picker: a start on another day at this minute, moved onto this day.
+                let source = try #require(CadenceCalendarEventTiming.startDate(day: elsewhere, startMin: minute, calendar: calendar))
+                if CadenceCalendarEventTiming.movingStart(source, toDayOf: day, calendar: calendar) == expected {
+                    dayBindingAgrees += 1
+                }
+
+                // The spelling the sites used to have.
+                var components = calendar.dateComponents([.year, .month, .day], from: day)
+                components.hour = minute / 60
+                components.minute = minute % 60
+                if calendar.date(from: components) == expected {
+                    dateFromComponentsAgrees += 1
+                }
+            }
+        }
+
+        #expect(total == 2880)
+        #expect(timeBindingAgrees == total, "the time binding disagrees with the shared helper on \(total - timeBindingAgrees) minutes")
+        #expect(dayBindingAgrees == total, "the day binding disagrees with the shared helper on \(total - dayBindingAgrees) minutes")
+        // Non-vacuity: the old spelling differs on exactly the 59 gap minutes 02:01-02:59 (02:00
+        // itself is 03:00 in both), so the two counts above are measuring the gap.
+        #expect(dateFromComponentsAgrees == total - 59)
+    }
+
+    /// The policy itself, at one gap minute, for both editor operations.
+    @Test func anEditorStartInsideTheSpringForwardGapCollapsesToThreeOClock() throws {
+        let calendar = try newYork()
+        let day = try midnight(Self.springForward, calendar)
+        let gapMinute = 2 * 60 + 30
+        let noon = try #require(CadenceCalendarEventTiming.startDate(day: day, startMin: 720, calendar: calendar))
+        let source = try #require(
+            CadenceCalendarEventTiming.startDate(day: try midnight("2026-06-20", calendar), startMin: gapMinute, calendar: calendar)
+        )
+
+        let viaTime = try #require(CadenceCalendarEventTiming.settingStartMinute(gapMinute, of: noon, calendar: calendar))
+        let viaDay = try #require(CadenceCalendarEventTiming.movingStart(source, toDayOf: day, calendar: calendar))
+        for (label, start) in [("time binding", viaTime), ("day binding", viaDay)] {
+            #expect(calendar.component(.hour, from: start) == 3, "\(label): 02:30 opens when the gap closes")
+            #expect(calendar.component(.minute, from: start) == 0, "\(label): at 03:00, not 03:30")
+            #expect(calendar.timeZone.secondsFromGMT(for: start) == Self.edt)
+            #expect(DateFormatters.dateKey(from: start, calendar: calendar) == Self.springForward)
+        }
+        #expect(CadenceCalendarEventTiming.minuteOfDay(of: viaTime, calendar: calendar) == 180)
+    }
+
+    /// The iOS sites are behind `#if os(iOS)` and unreachable from this macOS test host, so the
+    /// routing is pinned in source: no `Calendar.date(from:)` resolves a start in either sheet, and
+    /// each binding calls the shared helpers.
+    @Test func theIOSEventEditorsResolveTheirStartThroughTheSharedHelper() throws {
+        let edit = try CadenceCommitSurfaceScan.scanned("Cadence/iOS/iOSCalendarEventEditSheet.swift")
+        let quick = try CadenceCommitSurfaceScan.scanned("Cadence/iOS/iOSCalendarQuickCreateSheet.swift")
+        let needle = "\\.date\\(from:\\s*comp"
+
+        #expect(CadenceSourceScan.matchCount(needle, in: "startDate = Calendar.current.date(from: comps) ?? startDate") == 1)
+        #expect(CadenceSourceScan.matchCount(needle, in: "return Calendar.current.date(from: components) ?? baseDate") == 1)
+        for (path, source) in [("iOSCalendarEventEditSheet.swift", edit), ("iOSCalendarQuickCreateSheet.swift", quick)] {
+            let offenders = CadenceSourceScan.matchLines(needle, in: source)
+            #expect(offenders.isEmpty, "\(path) resolves a start with date(from:): \(offenders)")
+        }
+
+        #expect(CadenceSourceScan.matchCount("CadenceCalendarEventTiming\\.movingStart\\(", in: edit) == 1)
+        #expect(CadenceSourceScan.matchCount("CadenceCalendarEventTiming\\.settingStartMinute\\(", in: edit) == 1)
+        // The time binding and `defaultStartTime`.
+        #expect(CadenceSourceScan.matchCount("CadenceCalendarEventTiming\\.settingStartMinute\\(", in: quick) == 2)
+    }
 }
