@@ -15,9 +15,15 @@ nonisolated enum CadenceSearchMatcher {
     nonisolated struct PreparedQuery: Sendable {
         let normalized: String
         let tokens: [String]
+        /// The user typed nothing but whitespace. Only this is "match everything" (T-3099): a query
+        /// that had characters and normalized to no tokens -- `"!!!"`, an emoji -- is a real query
+        /// with nothing searchable in it, and answering it with every row looked like search worked.
+        let isBlank: Bool
 
         init(_ query: String) {
-            normalized = normalize(query.trimmingCharacters(in: .whitespacesAndNewlines))
+            let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+            isBlank = trimmed.isEmpty
+            normalized = normalize(trimmed)
             tokens = normalized.split(separator: " ").map(String.init)
         }
     }
@@ -88,14 +94,15 @@ nonisolated enum CadenceSearchMatcher {
         )
     }
 
-    /// `nil` means "no match". An empty query matches everything with a flat score of 1.
-    /// The first field is treated as the title and weighted highest.
+    /// `nil` means "no match". An empty or whitespace-only query matches everything with a flat
+    /// score of 1; a non-blank query that normalizes to no tokens (all punctuation or symbols)
+    /// matches nothing (T-3099). The first field is treated as the title and weighted highest.
     nonisolated static func matchScore(query: String, fields: [String]) -> Int? {
         matchScore(query: PreparedQuery(query), fields: fields)
     }
 
     nonisolated static func matchScore(query: PreparedQuery, fields: [String]) -> Int? {
-        guard !query.tokens.isEmpty else { return 1 }
+        guard !query.tokens.isEmpty else { return query.isBlank ? 1 : nil }
 
         let normalizedFields = fields
             .map(normalize)
@@ -133,10 +140,24 @@ nonisolated enum CadenceSearchMatcher {
         return score
     }
 
+    /// Case- and diacritic-folded, with every run of characters that is not a letter, combining
+    /// mark or digit **of any script** collapsed to one space.
+    ///
+    /// **T-3099.** The class used to be `[^A-Za-z0-9]`, which stripped every CJK, Cyrillic, Greek,
+    /// Arabic, Hebrew and Thai character: such a title normalized to `""` and could never be found,
+    /// and such a query normalized to no tokens and matched everything. `\p{M}` is kept so Indic
+    /// and Thai vowel signs do not split a word into fragments.
+    ///
+    /// **Scripts without word breaks (CJK, Thai) are not segmented.** A run of them is one "word",
+    /// and a query inside it is found by the containment fallbacks in `matchScore`
+    /// (`title.contains` / `body.contains`), which score below a word-prefix hit -- so a CJK query
+    /// that starts a title still ranks as a prefix, and one in the middle still matches. That is
+    /// substring search on the normalized field, chosen over a locale tokenizer so the scorer
+    /// stays pure, locale-independent and identical on every caller.
     nonisolated static func normalize(_ value: String) -> String {
         value
             .folding(options: [.caseInsensitive, .diacriticInsensitive], locale: .current)
-            .replacingOccurrences(of: "[^A-Za-z0-9]+", with: " ", options: .regularExpression)
+            .replacingOccurrences(of: "[^\\p{L}\\p{M}\\p{N}]+", with: " ", options: .regularExpression)
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .lowercased()
     }

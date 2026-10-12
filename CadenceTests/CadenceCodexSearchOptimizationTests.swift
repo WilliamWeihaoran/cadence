@@ -12,7 +12,13 @@ import SwiftUI
 struct CadenceCodexSearchOptimizationTests {
     @Test func codexPreparedQueryPreservesScoresIncludingEmptyAndPunctuation() {
         let cases: [(String, [String], Int?)] = [
-            ("", [], 1), ("  \n", [""], 1), ("!!!", [], 1),
+            // T-3099: an idle field still matches everything; `"!!!"` is a query the user typed
+            // that has nothing searchable in it, and no longer scores every row 1.
+            ("", [], 1), ("  \n", [""], 1), ("!!!", [], nil),
+            // The same table now also carries non-Latin scripts, which used to normalize away.
+            ("\u{043F}\u{043B}\u{0430}\u{043D}", ["\u{041F}\u{043B}\u{0430}\u{043D}"], 1260),
+            ("\u{4F1A}\u{8BAE}", ["\u{4F1A}\u{8BAE}"], 1260),
+            ("\u{4F1A}\u{8BAE}", ["\u{65E5}\u{5386}"], nil),
             ("cafe", ["Caf\u{00e9}"], 1260),
             ("admin", ["Admin"], 1260), ("admin", ["Administrator"], 1060),
             ("road map", ["Road map"], 1506),
