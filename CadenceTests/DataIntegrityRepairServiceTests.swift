@@ -1292,4 +1292,206 @@ struct DataIntegrityRepairServiceTests {
         return task
     }
 
+    // MARK: - T-3100, the untouched gate has to read every field the spawn copies
+
+    /// One thing a person can do to a forked occurrence, named so a failure says which one.
+    private struct ForkEdit {
+        let name: String
+        let apply: @MainActor (ForkedSeries, ModelContext) -> Void
+    }
+
+    /// Gives both rows of the fork the same subtask, the way `makeNextRecurringTask` would have.
+    private func seedMatchingSubtask(_ fork: ForkedSeries, in modelContext: ModelContext) {
+        for task in [fork.lower, fork.higher] {
+            let step = Subtask(title: "Fill the can")
+            step.order = 0
+            step.parentTask = task
+            modelContext.insert(step)
+        }
+    }
+
+    /// Gives both rows the same time block, again the way the spawn would have.
+    ///
+    /// The block has to be on the fixture *before* the edit, or moving it would also move
+    /// `scheduledDate` — a field the old ten-field gate already read, which would let that gate
+    /// pass the case for the wrong reason and the mutation survive unnoticed.
+    private func seedMatchingBlock(_ fork: ForkedSeries) {
+        for task in [fork.lower, fork.higher] {
+            task.scheduledDate = "2026-09-02"
+            task.scheduledStartMin = 8 * 60
+        }
+    }
+
+    /// **Every field the spawn copies is a field the removability gate has to read** (T-3100).
+    ///
+    /// The gate used to look at ten fields and say so in its own doc comment. `makeNextRecurringTask`
+    /// also copies `area`, `project`, `context`, `goal`, `tags`, `sectionName`, `estimatedMinutes`,
+    /// `scheduledStartMin` and the subtask *titles*, and sets `priority` and `calendarEventID`
+    /// nowhere — so every edit below left all ten of the old fields identical, the fork-collapse
+    /// called the row a pristine clone, and the next launch of either device deleted it with no
+    /// confirmation and no undo.
+    ///
+    /// Each case runs on its own store and starts by asserting the *unedited* fixture still
+    /// collapses, so a gate that had simply stopped working could not pass this.
+    @Test func aForkedOccurrenceEditedInAnyFieldTheSpawnCopiesIsNotCollectedAsAClone() throws {
+        let edits: [ForkEdit] = [
+            ForkEdit(name: "dragged into a project") { fork, modelContext in
+                let project = Project(name: "Balcony")
+                modelContext.insert(project)
+                fork.higher.project = project
+            },
+            ForkEdit(name: "dragged into an area") { fork, modelContext in
+                let area = Area(name: "Home")
+                modelContext.insert(area)
+                fork.higher.area = area
+            },
+            ForkEdit(name: "given a context") { fork, modelContext in
+                let context = Context(name: "Personal")
+                modelContext.insert(context)
+                fork.higher.context = context
+            },
+            ForkEdit(name: "attached to a goal") { fork, modelContext in
+                let goal = Goal(title: "Keep the plants alive")
+                modelContext.insert(goal)
+                fork.higher.goal = goal
+            },
+            ForkEdit(name: "retagged") { fork, modelContext in
+                let tag = Tag(name: "watering")
+                modelContext.insert(tag)
+                fork.higher.tags = [tag]
+            },
+            ForkEdit(name: "moved to another section") { fork, _ in
+                fork.higher.sectionName = "This week"
+            },
+            ForkEdit(name: "re-estimated") { fork, _ in
+                fork.higher.estimatedMinutes = 90
+            },
+            ForkEdit(name: "block moved to 09:00") { fork, _ in
+                self.seedMatchingBlock(fork)
+                fork.higher.scheduledStartMin = 9 * 60
+            },
+            ForkEdit(name: "re-prioritised") { fork, _ in
+                fork.higher.priority = .high
+            },
+            ForkEdit(name: "put on the calendar") { fork, _ in
+                fork.higher.calendarEventID = "event-1"
+            },
+            ForkEdit(name: "subtask text rewritten") { fork, modelContext in
+                self.seedMatchingSubtask(fork, in: modelContext)
+                fork.higher.subtasks?.first?.title = "Fill the can from the rain barrel"
+            },
+            ForkEdit(name: "subtask added") { fork, modelContext in
+                self.seedMatchingSubtask(fork, in: modelContext)
+                let extra = Subtask(title: "Prune the dead leaves")
+                extra.order = 1
+                extra.parentTask = fork.higher
+                modelContext.insert(extra)
+            },
+            ForkEdit(name: "focus session logged against it") { fork, modelContext in
+                let session = FocusSessionLog(
+                    minutes: 25,
+                    previousMinutes: 0,
+                    loggedAt: Date(timeIntervalSince1970: 6_000),
+                    dayKey: "2026-09-02"
+                )
+                session.task = fork.higher
+                modelContext.insert(session)
+            }
+        ]
+
+        for edit in edits {
+            let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+            let modelContext = ModelContext(container)
+            let fork = try forkedSeries(in: modelContext)
+            try modelContext.save()
+
+            let before = CadenceTaskRecurrenceWorkflowSupport
+                .collapsibleDuplicateOccurrences(among: [fork.lower, fork.higher])?
+                .removable.map(\.id) ?? []
+            #expect(before == [fork.higherID], "\(edit.name): the unedited fixture no longer collapses")
+
+            edit.apply(fork, modelContext)
+            try modelContext.save()
+
+            let after = CadenceTaskRecurrenceWorkflowSupport
+                .collapsibleDuplicateOccurrences(among: [fork.lower, fork.higher])?
+                .removable.map(\.id) ?? []
+            #expect(after.isEmpty, "\(edit.name): the edited occurrence was offered for deletion")
+        }
+    }
+
+    /// The scenario [[T-3100]] was filed on, end to end through the startup repair rather than
+    /// through the predicate: the user disambiguated a visible fork by making one of the two rows
+    /// *theirs* — a different project, its block dragged to 09:00, a tag, and a rewritten subtask —
+    /// without touching title, notes, or either date. Both rows start with the same block, so
+    /// nothing here is caught by a field the old ten-field gate already read.
+    ///
+    /// Nothing is collected, and the subtask text the user typed is still in the store afterwards.
+    /// That text is the part of this that nothing else holds: the other fields are copies of the
+    /// predecessor's, but an edited subtask title exists on exactly one row.
+    @Test func theStartupRepairLeavesAForkedOccurrenceTheUserMadeTheirOwn() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let modelContext = ModelContext(container)
+
+        let fork = try forkedSeries(in: modelContext)
+        seedMatchingSubtask(fork, in: modelContext)
+
+        let project = Project(name: "Balcony")
+        let tag = Tag(name: "watering")
+        modelContext.insert(project)
+        modelContext.insert(tag)
+        seedMatchingBlock(fork)
+        fork.higher.project = project
+        fork.higher.tags = [tag]
+        fork.higher.scheduledStartMin = 9 * 60
+        fork.higher.subtasks?.first?.title = "Fill the can from the rain barrel"
+        try modelContext.save()
+
+        let report = try DataIntegrityRepairService.repairIfNeeded(
+            in: modelContext,
+            source: "test",
+            removingForkedOccurrences: CadenceForkedOccurrenceRemover.removeAndCancelReminders
+        )
+
+        #expect(report.duplicateRecurrenceOccurrencesRemoved == 0)
+        let remaining = try modelContext.fetch(FetchDescriptor<AppTask>()).map(\.id)
+        #expect(remaining.contains(fork.higherID), "the occurrence the user had edited was deleted")
+        #expect(remaining.contains(fork.lowerID))
+        let titles = try modelContext.fetch(FetchDescriptor<Subtask>()).map(\.title).sorted()
+        #expect(titles == ["Fill the can", "Fill the can from the rain barrel"])
+    }
+
+    /// The other direction, so the two tests above cannot both be satisfied by a gate that always
+    /// refuses: a fork nobody has touched is still collected, and a fork whose *survivor* carries
+    /// the matching copied fields is collected too — the comparison is between the two rows, not
+    /// against a fixed shape.
+    @Test func aForkWhoseTwoRowsStillAgreeOnEveryCopiedFieldIsStillCollected() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let modelContext = ModelContext(container)
+
+        let fork = try forkedSeries(in: modelContext)
+        let project = Project(name: "Balcony")
+        let tag = Tag(name: "watering")
+        modelContext.insert(project)
+        modelContext.insert(tag)
+        // What the spawn itself would have produced: both rows carry the predecessor's list, tag,
+        // section, estimate and block, because both were copied from it.
+        for task in [fork.lower, fork.higher] {
+            task.project = project
+            task.tags = [tag]
+            task.sectionName = "This week"
+            task.estimatedMinutes = 90
+            task.priority = .high
+            task.scheduledDate = "2026-09-02"
+            task.scheduledStartMin = 9 * 60
+        }
+        seedMatchingSubtask(fork, in: modelContext)
+        try modelContext.save()
+
+        let removable = CadenceTaskRecurrenceWorkflowSupport
+            .collapsibleDuplicateOccurrences(among: [fork.lower, fork.higher])?
+            .removable.map(\.id) ?? []
+        #expect(removable == [fork.higherID])
+    }
+
 }

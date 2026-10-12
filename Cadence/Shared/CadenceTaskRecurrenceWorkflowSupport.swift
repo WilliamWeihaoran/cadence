@@ -203,8 +203,10 @@ nonisolated enum CadenceTaskRecurrenceWorkflowSupport {
     ///
     /// **Only untouched clones are removed.** The survivor is chosen without reference to work, so
     /// the protection for work lives here instead: a row is removable only if it still looks like
-    /// the copy the spawn made — open, never settled, no time logged, not in a bundle, no successor
-    /// of its own, no ticked subtask, and the same title/notes/dates as the survivor. Anything else
+    /// the copy the spawn made — open, never settled, no time logged, no focus session, no calendar
+    /// event, not in a bundle, no successor of its own, no ticked subtask, and every field the
+    /// spawn copies identical to the survivor's: title, notes, priority, both dates and the start
+    /// minute, estimate, section, area/project/context/goal, tags, and subtask text. Anything else
     /// is a task the user has acted on, and it stays. That is the answer to "what about a duplicate
     /// that has already been completed or has reminders scheduled": a **completed** one is never
     /// collected, and a removable one's reminders go with it, because the delete runs through
@@ -233,20 +235,108 @@ nonisolated enum CadenceTaskRecurrenceWorkflowSupport {
 
     /// Whether this row still looks exactly like the copy `makeNextRecurringTask` produced.
     ///
-    /// Every field checked is one that copy sets or leaves at its default, so "unchanged" is a
-    /// question with an answer. Deliberately strict: a `false` here costs a visible duplicate, a
-    /// wrong `true` costs the user's work.
+    /// Split the way the spawn itself is (T-3100). `spawnDefaultsAreUntouched` covers the fields
+    /// the copy never writes — the spawn left each at the model's default, so anything else is the
+    /// user — and `spawnCopiedFields` covers the fields the copy writes *from the predecessor*.
+    /// Two forks of one occurrence were minted by the same spawn from the same predecessor, so
+    /// every copied field must still be equal between them; a difference is an edit, whichever of
+    /// the two rows is carrying it.
+    ///
+    /// **This used to enumerate ten fields and assert that the enumeration was complete.** It was
+    /// not: the copy also sets `area`, `project`, `context`, `goal`, `tags`, `sectionName`,
+    /// `estimatedMinutes`, `scheduledStartMin` and the subtask *titles*, and the gate read none of
+    /// them. A forked occurrence the user had dragged into another project, re-timed, retagged, or
+    /// whose subtask text they had rewritten therefore still answered `true` here and was deleted
+    /// at the next launch of either device, unconfirmed and with no undo.
+    ///
+    /// Strict in one direction only, and that is the whole design: a wrong `false` leaves a visible
+    /// duplicate the user can delete, a wrong `true` destroys work they cannot get back.
+    ///
+    /// **Three fields are left out on purpose, and none of them is work this can protect.**
+    /// `createdAt` is minted per device, so two genuine forks legitimately differ on it. `order` is
+    /// renumbered *wholesale* across a list by one drag-reorder (`CadenceWriteService`'s placement
+    /// write), so requiring it to be pristine would make the collapse inert for anyone who has ever
+    /// reordered that list — and a row's position is re-draggable, unlike a project assignment or a
+    /// rewritten subtask. `bundleOrder` is only meaningful inside a bundle, and `bundle == nil` is
+    /// already required below.
     private static func isUntouchedClone(_ task: AppTask, of survivor: AppTask) -> Bool {
+        spawnDefaultsAreUntouched(task)
+            && spawnCopiedFields(of: task) == spawnCopiedFields(of: survivor)
+    }
+
+    /// The fields `makeNextRecurringTask` never writes, so the spawn left each at `AppTask`'s own
+    /// default: a non-default value is something that happened to this row afterwards.
+    private static func spawnDefaultsAreUntouched(_ task: AppTask) -> Bool {
         task.status == .todo
             && task.completedAt == nil
             && task.actualMinutes == 0
+            && task.calendarEventID.isEmpty
             && task.bundle == nil
             && task.recurrenceSpawnedTaskID == nil
-            && task.title == survivor.title
-            && task.notes == survivor.notes
-            && task.dueDate == survivor.dueDate
-            && task.scheduledDate == survivor.scheduledDate
+            && (task.focusSessions ?? []).isEmpty
             && (task.subtasks ?? []).allSatisfy { !$0.isDone }
+    }
+
+    /// Everything `makeNextRecurringTask` copies off its predecessor, as one value, so the list
+    /// lives in exactly one place instead of being re-spelled at a comparison site. Relationships
+    /// are compared by `id`, not by identity: two replicas of one row are two objects. Subtasks
+    /// carry their **titles**, because the copy copies the text and an edit to it is the part of a
+    /// collected duplicate that nothing else in the store still holds.
+    private static func spawnCopiedFields(of task: AppTask) -> SpawnCopiedFields {
+        SpawnCopiedFields(
+            title: task.title,
+            notes: task.notes,
+            priorityRaw: task.priorityRaw,
+            recurrenceRaw: task.recurrenceRaw,
+            recurrenceEndModeRaw: task.recurrenceEndModeRaw,
+            recurrenceEndDate: task.recurrenceEndDate,
+            recurrenceEndCount: task.recurrenceEndCount,
+            estimatedMinutes: task.estimatedMinutes,
+            sectionName: task.sectionName,
+            areaID: task.area?.id,
+            projectID: task.project?.id,
+            contextID: task.context?.id,
+            goalID: task.goal?.id,
+            tagIDs: task.sortedTags.map(\.id),
+            recurrenceSeriesIDRaw: task.recurrenceSeriesIDRaw,
+            recurrenceSourceTaskIDRaw: task.recurrenceSourceTaskIDRaw,
+            recurrenceOccurrenceIndex: task.recurrenceOccurrenceIndex,
+            dueDate: task.dueDate,
+            scheduledDate: task.scheduledDate,
+            scheduledStartMin: task.scheduledStartMin,
+            subtasks: (task.subtasks ?? [])
+                .sorted { $0.order < $1.order }
+                .map { CopiedSubtask(order: $0.order, title: $0.title) }
+        )
+    }
+
+    private struct CopiedSubtask: Equatable {
+        let order: Int
+        let title: String
+    }
+
+    private struct SpawnCopiedFields: Equatable {
+        let title: String
+        let notes: String
+        let priorityRaw: String
+        let recurrenceRaw: String
+        let recurrenceEndModeRaw: String
+        let recurrenceEndDate: String
+        let recurrenceEndCount: Int
+        let estimatedMinutes: Int
+        let sectionName: String
+        let areaID: UUID?
+        let projectID: UUID?
+        let contextID: UUID?
+        let goalID: UUID?
+        let tagIDs: [UUID]
+        let recurrenceSeriesIDRaw: String
+        let recurrenceSourceTaskIDRaw: String
+        let recurrenceOccurrenceIndex: Int
+        let dueDate: String
+        let scheduledDate: String
+        let scheduledStartMin: Int
+        let subtasks: [CopiedSubtask]
     }
 
     static func ensureRecurrenceSeriesMetadata(for task: AppTask) {
@@ -495,14 +585,6 @@ nonisolated enum CadenceTaskRecurrenceWorkflowSupport {
             else { return nil }
             return DateFormatters.dateKey(from: next, calendar: calendar)
         }
-
-    private static func recurrencePredecessor(of task: AppTask, in context: ModelContext) -> AppTask? {
-        guard let sourceID = task.recurrenceSourceTaskID else { return nil }
-        var descriptor = FetchDescriptor<AppTask>(predicate: #Predicate<AppTask> { $0.id == sourceID })
-        descriptor.fetchLimit = 1
-        return try? context.fetch(descriptor).first
-    }
-}
     }
 
     /// The day of the month a monthly/yearly series is really anchored on, recovered from the
@@ -566,3 +648,11 @@ nonisolated enum CadenceTaskRecurrenceWorkflowSupport {
         else { return nil }
         return StorageDayParts(monthIndex: year * 12 + (month - 1), day: day, monthLength: length)
     }
+
+    private static func recurrencePredecessor(of task: AppTask, in context: ModelContext) -> AppTask? {
+        guard let sourceID = task.recurrenceSourceTaskID else { return nil }
+        var descriptor = FetchDescriptor<AppTask>(predicate: #Predicate<AppTask> { $0.id == sourceID })
+        descriptor.fetchLimit = 1
+        return try? context.fetch(descriptor).first
+    }
+}
