@@ -179,6 +179,15 @@ private struct SettingsArchiveImportPreviewSheet: View {
                             .frame(maxHeight: 190)
                         }
 
+                        // **T-3111.** Amber: unlike the calendar caveat below, this is a merge declining to
+                        // repair rows that differ from the archive, which the reader may want to act on.
+                        if let note = CadenceArchiveImportPresentation.matchedDifferencesNote(plan) {
+                            Text(note)
+                                .font(.system(size: 11))
+                                .foregroundStyle(Theme.amber)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+
                         if let note = CadenceArchiveImportPresentation.unreadableKindsNote(plan) {
                             Text(note)
                                 .font(.system(size: 11))

@@ -682,6 +682,60 @@ struct CadenceArchiveImportEntryPointTests {
 
     // MARK: - Fixtures
 
+    // MARK: - Matched rows that differ (T-3111)
+
+    /// Said only under merge, only when something differs, in both numbers, naming the other mode
+    /// by its real title — and never calling it a restore.
+    @Test func theMatchedDifferencesNoteNamesTheModeThatWouldReplaceThem() throws {
+        func plan(_ mode: CadenceArchiveImportMode, differing: Int) -> CadenceArchiveImportPlan {
+            CadenceArchiveImportPlan(
+                mode: mode,
+                insertCountsByEntityName: [:],
+                matchedCountsByEntityName: ["AppTask": 4],
+                entityNamesOnlyInTheArchive: [],
+                linkedCalendarCount: 0,
+                differingMatchedCountsByEntityName: ["AppTask": differing]
+            )
+        }
+
+        #expect(CadenceArchiveImportPresentation.matchedDifferencesNote(plan(.mergeKeepingExistingRows, differing: 0)) == nil)
+        #expect(CadenceArchiveImportPresentation.matchedDifferencesNote(plan(.restoreOverwritingExistingRows, differing: 3)) == nil)
+
+        let one = try #require(CadenceArchiveImportPresentation.matchedDifferencesNote(plan(.mergeKeepingExistingRows, differing: 1)))
+        #expect(one.hasPrefix("1 task already here differs from this archive and would be left as it is."))
+        let many = try #require(CadenceArchiveImportPresentation.matchedDifferencesNote(plan(.mergeKeepingExistingRows, differing: 3)))
+        #expect(many.hasPrefix("3 tasks already here differ from this archive and would be left as they are."))
+        for note in [one, many] {
+            #expect(note.contains(CadenceArchiveImportPresentation.modeTitle(.restoreOverwritingExistingRows)))
+            #expect(!note.lowercased().contains("restore"))
+        }
+
+        let outcome = CadenceArchiveImportOutcome(
+            plan: plan(.mergeKeepingExistingRows, differing: 2),
+            insertedRecordCount: 0,
+            overwrittenRecordCount: 0,
+            skippedRecordCount: 4,
+            notesFoldedFromLegacyRows: 0
+        )
+        let sentence = CadenceArchiveImportPresentation.outcomeMessage(outcome)
+        #expect(sentence.contains("Nothing changed"))
+        #expect(sentence.contains("2 tasks here differ from the archive and were left as they are."))
+        #expect(!sentence.lowercased().contains("restore"))
+    }
+
+    /// Both previews draw it, and neither retypes it.
+    @Test func bothImportPreviewsDrawTheMatchedDifferencesNote() throws {
+        for path in [
+            "Cadence/macOS/Views/SettingsArchiveImportCard.swift",
+            "Cadence/iOS/iOSArchiveImportSettingsSection.swift",
+        ] {
+            let code = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(path))
+            #expect(code.contains("CadenceArchiveImportPresentation.matchedDifferencesNote(plan)"),
+                    "\(path) shows a preview that never says matched tasks differ from the archive")
+            #expect(!code.contains("differ from this"), "\(path) retypes the note instead of reading it")
+        }
+    }
+
     /// A plan with the shape the surface reads, without a store behind it. The counts are the
     /// subject of every assertion above; where they came from is not.
     private static func plan(

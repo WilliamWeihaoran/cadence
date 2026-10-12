@@ -1299,7 +1299,97 @@ struct CadenceArchiveImportSurfaceTests {
         #expect(try urls() == restored)
     }
 
+    // MARK: - Matched rows that differ from the archive (T-3111)
+
+    /// The no-op re-import: every row matches by id and every matched task is the archive's copy,
+    /// so the differing figure is zero — measured against a store that does hold matched tasks, or
+    /// a zero would prove nothing.
+    @Test func anIdenticalStoreHasNoMatchedTaskThatDiffersFromTheArchive() throws {
+        let (archive, destination, _) = try Self.importedCopyOfTheWholeSchema()
+
+        let plan = try CadenceArchiveImportService.plan(archive, in: destination)
+
+        #expect((plan.matchedCountsByEntityName["AppTask"] ?? 0) >= 1, "no matched task to compare")
+        #expect(plan.differingMatchedCountsByEntityName["AppTask"] == 0)
+        #expect(plan.totalDifferingMatchedCount == 0)
+        #expect(CadenceArchiveImportPresentation.matchedDifferencesNote(plan) == nil)
+    }
+
+    /// The audit's case: CloudKit nullified a task's area and the row survived with its id. Merge
+    /// still declines to repair it — that is a product decision this does not change — but the plan
+    /// now counts it, and the skipped tally is exactly what it was for the identical store.
+    @Test func aTaskWhoseAreaWasNullifiedDiffersAndIsStillOnlySkipped() throws {
+        let (archive, destination, task) = try Self.importedCopyOfTheWholeSchema()
+        #expect(task.area != nil, "the fixture's task has no area to lose")
+        task.area = nil
+        try destination.save()
+
+        let plan = try CadenceArchiveImportService.plan(archive, in: destination)
+        #expect(plan.differingMatchedCountsByEntityName["AppTask"] == 1)
+        #expect(plan.changesAnything == false, "merge still writes nothing to a matched row")
+        let note = try #require(CadenceArchiveImportPresentation.matchedDifferencesNote(plan))
+        #expect(note.hasPrefix("1 task already here differs"))
+
+        let outcome = try CadenceArchiveImportService.apply(archive, in: destination)
+        #expect(outcome.skippedRecordCount == archive.totalRecordCount)
+        #expect(outcome.insertedRecordCount == 0)
+        #expect(outcome.plan.totalDifferingMatchedCount == 1)
+        #expect(task.area == nil, "the count must not have become a repair")
+    }
+
+    /// The other relationships the ticket names, and a scalar, each on its own fresh copy so one
+    /// difference cannot mask another.
+    @Test func aTaskThatLostItsTagsOrProjectOrWasRenamedDiffers() throws {
+        let edits: [(String, (AppTask) -> Void)] = [
+            ("tags", { $0.tags = [] }),
+            ("project", { $0.project = nil }),
+            ("title", { $0.title = "Renamed after the backup" }),
+        ]
+        for (label, edit) in edits {
+            let (archive, destination, task) = try Self.importedCopyOfTheWholeSchema()
+            edit(task)
+            try destination.save()
+
+            let plan = try CadenceArchiveImportService.plan(archive, in: destination)
+            #expect(plan.differingMatchedCountsByEntityName["AppTask"] == 1, "\(label) did not count")
+        }
+    }
+
+    /// Two differences that are not ones: the tag ids in another order (the importer wires a set),
+    /// and logged focus minutes, which both modes reconcile from the sessions rather than leave or
+    /// replace.
+    @Test func tagOrderAndTheFocusTotalAreNotDifferences() throws {
+        let (_, destination, task) = try Self.importedCopyOfTheWholeSchema()
+        let second = Tag(name: "weekend")
+        destination.insert(second)
+        task.tags = (task.tags ?? []) + [second]
+        try destination.save()
+        var archive = try CadenceDataExportService.makeArchive(in: destination)
+        let index = try #require(archive.tasks.firstIndex { $0.id == task.id })
+        #expect(archive.tasks[index].tagIDs.count == 2)
+        archive.tasks[index].tagIDs.reverse()
+
+        task.actualMinutes += 15
+        try destination.save()
+
+        let plan = try CadenceArchiveImportService.plan(archive, in: destination)
+        #expect(plan.differingMatchedCountsByEntityName["AppTask"] == 0)
+    }
+
     // MARK: - Helpers
+
+    /// The whole schema, exported and imported into a fresh store, with the destination's copy of
+    /// the one task. The two stores are the archive's identical twins until a test edits one.
+    private static func importedCopyOfTheWholeSchema() throws -> (CadenceArchive, ModelContext, AppTask) {
+        let source = ModelContext(try CadenceTestStore.container())
+        try seedTheWholeSchema(into: source)
+        let archive = try CadenceDataExportService.makeArchive(in: source)
+        let destination = ModelContext(try CadenceTestStore.container())
+        try CadenceArchiveImportService.apply(archive, in: destination)
+        let task = try #require(try one(AppTask.self, in: destination))
+        return (archive, destination, task)
+    }
+
 
     private static func one<Model: PersistentModel>(
         _ type: Model.Type,

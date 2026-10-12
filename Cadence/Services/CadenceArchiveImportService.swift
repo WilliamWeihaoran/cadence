@@ -501,6 +501,13 @@ nonisolated enum CadenceArchiveImportService {
             matches[name] = ids.intersection(existing).count
         }
 
+        // [[T-3111]]. Read-only: this compares, it writes nothing, and it does not change what
+        // either mode does to the rows it counts.
+        let differingTasks = archive.tasks.filter { record in
+            guard let present = destination.tasks[record.id] else { return false }
+            return matchedTaskDiffers(record, from: present)
+        }.count
+
         let buildEntities = Set(CadenceSchema.schema.entities.map(\.name))
         return CadenceArchiveImportPlan(
             mode: mode,
@@ -510,8 +517,31 @@ nonisolated enum CadenceArchiveImportService {
                 .filter { !buildEntities.contains($0) }
                 .sorted(),
             linkedCalendarCount: archive.areas.filter { !$0.linkedCalendarID.isEmpty }.count
-                + archive.projects.filter { !$0.linkedCalendarID.isEmpty }.count
+                + archive.projects.filter { !$0.linkedCalendarID.isEmpty }.count,
+            differingMatchedCountsByEntityName: ["AppTask": differingTasks]
         )
+    }
+
+    /// Whether overwriting `present` with `record` would change it — every scalar field the
+    /// importer writes, and the area, project, goal, context, bundle and tag links ([[T-3111]]).
+    ///
+    /// **Compared through the exporter's own record**, `CadenceArchiveTask(present)`, rather than
+    /// field by field: that initializer is the definition of what the archive says about a task,
+    /// including the millisecond timestamp normalization, so a store that was just imported from
+    /// this archive compares equal by construction and a field added to the record is compared
+    /// without anyone remembering to come back here.
+    ///
+    /// Two deliberate normalizations. Tag ids are compared as a set, because the importer wires
+    /// them as a set and a hand-ordered archive is not a different task. And `actualMinutes` is left
+    /// out, because it is not a field either mode leaves alone or replaces — it is the focus-session
+    /// total `reconcileFocusCounters` raises in both (`CadenceArchiveImportPresentation.focusMinutesNote`).
+    nonisolated static func matchedTaskDiffers(_ record: CadenceArchiveTask, from present: AppTask) -> Bool {
+        var incoming = record
+        var current = CadenceArchiveTask(present)
+        current.actualMinutes = incoming.actualMinutes
+        incoming.tagIDs = incoming.tagIDs.sorted { $0.uuidString < $1.uuidString }
+        current.tagIDs = current.tagIDs.sorted { $0.uuidString < $1.uuidString }
+        return incoming != current
     }
 
     // MARK: - Writing
@@ -1308,8 +1338,19 @@ nonisolated struct CadenceArchiveImportPlan: Equatable, Sendable {
     /// and both are worded that way.
     let linkedCalendarCount: Int
 
+    /// Matched rows whose copy here is **not** the archive's copy ([[T-3111]]) — a subset of
+    /// `matchedCountsByEntityName`, never added to it.
+    ///
+    /// The figure that tells a no-op re-import from a merge that declined to repair something: a
+    /// task CloudKit stripped of its area and tags still matches by id, so merge counts it skipped
+    /// and leaves the links gone. Only `"AppTask"` is compared today, by
+    /// `CadenceArchiveImportService.matchedTaskDiffers`; an absent key means *not compared*, not
+    /// *identical*. Defaulted so a plan built without a store behind it reads as no differences.
+    var differingMatchedCountsByEntityName: [String: Int] = [:]
+
     var totalInsertCount: Int { insertCountsByEntityName.values.reduce(0, +) }
     var totalMatchedCount: Int { matchedCountsByEntityName.values.reduce(0, +) }
+    var totalDifferingMatchedCount: Int { differingMatchedCountsByEntityName.values.reduce(0, +) }
 
     /// Whether applying this plan would change the store at all. False for a second import of the
     /// same file in `.mergeKeepingExistingRows`, which is the idempotence a restore has to have.

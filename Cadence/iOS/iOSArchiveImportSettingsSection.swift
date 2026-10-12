@@ -176,6 +176,15 @@ private struct iOSArchiveImportPreviewSheet: View {
                                 }
                             }
 
+                            // **T-3111.** Amber, for the reason the Mac card records: a merge declining
+                            // to repair rows that differ from the archive is worth acting on.
+                            if let note = CadenceArchiveImportPresentation.matchedDifferencesNote(plan) {
+                                Text(note)
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(Theme.amber)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+
                             if let note = CadenceArchiveImportPresentation.unreadableKindsNote(plan) {
                                 Text(note)
                                     .font(.system(size: 11))

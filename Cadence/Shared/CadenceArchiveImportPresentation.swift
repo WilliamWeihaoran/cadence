@@ -258,6 +258,28 @@ nonisolated enum CadenceArchiveImportPresentation {
             """
     }
 
+    /// **T-3111.** Matched tasks whose copy here is not the archive's, said only where the mode
+    /// will leave them that way.
+    ///
+    /// Without it a merge over a task that lost its area and tags reads exactly like a re-import
+    /// that had nothing to do: "already has all N records … would change nothing". Both are true
+    /// by id. This is the sentence that says the second one is not the whole story, and names the
+    /// mode that would act on it, in that mode's own title.
+    ///
+    /// `nil` under overwrite, where `planSummary` already says the matched rows are replaced.
+    static func matchedDifferencesNote(_ plan: CadenceArchiveImportPlan) -> String? {
+        guard plan.mode == .mergeKeepingExistingRows else { return nil }
+        let count = plan.totalDifferingMatchedCount
+        guard count > 0 else { return nil }
+        let one = count == 1
+        let overwrite = modeTitle(.restoreOverwritingExistingRows)
+        return """
+            \(count) \(one ? "task" : "tasks") already here \(one ? "differs" : "differ") from this \
+            archive and would be left as \(one ? "it is" : "they are"). Choose \(overwrite) to \
+            replace \(one ? "it" : "them") with the archive's copy.
+            """
+    }
+
     // MARK: - Outcomes
 
     /// The sentence for an import that **committed** — which is every `CadenceArchiveImportOutcome`,
@@ -279,6 +301,13 @@ nonisolated enum CadenceArchiveImportPresentation {
             sentence = "Imported. \(records(overwritten)) replaced by the archive's copy."
         case (let inserted, let overwritten):
             sentence = "Imported \(records(inserted)) and replaced \(records(overwritten))."
+        }
+        // T-3111: the same fact as `matchedDifferencesNote`, in the past tense, so a merge that
+        // declined to repair a task does not end on "Nothing changed" alone.
+        if outcome.plan.mode == .mergeKeepingExistingRows, outcome.plan.totalDifferingMatchedCount > 0 {
+            let differing = outcome.plan.totalDifferingMatchedCount
+            let one = differing == 1
+            sentence += " \(differing) \(one ? "task" : "tasks") here \(one ? "differs" : "differ") from the archive and \(one ? "was" : "were") left as \(one ? "it is" : "they are")."
         }
         if outcome.notesFoldedFromLegacyRows > 0 {
             let folded = outcome.notesFoldedFromLegacyRows
