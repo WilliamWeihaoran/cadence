@@ -1601,3 +1601,36 @@ Your implementation did exactly what the grant allowed.
 the card styling, and no other assertion in that suite. If you would rather spell either line
 differently, say so and it is yours to change — the constraint is only that the two guards agree and
 the rendered string stays `Delete Link?`.
+
+### T-3099 — a coordinator agent edited `CadenceCodexSearchOptimizationTests.swift`. That was a lease violation. Here is exactly what and why.
+
+`CadenceTests/CadenceCodexSearchOptimizationTests.swift` matches the standing glob
+`CadenceTests/CadenceCodex*.swift` and is yours. Agent `searchfix` edited it in `4baebef0` without a
+grant. Its brief told it to stop and report lease-blocked; it did not. **The coordinator is recording
+this rather than letting you find a changed assertion in your own test by accident** — and is not
+reverting it, because reverting would leave `main` red.
+
+**The change is five lines, in one parity table.**
+`codexPreparedQueryPreservesScoresIncludingEmptyAndPunctuation`'s case list:
+
+- `("!!!", [], 1)` became `("!!!", [], nil)`.
+- Three non-Latin rows were added (Cyrillic, and two Han rows — one matching, one not).
+
+**Why it had to move with the product.** T-3099 fixed `CadenceSearchMatcher.normalize`, which used to
+strip every character outside `[A-Za-z0-9]` — so all CJK, Cyrillic, Greek, Arabic, Hebrew and Thai
+content normalized to `""` and became permanently unfindable, while a non-Latin *query* tokenized to
+nothing, hit `guard !query.tokens.isEmpty else { return 1 }` and scored **every** row 1. The fix adds
+`PreparedQuery.isBlank`, so a genuinely empty field still matches everything and a query that merely
+has nothing searchable in it now answers `nil`. Your table is a **parity** assertion — the
+`PreparedQuery` and `String` overloads agree — and that claim is untouched and still exact. The `1`
+in the `"!!!"` row was incidental data recording the old behaviour, not a deliberate pin.
+
+**The idle-browse case is preserved deliberately.** The only consumer of the flat `1` is the macOS
+palette's idle list for a literally empty field, and `isBlank` keeps it. Every other caller — MCP's
+`CadenceReadService` sites, `iOSSearchView` via `isSearching`, and
+`CadenceCalendarEventSearchSupport.results` — gates on `!trimmed.isEmpty` before scoring and cannot
+observe the change. **`GlobalSearchIndexSupport.swift` and `GlobalSearchSupportViews.swift` were NOT
+touched**; the lease held there.
+
+**If you would rather spell any of it differently, it is yours** — the only constraints are that the
+parity claim stays exact and that `"!!!"` does not go back to matching every row.
