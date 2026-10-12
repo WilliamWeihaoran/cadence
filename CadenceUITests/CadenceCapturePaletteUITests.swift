@@ -30,6 +30,28 @@ final class CadenceCapturePaletteUITests: XCTestCase {
         XCTAssertTrue(app.buttons["Cancel"].exists)
     }
 
+    /// Measures delivered hold durations, not XCTest command scheduling latency.
+    /// Mid-touch visibility must be checked in the accompanying screen recording.
+    func testHoldDurationSweepRecordsTapOrPaletteResolution() throws {
+        for duration in [0.1, 0.25, 0.4, 0.6, 0.9, 1.2] {
+            let plus = try launchAndFindTabBarPlus()
+            attach("duration-\(duration)-before")
+            print("CAPTURE-DURATION-BEGIN seconds=\(duration) epoch=\(Date().timeIntervalSince1970)")
+            plus.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+                .press(forDuration: duration)
+            let openedTask = app.navigationBars["New task"].waitForExistence(timeout: 2)
+            print("CAPTURE-DURATION-RESULT seconds=\(duration) openedTask=\(openedTask)")
+            attach("duration-\(duration)-after")
+            if openedTask {
+                XCTAssertTrue(app.buttons["Cancel"].exists)
+            } else {
+                XCTAssertTrue(app.buttons["New Task"].isHittable,
+                              "Hold ended in neither task capture nor the tab-bar surface.")
+            }
+            app.terminate()
+        }
+    }
+
     func testStationaryHoldThenSlideUpReachesEventCapture() throws {
         let plus = try launchAndFindTabBarPlus()
         let start = plus.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
