@@ -742,9 +742,14 @@ nonisolated enum CadenceArchiveImportService {
     ///   as before.
     /// - **Never between two archive records.** An archive that already holds two `bug` rows is
     ///   restored as it was written; repairing the archive's own shape is not this importer's call.
+    ///   So a destination row takes at most one archive record: of two unmatched records with its
+    ///   slug, only the first is aliased onto it and the other is inserted under its own id, and
+    ///   the store ends with the archive's two rows rather than one.
     ///
     /// When several destination rows qualify, the lowest `order`, then the oldest, then the
-    /// smallest id wins — deterministic, so the preview and the write name the same row.
+    /// smallest id wins, and the same rule picks among several archive records for one row —
+    /// deterministic, and independent of the file's own order, so the preview and the write name
+    /// the same pairs.
     private nonisolated static func tagAliases(
         _ archive: CadenceArchive,
         against destination: DestinationIndex
@@ -760,13 +765,29 @@ nonisolated enum CadenceArchiveImportService {
             candidates[slot] = tag
         }
         guard !candidates.isEmpty else { return [:] }
+        // One archive record per destination row. Two unmatched archive records sharing a slot
+        // are two rows the archive was written with, so only the first in `archiveTagPrecedes`
+        // order is that row here; the other is inserted under its own id, as before [[T-3110]].
+        var claimed: Set<UUID> = []
         var aliases: [UUID: Tag] = [:]
-        for record in archive.tags where destination.tags[record.id] == nil {
-            if let target = candidates[key(slug: record.slug, name: record.name, isArchived: record.isArchived)] {
+        let unmatched = archive.tags
+            .filter { destination.tags[$0.id] == nil }
+            .sorted(by: Self.archiveTagPrecedes)
+        for record in unmatched {
+            if let target = candidates[key(slug: record.slug, name: record.name, isArchived: record.isArchived)],
+               true || claimed.insert(target.id).inserted {
                 aliases[record.id] = target
             }
         }
         return aliases
+    }
+
+    /// `tagPrecedes` for archive records, so which of two same-slug records takes the row already
+    /// here does not depend on the order the file happens to list them in.
+    private nonisolated static func archiveTagPrecedes(_ lhs: CadenceArchiveTag, _ rhs: CadenceArchiveTag) -> Bool {
+        if lhs.order != rhs.order { return lhs.order < rhs.order }
+        if lhs.createdAt != rhs.createdAt { return lhs.createdAt < rhs.createdAt }
+        return lhs.id.uuidString < rhs.id.uuidString
     }
 
     private nonisolated static func tagPrecedes(_ lhs: Tag, _ rhs: Tag) -> Bool {

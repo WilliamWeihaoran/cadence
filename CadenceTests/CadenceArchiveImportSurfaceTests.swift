@@ -1925,6 +1925,124 @@ struct CadenceArchiveImportSurfaceTests {
         #expect(tags.filter(\.isArchived).count == 1, "the archive's archived tag lost its state")
     }
 
+    /// The doc comment's third limit, "never between two archive records": an archive that holds
+    /// two `bug` rows, neither of them here by id, gives the `bug` already here ONE of them — the
+    /// lowest `order` — and inserts the other under its own id, so the store ends with the
+    /// archive's two rows and each restored task on its own tag. Before this both folded onto
+    /// the one row here, merging two tags the archive kept apart. The preview counts the same
+    /// split, and a second run of the file is still a no-op.
+    @Test func twoArchiveTagsWithOneSlugFoldOnlyOneOntoTheTagAlreadyHere() throws {
+        let source = ModelContext(try CadenceTestStore.container())
+        let first = Cadence.Tag(name: "bug", colorHex: "#111111", order: 0,
+                                createdAt: Date(timeIntervalSince1970: 1_772_000_100))
+        let second = Cadence.Tag(name: "bug", colorHex: "#222222", order: 1,
+                                 createdAt: Date(timeIntervalSince1970: 1_772_000_000))
+        let onFirst = AppTask(title: "Fix the crash")
+        let onSecond = AppTask(title: "Write the test")
+        for model in [first, second] { source.insert(model) }
+        for model in [onFirst, onSecond] { source.insert(model) }
+        onFirst.tags = [first]
+        onSecond.tags = [second]
+        try source.save()
+        let archive = try CadenceDataExportService.makeArchive(in: source)
+        #expect(archive.tags.count == 2)
+
+        let container = try CadenceTestStore.container()
+        let destination = ModelContext(container)
+        let local = Cadence.Tag(name: "bug")
+        destination.insert(local)
+        try destination.save()
+
+        let plan = try CadenceArchiveImportService.plan(archive, in: ModelContext(container))
+        #expect(plan.insertCountsByEntityName["Tag"] == 1, "the preview does not count the second archive tag as added")
+        #expect(plan.matchedCountsByEntityName["Tag"] == 1, "the preview matched more than one archive tag to one row")
+
+        try CadenceArchiveImportService.apply(archive, mode: .mergeKeepingExistingRows, in: ModelContext(container))
+
+        let reader = ModelContext(container)
+        let tags = try reader.fetch(FetchDescriptor<Cadence.Tag>())
+        #expect(tags.count == 2, "two archive tags folded onto the one tag already here")
+        #expect(Set(tags.map(\.id)) == [local.id, second.id],
+                "the lowest-order archive tag is not the one matched to the tag already here")
+        let tasks = try reader.fetch(FetchDescriptor<AppTask>())
+        let restoredFirst = try #require(tasks.first { $0.id == onFirst.id })
+        let restoredSecond = try #require(tasks.first { $0.id == onSecond.id })
+        #expect(restoredFirst.tags?.map(\.id) == [local.id])
+        #expect(restoredSecond.tags?.map(\.id) == [second.id], "the second archive tag's task was moved onto another tag")
+
+        let again = try CadenceArchiveImportService.plan(archive, in: ModelContext(container))
+        #expect(again.changesAnything == false, "a second import of the same file reads as a change")
+    }
+
+    /// The note half of the preview's translation. A store just imported from this archive whose
+    /// `bug` has since been re-minted under another id holds a note on that `bug`; the archive's
+    /// copy names the old id. The preview must read the note through the alias, exactly as
+    /// `write` wires it, so the matched note is not counted as differing.
+    @Test func aNoteOnTheTagAlreadyHereIsNotADifferenceFromTheArchivesCopy() throws {
+        let source = ModelContext(try CadenceTestStore.container())
+        let stamp = Date(timeIntervalSince1970: 1_772_000_000)
+        let tag = Cadence.Tag(name: "bug", createdAt: stamp, updatedAt: stamp)
+        let note = Note(kind: .list, title: "Crash notes", content: "# Crash", createdAt: stamp, updatedAt: stamp)
+        source.insert(tag)
+        source.insert(note)
+        note.tags = [tag]
+        try source.save()
+        let archive = try CadenceDataExportService.makeArchive(in: source)
+
+        let container = try CadenceTestStore.container()
+        try CadenceArchiveImportService.apply(archive, in: ModelContext(container))
+        let destination = ModelContext(container)
+        let local = try #require(try destination.fetch(FetchDescriptor<Cadence.Tag>()).first)
+        local.id = UUID()
+        try destination.save()
+
+        let plan = try CadenceArchiveImportService.plan(archive, in: ModelContext(container))
+        #expect(plan.matchedCountsByEntityName["Tag"] == 1)
+        #expect(plan.matchedCountsByEntityName["Note"] == 1)
+        #expect(plan.differingMatchedCountsByEntityName["Note"] == 0,
+                "a note on the matched tag reads as differing from the archive's copy")
+        #expect(plan.changesAnything == false)
+    }
+
+    /// The doc comment's second limit. The archive carries the tag already here BY ID — renamed
+    /// `chore` — and a separate `bug`. Overwrite renames the row here to `chore`, so folding the
+    /// archive's `bug` onto it would hang that tag's task on `chore` and lose a row. The `bug`
+    /// is inserted under its own id instead, and the preview says so.
+    @Test func anArchiveTagIsNotFoldedOntoARowTheArchiveAlsoCarriesByID() throws {
+        let container = try CadenceTestStore.container()
+        let destination = ModelContext(container)
+        let local = Cadence.Tag(name: "bug")
+        destination.insert(local)
+        try destination.save()
+
+        let source = ModelContext(try CadenceTestStore.container())
+        let renamed = Cadence.Tag(id: local.id, name: "chore")
+        let other = Cadence.Tag(name: "bug")
+        let task = AppTask(title: "Fix the crash")
+        source.insert(renamed)
+        source.insert(other)
+        source.insert(task)
+        task.tags = [other]
+        try source.save()
+        let archive = try CadenceDataExportService.makeArchive(in: source)
+
+        let plan = try CadenceArchiveImportService.plan(archive, in: ModelContext(container))
+        #expect(plan.insertCountsByEntityName["Tag"] == 1, "the archive's bug was matched to a row the archive carries by id")
+        #expect(plan.matchedCountsByEntityName["Tag"] == 1)
+
+        try CadenceArchiveImportService.apply(
+            archive, mode: .restoreOverwritingExistingRows, in: ModelContext(container)
+        )
+
+        let reader = ModelContext(container)
+        let tags = try reader.fetch(FetchDescriptor<Cadence.Tag>())
+        #expect(tags.count == 2, "the archive's bug was folded onto the row the archive renames")
+        #expect(tags.first { $0.id == local.id }?.name == "chore")
+        #expect(tags.first { $0.id == other.id }?.name == "bug")
+        let restored = try #require(try reader.fetch(FetchDescriptor<AppTask>()).first { $0.id == task.id })
+        #expect(restored.tags?.map(\.id) == [other.id], "the bug task is not on its own tag")
+    }
+
     /// A source store with `bug` (recoloured) on a task, exported; a destination holding the same
     /// task — so the preview has a matched task to compare — and a `bug` minted under its own id.
     private static func restoreRouteWithATagTypedInBetween(
