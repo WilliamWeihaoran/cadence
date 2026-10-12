@@ -1240,6 +1240,65 @@ struct CadenceArchiveImportSurfaceTests {
         var errorDescription: String? { "the notes table could not be read" }
     }
 
+    // MARK: - T-3106: an imported saved link goes through the app's URL rule
+
+    /// Every other path that mints a saved link runs `CadenceSavedLinkURL.normalized`, which
+    /// recognises only `http(s)://` and demotes anything else to `https://<raw>`. Import used to
+    /// copy the archive's string verbatim, so a hand-edited `file://` link restored as a live
+    /// `file://` the Mac would open on one click. The archive here is built from a store that holds
+    /// raw strings -- `SavedLink.init` itself does not normalize -- which is exactly the shape a
+    /// hand-edited file arrives in.
+    @Test func anImportedSavedLinkIsNormalizedLikeATypedOne() throws {
+        // The importer restates the rule because the original is main-actor isolated; these two
+        // lines are what stop the restatement drifting from it.
+        #expect(CadenceArchiveImportService.importedSavedLinkSchemes == CadenceSavedLinkURL.recognisedSchemes)
+        #expect(CadenceArchiveImportService.importedSavedLinkAssumedScheme == CadenceSavedLinkURL.assumedScheme)
+
+        let source = ModelContext(try CadenceTestStore.container())
+        let raw: [(title: String, url: String)] = [
+            ("Terminal", "file:///Applications/Utilities/Terminal.app"),
+            ("Custom", "x-cadence-evil://run"),
+            ("Bare", "  example.com/recipe  "),
+            ("Upper", "HTTPS://Example.com/Path"),
+            ("Plain", "https://example.com/ok"),
+            ("Blank", "   "),
+        ]
+        for entry in raw { source.insert(SavedLink(title: entry.title, url: entry.url)) }
+        try source.save()
+        let archive = try CadenceDataExportService.makeArchive(in: source)
+        #expect(archive.savedLinks.count == raw.count)
+        #expect(archive.savedLinks.contains { $0.url == "file:///Applications/Utilities/Terminal.app" },
+                "the export already normalized, so this archive cannot exercise the importer")
+
+        let destination = ModelContext(try CadenceTestStore.container())
+        try CadenceArchiveImportService.apply(archive, in: destination)
+
+        func urls() throws -> [String: String] {
+            Dictionary(uniqueKeysWithValues: try destination.fetch(FetchDescriptor<SavedLink>()).map { ($0.title, $0.url) })
+        }
+        let restored = try urls()
+        #expect(restored.count == raw.count)
+        for entry in raw {
+            #expect(restored[entry.title] == (CadenceSavedLinkURL.normalized(entry.url) ?? ""),
+                    "\(entry.title) did not go through the saved-link rule")
+            #expect(CadenceArchiveImportService.importedSavedLinkURL(entry.url)
+                    == (CadenceSavedLinkURL.normalized(entry.url) ?? ""))
+        }
+        #expect(restored["Blank"] == "", "a blank link stays blank rather than becoming a bare scheme")
+        #expect(restored["Terminal"] == "https://file:///Applications/Utilities/Terminal.app")
+        #expect(restored["Bare"] == "https://example.com/recipe")
+        #expect(restored["Upper"] == "HTTPS://Example.com/Path", "a recognised scheme is not re-cased")
+        let nonBlank = restored.values.filter { !$0.isEmpty }
+        #expect(nonBlank.count == raw.count - 1)
+        #expect(nonBlank.allSatisfy(CadenceSavedLinkURL.hasRecognisedScheme),
+                "an imported link kept a scheme the app would not mint")
+
+        // Normalizing is idempotent, so a replacing re-import of the same file does not stack a
+        // second prefix onto the first.
+        try CadenceArchiveImportService.apply(archive, mode: .restoreOverwritingExistingRows, in: destination)
+        #expect(try urls() == restored)
+    }
+
     // MARK: - Helpers
 
     private static func one<Model: PersistentModel>(
