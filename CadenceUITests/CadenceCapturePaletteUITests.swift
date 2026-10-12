@@ -68,7 +68,8 @@ final class CadenceCapturePaletteUITests: XCTestCase {
         for count in [0, 100, 2_000] {
             _ = try launchAndFindTabBarPlus(storeID: loadStoreID(count))
             if count > 0 {
-                XCTAssertTrue(app.buttons["Tasks, \(count) open tasks"].waitForExistence(timeout: 5),
+                XCTAssertTrue(app.buttons.matching(CadenceUITestQuery.identifying("Tasks, \(count) open tasks"))
+                    .firstMatch.waitForExistence(timeout: 5),
                               "The app did not load the verified fixture population")
             }
             for page in ["index", "task-list"] {
