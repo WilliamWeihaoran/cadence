@@ -27,7 +27,9 @@ struct iOSTasksPageView: View {
 
     @AppStorage("ios.tasksPage.scope") private var scopeRaw = CadenceTasksPageScope.defaultScope.rawValue
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
-    @Environment(\.dismiss) private var dismiss
+    // No `@Environment(\.dismiss)` here (T-3155): the header's back action comes from
+    // `iOSCompactBackActionReader`, so presenting the capture sheet over this page does not re-run
+    // it — and with it `iOSAllTasksView`'s whole-store filter and sort.
 
     private var scope: CadenceTasksPageScope { CadenceTasksPageScope.resolved(scopeRaw) }
 
@@ -66,19 +68,21 @@ struct iOSTasksPageView: View {
     /// an iPhone row cannot pay for the standard density beside a title, and this page is reachable
     /// at compact width whenever an iPad shell is in a narrow split.
     private var header: some View {
-        iOSPageHeader(
-            eyebrow: "Tasks",
-            title: scope.pageTitle,
-            color: Theme.blue,
-            onBack: horizontalSizeClass == .compact ? { dismiss() } : nil
-        ) {
-            iOSSegmentedPillGroup(density: horizontalSizeClass == .regular ? .standard : .compact) {
-                ForEach(CadenceTasksPageScope.allCases) { option in
-                    iOSSegmentedPill(
-                        title: option.title,
-                        isSelected: scope == option
-                    ) {
-                        scopeRaw = option.rawValue
+        iOSCompactBackActionReader { onBack in
+            iOSPageHeader(
+                eyebrow: "Tasks",
+                title: scope.pageTitle,
+                color: Theme.blue,
+                onBack: onBack
+            ) {
+                iOSSegmentedPillGroup(density: horizontalSizeClass == .regular ? .standard : .compact) {
+                    ForEach(CadenceTasksPageScope.allCases) { option in
+                        iOSSegmentedPill(
+                            title: option.title,
+                            isSelected: scope == option
+                        ) {
+                            scopeRaw = option.rawValue
+                        }
                     }
                 }
             }

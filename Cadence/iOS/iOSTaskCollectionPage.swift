@@ -41,7 +41,7 @@ struct iOSTaskCollectionPage: View {
     let completedTasks: [AppTask]
     @Binding var sortMode: CadenceTaskSortMode
     @Binding var showCompleted: Bool
-    @Environment(\.dismiss) private var dismiss
+    // No `@Environment(\.dismiss)` (T-3155) — see `header` and `iOSCompactBackActionReader`.
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(RemindersManager.self) private var remindersManager
 
@@ -140,15 +140,19 @@ struct iOSTaskCollectionPage: View {
     ///
     /// `onBack` **only** at compact width, following `iOSCompactTodayView`: the iPad shell hosts
     /// this page with no `NavigationStack` around it, so `dismiss()` would have nothing to dismiss
-    /// and the chevron would be a control that looks wired and does nothing.
+    /// and the chevron would be a control that looks wired and does nothing. The action is read by
+    /// `iOSCompactBackActionReader` rather than here, so a sheet presented over this page re-runs
+    /// the header row alone and not the page (T-3155).
     private var header: some View {
-        iOSCompactPageHeader(
-            eyebrow: collection.eyebrow,
-            title: collection.title,
-            color: Theme.blue,
-            count: activeTasks.count,
-            onBack: horizontalSizeClass == .compact ? { dismiss() } : nil
-        )
+        iOSCompactBackActionReader { onBack in
+            iOSCompactPageHeader(
+                eyebrow: collection.eyebrow,
+                title: collection.title,
+                color: Theme.blue,
+                count: activeTasks.count,
+                onBack: onBack
+            )
+        }
     }
 
     /// Gated on `CadenceTaskSurfaceOptions`, which the compact views consulted and the two panels

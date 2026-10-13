@@ -453,6 +453,30 @@ extension iOSPageHeader where Trailing == EmptyView {
     }
 }
 
+/// Hands a page header its compact-width back action **without the page reading `\.dismiss`**
+/// (T-3155).
+///
+/// `DismissAction` is replaced whenever a sheet is presented or dismissed anywhere above the view
+/// reading it, so a page body holding `@Environment(\.dismiss)` re-runs on every presentation it
+/// sits under. On All Tasks that was the whole-store filter and sort: tapping the tab bar's `+`
+/// re-ran `iOSTasksPageView` and `iOSAllTasksView` twice on the way up and twice on the way down,
+/// measured by `Self._printChanges()` as `_dismiss changed` and nothing else. Read here, the same
+/// change re-runs this view and the header row it returns — which already depends on nothing the
+/// store holds — and the page above it stays put.
+///
+/// The compact-only rule is the one the three pushed task pages already followed: the iPad shell
+/// hosts these pages with no `NavigationStack` around them, so `dismiss()` would have nothing to
+/// dismiss and the chevron would look wired and do nothing.
+struct iOSCompactBackActionReader<Content: View>: View {
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @ViewBuilder let content: (_ onBack: (() -> Void)?) -> Content
+
+    var body: some View {
+        content(horizontalSizeClass == .compact ? { dismiss() } : nil)
+    }
+}
+
 /// The one count badge. `iOSListsPageHeader` used the neutral `iOSListCountBadge` instead, whose
 /// reasoning ("a second coloured element per row turns a page of lists into a page of colours") is
 /// about a *row* in a list of rows — there is one header per screen.
