@@ -39,15 +39,11 @@ struct iOSTasksTabView: View {
     @Binding var path: NavigationPath
 
     @Query(sort: \Context.order) private var contexts: [Context]
-    @Query private var allTasks: [AppTask]
+    // No task `@Query` here (T-3156): the counts beside Today and Tasks are read over every task,
+    // and this body re-runs whenever the shell hands it fresh `section` / `path` bindings — once
+    // each way per New task sheet. `iOSTasksIndexDestinationRows` owns that fetch and its counting.
     @Query(sort: \Area.order) private var areas: [Area]
     @Query(sort: \Project.order) private var projects: [Project]
-    /// The synced sidebar layout, read for exactly the reason the iPad column reads it: this index
-    /// draws the same rows, so a row hidden on another device has to be hidden here.
-    @Query private var sidebarLayoutPreferences: [SidebarLayoutPreference]
-    /// The same preference macOS's Settings → Sidebar colour picker writes, so a retinted Today is
-    /// retinted on the phone too.
-    @AppStorage(CadencePreferenceKeys.sidebarTabColors) private var sidebarTabColorsRaw = CadencePreferenceKeys.emptySidebarPreference
     /// The same request the iPad column hands its shell, and the same reason for it being one
     /// value: this index draws `iOSSidebarListsRegion` too, so its `+` seeds a context the same
     /// way or it seeds nothing.
@@ -101,29 +97,14 @@ struct iOSTasksTabView: View {
     /// the screen. Pinning them also means the three task surfaces never scroll away, which on a
     /// phone is worth more than one continuous scroll.
     private var index: some View {
-        let counts = countInputs
-
-        return VStack(alignment: .leading, spacing: 0) {
-            VStack(alignment: .leading, spacing: iOSSidebarMetrics.rowSpacing) {
-                ForEach(destinationRows) { destination in
-                    iOSSidebarButton(
-                        title: CadenceSidebarLayout.rowTitle(for: destination),
-                        systemImage: destination.systemImage,
-                        tint: tint(for: destination),
-                        count: CadenceSidebarLayout.count(for: destination, counts: counts),
-                        // Nothing is ever "selected" here: this is an index of places to go, and
-                        // the place you went is on top of the stack rather than highlighted
-                        // underneath it.
-                        isSelected: false,
-                        style: style
-                    ) {
-                        open(destination)
-                    }
-                }
-            }
-            .padding(.horizontal, style.horizontalPadding)
-            .padding(.top, iOSSidebarMetrics.groupSpacing)
-            .padding(.bottom, iOSSidebarMetrics.groupSpacing)
+        VStack(alignment: .leading, spacing: 0) {
+            // `.equatable()` is what makes the move pay: the row block's only input that SwiftUI
+            // cannot compare is `onOpen`, a fresh closure on every pass of this body, and a child
+            // handed one re-runs with its parent. Its `==` ignores the closure, so a pass here
+            // leaves the whole-store count alone; the block still re-runs when its own `@Query` or
+            // preference changes.
+            iOSTasksIndexDestinationRows(style: style, onOpen: open)
+                .equatable()
 
             iOSSidebarRailDivider()
                 .padding(.horizontal, style.horizontalPadding)
@@ -152,42 +133,12 @@ struct iOSTasksTabView: View {
         }
     }
 
-    /// The rows this index lists, with the user's synced sidebar layout applied.
-    private var destinationRows: [CadenceFeatureDestination] {
-        let layout = CadenceSidebarLayoutPreferenceStore.layout(from: sidebarLayoutPreferences)
-        return CadenceCompactTab.tasksIndexDestinations(
-            storedOrder: layout.order,
-            hidden: layout.hidden
-        )
-    }
-
     /// Push, and record which slice we went to — see `section`.
     private func open(_ destination: CadenceFeatureDestination) {
         if let slice = destination.compactTasksSection {
             section = slice
         }
         path.append(destination)
-    }
-
-    // MARK: - Counts and tint
-
-    /// Built once per render and handed to every row, the shape `iOSSidebar` and `SidebarView`
-    /// both use.
-    private var countInputs: CadenceSidebarCountInputs {
-        CadenceSidebarCountInputs(
-            todayOverdueCount: CadenceSidebarLayout.overdueTaskCount(
-                from: allTasks,
-                todayKey: DateFormatters.todayKey()
-            ),
-            openTaskCount: CadenceTaskQuerySupport.openTaskCount(
-                from: allTasks.filter(\.isInActiveContainer)
-            )
-        )
-    }
-
-    private func tint(for destination: CadenceFeatureDestination) -> Color {
-        let overrides = CadenceSidebarTint.overrides(from: sidebarTabColorsRaw)
-        return Color(hex: overrides[destination] ?? destination.defaultColorHex)
     }
 
     // MARK: - Lists
@@ -239,6 +190,89 @@ struct iOSTasksTabView: View {
                 iOSMissingListView()
             }
         }
+    }
+}
+
+/// The index's destination rows — Today, Tasks, Inbox — with their counts and tints (T-3156).
+///
+/// **This is the only view on the Tasks tab that fetches every task.** The counts are O(n) over the
+/// store, and they used to be computed in `iOSTasksTabView.body`, which re-runs once each way
+/// whenever the New task sheet is presented over the index or anything pushed on it: the shell
+/// rebuilds its `section` and `path` bindings from `Binding(get:set:)` closures on every pass, and
+/// SwiftUI cannot compare closure-backed bindings, so `Self._printChanges()` names them as changed
+/// although their values are not. That shell is not this file's to change, so the fetch moved
+/// here instead, behind an `==` that a parent pass cannot fail.
+///
+/// `onOpen` is excluded from `==` on purpose. It only appends to the tab's path binding and writes
+/// its section binding, both of which address state that outlives any one pass of the parent, so a
+/// closure kept from an earlier pass reaches the same storage as a fresh one.
+private struct iOSTasksIndexDestinationRows: View, Equatable {
+    let style: iOSSidebarStyle
+    let onOpen: (CadenceFeatureDestination) -> Void
+
+    @Query private var allTasks: [AppTask]
+    /// The synced sidebar layout, read for exactly the reason the iPad column reads it: this index
+    /// draws the same rows, so a row hidden on another device has to be hidden here.
+    @Query private var sidebarLayoutPreferences: [SidebarLayoutPreference]
+    /// The same preference macOS's Settings → Sidebar colour picker writes, so a retinted Today is
+    /// retinted on the phone too.
+    @AppStorage(CadencePreferenceKeys.sidebarTabColors) private var sidebarTabColorsRaw = CadencePreferenceKeys.emptySidebarPreference
+
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.style == rhs.style
+    }
+
+    var body: some View {
+        let counts = countInputs
+
+        VStack(alignment: .leading, spacing: iOSSidebarMetrics.rowSpacing) {
+            ForEach(destinationRows) { destination in
+                iOSSidebarButton(
+                    title: CadenceSidebarLayout.rowTitle(for: destination),
+                    systemImage: destination.systemImage,
+                    tint: tint(for: destination),
+                    count: CadenceSidebarLayout.count(for: destination, counts: counts),
+                    // Nothing is ever "selected" here: this is an index of places to go, and
+                    // the place you went is on top of the stack rather than highlighted
+                    // underneath it.
+                    isSelected: false,
+                    style: style
+                ) {
+                    onOpen(destination)
+                }
+            }
+        }
+        .padding(.horizontal, style.horizontalPadding)
+        .padding(.top, iOSSidebarMetrics.groupSpacing)
+        .padding(.bottom, iOSSidebarMetrics.groupSpacing)
+    }
+
+    /// The rows this index lists, with the user's synced sidebar layout applied.
+    private var destinationRows: [CadenceFeatureDestination] {
+        let layout = CadenceSidebarLayoutPreferenceStore.layout(from: sidebarLayoutPreferences)
+        return CadenceCompactTab.tasksIndexDestinations(
+            storedOrder: layout.order,
+            hidden: layout.hidden
+        )
+    }
+
+    /// Built once per render and handed to every row, the shape `iOSSidebar` and `SidebarView`
+    /// both use.
+    private var countInputs: CadenceSidebarCountInputs {
+        CadenceSidebarCountInputs(
+            todayOverdueCount: CadenceSidebarLayout.overdueTaskCount(
+                from: allTasks,
+                todayKey: DateFormatters.todayKey()
+            ),
+            openTaskCount: CadenceTaskQuerySupport.openTaskCount(
+                from: allTasks.filter(\.isInActiveContainer)
+            )
+        )
+    }
+
+    private func tint(for destination: CadenceFeatureDestination) -> Color {
+        let overrides = CadenceSidebarTint.overrides(from: sidebarTabColorsRaw)
+        return Color(hex: overrides[destination] ?? destination.defaultColorHex)
     }
 }
 
