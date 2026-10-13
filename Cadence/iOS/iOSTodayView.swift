@@ -156,11 +156,13 @@ struct iOSTodayView: View {
 
     /// One binding, handed to whichever layout is on screen. Both widths carry the same sort and
     /// completed controls — see `CadenceTaskSurfaceOptions`.
+    ///
+    /// A key-path projection of the stored preference, **not** `Binding(get:set:)` (T-3158): the
+    /// closure pair is a binding SwiftUI cannot compare, so every New task sheet presented over
+    /// Today re-ran `iOSCompactTodayView` and its options bar with `_sortMode changed`. The
+    /// fallback is `.priority`, as `sortMode` above reads it.
     private var sortModeBinding: Binding<CadenceTaskSortMode> {
-        Binding(
-            get: { sortMode },
-            set: { sortModeRaw = $0.rawValue }
-        )
+        $sortModeRaw[sortModeFallingBackTo: .priority]
     }
 
     private var sidePanel: iOSTodaySidePanel {

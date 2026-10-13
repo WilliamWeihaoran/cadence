@@ -27,9 +27,10 @@ struct iOSAllTasksView: View {
     /// re-run with `_sortMode changed` four times per New task sheet round trip on All Tasks — at
     /// 0, 300 and 3,000 tasks, while this view itself ran 0 times — and 0 times once the binding
     /// was this projection of `$sortModeRaw`, whose location SwiftUI can compare. Measured with
-    /// scratch `Self._printChanges()` probes on the standing iPhone simulator.
+    /// scratch `Self._printChanges()` probes on the standing iPhone simulator. Inbox and Today
+    /// project their own preference through the same subscript (T-3158).
     private var sortModeBinding: Binding<CadenceTaskSortMode> {
-        $sortModeRaw.iOSAllTasksSortMode
+        $sortModeRaw[sortModeFallingBackTo: .listOrder]
     }
 
     private var activeTasks: [AppTask] {
@@ -81,16 +82,6 @@ struct iOSAllTasksView: View {
             completedTasks: completedTasks
         ) else { return }
         showCompleted = true
-    }
-}
-
-/// The stored raw value read and written as a sort mode, so `sortModeBinding` can be a key-path
-/// projection of the `@AppStorage` binding rather than a closure pair (T-3156). An unknown raw
-/// value reads as `.listOrder`, as `iOSAllTasksView.sortMode` does.
-private extension String {
-    var iOSAllTasksSortMode: CadenceTaskSortMode {
-        get { CadenceTaskSortMode(rawValue: self) ?? .listOrder }
-        set { self = newValue.rawValue }
     }
 }
 #endif

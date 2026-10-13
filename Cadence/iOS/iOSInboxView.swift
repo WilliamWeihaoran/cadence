@@ -26,11 +26,12 @@ struct iOSInboxView: View {
         CadenceTaskSortMode(rawValue: sortModeRaw) ?? .listOrder
     }
 
+    /// A key-path projection of the stored preference, **not** `Binding(get:set:)` (T-3158). The
+    /// closure pair is a binding SwiftUI cannot compare, so `iOSTaskCollectionPage` and its options
+    /// bar re-ran with `_sortMode changed` on every New task sheet presented over the Inbox, while
+    /// this view itself did not run — the shape T-3156 measured and fixed on All Tasks.
     private var sortModeBinding: Binding<CadenceTaskSortMode> {
-        Binding(
-            get: { sortMode },
-            set: { sortModeRaw = $0.rawValue }
-        )
+        $sortModeRaw[sortModeFallingBackTo: .listOrder]
     }
 
     private var inboxTasks: [AppTask] {

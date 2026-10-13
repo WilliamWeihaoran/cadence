@@ -21,6 +21,25 @@ enum CadenceTaskSortMode: String, CaseIterable, Hashable, Identifiable {
     }
 }
 
+// MARK: - A stored raw value as a sort mode (T-3156, T-3158)
+
+/// The stored raw value read and written as a sort mode, so a page's `sortModeBinding` can be a
+/// key-path projection of its `@AppStorage` binding rather than a closure pair (T-3156, T-3158).
+/// An unknown raw value reads as `fallback`, which is each surface's own default: `.listOrder` for
+/// All Tasks and Inbox, `.priority` for Today, as their `sortMode` properties read it.
+///
+/// A subscript rather than one property per surface, because the fallback is the only thing the
+/// three differ in. Its argument is `Hashable`, so the key path stays comparable — which is the
+/// whole point: `$sortModeRaw[sortModeFallingBackTo: .listOrder]` is the same location on every
+/// pass, and a `Binding(get:set:)` never is. Here rather than beside the iOS pages because it is
+/// ordinary `String` code, which lets `CadenceIOSAllTasksSortBindingTests` run it on macOS.
+extension String {
+    subscript(sortModeFallingBackTo fallback: CadenceTaskSortMode) -> CadenceTaskSortMode {
+        get { CadenceTaskSortMode(rawValue: self) ?? fallback }
+        set { self = newValue.rawValue }
+    }
+}
+
 // MARK: - The retired macOS vocabulary (T-606)
 
 extension CadenceTaskSortMode {
