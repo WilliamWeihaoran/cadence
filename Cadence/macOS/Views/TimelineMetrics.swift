@@ -354,6 +354,7 @@ func computeTimelineBlockFrame(
     durationMinutes: Int,
     column: Int,
     totalColumns: Int,
+    cascadeDepth: Int = 0,
     totalWidth: CGFloat,
     metrics: TimelineMetrics,
     style: TimelineBlockStyle
@@ -363,6 +364,7 @@ func computeTimelineBlockFrame(
         durationMinutes: durationMinutes,
         column: column,
         totalColumns: totalColumns,
+        cascadeDepth: cascadeDepth,
         totalWidth: totalWidth,
         metrics: metrics,
         style: style
@@ -371,12 +373,23 @@ func computeTimelineBlockFrame(
 
 // MARK: - Unified Layout (tasks + events, overlap-aware)
 
-/// Computes column assignments for tasks and events together so they never visually overlap.
+/// Computes column assignments for tasks, bundles and events together, plus the cascade depth that
+/// lets a late-starting event be drawn *over* an event it overlaps rather than beside it (T-3161).
+///
+/// `cascadeGapMinutes` comes from `CadenceCalendarOverlapLayout.cascadeGapMinutes(headerHeight:
+/// hourHeight:)` — the event block's own header height converted into minutes at the canvas's
+/// current zoom.
 func computeUnifiedLayouts(
     tasks: [AppTask],
     bundles: [TaskBundle] = [],
-    events: [CalendarEventItem]
+    events: [CalendarEventItem],
+    cascadeGapMinutes: Int
 ) -> (tasks: [TimelineBlockLayout], bundles: [TimelineBundleLayout], events: [TimelineEventLayout]) {
-    TimelineMetricsSupport.computeUnifiedLayouts(tasks: tasks, bundles: bundles, events: events)
+    TimelineMetricsSupport.computeUnifiedLayouts(
+        tasks: tasks,
+        bundles: bundles,
+        events: events,
+        cascadeGapMinutes: cascadeGapMinutes
+    )
 }
 #endif

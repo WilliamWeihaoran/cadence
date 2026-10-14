@@ -934,15 +934,23 @@ private struct iOSCalendarTimelineDayColumn: View {
                     .offset(x: 7, y: yOffset(for: bundle.startMin))
             }
 
+            // **This column had no overlap layout at all** (T-3161): every event was drawn at the
+            // full `colWidth - 18`, so two overlapping events sat exactly on top of one another
+            // and the lower one was simply invisible. It now reads the same shared solver macOS
+            // does — equal columns for events that start close together, and Apple-Calendar-style
+            // cascade for one that starts a header's worth of minutes after the one it overlaps.
+            // Tasks and bundles are left alone: they still draw full width, as they always have.
+            let placements = eventPlacements
             ForEach(timedEvents, id: \.calendarItemIdentifier) { event in
                 // The column's own day, so an event that crosses midnight draws the part that
                 // belongs here. `frame` uses the range clamped into the drawn hours; the block
                 // still labels itself with the true one.
                 let range = iOSCalendarEventSupport.minuteRange(for: event, on: date)
                 let drawn = CadenceScheduleSupport.timelineVisibleRange(start: range.start, end: range.end)
+                let slot = eventSlotFrame(for: placements[event.calendarItemIdentifier] ?? .single)
                 iOSCalendarEventBlock(event: event, startMin: range.start, endMin: range.end)
-                    .frame(width: colWidth - 18, height: blockHeight(start: drawn.start, end: drawn.end))
-                    .offset(x: 9, y: yOffset(for: drawn.start))
+                    .frame(width: slot.width, height: blockHeight(start: drawn.start, end: drawn.end))
+                    .offset(x: slot.x, y: yOffset(for: drawn.start))
             }
 
             ForEach(tasks) { task in
@@ -1114,8 +1122,78 @@ private struct iOSCalendarTimelineDayColumn: View {
         CGFloat(CadenceScheduleSupport.calendarHourCount) * hourHeight
     }
 
+    /// Gutter between two event blocks that split a column, matching the Mac canvas's
+    /// `TimelineBlockStyle.columnSpacing`. Not applied when there is only one column, so a day with
+    /// no overlaps keeps the exact width it had before T-3161.
+    private var iOSTimelineEventColumnSpacing: CGFloat { 2 }
+
+    /// The day's timed events **in start order**, ties broken by their order in `events`.
+    ///
+    /// The order is load-bearing rather than tidy: a `ZStack` draws its children in order and
+    /// hit-tests the last one first, so start order is what makes the later-starting block of a
+    /// cascade the one painted on top *and* the one that answers a tap where the two overlap.
     private var timedEvents: [EKEvent] {
         events.filter { !$0.isAllDay }
+            .enumerated()
+            .sorted { lhs, rhs in
+                let left = CadenceScheduleSupport.timelineVisibleRange(
+                    start: iOSCalendarEventSupport.minuteRange(for: lhs.element, on: date).start,
+                    end: iOSCalendarEventSupport.minuteRange(for: lhs.element, on: date).end
+                ).start
+                let right = CadenceScheduleSupport.timelineVisibleRange(
+                    start: iOSCalendarEventSupport.minuteRange(for: rhs.element, on: date).start,
+                    end: iOSCalendarEventSupport.minuteRange(for: rhs.element, on: date).end
+                ).start
+                if left != right { return left < right }
+                return lhs.offset < rhs.offset
+            }
+            .map(\.element)
+    }
+
+    /// Column + cascade depth per timed event, keyed the way the `ForEach` identifies them.
+    ///
+    /// Solved over the **drawn** minute range, not the true one, because overlap here is a question
+    /// about rectangles on this column: an event that began yesterday is clamped to the top of the
+    /// grid and overlaps whatever is drawn there.
+    ///
+    /// Events only. Tasks and bundles on this surface have never had an overlap layout — they draw
+    /// full width and stack — and giving events one does not change that, so an event and a task at
+    /// the same hour still overlap exactly as they did before this ticket.
+    private var eventPlacements: [String: CadenceCalendarOverlapPlacement] {
+        let ordered = timedEvents
+        let slots = ordered.map { event -> CadenceCalendarOverlapLayout.Slot in
+            let range = iOSCalendarEventSupport.minuteRange(for: event, on: date)
+            let drawn = CadenceScheduleSupport.timelineVisibleRange(start: range.start, end: range.end)
+            return CadenceCalendarOverlapLayout.Slot(
+                startMin: drawn.start,
+                endMin: max(drawn.end, drawn.start + CadenceCalendarOverlapLayout.minimumSlotMinutes),
+                mayCascade: true
+            )
+        }
+        let placements = CadenceCalendarOverlapLayout.solve(
+            slots: slots,
+            cascadeGapMinutes: CadenceCalendarOverlapLayout.cascadeGapMinutes(
+                headerHeight: CadenceCalendarOverlapLayout.iOSEventHeaderHeight,
+                hourHeight: hourHeight
+            )
+        )
+        return Dictionary(
+            zip(ordered.map(\.calendarItemIdentifier), placements),
+            uniquingKeysWith: { first, _ in first }
+        )
+    }
+
+    /// Leading offset and width for one placed event block.
+    ///
+    /// The 9pt inset and the `colWidth - 18` usable width are the ones this column has always used;
+    /// a single un-overlapped event gets exactly them back, so a day with no overlaps is unchanged.
+    private func eventSlotFrame(for placement: CadenceCalendarOverlapPlacement) -> (x: CGFloat, width: CGFloat) {
+        let usable = max(0, colWidth - 18)
+        let columns = max(placement.totalColumns, 1)
+        let columnWidth = usable / CGFloat(columns)
+        let slotWidth = max(0, columnWidth - (columns > 1 ? iOSTimelineEventColumnSpacing : 0))
+        let indent = CadenceCalendarOverlapLayout.cascadeIndent(slotWidth: slotWidth, depth: placement.cascadeDepth)
+        return (9 + CGFloat(placement.column) * columnWidth + indent, max(0, slotWidth - indent))
     }
 
     private func yOffset(for minute: Int) -> CGFloat {

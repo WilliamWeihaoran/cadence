@@ -44,6 +44,7 @@ struct TimelineEventBlock: View {
             durationMinutes: effectiveDuration,
             column: layout.column,
             totalColumns: layout.totalColumns,
+            cascadeDepth: layout.cascadeDepth,
             totalWidth: totalWidth,
             metrics: metrics,
             style: style

@@ -69,7 +69,12 @@ struct TimelineDayCanvas: View {
     }
 
     var body: some View {
-        let unified = computeUnifiedLayouts(tasks: tasks, bundles: bundles, events: externalEvents)
+        let unified = computeUnifiedLayouts(
+            tasks: tasks,
+            bundles: bundles,
+            events: externalEvents,
+            cascadeGapMinutes: cascadeGapMinutes
+        )
         let layouts = unified.tasks
         let bundleLayouts = unified.bundles
         let eventLayouts = unified.events
@@ -370,26 +375,47 @@ struct TimelineDayCanvas: View {
                 totalColumns: layout.totalColumns
             )
         } + eventLayouts.map { layout in
+            // `cascadeDepth` is passed, not dropped. These rects are what the drag-to-create layer
+            // treats as occupied, and an event drawn indented at depth 2 occupies a *narrower*
+            // rect than its column — without the depth the canvas would refuse a drag in a strip
+            // the user can see is empty (T-3161).
             timelineFrame(
                 startMinute: layout.item.startMin,
                 durationMinutes: layout.item.durationMinutes,
                 column: layout.column,
-                totalColumns: layout.totalColumns
+                totalColumns: layout.totalColumns,
+                cascadeDepth: layout.cascadeDepth
             )
         }
+    }
+
+    /// Start-gap, in minutes, at which an event may be drawn over an event it overlaps.
+    ///
+    /// The event block's own header height divided by this canvas's points-per-minute — so it
+    /// follows the zoom control without anyone having to remember that it should. See
+    /// `CadenceCalendarOverlapLayout`.
+    private var cascadeGapMinutes: Int {
+        CadenceCalendarOverlapLayout.cascadeGapMinutes(
+            headerHeight: CadenceCalendarOverlapLayout.macEventHeaderHeight(
+                verticalPadding: style.verticalPadding
+            ),
+            hourHeight: metrics.hourHeight
+        )
     }
 
     private func timelineFrame(
         startMinute: Int,
         durationMinutes: Int,
         column: Int,
-        totalColumns: Int
+        totalColumns: Int,
+        cascadeDepth: Int = 0
     ) -> TimelineBlockFrame {
         computeTimelineBlockFrame(
             startMinute: startMinute,
             durationMinutes: durationMinutes,
             column: column,
             totalColumns: totalColumns,
+            cascadeDepth: cascadeDepth,
             totalWidth: width,
             metrics: metrics,
             style: style

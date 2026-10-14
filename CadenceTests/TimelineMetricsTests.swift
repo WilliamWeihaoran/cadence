@@ -107,7 +107,7 @@ struct TimelineMetricsTests {
         taskC.scheduledStartMin = 605
         taskC.estimatedMinutes = 10
 
-        let result = computeUnifiedLayouts(tasks: [taskA, taskB, taskC], bundles: [], events: [])
+        let result = computeUnifiedLayouts(tasks: [taskA, taskB, taskC], bundles: [], events: [], cascadeGapMinutes: 24)
 
         #expect(result.tasks.count == 3)
         let columns = Set(result.tasks.map(\.column))
@@ -132,7 +132,7 @@ struct TimelineMetricsTests {
             durationMinutes: 30
         )
 
-        let result = computeUnifiedLayouts(tasks: [task], bundles: [bundle], events: [])
+        let result = computeUnifiedLayouts(tasks: [task], bundles: [bundle], events: [], cascadeGapMinutes: 24)
 
         #expect(result.tasks.count == 1)
         #expect(result.bundles.count == 1)
@@ -152,7 +152,7 @@ struct TimelineMetricsTests {
         laterTask.scheduledStartMin = 600
         laterTask.estimatedMinutes = 30
 
-        let result = computeUnifiedLayouts(tasks: [earlyTask, laterTask], bundles: [], events: [])
+        let result = computeUnifiedLayouts(tasks: [earlyTask, laterTask], bundles: [], events: [], cascadeGapMinutes: 24)
         #expect(result.tasks.allSatisfy { $0.column == 0 && $0.totalColumns == 1 })
     }
 
@@ -291,7 +291,7 @@ struct TimelineMetricsTests {
         scheduled.scheduledStartMin = 600
         scheduled.estimatedMinutes = 30
 
-        let result = computeUnifiedLayouts(tasks: [unscheduled, scheduled], bundles: [], events: [])
+        let result = computeUnifiedLayouts(tasks: [unscheduled, scheduled], bundles: [], events: [], cascadeGapMinutes: 24)
 
         #expect(result.tasks.map { $0.task.id } == [scheduled.id])
         // ...and the real task keeps the full width it would have had to share.
