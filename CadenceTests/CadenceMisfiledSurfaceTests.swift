@@ -355,11 +355,11 @@ struct TodayAndInboxNamingTests {
             ),
             "iPadTodayTaskHeader": (
                 "Cadence/iOS/iOSTodayView.swift",
-                "case.twoPane:twoPaneTodayLayout(width:width)"
+                "case.twoPane:twoPaneTodayLayout(width:width,content:content)"
             ),
             "iPadTodayInspectorSwitcher": (
                 "Cadence/iOS/iOSTodayView.swift",
-                "case.twoPane:twoPaneTodayLayout(width:width)"
+                "case.twoPane:twoPaneTodayLayout(width:width,content:content)"
             )
         ]
 

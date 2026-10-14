@@ -109,14 +109,18 @@ struct iOSTodayView: View {
         )
     }
 
-    /// `nil` when there is nothing to roll or the day's notice has already been dismissed. The
-    /// banner opts in whole — the tasks and the action are useless apart.
-    private var rolloverNotice: iOSTodayRolloverNotice? {
-        guard isRolloverNoticeVisible else { return nil }
-        return iOSTodayRolloverNotice(
-            tasks: pastDoTasks,
-            failureNotice: rolloverFailureNotice,
-            onRollOver: rollOverPastDoTasks
+    /// Everything the task list draws, read from the store **once per body pass** (T-3159). The
+    /// rollover tasks are `nil` when there is nothing to roll or the day's notice has already been
+    /// dismissed; `iOSTodayRolloverNotice(content:onRollOver:)` turns them back into the banner,
+    /// which opts in whole — the tasks and the action are useless apart.
+    private var listContent: CadenceTodayListContent {
+        CadenceTodayListContent(
+            todayKey: todayKey,
+            taskGroups: todayTaskGroups,
+            completedTasks: completedTodayTasks,
+            rolloverTasks: isRolloverNoticeVisible ? pastDoTasks : nil,
+            rolloverFailureNotice: rolloverFailureNotice,
+            summary: todaySummary
         )
     }
 
@@ -177,8 +181,14 @@ struct iOSTodayView: View {
     }
 
     var body: some View {
+        // Read here, in the page's own body, and captured by the reader's closure below — never
+        // computed inside it (T-3159). The closure runs again whenever the proxy changes, with no
+        // pass of this body; while it called the four whole-store filters itself, every New task
+        // sheet presented over Today re-ran them and rebuilt `iOSCompactTodayView` 3 times per
+        // round trip, at any store size.
+        let content = listContent
         GeometryReader { proxy in
-            todayLayout(width: proxy.size.width)
+            todayLayout(width: proxy.size.width, content: content)
                 .frame(width: proxy.size.width, height: proxy.size.height, alignment: .top)
         }
         .background(Theme.bg.ignoresSafeArea())
@@ -205,15 +215,15 @@ struct iOSTodayView: View {
     }
 
     @ViewBuilder
-    private func todayLayout(width: CGFloat) -> some View {
+    private func todayLayout(width: CGFloat, content: CadenceTodayListContent) -> some View {
         // Two panes or one; there is no third layout and no stored preference feeding this. See
         // `CadenceTodayLayoutSupport`, which derives the two-pane floor from the panes' own
         // minimums.
         switch CadenceTodayLayoutSupport.layout(isRegularWidth: isRegularWidth, paneWidth: width) {
         case .twoPane:
-            twoPaneTodayLayout(width: width)
+            twoPaneTodayLayout(width: width, content: content)
         case .compact:
-            compactTodayLayout
+            compactTodayLayout(content)
         }
     }
 
@@ -221,9 +231,9 @@ struct iOSTodayView: View {
     /// decides whether this layout renders at all. It used to own the floor while this view owned
     /// the widths, and the two disagreed about whether the `Divider()` below existed — see
     /// `taskPaneWidth(forPaneWidth:)`.
-    private func twoPaneTodayLayout(width: CGFloat) -> some View {
+    private func twoPaneTodayLayout(width: CGFloat, content: CadenceTodayListContent) -> some View {
         HStack(spacing: 0) {
-            todayTaskColumn
+            todayTaskColumn(content)
                 .frame(width: CadenceTodayLayoutSupport.taskPaneWidth(forPaneWidth: width))
                 .layoutPriority(0.58)
 
@@ -265,30 +275,36 @@ struct iOSTodayView: View {
         }
     }
 
+    /// Through `iOSCompactTodayHost`, compared with `.equatable()` on what it draws, so a pass of
+    /// the reader's closure that moved none of it builds no `iOSCompactTodayView` (T-3159). The
+    /// two stored preferences go in as values as well as bindings: a binding reads its storage
+    /// live, so comparing two of them could never see the toggle that made them differ.
     @ViewBuilder
-    private var compactTodayLayout: some View {
+    private func compactTodayLayout(_ content: CadenceTodayListContent) -> some View {
         #if DEBUG
-        iOSCompactTodayView(
+        iOSCompactTodayHost(
             showsHeader: showsCompactHeader,
-            completedTodayTasks: completedTodayTasks,
-            todayTaskGroups: todayTaskGroups,
-            rolloverNotice: rolloverNotice,
-            summary: todaySummary,
+            content: content,
+            sortModeValue: sortMode,
+            showCompletedValue: showCompleted,
             sortMode: sortModeBinding,
             showCompleted: $showCompleted,
+            onRollOver: rollOverPastDoTasks,
             sampleDataStatus: sampleDataStatus,
             seedSampleData: seedSampleData
         )
+        .equatable()
         #else
-        iOSCompactTodayView(
+        iOSCompactTodayHost(
             showsHeader: showsCompactHeader,
-            completedTodayTasks: completedTodayTasks,
-            todayTaskGroups: todayTaskGroups,
-            rolloverNotice: rolloverNotice,
-            summary: todaySummary,
+            content: content,
+            sortModeValue: sortMode,
+            showCompletedValue: showCompleted,
             sortMode: sortModeBinding,
-            showCompleted: $showCompleted
+            showCompleted: $showCompleted,
+            onRollOver: rollOverPastDoTasks
         )
+        .equatable()
         #endif
     }
 
@@ -297,19 +313,19 @@ struct iOSTodayView: View {
     /// header row itself — see `iPadTodayTaskHeader`. It cost ~70pt of a column whose whole job is
     /// showing tasks, and it was the last chrome band left after the capture field ("Add a task for
     /// today…", replaced by the corner composer button) and the layout picker were removed from it.
-    private var todayTaskColumn: some View {
+    private func todayTaskColumn(_ content: CadenceTodayListContent) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             iPadTodayTaskHeader(
                 day: Date(),
                 title: "Today",
-                summary: todaySummary,
+                summary: content.summary,
                 sortMode: sortModeBinding,
                 showCompleted: $showCompleted
             )
 
             Divider().background(Theme.borderSubtle)
 
-            todayTaskSections
+            todayTaskSections(content)
         }
         .background(Theme.surface)
     }
@@ -322,9 +338,9 @@ struct iOSTodayView: View {
     /// The scroll container and its gutters stay here, because they are the *column's* and not the
     /// list's — the header above sits outside this scroll view so a two-pane column keeps its title
     /// while the rows move.
-    private var todayTaskSections: some View {
+    private func todayTaskSections(_ content: CadenceTodayListContent) -> some View {
         ScrollView {
-            todaySections
+            todaySections(content)
                 .frame(
                     maxWidth: iOSTodayTaskSections.contentMaxWidth(layout: .twoPane),
                     alignment: .leading
@@ -340,24 +356,24 @@ struct iOSTodayView: View {
         .background(Theme.surface)
     }
 
-    private var todaySections: some View {
+    private func todaySections(_ content: CadenceTodayListContent) -> some View {
         #if DEBUG
         iOSTodayTaskSections(
             layout: .twoPane,
-            taskGroups: todayTaskGroups,
-            completedTasks: completedTodayTasks,
+            taskGroups: content.taskGroups,
+            completedTasks: content.completedTasks,
             showsCompleted: $showCompleted,
-            rolloverNotice: rolloverNotice,
+            rolloverNotice: iOSTodayRolloverNotice(content: content, onRollOver: rollOverPastDoTasks),
             sampleDataStatus: sampleDataStatus,
             seedSampleData: seedSampleData
         )
         #else
         iOSTodayTaskSections(
             layout: .twoPane,
-            taskGroups: todayTaskGroups,
-            completedTasks: completedTodayTasks,
+            taskGroups: content.taskGroups,
+            completedTasks: content.completedTasks,
             showsCompleted: $showCompleted,
-            rolloverNotice: rolloverNotice
+            rolloverNotice: iOSTodayRolloverNotice(content: content, onRollOver: rollOverPastDoTasks)
         )
         #endif
     }
@@ -380,6 +396,66 @@ struct iOSTodayView: View {
         }
     }
     #endif
+}
+
+/// **The phone's Today list, behind an equality the GeometryReader's closure can use** (T-3159).
+///
+/// `iOSTodayView` builds this inside its `GeometryReader`, whose closure re-runs on every proxy
+/// change; `iOSCompactTodayView` holds closures (the rollover action, the DEBUG seeder) that no
+/// comparison can see through, so without this every such pass rebuilt it — `Self._printChanges()`
+/// printed `@self changed` for it and for `iOSTodayTaskSections` 3 times per New task round trip.
+/// `==` compares what the list actually draws and leaves the closures out: they act on the page's
+/// own `@State` / `@Query` storage, which a skipped rebuild still reaches.
+struct iOSCompactTodayHost: View, Equatable {
+    let showsHeader: Bool
+    let content: CadenceTodayListContent
+    /// The values the two bindings below held when this was built — compared, because the
+    /// bindings themselves read their storage live and so always agree with each other.
+    let sortModeValue: CadenceTaskSortMode
+    let showCompletedValue: Bool
+    let sortMode: Binding<CadenceTaskSortMode>
+    let showCompleted: Binding<Bool>
+    let onRollOver: () -> Void
+    #if DEBUG
+    let sampleDataStatus: String?
+    let seedSampleData: () -> Void
+    #endif
+
+    static func == (lhs: iOSCompactTodayHost, rhs: iOSCompactTodayHost) -> Bool {
+        #if DEBUG
+        guard lhs.sampleDataStatus == rhs.sampleDataStatus else { return false }
+        #endif
+        return lhs.showsHeader == rhs.showsHeader
+            && lhs.sortModeValue == rhs.sortModeValue
+            && lhs.showCompletedValue == rhs.showCompletedValue
+            && lhs.content == rhs.content
+    }
+
+    var body: some View {
+        #if DEBUG
+        iOSCompactTodayView(
+            showsHeader: showsHeader,
+            completedTodayTasks: content.completedTasks,
+            todayTaskGroups: content.taskGroups,
+            rolloverNotice: iOSTodayRolloverNotice(content: content, onRollOver: onRollOver),
+            summary: content.summary,
+            sortMode: sortMode,
+            showCompleted: showCompleted,
+            sampleDataStatus: sampleDataStatus,
+            seedSampleData: seedSampleData
+        )
+        #else
+        iOSCompactTodayView(
+            showsHeader: showsHeader,
+            completedTodayTasks: content.completedTasks,
+            todayTaskGroups: content.taskGroups,
+            rolloverNotice: iOSTodayRolloverNotice(content: content, onRollOver: onRollOver),
+            summary: content.summary,
+            sortMode: sortMode,
+            showCompleted: showCompleted
+        )
+        #endif
+    }
 }
 
 #endif

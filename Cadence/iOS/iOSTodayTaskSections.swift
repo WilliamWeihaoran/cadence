@@ -14,6 +14,15 @@ struct iOSTodayRolloverNotice {
     let onRollOver: () -> Void
 }
 
+extension iOSTodayRolloverNotice {
+    /// The banner for `content`, or `nil` when it carries no rollover tasks — the one place the
+    /// page's read-once list content (T-3159) becomes the notice both widths draw.
+    init?(content: CadenceTodayListContent, onRollOver: @escaping () -> Void) {
+        guard let tasks = content.rolloverTasks else { return nil }
+        self.init(tasks: tasks, failureNotice: content.rolloverFailureNotice, onRollOver: onRollOver)
+    }
+}
+
 // `iOSTodayOverdueSummaries` was here, with the `PAST DUE LISTS` and `PAST DUE SECTIONS` bands it
 // opted this view into, and `iOSTodayOverdueListSheet` was at the foot of this file as the page a
 // tapped card opened. All of it is gone at the owner's direction — *"we should remove the banners

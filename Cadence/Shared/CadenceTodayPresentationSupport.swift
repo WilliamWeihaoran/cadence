@@ -89,3 +89,61 @@ enum CadenceTodayPresentationSupport {
     // `CadenceEmptyStateAuditTests.noMacReachableCopyAsksForATouchGesture` walks this folder as
     // well as `Cadence/macOS/`, so the next one cannot land here quietly.
 }
+
+/// **Everything Today's task list draws, read from the store once per page body** (T-3159).
+///
+/// iOS's `iOSTodayView` lays itself out in a `GeometryReader`, and that reader's content closure
+/// runs again whenever its proxy changes — with no pass of the page's own body. The closure used
+/// to call the four whole-store filters itself (`todayTaskGroups`, `completedTodayTasks`, the
+/// rollover notice and the summary), so presenting the New task sheet over Today re-ran them and
+/// rebuilt `iOSCompactTodayView` 3 times per round trip at any store size. The page now builds this
+/// value in `body` and hands it into the closure, and the compact host compares it to skip a
+/// rebuild whose inputs did not move.
+///
+/// **Equality is by task identity, not by task contents, and that is deliberate.** A row observes
+/// its own `AppTask`, so an in-place edit (a title, a flag) redraws that row without this value
+/// changing; what this value has to notice is a change in *which* tasks are drawn, in what order,
+/// under which heading — and every heading field is compared by value.
+struct CadenceTodayListContent: Equatable {
+    /// The day the lists were read for. Part of equality so a midnight roll is never skipped,
+    /// even across a day whose lists happen to be empty both sides.
+    let todayKey: String
+    let taskGroups: [CadenceTodayTaskGroup]
+    let completedTasks: [AppTask]
+    /// The tasks the rollover banner offers, or `nil` when the banner is down.
+    let rolloverTasks: [AppTask]?
+    let rolloverFailureNotice: String?
+    let summary: CadenceTodaySummary
+
+    static func == (lhs: CadenceTodayListContent, rhs: CadenceTodayListContent) -> Bool {
+        lhs.todayKey == rhs.todayKey
+            && lhs.summary == rhs.summary
+            && lhs.rolloverFailureNotice == rhs.rolloverFailureNotice
+            && sameTasks(lhs.completedTasks, rhs.completedTasks)
+            && sameOptionalTasks(lhs.rolloverTasks, rhs.rolloverTasks)
+            && lhs.taskGroups.count == rhs.taskGroups.count
+            && zip(lhs.taskGroups, rhs.taskGroups).allSatisfy { sameGroup($0, $1) }
+    }
+
+    static func sameTasks(_ lhs: [AppTask], _ rhs: [AppTask]) -> Bool {
+        lhs.count == rhs.count && zip(lhs, rhs).allSatisfy { $0 === $1 }
+    }
+
+    private static func sameOptionalTasks(_ lhs: [AppTask]?, _ rhs: [AppTask]?) -> Bool {
+        switch (lhs, rhs) {
+        case (nil, nil): true
+        case let (lhs?, rhs?): sameTasks(lhs, rhs)
+        default: false
+        }
+    }
+
+    private static func sameGroup(_ lhs: CadenceTodayTaskGroup, _ rhs: CadenceTodayTaskGroup) -> Bool {
+        lhs.listKey == rhs.listKey
+            && lhs.title == rhs.title
+            && lhs.accent == rhs.accent
+            && lhs.listIcon == rhs.listIcon
+            && lhs.contextIcon == rhs.contextIcon
+            && lhs.contextColor == rhs.contextColor
+            && sameTasks(lhs.tasks, rhs.tasks)
+    }
+}
