@@ -82,10 +82,18 @@ struct CalendarChipDueMarker: View {
 
 /// Shared chip chrome for the month grid.
 ///
-/// Tasks get a faint neutral plate so each row stays its own click target; events keep the
-/// saturated filled plate they already had. Keeping the two fills different is deliberate —
-/// with the completion circle removed from events, fill is the only thing left distinguishing
-/// a calendar event from a task at a glance.
+/// Keeping a task's fill and an event's fill different is still the rule; T-3160 swapped **which**
+/// one each wears. A task now takes `CadenceCalendarEventStyle.plate*` — the bright
+/// luminance-solved fill with `Theme.onColor` ink — and an event takes `rail*`, the far darker
+/// tinted plate with its title in the calendar's own hue. Both are opaque solved plates in their
+/// own object's colour, so neither needs the neutral surface underneath it any more.
+///
+/// `wash` survives for `MonthBundleChip`, which is an amber tint over the neutral surface rather
+/// than a solved plate. **Neither solved plate may take one.** `Theme.subtleWash` is white at
+/// 0.035, and composited over the rail plate — solved to Y = 0.030 — it lifts the plate to about
+/// Y = 0.039, which drops the title from the 5.1:1 it was solved to to roughly 4.6:1. That is
+/// still AA on paper, and it is the whole of the rounding margin `railTitleContrastTarget` exists
+/// to provide, spent on a decorative fill. Pinned by `CadenceCalendarChipTreatmentTests`.
 private struct MonthChipPlate: ViewModifier {
     let fill: AnyShapeStyle
     var wash: AnyShapeStyle?
@@ -122,9 +130,10 @@ private extension View {
     }
 }
 
-/// A task inside a month cell. Renders the same hollow completion circle the task rows use
-/// everywhere else in the app, tinted by deadline urgency rather than by list colour — the
-/// chip's own wash already carries the list.
+/// A task inside a month cell, wearing the **plate** treatment since T-3160: its list colour
+/// solved to `plateLuminance`, with `Theme.onColor` ink. That is the fill a calendar event used to
+/// wear here, and the completion circle did not move with the paint — it is the affordance, and it
+/// is still the same hollow circle the task rows draw everywhere else in the app.
 struct MonthTaskChip: View {
     let task: AppTask
     /// `yyyy-MM-dd` of the cell this chip is drawn in.
@@ -136,12 +145,18 @@ struct MonthTaskChip: View {
         return "circle"
     }
 
+    /// The urgency tints and `Theme.green` stay — they are information, and they are bright enough
+    /// to read on a plate solved to `plateLuminance`. The **neutral** fallback does not: `Theme.dim`
+    /// is a grey solved against `Theme.bg`, and on a saturated plate it is the one tint here that
+    /// has no contrast budget at all. It becomes the plate's own tertiary tier, which is solved
+    /// against the fill the glyph actually lands on.
     private var glyphTint: Color {
-        if task.isCancelled { return Theme.dim }
+        if task.isCancelled { return CadenceCalendarEventStyle.plateTertiaryLabelColor() }
         if task.isDone { return Theme.green }
         // No due date is not urgency-free noise: it collapses to the same neutral `.later`
         // tint, so only a real deadline ever colours the circle.
-        return CadenceDueUrgency.evaluate(dueDateKey: task.dueDate, isDone: task.isDone)?.tint ?? Theme.dim
+        return CadenceDueUrgency.evaluate(dueDateKey: task.dueDate, isDone: task.isDone)?.tint
+            ?? CadenceCalendarEventStyle.plateTertiaryLabelColor()
     }
 
     var body: some View {
@@ -151,15 +166,23 @@ struct MonthTaskChip: View {
                 .foregroundStyle(glyphTint)
             Text(task.title)
                 .font(.system(size: 10))
-                .foregroundStyle(task.isDone ? Theme.dim : Theme.text)
+                .foregroundStyle(
+                    task.isDone
+                        ? CadenceCalendarEventStyle.plateSecondaryLabelColor()
+                        : CadenceCalendarEventStyle.platePrimaryLabelColor
+                )
                 .lineLimit(1)
             Spacer(minLength: 2)
             CalendarChipDueMarker(dueDateKey: task.dueDate, dayKey: dayKey, isDone: task.isDone)
         }
+        // No `wash`: the fill is already this task's list colour solved to its own luminance, so a
+        // second tint of the same hue over it would only move the plate off the target the ink is
+        // solved against. A done task dims the *ink* one tier instead, which is the move the plate
+        // treatment's own ladder makes everywhere else.
         .monthChipPlate(
-            fill: Theme.surfaceHover,
-            wash: Color(hex: task.containerColor).opacity(task.isDone ? 0.05 : 0.10),
-            border: Theme.borderSubtle
+            fill: CadenceCalendarEventStyle.plateChipFill(for: Color(hex: task.containerColor)),
+            border: Color(hex: task.containerColor)
+                .opacity(CadenceCalendarEventStyle.chipBorderOpacity())
         )
     }
 }
@@ -185,26 +208,44 @@ struct MonthBundleChip: View {
     }
 }
 
+/// An event inside a month cell, wearing the **rail** treatment's colours since T-3160: the dark
+/// tinted plate and the title in the calendar's own hue.
+///
+/// **No rail, and that is a measurement rather than an omission.** `railWidth` is 3pt and this chip
+/// is `CalendarMonthCellLayout.chipHeight` — 15pt — clipped to `CalendarVisualStyle.chipRadius`,
+/// which is 6. A 3pt bar laid down the leading edge of a 15pt rounded rectangle is cut away by both
+/// corners for 12 of those 15 points, leaving a 3x3 nub in the middle: that reads as a smudge of
+/// paint, not as the identity marker a rail is. Apple draws the same conclusion in its own month
+/// grid, where an event is a tinted chip or a dot and the rail appears only on the day and week
+/// canvases, where a block is tens of points tall. So the treatment arrives here as colour.
+///
+/// The rail's *colour* does not vanish with the rail: it becomes the chip's edge. The border is
+/// `railColor(for:)` rather than the raw calendar colour because `railColor` carries the
+/// `railMinimumLuminance` floor, so a near-black calendar still gets a visible rim — and it is
+/// drawn on the `chipBorderOpacity` ladder rather than the quieter `railBorderOpacity` one, which
+/// is quiet precisely because a rail is marking the leading edge for it. Here nothing is.
 struct MonthEventChip: View {
     let event: CalendarEventItem
     var calendar: Calendar = .current
 
     var body: some View {
-        // Plain `Theme.onColor` rather than `onColor(for:)`, and deliberately: the plate below is
-        // `CalendarEventVisualStyle.chipFill`, solved to a luminance target well under
-        // `Theme.onColorCrossoverLuminance`, so white is the better ink on it whatever the calendar
-        // colour is. Asking the function would return white every time. Pinned by
-        // `CadenceContrastFloorTests.theSolvedCalendarFillsStayBelowTheCrossoverSoTheirWhiteInkIsRight`.
+        // Every tier below is solved against `railChipFill`'s own plate, so none of them is a
+        // constant any more: the title clears `railTitleContrastTarget` and the time range
+        // `railSecondaryContrastTarget` against the exact fill they land on. Pinned by
+        // `CadenceContrastFloorTests.everyRailTreatmentTierLandsOnItsDeclaredRatioAgainstItsOwnPlate`
+        // and, for which chip reads which family, by `CadenceCalendarChipTreatmentTests`.
         HStack(spacing: 4) {
             Text(event.title)
                 .font(.system(size: 10))
-                .foregroundStyle(Theme.onColor)
+                .foregroundStyle(CadenceCalendarEventStyle.railTitleColor(for: event.calendarColor))
                 .lineLimit(1)
             if let time = event.chipTimeLabel(calendar: calendar) {
                 Spacer(minLength: 2)
                 Text(time)
                     .font(.system(size: 10))
-                    .foregroundStyle(Theme.onColorSecondary)
+                    .foregroundStyle(
+                        CadenceCalendarEventStyle.railSecondaryLabelColor(for: event.calendarColor)
+                    )
                     .lineLimit(1)
                     .fixedSize()
                     // Same rule as the due marker: the chip is one non-wrapping line in a column
@@ -213,9 +254,9 @@ struct MonthEventChip: View {
             }
         }
         .monthChipPlate(
-            fill: CalendarEventVisualStyle.chipFill(for: event.calendarColor),
-            wash: Theme.subtleWash,
-            border: event.calendarColor.opacity(CalendarEventVisualStyle.chipBorderOpacity())
+            fill: CadenceCalendarEventStyle.railChipFill(for: event.calendarColor),
+            border: CadenceCalendarEventStyle.railColor(for: event.calendarColor)
+                .opacity(CadenceCalendarEventStyle.chipBorderOpacity())
         )
     }
 }
@@ -474,10 +515,14 @@ struct AllDayTaskChip: View {
     let dayKey: String
     @State private var showInspector = false
 
+    /// Same rule as `MonthTaskChip.glyphTint`, and for the same reason: urgency and done-green are
+    /// information that survives the plate, `Theme.dim` is a grey solved against `Theme.bg` that
+    /// does not.
     private var allDayGlyphTint: Color {
-        if task.isCancelled { return Theme.dim }
+        if task.isCancelled { return CadenceCalendarEventStyle.plateTertiaryLabelColor() }
         if task.isDone { return Theme.green }
-        return CadenceDueUrgency.evaluate(dueDateKey: task.dueDate, isDone: task.isDone)?.tint ?? Theme.dim
+        return CadenceDueUrgency.evaluate(dueDateKey: task.dueDate, isDone: task.isDone)?.tint
+            ?? CadenceCalendarEventStyle.plateTertiaryLabelColor()
     }
 
     var body: some View {
@@ -487,7 +532,11 @@ struct AllDayTaskChip: View {
                 .foregroundStyle(allDayGlyphTint)
             Text(task.title)
                 .font(.system(size: 10))
-                .foregroundStyle(task.isDone ? Theme.dim : Theme.text)
+                .foregroundStyle(
+                    task.isDone
+                        ? CadenceCalendarEventStyle.plateSecondaryLabelColor(isActive: showInspector)
+                        : CadenceCalendarEventStyle.platePrimaryLabelColor
+                )
                 .lineLimit(1)
             Spacer(minLength: 2)
             CalendarChipDueMarker(dueDateKey: task.dueDate, dayKey: dayKey, isDone: task.isDone)
@@ -495,17 +544,25 @@ struct AllDayTaskChip: View {
         .padding(.horizontal, 5)
         .padding(.vertical, 3)
         .frame(maxWidth: .infinity, alignment: .leading)
+        // One solved plate rather than a neutral surface plus a tint of the list colour over it.
+        // The open-inspector state is what the two-layer form was spending its second fill on, and
+        // the plate treatment already has a state for it: `isActive` is the ladder's middle rung.
         .background(
-            ZStack {
-                RoundedRectangle(cornerRadius: CalendarVisualStyle.chipRadius)
-                    .fill(Theme.surfaceElevated)
-                RoundedRectangle(cornerRadius: CalendarVisualStyle.chipRadius)
-                    .fill(Color(hex: task.containerColor).opacity(showInspector ? 0.18 : 0.12))
-            }
+            RoundedRectangle(cornerRadius: CalendarVisualStyle.chipRadius)
+                .fill(
+                    CadenceCalendarEventStyle.plateChipFill(
+                        for: Color(hex: task.containerColor),
+                        isActive: showInspector
+                    )
+                )
         )
         .overlay(
             RoundedRectangle(cornerRadius: CalendarVisualStyle.chipRadius)
-                .strokeBorder(Theme.borderSubtle, lineWidth: 1)
+                .strokeBorder(
+                    Color(hex: task.containerColor)
+                        .opacity(CadenceCalendarEventStyle.chipBorderOpacity(isActive: showInspector)),
+                    lineWidth: 1
+                )
         )
         .shadow(color: Theme.chipShadow, radius: 4, y: 1)
         .contentShape(Rectangle())
@@ -522,6 +579,17 @@ struct AllDayTaskChip: View {
     }
 }
 
+/// An all-day event, wearing the **rail** treatment's colours since T-3160.
+///
+/// **The all-day lane was asked the rail question separately from the month grid, and answered the
+/// same way — but not because the two are the same size.** This chip is a 10pt line, so about 12pt
+/// of text, plus 2pt of padding top and bottom: roughly 16pt against the month chip's fixed 15.
+/// That is not the "taller row" a rail would need. Both are clipped to the same
+/// `CalendarVisualStyle.chipRadius` of 6, so 12 of those 16 points of the leading edge are corner
+/// and a 3pt `railWidth` bar would survive as a ~4pt nub — marginally longer than the month grid's
+/// 3pt and just as unreadable as an identity marker. The lane that *is* tall enough is the timed
+/// canvas, which is T-3161's. If the all-day banner ever grows a two-line chip this is worth
+/// re-asking; at 16pt it is not close.
 struct AllDayEventChip: View {
     let event: EKEvent
 
@@ -530,25 +598,27 @@ struct AllDayEventChip: View {
     }
 
     var body: some View {
-        // Solved `chipFill` below, so white unconditionally — same reasoning as `MonthEventChip`.
+        // Title in the calendar's own hue, solved against the plate below it — same family and
+        // same reasoning as `MonthEventChip`, including why the border is `railColor` rather than
+        // the raw calendar colour.
         Text(CadenceEventTitleSupport.displayTitle(event.title))
             .font(.system(size: 10))
-            .foregroundStyle(Theme.onColor)
+            .foregroundStyle(CadenceCalendarEventStyle.railTitleColor(for: eventColor))
             .lineLimit(1)
         .padding(.horizontal, 5)
         .padding(.vertical, 2)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
-            ZStack {
-                RoundedRectangle(cornerRadius: CalendarVisualStyle.chipRadius)
-                    .fill(CalendarEventVisualStyle.chipFill(for: eventColor))
-                RoundedRectangle(cornerRadius: CalendarVisualStyle.chipRadius)
-                    .fill(Theme.subtleWash)
-            }
+            RoundedRectangle(cornerRadius: CalendarVisualStyle.chipRadius)
+                .fill(CadenceCalendarEventStyle.railChipFill(for: eventColor))
         )
         .overlay(
             RoundedRectangle(cornerRadius: CalendarVisualStyle.chipRadius)
-                .strokeBorder(eventColor.opacity(CalendarEventVisualStyle.chipBorderOpacity()), lineWidth: 1)
+                .strokeBorder(
+                    CadenceCalendarEventStyle.railColor(for: eventColor)
+                        .opacity(CadenceCalendarEventStyle.chipBorderOpacity()),
+                    lineWidth: 1
+                )
         )
         .shadow(color: Theme.chipShadow, radius: 3, y: 1)
         .draggable(CalendarEventDragPayload.string(for: event))

@@ -419,7 +419,7 @@ private struct iOSCalendarMonthDayCell: View {
                             title: iOSCalendarEventSupport.title(for: event),
                             icon: event.isAllDay ? "calendar" : "calendar.badge.clock",
                             color: iOSCalendarEventSupport.color(for: event.calendar),
-                            isEventPlate: true
+                            isEvent: true
                         )
                     }
                     ForEach(visibleTasks) { task in
@@ -480,7 +480,7 @@ private struct iOSCalendarMonthDayCell: View {
     /// displayed month is lifted onto `Theme.surface` instead and the carried days fall back to the
     /// app background, which is a real step (#131316 against #09090b) and needs no colour below
     /// black. It stops at `surface` rather than climbing further because `iOSCalendarMiniChip`
-    /// plates itself in `Theme.surfaceElevated` — one stop more and the chips would read as holes
+    /// plates itself in its own object's colour — one stop more and the chips would read as holes
     /// punched into the cell instead of cards sitting on it.
     ///
     /// The plate answers one question only — which month is this day in — so it is split from the
@@ -522,48 +522,77 @@ private struct iOSCalendarMonthDayCell: View {
 
 /// The one-line chip a month cell or a timeline day header draws per item.
 ///
-/// `isEventPlate` gives a calendar event the solved plate of its own calendar colour — the same
-/// treatment macOS's month grid gives an event chip — while tasks and bundles keep a wash of their
-/// list colour over the neutral surface. Before, an event chip was washed like a task, so a day
-/// full of events and a day full of tasks looked the same at a glance.
+/// **Both branches are solved plates now (T-3160); what differs is which treatment.** An `isEvent`
+/// chip takes `CadenceCalendarEventStyle.rail*` — Apple Calendar's dark tinted plate with the
+/// title in the calendar's own hue — and everything Cadence owns, a task or a bundle, takes
+/// `plate*`, the bright luminance-solved fill with `Theme.onColor` ink that an event wore here
+/// until this ticket. The two are still as far apart as they were, which is the point: before any
+/// of this an event chip was washed exactly like a task, so a day full of events and a day full of
+/// tasks looked the same at a glance.
+///
+/// The flag is `isEvent` rather than the old `isEventPlate`, because after the swap an event is
+/// the one thing on this chip that is *not* wearing the plate treatment and a name that says
+/// otherwise is a trap for the next reader.
+///
+/// **No rail here either** — see `MonthEventChip` on macOS for the measurement. This chip is a
+/// 10pt line plus 2.5pt of padding, about 17pt tall, clipped to `Theme.radiusControl`; a 3pt
+/// `railWidth` bar down that leading edge is corner for most of its length. The treatment arrives
+/// as colour, which is what Apple's own month cells show at this size.
+///
+/// The icon is each family's *tertiary* tier in both branches rather than the object's own colour.
+/// It has to be: the plate is now that colour, so a list-coloured glyph on a list-coloured fill is
+/// invisible. A glyph owes the 3:1 non-text bar, which both tertiary tiers are solved to hold.
 struct iOSCalendarMiniChip: View {
     let title: String
     let icon: String
     let color: Color
-    var isEventPlate = false
+    var isEvent = false
 
     private var shape: RoundedRectangle {
         RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous)
+    }
+
+    private var plate: Color {
+        isEvent
+            ? CadenceCalendarEventStyle.railChipFill(for: color)
+            : CadenceCalendarEventStyle.plateChipFill(for: color)
+    }
+
+    /// The rim carries the rail's own solved colour on an event, so a near-black calendar still
+    /// has a visible edge — `railColor` is floored at `railMinimumLuminance`, the raw hue is not.
+    /// A task keeps its raw list colour, which is already bright enough to rim the brighter plate.
+    private var rim: Color {
+        isEvent ? CadenceCalendarEventStyle.railColor(for: color) : color
     }
 
     var body: some View {
         HStack(spacing: 4) {
             Image(systemName: icon)
                 .font(.system(size: 8, weight: .semibold))
-                .foregroundStyle(isEventPlate ? CadenceCalendarEventStyle.tertiaryLabelColor() : color)
+                .foregroundStyle(
+                    isEvent
+                        ? CadenceCalendarEventStyle.railTertiaryLabelColor(for: color)
+                        : CadenceCalendarEventStyle.plateTertiaryLabelColor()
+                )
             Text(title)
                 .font(.system(size: 10, weight: .medium))
-                .foregroundStyle(isEventPlate ? CadenceCalendarEventStyle.primaryLabelColor : Theme.text)
+                .foregroundStyle(
+                    isEvent
+                        ? CadenceCalendarEventStyle.railTitleColor(for: color)
+                        : CadenceCalendarEventStyle.platePrimaryLabelColor
+                )
                 .lineLimit(1)
         }
         .padding(.horizontal, 5)
         .padding(.vertical, 2.5)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background {
-            if isEventPlate {
-                shape.fill(CadenceCalendarEventStyle.chipFill(for: color))
-            } else {
-                ZStack {
-                    shape.fill(Theme.surfaceElevated.opacity(0.82))
-                    shape.fill(color.opacity(0.16))
-                }
-            }
-        }
+        .background { shape.fill(plate) }
         .clipShape(shape)
         .overlay {
-            if isEventPlate {
-                shape.strokeBorder(color.opacity(CadenceCalendarEventStyle.chipBorderOpacity()), lineWidth: 1)
-            }
+            shape.strokeBorder(
+                rim.opacity(CadenceCalendarEventStyle.chipBorderOpacity()),
+                lineWidth: 1
+            )
         }
     }
 }
