@@ -245,9 +245,9 @@ struct EstimatePickerPopoverContent: View {
         unit: String,
         selection: Binding<Int>
     ) -> some View {
-        EstimateRollerColumn(
+        CadenceRollerColumn(
             values: values,
-            unit: unit,
+            label: { "\($0)\(unit)" },
             selection: selection,
             isFocused: focusedColumn == id,
             // **T-1431.** The settle, from the scroll view itself rather than from a timer —
@@ -723,119 +723,12 @@ nonisolated struct EstimateRollerCommitGate: Equatable {
     }
 }
 
-/// Caps how far one gesture can carry the roller, and lands it on a whole row.
-private struct EstimateRollerScrollBehavior: ScrollTargetBehavior {
-    let rowHeight: CGFloat
-    let maxRowsPerGesture: CGFloat
-
-    func updateTarget(_ target: inout ScrollTarget, context: TargetContext) {
-        let origin = context.originalTarget.rect.minY
-        let limit = rowHeight * maxRowsPerGesture
-        let bounded = min(max(target.rect.minY, origin - limit), origin + limit)
-        // Land on a whole row regardless, so the centre band never holds a half value.
-        target.rect.origin.y = (bounded / rowHeight).rounded() * rowHeight
-    }
-}
-
-/// One roller column. The centre band is drawn *behind* the scrolling rows so it tints the well
-/// rather than the glyphs sitting in it.
-private struct EstimateRollerColumn: View {
-    let values: [Int]
-    let unit: String
-    @Binding var selection: Int
-    let isFocused: Bool
-    /// **T-1431.** `ScrollPhase.isScrolling`, forwarded up. The column decides nothing with it:
-    /// the panel owns the write and therefore owns when it happens.
-    let reportScrollPhase: (Bool) -> Void
-
-    private static let cornerRadius: CGFloat = 8
-
-    /// The column is drawn inside `EstimatePickerPopoverContent`'s declared scope, so these read
-    /// the flag back rather than naming it: the panel is the declaration and this is a private part
-    /// of it, which is why the two cannot disagree.
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-    @Environment(\.cadenceTypographyScaling) private var scaling
-
-    private var rowHeight: CGFloat { EstimateRollerMetrics.rowHeight(at: dynamicTypeSize, scaling: scaling) }
-    private var viewportHeight: CGFloat { EstimateRollerMetrics.viewportHeight(at: dynamicTypeSize, scaling: scaling) }
-
-    /// `scrollPosition` wants an optional; a nil centre (mid-fling, empty content) must not wipe
-    /// the selection.
-    private var centeredValue: Binding<Int?> {
-        Binding(
-            get: { selection },
-            set: { if let newValue = $0 { selection = newValue } }
-        )
-    }
-
-    var body: some View {
-        ScrollView(.vertical) {
-            LazyVStack(spacing: 0) {
-                ForEach(values, id: \.self) { item in
-                    Text("\(item)\(unit)")
-                        .cadenceFont(
-                            .controlLabel,
-                            base: EstimateRollerMetrics.rowLabelSize,
-                            weight: item == selection ? .semibold : .regular
-                        )
-                        .foregroundStyle(item == selection ? Theme.text : Theme.muted)
-                        .monospacedDigit()
-                        .opacity(opacity(for: item))
-                        // **T-1431.** The ramp and the tint ease instead of switching in one
-                        // frame, which is what made a scroll feel stepped while ↑/↓ did not. The
-                        // `.semibold`/`.regular` swap above is a *font*, which SwiftUI cannot
-                        // interpolate: it snaps as it always did rather than paying to re-lay-out
-                        // the text on every row the centre crosses.
-                        .animation(
-                            .easeOut(duration: EstimateRollerMetrics.rowTransitionDuration),
-                            value: selection
-                        )
-                        .frame(maxWidth: .infinity)
-                        .frame(height: rowHeight)
-                        .id(item)
-                }
-            }
-            .scrollTargetLayout()
-        }
-        .scrollIndicators(.hidden)
-        .scrollTargetBehavior(
-            EstimateRollerScrollBehavior(
-                rowHeight: rowHeight,
-                maxRowsPerGesture: EstimateRollerMetrics.maxRowsPerGesture()
-            )
-        )
-        // Lets the first and last rows reach the centre band instead of stopping at the edges.
-        .contentMargins(.vertical, (viewportHeight - rowHeight) / 2, for: .scrollContent)
-        .scrollPosition(id: centeredValue, anchor: .center)
-        // The settle, from the scroll view itself. See `EstimateRollerCommitGate`.
-        .onScrollPhaseChange { _, phase in
-            reportScrollPhase(phase.isScrolling)
-        }
-        .frame(height: viewportHeight)
-        .background(alignment: .center) {
-            RoundedRectangle(cornerRadius: 6)
-                .fill(Theme.blue.opacity(0.12))
-                .frame(height: rowHeight)
-                .padding(.horizontal, 4)
-        }
-        .background(
-            RoundedRectangle(cornerRadius: Self.cornerRadius)
-                .fill(Theme.surfaceRecessed)
-        )
-        .clipShape(RoundedRectangle(cornerRadius: Self.cornerRadius))
-        .overlay(
-            RoundedRectangle(cornerRadius: Self.cornerRadius)
-                .strokeBorder(isFocused ? Theme.blue.opacity(0.5) : Theme.borderSubtle, lineWidth: 1)
-        )
-    }
-
-    private func opacity(for item: Int) -> Double {
-        guard let itemIndex = values.firstIndex(of: item),
-              let selectedIndex = values.firstIndex(of: selection) else { return 0.35 }
-        switch abs(itemIndex - selectedIndex) {
-        case 0:  return 1
-        case 1:  return 0.55
-        default: return 0.3
-        }
-    }
-}
+// `EstimateRollerScrollBehavior` and `EstimateRollerColumn` used to be declared here.
+//
+// They are `CadenceRollerScrollBehavior` and `CadenceRollerColumn` in
+// `Shared/Components/CadenceRollerColumn.swift` now, unchanged except that the row's `unit` suffix
+// became a `label` closure (T-3169). Nothing about a scroll view whose centred row is the selection
+// was ever about durations, and the time roller the schedule panel needs is this same column three
+// times over — so the mechanism moved out rather than being written a second time. The geometry
+// stayed in `EstimateRollerMetrics` above, where its tests already are; `CadenceRollerMetrics` is a
+// typealias onto it, not a copy of it.
