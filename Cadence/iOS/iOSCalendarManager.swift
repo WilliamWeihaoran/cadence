@@ -142,6 +142,29 @@ final class iOSCalendarManager {
         )
     }
 
+    /// `TaskRecurrenceRule` as EventKit's own rule, or `nil` for `.none`.
+    ///
+    /// **One mapping, here, because there is exactly one direction to map.** Cadence's recurrence
+    /// vocabulary is `TaskRecurrenceRule` — it is what the task inspector's Repeat row, the widget
+    /// and `CadenceTaskRecurrenceWorkflowSupport` all speak — and an event created from a Cadence
+    /// surface has to carry the same five answers. Spelling the `switch` at the call site would put
+    /// EventKit's enum in a view; spelling it twice is how the app would come to disagree with
+    /// itself about what "monthly" means.
+    ///
+    /// Interval 1 and no end: the panel offers no "every 2 weeks" and no series end, so inventing
+    /// either here would be this function answering a question nothing asked.
+    static func eventRecurrenceRule(for rule: TaskRecurrenceRule) -> EKRecurrenceRule? {
+        let frequency: EKRecurrenceFrequency
+        switch rule {
+        case .none: return nil
+        case .daily: frequency = .daily
+        case .weekly: frequency = .weekly
+        case .monthly: frequency = .monthly
+        case .yearly: frequency = .yearly
+        }
+        return EKRecurrenceRule(recurrenceWith: frequency, interval: 1, end: nil)
+    }
+
     @discardableResult
     func createEvent(
         title: String,
@@ -149,7 +172,10 @@ final class iOSCalendarManager {
         endDate: Date,
         calendarID: String?,
         notes: String? = nil,
-        isAllDay: Bool = false
+        isAllDay: Bool = false,
+        /// Defaulted, so the two existing callers are byte-for-byte unchanged.
+        location: String = "",
+        repeatRule: TaskRecurrenceRule = .none
     ) -> CalendarWriteFailure? {
         guard isAuthorized, !isEventKitDisarmed else { return .notAuthorized }
         guard endDate > startDate else { return .invalidRange }
@@ -165,8 +191,17 @@ final class iOSCalendarManager {
         event.calendar = calendar
         let trimmedNotes = notes?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         event.notes = trimmedNotes.isEmpty ? nil : notes
+        let trimmedLocation = location.trimmingCharacters(in: .whitespacesAndNewlines)
+        // `nil` rather than `""`: an empty string is a location Calendar will render a blank row
+        // for, and "no location" is the absence of one.
+        event.location = trimmedLocation.isEmpty ? nil : trimmedLocation
+        if let recurrence = Self.eventRecurrenceRule(for: repeatRule) {
+            event.addRecurrenceRule(recurrence)
+        }
         do {
-            try store.save(event, span: .thisEvent)
+            // A new series is saved whole: `.thisEvent` on an event that carries a recurrence
+            // rule would ask EventKit to detach the first occurrence from a series it is creating.
+            try store.save(event, span: repeatRule == .none ? .thisEvent : .futureEvents)
             storeVersion += 1
             return nil
         } catch {

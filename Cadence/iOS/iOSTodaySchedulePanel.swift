@@ -45,9 +45,6 @@ struct iOSSchedulePanel: View {
     /// predicate query in a computed property runs on every body pass, which here would mean once
     /// per frame of a pinch. One day's fetch, re-run only when the store changes or the day does.
     @State private var todayEvents: [EKEvent] = []
-    @State private var quickCreateStartMin: Int?
-    @State private var quickCreateTitle = ""
-    @State private var quickCreateError: String?
 
     /// The invalidation token for the day this pane draws (T-3120, after [[T-3104]]).
     /// `iOSTodayView` builds this pane with no arguments, so its own midnight body pass does not
@@ -116,10 +113,14 @@ struct iOSSchedulePanel: View {
                 eventsByDate: [todayKey: todayEvents],
                 allTasks: allTasks,
                 zoom: $zoomLevel,
-                onCreateAt: { _, startMin in selectQuickCreateStart(startMin) }
+                // **Unused on this pane now, and deliberately still passed** ([[T-3169]]).
+                // `drawsDraftBlocks` makes the column open a draft instead of calling this, but the
+                // grid's other call site — the Calendar page — still routes its tap to a sheet, so
+                // the closure stays part of the column's contract rather than becoming optional for
+                // one caller. Nothing here can reach it.
+                onCreateAt: { _, _ in },
+                drawsDraftBlocks: true
             )
-
-            quickCreateComposer
         }
         // **T-586.** `Theme.surface`, and it ignores the safe area, because this pane and
         // `iOSNotesView` are the two halves of one rail: the switcher above them selects between
@@ -144,43 +145,20 @@ struct iOSSchedulePanel: View {
         .cadenceTracksDayChanges($observedDay)
     }
 
-    /// The composer, docked under the grid rather than inserted into it.
-    ///
-    /// It used to open inline, directly beneath the hour row that was tapped, and that placement
-    /// was load-bearing *for that grid*: an hour row is a flow, so a composer inserted above the
-    /// fold pushed every later hour down and the lane you had just aimed at slid out from under
-    /// your finger. The Calendar's day column is not a flow — every block is placed absolutely over
-    /// a fixed ladder — so nothing above or below the tapped minute moves when this appears, and
-    /// there is no row to open "beneath" in the first place. Docking it at the foot of the pane
-    /// keeps the grid still, which is the property the inline placement was bought for.
-    ///
-    /// It still names the minute it will create at, which is what makes a docked bar legible: the
-    /// tap is a quarter-hour (`CadenceScheduleSupport.timelineMinute`), and the bar says so.
-    @ViewBuilder
-    private var quickCreateComposer: some View {
-        if let quickCreateStartMin {
-            iOSScheduleQuickCreateBar(
-                startMin: quickCreateStartMin,
-                title: $quickCreateTitle,
-                errorMessage: quickCreateError,
-                create: createScheduledTask,
-                cancel: cancelQuickCreate
-            )
-            .padding(.horizontal, 10)
-            .padding(.bottom, 12)
-            // **T-589.** "Add a title first." used to stay red under the field while you typed the
-            // title it was asking for. `selectQuickCreateStart` and `cancelQuickCreate` were the
-            // only two clears, so the one edit that answers the complaint — typing — did not.
-            // The notice is about the field's *current* contents; the moment they change it is
-            // stating something that is no longer true, whichever of the two messages it is
-            // carrying. Attached to the composer rather than to the pane because the title can
-            // only change while the composer is up, and a clear that outlives its own field is the
-            // shape this is fixing.
-            .onChange(of: quickCreateTitle) { _, _ in
-                quickCreateError = nil
-            }
-        }
-    }
+    // `quickCreateComposer` used to be declared here, and with it the whole of the docked bar.
+    //
+    // **It is gone because it was the ticket** ([[T-3169]]). The bar sat under the canvas and said
+    // `Create at 4:00 PM` in words, so the user read a sentence about a time instead of seeing a
+    // block at it; it could make a task and never an event, on a canvas that draws both; and
+    // press-and-hold — the gesture every calendar on this platform uses to make something — did
+    // nothing at all. The owner's verdict was "it looks so ugly."
+    //
+    // What replaced it is not a prettier bar. `drawsDraftBlocks` above makes the day column itself
+    // answer the gesture: a press-and-hold draws a DRAFT BLOCK in place, at the pressed time, with
+    // a default hour and a drag handle at each end, and the shared `CadenceSchedulePanel` hangs off
+    // that block as a popover. The thing being created is visible on the canvas, at the time it
+    // will occupy, before it is named — which is what the bar's placement could not do and is the
+    // reason the bar's argument for docking (keeping the grid still) no longer has anything to buy.
 
     /// One day's events, through the shared manager and nothing else.
     ///
@@ -195,139 +173,6 @@ struct iOSSchedulePanel: View {
             return
         }
         todayEvents = calendarManager.fetchEvents(for: today)
-    }
-
-    private func selectQuickCreateStart(_ startMin: Int) {
-        quickCreateStartMin = startMin
-        quickCreateError = nil
-    }
-
-    private func cancelQuickCreate() {
-        quickCreateStartMin = nil
-        quickCreateTitle = ""
-        quickCreateError = nil
-    }
-
-    private func createScheduledTask() {
-        guard let startMin = quickCreateStartMin else { return }
-        let pendingTitle = quickCreateTitle
-        do {
-            guard (try CadenceTaskMutationSupport.insertScheduledTask(
-                title: pendingTitle,
-                allTasks: allTasks,
-                modelContext: modelContext,
-                scheduledDate: todayKey,
-                scheduledStartMin: startMin,
-                estimatedMinutes: 30
-            )) != nil else {
-                quickCreateError = "Add a title first."
-                return
-            }
-            cancelQuickCreate()
-        } catch {
-            quickCreateTitle = pendingTitle
-            quickCreateError = "Couldn't save this timed task."
-        }
-    }
-}
-
-private struct iOSScheduleQuickCreateBar: View {
-    let startMin: Int
-    @Binding var title: String
-    let errorMessage: String?
-    let create: () -> Void
-    let cancel: () -> Void
-    @FocusState private var isFocused: Bool
-
-    private var trimmedTitle: String {
-        title.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 9) {
-            HStack(alignment: .center, spacing: 8) {
-                iOSIconTile(systemImage: "clock.badge.plus", color: Theme.blue, size: 28, iconSize: 12, bordered: false)
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Create at \(TimeFormatters.timeString(from: startMin))")
-                        .font(.system(size: 12, weight: .bold))
-                        .foregroundStyle(Theme.text)
-                        .lineLimit(1)
-
-                    Text("Adds a 30 minute task to Today.")
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(Theme.dim)
-                        .lineLimit(1)
-                }
-
-                Spacer(minLength: 6)
-
-                // 26pt of plate, 44pt of hit area — the same trick `iOSIconButton` uses, rather
-                // than a 26pt tap target on the control that gets you out of the composer.
-                Button(action: cancel) {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 10, weight: .bold))
-                        .foregroundStyle(Theme.dim)
-                        .frame(width: 26, height: 26)
-                        .background(Theme.surfaceElevated.opacity(0.38))
-                        .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
-                        .contentShape(Rectangle())
-                        .iOSExpandedHitArea(9)
-                }
-                .buttonStyle(.iosPressable)
-                .accessibilityLabel("Cancel timed task")
-            }
-
-            HStack(spacing: 7) {
-                TextField("Timed task title...", text: $title)
-                    .textFieldStyle(.plain)
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(Theme.text)
-                    .focused($isFocused)
-                    .submitLabel(.done)
-                    // **Deliberately not guarded the way the `+` beside it is disabled** (T-589).
-                    // The button can refuse in a way you can see: it greys out, so an empty title
-                    // has already been answered before you reach for it. Return has no such
-                    // affordance, so guarding it would make the key do nothing at all and look
-                    // broken — the "inert control, no word on it" failure T-470/T-471 went through
-                    // this app removing. `create` reports instead, and the notice now clears on
-                    // the next keystroke.
-                    .onSubmit(create)
-                    .padding(.horizontal, 10)
-                    .frame(height: 44)
-                    .background(Theme.surface.opacity(0.86))
-                    .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
-                    .overlay {
-                        RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous)
-                            .strokeBorder(Theme.borderSubtle.opacity(0.52), lineWidth: 1)
-                    }
-
-                Button(action: create) {
-                    Image(systemName: "plus")
-                        .font(.system(size: 15, weight: .bold))
-                        .foregroundStyle(trimmedTitle.isEmpty ? Theme.dim : Theme.onColor(for: Theme.blue))
-                        .frame(width: 44, height: 44)
-                        .background(trimmedTitle.isEmpty ? Theme.surfaceElevated.opacity(0.42) : Theme.blue)
-                        .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.iosPressable)
-                .disabled(trimmedTitle.isEmpty)
-                .accessibilityLabel("Create timed task")
-            }
-
-            if let errorMessage {
-                Text(errorMessage)
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(Theme.red)
-                    .lineLimit(2)
-            }
-        }
-        .padding(10)
-        .cadenceCard(background: Theme.surfaceElevated.opacity(0.36), cornerRadius: Theme.radiusCard)
-        .onAppear {
-            isFocused = true
-        }
     }
 }
 

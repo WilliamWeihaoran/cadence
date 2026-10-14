@@ -111,6 +111,13 @@ struct CadenceChoicePickerDismissalTests {
     /// through `iOSTaskDetailSheet.selectScheduledTime` and the committing initialiser [[T-761]].
     @Test func everyChoicePopoverCallSiteIsCountedAndOnlyTheCommittingOnesAnswer() throws {
         let expected: [String: (calls: Int, committing: Int)] = [
+            // [[T-3169]]. The shared schedule panel's four draft pickers: list, section, calendar
+            // and repeat. **None commits, and that is the right side of the line for all four** —
+            // this panel holds a `CadenceScheduleDraft`, a value it copies on every keystroke, and
+            // nothing it writes reaches the store until Add/Save is pressed. A committing setter
+            // here would write a half-made task on the way past a picker row. It is the same
+            // answer, for the same reason, as the three sheets above it.
+            "Cadence/Shared/Components/CadenceSchedulePanel.swift": (4, 0),
             "Cadence/Shared/Components/CadenceStartTimeFieldRow.swift": (1, 0),
             "Cadence/iOS/iOSArchiveImportSettingsSection.swift": (1, 0),
             "Cadence/iOS/iOSCalendarEventEditSheet.swift": (2, 0),
@@ -157,8 +164,10 @@ struct CadenceChoicePickerDismissalTests {
         // 39 since the two archive-import mode pickers; 37 before them. [[T-2079]] made it 34:
         // `iOSTrackingEditorSheets.swift` held five, none of them committing, and the file is
         // deleted with the goal and habit editors it contained. T-1466 removes the inspector's
-        // milestone picker and the committing row chip, leaving exactly 32 and 3 respectively.
-        #expect(found.values.map(\.calls).reduce(0, +) == 32)
+        // milestone picker and the committing row chip, leaving 32 and 3 respectively. [[T-3169]]
+        // adds the shared schedule panel's four draft pickers: 36, and the committing count does
+        // not move, because a draft panel commits once at Add rather than row by row.
+        #expect(found.values.map(\.calls).reduce(0, +) == 36)
         #expect(found.values.map(\.committing).reduce(0, +) == 3)
     }
 

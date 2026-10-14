@@ -14,6 +14,9 @@ struct CadenceDatePicker: View {
     var minHeight: CGFloat = 30
     var showsClear: Bool = false
     var onClear: (() -> Void)? = nil
+    /// A second day marked on the grid behind this control, in amber. See `MonthCalendarPanel`.
+    var markedDay: Date? = nil
+    var markedDayCaption: String = "DUE"
 
     @State private var isOpen = false
     @State private var viewMonth: Date
@@ -24,7 +27,9 @@ struct CadenceDatePicker: View {
         placeholder: String? = nil,
         minHeight: CGFloat = 30,
         showsClear: Bool = false,
-        onClear: (() -> Void)? = nil
+        onClear: (() -> Void)? = nil,
+        markedDay: Date? = nil,
+        markedDayCaption: String = "DUE"
     ) {
         self.label = label
         self._selection = selection
@@ -32,6 +37,8 @@ struct CadenceDatePicker: View {
         self.minHeight = minHeight
         self.showsClear = showsClear
         self.onClear = onClear
+        self.markedDay = markedDay
+        self.markedDayCaption = markedDayCaption
         var comps = Calendar.current.dateComponents([.year, .month], from: selection.wrappedValue)
         comps.day = 1
         self._viewMonth = State(initialValue: Calendar.current.date(from: comps) ?? Date())
@@ -62,7 +69,9 @@ struct CadenceDatePicker: View {
                 viewMonth: $viewMonth,
                 isOpen: $isOpen,
                 showsClear: showsClear && onClear != nil,
-                onClear: onClear
+                onClear: onClear,
+                markedDay: markedDay,
+                markedDayCaption: markedDayCaption
             )
             // Stays an anchored popover on iPhone. Without this, compact width promotes it to a
             // full-height sheet around a 256×294 calendar — most of the screen empty — while every
@@ -88,6 +97,16 @@ nonisolated enum CadenceDateSelectionMetrics {
     static let numeralSize: CGFloat = 12
     static let gridPadding: CGFloat = 8
     static let gridSpacing: CGFloat = 2
+    /// The in-cell marker caption ("DUE").
+    ///
+    /// **It fits because the cell grows with it and because the grid stops before it cannot.**
+    /// `cellSide` is 34 around a 12pt numeral and is scaled by `cellSide(at:)`, which holds the
+    /// same ratio as the text grows — so the caption's 7pt rides the same curve and the pair never
+    /// outgrows the cell they are in. Above that, `usesDateRows(at:availableWidth:)` already
+    /// abandons the grid entirely at accessibility sizes, so the grid branch is never asked to draw
+    /// this at a size where it could not. The numeral is untouched: nothing here shrinks it to make
+    /// room, which was the other way this could have been paid for and the wrong one.
+    static let markerCaptionSize: CGFloat = 7
 
     static func cellSide(at size: DynamicTypeSize) -> CGFloat {
         CadenceTypeScale.height(cellSide, holding: .metadata, textBase: numeralSize, at: size, scaling: .enabled)
@@ -130,6 +149,20 @@ struct MonthCalendarPanel: View {
     @Binding var isOpen: Bool
     var inlineStyle: Bool = false
     var viewportHeight: CGFloat? = nil
+    /// A second day to mark on the same grid, in amber, captioned `markedDayCaption` (T-3169).
+    ///
+    /// **The schedule panel's Do calendar shows the task's DUE day on it**, so the two dates the
+    /// user is reconciling are visible together instead of one row apart. It is a marker, not a
+    /// second selection: the cell is not selectable *as* the marked day, it is the same button it
+    /// always was, and the day is drawn differently only when it is not the selected one — the
+    /// blue selection wins where they coincide, because a day that is both is first of all the one
+    /// you picked.
+    ///
+    /// Defaulted to `nil`, so the dozen existing call sites are byte-for-byte unchanged.
+    var markedDay: Date? = nil
+    /// The word inside the marked cell. Three marks say it, not one: an amber ring, the numeral in
+    /// amber, and this caption. A ring alone reads as "some other state" rather than as a deadline.
+    var markedDayCaption: String = "DUE"
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     private let cal = Calendar.current
@@ -195,6 +228,7 @@ struct MonthCalendarPanel: View {
                                             if let d = days[i] {
                                                 let isSelected = cal.isDate(d, inSameDayAs: selection)
                                                 let isToday = cal.isDateInToday(d)
+                                                let isMarked = isMarkedDay(d) && !isSelected
                                                 Button {
                                                     selection = d
                                                     syncViewMonthToSelection()
@@ -204,15 +238,33 @@ struct MonthCalendarPanel: View {
                                                         Circle()
                                                             .fill(isSelected ? Theme.blue : (isToday ? Theme.blue.opacity(0.15) : Color.clear))
 
-                                                        Text("\(cal.component(.day, from: d))")
-                                                            .cadenceFont(.metadata, base: CadenceDateSelectionMetrics.numeralSize, weight: isSelected || isToday ? .semibold : .regular)
-                                                            .foregroundStyle(isSelected ? Theme.onColor(for: Theme.blue) : (isToday ? Theme.blue : Theme.text))
+                                                        if isMarked {
+                                                            Circle()
+                                                                .strokeBorder(Theme.amber, lineWidth: 1.5)
+                                                        }
+
+                                                        VStack(spacing: 0) {
+                                                            Text("\(cal.component(.day, from: d))")
+                                                                .cadenceFont(.metadata, base: CadenceDateSelectionMetrics.numeralSize, weight: isSelected || isToday || isMarked ? .semibold : .regular)
+                                                                .foregroundStyle(isSelected ? Theme.onColor(for: Theme.blue) : (isMarked ? Theme.amber : (isToday ? Theme.blue : Theme.text)))
+                                                            if isMarked {
+                                                                Text(markedDayCaption)
+                                                                    .cadenceFont(.metadata, base: CadenceDateSelectionMetrics.markerCaptionSize, weight: .bold)
+                                                                    .foregroundStyle(Theme.amber)
+                                                                    .lineLimit(1)
+                                                                    .fixedSize()
+                                                            }
+                                                        }
                                                     }
                                                     .frame(width: cellSide, height: cellSide)
                                                     .contentShape(Circle())
                                                 }
                                                 .buttonStyle(.cadencePlain)
-                                                .accessibilityLabel(DateFormatters.longDate.string(from: d))
+                                                .accessibilityLabel(
+                                                    isMarked
+                                                        ? "\(DateFormatters.longDate.string(from: d)), \(markedDayCaption.lowercased())"
+                                                        : DateFormatters.longDate.string(from: d)
+                                                )
                                                 .accessibilityAddTraits(isSelected ? .isSelected : [])
                                                 .modifier(PickerHoverHighlight(cornerRadius: cellSide / 2, padding: 0))
                                             } else {
@@ -243,9 +295,22 @@ struct MonthCalendarPanel: View {
         CadenceDateSelectionMetrics.cellSide(at: dynamicTypeSize)
     }
 
+    private func isMarkedDay(_ day: Date) -> Bool {
+        guard let markedDay else { return false }
+        return cal.isDate(day, inSameDayAs: markedDay)
+    }
+
+    /// The marked day in the **rows** layout.
+    ///
+    /// This branch is what an accessibility text size gets — see
+    /// `CadenceDateSelectionMetrics.usesDateRows` — and a row has no cell to put a caption inside,
+    /// so the word goes beside the date where there is room for it to grow. The grid's three marks
+    /// become two and a word here, which is the same three statements in a layout that can hold
+    /// them.
     private func dateRow(_ day: Date) -> some View {
         let isSelected = cal.isDate(day, inSameDayAs: selection)
         let isToday = cal.isDateInToday(day)
+        let isMarked = isMarkedDay(day) && !isSelected
         return Button {
             selection = day
             syncViewMonthToSelection()
@@ -256,13 +321,19 @@ struct MonthCalendarPanel: View {
                     .cadenceFont(.metadata, weight: isSelected || isToday ? .semibold : .regular)
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 0)
+                if isMarked {
+                    Text(markedDayCaption)
+                        .cadenceFont(.metadata, weight: .bold)
+                        .foregroundStyle(Theme.amber)
+                        .lineLimit(1)
+                }
                 if isSelected {
                     Image(systemName: "checkmark")
                         .cadenceFont(.metadata)
                         .accessibilityHidden(true)
                 }
             }
-            .foregroundStyle(isSelected || isToday ? Theme.blue : Theme.text)
+            .foregroundStyle(isSelected || isToday ? Theme.blue : (isMarked ? Theme.amber : Theme.text))
             .padding(.horizontal, 8)
             .padding(.vertical, 8)
             .frame(maxWidth: .infinity, minHeight: CadenceDateSelectionMetrics.dateRowHeight(at: dynamicTypeSize), alignment: .leading)
@@ -314,6 +385,9 @@ struct CadenceQuickDatePopover: View {
     var showsClear: Bool = true
     var onClear: (() -> Void)? = nil
     var inlineStyle: Bool = false
+    /// Forwarded to `MonthCalendarPanel`; see its note. Defaulted, so no existing caller moved.
+    var markedDay: Date? = nil
+    var markedDayCaption: String = "DUE"
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     private let cal = Calendar.current
@@ -349,7 +423,9 @@ struct CadenceQuickDatePopover: View {
                 viewMonth: $viewMonth,
                 isOpen: $isOpen,
                 inlineStyle: true,
-                viewportHeight: CadenceDateSelectionMetrics.quickViewportHeight(at: dynamicTypeSize, inlineStyle: inlineStyle)
+                viewportHeight: CadenceDateSelectionMetrics.quickViewportHeight(at: dynamicTypeSize, inlineStyle: inlineStyle),
+                markedDay: markedDay,
+                markedDayCaption: markedDayCaption
             )
 
             if showsClear {

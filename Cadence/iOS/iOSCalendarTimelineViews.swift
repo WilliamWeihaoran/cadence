@@ -101,6 +101,16 @@ struct iOSCalendarTimelineGrid: View {
     /// `pinchZoom`.
     @Binding var zoom: Double
     let onCreateAt: (String, Int) -> Void
+    /// Press-and-hold draws a DRAFT BLOCK on the column and hangs the shared schedule panel off it
+    /// as a popover, instead of calling `onCreateAt` ([[T-3169]]).
+    ///
+    /// **A flag rather than a second grid.** The Calendar page and Today's pane build the same
+    /// column through `dayColumn(for:colWidth:)` — a second spelling of that call is how Today came
+    /// to have a timeline that drew neither events nor a drop target — so the draft layer is a
+    /// property of the column, switched on by whoever wants it. Defaulted `false`, so the Calendar
+    /// page's call site is byte-for-byte unchanged and keeps its tap-opens-a-sheet behaviour until
+    /// [[T-3171]] takes the panel there too.
+    var drawsDraftBlocks: Bool = false
 
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.modelContext) private var modelContext
@@ -293,6 +303,7 @@ struct iOSCalendarTimelineGrid: View {
             workHoursStartMinute: workHoursStartMinute,
             workHoursEndMinute: workHoursEndMinute,
             onCreateAt: onCreateAt,
+            drawsDraftBlocks: drawsDraftBlocks,
             onClearTime: clearsTime,
             onFormBundleFromTasks: formBundle(from:adding:)
         )
@@ -902,6 +913,8 @@ private struct iOSCalendarTimelineDayColumn: View {
     let workHoursStartMinute: Int
     let workHoursEndMinute: Int
     let onCreateAt: (String, Int) -> Void
+    /// See `iOSCalendarTimelineGrid.drawsDraftBlocks`.
+    var drawsDraftBlocks: Bool = false
     /// Non-`nil` only where a cleared task has a visible place to land — see
     /// `iOSCalendarTimelineGrid.clearsTime`, which is the one decision of it in the app.
     let onClearTime: ((AppTask) -> Void)?
@@ -910,17 +923,15 @@ private struct iOSCalendarTimelineDayColumn: View {
     /// as `iOSCalendarBoardDayColumn`'s.
     let onFormBundleFromTasks: (AppTask, AppTask) -> Void
 
+    /// The in-place draft, owned by the column that drew it. One column, one draft: a press lands
+    /// on exactly one day, and a grid that windows a scrolling range would otherwise need a rule
+    /// for which of fourteen columns holds the pending one.
+    @State private var draft: CadenceScheduleDraft?
+    @State private var isDraftEditorPresented = false
+
     var body: some View {
         ZStack(alignment: .topLeading) {
-            Rectangle()
-                .fill(Color.clear)
-                .contentShape(Rectangle())
-                .gesture(
-                    SpatialTapGesture()
-                        .onEnded { value in
-                            onCreateAt(DateFormatters.dateKey(from: date), minute(for: value.location.y))
-                        }
-                )
+            createSurface
 
             iOSCalendarTimelineColumnGridLines(colWidth: colWidth, hourHeight: hourHeight)
 
@@ -969,6 +980,8 @@ private struct iOSCalendarTimelineDayColumn: View {
                 .offset(x: 9, y: yOffset(for: range.start))
             }
 
+            draftLayer
+
             nowLine
         }
         .frame(width: colWidth, height: timelineHeight, alignment: .topLeading)
@@ -995,6 +1008,118 @@ private struct iOSCalendarTimelineDayColumn: View {
             ),
             dropKey: { dropKey }
         )
+    }
+
+    /// The empty-space gesture surface.
+    ///
+    /// **Two arms rather than one gesture with an `if` in it.** A column that does not draw drafts
+    /// installs exactly the recognizer it had before — this canvas already carries a horizontal
+    /// scroller, a vertical scroller, a pinch and a drop target, and gesture collisions are this
+    /// app's most repeated bug, so a recognizer is not installed where its gesture is not offered.
+    /// `drawsDraftBlocks` is fixed per call site, so the branch never flips at runtime.
+    ///
+    /// On the drafting arm the long press and the tap coexist: a `LongPressGesture` sequenced
+    /// before a zero-distance `DragGesture` is the only way SwiftUI reports **where** a press
+    /// happened — the press itself carries no location, and the drag that follows it does — and
+    /// continuing to drag sizes the block in the same gesture, which is Apple Calendar's own
+    /// behaviour. The tap is kept, and now opens the same draft rather than the docked bar: it is
+    /// what this canvas has always done, and removing it would be a behaviour the owner did not ask
+    /// to lose. `beginDraft` is idempotent, so a tap arriving at the end of a long press finds the
+    /// draft already there and does nothing.
+    @ViewBuilder
+    private var createSurface: some View {
+        if drawsDraftBlocks {
+            Rectangle()
+                .fill(Color.clear)
+                .contentShape(Rectangle())
+                .gesture(draftPressGesture)
+                .simultaneousGesture(
+                    SpatialTapGesture()
+                        .onEnded { value in beginDraft(atY: value.location.y) }
+                )
+        } else {
+            Rectangle()
+                .fill(Color.clear)
+                .contentShape(Rectangle())
+                .gesture(
+                    SpatialTapGesture()
+                        .onEnded { value in
+                            onCreateAt(DateFormatters.dateKey(from: date), minute(for: value.location.y))
+                        }
+                )
+        }
+    }
+
+    private var draftPressGesture: some Gesture {
+        LongPressGesture(minimumDuration: 0.35)
+            .sequenced(before: DragGesture(minimumDistance: 0))
+            .onChanged { value in
+                guard case .second(true, let drag?) = value else { return }
+                if draft == nil {
+                    beginDraft(atY: drag.startLocation.y)
+                    return
+                }
+                // Still the same press: dragging away from the start sizes the block rather than
+                // moving it, which is what a user who presses and then pulls means by it. A drag
+                // that has not travelled a row is left alone so a press-and-release keeps the
+                // default hour.
+                guard abs(drag.translation.height) > 2 else { return }
+                draft?.moveEndEdge(toMinute: minute(for: drag.location.y) + CadenceScheduleSupport.touchTimeGridMinutes)
+            }
+            .onEnded { _ in
+                guard draft != nil else { return }
+                isDraftEditorPresented = true
+            }
+    }
+
+    /// Opens a draft at a pressed point, or leaves the one already there alone.
+    private func beginDraft(atY yPosition: CGFloat) {
+        guard drawsDraftBlocks, draft == nil else { return }
+        draft = CadenceScheduleDraft(
+            dateKey: DateFormatters.dateKey(from: date),
+            startMin: minute(for: yPosition)
+        )
+        isDraftEditorPresented = true
+    }
+
+    /// The draft block, drawn where every other block on this column is drawn — same inset, same
+    /// `yOffset`, same `blockHeight` — so what the user sees before committing is the rectangle the
+    /// committed thing will occupy.
+    @ViewBuilder
+    private var draftLayer: some View {
+        if drawsDraftBlocks, let current = draft, current.startDateKey == DateFormatters.dateKey(from: date) {
+            iOSTimelineDraftBlock(
+                draft: Binding(
+                    get: { draft ?? current },
+                    set: { draft = $0 }
+                ),
+                hourHeight: hourHeight
+            )
+            .frame(
+                width: colWidth - 18,
+                height: blockHeight(start: current.startMin, end: current.isAllDay ? current.startMin + 60 : current.endMin)
+            )
+            .offset(x: 9, y: yOffset(for: current.isAllDay ? CadenceScheduleSupport.calendarStartHour * 60 : current.startMin))
+            .popover(isPresented: $isDraftEditorPresented, arrowEdge: .trailing) {
+                iOSTimelineDraftPanelHost(
+                    draft: Binding(
+                        get: { draft ?? current },
+                        set: { draft = $0 }
+                    ),
+                    onCancel: { isDraftEditorPresented = false },
+                    onCommitted: {
+                        isDraftEditorPresented = false
+                        draft = nil
+                    }
+                )
+            }
+            // Dismissing the popover by tapping outside it abandons the draft: there is no half-made
+            // block to leave on the canvas, and a rectangle outliving the editor that owned it is
+            // the shape of a leak the next tap cannot clear.
+            .onChange(of: isDraftEditorPresented) { _, isPresented in
+                if !isPresented { draft = nil }
+            }
+        }
     }
 
     /// What this column offers a dropped `+`, or `""` — no target — on a day that has already gone

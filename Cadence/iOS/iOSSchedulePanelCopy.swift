@@ -19,5 +19,10 @@ nonisolated enum iOSSchedulePanelCopy {
     ///
     /// It was a floating card — glyph, heading, explanation — laid over the middle of the hour
     /// grid in a `ZStack`, covering two hours of rows. See `iOSSchedulePanel`.
-    static let emptyScheduleHint = "No timed blocks yet — tap an hour to schedule one."
+    ///
+    /// **It teaches press-and-hold now, not tap** ([[T-3169]]). The sentence's job is to say what
+    /// fills the grid, and what fills it changed: a press draws a draft block in place and opens
+    /// the schedule panel on it. A tap still opens the same draft, so the gesture named here is the
+    /// one worth learning rather than the only one that works.
+    static let emptyScheduleHint = "No timed blocks yet — press and hold an hour to add one."
 }

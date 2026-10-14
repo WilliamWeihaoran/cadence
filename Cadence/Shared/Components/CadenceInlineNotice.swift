@@ -26,11 +26,30 @@ struct CadenceInlineNotice: View {
         /// the same weight as any other secondary line — deliberately *not* an accent, because an
         /// accent would compete with the row the sentence is about.
         case informational
+        /// Nothing was refused and nothing is hidden — the state the user has just chosen is a
+        /// legitimate one that is worth knowing about. `Theme.amber` (T-3169).
+        ///
+        /// **Why this is its own tier rather than one of the two above.** This file is deliberately
+        /// opinionated about which colour means what, so a third one has to earn itself. `.failure`
+        /// is the app's one refusal colour and would say "that did not happen" about a save that is
+        /// about to succeed — the exact mis-statement that made the reorder notice need
+        /// `.informational` in the first place. `.informational` is the opposite problem: `Theme.dim`
+        /// is the weight of *any* secondary line, so a sentence saying a task is planned for after
+        /// its own deadline would read as a caption rather than as something to look at. Amber is
+        /// the colour this app already spends on "true, and worth your attention" — the work-hours
+        /// band, the bundle-forming drop, the priority flag — and the notice is drawn at that weight
+        /// for the same reason.
+        ///
+        /// A warning never gates the control it sits under. The caller keeps Save enabled and
+        /// rewrites nothing; the sentence is expected to retire itself when the user changes what
+        /// caused it, which is why no warning call site passes `onDismiss`.
+        case warning
 
         var color: Color {
             switch self {
             case .failure: return Theme.red
             case .informational: return Theme.dim
+            case .warning: return Theme.amber
             }
         }
     }

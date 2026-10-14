@@ -1434,7 +1434,7 @@ struct CadenceEmptyStateAuditTests {
     /// and there was never a second reader for it to be shared with.
     @Test func theScheduleHintIsAnIOSConstantAndNoLongerASharedOne() throws {
         #expect(
-            iOSSchedulePanelCopy.emptyScheduleHint == "No timed blocks yet — tap an hour to schedule one."
+            iOSSchedulePanelCopy.emptyScheduleHint == "No timed blocks yet — press and hold an hour to add one."
         )
 
         let shared = CadenceSourceScan.strippingComments(

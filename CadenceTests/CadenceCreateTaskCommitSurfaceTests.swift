@@ -646,28 +646,50 @@ struct CadenceCreateTaskCommitSurfaceTests {
 
 /// **T-589.** An inline notice that outlives the thing it is complaining about.
 ///
-/// `iOSSchedulePanel`'s timed-task composer draws `quickCreateError` under its title field, and
-/// the two clears it had — `selectQuickCreateStart` and `cancelQuickCreate` — are both about the
+/// `iOSSchedulePanel`'s timed-task composer drew `quickCreateError` under its title field, and the
+/// two clears it had — `selectQuickCreateStart` and `cancelQuickCreate` — were both about the
 /// *composer*, not about the field. So "Add a title first." sat there in red while you typed the
-/// title, which is the one edit that answers it. Reachable in one keystroke: the `+` is disabled
-/// on a whitespace-only title, but `.onSubmit(create)` on the field is not, so Return with an
-/// empty field posts the notice and nothing takes it down.
+/// title, which is the one edit that answers it. Reachable in one keystroke: the `+` was disabled
+/// on a whitespace-only title, but `.onSubmit` on the field was not, so Return with an empty field
+/// posted the notice and nothing took it down.
 ///
-/// Same family as the tests above and the same reason for being a scan: `Cadence/iOS/` is behind
-/// `#if os(iOS)` and this target builds for macOS, so the view cannot be compiled here.
+/// **The composer this guarded no longer exists; the rule it guards does** ([[T-3169]]).
+/// `iOSScheduleQuickCreateBar` and its three `quickCreate*` properties were deleted when the iPad
+/// timeline stopped creating through a bar bolted under the canvas. The notice, the field and the
+/// clear all moved into `CadenceSchedulePanel`, which is **shared**, so this suite now reads
+/// `Cadence/Shared/Components/` — and the rule got wider rather than narrower in the move, because
+/// the panel is the one macOS will adopt under [[T-3171]] as well.
+///
+/// Re-pointed, not relaxed: every claim below is the claim it was, against the symbols that carry
+/// it now (`draft.title` for `quickCreateTitle`, `actionError` for `quickCreateError`, `commit()`
+/// for `createScheduledTask()`). It is still a scan rather than a compiled test, for the same
+/// reason as the tests above — a SwiftUI body cannot be exercised from this target.
 ///
 /// **Return stays unguarded, deliberately**, and that is the other half of the fix. Disabling the
 /// button is a visible refusal; silently swallowing Return is an inert control with no word on it,
 /// which is exactly what T-470 and T-471 went through this app removing. Return reports, and the
-/// report now goes away by itself.
+/// report goes away by itself.
 struct CadenceScheduleComposerNoticeTests {
+    private static let panelPath = "Cadence/Shared/Components/CadenceSchedulePanel.swift"
+
     private func panelSource() throws -> String {
-        let raw = try CadenceSourceScan.sourceFile("Cadence/iOS/iOSTodaySchedulePanel.swift")
-        #expect(raw.count > 400, "iOSTodaySchedulePanel.swift read as \(raw.count) characters")
+        let raw = try CadenceSourceScan.sourceFile(Self.panelPath)
+        #expect(raw.count > 400, "CadenceSchedulePanel.swift read as \(raw.count) characters")
         let stripped = CadenceSourceScan.strippingComments(raw)
         #expect(stripped != raw, "the comment stripper removed nothing")
         #expect(stripped.count == raw.count, "the stripper changed the length")
         return stripped
+    }
+
+    /// The bar really is gone, rather than this suite having quietly stopped looking at it. Without
+    /// this, re-pointing the three tests below would be indistinguishable from abandoning them.
+    @Test func theDockedComposerTheseTestsGuardedIsGone() throws {
+        let pane = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/iOS/iOSTodaySchedulePanel.swift")
+        )
+        #expect(!pane.contains("iOSScheduleQuickCreateBar"))
+        #expect(!pane.contains("quickCreateError"))
+        #expect(!pane.contains("quickCreateTitle"))
     }
 
     @Test func typingTheTitleClearsTheNoticeThatAsksForOne() throws {
@@ -679,10 +701,10 @@ struct CadenceScheduleComposerNoticeTests {
         )
         #expect(
             CadenceSourceScan.matchCount(
-                #"onChange\(of: quickCreateTitle\)[^}]*quickCreateError = nil"#,
+                #"onChange\(of: draft\.title\)[^}]*actionError = nil"#,
                 in: source
             ) == 1,
-            "nothing clears quickCreateError when the title changes"
+            "nothing clears actionError when the title changes"
         )
     }
 
@@ -690,32 +712,34 @@ struct CadenceScheduleComposerNoticeTests {
     @Test func returnOnAnEmptyFieldStillReportsRatherThanDoingNothing() throws {
         let source = try panelSource()
 
-        #expect(source.contains(".onSubmit(create)"), "the field no longer submits")
+        #expect(source.contains(".onSubmit(commit)"), "the field no longer submits")
         let body = try #require(
-            CadenceSourceScan.functionBody(named: "createScheduledTask", in: source),
-            "could not find createScheduledTask()"
+            CadenceSourceScan.functionBody(named: "commit", in: source),
+            "could not find commit()"
         )
-        #expect(body.contains("quickCreateError = \"Add a title first.\""))
+        #expect(body.contains("actionError = \"Add a title first.\""))
+        // The guard must *report* and return, not refuse silently. A `canCommit`-style early exit
+        // here would make Return do nothing at all, which is the inert control this test exists for.
         #expect(
-            CadenceSourceScan.matchCount(#"trimmedTitle\.isEmpty"#, in: body) == 0,
-            "createScheduledTask() grew its own empty-title guard, which makes the notice unreachable"
+            CadenceSourceScan.matchCount(#"guard canCommit"#, in: body) == 0,
+            "commit() grew a silent empty-title guard, which makes the notice unreachable"
         )
     }
 
     /// The needles match the spelling they hunt and miss the one they protect.
     @Test func theComposerNoticeNeedlesMatchTheOldSpellingOnly() {
-        let clearPattern = #"onChange\(of: quickCreateTitle\)[^}]*quickCreateError = nil"#
+        let clearPattern = #"onChange\(of: draft\.title\)[^}]*actionError = nil"#
         #expect(CadenceSourceScan.matchCount(
             clearPattern,
-            in: ".onChange(of: quickCreateTitle) { _, _ in\n quickCreateError = nil\n }"
+            in: ".onChange(of: draft.title) { _, _ in\n actionError = nil\n }"
         ) == 1)
         #expect(CadenceSourceScan.matchCount(
             clearPattern,
-            in: ".onChange(of: quickCreateStartMin) { _, _ in\n quickCreateError = nil\n }"
+            in: ".onChange(of: draft.kind) { _, _ in\n actionError = nil\n }"
         ) == 0)
         #expect(CadenceSourceScan.matchCount(
             clearPattern,
-            in: ".onChange(of: quickCreateTitle) { _, _ in\n didPlaceInitialScroll = false\n }"
+            in: ".onChange(of: draft.title) { _, _ in\n isTitleFocused = false\n }"
         ) == 0)
     }
 }

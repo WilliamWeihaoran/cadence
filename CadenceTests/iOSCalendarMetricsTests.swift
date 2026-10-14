@@ -118,7 +118,13 @@ struct iOSCalendarMetricsTests {
 
         // Non-vacuity: the read reached the right file, and the comment stripper left the code.
         #expect(panel.contains("struct iOSSchedulePanel: View"))
-        #expect(panel.contains("quickCreateStartMin"))
+        // **The anchor moved because the thing it named was the ticket** ([[T-3169]]).
+        // `quickCreateStartMin` was the docked quick-create bar's state, and the bar is gone: the
+        // pane now asks the column to draw a draft block in place and hang the shared schedule
+        // panel off it. A non-vacuity anchor has to name something the file still has, so it names
+        // the flag that replaced it — which is also the more useful anchor, being about what this
+        // pane asks of the grid rather than about a composer it no longer owns.
+        #expect(panel.contains("drawsDraftBlocks: true"))
 
         // The positive half. One grid, pinned to one day, and the pane hands it the day.
         #expect(
