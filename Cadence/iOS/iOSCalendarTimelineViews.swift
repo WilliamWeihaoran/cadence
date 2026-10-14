@@ -1217,60 +1217,107 @@ private struct iOSCalendarTimelineDayColumn: View {
     }
 }
 
-/// A timeline event block: a solid plate of the calendar's own colour, exactly as on macOS.
+/// A timeline event block: **Apple Calendar's rail treatment**, exactly as on macOS — a leading
+/// vertical rail at the calendar's own chroma, a dark tinted plate, and the title drawn *in that
+/// hue* rather than in white (T-3160).
 ///
-/// The label colours are `CadenceCalendarEventStyle`'s tiers rather than `Theme.text` at hand-picked
-/// alphas. That matters here more than anywhere else on the surface: the plate is solved to a fixed
-/// luminance *so that* `Theme.onColor` and `onColorSecondary` clear AA on top of it, and
-/// `Theme.text.opacity(0.7)` was quietly opting out of that guarantee.
+/// The label colours are `CadenceCalendarEventStyle`'s `rail*` tiers rather than `Theme.text` at
+/// hand-picked alphas. That matters here more than anywhere else on the surface: each tier's
+/// luminance is **derived** from `railFillLuminance` — the very plate drawn below it — so the
+/// title, the time range and the glyph land on 5.1 / 4.6 / 3.2:1 whatever colour the account gave
+/// the calendar, and `Theme.text.opacity(0.7)` was quietly opting out of that guarantee.
+///
+/// This block carries no interaction state, so every tier is read at rest. The Mac's copy passes
+/// hover and selection through to the same functions.
 private struct iOSCalendarEventBlock: View {
     let event: EKEvent
     let startMin: Int
     let endMin: Int
 
+    private var calendarColor: Color {
+        iOSCalendarEventSupport.color(for: event.calendar)
+    }
+
     private var fill: Color {
         iOSCalendarEventSupport.fillColor(for: event.calendar)
     }
 
+    /// The rail and the block's edge resolve from one call so the two cannot drift. Stateless by
+    /// design — see `CadenceCalendarEventStyle.railColor(for:)`.
+    private var railColor: Color {
+        CadenceCalendarEventStyle.railColor(for: calendarColor)
+    }
+
+    private var blockShape: RoundedRectangle {
+        RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous)
+    }
+
     var body: some View {
-        HStack(alignment: .top, spacing: 6) {
-            Image(systemName: "calendar")
-                .font(.system(size: 10, weight: .semibold))
-                .foregroundStyle(CadenceCalendarEventStyle.tertiaryLabelColor())
-                .padding(.top, 2)
+        HStack(alignment: .top, spacing: 0) {
+            // The identity marker. Its leading corners follow the block's so the strip ends
+            // exactly where the plate does; the trailing edge is square because this is a rail,
+            // not a pill. Opaque rather than a wash: this column gained an overlap layout in
+            // T-3161, so an indented block's rail is now drawn over the body of the block beneath
+            // it, and a translucent marker would show the neighbour's hue through it.
+            //
+            // `CadenceCalendarEventStyle.railWidth`, not a hand-typed `3`.
+            UnevenRoundedRectangle(
+                topLeadingRadius: Theme.radiusControl,
+                bottomLeadingRadius: Theme.radiusControl,
+                style: .continuous
+            )
+            .fill(railColor)
+            .frame(width: CadenceCalendarEventStyle.railWidth)
 
-            VStack(alignment: .leading, spacing: 3) {
-                Text(iOSCalendarEventSupport.title(for: event))
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(CadenceCalendarEventStyle.primaryLabelColor)
-                    .lineLimit(2)
+            HStack(alignment: .top, spacing: 6) {
+                Image(systemName: "calendar")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(CadenceCalendarEventStyle.railTertiaryLabelColor(for: calendarColor))
+                    .padding(.top, 2)
 
-                Text(CadenceScheduleSupport.timeRangeLabel(startMinute: startMin, endMinute: endMin))
-                    .font(.system(size: 9, weight: .medium))
-                    .foregroundStyle(CadenceCalendarEventStyle.secondaryLabelColor())
-                    .lineLimit(1)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(iOSCalendarEventSupport.title(for: event))
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(CadenceCalendarEventStyle.railTitleColor(for: calendarColor))
+                        .lineLimit(2)
+
+                    Text(CadenceScheduleSupport.timeRangeLabel(startMinute: startMin, endMinute: endMin))
+                        .font(.system(size: 9, weight: .medium))
+                        .foregroundStyle(CadenceCalendarEventStyle.railSecondaryLabelColor(for: calendarColor))
+                        .lineLimit(1)
+                }
             }
+            .padding(.horizontal, 7)
+            .padding(.vertical, 5)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
-        .padding(.horizontal, 7)
-        .padding(.vertical, 5)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(fill)
-        .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
+        .clipShape(blockShape)
         .overlay {
-            RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous)
-                .strokeBorder(
-                    iOSCalendarEventSupport.color(for: event.calendar)
-                        .opacity(CadenceCalendarEventStyle.chipBorderOpacity()),
-                    lineWidth: 1
-                )
+            // The rail's colour, not the raw calendar colour: the rim and the rail are the same
+            // marker seen at two weights, and `railBorderOpacity` is the ladder solved for this
+            // plate rather than the brighter one the chip opacity was picked against.
+            blockShape.strokeBorder(
+                railColor.opacity(CadenceCalendarEventStyle.railBorderOpacity()),
+                lineWidth: 1
+            )
         }
         .accessibilityElement(children: .combine)
     }
 }
 
 /// The **one** task block on a timed grid: the Calendar screen's day columns and Today's schedule
-/// pane. Neutral plate, a wash of the list's colour, and a square-edged strip of that colour on the
-/// leading edge — the same vocabulary `iOSBoardTaskCard` speaks on the boards.
+/// pane. Since T-3160 it wears the **solved plate** the event block used to wear — an opaque fill
+/// in the list's hue, solved to a fixed luminance so that `Theme.onColor`-family ink clears AA on
+/// top of it, with no leading rail. The rail went to the event side with the rest of Apple
+/// Calendar's look.
+///
+/// **This is now the one place the timeline's vocabulary parts from `iOSBoardTaskCard`'s**, which
+/// still draws the neutral surface plus a colour wash this block used to copy. That is a
+/// consequence of the swap being scoped to the calendar's timed grids, not an oversight: the
+/// boards were not in the owner's instruction, and nothing shows a board card and a timeline block
+/// side by side. Say so here rather than letting the next reader find the divergence and assume it
+/// was an accident.
 ///
 /// It replaced a second block in `iOSTodaySchedulePanel` that was a tint-washed, fully-rounded,
 /// shadowed card with a pill strip and no completion circle, so the same scheduled task changed
@@ -1313,15 +1360,21 @@ struct iOSTimelineTaskBlock: View {
         Color(hex: task.containerColor)
     }
 
-    /// Square on the leading edge so the list colour strip reads as a strip, rounded elsewhere.
-    private var blockShape: UnevenRoundedRectangle {
-        UnevenRoundedRectangle(
-            topLeadingRadius: 0,
-            bottomLeadingRadius: 0,
-            bottomTrailingRadius: Theme.radiusControl,
-            topTrailingRadius: Theme.radiusControl,
-            style: .continuous
-        )
+    /// Rounded on every corner since T-3160. It was square on the leading edge so that the list
+    /// colour strip read as a strip; there is no strip any more, and a block squared off against
+    /// nothing is the visible residue of a half-finished swap.
+    private var blockShape: RoundedRectangle {
+        RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous)
+    }
+
+    /// Both ink tiers, resolved against the plate they are actually drawn on. This block carries
+    /// no hover or selection state — the press is `.iosPressable` — so both are read at rest.
+    private var primaryInk: Color {
+        CadenceCalendarEventStyle.platePrimaryLabelColor
+    }
+
+    private var secondaryInk: Color {
+        CadenceCalendarEventStyle.plateSecondaryLabelColor()
     }
 
     /// T-243. `.draggable` and `.dropDestination` are attached in an `if let` branch rather than
@@ -1374,14 +1427,17 @@ struct iOSTimelineTaskBlock: View {
                     .padding(.top, 2)
 
                 VStack(alignment: .leading, spacing: 3) {
+                    // A finished task drops one ink tier rather than going grey. `Theme.dim` was
+                    // chosen for a near-black surface and this surface is no longer near-black —
+                    // it reads about 2:1 on the plate. The strikethrough is what still says done.
                     Text(TaskTitleSupport.displayTitle(task.title, fallback: TaskTitleSupport.defaultCompactDisplayTitle))
                         .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(task.isDone ? Theme.dim : Theme.text)
-                        .strikethrough(task.isDone, color: Theme.dim)
+                        .foregroundStyle(task.isDone ? secondaryInk : primaryInk)
+                        .strikethrough(task.isDone, color: secondaryInk)
                         .lineLimit(2)
                     Text(CadenceScheduleSupport.timeRangeLabel(startMinute: startMin, endMinute: endMin))
                         .font(.system(size: 9, weight: .medium))
-                        .foregroundStyle(Theme.dim)
+                        .foregroundStyle(secondaryInk)
                         .lineLimit(1)
                 }
             }
@@ -1390,10 +1446,14 @@ struct iOSTimelineTaskBlock: View {
             // Clears the trailing control when there is one, so a two-line title cannot run under it.
             .padding(.trailing, onClearTime == nil ? 0 : 26)
             .frame(maxWidth: .infinity, maxHeight: fillsAvailableHeight ? .infinity : nil, alignment: .topLeading)
+            // The solved plate, in the list's own hue. The neutral surface and the wash over it
+            // are gone: a wash says the hue with luminance it has to borrow from the surface, and
+            // the ink above is solved against `plateLuminance` rather than against whatever that
+            // borrowing happened to composite to. The done state is carried by the ink tier and
+            // the strikethrough, not by a second fill at a second opacity.
             .background {
                 ZStack {
-                    blockShape.fill(Theme.surfaceElevated.opacity(0.82))
-                    blockShape.fill(listColor.opacity(task.isDone ? 0.05 : 0.12))
+                    blockShape.fill(CadenceCalendarEventStyle.plateFill(for: listColor))
                     if isBundleFormingTargeted {
                         blockShape.fill(Theme.amber.opacity(0.16))
                     }
@@ -1404,16 +1464,18 @@ struct iOSTimelineTaskBlock: View {
             // draws rather than adding a second ring. Amber for the reason `iOSBoardTaskCard` gives
             // — `iOSTimelineBundleBlock` is amber at this same weight, so a block about to *become*
             // one says so in the colour it is about to take.
+            //
+            // The resting edge is the list colour's own lit rim at `chipBorderOpacity`, which is
+            // the edge a solved plate asks for. `Theme.borderSubtle` is a near-black hairline; it
+            // was the right edge for the near-black surface this plate replaced and is invisible
+            // on the plate itself.
             .overlay {
                 blockShape.strokeBorder(
-                    isBundleFormingTargeted ? Theme.amber.opacity(0.74) : Theme.borderSubtle,
+                    isBundleFormingTargeted
+                        ? Theme.amber.opacity(0.74)
+                        : listColor.opacity(CadenceCalendarEventStyle.chipBorderOpacity()),
                     lineWidth: isBundleFormingTargeted ? 1.5 : 1
                 )
-            }
-            .overlay(alignment: .leading) {
-                Rectangle()
-                    .fill(listColor)
-                    .frame(width: 3)
             }
         }
         .buttonStyle(.iosPressable)
@@ -1426,11 +1488,15 @@ struct iOSTimelineTaskBlock: View {
     private var clearTimeControl: some View {
         if let onClearTime {
             Button(action: onClearTime) {
+                // Plate ink, not the list colour. This control sits *on* a plate solved from that
+                // same colour, so a glyph in it was hue-on-hue the moment the fill stopped being a
+                // neutral surface; `Theme.onColorBorder` is the well the `onColor` family already
+                // ships for a control standing on a coloured fill.
                 Image(systemName: "arrow.uturn.left.circle")
                     .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(listColor.opacity(0.92))
+                    .foregroundStyle(CadenceCalendarEventStyle.platePrimaryLabelColor)
                     .frame(width: 22, height: 22)
-                    .background(listColor.opacity(0.12))
+                    .background(Theme.onColorBorder)
                     .clipShape(Circle())
                     .iOSExpandedHitArea(8)
             }

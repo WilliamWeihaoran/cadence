@@ -727,7 +727,17 @@ struct CadenceContrastFloorTests {
     ///
     /// The migration is only durable if the *next* accent-filled button is caught, and the whole
     /// failure mode of T-855 was that a constant looked like an answer. So the residue is
-    /// enumerated: five files, each with a stated reason, and a sixth goes red here.
+    /// enumerated: **three** files, each with a stated reason, and a fourth goes red here.
+    ///
+    /// **It was five until T-3160, and the two that left are the list working rather than the list
+    /// rotting.** The calendar's event and task treatments swapped places, and both departures are
+    /// a surface moving *onto* a solved colour: `CalendarPageMonthSupportViews.swift`'s task chips
+    /// now read `platePrimaryLabelColor`, which is the same white asked for by name against a fill
+    /// solved to admit it, and `TimelineEventBlock.swift` dropped the white accent wash it drew
+    /// across the top of every event block — over the rail treatment's plate at Y = 0.030-0.060
+    /// that wash composites brighter than the rail itself, so it had become a second, colourless
+    /// accent marker competing with the one that names the calendar. Entries are expected to leave
+    /// this list. Nothing may be added back to keep one on it.
     @Test func theOnlyBareThemeOnColorLeftInTheProductTreeIsSolvedOrBrandLocked() throws {
         let instrument = try CadenceScanInstrument(
             "Theme.onColor read as a constant rather than asked for a fill",
@@ -758,15 +768,22 @@ struct CadenceContrastFloorTests {
         )
 
         // Sorted, and `sweep` sorts by path: `Shared` precedes `macOS` because `S` precedes `m`.
+        //
+        // **Recomputed from the working tree on 2026-10-13 by agent `calrail`**, at the moment its
+        // half of T-3160 was committed, rather than copied from a sibling's report: three agents
+        // held dirty files that move this answer, so the only honest reading is the one taken off
+        // the tree by the sweep above. An agent landing a fourth must re-run this test, not trust
+        // this list.
         #expect(hits == [
-            // The solved event fill itself, which is why it is solved.
+            // The plate treatment's own primary tier. `platePrimaryLabelColor` is unconditionally
+            // `Theme.onColor` *because* the fill under it is solved to a luminance that admits it,
+            // which is the whole point of solving the fill.
             "Cadence/Shared/CadenceCalendarEventStyle.swift",
-            // The fill is `CalendarEventVisualStyle.chipFill`, solved under the crossover.
-            "Cadence/macOS/Views/CalendarPageMonthSupportViews.swift",
             // Sign in with Apple: a brand-locked black fill with a mandated white label.
             "Cadence/macOS/Views/SettingsSectionViews.swift",
-            // A white *wash* laid over a block, not ink read against one.
-            "Cadence/macOS/Views/TimelineEventBlock.swift",
+            // The neutral rest edge of a timeline block: a white *wash* over a block, not ink read
+            // against one. `borderColor`'s `idleTintOpacity` is how the rail treatment declines it
+            // (T-3160) without this helper having to pick a side.
             "Cadence/macOS/Views/TimelineHoverVisuals.swift",
         ], "the set of files still reading Theme.onColor as a constant changed: \(hits)")
     }

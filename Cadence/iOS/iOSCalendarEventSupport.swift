@@ -14,15 +14,18 @@ enum iOSCalendarEventSupport {
         return Color(cgColor: cgColor)
     }
 
-    /// Solid fill for an event block, so vivid EventKit calendar colors stay legible against the
-    /// dark theme.
+    /// The **dark tinted plate** behind an event block, so the leading rail — not the plate — is
+    /// what carries the calendar's colour.
     ///
     /// This used to be a local `saturation * 0.55, brightness * 0.6` rule — the same double-hit
     /// rule macOS abandoned because it rendered an orange calendar brown and a green one olive.
-    /// It now goes through the shared luminance solve, so an event is the same colour on both
-    /// platforms and `Theme.onColor` / `onColorSecondary` are guaranteed to clear AA on top of it.
+    /// It has gone through the shared luminance solve ever since, so an event is the same colour
+    /// on both platforms; **T-3160 moved it from the `plate` treatment to the `rail` one**, which
+    /// is Apple Calendar's look and the one an event now wears. The three `rail*` label tiers are
+    /// solved against this exact luminance, so this is the function to change if the plate is ever
+    /// to move — not the labels drawn on it.
     static func fillColor(for calendar: EKCalendar?) -> Color {
-        CadenceCalendarEventStyle.fill(for: color(for: calendar))
+        CadenceCalendarEventStyle.railFill(for: color(for: calendar))
     }
 
     static func timeRangeLabel(for event: EKEvent) -> String {

@@ -148,17 +148,47 @@ func timelineBlockBody(
     let dueUrgency = CadenceDueUrgency.evaluate(dueDateKey: task.dueDate, isDone: task.isDone, todayKey: todayKey)
     let dueLabel = CadenceFocusSupport.dueLabel(forDueDateKey: task.dueDate, todayKey: todayKey)
     let clampedProgress = min(max(completionProgress, 0), 1)
-    let completedTransitionOpacity = max(0, (clampedProgress - 0.58) / 0.42)
     let pendingOverlayOpacity = 1 - max(0, (clampedProgress - 0.86) / 0.14)
+    // **T-3160: the task block wears the solved plate the event block used to wear** — a fill
+    // solved to a luminance target in the list's hue, `Theme.onColor`-family content, and **no
+    // leading colour rail**. The rail moved to the event side with the rest of Apple Calendar's
+    // look; what stays here is every affordance, not the paint: the completion circle, the due
+    // marker, the resize handles and the diagonal done-stripes are all untouched below.
+    //
+    // Both ink tiers are resolved once, against the same state the fill is, because the two have
+    // to move together — the state ladder brightens the plate, and a label that did not rise with
+    // it would quietly drop under AA on hover.
+    let primaryInk = CadenceCalendarEventStyle.platePrimaryLabelColor
+    let secondaryInk = CadenceCalendarEventStyle.plateSecondaryLabelColor(
+        isSelected: showSelection,
+        isActive: showHover
+    )
+    // A finished task drops one tier instead of going grey. `Theme.dim` measures 1.99 / 1.70 /
+    // 1.48:1 against the three plate stops — it was a body-text colour chosen for a near-black
+    // surface and this surface is no longer near-black. The diagonal stripes and the filled
+    // completion glyph are what still say "done".
+    let titleInk = task.isDone ? secondaryInk : primaryInk
+    // **The due-urgency hue had to go, and it was measured before it went.**
+    //
+    // `CadenceDueUrgency.tint` is `Theme.red` / `Theme.amber` / `Theme.dim`, and against this
+    // plate's rest / hover / selected stops every accent the app ships lands between **1.63:1 and
+    // 4.61:1** — `Theme.red`, the overdue tint, is the worst at 1.72–2.84:1. Only one of the
+    // eighteen (Glacier's amber, at rest) clears 4.5:1, and most miss even the 3:1 non-text bar,
+    // so a tinted deadline here would be an AA failure on the one line the user is meant to act
+    // on. Dark ink is no escape either: black reads 2.96:1 on the rest plate. A fill solved to
+    // Y = 0.098–0.150 admits white-family ink and nothing else, which is exactly why
+    // `platePrimaryLabelColor` is unconditionally `Theme.onColor`.
+    //
+    // So urgency moves from the hue to the **tier**, which this label can afford because
+    // `CadenceFocusSupport.dueLabel` already says the word: "Overdue Aug 14", "Due today", "Due
+    // tomorrow". **The honest cost, stated rather than hidden:** at rest the urgent line is
+    // `Theme.onColor` over a non-urgent `Theme.onColorSecondary`, ~13 L* apart and plainly
+    // different ink; on hover and selection the secondary tier *has* to rise to white to stay
+    // above 4.5:1 on the brighter plate, so the two converge and only the wording separates them
+    // there. Buying the distinction back would mean either a hue that fails AA or a fourth white
+    // tier under it, which is the same failure wearing a different name.
+    let dueInk = (dueUrgency == .overdue || dueUrgency == .dueToday) ? primaryInk : secondaryInk
     HStack(alignment: .top, spacing: 0) {
-        taskColor
-            .opacity(task.isDone ? 0.4 : 1)
-            .frame(width: 3)
-            .clipShape(UnevenRoundedRectangle(
-                topLeadingRadius: style.cornerRadius,
-                bottomLeadingRadius: style.cornerRadius
-            ))
-
         HStack(alignment: .top, spacing: 4) {
             if let onToggleDone {
                 // Two states before: a cancelled task scheduled onto the timeline drew the same
@@ -185,13 +215,13 @@ func timelineBlockBody(
                 if frame.height >= 58 {
                     Text(timeRangeLabel)
                         .font(.system(size: 9, weight: .semibold))
-                        .foregroundStyle(taskColor.opacity(0.9))
+                        .foregroundStyle(secondaryInk)
                         .lineLimit(1)
                 }
                 if frame.height >= 38 {
                     Text(task.title)
                         .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(task.isDone ? Theme.dim : Theme.text)
+                        .foregroundStyle(titleInk)
                         .lineLimit(2)
                     let label = TimeFormatters.durationLabel(actual: task.actualMinutes, estimated: durationMinutes)
                     if label != "-/-" || dueLabel != nil {
@@ -201,13 +231,13 @@ func timelineBlockBody(
                                 // lose its second line and silently report a shorter duration.
                                 Text(label)
                                     .font(.system(size: 10))
-                                    .foregroundStyle(Theme.dim)
+                                    .foregroundStyle(secondaryInk)
                                     .lineLimit(1)
                             }
                             if let dueLabel {
                                 Text(dueLabel)
                                     .font(.system(size: 9, weight: .semibold))
-                                    .foregroundStyle(dueUrgency?.tint ?? Theme.dim)
+                                    .foregroundStyle(dueInk)
                                     .lineLimit(1)
                                     .layoutPriority(1)
                             }
@@ -222,19 +252,19 @@ func timelineBlockBody(
                     HStack(spacing: 4) {
                         Text(task.title)
                             .font(.system(size: 11, weight: .semibold))
-                            .foregroundStyle(task.isDone ? Theme.dim : Theme.text)
+                            .foregroundStyle(titleInk)
                             .lineLimit(1)
                         Spacer(minLength: 0)
                         if let dueLabel {
                             Text(dueLabel)
                                 .font(.system(size: 9, weight: .semibold))
-                                .foregroundStyle(dueUrgency?.tint ?? Theme.dim)
+                                .foregroundStyle(dueInk)
                                 .lineLimit(1)
                                 .layoutPriority(1)
                         } else if label != "-/-" {
                             Text(label)
                                 .font(.system(size: 9))
-                                .foregroundStyle(Theme.dim)
+                                .foregroundStyle(secondaryInk)
                                 .lineLimit(1)
                         }
                     }
@@ -248,20 +278,30 @@ func timelineBlockBody(
     }
     .frame(width: frame.width, height: frame.height, alignment: .topLeading)
     .clipped()
+    // Hover and selection are carried by the plate's own luminance ladder, not by a wash stacked
+    // on top of it — the same lever the event block already uses, and the reason the white hover
+    // wash that used to sit here is gone. A wash lifts the block by draining the hue it exists to
+    // show, and it would also break the ink solve: `plateSecondaryLabelColor` is computed against
+    // `plateLuminance`, not against whatever a wash happened to composite to.
     .background(
         ZStack {
-            RoundedRectangle(cornerRadius: style.cornerRadius).fill(Theme.surfaceElevated)
             RoundedRectangle(cornerRadius: style.cornerRadius)
-                .fill(taskColor.opacity(task.isDone ? 0.07 : 0.14))
+                .fill(
+                    CadenceCalendarEventStyle.plateFill(
+                        for: taskColor,
+                        isSelected: showSelection,
+                        isActive: showHover
+                    )
+                )
             if isPendingCompletion {
-                RoundedRectangle(cornerRadius: style.cornerRadius)
-                    .fill(taskColor.opacity(0.06 + (0.06 * completedTransitionOpacity)))
-            }
-            if showHover {
-                RoundedRectangle(cornerRadius: style.cornerRadius)
-                    .fill(TimelineHoverVisuals.hoverFill(tint: taskColor, isHovered: showHover, opacity: 0.08))
-            }
-            if isPendingCompletion {
+                // The second, list-coloured wash that used to ride on top of the fill here
+                // (`taskColor.opacity(0.06 + 0.06 * completedTransitionOpacity)`) is gone rather
+                // than re-tinted. It warmed a neutral surface toward the list colour as the
+                // completion ran; over a plate that is already solved in that colour it would
+                // composite to very nearly nothing, so keeping it would have been a line of code
+                // pretending to animate. The animation itself is untouched —
+                // `TaskCompletionPendingOverlay` is the sweeping glow, the progress capsule and
+                // the rim, and the glyph still fills on its own ring.
                 TaskCompletionPendingOverlay(
                     progress: clampedProgress,
                     tint: Theme.green,
@@ -280,12 +320,18 @@ func timelineBlockBody(
     .overlay(
         RoundedRectangle(cornerRadius: style.cornerRadius)
             .strokeBorder(
+                // The hairline is the calendar-style "lit rim of the same hue": the raw list
+                // colour over the solved plate, at the plate treatment's own opacities rather
+                // than the two this block used while it sat on a neutral surface. A 0.46 rim of
+                // the list colour over a near-black surface reads as an edge; over a plate of
+                // that same colour it is barely there.
                 TimelineHoverVisuals.borderColor(
                     tint: taskColor,
                     isSelected: showSelection,
                     isHovered: showHover,
-                    selectedOpacity: 0.46,
-                    hoverOpacity: 0.38
+                    selectedOpacity: CadenceCalendarEventStyle.chipBorderOpacity(isActive: true),
+                    hoverOpacity: CadenceCalendarEventStyle.chipBorderOpacity(),
+                    idleOpacity: 0.12
                 ),
                 lineWidth: showHover ? 1.2 : 1
             )

@@ -160,8 +160,20 @@ struct TimelineTaskBlock: View {
                 .contentShape(Rectangle())
                 .overlay {
                     let isEmphasized = resizeSession?.edge == edge || isHovered || selectedTaskID == task.id
+                    // **The emphasized handle had to be re-solved for the plate (T-3160).**
+                    // `Theme.onColorHandleActive` is white at 0.42, and it was chosen against the
+                    // near-black `Theme.surfaceElevated` this block used to sit on, where it read
+                    // 3.61:1 at worst and cleared the 3:1 bar a non-text affordance owes. Over a
+                    // fill solved to Y = 0.124–0.150 the same alpha lands at **2.17:1** — a resize
+                    // grip the user cannot find is a lost affordance, not a lost decoration. The
+                    // plate's own incidental-glyph tier is the thing that is already solved
+                    // against this fill: it is 3.69:1 at worst across the twelve list colours,
+                    // measured in `CadenceTimelineTaskPlateTests`. The idle handle keeps
+                    // `Theme.onColorHandle`; it is deliberately almost invisible until the pointer
+                    // is on the block, and it was that before (1.66:1) as much as it is now
+                    // (1.35:1).
                     Capsule()
-                        .fill(isEmphasized ? Theme.onColorHandleActive : Theme.onColorHandle)
+                        .fill(isEmphasized ? CadenceCalendarEventStyle.plateTertiaryLabelColor(isActive: true) : Theme.onColorHandle)
                         .frame(width: TimelineBlockGeometry.handleCapsuleWidth(blockWidth: frame.width), height: 2)
                 }
                 .highPriorityGesture(

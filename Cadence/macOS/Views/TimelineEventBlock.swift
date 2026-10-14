@@ -355,66 +355,113 @@ struct TimelineEventBlock: View {
     // MARK: - Block Body
 
     private var eventBlockBody: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            if frame.height >= 36 {
-                Text(timeRangeLabel)
-                    .font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(secondaryLabelColor)
-                    .lineLimit(1)
-            }
-            HStack(alignment: .firstTextBaseline, spacing: 4) {
-                Image(systemName: "calendar")
-                    .font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(secondaryLabelColor)
-                Text(item.title)
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(CalendarEventVisualStyle.primaryLabelColor)
-                    .lineLimit(2)
-                if item.isRecurringSeriesMember {
-                    Image(systemName: "repeat")
-                        .font(.system(size: 8, weight: .bold))
-                        .foregroundStyle(CalendarEventVisualStyle.tertiaryLabelColor(isSelected: isSelected, isHovered: isHovered))
+        HStack(alignment: .top, spacing: 0) {
+            // **T-3160: the event block wears Apple Calendar's rail treatment.** The leading rail
+            // is the identity marker — `railColor` keeps 96% of the calendar's own chroma at full
+            // brightness — and it is *stateless on purpose*: a marker that answers "which calendar
+            // is this" must not change colour under the pointer. The state ladder is carried by
+            // the plate and the labels, which is why `railColor` takes no `isSelected`/`isActive`.
+            //
+            // Its leading corners follow the block's so the strip ends exactly where the plate
+            // does; the trailing edge is square because this is a rail, not a pill. In a cascade
+            // (T-3161) an indented block's rail is drawn **over the body of the block beneath it**,
+            // which is what Apple does — and why the rail is an opaque fill rather than a wash,
+            // since a translucent one would show the neighbour's hue through the marker that is
+            // supposed to name this event's calendar.
+            //
+            // `CadenceCalendarEventStyle.railWidth`, not a sixth hand-typed `3`.
+            UnevenRoundedRectangle(
+                topLeadingRadius: style.cornerRadius,
+                bottomLeadingRadius: style.cornerRadius
+            )
+            .fill(railColor)
+            .frame(width: CadenceCalendarEventStyle.railWidth)
+
+            VStack(alignment: .leading, spacing: 2) {
+                if frame.height >= 36 {
+                    Text(timeRangeLabel)
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(secondaryLabelColor)
+                        .lineLimit(1)
+                }
+                HStack(alignment: .firstTextBaseline, spacing: 4) {
+                    Image(systemName: "calendar")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(secondaryLabelColor)
+                    Text(item.title)
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(
+                            CadenceCalendarEventStyle.railTitleColor(
+                                for: item.calendarColor,
+                                isSelected: isSelected,
+                                isActive: isHovered
+                            )
+                        )
+                        .lineLimit(2)
+                    // The recurrence glyph stays with the event. T-3160 moved paint, not
+                    // affordances — this marker and the task's completion circle are what still
+                    // say which species a block is where the two treatments come closest.
+                    if item.isRecurringSeriesMember {
+                        Image(systemName: "repeat")
+                            .font(.system(size: 8, weight: .bold))
+                            .foregroundStyle(
+                                CadenceCalendarEventStyle.railTertiaryLabelColor(
+                                    for: item.calendarColor,
+                                    isSelected: isSelected,
+                                    isActive: isHovered
+                                )
+                            )
+                    }
+                }
+                if frame.height >= 54 && !item.calendarTitle.isEmpty {
+                    Text(item.calendarTitle)
+                        .font(.system(size: 9))
+                        .foregroundStyle(secondaryLabelColor)
+                        .lineLimit(1)
                 }
             }
-            if frame.height >= 54 && !item.calendarTitle.isEmpty {
-                Text(item.calendarTitle)
-                    .font(.system(size: 9))
-                    .foregroundStyle(secondaryLabelColor)
-                    .lineLimit(1)
-            }
+            .padding(.horizontal, style.horizontalPadding)
+            .padding(.vertical, style.verticalPadding)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
-        .padding(.horizontal, style.horizontalPadding)
-        .padding(.vertical, style.verticalPadding)
         .frame(width: frame.width, height: frame.height, alignment: .topLeading)
         .clipped()
-        // Hover and selection are carried by the fill's own luminance ladder, not by a white wash
-        // stacked on top of it. A wash was the wrong lever here: it lifts the block by draining
-        // the hue it is supposed to be showing, which is half of why these blocks read as washed
-        // out. `CalendarEventVisualStyle.fillLuminance` brightens the calendar's colour instead.
+        // Hover and selection are carried by the plate's own luminance ladder, not by a wash
+        // stacked on top of it. A wash is the wrong lever here twice over: it lifts the block by
+        // draining the hue it is supposed to be showing, and every `rail*` label tier is solved
+        // against `railFillLuminance` specifically — so a wash would quietly move the surface the
+        // whole AA budget was computed against. `railFill` brightens the calendar's colour instead.
+        //
+        // **The white accent hairline that used to run across the top went with the swap**
+        // (T-3160). It was a bare `Theme.onColor` at 0.18 / 0.34 / 0.48, and over a plate solved
+        // to Y = 0.030-0.060 it composites brighter than the rail itself: a second, colourless
+        // accent marker competing with the one element that now says which calendar this is.
         .background(
             RoundedRectangle(cornerRadius: style.cornerRadius)
-                .fill(CalendarEventVisualStyle.fill(for: item.calendarColor, isSelected: isSelected, isHovered: isHovered))
+                .fill(
+                    CadenceCalendarEventStyle.railFill(
+                        for: item.calendarColor,
+                        isSelected: isSelected,
+                        isActive: isHovered
+                    )
+                )
         )
         .overlay(
             RoundedRectangle(cornerRadius: style.cornerRadius)
                 .strokeBorder(
                     TimelineHoverVisuals.borderColor(
-                        tint: item.calendarColor,
+                        tint: railColor,
                         isSelected: isSelected,
                         isHovered: isHovered,
-                        selectedOpacity: CalendarEventVisualStyle.chipBorderOpacity(isActive: true),
-                        hoverOpacity: CalendarEventVisualStyle.chipBorderOpacity(),
-                        idleOpacity: 0.12
+                        selectedOpacity: CadenceCalendarEventStyle.railBorderOpacity(isSelected: true),
+                        hoverOpacity: CadenceCalendarEventStyle.railBorderOpacity(isActive: true),
+                        // The rail's own colour at rest rather than the white wash this helper
+                        // otherwise draws there — see `TimelineHoverVisuals.borderColor`.
+                        idleTintOpacity: CadenceCalendarEventStyle.railBorderOpacity()
                     ),
                     lineWidth: isHovered || isSelected ? 1.2 : 1
                 )
         )
-        .overlay(alignment: .top) {
-            Rectangle()
-                .fill(Theme.onColor.opacity(CalendarEventVisualStyle.blockAccentOpacity(isSelected: isSelected, isHovered: isHovered)))
-                .frame(height: isSelected ? 2 : 1)
-                .padding(.horizontal, 8)
-        }
         .shadow(
             color: TimelineHoverVisuals.shadowColor(isActive: isHovered || isSelected),
             radius: TimelineHoverVisuals.shadowRadius(isActive: isHovered || isSelected, active: 12, idle: 8),
@@ -428,10 +475,26 @@ struct TimelineEventBlock: View {
                                  endMin: effectiveStartMin + effectiveDuration)
     }
 
-    /// Read three times in the block body, so it is resolved once against the same state the fill
-    /// is — the two have to move together or the brighter hover fill eats the label.
+    /// Read three times in the block body, so it is resolved once against the same state the plate
+    /// is — the two have to move together or the brighter hover plate eats the label.
+    ///
+    /// **Narrow by construction, and that is stated rather than hidden**: this tier owes 4.6:1
+    /// against a title that owes 5.1:1 on the same plate, about 3.2 L* apart, so it reads as a
+    /// dimmer line of the same colour rather than a different weight of ink. See
+    /// `CadenceCalendarEventStyle.railSecondaryContrastTarget` for why buying more would cost the
+    /// hue this treatment exists to show.
     private var secondaryLabelColor: Color {
-        CalendarEventVisualStyle.secondaryLabelColor(isSelected: isSelected, isHovered: isHovered)
+        CadenceCalendarEventStyle.railSecondaryLabelColor(
+            for: item.calendarColor,
+            isSelected: isSelected,
+            isActive: isHovered
+        )
+    }
+
+    /// The leading rail and the block's edge resolve from one call, so the two cannot drift.
+    /// Stateless — see `CadenceCalendarEventStyle.railColor(for:)`.
+    private var railColor: Color {
+        CadenceCalendarEventStyle.railColor(for: item.calendarColor)
     }
 }
 #endif
