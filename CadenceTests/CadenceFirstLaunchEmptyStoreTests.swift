@@ -64,6 +64,9 @@ struct CadenceFirstLaunchEmptyStoreTests {
 
         let expectedOrder = [
             "PursuitToGoalMigration.runIfNeeded",
+            // [[T-3170]]. The Block retirement, second because it rewrites the schedule fields the
+            // repair pass below reads, and because the two retirement migrations belong together.
+            "TaskBundleRetirement.runIfNeeded",
             "NoteMigrationService.migrateAndRecordFailure",
             "TagSupport.syncAllNoteTagsFromMarkdown",
             "DataIntegrityRepairService.repairAndRecordFailure",
@@ -96,7 +99,7 @@ struct CadenceFirstLaunchEmptyStoreTests {
         let derived = try Self.passesTheLaunchRuns()
         #expect(
             derived.count >= 5,
-            "the pass reader found \(derived.count) passes in the launch body \(derived.sorted()), fewer than the five it runs"
+            "the pass reader found \(derived.count) passes in the launch body \(derived.sorted()), fewer than the five it has run since T-1108"
         )
         #expect(
             Set(expectedOrder) == derived,
@@ -248,6 +251,7 @@ struct CadenceFirstLaunchEmptyStoreTests {
         defaults: UserDefaults
     ) {
         PursuitToGoalMigration.runIfNeeded(modelContext: context, defaults: defaults)
+        let retiredBlocks = TaskBundleRetirement.runIfNeeded(modelContext: context)
         let migrationReport = NoteMigrationService.migrateAndRecordFailure(
             in: context, source: "empty-store-test", saveChanges: false
         )
@@ -258,6 +262,12 @@ struct CadenceFirstLaunchEmptyStoreTests {
         let reconciledFocusMinutes = CadenceFocusLedger.reconcile(in: context)
 
         #expect(migrationReport?.insertedTotal == 0)
+        // [[T-3170]]. A store with no blocks in it is the state every launch after the first is in,
+        // and an empty one has never had any — so the Block retirement has to read as a *result*
+        // here and not as a store it could not read, the same distinction T-1402 drew for the two
+        // below it.
+        #expect(retiredBlocks == .nothingToDo, "the Block retirement changed an empty store")
+        #expect(retiredBlocks != .couldNotRead, "the Block retirement could not read an empty store")
         // **T-1402.** These two were `#expect(!synced)` and `#expect(!reconciledFocusMinutes)`, and
         // `false` there covered a clean pass *and* a table the pass could not read — so an empty
         // first launch and a launch that could read nothing at all were the same assertion. They

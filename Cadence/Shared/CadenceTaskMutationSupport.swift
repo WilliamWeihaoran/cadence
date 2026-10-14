@@ -1497,7 +1497,16 @@ extension CadenceTaskMutationSupport {
 /// It is deliberately **not** a second `rollback()`: this app has one `ModelContext`, and a
 /// rollback discards whatever else is pending in it. That is `commitEdit`'s own reason for taking a
 /// caller-supplied `undo`, and it does not depend on any SwiftData timing.
-struct CadenceDeleteSurvivorSnapshot {
+///
+/// **It is `nonisolated`, and that is load-bearing rather than tidy ([[T-3170]]).** It is a value
+/// type over closures that read and write model fields; nothing in it touches the UI. Left on this
+/// module's `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor` default it forced `MainActor` onto every
+/// caller that wanted a refusal path, which is how `TaskBundleRetirement.runIfNeeded` — a data
+/// migration over a `ModelContext`, pure arithmetic over dates and minutes — came to need main-actor
+/// isolation it has no use for. It already compiles `nonisolated` in `CadenceMCPServer`, which
+/// builds this file without that default; saying so here makes the two targets agree and stops the
+/// isolation spreading to the next caller.
+nonisolated struct CadenceDeleteSurvivorSnapshot {
     private var restorations: [() -> Void] = []
 
     var isEmpty: Bool { restorations.isEmpty }

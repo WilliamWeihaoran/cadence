@@ -432,6 +432,18 @@ struct PersistenceController {
             .forMaintenancePass(outcome)
         }
 
+        // [[T-3170]]: takes the Block feature's rows out of the store, having first pushed each
+        // block's day and time down onto its members. It must run before anything that reads a
+        // task's schedule, because until it has, every member of a block holds the `-1`
+        // unscheduled sentinel instead of a slot. `_ =` for the same reason the pursuit migration
+        // above is: it deletes rows, so it owns its own save and `context.hasChanges` is already
+        // false for its work by the time `changedStore` below is computed.
+        _ = recorder.measure(.bundleRetirement) {
+            TaskBundleRetirement.runIfNeeded(modelContext: context)
+        } classifying: { outcome in
+            .forMaintenancePass(outcome)
+        }
+
         // **No pass here seeds the default tags, and that is the point (T-528).**
         //
         // The seed's only signal was "no tag carries this slug", and at launch that sentence has
@@ -2766,6 +2778,10 @@ nonisolated enum CadenceStartupStage: String, Hashable, CaseIterable {
     /// Opening the CloudKit-backed `ModelContainer` on the real store.
     case containerOpen
     case pursuitMigration
+    /// [[T-3170]]'s one-time Block retirement: each block's schedule pushed down onto its members,
+    /// then the block rows deleted. Beside the pursuit migration because it is the same kind of
+    /// pass — a feature leaving the product — and because, like it, it manages its own save.
+    case bundleRetirement
     case noteMigration
     case tagSync
     case integrityRepair
