@@ -95,10 +95,6 @@ struct CadenceReadServiceTests {
         task.sectionName = "Build"
         task.tags = TagSupport.resolveTags(named: ["feature"], in: fixture.modelContext)
 
-        let bundle = TaskBundle(title: "Planning block", dateKey: "2026-05-01", startMin: 600, durationMinutes: 45)
-        task.bundle = bundle
-        task.bundleOrder = 0
-
         let note = Note(
             kind: .list,
             title: "Design Note",
@@ -123,7 +119,6 @@ struct CadenceReadServiceTests {
         fixture.modelContext.insert(goal)
         fixture.modelContext.insert(parentGoal)
         fixture.modelContext.insert(task)
-        fixture.modelContext.insert(bundle)
         fixture.modelContext.insert(note)
         fixture.modelContext.insert(backlink)
         fixture.modelContext.insert(habit)
@@ -135,7 +130,6 @@ struct CadenceReadServiceTests {
         let taskDetail = try fixture.service.getTask(taskID: task.id.uuidString)
         let noteDetail = try fixture.service.getNote(noteID: note.id.uuidString)
         let goalDetail = try fixture.service.getGoal(goalID: goal.id.uuidString)
-        let bundleDetail = try fixture.service.getTaskBundle(bundleID: bundle.id.uuidString)
 
         #expect(taskDetail.summary.goal?.id == goal.id.uuidString)
         #expect(try fixture.service.listTags(query: "feature").items.first?.summary.slug == "feature")
@@ -152,8 +146,6 @@ struct CadenceReadServiceTests {
         #expect(try fixture.service.listHabits(options: .init(goalId: goal.id.uuidString)).items.first?.completedToday == true)
         #expect(try fixture.service.listHabits(options: .init(goalId: goal.id.uuidString)).items.first?.goal?.id == goal.id.uuidString)
         #expect(try fixture.service.listLinks(options: .init(containerKind: "project", containerId: fixture.project.id.uuidString)).items.map(\.id) == [savedLink.id.uuidString])
-        #expect(try fixture.service.listTaskBundles(options: .init(dateKey: "2026-05-01")).items.map(\.id) == [bundle.id.uuidString])
-        #expect(bundleDetail.tasks.map(\.id) == [task.id.uuidString])
         #expect(try fixture.service.search(query: "Goal Spec", scopes: ["links"]).items.first?.entityType == "saved_link")
         #expect(try fixture.service.search(query: "Write daily", scopes: ["habits"]).items.first?.entityType == "habit")
         #expect(try fixture.service.search(query: "Ship Goals", scopes: ["goals"]).items.first?.entityType == "goal")

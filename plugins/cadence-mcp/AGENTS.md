@@ -19,12 +19,14 @@ missing-argument case, and a deleted router arm answers `Unknown tool` while a r
 answers a different `Missing required argument` — both of them errors. A bare `isError` check is
 green for all three, so `call_error` takes the expected text. Do not "simplify" it away.
 
-What is still not covered: **`list_task_bundles` alone** is dispatched and returns `[]`, because
-MCP has no tool that creates a bundle and a fresh fixture store therefore cannot hold one. That is
-now a *refusal with a measurement* rather than a gap — see [[T-1122]] — so the empty assertion is
-the honest end state until something changes on the app side, not a placeholder. **The measurement
-grew a second half on 2026-09-27**: no write arm can put a task *into* a bundle either, so even
-with the arm the fixture could only hold an empty block. `list_links` left
+What is still not covered: nothing on the bundle side any more, because there is no bundle side.
+`list_task_bundles` was for a long time the one arm dispatched against a guaranteed-empty table —
+a *refusal with a measurement* rather than a gap ([[T-1122]]), which grew a second half on
+2026-09-27 when it turned out no write arm could put a task into a block either. [[T-1122]] then
+paid both halves and the smoke test ran `create_task_bundle` and `add_task_to_bundle` over real
+rows. **[[T-3170]] removed all four Block tools**, read arms included, because the owner retired
+the feature and the startup pass now deletes the rows; there is no table left to dispatch against.
+`list_links` left
 the list with `create_link` and `list_notes` now runs over list notes `create_list_note` made
 ([[T-1122]] throughout): both now run against rows the smoke test made, with their key sets
 compared at runtime. **`list_goals`, `get_goal` and `list_habits` went back on the list with

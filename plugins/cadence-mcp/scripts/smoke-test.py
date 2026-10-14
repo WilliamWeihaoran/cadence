@@ -34,16 +34,12 @@ WRITE_TOOLS = {
     "create_link",
     "create_tag",
     "create_list_note",
-    "create_task_bundle",
-    "add_task_to_bundle",
 }
 EXPECTED_TOOLS = {
     "mcp_diagnostics",
     "get_today_brief",
     "list_tasks",
     "get_task",
-    "list_task_bundles",
-    "get_task_bundle",
     "list_contexts",
     "get_context_summary",
     "list_containers",
@@ -123,11 +119,6 @@ CONTAINER_SUMMARY_KEYS = {
 # T-1122. `create_link` is the first constructor on this surface for a model outside the
 # context/list/task triangle, which is what finally gives `list_links` a row: until it existed the
 # fixture store could hold no saved link, so this DTO was dispatched and asserted empty (T-269).
-TASK_BUNDLE_SUMMARY_KEYS = {
-    "id", "title", "dateKey", "startMin", "durationMinutes", "endMin",
-    "totalEstimatedMinutes", "taskCount", "activeTaskCount", "createdAt",
-}
-TASK_BUNDLE_DETAIL_KEYS = {"summary", "tasks"}
 SAVED_LINK_SUMMARY_KEYS = {"id", "title", "url", "container", "order", "createdAt"}
 SAVED_LINK_SUMMARY_OPTIONAL = {"container"}
 # T-2077 removed `create_goal` and `create_habit`, so the goal/habit key sets that used to sit
@@ -619,7 +610,7 @@ def main() -> int:
         if not any(hit["entityType"] == "daily_note" and hit["entityId"] == daily_note["id"] for hit in default_search_hits):
             raise AssertionError(f"expected default search to include core notes, got {default_search_hits}")
 
-        for offset, tool_name in enumerate(["list_tags", "list_goals", "list_habits", "list_links", "list_task_bundles"], start=25):
+        for offset, tool_name in enumerate(["list_tags", "list_goals", "list_habits", "list_links"], start=25):
             send(
                 {
                     "jsonrpc": "2.0",
@@ -815,20 +806,13 @@ def main() -> int:
             raise AssertionError("list_tags with a non-integer limit should return an MCP tool error")
 
         # --- Read arms nothing had ever dispatched (T-259) ------------------------------
-        # A fresh fixture store holds no bundles, containers or goals, and MCP has no tool that
-        # creates one, so what these can establish is the argument wiring and the not-found path.
-        # That is not nothing: `bundleId`, `goalId` and `containerKind`+`containerId` are each
-        # read by exactly one arm, so a renamed key here fails nowhere else. Each asserts the
-        # error *message*, because "Unknown tool" is also an error.
-        call_error(40, "get_task_bundle", {}, "missing bundleId", "Missing required argument: bundleId")
-        call_error(
-            41,
-            "get_task_bundle",
-            {"bundleId": MISSING_UUID},
-            "unknown bundleId",
-            f"No task bundle found with id {MISSING_UUID}.",
-        )
-
+        # A fresh fixture store holds no containers or goals, and MCP has no tool that creates
+        # one, so what these can establish is the argument wiring and the not-found path. That is
+        # not nothing: `goalId` and `containerKind`+`containerId` are each read by exactly one arm,
+        # so a renamed key here fails nowhere else. Each asserts the error *message*, because
+        # "Unknown tool" is also an error. The `bundleId` probes that stood first here went with
+        # the Block tools at [[T-3170]]; ids 40 and 41 are deliberately left unused rather than
+        # renumbered, because every id below them is cited in a comment somewhere in this file.
         containers = page_items(call_ok(42, "list_containers", {"limit": 3}), "list_containers")
         if containers != []:
             raise AssertionError(f"expected no containers in a fresh store, got {containers}")
@@ -1327,99 +1311,17 @@ def main() -> int:
         if [row["summary"]["id"] for row in carrying_slug] != [tag["summary"]["id"]]:
             raise AssertionError(f"expected exactly the new tag carrying its slug, got {carrying_slug}")
 
-        # --- The first task bundle this surface can make, and the first task put in one -----
-        # [[T-1122]]'s sixth and last constructor, plus the half that stops it being a constructor
-        # for empty boxes. Both refusals it replaces were measurements rather than opinions: the
-        # arm needed `CadenceTaskMutationSupport.insertBundle(title:…)`, which lived in a file
-        # reaching `NotificationManager` and WidgetKit, and a Sources phase compiles whole files;
-        # and nothing on this surface could put a task into a block, so `list_task_bundles` would
-        # have gone from dispatched-and-empty to dispatched-over-rows nobody could fill.
+        # --- The Block tools stood here, and are gone ([[T-3170]]) ----------------------
+        # `create_task_bundle`, `add_task_to_bundle`, `list_task_bundles` and `get_task_bundle`
+        # were [[T-1122]]'s sixth and last constructor plus its filling half and the two read arms
+        # they fed. The owner retired the Block feature outright, so the app no longer mints a
+        # `TaskBundle` and this surface is not allowed to be the one process that still does — the
+        # same argument that took `create_goal` and `create_habit` out at [[T-2077]]. The read arms
+        # went too, which those two did not: `PersistenceController.performStartupMaintenance` now
+        # deletes the rows, so there is no table left to answer about.
         #
-        # The membership rule is the thing these checks are aimed at. `assignTask(_:to:)` writes
-        # five fields and a hand-rolled copy of it inside `CadenceWriteService` is the failure the
-        # ticket exists to refuse — so each assertion below is one of those five, read back off a
-        # different tool rather than off the arm's own answer.
-        block = call_ok(160, "create_task_bundle", {
-            "title": "  Deep work  ",
-            "date": "2026-05-04",
-            "startMin": "9 AM",
-            "durationMinutes": "2h",
-        })
-        check_keys(block, TASK_BUNDLE_DETAIL_KEYS, set(), "create_task_bundle detail")
-        check_keys(block["summary"], TASK_BUNDLE_SUMMARY_KEYS, set(), "create_task_bundle summary")
-        block_id = block["summary"]["id"]
-        # The natural-language start and duration both landed, and the title was trimmed by
-        # `TaskBundle.storedTitle` rather than stored as sent.
-        if block["summary"]["startMin"] != 540 or block["summary"]["durationMinutes"] != 120:
-            raise AssertionError(f"expected 9 AM for 2h to land as 540/120, got {block['summary']}")
-        if block["summary"]["endMin"] != 660 or block["summary"]["title"] != "Deep work":
-            raise AssertionError(f"expected a trimmed title and a derived endMin, got {block['summary']}")
-        if block["tasks"] or block["summary"]["taskCount"] != 0:
-            raise AssertionError(f"a new block starts empty, got {block}")
-
-        # An omitted title takes the app's own fallback, which is `TaskBundle.storedTitle`'s job
-        # and not a literal this arm is allowed to type.
-        untitled_block = call_ok(161, "create_task_bundle", {
-            "date": "2026-05-04", "startMin": 780, "durationMinutes": 30,
-        })
-        if not untitled_block["summary"]["title"]:
-            raise AssertionError(f"expected the shared fallback title, got {untitled_block['summary']}")
-
-        # A block is a placement, so each of the three placement fields is refused when absent
-        # rather than defaulted to a day, a time or a height nobody asked for.
-        call_error(162, "create_task_bundle", {"startMin": 540, "durationMinutes": 60}, "a block with no day", "date is required")
-        call_error(163, "create_task_bundle", {"date": "2026-05-04", "durationMinutes": 60}, "a block with no time", "startMin is required")
-        call_error(164, "create_task_bundle", {"date": "2026-05-04", "startMin": 540}, "a block with no height", "durationMinutes is required")
-
-        member = call_ok(165, "create_task", {
-            "title": "Coverage probe block member",
-            "scheduledDate": "2026-05-06",
-            "scheduledStartMin": 600,
-            "estimatedMinutes": 45,
-        })
-        member_id = member["summary"]["id"]
-        filled = call_ok(166, "add_task_to_bundle", {"bundleId": block_id, "taskId": member_id})
-        check_keys(filled, TASK_BUNDLE_DETAIL_KEYS, set(), "add_task_to_bundle detail")
-        if [row["id"] for row in filled["tasks"]] != [member_id]:
-            raise AssertionError(f"expected the task listed as the block's one member, got {filled}")
-        if filled["summary"]["taskCount"] != 1 or filled["summary"]["totalEstimatedMinutes"] != 45:
-            raise AssertionError(f"expected the member counted on the block, got {filled['summary']}")
-        # Read back through `get_task`, not off the answer above: the block owns the placement now,
-        # so the task takes the block's day and loses its own time-of-day slot. A hand-rolled copy
-        # of the rule that wrote only `bundle` would survive a check on the block's member list and
-        # is killed here.
-        moved = call_ok(167, "get_task", {"taskId": member_id})
-        if moved["summary"]["scheduledDate"] != "2026-05-04":
-            raise AssertionError(f"expected the task moved onto the block's day, got {moved['summary']}")
-        if moved["summary"]["scheduledStartMin"] != -1:
-            raise AssertionError(f"expected the task's own slot cleared by the block, got {moved['summary']}")
-
-        # Refused rather than re-stamped: a no-op write would still put a line in `mcp-audit.log`.
-        call_error(
-            168,
-            "add_task_to_bundle",
-            {"bundleId": block_id, "taskId": member_id},
-            "a task the block already holds",
-            "is already in block",
-        )
-        call_error(
-            169,
-            "add_task_to_bundle",
-            {"bundleId": MISSING_UUID, "taskId": member_id},
-            "a block that does not exist",
-            f"No task bundle found with id {MISSING_UUID}.",
-        )
-        call_error(170, "add_task_to_bundle", {"taskId": member_id}, "no bundleId", "Missing required argument: bundleId")
-
-        # And the rows are visible to the read half, which is what the two arms were for.
-        listed_blocks = page_items(
-            call_ok(171, "list_task_bundles", {"date": "2026-05-04", "limit": 10}),
-            "list_task_bundles after create_task_bundle",
-        )
-        if {row["id"] for row in listed_blocks} != {block_id, untitled_block["summary"]["id"]}:
-            raise AssertionError(f"expected both new blocks on the day, got {listed_blocks}")
-        for row in listed_blocks:
-            check_keys(row, TASK_BUNDLE_SUMMARY_KEYS, set(), "list_task_bundles row")
+        # Ids 160-171 are left unused rather than reassigned, for the reason the 40/41 gap above
+        # gives.
 
         # --- The five write tools that ran nowhere at all (T-259) ------------------------
         # `update_task`, `schedule_task`, `complete_task`, `reopen_task` and `cancel_task` are
@@ -1598,11 +1500,13 @@ def main() -> int:
         # --- List DTO shapes -------------------------------------------------------------
         # The `list_*` arms this file already called ran against an empty store and returned
         # `[]`, so no list payload's shape had ever been observed. Tags, tasks and notes all
-        # exist by now, so those three can be checked against real rows. Bundles, links, contexts
-        # and containers have a creation path too since [[T-799]], [[T-1122]] and the sections
-        # above, and are shape-checked where they are made. Goals and habits stay empty here and
-        # always will: [[T-2077]] removed `create_goal` and `create_habit` because the app itself
-        # stopped minting either, so that half of the gap is closed by decision rather than open.
+        # exist by now, so those three can be checked against real rows. Links, contexts and
+        # containers have a creation path too since [[T-799]] and [[T-1122]], and are shape-checked
+        # where they are made. Goals and habits stay empty here and always will: [[T-2077]] removed
+        # `create_goal` and `create_habit` because the app itself stopped minting either, so that
+        # half of the gap is closed by decision rather than open. Bundles had a creation path from
+        # [[T-1122]] and have no tool at all since [[T-3170]], for the same reason one step further
+        # on.
         #
         # The tags here are the two request 28 minted by name through `TagSupport.resolveTags`,
         # not the default set. T-528 removed the seed from `CadenceMCPStorePreparation.prepare`:
@@ -1728,7 +1632,7 @@ def main() -> int:
         print("OK core note append/read/search")
         print("OK note list/detail paths")
         print("OK context list/error paths")
-        print("OK tag/goal/habit/link/bundle list paths")
+        print("OK tag/goal/habit/link list paths")
         print("OK document/event-note read paths")
         print("OK string scheduledStartMin")
         print("OK natural date/duration")
@@ -1741,7 +1645,7 @@ def main() -> int:
         print(f"OK audit log entries={len(audit_entries)}")
         print("OK tool error paths")
         print("OK write lifecycle update/schedule/complete/reopen/cancel")
-        print("OK bundle/container/goal read arms")
+        print("OK container/goal read arms")
         print("OK natural date/duration/time parsing branches")
         print("OK list DTO shapes")
         print("OK context/container creation and board seeding")

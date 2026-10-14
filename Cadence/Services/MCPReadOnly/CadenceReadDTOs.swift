@@ -172,24 +172,6 @@ nonisolated struct CadenceTaskSummary: Codable, Sendable {
     let isCancelled: Bool
 }
 
-nonisolated struct CadenceTaskBundleSummary: Codable, Sendable {
-    let id: String
-    let title: String
-    let dateKey: String
-    let startMin: Int
-    let durationMinutes: Int
-    let endMin: Int
-    let totalEstimatedMinutes: Int
-    let taskCount: Int
-    let activeTaskCount: Int
-    let createdAt: String
-}
-
-nonisolated struct CadenceTaskBundleDetail: Codable, Sendable {
-    let summary: CadenceTaskBundleSummary
-    let tasks: [CadenceTaskSummary]
-}
-
 nonisolated struct CadenceTaskDetail: Codable, Sendable {
     let summary: CadenceTaskSummary
     let notes: String

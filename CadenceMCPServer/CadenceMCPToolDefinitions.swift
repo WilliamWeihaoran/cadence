@@ -106,7 +106,22 @@ enum CadenceMCPToolDefinitions {
     // the refusal that remains is deletion, which is settled rather than deferred. "Can this
     // server put a task on the timeline in a block?" is a capability question, and the version is
     // the only thing a client can ask.
-    private static let serverVersion = "0.15.0"
+    // 0.16.0 takes all four of those block tools away again — `create_task_bundle`,
+    // `add_task_to_bundle`, `list_task_bundles` and `get_task_bundle` ([[T-3170]]). The owner
+    // retired the Block feature outright ("the whole concept of bundle feels a bit unnecessary and
+    // adds confusion"), and this surface is not allowed to be the one process still minting the
+    // rows the app has stopped making — the same argument 0.14.0 made for `create_goal` and
+    // `create_habit`, and the same reason the two *read* tools go with them rather than staying to
+    // answer about a table nothing writes. They **disappear** rather than remaining advertised and
+    // refusing, for 0.14.0's reason: `tools/list` is the only capability contract a client can
+    // read. `CadenceTaskBundleSummary` and `CadenceTaskBundleDetail` go with them, which is the
+    // first **removal** of response types from this surface and the reason this is a minor bump
+    // and not a patch. `TaskBundle` itself stays in `CadenceSchema` and stays a `@Model` — build
+    // 22 ships blocks and this project has no `SchemaMigrationPlan`, so a store written by it has
+    // to keep opening; a later build drops the entity once no device can hold a record. Until
+    // then, `PersistenceController.performStartupMaintenance` retires any rows it finds, pushing
+    // each block's day and time down onto its members first so none of them loses its slot.
+    private static let serverVersion = "0.16.0"
     private static let writeToolNames: Set<String> = [
         "create_context",
         "create_container",
@@ -124,8 +139,6 @@ enum CadenceMCPToolDefinitions {
         "create_link",
         "create_tag",
         "create_list_note",
-        "create_task_bundle",
-        "add_task_to_bundle",
     ]
 
     static var tools: [Tool] {
@@ -167,14 +180,6 @@ enum CadenceMCPToolDefinitions {
             Tool(name: "get_task", description: "Get full read-only detail for one Cadence task.", inputSchema: schema([
                 "taskId": uuidProperty("Task UUID."),
             ], required: ["taskId"])),
-            Tool(name: "list_task_bundles", description: "List scheduled Cadence task bundles.", inputSchema: schema([
-                "date": dateProperty("Optional bundle date, yyyy-MM-dd or natural day."),
-                "limit": integerProperty("Optional page size, capped at 200. The response is a page envelope — items, offset, returnedCount, totalCount, hasMore, nextOffset — so 0 is a valid request for totalCount alone.", minimum: 0, maximum: 200),
-                "offset": integerProperty("Optional zero-based offset into the totally ordered result. Pass the previous response's nextOffset to continue; hasMore says whether one exists.", minimum: 0),
-            ])),
-            Tool(name: "get_task_bundle", description: "Get read-only detail for one Cadence task bundle.", inputSchema: schema([
-                "bundleId": uuidProperty("Task bundle UUID."),
-            ], required: ["bundleId"])),
             Tool(name: "list_contexts", description: "List Cadence contexts with summary counts.", inputSchema: schema([
                 "includeArchived": booleanProperty("Include archived contexts."),
                 "query": stringProperty("Optional context search."),
@@ -382,16 +387,6 @@ enum CadenceMCPToolDefinitions {
                 "title": stringProperty("Note title, which is also the note's seeded # heading.", minLength: 1),
                 "folderPath": stringProperty("Optional /-separated folder path such as Planning/Research. Trimmed per component, empty components dropped. Omitted or blank files the note at the list's root."),
             ], required: ["containerKind", "containerId", "title"])),
-            Tool(name: "create_task_bundle", description: "Create an empty Cadence task bundle — a block on one day's timeline. Answers the same detail get_task_bundle returns. A block is a placement, so date, startMin and durationMinutes are all required; an omitted title gets the app's own fallback. The start minute is clamped so a minimum-length block still ends inside the day, and the duration is clamped into whatever is left of that day, so read startMin, durationMinutes and endMin off the answer rather than assuming what was sent. Use add_task_to_bundle to put tasks in it. There is no deletion on this surface.", inputSchema: schema([
-                "title": stringProperty("Optional block title. Omitted or blank, the block displays under the app's own default name."),
-                "date": dateProperty("Block date, yyyy-MM-dd or natural day."),
-                "startMin": integerOrStringProperty("Minutes from midnight, 0...1439, or time like 4 PM.", minimum: 0, maximum: 1439),
-                "durationMinutes": integerOrStringProperty("Block height, 1...1440 minutes, or duration like 30m, 1h, 1.5h, or three hours.", minimum: 1, maximum: 1440),
-            ], required: ["date", "startMin", "durationMinutes"])),
-            Tool(name: "add_task_to_bundle", description: "Move a Cadence task into an existing task bundle. Answers the block's detail, as get_task_bundle does. The block owns the placement, so the task takes the block's date, loses its own time-of-day slot and any stale calendar link, and is appended after the block's current members. A task the block already holds is rejected rather than re-stamped, and a cancelled task is rejected because a block lists only its active members. Use schedule_task to take a task back out onto its own slot.", inputSchema: schema([
-                "bundleId": uuidProperty("Task bundle UUID."),
-                "taskId": uuidProperty("Task UUID."),
-            ], required: ["bundleId", "taskId"])),
             Tool(name: "append_core_note", description: "Append text to a daily, weekly, or permanent Cadence note, creating it if needed.", inputSchema: schema([
                 "kind": stringProperty("daily, weekly, or permanent.", enumValues: ["daily", "weekly", "permanent"]),
                 "content": stringProperty("Text to append.", minLength: 1),

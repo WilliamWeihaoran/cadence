@@ -110,14 +110,20 @@ struct CadenceMCPToolContractTests {
     /// or `CadenceContainerRef` coming back over the wire — a renamed or dropped field on any of
     /// them reaches a user's editor with nothing red anywhere.
     ///
+    /// **Five, since [[T-3170]] removed `list_task_bundles` along with the rest of the Block
+    /// surface.** `CadenceTaskBundleSummary` is not an uncovered DTO any more; it is not a DTO. The
+    /// sentences above are left as they were written because they are the argument for the five
+    /// that remain, and rewriting them to pretend bundles were never in the list would lose why
+    /// this scan exists.
+    ///
     /// **Two of the six are no longer in that position (T-799).** `create_context` and
     /// `create_container` now mint a context and a container over the wire, and the smoke test
     /// checks the resulting `CadenceContextRef` and `CadenceContainerRef` key sets against real
     /// rows. Both stay in the list below anyway: this scan runs inside `CadenceTests` on every
     /// unit run, the smoke test runs only when someone remembers to invoke it, and a scan that
-    /// agrees with a stronger check costs nothing. The other four — bundles, goals, habits and
-    /// links — still have no constructor anywhere on the surface, so for them this remains the
-    /// only check of any kind.
+    /// agrees with a stronger check costs nothing. The remaining three — goals, habits and links —
+    /// still have no constructor anywhere on the surface, so for them this remains the only check
+    /// of any kind. Bundles were the fourth and are no longer anywhere ([[T-3170]]).
     ///
     /// T-269 weighed seeding a fixture store out-of-band (a second process opening the same
     /// SwiftData store the server is about to open, with a fixture that has to be hand-kept in
@@ -155,7 +161,7 @@ struct CadenceMCPToolContractTests {
     @Test func listToolDTOScanIsNotVacuous() throws {
         let source = strippingComments(try sourceFile(Self.readDTOsPath))
         #expect(source.count > 3_000)
-        #expect(Self.listToolDTOSpecs.count == 6)
+        #expect(Self.listToolDTOSpecs.count == 5)
         for spec in Self.listToolDTOSpecs {
             #expect(spec.expectedFields.isEmpty == false)
             #expect(structStoredPropertyNames(spec.structName, in: source).isEmpty == false)
@@ -422,8 +428,9 @@ private extension CadenceMCPToolContractTests {
         return String(body[body.startIndex..<end])
     }
 
-    /// The six `list_*` result-element DTOs `CadenceReadService` returns that T-269 found with no
-    /// runtime coverage: `listTaskBundles` -> `CadenceTaskBundleSummary`, `listGoals` ->
+    /// The `list_*` result-element DTOs `CadenceReadService` returns that T-269 found with no
+    /// runtime coverage. Six, until [[T-3170]] took `listTaskBundles` ->
+    /// `CadenceTaskBundleSummary` off the surface entirely; five now: `listGoals` ->
     /// `CadenceGoalSummary`, `listHabits` -> `CadenceHabitSummary`, `listLinks` ->
     /// `CadenceSavedLinkSummary`, `listContexts` -> `CadenceContextRef`, `listContainers` ->
     /// `CadenceContainerRef` (`CadenceReadService.swift`). `list_tasks`, `list_tags` and
@@ -441,10 +448,6 @@ private extension CadenceMCPToolContractTests {
     }
 
     static let listToolDTOSpecs: [DTOFieldSpec] = [
-        DTOFieldSpec(structName: "CadenceTaskBundleSummary", expectedFields: [
-            "id", "title", "dateKey", "startMin", "durationMinutes", "endMin",
-            "totalEstimatedMinutes", "taskCount", "activeTaskCount", "createdAt",
-        ]),
         DTOFieldSpec(structName: "CadenceGoalSummary", expectedFields: [
             "id", "title", "description", "startDate", "endDate", "progressType", "targetHours",
             "loggedHours", "colorHex", "icon", "kind", "status", "progress", "contextId",

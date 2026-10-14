@@ -164,17 +164,17 @@ as `timed out waiting for response 100` rather than naming a build.
   **status/`isArchived`**, and — since [[T-1182]] — a **position** (a zero-based index into the
   destination bucket, which the arm renumbers densely; re-filing alone renumbers nothing) plus the
   two `hide*IfEmpty` flags. `linkedCalendarID` stays refused, on T-390's opacity. `create_link`,
-  `create_tag`, `create_list_note`, `create_task_bundle` and `add_task_to_bundle` are the
-  constructors outside the context/list/task triangle; **nothing deletes anything**, refused with
-  a measurement and settled rather than deferred ([[T-1122]]). Archiving is offered instead.
+  `create_tag` and `create_list_note` are the constructors outside the context/list/task triangle;
+  **nothing deletes anything**, refused with a measurement and settled rather than deferred
+  ([[T-1122]]). Archiving is offered instead.
   **Four of those arms carry a refusal, a removal or a lifting condition whose SHAPE is what the
   next arm-shaped question gets measured against, and not one is re-decidable from a summary**:
   `create_goal`/`create_habit` **removed** rather than left advertised and refusing ([[T-2077]],
   0.13.0 -> 0.14.0, `list_goals`/`get_goal`/`list_habits` untouched); `create_list_note` lifted by
   splitting a FILE rather than by changing a rule, and still taking no **body**; `create_tag`
   refused twice before `TagSupport.creationDecision(for:in:)` existed to be asked ([[T-1406]]);
-  and `create_task_bundle` refused for seven sittings on a file AND on there being no way to fill
-  a block, both paid in one pass ([[T-1122]]). All four in full:
+  and the four block arms, refused for seven sittings and then **removed outright, read arms
+  included** ([[T-3170]], 0.15.0 -> 0.16.0: the startup pass deletes the rows). All four in full:
   `../docs/MCP_AGENTS_REFERENCE.md`, "What the create and update arms cover", "Why one kind had
   no constructor" and "Why deletion is refused".
 - **Eleven `Cadence/Shared/` files are in the Sources phase, and none of them earns its place for

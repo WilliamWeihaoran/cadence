@@ -11,7 +11,6 @@ nonisolated enum CadenceReadError: Error, LocalizedError, Sendable {
     case invalidNoteKind(String)
     case incompleteContainerFilter
     case taskNotFound(String)
-    case taskBundleNotFound(String)
     case containerNotFound(String, String)
     case contextNotFound(String)
     case noteNotFound(String)
@@ -41,8 +40,6 @@ nonisolated enum CadenceReadError: Error, LocalizedError, Sendable {
             return "containerKind and containerId must be provided together."
         case .taskNotFound(let value):
             return "No task found with id \(value)."
-        case .taskBundleNotFound(let value):
-            return "No task bundle found with id \(value)."
         case .containerNotFound(let kind, let id):
             return "No \(kind) found with id \(id)."
         case .contextNotFound(let value):
@@ -107,12 +104,6 @@ nonisolated struct CadenceSavedLinkListOptions: Sendable {
     var containerKind: String? = nil
     var containerId: String? = nil
     var query: String? = nil
-    var limit: Int = 50
-    var offset: Int = 0
-}
-
-nonisolated struct CadenceTaskBundleListOptions: Sendable {
-    var dateKey: String? = nil
     var limit: Int = 50
     var offset: Int = 0
 }
@@ -327,34 +318,6 @@ final class CadenceReadService {
             subtasks: subtasks,
             createdAt: format(task.createdAt),
             completedAt: task.completedAt.map(format)
-        )
-    }
-
-    func listTaskBundles(options: CadenceTaskBundleListOptions) throws -> CadencePage<CadenceTaskBundleSummary> {
-        let dateKey = try normalizedDateKey(options.dateKey)
-        let bundles = try fetchAll(
-            TaskBundle.self,
-            where: dateKey.map { key in #Predicate<TaskBundle> { $0.dateKey == key } }
-        )
-
-        let ordered = bundles.sorted {
-            if $0.dateKey != $1.dateKey { return $0.dateKey < $1.dateKey }
-            if $0.startMin != $1.startMin { return $0.startMin < $1.startMin }
-            let titles = $0.displayTitle.localizedCaseInsensitiveCompare($1.displayTitle)
-            if titles != .orderedSame { return titles == .orderedAscending }
-            return $0.id.uuidString < $1.id.uuidString
-        }
-        return CadencePage.paging(ordered, offset: options.offset, limit: options.limit, transform: taskBundleSummary)
-    }
-
-    func getTaskBundle(bundleID: String) throws -> CadenceTaskBundleDetail {
-        let id = try uuid(from: bundleID)
-        guard let bundle = try fetchFirst(TaskBundle.self, where: #Predicate { $0.id == id }) else {
-            throw CadenceReadError.taskBundleNotFound(bundleID)
-        }
-        return CadenceTaskBundleDetail(
-            summary: taskBundleSummary(bundle),
-            tasks: bundle.sortedTasks.map { taskSummary($0) }
         )
     }
 
@@ -1104,10 +1067,6 @@ final class CadenceReadService {
         try fetchAll(SavedLink.self)
     }
 
-    private func fetchTaskBundles() throws -> [TaskBundle] {
-        try fetchAll(TaskBundle.self)
-    }
-
     /// Raw values hoisted so a `#Predicate` captures a `String` rather than reaching through
     /// `TaskStatus` / `NoteKind` — SwiftData compiles a narrow expression grammar and an enum
     /// round-trip is not in it.
@@ -1116,8 +1075,9 @@ final class CadenceReadService {
     private static let listNoteKindRaw = NoteKind.list.rawValue
 
     /// The dead `allTasks:` parameter is gone, and removing it is most of T-384's win on the
-    /// detail lookups. It was **read by nothing** in this function, while `getTask`,
-    /// `getTaskBundle` and `getGoal` each fetched every task in the store purely to supply it.
+    /// detail lookups. It was **read by nothing** in this function, while `getTask`, `getGoal` and
+    /// the since-retired `getTaskBundle` ([[T-3170]]) each fetched every task in the store purely
+    /// to supply it.
     private func taskSummary(_ task: AppTask) -> CadenceTaskSummary {
         CadenceTaskSummary(
             id: task.id.uuidString,
@@ -1134,21 +1094,6 @@ final class CadenceReadService {
             tags: tagSummaries(task.sortedTags),
             isDone: task.isDone,
             isCancelled: task.isCancelled
-        )
-    }
-
-    private func taskBundleSummary(_ bundle: TaskBundle) -> CadenceTaskBundleSummary {
-        CadenceTaskBundleSummary(
-            id: bundle.id.uuidString,
-            title: bundle.displayTitle,
-            dateKey: bundle.dateKey,
-            startMin: bundle.startMin,
-            durationMinutes: bundle.durationMinutes,
-            endMin: bundle.endMin,
-            totalEstimatedMinutes: bundle.totalEstimatedMinutes,
-            taskCount: bundle.sortedTasks.count,
-            activeTaskCount: bundle.activeTasks.count,
-            createdAt: format(bundle.createdAt)
         )
     }
 

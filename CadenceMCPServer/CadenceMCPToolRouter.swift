@@ -69,16 +69,6 @@ struct CadenceMCPToolRouter {
         case "get_task":
             return try encode(readService.getTask(taskID: try arguments.requiredString("taskId")))
 
-        case "list_task_bundles":
-            return try encode(readService.listTaskBundles(options: CadenceTaskBundleListOptions(
-                dateKey: try arguments.dateKey("date"),
-                limit: try arguments.strictInt("limit") ?? 50,
-                offset: try arguments.strictInt("offset") ?? 0
-            )))
-
-        case "get_task_bundle":
-            return try encode(readService.getTaskBundle(bundleID: try arguments.requiredString("bundleId")))
-
         case "list_contexts":
             return try encode(readService.listContexts(
                 includeArchived: arguments.bool("includeArchived") ?? false,
@@ -347,22 +337,6 @@ struct CadenceMCPToolRouter {
                 containerId: try arguments.requiredString("containerId"),
                 title: try arguments.requiredString("title"),
                 folderPath: arguments.string("folderPath")
-            )))
-
-        case "create_task_bundle":
-            let writeService = try requireWriteService(for: name)
-            return try encode(writeService.createTaskBundle(options: CadenceCreateTaskBundleOptions(
-                title: arguments.string("title"),
-                dateKey: try arguments.dateKey("date"),
-                startMin: try arguments.minuteOfDay("startMin"),
-                durationMinutes: try arguments.durationMinutes("durationMinutes")
-            )))
-
-        case "add_task_to_bundle":
-            let writeService = try requireWriteService(for: name)
-            return try encode(writeService.addTaskToBundle(options: CadenceAddTaskToBundleOptions(
-                bundleId: try arguments.requiredString("bundleId"),
-                taskId: try arguments.requiredString("taskId")
             )))
 
         case "append_core_note":
