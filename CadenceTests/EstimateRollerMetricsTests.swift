@@ -376,14 +376,29 @@ struct EstimateRollerCommitRateTests {
     /// paths now ease, off one duration rather than two literals that can drift apart.
     @Test("The scroll path animates, off the same duration the keyboard path uses")
     func theRowTransitionIsAnimatedOnBothPaths() throws {
+        // **T-3169 moved the scroll path out of this file; it did not remove it.** The column is
+        // `CadenceRollerColumn` now, drawn by the estimate panel and by `CadenceTimeRoller`, so the
+        // scroll half of this claim is read there and the keyboard half stays here. The two
+        // assertions added below are what makes that split checkable rather than assumed: if the
+        // panel stopped drawing the shared column, or the column stopped reading the panel's
+        // metrics, reading two files would prove less than reading one used to.
+        //
+        // `CadenceRollerMetrics` is a typealias of `EstimateRollerMetrics`, so both spellings name
+        // one constant and the `readings` count below matches either.
         let read = CadenceSourceScan.strippedSourceReader()
-        let source = try read("Cadence/Shared/Components/EstimatePickerControl.swift")
+        let panel = try read("Cadence/Shared/Components/EstimatePickerControl.swift")
+        let column = try read("Cadence/Shared/Components/CadenceRollerColumn.swift")
+        #expect(panel.contains("CadenceRollerColumn("),
+                "the estimate panel no longer draws the shared column, so reading it proves nothing")
+        #expect(column.contains("typealias CadenceRollerMetrics = EstimateRollerMetrics"),
+                "the column's metrics are no longer the panel's, so the two paths can drift")
+        let source = panel + "\n" + column
 
-        #expect(source.contains(".animation("),
+        #expect(column.contains(".animation("),
                 "the scroll path has no animation, so the ramp still snaps")
-        #expect(source.contains("value: selection"),
+        #expect(column.contains("value: selection"),
                 "the animation is not keyed on the row becoming the chosen one")
-        #expect(source.contains(".onScrollPhaseChange"),
+        #expect(column.contains(".onScrollPhaseChange"),
                 "the panel no longer hears the settle, so the deferral cannot be redeemed")
 
         // Non-vacuity, and the reason the constant exists: the 0.12 the keyboard path carried as a
@@ -391,7 +406,7 @@ struct EstimateRollerCommitRateTests {
         #expect(EstimateRollerMetrics.rowTransitionDuration == 0.12)
         #expect(!source.contains("duration: 0.12"),
                 "the literal came back beside the constant, so the two paths can drift apart")
-        let readings = source.components(separatedBy: "EstimateRollerMetrics.rowTransitionDuration").count - 1
+        let readings = source.components(separatedBy: "RollerMetrics.rowTransitionDuration").count - 1
         #expect(readings >= 2, "only one path reads the shared duration, which is not shared")
     }
 
