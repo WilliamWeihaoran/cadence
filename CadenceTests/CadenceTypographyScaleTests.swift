@@ -393,6 +393,10 @@ struct CadenceTypographyConversionSweepTests {
     /// `iOSTaskDetailComponents.swift` is on the list twice over: it holds the detail sheet's tag
     /// strip **and** `iOSTaskTagPickerPopover`, which T-1412 converted once `CadenceTagChip` could
     /// follow the reader.
+    ///
+    /// `CadenceTimeRoller.swift` ([[T-3169]]) is `EstimatePickerControl`'s wheel generalized to a
+    /// time of day; it declares for the same reason the estimate panel does, and its row geometry
+    /// reads `dynamicTypeSize` through `CadenceRollerMetrics`.
     @Test func theDeclaredScaledRootsAreTheListAndNotACount() throws {
         let instrument = try CadenceScanInstrument(
             "scaled typography scope",
@@ -420,6 +424,7 @@ struct CadenceTypographyConversionSweepTests {
         #expect(hits.sorted() == [
             "Cadence/Shared/Components/CadenceChoicePicker.swift",
             "Cadence/Shared/Components/CadenceDatePicker.swift",
+            "Cadence/Shared/Components/CadenceTimeRoller.swift",
             "Cadence/Shared/Components/EstimatePickerControl.swift",
             "Cadence/iOS/iOSCreateTaskSheet.swift",
             "Cadence/iOS/iOSListDetailView.swift",

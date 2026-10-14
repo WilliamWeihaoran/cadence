@@ -976,6 +976,7 @@ enum CadenceCommentSymbolClaim {
         "Cadence/macOS/Views/TasksPanelDropCoordinator.swift `taskDropHandler(scopeTasks:dropKey:)`",
         "CadenceTests/CadenceColorPaletteTests.swift `ranges(of:options:)`",
         "CadenceTests/CadenceCommentSymbolClaimTests.swift `foo(_:)`",
+        "CadenceTests/CadenceCreateTaskCommitSurfaceTests.swift `createScheduledTask()`",
         "CadenceTests/CadenceLaunchWiringTests.swift `unregisterForRemoteNotifications()`",
         "CadenceTests/CadenceSettingsSectionCopyTests.swift `sectionTitle(_:of:)`",
         "CadenceTests/CadenceSharedBoardChromeTests.swift `kanbanColumnHeaderPadding()`",
@@ -983,8 +984,7 @@ enum CadenceCommentSymbolClaim {
         "CadenceTests/CadenceTodayUnificationTests.swift `taskDropHandler(scopeTasks:dropKey:)`",
         "CadenceTests/MarkdownImagePasteTests.swift `readSelection(from:)`",
         "CadenceTests/TemporaryDefaultsSupport.swift `freshDefaults(_:)`",
-        "CadenceTests/TemporaryDefaultsSupport.swift `someTestName()`",
-        "CadenceTests/iOSCalendarMetricsTests.swift `hourLabel(_:)`"
+        "CadenceTests/TemporaryDefaultsSupport.swift `someTestName()`"
     ]
 
     /// The two halves are one ledger and must not overlap or repeat.
