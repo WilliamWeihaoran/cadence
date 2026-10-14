@@ -477,14 +477,18 @@ struct CadenceContrastFloorTests {
         )
     }
 
-    /// The three fills the app *solves* rather than takes raw stay under the crossover, which is
-    /// what entitles `CadenceCalendarEventStyle.primaryLabelColor` and the two month chips to keep
-    /// reaching for the bare `Theme.onColor` constant.
+    /// The three **plate** fills the app *solves* rather than takes raw stay under the crossover,
+    /// which is what entitles `CadenceCalendarEventStyle.platePrimaryLabelColor` and the two month
+    /// chips to keep reaching for the bare `Theme.onColor` constant.
     ///
     /// Without this, "white unconditionally" is a claim about a number in another file that
-    /// nothing connects to the ink: raise `fillLuminance`'s selected stop past the crossover and
-    /// event titles quietly become the worst-contrast text in the app, with every accent test in
+    /// nothing connects to the ink: raise `plateLuminance`'s selected stop past the crossover and
+    /// plate titles quietly become the worst-contrast text in the app, with every accent test in
     /// this file still green.
+    ///
+    /// T-3160 moved this treatment from events to tasks and gave it `plate*` names. The legacy
+    /// unprefixed spellings are still live for un-renamed call sites, so this also pins that the
+    /// two spellings are the *same* solve rather than two that happen to agree today.
     @Test func theSolvedCalendarFillsStayBelowTheCrossoverSoTheirWhiteInkIsRight() {
         var measured = 0
         // Includes the two brightest hues the palettes ship, which is where a luminance solve is
@@ -492,24 +496,230 @@ struct CadenceContrastFloorTests {
         for hex in ["#ffc857", "#4fd6e0", "#ffffff", "#4a9eff", "#3d0000"] {
             for (selected, active) in [(false, false), (false, true), (true, false)] {
                 measured += 1
-                let fill = CadenceCalendarEventStyle.fill(for: Color(hex: hex), isSelected: selected, isActive: active)
+                let swatch = Color(hex: hex)
+                let fill = CadenceCalendarEventStyle.plateFill(for: swatch, isSelected: selected, isActive: active)
                 #expect(
                     Theme.relativeLuminance(of: fill) < Theme.onColorCrossoverLuminance,
-                    "a solved event fill for \(hex) (selected: \(selected), active: \(active)) is past the crossover, so its label must stop being unconditional white"
+                    "a solved plate fill for \(hex) (selected: \(selected), active: \(active)) is past the crossover, so its label must stop being unconditional white"
                 )
                 #expect(Theme.onColor(for: fill) == Theme.onColor)
-                #expect(t853Ratio(CadenceCalendarEventStyle.primaryLabelColor, on: fill) >= 4.5)
+                #expect(t853Ratio(CadenceCalendarEventStyle.platePrimaryLabelColor, on: fill) >= 4.5)
+
+                // The legacy spelling is the same solve, not a second one.
+                let legacy = CadenceCalendarEventStyle.fill(for: swatch, isSelected: selected, isActive: active)
+                #expect(
+                    abs(Theme.relativeLuminance(of: legacy) - Theme.relativeLuminance(of: fill)) < 0.0005,
+                    "fill(for:) and plateFill(for:) have drifted apart at \(hex)"
+                )
             }
         }
         #expect(measured == 15, "non-vacuity: five hues in three states, \(measured) measured")
+        #expect(CadenceCalendarEventStyle.primaryLabelColor == CadenceCalendarEventStyle.platePrimaryLabelColor)
+        #expect(CadenceCalendarEventStyle.fillSaturationScale == CadenceCalendarEventStyle.plateSaturationScale)
 
         // The same guard on the luminance targets themselves, independent of any hue.
         for target in [
-            CadenceCalendarEventStyle.fillLuminance(),
-            CadenceCalendarEventStyle.fillLuminance(isActive: true),
-            CadenceCalendarEventStyle.fillLuminance(isSelected: true),
+            CadenceCalendarEventStyle.plateLuminance(),
+            CadenceCalendarEventStyle.plateLuminance(isActive: true),
+            CadenceCalendarEventStyle.plateLuminance(isSelected: true),
         ] {
-            #expect(target < Theme.onColorCrossoverLuminance, "the \(target) fill target is past the crossover")
+            #expect(target < Theme.onColorCrossoverLuminance, "the \(target) plate target is past the crossover")
+            #expect(
+                CadenceCalendarEventStyle.fillLuminance(
+                    isSelected: target == CadenceCalendarEventStyle.plateLuminance(isSelected: true),
+                    isActive: target == CadenceCalendarEventStyle.plateLuminance(isActive: true)
+                ) == target,
+                "fillLuminance stopped forwarding to plateLuminance at \(target)"
+            )
+        }
+    }
+
+    /// The **plate** treatment's secondary tier — the time range and calendar name — measured
+    /// rather than remembered, and with the one case that does not clear AA named out loud.
+    ///
+    /// At rest the tier is `Theme.onColorSecondary`, a 0.75 wash of white, and 0.098 was chosen as
+    /// the rest fill precisely so that it clears 4.5:1 there. It does — for every hue whose own
+    /// luminance is at or above the fill it is solved into. A hue *darker* than its own plate, a
+    /// near-black `#3d0000` being the example that exists, composites a more saturated colour
+    /// through the wash and lands at 4.46:1: short of AA by 0.04, and short of it before T-3160
+    /// too. This is recorded, not silently swept, because the fix is a `Theme` token change and
+    /// this ticket is a paint swap. The active and selected states are unaffected: both lift the
+    /// tier to full `Theme.onColor`, which is why the ladder exists.
+    @Test func thePlateSecondaryTierClearsAAExceptOnAHueDarkerThanItsOwnPlate() {
+        var measured = 0
+        var exempted: [String] = []
+        for hex in ["#ffc857", "#4fd6e0", "#ffffff", "#4a9eff", "#3d0000"] {
+            let swatch = Color(hex: hex)
+            let restFill = CadenceCalendarEventStyle.plateFill(for: swatch)
+            let restRatio = t853Ratio(CadenceCalendarEventStyle.plateSecondaryLabelColor(), on: restFill)
+            measured += 1
+            if Theme.relativeLuminance(of: swatch) >= CadenceCalendarEventStyle.plateLuminance() {
+                #expect(
+                    restRatio >= 4.5,
+                    "\(hex) is lighter than its own plate and still misses AA at \(t853Rounded(restRatio)):1"
+                )
+            } else {
+                exempted.append(hex)
+                #expect(
+                    restRatio >= 4.4,
+                    "\(hex) fell further than the recorded 4.46:1 shortfall, to \(t853Rounded(restRatio)):1"
+                )
+            }
+
+            for (selected, active) in [(false, true), (true, false)] {
+                measured += 1
+                let fill = CadenceCalendarEventStyle.plateFill(for: swatch, isSelected: selected, isActive: active)
+                let tier = CadenceCalendarEventStyle.plateSecondaryLabelColor(isSelected: selected, isActive: active)
+                #expect(tier == CadenceCalendarEventStyle.platePrimaryLabelColor)
+                #expect(t853Ratio(tier, on: fill) >= 4.5)
+            }
+        }
+        #expect(measured == 15, "non-vacuity: five hues in three states, \(measured) measured")
+        #expect(
+            exempted == ["#3d0000"],
+            "the set of hues darker than their own plate changed: \(exempted)"
+        )
+    }
+
+    /// T-3160's **rail** treatment: Apple Calendar's look, where the title is in the calendar's own
+    /// hue instead of in white.
+    ///
+    /// This is the assertion that treatment is *solvable*, not merely implemented. A title in the
+    /// hue has a far tighter budget than `Theme.onColor` did — white is Y = 1 and nothing in the
+    /// gamut can be asked for more — so every tier here is solved to a stated ratio against the
+    /// plate it actually lands on, and this measures the ratio that came back rather than checking
+    /// that a function exists.
+    ///
+    /// Each tier is solved, not clamped, which is why the measured ratio should land *on* its
+    /// declared target for every hue including the degenerate ones: a pure-black calendar has no
+    /// chroma to spend and resolves to a grey of the right luminance, a pure-blue one cannot reach
+    /// the target with its chroma intact and is desaturated to exactly the point where it does.
+    /// Both are in the sweep because both are reachable through a user-chosen `colorHex`.
+    @Test func everyRailTreatmentTierLandsOnItsDeclaredRatioAgainstItsOwnPlate() {
+        let tiers: [(name: String, target: Double, floor: Double, color: (Color, Bool, Bool) -> Color)] = [
+            ("title", CadenceCalendarEventStyle.railTitleContrastTarget, 4.5, {
+                CadenceCalendarEventStyle.railTitleColor(for: $0, isSelected: $1, isActive: $2)
+            }),
+            ("secondary", CadenceCalendarEventStyle.railSecondaryContrastTarget, 4.5, {
+                CadenceCalendarEventStyle.railSecondaryLabelColor(for: $0, isSelected: $1, isActive: $2)
+            }),
+            ("tertiary", CadenceCalendarEventStyle.railTertiaryContrastTarget, 3, {
+                CadenceCalendarEventStyle.railTertiaryLabelColor(for: $0, isSelected: $1, isActive: $2)
+            }),
+        ]
+
+        var measured = 0
+        for hex in t853CalendarHues {
+            let swatch = Color(hex: hex)
+            for (selected, active) in [(false, false), (false, true), (true, false)] {
+                let plate = CadenceCalendarEventStyle.railFill(for: swatch, isSelected: selected, isActive: active)
+                for tier in tiers {
+                    measured += 1
+                    let ratio = t853Ratio(tier.color(swatch, selected, active), on: plate)
+                    #expect(
+                        ratio >= tier.floor,
+                        "the rail \(tier.name) for \(hex) (selected: \(selected), active: \(active)) reads \(t853Rounded(ratio)):1, under its \(tier.floor):1 floor"
+                    )
+                    #expect(
+                        abs(ratio - tier.target) < 0.08,
+                        "the rail \(tier.name) for \(hex) (selected: \(selected), active: \(active)) reads \(t853Rounded(ratio)):1 but is solved to \(tier.target):1 — the solve is being clamped, not met"
+                    )
+                }
+            }
+        }
+        #expect(measured == 63, "non-vacuity: seven hues, three states, three tiers; \(measured) measured")
+
+        // The targets themselves carry the floors, independent of any hue: a later edit that drops
+        // `railSecondaryContrastTarget` to 4.2 is red here even if no sweep hue happens to notice.
+        #expect(CadenceCalendarEventStyle.railTitleContrastTarget >= 4.5)
+        #expect(CadenceCalendarEventStyle.railSecondaryContrastTarget >= 4.5)
+        #expect(CadenceCalendarEventStyle.railTertiaryContrastTarget >= 3)
+        #expect(CadenceCalendarEventStyle.railTitleContrastTarget > CadenceCalendarEventStyle.railSecondaryContrastTarget)
+        #expect(CadenceCalendarEventStyle.railSecondaryContrastTarget > CadenceCalendarEventStyle.railTertiaryContrastTarget)
+    }
+
+    /// The rail is the identity marker, so it owes the 3:1 non-text floor against **`Theme.bg`** —
+    /// not against its own plate, which is the same hue and cannot separate from it by chroma.
+    ///
+    /// And it owes it while staying recognisably that calendar, which is the half a floor alone
+    /// would not catch: a rail solved to a luminance target would clear 3:1 on every hue by
+    /// turning a deep blue into a pale one. So this also pins that the rail keeps essentially all
+    /// of its chroma wherever the hue can afford it, and gives chroma up only where it cannot.
+    @Test func theRailClearsTheNonTextFloorOnBgWhileKeepingTheCalendarsChroma() {
+        var measured = 0
+        var desaturated: [String] = []
+        for hex in t853CalendarHues {
+            measured += 1
+            let swatch = Color(hex: hex)
+            let rail = CadenceCalendarEventStyle.railColor(for: swatch)
+            let ratio = t853Ratio(rail, on: Theme.bg)
+            #expect(
+                ratio >= 3,
+                "the rail for \(hex) reads \(t853Rounded(ratio)):1 on bg, under the 3:1 non-text floor"
+            )
+            #expect(
+                Theme.relativeLuminance(of: rail) >= CadenceCalendarEventStyle.railMinimumLuminance - 0.001,
+                "the rail for \(hex) is under its own luminance floor"
+            )
+
+            let source = t853Saturation(swatch)
+            let kept = t853Saturation(rail)
+            if source > 0.01 {
+                #expect(t853Hue(rail) == t853Hue(swatch), "the rail for \(hex) is no longer that hue")
+            }
+            let intact = source * CadenceCalendarEventStyle.railSaturationScale
+            if kept < intact - 0.01 {
+                desaturated.append(hex)
+            } else {
+                #expect(abs(kept - intact) < 0.01, "the rail for \(hex) gained chroma the calendar did not have")
+            }
+        }
+        #expect(measured == 7, "non-vacuity: \(measured) hues measured")
+        #expect(
+            desaturated == ["#0000ff"],
+            "the set of hues whose rail has to give up chroma to clear 3:1 on bg changed: \(desaturated). A primary blue tops out at Y = 0.072 with its chroma intact, which is the whole reason railMinimumLuminance is spelled as a floor rather than a target"
+        )
+    }
+
+    /// Both ladders, measured in L* rather than in raw luminance, because raw luminance is not
+    /// perceptually uniform and 0.030 → 0.044 looks nothing like 0.098 → 0.124 does.
+    ///
+    /// Two claims: each ladder's three stops are ordered and separated by several times the ~1 L*
+    /// just-noticeable step, and the rail treatment's plate is *strictly darker* than the plate
+    /// treatment's at every state. The second is what keeps the two treatments distinguishable now
+    /// that functional affordances are the only other thing telling a task from an event — collapse
+    /// the two fills together and the swap has produced one treatment, not two.
+    @Test func bothCalendarPlateLaddersStayOrderedAndTheRailPlateStaysTheDarkerOne() {
+        let plateLadder = [
+            CadenceCalendarEventStyle.plateLuminance(),
+            CadenceCalendarEventStyle.plateLuminance(isActive: true),
+            CadenceCalendarEventStyle.plateLuminance(isSelected: true),
+        ]
+        let railLadder = [
+            CadenceCalendarEventStyle.railFillLuminance(),
+            CadenceCalendarEventStyle.railFillLuminance(isActive: true),
+            CadenceCalendarEventStyle.railFillLuminance(isSelected: true),
+        ]
+
+        for (name, ladder) in [("plate", plateLadder), ("rail", railLadder)] {
+            let steps = zip(ladder.dropFirst(), ladder).map { t853LStar($0) - t853LStar($1) }
+            #expect(steps.count == 2, "non-vacuity: \(name) has \(steps.count) steps")
+            for step in steps {
+                #expect(step > 3, "the \(name) ladder has a \(t853Rounded(step)) L* step, near the ~1 L* JND")
+                #expect(step < 12, "the \(name) ladder has a \(t853Rounded(step)) L* step, which is a jump not a state")
+            }
+        }
+
+        for (rail, plate) in zip(railLadder, plateLadder) {
+            #expect(plate - rail > 0.04, "the two plates have converged: \(rail) against \(plate)")
+            #expect(t853LStar(plate) - t853LStar(rail) > 10, "the two plates are within one state-step of each other")
+        }
+
+        // And the rail plate is still a plate, not the background: it has to say where the block
+        // ends even though the rail is what announces it.
+        for luminance in railLadder {
+            #expect(luminance > Theme.relativeLuminance(of: Theme.bg) * 5)
+            #expect(luminance < Theme.onColorCrossoverLuminance)
         }
     }
 
@@ -560,6 +770,35 @@ struct CadenceContrastFloorTests {
             "Cadence/macOS/Views/TimelineHoverVisuals.swift",
         ], "the set of files still reading Theme.onColor as a constant changed: \(hits)")
     }
+}
+
+/// The hues a calendar colour sweep has to cover. EventKit hands back whatever the account stored,
+/// so this is not the palette: it is the palette's bright end, a raw white calendar, and the two
+/// degenerate corners a user-chosen `colorHex` can reach — a near-black red and a primary blue,
+/// which are where a luminance solve either runs out of chroma or runs out of headroom.
+private let t853CalendarHues = ["#ffc857", "#4fd6e0", "#ffffff", "#4a9eff", "#3d0000", "#0000ff", "#000000"]
+
+/// CIE L* of a WCAG relative luminance. Luminance is linear light and 0.03 → 0.044 says nothing
+/// about whether a reader can see the step; L* is roughly perceptually uniform, with a
+/// just-noticeable difference of about 1.
+private func t853LStar(_ luminance: Double) -> Double {
+    luminance > 0.008856 ? 116 * pow(luminance, 1.0 / 3.0) - 16 : 903.3 * luminance
+}
+
+private func t853Hue(_ color: Color) -> Double {
+    var hue: CGFloat = 0, saturation: CGFloat = 0, brightness: CGFloat = 0, alpha: CGFloat = 0
+    let resolved = NSColor(color)
+    let srgb = resolved.usingColorSpace(.sRGB) ?? resolved
+    srgb.getHue(&hue, saturation: &saturation, brightness: &brightness, alpha: &alpha)
+    return (Double(hue) * 1000).rounded() / 1000
+}
+
+private func t853Saturation(_ color: Color) -> Double {
+    var hue: CGFloat = 0, saturation: CGFloat = 0, brightness: CGFloat = 0, alpha: CGFloat = 0
+    let resolved = NSColor(color)
+    let srgb = resolved.usingColorSpace(.sRGB) ?? resolved
+    srgb.getHue(&hue, saturation: &saturation, brightness: &brightness, alpha: &alpha)
+    return Double(saturation)
 }
 
 /// An opaque grey whose WCAG relative luminance is `luminance`, by inverting the sRGB transfer
