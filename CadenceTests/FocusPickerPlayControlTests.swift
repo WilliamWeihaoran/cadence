@@ -101,8 +101,8 @@ struct FocusPickerPlayControlTests {
 
 /// T-186: iOS discarded the focus timer whenever the session moved to another task.
 ///
-/// macOS has always committed first — `FocusManager.startFocus(task:)` and `startFocus(bundle:)`
-/// both call `commitElapsed()` before switching. iOS reset the clock instead, on **both** of its
+/// macOS has always committed first — `FocusManager.startFocus(task:)` calls `commitElapsed()`
+/// before switching. iOS reset the clock instead, on **both** of its
 /// switch paths, so the only way measured minutes ever reached `actualMinutes` was finishing the
 /// task. The visible symptom was that a goal with `progressType == "hours"` could only be advanced
 /// from a Mac, because the list `loggedMinutes` behind it moves through this helper alone.
@@ -256,19 +256,19 @@ struct FocusSessionSwitchCommitTests {
         let code = try focusStrippingComments(focusSourceFile("Cadence/iOS/iOSFocusView.swift"))
 
         #expect(code.components(separatedBy: "CadenceFocusSupport.commitElapsed(").count - 1 == 2)
-        // And the old spelling is gone from them. Three live `resetTimer()` occurrences remain:
-        // its own declaration, `complete(_:)`, and — since T-242 — `logBundleSession(_:)`, which
-        // hands a block's minutes to its ticked members and then clears the clock, the same shape
-        // `complete(_:)` has for a single task. The reset *button* passes `resetTimer` unapplied.
-        #expect(code.components(separatedBy: "resetTimer()").count - 1 == 3)
+        // And the old spelling is gone from them. Two live `resetTimer()` occurrences remain:
+        // its own declaration and `complete(_:)`, which banks a single task's session and then
+        // clears the clock. The reset *button* passes `resetTimer` unapplied. It was three until
+        // [[T-3170]] deleted logBundleSession(_:) with the Block feature.
+        #expect(code.components(separatedBy: "resetTimer()").count - 1 == 2)
     }
 
     /// The scan is worthless if it reads nothing, and a scan that returns an empty string passes
     /// every count above by accident. This is the non-vacuity check.
     ///
-    /// The two signatures took a `CadenceFocusPickItem` in T-242 rather than an `AppTask`, because
-    /// the row being picked can now be a block. Pinning the *new* spelling is the point: a scan
-    /// that still named the old one would go quietly vacuous the moment it stopped matching.
+    /// The two signatures take a `CadenceFocusPickItem` rather than an `AppTask` since T-242.
+    /// Pinning the current spelling is the point: a scan that still named the old one would go
+    /// quietly vacuous the moment it stopped matching.
     @Test func theScanActuallyReachesTheIOSFocusView() throws {
         let code = try focusStrippingComments(focusSourceFile("Cadence/iOS/iOSFocusView.swift"))
 
@@ -278,19 +278,15 @@ struct FocusSessionSwitchCommitTests {
         #expect(code.count > 8_000, "read \(code.count) characters of iOSFocusView and cannot be doing its job")
     }
 
-    /// **T-242 fired this tripwire, and it is replaced rather than deleted.** It used to read
-    /// `code.contains("TaskBundle") == false` with the note "if that changes, this fails and the
-    /// commit has to be added there" — which is exactly what happened: `iOSFocusView` now loads a
-    /// `TaskBundle`, so the assertion has to become the positive one it was standing in for.
-    ///
-    /// What must hold is that **both** switch paths hand `commitElapsed` a `CadenceFocusSubject`,
-    /// not a task. A subject carries the block's ticked members with it, and that is the only thing
-    /// that knows where a block session's minutes go; passing `selectedItem` or a bare id would
-    /// either credit every member or none, unrecoverably, once the clock is reset.
-    @Test func theIOSBundleFocusPathCommitsThroughTheSubjectShapedRule() throws {
+    /// **T-242 fired this tripwire, and [[T-3170]] put it back the way it started.** It read
+    /// `code.contains("TaskBundle") == false`, then had to become a positive assertion when
+    /// `iOSFocusView` learned to load one. The Block feature is gone, so the screen holds no
+    /// `TaskBundle` again — and what still has to hold is that every commit path hands
+    /// `commitElapsed` a `CadenceFocusSubject` rather than a bare task or id.
+    @Test func theIOSFocusPathCommitsThroughTheSubjectShapedRule() throws {
         let code = try focusStrippingComments(focusSourceFile("Cadence/iOS/iOSFocusView.swift"))
 
-        #expect(code.contains("TaskBundle"))
+        #expect(code.contains("TaskBundle") == false)
         #expect(code.contains("private var selectedSubject: CadenceFocusSubject?"))
         // Three since T-266, and the third is a different act rather than a third switch path:
         // `.onDisappear` ends the session outright through `endSession(leaving:…)`, which the two
@@ -298,8 +294,8 @@ struct FocusSessionSwitchCommitTests {
         // a fourth `leaving: selectedSubject` means a commit was added somewhere unaccounted for.
         #expect(code.components(separatedBy: "leaving: selectedSubject").count - 1 == 3)
         #expect(code.components(separatedBy: "CadenceFocusSupport.endSession(").count - 1 == 1)
-        // And the task-shaped overload is gone from this screen: leaving a block through it is
-        // unspellable, which is the whole reason the subject type exists.
+        // And the task-shaped overload is not used on this screen: the subject type is the one
+        // door, which is what keeps a second commit shape from appearing beside it.
         #expect(code.components(separatedBy: "leaving: selectedTask,").count - 1 == 0)
     }
 }
@@ -413,21 +409,9 @@ struct FocusHandoffTests {
         #expect(next.elapsedSeconds(now: epoch) == 0)
     }
 
-    /// A bundle and one of its members carry equal-looking ids in every other vocabulary; the
-    /// target type is what keeps them apart, and the reset rule has to read it that way.
-    @Test func aBundleAndItsMemberAreDifferentSubjectsEvenWithTheSameID() {
-        let shared = UUID()
-        let running = runningClock(from: 0, at: epoch)
-
-        let next = CadenceFocusSupport.timerState(
-            startRequestFor: .bundle(shared),
-            selectedTarget: .task(shared),
-            state: running,
-            now: epoch.addingTimeInterval(300)
-        )
-
-        #expect(next.elapsedSeconds(now: epoch.addingTimeInterval(300)) == 0)
-    }
+    // [[T-3170]] retired `aBundleAndItsMemberAreDifferentSubjectsEvenWithTheSameID`. It pinned
+    // that a block and one of its members with equal-looking ids were different subjects —
+    // `CadenceFocusTarget` has one case again, so there is no second kind of id to confuse.
 
     // MARK: - Leaving
 
@@ -463,36 +447,9 @@ struct FocusHandoffTests {
         #expect(next.elapsedSeconds(now: epoch.addingTimeInterval(18 * 60)) == 0)
     }
 
-    /// A block's minutes go to the members that were ticked while it ran, and to no one else — the
-    /// whole reason the subject carries the selection rather than the bundle alone.
-    @Test func endingABundleSessionCreditsOnlyTheTickedMembers() throws {
-        let container = try makeContainer()
-        let context = ModelContext(container)
-        let bundle = TaskBundle(title: "Morning", dateKey: "2026-08-24", startMin: 540, durationMinutes: 60)
-        let included = AppTask(title: "Draft")
-        let excluded = AppTask(title: "Email")
-        included.bundle = bundle
-        excluded.bundle = bundle
-        // Assigned explicitly: the inverse is not back-populated before a save, and `sortedTasks`
-        // reads `bundle.tasks`.
-        bundle.tasks = [included, excluded]
-        context.insert(bundle)
-        context.insert(included)
-        context.insert(excluded)
-
-        var banked = CadenceFocusTimerState()
-        banked.accumulatedSeconds = 30 * 60
-
-        _ = try CadenceFocusSupport.endSession(
-            leaving: .bundle(bundle, selectedTaskIDs: [included.id]),
-            state: banked,
-            modelContext: context,
-            now: epoch
-        )
-
-        #expect(included.actualMinutes == 30)
-        #expect(excluded.actualMinutes == 0)
-    }
+    // [[T-3170]] retired `endingABundleSessionCreditsOnlyTheTickedMembers`. The ticked-member
+    // selection is gone with the feature; `endSession` credits the task it was leaving, which the
+    // test above this note pins.
 
     /// Under a whole minute writes nothing: `minutes(fromElapsedSeconds:)` rounds to the nearest
     /// minute and a zero is not a record. `actualMinutes` is the field to assert on —
@@ -584,7 +541,7 @@ struct FocusHandoffTests {
         center.request(.task(UUID()))
         let stale = center.pending
 
-        center.request(.bundle(UUID()))
+        center.request(.task(UUID()))
         let current = center.pending
 
         center.consume(stale!)
@@ -682,22 +639,16 @@ struct FocusHandoffCallSiteTests {
         #expect(body.contains("focusHandoffCenter.consume(handoff)"))
     }
 
-    /// Every affordance, and both halves of `CadenceFocusTarget`. Shipping only the task half would
-    /// leave the block half — the thing T-242 had just built — reachable from nowhere but Focus.
-    ///
-    /// It read `bothAffordancesRequestAHandoff` while there were two; the third (T-273) is the task
-    /// inspector, which is what gives a task met on the Calendar Board or a day timeline a route —
-    /// `iOSTaskRowContextMenu` hangs off `iOSTaskRow` and off nothing else.
+    /// Every affordance. It read `bothAffordancesRequestAHandoff` while there were two; the third
+    /// (T-273) is the task inspector, which is what gives a task met on the Calendar Board or a day
+    /// timeline a route — `iOSTaskRowContextMenu` hangs off `iOSTaskRow` and off nothing else.
+    /// [[T-3170]] removed the fourth, the Block sheet's, with the feature it started.
     @Test func everyAffordanceRequestsAHandoff() throws {
         let rowCode = try focusStrippingComments(focusSourceFile("Cadence/iOS/iOSTaskRowActionViews.swift"))
-        let blockCode = try focusStrippingComments(focusSourceFile("Cadence/iOS/iOSCalendarBundleDetailSheet.swift"))
         let sheetCode = try focusStrippingComments(focusSourceFile("Cadence/iOS/iOSTaskDetailSheet.swift"))
 
         #expect(rowCode.contains("struct iOSTaskRowContextMenu: View"))
         #expect(rowCode.contains("CadenceFocusHandoffCenter.shared.request(.task(task.id))"))
-
-        #expect(blockCode.contains("struct iOSCalendarBundleDetailSheet: View"))
-        #expect(blockCode.contains("CadenceFocusHandoffCenter.shared.request(.bundle(bundle.id))"))
 
         #expect(sheetCode.contains("struct iOSTaskDetailSheet: View"))
         #expect(sheetCode.contains("CadenceFocusHandoffCenter.shared.request(.task(task.id))"))
@@ -717,13 +668,10 @@ struct FocusHandoffCallSiteTests {
 
     /// The request is posted before the sheet dismisses, in that order.
     ///
-    /// Reversed, the tap would be asking a view that is already being torn down to post it. The
-    /// block sheet established the order; the inspector has the same two lines and there is no
-    /// second place for them to disagree.
+    /// Reversed, the tap would be asking a view that is already being torn down to post it.
     @Test func theInspectorRequestsBeforeItDismisses() throws {
         for path in [
-            "Cadence/iOS/iOSTaskDetailSheet.swift",
-            "Cadence/iOS/iOSCalendarBundleDetailSheet.swift"
+            "Cadence/iOS/iOSTaskDetailSheet.swift"
         ] {
             let code = try focusStrippingComments(focusSourceFile(path))
             let request = try #require(code.range(of: "CadenceFocusHandoffCenter.shared.request("))
@@ -737,21 +685,19 @@ struct FocusHandoffCallSiteTests {
         }
     }
 
-    /// Both Focus entries name the Focus destination's own tint and glyph rather than spelling a
-    /// palette decision twice. The block sheet shipped `Theme.amber` — the token
-    /// `CadenceFeatureDestination.defaultColorHex` gives Today and Habits — and a second button
-    /// naming one screen in a second colour is what that property's doc comment calls the drift.
-    @Test func bothFocusEntriesReadTheDestinationsOwnTint() throws {
+    /// The Focus entry names the Focus destination's own tint and glyph rather than spelling a
+    /// palette decision twice — a button naming one screen in a second colour is what
+    /// `CadenceFeatureDestination.defaultColorHex`'s doc comment calls the drift.
+    @Test func thefocusEntryReadsTheDestinationsOwnTint() throws {
         for path in [
-            "Cadence/iOS/iOSTaskDetailSheet.swift",
-            "Cadence/iOS/iOSCalendarBundleDetailSheet.swift"
+            "Cadence/iOS/iOSTaskDetailSheet.swift"
         ] {
             let code = try focusStrippingComments(focusSourceFile(path))
             #expect(code.contains("tint: CadenceFeatureDestination.focus.tint"), "\(path)")
             #expect(code.contains("systemImage: CadenceFeatureDestination.focus.systemImage"), "\(path)")
-            // The exact retired spelling, not a bare `Theme.amber`: the block sheet legitimately
-            // draws an amber overdue glyph, and a needle that fails on that is a needle that
-            // forces the next agent to re-tint something unrelated.
+            // The exact retired spelling, not a bare `Theme.amber`: a sheet may legitimately draw
+            // an amber overdue glyph, and a needle that fails on that is a needle that forces the
+            // next agent to re-tint something unrelated.
             #expect(code.contains("tint: Theme.amber") == false, "\(path)")
         }
         #expect(CadenceFeatureDestination.focus.defaultColorHex == Theme.tealHex)
@@ -782,16 +728,6 @@ struct FocusSubjectEligibilityTests {
         return task
     }
 
-    private func bundle(_ title: String, members: [AppTask]) -> TaskBundle {
-        let bundle = TaskBundle(title: title, dateKey: "2026-08-25", startMin: 540, durationMinutes: 60)
-        for (offset, member) in members.enumerated() {
-            member.bundle = bundle
-            member.bundleOrder = offset
-        }
-        bundle.tasks = members
-        return bundle
-    }
-
     // MARK: - The predicate itself
 
     @Test func onlyUnsettledWorkCanBeTheSubjectOfASession() {
@@ -801,39 +737,10 @@ struct FocusSubjectEligibilityTests {
         #expect(CadenceFocusSupport.canFocus(task("Abandoned", status: .cancelled)) == false)
     }
 
-    /// The bundle half, decided explicitly rather than by analogy with the task half. A block whose
-    /// members are all settled is a container with nothing left in it — which is what
-    /// `TaskBundle.isCompleted` already means — and the picker has excluded exactly those since
-    /// before there was an entry point to gate.
-    @Test func aBlockWithNothingLeftInItCannotBeTheSubjectOfASession() {
-        #expect(CadenceFocusSupport.canFocus(bundle("Live", members: [task("A", status: .todo)])))
-        #expect(
-            CadenceFocusSupport.canFocus(
-                bundle("Half done", members: [task("A", status: .done), task("B", status: .todo)])
-            )
-        )
-        #expect(
-            CadenceFocusSupport.canFocus(bundle("All done", members: [task("A", status: .done)])) == false
-        )
-    }
-
-    /// The empty clause is not covered by `isCompleted`, and it is the sharper of the two: an empty
-    /// block is `isCompleted == false`, and running the clock against one distributes its minutes
-    /// across nothing — `distributeMinutes` returns early on an empty array. It is the only way in
-    /// the app to measure real time and silently discard every minute of it.
-    ///
-    /// A block whose members were all *cancelled* is the same case rather than the completed one,
-    /// because `TaskBundle.sortedTasks` filters cancelled members out before `activeTasks` ever sees
-    /// them. Neither clause implies the other.
-    @Test func anEmptyBlockCannotBeTheSubjectEvenThoughItIsNotCompleted() {
-        let empty = bundle("Empty", members: [])
-        let allCancelled = bundle("Abandoned", members: [task("A", status: .cancelled)])
-
-        #expect(empty.isCompleted == false)
-        #expect(allCancelled.isCompleted == false)
-        #expect(CadenceFocusSupport.canFocus(empty) == false)
-        #expect(CadenceFocusSupport.canFocus(allCancelled) == false)
-    }
+    // [[T-3170]] retired `aBlockWithNothingLeftInItCannotBeTheSubjectOfASession` and
+    // `anEmptyBlockCannotBeTheSubjectEvenThoughItIsNotCompleted`. Both argued the two clauses of
+    // canFocus(_ bundle:) — a settled block and an empty one — and that overload is gone with the
+    // feature. The task predicate above is untouched.
 
     /// **The predicate is what the pickers actually filter by**, not a name parked beside them. Both
     /// `readyTasks` and `CadenceFocusPickItem.filtered` are asserted to agree with it item for item,
@@ -845,29 +752,21 @@ struct FocusSubjectEligibilityTests {
             task("Finished", status: .done),
             task("Abandoned", status: .cancelled)
         ]
-        let bundles = [
-            bundle("Live", members: [task("A", status: .todo)]),
-            bundle("All done", members: [task("B", status: .done)]),
-            bundle("Empty", members: [])
-        ]
-
         let ready = CadenceFocusSupport.readyTasks(from: tasks, todayKey: "2026-08-25")
         #expect(Set(ready.map(\.title)) == Set(tasks.filter { CadenceFocusSupport.canFocus($0) }.map(\.title)))
         #expect(ready.count == 2)
 
         let offered = CadenceFocusPickItem.filtered(
             tasks: ready,
-            bundles: bundles,
             query: "",
             todayKey: "2026-08-25",
             limit: nil
         )
-        let offeredBundleTitles = offered.compactMap { item -> String? in
-            guard case .bundle(let bundle) = item else { return nil }
-            return bundle.displayTitle
+        let offeredTitles = offered.compactMap { item -> String? in
+            guard case .task(let task) = item else { return nil }
+            return TaskTitleSupport.displayTitle(task.title)
         }
-        #expect(offeredBundleTitles == bundles.filter { CadenceFocusSupport.canFocus($0) }.map(\.displayTitle))
-        #expect(offeredBundleTitles == ["Live"])
+        #expect(Set(offeredTitles) == Set(ready.map { TaskTitleSupport.displayTitle($0.title) }))
     }
 }
 
@@ -920,40 +819,8 @@ struct FocusEntryGateCallSiteTests {
         #expect(code.components(separatedBy: "focusSection").count - 1 == 2)
     }
 
-    /// The block inspector, gated on the **bundle** predicate rather than on any member's status.
-    /// Asserting the argument is the whole point: `canFocus(task)` would not compile here, but
-    /// hand-spelling `bundle.isCompleted == false` would, and would silently reinstate the empty
-    /// block that discards its minutes.
-    @Test func theBlockInspectorsFocusSectionIsGatedOnTheBundlePredicate() throws {
-        let code = try focusStrippingComments(focusSourceFile("Cadence/iOS/iOSCalendarBundleDetailSheet.swift"))
-        let body = try cadenceFunctionBody("private var focusSection: some View", in: code)
-
-        #expect(body.contains("CadenceFocusSupport.canFocus(bundle)"))
-        #expect(body.contains("CadenceFocusHandoffCenter.shared.request(.bundle(bundle.id))"))
-        #expect(body.contains("isCompleted") == false)
-        #expect(code.components(separatedBy: "focusSection").count - 1 == 2)
-    }
-
-    /// The Mac's block inspector, which is the fifth entry and the one that was never wrong — it
-    /// spelled the rule as `bundle.activeTasks.isEmpty`, which is `!canFocus(bundle)` exactly, for
-    /// both clauses: an empty block has no active tasks either. It reads the shared predicate now
-    /// so there is one spelling rather than a correct copy that a later edit could quietly drift.
-    ///
-    /// Disabled rather than absent, unlike the phone's sheet, and that is a shape decision rather
-    /// than a divergence: this button is one of a pair of equal-width buttons in one deck, and
-    /// removing it would stretch "Complete" across the row.
-    @Test func theMacBlockInspectorsStartFocusReadsTheSharedPredicate() throws {
-        let body = try cadenceFunctionBody(
-            "private var actionDeck: some View",
-            in: focusStrippingComments(
-                focusSourceFile("Cadence/macOS/Views/TimelineBundleBlockSupportViews.swift")
-            )
-        )
-
-        #expect(body.contains("isDisabled: !CadenceFocusSupport.canFocus(bundle)"))
-        #expect(body.contains("activeTasks.isEmpty,") == false)
-        // Non-vacuity: this really is the deck holding the Focus button.
-        #expect(body.contains("action: onFocus"))
-    }
+    // [[T-3170]] retired `theBlockInspectorsFocusSectionIsGatedOnTheBundlePredicate` and
+    // `theMacBlockInspectorsStartFocusReadsTheSharedPredicate`. Both pinned that a block
+    // inspector's Focus entry read canFocus(_ bundle:); neither entry exists any more. The three
+    // task-shaped entries above still read the shared predicate.
 }
-

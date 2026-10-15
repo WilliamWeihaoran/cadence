@@ -524,15 +524,15 @@ struct CadenceSharedTaskRowJobsTests {
 
     // MARK: - Bundle member row: the call sites
 
-    /// **The T-161 test for the bundle row.** All three rows — two macOS, one iOS — must read the
-    /// one detail line. The iOS entry is the one that matters most: that row is the reason
-    /// `TaskDetailLineLabel` had to leave `#if os(macOS)`.
-    @Test func allThreeBundleMemberRowsReadTheOneDetailLine() throws {
+    /// **The T-161 test for the bundle row.** Both remaining rows — one macOS, one iOS — must read
+    /// the one detail line. The iOS entry is the one that matters most: that row is the reason
+    /// `TaskDetailLineLabel` had to leave `#if os(macOS)`. It was three rows until [[T-3170]]
+    /// deleted the Focus panel's with Block Focus.
+    @Test func bothBundleMemberRowsReadTheOneDetailLine() throws {
         try expectCallSites(
             of: "CadenceBundleTaskRowSupport.detailParts",
             at: [
                 "Cadence/macOS/Views/TimelineBundleBlockSupportViews.swift": 1,
-                "Cadence/macOS/Views/FocusBundleTaskSupportViews.swift": 1,
                 "Cadence/iOS/iOSCalendarBundleDetailSheet.swift": 1,
             ]
         )
@@ -540,7 +540,6 @@ struct CadenceSharedTaskRowJobsTests {
             of: "CadenceTaskDetailLineLabel",
             at: [
                 "Cadence/macOS/Views/TimelineBundleBlockSupportViews.swift": 1,
-                "Cadence/macOS/Views/FocusBundleTaskSupportViews.swift": 1,
                 "Cadence/iOS/iOSCalendarBundleDetailSheet.swift": 1,
                 // The focus rows and the bundle picker, which already used it under its old name.
                 "Cadence/macOS/Views/FocusSidebarSupportViews.swift": 1,
@@ -556,17 +555,9 @@ struct CadenceSharedTaskRowJobsTests {
         try expectNoLiveMention(of: "TaskDetailLineLabel", excludingPrefixes: ["Cadence"])
     }
 
-    /// **The leading glyph collision.** The Focus panel's row uses its leading control to include a
-    /// task in the session's time log — not to finish it — and it drew that with
-    /// `checkmark.circle.fill` in `Theme.green`: the app's completion glyph, in the app's completion
-    /// colour, two clicks away from two other bundle member rows where the same glyph *is*
-    /// completion state. A square reads as a checkbox.
-    @Test func theFocusPanelsSelectionControlDoesNotWearTheCompletionGlyph() throws {
-        let code = try strippingComments(sourceFile("Cadence/macOS/Views/FocusBundleTaskSupportViews.swift"))
-
-        #expect(!code.contains("checkmark.circle.fill"), "the time-log selection control looks like completion again")
-        #expect(code.contains("checkmark.square.fill"))
-    }
+    // [[T-3170]] retired `theFocusPanelsSelectionControlDoesNotWearTheCompletionGlyph`. It pinned
+    // that the Focus panel's time-log tick was a square rather than the app's completion circle;
+    // the panel it read, FocusBundleTaskSupportViews.swift, went with Block Focus.
 
     // MARK: - T-175: the primary row's metrics, and the macOS reader that was missing
 

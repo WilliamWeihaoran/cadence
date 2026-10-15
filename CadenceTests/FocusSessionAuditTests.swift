@@ -5,8 +5,7 @@ import Testing
 @testable import Cadence
 
 /// Focus-surface regressions found in the Focus audit: the two places that turn a stopwatch
-/// reading into logged minutes, the close button that used to strand the stopwatch, and the
-/// bundle ordering in the idle picker.
+/// reading into logged minutes, and the close button that used to strand the stopwatch.
 @MainActor
 struct FocusSessionSeedTests {
 
@@ -57,7 +56,6 @@ struct FocusManagerEndSessionTests {
     private func resetManager() {
         let manager = FocusManager.shared
         manager.activeSession = nil
-        manager.selectedBundleTaskIDs = []
         manager.reset()
         manager.wantsNavToFocus = false
         manager.clock = { Date() }
@@ -100,38 +98,9 @@ struct FocusManagerEndSessionTests {
         #expect(manager.elapsed == 0)
     }
 
-    /// Same for a bundle session: the selected members receive the time, and the selection is
-    /// cleared with the session rather than leaking into the next one.
-    @Test func closingABundleSessionDistributesTimeAndClearsSelection() throws {
-        resetManager()
-        defer { resetManager() }
-
-        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
-        let context = ModelContext(container)
-        let bundle = TaskBundle(title: "Admin sweep", dateKey: "2026-08-12", startMin: 540, durationMinutes: 30)
-        let first = AppTask(title: "Expenses")
-        first.estimatedMinutes = 10
-        first.bundle = bundle
-        let second = AppTask(title: "Inbox zero")
-        second.estimatedMinutes = 10
-        second.bundle = bundle
-        context.insert(bundle)
-        context.insert(first)
-        context.insert(second)
-
-        let manager = FocusManager.shared
-        let clock = installedClock()
-        try manager.startFocus(bundle: bundle, in: context)
-        clock.advance(20 * 60)
-
-        try manager.endSession(in: context)
-
-        #expect(first.actualMinutes + second.actualMinutes == 20)
-        #expect(manager.activeSession == nil)
-        #expect(manager.selectedBundleTaskIDs.isEmpty)
-        #expect(manager.isRunning == false)
-        #expect(manager.elapsed == 0)
-    }
+    // [[T-3170]] retired `closingABundleSessionDistributesTimeAndClearsSelection`. It pinned the
+    // Block session's member distribution and the clearing of the hand-built selection; both went
+    // with the feature. Closing a task session is pinned by the test above this note.
 }
 
 /// **T-1103.** Who owns the focus stopwatch.
@@ -152,7 +121,6 @@ struct FocusManagerClockOwnershipTests {
     private func resetManager() {
         let manager = FocusManager.shared
         manager.activeSession = nil
-        manager.selectedBundleTaskIDs = []
         manager.reset()
         manager.wantsNavToFocus = false
         manager.clock = { Date() }
@@ -266,28 +234,8 @@ struct FocusManagerClockOwnershipTests {
         #expect(manager.elapsed == 6 * 60)
     }
 
-    /// The same contract for a bundle: re-selecting the block you are already focusing keeps its
-    /// clock.
-    @Test func reSelectingTheBundleAlreadyFocusedResumesInsteadOfDiscarding() throws {
-        resetManager()
-        defer { resetManager() }
-
-        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
-        let context = ModelContext(container)
-        let bundle = TaskBundle(title: "Morning block", dateKey: "2026-08-12", startMin: 540, durationMinutes: 30)
-        context.insert(bundle)
-
-        let manager = FocusManager.shared
-        let clock = installedClock()
-
-        try manager.startFocus(bundle: bundle, in: context)
-        clock.advance(7 * 60)
-
-        try manager.startFocus(bundle: bundle, in: context)
-
-        #expect(manager.isRunning)
-        #expect(manager.elapsed == 7 * 60)
-    }
+    // [[T-3170]] retired `reSelectingTheBundleAlreadyFocusedResumesInsteadOfDiscarding` — the
+    // Block twin of the task test above it, and startFocus(bundle:) no longer exists.
 
     /// Starting a different task starts a different clock. `commitElapsed` returns early when
     /// there is nothing to bank, so the reset has to happen on the start path rather than only on
@@ -367,57 +315,9 @@ struct FocusManagerClockOwnershipTests {
     }
 }
 
-/// The idle focus picker's bundle ordering.
-@MainActor
-struct FocusPickItemBundleOrderTests {
-    private let todayKey = "2026-08-12"
+// [[T-3170]] retired `FocusPickItemBundleOrderTests` whole — `upcomingBundlesSortByDayThenStartTime`
+// and `bundleRanksOrderTodayThenUpcomingThenUndatedThenPast`. Both pinned `CadenceFocusPickItem`'s
+// block date-rank comparator, which is gone with the feature: the picker lists ready tasks, and
+// `readyTasks` owns their order.
 
-    private func bundle(_ title: String, _ dateKey: String, startMin: Int, task: String) -> TaskBundle {
-        let bundle = TaskBundle(title: title, dateKey: dateKey, startMin: startMin, durationMinutes: 30)
-        let member = AppTask(title: task)
-        member.bundle = bundle
-        bundle.tasks = [member]
-        return bundle
-    }
-
-    /// Two bundles in the same rank but on different days used to compare as equal — the day was
-    /// never consulted and the `startMin` tie-break was never reached — so a bundle eight days out
-    /// could render above tomorrow's, and the comparator was not a strict weak ordering.
-    @Test func upcomingBundlesSortByDayThenStartTime() {
-        let far = bundle("Far", "2026-08-20", startMin: 540, task: "a")
-        let soon = bundle("Soon", "2026-08-13", startMin: 600, task: "b")
-        let farEarly = bundle("Far early", "2026-08-20", startMin: 480, task: "c")
-
-        let items = FocusPickItem.filtered(
-            tasks: [],
-            bundles: [far, soon, farEarly],
-            query: "",
-            todayKey: todayKey
-        )
-
-        #expect(items.map(\.id) == [soon, farEarly, far].map { "bundle-\($0.id.uuidString)" })
-    }
-
-    /// Today first, then upcoming, then undated, then past — and inside the past run the most
-    /// recent day leads, so yesterday's leftovers are not buried under last year's.
-    @Test func bundleRanksOrderTodayThenUpcomingThenUndatedThenPast() {
-        let today = bundle("Today", todayKey, startMin: 540, task: "a")
-        let upcoming = bundle("Upcoming", "2026-08-14", startMin: 540, task: "b")
-        let undated = bundle("Undated", "", startMin: 540, task: "c")
-        let yesterday = bundle("Yesterday", "2026-08-11", startMin: 540, task: "d")
-        let ancient = bundle("Ancient", "2025-01-04", startMin: 540, task: "e")
-
-        let items = FocusPickItem.filtered(
-            tasks: [],
-            bundles: [ancient, undated, upcoming, yesterday, today],
-            query: "",
-            todayKey: todayKey
-        )
-
-        #expect(
-            items.map(\.id) == [today, upcoming, undated, yesterday, ancient]
-                .map { "bundle-\($0.id.uuidString)" }
-        )
-    }
-}
 #endif

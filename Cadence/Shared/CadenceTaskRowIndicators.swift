@@ -23,7 +23,7 @@ enum CadenceTaskRowIndicator: String, CaseIterable, Hashable, Sendable {
     case tags
 
     /// Symbols already in this tree rather than three new ones: `note.text` is what
-    /// `FocusNotesPanel` heads itself with and `checklist` is `FocusBundleTaskSupportViews`'.
+    /// `FocusNotesPanel` heads itself with, and `checklist` is the app's subtask glyph.
     var symbolName: String {
         switch self {
         case .notes:    return "note.text"

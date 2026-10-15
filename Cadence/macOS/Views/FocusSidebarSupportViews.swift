@@ -3,8 +3,8 @@ import SwiftUI
 
 // `TaskDetailLineLabel` moved to `Shared/Components/CadenceTaskDetailLineLabel.swift`, unchanged,
 // as `CadenceTaskDetailLineLabel`. It contained no AppKit and never had; sitting inside this file's
-// `#if os(macOS)` is the whole reason iOS's bundle member row wrote its own secondary line, and
-// that copy had no due date in it.
+// `#if os(macOS)` is the whole reason iOS's task rows wrote their own secondary line, and that
+// copy had no due date in it.
 
 private struct FocusStatusChip: View {
     let title: String
@@ -141,21 +141,6 @@ struct FocusSidebarTaskRow: View {
         .buttonStyle(.cadencePlain)
         .cadenceControlLabel("Focus this task")
         .onHover { isHovered = $0 }
-    }
-}
-
-struct FocusBundleSidebar: View {
-    let bundle: TaskBundle
-    let nextTasks: [AppTask]
-    let onSelectTask: (AppTask) -> Void
-
-    var body: some View {
-        FocusSidebarShell(nextTasks: nextTasks, onSelectTask: onSelectTask) {
-            HStack(spacing: 8) {
-                FocusStatusChip(title: TaskBundle.shortLabel, color: Theme.amber, icon: "tray.full")
-                FocusStatusChip(title: CadencePluralization.phrase(bundle.sortedTasks.count, singular: "task", plural: "tasks"), color: Theme.blue, icon: "checklist")
-            }
-        }
     }
 }
 

@@ -6,15 +6,13 @@ struct iOSFocusView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
-    /// The inbox a "Focus this" tap from a task row or a block sheet arrives in. This screen is the
-    /// only thing that adopts one, because this screen is where the clock lives.
+    /// The inbox a "Focus this" tap from a task row arrives in. This screen is the only thing
+    /// that adopts one, because this screen is where the clock lives.
     @Environment(CadenceFocusHandoffCenter.self) private var focusHandoffCenter
     @Query(sort: \Note.updatedAt, order: .reverse) private var allNotes: [Note]
     @Query(sort: \AppTask.order) private var allTasks: [AppTask]
-    @Query private var allBundles: [TaskBundle]
     @Query(sort: \MarkdownImageAsset.createdAt) private var imageAssets: [MarkdownImageAsset]
     @State private var selectedTarget: CadenceFocusTarget?
-    @State private var selectedBundleTaskIDs: Set<UUID> = []
     @State private var selectedReferenceNote: Note?
     @State private var selectedReferenceTask: AppTask?
     @State private var timerState = CadenceFocusTimerState()
@@ -25,8 +23,8 @@ struct iOSFocusView: View {
         CadenceFocusSupport.readyTasks(from: allTasks, todayKey: todayKey)
     }
 
-    /// Ready tasks **and** the blocks you could sit down and work through, in one list, ordered by
-    /// the one rule both platforms use (`CadenceFocusPickItem`).
+    /// The ready tasks, in one list, ordered by the one rule both platforms use
+    /// (`CadenceFocusPickItem`).
     ///
     /// `limit: nil` because this picker has no search field: macOS caps its unfiltered list at 18
     /// on the understanding that you can type past the cap, and applying that here would just hide
@@ -34,7 +32,6 @@ struct iOSFocusView: View {
     private var pickItems: [CadenceFocusPickItem] {
         CadenceFocusPickItem.filtered(
             tasks: readyTasks,
-            bundles: allBundles,
             query: "",
             todayKey: todayKey,
             limit: nil
@@ -42,9 +39,8 @@ struct iOSFocusView: View {
     }
 
     /// The row the session is running against. An explicitly chosen subject wins even after it
-    /// leaves the ready list — finishing the last member of a block, or completing the focused
-    /// task, must not silently re-point the clock at something else mid-session — and with nothing
-    /// chosen the head of the list is offered.
+    /// leaves the ready list — completing the focused task must not silently re-point the clock at
+    /// something else mid-session — and with nothing chosen the head of the list is offered.
     private var selectedItem: CadenceFocusPickItem? {
         guard let selectedTarget else { return pickItems.first }
         return pickItem(for: selectedTarget)
@@ -61,17 +57,13 @@ struct iOSFocusView: View {
         switch target {
         case .task(let id):
             return allTasks.first { $0.id == id }.map(CadenceFocusPickItem.task)
-        case .bundle(let id):
-            return allBundles.first { $0.id == id }.map(CadenceFocusPickItem.bundle)
         }
     }
 
-    /// The same subject with the bundle's member ticks attached, which is what the commit path
-    /// needs to know where a block's minutes go.
+    /// The subject the commit path banks against.
     private var selectedSubject: CadenceFocusSubject? {
         switch selectedItem {
         case .task(let task): return .task(task)
-        case .bundle(let bundle): return .bundle(bundle, selectedTaskIDs: selectedBundleTaskIDs)
         case nil: return nil
         }
     }
@@ -183,7 +175,6 @@ struct iOSFocusView: View {
                         sessionClock(fontSize: 66)
                         switch item {
                         case .task(let task): focusControls(for: task)
-                        case .bundle(let bundle): bundleControls(for: bundle)
                         }
                     } else {
                         unselectedDetail
@@ -277,9 +268,8 @@ struct iOSFocusView: View {
         .background(Theme.surface)
     }
 
-    /// One row struct for both kinds of session. A bundle differs from a task in its tint, its
-    /// leading glyph and what its detail line says — not in how it is picked or started — so it is
-    /// the same row parameterised, not a second copy of it.
+    /// One row struct for every session: the tint and the leading glyph are parameters, not a
+    /// second copy of the row.
     private func pickRow(_ item: CadenceFocusPickItem) -> some View {
         let target = item.target
         return iOSFocusPickRow(
@@ -297,7 +287,6 @@ struct iOSFocusView: View {
     private func title(of item: CadenceFocusPickItem) -> String {
         switch item {
         case .task(let task): return TaskTitleSupport.displayTitle(task.title)
-        case .bundle(let bundle): return bundle.displayTitle
         }
     }
 
@@ -305,26 +294,19 @@ struct iOSFocusView: View {
         switch item {
         case .task(let task):
             return CadenceFocusSupport.sidebarDetail(for: task, todayKey: todayKey)
-        case .bundle(let bundle):
-            return CadenceFocusBundlePresentation.summaryLine(for: bundle, todayKey: todayKey)
         }
     }
 
-    /// A block has no list of its own, so it takes the amber the rest of the app already uses for
-    /// bundles — the timeline block, macOS's picker row, and the member panel's own heading.
     private func tint(of item: CadenceFocusPickItem) -> Color {
         switch item {
         case .task(let task): return Color(hex: task.containerColor)
-        case .bundle: return Theme.amber
         }
     }
 
-    /// `nil` means the task's list colour as a dot; a glyph is what marks the row as something
-    /// other than a single task. Same `tray.full` macOS's picker draws.
+    /// `nil` means the task's list colour as a dot, which is what every row draws.
     private func glyph(of item: CadenceFocusPickItem) -> String? {
         switch item {
         case .task: return nil
-        case .bundle: return "tray.full"
         }
     }
 
@@ -337,11 +319,6 @@ struct iOSFocusView: View {
                 selectedTaskHeader(task)
                 timerPanel(accent: Color(hex: task.containerColor), controls: { focusControls(for: task) })
                 taskNotes(task)
-                Spacer(minLength: 0)
-            case .bundle(let bundle):
-                selectedBundleHeader(bundle)
-                timerPanel(accent: Theme.amber, controls: { bundleControls(for: bundle) })
-                bundleMembers(bundle)
                 Spacer(minLength: 0)
             case nil:
                 unselectedDetail
@@ -395,24 +372,6 @@ struct iOSFocusView: View {
             }
             if let estimate = estimateLabel(for: task) {
                 iOSMetaChip(label: estimate, color: Theme.dim)
-            }
-        }
-    }
-
-    /// The block's own facts, from the same helper the picker row's line comes from — minus the
-    /// leading `TaskBundle.shortLabel`, because the title above these chips already is one.
-    private func selectedBundleHeader(_ bundle: TaskBundle) -> some View {
-        sessionHeader(title: bundle.displayTitle) {
-            ForEach(
-                Array(
-                    CadenceFocusBundlePresentation
-                        .summaryParts(for: bundle, todayKey: todayKey)
-                        .dropFirst()
-                        .enumerated()
-                ),
-                id: \.offset
-            ) { _, part in
-                iOSMetaChip(label: part, color: Theme.amber)
             }
         }
     }
@@ -501,31 +460,6 @@ struct iOSFocusView: View {
         }
     }
 
-    /// A block's third control **logs**; it does not complete.
-    ///
-    /// Finishing a task is one decision about one thing. "Finish the block" would be a decision
-    /// about every member at once — including the ones you unticked precisely because you were not
-    /// working on them — so the control that would do it does not exist, and the glyph deliberately
-    /// is not the checkmark beside it on the task session. Completion stays where it is honest: the
-    /// member's own circle in the block's inspector.
-    private func bundleControls(for bundle: TaskBundle) -> some View {
-        HStack(spacing: 16) {
-            resetButton
-
-            playButton(accent: Theme.amber)
-
-            iOSFocusControlButton(
-                systemImage: "tray.and.arrow.down",
-                accessibilityLabel: "Log session to the selected tasks",
-                foreground: Theme.amber,
-                background: Theme.surfaceElevated,
-                diameter: 48
-            ) {
-                logBundleSession(bundle)
-            }
-        }
-    }
-
     private var resetButton: some View {
         iOSFocusControlButton(
             systemImage: "arrow.counterclockwise",
@@ -547,39 +481,6 @@ struct iOSFocusView: View {
             glowColor: accent.opacity(0.45),
             action: toggleTimer
         )
-    }
-
-    /// Which members receive the session's minutes. macOS's `FocusBundleTasksPanel` in touch
-    /// clothes: the same three facts per row, from the same `CadenceBundleTaskRowSupport`, and the
-    /// same square-not-circle tick, because this control includes a task in the time log and the
-    /// app's circle already means completed.
-    private func bundleMembers(_ bundle: TaskBundle) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            VStack(alignment: .leading, spacing: 4) {
-                SectionEyebrowLabel(text: TaskBundle.tasksSectionLabel, tint: Theme.amber)
-                Text(CadenceFocusBundlePresentation.selectionSummary(for: bundle, selectedTaskIDs: selectedBundleTaskIDs))
-                    .font(.system(size: 11))
-                    .foregroundStyle(Theme.subdued)
-            }
-
-            if bundle.sortedTasks.isEmpty {
-                Text("This block is empty.")
-                    .font(.system(size: 12))
-                    .foregroundStyle(Theme.dim)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            } else {
-                ForEach(bundle.sortedTasks) { task in
-                    iOSFocusBundleMemberRow(
-                        task: task,
-                        isSelected: selectedBundleTaskIDs.contains(task.id),
-                        toggle: { toggleMember(task) }
-                    )
-                }
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(16)
-        .cadenceCard(background: Theme.surface, cornerRadius: Theme.radiusCard, shadowRadius: 12, shadowY: 5)
     }
 
     @ViewBuilder
@@ -701,29 +602,9 @@ struct iOSFocusView: View {
         adopt(item)
     }
 
-    /// Point the session at `item`, seeding a block's member ticks **only when the block itself
-    /// changes**. Re-selecting the block already loaded must not undo the ticks you just made — the
-    /// picker row stays tappable while its own session runs.
+    /// Point the session at `item`.
     private func adopt(_ item: CadenceFocusPickItem) {
-        let previous = selectedTarget
         selectedTarget = item.target
-
-        switch item {
-        case .task:
-            selectedBundleTaskIDs = []
-        case .bundle(let bundle):
-            if previous != item.target {
-                selectedBundleTaskIDs = CadenceFocusSupport.defaultSelectedTaskIDs(for: bundle)
-            }
-        }
-    }
-
-    private func toggleMember(_ task: AppTask) {
-        if selectedBundleTaskIDs.contains(task.id) {
-            selectedBundleTaskIDs.remove(task.id)
-        } else {
-            selectedBundleTaskIDs.insert(task.id)
-        }
     }
 
     private func toggleTimer() {
@@ -750,30 +631,9 @@ struct iOSFocusView: View {
             adopt(next)
         } else {
             selectedTarget = nil
-            selectedBundleTaskIDs = []
         }
     }
 
-    /// Hand the block's minutes to the ticked members, weighted by estimate, through the one helper
-    /// macOS's bundle timer also commits through.
-    ///
-    /// **Only resets the clock once the store has the minutes (T-654).** This used to bank via a
-    /// swallowed `try? modelContext.save()` and clear the clock unconditionally — the same shape
-    /// T-636(c) fixed on the single-task completion door beside it. A refused commit here now leaves
-    /// `timerState` untouched, so the session is still there to log again rather than gone for good.
-    private func logBundleSession(_ bundle: TaskBundle) {
-        do {
-            try CadenceFocusSupport.logElapsedSeconds(
-                elapsedSeconds,
-                across: CadenceFocusSupport.selectedTasks(in: bundle, selectedTaskIDs: selectedBundleTaskIDs),
-                in: modelContext
-            )
-        } catch {
-            CadenceTaskSettleFailureCenter.shared.record()
-            return
-        }
-        resetTimer()
-    }
 }
 
 // MARK: - Focus chrome
@@ -850,8 +710,8 @@ private struct iOSFocusControlButton: View {
 private let iOSFocusTransportSize: CGFloat = 44
 
 /// iOS counterpart of macOS's `FocusPickItemRow`: a leading medallion, the title, one detail line,
-/// and the transport control. **One row for both a ready task and a bundle** — a block differs in
-/// its tint and its glyph, not in how it is picked or started.
+/// and the transport control. The tint and the glyph are parameters, so one row serves every
+/// kind of pick item.
 ///
 /// The two controls are **siblings in an `HStack`**, not a small button layered over a full-width
 /// one. Layering is how `iOSHabitsView` does its check-in circle and it works there, but this row
@@ -864,8 +724,7 @@ private struct iOSFocusPickRow: View {
     let title: String
     let detail: String
     let tint: Color
-    /// `nil` draws the list-colour dot a task row has always shown; a glyph marks a row that is not
-    /// a single task.
+    /// `nil` draws the list-colour dot a task row has always shown.
     let glyph: String?
     let isSelected: Bool
     let isRunning: Bool
@@ -947,61 +806,4 @@ private struct iOSFocusPickRow: View {
     }
 }
 
-/// One member of the block being focused, with the tick that includes it in the time log.
-///
-/// The three facts and their metrics come from `CadenceBundleTaskRowSupport` /
-/// `CadenceBundleTaskRowMetrics`, which is what the macOS focus panel, the timeline inspector and
-/// the iOS block sheet all read — those three disagreed about every one of them once, and the
-/// shared decision is why they no longer can.
-///
-/// **The tick is a square, not a circle.** It includes the task in this session's time log; it does
-/// not finish it. The circle is the app's completion glyph — it is what the same task's row draws
-/// in `iOSCalendarBundleDetailSheet` — so the one control in the app whose leading mark means
-/// something else is drawn as a checkbox in the panel's own amber.
-private struct iOSFocusBundleMemberRow: View {
-    let task: AppTask
-    let isSelected: Bool
-    let toggle: () -> Void
-
-    var body: some View {
-        Button(action: toggle) {
-            HStack(alignment: .top, spacing: 11) {
-                Image(systemName: isSelected ? "checkmark.square.fill" : "square")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundStyle(isSelected ? Theme.amber : Theme.dim)
-                    .frame(width: 30, height: 30)
-
-                VStack(alignment: .leading, spacing: CadenceBundleTaskRowMetrics.summarySpacing) {
-                    Text(TaskTitleSupport.displayTitle(task.title))
-                        .font(.system(size: CadenceBundleTaskRowMetrics.titleSize, weight: CadenceBundleTaskRowMetrics.titleWeight))
-                        .foregroundStyle(task.isDone ? Theme.dim : Theme.text)
-                        .strikethrough(task.isDone, color: Theme.dim)
-                        .lineLimit(CadenceBundleTaskRowMetrics.titleLineLimit)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-
-                    // `includesLoggedTime` — this panel hands the session's minutes to the tasks
-                    // you tick, so `45/60m` is the number it is about. Every other bundle member
-                    // row states the estimate alone.
-                    CadenceTaskDetailLineLabel(
-                        parts: CadenceBundleTaskRowSupport.detailParts(for: task, includesLoggedTime: true),
-                        fontSize: CadenceBundleTaskRowMetrics.detailSize
-                    )
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                }
-
-                if task.isDone {
-                    Text("Done")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(Theme.green)
-                }
-            }
-            .padding(.vertical, 6)
-            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.iosPressable)
-        .accessibilityLabel(isSelected ? "Exclude from time log" : "Include in time log")
-        .accessibilityValue(TaskTitleSupport.displayTitle(task.title))
-    }
-}
 #endif

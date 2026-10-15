@@ -26,7 +26,6 @@ struct CadenceRootContextSwapAdoptionTests {
 
     private func resetSharedManagers() {
         FocusManager.shared.activeSession = nil
-        FocusManager.shared.selectedBundleTaskIDs = []
         FocusManager.shared.reset()
         FocusManager.shared.clock = { Date() }
         HoveredTaskManager.shared.clear()
@@ -70,24 +69,9 @@ struct CadenceRootContextSwapAdoptionTests {
         #expect(liveCopy.title == "Deeper work")
     }
 
-    /// The bundle half of the same session. `FocusManager.ActiveSession` has two cases and a fix
-    /// that handled one of them would strand every bundle focus.
-    @Test func aRunningBundleSessionIsRepointedToo() throws {
-        let (retired, live) = try makeSwap()
-        let seeded = TaskBundle(title: "Morning block", dateKey: "2026-08-04", startMin: 540, durationMinutes: 60)
-        retired.insert(seeded)
-        try retired.save()
-
-        let resolved = try #require(
-            macOSRootDataRefreshSupport.reresolvedSession(.bundle(seeded), in: live)
-        )
-        guard case .bundle(let adopted) = resolved else {
-            Issue.record("a bundle session was re-resolved into something other than a bundle session")
-            return
-        }
-        #expect(adopted.id == seeded.id)
-        #expect(adopted !== seeded)
-    }
+    // [[T-3170]] retired `aRunningBundleSessionIsRepointedToo`. It was the Block half of the
+    // re-resolution, and `FocusManager.ActiveSession` has one case again; the task half above is
+    // the whole of what the swap now has to re-point.
 
     /// **The decision this leg turns on.** When the other process deleted the task, the row cannot
     /// be re-resolved — and the answer to that is to leave the session alone, not to end it.

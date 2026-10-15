@@ -1,10 +1,10 @@
 #if os(macOS)
 import SwiftUI
 
-/// The picker's row model moved to `Shared/CadenceFocusBundleSupport.swift` under T-242: it was
-/// date-key arithmetic and string matching sitting inside `#if os(macOS)`, and that guard is why
-/// the iPhone's focus picker could list tasks but never a block. The Mac keeps the shorter
-/// spelling the views below read better with; there is no second body.
+/// The picker's row model lives in `Shared/CadenceFocusBundleSupport.swift` since T-242: it is
+/// date-key arithmetic and string matching, and it sat inside `#if os(macOS)` where the iPhone's
+/// focus picker could not reach it. The Mac keeps the shorter spelling the views below read better
+/// with; there is no second body.
 typealias FocusPickItem = CadenceFocusPickItem
 
 struct FocusPickSessionCard: View {
@@ -14,7 +14,6 @@ struct FocusPickSessionCard: View {
     @Binding var searchText: String
     let items: [FocusPickItem]
     let onSelectTask: (AppTask) -> Void
-    let onSelectBundle: (TaskBundle) -> Void
     @FocusState private var searchFieldFocused: Bool
 
     var body: some View {
@@ -61,8 +60,6 @@ struct FocusPickSessionCard: View {
                                 switch item {
                                 case .task(let task):
                                     onSelectTask(task)
-                                case .bundle(let bundle):
-                                    onSelectBundle(bundle)
                                 }
                             }
                         }
@@ -93,7 +90,7 @@ struct FocusPickSessionCard: View {
             Image(systemName: "magnifyingglass")
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(searchFieldFocused ? Theme.blue : Theme.dim)
-            TextField("Search tasks and bundles", text: $searchText)
+            TextField("Search tasks", text: $searchText)
                 .textFieldStyle(.plain)
                 .font(.system(size: 14))
                 .foregroundStyle(Theme.text)
@@ -116,11 +113,11 @@ struct FocusPickSessionCard: View {
                 .font(.system(size: 18, weight: .semibold))
                 .foregroundStyle(isSearching ? Theme.dim : Theme.green)
 
-            Text(isSearching ? "No matching tasks or bundles" : "Nothing ready right now")
+            Text(isSearching ? "No matching tasks" : "Nothing ready right now")
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(Theme.text)
 
-            Text(isSearching ? "Try a project, bundle title, task title, priority, or date." : "When a task is ready, it will appear here.")
+            Text(isSearching ? "Try a project, task title, priority, or date." : "When a task is ready, it will appear here.")
                 .font(.system(size: 11))
                 .foregroundStyle(Theme.dim)
                 .lineLimit(2)
@@ -136,33 +133,11 @@ struct FocusPickSessionCard: View {
             return isSearching ? "No matches" : "No ready sessions"
         }
 
-        let counts = itemCounts
         if isSearching {
             return "\(items.count) match\(items.count == 1 ? "" : "es")"
         }
 
-        var parts: [String] = []
-        if counts.tasks > 0 {
-            parts.append("\(counts.tasks) task\(counts.tasks == 1 ? "" : "s")")
-        }
-        if counts.bundles > 0 {
-            parts.append("\(counts.bundles) bundle\(counts.bundles == 1 ? "" : "s")")
-        }
-        return "Best matches / \(parts.joined(separator: " / "))"
-    }
-
-    private var itemCounts: (tasks: Int, bundles: Int) {
-        var taskCount = 0
-        var bundleCount = 0
-        for item in items {
-            switch item {
-            case .task:
-                taskCount += 1
-            case .bundle:
-                bundleCount += 1
-            }
-        }
-        return (taskCount, bundleCount)
+        return "Best matches / \(items.count) task\(items.count == 1 ? "" : "s")"
     }
 
     private var isSearching: Bool {
@@ -223,13 +198,6 @@ private struct FocusPickItemRow: View {
                     .frame(width: 8, height: 8)
             }
             .frame(width: 24, height: 24)
-        case .bundle:
-            Image(systemName: "tray.full")
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(Theme.amber)
-                .frame(width: 24, height: 24)
-                .background(Theme.amber.opacity(0.12))
-                .clipShape(Circle())
         }
     }
 
@@ -237,8 +205,6 @@ private struct FocusPickItemRow: View {
         switch item {
         case .task(let task):
             return TaskTitleSupport.displayTitle(task.title)
-        case .bundle(let bundle):
-            return bundle.displayTitle
         }
     }
 
@@ -247,24 +213,13 @@ private struct FocusPickItemRow: View {
         switch item {
         case .task(let task):
             CadenceTaskDetailLineLabel(task: task, fallback: "Ready to focus", fontSize: 11)
-        case .bundle(let bundle):
-            Text(bundleDetail(bundle))
-                .font(.system(size: 11))
-                .foregroundStyle(Theme.dim)
-                .lineLimit(1)
         }
-    }
-
-    private func bundleDetail(_ bundle: TaskBundle) -> String {
-        CadenceFocusBundlePresentation.summaryLine(for: bundle)
     }
 
     private var tint: Color {
         switch item {
         case .task:
             return Theme.blue
-        case .bundle:
-            return Theme.amber
         }
     }
 
@@ -272,8 +227,6 @@ private struct FocusPickItemRow: View {
         switch item {
         case .task:
             return "Focus this task"
-        case .bundle:
-            return "Focus this bundle"
         }
     }
 }

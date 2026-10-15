@@ -20,11 +20,11 @@ extension ModelContext {
     /// nothing — when the delete did not go through.
     ///
     /// The deletion itself lives in `CadenceTaskMutationSupport.deleteTasks(withIDs:…)`, which is
-    /// also iOS's only delete path; this wrapper exists solely to supply the two macOS-only hooks
-    /// (singleton state teardown, and the focus session that a disposed bundle invalidates). The
-    /// two implementations used to be independent, and the iOS one had drifted into losing empty
-    /// bundles, pending notifications, and relationship detachment. Add behaviour to the shared
-    /// core, not here, unless it is genuinely AppKit-shaped.
+    /// also iOS's only delete path; this wrapper exists solely to supply the macOS-only hooks
+    /// (singleton state teardown, and the focus session a disposed task invalidates). The two
+    /// implementations used to be independent, and the iOS one had drifted into losing pending
+    /// notifications and relationship detachment. Add behaviour to the shared core, not here,
+    /// unless it is genuinely AppKit-shaped.
     ///
     /// `commitsImmediately` is forwarded rather than fixed here so the list cascades can defer the
     /// commit to the confirmation that owns it — see the shared core for why. `commit` is
@@ -48,9 +48,8 @@ extension ModelContext {
     ///   row that is about to disappear. Moving a state-destructive callback earlier under a new
     ///   name is the repair R65 warns against, and this is its mirror — leaving a cheap one where
     ///   it belongs.
-    /// - **Ending the focus session, and the bundle selection the user built by hand, is
-    ///   deferred.** Both are decided here, while the doomed rows are still readable, and performed
-    ///   only once a commit has landed: this call's own on the ordinary path, and the enclosing
+    /// - **Ending the focus session is deferred.** It is decided here, while the doomed rows are
+    ///   still readable, and performed only once a commit has landed: this call's own on the ordinary path, and the enclosing
     ///   `commitCascade`'s on the deferred one, through `CadenceDeferredDeleteEffects` — the queue
     ///   [[T-1348]] built for exactly this and which is no longer named for reminders.
     ///
@@ -80,9 +79,6 @@ extension ModelContext {
             willDelete: { ids in
                 Self.cancelTransientTaskState(for: ids)
                 Self.deferFocusTeardown(forTaskIDs: ids, to: effects)
-            },
-            didDeleteBundles: { deletedBundleIDs in
-                Self.deferFocusTeardown(forBundleIDs: deletedBundleIDs, to: effects)
             }
         )
 
@@ -109,36 +105,17 @@ extension ModelContext {
         }
     }
 
-    /// Decides now whether the doomed tasks invalidate the focus session or the bundle selection,
-    /// and queues the teardown for a commit that has not happened yet.
+    /// Decides now whether the doomed tasks invalidate the focus session, and queues the teardown
+    /// for a commit that has not happened yet.
     ///
     /// Decided here rather than inside the effect because by the time the effect runs the rows are
     /// deleted and committed, and reading `FocusManager.shared.activeTask.id` off one of them is a
     /// fault waiting for a fault handler.
     private static func deferFocusTeardown(forTaskIDs taskIDs: Set<UUID>, to effects: CadenceDeferredDeleteEffects?) {
         let endsTheSession = FocusManager.shared.activeTask.map { taskIDs.contains($0.id) } ?? false
-        let deselects = !FocusManager.shared.selectedBundleTaskIDs.isDisjoint(with: taskIDs)
-        guard endsTheSession || deselects else { return }
+        guard endsTheSession else { return }
 
         Self.queueTeardown(taskIDs: taskIDs, to: effects) {
-            if endsTheSession {
-                FocusManager.shared.activeSession = nil
-                FocusManager.shared.reset()
-            }
-            if deselects {
-                FocusManager.shared.selectedBundleTaskIDs.subtract(taskIDs)
-            }
-        }
-    }
-
-    /// The same decision for the block a delete disposed of: a focus session running on a block
-    /// that no longer exists has nothing left to count down.
-    private static func deferFocusTeardown(forBundleIDs bundleIDs: Set<UUID>, to effects: CadenceDeferredDeleteEffects?) {
-        guard let activeBundle = FocusManager.shared.activeBundle,
-              bundleIDs.contains(activeBundle.id)
-        else { return }
-
-        Self.queueTeardown(taskIDs: [], to: effects) {
             FocusManager.shared.activeSession = nil
             FocusManager.shared.reset()
         }

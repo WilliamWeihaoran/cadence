@@ -10,11 +10,9 @@ final class FocusManager {
 
     enum ActiveSession {
         case task(AppTask)
-        case bundle(TaskBundle)
     }
 
     var activeSession: ActiveSession? = nil
-    var selectedBundleTaskIDs: Set<UUID> = []
     var wantsNavToFocus: Bool = false
 
     /// **T-1103.** The stopwatch itself, and the only copy of it.
@@ -83,15 +81,7 @@ final class FocusManager {
         }
         set {
             activeSession = newValue.map { .task($0) }
-            if newValue == nil {
-                selectedBundleTaskIDs.removeAll()
-            }
         }
-    }
-
-    var activeBundle: TaskBundle? {
-        guard case .bundle(let bundle) = activeSession else { return nil }
-        return bundle
     }
 
     /// Begin focusing on a task, navigating to the focus view.
@@ -112,23 +102,7 @@ final class FocusManager {
             try commitElapsed(in: modelContext, commit: commit)
         }
         activeSession = .task(task)
-        selectedBundleTaskIDs.removeAll()
         // A different task gets a fresh stopwatch; the one already being focused gets its own back.
-        if isSameSession { resumeClock() } else { startClock() }
-        wantsNavToFocus = true
-    }
-
-    func startFocus(
-        bundle: TaskBundle,
-        in modelContext: ModelContext,
-        commit: (ModelContext) throws -> Void = { try $0.save() }
-    ) throws {
-        let isSameSession = activeBundle?.id == bundle.id
-        if !isSameSession {
-            try commitElapsed(in: modelContext, commit: commit)
-        }
-        activeSession = .bundle(bundle)
-        selectedBundleTaskIDs = CadenceFocusSupport.defaultSelectedTaskIDs(for: bundle)
         if isSameSession { resumeClock() } else { startClock() }
         wantsNavToFocus = true
     }
@@ -139,9 +113,8 @@ final class FocusManager {
     /// This used to add to `actualMinutes` only, so running the timer never moved
     /// `project.loggedMinutes` — which an hours-mode goal reads. Two things made that hard to
     /// notice: macOS's *manual* "log session" sheet does roll up, so typing 25 minutes and
-    /// running the timer for 25 minutes produced different totals on the same Mac; and the
-    /// bundle branch below rolls up too, so a bundle timer credited the list and a single-task
-    /// timer did not. It now goes through the same shared helper iOS uses.
+    /// running the timer for 25 minutes produced different totals on the same Mac. It now goes
+    /// through the same shared helper iOS uses.
     ///
     /// **It takes a `ModelContext` because banking now inserts.** Since T-621 each increment is a
     /// `FocusSessionLog` row, so this is a pending change and the rule that governs one
@@ -150,9 +123,9 @@ final class FocusManager {
     /// one too: they are the frames that bank on the user's behalf.
     ///
     /// **Throws and takes `commit:` now (T-654).** It used to write the bank and stop — no `save()`
-    /// of any kind, swallowed or otherwise, which is why `FocusView.timerControls`/
-    /// `bundleTimerControls` were held in `CadenceSaveCommitRule.commitReachExemptions` rather than
-    /// `existenceExemptions`: there was no commit for half 1/2 to find. Routes through the same
+    /// of any kind, swallowed or otherwise, which is why `FocusView.timerControls` was held in
+    /// `CadenceSaveCommitRule.commitReachExemptions` rather than `existenceExemptions`: there was
+    /// no commit for half 1/2 to find. Routes through the same
     /// `CadenceFocusSupport.logElapsedSeconds(_:across:in:commit:)` iOS uses — a single active task
     /// is a one-element credit list — so both platforms share one commit-and-undo shape. `isRunning`
     /// and `elapsed` are only cleared once that commit actually lands.
@@ -168,8 +141,6 @@ final class FocusManager {
         switch activeSession {
         case .task(let task):
             creditedTasks = [task]
-        case .bundle(let bundle):
-            creditedTasks = CadenceFocusSupport.selectedTasks(in: bundle, selectedTaskIDs: selectedBundleTaskIDs)
         case nil:
             return
         }
@@ -178,7 +149,7 @@ final class FocusManager {
     }
 
     /// Leave the current session the way switching to another one leaves it: bank the elapsed
-    /// time against the task (or bundle) that earned it, then clear the session.
+    /// time against the task that earned it, then clear the session.
     ///
     /// Clearing `activeSession` directly is what the close buttons used to do, and it stranded the
     /// stopwatch: `isRunning` stayed `true`, so `FocusView`'s one-second timer kept incrementing
@@ -197,7 +168,6 @@ final class FocusManager {
     ) throws {
         try commitElapsed(in: modelContext, commit: commit)
         activeSession = nil
-        selectedBundleTaskIDs.removeAll()
         reset()
     }
 

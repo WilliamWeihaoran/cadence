@@ -10,7 +10,6 @@ struct CalendarBoardBundleCard: View {
     let onDropTask: (AppTask) -> Void
 
     @Environment(\.modelContext) private var modelContext
-    @Environment(FocusManager.self) private var focusManager
     @State private var showPopover = false
     @State private var isHovered = false
     @State private var isTargeted = false
@@ -123,17 +122,6 @@ struct CalendarBoardBundleCard: View {
             allTasks: allTasks,
             areas: areas,
             projects: projects,
-            onFocus: {
-                // T-654: `startFocus` commits a pending bank from whatever session was running
-                // before this one and can refuse; the popover stays open on a refusal rather than
-                // reporting a switch that did not happen.
-                do {
-                    try focusManager.startFocus(bundle: bundle, in: modelContext)
-                    showPopover = false
-                } catch {
-                    TaskCompletionAnimationManager.shared.recordSettleFailure()
-                }
-            },
             onAddTask: { task in
                 SchedulingActions.addTask(task, to: bundle)
                 try? modelContext.save()
@@ -147,10 +135,6 @@ struct CalendarBoardBundleCard: View {
                 try? modelContext.save()
             },
             onComplete: {
-                if focusManager.activeBundle?.id == bundle.id {
-                    focusManager.reset()
-                    focusManager.activeSession = nil
-                }
                 endBlock(CadencePendingChangePersistence.editFailureNotice) {
                     try SchedulingActions.completeBundle(bundle, in: modelContext)
                 }

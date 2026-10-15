@@ -52,30 +52,31 @@ import Testing
 /// naming gap, over the population that pattern search can reach.
 struct CadenceIconOnlyHelperIdiomDuplicationTests {
 
-    /// The seven private helpers, keyed by the file that declares them. T-674 fixed the first
-    /// four; the last three already required a name before T-674 existed.
+    /// The six private helpers, keyed by the file that declares them. T-674 fixed the first
+    /// three of them; the last three already required a name before T-674 existed. It was seven
+    /// until [[T-3170]] deleted FocusBundleTaskSupportViews.swift with Block Focus — a fourth
+    /// T-674 site, removed rather than renamed.
     private static let iconButtonHelperSites: [String: String] = [
         "Cadence/macOS/Views/HabitsFormSupportViews.swift": "stepButton",
         "Cadence/macOS/Views/GoalTimelineView.swift": "timelineNavButton",
         "Cadence/macOS/Views/SettingsSupportViews.swift": "actionButton",
-        "Cadence/macOS/Views/FocusBundleTaskSupportViews.swift": "focusRowIconButton",
         "Cadence/macOS/Views/TimelineBundleBlockSupportViews.swift": "rowIconButton",
         "Cadence/macOS/Views/TaskInspectorContentSupportViews.swift": "iconButton",
         "Cadence/macOS/Views/SettingsTagsSection.swift": "rowButton",
     ]
 
-    /// **The population T-791 says a naming-gap ledger cannot show.** Seven, not
+    /// **The population T-791 says a naming-gap ledger cannot show.** Six, not
     /// `knownUnnamedIconButtonSites`' four (T-611's remaining iOS two plus whatever T-674 was
-    /// working through at the time) — the other three were never unnamed, so no accessibility
+    /// working through at the time) — three of the six were never unnamed, so no accessibility
     /// sweep's report ever had a reason to mention them.
-    @Test func sevenNearCopiesOfThePrivateIconButtonHelperExist() throws {
-        #expect(Self.iconButtonHelperSites.count == 7)
-        // Four of the seven are the files T-674's commit names as gaining the required parameter.
+    @Test func sixNearCopiesOfThePrivateIconButtonHelperExist() throws {
+        #expect(Self.iconButtonHelperSites.count == 6)
+        // Three of the six are files T-674's commit names as gaining the required parameter; its
+        // fourth, FocusBundleTaskSupportViews.swift, went with Block Focus in [[T-3170]].
         let t674Fixed: Set<String> = [
             "Cadence/macOS/Views/HabitsFormSupportViews.swift",
             "Cadence/macOS/Views/GoalTimelineView.swift",
             "Cadence/macOS/Views/SettingsSupportViews.swift",
-            "Cadence/macOS/Views/FocusBundleTaskSupportViews.swift",
         ]
         let alreadyNamed = Set(Self.iconButtonHelperSites.keys).subtracting(t674Fixed)
         #expect(alreadyNamed.count == 3, "expected exactly the three copies no ledger ever saw")

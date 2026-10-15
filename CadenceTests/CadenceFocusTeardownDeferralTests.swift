@@ -13,8 +13,7 @@ import Testing
 /// The two halves are separated rather than both moved, which is the whole of the ticket: hover,
 /// the animation and the subtask field are transient and `willDelete` is placed early on purpose —
 /// it exists to stop an animation aimed at a row that is about to go — while ending a session the
-/// user started, and dropping a bundle selection they built by hand, is destructive and waits for
-/// the commit through `CadenceDeferredDeleteEffects`.
+/// user started is destructive and waits for the commit through `CadenceDeferredDeleteEffects`.
 ///
 /// Nothing here depends on a SwiftData timing: the assertions are about in-memory singleton state
 /// and about which side of a commit a callback runs on.
@@ -26,7 +25,6 @@ struct CadenceFocusTeardownDeferralTests {
 
     private func resetSharedManagers() {
         FocusManager.shared.activeSession = nil
-        FocusManager.shared.selectedBundleTaskIDs = []
         FocusManager.shared.reset()
         HoveredTaskManager.shared.clear()
         TaskSubtaskEntryManager.shared.requestedTaskID = nil
@@ -83,35 +81,10 @@ struct CadenceFocusTeardownDeferralTests {
         #expect(TaskSubtaskEntryManager.shared.requestedTaskID == nil)
     }
 
-    /// The selection a user assembled by hand is on the deferred side with the session.
-    @Test func arefusedDeleteOfASelectedBundleMemberKeepsItSelected() throws {
-        resetSharedManagers()
-        defer { resetSharedManagers() }
-
-        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
-        let modelContext = ModelContext(container)
-        let bundle = TaskBundle(title: "Morning admin", dateKey: "2026-09-24", startMin: 540, durationMinutes: 30)
-        let first = AppTask(title: "Reply to emails")
-        first.bundle = bundle
-        let second = AppTask(title: "Clear inbox")
-        second.bundle = bundle
-        bundle.tasks = [first, second]
-        for model in [bundle, first, second] as [any PersistentModel] {
-            modelContext.insert(model)
-        }
-        try modelContext.save()
-
-        try FocusManager.shared.startFocus(bundle: bundle, in: modelContext)
-        FocusManager.shared.selectedBundleTaskIDs = [first.id, second.id]
-
-        #expect(modelContext.deleteTask(first, commit: refuseTheCommit) == false)
-
-        #expect(
-            FocusManager.shared.selectedBundleTaskIDs.contains(first.id),
-            "a refused delete dropped a row the user had selected inside the running block"
-        )
-        #expect(FocusManager.shared.activeBundle?.id == bundle.id)
-    }
+    // [[T-3170]] retired `arefusedDeleteOfASelectedBundleMemberKeepsItSelected`. It pinned the
+    // deferral through the Block-shaped focus session's hand-built member selection, which is gone
+    // with the feature. The deferral itself — a refused delete leaving the running session alone —
+    // is pinned without a Block by `arefusedTaskDeleteLeavesTheFocusSessionRunning` above.
 
     /// The success path, unchanged: a delete that lands still ends the session and drops the row.
     @Test func acommittedTaskDeleteStillEndsTheFocusSessionItInvalidates() throws {

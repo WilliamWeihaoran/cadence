@@ -60,20 +60,11 @@ enum macOSRootDataRefreshSupport {
         case .task(let task):
             guard let live = fetchTask(id: task.id, in: context), live !== task else { return nil }
             return .task(live)
-        case .bundle(let bundle):
-            guard let live = fetchBundle(id: bundle.id, in: context), live !== bundle else { return nil }
-            return .bundle(live)
         }
     }
 
     private static func fetchTask(id: UUID, in context: ModelContext) -> AppTask? {
         var descriptor = FetchDescriptor<AppTask>(predicate: #Predicate { $0.id == id })
-        descriptor.fetchLimit = 1
-        return (try? context.fetch(descriptor))?.first
-    }
-
-    private static func fetchBundle(id: UUID, in context: ModelContext) -> TaskBundle? {
-        var descriptor = FetchDescriptor<TaskBundle>(predicate: #Predicate { $0.id == id })
         descriptor.fetchLimit = 1
         return (try? context.fetch(descriptor))?.first
     }

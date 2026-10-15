@@ -20,7 +20,6 @@ struct TimelineBundleBlock: View {
 
     @Environment(\.modelContext) private var modelContext
     @Environment(DeleteConfirmationManager.self) private var deleteConfirmationManager
-    @Environment(FocusManager.self) private var focusManager
     @Environment(HoveredEditableManager.self) private var hoveredEditableManager
     @State private var resizeSession: TimelineResizeSession? = nil
     @State private var isHovered = false
@@ -116,15 +115,6 @@ struct TimelineBundleBlock: View {
                     allTasks: allTasks,
                     areas: areas,
                     projects: projects,
-                    onFocus: {
-                        // T-654: see `CalendarBoardItemSupportViews`'s identical guard.
-                        do {
-                            try focusManager.startFocus(bundle: bundle, in: modelContext)
-                            selectedBundleID = nil
-                        } catch {
-                            TaskCompletionAnimationManager.shared.recordSettleFailure()
-                        }
-                    },
                     onAddTask: { task in
                         SchedulingActions.addTask(task, to: bundle)
                     },
@@ -135,10 +125,6 @@ struct TimelineBundleBlock: View {
                         SchedulingActions.moveTaskInBundle(task, direction: direction)
                     },
                     onComplete: {
-                        if focusManager.activeBundle?.id == bundle.id {
-                            focusManager.reset()
-                            focusManager.activeSession = nil
-                        }
                         endBlock(CadencePendingChangePersistence.editFailureNotice) {
                             try SchedulingActions.completeBundle(bundle, in: modelContext)
                         }

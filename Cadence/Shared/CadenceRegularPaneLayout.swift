@@ -683,10 +683,10 @@ nonisolated enum CadenceDesktopSplitLayout {
 
     // MARK: - Focus — session │ sidebar
 
-    /// The timer-and-notes column's declared minimum, as all three of `FocusView`'s splits already
-    /// had it — the active task layout, the active bundle layout and the idle picker.
+    /// The timer-and-notes column's declared minimum, as both of `FocusView`'s splits already
+    /// had it — the active task layout and the idle picker.
     static let focusSessionPaneMinWidth: CGFloat = 520
-    /// `FocusSidebar` / `FocusBundleSidebar` / the idle layout's compact `SchedulePanel`.
+    /// `FocusSidebar` / the idle layout's compact `SchedulePanel`.
     static let focusSidebarPaneMinWidth: CGFloat = 320
 
     /// 841pt of pane.

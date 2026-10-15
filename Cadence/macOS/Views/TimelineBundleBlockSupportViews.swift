@@ -6,7 +6,6 @@ struct TaskBundleDetailPopover: View {
     let allTasks: [AppTask]
     let areas: [Area]
     let projects: [Project]
-    let onFocus: () -> Void
     let onAddTask: (AppTask) -> Void
     let onRemoveTask: (AppTask) -> Void
     let onMoveTask: (AppTask, Int) -> Void
@@ -261,24 +260,6 @@ struct TaskBundleDetailPopover: View {
                     ) {
                         beginConfirmation(.complete)
                     }
-
-                    // The shared predicate, not a fifth hand-written spelling of it. This was
-                    // `bundle.activeTasks.isEmpty`, which is exactly `!canFocus(bundle)` — the Mac's
-                    // block inspector had the rule right all along, in its own words, which is part
-                    // of why the bundle half of T-276 came out the way it did. Disabled rather than
-                    // absent here because this is one of a pair of equal-width buttons and dropping
-                    // one would reflow the other across the deck; the phone's sheet has a single
-                    // full-width button and no such row to disturb.
-                    CadenceActionButton(
-                        title: "Start Focus",
-                        systemImage: "play.fill",
-                        role: .primary,
-                        size: .compact,
-                        tint: Theme.amber,
-                        fullWidth: true,
-                        isDisabled: !CadenceFocusSupport.canFocus(bundle),
-                        action: onFocus
-                    )
                 }
             }
         }

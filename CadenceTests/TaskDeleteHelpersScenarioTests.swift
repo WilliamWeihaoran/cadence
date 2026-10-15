@@ -14,7 +14,6 @@ import Testing
 struct TaskDeleteHelpersScenarioTests {
     private func resetSharedManagers() {
         FocusManager.shared.activeSession = nil
-        FocusManager.shared.selectedBundleTaskIDs = []
         FocusManager.shared.reset()
         HoveredTaskManager.shared.clear()
         TaskSubtaskEntryManager.shared.requestedTaskID = nil
@@ -296,7 +295,7 @@ struct TaskDeleteHelpersScenarioTests {
         #expect(try modelContext.fetch(FetchDescriptor<AppTask>()).isEmpty)
     }
 
-    // MARK: - 7. Deleting the active Focus task/bundle clears FocusManager instead of retaining a stale reference
+    // MARK: - 7. Deleting the active Focus task clears FocusManager instead of retaining a stale reference
 
     @Test func deletingActiveFocusTaskClearsFocusManagerSession() throws {
         resetSharedManagers()
@@ -320,69 +319,12 @@ struct TaskDeleteHelpersScenarioTests {
         #expect(FocusManager.shared.isRunning == false)
     }
 
-    @Test func deletingAllMembersOfActiveFocusBundleClearsFocusManagerSession() throws {
-        resetSharedManagers()
-        defer { resetSharedManagers() }
-
-        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
-        let modelContext = ModelContext(container)
-
-        let bundle = TaskBundle(title: "Morning admin", dateKey: "2026-08-04", startMin: 540, durationMinutes: 30)
-        let taskA = AppTask(title: "Reply to emails")
-        taskA.bundle = bundle
-        let taskB = AppTask(title: "Clear inbox")
-        taskB.bundle = bundle
-        bundle.tasks = [taskA, taskB]
-
-        modelContext.insert(bundle)
-        modelContext.insert(taskA)
-        modelContext.insert(taskB)
-        try modelContext.save()
-
-        try FocusManager.shared.startFocus(bundle: bundle, in: modelContext)
-        #expect(FocusManager.shared.activeBundle?.id == bundle.id)
-
-        // Deleting every member task empties the bundle, which is then itself deleted by
-        // deleteEmptyBundles — FocusManager must not keep pointing at that deleted TaskBundle.
-        modelContext.deleteTasks(withIDs: Set([taskA.id, taskB.id]))
-        try modelContext.save()
-
-        #expect(try modelContext.fetch(FetchDescriptor<TaskBundle>()).isEmpty)
-        #expect(FocusManager.shared.activeSession == nil)
-        #expect(FocusManager.shared.activeBundle == nil)
-    }
-
-    @Test func deletingOneMemberOfActiveFocusBundleKeepsSessionWhenBundleStillHasTasks() throws {
-        resetSharedManagers()
-        defer { resetSharedManagers() }
-
-        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
-        let modelContext = ModelContext(container)
-
-        let bundle = TaskBundle(title: "Morning admin", dateKey: "2026-08-04", startMin: 540, durationMinutes: 30)
-        let taskA = AppTask(title: "Reply to emails")
-        taskA.bundle = bundle
-        let taskB = AppTask(title: "Clear inbox")
-        taskB.bundle = bundle
-        bundle.tasks = [taskA, taskB]
-
-        modelContext.insert(bundle)
-        modelContext.insert(taskA)
-        modelContext.insert(taskB)
-        try modelContext.save()
-
-        try FocusManager.shared.startFocus(bundle: bundle, in: modelContext)
-        FocusManager.shared.selectedBundleTaskIDs = [taskA.id, taskB.id]
-
-        modelContext.deleteTask(taskA)
-        try modelContext.save()
-
-        // The bundle still has taskB, so it must survive and Focus must remain on it.
-        #expect(try modelContext.fetch(FetchDescriptor<TaskBundle>()).count == 1)
-        #expect(FocusManager.shared.activeBundle?.id == bundle.id)
-        // The deleted task's id must be gone from the selection so a later commit doesn't touch it.
-        #expect(!FocusManager.shared.selectedBundleTaskIDs.contains(taskA.id))
-    }
+    // [[T-3170]] retired `deletingAllMembersOfActiveFocusBundleClearsFocusManagerSession` and
+    // `deletingOneMemberOfActiveFocusBundleKeepsSessionWhenBundleStillHasTasks`. Both pinned the
+    // Block-shaped focus session's teardown — the session that pointed at a `TaskBundle`, and the
+    // hand-built member selection a delete had to subtract from. Neither exists any more, so there
+    // is nothing left for them to be about; the single-task half of the same teardown is still
+    // pinned by the test above this note.
 
     // MARK: - 8. Deleting an occurrence of a recurring series doesn't corrupt or kill the rest of the series
 

@@ -65,33 +65,5 @@ enum FocusSessionSupport {
         focusManager.reset()
     }
 
-    /// - Parameter commit: See `distributeBundleMinutes(_:across:in:commit:)`.
-    static func logBundleSession(
-        hours: Int,
-        minutes: Int,
-        tasks: [AppTask],
-        modelContext: ModelContext,
-        focusManager: FocusManager,
-        commit: (ModelContext) throws -> Void = { try $0.save() }
-    ) throws {
-        try distributeBundleMinutes(hours * 60 + minutes, across: tasks, in: modelContext, commit: commit)
-        focusManager.reset()
-    }
-
-    /// Delegation. The arithmetic moved to `CadenceFocusSupport.distributeMinutes(_:across:)` in
-    /// `Shared/` under T-242 — it touched nothing but models, and living behind `#if os(macOS)` is
-    /// why an iPhone could not run a block's timer at all. The Mac's spelling stays because the
-    /// popovers here read better in this file's vocabulary; it must not grow a body again.
-    ///
-    /// - Parameter commit: See `CadencePendingChangePersistence.commitInsert(of:in:commit:)`.
-    static func distributeBundleMinutes(
-        _ totalMinutes: Int,
-        across tasks: [AppTask],
-        in modelContext: ModelContext,
-        commit: (ModelContext) throws -> Void = { try $0.save() }
-    ) throws {
-        try CadenceFocusSupport.distributeMinutes(totalMinutes, across: tasks, in: modelContext, commit: commit)
-    }
-
 }
 #endif

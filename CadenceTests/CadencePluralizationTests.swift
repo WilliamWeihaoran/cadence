@@ -23,20 +23,12 @@ struct CadencePluralizationTests {
         #expect(CadencePluralization.phrase(2, singular: "milestone", plural: "milestones") == "2 milestones")
     }
 
-    /// The four call sites T-844 named, each read as text: the ungrammatical literal is gone and
-    /// the shared helper is what supplies the count and noun now.
-    @Test func theFourNamedSitesReadTheSharedHelper() throws {
+    /// The call sites T-844 named, each read as text: the ungrammatical literal is gone and the
+    /// shared helper is what supplies the count and noun now. It named four; [[T-3170]] deleted
+    /// two of them — `BundleLogSessionPopover`'s "N selected tasks" and `FocusBundleSidebar`'s
+    /// "N tasks" — with Block Focus.
+    @Test func thenamedSitesReadTheSharedHelper() throws {
         let cases: [(path: String, needle: String, retiredLiteral: String)] = [
-            (
-                "Cadence/macOS/Views/FocusLogSessionPopovers.swift",
-                #"CadencePluralization\.phrase\(selectedTasks\.count, singular: "selected task", plural: "selected tasks"\)"#,
-                #""\#(1) selected tasks""#
-            ),
-            (
-                "Cadence/macOS/Views/FocusSidebarSupportViews.swift",
-                #"CadencePluralization\.phrase\(bundle\.sortedTasks\.count, singular: "task", plural: "tasks"\)"#,
-                #""\#(1) tasks""#
-            ),
             (
                 "Cadence/Shared/CadenceNotesListSupport.swift",
                 #"CadencePluralization\.phrase\(noteCount, singular: "note", plural: "notes"\)"#,

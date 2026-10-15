@@ -554,14 +554,10 @@ nonisolated enum CadenceTodayStanding: Int, CaseIterable, Hashable {
     /// row's leading chip.
     static let shortLabel = "Block"
 
-    /// The tasks-list section heading inside a block's Focus surface, on both platforms.
-    static let tasksSectionLabel = "Block tasks"
-
-    /// The Focus chrome eyebrow shown while a block has focus.
-    static let focusEyebrowTitle = "Block Focus"
-
-    /// The log-session popover's heading when time is being logged against a block's tasks.
-    static let logSessionTitle = "Log Block Session"
+    // [[T-3170]] deleted `tasksSectionLabel`, `focusEyebrowTitle` and `logSessionTitle` with Block
+    // Focus. Each was drawn by exactly one of the surfaces that went — the member panel's heading,
+    // the Focus chrome eyebrow and the log-session popover's title — and had no reader outside it.
+    // `shortLabel` above stays: the block inspector sheet still heads a section with it.
 
     /// The title field placeholder for creating or renaming a block.
     static let titleFieldPlaceholder = "Block title"

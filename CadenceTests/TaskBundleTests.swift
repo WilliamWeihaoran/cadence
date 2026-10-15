@@ -426,18 +426,10 @@ struct TaskBundleTests {
         #expect(copy.calendarEventID.isEmpty)
     }
 
-    @Test func bundleFocusLoggingDistributesByEstimate() throws {
-        let context = ModelContext(try CadenceTestStore.container())
-        let short = AppTask(title: "Short")
-        short.estimatedMinutes = 10
-        let long = AppTask(title: "Long")
-        long.estimatedMinutes = 20
-
-        try FocusSessionSupport.distributeBundleMinutes(30, across: [short, long], in: context)
-
-        #expect(short.actualMinutes == 10)
-        #expect(long.actualMinutes == 20)
-    }
+    // [[T-3170]] retired `bundleFocusLoggingDistributesByEstimate`. It reached the weighting
+    // through FocusSessionSupport.distributeBundleMinutes, the Mac's delegating spelling, which
+    // went with Block Focus. The weighting itself is pinned without a Block by
+    // `CadenceFocusDistributionTests.asessionSplitsItsMinutesByEstimateAndLosesNoneOfThem`.
     /// **T-567.** An untitled block was called "Task Bundle" — the *type's* name, and a word the
     /// app never says to a user. Everything around it on that screen said **Block**: the segment,
     /// "Block title", "Edit Block", "Delete Block", "No tasks in this block". The literal was
@@ -468,20 +460,16 @@ struct TaskBundleTests {
     /// exactly why it needed to be a constant: three re-typings is three chances for one to drift.
     @Test func theRestOfTheBlockVocabularyIsOneWordEach() throws {
         #expect(TaskBundle.shortLabel == "Block")
-        #expect(TaskBundle.tasksSectionLabel == "Block tasks")
-        #expect(TaskBundle.focusEyebrowTitle == "Block Focus")
-        #expect(TaskBundle.logSessionTitle == "Log Block Session")
         #expect(TaskBundle.titleFieldPlaceholder == "Block title")
         #expect(TaskBundle.deleteConfirmationTitle == "Delete Block?")
         #expect(TaskBundle.deleteConfirmationButtonTitle == "Delete Block")
 
-        // None of the seven collides with another — a copy/paste that reused the wrong constant
-        // would still read as "Block" somewhere, but the wrong sentence.
+        // None of the four collides with another — a copy/paste that reused the wrong constant
+        // would still read as "Block" somewhere, but the wrong sentence. It was seven until
+        // [[T-3170]] deleted `tasksSectionLabel`, `focusEyebrowTitle` and `logSessionTitle` with
+        // the Block Focus surfaces that were each one's only reader.
         let values = [
             TaskBundle.shortLabel,
-            TaskBundle.tasksSectionLabel,
-            TaskBundle.focusEyebrowTitle,
-            TaskBundle.logSessionTitle,
             TaskBundle.titleFieldPlaceholder,
             TaskBundle.deleteConfirmationTitle,
             TaskBundle.deleteConfirmationButtonTitle,
@@ -489,18 +477,13 @@ struct TaskBundleTests {
         #expect(Set(values).count == values.count)
     }
 
-    /// The eleven live sites T-843 found, each pinned to read the shared constant rather than a
-    /// re-typed literal. `noNewSurfaceTypesTheRetiredBundleNounEither` below is the complementary
+    /// The live sites T-843 found, each pinned to read the shared constant rather than a
+    /// re-typed literal. It was eleven; Block Focus took five of them in [[T-3170]]. `noNewSurfaceTypesTheRetiredBundleNounEither` below is the complementary
     /// claim — that no *other* site still types "Bundle" — so together they cover both directions:
     /// the known sites moved, and nothing new took their place.
     @Test func everyKnownBundleSiteReadsTheSharedVocabulary() throws {
         let sites: [(path: String, needle: String)] = [
-            ("Cadence/Shared/CadenceFocusBundleSupport.swift", "TaskBundle.shortLabel"),
-            ("Cadence/iOS/iOSFocusView.swift", "TaskBundle.tasksSectionLabel"),
-            ("Cadence/macOS/Views/FocusChromeSupportViews.swift", "TaskBundle.focusEyebrowTitle"),
-            ("Cadence/macOS/Views/FocusBundleTaskSupportViews.swift", "TaskBundle.tasksSectionLabel"),
-            ("Cadence/macOS/Views/FocusLogSessionPopovers.swift", "TaskBundle.logSessionTitle"),
-            ("Cadence/macOS/Views/FocusSidebarSupportViews.swift", "TaskBundle.shortLabel"),
+            ("Cadence/iOS/iOSCalendarBundleDetailSheet.swift", "TaskBundle.shortLabel"),
             ("Cadence/macOS/Views/TimelineBundleBlock.swift", "TaskBundle.deleteConfirmationTitle"),
         ]
         for site in sites {
@@ -605,11 +588,9 @@ struct TaskBundleTests {
 
     /// **T-843.** T-567 gave the untitled-block fallback one home and left the rest of the "Block"
     /// vocabulary to be re-typed by hand — which is exactly how "Bundle" came back at eleven sites
-    /// across nine files: `CadenceFocusBundleSupport`, `iOSFocusView`, `FocusChromeSupportViews`,
-    /// `FocusBundleTaskSupportViews`, `FocusLogSessionPopovers`, `FocusSidebarSupportViews`,
-    /// `QuickCreateChoicePopover` (twice), `TimelineBundleBlock`, and
-    /// `TimelineBundleBlockSupportViews` (twice). All eleven now read one of the constants added
-    /// beside `defaultDisplayTitle` above.
+    /// across nine files. All eleven read one of the constants added beside `defaultDisplayTitle`
+    /// above; [[T-3170]] has since removed the Focus and quick-create surfaces among them, leaving
+    /// the block inspector sheet, `TimelineBundleBlock` and `TimelineBundleBlockSupportViews`.
     ///
     /// This is the forward guard for a twelfth: every `.swift` file under the three product roots,
     /// comment-stripped so a doc comment cannot trip it, checked for a string literal containing

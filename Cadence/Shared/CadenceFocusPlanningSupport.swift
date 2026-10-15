@@ -159,8 +159,7 @@ enum CadenceFocusSupport {
     /// on, and carrying them over would log one task's minutes onto another when the session is
     /// finished.
     /// Forwards to the target-shaped rule in `CadenceFocusBundleSupport.swift`. Two bodies here
-    /// would be two answers to "does tapping play on another row inherit the clock", and a bundle
-    /// row is exactly another row.
+    /// would be two answers to "does tapping play on another row inherit the clock".
     static func timerState(
         afterPlayTapOn tappedTaskID: UUID,
         selectedTaskID: UUID?,
@@ -198,16 +197,14 @@ enum CadenceFocusSupport {
     /// The pending, non-committing write `complete(_:elapsedSeconds:modelContext:commit:)` below
     /// needs — banking and settling have to land as one commit, so this cannot save on its own.
     ///
-    /// **Renamed from `logElapsedSeconds(_:to:in:)` (T-654).** The bundle-shaped door in
+    /// **Renamed from `logElapsedSeconds(_:to:in:)` (T-654).** The committing door in
     /// `CadenceFocusBundleSupport.swift` used to share that name while *also* being
-    /// `logElapsedSeconds`, just committing — and `CadenceSaveCommitDisciplineTests`' commit index
-    /// "resolves a call by name and type and cannot see an argument list, so a name is only allowed
-    /// to vouch for itself when every overload of it agrees" (see `CadenceTaskMutationSupport`'s
-    /// `createBundle`/`insertBundle` split for the same reasoning). One overload committing and one
-    /// deliberately not is exactly the disagreement that rule exists to catch, and it made
-    /// `iOSFocusView.logBundleSession`'s real commit invisible to the scan. `bank` is this file's
-    /// own vocabulary for the write (`CadenceFocusLedger.bank`), so the rename costs nothing a
-    /// reader did not already know.
+    /// `logElapsedSeconds` — and `CadenceSaveCommitDisciplineTests`' commit index "resolves a call
+    /// by name and type and cannot see an argument list, so a name is only allowed to vouch for
+    /// itself when every overload of it agrees". One overload committing and one deliberately not
+    /// is exactly the disagreement that rule exists to catch, and it hid a real commit from the
+    /// scan. `bank` is this file's own vocabulary for the write (`CadenceFocusLedger.bank`), so
+    /// the rename costs nothing a reader did not already know.
     static func bankElapsedSeconds(_ seconds: Int, to task: AppTask, in modelContext: ModelContext) {
         let minutes = minutes(fromElapsedSeconds: seconds)
         guard minutes > 0 else { return }

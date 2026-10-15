@@ -195,8 +195,8 @@ struct CadenceDesktopSplitLayoutTests {
               "CadenceDesktopSplitLayout.goalInspectorPaneMinWidth": 2]),
             ("Cadence/macOS/Views/FocusView.swift",
              ["minWidth: 520", "minWidth: 320"],
-             ["CadenceDesktopSplitLayout.focusSessionPaneMinWidth": 3,
-              "CadenceDesktopSplitLayout.focusSidebarPaneMinWidth": 3]),
+             ["CadenceDesktopSplitLayout.focusSessionPaneMinWidth": 2,
+              "CadenceDesktopSplitLayout.focusSidebarPaneMinWidth": 2]),
         ]
 
         for (path, typed, referenced) in expectations {
@@ -216,9 +216,10 @@ struct CadenceDesktopSplitLayoutTests {
         }
     }
 
-    /// And each page asks before it draws. Focus is three splits — the active task layout, the
-    /// active bundle layout and the idle picker — and all three carried the same pair of minimums,
-    /// so a fix that reached only the first would leave two thirds of the page broken.
+    /// And each page asks before it draws. Focus is two splits — the active task layout and the
+    /// idle picker — and both carry the same pair of minimums, so a fix that reached only the first
+    /// would leave half the page broken. It was three until [[T-3170]] deleted the active block
+    /// layout with Block Focus.
     @Test
     func eachSplitIsGatedOnTheWidthItWasHanded() throws {
         let gates: [(path: String, call: String, count: Int)] = [
@@ -227,7 +228,7 @@ struct CadenceDesktopSplitLayoutTests {
             ("Cadence/macOS/Views/GoalsView.swift",
              "CadenceDesktopSplitLayout.goalsShowsInspector(", 1),
             ("Cadence/macOS/Views/FocusView.swift",
-             "CadenceDesktopSplitLayout.focusShowsSidebar(paneWidth:", 3),
+             "CadenceDesktopSplitLayout.focusShowsSidebar(paneWidth:", 2),
         ]
 
         for (path, call, count) in gates {

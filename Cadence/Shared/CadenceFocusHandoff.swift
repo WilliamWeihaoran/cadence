@@ -8,11 +8,11 @@ import Observation
 /// the clock and raises `wantsNavToFocus`. That singleton is deliberately macOS-only (T-242): iOS
 /// keeps its stopwatch in `iOSFocusView`'s own `CadenceFocusTimerState`, so a cross-platform
 /// `FocusManager` would be a second timer authority with nothing incrementing its `elapsed`. What
-/// iOS was missing is not the manager but the *message* — a way for a task row or a block sheet to
-/// name a subject and hand it over.
+/// iOS was missing is not the manager but the *message* — a way for a task row to name a subject
+/// and hand it over.
 ///
-/// It carries a `CadenceFocusTarget` rather than a `UUID` for the reason that type exists: a bundle
-/// and one of its own members are different sessions that equal ids cannot tell apart.
+/// It carries a `CadenceFocusTarget` rather than a `UUID` for the reason that type exists: every
+/// rule about leaving a session is stated against a target, not a bare id.
 ///
 /// It lives in `Shared/` while having **zero** readers under `Cadence/macOS` — a pattern called out
 /// in `docs/CLAUDE_REFERENCE.md` — and that is deliberate rather than an oversight: the decisions

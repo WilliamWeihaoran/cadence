@@ -110,37 +110,6 @@ struct FocusSessionHeader: View {
     }
 }
 
-struct FocusBundleHeader: View {
-    let bundle: TaskBundle
-    let selectedCount: Int
-    let onClose: () -> Void
-
-    var body: some View {
-        FocusSurfaceHeader(
-            eyebrow: TaskBundle.focusEyebrowTitle,
-            title: bundle.displayTitle,
-            onClose: onClose
-        ) {
-            HStack(spacing: 7) {
-                Label {
-                    Text(TimeFormatters.timeRange(startMin: bundle.startMin, endMin: bundle.endMin))
-                } icon: {
-                    Image(systemName: "tray.full")
-                        .font(.system(size: 10, weight: .semibold))
-                }
-                FocusMetaSeparator()
-                Text("\(selectedCount) selected")
-                FocusMetaSeparator()
-                Text("\(bundle.sortedTasks.count) total")
-                if bundle.totalEstimatedMinutes > 0 {
-                    FocusMetaSeparator()
-                    Text("\(bundle.totalEstimatedMinutes)m estimated")
-                }
-            }
-        }
-    }
-}
-
 struct FocusTimerPanel<Controls: View>: View {
     let clockDisplay: String
     let isRunning: Bool
