@@ -780,7 +780,7 @@ struct CadenceControlAccessibilityLabelTests {
         (
             "Cadence/iOS/iOSCalendarTimelineViews.swift",
             "struct iOSCalendarTimelineDayHeader: View {",
-            "CadenceCalendarDayAccessibility.timelineDayLabel(date:date,unscheduledCount:unscheduledTasks.count)",
+            "CadenceCalendarDayAccessibility.timelineDayLabel(date:date,allDayEventCount:allDayEvents.count,unscheduledCount:unscheduledTasks.count)",
             false
         ),
     ]
@@ -812,14 +812,24 @@ struct CadenceControlAccessibilityLabelTests {
         // and nothing else. The "N timed" chip it used to carry is gone from the band, so the
         // count is gone from the label with it.
         #expect(
-            CadenceCalendarDayAccessibility.timelineDayLabel(date: date, unscheduledCount: 2)
+            CadenceCalendarDayAccessibility.timelineDayLabel(date: date, allDayEventCount: 0, unscheduledCount: 2)
                 == "\(day), 2 unscheduled"
+        )
+        // T-3163: the band draws the day's all-day events too, ahead of the tasks, and says so in
+        // the same order.
+        #expect(
+            CadenceCalendarDayAccessibility.timelineDayLabel(date: date, allDayEventCount: 1, unscheduledCount: 2)
+                == "\(day), 1 all-day event, 2 unscheduled"
+        )
+        #expect(
+            CadenceCalendarDayAccessibility.timelineDayLabel(date: date, allDayEventCount: 2, unscheduledCount: 0)
+                == "\(day), 2 all-day events"
         )
         // And a band with no chips is the bare date. Not `emptyPhrase`: the column under this
         // header can be full of blocks, so "no scheduled items" would be a claim about the day
         // that the day contradicts. The other two cells *do* summarise their day, which is why
         // they keep it.
-        #expect(CadenceCalendarDayAccessibility.timelineDayLabel(date: date, unscheduledCount: 0) == day)
+        #expect(CadenceCalendarDayAccessibility.timelineDayLabel(date: date, allDayEventCount: 0, unscheduledCount: 0) == day)
 
         // One wording for an empty day across the two cells that summarise one, by construction
         // rather than by two literals happening to match.

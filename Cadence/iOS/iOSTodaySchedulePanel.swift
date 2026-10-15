@@ -64,7 +64,7 @@ struct iOSSchedulePanel: View {
     /// about. A narrower query here — "today's tasks only" — is what would let the two surfaces
     /// disagree about what a scheduled task is.
     private var scheduledTasksByDate: [String: [AppTask]] {
-        CadenceScheduleSupport.tasksByScheduledDate(allTasks, includeCompleted: false)
+        CadenceScheduleSupport.tasksByScheduledDate(allTasks, includeCompleted: true)
     }
 
     private var bundlesByDate: [String: [TaskBundle]] {

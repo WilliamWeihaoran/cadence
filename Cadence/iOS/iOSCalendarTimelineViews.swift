@@ -381,6 +381,7 @@ struct iOSCalendarTimelineGrid: View {
                         let date = date(at: index)
                         iOSCalendarTimelineDayHeader(
                             date: date,
+                            allDayEvents: items(eventsByDate, on: date).filter(\.isAllDay),
                             unscheduledTasks: items(unscheduledTasksByDate, on: date)
                         ) {
                             selectedDate = date
@@ -714,7 +715,15 @@ struct iOSCalendarTimelineGrid: View {
     }
 }
 
-/// The band over one day column: the weekday, the day number, and the day's **unscheduled** tasks.
+/// The band over one day column: the weekday, the day number, the day's **all-day events**, and its
+/// **unscheduled** tasks.
+///
+/// **All-day events live here since T-3163.** The column below has never drawn one — they are not
+/// blocks, so `iOSCalendarTimelineDayColumn.timedEvents` drops them — and until then nothing else
+/// did either, so on the week timeline a holiday or a trip did not exist. They take the band's
+/// slots ahead of the unscheduled tasks, by `CadenceCalendarAllDayBandPriority` (the month cell's
+/// events-before-tasks rule), and wear the same rail-plate `iOSCalendarMiniChip` the iOS month cell
+/// draws an event with, which is the treatment macOS's `AllDayEventChip` wears.
 ///
 /// Nothing timed is named here. It used to end in an "N timed" chip counting the day's tasks,
 /// bundles and events, and that chip hid nothing — `iOSCalendarTimelineDayColumn` draws every one
@@ -730,8 +739,17 @@ struct iOSCalendarTimelineGrid: View {
 /// two were told apart mostly by knowing which was which.
 private struct iOSCalendarTimelineDayHeader: View {
     let date: Date
+    let allDayEvents: [EKEvent]
     let unscheduledTasks: [AppTask]
     let action: () -> Void
+
+    /// Who gets the band's two rows, and how many items the "+N more" line stands for.
+    private var split: CadenceCalendarMonthCellPriority.Split {
+        CadenceCalendarAllDayBandPriority.split(
+            allDayEvents: allDayEvents.count,
+            unscheduledTasks: unscheduledTasks.count
+        )
+    }
 
     private let calendar = Calendar.current
     private var isToday: Bool { calendar.isDateInToday(date) }
@@ -765,7 +783,16 @@ private struct iOSCalendarTimelineDayHeader: View {
                 .frame(height: iOSCalendarTimelineMetrics.dateBlockHeight)
 
                 VStack(alignment: .leading, spacing: 3) {
-                    ForEach(unscheduledTasks.prefix(2)) { task in
+                    ForEach(allDayEvents.prefix(split.events), id: \.calendarItemIdentifier) { event in
+                        iOSCalendarMiniChip(
+                            title: iOSCalendarEventSupport.title(for: event),
+                            icon: "calendar",
+                            color: iOSCalendarEventSupport.color(for: event.calendar),
+                            isEvent: true
+                        )
+                    }
+
+                    ForEach(unscheduledTasks.prefix(split.tasks)) { task in
                         iOSCalendarMiniChip(
                             title: TaskTitleSupport.displayTitle(task.title, fallback: TaskTitleSupport.defaultCompactDisplayTitle),
                             icon: "circle.fill",
@@ -773,8 +800,8 @@ private struct iOSCalendarTimelineDayHeader: View {
                         )
                     }
 
-                    if unscheduledTasks.count > 2 {
-                        Text(CadenceTaskSurfaceOptions.moreLabel(hidden: unscheduledTasks.count - 2))
+                    if split.hidden > 0 {
+                        Text(CadenceTaskSurfaceOptions.moreLabel(hidden: split.hidden))
                             .font(.system(size: 9, weight: .medium))
                             .foregroundStyle(Theme.subdued)
                     }
@@ -801,9 +828,9 @@ private struct iOSCalendarTimelineDayHeader: View {
             }
         }
         .buttonStyle(.iosPressable)
-        // The one figure the band still draws — the unscheduled stack — where it used to announce
-        // the long date and nothing else (T-573), and where it briefly announced an "N timed"
-        // count as well (T-1271 took that chip off the band).
+        // The two stacks the band draws — all-day events (T-3163) and unscheduled tasks — where it
+        // used to announce the long date and nothing else (T-573), and where it briefly announced
+        // an "N timed" count as well (T-1271 took that chip off the band).
         //
         // **No `.isSelected` trait here**, unlike the two month cells. This header carries no
         // selection state by design (see the doc above): tapping it still sets the calendar's
@@ -812,6 +839,7 @@ private struct iOSCalendarTimelineDayHeader: View {
         .accessibilityLabel(
             CadenceCalendarDayAccessibility.timelineDayLabel(
                 date: date,
+                allDayEventCount: allDayEvents.count,
                 unscheduledCount: unscheduledTasks.count
             )
         )

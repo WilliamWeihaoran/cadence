@@ -68,8 +68,14 @@ struct iOSCalendarView: View {
         DateFormatters.dateKey(from: selectedDate)
     }
 
+    /// **Completed timed tasks stay on the grid (T-3164)**, as they do on macOS's Calendar page
+    /// (`CalendarPageDataSupport.tasksByScheduledDate`), which draws them with the done treatment.
+    /// The `false` this used to pass was the old defaulted argument made explicit by `a95c31ba`
+    /// with behaviour unchanged, not a decision — that commit names the divergence as an accident
+    /// of who typed the argument. Finishing a task is not a reason for the hour it filled to look
+    /// free. Cancelled tasks are still dropped inside the query.
     private var scheduledTasksByDate: [String: [AppTask]] {
-        CadenceScheduleSupport.tasksByScheduledDate(allTasks, includeCompleted: false)
+        CadenceScheduleSupport.tasksByScheduledDate(allTasks, includeCompleted: true)
     }
 
     private var unscheduledTasksByDate: [String: [AppTask]] {

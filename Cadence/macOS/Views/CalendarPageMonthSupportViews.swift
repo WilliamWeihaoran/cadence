@@ -299,6 +299,37 @@ private struct MonthDayNumberLabel: View {
     }
 }
 
+/// What a month cell's event chips are drawn from: the day's **all-day** events, then its timed
+/// segments. **T-3163.**
+///
+/// The cell used to ask `timedEvents(for:)` alone, so a holiday, a trip or an offsite was drawn in
+/// the week view's all-day lane and simply did not exist on the month grid. All-day items lead,
+/// as they do in Apple Calendar's month cell: they describe the whole day, so they read before the
+/// day's appointments. They take the same `MonthEventChip` as a timed event — the rail plate and
+/// the calendar-hued title `AllDayEventChip` wears — and `chipTimeLabel` already answers `nil` for
+/// an all-day event, so the chip draws no time it does not have. Both kinds then compete for the
+/// cell's rows as one "events" count through `CadenceCalendarMonthCellPriority`, unchanged.
+///
+/// Both halves go through the shared `CalendarEventDayCache`, so the grid still runs at most one
+/// fetch of each half per day rather than one per cell per pass.
+enum CalendarMonthCellEventSupport {
+    static func items(
+        for date: Date,
+        eventCache: CalendarEventDayCache,
+        source: any CalendarEventDaySource,
+        calendar: Calendar = .current
+    ) -> [CalendarEventItem] {
+        let allDay = eventCache.allDayEvents(for: date, calendarManager: source)
+            .map { CalendarEventItem(event: $0) }
+        let timed = CalendarEventItem.timedSegments(
+            from: eventCache.timedEvents(for: date, calendarManager: source),
+            for: date,
+            calendar: calendar
+        )
+        return allDay + timed
+    }
+}
+
 struct MonthDayCell: View {
     let date: Date
     let tasks: [AppTask]
@@ -333,8 +364,9 @@ struct MonthDayCell: View {
 
     private var dateKey: String { DateFormatters.dateKey(from: date) }
 
+    /// All-day events first, then the timed segments — see `CalendarMonthCellEventSupport`.
     private var calendarEvents: [CalendarEventItem] {
-        CalendarEventItem.timedSegments(from: eventCache.timedEvents(for: date, calendarManager: calendarManager), for: date)
+        CalendarMonthCellEventSupport.items(for: date, eventCache: eventCache, source: calendarManager)
     }
 
     private var visibleEvents: [CalendarEventItem] {

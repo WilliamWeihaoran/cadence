@@ -71,3 +71,26 @@ enum CadenceCalendarMonthCellPriority {
         )
     }
 }
+
+/// Who gets the iOS timeline day header's band rows: the day's **all-day events**, then its
+/// **unscheduled** tasks. **T-3163.**
+///
+/// The month cell's rule, reused rather than restated — an all-day event is a commitment made with
+/// other people and an unscheduled task can move without asking anybody, which is the argument
+/// `CadenceCalendarMonthCellPriority` records for events over tasks. The band has no bundles: a
+/// bundle always has a time, so it is a block in the column below.
+///
+/// `capacity` is the band's fixed row count. The band is a fixed-height strip pinned over the grid,
+/// so it cannot grow to fit a busy day; the rest goes into its "+N more" line.
+enum CadenceCalendarAllDayBandPriority {
+    static let capacity = 2
+
+    static func split(allDayEvents: Int, unscheduledTasks: Int) -> CadenceCalendarMonthCellPriority.Split {
+        CadenceCalendarMonthCellPriority.split(
+            bundles: 0,
+            events: allDayEvents,
+            tasks: unscheduledTasks,
+            capacity: capacity
+        )
+    }
+}

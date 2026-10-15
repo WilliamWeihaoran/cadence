@@ -154,9 +154,19 @@ nonisolated enum CadenceCalendarDayAccessibility {
     /// **No `emptyPhrase` here**, unlike the other two. A header with no unscheduled chips is not
     /// an empty day — the column under it can be full — so "no scheduled items" would be the same
     /// mismatch pointing the other way. An empty *day* is announced by the empty grid, not here.
-    static func timelineDayLabel(date: Date, unscheduledCount: Int) -> String {
-        guard unscheduledCount > 0 else { return dayName(date) }
-        return "\(dayName(date)), \(unscheduledCount) unscheduled"
+    ///
+    /// **All-day events join it since T-3163**, because the band draws them now:
+    /// `"Monday, 31 August 2026, 1 all-day event, 2 unscheduled"`. Each count is spoken only when
+    /// it is non-zero, in the order the band stacks them.
+    static func timelineDayLabel(date: Date, allDayEventCount: Int, unscheduledCount: Int) -> String {
+        var parts = [dayName(date)]
+        if allDayEventCount > 0 {
+            parts.append("\(allDayEventCount) all-day event\(allDayEventCount == 1 ? "" : "s")")
+        }
+        if unscheduledCount > 0 {
+            parts.append("\(unscheduledCount) unscheduled")
+        }
+        return parts.joined(separator: ", ")
     }
 
     /// One wording for an empty day, so the three cells cannot drift into three ways of saying
