@@ -1766,8 +1766,14 @@ ios_leg_args() {
 ui_suite_launches_an_app() {    # $1 = suite name. 0 = launches, or cannot be answered.
   local suite="$1"
   local dir="${CADENCE_UI_TEST_SOURCE_DIR:-$ROOT_DIR/CadenceUITests}"
-  local -a decl
-  decl=(${(f)"$(grep -lE "^[[:space:]]*(final[[:space:]]+)?(class|struct)[[:space:]]+${suite}[[:space:]]*:" -- "$dir"/*.swift(N) 2>/dev/null)"})
+  local -a files decl
+  # NO FILES IS NO ANSWER, and grep must never be asked (T-3172): `(N)` expands an empty directory
+  # to nothing, and `grep -lE <re> --` with no file operand reads STDIN -- a run from a tree with no
+  # `CadenceUITests/` blocked there for as long as its stdin stayed open. `</dev/null` is the second
+  # wall, so no future edit to the list can put grep back on the caller's terminal.
+  files=("$dir"/*.swift(N))
+  (( ${#files} )) || return 0
+  decl=(${(f)"$(grep -lE "^[[:space:]]*(final[[:space:]]+)?(class|struct)[[:space:]]+${suite}[[:space:]]*:" -- "${files[@]}" 2>/dev/null </dev/null)"})
   (( ${#decl} == 1 )) || return 0
   [[ -n "${decl[1]}" ]] || return 0
   grep -qF 'XCUIApplication' -- "${decl[1]}" && return 0
@@ -3472,6 +3478,34 @@ selftest_only_testing() {
   run_sel CadenceUITests/ScreenFreeFixtureTests CadenceTests/SomeUnitSuite
   check "FAIL-CLOSED: one launching member makes the whole selection launching" \
     $( [[ $rc == 0 ]] && print 1 || print 0 ) "exit $rc: $uiout"
+
+  # A TREE WITH NO UI TEST FILES, WITH STDIN LEFT OPEN (T-3172). `grep -lE <re> --` with an empty
+  # file list reads stdin, so the lookup blocked for as long as the caller's stdin stayed open. The
+  # stdin here is a FIFO this shell holds open read-write: it never delivers EOF, exactly like a
+  # terminal or an agent's pipe. The run is given 10 s; one that has not written its rc by then is
+  # the hang, and is killed with its descendants so the selftest itself cannot hang on it.
+  mkdir -p "$ws/uitests-none"
+  local sfifo="$ws/uitests-stdin.fifo" sfd spid swait=0 srcf="$ws/uitests-none.rc" sout="$ws/uitests-none.out"
+  rm -f "$sfifo" "$srcf"; mkfifo "$sfifo"
+  exec {sfd}<>"$sfifo"
+  ( CADENCE_UI_TEST_SOURCE_DIR="$ws/uitests-none" zsh "$here" check-ui-selection CadenceUITests/ScreenFreeFixtureTests \
+      >"$sout" 2>&1; print -r -- $? >"$srcf" ) <&$sfd &
+  spid=$!
+  while [[ ! -s "$srcf" ]] && (( swait < 100 )); do sleep 0.1; (( swait++ )); done
+  if [[ ! -s "$srcf" ]]; then
+    local -a skill sfront snext; skill=($spid); sfront=($spid)
+    while (( ${#sfront} )); do
+      snext=(${(f)"$(pgrep -P "${(j:,:)sfront}" 2>/dev/null)"}); skill+=($snext); sfront=($snext)
+    done
+    kill ${skill[@]} 2>/dev/null
+  fi
+  wait $spid 2>/dev/null
+  exec {sfd}>&-
+  check "a tree with NO UI test files RETURNS with stdin left open (T-3172), within 10 s" \
+    $( [[ -s "$srcf" ]] && print 1 || print 0 ) "still blocked after $(( swait / 10 )) s: $(cat "$sout" 2>/dev/null)"
+  check "...and FAIL-CLOSED: with no source to read, the suite launches an app" \
+    $( [[ "$(cat "$srcf" 2>/dev/null)" == 0 && "$(cat "$sout" 2>/dev/null)" == *LAUNCHES-AN-APP* ]] && print 1 || print 0 ) \
+    "exit $(cat "$srcf" 2>/dev/null): $(cat "$sout" 2>/dev/null)"
 
   # The fixture above is a claim about the reading; this is the claim about this repository, and it
   # is section 5's argument again -- without it a fixture that had drifted from the real target
