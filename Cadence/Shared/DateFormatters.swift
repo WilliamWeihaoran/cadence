@@ -434,9 +434,7 @@ nonisolated enum TimeFormatters {
     ///
     /// The 12-hour branch is byte-for-byte what it was, so nothing that already reads `1:15 AM`
     /// moves. The 24-hour branch is always zero-padded `HH:mm`, including on the hour: a bare `13`
-    /// beside a bare `9` does not read as a clock, and the hour rails are a column of these. It is
-    /// also what `minutes(fromTimeString:)` below already accepts — `"16:55"` was in that parser's
-    /// doc comment before this change — so a format-parse-reformat round trip survives.
+    /// beside a bare `9` does not read as a clock, and the hour rails are a column of these.
     ///
     /// `.oneToTwentyFour` (`h24`, where midnight is `24:00`) is folded into the `h23` spelling
     /// deliberately: one 24-hour face for the app, the way there is one 12-hour face.
@@ -455,40 +453,6 @@ nonisolated enum TimeFormatters {
     /// Formats a start/end minute pair as a range: "1:15 AM – 2:15 AM", or "01:15 – 02:15".
     static func timeRange(startMin: Int, endMin: Int, locale: Locale = .current) -> String {
         "\(timeString(from: startMin, locale: locale)) – \(timeString(from: endMin, locale: locale))"
-    }
-
-    /// Reads a typed time — "4:55 PM", "16:55", "4 PM", "04:55" — back to minutes from midnight,
-    /// or `nil` when it is not a time at all.
-    ///
-    /// The inverse of `timeString(from:locale:)`, and it lives beside it because of what the one
-    /// surface that used it did: the macOS event editor's typed Start and End fields were seeded
-    /// with `timeString`, edited by hand, parsed by this, and **re-seeded with `timeString`**, so
-    /// the pair had to agree — and a pair that agrees cannot be a private helper in a view file no
-    /// test can reach, which is what this was before [[T-1135]] moved it.
-    ///
-    /// **No product caller is left** ([[T-3171]]): that editor became the shared schedule panel,
-    /// whose clock is a roller. It stays because `aTypedTimeSurvivesTheEditorsFormatParseReformatRoundTrip`
-    /// still pins the pair; retiring it is filed rather than done in that slice.
-    ///
-    /// Locale-free on purpose, and that is the asymmetry worth stating. Display follows the user's
-    /// clock; *input* accepts both faces from everyone, because a 24-hour user who types `4 PM` out
-    /// of habit and a 12-hour user who types `16:55` are both being clear. Nothing here needs the
-    /// hour cycle to decide, since `am`/`pm` is present or it is not.
-    static func minutes(fromTimeString raw: String) -> Int? {
-        let s = raw.trimmingCharacters(in: .whitespaces).lowercased()
-        let isPM = s.contains("pm")
-        let isAM = s.contains("am")
-        let digits = s.replacingOccurrences(of: "am", with: "")
-            .replacingOccurrences(of: "pm", with: "")
-            .trimmingCharacters(in: .whitespaces)
-        let parts = digits.split(separator: ":").map { Int($0.trimmingCharacters(in: .whitespaces)) }
-        guard let h = parts.first ?? nil else { return nil }
-        let m = parts.count > 1 ? (parts[1] ?? 0) : 0
-        var hour = h
-        if isPM && hour != 12 { hour += 12 }
-        if isAM && hour == 12 { hour = 0 }
-        guard hour >= 0, hour < 24, m >= 0, m < 60 else { return nil }
-        return hour * 60 + m
     }
 
     /// Canonical minutes → duration label for the whole app: "45m", "2h", "1h 24m". Never renders

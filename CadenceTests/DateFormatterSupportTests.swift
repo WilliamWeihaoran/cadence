@@ -379,56 +379,6 @@ struct ClockFaceFollowsTheSystemTests {
         )
     }
 
-    /// The one call site whose output is read back rather than only drawn.
-    ///
-    /// `CalendarEventEditPopover` seeds its Start and End fields with `timeString`, parses what the
-    /// user leaves there, and re-seeds them with `timeString`. Before T-1135 the format was fixed, so
-    /// the parser only ever saw one spelling; now it can be handed `16:55` on a 24-hour Mac. A
-    /// formatter change that altered a string something else reads back is a different bug from the
-    /// one being fixed, which is why this is asserted over every minute of the day on both faces
-    /// rather than sampled.
-    ///
-    /// The cross terms matter as much as the round trip: a 24-hour user who types `4 PM` out of
-    /// habit, and a 12-hour user who types `16:55`, must both land on 16:55.
-    @Test func aTypedTimeSurvivesTheEditorsFormatParseReformatRoundTrip() {
-        for (face, locale) in CadenceTestClocks.all {
-            for minute in 0..<(24 * 60) {
-                let drawn = TimeFormatters.timeString(from: minute, locale: locale)
-                #expect(
-                    TimeFormatters.minutes(fromTimeString: drawn) == minute,
-                    "the \(face) spelling of minute \(minute) — \(drawn) — did not parse back to it"
-                )
-                #expect(
-                    TimeFormatters.timeString(
-                        from: TimeFormatters.minutes(fromTimeString: drawn) ?? -1,
-                        locale: locale
-                    ) == drawn,
-                    "\(drawn) did not survive a second trip through the \(face) editor"
-                )
-            }
-        }
-
-        // Typed by hand, in the other face's vocabulary, with the spacing people actually use.
-        let typed: [(String, Int?)] = [
-            ("4:55 PM", 16 * 60 + 55),
-            ("16:55", 16 * 60 + 55),
-            ("4 PM", 16 * 60),
-            ("04:55", 4 * 60 + 55),
-            ("  9:30 am  ", 9 * 60 + 30),
-            ("12 AM", 0),
-            ("00:00", 0),
-            ("24:00", nil),
-            ("noon", nil),
-            ("", nil),
-        ]
-        for probe in typed {
-            #expect(
-                TimeFormatters.minutes(fromTimeString: probe.0) == probe.1,
-                "\"\(probe.0)\" parsed to \(String(describing: TimeFormatters.minutes(fromTimeString: probe.0)))"
-            )
-        }
-    }
-
     /// **T-1130 asked for a measurement rather than a hope, and this is the 24-hour half of it.**
     ///
     /// The hour rails are a fixed-width column of these labels, so the widest one decides whether
