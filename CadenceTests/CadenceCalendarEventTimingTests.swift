@@ -780,8 +780,17 @@ struct CadenceCalendarEventTimingTests {
             #expect(offenders.isEmpty, "\(path) resolves a start with date(from:): \(offenders)")
         }
 
-        #expect(CadenceSourceScan.matchCount("CadenceCalendarEventTiming\\.movingStart\\(", in: edit) == 1)
-        #expect(CadenceSourceScan.matchCount("CadenceCalendarEventTiming\\.settingStartMinute\\(", in: edit) == 1)
+        // [[T-3171]]: the event editor no longer holds its start as a `Date` at all. It edits a
+        // `CadenceScheduleDraft` through the shared panel and resolves both ends with
+        // `eventDateRange(calendar:)`, which sets each wall-clock minute through the same
+        // `startDate(day:startMin:calendar:)` the two helpers above delegate to — pinned
+        // behaviourally, at the gap minute, by `CadenceScheduleDraftTests`.
+        #expect(CadenceSourceScan.matchCount("CadenceCalendarEventTiming\\.(movingStart|settingStartMinute)\\(", in: edit) == 0)
+        #expect(edit.contains("draft.eventDateRange()"), "the event editor resolves its range some other way")
+        let draft = try CadenceCommitSurfaceScan.scanned("Cadence/Shared/CadenceScheduleDraft.swift")
+        let range = try #require(CadenceSourceScan.functionBody(named: "eventDateRange", in: draft))
+        #expect(CadenceSourceScan.matchCount("CadenceCalendarEventTiming\\.startDate\\(day:", in: range) == 2)
+        #expect(CadenceSourceScan.matchLines(needle, in: draft).isEmpty)
         // The time binding and `defaultStartTime`.
         #expect(CadenceSourceScan.matchCount("CadenceCalendarEventTiming\\.settingStartMinute\\(", in: quick) == 2)
     }

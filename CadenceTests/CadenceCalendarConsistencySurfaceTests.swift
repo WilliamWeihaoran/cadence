@@ -428,9 +428,11 @@ struct CadenceCalendarConsistencySurfaceTests {
             "the label came back as an argument, which is how there were three of them"
         )
 
+        // [[T-3171]] took the event editor out of this list: it no longer draws a Schedule card of
+        // its own but hosts the shared schedule panel, whose Start is the roller row that takes a
+        // label because the panel also carries an End. Re-pointed below, not dropped.
         for (path, binding) in [
             ("Cadence/iOS/iOSCalendarQuickCreateSheet.swift", "startTimeMinutesBinding"),
-            ("Cadence/iOS/iOSCalendarEventEditSheet.swift", "startTimeMinutesBinding"),
             ("Cadence/iOS/iOSCalendarBundleDetailSheet.swift", "startMinuteBinding")
         ] {
             let source = try scannedSource(path)
@@ -454,6 +456,20 @@ struct CadenceCalendarConsistencySurfaceTests {
                 "\(path) still owns the start-time popover's presentation state"
             )
         }
+
+        // The event editor's start time is the panel's, and the editor spells none of its own.
+        let editor = try scannedSource("Cadence/iOS/iOSCalendarEventEditSheet.swift")
+        #expect(editor.contains("CadenceSchedulePanel("), "the event editor does not host the shared panel")
+        #expect(!editor.contains("CadenceStartTimeFieldRow("), "the event editor draws its own start row again")
+        for retired in [#"label: "Starts""#, #"label: "Time""#, #"label: "Start""#] {
+            #expect(CadenceSourceScan.matchCount(retired, in: editor) == 0, "the event editor spells \(retired)")
+        }
+        #expect(CadenceSourceScan.matchCount("showStartTimePicker", in: editor) == 0)
+        let panel = try scannedSource("Cadence/Shared/Components/CadenceSchedulePanel.swift")
+        #expect(
+            CadenceSourceScan.matchCount(#"CadenceTimeRollerFieldRow\(label: "Start""#, in: panel) == 1,
+            "the shared panel lost the one Start row its event schedule draws"
+        )
     }
 
     // MARK: - T-598(c): one "+N more"

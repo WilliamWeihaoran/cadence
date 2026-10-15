@@ -222,7 +222,11 @@ final class iOSCalendarManager {
         calendarID: String?,
         notes: String? = nil,
         span: EKSpan = .thisEvent,
-        isAllDay: Bool = false
+        isAllDay: Bool = false,
+        /// `nil` leaves the event's location as it is — the default, so a caller that edits no
+        /// location cannot clear one. A string, even an empty one, is written ([[T-3171]]: the
+        /// shared panel's Location row is the first editor on this platform that has one).
+        location: String? = nil
     ) -> CalendarWriteFailure? {
         guard isAuthorized, !isEventKitDisarmed else { return .notAuthorized }
         guard endDate > startDate else { return .invalidRange }
@@ -238,6 +242,11 @@ final class iOSCalendarManager {
         }
         let trimmedNotes = notes?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         event.notes = trimmedNotes.isEmpty ? nil : notes
+        if let location {
+            let trimmedLocation = location.trimmingCharacters(in: .whitespacesAndNewlines)
+            // `nil` rather than `""`, as `createEvent` writes it: "no location" is the absence of one.
+            event.location = trimmedLocation.isEmpty ? nil : trimmedLocation
+        }
         do {
             try store.save(event, span: span)
             storeVersion += 1

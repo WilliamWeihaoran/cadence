@@ -120,7 +120,6 @@ struct CadenceChoicePickerDismissalTests {
             "Cadence/Shared/Components/CadenceSchedulePanel.swift": (4, 0),
             "Cadence/Shared/Components/CadenceStartTimeFieldRow.swift": (1, 0),
             "Cadence/iOS/iOSArchiveImportSettingsSection.swift": (1, 0),
-            "Cadence/iOS/iOSCalendarEventEditSheet.swift": (2, 0),
             "Cadence/iOS/iOSCalendarQuickCreateSheet.swift": (3, 0),
             "Cadence/iOS/iOSCalendarSettingsSection.swift": (1, 0),
             "Cadence/iOS/iOSCreateTaskSheetSupportViews.swift": (3, 0),
@@ -166,8 +165,11 @@ struct CadenceChoicePickerDismissalTests {
         // deleted with the goal and habit editors it contained. T-1466 removes the inspector's
         // milestone picker and the committing row chip, leaving 32 and 3 respectively. [[T-3169]]
         // adds the shared schedule panel's four draft pickers: 36, and the committing count does
-        // not move, because a draft panel commits once at Add rather than row by row.
-        #expect(found.values.map(\.calls).reduce(0, +) == 36)
+        // not move, because a draft panel commits once at Add rather than row by row. [[T-3171]]
+        // takes the event editor's two (its Days list and its calendar picker) with it onto the
+        // panel, whose calendar picker serves it now and whose separate end date replaced the
+        // Days list: 34, still 3 committing.
+        #expect(found.values.map(\.calls).reduce(0, +) == 34)
         #expect(found.values.map(\.committing).reduce(0, +) == 3)
     }
 

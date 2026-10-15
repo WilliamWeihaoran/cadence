@@ -52,7 +52,27 @@ struct CadenceSchedulePanelActions {
 /// Due expands to the grid and nothing else, and Do expands to the grid plus one quiet Time row
 /// that reveals the roller only if asked. An **event** keeps time prominent, because an event with
 /// no time is only meaningful as an all-day one and the all-day toggle is what says that.
-struct CadenceSchedulePanel: View {
+///
+/// ## What a host may hand in besides the draft
+///
+/// Every addition is data or a closure, never a platform type, so the panel stays one file with no
+/// conditional compilation:
+///
+/// - `readOnlyNotice` — the record exists and cannot be written (a Birthdays or subscribed
+///   calendar). The panel says so first, every field it owns goes inert, and Save and Delete are
+///   **absent** rather than disabled, because an enabled Save over a calendar EventKit refuses was
+///   exactly the false promise the event sheet this replaces had removed.
+/// - `failureNotice` — a refusal the host learned *after* the panel's own call returned. A
+///   recurring event asks "this one, or all future ones?" between the tap and the write, so the
+///   write's answer cannot come back through `actions.commit`'s return value.
+/// - `canCommit` — a gate the draft cannot see, such as "the chosen calendar is one this event
+///   can be moved to". Save greys out exactly as it does for an empty title.
+/// - `offersEventRepeat` — `false` where the host cannot write a recurrence (an existing event's
+///   series is not edited from here), so no Repeat row offers a choice that would be dropped.
+/// - `notesField` — the host's own notes editor. A sheet has room for the platform's full
+///   markdown well and its reference sheets; a popover hanging off a block does not, and gets the
+///   plain field below. Both write the same `draft.notes`.
+struct CadenceSchedulePanel<NotesField: View>: View {
     @Binding var draft: CadenceScheduleDraft
     var listChoices: [CadenceSchedulePanelChoice] = []
     var sectionChoices: [String] = []
@@ -62,7 +82,12 @@ struct CadenceSchedulePanel: View {
     /// the place to raise a system prompt, so it says what is missing and leaves the request to the
     /// surface that owns it.
     var calendarUnavailableNotice: String?
+    var readOnlyNotice: String?
+    var failureNotice: String?
+    var canCommit = true
+    var offersEventRepeat = true
     let actions: CadenceSchedulePanelActions
+    private let notesField: NotesField?
 
     @State private var isDoExpanded = false
     @State private var isDueExpanded = false
@@ -77,25 +102,93 @@ struct CadenceSchedulePanel: View {
     @State private var actionError: String?
     @FocusState private var isTitleFocused: Bool
 
-    /// The panel's width where its host gives it none — a popover has no container to be a fraction
-    /// of. A sheet or an inspector column overrides it with its own frame.
-    static let preferredWidth: CGFloat = 372
+    /// The host's own notes editor in place of the plain field. See the type note.
+    init(
+        draft: Binding<CadenceScheduleDraft>,
+        listChoices: [CadenceSchedulePanelChoice] = [],
+        sectionChoices: [String] = [],
+        calendarChoices: [CadenceSchedulePanelChoice] = [],
+        calendarUnavailableNotice: String? = nil,
+        readOnlyNotice: String? = nil,
+        failureNotice: String? = nil,
+        canCommit: Bool = true,
+        offersEventRepeat: Bool = true,
+        actions: CadenceSchedulePanelActions,
+        @ViewBuilder notesField: () -> NotesField
+    ) {
+        self.init(
+            draft: draft,
+            listChoices: listChoices,
+            sectionChoices: sectionChoices,
+            calendarChoices: calendarChoices,
+            calendarUnavailableNotice: calendarUnavailableNotice,
+            readOnlyNotice: readOnlyNotice,
+            failureNotice: failureNotice,
+            canCommit: canCommit,
+            offersEventRepeat: offersEventRepeat,
+            actions: actions,
+            customNotesField: notesField()
+        )
+    }
+
+    fileprivate init(
+        draft: Binding<CadenceScheduleDraft>,
+        listChoices: [CadenceSchedulePanelChoice],
+        sectionChoices: [String],
+        calendarChoices: [CadenceSchedulePanelChoice],
+        calendarUnavailableNotice: String?,
+        readOnlyNotice: String?,
+        failureNotice: String?,
+        canCommit: Bool,
+        offersEventRepeat: Bool,
+        actions: CadenceSchedulePanelActions,
+        customNotesField: NotesField?
+    ) {
+        self._draft = draft
+        self.listChoices = listChoices
+        self.sectionChoices = sectionChoices
+        self.calendarChoices = calendarChoices
+        self.calendarUnavailableNotice = calendarUnavailableNotice
+        self.readOnlyNotice = readOnlyNotice
+        self.failureNotice = failureNotice
+        self.canCommit = canCommit
+        self.offersEventRepeat = offersEventRepeat
+        self.actions = actions
+        self.notesField = customNotesField
+    }
+
+    private var isReadOnly: Bool { readOnlyNotice != nil }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            kindSwitch
-            titleRow
-            if draft.kind == .task {
-                taskSchedule
-                listAndSection
-            } else {
-                eventSchedule
-                locationRow
-                calendarRow
+            if let readOnlyNotice {
+                CadenceInlineNotice(text: readOnlyNotice, tone: .informational)
             }
-            notesRow
-            if let actionError {
-                CadenceInlineNotice(text: actionError, tone: .failure)
+            Group {
+                kindSwitch
+                titleRow
+                if draft.kind == .task {
+                    taskSchedule
+                    listAndSection
+                } else {
+                    eventSchedule
+                    locationRow
+                    calendarRow
+                }
+            }
+            // Every field the panel owns is inert on a record that cannot be written: there is no
+            // Save to carry an edit anywhere, so letting one be typed would be the same false
+            // promise in a quieter form. The host's notes field is *not* in this group — a host can
+            // carry something of its own there that stays writable (its own note about the event).
+            .disabled(isReadOnly)
+            if let notesField {
+                notesField
+            } else {
+                notesRow
+                    .disabled(isReadOnly)
+            }
+            if let failure = actionError ?? failureNotice {
+                CadenceInlineNotice(text: failure, tone: .failure)
             }
             footer
         }
@@ -389,7 +482,7 @@ struct CadenceSchedulePanel: View {
                 CadenceFieldRow(label: "Ends", systemImage: "calendar.badge.clock", color: Theme.blue) {
                     CadenceDatePicker(selection: eventEndDayBinding, minHeight: 36)
                 }
-                if !draft.isAllDay && !draft.spansMultipleDays {
+                if !draft.isAllDay {
                     CadenceTimeRollerFieldRow(
                         label: "End",
                         systemImage: "clock.badge.checkmark",
@@ -397,8 +490,10 @@ struct CadenceSchedulePanel: View {
                     )
                 }
 
-                CadenceFieldDivider()
-                repeatRow
+                if offersEventRepeat {
+                    CadenceFieldDivider()
+                    repeatRow
+                }
             }
         }
     }
@@ -524,7 +619,7 @@ struct CadenceSchedulePanel: View {
     /// delete. That one control is the entire difference between this panel creating and editing.
     private var footer: some View {
         HStack(spacing: 10) {
-            if let delete = actions.delete {
+            if !isReadOnly, let delete = actions.delete {
                 Button {
                     actionError = delete()
                 } label: {
@@ -542,8 +637,10 @@ struct CadenceSchedulePanel: View {
 
             Spacer(minLength: 0)
 
+            // "Done" on a record that cannot be written: there is nothing to cancel, and the one
+            // thing the button does is leave.
             Button(action: actions.cancel) {
-                Text("Cancel")
+                Text(isReadOnly ? "Done" : "Cancel")
                     .cadenceFont(.controlLabel, weight: .semibold)
                     .foregroundStyle(Theme.muted)
                     .padding(.horizontal, 14)
@@ -554,22 +651,29 @@ struct CadenceSchedulePanel: View {
             }
             .buttonStyle(.cadencePlain)
 
-            Button(action: commit) {
-                Text(draft.subject.isEditing ? "Save" : "Add")
-                    .cadenceFont(.controlLabel, weight: .semibold)
-                    .foregroundStyle(Theme.onColor(for: Theme.blue))
-                    .padding(.horizontal, 16)
-                    .frame(height: 34)
-                    .background(draft.hasCommittableTitle ? Theme.blue : Theme.blue.opacity(0.4))
-                    .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControlCompact, style: .continuous))
-                    .contentShape(Rectangle())
+            if !isReadOnly {
+                Button(action: commit) {
+                    Text(draft.subject.isEditing ? "Save" : "Add")
+                        .cadenceFont(.controlLabel, weight: .semibold)
+                        .foregroundStyle(Theme.onColor(for: Theme.blue))
+                        .padding(.horizontal, 16)
+                        .frame(height: 34)
+                        .background(isCommitEnabled ? Theme.blue : Theme.blue.opacity(0.4))
+                        .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControlCompact, style: .continuous))
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.cadencePlain)
+                .disabled(!isCommitEnabled)
             }
-            .buttonStyle(.cadencePlain)
-            .disabled(!draft.hasCommittableTitle)
         }
     }
 
+    private var isCommitEnabled: Bool {
+        draft.hasCommittableTitle && canCommit
+    }
+
     private func commit() {
+        guard !isReadOnly else { return }
         guard draft.hasCommittableTitle else {
             actionError = "Add a title first."
             return
@@ -624,7 +728,7 @@ struct CadenceSchedulePanel: View {
                 // An end day can never precede the start it was measured from. Dragging the start
                 // past the end carries the end with it rather than producing a block that finishes
                 // before it begins — the same non-inversion rule the block's edge handles obey.
-                if draft.endDateKey < key { draft.endDateKey = key }
+                draft.keepEndAfterStart()
             }
         )
     }
@@ -632,7 +736,10 @@ struct CadenceSchedulePanel: View {
     private var eventEndDayBinding: Binding<Date> {
         Binding(
             get: { DateFormatters.date(from: draft.endDateKey) ?? Date() },
-            set: { draft.endDateKey = max(DateFormatters.dateKey(from: $0), draft.startDateKey) }
+            set: {
+                draft.endDateKey = max(DateFormatters.dateKey(from: $0), draft.startDateKey)
+                draft.keepEndAfterStart()
+            }
         )
     }
 
@@ -646,7 +753,44 @@ struct CadenceSchedulePanel: View {
     private var eventEndMinuteBinding: Binding<Int> {
         Binding(
             get: { draft.endMin },
-            set: { draft.moveEndEdge(toMinute: $0) }
+            set: { draft.setEndMinute($0) }
         )
     }
+}
+
+extension CadenceSchedulePanel where NotesField == EmptyView {
+    /// The panel with its own plain notes field — what a popover host wants.
+    init(
+        draft: Binding<CadenceScheduleDraft>,
+        listChoices: [CadenceSchedulePanelChoice] = [],
+        sectionChoices: [String] = [],
+        calendarChoices: [CadenceSchedulePanelChoice] = [],
+        calendarUnavailableNotice: String? = nil,
+        readOnlyNotice: String? = nil,
+        failureNotice: String? = nil,
+        canCommit: Bool = true,
+        offersEventRepeat: Bool = true,
+        actions: CadenceSchedulePanelActions
+    ) {
+        self.init(
+            draft: draft,
+            listChoices: listChoices,
+            sectionChoices: sectionChoices,
+            calendarChoices: calendarChoices,
+            calendarUnavailableNotice: calendarUnavailableNotice,
+            readOnlyNotice: readOnlyNotice,
+            failureNotice: failureNotice,
+            canCommit: canCommit,
+            offersEventRepeat: offersEventRepeat,
+            actions: actions,
+            customNotesField: nil
+        )
+    }
+}
+
+/// The panel's figures, outside the generic type: a static stored property cannot live on one.
+enum CadenceSchedulePanelMetrics {
+    /// The panel's width where its host gives it none — a popover has no container to be a fraction
+    /// of. A sheet or an inspector column overrides it with its own frame.
+    static let preferredWidth: CGFloat = 372
 }

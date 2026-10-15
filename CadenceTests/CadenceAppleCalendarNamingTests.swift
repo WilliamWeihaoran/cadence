@@ -36,7 +36,9 @@ struct CadenceAppleCalendarNamingTests {
     private static let sites: [(path: String, expression: String, count: Int)] = [
         // The label: the eyebrow over the controls that read or write the system calendar.
         ("Cadence/iOS/iOSCalendarQuickCreateSheet.swift", "integrationSectionTitle", 1),
-        ("Cadence/iOS/iOSCalendarEventEditSheet.swift", "integrationSectionTitle", 1),
+        // [[T-3171]]: the event editor's eyebrow moved with its form onto the shared panel, which
+        // labels its calendar row with the same constant — the site moved, it did not go away.
+        ("Cadence/Shared/Components/CadenceSchedulePanel.swift", "integrationSectionTitle", 1),
         ("Cadence/iOS/iOSCalendarInspectorView.swift", "integrationSectionTitle", 1),
         ("Cadence/macOS/Sheets/ListEditorSupportViews.swift", "integrationSectionTitle", 1),
         // The fallback for `event.calendar?.title`: which calendar, when the event names none.

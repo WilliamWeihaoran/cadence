@@ -13,6 +13,20 @@ struct iOSCalendarEventSelection: Identifiable {
     }
 }
 
+/// Edits an existing Apple Calendar event through **the one shared schedule panel** ([[T-3171]]).
+///
+/// The form itself is `CadenceSchedulePanel`, the same view the iPad timeline creates with — so
+/// editing an event and creating one are the same screen, differing by `CadenceScheduleDraft`'s
+/// subject and by the Delete control. This file is what cannot be shared: the `EKEvent`, the
+/// manager's writes, the recurrence-scope question, the delete confirmation, the Cadence event note
+/// and the platform's markdown well for the Apple Calendar note.
+///
+/// **What it gained by adopting the panel**: a separate end DATE, so a timed event can be moved
+/// across a midnight and an all-day one given any number of days (the old Days list stopped at
+/// 30); an End time instead of a Duration; and a Location row, written back through
+/// `iOSCalendarManager.updateEvent(location:)`. **What it deliberately does not offer** is Repeat:
+/// an existing series is not re-ruled from here, so the panel is told `offersEventRepeat: false`
+/// rather than shown a row whose choice would be dropped.
 struct iOSCalendarEventEditSheet: View {
     let event: EKEvent
 
@@ -22,13 +36,7 @@ struct iOSCalendarEventEditSheet: View {
     @Environment(iOSCalendarManager.self) private var calendarManager
     @Query(sort: \Note.updatedAt, order: .reverse) private var allNotes: [Note]
     @Query(sort: \AppTask.order) private var allTasks: [AppTask]
-    @State private var title: String
-    @State private var startDate: Date
-    @State private var durationMinutes: Int
-    @State private var allDayDurationDays: Int
-    @State private var isAllDay: Bool
-    @State private var selectedCalendarID: String
-    @State private var notes: String
+    @State private var draft: CadenceScheduleDraft
     @State private var notesEditorFocused = false
     @State private var presentedEventNote: Note?
     @State private var selectedReferenceNote: Note?
@@ -36,46 +44,14 @@ struct iOSCalendarEventEditSheet: View {
     @State private var confirmDelete = false
     @State private var actionError: String?
     @State private var pendingAction: PendingAction?
-    @State private var showCalendarPicker = false
-    @State private var showDaysPicker = false
 
-    /// `CadenceDatePicker` returns midnight-anchored day dates — merge just the Y/M/D into the
-    /// existing `startDate` so picking a new day doesn't silently zero out the time-of-day.
-    private var startDateOnlyBinding: Binding<Date> {
-        Binding(
-            get: { startDate },
-            set: { newDay in
-                // Through the shared rule, so a time inside the spring-forward gap collapses to
-                // 03:00 like every other start in the app instead of moving an hour later (T-3119).
-                startDate = CadenceCalendarEventTiming.movingStart(startDate, toDayOf: newDay) ?? startDate
-            }
-        )
-    }
-
-    private var startTimeMinutesBinding: Binding<Int> {
-        Binding(
-            get: { CadenceCalendarEventTiming.minuteOfDay(of: startDate) },
-            set: { minutes in
-                startDate = CadenceCalendarEventTiming.settingStartMinute(minutes, of: startDate) ?? startDate
-            }
-        )
-    }
+    /// The draft as the sheet opened it. A save whose schedule still matches it writes the event's
+    /// own instants back — see `CadenceScheduleDraft.hasSameSchedule(as:)`.
+    private let openedDraft: CadenceScheduleDraft
 
     private enum PendingAction {
         case save
         case delete
-    }
-
-    private var endDate: Date {
-        if isAllDay {
-            let startOfDay = Calendar.current.startOfDay(for: startDate)
-            return Calendar.current.date(byAdding: .day, value: max(1, allDayDurationDays), to: startOfDay) ?? startOfDay
-        }
-        return Calendar.current.date(byAdding: .minute, value: max(5, durationMinutes), to: startDate) ?? startDate
-    }
-
-    private var normalizedStartDate: Date {
-        isAllDay ? Calendar.current.startOfDay(for: startDate) : startDate
     }
 
     /// EventKit refuses writes to Birthdays, Holidays and subscribed calendars, and the sheet is
@@ -94,9 +70,9 @@ struct iOSCalendarEventEditSheet: View {
 
     private var canSave: Bool {
         CadenceCalendarEventEditingSupport.canSave(
-            title: title,
+            title: draft.title,
             isEventEditable: isEditable,
-            selectedCalendarID: selectedCalendarID,
+            selectedCalendarID: draft.calendarID,
             writableCalendarIDs: writableCalendarIDs
         )
     }
@@ -117,7 +93,7 @@ struct iOSCalendarEventEditSheet: View {
         CadenceEventNoteSupport.note(
             for: eventNoteID,
             eventTitle: iOSCalendarEventSupport.title(for: event),
-            calendarID: event.calendar?.calendarIdentifier ?? selectedCalendarID,
+            calendarID: event.calendar?.calendarIdentifier ?? draft.calendarID,
             eventDateKey: eventMetadata.dateKey,
             eventStartMin: eventMetadata.startMin,
             eventEndMin: eventMetadata.endMin,
@@ -125,9 +101,7 @@ struct iOSCalendarEventEditSheet: View {
         )
     }
 
-    /// Read for two things only: the sheet's gutter, and whether the form splits into two columns.
-    /// Both are facts about the host. Nothing the sheet *draws* consults it — those figures are
-    /// `iOSEditorSheetMetrics`, which takes no width.
+    /// Read for the sheet's gutter only — a fact about the host. Nothing the panel draws consults it.
     private var isRegularWidth: Bool {
         horizontalSizeClass == .regular
     }
@@ -136,46 +110,51 @@ struct iOSCalendarEventEditSheet: View {
         self.event = event
         let start = event.startDate ?? Date()
         let end = event.endDate ?? start.addingTimeInterval(30 * 60)
-        _title = State(initialValue: iOSCalendarEventSupport.title(for: event))
-        _startDate = State(initialValue: start)
-        _durationMinutes = State(initialValue: max(5, Int(end.timeIntervalSince(start) / 60)))
-        _allDayDurationDays = State(initialValue: max(1, Calendar.current.dateComponents([.day], from: Calendar.current.startOfDay(for: start), to: Calendar.current.startOfDay(for: end)).day ?? 1))
-        _isAllDay = State(initialValue: event.isAllDay)
-        _selectedCalendarID = State(initialValue: event.calendar?.calendarIdentifier ?? "")
-        _notes = State(initialValue: event.notes ?? "")
+        let opened = CadenceScheduleDraft(
+            editingEventID: event.eventIdentifier ?? event.calendarItemIdentifier,
+            title: iOSCalendarEventSupport.title(for: event),
+            notes: event.notes ?? "",
+            location: event.location ?? "",
+            calendarID: event.calendar?.calendarIdentifier ?? "",
+            start: start,
+            end: end,
+            isAllDay: event.isAllDay
+        )
+        self.openedDraft = opened
+        _draft = State(initialValue: opened)
     }
 
     var body: some View {
         NavigationStack {
             ScrollView {
-                // T-604: `.ruled` groups need a plate to be ruled *on*. This is
-                // `iOSCalendarQuickCreateSheet`'s frame, figure for figure — `cardPadding` inside
-                // `Theme.radiusPanel`, `gutter` outside it — because the two sheets now draw the
-                // same "Schedule" group and a group is only the same component if the surface
-                // under it is too.
-                formLayout
-                    .padding(iOSEditorSheetMetrics.cardPadding)
-                    .background(Theme.surfaceElevated)
-                    .clipShape(RoundedRectangle(cornerRadius: Theme.radiusPanel, style: .continuous))
-                    .padding(iOSEditorSheetMetrics.gutter(isRegularWidth: isRegularWidth))
+                CadenceSchedulePanel(
+                    draft: $draft,
+                    calendarChoices: calendarChoices,
+                    calendarUnavailableNotice: calendarUnavailableNotice,
+                    readOnlyNotice: isEditable
+                        ? nil
+                        : CadenceCalendarEventEditingSupport.readOnlyNotice(calendarName: eventCalendarName),
+                    // T-497: every failure this sheet reports — a refused EventKit save, a refused
+                    // delete, a refused event-note commit — is drawn by the panel, in one place,
+                    // whatever the width. Most of them arrive after a confirmation dialog rather
+                    // than as the panel's own call returning, which is why this is a parameter.
+                    failureNotice: actionError,
+                    canCommit: canSave,
+                    offersEventRepeat: false,
+                    actions: panelActions
+                ) {
+                    eventNoteSection
+                    notesSection
+                }
+                .clipShape(RoundedRectangle(cornerRadius: Theme.radiusPanel, style: .continuous))
+                // One column now, so the widest column the old two-column form allowed is the cap.
+                .frame(maxWidth: iOSEditorSheetMetrics.secondaryColumnMaxWidth)
+                .padding(iOSEditorSheetMetrics.gutter(isRegularWidth: isRegularWidth))
+                .frame(maxWidth: .infinity, alignment: .top)
             }
             .background(Theme.bg)
             .navigationTitle(isEditable ? "Edit Event" : "Event Details")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button(isEditable ? "Cancel" : "Done") { dismiss() }
-                }
-                // No Save at all on a read-only event. It used to be enabled, and tapping it
-                // threw inside EventKit, returned false, and left the sheet open with nothing
-                // said — an enabled control that did nothing.
-                if isEditable {
-                    ToolbarItem(placement: .confirmationAction) {
-                        Button("Save", action: save)
-                            .disabled(!canSave)
-                    }
-                }
-            }
             .confirmationDialog("Delete Event?", isPresented: $confirmDelete, titleVisibility: .visible) {
                 Button("Delete Event", role: .destructive) {
                     requestDelete()
@@ -206,10 +185,10 @@ struct iOSCalendarEventEditSheet: View {
             }
             .onAppear(perform: ensureWritableCalendar)
             .onChange(of: calendarManager.storeVersion) { _, _ in
-                notes = event.notes ?? ""
+                draft.notes = event.notes ?? ""
             }
             .sheet(item: $presentedEventNote) { note in
-                iOSEventNoteEditorSheet(note: note, eventTitle: title, event: event)
+                iOSEventNoteEditorSheet(note: note, eventTitle: draft.title, event: event)
             }
         }
         .iOSMarkdownReferenceSheets(
@@ -221,205 +200,54 @@ struct iOSCalendarEventEditSheet: View {
         .preferredColorScheme(.dark)
     }
 
-    @ViewBuilder
-    private var formLayout: some View {
-        if isRegularWidth {
-            regularFormLayout
-        } else {
-            compactFormLayout
+    /// Save, Cancel and — on an event that can be written — Delete. The panel draws them; a
+    /// recurring event's save and every delete stop at a confirmation here before anything is
+    /// written, so their outcome is reported through `actionError` rather than returned.
+    private var panelActions: CadenceSchedulePanelActions {
+        var actions = CadenceSchedulePanelActions(commit: save, cancel: { dismiss() })
+        // Absent, not disabled, on a read-only event: EventKit refuses the removal, so a Delete
+        // there raised a confirmation dialog for a delete that could never happen.
+        if isEditable {
+            actions.delete = {
+                confirmDelete = true
+                return nil
+            }
         }
+        return actions
     }
 
-    private var compactFormLayout: some View {
-        VStack(alignment: .leading, spacing: iOSEditorSheetMetrics.groupSpacing) {
-            readOnlyNotice
-            actionErrorNotice
-            titleSection
-            scheduleSection
-            calendarSection
-            eventNoteSection
-            notesSection
-            deleteButton
+    /// The writable calendars, or — on a read-only event — the event's real calendar alone, stated
+    /// plainly. A picker there could only offer calendars this event cannot move to, and the panel
+    /// draws it inert.
+    private var calendarChoices: [CadenceSchedulePanelChoice] {
+        guard isEditable else {
+            return [
+                CadenceSchedulePanelChoice(
+                    id: draft.calendarID,
+                    name: CadenceTitleNormalization.display(eventCalendarName, fallback: "Unknown calendar"),
+                    color: Theme.dim
+                )
+            ]
         }
-    }
-
-    private var regularFormLayout: some View {
-        HStack(alignment: .top, spacing: iOSEditorSheetMetrics.groupSpacing) {
-            VStack(alignment: .leading, spacing: iOSEditorSheetMetrics.groupSpacing) {
-                readOnlyNotice
-                // T-497: the two-column layout carried `readOnlyNotice` and not
-                // `actionErrorNotice`, so every failure this sheet reports — a refused EventKit
-                // save, a refused delete, and now a refused event-note commit — was invisible at
-                // regular width. Both notices sit in both layouts now.
-                actionErrorNotice
-                titleSection
-                scheduleSection
-                calendarSection
-            }
-            .frame(
-                minWidth: iOSEditorSheetMetrics.primaryColumnMinWidth,
-                maxWidth: iOSEditorSheetMetrics.primaryColumnMaxWidth,
-                alignment: .topLeading
-            )
-
-            VStack(alignment: .leading, spacing: iOSEditorSheetMetrics.groupSpacing) {
-                eventNoteSection
-                notesSection
-                deleteButton
-            }
-            .frame(
-                minWidth: iOSEditorSheetMetrics.secondaryColumnMinWidth,
-                maxWidth: iOSEditorSheetMetrics.secondaryColumnMaxWidth,
-                alignment: .topLeading
+        return calendarManager.writableCalendars.map {
+            CadenceSchedulePanelChoice(
+                id: $0.calendarIdentifier,
+                name: $0.title,
+                color: iOSCalendarEventSupport.color(for: $0),
+                systemImage: "calendar"
             )
         }
-        .frame(maxWidth: iOSEditorSheetMetrics.twoColumnMaxWidth, alignment: .top)
-        .frame(maxWidth: .infinity, alignment: .top)
     }
 
-    /// An untitled `iOSEditorSection`, not a hand-rolled card. Both notices used to build the card
-    /// themselves — `.padding(16).cadenceCard(background: Theme.surface, cornerRadius:
-    /// Theme.radiusCard)` — which is `iOSEditorSection(title: nil)` with two numbers changed: 16pt
-    /// of padding where every group beside them on this sheet used 14, and the default 14/6 shadow
-    /// where they used 12/5. Two near-copies of a shared component, drifting in exactly the places
-    /// a copy drifts. Since T-604 the shared component draws no card here at all, which is the
-    /// point: one style decision, taken once, moves every group on the sheet together.
-    @ViewBuilder
-    private var actionErrorNotice: some View {
-        if let actionError {
-            iOSEditorSection(title: nil, style: .ruled) {
-                Text(actionError)
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(Theme.red)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-        }
-    }
-
-    /// Says once, at the top, why the fields below are inert — instead of leaving the reader to
-    /// discover it by tapping a Save button that silently failed.
-    @ViewBuilder
-    private var readOnlyNotice: some View {
-        if !isEditable {
-            iOSEditorSection(title: nil, style: .ruled) {
-                HStack(alignment: .top, spacing: 12) {
-                    iOSIconTile(systemImage: "lock.fill", color: Theme.amber, size: 34, iconSize: 15)
-
-                    Text(CadenceCalendarEventEditingSupport.readOnlyNotice(calendarName: eventCalendarName))
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(Theme.muted)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-            }
-        }
-    }
-
-    private var titleSection: some View {
-        iOSEditorSection(title: "Event", style: .ruled) {
-            TextField("Event title", text: $title, axis: .vertical)
-                .textFieldStyle(.plain)
-                .font(.system(size: iOSEditorSheetMetrics.titleSize, weight: .bold))
-                .foregroundStyle(Theme.text)
-                .lineLimit(1...iOSEditorSheetMetrics.titleLineLimit)
-        }
-        // Every field below is inert on a read-only event: there is no Save to carry an edit
-        // anywhere, so letting one be typed would be the same false promise in a quieter form.
-        .disabled(!isEditable)
-    }
-
-    // `contentSpacing` stays at its 0 default: every gap in here is an `iOSEditorDivider`, which
-    // already pads itself 9pt each side. Adding 10 on top double-counted it and gave a 44pt row an
-    // 83pt pitch — the same measurement that was taken out of the task inspector.
-    private var scheduleSection: some View {
-        iOSEditorSection(title: "Schedule", style: .ruled) {
-            Toggle(isOn: $isAllDay) {
-                iOSEditorInlineLabel(label: "All day", systemImage: "sun.max", color: Theme.amber)
-            }
-            .toggleStyle(.switch)
-            .tint(Theme.blue)
-
-            iOSEditorDivider()
-
-            iOSEditorFieldRow(label: "Date", systemImage: "calendar", color: Theme.blue) {
-                CadenceDatePicker(selection: startDateOnlyBinding)
-            }
-
-            if !isAllDay {
-                iOSEditorDivider()
-                CadenceStartTimeFieldRow(minutes: startTimeMinutesBinding)
-            }
-
-            iOSEditorDivider()
-
-            if isAllDay {
-                iOSEditorFieldRow(label: "Days", systemImage: "calendar", color: Theme.green) {
-                    iOSChoiceValueButton(title: allDayDurationDays == 1 ? "1 day" : "\(allDayDurationDays) days", color: Theme.text) {
-                        showDaysPicker = true
-                    }
-                    .popover(isPresented: $showDaysPicker) {
-                        iOSChoicePopoverList(
-                            rows: [1, 2, 3, 4, 5, 6, 7, 10, 14, 21, 30].map { days in
-                                iOSChoiceRow(value: days, title: days == 1 ? "1 day" : "\(days) days", color: Theme.green)
-                            },
-                            selection: $allDayDurationDays,
-                            isPresented: $showDaysPicker
-                        )
-                    }
-                }
-            } else {
-                iOSEditorFieldRow(label: "Duration", systemImage: "timer", color: Theme.green) {
-                    EstimatePickerControl(value: $durationMinutes)
-                }
-            }
-        }
-        .disabled(!isEditable)
-    }
-
-    private var calendarSection: some View {
-        iOSEditorSection(title: CadenceAppleCalendarNaming.integrationSectionTitle, style: .ruled) {
-            if !isEditable {
-                // The event's real calendar, stated plainly. A picker here could only offer
-                // calendars this event cannot move to.
-                iOSEditorFieldRow(label: "Calendar", systemImage: "calendar", color: Theme.dim) {
-                    Text(CadenceTitleNormalization.display(eventCalendarName, fallback: "Unknown calendar"))
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(Theme.muted)
-                        .lineLimit(1)
-                }
-            } else if calendarManager.writableCalendars.isEmpty {
-                Text("No writable calendars are available.")
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(Theme.dim)
-            } else {
-                iOSEditorFieldRow(label: "Calendar", systemImage: "calendar", color: Theme.blue) {
-                    iOSChoiceValueButton(
-                        title: calendarManager.writableCalendars.first { $0.calendarIdentifier == selectedCalendarID }?.title ?? "Choose Calendar",
-                        color: Theme.text
-                    ) {
-                        showCalendarPicker = true
-                    }
-                    .popover(isPresented: $showCalendarPicker) {
-                        iOSChoicePopoverList(
-                            rows: calendarManager.writableCalendars.map { calendar in
-                                iOSChoiceRow(value: calendar.calendarIdentifier, title: calendar.title, systemImage: "calendar", color: Theme.blue)
-                            },
-                            selection: $selectedCalendarID,
-                            isPresented: $showCalendarPicker
-                        )
-                    }
-                }
-            }
-        }
+    private var calendarUnavailableNotice: String? {
+        guard isEditable, calendarManager.writableCalendars.isEmpty else { return nil }
+        return "No writable calendars are available."
     }
 
     private var eventNoteSection: some View {
         iOSEditorSection(title: "Event Note", style: .ruled) {
             HStack(alignment: .center, spacing: 12) {
-                // 34/15, the same tile the read-only notice above draws. It was 34/16: one sheet,
-                // two rows, one tile size, two glyph sizes — a tile resized without its glyph, in
-                // the one place a reader can see both at once.
+                // 34/15, the tile size the app's other editor rows draw.
                 iOSIconTile(systemImage: "doc.text", color: Theme.purple, size: 34, iconSize: 15)
 
                 VStack(alignment: .leading, spacing: 3) {
@@ -453,7 +281,7 @@ struct iOSCalendarEventEditSheet: View {
                     .foregroundStyle(Theme.subdued)
 
                 iOSMarkdownEditingSurface(
-                    text: $notes,
+                    text: $draft.notes,
                     isFocused: $notesEditorFocused,
                     placeholder: "Add markdown notes...",
                     referenceNotes: allNotes,
@@ -472,7 +300,8 @@ struct iOSCalendarEventEditSheet: View {
             }
         }
         // The Apple Calendar note is written back through EventKit on save, which a read-only
-        // calendar refuses. The *Cadence* event note above stays editable — it is our own data.
+        // calendar refuses. The *Cadence* event note above stays editable — it is our own data,
+        // which is why the panel leaves its notes slot to the host rather than disabling it.
         .disabled(!isEditable)
     }
 
@@ -491,8 +320,8 @@ struct iOSCalendarEventEditSheet: View {
         var inserted: [any PersistentModel] = []
         guard let note = CadenceEventNoteSupport.noteForEditing(
             calendarEventID: eventNoteID,
-            eventTitle: title,
-            calendarID: event.calendar?.calendarIdentifier ?? selectedCalendarID,
+            eventTitle: draft.title,
+            calendarID: event.calendar?.calendarIdentifier ?? draft.calendarID,
             eventDateKey: eventMetadata.dateKey,
             eventStartMin: eventMetadata.startMin,
             eventEndMin: eventMetadata.endMin,
@@ -523,28 +352,15 @@ struct iOSCalendarEventEditSheet: View {
         }
     }
 
-    /// Absent, not disabled, on a read-only event: EventKit refuses the removal, so the button
-    /// raised a confirmation dialog for a delete that could never happen.
-    @ViewBuilder
-    private var deleteButton: some View {
-        if isEditable {
-            iOSActionButton(
-                title: "Delete Event",
-                systemImage: "trash",
-                role: .destructive,
-                fullWidth: true
-            ) {
-                confirmDelete = true
-            }
-        }
-    }
-
-    private func save() {
+    /// The panel's commit. `nil` always: a recurring event stops at the scope question, and every
+    /// outcome — this one's included — is reported through `actionError`, which the panel draws.
+    private func save() -> String? {
         if isRecurringEvent {
             pendingAction = .save
-            return
+            return nil
         }
         applySave(scope: .thisOccurrence)
+        return nil
     }
 
     private func requestDelete() {
@@ -566,16 +382,35 @@ struct iOSCalendarEventEditSheet: View {
         }
     }
 
+    /// The instants to write. An untouched schedule writes the event's own back, exactly; a moved
+    /// one is resolved through the draft's wall-clock rule (T-3119's gap policy included).
+    private var savedRange: (start: Date, end: Date)? {
+        if draft.hasSameSchedule(as: openedDraft),
+           let start = event.startDate,
+           let end = event.endDate,
+           end > start {
+            return (start, end)
+        }
+        return draft.eventDateRange()
+    }
+
     private func applySave(scope: CalendarRecurrenceEditScope) {
+        // A schedule that names no instant was never offered to EventKit, so there is no cause to
+        // name — the same `nil` the create path passes for an unparseable day.
+        guard let range = savedRange else {
+            actionError = CadenceCalendarEventEditingSupport.saveFailureNotice(for: nil)
+            return
+        }
         if let failure = calendarManager.updateEvent(
             event,
-            title: title,
-            startDate: normalizedStartDate,
-            endDate: endDate,
-            calendarID: selectedCalendarID,
-            notes: notes,
+            title: draft.title,
+            startDate: range.start,
+            endDate: range.end,
+            calendarID: draft.calendarID,
+            notes: draft.notes,
             span: scope.eventSpan,
-            isAllDay: isAllDay
+            isAllDay: draft.isAllDay,
+            location: draft.location
         ) {
             // A rejected write used to return here and do nothing at all: the sheet stayed open,
             // unchanged, with no indication that the save had failed. It then said *that* it had
@@ -601,13 +436,12 @@ struct iOSCalendarEventEditSheet: View {
     /// substituted the first writable calendar, so a Birthdays event's Calendar row read
     /// "Personal" and the sheet then offered to save it there.
     private func ensureWritableCalendar() {
-        selectedCalendarID = CadenceCalendarEventEditingSupport.resolvedCalendarID(
-            eventCalendarID: selectedCalendarID,
+        draft.calendarID = CadenceCalendarEventEditingSupport.resolvedCalendarID(
+            eventCalendarID: draft.calendarID,
             isEventEditable: isEditable,
             writableCalendarIDs: writableCalendarIDs
         )
     }
-
 }
 
 #endif

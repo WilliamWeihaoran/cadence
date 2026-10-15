@@ -173,6 +173,99 @@ struct CadenceScheduleDraft: Equatable {
         self.calendarID = ""
     }
 
+    // MARK: Editing an event
+
+    /// What a time-of-day the panel offers an all-day event when its time is switched back on.
+    /// The record carries no time to restore, so this is a starting point, not a reading.
+    static let allDayEventFallbackStartMinute = 9 * 60
+
+    /// A draft over an event that **already exists** ([[T-3171]]) — the inverse of
+    /// `eventDateRange(calendar:)`, so an untouched event reads back as the instants it was opened
+    /// with.
+    ///
+    /// The two `Date`s are EventKit's, and EventKit's all-day end is **exclusive**: a one-day event
+    /// on the 16th ends at 00:00 on the 17th. So the last day it covers is one before its end, and
+    /// that is what `endDateKey` holds — the panel's Ends row names a day the event is *on*.
+    ///
+    /// A timed event that ends exactly at the next midnight is read as a same-day block ending at
+    /// minute 1440, not as a two-day one, because "4 PM – 12 AM" is what that event is and a
+    /// multi-day spelling of it would print a second date for no reason.
+    ///
+    /// The length is **not** floored to `minimumDurationMinutes`: that floor is a drag rule for a
+    /// block being sized by a finger, and a five-minute event opened to rename it must still be
+    /// five minutes long when it is saved.
+    init(
+        editingEventID eventID: String,
+        title: String,
+        notes: String,
+        location: String,
+        calendarID: String,
+        start: Date,
+        end: Date,
+        isAllDay: Bool,
+        calendar: Calendar = .current
+    ) {
+        self.subject = .editingEvent(eventID)
+        self.kind = .event
+        self.title = title
+        self.notes = notes
+        self.repeatRule = .none
+        self.isAllDay = isAllDay
+        self.dueDateKey = ""
+        self.priority = .none
+        self.listToken = CadenceTaskComposerSupport.token(for: .inbox)
+        self.sectionName = TaskSectionDefaults.defaultName
+        self.estimateIsExplicit = false
+        self.location = location
+        self.calendarID = calendarID
+
+        let startDay = calendar.startOfDay(for: start)
+        let startKey = DateFormatters.dateKey(from: startDay, calendar: calendar)
+        self.startDateKey = startKey
+
+        if isAllDay {
+            let lastCoveredDay = calendar.date(byAdding: .day, value: -1, to: calendar.startOfDay(for: end))
+                ?? startDay
+            self.endDateKey = max(startKey, DateFormatters.dateKey(from: lastCoveredDay, calendar: calendar))
+            self.startMin = Self.allDayEventFallbackStartMinute
+            self.endMin = Self.allDayEventFallbackStartMinute + Self.defaultDurationMinutes
+            return
+        }
+
+        let startMinute = CadenceCalendarEventTiming.minuteOfDay(of: start, calendar: calendar)
+        self.startMin = startMinute
+        let endDay = calendar.startOfDay(for: end)
+        let nextMidnight = calendar.date(byAdding: .day, value: 1, to: startDay)
+        if end == nextMidnight {
+            self.endDateKey = startKey
+            self.endMin = 24 * 60
+        } else if endDay <= startDay {
+            // Read on the wall, like the start, so a transition day keeps the end the user sees.
+            // An end at or before the start is a record EventKit should not have held; it opens
+            // with the five minutes the sheets this replaces always gave one.
+            self.endDateKey = startKey
+            self.endMin = min(
+                24 * 60,
+                max(CadenceCalendarEventTiming.minuteOfDay(of: end, calendar: calendar), startMinute + 5)
+            )
+        } else {
+            self.endDateKey = DateFormatters.dateKey(from: endDay, calendar: calendar)
+            self.endMin = CadenceCalendarEventTiming.minuteOfDay(of: end, calendar: calendar)
+        }
+    }
+
+    /// Whether the two drafts name the same time. The event editor compares its draft with the one
+    /// it opened with, and when nothing about the schedule moved it writes back the event's own
+    /// instants rather than re-deriving them — so renaming an event can never nudge it by the
+    /// seconds, or the repeated fall-back hour, that a wall-clock minute cannot spell.
+    func hasSameSchedule(as other: CadenceScheduleDraft) -> Bool {
+        startDateKey == other.startDateKey
+            && endDateKey == other.endDateKey
+            && startMin == other.startMin
+            && endMin == other.endMin
+            && isAllDay == other.isAllDay
+    }
+
     // MARK: Geometry
 
     /// Minutes from midnight, snapped to the touch grid and held inside the drawn day.
@@ -227,6 +320,71 @@ struct CadenceScheduleDraft: Equatable {
         startMin = Self.snapped(minute)
         guard !spansMultipleDays else { return }
         endMin = min(CadenceScheduleSupport.calendarEndHour * 60, startMin + length)
+    }
+
+    /// What the panel's **End** time writes, on a block of one day or of several.
+    ///
+    /// Inside one day this is the bottom handle, with its non-inversion rule. Across a midnight the
+    /// end is a clock time on a *later* day, so no minute can put it before the start and the
+    /// handle's guard — which refuses a multi-day block because a drag on one day's canvas cannot
+    /// mean a time on another — does not apply. Without this the End row of a multi-day timed
+    /// event would be a control with nowhere to write.
+    mutating func setEndMinute(_ minute: Int) {
+        guard spansMultipleDays else {
+            moveEndEdge(toMinute: minute)
+            return
+        }
+        endMin = Self.snapped(minute)
+    }
+
+    /// Re-establishes "the end follows the start" after a **day** moved.
+    ///
+    /// Moving the end date back onto the start date can leave a clock time that was fine on a later
+    /// day sitting before the start on this one — 10 PM on the 16th to 1 AM on the 17th becomes
+    /// 10 PM to 1 AM on the 16th. The block is then given its minimum length rather than left
+    /// inverted for the write to refuse.
+    mutating func keepEndAfterStart() {
+        if endDateKey < startDateKey { endDateKey = startDateKey }
+        guard !spansMultipleDays, endMin <= startMin else { return }
+        endMin = min(CadenceScheduleSupport.calendarEndHour * 60, startMin + Self.minimumDurationMinutes)
+    }
+
+    // MARK: Writing an event
+
+    /// The draft's two `Date`s, as EventKit needs them — all-day, same-day timed, and one that
+    /// crosses a midnight, as one function rather than three branches inside a commit.
+    ///
+    /// **Both ends are wall-clock readings, set through `CadenceCalendarEventTiming`**, so a time
+    /// inside the spring-forward gap collapses to 03:00 like every other start in the app
+    /// (T-3119). The end used to be an elapsed duration added to the start; that is right for a
+    /// *Duration* control, which is what the sheets this panel replaces had, and wrong for the
+    /// panel's *End* control, which names a time on the wall. On a transition day the two differ by
+    /// the hour the clock skipped, and the user picked the time, not the length.
+    ///
+    /// EventKit's all-day end is exclusive: a one-day event ends at the start of the next.
+    func eventDateRange(calendar: Calendar = .current) -> (start: Date, end: Date)? {
+        guard let startDay = DateFormatters.date(from: startDateKey, in: calendar),
+              let endDay = DateFormatters.date(from: endDateKey, in: calendar) else { return nil }
+
+        if isAllDay {
+            let start = calendar.startOfDay(for: startDay)
+            guard let end = calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: endDay)),
+                  end > start else { return nil }
+            return (start, end)
+        }
+
+        guard let start = CadenceCalendarEventTiming.startDate(day: startDay, startMin: startMin, calendar: calendar) else {
+            return nil
+        }
+        // Minute 1440 is the next midnight, which no clock reading on `endDay` itself can name.
+        let endReading: Date?
+        if endMin >= 24 * 60 {
+            endReading = calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: endDay))
+        } else {
+            endReading = CadenceCalendarEventTiming.startDate(day: endDay, startMin: endMin, calendar: calendar)
+        }
+        guard let end = endReading, end > start else { return nil }
+        return (start, end)
     }
 
     // MARK: Labels

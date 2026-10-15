@@ -276,11 +276,24 @@ struct CadenceTagAndNoteCommitSurfaceTests {
             "the sheet presents the note above its failure branch"
         )
 
-        // The notice this failure is reported through has to be in *both* layouts. It was in the
-        // compact one only, so at regular width every failure this sheet reports was invisible.
+        // The notice this failure is reported through has to be drawn at every width. It used to
+        // be in the compact layout only, so at regular width every failure this sheet reported was
+        // invisible. [[T-3171]] collapsed the two layouts into the shared panel's one column, and
+        // the sheet hands its `actionError` to the panel, which draws it in that column — so
+        // "both layouts" is now "the one layout there is", and that is what is pinned.
+        #expect(!sheet.contains("compactFormLayout") && !sheet.contains("regularFormLayout"),
+                "the sheet grew a second layout again; pin the notice in both")
         #expect(
-            CadenceSourceScan.matchCount(#"\n\s+actionErrorNotice\n"#, in: sheet) == 2,
-            "actionErrorNotice is not in both form layouts"
+            CadenceSourceScan.matchCount(#"failureNotice: actionError"#, in: sheet) == 1,
+            "the sheet no longer hands its failures to the panel"
+        )
+        let panel = try scanned("Cadence/Shared/Components/CadenceSchedulePanel.swift")
+        #expect(
+            CadenceSourceScan.matchCount(
+                #"if let failure = actionError \?\? failureNotice \{\s*CadenceInlineNotice\(text: failure, tone: \.failure\)"#,
+                in: panel
+            ) == 1,
+            "the panel takes a host failure and never draws it"
         )
     }
 

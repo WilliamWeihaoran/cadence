@@ -234,7 +234,7 @@ struct iOSTimelineDraftPanelHost: View {
                 )
             )
         }
-        .frame(width: CadenceSchedulePanel.preferredWidth)
+        .frame(width: CadenceSchedulePanelMetrics.preferredWidth)
         .frame(maxHeight: 620)
         .background(Theme.surfaceElevated)
         .presentationCompactAdaptation(.popover)
@@ -383,7 +383,7 @@ struct iOSTimelineDraftPanelHost: View {
     /// Every exit that is not a created event says so and says why — the rule T-324/T-339 settled
     /// for the two sheets, restated here because this panel writes through the same manager.
     private func commitEvent() -> String? {
-        guard let range = iOSTimelineDraftEventRange.range(for: draft) else {
+        guard let range = draft.eventDateRange() else {
             return CadenceCalendarEventEditingSupport.saveFailureNotice(for: nil)
         }
         if let failure = calendarManager.createEvent(
@@ -400,44 +400,6 @@ struct iOSTimelineDraftPanelHost: View {
         }
         onCommitted()
         return nil
-    }
-}
-
-/// A draft's two `Date`s, as EventKit needs them.
-///
-/// Separate from the view so the three cases that differ — all-day, same-day timed, and one that
-/// crosses a midnight — are one function rather than three branches inside a commit.
-///
-/// The start is a wall-clock reading and is **set** through `CadenceCalendarEventTiming`, so a time
-/// inside the spring-forward gap collapses to 03:00 like every other start in the app (T-3119).
-enum iOSTimelineDraftEventRange {
-    static func range(for draft: CadenceScheduleDraft) -> (start: Date, end: Date)? {
-        let calendar = Calendar.current
-        guard let startDay = DateFormatters.date(from: draft.startDateKey),
-              let endDay = DateFormatters.date(from: draft.endDateKey) else { return nil }
-
-        if draft.isAllDay {
-            let start = calendar.startOfDay(for: startDay)
-            // EventKit's all-day end is exclusive: a one-day event ends at the start of the next.
-            guard let end = calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: endDay)),
-                  end > start else { return nil }
-            return (start, end)
-        }
-
-        guard let start = CadenceCalendarEventTiming.startDate(day: startDay, startMin: draft.startMin) else {
-            return nil
-        }
-        guard draft.endDateKey > draft.startDateKey else {
-            // Same day: the end is a **duration** added to an already-correct start, and is right
-            // as elapsed time. Do not "fix" it to be set the way the start is.
-            guard let end = calendar.date(byAdding: .minute, value: draft.durationMinutes, to: start) else {
-                return nil
-            }
-            return (start, end)
-        }
-        guard let end = CadenceCalendarEventTiming.startDate(day: endDay, startMin: draft.endMin),
-              end > start else { return nil }
-        return (start, end)
     }
 }
 

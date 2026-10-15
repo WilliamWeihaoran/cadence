@@ -321,7 +321,8 @@ struct CadenceTodayTimelineDraftCreationTests {
     @Test("Delete is present only when a record exists")
     func deleteIsPresentOnlyWhenARecordExists() {
         let panel = source("Cadence/Shared/Components/CadenceSchedulePanel.swift")
-        #expect(panel.contains("if let delete = actions.delete"))
+        // [[T-3171]] added the read-only arm: a record that cannot be written has no Delete either.
+        #expect(panel.contains("if !isReadOnly, let delete = actions.delete"))
         let host = source("Cadence/iOS/iOSTimelineDraftCreate.swift")
         #expect(host.contains("delete: nil"), "a draft has nothing to delete")
     }
@@ -335,5 +336,290 @@ struct CadenceTodayTimelineDraftCreationTests {
         #expect(block.contains("CadenceCalendarEventStyle.plateFill(for:"))
         #expect(block.contains("CadenceCalendarEventStyle.railColor(for:"))
         #expect(block.contains("CadenceCalendarEventStyle.platePrimaryLabelColor"))
+    }
+}
+
+/// The draft over an event that **already exists** — the model half of [[T-3171]]'s first
+/// adoption, `iOSCalendarEventEditSheet` hosting the shared panel in edit mode.
+///
+/// Behavioural, on explicit calendars: the scheme pins `TZ=UTC` ([[T-1116]]), in which the
+/// spring-forward hour this file has to reason about does not exist, so every zone is named.
+@Suite("Schedule draft over an existing event")
+@MainActor
+struct CadenceScheduleDraftEventEditingTests {
+
+    private func newYork() throws -> Calendar {
+        try CadenceTestTimeZones.calendar("America/New_York")
+    }
+
+    private func instant(_ key: String, _ minute: Int, _ calendar: Calendar) throws -> Date {
+        let day = try #require(DateFormatters.date(from: key, in: calendar))
+        return try #require(CadenceCalendarEventTiming.startDate(day: day, startMin: minute, calendar: calendar))
+    }
+
+    private func editing(start: Date, end: Date, isAllDay: Bool = false, _ calendar: Calendar) -> CadenceScheduleDraft {
+        CadenceScheduleDraft(
+            editingEventID: "event-1",
+            title: "Standup",
+            notes: "Agenda",
+            location: "Room 4",
+            calendarID: "cal-1",
+            start: start,
+            end: end,
+            isAllDay: isAllDay,
+            calendar: calendar
+        )
+    }
+
+    /// Opening an event and writing it back unchanged names the instants it was opened with — the
+    /// round trip every save of a renamed event takes.
+    @Test("An event opens as itself and writes back as itself")
+    func anEventRoundTripsThroughTheDraft() throws {
+        let calendar = try newYork()
+        let start = try instant("2026-06-15", 10 * 60 + 5, calendar)
+        let end = try instant("2026-06-15", 11 * 60 + 40, calendar)
+        let draft = editing(start: start, end: end, calendar)
+
+        #expect(draft.subject == .editingEvent("event-1"))
+        #expect(draft.subject.isEditing)
+        #expect(draft.kind == .event)
+        #expect(draft.title == "Standup")
+        #expect(draft.notes == "Agenda")
+        #expect(draft.location == "Room 4")
+        #expect(draft.calendarID == "cal-1")
+        #expect(draft.startDateKey == "2026-06-15")
+        #expect(draft.endDateKey == draft.startDateKey)
+        #expect(draft.startMin == 10 * 60 + 5, "an off-grid start was snapped on the way in")
+        #expect(draft.endMin == 11 * 60 + 40)
+
+        let range = try #require(draft.eventDateRange(calendar: calendar))
+        #expect(range.start == start)
+        #expect(range.end == end)
+    }
+
+    /// The drag floor is a rule for a block being sized by a finger. A five-minute event opened to
+    /// rename it is still five minutes long when it is saved.
+    @Test("A short event is not lengthened to the drag floor")
+    func aShortEventKeepsItsLength() throws {
+        let calendar = try newYork()
+        let start = try instant("2026-06-15", 9 * 60, calendar)
+        let end = try instant("2026-06-15", 9 * 60 + 5, calendar)
+        let range = try #require(editing(start: start, end: end, calendar).eventDateRange(calendar: calendar))
+        #expect(range.end.timeIntervalSince(range.start) == 5 * 60)
+        #expect(5 < CadenceScheduleDraft.minimumDurationMinutes, "the case is not below the floor")
+    }
+
+    /// EventKit's all-day end is exclusive, so a three-day event on the 16th–18th ends at 00:00 on
+    /// the 19th. The panel's Ends row names the 18th — a day the event is on.
+    @Test("An all-day event's end date is the last day it covers")
+    func allDayEndIsTheLastCoveredDay() throws {
+        let calendar = try newYork()
+        let start = try #require(DateFormatters.date(from: "2026-10-16", in: calendar))
+        let end = try #require(DateFormatters.date(from: "2026-10-19", in: calendar))
+        let draft = editing(start: start, end: end, isAllDay: true, calendar)
+
+        #expect(draft.isAllDay)
+        #expect(draft.startDateKey == "2026-10-16")
+        #expect(draft.endDateKey == "2026-10-18")
+        #expect(draft.spansMultipleDays)
+
+        let range = try #require(draft.eventDateRange(calendar: calendar))
+        #expect(range.start == start)
+        #expect(range.end == end)
+
+        // And a one-day event is one day, not zero.
+        let oneDayEnd = try #require(DateFormatters.date(from: "2026-10-17", in: calendar))
+        let single = editing(start: start, end: oneDayEnd, isAllDay: true, calendar)
+        #expect(single.endDateKey == single.startDateKey)
+        #expect(!single.spansMultipleDays)
+    }
+
+    /// "4 PM – 12 AM" is one evening, not a two-day event.
+    @Test("An event ending at the next midnight reads as one day")
+    func anEndAtTheNextMidnightIsTheSameDay() throws {
+        let calendar = try newYork()
+        let start = try instant("2026-06-15", 16 * 60, calendar)
+        let end = try #require(DateFormatters.date(from: "2026-06-16", in: calendar))
+        let draft = editing(start: start, end: end, calendar)
+
+        #expect(!draft.spansMultipleDays)
+        #expect(draft.endMin == 24 * 60)
+        let range = try #require(draft.eventDateRange(calendar: calendar))
+        #expect(range.end == end)
+    }
+
+    /// A timed event across a midnight keeps its End time writable. The edge handle refuses a
+    /// multi-day block — a drag on one day's canvas cannot name a time on another — and before
+    /// `setEndMinute` the panel's End row on such an event wrote nowhere.
+    @Test("The End time of a multi-day event is writable")
+    func aMultiDayEndTimeIsWritable() throws {
+        let calendar = try newYork()
+        let start = try instant("2026-06-15", 22 * 60, calendar)
+        let end = try instant("2026-06-16", 90, calendar)
+        var draft = editing(start: start, end: end, calendar)
+        #expect(draft.spansMultipleDays)
+        #expect(draft.endDateKey == "2026-06-16")
+        #expect(draft.endMin == 90)
+
+        var handle = draft
+        handle.moveEndEdge(toMinute: 3 * 60)
+        #expect(handle.endMin == 90, "the drag rule changed; this test's contrast no longer holds")
+
+        draft.setEndMinute(3 * 60)
+        #expect(draft.endMin == 3 * 60)
+        let range = try #require(draft.eventDateRange(calendar: calendar))
+        #expect(range.end == (try instant("2026-06-16", 3 * 60, calendar)))
+
+        // Inside one day the same call is the bottom handle, non-inversion rule and all.
+        var sameDay = editing(
+            start: try instant("2026-06-15", 9 * 60, calendar),
+            end: try instant("2026-06-15", 10 * 60, calendar),
+            calendar
+        )
+        sameDay.setEndMinute(8 * 60)
+        #expect(sameDay.endMin == 9 * 60 + CadenceScheduleDraft.minimumDurationMinutes)
+    }
+
+    /// Pulling the end date back onto the start date leaves 10 PM – 1 AM on one day. The block
+    /// gets its minimum length rather than an inverted range for the write to refuse.
+    @Test("Moving the end day back never leaves the end before the start")
+    func moveTheEndDayBackKeepsTheEndAfterTheStart() throws {
+        let calendar = try newYork()
+        var draft = editing(
+            start: try instant("2026-06-15", 22 * 60, calendar),
+            end: try instant("2026-06-16", 60, calendar),
+            calendar
+        )
+        draft.endDateKey = draft.startDateKey
+        #expect(draft.endMin < draft.startMin, "the case does not invert")
+        #expect(draft.eventDateRange(calendar: calendar) == nil, "an inverted range is refused, not written")
+
+        draft.keepEndAfterStart()
+        #expect(draft.endMin == 22 * 60 + CadenceScheduleDraft.minimumDurationMinutes)
+        #expect(draft.eventDateRange(calendar: calendar) != nil)
+
+        // An end day before the start day is carried forward, too.
+        draft.endDateKey = "2026-06-14"
+        draft.keepEndAfterStart()
+        #expect(draft.endDateKey == draft.startDateKey)
+    }
+
+    /// Both ends are wall-clock readings. On 2026-03-08 New York skips 02:00–02:59: a start chosen
+    /// at 02:30 opens at 03:00, as every start in the app does (T-3119), and an End chosen at 03:00
+    /// after a 01:00 start is 03:00 on the wall — one elapsed hour — not the 04:00 that adding the
+    /// two-hour difference as a duration would land on.
+    @Test("Both ends are set on the wall clock, gap policy included")
+    func bothEndsAreWallClockReadings() throws {
+        let calendar = try newYork()
+        var draft = CadenceScheduleDraft(dateKey: "2026-03-08", startMin: 60, kind: .event, durationMinutes: 120)
+        #expect(draft.endMin == 3 * 60)
+        let range = try #require(draft.eventDateRange(calendar: calendar))
+        #expect(calendar.component(.hour, from: range.end) == 3)
+        #expect(range.end.timeIntervalSince(range.start) == 3600, "the end was added as a duration")
+
+        draft.startMin = 2 * 60 + 30
+        draft.endMin = 4 * 60
+        let gap = try #require(draft.eventDateRange(calendar: calendar))
+        #expect(calendar.component(.hour, from: gap.start) == 3)
+        #expect(calendar.component(.minute, from: gap.start) == 0, "02:30 opens when the gap closes, at 03:00")
+    }
+
+    /// The editor writes the event's own instants back when nothing about the schedule moved.
+    @Test("Schedule equality ignores everything but the schedule")
+    func scheduleEqualityIsAboutTheScheduleAlone() throws {
+        let calendar = try newYork()
+        let opened = editing(
+            start: try instant("2026-06-15", 9 * 60, calendar),
+            end: try instant("2026-06-15", 10 * 60, calendar),
+            calendar
+        )
+        var renamed = opened
+        renamed.title = "Retro"
+        renamed.location = "Room 9"
+        renamed.notes = "New agenda"
+        #expect(renamed.hasSameSchedule(as: opened))
+
+        for change in [
+            { (d: inout CadenceScheduleDraft) in d.startMin += 15 },
+            { (d: inout CadenceScheduleDraft) in d.endMin += 15 },
+            { (d: inout CadenceScheduleDraft) in d.endDateKey = "2026-06-16" },
+            { (d: inout CadenceScheduleDraft) in d.startDateKey = "2026-06-14" },
+            { (d: inout CadenceScheduleDraft) in d.isAllDay = true },
+        ] {
+            var moved = opened
+            change(&moved)
+            #expect(!moved.hasSameSchedule(as: opened))
+        }
+    }
+}
+
+/// The source half of the same adoption: the iOS event editor is a host of the shared panel, and
+/// the panel carries what that editor needs without a platform type ([[T-3171]]).
+@Suite("Event editor hosts the shared panel")
+@MainActor
+struct CadenceEventEditorPanelAdoptionTests {
+
+    private func code(_ relativePath: String) throws -> String {
+        let raw = try CadenceSourceScan.sourceFile(relativePath)
+        #expect(raw.count > 1_000, "\(relativePath) read as \(raw.count) characters")
+        let stripped = CadenceSourceScan.strippingComments(raw)
+        #expect(stripped != raw, "\(relativePath): the comment stripper removed nothing")
+        #expect(stripped.count == raw.count)
+        return stripped
+    }
+
+    @Test("The event editor draws the panel and none of the old form")
+    func theEventEditorDrawsThePanel() throws {
+        let editor = try code("Cadence/iOS/iOSCalendarEventEditSheet.swift")
+        #expect(CadenceSourceScan.matchCount(#"CadenceSchedulePanel\("#, in: editor) == 1)
+        // The old form's controls, each now the panel's: a Days list, a Duration estimate, the
+        // quarter-hour start list, and the calendar picker built from the platform popover.
+        for retired in [
+            "showDaysPicker", "allDayDurationDays", "durationMinutes", "EstimatePickerControl(",
+            "CadenceStartTimeFieldRow(", "iOSChoicePopoverList(", "iOSChoiceValueButton(",
+            "regularFormLayout", "compactFormLayout",
+        ] {
+            #expect(!editor.contains(retired), "the event editor still draws \(retired)")
+        }
+        // The two writes it owns, with the panel's fields reaching them.
+        #expect(editor.contains("location: draft.location"), "the panel's Location row writes nowhere")
+        #expect(editor.contains("draft.eventDateRange()"))
+        #expect(editor.contains("draft.hasSameSchedule(as: openedDraft)"))
+        // An existing series is not re-ruled from here, so the panel offers no Repeat.
+        #expect(editor.contains("offersEventRepeat: false"))
+    }
+
+    /// Delete is the one control that separates editing from creating, and a read-only event has
+    /// neither it nor Save — absent, not disabled.
+    @Test("Delete is offered only on an event that can be written")
+    func deleteIsOfferedOnlyOnAWritableEvent() throws {
+        let editor = try code("Cadence/iOS/iOSCalendarEventEditSheet.swift")
+        let actions = try #require(CadenceSourceScan.declarationBody("private var panelActions: CadenceSchedulePanelActions", in: editor))
+        #expect(actions.contains("if isEditable {"))
+        #expect(actions.contains("actions.delete = {"))
+        #expect(actions.contains("confirmDelete = true"), "Delete skipped its confirmation")
+        #expect(editor.contains("readOnlyNotice: isEditable"))
+
+        let panel = try code("Cadence/Shared/Components/CadenceSchedulePanel.swift")
+        let footer = try #require(CadenceSourceScan.declarationBody("private var footer: some View", in: panel))
+        #expect(footer.contains("if !isReadOnly, let delete = actions.delete {"))
+        #expect(CadenceSourceScan.matchCount(#"if !isReadOnly \{\s*Button\(action: commit\)"#, in: footer) == 1,
+                "Save is drawn on a record that cannot be written")
+        // The panel's own fields go inert on such a record; the host's notes slot does not, so the
+        // Cadence event note stays reachable.
+        #expect(CadenceSourceScan.matchCount(#"\.disabled\(isReadOnly\)"#, in: panel) == 2)
+    }
+
+    /// The End row is drawn whenever the event is timed — including across a midnight — and it
+    /// writes through the rule that can reach a later day.
+    @Test("The panel's End time is drawn and writable on a multi-day event")
+    func theEndTimeIsDrawnOnAMultiDayEvent() throws {
+        let panel = try code("Cadence/Shared/Components/CadenceSchedulePanel.swift")
+        let schedule = try #require(CadenceSourceScan.declarationBody("private var eventSchedule: some View", in: panel))
+        #expect(CadenceSourceScan.matchCount(#"if !draft\.isAllDay \{\s*CadenceTimeRollerFieldRow\(\s*label: "End""#, in: schedule) == 1)
+        #expect(!schedule.contains("spansMultipleDays"), "the End row is hidden across a midnight again")
+        #expect(CadenceSourceScan.matchCount(#"if offersEventRepeat \{"#, in: schedule) == 1)
+        let end = try #require(CadenceSourceScan.declarationBody("private var eventEndMinuteBinding: Binding<Int>", in: panel))
+        #expect(end.contains("draft.setEndMinute($0)"))
     }
 }

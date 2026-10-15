@@ -211,9 +211,10 @@ struct iOSEditorSheetMetricsTests {
         // The style's own contract, so the assertions below are about a decision and not a spelling.
         #expect(CadenceFieldSectionStyle.ruled != CadenceFieldSectionStyle.card)
 
+        // [[T-3171]] moved the event editor off this table: its form is the shared schedule
+        // panel now, which rules its own groups on its own plate. Pinned after the loop.
         let sheets = [
             "Cadence/iOS/iOSCalendarQuickCreateSheet.swift": 6,
-            "Cadence/iOS/iOSCalendarEventEditSheet.swift": 7,
             "Cadence/iOS/iOSCalendarBundleDetailSheet.swift": 3
         ]
 
@@ -256,6 +257,28 @@ struct iOSEditorSheetMetricsTests {
                 "\(path) does not space its groups by the shared figure"
             )
         }
+
+        // The event editor: two groups of its own (the Cadence event note and the Apple Calendar
+        // note it hands the panel's notes slot), both ruled, inside the shared gutter and radius.
+        let editor = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/iOS/iOSCalendarEventEditSheet.swift")
+        )
+        #expect(editor.contains("CadenceSchedulePanel("), "the event editor no longer hosts the shared panel")
+        #expect(CadenceSourceScan.matchCount(#"iOSEditorSection\("#, in: editor) == 2)
+        #expect(CadenceSourceScan.matchCount(#"style: \.ruled"#, in: editor) == 2)
+        #expect(CadenceSourceScan.matchCount(#"style: \.card"#, in: editor) == 0)
+        #expect(editor.contains("cornerRadius: Theme.radiusPanel"))
+        #expect(editor.contains("iOSEditorSheetMetrics.gutter(isRegularWidth:"))
+        // And the panel is a ruled form on a plate of its own — the same decision, taken once for
+        // every host instead of once per sheet.
+        let panel = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/Shared/Components/CadenceSchedulePanel.swift")
+        )
+        let panelSections = CadenceSourceScan.matchCount(#"CadenceFieldSection\("#, in: panel)
+        #expect(panelSections == 8, "the panel declares \(panelSections) groups — re-count before bumping")
+        #expect(CadenceSourceScan.matchCount(#"style: \.ruled"#, in: panel) == panelSections)
+        #expect(CadenceSourceScan.matchCount(#"style: \.card"#, in: panel) == 0)
+        #expect(panel.contains(".background(Theme.surfaceElevated)"))
 
         // The detector is not blind: it separates the two spellings it has to tell apart.
         #expect(CadenceSourceScan.matchCount(#"style: \.ruled"#, in: "iOSEditorSection(title: nil, style: .ruled) {") == 1)
