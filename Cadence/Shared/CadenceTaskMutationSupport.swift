@@ -660,12 +660,12 @@ extension CadenceTaskMutationSupport {
 
     /// Shown when a block the user asked for could not be committed (T-471).
     ///
-    /// "Block" rather than "task": a `TaskBundle` is a *block* everywhere the user meets one — the
-    /// quick-create sheet's own segmented control, `iOSCalendarBundleDetailSheet`'s "Delete this
-    /// block?" — so `TaskCreationService.saveFailureNotice` would name an object the sheet was not
-    /// making. It is held here, beside the `insertBundle(title:…)` that throws, for the same reason
-    /// the other notices sit beside their mutations: the next surface that creates a block reads
-    /// this sentence instead of inventing a third spelling of "that didn't work".
+    /// "Block" rather than "task": a `TaskBundle` is a *block* everywhere the user meets one —
+    /// `iOSCalendarBundleDetailSheet`'s "Delete this block?" among them — so
+    /// `TaskCreationService.saveFailureNotice` would name an object the gesture was not making. It
+    /// is held here, beside the `insertBundle(from:adding:)` that throws, for the same reason the
+    /// other notices sit beside their mutations. Since [[T-3170]] the only surfaces that still
+    /// create a block are the drag-two-tasks-together gestures; the empty-slot Create Block is gone.
     ///
     /// No "Nothing was created." clause, even though `insertBundle` earns one — it deletes the
     /// pending bundle before it rethrows. The *create* family does not carry that clause

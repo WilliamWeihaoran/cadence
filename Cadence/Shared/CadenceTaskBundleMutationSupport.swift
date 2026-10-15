@@ -1,8 +1,10 @@
 import Foundation
 import SwiftData
 
-/// **The declaration site of `CadenceTaskMutationSupport`, holding the block constructor, its
-/// clamps and the bundle-membership rule.** The enum's other sixty-two members live in
+/// **The declaration site of `CadenceTaskMutationSupport`, holding the block clamps and the
+/// bundle-membership rule.** (The empty-slot block constructor, `insertBundle(title:…)`, was here
+/// until [[T-3170]] removed the last surface that created a block from an empty slot, so the
+/// member counts below are one high.) The enum's other sixty-two members live in
 /// `CadenceTaskMutationSupport.swift`, which extends this enum rather than declaring it —
 /// fifty-six `internal` and six `private`.
 /// (T-1122's entry counted this enum at "61 static members" when five were here; it is **62**
@@ -14,18 +16,18 @@ import SwiftData
 /// **That inversion is the point of the file, and it is deliberate (T-1122).** The enum's main file
 /// reaches `NotificationManager` and `CadenceWidgetRefreshCenter`, and the latter is
 /// `#if canImport(WidgetKit)` — two stacks that have no business in `CadenceMCPServer`, a headless
-/// command-line tool whose Sources phase compiles whole *files*. `create_task_bundle` needs
-/// `insertBundle(title:…)` and the four clamps; `add_task_to_bundle` needs `assignTask(_:to:)` and
-/// the snapshot that undoes it, and nothing else in the enum. So those members are declared here,
+/// command-line tool whose Sources phase compiles whole *files*. `create_task_bundle` needed
+/// the empty-slot constructor and the four clamps; `add_task_to_bundle` needed `assignTask(_:to:)`
+/// and the snapshot that undoes it, and nothing else in the enum (both tools went with
+/// [[T-3170]]). So those members are declared here,
 /// on `Foundation`/`SwiftData` alone, and everything they touch — `AppTask`, `TaskBundle` and
 /// `CadencePendingChangePersistence` — is already in that target.
 ///
 /// **Why the declaration moved rather than the members being renamed into a second type.** An
 /// `extension CadenceTaskMutationSupport` in this file would still require the main file to
 /// declare the enum, which is the whole problem; and a differently-named helper type would break
-/// the spelling `CadenceTaskMutationSupport.insertBundle(` that three source-text scans pin at
-/// their call sites — `CadenceCreateTaskCommitSurfaceTests` against `iOSCalendarQuickCreateSheet`,
-/// `CadenceBundleCreationParityTests` against `SchedulingService`, and
+/// the spelling `CadenceTaskMutationSupport.insertBundle(` that source-text scans pin at their
+/// call sites — `CadenceBundleCreationParityTests` against `SchedulingService`, and
 /// `CadenceSaveCommitDisciplineTests` against the same file by path. Declaring the enum here and
 /// extending it there costs no call site and no pin a single character.
 ///
@@ -57,41 +59,6 @@ enum CadenceTaskMutationSupport {
             partial + max(task.estimatedMinutes, bundleMinimumDuration)
         }
         return max(bundleMinimumDuration, min(total, bundleDayEndMin - clampedBundleStart(startMin)))
-    }
-
-    /// Mints an empty block from four explicit fields — the drag-out-a-range gesture's constructor.
-    ///
-    /// **It takes a `commit:` now ([[T-1122]]), and the default keeps every existing call site
-    /// character-identical.** It was the one member of the `insertBundle` family without one, which
-    /// was fine while the only caller was a sheet that commits on its own behalf. `create_task_bundle`
-    /// is not: `CadenceWriteService` hands every arm's insert to `saveNotifyAndAudit`, so the row has
-    /// to be able to travel there pending rather than arriving already saved — otherwise a refused
-    /// audit-and-notify commit leaves a block in the store that `mcp-audit.log` never heard of, which
-    /// is exactly the shape T-1181 removed from `appendCoreNote`.
-    ///
-    /// - Parameter commit: See `CadencePendingChangePersistence.commitInsert(of:in:commit:)`.
-    @discardableResult
-    static func insertBundle(
-        title: String,
-        dateKey: String,
-        startMin: Int,
-        durationMinutes: Int,
-        modelContext: ModelContext,
-        commit: (ModelContext) throws -> Void = { try $0.save() }
-    ) throws -> TaskBundle {
-        let clampedStart = clampedBundleStart(startMin)
-        let duration = min(max(bundleMinimumDuration, durationMinutes), bundleDayEndMin - clampedStart)
-        let bundle = TaskBundle(
-            title: TaskBundle.storedTitle(title),
-            dateKey: dateKey,
-            startMin: clampedStart,
-            durationMinutes: duration
-        )
-
-        modelContext.insert(bundle)
-        // See `duplicate(_:allTasks:modelContext:)` (T-1299): the same three lines, said once.
-        try CadencePendingChangePersistence.commitInsert(of: bundle, in: modelContext, commit: commit)
-        return bundle
     }
 
     /// The five-field write `addTask(_:to:modelContext:commit:)` and

@@ -66,17 +66,12 @@ struct iOSCalendarQuickCreateSheet: View {
         return projects.first { $0.id == id }
     }
 
-    /// **T-567.** `.bundle` used to return `true` unconditionally while both its neighbours
-    /// required a title, so the Block segment was the one arm of this sheet where two taps from an
-    /// empty slot created something — and what it created was named by
-    /// `TaskBundle.storedTitle`'s fallback rather than by the user. The three arms now agree that
-    /// a thing being created needs a name, and the fallback stays for the callers that do not ask
-    /// for one (a drag that forms a block from two tasks).
+    /// Both arms agree that a thing being created needs a name (T-567). The Block arm that used to
+    /// sit between them is gone with the Block feature itself ([[T-3170]]): this sheet creates a
+    /// task or an event and nothing else.
     private var canCreate: Bool {
         switch kind {
         case .task:
-            return !TaskTitleSupport.isEmpty(title)
-        case .bundle:
             return !TaskTitleSupport.isEmpty(title)
         case .event:
             return !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && selectedWritableCalendar != nil
@@ -106,8 +101,6 @@ struct iOSCalendarQuickCreateSheet: View {
         switch kind {
         case .task:
             return hasTime
-        case .bundle:
-            return true
         case .event:
             return !eventIsAllDay
         }
@@ -317,7 +310,7 @@ struct iOSCalendarQuickCreateSheet: View {
         }
     }
 
-    /// No eyebrow. It read "TASK" / "BLOCK" / "EVENT" — the word the segmented control directly
+    /// No eyebrow. It read "TASK" / "EVENT" — the word the segmented control directly
     /// above it already has lit up, and the word the field's own placeholder repeats a line below.
     private var titleSection: some View {
         iOSEditorSection(title: nil, style: .ruled) {
@@ -454,16 +447,14 @@ struct iOSCalendarQuickCreateSheet: View {
             }
 
             if showsTimedControls {
-                if kind == .task || kind == .event {
-                    iOSEditorDivider()
-                }
+                iOSEditorDivider()
 
                 CadenceStartTimeFieldRow(minutes: startTimeMinutesBinding)
 
                 // No Duration row for a task. A task's length is `estimatedMinutes`, and the
                 // Estimate row in DETAILS above already edits it — two rows, one field, showing the
-                // same "30m" and moving together. Blocks and events have no Details section, so for
-                // them this is the only place the length can be set.
+                // same "30m" and moving together. An event has no Details section, so for it this
+                // is the only place the length can be set.
                 if kind != .task {
                     iOSEditorDivider()
 
@@ -517,8 +508,6 @@ struct iOSCalendarQuickCreateSheet: View {
         switch kind {
         case .task:
             createTask()
-        case .bundle:
-            createBundle()
         case .event:
             createEvent()
         }
@@ -612,31 +601,6 @@ struct iOSCalendarQuickCreateSheet: View {
         dismiss()
     }
 
-    /// T-471, and the worse of the pair. `_ = try? insertBundle(…)` followed by an unconditional
-    /// `dismiss()` meant a refused write closed the sheet exactly as a successful one does: the
-    /// user watched a block get made and then could not find it.
-    ///
-    /// `insertBundle(title:…)` already does its half — it deletes the pending bundle and rethrows,
-    /// so there is no half-made block anywhere — and the only thing missing was a caller that
-    /// listened. `dismiss()` is now reachable only through the `try` succeeding.
-    private func createBundle() {
-        let startMin = minuteOfDay(from: startTime)
-        do {
-            try CadenceTaskMutationSupport.insertBundle(
-                title: title,
-                dateKey: dateKey,
-                startMin: startMin,
-                durationMinutes: estimatedMinutes,
-                modelContext: modelContext
-            )
-        } catch {
-            actionError = CadenceTaskMutationSupport.bundleSaveFailureNotice
-            return
-        }
-        actionError = nil
-        dismiss()
-    }
-
     private func configureTask(_ task: AppTask) {
         if priority != .none {
             task.priority = priority
@@ -672,9 +636,9 @@ struct iOSCalendarQuickCreateSheet: View {
         return max(0, min(23 * 60 + 59, (components.hour ?? 9) * 60 + (components.minute ?? 0)))
     }
 
-    /// Only the slot the sheet was opened on. The other branch used to read "Create a planned task,
-    /// block, or Apple Calendar event." — a subtitle listing the three options the segmented control
-    /// two rows below already lists, on a sheet whose one purpose is creating one of them.
+    /// Only the slot the sheet was opened on. The other branch used to read a subtitle listing the
+    /// options the segmented control two rows below already lists, on a sheet whose one purpose is
+    /// creating one of them.
     private var headerSubtitle: String? {
         guard let initialStartMinute else { return nil }
         return "Create around \(CadenceScheduleSupport.timeRangeLabel(startMinute: initialStartMinute, endMinute: initialStartMinute + estimatedMinutes))."
@@ -696,7 +660,6 @@ struct iOSCalendarQuickCreateSheet: View {
 
 enum iOSCalendarQuickCreateKind: String, CaseIterable, Identifiable {
     case task
-    case bundle
     case event
 
     var id: String { rawValue }
@@ -704,7 +667,6 @@ enum iOSCalendarQuickCreateKind: String, CaseIterable, Identifiable {
     var title: String {
         switch self {
         case .task: return "Task"
-        case .bundle: return "Block"
         case .event: return "Event"
         }
     }
@@ -712,7 +674,6 @@ enum iOSCalendarQuickCreateKind: String, CaseIterable, Identifiable {
     var placeholder: String {
         switch self {
         case .task: return "Task title"
-        case .bundle: return "Block title"
         case .event: return "Event title"
         }
     }
@@ -720,7 +681,6 @@ enum iOSCalendarQuickCreateKind: String, CaseIterable, Identifiable {
     var systemImage: String {
         switch self {
         case .task: return "checkmark.circle"
-        case .bundle: return "tray.full.fill"
         case .event: return "calendar.badge.plus"
         }
     }

@@ -2,10 +2,10 @@ import Foundation
 
 /// The two things the shared schedule panel can be editing.
 ///
-/// **Deliberately two cases, not three.** `iOSCalendarQuickCreateKind` carries a `.bundle` arm as
-/// well; a Block is formed from tasks that already exist
+/// **Deliberately two cases, not three.** `iOSCalendarQuickCreateKind` carried a `.bundle` arm as
+/// well until [[T-3170]] took it out; a Block is formed from tasks that already exist
 /// (`CadenceTaskMutationSupport.insertBundle(from:adding:)` takes two of them), so an empty slot has
-/// nothing to make one out of, and sibling work is retiring the feature in any case.
+/// nothing to make one out of, and the feature is being retired in any case.
 @MainActor
 enum CadenceScheduleDraftKind: String, CaseIterable, Hashable, Identifiable, Sendable {
     case task

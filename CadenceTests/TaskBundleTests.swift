@@ -320,12 +320,12 @@ struct TaskBundleTests {
         #expect(try context.fetch(FetchDescriptor<TaskBundle>()).isEmpty)
     }
 
+    /// Re-pointed at `updateBundleTime` when [[T-3170]] removed the empty-slot
+    /// `createBundle(title:…)` this used to read: the clamp is the same private `clampedRange`.
     @Test func bundleTimesAreClampedInsideOneDay() throws {
-        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
-        let context = ModelContext(container)
-        let bundle = SchedulingActions.createBundle(title: "", dateKey: "2026-05-01", startMin: 1438, endMin: 1510, in: context)
+        let bundle = TaskBundle(title: "Clamp", dateKey: "2026-05-01", startMin: 600, durationMinutes: 30)
+        SchedulingActions.updateBundleTime(bundle, startMin: 1438, endMin: 1510)
 
-        #expect(bundle.title == TaskBundle.defaultDisplayTitle)
         #expect(bundle.startMin == 1435)
         #expect(bundle.durationMinutes == 5)
         #expect(bundle.endMin == 1440)
@@ -394,7 +394,8 @@ struct TaskBundleTests {
         #expect(detached.calendarEventID.isEmpty)
 
         let bundled = stale("Bundled")
-        let bundle = SchedulingActions.createBundle(title: "Sweep", dateKey: "2026-05-01", startMin: 600, endMin: 660, in: context)
+        let bundle = TaskBundle(title: "Sweep", dateKey: "2026-05-01", startMin: 600, durationMinutes: 60)
+        context.insert(bundle)
         SchedulingActions.addTask(bundled, to: bundle)
         #expect(bundled.calendarEventID.isEmpty)
 
@@ -434,7 +435,7 @@ struct TaskBundleTests {
         #expect(long.actualMinutes == 20)
     }
     /// **T-567.** An untitled block was called "Task Bundle" — the *type's* name, and a word the
-    /// app never says to a user. Everything around it on that screen says **Block**: the segment,
+    /// app never says to a user. Everything around it on that screen said **Block**: the segment,
     /// "Block title", "Edit Block", "Delete Block", "No tasks in this block". The literal was
     /// typed at nine sites across both platforms, three of which *stored* it rather than merely
     /// drawing it, so the noun could be renamed in one place and left behind in eight.
@@ -453,32 +454,14 @@ struct TaskBundleTests {
         let blank = TaskBundle(title: " \n ", dateKey: "2026-05-01", startMin: 600, durationMinutes: 30)
         #expect(blank.displayTitle == TaskBundle.defaultDisplayTitle)
         #expect(TaskBundle(title: "Admin", dateKey: "2026-05-01", startMin: 600, durationMinutes: 30).displayTitle == "Admin")
-
-        // Both creation paths, one per platform, through the store rather than the constant.
-        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
-        let context = ModelContext(container)
-        let dragged = SchedulingActions.createBundle(
-            title: "   ",
-            dateKey: "2026-05-01",
-            startMin: 600,
-            endMin: 660,
-            in: context
-        )
-        #expect(dragged.title == TaskBundle.defaultDisplayTitle)
-        let created = try CadenceTaskMutationSupport.insertBundle(
-            title: "",
-            dateKey: "2026-05-01",
-            startMin: 600,
-            durationMinutes: 30,
-            modelContext: context
-        )
-        #expect(created.title == TaskBundle.defaultDisplayTitle)
+        // The two empty-slot creation paths this also drove through the store went with
+        // [[T-3170]]; no surface mints a titled block from a form any more.
     }
 
     /// **T-843.** The rest of the "Block" vocabulary, pinned by value beside the noun each one
-    /// stands in for on screen. `shortLabel` covers three call sites at once (a Focus status chip,
-    /// a mode-picker button, and the unlabelled facts row), which is exactly why it needed to be a
-    /// constant: three re-typings is three chances for one to drift.
+    /// stands in for on screen. `shortLabel` covered three call sites at once (a Focus status chip,
+    /// a mode-picker button — gone with [[T-3170]] — and the unlabelled facts row), which is
+    /// exactly why it needed to be a constant: three re-typings is three chances for one to drift.
     @Test func theRestOfTheBlockVocabularyIsOneWordEach() throws {
         #expect(TaskBundle.shortLabel == "Block")
         #expect(TaskBundle.tasksSectionLabel == "Block tasks")
@@ -524,11 +507,9 @@ struct TaskBundleTests {
             )
         }
 
-        // `QuickCreateChoicePopover` and `TimelineBundleBlockSupportViews` each carry two of the
-        // eleven sites, so both needles are pinned per file rather than folded into the loop above.
-        let quickCreate = try CadenceCommitSurfaceScan.scanned("Cadence/macOS/Views/QuickCreateChoicePopover.swift")
-        #expect(CadenceSourceScan.matchCount(#"TaskBundle\.titleFieldPlaceholder"#, in: quickCreate) >= 1)
-        #expect(CadenceSourceScan.matchCount(#"TaskBundle\.shortLabel"#, in: quickCreate) >= 1)
+        // `TimelineBundleBlockSupportViews` carries two of the sites, so both needles are pinned
+        // per file rather than folded into the loop above. `QuickCreateChoicePopover` carried two
+        // more until [[T-3170]] removed its Block tab, which was the only thing that read them.
 
         let timelineBundleBlockSupport = try CadenceCommitSurfaceScan.scanned(
             "Cadence/macOS/Views/TimelineBundleBlockSupportViews.swift"
@@ -553,15 +534,16 @@ struct TaskBundleTests {
     /// *declared* — the block constructor and its clamps moved there so `CadenceMCPServer` can
     /// compile them without the notification and WidgetKit stacks the rest of the enum reaches.
     /// Listing only the extension file would have let the split quietly halve this rule's reach:
-    /// `insertBundle(title:…)`, the one member here that mints a title, went with the declaration.
+    /// `insertBundle(title:…)`, the one member here that minted a title, went with the declaration.
+    /// **[[T-3170]] took that constructor out**, along with `SchedulingActions.createBundle(title:…)`
+    /// and the quick-create popover's Block tab, so `CadenceTaskBundleMutationSupport.swift`,
+    /// `SchedulingService.swift` and `QuickCreateChoicePopover.swift` mint no title and have left
+    /// this list; `noNewSurfaceTypesTheRetiredBundleNounEither` still sweeps all three.
     @Test func noSurfaceStillTypesTheRetiredBundleNoun() throws {
         for path in [
             "Cadence/Models/AppTask.swift",
             "Cadence/Shared/CadenceTaskMutationSupport.swift",
-            "Cadence/Shared/CadenceTaskBundleMutationSupport.swift",
-            "Cadence/macOS/Services/SchedulingService.swift",
             "Cadence/macOS/Views/TimelineDayCanvas.swift",
-            "Cadence/macOS/Views/QuickCreateChoicePopover.swift",
             "Cadence/macOS/Views/TimelineBundleBlockSupportViews.swift",
             "Cadence/macOS/Views/CalendarPageMonthSupportViews.swift",
         ] {
@@ -590,11 +572,11 @@ struct TaskBundleTests {
 
     /// T-567's first half, and the reason the fallback was reachable from a create form at all:
     /// `canCreate` returned `true` unconditionally for `.bundle` while Task and Event both
-    /// required a title, so two taps on an empty slot made a block the user had not named.
+    /// required a title, so two taps on an empty slot made a block the user had not named. The
+    /// `.bundle` arm is gone ([[T-3170]]); what is left is that both remaining arms ask.
     ///
-    /// Scoped to the `canCreate` body rather than the file: `showsTimedControls` twelve lines
-    /// below has its own `case .bundle: return true`, which is correct and must stay — a
-    /// file-wide needle would either miss this defect or condemn that line.
+    /// Scoped to the `canCreate` body rather than the file: `showsTimedControls` below has its own
+    /// `case .task: return hasTime`, which is correct and must stay outside this read.
     @Test func theIOSQuickCreateSheetAsksForATitleForEveryKindItCreates() throws {
         let source = try CadenceCommitSurfaceScan.scanned("Cadence/iOS/iOSCalendarQuickCreateSheet.swift")
         let anchor = try #require(source.range(of: "var canCreate: Bool"))
@@ -603,14 +585,16 @@ struct TaskBundleTests {
         )
 
         #expect(CadenceSourceScan.matchCount(#"return true"#, in: body) == 0)
-        #expect(CadenceSourceScan.matchCount(#"TaskTitleSupport\.isEmpty\(title\)"#, in: body) == 2)
-        #expect(CadenceSourceScan.matchCount(#"case \.(task|bundle|event):"#, in: body) == 3)
+        #expect(CadenceSourceScan.matchCount(#"TaskTitleSupport\.isEmpty\(title\)"#, in: body) == 1)
+        #expect(CadenceSourceScan.matchCount(#"\.trimmingCharacters\(in: \.whitespacesAndNewlines\)\.isEmpty"#, in: body) == 1)
+        #expect(CadenceSourceScan.matchCount(#"case \.(task|bundle|event):"#, in: body) == 2)
+        #expect(CadenceSourceScan.matchCount(#"case \.bundle:"#, in: body) == 0)
 
-        // The read really was one declaration's body: the sibling that still answers `true` for a
-        // block is outside it.
-        #expect(!body.contains("showsTimedControls"))
+        // The read really was one declaration's body: the sibling in `showsTimedControls` is
+        // outside it.
+        #expect(!body.contains("hasTime"))
         #expect(
-            CadenceSourceScan.matchCount(#"case \.bundle:\s*return true"#, in: source) == 1,
+            CadenceSourceScan.matchCount(#"case \.task:\s*return hasTime"#, in: source) == 1,
             "showsTimedControls no longer holds the negative this scan is discriminated against"
         )
     }

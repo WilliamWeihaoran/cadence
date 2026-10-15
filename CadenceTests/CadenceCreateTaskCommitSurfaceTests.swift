@@ -436,9 +436,10 @@ struct CadenceCreateTaskCommitSurfaceTests {
 
     // MARK: - T-470 / T-471: the iOS calendar quick-create sheet
 
-    /// The sentence the Block branch shows. It names the object the sheet was making, and it is
-    /// not the task sentence, which is the whole reason it is a second constant rather than a
-    /// reuse of `TaskCreationService.saveFailureNotice`.
+    /// The sentence a refused block creation shows. It names the object being made, and it is not
+    /// the task sentence, which is the whole reason it is a second constant rather than a reuse of
+    /// `TaskCreationService.saveFailureNotice`. The quick-create sheet's Block branch that first
+    /// read it is gone ([[T-3170]]); the drag-two-tasks-together gestures still do.
     @Test func theBlockCreationFailureNoticeNamesTheBlockRatherThanATask() {
         #expect(CadenceTaskMutationSupport.bundleSaveFailureNotice == "Couldn't save this block.")
         #expect(CadenceTaskMutationSupport.bundleSaveFailureNotice != TaskCreationService.saveFailureNotice)
@@ -450,13 +451,6 @@ struct CadenceCreateTaskCommitSurfaceTests {
         #expect(!CadenceTaskMutationSupport.bundleSaveFailureNotice.contains("Nothing"))
         #expect(CadenceTaskMutationSupport.bundleSaveFailureNotice.hasPrefix("Couldn't save this "))
     }
-
-    /// The sheet's Block branch reports a refused write the way its Task and Event branches do.
-    ///
-    /// `catch` has to both name the failure and leave, which is what separates T-471 from a
-    /// `catch` that merely logs and falls through into `dismiss()`.
-    private static let quickCreateBlockFailureBranch =
-        #"catch \{[^}]*actionError = CadenceTaskMutationSupport\.bundleSaveFailureNotice[^}]*return[^}]*\}"#
 
     /// T-470. `createTask()` guarded on `try? insertScheduledTask(...)` and returned on `nil`, so a
     /// refused save and an empty title produced the identical silent exit: the create button looked
@@ -521,51 +515,29 @@ struct CadenceCreateTaskCommitSurfaceTests {
         )
     }
 
-    /// T-471, the worse half. `createBundle()` ran `_ = try? insertBundle(...)` and then dismissed
-    /// unconditionally, so the sheet closed exactly as it does on success while the store held no
-    /// block. `insertBundle(title:...)` already deletes the pending bundle and rethrows; the caller
-    /// threw that signal away.
+    /// **[[T-3170]].** The sheet creates a task or an event and nothing else: the Block segment,
+    /// its `createBundle()` and the empty-slot constructor it called are gone with the Block
+    /// feature. T-471's two pins on that branch (no dismissal over a refused block, and the block
+    /// in the store before the sheet could close) went with it — there is no branch left to hold
+    /// to either rule.
     ///
-    /// Source shape, for the same `#if os(iOS)` reason as above. The load-bearing assertion is the
-    /// *position* of `dismiss()`: a `catch` that reports and falls through would still close the
-    /// sheet on nothing.
-    @Test func theQuickCreateSheetDoesNotDismissOverARefusedBlock() throws {
+    /// Source shape, for the same `#if os(iOS)` reason as above: this target cannot compile the
+    /// sheet, so it reads it with comments stripped.
+    @Test func theQuickCreateSheetOffersNoBlockArm() throws {
         let raw = try CadenceSourceScan.sourceFile("Cadence/iOS/iOSCalendarQuickCreateSheet.swift")
         #expect(raw.count > 400, "iOSCalendarQuickCreateSheet.swift read as \(raw.count) characters")
-
         let stripped = CadenceSourceScan.strippingComments(raw)
-        #expect(stripped != raw, "the comment stripper removed nothing")
-        #expect(stripped.count == raw.count, "the stripper changed the length")
 
-        let body = try #require(
-            CadenceSourceScan.functionBody(named: "createBundle", in: stripped),
-            "could not find createBundle()"
+        let kindEnum = try #require(
+            stripped.range(of: #"enum iOSCalendarQuickCreateKind[^{]*\{[^}]*\}"#, options: .regularExpression),
+            "could not find iOSCalendarQuickCreateKind's case list"
         )
-        #expect(
-            body.contains("CadenceTaskMutationSupport.insertBundle("),
-            "createBundle() body looks wrong"
-        )
-        #expect(
-            CadenceSourceScan.matchCount(#"try\?"#, in: body) == 0,
-            "createBundle() still swallows the insert error"
-        )
-
-        let failureBranch = try #require(
-            body.range(of: Self.quickCreateBlockFailureBranch, options: .regularExpression),
-            "createBundle() has no catch branch that both reports the failure and returns"
-        )
-        let dismissal = try #require(
-            body.range(of: "dismiss()"),
-            "createBundle() no longer spells dismiss()"
-        )
-        #expect(
-            dismissal.lowerBound >= failureBranch.upperBound,
-            "createBundle() dismisses before the failed insert has returned"
-        )
-        #expect(
-            CadenceSourceScan.matchCount(#"dismiss\(\)"#, in: body) == 1,
-            "createBundle() has a second, unguarded dismissal"
-        )
+        let cases = CadenceSourceScan.matchCount(#"\bcase [a-z]+\n"#, in: String(stripped[kindEnum]))
+        #expect(cases == 2, "iOSCalendarQuickCreateKind declares \(cases) cases, not task and event")
+        #expect(CadenceSourceScan.matchCount(#"\bcase bundle\b"#, in: stripped) == 0)
+        #expect(CadenceSourceScan.matchCount(#"\.bundle\b"#, in: stripped) == 0)
+        #expect(CadenceSourceScan.matchCount(#"insertBundle\("#, in: stripped) == 0)
+        #expect(CadenceSourceScan.matchCount(#"bundleSaveFailureNotice"#, in: stripped) == 0)
     }
 
     /// Neither branch may spell its own sentence: both read a shared constant, so the sheet cannot
@@ -576,37 +548,10 @@ struct CadenceCreateTaskCommitSurfaceTests {
             try CadenceSourceScan.sourceFile("Cadence/iOS/iOSCalendarQuickCreateSheet.swift")
         )
         #expect(stripped.contains("actionError = TaskCreationService.saveFailureNotice"))
-        #expect(stripped.contains("actionError = CadenceTaskMutationSupport.bundleSaveFailureNotice"))
         #expect(
             CadenceSourceScan.matchCount(#""Couldn.t save this"#, in: stripped) == 0,
             "the sheet spells a save-failure sentence itself"
         )
-    }
-
-    /// Behavioural, and the reason `createBundle()` is allowed to dismiss at all: on the success
-    /// path the block really is in the store, asserted from a **second context on the same
-    /// container** -- the sheet's own context reports it present either way.
-    @Test func aQuickCreatedBlockIsInTheStoreBeforeTheSheetCouldClose() throws {
-        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
-        let modelContext = ModelContext(container)
-
-        let bundle = try CadenceTaskMutationSupport.insertBundle(
-            title: "Deep work",
-            dateKey: "2026-06-20",
-            startMin: 540,
-            durationMinutes: 90,
-            modelContext: modelContext
-        )
-        #expect(bundle.title == "Deep work")
-        #expect(!modelContext.hasChanges, "the block was left pending in the context")
-
-        let store = ModelContext(container)
-        let stored = try store.fetch(FetchDescriptor<TaskBundle>())
-        #expect(stored.count == 1)
-        #expect(stored.first?.title == "Deep work")
-        #expect(stored.first?.dateKey == "2026-06-20")
-        #expect(stored.first?.startMin == 540)
-        #expect(stored.first?.durationMinutes == 90)
     }
 
     /// The needles above match the spellings they hunt and miss the ones they protect -- otherwise
@@ -620,14 +565,10 @@ struct CadenceCreateTaskCommitSurfaceTests {
             #"try\?"#,
             in: "try CadenceTaskMutationSupport.insertBundle("
         ) == 0)
-        #expect(CadenceSourceScan.matchCount(
-            Self.quickCreateBlockFailureBranch,
-            in: "catch {\n actionError = CadenceTaskMutationSupport.bundleSaveFailureNotice\n return\n }"
-        ) == 1)
-        #expect(CadenceSourceScan.matchCount(
-            Self.quickCreateBlockFailureBranch,
-            in: "catch {\n actionError = CadenceTaskMutationSupport.bundleSaveFailureNotice\n }"
-        ) == 0)
+        #expect(CadenceSourceScan.matchCount(#"\bcase [a-z]+\n"#, in: "case task\n case bundle\n case event\n") == 3)
+        #expect(CadenceSourceScan.matchCount(#"\bcase [a-z]+\n"#, in: "case .task: return \"Task\"\n") == 0)
+        #expect(CadenceSourceScan.matchCount(#"\.bundle\b"#, in: "case .bundle:") == 1)
+        #expect(CadenceSourceScan.matchCount(#"\.bundle\b"#, in: "task.bundled") == 0)
         #expect(CadenceSourceScan.matchCount(
             #"guard created != nil else \{ return \}"#,
             in: "guard created != nil else { return }"

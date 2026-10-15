@@ -65,17 +65,11 @@ struct CadenceRowSubjectAccessibilityTests {
         ))
     }
 
-    @Test func quickCreateSelectedTaskRemoveButtonNamesTheTaskItRemoves() throws {
-        let source = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(Self.quickCreatePath))
-        let body = try #require(
-            CadenceSourceScan.declarationBody("private func selectedTaskRow(_ task: AppTask) -> some View", in: source)
-        )
-
-        #expect(body.contains(#".accessibilityLabel("Remove")"#))
-        #expect(body.contains(
-            ".accessibilityValue(TaskTitleSupport.displayTitle(task.title, fallback: TaskTitleSupport.defaultCompactDisplayTitle))"
-        ))
-    }
+    // **`quickCreateSelectedTaskRemoveButtonNamesTheTaskItRemoves` left with [[T-3170]].** It was
+    // [[T-673]]'s third site: the popover's Block tab listed the tasks ticked into a new block,
+    // each with a "Remove" button naming its task. The Block tab, and
+    // `QuickCreateBundleTaskSelectionView` with its `selectedTaskRow`, went with the Block
+    // feature's creation paths; the draft-subtask row above is the popover's surviving site.
 
     // MARK: - Sites 4 and 5: a goal's attached work
 
@@ -193,13 +187,13 @@ struct CadenceRowSubjectAccessibilityTests {
             "private func subtaskRow(title: String, index: Int) -> some View",
             in: Self.quickCreatePath
         )
-        total += try count("private func selectedTaskRow(_ task: AppTask) -> some View", in: Self.quickCreatePath)
         total += try count("struct GoalTaskContributorRow: View", in: Self.goalsSupportPath)
         // Both subtask-row sites (the circle and the delete button) live in one struct.
         total += try count("struct SubtaskRow: View", in: Self.tasksPanelSupportPath)
         // `GoalLinkedListRow` and `HabitListCard` were the fourth and eighth sites and left with
-        // [[T-2079]]; see the two notes above.
+        // [[T-2079]]; see the two notes above. The third, the Block tab's `selectedTaskRow`, left
+        // with [[T-3170]] — one `.accessibilityValue(` with it.
 
-        #expect(total == 6)
+        #expect(total == 5)
     }
 }

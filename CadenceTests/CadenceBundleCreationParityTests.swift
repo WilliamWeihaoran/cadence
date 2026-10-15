@@ -175,15 +175,14 @@ struct CadenceBundleCreationParityTests {
 
     // MARK: - The wiring (source scans)
 
-    /// An exact count, not an absence: `SchedulingService` legitimately still constructs a
-    /// `TaskBundle` in `createBundle(title:dateKey:startMin:endMin:)`, the drag-out-a-range gesture.
-    /// What must be gone is the *second* one, in the task-onto-task path. An `!contains` assertion
-    /// here would fail on the surviving legitimate call and a `contains` would pass either way, so
-    /// the count is the only spelling that says what is meant.
+    /// An exact count. `SchedulingService` used to construct one legitimate `TaskBundle` in
+    /// `createBundle(title:dateKey:startMin:endMin:)`, the drag-out-a-range gesture, and the count
+    /// was 1; [[T-3170]] removed that gesture, so the count is 0 — the task-onto-task path still
+    /// forms its block only through the shared mutation, never a body of its own here.
     @Test func theMacTimelineNoLongerKeepsItsOwnBundleFormingBody() throws {
         let source = try strippingBundleTestComments(sourceFile("Cadence/macOS/Services/SchedulingService.swift"))
 
-        #expect(occurrences(of: "TaskBundle(", in: source) == 1)
+        #expect(occurrences(of: "TaskBundle(", in: source) == 0)
         #expect(occurrences(of: "CadenceTaskMutationSupport.insertBundle(", in: source) == 1)
         // The arithmetic went with the body rather than being left behind unused.
         #expect(occurrences(of: "clampedBundleDuration", in: source) == 0)

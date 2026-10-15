@@ -23,6 +23,12 @@ import Testing
 /// statement that the *caller* owns the unit of work. `SchedulePanel` was that caller and committed
 /// nothing either, then added the ticked tasks to the block and let the canvas dismiss its draft
 /// popover. Half 3: an insert that reaches no commit at all.
+///
+/// **[[T-3170]] removed (e)'s surface.** The empty-slot Create Block — the popover's Block tab,
+/// `SchedulePanel`'s and the month grid's `createBundle`, and `SchedulingActions.insertBundle(title:
+/// …adding:in:)` behind them — is gone with the Block feature, so its three behavioural pins
+/// retired with it and its two source pins now hold the absence. The drag-a-task-onto-a-task block
+/// (T-655 below) is a separate gesture and is still pinned in full.
 @MainActor
 struct CadenceFocusSessionAndBlockCommitTests {
 
@@ -138,107 +144,18 @@ struct CadenceFocusSessionAndBlockCommitTests {
         #expect(view.contains("struct iOSFocusView: View"))
     }
 
-    // MARK: - T-636(e), behavioural
-
-    /// A refused block creation un-inserts the block **and puts its members back** — the five
-    /// fields `addTask` writes, which `commitInsert` cannot see.
-    @Test func arefusedBlockCreationLeavesNoBlockAndNoMovedTasks() throws {
-        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
-        let context = ModelContext(container)
-        let task = AppTask(title: "Write the brief")
-        task.scheduledDate = "2026-04-30"
-        task.scheduledStartMin = 600
-        task.calendarEventID = "evt-1"
-        context.insert(task)
-        try context.save()
-
-        #expect(throws: CommitRefused.self) {
-            try SchedulingActions.insertBundle(
-                title: "Deep work",
-                dateKey: "2026-05-01",
-                startMin: 540,
-                endMin: 660,
-                adding: [task],
-                in: context
-            ) { _ in throw CommitRefused() }
-        }
-
-        #expect(task.bundle == nil, "the task stayed in a block the store never took")
-        #expect(task.scheduledDate == "2026-04-30", "the task was left on the block's day")
-        #expect(task.scheduledStartMin == 600, "the task lost its time slot anyway")
-        #expect(task.calendarEventID == "evt-1")
-        let reader = ModelContext(container)
-        #expect(try reader.fetch(FetchDescriptor<TaskBundle>()).isEmpty)
-    }
-
-    /// The accepted path: the block **and** its membership are in the store together, read back
-    /// through a second context so the creating context's own memory cannot satisfy it.
-    @Test func anAcceptedBlockCreationCommitsTheBlockAndItsMembersTogether() throws {
-        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
-        let context = ModelContext(container)
-        let task = AppTask(title: "Write the brief")
-        task.scheduledDate = "2026-04-30"
-        task.scheduledStartMin = 600
-        context.insert(task)
-        try context.save()
-
-        let bundle = try SchedulingActions.insertBundle(
-            title: "Deep work",
-            dateKey: "2026-05-01",
-            startMin: 540,
-            endMin: 660,
-            adding: [task],
-            in: context
-        )
-
-        #expect(bundle.dateKey == "2026-05-01")
-        #expect(!context.hasChanges, "the block or its members were left pending")
-        let reader = ModelContext(container)
-        let stored = try reader.fetch(FetchDescriptor<TaskBundle>())
-        #expect(stored.count == 1)
-        #expect((stored.first?.tasks ?? []).map(\.title) == ["Write the brief"])
-        let storedTask = try reader.fetch(FetchDescriptor<AppTask>()).first
-        #expect(storedTask?.scheduledDate == "2026-05-01")
-        #expect(storedTask?.scheduledStartMin == -1)
-    }
-
-    /// A block created with nothing ticked is still a commit: the drag makes an empty block on
-    /// purpose, and it must not be left pending either.
-    @Test func ablockCreatedWithNoTickedTasksIsCommittedToo() throws {
-        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
-        let context = ModelContext(container)
-
-        try SchedulingActions.insertBundle(
-            title: "",
-            dateKey: "2026-05-01",
-            startMin: 540,
-            endMin: 600,
-            adding: [],
-            in: context
-        )
-
-        #expect(!context.hasChanges)
-        let reader = ModelContext(container)
-        #expect(try reader.fetch(FetchDescriptor<TaskBundle>()).count == 1)
-    }
-
     // MARK: - T-636(e), source shape
 
-    /// The panel is the frame that owns the unit of work, so the commit is there, and the refusal
-    /// is named on the panel — the draft popover has already dismissed itself by then.
-    @Test func theschedulePanelCommitsTheBlockItCreatesAndNamesArefusal() throws {
+    /// The panel no longer creates a block at all ([[T-3170]]): no Block tab reaches it, so it has
+    /// no `createBundle`, no refusal flag and no alert for one. Its event branch is untouched.
+    @Test func theSchedulePanelNoLongerCreatesABlockFromAnEmptySlot() throws {
         let source = try CadenceCommitSurfaceScan.scanned(Self.panelPath)
-        let body = try CadenceCommitSurfaceScan.declarationBody(named: "createBundle", in: source)
 
-        #expect(body.contains("try SchedulingActions.insertBundle("))
-        #expect(body.contains("bundleCreateFailed = true"))
-        #expect(
-            CadenceSourceScan.matchCount(#"SchedulingActions\.createBundle\("#, in: source) == 0,
-            "the panel still calls the spelling that commits nothing"
-        )
-        #expect(source.contains("@State private var bundleCreateFailed = false"))
-        #expect(source.contains("CadenceTaskMutationSupport.bundleCreateFailureAlertTitle"))
-        #expect(source.contains("Text(CadenceTaskMutationSupport.bundleSaveFailureNotice)"))
+        #expect(CadenceSourceScan.matchCount(#"func createBundle\("#, in: source) == 0)
+        #expect(CadenceSourceScan.matchCount(#"SchedulingActions\.(createBundle|insertBundle)\("#, in: source) == 0)
+        #expect(CadenceSourceScan.matchCount(#"\bonCreateBundle\b"#, in: source) == 0)
+        #expect(CadenceSourceScan.matchCount(#"\bbundleCreateFailed\b"#, in: source) == 0)
+        #expect(CadenceSourceScan.matchCount(#"bundleCreateFailureAlertTitle"#, in: source) == 0)
 
         // The event branch beside it is deliberately untouched: EventKit failures already travel
         // through `CalendarManager.lastWriteFailure`.
@@ -533,17 +450,18 @@ struct CadenceFocusSessionAndBlockCommitTests {
 
     // MARK: - T-655, source shape
 
-    /// The calendar grid's day column owns two units of work — drag out a range and name a task,
-    /// drag out a range and tick tasks into a block — and committed neither.
-    @Test func themonthGridCommitsBothThingsItsDragCreatesAndNamesEitherRefusal() throws {
+    /// The calendar grid's day column owned two units of work — drag out a range and name a task,
+    /// drag out a range and tick tasks into a block — and committed neither. The block half is
+    /// gone ([[T-3170]]); the task half commits and names its refusal.
+    @Test func themonthGridCommitsTheTaskItsDragCreatesAndNamesARefusal() throws {
         let source = try CadenceCommitSurfaceScan.scanned(Self.monthGridPath)
         let taskBody = try CadenceCommitSurfaceScan.declarationBody(named: "createTask", in: source)
-        let bundleBody = try CadenceCommitSurfaceScan.declarationBody(named: "createBundle", in: source)
 
         #expect(taskBody.contains("try SchedulingActions.insertTask("))
         #expect(taskBody.contains("taskCreateFailed = true"))
-        #expect(bundleBody.contains("try SchedulingActions.insertBundle("))
-        #expect(bundleBody.contains("bundleCreateFailed = true"))
+        #expect(CadenceSourceScan.matchCount(#"func createBundle\("#, in: source) == 0)
+        #expect(CadenceSourceScan.matchCount(#"SchedulingActions\.insertBundle\("#, in: source) == 0)
+        #expect(CadenceSourceScan.matchCount(#"\bbundleCreateFailed\b"#, in: source) == 0)
 
         // Neither pending spelling survives anywhere in the file, so a second day column cannot
         // reintroduce one below the two this reads.
@@ -556,11 +474,8 @@ struct CadenceFocusSessionAndBlockCommitTests {
             "the grid still calls the block spelling that commits nothing"
         )
         #expect(source.contains("@State private var taskCreateFailed = false"))
-        #expect(source.contains("@State private var bundleCreateFailed = false"))
         #expect(source.contains("TaskCreationService.createFailureAlertTitle"))
         #expect(source.contains("Text(TaskCreationService.saveFailureNotice)"))
-        #expect(source.contains("CadenceTaskMutationSupport.bundleCreateFailureAlertTitle"))
-        #expect(source.contains("Text(CadenceTaskMutationSupport.bundleSaveFailureNotice)"))
 
         // The event branch beside them stays as it is, for the reason the panel's does: EventKit
         // failures already travel through `CalendarManager.lastWriteFailure`.

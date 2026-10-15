@@ -88,9 +88,6 @@ struct SchedulePanel: View {
     @State private var isFocusHighlighted = false
     @State private var exportDocument: PlainTextExportDocument?
     @State private var isExportingTimeline = false
-    /// Set when a block the timeline offered to create was refused by the store. See
-    /// `createBundle(title:startMin:endMin:adding:)`.
-    @State private var bundleCreateFailed = false
 
     /// The invalidation token for the day this timeline draws (T-3120, after [[T-3104]]). Every
     /// host builds this panel with constant arguments, so a host's own body pass at midnight does
@@ -170,9 +167,6 @@ struct SchedulePanel: View {
                             onDropTaskAtMinute: { task, startMin in
                                 SchedulingActions.dropTask(task, to: todayKey, startMin: startMin)
                             },
-                            onCreateBundle: { title, startMin, endMin, selectedTasks in
-                                createBundle(title: title, startMin: startMin, endMin: endMin, adding: selectedTasks)
-                            },
                             onDropBundleAtMinute: { bundle, startMin in
                                 SchedulingActions.dropBundle(bundle, to: todayKey, startMin: startMin)
                             },
@@ -241,16 +235,6 @@ struct SchedulePanel: View {
                 .padding(.vertical, 6)
         }
         .calendarWriteFailureAlert()
-        // The event branch beside this panel's block branch has reported its refusals since T-238;
-        // this is the block branch saying the same thing in the same place (T-636(e)).
-        .alert(
-            CadenceTaskMutationSupport.bundleCreateFailureAlertTitle,
-            isPresented: $bundleCreateFailed
-        ) {
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text(CadenceTaskMutationSupport.bundleSaveFailureNotice)
-        }
         .cadenceTracksDayChanges($observedDay)
         .onChange(of: calendarManager.storeVersion) {
             SchedulePanelDataSupport.syncLinkedTasks(
@@ -258,31 +242,6 @@ struct SchedulePanel: View {
                 modelContext: modelContext,
                 calendarManager: calendarManager
             )
-        }
-    }
-
-    /// **The block and its members are one commit, and a refusal is named here (T-636(e)).**
-    ///
-    /// The closure this replaces ran `SchedulingActions.createBundle` — which inserts into the
-    /// context it is handed and commits nothing, correctly, because its caller owns the unit of
-    /// work — then `addTask` per selection, and then the canvas dismissed its draft popover. This
-    /// panel *is* that caller, so the commit is here; the popover is gone by the time the store
-    /// answers, so the report is an alert on the panel rather than an inline notice.
-    ///
-    /// The event branch beside it in `body` is deliberately left alone: EventKit failures already
-    /// travel through `CalendarManager.lastWriteFailure` to `.calendarWriteFailureAlert()`.
-    private func createBundle(title: String, startMin: Int, endMin: Int, adding tasks: [AppTask]) {
-        do {
-            try SchedulingActions.insertBundle(
-                title: title,
-                dateKey: todayKey,
-                startMin: startMin,
-                endMin: endMin,
-                adding: tasks,
-                in: modelContext
-            )
-        } catch {
-            bundleCreateFailed = true
         }
     }
 

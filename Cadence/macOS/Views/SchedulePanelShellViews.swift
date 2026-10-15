@@ -80,7 +80,6 @@ struct SchedulePanelTimelineViewport: View {
     let externalEventItems: [CalendarEventItem]
     let onCreateTask: (QuickCreateTaskDraft) -> Void
     let onDropTaskAtMinute: (AppTask, Int) -> Void
-    let onCreateBundle: (String, Int, Int, [AppTask]) -> Void
     let onDropBundleAtMinute: (TaskBundle, Int) -> Void
     let onDropTaskOnBundle: (AppTask, TaskBundle) -> Void
     let onCreateEvent: (String, Int, Int, String, String) -> CalendarWriteFailure?
@@ -120,7 +119,6 @@ struct SchedulePanelTimelineViewport: View {
                 showHalfHourMarks: zoomLevel == 3,
                 showWorkHoursHighlight: true,
                 onCreateTask: onCreateTask,
-                onCreateBundle: onCreateBundle,
                 onDropTaskAtMinute: onDropTaskAtMinute,
                 onDropBundleAtMinute: onDropBundleAtMinute,
                 onDropTaskOnBundle: onDropTaskOnBundle,

@@ -671,11 +671,9 @@ struct CalDayColumn: View {
     let showHalfHourMarks: Bool
     @Environment(\.modelContext) private var modelContext
     @Environment(CalendarManager.self) private var calendarManager
-    /// The two refusals this column can produce. Separate flags because they are separate units of
-    /// work with separate sentences — a task the store would not take and a block the store would
-    /// not take are not the same message ([[T-655]]).
+    /// The refusal this column can produce: a drag-created task the store would not take
+    /// ([[T-655]]). Its block sibling went with the Block feature's creation paths ([[T-3170]]).
     @State private var taskCreateFailed = false
-    @State private var bundleCreateFailed = false
 
     private var dateKey: String {
         DateFormatters.dateKey(from: date)
@@ -719,9 +717,6 @@ struct CalDayColumn: View {
                     subtaskTitles: draft.subtaskTitles
                 )
             },
-            onCreateBundle: { title, startMin, endMin, selectedTasks in
-                createBundle(title: title, startMin: startMin, endMin: endMin, adding: selectedTasks)
-            },
             onDropTaskAtMinute: { task, startMin in
                 SchedulingActions.dropTask(task, to: dateKey, startMin: startMin)
             },
@@ -758,11 +753,6 @@ struct CalDayColumn: View {
         } message: {
             Text(TaskCreationService.saveFailureNotice)
         }
-        .alert(CadenceTaskMutationSupport.bundleCreateFailureAlertTitle, isPresented: $bundleCreateFailed) {
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text(CadenceTaskMutationSupport.bundleSaveFailureNotice)
-        }
     }
 
     /// **The drag-created task is committed here, and a refusal is named here ([[T-655]]).**
@@ -798,28 +788,6 @@ struct CalDayColumn: View {
             )
         } catch {
             taskCreateFailed = true
-        }
-    }
-
-    /// **The block and the tasks ticked into it are one commit ([[T-655]]).**
-    ///
-    /// The same fix [[T-636]](e) made on `SchedulePanel`, through the same unit: `insertBundle`
-    /// creates the block, moves the ticked tasks into it, and either commits both or puts both
-    /// back. Committing the block first and adding its members afterwards would leave an empty
-    /// block in the store and the memberships pending, which is the same defect with a smaller
-    /// blast radius.
-    private func createBundle(title: String, startMin: Int, endMin: Int, adding tasks: [AppTask]) {
-        do {
-            try SchedulingActions.insertBundle(
-                title: title,
-                dateKey: dateKey,
-                startMin: startMin,
-                endMin: endMin,
-                adding: tasks,
-                in: modelContext
-            )
-        } catch {
-            bundleCreateFailed = true
         }
     }
 }

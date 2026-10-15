@@ -9,81 +9,6 @@ enum SchedulingActions {
     private static let dayEndMin = TimelineDayRange.endMin
     private static let minimumBundleDuration = TimelineDayRange.minimumDuration
 
-    /// Create and insert a new scheduled task bundle.
-    @discardableResult
-    static func createBundle(title: String, dateKey: String, startMin: Int, endMin: Int, in context: ModelContext) -> TaskBundle {
-        let range = clampedRange(startMin: startMin, endMin: endMin)
-        let bundle = TaskBundle(
-            title: TaskBundle.storedTitle(title),
-            dateKey: dateKey,
-            startMin: range.start,
-            durationMinutes: range.duration
-        )
-        context.insert(bundle)
-        return bundle
-    }
-
-    /// Creates a scheduled block from a timeline drag, adds the tasks the user ticked to it, and
-    /// **commits the pair as one unit** ([[T-636]](e)).
-    ///
-    /// `createBundle(title:…)` above is right to commit nothing: it is handed a `ModelContext`, and
-    /// that signature is this repo's statement that the caller owns the unit of work. What was
-    /// missing is the caller doing so. Every timeline that offers "create block" ran
-    /// `createBundle` and then `addTask` per selection and then closed its draft popover, so a
-    /// refused store left a pending `TaskBundle` — and the membership edits that go with it — in
-    /// the app's one `ModelContext`, for the next unrelated `save()` to take or the next unrelated
-    /// `rollback()` to discard.
-    ///
-    /// **Both halves are one unit deliberately.** Committing the block and then adding its members
-    /// would put an empty block in the store and leave the memberships pending, which is the same
-    /// defect with a smaller blast radius. The undo is therefore two-sided as well:
-    /// `commitInsert` un-inserts the block, and `BundleMembership` puts back the five fields
-    /// `addTask` writes on each task it moved.
-    ///
-    /// It does **not** promise "nothing was changed" — the sentence for a refused creation is
-    /// `CadenceTaskMutationSupport.bundleSaveFailureNotice`, which deliberately has no such clause.
-    /// A task that was already in another block has that block's own member ordering renormalised
-    /// on the way out, and this restores the task rather than re-deriving its former siblings.
-    ///
-    /// - Parameter commit: See `CadencePendingChangePersistence.commitInsert(of:in:commit:)`.
-    @discardableResult
-    static func insertBundle(
-        title: String,
-        dateKey: String,
-        startMin: Int,
-        endMin: Int,
-        adding tasks: [AppTask],
-        in context: ModelContext,
-        commit: (ModelContext) throws -> Void = { try $0.save() }
-    ) throws -> TaskBundle {
-        // An explicit loop, not `tasks.map(BundleMembership.init)`: this module builds with
-        // `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, so passing the initializer as a function
-        // value into `map`'s nonisolated closure is a warning, and the baseline here is zero.
-        var members: [BundleMembership] = []
-        for task in tasks {
-            members.append(BundleMembership(task))
-        }
-        let bundle = createBundle(
-            title: title,
-            dateKey: dateKey,
-            startMin: startMin,
-            endMin: endMin,
-            in: context
-        )
-        for task in tasks {
-            addTask(task, to: bundle)
-        }
-        do {
-            try CadencePendingChangePersistence.commitInsert(of: bundle, in: context, commit: commit)
-        } catch {
-            for member in members {
-                member.restore()
-            }
-            throw error
-        }
-        return bundle
-    }
-
     /// The fields `addTask(_:to:)` writes on the task it moves, captured before the write.
     ///
     /// The block itself is un-inserted by `commitInsert`, but that does not put the task back: it
@@ -248,14 +173,14 @@ enum SchedulingActions {
     /// and both memberships as one unit** ([[T-655]]).
     ///
     /// The committing sibling of `createBundle(from:adding:in:)` above, added rather than folded
-    /// into it for the reason `insertTask` records — `createBundle` has two overloads on this type
-    /// and the index needs unanimity before it will vouch for the name.
+    /// into it for the reason `insertTask` records — `createBundle` had two overloads on this type
+    /// (the empty-slot one went with [[T-3170]]) and the index needs unanimity before it will
+    /// vouch for the name.
     ///
     /// **Both tasks are restored on a refusal, not just the block.** `commitInsert` un-inserts the
     /// `TaskBundle`, and that on its own would leave two tasks detached from whatever block they
     /// were in, moved onto a day the store never agreed to and stripped of their time slot and any
-    /// calendar link — the same five fields `insertBundle(title:…adding:in:)` restores through
-    /// `BundleMembership`, and the same reason.
+    /// calendar link — the five fields `BundleMembership` restores.
     ///
     /// **It can now promise the store holds no block on a refusal (T-760).** `createBundle` above
     /// used to be the shared mutation's own self-committing call — `addTask` ended `try?

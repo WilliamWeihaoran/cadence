@@ -24,7 +24,6 @@ struct TimelineDayCanvas: View {
     var showWorkHoursHighlight = false
     var usesTaskPanelForTaskCreation = true
     let onCreateTask: (QuickCreateTaskDraft) -> Void
-    let onCreateBundle: (String, Int, Int, [AppTask]) -> Void
     let onDropTaskAtMinute: (AppTask, Int) -> Void
     let onDropBundleAtMinute: (TaskBundle, Int) -> Void
     let onDropTaskOnBundle: (AppTask, TaskBundle) -> Void
@@ -281,7 +280,7 @@ struct TimelineDayCanvas: View {
     }
 
     /// `start`/`end` are the range the ghost is drawing and the popover is anchored to. The Event
-    /// and Block closures below create *that* range: they used to shadow these parameters and
+    /// closure below creates *that* range: they used to shadow these parameters and
     /// re-read `pendingStartMin`/`pendingEndMin`, so the popover displayed one range and made
     /// another.
     ///
@@ -310,10 +309,6 @@ struct TimelineDayCanvas: View {
                     var resolved = draft
                     resolved.title = TaskTitleSupport.displayTitle(draft.title, fallback: TaskTitleSupport.defaultDisplayTitle)
                     onCreateTask(resolved)
-                    finishDraftCreation()
-                },
-                onCreateBundle: { title, selectedTasks in
-                    onCreateBundle(TaskBundle.storedTitle(title), start, end, selectedTasks)
                     finishDraftCreation()
                 },
                 onCreateEvent: onCreateEvent == nil ? nil : { title, calendarID, notes in

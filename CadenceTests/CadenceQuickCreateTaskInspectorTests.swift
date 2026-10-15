@@ -368,7 +368,7 @@ struct CadenceQuickCreateTaskInspectorTests {
     /// Both directions and a third tab, because one direction alone is satisfiable by a slot that
     /// always answers empty: the Task tab's own prose has to come back out of `.timeBlock`
     /// unchanged while the Event tab's comes back out of `.calendarEvent`, and the two readings
-    /// must differ. `.bundle` composes no prose at all and must answer neither neighbour's.
+    /// must differ. (The `.bundle` tab, which composed none, went with [[T-3170]].)
     @Test func theEventTabsProseNeverReachesTheTaskDraft() {
         var draft = QuickCreateNotesDraft()
         draft.event = "Bring the referral letter"
@@ -392,7 +392,6 @@ struct CadenceQuickCreateTaskInspectorTests {
             draft.notes(for: .timeBlock) != draft.notes(for: .calendarEvent),
             "both tabs answered the same prose; this test measures nothing"
         )
-        #expect(draft.notes(for: .bundle).isEmpty, "the Bundle tab composes no notes")
     }
 
     /// The wiring, because the value above is only the fix if the popover is holding it.
