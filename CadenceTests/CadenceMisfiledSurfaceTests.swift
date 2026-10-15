@@ -478,6 +478,25 @@ struct TodayAndInboxNamingTests {
         #expect(paths.contains("docs/TODO.md") == false, "the ticket ledger is inside the sweep")
         #expect(paths.contains("docs/TODO_DONE.md") == false, "the archive is inside the sweep")
     }
+
+    /// **[[T-3180]]: a ledger copy in the repo's `scratchpad/` is not an agent-facing doc.** An
+    /// agent's working copies of `docs/TODO.md` there reddened the sweep above on a green tree. Run
+    /// against a fixture tree rather than the checkout, so it holds whether or not a scratchpad
+    /// exists today. Only the TOP-LEVEL directory is pruned: a nested `scratchpad` is still swept.
+    @Test func docWalkSkipsTheRootScratchpadOnly() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("misfiled-walk-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        for path in ["scratchpad/agent/TODO.new.md", "docs/guide.md", "Cadence/scratchpad/nested.md"] {
+            let file = root.appendingPathComponent(path)
+            try FileManager.default.createDirectory(
+                at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try Data("# fixture\n".utf8).write(to: file)
+        }
+
+        let paths = try misfiledAgentFacingDocs(under: root)
+        #expect(paths == ["Cadence/scratchpad/nested.md", "docs/guide.md"], "walk returned \(paths)")
+    }
 }
 
 // MARK: - T-281
@@ -989,16 +1008,20 @@ private let misfiledRetiredIPadNames = [
 /// Enumerated with an explicit prune list rather than a whole-tree walk: an isolated verification
 /// copy carries `.codex-build/SourcePackages`, several hundred vendored markdown files that have
 /// nothing to do with Cadence and would make the `atLeast:` floor meaningless.
-private func misfiledAgentFacingDocs() throws -> [String] {
+///
+/// The top-level `scratchpad/` is pruned too ([[T-3180]]): it is untracked by construction, no guide
+/// routes to it, and an agent's rebuild-on-HEAD working copy of `docs/TODO.md` kept there is a
+/// ledger under another path — swept, it reddened the next runner's full run on a green tree.
+private func misfiledAgentFacingDocs(under root: URL = misfiledRepositoryRoot()) throws -> [String] {
     let pruned: Set<String> = [".git", ".build", ".codex-build", "node_modules", "DerivedData", "build"]
+    let prunedAtRoot: Set<String> = ["scratchpad"]
     let ledgers: Set<String> = ["docs/TODO.md", "docs/TODO_DONE.md"]
-    let root = misfiledRepositoryRoot()
     guard let enumerator = FileManager.default.enumerator(atPath: root.path) else { return [] }
 
     var paths: [String] = []
     for element in enumerator {
         guard let name = element as? String else { continue }
-        if pruned.contains((name as NSString).lastPathComponent) {
+        if pruned.contains((name as NSString).lastPathComponent) || prunedAtRoot.contains(name) {
             enumerator.skipDescendants()
             continue
         }
