@@ -111,7 +111,6 @@ struct iOSSchedulePanel: View {
                 unscheduledTasksByDate: [:],
                 bundlesByDate: bundlesByDate,
                 eventsByDate: [todayKey: todayEvents],
-                allTasks: allTasks,
                 zoom: $zoomLevel,
                 // **Unused on this pane now, and deliberately still passed** ([[T-3169]]).
                 // `drawsDraftBlocks` makes the column open a draft instead of calling this, but the

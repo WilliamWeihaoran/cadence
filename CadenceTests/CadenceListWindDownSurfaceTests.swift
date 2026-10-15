@@ -10,7 +10,7 @@ import Testing
 /// of open work depending on which device the swipe happened on. The divergence existed because
 /// `TaskContainerLifecycleService` sat inside `TaskWorkflowService.swift`'s `#if os(macOS)` while
 /// importing nothing platform-specific — the sixth instance of that shape after `RemindersManager`,
-/// `PrivacyDataResetService`, `ListDeleteHelpers`, `SchedulingActions.createBundle(from:adding:)`
+/// `PrivacyDataResetService`, `ListDeleteHelpers`, SchedulingActions.createBundle(from:adding:) (since removed, [[T-3170]])
 /// and the list delete cascades.
 ///
 /// **T-214** is the completion half, and it is not the same ticket with a word changed. The service

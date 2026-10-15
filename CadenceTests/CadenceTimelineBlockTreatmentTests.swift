@@ -378,9 +378,11 @@ struct CadenceTimelineBlockTreatmentTests {
             CadenceSourceScan.matchCount(#"iOSTaskCompletionCircle"#, in: iosTask) == 1,
             "the task block lost its completion circle"
         )
-        #expect(CadenceSourceScan.matchCount(#"\.draggable\("#, in: iosTask) == 1)
-        #expect(CadenceSourceScan.matchCount(#"\.dropDestination\("#, in: iosTask) == 1)
-        #expect(CadenceSourceScan.matchCount(#"isBundleFormingTargeted"#, in: iosTask) == 5)
+        // [[T-3170]] took the block-forming drag and drop off this block on purpose — that is the
+        // retirement of a gesture, not paint — so the lift, the drop and the targeted tint are gone.
+        #expect(CadenceSourceScan.matchCount(#"\.draggable\("#, in: iosTask) == 0)
+        #expect(CadenceSourceScan.matchCount(#"\.dropDestination\("#, in: iosTask) == 0)
+        #expect(CadenceSourceScan.matchCount(#"isBundleFormingTargeted"#, in: iosTask) == 0)
         #expect(CadenceSourceScan.matchCount(#"taskInspector\(task\)"#, in: iosTask) == 1)
         #expect(CadenceSourceScan.matchCount(#"onClearTime"#, in: iosTask) >= 3)
     }

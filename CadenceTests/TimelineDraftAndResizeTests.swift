@@ -181,50 +181,11 @@ struct TimelineDraftAndResizeTests {
 
     // MARK: - Bundle-drop shelf geometry
 
-    @Test func theBundleShelfRectIsTheRegionTheShelfActuallyDraws() {
-        // The canvas drop delegate defers to the shelf on exactly this rect. Both read it from
-        // here, so "where the shelf is drawn" and "where the canvas stands aside" are one answer
-        // rather than a 750 ms window arbitrating two async callbacks.
-        let block = computeTimelineBlockFrame(
-            startMinute: 540,
-            durationMinutes: 120,
-            column: 0,
-            totalColumns: 1,
-            totalWidth: 300,
-            metrics: metrics,
-            style: .schedule
-        )
-        let shelf = TimelineMetricsSupport.bundleDropShelfFrame(blockFrame: block)
-
-        #expect(shelf.x == block.x)
-        #expect(shelf.y == block.y)
-        #expect(shelf.width == block.width)
-        #expect(shelf.height == TimelineMetricsSupport.bundleDropShelfHeight(blockHeight: block.height)
-                + TimelineMetricsSupport.bundleDropShelfPadding * 2)
-        // It is a shelf, not the whole block: a drop lower down is still a move-to-minute.
-        #expect(shelf.height < block.height)
-    }
-
-    @Test func aDropOnTheShelfIsInsideItAndADropBelowTheShelfIsNot() {
-        let block = computeTimelineBlockFrame(
-            startMinute: 540,
-            durationMinutes: 120,
-            column: 0,
-            totalColumns: 1,
-            totalWidth: 300,
-            metrics: metrics,
-            style: .schedule
-        )
-        let shelf = TimelineMetricsSupport.bundleDropShelfFrame(blockFrame: block)
-
-        let onShelf = CGPoint(x: block.x + block.width / 2, y: shelf.y + shelf.height / 2)
-        let belowShelf = CGPoint(x: block.x + block.width / 2, y: shelf.y + shelf.height + 20)
-        let besideBlock = CGPoint(x: block.x + block.width + 20, y: shelf.y + 2)
-
-        #expect(TimelineMetricsSupport.isInsideBlockedBlock(point: onShelf, blockedFrames: [shelf]))
-        #expect(!TimelineMetricsSupport.isInsideBlockedBlock(point: belowShelf, blockedFrames: [shelf]))
-        #expect(!TimelineMetricsSupport.isInsideBlockedBlock(point: besideBlock, blockedFrames: [shelf]))
-    }
+    // [[T-3170]] retired `theBundleShelfRectIsTheRegionTheShelfActuallyDraws` and
+    // `aDropOnTheShelfIsInsideItAndADropBelowTheShelfIsNot` with the shelf itself: the Mac timeline
+    // no longer forms a Block from a task dropped on a task, so `TimelineMetricsSupport` has no
+    // shelf rect to agree with. What a drop on a task does now is pinned by
+    // `CadenceBundleCreationParityTests.onTheMacATaskDroppedOnATaskFallsThroughToTheRescheduleDrop`.
 
     // MARK: - Clamping
 

@@ -1,11 +1,9 @@
 #if os(macOS)
 import SwiftUI
 import SwiftData
-import UniformTypeIdentifiers
 
 struct TimelineTaskBlock: View {
     let task: AppTask
-    let allTasks: [AppTask]
     let column: Int
     let totalColumns: Int
     let totalWidth: CGFloat
@@ -18,12 +16,10 @@ struct TimelineTaskBlock: View {
     @Environment(TaskCompletionAnimationManager.self) private var taskCompletionAnimationManager
     @Binding var selectedTaskID: UUID?
     @Binding var activeDragTaskID: UUID?
-    let onCreateBundleWithTask: (AppTask, AppTask) -> Void
     let onSelect: () -> Void
 
     @State private var resizeSession: TimelineResizeSession? = nil
     @State private var isHovered = false
-    @State private var isBundleDropTargeted = false
 
     private var timeRangeLabel: String {
         TimelineTaskBlockInteractionSupport.timeRangeLabel(for: task)
@@ -122,9 +118,10 @@ struct TimelineTaskBlock: View {
         .overlay(alignment: .bottom) {
             resizeHandle(edge: .end)
         }
-        .overlay(alignment: .top) {
-            bundleDropShelf
-        }
+        // [[T-3170]]: no "drop here to bundle" shelf any more. The block has no drop target of its
+        // own, so a task released over it falls through to the canvas's `TimelineDropDelegate`
+        // and is rescheduled to the minute under the pointer, exactly as a release over empty
+        // canvas is.
         .popover(
             isPresented: TimelineTaskBlockStateSupport.selectionBinding(
                 taskID: task.id,
@@ -134,20 +131,6 @@ struct TimelineTaskBlock: View {
             TaskDetailPopover(task: task)
         }
         .position(x: frame.centerX, y: frame.centerY)
-    }
-
-    @ViewBuilder
-    private var bundleDropShelf: some View {
-        if activeDragTaskID != nil && activeDragTaskID != task.id {
-            TimelineTaskBundleDropShelf(
-                targetTask: task,
-                allTasks: allTasks,
-                height: TimelineMetricsSupport.bundleDropShelfHeight(blockHeight: frame.height),
-                activeDragTaskID: $activeDragTaskID,
-                isTargeted: $isBundleDropTargeted,
-                onCreateBundle: onCreateBundleWithTask
-            )
-        }
     }
 
     @ViewBuilder
@@ -237,89 +220,6 @@ struct TimelineTaskBlock: View {
 
     private func endResize() {
         TimelineTaskBlockStateSupport.endResize(resizeSession: &resizeSession)
-    }
-}
-
-private struct TimelineTaskBundleDropShelf: View {
-    let targetTask: AppTask
-    let allTasks: [AppTask]
-    let height: CGFloat
-    @Binding var activeDragTaskID: UUID?
-    @Binding var isTargeted: Bool
-    let onCreateBundle: (AppTask, AppTask) -> Void
-
-    var body: some View {
-        HStack(spacing: 6) {
-            Image(systemName: "tray.and.arrow.down")
-                .font(.system(size: 10, weight: .semibold))
-            Text("Drop here to bundle")
-                .font(.system(size: 10, weight: .semibold))
-                .lineLimit(1)
-                .minimumScaleFactor(0.72)
-        }
-        .foregroundStyle(Theme.amber)
-        .padding(.horizontal, 8)
-        .frame(maxWidth: .infinity, minHeight: height, maxHeight: height)
-        .background(
-            RoundedRectangle(cornerRadius: 8)
-                .fill(Theme.amber.opacity(isTargeted ? 0.28 : 0.18))
-        )
-        .overlay {
-            RoundedRectangle(cornerRadius: 8)
-                .strokeBorder(Theme.amber.opacity(isTargeted ? 0.72 : 0.45), style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
-        }
-        .padding(TimelineMetricsSupport.bundleDropShelfPadding)
-        .contentShape(Rectangle())
-        .onDrop(
-            of: [UTType.text.identifier],
-            delegate: TimelineTaskBundleDropDelegate(
-                targetTask: targetTask,
-                allTasks: allTasks,
-                onCreateBundle: onCreateBundle,
-                activeDragTaskID: $activeDragTaskID,
-                isTargeted: $isTargeted
-            )
-        )
-    }
-}
-
-private struct TimelineTaskBundleDropDelegate: DropDelegate {
-    let targetTask: AppTask
-    let allTasks: [AppTask]
-    let onCreateBundle: (AppTask, AppTask) -> Void
-    @Binding var activeDragTaskID: UUID?
-    @Binding var isTargeted: Bool
-
-    func validateDrop(info: DropInfo) -> Bool {
-        !info.itemProviders(for: [UTType.text]).isEmpty
-    }
-
-    func dropEntered(info: DropInfo) {
-        isTargeted = true
-    }
-
-    func dropExited(info: DropInfo) {
-        isTargeted = false
-    }
-
-    func dropUpdated(info: DropInfo) -> DropProposal? {
-        DropProposal(operation: .move)
-    }
-
-    func performDrop(info: DropInfo) -> Bool {
-        isTargeted = false
-        activeDragTaskID = nil
-        guard let provider = info.itemProviders(for: [UTType.text]).first else { return false }
-        _ = provider.loadObject(ofClass: NSString.self) { object, _ in
-            guard let payload = object as? NSString,
-                  let taskID = TaskDragPayload.taskID(from: payload as String) else { return }
-            Task { @MainActor in
-                guard targetTask.id != taskID,
-                      let draggedTask = allTasks.first(where: { $0.id == taskID }) else { return }
-                onCreateBundle(targetTask, draggedTask)
-            }
-        }
-        return true
     }
 }
 #endif

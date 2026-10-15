@@ -348,7 +348,7 @@ struct CadenceSaveCommitDisciplineTests {
     /// The separation the half above claims to draw, on the real sites [[T-1299]] measured it
     /// against — the evidence that it is *declining* them rather than blind to the shape.
     ///
-    /// Four files, each holding a `try?` over one of the helpers in question. A detector that had
+    /// Three files, each holding a `try?` over one of the helpers in question. A detector that had
     /// stopped reading `try?` call sites at all would satisfy the emptiness assertion below
     /// trivially, so each file also has to still contain the call it is listed for.
     @Test func theUnrepairedCommitHalfDeclinesTheCleanSwallowsItWasMeasuredAgainst() throws {
@@ -356,9 +356,10 @@ struct CadenceSaveCommitDisciplineTests {
         for (path, call) in [
             // `moveBundle` and `addTask`: in-place moves between objects the store already holds.
             ("Cadence/iOS/iOSCalendarBoardView.swift", "try? CadenceTaskMutationSupport.moveBundle("),
-            // `insertBundle` and `duplicate`: inserts, committed through `commitInsert` since
-            // T-1299 converted their hand-rolled undos.
-            ("Cadence/macOS/Services/SchedulingService.swift", "try? CadenceTaskMutationSupport.insertBundle("),
+            // `duplicate`: an insert, committed through `commitInsert` since T-1299 converted its
+            // hand-rolled undo. Its `insertBundle` sibling row went with [[T-3170]]: the one
+            // `try?` over it was SchedulingActions.createBundle(from:adding:in:), removed with
+            // the Mac timeline's drop-a-task-on-a-task gesture.
             ("Cadence/iOS/iOSTaskRowActionViews.swift", "try? CadenceTaskMutationSupport.duplicate("),
             // The three core-note accessors, routed through `commitInsert` by [[T-1181]].
             ("Cadence/Shared/CadenceNotePlanningSupport.swift", "try? NoteMigrationService.dailyNote("),
@@ -2074,7 +2075,7 @@ enum CadenceSaveCommitRule {
         // back into the note's frontmatter. Pinned by
         // `CadenceInlineTagCommitSurfaceTests.noteEditorPaneNoLongerNeedsACommitReachExemption`.
         // [[T-636]](e) and [[T-655]] emptied the three canvas entries that used to sit here.
-        // `SchedulingActions.createBundle` inserts into a context it was handed and commits
+        // SchedulingActions.createBundle (since removed, [[T-3170]]) inserted into a context it was handed and committed
         // nothing — correctly. Its `createTask` sibling was deleted outright by [[T-759]], having
         // had no production caller left. `SchedulePanel.body`, `CalDayColumn.body` and
         // `TimelineDayCanvas.body` each committed nothing either. All three own their unit of work

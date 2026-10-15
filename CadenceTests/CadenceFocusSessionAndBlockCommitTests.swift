@@ -18,7 +18,7 @@ import Testing
 /// counter now holds, so a write that did not land stays lost, and `actualMinutes` feeds
 /// `area.loggedMinutes` / `project.loggedMinutes`, which an hours-based `Goal` reads.
 ///
-/// **(e) The timeline's Create Block.** `SchedulingActions.createBundle(title:…in:)` inserts into
+/// **(e) The timeline's Create Block.** SchedulingActions.createBundle(title:…in:) inserted into
 /// the context it is handed and commits nothing — correct, because that signature is this repo's
 /// statement that the *caller* owns the unit of work. `SchedulePanel` was that caller and committed
 /// nothing either, then added the ticked tasks to the block and let the canvas dismiss its draft
@@ -28,7 +28,10 @@ import Testing
 /// `SchedulePanel`'s and the month grid's `createBundle`, and `SchedulingActions.insertBundle(title:
 /// …adding:in:)` behind them — is gone with the Block feature, so its three behavioural pins
 /// retired with it and its two source pins now hold the absence. The drag-a-task-onto-a-task block
-/// (T-655 below) is a separate gesture and is still pinned in full.
+/// (T-655 below) is a separate gesture. [[T-3170]]'s next pass took it off the Mac timeline, with
+/// SchedulingActions.insertBundle(from:adding:in:); its behavioural pins now run the shared
+/// `CadenceTaskMutationSupport.insertBundle(from:adding:)` the iOS Calendar Board still calls, and
+/// the canvas's source pin holds the absence.
 @MainActor
 struct CadenceFocusSessionAndBlockCommitTests {
 
@@ -289,10 +292,10 @@ struct CadenceFocusSessionAndBlockCommitTests {
         try context.save()
 
         #expect(throws: CommitRefused.self) {
-            try SchedulingActions.insertBundle(
+            try CadenceTaskMutationSupport.insertBundle(
                 from: target,
                 adding: dragged,
-                in: context
+                modelContext: context
             ) { _ in throw CommitRefused() }
         }
 
@@ -399,7 +402,7 @@ struct CadenceFocusSessionAndBlockCommitTests {
         try context.save()
 
         let bundle = try #require(
-            try SchedulingActions.insertBundle(from: target, adding: dragged, in: context)
+            try CadenceTaskMutationSupport.insertBundle(from: target, adding: dragged, modelContext: context)
         )
 
         #expect(bundle.dateKey == "2026-05-01")
@@ -421,10 +424,10 @@ struct CadenceFocusSessionAndBlockCommitTests {
         context.insert(task)
         try context.save()
 
-        let bundle = try SchedulingActions.insertBundle(
+        let bundle = try CadenceTaskMutationSupport.insertBundle(
             from: task,
             adding: task,
-            in: context
+            modelContext: context
         ) { _ in throw CommitRefused() }
 
         #expect(bundle == nil)
@@ -483,22 +486,20 @@ struct CadenceFocusSessionAndBlockCommitTests {
         #expect(source.contains("struct CalDayColumn: View"))
     }
 
-    /// Dropping a task on a scheduled task makes a block out of the two, and the canvas is the
-    /// frame that owns it: every frame below is handed its `ModelContext`.
-    @Test func thetimelineCanvasCommitsTheBlockADroppedTaskFormsAndNamesArefusal() throws {
+    /// Dropping a task on a scheduled task used to make a block out of the two, and the canvas was
+    /// the frame that committed it. [[T-3170]] removed the gesture from the Mac timeline, so the
+    /// canvas has no `formBundle`, no refusal flag and no alert for one, and nothing in it calls
+    /// either `SchedulingActions` spelling.
+    @Test func thetimelineCanvasNoLongerFormsABlockFromADroppedTask() throws {
         let source = try CadenceCommitSurfaceScan.scanned(Self.dayCanvasPath)
-        let body = try CadenceCommitSurfaceScan.declarationBody(named: "formBundle", in: source)
 
-        #expect(body.contains("try SchedulingActions.insertBundle("))
-        #expect(body.contains("bundleCreateFailed = true"))
-        #expect(
-            CadenceSourceScan.matchCount(#"SchedulingActions\.createBundle\("#, in: source) == 0,
-            "the canvas still calls the spelling that commits nothing"
-        )
-        #expect(source.contains("@State private var bundleCreateFailed = false"))
-        #expect(source.contains("CadenceTaskMutationSupport.bundleCreateFailureAlertTitle"))
-        #expect(source.contains("Text(CadenceTaskMutationSupport.bundleSaveFailureNotice)"))
+        #expect(CadenceSourceScan.matchCount(#"func formBundle\("#, in: source) == 0)
+        #expect(CadenceSourceScan.matchCount(#"SchedulingActions\.(createBundle|insertBundle)\("#, in: source) == 0)
+        #expect(CadenceSourceScan.matchCount(#"\bbundleCreateFailed\b"#, in: source) == 0)
+        #expect(CadenceSourceScan.matchCount(#"bundleCreateFailureAlertTitle"#, in: source) == 0)
+        // Non-vacuity: the canvas is still the frame that owns the task create it commits.
         #expect(source.contains("struct TimelineDayCanvas: View"))
+        #expect(source.contains("onDropTaskAtMinute: onDropTaskAtMinute,"))
     }
 
     /// The comment-stripper the two scans above read through is discriminating on these files:

@@ -92,7 +92,7 @@ enum CadenceTaskMutationSupport {
     }
 
     /// The fields `assignTask(_:to:)` writes on a task it moves into a bundle, captured before the
-    /// write — the shared-mutation twin of `SchedulingActions.BundleMembership` on macOS (T-760).
+    /// write (T-760). macOS's SchedulingActions kept a twin of it until [[T-3170]] removed it.
     ///
     /// The bundle itself is un-inserted by `commitInsert`, but that does not put either task back:
     /// both were detached from whatever block they were in, given a `bundleOrder`, moved onto the

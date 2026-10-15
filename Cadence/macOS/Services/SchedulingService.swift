@@ -9,38 +9,6 @@ enum SchedulingActions {
     private static let dayEndMin = TimelineDayRange.endMin
     private static let minimumBundleDuration = TimelineDayRange.minimumDuration
 
-    /// The fields `addTask(_:to:)` writes on the task it moves, captured before the write.
-    ///
-    /// The block itself is un-inserted by `commitInsert`, but that does not put the task back: it
-    /// was detached from whatever block it was in, given a `bundleOrder`, moved onto the block's
-    /// day, stripped of its time slot and of any calendar-event link. A refused creation that
-    /// restored only the block would leave the tasks scheduled somewhere the store never agreed to.
-    private struct BundleMembership {
-        private let task: AppTask
-        private let bundle: TaskBundle?
-        private let bundleOrder: Int
-        private let scheduledDate: String
-        private let scheduledStartMin: Int
-        private let calendarEventID: String
-
-        init(_ task: AppTask) {
-            self.task = task
-            bundle = task.bundle
-            bundleOrder = task.bundleOrder
-            scheduledDate = task.scheduledDate
-            scheduledStartMin = task.scheduledStartMin
-            calendarEventID = task.calendarEventID
-        }
-
-        func restore() {
-            task.bundle = bundle
-            task.bundleOrder = bundleOrder
-            task.scheduledDate = scheduledDate
-            task.scheduledStartMin = scheduledStartMin
-            task.calendarEventID = calendarEventID
-        }
-    }
-
     /// Creates a scheduled task in a list or section from a drag on a calendar day column, and
     /// **commits it** ([[T-655]]).
     ///
@@ -145,78 +113,9 @@ enum SchedulingActions {
         normalizeBundleOrder(bundle)
     }
 
-    /// Forms a bundle out of a scheduled task plus a task dropped onto it, **without committing**.
-    ///
-    /// The mutation itself is `CadenceTaskMutationSupport.insertBundle(from:adding:)` — shared, and
-    /// therefore reachable from iOS's Calendar Board too (T-190). This spelling stays because
-    /// `insertBundle(from:adding:in:commit:)` below calls it and reads better in `SchedulingActions`'
-    /// vocabulary; it must not grow a second body.
-    ///
-    /// **Passes a commit that never runs (T-760).** The shared mutation used to commit on its own
-    /// behalf regardless of what this frame did — `addTask` ended its own `try? modelContext.save()`
-    /// twice — which made this function's name a lie: it returned as though nothing were committed
-    /// while the store already held the block. Since the shared mutation now takes a `commit:` and
-    /// owns exactly one commit for the whole unit, handing it `{ _ in }` here keeps this function's
-    /// contract true again — the bundle and both memberships land in the context, pending, and
-    /// `insertBundle(from:adding:in:commit:)` below is what actually saves them.
-    @discardableResult
-    static func createBundle(from targetTask: AppTask, adding draggedTask: AppTask, in context: ModelContext) -> TaskBundle? {
-        try? CadenceTaskMutationSupport.insertBundle(
-            from: targetTask,
-            adding: draggedTask,
-            modelContext: context,
-            commit: { _ in }
-        )
-    }
-
-    /// Forms a block out of a scheduled task plus a task dropped onto it, and **commits the block
-    /// and both memberships as one unit** ([[T-655]]).
-    ///
-    /// The committing sibling of `createBundle(from:adding:in:)` above, added rather than folded
-    /// into it for the reason `insertTask` records — `createBundle` had two overloads on this type
-    /// (the empty-slot one went with [[T-3170]]) and the index needs unanimity before it will
-    /// vouch for the name.
-    ///
-    /// **Both tasks are restored on a refusal, not just the block.** `commitInsert` un-inserts the
-    /// `TaskBundle`, and that on its own would leave two tasks detached from whatever block they
-    /// were in, moved onto a day the store never agreed to and stripped of their time slot and any
-    /// calendar link — the five fields `BundleMembership` restores.
-    ///
-    /// **It can now promise the store holds no block on a refusal (T-760).** `createBundle` above
-    /// used to be the shared mutation's own self-committing call — `addTask` ended `try?
-    /// modelContext.save()` twice, so the pair was already committed before this frame's `commit`
-    /// was ever asked, and an injected refusal here could not model the store's real answer
-    /// (`theSharedTwoTaskBlockMutationCommitsThroughAswallowedSaveOfItsOwn` pinned exactly that gap).
-    /// `createBundle` now hands the shared mutation a commit that never runs, so the bundle and both
-    /// memberships are still pending by the time `commitInsert` below asks for the real one — this
-    /// frame is the single commit for the whole gesture, same as it always claimed to be.
-    ///
-    /// Answers `nil` for a pair the shared mutation refuses — the same task twice, or a target
-    /// with no day and time — which is "nothing to make" rather than a failure, so there is
-    /// nothing to commit and nothing to report.
-    ///
-    /// - Parameter commit: See `CadencePendingChangePersistence.commitInsert(of:in:commit:)`.
-    @discardableResult
-    static func insertBundle(
-        from targetTask: AppTask,
-        adding draggedTask: AppTask,
-        in context: ModelContext,
-        commit: (ModelContext) throws -> Void = { try $0.save() }
-    ) throws -> TaskBundle? {
-        let members = [BundleMembership(targetTask), BundleMembership(draggedTask)]
-        guard let bundle = createBundle(from: targetTask, adding: draggedTask, in: context) else {
-            return nil
-        }
-        do {
-            try CadencePendingChangePersistence.commitInsert(of: bundle, in: context, commit: commit)
-        } catch {
-            for member in members {
-                member.restore()
-            }
-            throw error
-        }
-        return bundle
-    }
+    // [[T-3170]] removed createBundle(from:adding:in:) and insertBundle(from:adding:in:commit:)
+    // with the Mac timeline's drag-a-task-onto-a-task gesture, their only caller. The shared
+    // `CadenceTaskMutationSupport.insertBundle(from:adding:)` stays for iOS's Calendar Board.
 
     static func removeTaskFromBundle(_ task: AppTask, keepOnBundleDate: Bool = true) {
         guard let bundle = task.bundle else { return }

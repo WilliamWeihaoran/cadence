@@ -109,29 +109,6 @@ enum TimelineMetricsSupport {
         }
     }
 
-    /// The "drop here to bundle" shelf pinned to the top of a task block.
-    ///
-    /// One definition, read by the shelf that draws it *and* by the canvas drop delegate that has
-    /// to know the shelf owns that region. Which of the two competing drops wins used to be
-    /// decided by a 750 ms wall-clock window armed by whichever async payload callback returned
-    /// first — so the same gesture bundled a task or moved it to a minute depending on timing.
-    static func bundleDropShelfFrame(blockFrame: TimelineBlockFrame) -> TimelineBlockFrame {
-        let shelfHeight = bundleDropShelfHeight(blockHeight: blockFrame.height)
-        return TimelineBlockFrame(
-            x: blockFrame.x,
-            y: blockFrame.y,
-            width: blockFrame.width,
-            height: shelfHeight + (bundleDropShelfPadding * 2)
-        )
-    }
-
-    /// Inset around the shelf capsule; part of its hit target.
-    static let bundleDropShelfPadding: CGFloat = 5
-
-    static func bundleDropShelfHeight(blockHeight: CGFloat) -> CGFloat {
-        max(12, min(max(30, blockHeight * 0.38), 46, blockHeight - 10))
-    }
-
     /// Column + cascade placement for everything drawn on one day's canvas.
     ///
     /// `cascadeGapMinutes` is the zoom-derived threshold from `CadenceCalendarOverlapLayout` — the

@@ -273,7 +273,11 @@ struct TaskBundleTests {
         context.insert(target)
         context.insert(dragged)
 
-        let bundle = try #require(SchedulingActions.createBundle(from: target, adding: dragged, in: context))
+        // [[T-3170]]: SchedulingActions.createBundle(from:adding:in:) went with the Mac timeline's
+        // gesture; the shared mutation it forwarded to is what the iOS Calendar Board still calls.
+        let bundle = try #require(
+            try CadenceTaskMutationSupport.insertBundle(from: target, adding: dragged, modelContext: context)
+        )
 
         #expect(bundle.dateKey == "2026-05-01")
         #expect(bundle.startMin == 600)
@@ -535,7 +539,7 @@ struct TaskBundleTests {
     /// compile them without the notification and WidgetKit stacks the rest of the enum reaches.
     /// Listing only the extension file would have let the split quietly halve this rule's reach:
     /// `insertBundle(title:…)`, the one member here that minted a title, went with the declaration.
-    /// **[[T-3170]] took that constructor out**, along with `SchedulingActions.createBundle(title:…)`
+    /// **[[T-3170]] took that constructor out**, along with SchedulingActions.createBundle(title:…)
     /// and the quick-create popover's Block tab, so `CadenceTaskBundleMutationSupport.swift`,
     /// `SchedulingService.swift` and `QuickCreateChoicePopover.swift` mint no title and have left
     /// this list; `noNewSurfaceTypesTheRetiredBundleNounEither` still sweeps all three.

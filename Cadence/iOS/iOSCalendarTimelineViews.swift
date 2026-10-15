@@ -93,10 +93,6 @@ struct iOSCalendarTimelineGrid: View {
     let unscheduledTasksByDate: [String: [AppTask]]
     let bundlesByDate: [String: [TaskBundle]]
     let eventsByDate: [String: [EKEvent]]
-    /// Flat, for resolving a drag payload — the same argument `iOSCalendarBoardPlanner` takes and for
-    /// the same reason. The by-day dictionaries above are what the grid *draws*; a drag can cross
-    /// columns, so what it *resolves* against has to be the whole set (T-243).
-    let allTasks: [AppTask]
     /// A multiplier on the base hour height, 1…3. Written once per pinch, not per frame — see
     /// `pinchZoom`.
     @Binding var zoom: Double
@@ -136,10 +132,6 @@ struct iOSCalendarTimelineGrid: View {
     /// Latches a `leadingDate` write this view made itself, so the change coming back does not
     /// re-scroll the grid under the finger that caused it. The Board carries the same latch.
     @State private var isReportingLeadingDate = false
-    /// T-760: `formBundle` commits through the shared mutation now, and this is the one place on
-    /// this grid that can name a refusal. Same alert macOS's `TimelineDayCanvas` and this file's
-    /// sibling board (`iOSCalendarBoardPlanner`) already show for the identical gesture.
-    @State private var bundleCreateFailed = false
     /// The zoom *during* a pinch. `zoom` is `@AppStorage`-backed two views up, and writing a
     /// defaults key sixty times a second is not a thing to do to a gesture — so the live value
     /// lives here and is committed once, on `onEnded`.
@@ -255,31 +247,6 @@ struct iOSCalendarTimelineGrid: View {
             }
             alignWindow(to: newDate, animated: true)
         }
-        .alert(CadenceTaskMutationSupport.bundleCreateFailureAlertTitle, isPresented: $bundleCreateFailed) {
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text(CadenceTaskMutationSupport.bundleSaveFailureNotice)
-        }
-    }
-
-    /// Drop a block on a block and the two become one — the gesture macOS's `TimelineDayCanvas` has
-    /// had all along, and which T-190 could only give iOS's Calendar *Board* because this file had
-    /// no drag mesh at all (T-243).
-    ///
-    /// `CadenceTaskMutationSupport.insertBundle(from:adding:)` is the single implementation of "two
-    /// tasks become a block"; `SchedulingActions.createBundle` is a delegation to it and
-    /// `iOSCalendarBoardPlanner.formBundle` is this same call. A second body here would be the
-    /// fourth spelling of the thing T-190 existed to unify.
-    ///
-    /// **Names a refusal now (T-760).** It used to commit through two saves nobody could hear
-    /// refuse — the block landed either way, so there was, in the swallowed sense, nothing to
-    /// report. It throws now, and this is one of the three canvases sharing that one answer.
-    private func formBundle(from target: AppTask, adding dragged: AppTask) {
-        do {
-            _ = try CadenceTaskMutationSupport.insertBundle(from: target, adding: dragged, modelContext: modelContext)
-        } catch {
-            bundleCreateFailed = true
-        }
     }
 
     /// One day's column, wherever it is being drawn.
@@ -297,15 +264,13 @@ struct iOSCalendarTimelineGrid: View {
             tasks: CadenceScheduleSupport.items(on: key, in: scheduledTasksByDate),
             bundles: CadenceScheduleSupport.items(on: key, in: bundlesByDate),
             events: CadenceScheduleSupport.items(on: key, in: eventsByDate),
-            allTasks: allTasks,
             colWidth: colWidth,
             hourHeight: hourHeight,
             workHoursStartMinute: workHoursStartMinute,
             workHoursEndMinute: workHoursEndMinute,
             onCreateAt: onCreateAt,
             drawsDraftBlocks: drawsDraftBlocks,
-            onClearTime: clearsTime,
-            onFormBundleFromTasks: formBundle(from:adding:)
+            onClearTime: clearsTime
         )
     }
 
@@ -932,10 +897,6 @@ private struct iOSCalendarTimelineDayColumn: View {
     let tasks: [AppTask]
     let bundles: [TaskBundle]
     let events: [EKEvent]
-    /// Every task in the store, for resolving a drag payload. Not `tasks`: the grid renders a window
-    /// of days side by side, so a block can legitimately be dragged from one column onto another,
-    /// and a lookup confined to this column's own day would drop exactly those releases.
-    let allTasks: [AppTask]
     let colWidth: CGFloat
     let hourHeight: CGFloat
     let workHoursStartMinute: Int
@@ -946,10 +907,6 @@ private struct iOSCalendarTimelineDayColumn: View {
     /// Non-`nil` only where a cleared task has a visible place to land — see
     /// `iOSCalendarTimelineGrid.clearsTime`, which is the one decision of it in the app.
     let onClearTime: ((AppTask) -> Void)?
-    /// `(target, dragged)` — the argument order `CadenceTaskMutationSupport.insertBundle(from:adding:)`
-    /// takes, so the block that was dropped *on* stays the one that supplies the slot. Same spelling
-    /// as `iOSCalendarBoardDayColumn`'s.
-    let onFormBundleFromTasks: (AppTask, AppTask) -> Void
 
     /// The in-place draft, owned by the column that drew it. One column, one draft: a press lands
     /// on exactly one day, and a grid that windows a scrolling range would otherwise need a rule
@@ -1001,8 +958,7 @@ private struct iOSCalendarTimelineDayColumn: View {
                     task: task,
                     startMin: range.start,
                     endMin: range.end,
-                    onClearTime: onClearTime.map { clear in { clear(task) } },
-                    bundleFormingDrop: bundleFormingDrop(onto: task)
+                    onClearTime: onClearTime.map { clear in { clear(task) } }
                 )
                 .frame(width: slot.width, height: blockHeight(start: range.start, end: range.end))
                 .offset(x: slot.x, y: yOffset(for: range.start))
@@ -1196,29 +1152,6 @@ private struct iOSCalendarTimelineDayColumn: View {
                 yOffset: { yOffset(for: $0) }
             )
         }
-    }
-
-    /// The same guard the Calendar Board's card makes, for the same reason and against the same
-    /// shared mutation: a block is `dateKey` **plus** `startMin`, and
-    /// `CadenceTaskMutationSupport.insertBundle(from:adding:)` returns `nil` for a target with
-    /// neither — so a block that cannot supply a slot declines rather than lighting up amber and
-    /// then silently doing nothing.
-    ///
-    /// On this surface the guard is very nearly a tautology, and that is the point of writing it
-    /// anyway: every block drawn here comes from `CadenceScheduleSupport.tasksByScheduledDate`, so it
-    /// has a slot by construction. The guard states the requirement locally instead of resting on a
-    /// query two files away that could reasonably be widened — the "do-dated-only card" the Board
-    /// declines is exactly what a widened query would send here.
-    ///
-    /// It does **not** pass `onTargetedChanged`. This column has no `dropDestination` of its own for
-    /// a nested block to shadow, so there is no second reading of the release to suppress, and none
-    /// of the Board's `nestedDropTargetID` / `recentlyBundledTaskID` machinery is needed here.
-    private func bundleFormingDrop(onto task: AppTask) -> iOSBundleFormingDrop? {
-        guard task.scheduledStartMin >= 0 else { return nil }
-        return iOSBundleFormingDrop(
-            allTasks: allTasks,
-            onDropTask: { dragged in onFormBundleFromTasks(task, dragged) }
-        )
     }
 
     /// The today tint, drawn over the whole column.
@@ -1507,21 +1440,10 @@ struct iOSTimelineTaskBlock: View {
     /// did not change is that clearing a block's time still lands the task somewhere you can see.
     /// The destination moved one divider left; only its name was stale.
     var onClearTime: (() -> Void)? = nil
-    /// Non-`nil` only on a surface that can turn two blocks into one: the Calendar screen's day
-    /// columns. Today's schedule pane passes `nil` and is byte-for-byte unchanged — it stacks its
-    /// blocks inside hour rows rather than positioning them on a canvas, and it already spends the
-    /// block's trailing corner on `onClearTime`.
-    ///
-    /// **It gates the drag as well as the drop**, which is why one optional covers both halves of a
-    /// gesture: a lift that no sibling can accept is an affordance that does nothing, and this block
-    /// sits inside two nested scroll views and under a `simultaneousGesture` pinch — the last place
-    /// to install a recognizer speculatively. See T-243.
-    var bundleFormingDrop: iOSBundleFormingDrop? = nil
     // T-201: the page's `iOSTaskInspectorHost` presents, not this block. Both hosts of this block
     // rebuild their grid from a query keyed on the day and the slot, so completing or cancelling a
     // task from inside the panel dropped the block and the panel with it.
     @Environment(\.iOSTaskInspector) private var taskInspector
-    @State private var isBundleFormingTargeted = false
 
     private var listColor: Color {
         Color(hex: task.containerColor)
@@ -1544,44 +1466,12 @@ struct iOSTimelineTaskBlock: View {
         CadenceCalendarEventStyle.plateSecondaryLabelColor()
     }
 
-    /// T-243. `.draggable` and `.dropDestination` are attached in an `if let` branch rather than
-    /// always-on-returning-`false`, for the two reasons `iOSBoardTaskCard` already documents and one
-    /// that is specific to this surface:
-    ///
-    /// - `isTargeted` fires whether or not the closure accepts the drop, so an always-attached
-    ///   version would light up blocks on Today's pane, which has nothing to bundle them with;
-    /// - `.dropDestination` has no erased form, so the choice cannot be a ternary at the call site;
-    /// - and the file's own note about `.draggable` "delaying the touches of everything under it"
-    ///   is about *installing recognizers*, so the honest response is to install none where the
-    ///   gesture is not offered. `bundleFormingDrop` is fixed per call site, so this branch never
-    ///   flips at runtime.
-    ///
-    /// **The pinch and the lift coexist, and it is worth saying why rather than only that they do.**
-    /// `iOSCalendarTimelineGrid` carries `MagnifyGesture` as a `simultaneousGesture` on the
-    /// container. A magnification needs two fingers; a `UIDragInteraction` lift needs one finger held
-    /// still for ~350ms. Neither can begin in the other's territory, and a one-finger pan that moves
-    /// immediately is still a scroll, because the lift recognizer's slop is broken by the first
-    /// movement. What the sidebar bug was actually about — `.draggable` delaying *taps* — does not
-    /// arise either: the block's tap is a `Button`, and the drag interaction defers a touch only
-    /// until its long-press threshold fails.
+    /// [[T-3170]]: the block is neither draggable nor a drop target any more. Its only drag was the
+    /// drop-a-block-on-a-block gesture that formed a Block, and this grid's day column has no
+    /// `dropDestination` of its own, so there is no reschedule drop for a lift to feed. A task
+    /// released over a block is simply not accepted; the time is moved from the task inspector.
     var body: some View {
-        if let drop = bundleFormingDrop {
-            block
-                .draggable(TaskDragPayload.string(for: task.id))
-                .dropDestination(for: String.self) { items, _ in
-                    guard let payload = items.first,
-                          let taskID = TaskDragPayload.taskID(from: payload),
-                          taskID != task.id,
-                          let dragged = drop.allTasks.first(where: { $0.id == taskID }) else { return false }
-                    drop.onDropTask(dragged)
-                    return true
-                } isTargeted: { targeted in
-                    isBundleFormingTargeted = targeted
-                    drop.onTargetedChanged(targeted)
-                }
-        } else {
-            block
-        }
+        block
     }
 
     private var block: some View {
@@ -1619,29 +1509,17 @@ struct iOSTimelineTaskBlock: View {
             // borrowing happened to composite to. The done state is carried by the ink tier and
             // the strikethrough, not by a second fill at a second opacity.
             .background {
-                ZStack {
-                    blockShape.fill(CadenceCalendarEventStyle.plateFill(for: listColor))
-                    if isBundleFormingTargeted {
-                        blockShape.fill(Theme.amber.opacity(0.16))
-                    }
-                }
+                blockShape.fill(CadenceCalendarEventStyle.plateFill(for: listColor))
             }
             .clipShape(blockShape)
-            // One layer, one radius: the targeted state re-tints the border this block already
-            // draws rather than adding a second ring. Amber for the reason `iOSBoardTaskCard` gives
-            // — `iOSTimelineBundleBlock` is amber at this same weight, so a block about to *become*
-            // one says so in the colour it is about to take.
-            //
             // The resting edge is the list colour's own lit rim at `chipBorderOpacity`, which is
             // the edge a solved plate asks for. `Theme.borderSubtle` is a near-black hairline; it
             // was the right edge for the near-black surface this plate replaced and is invisible
             // on the plate itself.
             .overlay {
                 blockShape.strokeBorder(
-                    isBundleFormingTargeted
-                        ? Theme.amber.opacity(0.74)
-                        : listColor.opacity(CadenceCalendarEventStyle.chipBorderOpacity()),
-                    lineWidth: isBundleFormingTargeted ? 1.5 : 1
+                    listColor.opacity(CadenceCalendarEventStyle.chipBorderOpacity()),
+                    lineWidth: 1
                 )
             }
         }

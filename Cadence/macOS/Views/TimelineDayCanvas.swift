@@ -55,8 +55,6 @@ struct TimelineDayCanvas: View {
     @AppStorage(CalendarWorkHoursPreferences.endMinuteKey) private var workHoursEndMinute = CalendarWorkHoursPreferences.defaultEndMinute
     @Environment(\.modelContext) private var modelContext
     @Environment(CalendarManager.self) private var calendarManager
-    /// Set when the store refuses a block formed by dropping a task on a task ([[T-655]]).
-    @State private var bundleCreateFailed = false
     @State private var eventCreateFailureNotice: String?
 
     private func clearDraftCreation() {
@@ -95,7 +93,10 @@ struct TimelineDayCanvas: View {
                     onDropTaskAtMinute: onDropTaskAtMinute,
                     onDropBundleAtMinute: onDropBundleAtMinute,
                     onDropAllDayEventAtMinute: onDropAllDayEventAtMinute,
-                    bundleShelfFrames: bundleShelfFrames(layouts: layouts),
+                    // [[T-3170]]: no task block draws a bundle shelf any more, so no region of
+                    // the canvas defers a task drop to one. The delegate's parameter is in a
+                    // Codex-leased file and stays until that lease lets it go.
+                    bundleShelfFrames: [],
                     isTargeted: $isDropTargeted,
                     previewTaskID: $dropPreviewTaskID,
                     previewStartMin: $dropPreviewStartMin,
@@ -168,9 +169,6 @@ struct TimelineDayCanvas: View {
                 activeDragTaskID: $activeDragTaskID,
                 activeDragBundleID: $activeDragBundleID,
                 onTaskDroppedOnBundle: onDropTaskOnBundle,
-                onCreateBundleFromTasks: { targetTask, draggedTask in
-                    formBundle(from: targetTask, adding: draggedTask)
-                },
                 onTaskSelected: selectTaskBlock,
                 onBundleSelected: selectBundleBlock
             )
@@ -192,32 +190,6 @@ struct TimelineDayCanvas: View {
         // side by side and the one with no seeded block on it is the one a draft can be made in.
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier(CadenceAccessibilityIdentifiers.timelineDayCanvas(dateKey: dateKey))
-        .alert(CadenceTaskMutationSupport.bundleCreateFailureAlertTitle, isPresented: $bundleCreateFailed) {
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text(CadenceTaskMutationSupport.bundleSaveFailureNotice)
-        }
-    }
-
-    /// **Two tasks become a block, and the block is committed here ([[T-655]]).**
-    ///
-    /// Every frame below this one is handed a `ModelContext` — `SchedulingActions.insertBundle`,
-    /// `CadenceTaskMutationSupport.insertBundle`, `addTask` — which is this repo's statement that
-    /// the caller owns the unit of work. This canvas reached for the ambient context, so it is that
-    /// caller; it used to drop the answer on the floor and report nothing either way.
-    ///
-    /// The gesture has no draft popover to keep open, so the refusal is an alert, the same one
-    /// `SchedulePanel` and the calendar day column raise for the create-a-block gesture.
-    private func formBundle(from targetTask: AppTask, adding draggedTask: AppTask) {
-        do {
-            _ = try SchedulingActions.insertBundle(
-                from: targetTask,
-                adding: draggedTask,
-                in: modelContext
-            )
-        } catch {
-            bundleCreateFailed = true
-        }
     }
 
     private func resetCanvasSelection() {
@@ -330,24 +302,6 @@ struct TimelineDayCanvas: View {
                 defaultsToCalendarEvent: prefersCalendarEventCreation
             )
         )
-    }
-
-    /// Shelf rects for the task blocks currently offering to bundle the dragged task. Derived
-    /// from the same `TimelineBlockFrame`s the blocks are drawn from, so the region the canvas
-    /// defers on is exactly the region the shelf draws.
-    private func bundleShelfFrames(layouts: [TimelineBlockLayout]) -> [TimelineBlockFrame] {
-        guard let draggedTaskID = activeDragTaskID else { return [] }
-        return layouts.compactMap { layout in
-            guard layout.task.id != draggedTaskID else { return nil }
-            return TimelineMetricsSupport.bundleDropShelfFrame(
-                blockFrame: timelineFrame(
-                    startMinute: layout.task.scheduledStartMin,
-                    durationMinutes: layout.task.timelineDurationMinutes,
-                    column: layout.column,
-                    totalColumns: layout.totalColumns
-                )
-            )
-        }
     }
 
     private func blockedFrames(

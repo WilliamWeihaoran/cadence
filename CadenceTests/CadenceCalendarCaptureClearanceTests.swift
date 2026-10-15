@@ -99,15 +99,16 @@ struct CadenceCalendarCaptureClearanceTests {
         let timeline = try read("Cadence/iOS/iOSCalendarTimelineViews.swift")
         let scroller = try #require(CadenceSourceScan.declarationBody("private func gridScroller(", in: timeline))
 
-        // Scope proof: the slice is the function, not the file. `formBundle(from:adding:)` is the
-        // declaration directly above it and gridScroller only passes its *reference*.
+        // Scope proof: the slice is the function, not the file. The column view's own name is in the
+        // file and not in the scroller, which only calls the helper that builds it. (This used to
+        // read formBundle(from:adding:), the declaration above it; [[T-3170]] removed that.)
         //
         // The needle is `dayColumn(for:`, not `iOSCalendarTimelineDayColumn(`: since [[T-3081]] the
         // grid draws two spans — a scrolling run of days and Today's single pinned column — and
         // builds the column itself in one shared helper so the two cannot drift. The scroller
         // calls that helper; the helper names the view.
         #expect(scroller.contains("dayColumn(for: "))
-        #expect(scroller.contains("CadenceTaskMutationSupport.insertBundle") == false)
+        #expect(scroller.contains("iOSCalendarTimelineDayColumn(") == false)
         #expect(
             timeline.contains("iOSCalendarTimelineDayColumn("),
             "non-vacuity: the helper the scroller calls no longer builds the column"

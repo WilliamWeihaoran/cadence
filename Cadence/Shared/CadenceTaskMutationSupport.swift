@@ -1112,10 +1112,10 @@ extension CadenceTaskMutationSupport {
     /// Forms a new bundle out of a scheduled task plus a task dropped onto it.
     ///
     /// **This is the one implementation of the drop-a-task-on-a-task gesture.** It was
-    /// `SchedulingActions.createBundle(from:adding:)` inside `#if os(macOS)`, in a file that imports
-    /// no AppKit, which is why the gesture existed only on the Mac timeline (T-190).
-    /// `SchedulingActions.createBundle(from:adding:)` now delegates here, so macOS's timeline and
-    /// iOS's Calendar Board mint a block the same way.
+    /// SchedulingActions.createBundle(from:adding:) inside `#if os(macOS)`, in a file that imports
+    /// no AppKit, which is why the gesture existed only on the Mac timeline (T-190). That Mac
+    /// spelling forwarded here until [[T-3170]] removed the gesture from both timelines with it;
+    /// iOS's Calendar Board is the one caller left, kept while its file is Codex-leased.
     ///
     /// Returns `nil` when the drop cannot form a block: the same task twice, or a target with no day
     /// or no time-of-day slot. A bundle *is* a timeline block — `dateKey` plus `startMin` — so a
@@ -1127,14 +1127,13 @@ extension CadenceTaskMutationSupport {
     /// **Throws and takes `commit:` now (T-760).** It used to insert the bundle and call `addTask`
     /// twice, each ending its own `try? modelContext.save()` — so the block was committed by two
     /// saves nobody could hear refuse, from a frame with no `try?` of its own. That shape is why
-    /// `iOSCalendarTimelineViews.formBundle` and `iOSCalendarBoardView.formBundle` reported nothing:
+    /// the day timeline's formBundle (gone since [[T-3170]]) and `iOSCalendarBoardView.formBundle` reported nothing:
     /// the mutation *did* reach a commit, just not one that answered. `addTask` now writes its five
     /// fields through the pending, non-committing `assignTask(_:to:)`, and this frame is the one
     /// commit for the whole unit — the bundle insert and both memberships — through
     /// `CadencePendingChangePersistence.commitInsert`. A refusal restores both tasks via
-    /// `BundleMembership`, the shared-mutation twin of `SchedulingActions.BundleMembership` (macOS's
-    /// own committing wrapper now forwards `commit:` straight here rather than keeping a second
-    /// copy of this undo).
+    /// `BundleMembership`. macOS's own committing wrapper kept a twin of it until [[T-3170]]
+    /// removed that wrapper with the Mac timeline's gesture.
     ///
     /// - Parameter commit: See `CadencePendingChangePersistence.commitInsert(of:in:commit:)`.
     @discardableResult

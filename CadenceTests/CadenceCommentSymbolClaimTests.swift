@@ -917,7 +917,15 @@ enum CadenceCommentSymbolClaim {
     /// change that deleted its ledger line, so nothing here needs a tombstone: a corrected
     /// sentence names a real declaration, which is the tombstones' territory only if the repo
     /// later removes what it now correctly names.
-    static let staleClaims: [String] = []
+    ///
+    /// **One is back, and it is held here rather than fixed because its file is Codex-leased
+    /// ([[T-3170]]).** The Calendar Board's formBundle doc says the Mac timeline "has had" the
+    /// gesture as SchedulingActions.createBundle(from:adding:), which "now delegates" to the shared
+    /// mutation. T-3170 removed both the gesture and that spelling from the Mac, so the sentence is
+    /// stale in the present tense. Delete this line in the change that corrects the comment.
+    static let staleClaims: [String] = [
+        "Cadence/iOS/iOSCalendarBoardView.swift `SchedulingActions.createBundle(from:adding:)`"
+    ]
 
     static var ledger: [String] { (deliberateTombstones + staleClaims).sorted() }
 
@@ -976,6 +984,9 @@ enum CadenceCommentSymbolClaim {
         "Cadence/macOS/Views/TasksPanelDropCoordinator.swift `taskDropHandler(scopeTasks:dropKey:)`",
         "CadenceTests/CadenceColorPaletteTests.swift `ranges(of:options:)`",
         "CadenceTests/CadenceCommentSymbolClaimTests.swift `foo(_:)`",
+        // [[T-3170]]: a tombstone for the iOS quick-create sheet's Block arm. It resolved by accident
+        // until the Mac's SchedulingActions spelling of the same name went too.
+        "CadenceTests/CadenceCreateTaskCommitSurfaceTests.swift `createBundle()`",
         "CadenceTests/CadenceCreateTaskCommitSurfaceTests.swift `createScheduledTask()`",
         "CadenceTests/CadenceLaunchWiringTests.swift `unregisterForRemoteNotifications()`",
         "CadenceTests/CadenceSettingsSectionCopyTests.swift `sectionTitle(_:of:)`",
@@ -999,7 +1010,8 @@ enum CadenceCommentSymbolClaim {
         // 36 before T-1091 ledgered its two examples; 37 since [[T-1571]] removed the one of
         // those two that was never a finding, only a member the reader could not reach.
         #expect(tombstones.count == 37)
-        #expect(stale.count == 0)
+        // 1 since [[T-3170]]: the leased Calendar Board's sentence about the Mac spelling it removed.
+        #expect(stale.count == 1)
     }
 
     /// The sweep. Exact set equality, both directions, over every Swift file in all five targets.
@@ -1151,7 +1163,8 @@ enum CadenceCommentSymbolClaim {
         #expect(illustrative == illustrative.sorted())
 
         let tombstones = ledger.subtracting(sdk).subtracting(illustrative)
-        #expect(tombstones.count == 20, "the tombstone remainder is \(tombstones.count), not 20")
+        // 21 since [[T-3170]] ledgered the quick-create sheet's createBundle() tombstone.
+        #expect(tombstones.count == 21, "the tombstone remainder is \(tombstones.count), not 21")
         #expect(sdk.count == 5)
         #expect(illustrative.count == 2)
         #expect(tombstones.count + sdk.count + illustrative.count == Self.unqualifiedLedger.count)
@@ -1175,7 +1188,7 @@ enum CadenceCommentSymbolClaim {
         let ledger = Self.unqualifiedLedger
         #expect(Set(ledger).count == ledger.count)
         #expect(ledger == ledger.sorted())
-        #expect(ledger.count == 27)
+        #expect(ledger.count == 28)
         #expect(Set(ledger).isDisjoint(with: Set(Self.ledger)))
     }
 
