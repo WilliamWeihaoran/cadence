@@ -515,17 +515,19 @@ struct CalendarTimelineRangeTests {
         )
     }
 
-    /// `iOSCalendarQuickCreateSheet.createEvent()` is a private method on a SwiftUI view in an
-    /// `#if os(iOS)` file, so this target can neither call it nor compile it. The scan is scoped
-    /// to that **function body**.
+    /// The quick-create sheet's event write, which [[T-3171]] moved onto the shared panel: the sheet
+    /// calls `iOSScheduleDraftCreation.createEvent`, the one create helper it shares with the iPad
+    /// timeline, and dismisses only on its `nil`. Both are in `#if os(iOS)` files this target can
+    /// neither call nor compile, so the scan is scoped to the two **function bodies**.
     ///
     /// What it pins is the shape of the bug rather than a spelling: `createEvent()` used to leave
     /// two paths that returned without a word — an unparseable date key, and the `false` that
     /// missing access, no writable calendar, a bad range and a throwing save all collapse into.
-    /// A bare `else { return }` anywhere in this body is that bug back.
+    /// A bare `else { return }` anywhere in the helper's body is that bug back; a sheet that
+    /// dismisses without reading the helper's answer is the same bug one frame up.
     @Test func theQuickCreateSheetHasNoSilentEventFailurePath() throws {
-        let raw = try CadenceSourceScan.sourceFile("Cadence/iOS/iOSCalendarQuickCreateSheet.swift")
-        #expect(raw.count > 400, "iOSCalendarQuickCreateSheet.swift read as \(raw.count) characters")
+        let raw = try CadenceSourceScan.sourceFile("Cadence/iOS/iOSTimelineDraftCreate.swift")
+        #expect(raw.count > 400, "iOSTimelineDraftCreate.swift read as \(raw.count) characters")
 
         let stripped = CadenceSourceScan.strippingComments(raw)
         #expect(stripped != raw, "the comment stripper removed nothing")
@@ -533,23 +535,43 @@ struct CalendarTimelineRangeTests {
 
         let body = try #require(
             CadenceSourceScan.functionBody(named: "createEvent", in: stripped),
-            "could not find createEvent()"
+            "could not find iOSScheduleDraftCreation.createEvent"
         )
-        #expect(body.contains("calendarManager.createEvent("), "createEvent() body looks wrong")
+        #expect(body.contains("calendarManager.createEvent("), "createEvent body looks wrong")
         #expect(
-            body.contains("actionError = CadenceCalendarEventEditingSupport.saveFailureNotice"),
-            "createEvent() no longer reports a rejected write"
+            CadenceSourceScan.matchCount(#"return CadenceCalendarEventEditingSupport\.saveFailureNotice\(for:"#, in: body) == 2,
+            "createEvent no longer reports both a refused write and an unspellable range"
         )
+        // The helper answers with a value, so its early exits are `else { return <notice> }` —
+        // which the needle, written for a `Void` method, also matches. Every one it finds must be
+        // returning the shared notice; one that returns anything else is the silent path back.
+        let earlyExits = CadenceSourceScan.matchCount(silentReturnPattern, in: body)
+        let reportedExits = CadenceSourceScan.matchCount(
+            #"else\s*\{\s*return CadenceCalendarEventEditingSupport\.saveFailureNotice\(for:"#,
+            in: body
+        )
+        #expect(earlyExits >= 1, "non-vacuity: the unspellable-range exit is gone")
         #expect(
-            CadenceSourceScan.matchCount(silentReturnPattern, in: body) == 0,
-            "createEvent() still has a failure path that returns without saying anything"
+            earlyExits == reportedExits,
+            "createEvent still has a failure path that returns without saying anything"
         )
+
+        let sheet = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/iOS/iOSCalendarQuickCreateSheet.swift")
+        )
+        let create = try #require(CadenceSourceScan.functionBody(named: "create", in: sheet), "could not find the sheet's create()")
+        #expect(create.contains("iOSScheduleDraftCreation.createEvent(from: draft"))
+        #expect(CadenceSourceScan.matchCount(#"if failure == nil \{ dismiss\(\) \}"#, in: create) == 1)
+        #expect(CadenceSourceScan.matchCount(#"dismiss\(\)"#, in: create) == 1, "the sheet dismisses on a path that ignores the answer")
+        #expect(create.contains("return failure"))
     }
 
-    /// Both iOS event sheets read the shared notices, so neither can drift into wording of its own.
+    /// Both iOS event writers read the shared notices, so neither can drift into wording of its own.
+    /// [[T-3171]]: the quick-create sheet's write is `iOSScheduleDraftCreation`'s now, so that is
+    /// the file read for it.
     @Test func bothIOSEventSheetsReadTheSharedWriteFailureNotices() throws {
         for relativePath in [
-            "Cadence/iOS/iOSCalendarQuickCreateSheet.swift",
+            "Cadence/iOS/iOSTimelineDraftCreate.swift",
             "Cadence/iOS/iOSCalendarEventEditSheet.swift"
         ] {
             let stripped = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(relativePath))

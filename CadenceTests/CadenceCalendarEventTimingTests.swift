@@ -603,14 +603,21 @@ struct CadenceCalendarEventTimingTests {
         }
     }
 
-    /// The three call sites, in source: each sets its start through `CadenceCalendarEventTiming`
-    /// and each keeps its end as a duration added to that start. `Cadence/iOS/` is behind
-    /// `#if os(iOS)` while `CadenceTests` builds on macOS, so the iOS site has no other reachable
-    /// pin; the two macOS sites are scanned the same way because their end legs are likewise
-    /// unreachable without an authorized `EKEventStore`, which this suite must never open.
+    /// The call sites, in source: each sets its start through `CadenceCalendarEventTiming` and each
+    /// macOS one keeps its end as a duration added to that start. The two macOS sites are scanned
+    /// because their end legs are unreachable without an authorized `EKEventStore`, which this
+    /// suite must never open.
+    ///
+    /// [[T-3171]] moved the iOS quick-create sheet's write onto the shared panel: it creates
+    /// through `iOSScheduleDraftCreation.createEvent`, which resolves both ends with
+    /// `draft.eventDateRange()` — the wall-clock range `CadenceScheduleDraftTests` pins
+    /// behaviourally at the gap minute. The sheet now has an End time, not a Duration, so its end
+    /// is a time on the wall and no longer an elapsed length; the scan below holds that it has no
+    /// arithmetic of its own left and that the shared helper is the one place the range is made.
     @Test func everyEventStartWriteSetsTheClockAndEveryEventEndStaysADuration() throws {
         let manager = try CadenceCommitSurfaceScan.scanned("Cadence/macOS/Services/CalendarManager.swift")
         let sheet = try CadenceCommitSurfaceScan.scanned("Cadence/iOS/iOSCalendarQuickCreateSheet.swift")
+        let creation = try CadenceCommitSurfaceScan.scanned("Cadence/iOS/iOSTimelineDraftCreate.swift")
 
         // The stripper must actually be discriminating here, or every absence below is free.
         let strippedProbe = CadenceSourceScan.strippingComments("let a = 1 // value: startMin\n")
@@ -622,10 +629,20 @@ struct CadenceCalendarEventTimingTests {
             CadenceSourceScan.matchCount("CadenceCalendarEventTiming\\.startDate\\(", in: manager) == 3,
             "CalendarManager has exactly three minute-of-day start legs"
         )
+        // The sheet resolves no instant itself; the shared creation helper resolves one range,
+        // through the draft.
         #expect(
-            CadenceSourceScan.matchCount("CadenceCalendarEventTiming\\.startDate\\(", in: sheet) == 1,
-            "the quick-create sheet has exactly one"
+            CadenceSourceScan.matchCount("CadenceCalendarEventTiming\\.startDate\\(", in: sheet) == 0,
+            "the quick-create sheet builds an event start of its own again"
         )
+        #expect(
+            CadenceSourceScan.matchCount("calendarManager\\.createEvent\\(", in: sheet) == 0,
+            "the quick-create sheet writes an event itself instead of through iOSScheduleDraftCreation"
+        )
+        #expect(sheet.contains("iOSScheduleDraftCreation.createEvent(from: draft"))
+        let createEvent = try #require(CadenceSourceScan.functionBody(named: "createEvent", in: creation))
+        #expect(CadenceSourceScan.matchCount("draft\\.eventDateRange\\(\\)", in: createEvent) == 1)
+        #expect(CadenceSourceScan.matchCount("calendarManager\\.createEvent\\(", in: createEvent) == 1)
 
         // Positive: the end legs are still durations added to the start.
         #expect(
@@ -640,13 +657,13 @@ struct CadenceCalendarEventTimingTests {
             manager.contains("timingCalendar.date(byAdding: .minute, value: max(5, durationMinutes), to: startDate)"),
             "createStandaloneEvent's end is durationMinutes of real time after its start (T-3051)"
         )
-        #expect(
-            sheet.contains("Calendar.current.date(byAdding: .minute, value: max(5, estimatedMinutes), to: startDate)"),
-            "the sheet's end is estimatedMinutes of real time after its start"
-        )
 
         // Negative: no minute-of-day is added to a day's midnight anywhere in these two files.
-        for (path, source) in [("CalendarManager.swift", manager), ("iOSCalendarQuickCreateSheet.swift", sheet)] {
+        for (path, source) in [
+            ("CalendarManager.swift", manager),
+            ("iOSCalendarQuickCreateSheet.swift", sheet),
+            ("iOSTimelineDraftCreate.swift", creation)
+        ] {
             let offenders = CadenceSourceScan.matchLines(
                 "byAdding:\\s*\\.minute,\\s*value:\\s*start(Min|Minute)",
                 in: source
@@ -658,7 +675,11 @@ struct CadenceCalendarEventTimingTests {
         // is the form `createStandaloneEvent` used, so a `byAdding: .minute` scan — the one above,
         // and the `rg` that produced T-3048 and T-3050 — scores 0 on it. Neither file may turn a
         // minute-of-day into an instant that way again.
-        for (path, source) in [("CalendarManager.swift", manager), ("iOSCalendarQuickCreateSheet.swift", sheet)] {
+        for (path, source) in [
+            ("CalendarManager.swift", manager),
+            ("iOSCalendarQuickCreateSheet.swift", sheet),
+            ("iOSTimelineDraftCreate.swift", creation)
+        ] {
             let offenders = CadenceSourceScan.matchLines("addingTimeInterval", in: source)
             #expect(offenders.isEmpty, "\(path) converts a time by elapsed seconds: \(offenders)")
         }
@@ -791,7 +812,11 @@ struct CadenceCalendarEventTimingTests {
         let range = try #require(CadenceSourceScan.functionBody(named: "eventDateRange", in: draft))
         #expect(CadenceSourceScan.matchCount("CadenceCalendarEventTiming\\.startDate\\(day:", in: range) == 2)
         #expect(CadenceSourceScan.matchLines(needle, in: draft).isEmpty)
-        // The time binding and `defaultStartTime`.
-        #expect(CadenceSourceScan.matchCount("CadenceCalendarEventTiming\\.settingStartMinute\\(", in: quick) == 2)
+        // [[T-3171]]: the quick-create sheet's time binding went with its form onto the panel's
+        // roller, so `defaultStartMinute` — the opening slot, through the gap rule — is the one
+        // start it still resolves itself; its write is the draft's `eventDateRange()` above.
+        #expect(CadenceSourceScan.matchCount("CadenceCalendarEventTiming\\.settingStartMinute\\(", in: quick) == 1)
+        let opening = try #require(CadenceSourceScan.functionBody(named: "defaultStartMinute", in: quick))
+        #expect(CadenceSourceScan.matchCount("CadenceCalendarEventTiming\\.settingStartMinute\\(", in: opening) == 1)
     }
 }

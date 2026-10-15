@@ -322,8 +322,9 @@ struct CadenceSchedulePanel<NotesField: View>: View {
         .accessibilityLabel("Priority: \(draft.priority.label)")
         // **The outcome, not the gesture** (T-521, and this panel is why that sweep
         // covers `Shared/`). This control's hint read "Tap to cycle priority", which
-        // was copied from `iOSCalendarQuickCreateSheet` — where it is correct, because
-        // that sheet is under `#if os(iOS)` and touch is the only way to reach it. This
+        // was copied from `iOSCalendarQuickCreateSheet`'s old flag — correct there,
+        // because that sheet is under `#if os(iOS)` and touch is the only way to reach
+        // it, and retired with it when the sheet adopted this panel ([[T-3171]]). This
         // panel is shared, so on the Mac the hint named a gesture that surface does not
         // have: VoiceOver activates a control there with Control-Option-Space.
         .accessibilityHint("Changes the priority to the next level")

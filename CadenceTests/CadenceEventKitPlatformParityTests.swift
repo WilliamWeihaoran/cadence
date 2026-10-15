@@ -495,11 +495,12 @@ struct CadenceEventKitPlatformParityTests {
         }
     }
 
-    /// Both iOS event sheets show the cause, through the shared notices rather than a third
-    /// wording of their own.
+    /// Both iOS event writers show the cause, through the shared notices rather than a third
+    /// wording of their own. [[T-3171]]: the quick-create sheet writes through
+    /// `iOSScheduleDraftCreation`, shared with the iPad timeline, so that file is read for it.
     @Test func bothIOSEventSheetsNameTheCauseOfARejectedWrite() throws {
         for path in [
-            "Cadence/iOS/iOSCalendarQuickCreateSheet.swift",
+            "Cadence/iOS/iOSTimelineDraftCreate.swift",
             "Cadence/iOS/iOSCalendarEventEditSheet.swift"
         ] {
             let raw = try CadenceSourceScan.sourceFile(path)

@@ -428,11 +428,11 @@ struct CadenceCalendarConsistencySurfaceTests {
             "the label came back as an argument, which is how there were three of them"
         )
 
-        // [[T-3171]] took the event editor out of this list: it no longer draws a Schedule card of
-        // its own but hosts the shared schedule panel, whose Start is the roller row that takes a
-        // label because the panel also carries an End. Re-pointed below, not dropped.
+        // [[T-3171]] took the event editor, and then the quick-create sheet, out of this list:
+        // neither draws a Schedule card of its own any more, both host the shared schedule panel,
+        // whose Start is the roller row that takes a label because the panel also carries an End.
+        // Re-pointed below, not dropped.
         for (path, binding) in [
-            ("Cadence/iOS/iOSCalendarQuickCreateSheet.swift", "startTimeMinutesBinding"),
             ("Cadence/iOS/iOSCalendarBundleDetailSheet.swift", "startMinuteBinding")
         ] {
             let source = try scannedSource(path)
@@ -457,14 +457,17 @@ struct CadenceCalendarConsistencySurfaceTests {
             )
         }
 
-        // The event editor's start time is the panel's, and the editor spells none of its own.
-        let editor = try scannedSource("Cadence/iOS/iOSCalendarEventEditSheet.swift")
-        #expect(editor.contains("CadenceSchedulePanel("), "the event editor does not host the shared panel")
-        #expect(!editor.contains("CadenceStartTimeFieldRow("), "the event editor draws its own start row again")
-        for retired in [#"label: "Starts""#, #"label: "Time""#, #"label: "Start""#] {
-            #expect(CadenceSourceScan.matchCount(retired, in: editor) == 0, "the event editor spells \(retired)")
+        // The event editor's and the quick-create sheet's start times are the panel's, and neither
+        // sheet spells one of its own.
+        for path in ["Cadence/iOS/iOSCalendarEventEditSheet.swift", "Cadence/iOS/iOSCalendarQuickCreateSheet.swift"] {
+            let editor = try scannedSource(path)
+            #expect(editor.contains("CadenceSchedulePanel("), "\(path) does not host the shared panel")
+            #expect(!editor.contains("CadenceStartTimeFieldRow("), "\(path) draws its own start row again")
+            for retired in [#"label: "Starts""#, #"label: "Time""#, #"label: "Start""#] {
+                #expect(CadenceSourceScan.matchCount(retired, in: editor) == 0, "\(path) spells \(retired)")
+            }
+            #expect(CadenceSourceScan.matchCount("showStartTimePicker", in: editor) == 0)
         }
-        #expect(CadenceSourceScan.matchCount("showStartTimePicker", in: editor) == 0)
         let panel = try scannedSource("Cadence/Shared/Components/CadenceSchedulePanel.swift")
         #expect(
             CadenceSourceScan.matchCount(#"CadenceTimeRollerFieldRow\(label: "Start""#, in: panel) == 1,

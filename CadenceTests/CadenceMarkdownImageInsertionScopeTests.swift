@@ -364,17 +364,21 @@ struct CadenceMarkdownImageInsertionScopeTests {
     /// Quick create is the one host where the flat refusal would be **wrong**, and this is the test
     /// that says so.
     ///
-    /// Its single `notes` state has two destinations: `calendarManager.createEvent(notes:)` in
-    /// event mode, which is EventKit and outside the store, and `task.notes` in
-    /// `configureTask(_:)` otherwise. `AppTask.notes` is in the inventory — reaching it was the
-    /// whole of T-411 — so an image pasted into a *task* note here is safe and refusing it would
-    /// remove a working capability to fix a hazard that mode does not have. Copying the sibling
-    /// sheet's `false` is the plausible mistake; this fails on it.
+    /// Its single draft note has two destinations: `calendarManager.createEvent(notes:)` in event
+    /// mode, which is EventKit and outside the store, and `task.notes` otherwise. `AppTask.notes` is
+    /// in the inventory — reaching it was the whole of T-411 — so an image pasted into a *task* note
+    /// here is safe and refusing it would remove a working capability to fix a hazard that mode does
+    /// not have. Copying the sibling sheet's `false` is the plausible mistake; this fails on it.
+    ///
+    /// [[T-3171]] moved the form onto the shared panel and the two writes into
+    /// `iOSScheduleDraftCreation`, shared with the iPad timeline; the markdown well stayed in the
+    /// sheet, in the panel's `notesField` slot, so the condition is read there and the premise —
+    /// where each mode's note goes — is read in the helper.
     @Test func quickCreateRefusesImagesOnlyInEventMode() throws {
         let code = try strippedSource("Cadence/iOS/iOSCalendarQuickCreateSheet.swift")
 
         #expect(
-            code.contains("allowsImageInsertion: kind != .event"),
+            code.contains("allowsImageInsertion: draft.kind != .event"),
             "quick create does not condition the refusal on the mode that decides where notes go"
         )
         #expect(
@@ -384,8 +388,11 @@ struct CadenceMarkdownImageInsertionScopeTests {
 
         // Non-vacuity plus the premise: the two destinations really are what the condition claims.
         #expect(code.contains("allowsEmbeddedTaskCreation: false"))
-        #expect(code.contains("task.notes = notes"), "the task destination is gone; re-check the condition")
-        #expect(code.contains("notes: notes"), "the event destination is gone; re-check the condition")
+        #expect(code.contains("text: $draft.notes"), "the well no longer edits the draft note both writes read")
+        #expect(code.contains("iOSScheduleDraftCreation.createTask(") && code.contains("iOSScheduleDraftCreation.createEvent("))
+        let creation = try strippedSource("Cadence/iOS/iOSTimelineDraftCreate.swift")
+        #expect(creation.contains("task.notes = draft.notes"), "the task destination is gone; re-check the condition")
+        #expect(creation.contains("notes: draft.notes"), "the event destination is gone; re-check the condition")
     }
 
     /// The claim the three tests above add up to, stated once as a relation over the whole editor's

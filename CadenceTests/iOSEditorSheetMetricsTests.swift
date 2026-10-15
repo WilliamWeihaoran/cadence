@@ -211,10 +211,10 @@ struct iOSEditorSheetMetricsTests {
         // The style's own contract, so the assertions below are about a decision and not a spelling.
         #expect(CadenceFieldSectionStyle.ruled != CadenceFieldSectionStyle.card)
 
-        // [[T-3171]] moved the event editor off this table: its form is the shared schedule
-        // panel now, which rules its own groups on its own plate. Pinned after the loop.
+        // [[T-3171]] moved the event editor, then the quick-create sheet, off this table: their
+        // forms are the shared schedule panel now, which rules its own groups on its own plate.
+        // Pinned after the loop.
         let sheets = [
-            "Cadence/iOS/iOSCalendarQuickCreateSheet.swift": 6,
             "Cadence/iOS/iOSCalendarBundleDetailSheet.swift": 3
         ]
 
@@ -269,6 +269,18 @@ struct iOSEditorSheetMetricsTests {
         #expect(CadenceSourceScan.matchCount(#"style: \.card"#, in: editor) == 0)
         #expect(editor.contains("cornerRadius: Theme.radiusPanel"))
         #expect(editor.contains("iOSEditorSheetMetrics.gutter(isRegularWidth:"))
+        // The quick-create sheet: one group of its own (the markdown well it hands the panel's
+        // notes slot), ruled, with its header spaced from the panel by the shared group figure.
+        let quick = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/iOS/iOSCalendarQuickCreateSheet.swift")
+        )
+        #expect(quick.contains("CadenceSchedulePanel("), "the quick-create sheet no longer hosts the shared panel")
+        #expect(CadenceSourceScan.matchCount(#"iOSEditorSection\("#, in: quick) == 1)
+        #expect(CadenceSourceScan.matchCount(#"style: \.ruled"#, in: quick) == 1)
+        #expect(CadenceSourceScan.matchCount(#"style: \.card"#, in: quick) == 0)
+        #expect(quick.contains("cornerRadius: Theme.radiusPanel"))
+        #expect(quick.contains("iOSEditorSheetMetrics.gutter(isRegularWidth:"))
+        #expect(quick.contains("iOSEditorSheetMetrics.groupSpacing"))
         // And the panel is a ruled form on a plate of its own — the same decision, taken once for
         // every host instead of once per sheet.
         let panel = CadenceSourceScan.strippingComments(

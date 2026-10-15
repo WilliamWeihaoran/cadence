@@ -1018,3 +1018,168 @@ struct CadenceTaskEditorPanelAdoptionTests {
         #expect(title.contains("TaskPriorityMarkControl(priority: draft.priority)"))
     }
 }
+
+/// The draft the calendar's quick-create sheet opens with — [[T-3171]]'s third adoption slice,
+/// `iOSCalendarQuickCreateSheet` hosting the shared panel in create mode. Behavioural: the sheet is
+/// iOS-only, so what a tapped slot hands the panel was moved into the shared draft to be run here.
+@Suite("Quick-create sheet's opening draft")
+@MainActor
+struct CadenceScheduleDraftQuickCreateTests {
+
+    @Test("A task opened on a slot is timed there, half an hour long")
+    func aTaskOpenedOnASlotIsTimedThere() {
+        let draft = CadenceScheduleDraft.quickCreate(dateKey: "2026-10-16", startMin: 10 * 60, opensTimed: true, kind: .task)
+        #expect(draft.subject == .creating)
+        #expect(draft.kind == .task)
+        #expect(draft.startDateKey == "2026-10-16")
+        #expect(draft.endDateKey == draft.startDateKey)
+        #expect(!draft.isAllDay)
+        #expect(draft.scheduledStartMin == 10 * 60)
+        #expect(draft.endMin - draft.startMin == CadenceScheduleDraft.quickCreateLengthMinutes)
+        #expect(draft.estimateMinutes == CadenceScheduleDraft.quickCreateLengthMinutes)
+        // Not the press-and-hold block's hour: the sheet always opened at the half hour.
+        #expect(CadenceScheduleDraft.quickCreateLengthMinutes == 30)
+        #expect(CadenceScheduleDraft.quickCreateLengthMinutes < CadenceScheduleDraft.defaultDurationMinutes)
+        #expect(draft.listToken == CadenceTaskComposerSupport.token(for: .inbox))
+    }
+
+    /// "Set time" started off when the sheet was opened from no slot, so the task it makes is on
+    /// the day and at no particular time — and it still carries the estimate it was given.
+    @Test("A task opened from no slot is untimed and keeps its estimate")
+    func aTaskOpenedFromNoSlotIsUntimed() {
+        let draft = CadenceScheduleDraft.quickCreate(dateKey: "2026-10-16", startMin: 9 * 60, opensTimed: false, kind: .task)
+        #expect(draft.isAllDay)
+        #expect(draft.scheduledStartMin == -1)
+        #expect(draft.startDateKey == "2026-10-16")
+        #expect(draft.estimateMinutes == 30)
+        #expect(draft.doTimeLabel == "Add time")
+    }
+
+    /// "All day" started off whatever opened the sheet, so an event from no slot is a timed one.
+    @Test("An event opens timed whether or not a slot opened the sheet")
+    func anEventOpensTimedEitherWay() throws {
+        let calendar = try CadenceTestTimeZones.calendar("UTC")
+        for opensTimed in [true, false] {
+            let draft = CadenceScheduleDraft.quickCreate(dateKey: "2026-10-16", startMin: 14 * 60, opensTimed: opensTimed, kind: .event)
+            #expect(!draft.isAllDay, "opensTimed \(opensTimed)")
+            let range = try #require(draft.eventDateRange(calendar: calendar))
+            #expect(range.end.timeIntervalSince(range.start) == 30 * 60)
+        }
+    }
+
+    /// The drawn block is clipped at midnight; the estimate is not read off it.
+    @Test("A slot near midnight keeps the half-hour estimate the block cannot draw")
+    func aSlotNearMidnightKeepsItsEstimate() {
+        let lateSlot = 23 * 60 + 45
+        let draft = CadenceScheduleDraft.quickCreate(dateKey: "2026-10-16", startMin: lateSlot, opensTimed: true, kind: .task)
+        #expect(draft.startMin == lateSlot)
+        #expect(draft.endMin == 24 * 60)
+        #expect(draft.endMin - draft.startMin < draft.estimateMinutes, "non-vacuity: the block really is clipped")
+        #expect(draft.estimateMinutes == 30)
+    }
+}
+
+/// The source half of the same slice: the quick-create sheet is a host of the shared panel, keeps
+/// what the panel deliberately does not do, and writes through the one create helper it shares
+/// with the iPad timeline ([[T-3171]]).
+@Suite("Quick-create sheet hosts the shared panel")
+@MainActor
+struct CadenceQuickCreatePanelAdoptionTests {
+
+    private func code(_ relativePath: String) throws -> String {
+        let raw = try CadenceSourceScan.sourceFile(relativePath)
+        #expect(raw.count > 1_000, "\(relativePath) read as \(raw.count) characters")
+        let stripped = CadenceSourceScan.strippingComments(raw)
+        #expect(stripped != raw, "\(relativePath): the comment stripper removed nothing")
+        #expect(stripped.count == raw.count)
+        return stripped
+    }
+
+    @Test("The sheet draws the panel and none of the old form")
+    func theSheetDrawsThePanel() throws {
+        let sheet = try code("Cadence/iOS/iOSCalendarQuickCreateSheet.swift")
+        #expect(CadenceSourceScan.matchCount(#"CadenceSchedulePanel\("#, in: sheet) == 1)
+        #expect(sheet.contains("State(initialValue: .quickCreate("))
+        #expect(sheet.contains("canCommit: canCreate"))
+        // Creating: nothing to delete, so the control is absent rather than disabled.
+        #expect(sheet.contains("delete: nil"))
+        for retired in [
+            "iOSSegmentedChoice(", "EstimatePickerControl(", "CadenceStartTimeFieldRow(", "iOSContainerChoicePopover(",
+            "iOSChoicePopoverList(", "Toggle(", "actionErrorNotice", "cyclePriority", "enum iOSCalendarQuickCreateKind",
+        ] {
+            #expect(!sheet.contains(retired), "the quick-create sheet still carries \(retired)")
+        }
+    }
+
+    /// Add greys out as the old arrow did: a title for either kind, and for an event a calendar
+    /// that can be written to — a gate the draft cannot see, so the host hands it in.
+    @Test("An event needs a writable calendar before Add is offered")
+    func anEventNeedsAWritableCalendar() throws {
+        let sheet = try code("Cadence/iOS/iOSCalendarQuickCreateSheet.swift")
+        let gate = try #require(CadenceSourceScan.declarationBody("private var canCreate: Bool", in: sheet))
+        #expect(CadenceSourceScan.matchCount(#"case \.event:[^\n]*\n[^\n]*&& selectedWritableCalendar != nil"#, in: gate) == 1)
+        let calendar = try #require(CadenceSourceScan.declarationBody("private var selectedWritableCalendar: EKCalendar?", in: sheet))
+        #expect(calendar.contains("calendarManager.writableCalendars.first { $0.calendarIdentifier == draft.calendarID }"))
+    }
+
+    /// The panel names a missing calendar and never raises a system prompt; this sheet, a surface
+    /// opened on purpose, still offers the request — in its own slot, directly under that row.
+    @Test("Allow Calendar Access stays in the host, under the panel's calendar row")
+    func calendarAccessStaysInTheHost() throws {
+        let sheet = try code("Cadence/iOS/iOSCalendarQuickCreateSheet.swift")
+        let request = try #require(CadenceSourceScan.declarationBody("private var calendarAccessRequest: some View", in: sheet))
+        #expect(request.contains("if draft.kind == .event && !calendarManager.isAuthorized {"))
+        #expect(request.contains(#"title: "Allow Calendar Access""#))
+        #expect(CadenceSourceScan.matchCount(#"calendarManager\.requestAccess\(\)"#, in: request) == 1)
+        #expect(CadenceSourceScan.matchCount(#"calendarManager\.requestAccess\(\)"#, in: sheet) == 1)
+        #expect(request.contains("normalizeCalendarSelection()"), "access granted, and no calendar chosen")
+        // Drawn in the panel's host slot, first, ahead of the notes.
+        #expect(CadenceSourceScan.matchCount(#"\) \{\s*calendarAccessRequest\s*notesSection\s*\}"#, in: sheet) == 1)
+        #expect(sheet.contains("calendarUnavailableNotice: calendarUnavailableNotice"))
+        let panel = try code("Cadence/Shared/Components/CadenceSchedulePanel.swift")
+        #expect(!panel.contains("requestAccess"), "the shared panel raises a permission prompt")
+    }
+
+    /// Each kind keeps its own time choice across a switch, as the two separate toggles did.
+    @Test("A kind switch restores the time choice of the kind it lands on")
+    func aKindSwitchRestoresTheLandingKindsTimeChoice() throws {
+        let sheet = try code("Cadence/iOS/iOSCalendarQuickCreateSheet.swift")
+        #expect(CadenceSourceScan.matchCount(
+            #"\.onChange\(of: draft\.kind\) \{ oldKind, newKind in\s*rememberTimeChoice\(of: oldKind\)\s*draft\.isAllDay = !isTimed\(newKind\)"#,
+            in: sheet
+        ) == 1)
+        let timed = try #require(CadenceSourceScan.functionBody(named: "isTimed", in: sheet))
+        #expect(timed.contains("case .task: return hasTime"))
+        #expect(timed.contains("case .event: return !eventIsAllDay"))
+        let remember = try #require(CadenceSourceScan.functionBody(named: "rememberTimeChoice", in: sheet))
+        #expect(remember.contains("case .task: hasTime = !draft.isAllDay"))
+        #expect(remember.contains("case .event: eventIsAllDay = draft.isAllDay"))
+    }
+
+    /// A list change re-resolves the section, and the Inbox offers none — its Section row greys
+    /// out, as the sheet's always did.
+    @Test("A list change re-resolves the section and the Inbox offers none")
+    func aListChangeReResolvesTheSection() throws {
+        let sheet = try code("Cadence/iOS/iOSCalendarQuickCreateSheet.swift")
+        #expect(sheet.contains(".onChange(of: draft.listToken) { _, _ in normalizeSection() }"))
+        let creation = try code("Cadence/iOS/iOSTimelineDraftCreate.swift")
+        let sections = try #require(CadenceSourceScan.functionBody(named: "sectionChoices", in: creation))
+        #expect(sections.contains("guard area != nil || project != nil else { return [] }"))
+    }
+
+    /// One create implementation behind both create-mode hosts.
+    @Test("Both create hosts write through the one shared helper")
+    func bothCreateHostsWriteThroughOneHelper() throws {
+        let creation = try code("Cadence/iOS/iOSTimelineDraftCreate.swift")
+        #expect(CadenceSourceScan.matchCount(#"CadenceTaskMutationSupport\.insertScheduledTask\("#, in: creation) == 1)
+        #expect(CadenceSourceScan.matchCount(#"calendarManager\.createEvent\("#, in: creation) == 1)
+        for path in ["Cadence/iOS/iOSCalendarQuickCreateSheet.swift", "Cadence/iOS/iOSTimelineDraftCreate.swift"] {
+            let host = try code(path)
+            #expect(CadenceSourceScan.matchCount(#"iOSScheduleDraftCreation\.createTask\("#, in: host) == 1, "\(path)")
+            #expect(CadenceSourceScan.matchCount(#"iOSScheduleDraftCreation\.createEvent\("#, in: host) == 1, "\(path)")
+        }
+        let sheet = try code("Cadence/iOS/iOSCalendarQuickCreateSheet.swift")
+        #expect(!sheet.contains("insertScheduledTask("))
+        #expect(!sheet.contains("HabitNotificationReconcileSupport"), "the sheet reconciles a second time")
+    }
+}

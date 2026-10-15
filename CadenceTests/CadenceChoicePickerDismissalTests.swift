@@ -103,7 +103,7 @@ struct CadenceChoicePickerDismissalTests {
     /// picker anywhere lands here in the same change — which is the point, because the question
     /// "does this one's selection setter commit?" has to be asked at that moment and not later.
     ///
-    /// Two of thirty commit, both task-row chips. The two archive-import mode pickers do not: the
+    /// Two of twenty-seven commit, both task-row chips. The two archive-import mode pickers do not: the
     /// mode is a view-state choice read at the moment Import is pressed, so its setter writes
     /// nothing to the store and a committing setter there would be wrong, not missing. The third
     /// committing site was `iOSTaskDetailSheetSections`' time picker [[T-761]]; [[T-3171]] made the
@@ -120,7 +120,6 @@ struct CadenceChoicePickerDismissalTests {
             "Cadence/Shared/Components/CadenceSchedulePanel.swift": (4, 0),
             "Cadence/Shared/Components/CadenceStartTimeFieldRow.swift": (1, 0),
             "Cadence/iOS/iOSArchiveImportSettingsSection.swift": (1, 0),
-            "Cadence/iOS/iOSCalendarQuickCreateSheet.swift": (3, 0),
             "Cadence/iOS/iOSCalendarSettingsSection.swift": (1, 0),
             "Cadence/iOS/iOSCreateTaskSheetSupportViews.swift": (3, 0),
             "Cadence/iOS/iOSListEditorViews.swift": (2, 0),
@@ -172,7 +171,9 @@ struct CadenceChoicePickerDismissalTests {
         // panel, whose calendar picker serves it now and whose separate end date replaced the
         // Days list: 34, still 3 committing. The task editor's slice of the same ticket takes four
         // more (priority, list, section, time) and the one committing time picker: 30 and 2.
-        #expect(found.values.map(\.calls).reduce(0, +) == 30)
+        // Its third slice takes the quick-create sheet's three (calendar, list, section) onto the
+        // panel's own rows, none of them committing: 27 and 2.
+        #expect(found.values.map(\.calls).reduce(0, +) == 27)
         #expect(found.values.map(\.committing).reduce(0, +) == 2)
     }
 

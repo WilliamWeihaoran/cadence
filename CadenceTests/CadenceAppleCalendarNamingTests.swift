@@ -35,9 +35,9 @@ struct CadenceAppleCalendarNamingTests {
     /// are where you left them, and the population here is one a later pass is expected to shrink.
     private static let sites: [(path: String, expression: String, count: Int)] = [
         // The label: the eyebrow over the controls that read or write the system calendar.
-        ("Cadence/iOS/iOSCalendarQuickCreateSheet.swift", "integrationSectionTitle", 1),
-        // [[T-3171]]: the event editor's eyebrow moved with its form onto the shared panel, which
-        // labels its calendar row with the same constant — the site moved, it did not go away.
+        // [[T-3171]]: the event editor's eyebrow, and then the quick-create sheet's, moved with
+        // their forms onto the shared panel, which labels its calendar row with the same constant
+        // — the sites moved into one, they did not go away.
         ("Cadence/Shared/Components/CadenceSchedulePanel.swift", "integrationSectionTitle", 1),
         ("Cadence/iOS/iOSCalendarInspectorView.swift", "integrationSectionTitle", 1),
         ("Cadence/macOS/Sheets/ListEditorSupportViews.swift", "integrationSectionTitle", 1),

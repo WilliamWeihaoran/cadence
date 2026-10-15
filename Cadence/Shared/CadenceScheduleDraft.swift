@@ -2,8 +2,9 @@ import Foundation
 
 /// The two things the shared schedule panel can be editing.
 ///
-/// **Deliberately two cases, not three.** `iOSCalendarQuickCreateKind` carried a `.bundle` arm as
-/// well until [[T-3170]] took it out; a Block is formed from tasks that already exist
+/// **Deliberately two cases, not three.** The quick-create sheet's own kind enum carried a `.bundle`
+/// arm as well until [[T-3170]] took it out — and [[T-3171]] then retired that enum for this one,
+/// when the sheet adopted the shared panel; a Block is formed from tasks that already exist
 /// (`CadenceTaskMutationSupport.insertBundle(from:adding:)` takes two of them), so an empty slot has
 /// nothing to make one out of, and the feature is being retired in any case.
 @MainActor
@@ -62,7 +63,7 @@ enum CadenceScheduleDraftKind: String, CaseIterable, Hashable, Identifiable, Sen
 /// The translation to storage is stated once, in `scheduledStartMin`: an **all-day task is an
 /// untimed task**, `AppTask.scheduledStartMin == -1`, which is the app's existing spelling of
 /// "planned for this day, at no particular time" and what `iOSCalendarQuickCreateSheet`'s "Set
-/// time" toggle already writes. The alternative — a task pinned 00:00–24:00 — would put a block
+/// time" toggle wrote before that sheet hosted this panel. The alternative — a task pinned 00:00–24:00 — would put a block
 /// across the whole canvas for something every other surface draws in the untimed column.
 ///
 /// ## Due is a date, by construction
@@ -200,6 +201,38 @@ struct CadenceScheduleDraft: Equatable {
         self.isDone = false
         self.location = ""
         self.calendarID = ""
+    }
+
+    /// The length the calendar's quick-create sheet opens with: the half hour its Estimate and its
+    /// Duration both started at, and the size of the slot a tap on that calendar names. The hour
+    /// above is the press-and-hold block's, not that sheet's.
+    static let quickCreateLengthMinutes = 30
+
+    /// The draft `iOSCalendarQuickCreateSheet` opens with ([[T-3171]]) — here rather than in the
+    /// sheet so what a tapped slot hands the panel is checked on the Mac, where the sheet is not
+    /// compiled.
+    ///
+    /// - A **task** opened on a slot is timed at it; opened from no slot it is **untimed** — the
+    ///   sheet's "Set time" toggle started off there, and an untimed task is `isAllDay` here.
+    /// - An **event** opens timed either way: "All day" started off whatever opened the sheet.
+    /// - Either kind starts at `quickCreateLengthMinutes`, and the task's **estimate** says so even
+    ///   where the drawn block cannot — a slot at 11:45 PM is clipped at midnight, and a 15-minute
+    ///   estimate read off that clipped block would be a figure the user never chose.
+    static func quickCreate(
+        dateKey: String,
+        startMin: Int,
+        opensTimed: Bool,
+        kind: CadenceScheduleDraftKind
+    ) -> CadenceScheduleDraft {
+        var draft = CadenceScheduleDraft(
+            dateKey: dateKey,
+            startMin: startMin,
+            kind: kind,
+            durationMinutes: quickCreateLengthMinutes
+        )
+        draft.setEstimate(quickCreateLengthMinutes)
+        draft.isAllDay = kind == .task && !opensTimed
+        return draft
     }
 
     // MARK: Editing an event
@@ -528,7 +561,9 @@ struct CadenceScheduleDraft: Equatable {
     }
 
     /// A thing being created or saved needs a name, whichever kind it is — the rule T-567 settled
-    /// for `iOSCalendarQuickCreateSheet`'s three arms, restated for these two.
+    /// for `iOSCalendarQuickCreateSheet`'s three arms, restated for these two. That sheet hosts this
+    /// panel now and still hands it a stricter `canCommit` of its own: an event also needs a
+    /// calendar it can be written to.
     var hasCommittableTitle: Bool {
         !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }

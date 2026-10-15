@@ -231,9 +231,11 @@ struct CadenceContainerPickerConsolidationTests {
 
     // MARK: - The call sites, which the macOS test target does not compile
 
+    /// [[T-3171]] took `iOSCalendarQuickCreateSheet` off this list: its List row is the shared
+    /// schedule panel's now, whose rows `iOSScheduleDraftCreation.listChoices` narrows — pinned by
+    /// `theQuickCreateRowsAreNarrowedByTheSharedPickableRule` below.
     private static let containerPickerCallSites = [
         "Cadence/iOS/iOSTaskDetailComponents.swift",
-        "Cadence/iOS/iOSCalendarQuickCreateSheet.swift",
         "Cadence/iOS/iOSCreateTaskSheetSupportViews.swift",
         "Cadence/iOS/iOSTaskRowActionViews.swift"
     ]
@@ -273,7 +275,7 @@ struct CadenceContainerPickerConsolidationTests {
 
         let hits = try handsAFilteredArray.sweep(
             Self.containerPickerCallSites,
-            atLeast: 4,
+            atLeast: 3,
             including: "Cadence/iOS/iOSTaskDetailComponents.swift",
             read: CadenceSourceScan.strippedSourceReader()
         )
@@ -471,7 +473,9 @@ struct CadenceContainerPickerConsolidationTests {
 
         for path in [
             "Cadence/iOS/iOSTaskDetailSheet.swift",
-            "Cadence/iOS/iOSCalendarQuickCreateSheet.swift"
+            // [[T-3171]]: the quick-create sheet's token is read by the create helper it shares
+            // with the iPad timeline, so that is the file read for it.
+            "Cadence/iOS/iOSTimelineDraftCreate.swift"
             // `CreateGoalSheet.swift` was the third until [[T-2079]] deleted it.
         ] {
             let source = try CadenceSourceScan.strippingComments(CadenceSourceScan.sourceFile(path))
@@ -481,13 +485,38 @@ struct CadenceContainerPickerConsolidationTests {
             )
         }
 
-        // And the quick-create tile names its list through the shared resolver, whose `displayName`
-        // trims before it falls back — the one place the old copy genuinely differed.
+        // The quick-create sheet names its list through the panel's List row now, which shows the
+        // name of the row carrying the draft's token — so no default-name fallback of its own.
         let quickCreate = try CadenceSourceScan.strippingComments(
             CadenceSourceScan.sourceFile("Cadence/iOS/iOSCalendarQuickCreateSheet.swift")
         )
-        #expect(quickCreate.contains("CadenceTaskComposerSupport.containerName(for: containerChoice"))
-        #expect(CadenceSourceScan.matchCount("defaultAreaName|defaultProjectName", in: quickCreate) == 0)
+        #expect(quickCreate.contains("CadenceSchedulePanel("))
+        #expect(CadenceSourceScan.matchCount("defaultAreaName|defaultProjectName|selection\\(fromToken:", in: quickCreate) == 0)
+    }
+
+    /// **The quick-create sheet's List rows are narrowed, as its popover narrowed them** ([[T-3171]]).
+    /// It hosts the shared schedule panel now, whose rows are `iOSScheduleDraftCreation.listChoices`
+    /// — the builder the iPad timeline shares — so that builder must apply T-514's rule: the active
+    /// lists, sorted, **plus the one the draft names**. Built from the raw queries, as the iPad
+    /// popover's was, it offers archived and completed lists as places to put a new task.
+    @Test func theQuickCreateRowsAreNarrowedByTheSharedPickableRule() throws {
+        let creation = try CadenceSourceScan.strippingComments(
+            CadenceSourceScan.sourceFile("Cadence/iOS/iOSTimelineDraftCreate.swift")
+        )
+        let builder = try #require(CadenceSourceScan.functionBody(named: "listChoices", in: creation))
+        #expect(builder.contains("CadenceTaskComposerSupport.pickableAreas("))
+        #expect(builder.contains("CadenceTaskComposerSupport.pickableProjects("))
+        #expect(builder.contains("selectedID: CadenceTaskComposerSupport.selectedAreaID(choice)"))
+        #expect(builder.contains("selectedID: CadenceTaskComposerSupport.selectedProjectID(choice)"))
+        #expect(CadenceSourceScan.matchCount(#"\b(areas|projects)\.map\b"#, in: builder) == 0, "a raw query is mapped into rows unnarrowed")
+        // Both hosts read that one builder.
+        for path in ["Cadence/iOS/iOSCalendarQuickCreateSheet.swift", "Cadence/iOS/iOSTimelineDraftCreate.swift"] {
+            let source = try CadenceSourceScan.strippingComments(CadenceSourceScan.sourceFile(path))
+            #expect(
+                CadenceSourceScan.matchCount(#"iOSScheduleDraftCreation\.listChoices\(for: draft"#, in: source) == 1,
+                "\(path) builds its List rows some other way"
+            )
+        }
     }
 
     /// **The two sweeps above read the tree through different readers, and that has to stay true.**

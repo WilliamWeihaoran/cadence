@@ -219,6 +219,10 @@ struct CadenceCreateTaskCommitSurfaceTests {
     /// note text from being written.
     private static let composerFailureBranch =
         #"catch \{[^}]*actionError = TaskCreationService\.saveFailureNotice[^}]*return[^}]*\}"#
+    /// The shared create helper's form of the branch: it has no `actionError` to set, so the
+    /// notice is the value it returns.
+    private static let sharedCreateFailureBranch =
+        #"catch \{[^}]*return TaskCreationService\.saveFailureNotice[^}]*\}"#
     private static let embedFailureBranch = #"catch \{[^}]*return nil[^}]*\}"#
 
     private var commitSurfaces: [CommitSurface] {
@@ -457,12 +461,20 @@ struct CadenceCreateTaskCommitSurfaceTests {
     /// inert while the sheet stayed open with no word on it — and this is the *same sheet* whose
     /// Event branch has reported its refusals since T-324.
     ///
+    /// [[T-3171]] moved the sheet onto the shared schedule panel, and its task write into
+    /// `iOSScheduleDraftCreation.createTask` — the helper it shares with the iPad timeline — which
+    /// answers `String?`: the sentence the panel shows, or `nil` when the task landed. The sheet
+    /// dismisses on that `nil` and on nothing else (`theQuickCreateSheetHasNoSilentEventFailurePath`
+    /// pins the sheet's half). So the rule is read in the helper: the refused save is caught and
+    /// **returned as the notice** before anything that reports success, an insert that made nothing
+    /// says so rather than going quiet, and the habit reconcile runs only after a task landed.
+    ///
     /// Source shape, not behaviour: `Cadence/iOS/` is behind `#if os(iOS)` and this target builds
-    /// for macOS, so the view cannot be compiled here, let alone driven. Scoped to the function
+    /// for macOS, so the helper cannot be compiled here, let alone driven. Scoped to the function
     /// body; the ordering is asserted as positions rather than as "contains".
     @Test func theQuickCreateSheetReportsARefusedTaskRatherThanLookingInert() throws {
-        let raw = try CadenceSourceScan.sourceFile("Cadence/iOS/iOSCalendarQuickCreateSheet.swift")
-        #expect(raw.count > 400, "iOSCalendarQuickCreateSheet.swift read as \(raw.count) characters")
+        let raw = try CadenceSourceScan.sourceFile("Cadence/iOS/iOSTimelineDraftCreate.swift")
+        #expect(raw.count > 400, "iOSTimelineDraftCreate.swift read as \(raw.count) characters")
 
         let stripped = CadenceSourceScan.strippingComments(raw)
         #expect(stripped != raw, "the comment stripper removed nothing")
@@ -470,49 +482,46 @@ struct CadenceCreateTaskCommitSurfaceTests {
 
         let body = try #require(
             CadenceSourceScan.functionBody(named: "createTask", in: stripped),
-            "could not find createTask()"
+            "could not find iOSScheduleDraftCreation.createTask"
         )
         #expect(
             body.contains("CadenceTaskMutationSupport.insertScheduledTask("),
-            "createTask() body looks wrong"
+            "createTask body looks wrong"
         )
         #expect(
             CadenceSourceScan.matchCount(#"try\?"#, in: body) == 0,
-            "createTask() still swallows the insert error"
+            "createTask still swallows the insert error"
         )
 
         let failureBranch = try #require(
-            body.range(of: Self.composerFailureBranch, options: .regularExpression),
-            "createTask() has no catch branch that both reports the failure and returns"
+            body.range(of: Self.sharedCreateFailureBranch, options: .regularExpression),
+            "createTask has no catch branch that returns the failure notice"
         )
 
-        // The empty-title answer stays a silent return -- `insertScheduledTask` returns `nil`
-        // rather than throwing for a title there is nothing to make a task out of, exactly as
-        // `iOSCreateTaskSheet.create()` still `guard let task = created`s after its own `do`. What
-        // must not happen is dismissing over it.
+        // An insert that made nothing is answered, not swallowed: the panel already greys Add out
+        // over a blank title, so reaching this means Return was pressed on one, and T-589's rule is
+        // that the key reports rather than doing nothing.
         let nothingToCreate = try #require(
-            body.range(of: #"guard created != nil else \{ return \}"#, options: .regularExpression),
-            "createTask() dismisses over an insert that made nothing"
+            body.range(of: #"guard created != nil else \{ return "Add a title first\." \}"#, options: .regularExpression),
+            "createTask goes quiet over an insert that made nothing"
         )
         #expect(
             nothingToCreate.lowerBound >= failureBranch.upperBound,
             "the nothing-to-create guard sits above the failure branch"
         )
 
-        for spelling in ["HabitNotificationReconcileSupport.scheduleReconcile", "dismiss()"] {
+        for spelling in ["HabitNotificationReconcileSupport.scheduleReconcile", "return nil"] {
             let success = try #require(
                 body.range(of: spelling),
-                "createTask() no longer spells \(spelling)"
+                "createTask no longer spells \(spelling)"
             )
             #expect(
                 success.lowerBound >= nothingToCreate.upperBound,
-                "createTask(): \(spelling) runs before the failed insert has returned"
+                "createTask: \(spelling) runs before the failed insert has returned"
             )
         }
-        #expect(
-            CadenceSourceScan.matchCount(#"dismiss\(\)"#, in: body) == 1,
-            "createTask() has a second, unguarded dismissal"
-        )
+        #expect(CadenceSourceScan.matchCount(#"return nil"#, in: body) == 1, "createTask reports success on a second path")
+        #expect(CadenceSourceScan.matchCount(#"dismiss\(\)"#, in: body) == 0, "the shared helper dismisses its host itself")
     }
 
     /// **[[T-3170]].** The sheet creates a task or an event and nothing else: the Block segment,
@@ -521,37 +530,43 @@ struct CadenceCreateTaskCommitSurfaceTests {
     /// in the store before the sheet could close) went with it — there is no branch left to hold
     /// to either rule.
     ///
-    /// Source shape, for the same `#if os(iOS)` reason as above: this target cannot compile the
-    /// sheet, so it reads it with comments stripped.
+    /// [[T-3171]]: the sheet's own two-case kind enum went too. It switches on
+    /// `CadenceScheduleDraftKind`, the shared panel's, which is exactly Task and Event — asserted as
+    /// a value, since that type is compiled here.
     @Test func theQuickCreateSheetOffersNoBlockArm() throws {
-        let raw = try CadenceSourceScan.sourceFile("Cadence/iOS/iOSCalendarQuickCreateSheet.swift")
-        #expect(raw.count > 400, "iOSCalendarQuickCreateSheet.swift read as \(raw.count) characters")
-        let stripped = CadenceSourceScan.strippingComments(raw)
+        #expect(CadenceScheduleDraftKind.allCases == [.task, .event])
 
-        let kindEnum = try #require(
-            stripped.range(of: #"enum iOSCalendarQuickCreateKind[^{]*\{[^}]*\}"#, options: .regularExpression),
-            "could not find iOSCalendarQuickCreateKind's case list"
+        for path in ["Cadence/iOS/iOSCalendarQuickCreateSheet.swift", "Cadence/iOS/iOSTimelineDraftCreate.swift"] {
+            let raw = try CadenceSourceScan.sourceFile(path)
+            #expect(raw.count > 400, "\(path) read as \(raw.count) characters")
+            let stripped = CadenceSourceScan.strippingComments(raw)
+            #expect(CadenceSourceScan.matchCount(#"\bcase bundle\b"#, in: stripped) == 0)
+            #expect(CadenceSourceScan.matchCount(#"\.bundle\b"#, in: stripped) == 0)
+            #expect(CadenceSourceScan.matchCount(#"insertBundle\("#, in: stripped) == 0)
+            #expect(CadenceSourceScan.matchCount(#"bundleSaveFailureNotice"#, in: stripped) == 0)
+        }
+        let sheet = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/iOS/iOSCalendarQuickCreateSheet.swift")
         )
-        let cases = CadenceSourceScan.matchCount(#"\bcase [a-z]+\n"#, in: String(stripped[kindEnum]))
-        #expect(cases == 2, "iOSCalendarQuickCreateKind declares \(cases) cases, not task and event")
-        #expect(CadenceSourceScan.matchCount(#"\bcase bundle\b"#, in: stripped) == 0)
-        #expect(CadenceSourceScan.matchCount(#"\.bundle\b"#, in: stripped) == 0)
-        #expect(CadenceSourceScan.matchCount(#"insertBundle\("#, in: stripped) == 0)
-        #expect(CadenceSourceScan.matchCount(#"bundleSaveFailureNotice"#, in: stripped) == 0)
+        #expect(CadenceSourceScan.matchCount(#"\benum iOSCalendarQuickCreateKind\b"#, in: sheet) == 0)
+        #expect(sheet.contains("initialKind: CadenceScheduleDraftKind = .task"))
     }
 
     /// Neither branch may spell its own sentence: both read a shared constant, so the sheet cannot
-    /// come to word "that didn't work" three ways -- which is the note its own `actionErrorNotice`
-    /// already carries about the Event branch.
+    /// come to word "that didn't work" three ways. [[T-3171]]: the sentences are returned by the
+    /// shared create helper and drawn by the panel, so both files are read.
     @Test func theQuickCreateSheetReadsSharedFailureNoticesRatherThanItsOwn() throws {
-        let stripped = CadenceSourceScan.strippingComments(
-            try CadenceSourceScan.sourceFile("Cadence/iOS/iOSCalendarQuickCreateSheet.swift")
+        let creation = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/iOS/iOSTimelineDraftCreate.swift")
         )
-        #expect(stripped.contains("actionError = TaskCreationService.saveFailureNotice"))
-        #expect(
-            CadenceSourceScan.matchCount(#""Couldn.t save this"#, in: stripped) == 0,
-            "the sheet spells a save-failure sentence itself"
-        )
+        #expect(creation.contains("return TaskCreationService.saveFailureNotice"))
+        for path in ["Cadence/iOS/iOSCalendarQuickCreateSheet.swift", "Cadence/iOS/iOSTimelineDraftCreate.swift"] {
+            let stripped = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(path))
+            #expect(
+                CadenceSourceScan.matchCount(#""Couldn.t save this"#, in: stripped) == 0,
+                "\(path) spells a save-failure sentence itself"
+            )
+        }
     }
 
     /// The needles above match the spellings they hunt and miss the ones they protect -- otherwise
@@ -570,12 +585,24 @@ struct CadenceCreateTaskCommitSurfaceTests {
         #expect(CadenceSourceScan.matchCount(#"\.bundle\b"#, in: "case .bundle:") == 1)
         #expect(CadenceSourceScan.matchCount(#"\.bundle\b"#, in: "task.bundled") == 0)
         #expect(CadenceSourceScan.matchCount(
-            #"guard created != nil else \{ return \}"#,
-            in: "guard created != nil else { return }"
+            #"guard created != nil else \{ return "Add a title first\." \}"#,
+            in: "guard created != nil else { return \"Add a title first.\" }"
         ) == 1)
         #expect(CadenceSourceScan.matchCount(
-            #"guard created != nil else \{ return \}"#,
-            in: "guard let task = created else { return }"
+            #"guard created != nil else \{ return "Add a title first\." \}"#,
+            in: "guard created != nil else { return }"
+        ) == 0)
+        #expect(CadenceSourceScan.matchCount(
+            Self.sharedCreateFailureBranch,
+            in: "} catch {\n    return TaskCreationService.saveFailureNotice\n}"
+        ) == 1)
+        #expect(CadenceSourceScan.matchCount(
+            Self.sharedCreateFailureBranch,
+            in: "} catch {\n    return nil\n}"
+        ) == 0)
+        #expect(CadenceSourceScan.matchCount(
+            #"guard created != nil else \{ return "Add a title first\." \}"#,
+            in: "guard let task = created else { return \"Add a title first.\" }"
         ) == 0)
         #expect(CadenceSourceScan.matchCount(#""Couldn.t save this"#, in: "\"Couldn't save this block.\"") == 1)
         #expect(CadenceSourceScan.matchCount(

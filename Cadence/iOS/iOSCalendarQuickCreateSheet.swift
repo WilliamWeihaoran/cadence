@@ -3,6 +3,20 @@ import EventKit
 import SwiftData
 import SwiftUI
 
+/// Creates a task or an event from the calendar through **the one shared schedule panel**
+/// ([[T-3171]]'s third adoption slice).
+///
+/// The form is `CadenceSchedulePanel` in create mode — the same view the iPad timeline creates
+/// with and the event and task editors edit with — and the writes are `iOSScheduleDraftCreation`'s,
+/// shared with that timeline. What stays here is only what is this sheet's own: the header naming
+/// the day it was opened on, the **Allow Calendar Access** request (the panel deliberately never
+/// raises a system prompt; a full sheet has room to, so the request sits in the host's slot,
+/// directly under the panel's calendar notice), the platform's markdown well for the notes —
+/// image insertion on for a task and off for an event, T-422 — and its reference sheets.
+///
+/// **Each kind keeps its own time choice across a switch**, as the sheet's separate "Set time" and
+/// "All day" toggles always did: an untimed task switched to Event opens as a timed event rather
+/// than an all-day one, and switching back finds the task untimed again. See `isTimed(_:)`.
 struct iOSCalendarQuickCreateSheet: View {
     let dateKey: String
     let initialStartMinute: Int?
@@ -14,63 +28,39 @@ struct iOSCalendarQuickCreateSheet: View {
     @Query(sort: \AppTask.order) private var allTasks: [AppTask]
     @Query(sort: \Area.order) private var areas: [Area]
     @Query(sort: \Project.order) private var projects: [Project]
-    @State private var kind: iOSCalendarQuickCreateKind
-    @State private var title = ""
-    @State private var priority: TaskPriority = .none
-    @State private var estimatedMinutes = 30
-    @State private var notes = ""
+    @State private var draft: CadenceScheduleDraft
+    /// The task's time choice while the draft is an event, and the event's while it is a task.
+    /// The draft carries one `isAllDay` for whichever kind is showing; these remember the other.
+    @State private var hasTime: Bool
+    @State private var eventIsAllDay = false
     @State private var notesEditorFocused = false
     @State private var selectedReferenceNote: Note?
     @State private var selectedReferenceTask: AppTask?
-    @State private var hasTime: Bool
-    @State private var eventIsAllDay = false
-    @State private var startTime: Date
-    @State private var containerSelection = "inbox"
-    @State private var sectionName = TaskSectionDefaults.defaultName
-    @State private var selectedCalendarID = ""
-    @State private var showCalendarPicker = false
-    @State private var showContainerPicker = false
-    @State private var showSectionPicker = false
-    @State private var actionError: String?
 
-    /// `initialKind` is what the capture palette's **Event** segment needs: the segmented control
-    /// is still there and still switches, but a palette that says "Event" and opens on Task would
-    /// be the choice being taken twice. Defaults to `.task`, which is what every existing caller —
-    /// a tapped empty slot on the calendar — means.
-    init(dateKey: String, initialStartMinute: Int? = nil, initialKind: iOSCalendarQuickCreateKind = .task) {
+    /// `initialKind` is what the capture palette's **Event** segment needs: the kind switch is
+    /// still there and still switches, but a palette that says "Event" and opens on Task would be
+    /// the choice being taken twice. Defaults to `.task`, which is what every other caller — a
+    /// tapped empty slot on the calendar — means.
+    init(dateKey: String, initialStartMinute: Int? = nil, initialKind: CadenceScheduleDraftKind = .task) {
         self.dateKey = dateKey
         self.initialStartMinute = initialStartMinute
-        _kind = State(initialValue: initialKind)
-        _hasTime = State(initialValue: initialStartMinute != nil)
-        _startTime = State(initialValue: iOSCalendarQuickCreateSheet.defaultStartTime(dateKey: dateKey, startMinute: initialStartMinute))
+        let opensTimed = initialStartMinute != nil
+        _draft = State(initialValue: .quickCreate(
+            dateKey: dateKey,
+            startMin: Self.defaultStartMinute(dateKey: dateKey, startMinute: initialStartMinute),
+            opensTimed: opensTimed,
+            kind: initialKind
+        ))
+        _hasTime = State(initialValue: opensTimed)
     }
 
-    private var availableSectionNames: [String] {
-        CadenceTaskMutationSupport.sectionNames(forArea: selectedArea, project: selectedProject)
-    }
-
-    /// The token this sheet holds, read through the one mapping that owns the prefix arithmetic.
-    /// `selection(fromToken:)` answers `.inbox` for anything it cannot parse — including a
-    /// well-formed prefix over a malformed id — which is what these two used to spell themselves.
-    private var containerChoice: TaskContainerSelection {
-        CadenceTaskComposerSupport.selection(fromToken: containerSelection)
-    }
-
-    private var selectedArea: Area? {
-        guard let id = CadenceTaskComposerSupport.selectedAreaID(containerChoice) else { return nil }
-        return areas.first { $0.id == id }
-    }
-
-    private var selectedProject: Project? {
-        guard let id = CadenceTaskComposerSupport.selectedProjectID(containerChoice) else { return nil }
-        return projects.first { $0.id == id }
-    }
-
-    /// Both arms agree that a thing being created needs a name (T-567). The Block arm that used to
-    /// sit between them is gone with the Block feature itself ([[T-3170]]): this sheet creates a
-    /// task or an event and nothing else.
+    /// Both kinds agree that a thing being created needs a name (T-567), and an event needs a
+    /// calendar it can be written to. The Block arm that used to sit between them is gone with the
+    /// Block feature itself ([[T-3170]]). Handed to the panel as `canCommit`, so Add greys out
+    /// exactly as the sheet's arrow button did.
     private var canCreate: Bool {
-        switch kind {
+        let title = draft.title
+        switch draft.kind {
         case .task:
             return !TaskTitleSupport.isEmpty(title)
         case .event:
@@ -79,36 +69,26 @@ struct iOSCalendarQuickCreateSheet: View {
     }
 
     private var selectedWritableCalendar: EKCalendar? {
-        calendarManager.writableCalendars.first { $0.calendarIdentifier == selectedCalendarID }
+        calendarManager.writableCalendars.first { $0.calendarIdentifier == draft.calendarID }
     }
 
-    private var selectedCalendarTitle: String {
-        selectedWritableCalendar?.title ?? "Choose Calendar"
-    }
-
-    private var startTimeMinutesBinding: Binding<Int> {
-        Binding(
-            get: { CadenceCalendarEventTiming.minuteOfDay(of: startTime) },
-            set: { minutes in
-                // The shared gap policy: a minute inside the spring-forward gap collapses to 03:00
-                // rather than moving an hour later, and the event write reads it back (T-3119).
-                startTime = CadenceCalendarEventTiming.settingStartMinute(minutes, of: startTime) ?? startTime
-            }
-        )
-    }
-
-    private var showsTimedControls: Bool {
+    /// Whether `kind`, when the switch lands on it, is timed — read from that kind's own remembered
+    /// choice rather than from the kind being left.
+    private func isTimed(_ kind: CadenceScheduleDraftKind) -> Bool {
         switch kind {
-        case .task:
-            return hasTime
-        case .event:
-            return !eventIsAllDay
+        case .task: return hasTime
+        case .event: return !eventIsAllDay
         }
     }
 
-    /// Read for two things only: the sheet's gutter, and whether the form splits into two columns.
-    /// Both are facts about the host. Nothing the sheet *draws* consults it — those figures are
-    /// `iOSEditorSheetMetrics`, which takes no width.
+    private func rememberTimeChoice(of kind: CadenceScheduleDraftKind) {
+        switch kind {
+        case .task: hasTime = !draft.isAllDay
+        case .event: eventIsAllDay = draft.isAllDay
+        }
+    }
+
+    /// Read for the sheet's gutter only — a fact about the host. Nothing the panel draws consults it.
     private var isRegularWidth: Bool {
         horizontalSizeClass == .regular
     }
@@ -116,16 +96,42 @@ struct iOSCalendarQuickCreateSheet: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                formLayout
-                    .padding(iOSEditorSheetMetrics.cardPadding)
-                    .background(Theme.surfaceElevated)
+                VStack(alignment: .leading, spacing: iOSEditorSheetMetrics.groupSpacing) {
+                    header
+
+                    CadenceSchedulePanel(
+                        draft: $draft,
+                        listChoices: iOSScheduleDraftCreation.listChoices(for: draft, areas: areas, projects: projects),
+                        sectionChoices: iOSScheduleDraftCreation.sectionChoices(for: draft, areas: areas, projects: projects),
+                        calendarChoices: iOSScheduleDraftCreation.calendarChoices(calendarManager),
+                        calendarUnavailableNotice: calendarUnavailableNotice,
+                        canCommit: canCreate,
+                        actions: CadenceSchedulePanelActions(
+                            commit: create,
+                            cancel: { dismiss() },
+                            // Nothing exists yet, so there is nothing to delete: absent, not disabled.
+                            delete: nil
+                        )
+                    ) {
+                        calendarAccessRequest
+                        notesSection
+                    }
                     .clipShape(RoundedRectangle(cornerRadius: Theme.radiusPanel, style: .continuous))
-                    .padding(iOSEditorSheetMetrics.gutter(isRegularWidth: isRegularWidth))
+                }
+                // One column now, so the widest column the old two-column form allowed is the cap —
+                // the event editor's figure, which this sheet shares.
+                .frame(maxWidth: iOSEditorSheetMetrics.secondaryColumnMaxWidth)
+                .padding(iOSEditorSheetMetrics.gutter(isRegularWidth: isRegularWidth))
+                .frame(maxWidth: .infinity, alignment: .top)
             }
             .background(Theme.bg)
             .toolbar(.hidden, for: .navigationBar)
-            .onChange(of: containerSelection) { _, _ in normalizeSection() }
-            .onChange(of: kind) { _, _ in normalizeCalendarSelection() }
+            .onChange(of: draft.listToken) { _, _ in normalizeSection() }
+            .onChange(of: draft.kind) { oldKind, newKind in
+                rememberTimeChoice(of: oldKind)
+                draft.isAllDay = !isTimed(newKind)
+                normalizeCalendarSelection()
+            }
             .onAppear {
                 normalizeCalendarSelection()
             }
@@ -139,79 +145,17 @@ struct iOSCalendarQuickCreateSheet: View {
         .preferredColorScheme(.dark)
     }
 
-    @ViewBuilder
-    private var formLayout: some View {
-        if isRegularWidth {
-            regularFormLayout
-        } else {
-            compactFormLayout
-        }
-    }
-
-    private var compactFormLayout: some View {
-        VStack(alignment: .leading, spacing: iOSEditorSheetMetrics.groupSpacing) {
-            header
-            actionErrorNotice
-            kindPicker
-            titleSection
-            formDetails
-            timeSection
-            formNotes
-        }
-    }
-
-    private var regularFormLayout: some View {
-        HStack(alignment: .top, spacing: iOSEditorSheetMetrics.groupSpacing) {
-            VStack(alignment: .leading, spacing: iOSEditorSheetMetrics.groupSpacing) {
-                header
-                actionErrorNotice
-                kindPicker
-                titleSection
-                timeSection
-            }
-            .frame(
-                minWidth: iOSEditorSheetMetrics.primaryColumnMinWidth,
-                maxWidth: iOSEditorSheetMetrics.primaryColumnMaxWidth,
-                alignment: .topLeading
-            )
-
-            VStack(alignment: .leading, spacing: iOSEditorSheetMetrics.groupSpacing) {
-                formDetails
-                formNotes
-            }
-            .frame(
-                minWidth: iOSEditorSheetMetrics.secondaryColumnMinWidth,
-                maxWidth: iOSEditorSheetMetrics.secondaryColumnMaxWidth,
-                alignment: .topLeading
-            )
-        }
-        .frame(maxWidth: iOSEditorSheetMetrics.twoColumnMaxWidth, alignment: .top)
-        .frame(maxWidth: .infinity, alignment: .top)
-    }
-
-    @ViewBuilder
-    private var formDetails: some View {
-        if kind == .task {
-            taskOptions
-        }
-        if kind == .event {
-            calendarSection
-        }
-    }
-
-    @ViewBuilder
-    private var formNotes: some View {
-        if kind == .task || kind == .event {
-            notesSection
-        }
-    }
-
+    /// The day the thing will land on, and — when the sheet was opened on a slot — the time. The
+    /// Cancel, Create and priority controls that used to sit at its trailing edge are the panel's
+    /// Cancel and Add and its priority marks now.
     private var header: some View {
         HStack(spacing: 12) {
             iOSIconTile(systemImage: "calendar.badge.plus", color: Theme.blue, size: 42, iconSize: 19)
 
             VStack(alignment: .leading, spacing: 3) {
-                Text(DateFormatters.relativeDate(from: dateKey))
+                // The draft's day, not the one the sheet opened on: the panel's Do and Starts rows
+                // can move it, and a header naming the old day would contradict them.
+                Text(DateFormatters.relativeDate(from: draft.startDateKey.isEmpty ? dateKey : draft.startDateKey))
                     .font(.system(size: 19, weight: .bold))
                     .foregroundStyle(Theme.text)
                 if let headerSubtitle {
@@ -221,246 +165,44 @@ struct iOSCalendarQuickCreateSheet: View {
                 }
             }
 
-            Spacer(minLength: 8)
-
-            if kind == .task {
-                priorityFlagButton
-            }
-
-            cancelButton
-            createButton
+            Spacer(minLength: 0)
         }
     }
 
-    private var priorityFlagButton: some View {
-        Button(action: cyclePriority) {
-            Image(systemName: "flag.fill")
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(Theme.priorityColor(priority))
-                .frame(width: 40, height: 40)
-                .background(Theme.priorityColor(priority).opacity(0.13))
-                .clipShape(Circle())
-                .iOSExpandedHitArea(2)
+    /// Only the slot the sheet was opened on, and only while the draft is still timed.
+    private var headerSubtitle: String? {
+        guard initialStartMinute != nil, !draft.isAllDay else { return nil }
+        return "Create around \(CadenceScheduleSupport.timeRangeLabel(startMinute: draft.startMin, endMinute: draft.endMin))."
+    }
+
+    /// What the panel's calendar row says when there is no calendar to pick. Access missing is
+    /// answered by `calendarAccessRequest` directly below it.
+    private var calendarUnavailableNotice: String? {
+        if !calendarManager.isAuthorized {
+            return "Calendar access is needed to create events."
         }
-        .buttonStyle(.iosPressable)
-        .accessibilityLabel("Priority: \(priority.label)")
-        .accessibilityHint("Tap to cycle priority")
-    }
-
-    private var cancelButton: some View {
-        Button {
-            dismiss()
-        } label: {
-            Image(systemName: "xmark")
-                .font(.system(size: 14, weight: .bold))
-                .foregroundStyle(Theme.dim)
-                .frame(width: 40, height: 40)
-                .background(Theme.surface)
-                .clipShape(Circle())
-                .iOSExpandedHitArea(2)
+        if calendarManager.writableCalendars.isEmpty {
+            return "No writable calendars are available."
         }
-        .buttonStyle(.iosPressable)
-        .accessibilityLabel("Cancel")
+        return nil
     }
 
-    private var createButton: some View {
-        Button(action: create) {
-            Image(systemName: "arrow.up")
-                .font(.system(size: 15, weight: .bold))
-                .foregroundStyle(Theme.onColor(for: Theme.blue))
-                .frame(width: 40, height: 40)
-                .background(canCreate ? Theme.blue : Theme.blue.opacity(0.4))
-                .clipShape(Circle())
-                .iOSExpandedHitArea(2)
-        }
-        .buttonStyle(.iosPressable)
-        .disabled(!canCreate)
-        .accessibilityLabel("Create")
-    }
-
-    private func cyclePriority() {
-        switch priority {
-        case .none: priority = .low
-        case .low: priority = .medium
-        case .medium: priority = .high
-        case .high: priority = .none
-        }
-    }
-
-    private var kindPicker: some View {
-        iOSSegmentedChoice(
-            options: iOSCalendarQuickCreateKind.allCases.map { ($0, $0.title) },
-            selection: $kind
-        )
-    }
-
-    /// The same notice the event *edit* sheet shows, in the same component, reading the same
-    /// string — rather than a third spelling of "that didn't work". It sits directly under the
-    /// create button, which is the control that appeared to do nothing.
+    /// **The request the panel will not make, kept in the host** ([[T-3171]]). The panel's calendar
+    /// row names what is missing; this sheet is a full surface opened on purpose, with room to ask,
+    /// so it offers the system prompt here — first in the host's slot, which the panel draws
+    /// directly under that calendar row.
     @ViewBuilder
-    private var actionErrorNotice: some View {
-        if let actionError {
-            iOSEditorSection(title: nil, style: .ruled) {
-                Text(actionError)
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(Theme.red)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-        }
-    }
-
-    /// No eyebrow. It read "TASK" / "EVENT" — the word the segmented control directly
-    /// above it already has lit up, and the word the field's own placeholder repeats a line below.
-    private var titleSection: some View {
-        iOSEditorSection(title: nil, style: .ruled) {
-            TextField(kind.placeholder, text: $title, axis: .vertical)
-                .textFieldStyle(.plain)
-                .font(.system(size: iOSEditorSheetMetrics.titleSize, weight: .bold))
-                .foregroundStyle(Theme.text)
-                .lineLimit(1...iOSEditorSheetMetrics.titleLineLimit)
-                .submitLabel(.done)
-                .onSubmit {
-                    if canCreate { create() }
-                }
-        }
-    }
-
-    private var calendarSection: some View {
-        iOSEditorSection(title: CadenceAppleCalendarNaming.integrationSectionTitle, style: .ruled) {
-            if !calendarManager.isAuthorized {
-                VStack(alignment: .leading, spacing: 10) {
-                    Text("Calendar access is needed to create events.")
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(Theme.dim)
-                    iOSActionButton(
-                        title: "Allow Calendar Access",
-                        systemImage: "calendar.badge.plus",
-                        role: .primary,
-                        size: .compact
-                    ) {
-                        Task {
-                            _ = await calendarManager.requestAccess()
-                            normalizeCalendarSelection()
-                        }
-                    }
-                }
-            } else if calendarManager.writableCalendars.isEmpty {
-                Text("No writable calendars are available.")
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(Theme.dim)
-            } else {
-                iOSEditorFieldRow(label: "Calendar", systemImage: "calendar", color: Theme.green) {
-                    iOSChoiceValueButton(title: selectedCalendarTitle, color: Theme.text) {
-                        showCalendarPicker = true
-                    }
-                    .popover(isPresented: $showCalendarPicker) {
-                        iOSChoicePopoverList(
-                            rows: calendarManager.writableCalendars.map { calendar in
-                                iOSChoiceRow(value: calendar.calendarIdentifier, title: calendar.title, systemImage: "calendar", color: Theme.green)
-                            },
-                            selection: $selectedCalendarID,
-                            isPresented: $showCalendarPicker
-                        )
-                    }
-                }
-            }
-        }
-    }
-
-    private var taskOptions: some View {
-        iOSEditorSection(title: "Details", style: .ruled) {
-            iOSEditorFieldRow(label: "Estimate", systemImage: "clock.fill", color: Theme.blue) {
-                EstimatePickerControl(value: $estimatedMinutes)
-            }
-
-            iOSEditorDivider()
-
-            iOSEditorFieldRow(label: "List", systemImage: "tray.full.fill", color: Theme.blue) {
-                iOSChoiceValueButton(title: containerTitle, color: Theme.text) {
-                    showContainerPicker = true
-                }
-                .popover(isPresented: $showContainerPicker) {
-                    iOSContainerChoicePopover(
-                        areas: areas,
-                        projects: projects,
-                        selection: $containerSelection,
-                        isPresented: $showContainerPicker
-                    )
-                }
-            }
-
-            iOSEditorDivider()
-
-            iOSEditorFieldRow(label: "Section", systemImage: "rectangle.split.3x1.fill", color: Theme.purple) {
-                iOSChoiceValueButton(title: sectionName, color: Theme.text) {
-                    showSectionPicker = true
-                }
-                .popover(isPresented: $showSectionPicker) {
-                    iOSChoicePopoverList(
-                        rows: availableSectionNames.map { name in
-                            iOSChoiceRow(value: name, title: name, color: Theme.purple)
-                        },
-                        selection: $sectionName,
-                        isPresented: $showSectionPicker
-                    )
-                }
-                .disabled(containerSelection == "inbox")
-                .opacity(containerSelection == "inbox" ? 0.45 : 1)
-            }
-        }
-    }
-
-    /// What the List tile says. The shared resolver's rule is *existence*, and its `displayName`
-    /// **trims** before it falls back — where this sheet's own copy tested `name.isEmpty`, so a
-    /// name that is only whitespace rendered as a blank tile here and as "Untitled Area" on every
-    /// other surface. Both list editors normalise on write, so that gap was latent rather than
-    /// live; adopting the resolver closes it either way.
-    private var containerTitle: String {
-        CadenceTaskComposerSupport.containerName(for: containerChoice, areas: areas, projects: projects)
-    }
-
-    private var timeSection: some View {
-        iOSEditorSection(title: "Schedule", style: .ruled) {
-            if kind == .task {
-                Toggle(isOn: $hasTime) {
-                    iOSEditorInlineLabel(
-                        label: "Set time",
-                        systemImage: "clock",
-                        color: Theme.amber
-                    )
-                }
-                .toggleStyle(.switch)
-                .tint(Theme.blue)
-            }
-
-            if kind == .event {
-                Toggle(isOn: $eventIsAllDay) {
-                    iOSEditorInlineLabel(
-                        label: "All day",
-                        systemImage: "sun.max",
-                        color: Theme.amber
-                    )
-                }
-                .toggleStyle(.switch)
-                .tint(Theme.blue)
-            }
-
-            if showsTimedControls {
-                iOSEditorDivider()
-
-                CadenceStartTimeFieldRow(minutes: startTimeMinutesBinding)
-
-                // No Duration row for a task. A task's length is `estimatedMinutes`, and the
-                // Estimate row in DETAILS above already edits it — two rows, one field, showing the
-                // same "30m" and moving together. An event has no Details section, so for it this
-                // is the only place the length can be set.
-                if kind != .task {
-                    iOSEditorDivider()
-
-                    iOSEditorFieldRow(label: "Duration", systemImage: "timer", color: Theme.green) {
-                        EstimatePickerControl(value: $estimatedMinutes)
-                    }
+    private var calendarAccessRequest: some View {
+        if draft.kind == .event && !calendarManager.isAuthorized {
+            iOSActionButton(
+                title: "Allow Calendar Access",
+                systemImage: "calendar.badge.plus",
+                role: .primary,
+                size: .compact
+            ) {
+                Task {
+                    _ = await calendarManager.requestAccess()
+                    normalizeCalendarSelection()
                 }
             }
         }
@@ -469,26 +211,26 @@ struct iOSCalendarQuickCreateSheet: View {
     private var notesSection: some View {
         iOSEditorSection(title: "Notes", style: .ruled) {
             VStack(alignment: .leading, spacing: 8) {
-                Text(kind == .event ? "Apple Calendar note" : "Task note")
+                Text(draft.kind == .event ? "Apple Calendar note" : "Task note")
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(Theme.subdued)
 
                 iOSMarkdownEditingSurface(
-                    text: $notes,
+                    text: $draft.notes,
                     isFocused: $notesEditorFocused,
                     placeholder: "Add markdown notes...",
                     referenceNotes: allNotes,
                     referenceTasks: allTasks,
                     onOpenReference: openMarkdownReference,
                     allowsEmbeddedTaskCreation: false,
-                    // **T-422, and not the flat `false` its sibling sheet takes.** This one `notes`
-                    // state has two destinations: `calendarManager.createEvent(notes:)` in event
+                    // **T-422, and not the flat `false` its sibling sheet takes.** This one draft
+                    // note has two destinations: `calendarManager.createEvent(notes:)` in event
                     // mode, which is `EKEvent.notes` and outside the store, and `task.notes` in
-                    // `configureTask(_:)` otherwise — and `AppTask.notes` *is* in the inventory,
-                    // because widening the scan to reach it was the whole of [[T-411]]. Refusing
-                    // images in both modes would take a working capability off task capture to fix
-                    // a hazard task capture does not have.
-                    allowsImageInsertion: kind != .event
+                    // `iOSScheduleDraftCreation.createTask` otherwise — and `AppTask.notes` *is* in
+                    // the inventory, because widening the scan to reach it was the whole of
+                    // [[T-411]]. Refusing images in both modes would take a working capability off
+                    // task capture to fix a hazard task capture does not have.
+                    allowsImageInsertion: draft.kind != .event
                 )
                 .iOSMarkdownWell()
             }
@@ -504,147 +246,37 @@ struct iOSCalendarQuickCreateSheet: View {
         }
     }
 
-    private func create() {
-        switch kind {
+    /// Every exit that is not a created record says why, through the panel (T-470, T-324): the
+    /// shared writes return the sentence, and only a `nil` — the write landed — dismisses.
+    private func create() -> String? {
+        let failure: String?
+        switch draft.kind {
         case .task:
-            createTask()
-        case .event:
-            createEvent()
-        }
-    }
-
-    /// T-470. This used to be one `guard (try? …) != nil else { return }`, which collapsed the two
-    /// answers `insertScheduledTask` can give into the same silent exit: a title with nothing in it
-    /// to make a task out of (`nil`), and a store that refused the write (a throw). The second one
-    /// left the sheet open, unchanged and wordless, so the create button read as inert — the very
-    /// complaint `actionErrorNotice` above was added to answer, and which this sheet's own Event
-    /// branch has answered since T-324.
-    ///
-    /// The shape is `iOSCreateTaskSheet.create()`'s: catch, name the failure where the user is
-    /// already looking, and return *before* anything that reports success. The `nil` answer stays a
-    /// silent return, because "you typed nothing" is not a failure to report — but it must not
-    /// dismiss either, which is the whole of T-471 in the branch below.
-    private func createTask() {
-        let startMin = hasTime ? minuteOfDay(from: startTime) : -1
-        let created: AppTask?
-        do {
-            created = try CadenceTaskMutationSupport.insertScheduledTask(
-                title: title,
+            failure = iOSScheduleDraftCreation.createTask(
+                from: draft,
                 allTasks: allTasks,
-                modelContext: modelContext,
-                scheduledDate: dateKey,
-                scheduledStartMin: startMin,
-                estimatedMinutes: estimatedMinutes,
-                configure: configureTask
+                areas: areas,
+                projects: projects,
+                modelContext: modelContext
             )
-        } catch {
-            actionError = TaskCreationService.saveFailureNotice
-            return
+        case .event:
+            failure = iOSScheduleDraftCreation.createEvent(from: draft, calendarManager: calendarManager)
         }
-        guard created != nil else { return }
-        actionError = nil
-        HabitNotificationReconcileSupport.scheduleReconcile(in: modelContext)
-        dismiss()
-    }
-
-    /// Every exit from here that is not a created event now says so, and says why. It used to
-    /// have two silent ones: an unparseable `dateKey`, and a rejected write — the sheet simply
-    /// returned, so the create button looked inert (T-324).
-    ///
-    /// T-324 could name the operation but not the cause, because the four rejections all arrived
-    /// as the same `false`. Since T-339 they arrive as a `CalendarWriteFailure`. The date-key
-    /// branch still has no cause to name: nothing was ever offered to EventKit, so it passes
-    /// `nil` rather than picking a case that would read as EventKit's answer.
-    private func createEvent() {
-        guard let baseDate = DateFormatters.date(from: dateKey) else {
-            actionError = CadenceCalendarEventEditingSupport.saveFailureNotice(for: nil)
-            return
-        }
-        let startDate: Date
-        let endDate: Date
-        if eventIsAllDay {
-            startDate = Calendar.current.startOfDay(for: baseDate)
-            endDate = Calendar.current.date(byAdding: .day, value: 1, to: startDate) ?? startDate
-        } else {
-            // T-3050. The start is a wall-clock reading and is *set*, not added to midnight —
-            // `CadenceCalendarEventTiming.startDate` records the measurement and the edge cases.
-            // The `endDate` line below is a **duration** added to an already-correct start and is
-            // correct as elapsed time; do not "fix" it to match the line above.
-            //
-            // A `nil` start names no time on the day, and it leaves by the same announced exit
-            // the unparseable date key does rather than by a bare `return`: nothing was offered to
-            // EventKit, so there is no cause to name. `minuteOfDay(from:)` clamps to `0...1439`,
-            // so no picker can reach it.
-            let startMinute = minuteOfDay(from: startTime)
-            guard let timedStart = CadenceCalendarEventTiming.startDate(
-                dateKey: dateKey,
-                startMin: startMinute
-            ) else {
-                actionError = CadenceCalendarEventEditingSupport.saveFailureNotice(for: nil)
-                return
-            }
-            startDate = timedStart
-            endDate = Calendar.current.date(byAdding: .minute, value: max(5, estimatedMinutes), to: startDate) ?? startDate
-        }
-        if let failure = calendarManager.createEvent(
-            title: title,
-            startDate: startDate,
-            endDate: endDate,
-            calendarID: selectedCalendarID,
-            notes: notes,
-            isAllDay: eventIsAllDay
-        ) {
-            actionError = CadenceCalendarEventEditingSupport.saveFailureNotice(for: failure)
-            return
-        }
-        actionError = nil
-        dismiss()
-    }
-
-    private func configureTask(_ task: AppTask) {
-        if priority != .none {
-            task.priority = priority
-        }
-        task.notes = notes
-        task.estimatedMinutes = estimatedMinutes
-        CadenceTaskMutationSupport.assignContainer(
-            task,
-            area: selectedArea,
-            project: selectedProject,
-            sectionName: sectionName,
-            allTasks: allTasks
-        )
+        if failure == nil { dismiss() }
+        return failure
     }
 
     private func normalizeSection() {
-        sectionName = CadenceTaskMutationSupport.normalizedSectionName(
-            sectionName,
-            area: selectedArea,
-            project: selectedProject
-        )
+        draft.sectionName = iOSScheduleDraftCreation.normalizedSectionName(for: draft, areas: areas, projects: projects)
     }
 
     private func normalizeCalendarSelection() {
-        guard kind == .event else { return }
-        if !calendarManager.writableCalendars.contains(where: { $0.calendarIdentifier == selectedCalendarID }) {
-            selectedCalendarID = calendarManager.writableCalendars.first?.calendarIdentifier ?? ""
-        }
+        iOSScheduleDraftCreation.resolveCalendarSelection(&draft, calendarManager: calendarManager)
     }
 
-    private func minuteOfDay(from date: Date) -> Int {
-        let components = Calendar.current.dateComponents([.hour, .minute], from: date)
-        return max(0, min(23 * 60 + 59, (components.hour ?? 9) * 60 + (components.minute ?? 0)))
-    }
-
-    /// Only the slot the sheet was opened on. The other branch used to read a subtitle listing the
-    /// options the segmented control two rows below already lists, on a sheet whose one purpose is
-    /// creating one of them.
-    private var headerSubtitle: String? {
-        guard let initialStartMinute else { return nil }
-        return "Create around \(CadenceScheduleSupport.timeRangeLabel(startMinute: initialStartMinute, endMinute: initialStartMinute + estimatedMinutes))."
-    }
-
-    private static func defaultStartTime(dateKey: String, startMinute: Int?) -> Date {
+    /// The minute the draft opens at: the tapped slot, or the next whole hour inside the drawn day.
+    /// Through the shared gap rule, so a slot inside the spring-forward gap opens at 03:00 (T-3119).
+    private static func defaultStartMinute(dateKey: String, startMinute: Int?) -> Int {
         let baseDate = DateFormatters.date(from: dateKey) ?? Date()
         let minute: Int
         if let startMinute {
@@ -653,36 +285,8 @@ struct iOSCalendarQuickCreateSheet: View {
             let hour = Calendar.current.component(.hour, from: Date())
             minute = min(max(hour + 1, CadenceScheduleSupport.calendarStartHour), CadenceScheduleSupport.calendarEndHour - 1) * 60
         }
-        // The shared rule, so a slot inside the spring-forward gap opens at 03:00 (T-3119).
-        return CadenceCalendarEventTiming.settingStartMinute(minute, of: baseDate) ?? baseDate
-    }
-}
-
-enum iOSCalendarQuickCreateKind: String, CaseIterable, Identifiable {
-    case task
-    case event
-
-    var id: String { rawValue }
-
-    var title: String {
-        switch self {
-        case .task: return "Task"
-        case .event: return "Event"
-        }
-    }
-
-    var placeholder: String {
-        switch self {
-        case .task: return "Task title"
-        case .event: return "Event title"
-        }
-    }
-
-    var systemImage: String {
-        switch self {
-        case .task: return "checkmark.circle"
-        case .event: return "calendar.badge.plus"
-        }
+        guard let start = CadenceCalendarEventTiming.settingStartMinute(minute, of: baseDate) else { return minute }
+        return CadenceCalendarEventTiming.minuteOfDay(of: start)
     }
 }
 
