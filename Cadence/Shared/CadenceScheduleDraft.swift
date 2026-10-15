@@ -128,6 +128,29 @@ struct CadenceScheduleDraft: Equatable {
     var listToken: String
     var sectionName: String
     var estimateIsExplicit: Bool
+    /// What `AppTask.estimatedMinutes` is written with — **its own field, not the block's length**
+    /// ([[T-3171]], the task editor's slice). `0` is a real value: "no estimate", which a task row
+    /// shows as nothing and the inspector's Estimate row reads as None. The block's geometry cannot
+    /// carry that, because `durationMinutes` is floored to one snap step so a drawn block never
+    /// inverts; nor can it carry a 20-minute estimate, because the edge handles snap to the
+    /// quarter-hour; nor a two-hour estimate on a task at 11 PM, because `endMin` stops at midnight.
+    /// A drag on a block still moves it — the geometry mutators below keep the two in step — but
+    /// an edit that only names a length never passes through the geometry at all.
+    var estimateMinutes: Int
+    /// The series' end condition, as stored. Read through `effectiveSeriesEndMode`, which is what
+    /// a control shows. **Named `series*`, not `recurrenceEnd*`**, so the draft's own fields can
+    /// never be mistaken for `AppTask`'s three by the guard that holds every write of those to
+    /// `CadenceTaskRecurrenceWorkflowSupport.applyRecurrenceEnd` — the draft is a value, and
+    /// `CadenceTaskEditDraftCommit` reaches the task's fields through exactly that workflow.
+    var seriesEndMode: TaskRecurrenceEndMode
+    var seriesEndDateKey: String
+    var seriesEndCount: Int
+    /// Which occurrence of its series this is, 1-based — **read, never written**. The Ends row's
+    /// "3 of 5" is the one fact about a counted series the editor has nowhere else to say.
+    var seriesOccurrenceNumber: Int
+    /// Whether the task is done. It colours nothing by itself; it is what stops a past do date or
+    /// a passed deadline being painted as wrong on a task that is already finished.
+    var isDone: Bool
 
     // MARK: Event only
 
@@ -169,6 +192,12 @@ struct CadenceScheduleDraft: Equatable {
         self.listToken = CadenceTaskComposerSupport.token(for: .inbox)
         self.sectionName = TaskSectionDefaults.defaultName
         self.estimateIsExplicit = false
+        self.estimateMinutes = self.endMin - self.startMin
+        self.seriesEndMode = .never
+        self.seriesEndDateKey = ""
+        self.seriesEndCount = 0
+        self.seriesOccurrenceNumber = 1
+        self.isDone = false
         self.location = ""
         self.calendarID = ""
     }
@@ -216,6 +245,12 @@ struct CadenceScheduleDraft: Equatable {
         self.listToken = CadenceTaskComposerSupport.token(for: .inbox)
         self.sectionName = TaskSectionDefaults.defaultName
         self.estimateIsExplicit = false
+        self.estimateMinutes = 0
+        self.seriesEndMode = .never
+        self.seriesEndDateKey = ""
+        self.seriesEndCount = 0
+        self.seriesOccurrenceNumber = 1
+        self.isDone = false
         self.location = location
         self.calendarID = calendarID
 
@@ -290,7 +325,39 @@ struct CadenceScheduleDraft: Equatable {
 
     /// What `AppTask.scheduledStartMin` is written with. See the type note on all-day tasks.
     var scheduledStartMin: Int {
-        isAllDay ? -1 : startMin
+        // A time on no day is not a slot — `CadenceTaskMutationSupport.setPlanningDates` drops
+        // the minute whenever the day is cleared, and the draft says the same thing.
+        isAllDay || startDateKey.isEmpty ? -1 : startMin
+    }
+
+    /// The task's **Estimate** row. Names a length and nothing else, so `0` (None) and an
+    /// off-grid figure both survive; on a timed task the block is redrawn to match, never shorter
+    /// than one snap step, because that is all a drawn block can be.
+    mutating func setEstimate(_ minutes: Int) {
+        estimateMinutes = max(0, minutes)
+        guard !spansMultipleDays else { return }
+        endMin = min(
+            CadenceScheduleSupport.calendarEndHour * 60,
+            startMin + max(Self.minimumDurationMinutes, estimateMinutes)
+        )
+    }
+
+    /// The Do grid's **Clear**: the task leaves the calendar, and its time with it — a slot on no
+    /// day is not a slot.
+    mutating func clearDoDate() {
+        startDateKey = ""
+        endDateKey = ""
+        isAllDay = true
+    }
+
+    /// The Do section's Time row, tapped while the task has no time. A time needs a day under it,
+    /// so a task with no do date adopts today first — what the inspector's time picker always did.
+    mutating func addTime(today: String = DateFormatters.todayKey()) {
+        if startDateKey.isEmpty {
+            startDateKey = today
+            endDateKey = today
+        }
+        isAllDay = false
     }
 
     /// The top handle. Pushing it past the bottom edge would invert the block, so it stops one snap
@@ -302,6 +369,7 @@ struct CadenceScheduleDraft: Equatable {
             CadenceScheduleSupport.calendarStartHour * 60,
             min(Self.snapped(minute), endMin - Self.minimumDurationMinutes)
         )
+        estimateMinutes = durationMinutes
     }
 
     /// The bottom handle, with the same non-inversion rule read the other way.
@@ -311,6 +379,7 @@ struct CadenceScheduleDraft: Equatable {
             CadenceScheduleSupport.calendarEndHour * 60,
             max(Self.snapped(minute), startMin + Self.minimumDurationMinutes)
         )
+        estimateMinutes = durationMinutes
     }
 
     /// Moving the start carries the block's length with it, rather than stretching it against a
@@ -419,9 +488,34 @@ struct CadenceScheduleDraft: Equatable {
     /// time plus the length once there is — so the row says what it holds rather than only that it
     /// could hold something.
     var doTimeLabel: String {
-        guard !isAllDay else { return "Add time" }
-        return "\(TimeFormatters.timeString(from: startMin)) · "
-            + CadenceTaskPresentationSupport.estimateLabel(minutes: durationMinutes)
+        guard !isAllDay, !startDateKey.isEmpty else { return "Add time" }
+        let time = TimeFormatters.timeString(from: startMin)
+        // No estimate is no length to state, not a zero one.
+        guard estimateMinutes > 0 else { return time }
+        return "\(time) · " + CadenceTaskPresentationSupport.estimateLabel(minutes: estimateMinutes)
+    }
+
+    /// A do date in the past on a task that is not done — one of the two things in a task's
+    /// schedule that is wrong, and so one of the two the panel spends colour on.
+    var isDoDateOverdue: Bool {
+        guard kind == .task, !isDone, !startDateKey.isEmpty else { return false }
+        return (DateFormatters.dayOffset(from: startDateKey) ?? 0) < 0
+    }
+
+    /// A passed deadline on a task that is not done — the other one.
+    var isDueDateOverdue: Bool {
+        kind == .task && CadenceDueUrgency.evaluate(dueDateKey: dueDateKey, isDone: isDone) == .overdue
+    }
+
+    /// The end mode that actually applies: `AppTask.effectiveRecurrenceEndMode`'s rule, read off
+    /// the draft's own rule so a Repeat change shows its Ends rows before anything is saved.
+    var effectiveSeriesEndMode: TaskRecurrenceEndMode {
+        guard repeatRule != .none else { return .never }
+        switch seriesEndMode {
+        case .never: return .never
+        case .onDate: return seriesEndDateKey.isEmpty ? .never : .onDate
+        case .afterCount: return seriesEndCount >= 1 ? .afterCount : .never
+        }
     }
 
     var dueRowLabel: String {

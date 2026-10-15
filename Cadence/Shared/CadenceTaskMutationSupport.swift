@@ -38,7 +38,7 @@ extension CadenceTaskMutationSupport {
     ///   Status row inside the detail sheet, while a done row un-did itself in one swipe.
     ///
     /// The labels that describe this gesture read the same predicate — see `iOSTaskRowActions`,
-    /// `iOSTaskRow`, `iOSTaskEditorTitleCard` and `iOSBoardTaskCard` — and
+    /// `iOSTaskRow`, `iOSTaskStatusActionsSection` and `iOSBoardTaskCard` — and
     /// `CadenceTaskStatusLifecycleSurfaceTests` pins that they do.
     ///
     /// **The completion spine commits now (T-636).** This used to end `try? modelContext.save()`,

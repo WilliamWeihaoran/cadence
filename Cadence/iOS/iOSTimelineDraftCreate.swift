@@ -342,7 +342,7 @@ struct iOSTimelineDraftPanelHost: View {
                 modelContext: modelContext,
                 scheduledDate: draft.startDateKey,
                 scheduledStartMin: draft.scheduledStartMin,
-                estimatedMinutes: draft.durationMinutes,
+                estimatedMinutes: draft.estimateMinutes,
                 configure: configureTask
             )
         } catch {
@@ -356,7 +356,7 @@ struct iOSTimelineDraftPanelHost: View {
 
     private func configureTask(_ task: AppTask) {
         task.notes = draft.notes
-        task.estimatedMinutes = draft.durationMinutes
+        task.estimatedMinutes = draft.estimateMinutes
         task.dueDate = draft.dueDateKey
         if draft.priority != .none {
             task.priority = draft.priority

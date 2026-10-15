@@ -2,104 +2,41 @@
 import SwiftData
 import SwiftUI
 
-/// **The inspector's one quiet field list** — do date, due date, time, estimate, repeat (and its end
-/// condition), and whatever the focus timer has logged.
+/// **The task's series and its measurement** — Repeat, the end condition under it, and whatever
+/// the focus timer has logged — drawn in the schedule panel's host slot ([[T-3171]]).
 ///
-/// **T-1278, chosen by the owner from three drawn mockups.** It was two groups: an untitled
-/// "properties" pair (Priority, Milestone) above a "SCHEDULE" well. Two of the three drafts — a chip
-/// summary strip and a 2×2 tile grid — were rejected for the same reason, that each introduced a
-/// tile or card layer this app does not otherwise draw, against the standing *one hover/selection
-/// layer at one radius* rule. What is left is the layer the app already has: labelled rows on the
-/// sheet's own plate with a hairline between them and no box around them, which is exactly what
-/// `iOSEditorSection(style: .ruled)` is for.
+/// It was the inspector's whole field list (T-1278: labelled rows on the sheet's plate with a
+/// hairline between them and no box around them, chosen by the owner from three mockups). When the
+/// inspector became `CadenceSchedulePanel` in edit mode, the panel took Do, Due, the time and the
+/// estimate; what is left here is what the panel has no row for. **The end condition** is an edit
+/// only an existing series has — a creating panel offers Repeat and stops — and it shares the one
+/// scope question with the rule, so the two stay together with the Repeat row rather than splitting
+/// across the panel and its host (`offersTaskRepeat: false` is how the panel is told). **Logged**
+/// is the one figure in the sheet nobody sets.
 ///
-/// **No heading, because every row names itself.** The group the properties pair used to carry was
-/// titled "Overview" and was deleted for saying nothing the rows did not; "Schedule" over a list
-/// that now also holds an estimate and a milestone would be the same mistake with a truer-sounding
-/// word.
-///
-/// **Priority is not here.** It moved to the title row as the `!` / `!!` / `!!!` mark control both
-/// platforms now share — see `iOSTaskEditorTitleCard`. Nothing else in the sheet writes it.
-///
-/// Each date is **one** control: the picker states the day and its popover offers Today / Tomorrow /
-/// This Weekend, a month grid, and Clear. The toggle that used to sit beside it was a second
-/// affordance for the same field, and the pair could disagree — the toggle said "on" while the
-/// picker below it showed a day the task did not have.
+/// Every control writes the **draft**: the rule and the bound reach the store on Save, through
+/// `CadenceTaskEditDraftCommit`, after the series-scope question when the task has a series.
 struct iOSTaskFieldListSection: View {
-    @Bindable var task: AppTask
-    let recurrenceSelection: Binding<TaskRecurrenceRule>
-    /// The one way this section writes an end condition, and deliberately a callback rather than
-    /// three bindings: every end edit has to reach
-    /// `CadenceTaskRecurrenceWorkflowSupport.applyRecurrenceEnd` — which normalizes the values that
-    /// do not belong to the chosen mode and propagates across the series — and it has to ask the
-    /// same scope question the rule edit asks. Writing `task.recurrenceEndMode` from here would
-    /// bypass both, and silently: the fields are plain stored properties.
-    let applyRecurrenceEnd: (TaskRecurrenceEndMode, String, Int) -> Void
-    let hasScheduledDate: Binding<Bool>
-    let scheduledDate: Binding<Date>
-    let hasDueDate: Binding<Bool>
-    let dueDate: Binding<Date>
-    /// Committing: answers whether the minute landed, so the picker below can stay open over a
-    /// refusal instead of closing over it (T-761). See `iOSTaskDetailSheet.selectScheduledTime`.
-    let selectScheduledTime: (Int) -> Bool
-    let scheduledTimeLabel: String
+    @Binding var draft: CadenceScheduleDraft
+    let loggedMinutes: Int
 
     @State private var showRepeatPicker = false
-    @State private var showTimePicker = false
     @State private var showEndModePicker = false
     @State private var showEndCountPicker = false
-    @State private var showEstimatePicker = false
-
-    /// Colour is spent only on what is wrong. A do date in the past and an overdue deadline are the
-    /// two things in this list that are, so everything else — including a do date of *today*, which
-    /// is the common case — is `Theme.dim`.
-    private var isOverdo: Bool {
-        guard !task.scheduledDate.isEmpty, !task.isDone else { return false }
-        return (DateFormatters.dayOffset(from: task.scheduledDate) ?? 0) < 0
-    }
-
-    private var isOverdue: Bool {
-        CadenceDueUrgency.evaluate(dueDateKey: task.dueDate, isDone: task.isDone) == .overdue
-    }
-
-    private var hasScheduledStartMin: Bool {
-        task.scheduledStartMin >= 0
-    }
-
 
     var body: some View {
         // Divider-separated rows, so no `contentSpacing`: `iOSEditorDivider` already pads itself by
-        // 6pt on each side, and adding more on both sides counts the same gap twice. The divider
-        // owns the spacing between rows; the section does not add to it.
+        // 6pt on each side, and adding more on both sides counts the same gap twice.
         iOSEditorSection(title: nil, style: .ruled) {
-            doRow
-
-            iOSEditorDivider()
-            dueRow
-
-            // The time belongs to the do date and cannot mean anything without one, so it appears
-            // with it rather than sitting empty above a task that has no day.
-            if hasScheduledDate.wrappedValue {
-                iOSEditorDivider()
-                timeRow
-            }
-
-            iOSEditorDivider()
-            estimateRow
-
-            iOSEditorDivider()
             repeatRow
 
-            // A recurring task created here used to repeat forever with no way to bound it, while
-            // correctly honouring a bound set on a Mac — the end condition has been in the model
-            // and in `applyRecurrenceEnd` all along and only macOS's inspector offered it (T-188).
             // The rows are hidden outright for a one-off task: an end condition on something that
-            // does not repeat has nothing to end.
-            if CadenceTaskRecurrenceEndPresentation.showsEndControls(rule: task.recurrenceRule) {
+            // does not repeat has nothing to end (T-188).
+            if CadenceTaskRecurrenceEndPresentation.showsEndControls(rule: draft.repeatRule) {
                 iOSEditorDivider()
                 endsRow
 
-                switch CadenceTaskRecurrenceEndPresentation.detail(for: task.effectiveRecurrenceEndMode) {
+                switch CadenceTaskRecurrenceEndPresentation.detail(for: draft.effectiveSeriesEndMode) {
                 case .none:
                     EmptyView()
                 case .date:
@@ -115,129 +52,13 @@ struct iOSTaskFieldListSection: View {
         }
     }
 
-    // MARK: - Dates
-
-    private var doRow: some View {
-        iOSEditorFieldRow(
-            label: "Do",
-            systemImage: "sun.max.fill",
-            color: isOverdo ? Theme.red : Theme.dim
-        ) {
-            CadenceDatePicker(
-                selection: doDateBinding,
-                placeholder: hasScheduledDate.wrappedValue ? nil : "No do date",
-                minHeight: 44,
-                showsClear: hasScheduledDate.wrappedValue,
-                onClear: { hasScheduledDate.wrappedValue = false }
-            )
-        }
-    }
-
-    private var dueRow: some View {
-        iOSEditorFieldRow(
-            label: "Due",
-            systemImage: "flag.fill",
-            color: isOverdue ? Theme.red : Theme.dim
-        ) {
-            CadenceDatePicker(
-                selection: dueDateBinding,
-                placeholder: hasDueDate.wrappedValue ? nil : "No due date",
-                minHeight: 44,
-                showsClear: hasDueDate.wrappedValue,
-                onClear: { hasDueDate.wrappedValue = false }
-            )
-        }
-    }
-
-    /// Picking a day is what gives the task a do date; there is no separate switch to flip first.
-    private var doDateBinding: Binding<Date> {
-        Binding(
-            get: { scheduledDate.wrappedValue },
-            set: { newValue in
-                scheduledDate.wrappedValue = newValue
-                hasScheduledDate.wrappedValue = true
-            }
-        )
-    }
-
-    private var dueDateBinding: Binding<Date> {
-        Binding(
-            get: { dueDate.wrappedValue },
-            set: { newValue in
-                dueDate.wrappedValue = newValue
-                hasDueDate.wrappedValue = true
-            }
-        )
-    }
-
-    /// One control, again: "No time" is the first row of the same picker that sets a time, rather
-    /// than a toggle beside it that could contradict the value shown.
-    private var timeRow: some View {
-        iOSEditorFieldRow(label: "Time", systemImage: "clock.fill", color: Theme.dim) {
-            iOSChoiceValueButton(
-                title: scheduledTimeLabel,
-                color: hasScheduledStartMin ? Theme.text : Theme.dim,
-                minHeight: 44
-            ) {
-                showTimePicker = true
-            }
-            .popover(isPresented: $showTimePicker) {
-                iOSChoicePopoverList(
-                    rows: [iOSChoiceRow(value: -1, title: "No time", color: Theme.dim)]
-                        + stride(from: 0, to: 1440, by: 15).map { minute in
-                            iOSChoiceRow(
-                                value: minute,
-                                title: TimeFormatters.timeString(from: minute),
-                                color: Theme.dim
-                            )
-                        },
-                    selection: task.scheduledStartMin,
-                    isPresented: $showTimePicker,
-                    select: selectScheduledTime
-                )
-            }
-        }
-    }
-
-    // MARK: - Estimate
-
-    /// **The estimate is a row now, not a chip beside the title (T-1278).** It sat in the title row
-    /// because "an estimate is a property of the task the way its priority is" — which is true, and
-    /// is why the *priority* is what sits there now: there is one trailing slot on that line and
-    /// the two platforms had to agree on what fills it. The estimate reads as a field the moment it
-    /// is asked "how long", which is the question every other row on this list answers.
-    ///
-    /// It opens the shared roller directly rather than drawing `EstimatePickerControl`: that
-    /// control carries its own `timer` glyph and its own filled pill, and in a row already labelled
-    /// `timer` that is the glyph twice and the only tile in a list with no tiles. The words are
-    /// `CadenceTaskPresentationSupport.estimateValueLabel`, which is what the pill says too.
-    private var estimateRow: some View {
-        iOSEditorFieldRow(label: "Estimate", systemImage: "timer", color: Theme.dim) {
-            iOSChoiceValueButton(
-                title: CadenceTaskPresentationSupport.estimateValueLabel(minutes: task.estimatedMinutes),
-                color: task.estimatedMinutes > 0 ? Theme.text : Theme.dim,
-                minHeight: 44
-            ) {
-                showEstimatePicker = true
-            }
-            .popover(isPresented: $showEstimatePicker) {
-                EstimatePickerPopoverContent(value: $task.estimatedMinutes) {
-                    showEstimatePicker = false
-                }
-                // Same reason as `CadenceDatePicker`: compact width otherwise promotes this to a
-                // full-height sheet wrapped around a 260pt panel.
-                .presentationCompactAdaptation(.popover)
-            }
-        }
-    }
-
     // MARK: - Repeat
 
     private var repeatRow: some View {
-        iOSEditorFieldRow(label: "Repeat", systemImage: task.recurrenceRule.systemImage, color: Theme.dim) {
+        iOSEditorFieldRow(label: "Repeat", systemImage: draft.repeatRule.systemImage, color: Theme.dim) {
             iOSChoiceValueButton(
-                title: task.recurrenceRule.label,
-                color: task.recurrenceRule == .none ? Theme.dim : Theme.text,
+                title: draft.repeatRule.label,
+                color: draft.repeatRule == .none ? Theme.dim : Theme.text,
                 minHeight: 44
             ) {
                 showRepeatPicker = true
@@ -247,7 +68,7 @@ struct iOSTaskFieldListSection: View {
                     rows: TaskRecurrenceRule.allCases.map { rule in
                         iOSChoiceRow(value: rule, title: rule.label, systemImage: rule.systemImage, color: Theme.dim)
                     },
-                    selection: recurrenceSelection,
+                    selection: $draft.repeatRule,
                     isPresented: $showRepeatPicker
                 )
             }
@@ -261,23 +82,23 @@ struct iOSTaskFieldListSection: View {
     /// inspector puts under its Repeat row — including "3 of 5", which is the one fact about a
     /// counted series that this sheet has nowhere else to say.
     ///
-    /// It reads `effectiveRecurrenceEndMode`, not `recurrenceEndMode`: a mode whose value cannot
+    /// It reads `effectiveSeriesEndMode`, not the stored mode: a mode whose value cannot
     /// be honoured (an `.onDate` with no date) already behaves as `.never` everywhere else, so
     /// showing it as selected here would be the control disagreeing with the series.
     private var endsRow: some View {
         iOSEditorFieldRow(
             label: "Ends",
-            systemImage: task.effectiveRecurrenceEndMode.systemImage,
+            systemImage: draft.effectiveSeriesEndMode.systemImage,
             color: Theme.dim
         ) {
             iOSChoiceValueButton(
                 title: CadenceTaskRecurrenceEndPresentation.valueLabel(
-                    mode: task.effectiveRecurrenceEndMode,
-                    endDateKey: task.recurrenceEndDate,
-                    occurrenceNumber: task.recurrenceOccurrenceNumber,
-                    endCount: task.recurrenceEndCount
+                    mode: draft.effectiveSeriesEndMode,
+                    endDateKey: draft.seriesEndDateKey,
+                    occurrenceNumber: draft.seriesOccurrenceNumber,
+                    endCount: draft.seriesEndCount
                 ),
-                color: task.effectiveRecurrenceEndMode == .never ? Theme.dim : Theme.text,
+                color: draft.effectiveSeriesEndMode == .never ? Theme.dim : Theme.text,
                 minHeight: 44
             ) {
                 showEndModePicker = true
@@ -308,7 +129,7 @@ struct iOSTaskFieldListSection: View {
     private var endCountRow: some View {
         iOSEditorFieldRow(label: "Occurrences", systemImage: "number", color: Theme.dim) {
             iOSChoiceValueButton(
-                title: "\(CadenceTaskRecurrenceEndPresentation.resolvedEndCount(task.recurrenceEndCount))",
+                title: "\(CadenceTaskRecurrenceEndPresentation.resolvedEndCount(draft.seriesEndCount))",
                 color: Theme.text,
                 minHeight: 44
             ) {
@@ -329,27 +150,23 @@ struct iOSTaskFieldListSection: View {
     /// Selecting a mode has to arrive with that mode's value already usable.
     ///
     /// `.onDate` with an empty key and `.afterCount` with a stored `0` both degrade straight back
-    /// to `.never` in `effectiveRecurrenceEndMode`, so writing the bare mode would look like the
+    /// to `.never` in `effectiveSeriesEndMode`, so writing the bare mode would look like the
     /// picker refusing the tap. Seeding here is the same fix macOS's `selectOnDate` makes, from the
     /// same two constants.
     private var endModeSelection: Binding<TaskRecurrenceEndMode> {
         Binding(
-            get: { task.effectiveRecurrenceEndMode },
+            get: { draft.effectiveSeriesEndMode },
             set: { mode in
                 switch CadenceTaskRecurrenceEndPresentation.detail(for: mode) {
                 case .none:
-                    applyRecurrenceEnd(mode, "", 0)
+                    setEnd(mode, "", 0)
                 case .date:
-                    let key = task.recurrenceEndDate.isEmpty
+                    let key = draft.seriesEndDateKey.isEmpty
                         ? CadenceTaskRecurrenceEndPresentation.defaultEndDateKey()
-                        : task.recurrenceEndDate
-                    applyRecurrenceEnd(mode, key, 0)
+                        : draft.seriesEndDateKey
+                    setEnd(mode, key, 0)
                 case .count:
-                    applyRecurrenceEnd(
-                        mode,
-                        "",
-                        CadenceTaskRecurrenceEndPresentation.resolvedEndCount(task.recurrenceEndCount)
-                    )
+                    setEnd(mode, "", CadenceTaskRecurrenceEndPresentation.resolvedEndCount(draft.seriesEndCount))
                 }
             }
         )
@@ -357,38 +174,37 @@ struct iOSTaskFieldListSection: View {
 
     private var endDateSelection: Binding<Date> {
         Binding(
-            get: { CadenceTaskRecurrenceEndPresentation.resolvedEndDate(task.recurrenceEndDate) },
-            set: { applyRecurrenceEnd(.onDate, DateFormatters.dateKey(from: $0), 0) }
+            get: { CadenceTaskRecurrenceEndPresentation.resolvedEndDate(draft.seriesEndDateKey) },
+            set: { setEnd(.onDate, DateFormatters.dateKey(from: $0), 0) }
         )
     }
 
     private var endCountSelection: Binding<Int> {
         Binding(
-            get: { CadenceTaskRecurrenceEndPresentation.resolvedEndCount(task.recurrenceEndCount) },
-            set: { applyRecurrenceEnd(.afterCount, "", CadenceTaskRecurrenceEndPresentation.normalizedEndCount($0)) }
+            get: { CadenceTaskRecurrenceEndPresentation.resolvedEndCount(draft.seriesEndCount) },
+            set: { setEnd(.afterCount, "", CadenceTaskRecurrenceEndPresentation.normalizedEndCount($0)) }
         )
+    }
+
+    /// The Ends rows' one write, normalized the way `applyRecurrenceEnd` will store it — values
+    /// that do not belong to the chosen mode are dropped, so the draft and the saved series cannot
+    /// disagree about what was chosen.
+    private func setEnd(_ mode: TaskRecurrenceEndMode, _ dateKey: String, _ count: Int) {
+        draft.seriesEndMode = mode
+        draft.seriesEndDateKey = mode == .onDate ? dateKey : ""
+        draft.seriesEndCount = mode == .afterCount ? CadenceTaskRecurrenceEndPresentation.normalizedEndCount(count) : 0
     }
 
     // MARK: - Logged
 
-    /// **Logged time keeps a row of its own, and T-1278 had to decide that rather than inherit it.**
-    /// None of the three mockups drew it — they were drawn from the fields a user *sets*, and this
-    /// is the one figure in the sheet nobody sets: the focus timer writes `actualMinutes` and this
-    /// row reports it. It used to be an editable minutes picker, which invited a user to overwrite a
-    /// measurement by hand, and macOS deleted its equivalent "Actual" row for that reason.
-    ///
-    /// The two alternatives were both worse. Dropping it strands the only readout of time this app
-    /// measured, with no other surface in the sheet showing it. Folding it into the Estimate row's
-    /// value ("30m · 12m logged") puts a measurement and an editable field on one line under one
-    /// label, so the row would no longer have a single answer — and the Estimate row is a *control*,
-    /// which this is deliberately not.
-    ///
-    /// So: its own row, last, and only when there is something to report — which is what
-    /// `loggedLabel` returning `nil` on zero already encodes, so on the common task the list ends at
-    /// Milestone and costs nothing.
+    /// **Logged time keeps a row of its own** (T-1278). It is the one figure in the sheet nobody
+    /// sets: the focus timer writes `actualMinutes` and this row reports it. It used to be an
+    /// editable minutes picker, which invited a user to overwrite a measurement by hand, and macOS
+    /// deleted its equivalent "Actual" row for that reason. Only when there is something to report
+    /// — `loggedLabel` returns `nil` on zero.
     @ViewBuilder
     private var loggedRow: some View {
-        if let logged = CadenceTaskInspectorSupport.loggedLabel(minutes: task.actualMinutes) {
+        if let logged = CadenceTaskInspectorSupport.loggedLabel(minutes: loggedMinutes) {
             iOSEditorDivider()
             iOSEditorFieldRow(label: "Logged", systemImage: "stopwatch", color: Theme.dim) {
                 Text(logged)
@@ -408,12 +224,12 @@ struct iOSTaskFieldListSection: View {
 /// rows genuinely is one thing, and boxing it is what tells a reader where the list ends and the
 /// Notes begin. One surface, one radius, no border, no hover layer.
 ///
-/// `Theme.surfaceElevated`, **not** the `Theme.surface` the mockup named: the form this block sits
-/// in is already drawn on `Theme.surface` (`iOSTaskDetailSheet.editorScrollView`), so a
-/// `Theme.surface` block inside it is the same colour on the same colour and there is no block at
-/// all. `surfaceElevated` is the ramp's next stop and is what `Theme`'s own note calls the fill for
-/// content nested inside an already-elevated surface. The mockups were drawn standalone against
-/// `Theme.bg`, where `surface` *is* the readable step; inside the card it is one step short.
+/// `Theme.surface`, the fill the mockup named — and **one step below** the plate it sits on. Since
+/// [[T-3171]] this block is inside `CadenceSchedulePanel`, which draws on `Theme.surfaceElevated`,
+/// so the `surfaceElevated` it wore while the form was on `Theme.surface` would now be the same
+/// colour on the same colour and there would be no block at all. A step down reads as a well, the
+/// way the markdown well beneath it does; a step up would be `surfaceHighlight`, which `Theme`
+/// reserves for hover and selection.
 ///
 /// The count beside the label is live and comes from the same `CadenceSubtaskProgress` the task row
 /// draws its `2/5` badge from, so the panel and the row cannot disagree about how far along a task
@@ -463,7 +279,7 @@ struct iOSTaskSubtasksSection: View {
             addSubtaskRow
         }
         .padding(.horizontal, 10)
-        .background(Theme.surfaceElevated)
+        .background(Theme.surface)
         .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
     }
 
@@ -534,20 +350,38 @@ struct iOSTaskNotesSection: View {
     }
 }
 
-/// The two status transitions a checkbox cannot express, under no heading — a label over two
-/// buttons names what the buttons already say.
+/// The task's status transitions, under no heading — a label over the buttons names what the
+/// buttons already say.
 ///
-/// Between these and the header's completion circle, every status value has exactly one control:
-/// the circle owns `done`, "Start" owns `inProgress`, "Cancel" owns `cancelled`, and each of the
-/// two buttons is its own undo back to `todo`. Deleting stays on the toolbar rather than gaining a
-/// second home down here.
+/// Every status value has exactly one control: **Complete** owns `done` (it was the title card's
+/// circle until [[T-3171]] gave the title row to the shared panel, which draws no platform
+/// completion control), "Start" owns `inProgress`, "Cancel" owns `cancelled`, and each is its own
+/// undo back to `todo` — on a cancelled task Complete restores rather than completes, T-344's rule.
+/// They land the moment they are tapped, as they always did: a status change is an action on the
+/// record, not a field of the draft. Deleting is the panel's footer, and gains no second home here.
 struct iOSTaskStatusActionsSection: View {
     @Bindable var task: AppTask
+    let onToggleCompletion: () -> Void
     let onSetStatus: (TaskStatus) -> Void
+
+    private var isFinished: Bool {
+        CadenceTaskQuerySupport.isFinishedTask(task)
+    }
 
     var body: some View {
         iOSEditorSection(title: nil, style: .ruled, contentSpacing: 10) {
             HStack(spacing: 10) {
+                iOSActionButton(
+                    title: isFinished ? "Reopen" : "Complete",
+                    systemImage: isFinished ? "arrow.uturn.backward.circle" : "checkmark.circle",
+                    role: task.isDone ? .primary : .secondary,
+                    size: .compact,
+                    tint: task.isDone ? CadenceTaskPresentationSupport.statusColor(.done) : Theme.muted,
+                    fullWidth: true,
+                    action: onToggleCompletion
+                )
+                .accessibilityLabel(isFinished ? "Mark task todo" : "Complete task")
+
                 ForEach(CadenceTaskInspectorSupport.StatusAction.allCases, id: \.self) { action in
                     let isActive = action.isActive(task.status)
 

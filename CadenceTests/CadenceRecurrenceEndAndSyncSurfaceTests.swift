@@ -35,11 +35,16 @@ struct CadenceRecurrenceEndSurfaceTests {
     /// Two calls per platform, not one. Each sheet writes the end condition from its own control
     /// *and* clears it when the rule drops to `.none` — an end condition left behind on a task that
     /// no longer repeats silently re-arms the moment repeating is switched back on.
+    ///
+    /// **The iOS pair moved, not vanished ([[T-3171]]).** The iOS inspector became the shared
+    /// schedule panel, whose series rows write the draft; the two calls are in the draft's one save,
+    /// `CadenceTaskEditDraftCommit.apply`, which the iOS sheet's Save reaches and which macOS can
+    /// adopt as it is.
     @Test func bothPlatformsWriteTheEndConditionThroughTheSharedWorkflow() throws {
         try expectCallSites(
             of: "CadenceTaskRecurrenceWorkflowSupport.applyRecurrenceEnd",
             at: [
-                "Cadence/iOS/iOSTaskDetailSheet.swift": 2,
+                "Cadence/Shared/CadenceScheduleDraftTaskEditing.swift": 2,
                 "Cadence/macOS/Views/TaskInspectorWorkflowSupportViews.swift": 2,
             ]
         )
@@ -77,10 +82,16 @@ struct CadenceRecurrenceEndSurfaceTests {
                 "Cadence/Services/CadenceArchiveImportService.swift",
                 // Reads the field to copy it into the archive, and only that — see above.
                 "Cadence/Services/CadenceDataExportService.swift",
+                // [[T-3171]]: reads the three to open a task in the shared schedule panel's draft,
+                // whose own fields are `series*` so they cannot be mistaken for these. Read only —
+                // asserted below with the views.
+                "Cadence/Shared/CadenceScheduleDraftTaskEditing.swift",
+                // The edit snapshot: captures the three before a write and puts them back, verbatim,
+                // on a refusal — the importer's capability, granted on the importer's ground and
+                // asserted the same way below.
+                "Cadence/Shared/CadenceTaskFieldEditCommit.swift",
                 "Cadence/Shared/CadenceTaskMutationSupport.swift",
                 "Cadence/Shared/CadenceTaskRecurrenceWorkflowSupport.swift",
-                "Cadence/iOS/iOSTaskDetailSheet.swift",
-                "Cadence/iOS/iOSTaskDetailSheetSections.swift",
                 "Cadence/macOS/Views/TaskInspectorWorkflowSupportViews.swift",
             ].sorted(),
             "recurrenceEndCount is read or written from \(endCountReaders)"
@@ -92,6 +103,7 @@ struct CadenceRecurrenceEndSurfaceTests {
         for path in [
             "Cadence/iOS/iOSTaskDetailSheetSections.swift",
             "Cadence/iOS/iOSTaskDetailSheet.swift",
+            "Cadence/Shared/CadenceScheduleDraftTaskEditing.swift",
             "Cadence/macOS/Views/TaskInspectorWorkflowSupportViews.swift",
             "Cadence/Services/CadenceDataExportService.swift",
         ] {
@@ -127,6 +139,20 @@ struct CadenceRecurrenceEndSurfaceTests {
             !importer.contains("applyRecurrenceEnd"),
             "the importer restores rows one at a time; the workflow would propagate across the series"
         )
+
+        // **The snapshot is the undo's half of the same capability ([[T-3171]]).** A refused edit
+        // through `CadenceTaskFieldEditCommit` has to put the three back exactly as they were found
+        // — it is what makes "Nothing was changed" true — and the only spelling that is that is a
+        // verbatim copy in each direction. Every assignment to the three in the file is one of
+        // those six, and nothing else.
+        let snapshot = try strippingComments(sourceFile("Cadence/Shared/CadenceTaskFieldEditCommit.swift"))
+        for field in ["recurrenceEndModeRaw", "recurrenceEndDate", "recurrenceEndCount"] {
+            #expect(snapshot.contains("\(field) = task.\(field)"), "the snapshot does not capture \(field)")
+            #expect(snapshot.contains("task.\(field) = \(field)"), "the snapshot does not restore \(field) verbatim")
+            let writes = snapshot.components(separatedBy: "task.\(field) =").count - 1
+            #expect(writes == 1, "the snapshot writes \(field) \(writes) times; only the restore may")
+        }
+        #expect(!snapshot.contains("applyRecurrenceEnd"), "the undo must restore, not re-apply across the series")
     }
 
     /// All three modes, reachable. The iOS picker is built from `allCases` rather than a typed-out

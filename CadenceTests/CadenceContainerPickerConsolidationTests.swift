@@ -302,32 +302,35 @@ struct CadenceContainerPickerConsolidationTests {
         #expect(CadenceSourceScan.matchCount("[Aa]reas\\s*\\.\\s*filter", in: picker) == 0)
     }
 
-    /// **The breadcrumb reads the unfiltered arrays.** This is the segment that said "Inbox" over a
-    /// task that was in an area all along, and it says so because it resolved the id its own way
-    /// instead of through the resolver the save already used.
-    @Test func thePlacementBreadcrumbNamesItsContainerThroughTheSharedResolver() throws {
-        let breadcrumb = try CadenceSourceScan.strippingComments(
-            CadenceSourceScan.sourceFile("Cadence/iOS/iOSTaskDetailComponents.swift")
+    /// **The task inspector names its list through the unfiltered arrays.** Its breadcrumb was the
+    /// segment that said "Inbox" over a task that was in an area all along, because it resolved
+    /// the id against the active lists instead of the ones the save used (T-514). [[T-3171]] gave
+    /// the job to the schedule panel's List row, which names whatever row of `listChoices` carries
+    /// the draft's token — so the sheet must build those rows the way the popover narrows: the
+    /// active lists **plus the selected one**, from the unfiltered queries, and resolve the save's
+    /// list from the same unfiltered arrays.
+    @Test func theTaskInspectorNamesItsListThroughTheUnfilteredArrays() throws {
+        let sheet = try CadenceSourceScan.strippingComments(
+            CadenceSourceScan.sourceFile("Cadence/iOS/iOSTaskDetailSheet.swift")
         )
-
-        let declaration = try #require(
-            breadcrumb.range(of: "struct iOSTaskPlacementBreadcrumb: View {"),
-            "the breadcrumb this test is about is not declared here any more"
+        let choices = try #require(
+            CadenceSourceScan.declarationBody("private var listChoices: [CadenceSchedulePanelChoice]", in: sheet),
+            "the list rows this test is about are not built here any more"
         )
-        let body = try #require(
-            breadcrumb.range(of: "struct iOSTaskAttributeChip", range: declaration.upperBound..<breadcrumb.endIndex),
-            "the breadcrumb's extent could not be bounded"
+        #expect(choices.contains("CadenceTaskComposerSupport.pickableAreas("))
+        #expect(choices.contains("CadenceTaskComposerSupport.pickableProjects("))
+        #expect(choices.contains("selectedID: CadenceTaskComposerSupport.selectedAreaID(containerChoice)"))
+        #expect(choices.contains("selectedID: CadenceTaskComposerSupport.selectedProjectID(containerChoice)"))
+        #expect(sheet.contains("@Query(sort: \\Area.order) private var areas: [Area]"))
+        // The three things the breadcrumb used to re-derive: the filtered arrays, the prefix
+        // arithmetic, and the fall-through that produced the wrong word.
+        #expect(CadenceSourceScan.matchCount("activeAreas|activeProjects", in: sheet) == 0)
+        #expect(CadenceSourceScan.matchCount("dropFirst\\(", in: sheet) == 0)
+        // The panel names the row by the token, nothing else.
+        let panel = try CadenceSourceScan.strippingComments(
+            CadenceSourceScan.sourceFile("Cadence/Shared/Components/CadenceSchedulePanel.swift")
         )
-        let scope = String(breadcrumb[declaration.upperBound..<body.lowerBound])
-
-        #expect(scope.contains("let areas: [Area]"))
-        #expect(scope.contains("let projects: [Project]"))
-        #expect(scope.contains("CadenceTaskComposerSupport.containerName("))
-        #expect(scope.contains("CadenceTaskComposerSupport.resolvedContainer("))
-        // The three things it used to re-derive: the filtered arrays, the prefix arithmetic, and
-        // the fall-through that produced the wrong word.
-        #expect(CadenceSourceScan.matchCount("activeAreas|activeProjects", in: scope) == 0)
-        #expect(CadenceSourceScan.matchCount("dropFirst\\(", in: scope) == 0)
+        #expect(panel.contains("listChoices.first { $0.id == draft.listToken }?.name"))
     }
 
     /// The other three-way container control on this platform is the row's context menu, and it had

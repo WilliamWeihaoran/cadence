@@ -305,7 +305,7 @@ struct IOSTaskDetailSheetResidueTests {
         // The reader really returns the repository's text, and the sheet really is the file with
         // both problems' fixes in it.
         let sheet = try sheetSource()
-        #expect(sheet.contains("iOSTaskStatusActionsSection(task: task)"),
+        #expect(sheet.contains("iOSTaskStatusActionsSection(task: task, onToggleCompletion: toggleCompletion)"),
                 "the status well moved out of the sheet, so the routing assertions prove nothing")
     }
 }

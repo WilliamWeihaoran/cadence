@@ -220,7 +220,11 @@ struct CadenceTaskDateEditingSurfaceTests {
         // is `iOSCalendarTimelineViews`' now and the pane edits no date at all — it would fail the
         // positive "names the wrapper" half below for the right reason, which is why it is removed
         // rather than loosened.
-        "Cadence/iOS/iOSTaskDetailSheet.swift",
+        // `Cadence/iOS/iOSTaskDetailSheet.swift` was here. [[T-3171]] made it a host of the shared
+        // schedule panel: its dates are draft fields and it writes none itself, so it would fail the
+        // positive half for the right reason. Its Save writes them in
+        // `CadenceTaskEditDraftCommit`, inside one undo-backed commit — see
+        // `theTaskDraftSaveReconcilesAfterItsDateWrites` below for why that is not a raw write.
         "Cadence/iOS/iOSCalendarBoardView.swift",
         // Where the clear-time edit moved to. [[T-3081]] put Today's pane on
         // `iOSCalendarTimelineGrid`, and the grid decides — from its span, on the condition
@@ -237,6 +241,28 @@ struct CadenceTaskDateEditingSurfaceTests {
     /// because it saves and stops.
     private static let unwrappedMutation =
         #"CadenceTaskMutationSupport\.(?:setScheduledDate|setDueDate|setScheduledTime|clearScheduledDate|clearScheduledTime|clearDueDate|scheduleToday|scheduleTomorrow|scheduleNextWeek|dueToday|dueTomorrow|dueNextWeek|moveTaskToDate|setPlanningDates)\b"#
+
+    /// **The one sanctioned set of raw date writes outside the mutation layer ([[T-3171]]).**
+    /// `CadenceTaskDateEditing`'s wrappers each commit on their own, so a save that writes the do
+    /// date, the time and the deadline *with* every other field in one undo-backed commit cannot
+    /// call them without landing a third of the edit early. What the wrappers add beyond the write
+    /// is the wind-down reconcile (T-362), and the draft save runs exactly that after its commit
+    /// lands — and the field-edit commit runs it again on the undo, as it does for every caller.
+    @Test func theTaskDraftSaveReconcilesAfterItsDateWrites() throws {
+        let raw = try CadenceSourceScan.sourceFile("Cadence/Shared/CadenceScheduleDraftTaskEditing.swift")
+        let code = CadenceSourceScan.strippingComments(raw)
+        #expect(code != raw)
+        let save = try #require(CadenceSourceScan.declarationBody("static func save(", in: code))
+        let landed = try #require(save.range(of: "guard landed else { return false }"))
+        let reconcile = try #require(save.range(of: "(reconciler ?? .default).run(in: modelContext)"),
+                                     "the draft save writes dates and never reconciles the wind-down reminders")
+        #expect(landed.upperBound <= reconcile.lowerBound, "the reconcile runs before the commit has answered")
+        #expect(save.contains("CadenceTaskFieldEditCommit.commit("))
+        // The writes are inside the commit's closure, not beside it.
+        let apply = try #require(CadenceSourceScan.declarationBody("static func apply(", in: code))
+        #expect(CadenceSourceScan.matchCount(Self.rawDateWrite, in: apply) == 3)
+        #expect(CadenceSourceScan.matchCount(Self.rawDateWrite, in: save) == 0)
+    }
 
     @Test func theDateAndTimeSurfacesRouteEveryEditThroughTheSharedWrapper() throws {
         var filesRead = 0
@@ -267,7 +293,7 @@ struct CadenceTaskDateEditingSurfaceTests {
             filesRead += 1
         }
 
-        #expect(filesRead == 12, "the scan read \(filesRead) of 12 routed surfaces")
+        #expect(filesRead == 11, "the scan read \(filesRead) of 11 routed surfaces")
     }
 
     /// Every entry point on the wrapper ends in the one private reconcile. Stated as a relation

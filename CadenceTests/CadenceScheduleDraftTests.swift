@@ -1,4 +1,5 @@
 import Foundation
+import SwiftData
 import Testing
 @testable import Cadence
 
@@ -621,5 +622,399 @@ struct CadenceEventEditorPanelAdoptionTests {
         #expect(CadenceSourceScan.matchCount(#"if offersEventRepeat \{"#, in: schedule) == 1)
         let end = try #require(CadenceSourceScan.declarationBody("private var eventEndMinuteBinding: Binding<Int>", in: panel))
         #expect(end.contains("draft.setEndMinute($0)"))
+    }
+}
+
+/// The draft over a task that **already exists**, and the one commit that writes it back
+/// ([[T-3171]], the task editor's slice).
+///
+/// Behavioural, against an in-memory store: the iOS task sheet that hosts this is behind
+/// `#if os(iOS)`, but what it reads and writes is shared, so the claims that could be wrong
+/// silently — that opening writes nothing, that an untouched save changes nothing, that a refusal
+/// puts every field back, that a list that did not change is not re-asserted — are asserted on
+/// real models rather than scanned for.
+@Suite("Schedule draft over an existing task")
+@MainActor
+struct CadenceScheduleDraftTaskEditingTests {
+
+    private struct CommitRefused: Error {}
+
+    private func store() throws -> (ModelContainer, ModelContext) {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        return (container, ModelContext(container))
+    }
+
+    /// A task with every field the panel edits set to something other than its default, and the
+    /// two figures the panel's geometry cannot hold: a minute off the quarter-hour and an
+    /// estimate off it.
+    private func filedTask(in context: ModelContext, area: Area) throws -> AppTask {
+        let task = AppTask(title: "Ship the fix")
+        task.notes = "Before"
+        task.priority = .medium
+        task.scheduledDate = "2026-10-16"
+        task.scheduledStartMin = 10 * 60 + 5
+        task.estimatedMinutes = 20
+        task.dueDate = "2026-10-18"
+        task.order = 3
+        task.area = area
+        task.context = area.context
+        context.insert(task)
+        try context.save()
+        return task
+    }
+
+    @Test("Opening a task reads its own figures, unsnapped and unfloored")
+    func openingATaskReadsItsOwnFigures() throws {
+        let (_, context) = try store()
+        let area = Area(name: "Work")
+        context.insert(area)
+        let task = try filedTask(in: context, area: area)
+
+        let draft = CadenceScheduleDraft(editing: task)
+        #expect(draft.subject == .editingTask(task.id))
+        #expect(draft.kind == .task)
+        #expect(draft.title == "Ship the fix")
+        #expect(draft.notes == "Before")
+        #expect(draft.priority == .medium)
+        #expect(draft.startDateKey == "2026-10-16")
+        #expect(draft.startMin == 10 * 60 + 5, "the start was snapped to the drag grid on open")
+        #expect(draft.scheduledStartMin == 10 * 60 + 5)
+        #expect(draft.estimateMinutes == 20, "the estimate was snapped or floored on open")
+        #expect(draft.dueDateKey == "2026-10-18")
+        #expect(draft.listToken == CadenceTaskComposerSupport.token(for: .area(area.id)))
+
+        task.estimatedMinutes = 0
+        task.scheduledStartMin = -1
+        let untimed = CadenceScheduleDraft(editing: task)
+        #expect(untimed.estimateMinutes == 0, "no estimate opened as one")
+        #expect(untimed.isAllDay)
+        #expect(untimed.scheduledStartMin == -1)
+    }
+
+    /// Opening is not an edit (T-726's ground): the draft is built, nothing in the store moves and
+    /// nothing is left pending.
+    @Test("Opening a task writes nothing")
+    func openingATaskWritesNothing() throws {
+        let (_, context) = try store()
+        let area = Area(name: "Work")
+        context.insert(area)
+        let task = try filedTask(in: context, area: area)
+        #expect(!context.hasChanges)
+
+        _ = CadenceScheduleDraft(editing: task)
+        #expect(!context.hasChanges, "building the draft wrote to the task")
+    }
+
+    /// A save of what was opened changes nothing — including the two figures the geometry cannot
+    /// hold, the task's place in its list, and a context the user set by hand.
+    @Test("An untouched save writes the task back as it was")
+    func anUntouchedSaveWritesTheTaskBackAsItWas() throws {
+        let (container, context) = try store()
+        let home = Context(name: "Home")
+        let office = Context(name: "Office")
+        let area = Area(name: "Work", context: home)
+        for model in [home, office] { context.insert(model) }
+        context.insert(area)
+        let task = try filedTask(in: context, area: area)
+        task.context = office
+        task.estimatedMinutes = 0
+        try context.save()
+
+        let opened = CadenceScheduleDraft(editing: task)
+        let landed = CadenceTaskEditDraftCommit.save(
+            opened, opened: opened, to: task, area: area, project: nil,
+            allTasks: [task], scope: .thisTask, in: context, reconciler: .inert
+        )
+        #expect(landed)
+
+        let stored = try #require(try ModelContext(container).fetch(FetchDescriptor<AppTask>()).first)
+        #expect(stored.scheduledStartMin == 10 * 60 + 5)
+        #expect(stored.estimatedMinutes == 0, "an untouched save gave a task with no estimate one")
+        #expect(stored.order == 3, "re-asserting the list it was already in moved it to the tail")
+        #expect(stored.context?.name == "Office", "re-asserting the list overwrote a hand-set context")
+        #expect(stored.title == "Ship the fix")
+    }
+
+    /// Every drafted field reaches the store in the one commit, a list move included.
+    @Test("A saved draft writes every field it holds")
+    func aSavedDraftWritesEveryFieldItHolds() throws {
+        let (container, context) = try store()
+        let work = Area(name: "Work")
+        let home = Area(name: "Home")
+        context.insert(work)
+        context.insert(home)
+        let task = try filedTask(in: context, area: work)
+
+        let opened = CadenceScheduleDraft(editing: task)
+        var draft = opened
+        draft.title = "Ship the beta"
+        draft.notes = "After"
+        draft.priority = .high
+        draft.setEstimate(45)
+        draft.startDateKey = "2026-10-20"
+        draft.moveStart(toMinute: 14 * 60)
+        draft.dueDateKey = ""
+        draft.listToken = CadenceTaskComposerSupport.token(for: .area(home.id))
+
+        let landed = CadenceTaskEditDraftCommit.save(
+            draft, opened: opened, to: task, area: home, project: nil,
+            allTasks: [task], scope: .thisTask, in: context, reconciler: .inert
+        )
+        #expect(landed)
+        #expect(!context.hasChanges, "the save left part of the edit pending")
+
+        let stored = try #require(try ModelContext(container).fetch(FetchDescriptor<AppTask>()).first)
+        #expect(stored.title == "Ship the beta")
+        #expect(stored.notes == "After")
+        #expect(stored.priority == .high)
+        #expect(stored.estimatedMinutes == 45)
+        #expect(stored.scheduledDate == "2026-10-20")
+        #expect(stored.scheduledStartMin == 14 * 60)
+        #expect(stored.dueDate == "")
+        #expect(stored.area?.id == home.id, "the list move did not land")
+    }
+
+    /// The refusal half: every field the save wrote comes back, the series end condition and the
+    /// note included, and the draft — which the panel is still showing — keeps what was chosen.
+    @Test("A refused save puts every field back and leaves the draft as chosen")
+    func aRefusedSavePutsEveryFieldBack() throws {
+        let (_, context) = try store()
+        let work = Area(name: "Work")
+        let home = Area(name: "Home")
+        context.insert(work)
+        context.insert(home)
+        let task = try filedTask(in: context, area: work)
+        task.recurrenceRule = .daily
+        try context.save()
+
+        let opened = CadenceScheduleDraft(editing: task)
+        var draft = opened
+        draft.title = "Ship the beta"
+        draft.notes = "After"
+        draft.setEstimate(90)
+        draft.clearDoDate()
+        draft.listToken = CadenceTaskComposerSupport.token(for: .area(home.id))
+        draft.seriesEndMode = .afterCount
+        draft.seriesEndCount = 4
+        let chosen = draft
+
+        let landed = CadenceTaskEditDraftCommit.save(
+            draft, opened: opened, to: task, area: home, project: nil,
+            allTasks: [task], scope: .thisTask, in: context, reconciler: .inert,
+            commit: { _ in throw CommitRefused() }
+        )
+        #expect(!landed)
+        #expect(task.title == "Ship the fix")
+        #expect(task.notes == "Before", "a refused save left the note it wrote")
+        #expect(task.estimatedMinutes == 20)
+        #expect(task.scheduledDate == "2026-10-16")
+        #expect(task.scheduledStartMin == 10 * 60 + 5)
+        #expect(task.area?.id == work.id, "a refused save left the task in the list it was moved to")
+        #expect(task.order == 3)
+        #expect(task.recurrenceEndMode == .never, "a refused save left the series bound it wrote")
+        #expect(task.recurrenceEndCount == 0)
+        #expect(draft == chosen, "the refusal touched the draft the panel is still showing")
+    }
+
+    /// A series edit reaches later occurrences only when asked to, and the rule is applied only
+    /// when it moved — applying it stamps series metadata.
+    @Test("A series edit reaches the later occurrences only for this-and-future")
+    func aSeriesEditReachesLaterOccurrencesOnlyWhenAsked() throws {
+        func series() throws -> (ModelContext, AppTask, AppTask) {
+            let (_, context) = try store()
+            let first = AppTask(title: "Water plants")
+            let second = AppTask(title: "Water plants")
+            first.recurrenceRule = .daily
+            second.recurrenceRule = .daily
+            first.recurrenceSeriesIDRaw = first.id.uuidString
+            second.recurrenceSeriesIDRaw = first.id.uuidString
+            first.recurrenceSpawnedTaskID = second.id
+            context.insert(first)
+            context.insert(second)
+            try context.save()
+            return (context, first, second)
+        }
+
+        for (scope, reachesSecond) in [(CadenceTaskRecurrenceEditScope.thisTask, false), (.thisAndFuture, true)] {
+            let (context, first, second) = try series()
+            let opened = CadenceScheduleDraft(editing: first)
+            var draft = opened
+            draft.seriesEndMode = .afterCount
+            draft.seriesEndCount = 3
+            #expect(draft.changesRecurrence(from: opened))
+
+            let landed = CadenceTaskEditDraftCommit.save(
+                draft, opened: opened, to: first, area: nil, project: nil,
+                allTasks: [first, second], scope: scope, in: context, reconciler: .inert
+            )
+            #expect(landed)
+            #expect(first.recurrenceEndCount == 3)
+            #expect((second.recurrenceEndCount == 3) == reachesSecond, "scope \(scope) reached the wrong occurrences")
+        }
+
+        let (_, first, _) = try series()
+        let opened = CadenceScheduleDraft(editing: first)
+        var renamed = opened
+        renamed.title = "Water the plants"
+        #expect(!renamed.changesRecurrence(from: opened), "a rename asks the series-scope question")
+        var ruled = opened
+        ruled.repeatRule = .weekly
+        #expect(ruled.changesRecurrence(from: opened))
+    }
+
+    /// Switching repeating off clears the bound with it, so it cannot re-arm later.
+    @Test("Turning repeat off clears the end condition")
+    func turningRepeatOffClearsTheEndCondition() throws {
+        let (_, context) = try store()
+        let task = AppTask(title: "Water plants")
+        task.recurrenceRule = .daily
+        task.recurrenceEndMode = .afterCount
+        task.recurrenceEndCount = 5
+        context.insert(task)
+        try context.save()
+
+        let opened = CadenceScheduleDraft(editing: task)
+        var draft = opened
+        draft.repeatRule = .none
+        #expect(CadenceTaskEditDraftCommit.save(
+            draft, opened: opened, to: task, area: nil, project: nil,
+            allTasks: [task], scope: .thisTask, in: context, reconciler: .inert
+        ))
+        #expect(task.recurrenceRule == .none)
+        #expect(task.recurrenceEndMode == .never)
+        #expect(task.recurrenceEndCount == 0)
+    }
+
+    /// The estimate is its own figure: None and an off-grid length survive, and a drag on a
+    /// creating block still moves it.
+    @Test("The estimate keeps None and an off-grid length, and follows a drag")
+    func theEstimateKeepsNoneAndOffGridAndFollowsADrag() {
+        var draft = CadenceScheduleDraft(dateKey: "2026-10-16", startMin: 9 * 60, kind: .task)
+        #expect(draft.estimateMinutes == CadenceScheduleDraft.defaultDurationMinutes)
+        draft.setEstimate(0)
+        #expect(draft.estimateMinutes == 0)
+        #expect(draft.durationMinutes == CadenceScheduleDraft.minimumDurationMinutes, "the drawn block inverted")
+        draft.setEstimate(20)
+        #expect(draft.estimateMinutes == 20)
+        draft.moveEndEdge(toMinute: 11 * 60)
+        #expect(draft.estimateMinutes == 2 * 60, "a drag on the block left the estimate behind")
+        draft.moveStartEdge(toMinute: 10 * 60)
+        #expect(draft.estimateMinutes == 60)
+    }
+
+    /// Clearing the do date takes the time with it; adding a time to an undated task adopts today.
+    @Test("A time needs a day, and a day cleared takes its time")
+    func aTimeNeedsADay() {
+        var draft = CadenceScheduleDraft(dateKey: "2026-10-16", startMin: 9 * 60, kind: .task)
+        draft.clearDoDate()
+        #expect(draft.startDateKey.isEmpty)
+        #expect(draft.scheduledStartMin == -1)
+        #expect(draft.doTimeLabel == "Add time")
+
+        draft.addTime(today: "2026-10-15")
+        #expect(draft.startDateKey == "2026-10-15")
+        #expect(draft.scheduledStartMin == 9 * 60)
+
+        // A time on a draft whose day is gone is still no slot.
+        draft.startDateKey = ""
+        #expect(draft.scheduledStartMin == -1)
+    }
+
+    /// Colour is spent on what is wrong, and a finished task has nothing wrong with its dates.
+    @Test("Past dates are flagged only on an open task")
+    func pastDatesAreFlaggedOnlyOnAnOpenTask() {
+        var draft = CadenceScheduleDraft(dateKey: "2020-01-01", startMin: 9 * 60, kind: .task)
+        draft.dueDateKey = "2020-01-02"
+        #expect(draft.isDoDateOverdue)
+        #expect(draft.isDueDateOverdue)
+        draft.isDone = true
+        #expect(!draft.isDoDateOverdue)
+        #expect(!draft.isDueDateOverdue)
+        draft.isDone = false
+        draft.startDateKey = "2999-01-01"
+        draft.dueDateKey = "2999-01-02"
+        #expect(!draft.isDoDateOverdue)
+        #expect(!draft.isDueDateOverdue)
+    }
+}
+
+/// The source half: the iOS task editor is a host of the shared panel and keeps what the panel
+/// cannot hold ([[T-3171]]).
+@Suite("Task editor hosts the shared panel")
+@MainActor
+struct CadenceTaskEditorPanelAdoptionTests {
+
+    private func code(_ relativePath: String) throws -> String {
+        let raw = try CadenceSourceScan.sourceFile(relativePath)
+        #expect(raw.count > 1_000, "\(relativePath) read as \(raw.count) characters")
+        let stripped = CadenceSourceScan.strippingComments(raw)
+        #expect(stripped != raw, "\(relativePath): the comment stripper removed nothing")
+        #expect(stripped.count == raw.count)
+        return stripped
+    }
+
+    @Test("The task editor draws the panel and none of the old form")
+    func theTaskEditorDrawsThePanel() throws {
+        let sheet = try code("Cadence/iOS/iOSTaskDetailSheet.swift")
+        #expect(CadenceSourceScan.matchCount(#"CadenceSchedulePanel\("#, in: sheet) == 1)
+        #expect(sheet.contains("CadenceScheduleDraft(editing: task)"))
+        // The series is drawn by the host, with its end condition — not twice.
+        #expect(sheet.contains("offersTaskRepeat: false"))
+        // The old write-through form: a token picker, two date flags, and a flush on Done.
+        for retired in [
+            "containerSelection", "hasScheduledDate", "hasDueDate", "applyDates", "finishEditingAndDismiss",
+            "iOSTaskPlacementBreadcrumb(", "iOSTaskEditorTitleCard(", "try? modelContext.save()",
+            "onChange(of: task.title)",
+        ] {
+            #expect(!sheet.contains(retired), "the task editor still carries \(retired)")
+        }
+        // The note is drafted with everything else.
+        #expect(sheet.contains("notesText: $draft.notes"))
+        // An unsaved draft is not discarded by a swipe.
+        #expect(sheet.contains(".interactiveDismissDisabled(draft != openedDraft)"))
+    }
+
+    /// Save is one commit, asks the series question only where there is a series, and closes only
+    /// below its refusal.
+    @Test("Save asks the series question only for a series and closes below its refusal")
+    func saveAsksTheSeriesQuestionOnlyForASeries() throws {
+        let sheet = try code("Cadence/iOS/iOSTaskDetailSheet.swift")
+        let save = try #require(CadenceSourceScan.functionBody(named: "save", in: sheet))
+        #expect(save.contains("if draft.changesRecurrence(from: openedDraft) && task.isRecurrenceSeriesMember {"))
+        #expect(save.contains("isAskingRecurrenceScope = true"))
+        let apply = try #require(CadenceSourceScan.functionBody(named: "applySave", in: sheet))
+        #expect(apply.contains("guard CadenceTaskEditDraftCommit.save("))
+        #expect(CadenceSourceScan.matchCount(#"dismiss\(\)"#, in: apply) == 1)
+        #expect(sheet.contains("failureNotice: saveFailureNotice"), "the refusal is set and never drawn")
+        // Both scopes are offered, and each reaches the one save.
+        #expect(CadenceSourceScan.matchCount(#"applySave\(scope: \.thisAndFuture\)"#, in: sheet) == 1)
+    }
+
+    /// Delete is the panel's, and still stops at its confirmation.
+    @Test("Delete is the panel's and keeps its confirmation")
+    func deleteIsThePanelsAndKeepsItsConfirmation() throws {
+        let sheet = try code("Cadence/iOS/iOSTaskDetailSheet.swift")
+        let actions = try #require(CadenceSourceScan.declarationBody("private var panelActions: CadenceSchedulePanelActions", in: sheet))
+        #expect(actions.contains("showDeleteConfirmation = true"), "Delete skipped its confirmation")
+        #expect(!sheet.contains("ToolbarItem("), "a second Delete or Done is still in the toolbar")
+        #expect(sheet.contains("Button(\"Delete\", role: .destructive, action: deleteTask)"))
+    }
+
+    /// The panel's task rows carry what the inspector had: a Clear on an existing task's do date,
+    /// an Estimate row of the task's own, and the overdue tints.
+    @Test("The panel's task rows carry the inspector's behaviours")
+    func thePanelsTaskRowsCarryTheInspectorsBehaviours() throws {
+        let panel = try code("Cadence/Shared/Components/CadenceSchedulePanel.swift")
+        let schedule = try #require(CadenceSourceScan.declarationBody("private var taskSchedule: some View", in: panel))
+        #expect(schedule.contains("showsClear: draft.subject.isEditing && !draft.startDateKey.isEmpty"))
+        #expect(schedule.contains("draft.isDoDateOverdue ? Theme.red : Theme.blue"))
+        #expect(schedule.contains("draft.isDueDateOverdue ? Theme.red : Theme.amber"))
+        #expect(CadenceSourceScan.matchCount(#"if offersTaskRepeat \{"#, in: schedule) == 1)
+        let list = try #require(CadenceSourceScan.declarationBody("private var listAndSection: some View", in: panel))
+        #expect(list.contains("EstimatePickerControl(value: estimateBinding)"))
+        let estimate = try #require(CadenceSourceScan.declarationBody("private var estimateBinding: Binding<Int>", in: panel))
+        #expect(estimate.contains("draft.setEstimate($0)"))
+        let title = try #require(CadenceSourceScan.declarationBody("private var priorityControl: some View", in: panel))
+        #expect(title.contains("TaskPriorityMarkControl(priority: draft.priority)"))
     }
 }

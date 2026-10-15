@@ -669,7 +669,9 @@ struct CadenceTaskStatusLifecycleSurfaceTests {
             at: [
                 // One `let isFinished`, read by the swipe's title, image and tint.
                 "Cadence/iOS/iOSTaskRowActionViews.swift": 1,
-                "Cadence/iOS/iOSTaskDetailComponents.swift": 1,
+                // [[T-3171]]: the inspector's completion control moved from the title card's
+                // circle (components) to the Complete button in the status section.
+                "Cadence/iOS/iOSTaskDetailSheetSections.swift": 1,
                 "Cadence/iOS/iOSBoardCards.swift": 1
             ]
         )
@@ -688,6 +690,7 @@ struct CadenceTaskStatusLifecycleSurfaceTests {
             "Cadence/iOS/iOSTaskRowActionViews.swift",
             "Cadence/iOS/iOSTaskViews.swift",
             "Cadence/iOS/iOSTaskDetailComponents.swift",
+            "Cadence/iOS/iOSTaskDetailSheetSections.swift",
             "Cadence/iOS/iOSBoardCards.swift"
         ] {
             let code = try strippingComments(sourceFile(path))

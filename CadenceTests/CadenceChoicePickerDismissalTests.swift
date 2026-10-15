@@ -103,12 +103,12 @@ struct CadenceChoicePickerDismissalTests {
     /// picker anywhere lands here in the same change — which is the point, because the question
     /// "does this one's selection setter commit?" has to be asked at that moment and not later.
     ///
-    /// Three of thirty-two commit. The two archive-import mode pickers do not: the mode is a
-    /// view-state choice read at the moment Import is pressed, so its setter writes nothing to the
-    /// store and a committing setter there would be wrong, not missing. Two are task-row chips; the third is
-    /// `iOSTaskDetailSheetSections`' time picker, the same defect closing over a swallowed
-    /// `try? modelContext.save()` two calls down its old `Binding<Int>` setter — fixed by routing it
-    /// through `iOSTaskDetailSheet.selectScheduledTime` and the committing initialiser [[T-761]].
+    /// Two of thirty commit, both task-row chips. The two archive-import mode pickers do not: the
+    /// mode is a view-state choice read at the moment Import is pressed, so its setter writes
+    /// nothing to the store and a committing setter there would be wrong, not missing. The third
+    /// committing site was `iOSTaskDetailSheetSections`' time picker [[T-761]]; [[T-3171]] made the
+    /// task inspector the shared schedule panel, whose time is the draft's roller and whose one
+    /// commit is Save, so no picker row on that sheet writes to the store at all.
     @Test func everyChoicePopoverCallSiteIsCountedAndOnlyTheCommittingOnesAnswer() throws {
         let expected: [String: (calls: Int, committing: Int)] = [
             // [[T-3169]]. The shared schedule panel's four draft pickers: list, section, calendar
@@ -125,10 +125,12 @@ struct CadenceChoicePickerDismissalTests {
             "Cadence/iOS/iOSCreateTaskSheetSupportViews.swift": (3, 0),
             "Cadence/iOS/iOSListEditorViews.swift": (2, 0),
             "Cadence/iOS/iOSSettingsOverviewSections.swift": (4, 0),
-            // T-1278 moved the priority picker from the sections file's Priority *row* onto the
-            // title card's mark control, which is why one call crossed between these two lines.
-            "Cadence/iOS/iOSTaskDetailComponents.swift": (3, 0),
-            "Cadence/iOS/iOSTaskDetailSheetSections.swift": (4, 1),
+            // [[T-3171]]: the task inspector is the shared schedule panel. The components file's
+            // three — the title card's priority, the breadcrumb's list and section — went with the
+            // two views, onto the panel's own rows, so the file holds no picker. The sections
+            // file keeps the series' three draft pickers (Repeat, Ends, Occurrences), and none
+            // commits: they write the draft, which Save commits once.
+            "Cadence/iOS/iOSTaskDetailSheetSections.swift": (3, 0),
             "Cadence/iOS/iOSTaskRowActionViews.swift": (2, 2),
             "Cadence/iOS/iOSTaskViews.swift": (1, 0),
             "Cadence/iOS/iOSTrackingEditorComponents.swift": (2, 0),
@@ -168,9 +170,10 @@ struct CadenceChoicePickerDismissalTests {
         // not move, because a draft panel commits once at Add rather than row by row. [[T-3171]]
         // takes the event editor's two (its Days list and its calendar picker) with it onto the
         // panel, whose calendar picker serves it now and whose separate end date replaced the
-        // Days list: 34, still 3 committing.
-        #expect(found.values.map(\.calls).reduce(0, +) == 34)
-        #expect(found.values.map(\.committing).reduce(0, +) == 3)
+        // Days list: 34, still 3 committing. The task editor's slice of the same ticket takes four
+        // more (priority, list, section, time) and the one committing time picker: 30 and 2.
+        #expect(found.values.map(\.calls).reduce(0, +) == 30)
+        #expect(found.values.map(\.committing).reduce(0, +) == 2)
     }
 
     /// **The defect itself, as a detector rather than a list.**
@@ -262,38 +265,32 @@ struct CadenceChoicePickerDismissalTests {
         #expect(!source.contains("task.goal"))
     }
 
-    /// **The fourth site, [[T-761]].** Its `select` closure is not in `rowActionsPath` like the other
-    /// three: it lives in `iOSTaskDetailSheet.swift`, because the "materialise today" step it wraps
-    /// reads and writes `hasScheduledDate` / `scheduledDate` — this sheet's own `@State` — before the
-    /// minute can mean anything. `iOSTaskDetailSheetSections.swift` only holds the call site.
-    @Test func theDetailSheetsTimePickerCommitsTheMinuteAndStaysOpenWhenTheStoreRefusesIt() throws {
+    /// **The fourth site, [[T-761]] — retired by [[T-3171]], and what replaced it.** The inspector's
+    /// time picker committed each minute it was handed, through a `select` closure that answered
+    /// whether the write landed so the popover could stay open over a refusal. The inspector is the
+    /// shared schedule panel now: the time is the panel's roller, writing the **draft**, and the
+    /// store is reached once, by Save, through a commit that restores every field on a refusal. So
+    /// the claim T-761 made — no time pick closes over a swallowed commit — holds by there being no
+    /// commit under the pick at all, and this pins both halves.
+    @Test func theDetailSheetsTimeIsADraftFieldCommittedOnlyBySave() throws {
         let sheetSource = try CadenceCommitSurfaceScan.scanned(Self.detailSheetPath)
-        let select = try CadenceCommitSurfaceScan.declarationBody(named: "selectScheduledTime", in: sheetSource)
-
+        #expect(!sheetSource.contains("selectScheduledTime"), "the per-pick time commit is back")
         #expect(
-            CadenceSourceScan.matchCount(#"try\? modelContext\.save\(\)"#, in: select) == 0,
-            "the time selection still swallows its commit"
+            CadenceSourceScan.matchCount(#"try\? modelContext\.save\(\)"#, in: sheetSource) == 0,
+            "the task editor swallows a commit"
         )
-        #expect(
-            select.contains("CadenceTaskDateEditing.setScheduledTime(minutes, for: task, in: modelContext)"),
-            "the committing branch does not route the write through the reconciling wrapper"
-        )
-        #expect(
-            select.contains("CadenceTaskDateEditing.clearScheduledTime(task, in: modelContext)"),
-            "the \"No time\" branch does not route the clear through the reconciling wrapper"
-        )
-        #expect(select.contains("saveFailureNotice = landed ? nil : CadenceTaskFieldEditCommit.saveFailureNotice"))
-        #expect(select.contains("return landed"), "the function does not answer whether the write landed")
+        let apply = try CadenceCommitSurfaceScan.declarationBody(named: "applySave", in: sheetSource)
+        #expect(apply.contains("guard CadenceTaskEditDraftCommit.save("), "Save does not guard on the one commit")
 
         let sectionsSource = try CadenceCommitSurfaceScan.scanned(Self.detailSheetSectionsPath)
-        #expect(
-            sectionsSource.contains("select: selectScheduledTime"),
-            "the time picker still uses the draft form"
-        )
-        #expect(
-            CadenceSourceScan.matchCount(#"selection: scheduledStartSelection"#, in: sectionsSource) == 0,
-            "the time picker still writes through the old plain Binding<Int>"
-        )
+        #expect(!sectionsSource.contains("select: selectScheduledTime"), "the sections file still holds the old time picker")
+        #expect(sectionsSource.contains("@Binding var draft: CadenceScheduleDraft"), "non-vacuity: the series rows draft too")
+
+        let panel = try CadenceCommitSurfaceScan.scanned("Cadence/Shared/Components/CadenceSchedulePanel.swift")
+        let time = try #require(CadenceSourceScan.declarationBody("private var doTimeRow: some View", in: panel))
+        #expect(time.contains("CadenceTimeRoller(minutes: doStartMinuteBinding)"))
+        let minute = try #require(CadenceSourceScan.declarationBody("private var doStartMinuteBinding: Binding<Int>", in: panel))
+        #expect(minute.contains("draft.moveStart(toMinute: $0)"), "the roller writes somewhere other than the draft")
     }
 
     /// **What is left in the file, exactly and by name.** Two swallowed saves were removed and

@@ -13,6 +13,18 @@ struct CadenceSchedulePanelChoice: Identifiable, Hashable {
     var systemImage: String = "circle.fill"
 }
 
+/// What the title says about the record's state, beside the words themselves.
+///
+/// Only an existing task has one: an eyebrow for the two statuses a checkbox cannot express (In
+/// Progress, Cancelled) and a struck-through, dimmed title once it is settled — what the iOS task
+/// inspector's title row has always drawn, carried over when that inspector became this panel
+/// ([[T-3171]]). Data, not a view, so the panel stays free of either platform's completion control.
+struct CadenceSchedulePanelTitleStatus: Equatable {
+    var eyebrow: String?
+    var eyebrowTint: Color = Theme.dim
+    var isSettled = false
+}
+
 /// What the host can do, handed in rather than reached for.
 ///
 /// Every write returns `String?` — `nil` when it landed, the sentence to show when it did not.
@@ -69,6 +81,10 @@ struct CadenceSchedulePanelActions {
 ///   can be moved to". Save greys out exactly as it does for an empty title.
 /// - `offersEventRepeat` — `false` where the host cannot write a recurrence (an existing event's
 ///   series is not edited from here), so no Repeat row offers a choice that would be dropped.
+/// - `titleStatus` — an existing task's state, drawn on the title row. See the type.
+/// - `offersTaskRepeat` — `false` where the host draws a task's series itself. The task editor
+///   does, because its Repeat row is followed by the end condition and the series-scope question,
+///   neither of which a creating panel has.
 /// - `notesField` — the host's own notes editor. A sheet has room for the platform's full
 ///   markdown well and its reference sheets; a popover hanging off a block does not, and gets the
 ///   plain field below. Both write the same `draft.notes`.
@@ -86,6 +102,8 @@ struct CadenceSchedulePanel<NotesField: View>: View {
     var failureNotice: String?
     var canCommit = true
     var offersEventRepeat = true
+    var titleStatus: CadenceSchedulePanelTitleStatus?
+    var offersTaskRepeat = true
     let actions: CadenceSchedulePanelActions
     private let notesField: NotesField?
 
@@ -113,6 +131,8 @@ struct CadenceSchedulePanel<NotesField: View>: View {
         failureNotice: String? = nil,
         canCommit: Bool = true,
         offersEventRepeat: Bool = true,
+        titleStatus: CadenceSchedulePanelTitleStatus? = nil,
+        offersTaskRepeat: Bool = true,
         actions: CadenceSchedulePanelActions,
         @ViewBuilder notesField: () -> NotesField
     ) {
@@ -126,6 +146,8 @@ struct CadenceSchedulePanel<NotesField: View>: View {
             failureNotice: failureNotice,
             canCommit: canCommit,
             offersEventRepeat: offersEventRepeat,
+            titleStatus: titleStatus,
+            offersTaskRepeat: offersTaskRepeat,
             actions: actions,
             customNotesField: notesField()
         )
@@ -141,6 +163,8 @@ struct CadenceSchedulePanel<NotesField: View>: View {
         failureNotice: String?,
         canCommit: Bool,
         offersEventRepeat: Bool,
+        titleStatus: CadenceSchedulePanelTitleStatus?,
+        offersTaskRepeat: Bool,
         actions: CadenceSchedulePanelActions,
         customNotesField: NotesField?
     ) {
@@ -153,6 +177,8 @@ struct CadenceSchedulePanel<NotesField: View>: View {
         self.failureNotice = failureNotice
         self.canCommit = canCommit
         self.offersEventRepeat = offersEventRepeat
+        self.titleStatus = titleStatus
+        self.offersTaskRepeat = offersTaskRepeat
         self.actions = actions
         self.notesField = customNotesField
     }
@@ -235,53 +261,72 @@ struct CadenceSchedulePanel<NotesField: View>: View {
         .disabled(draft.subject.isEditing)
     }
 
-    /// The title, with priority as a compact flag at its trailing edge.
+    /// The title, with priority as a compact mark control at its trailing edge.
     ///
     /// **Priority rides here rather than in a row of its own**, which is what frees the slot beside
-    /// the list control for Section. A flag cycles on activation and needs no label — it is the same
-    /// control `iOSCalendarQuickCreateSheet`'s header carries, in the same place relative to the
-    /// field it qualifies.
+    /// the list control for Section. It cycles on activation and needs no label, in the same place
+    /// relative to the field it qualifies as the iOS task inspector's title row put it.
     private var titleRow: some View {
         CadenceFieldSection(title: nil, style: .ruled) {
             HStack(alignment: .top, spacing: 8) {
-                TextField(draft.kind.titlePlaceholder, text: $draft.title, axis: .vertical)
-                    .textFieldStyle(.plain)
-                    .cadenceFont(.fieldValue, base: 16, weight: .bold)
-                    .foregroundStyle(Theme.text)
-                    .lineLimit(1...3)
-                    .focused($isTitleFocused)
-                    .submitLabel(.done)
-                    // **Deliberately unguarded** (T-589, inherited from the docked bar this panel
-                    // replaces). Add/Save can refuse in a way you can see — it greys out — so an
-                    // empty title has already been answered before you reach for it. Return has no
-                    // such affordance, so guarding it would make the key do nothing at all and look
-                    // broken: the "inert control, no word on it" failure T-470/T-471 went through
-                    // this app removing. `commit()` reports instead, and `onChange(of: draft.title)`
-                    // below takes the report down on the next keystroke.
-                    .onSubmit(commit)
+                VStack(alignment: .leading, spacing: 3) {
+                    // Only the two statuses a checkbox cannot express say anything here. "Todo"
+                    // over every open task is a label that fires on the common case.
+                    if let eyebrow = titleStatus?.eyebrow {
+                        SectionEyebrowLabel(text: eyebrow, tint: titleStatus?.eyebrowTint ?? Theme.dim)
+                    }
+                    titleField
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
 
                 if draft.kind == .task {
-                    Button(action: cyclePriority) {
-                        Image(systemName: "flag.fill")
-                            .cadenceFont(.controlLabel)
-                            .foregroundStyle(Theme.priorityColor(draft.priority))
-                            .frame(width: 32, height: 32)
-                            .background(Theme.priorityColor(draft.priority).opacity(0.13))
-                            .clipShape(Circle())
-                            .contentShape(Circle())
-                    }
-                    .buttonStyle(.cadencePlain)
-                    .accessibilityLabel("Priority: \(draft.priority.label)")
-                    // **The outcome, not the gesture** (T-521, and this panel is why that sweep
-                    // covers `Shared/`). This control's hint read "Tap to cycle priority", which
-                    // was copied from `iOSCalendarQuickCreateSheet` — where it is correct, because
-                    // that sheet is under `#if os(iOS)` and touch is the only way to reach it. This
-                    // panel is shared, so on the Mac the hint named a gesture that surface does not
-                    // have: VoiceOver activates a control there with Control-Option-Space.
-                    .accessibilityHint("Changes the priority to the next level")
+                    priorityControl
                 }
             }
         }
+    }
+
+    /// Settled — done or cancelled — reads struck through and stops being the loudest text here.
+    private var isTitleSettled: Bool { titleStatus?.isSettled ?? false }
+
+    private var titleField: some View {
+        TextField(draft.kind.titlePlaceholder, text: $draft.title, axis: .vertical)
+            .textFieldStyle(.plain)
+            .cadenceFont(.fieldValue, base: 16, weight: .bold)
+            .foregroundStyle(isTitleSettled ? Theme.dim : Theme.text)
+            .strikethrough(isTitleSettled, color: Theme.dim)
+            .lineLimit(1...3)
+            .focused($isTitleFocused)
+            .submitLabel(.done)
+            // **Deliberately unguarded** (T-589, inherited from the docked bar this panel
+            // replaces). Add/Save can refuse in a way you can see — it greys out — so an
+            // empty title has already been answered before you reach for it. Return has no
+            // such affordance, so guarding it would make the key do nothing at all and look
+            // broken: the "inert control, no word on it" failure T-470/T-471 went through
+            // this app removing. `commit()` reports instead, and `onChange(of: draft.title)`
+            // below takes the report down on the next keystroke.
+            .onSubmit(commit)
+    }
+
+    /// **Marks, not a flag** ([[T-1278]]'s ruling, carried in when the task inspector became this
+    /// panel). `flag.fill` is the *due date* on macOS, and the owner chose the `!` / `!!` / `!!!`
+    /// control as the one priority style across devices, so this draws the shared
+    /// `TaskPriorityMarkControl` rather than a glyph of its own.
+    private var priorityControl: some View {
+        Button(action: cyclePriority) {
+            TaskPriorityMarkControl(priority: draft.priority)
+                .frame(width: 32, height: 32)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.cadencePlain)
+        .accessibilityLabel("Priority: \(draft.priority.label)")
+        // **The outcome, not the gesture** (T-521, and this panel is why that sweep
+        // covers `Shared/`). This control's hint read "Tap to cycle priority", which
+        // was copied from `iOSCalendarQuickCreateSheet` — where it is correct, because
+        // that sheet is under `#if os(iOS)` and touch is the only way to reach it. This
+        // panel is shared, so on the Mac the hint named a gesture that surface does not
+        // have: VoiceOver activates a control there with Control-Option-Space.
+        .accessibilityHint("Changes the priority to the next level")
     }
 
     private func cyclePriority() {
@@ -298,11 +343,12 @@ struct CadenceSchedulePanel<NotesField: View>: View {
     @ViewBuilder
     private var taskSchedule: some View {
         CadenceFieldSection(title: nil, style: .ruled) {
+            // Colour is spent on what is wrong: a do date already past on an open task.
             disclosureRow(
                 label: "Do",
                 value: draft.doRowLabel,
                 systemImage: "calendar",
-                color: Theme.blue,
+                color: draft.isDoDateOverdue ? Theme.red : Theme.blue,
                 isExpanded: $isDoExpanded
             )
 
@@ -310,19 +356,25 @@ struct CadenceSchedulePanel<NotesField: View>: View {
                 CadenceFieldDivider()
                 // The DUE day is marked on this grid, in amber with the word in the cell, so the
                 // two dates being reconciled are visible together rather than one row apart.
+                // **Clear only on a task that exists.** Unscheduling a saved task is an edit the
+                // inspector always offered; a draft block on a timeline is *made* of its day, so a
+                // Clear there would erase the thing being created.
                 CadenceQuickDatePopover(
                     selection: doDateBinding,
                     viewMonth: $doViewMonth,
                     isOpen: .constant(true),
-                    showsClear: false,
+                    showsClear: draft.subject.isEditing && !draft.startDateKey.isEmpty,
+                    onClear: { draft.clearDoDate() },
                     inlineStyle: true,
                     markedDay: draft.dueDateKey.isEmpty ? nil : DateFormatters.date(from: draft.dueDateKey)
                 )
 
                 CadenceFieldDivider()
                 doTimeRow
-                CadenceFieldDivider()
-                repeatRow
+                if offersTaskRepeat {
+                    CadenceFieldDivider()
+                    repeatRow
+                }
             }
         }
 
@@ -331,7 +383,7 @@ struct CadenceSchedulePanel<NotesField: View>: View {
                 label: "Due",
                 value: draft.dueRowLabel,
                 systemImage: "calendar.badge.exclamationmark",
-                color: Theme.amber,
+                color: draft.isDueDateOverdue ? Theme.red : Theme.amber,
                 isExpanded: $isDueExpanded
             )
 
@@ -363,8 +415,8 @@ struct CadenceSchedulePanel<NotesField: View>: View {
     @ViewBuilder
     private var doTimeRow: some View {
         Button {
-            if draft.isAllDay {
-                draft.isAllDay = false
+            if draft.isAllDay || draft.startDateKey.isEmpty {
+                draft.addTime()
                 isDoTimeExpanded = true
             } else {
                 isDoTimeExpanded.toggle()
@@ -375,7 +427,7 @@ struct CadenceSchedulePanel<NotesField: View>: View {
                 Spacer(minLength: 6)
                 Text(draft.doTimeLabel)
                     .cadenceFont(.fieldValue)
-                    .foregroundStyle(draft.isAllDay ? Theme.dim : Theme.text)
+                    .foregroundStyle(draft.scheduledStartMin < 0 ? Theme.dim : Theme.text)
                     .lineLimit(1)
             }
             .contentShape(Rectangle())
@@ -383,12 +435,8 @@ struct CadenceSchedulePanel<NotesField: View>: View {
         }
         .buttonStyle(.cadencePlain)
 
-        if !draft.isAllDay && isDoTimeExpanded {
+        if draft.scheduledStartMin >= 0 && isDoTimeExpanded {
             CadenceTimeRoller(minutes: doStartMinuteBinding) { isDoTimeExpanded = false }
-
-            CadenceFieldRow(label: "Length", systemImage: "timer", color: Theme.green) {
-                EstimatePickerControl(value: durationBinding, pickerTitle: "LENGTH")
-            }
 
             Button {
                 draft.isAllDay = true
@@ -441,6 +489,16 @@ struct CadenceSchedulePanel<NotesField: View>: View {
             }
             .disabled(sectionChoices.isEmpty)
             .opacity(sectionChoices.isEmpty ? 0.45 : 1)
+
+            CadenceFieldDivider()
+
+            // **A row of the task's own, not a Length under the time** ([[T-3171]]). An estimate
+            // is a property of the task whether or not it has a slot — the inspector this panel
+            // replaced edited it on an untimed task, and None (0) is a value it could choose. On a
+            // timed task it is also the block's length, which `setEstimate` keeps in step.
+            CadenceFieldRow(label: "Estimate", systemImage: "timer", color: Theme.green) {
+                EstimatePickerControl(value: estimateBinding)
+            }
         }
     }
 
@@ -712,10 +770,10 @@ struct CadenceSchedulePanel<NotesField: View>: View {
         )
     }
 
-    private var durationBinding: Binding<Int> {
+    private var estimateBinding: Binding<Int> {
         Binding(
-            get: { draft.durationMinutes },
-            set: { draft.moveEndEdge(toMinute: draft.startMin + max(CadenceScheduleDraft.minimumDurationMinutes, $0)) }
+            get: { draft.estimateMinutes },
+            set: { draft.setEstimate($0) }
         )
     }
 
@@ -782,6 +840,8 @@ extension CadenceSchedulePanel where NotesField == EmptyView {
             failureNotice: failureNotice,
             canCommit: canCommit,
             offersEventRepeat: offersEventRepeat,
+            titleStatus: nil,
+            offersTaskRepeat: true,
             actions: actions,
             customNotesField: nil
         )

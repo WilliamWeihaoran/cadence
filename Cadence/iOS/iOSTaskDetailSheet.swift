@@ -2,6 +2,20 @@
 import SwiftData
 import SwiftUI
 
+/// Edits an existing task through **the one shared schedule panel** ([[T-3171]]).
+///
+/// The form is `CadenceSchedulePanel` in edit mode — the same view the iPad timeline creates a task
+/// with and the event editor edits an event with — so creating a task and editing one differ by
+/// `CadenceScheduleDraft.subject` and by the Delete control, and by nothing else the panel draws.
+/// The panel owns the title and priority, Do (with its time and Clear), Due, the list and section,
+/// and the estimate; it writes **nothing** until Save, which commits every one of those fields at
+/// once through `CadenceTaskEditDraftCommit` and restores them all on a refusal.
+///
+/// This file is what the panel cannot hold, carried in its host slot: the tags, the task's series
+/// (Repeat, its end condition and the logged time, in `iOSTaskFieldListSection`), the subtasks, the
+/// markdown well, the status transitions and completion, and Focus. Those are **actions on the
+/// record**, not fields of the draft — a subtask added, a tag removed or a task completed lands the
+/// moment it is asked for, exactly as before, and Cancel does not take it back.
 struct iOSTaskDetailSheet: View {
     @Bindable var task: AppTask
     @Environment(\.dismiss) private var dismiss
@@ -12,63 +26,111 @@ struct iOSTaskDetailSheet: View {
     @Query(sort: \Area.order) private var areas: [Area]
     @Query(sort: \Project.order) private var projects: [Project]
     @Query(sort: \Tag.order) private var tags: [Tag]
+    @State private var draft: CadenceScheduleDraft
     @State private var newSubtaskTitle = ""
     /// Set when a subtask insert or delete was refused by the store. See `addSubtask()`.
     @State private var subtaskFailureNotice: String?
     @State private var newTagName = ""
-    @State private var scheduledDate = Date()
-    @State private var dueDate = Date()
-    @State private var hasScheduledDate = false
-    @State private var hasDueDate = false
-    @State private var containerSelection = "inbox"
-    /// Set while `applyContainerSelection` puts the token back after a refused move, so the
-    /// `onChange` that restore fires does not re-commit the move the store just refused (T-702).
-    @State private var isRestoringContainerSelection = false
     @State private var showDeleteConfirmation = false
     /// Set when the delete's commit was refused and rolled back. Same flag, same sentence and the
     /// same second alert `iOSTaskRow` carries — see `deleteTask()`.
     @State private var deleteFailed = false
     @State private var isNotesFocused = false
-    /// Set when Done could not flush the sheet's edits. See `finishEditingAndDismiss()`.
+    /// The one slot this sheet reports a refused save through (T-497, T-646): the panel draws it
+    /// beside its footer, whether the save was asked directly or after the series-scope question.
     @State private var saveFailureNotice: String?
-    @State private var pendingRecurrenceChange: PendingRecurrenceChange?
-    /// Set when a recurrence edit did not reach the store. See `apply(_:scope:)`.
-    @State private var recurrenceUpdateFailure: String?
+    /// Raised by Save when the draft moved the series of a task that has one.
+    @State private var isAskingRecurrenceScope = false
     @State private var selectedReferenceNote: Note?
     @State private var selectedReferenceTask: AppTask?
+
+    /// The draft as the sheet opened it. Save compares against it to decide whether the series
+    /// moved — the one edit that asks how far it reaches — and an unsaved difference from it is
+    /// what keeps a swipe from discarding the edit.
+    private let openedDraft: CadenceScheduleDraft
+
+    init(task: AppTask) {
+        _task = Bindable(wrappedValue: task)
+        let opened = CadenceScheduleDraft(editing: task)
+        openedDraft = opened
+        _draft = State(initialValue: opened)
+    }
 
     private var sortedSubtasks: [Subtask] {
         (task.subtasks ?? []).sorted { $0.order < $1.order }
     }
 
-
-    private var availableSectionNames: [String] {
-        CadenceTaskMutationSupport.sectionNames(forArea: selectedArea, project: selectedProject)
-    }
-
-    /// The token this sheet holds, read through the one mapping that owns the prefix arithmetic.
+    /// The token the draft holds, read through the one mapping that owns the prefix arithmetic.
     /// `selection(fromToken:)` answers `.inbox` for anything it cannot parse — including a
-    /// well-formed prefix over a malformed id — which is what these two used to spell themselves.
+    /// well-formed prefix over a malformed id.
     private var containerChoice: TaskContainerSelection {
-        CadenceTaskComposerSupport.selection(fromToken: containerSelection)
+        CadenceTaskComposerSupport.selection(fromToken: draft.listToken)
     }
 
-    private var selectedAreaID: UUID? {
-        CadenceTaskComposerSupport.selectedAreaID(containerChoice)
-    }
-
-    private var selectedProjectID: UUID? {
-        CadenceTaskComposerSupport.selectedProjectID(containerChoice)
-    }
-
+    /// Resolved against the **unfiltered** queries (T-514): a task in an archived list saves and
+    /// sections against the list it is in, not against the active ones.
     private var selectedArea: Area? {
-        guard let selectedAreaID else { return nil }
-        return areas.first { $0.id == selectedAreaID }
+        guard let id = CadenceTaskComposerSupport.selectedAreaID(containerChoice) else { return nil }
+        return areas.first { $0.id == id }
     }
 
     private var selectedProject: Project? {
-        guard let selectedProjectID else { return nil }
-        return projects.first { $0.id == selectedProjectID }
+        guard let id = CadenceTaskComposerSupport.selectedProjectID(containerChoice) else { return nil }
+        return projects.first { $0.id == id }
+    }
+
+    /// The lists a task can be moved to — the active ones — **plus the one it is in**, archived or
+    /// not, so the List row names where the task actually lives. The narrowing the container popover
+    /// this replaces did for itself, through the same two calls.
+    private var listChoices: [CadenceSchedulePanelChoice] {
+        var rows = [
+            CadenceSchedulePanelChoice(
+                id: CadenceTaskComposerSupport.token(for: .inbox),
+                name: CadenceTaskInspectorSupport.inboxSegmentTitle,
+                color: Theme.blue,
+                systemImage: "tray.full.fill"
+            )
+        ]
+        rows += CadenceTaskComposerSupport.pickableAreas(
+            areas,
+            selectedID: CadenceTaskComposerSupport.selectedAreaID(containerChoice)
+        ).map {
+            CadenceSchedulePanelChoice(
+                id: CadenceTaskComposerSupport.token(for: .area($0.id)),
+                name: $0.name,
+                color: Color(hex: $0.colorHex),
+                systemImage: "tray.full.fill"
+            )
+        }
+        rows += CadenceTaskComposerSupport.pickableProjects(
+            projects,
+            selectedID: CadenceTaskComposerSupport.selectedProjectID(containerChoice)
+        ).map {
+            CadenceSchedulePanelChoice(
+                id: CadenceTaskComposerSupport.token(for: .project($0.id)),
+                name: $0.name,
+                color: Color(hex: $0.colorHex),
+                systemImage: "checklist"
+            )
+        }
+        return rows
+    }
+
+    private var sectionChoices: [String] {
+        CadenceTaskMutationSupport.sectionNames(forArea: selectedArea, project: selectedProject)
+    }
+
+    /// The state the old title card drew beside the words: an eyebrow for the two statuses a
+    /// checkbox cannot express, and a struck-through title once the task is settled. Read live
+    /// off the task, because completing it from this sheet lands at once.
+    private var titleStatus: CadenceSchedulePanelTitleStatus {
+        let status = task.status
+        let showsEyebrow = status == .inProgress || task.isCancelled
+        return CadenceSchedulePanelTitleStatus(
+            eyebrow: showsEyebrow ? status.label : nil,
+            eyebrowTint: CadenceTaskPresentationSupport.statusColor(status),
+            isSettled: CadenceTaskCompletionState.resolve(task: task).isSettled
+        )
     }
 
     /// The **only** thing this sheet reads the size class for: the margin between its card and the
@@ -78,11 +140,9 @@ struct iOSTaskDetailSheet: View {
         horizontalSizeClass == .regular
     }
 
-    /// **Split from `editorSurface` (T-407).** The sheet observes eleven fields and presents a
-    /// dialog and two alerts, and the moment the second alert joined the chain the whole of `body`
-    /// stopped type-checking: `error: the compiler is unable to type-check this expression in
-    /// reasonable time`, on the iOS-simulator build and nowhere else. Two expressions rather than
-    /// one is the whole fix — nothing here is conditional and no modifier changed.
+    /// **Split from `editorSurface` (T-407).** The sheet presents a dialog and two alerts, and the
+    /// moment the second alert joined the chain the whole of `body` stopped type-checking on the
+    /// iOS-simulator build. Two expressions rather than one is the whole fix.
     var body: some View {
         editorSurface
             .alert("Delete Task?", isPresented: $showDeleteConfirmation) {
@@ -93,36 +153,22 @@ struct iOSTaskDetailSheet: View {
             }
             // Shared with `iOSTaskRow`; see `iOSTaskDeleteFailureAlert`.
             .iOSTaskDeleteFailureAlert(isPresented: $deleteFailed)
+            // The same question `iOSTaskRowRecurrenceScopeDialogModifier` asks, from the same copy
+            // (T-633) — asked once, at Save, for the series edit the draft carries.
             .confirmationDialog(
                 CadenceRecurrenceScopeCopy.taskScopeTitle,
-                isPresented: recurrenceScopeDialogPresentation,
+                isPresented: $isAskingRecurrenceScope,
                 titleVisibility: .visible
             ) {
                 Button(CadenceTaskRecurrenceEditScope.thisTask.label) {
-                    applyPendingRecurrenceChange(scope: .thisTask)
+                    applySave(scope: .thisTask)
                 }
                 Button(CadenceTaskRecurrenceEditScope.thisAndFuture.label) {
-                    applyPendingRecurrenceChange(scope: .thisAndFuture)
+                    applySave(scope: .thisAndFuture)
                 }
-                Button("Cancel", role: .cancel) {
-                    pendingRecurrenceChange = nil
-                }
+                Button("Cancel", role: .cancel) {}
             } message: {
                 Text(CadenceRecurrenceScopeCopy.taskScopeMessage)
-            }
-            // The same alert `iOSTaskRowRecurrenceScopeDialogModifier` raises, from the same copy:
-            // this sheet asks the same scope question about the same series (T-633).
-            .alert(
-                CadenceRecurrenceScopeCopy.taskScopeFailureTitle,
-                isPresented: Binding(
-                    get: { recurrenceUpdateFailure != nil },
-                    set: { if !$0 { recurrenceUpdateFailure = nil } }
-                ),
-                presenting: recurrenceUpdateFailure
-            ) { _ in
-                Button("OK", role: .cancel) { recurrenceUpdateFailure = nil }
-            } message: { notice in
-                Text(notice)
             }
             .iOSMarkdownReferenceSheets(
                 selectedNote: $selectedReferenceNote,
@@ -132,67 +178,73 @@ struct iOSTaskDetailSheet: View {
             )
     }
 
-    /// The scroll view and everything that watches a field on it. Unchanged from what `body`
-    /// carried inline; see `body` for why it is a separate expression.
     private var editorSurface: some View {
         NavigationStack {
             editorScrollView
         }
         // **The other half of T-1364's one converted workflow.** Creating a task and then opening
         // it are the same errand, so the sheet that reads it back scales exactly where the sheet
-        // that wrote it does — the title, the field rows, the tags, the subtasks and the markdown
-        // well. Everything below here is inside the scope; the sheet itself declares no heights of
-        // its own, so unlike `iOSCreateTaskSheet` it has nothing to read back.
+        // that wrote it does. Everything below here is inside the scope.
         .cadenceScaledTypography()
         .preferredColorScheme(.dark)
-        .onAppear(perform: initializeTaskSheet)
-        .onChange(of: containerSelection) { _, _ in
-            applyContainerSelection()
+        // The panel writes on Save, so an unsaved draft is the user's work and nowhere else. A
+        // swipe that dropped it would be the silent loss the old write-through sheet never had.
+        .interactiveDismissDisabled(draft != openedDraft)
+        // The two fields this sheet does not draft: status, which its own actions write at once,
+        // and logged time, which the focus timer writes. `normalizeCompletionState` is the repair
+        // the old field observers fired; Save runs it for every drafted field.
+        .onChange(of: task.statusRaw) { _, _ in
+            draft.isDone = task.isDone
+            saveTask()
         }
-        // No "seed today when switched on" fallback any more: nothing turns these on except a day
-        // being picked, so seeding here would overwrite the day the user just chose.
-        .onChange(of: hasScheduledDate) { _, _ in applyDates() }
-        .onChange(of: hasDueDate) { _, _ in applyDates() }
-        .onChange(of: scheduledDate) { _, _ in applyDates() }
-        .onChange(of: dueDate) { _, _ in applyDates() }
-        .onChange(of: task.title) { _, _ in saveTask() }
-        .onChange(of: task.priorityRaw) { _, _ in saveTask() }
-        .onChange(of: task.statusRaw) { _, _ in saveTask() }
-        .onChange(of: task.recurrenceRaw) { _, _ in saveTask() }
-        .onChange(of: task.estimatedMinutes) { _, _ in saveTask() }
         .onChange(of: task.actualMinutes) { _, _ in saveTask() }
-        .onChange(of: task.sectionName) { _, _ in saveTask() }
     }
 
     private var editorScrollView: some View {
         ScrollView {
-            taskForm
-                .padding(iOSTaskInspectorMetrics.cardPadding)
-                .background(Theme.surface)
-                .clipShape(RoundedRectangle(cornerRadius: Theme.radiusPanel, style: .continuous))
-                .frame(maxWidth: iOSTaskInspectorMetrics.contentMaxWidth)
-                .frame(maxWidth: .infinity)
-                .padding(iOSTaskInspectorMetrics.sheetGutter(isRegularWidth: isRegularWidth))
+            CadenceSchedulePanel(
+                draft: $draft,
+                listChoices: listChoices,
+                sectionChoices: sectionChoices,
+                failureNotice: saveFailureNotice,
+                titleStatus: titleStatus,
+                // The series is drawn below, with its end condition and its scope question.
+                offersTaskRepeat: false,
+                actions: panelActions
+            ) {
+                recordSections
+            }
+            .clipShape(RoundedRectangle(cornerRadius: Theme.radiusPanel, style: .continuous))
+            .frame(maxWidth: iOSTaskInspectorMetrics.contentMaxWidth)
+            .frame(maxWidth: .infinity)
+            .padding(iOSTaskInspectorMetrics.sheetGutter(isRegularWidth: isRegularWidth))
         }
         .background(Theme.bg)
         .navigationTitle("Edit Task")
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar { taskToolbar }
         .tint(Theme.blue)
     }
 
-    /// Same order as macOS's inspector, for the same reasons: what the task *is* (title, where it
-    /// lives, its tags), then its fields, then the work inside it, then its notes, then the actions
-    /// that change its state.
-    ///
-    /// **T-1278 merged two groups into one.** The untitled Priority/Milestone pair and the SCHEDULE
-    /// well were a card's worth of chrome apart while holding eight fields of the same kind; they
-    /// are one hairline list now, with the priority moved onto the title row.
-    private var taskForm: some View {
+    /// Save, Cancel and Delete. Delete stops at its confirmation; Save may stop at the series-scope
+    /// question, so every outcome is reported through `saveFailureNotice` rather than returned.
+    private var panelActions: CadenceSchedulePanelActions {
+        CadenceSchedulePanelActions(
+            commit: save,
+            cancel: { dismiss() },
+            delete: {
+                showDeleteConfirmation = true
+                return nil
+            }
+        )
+    }
+
+    /// What the panel cannot hold, in the order the inspector always drew it: what the task is
+    /// tagged with, its series, the work inside it, its notes, then the actions that change its
+    /// state.
+    private var recordSections: some View {
         VStack(alignment: .leading, spacing: iOSTaskInspectorMetrics.sectionSpacing) {
-            saveFailureNoticeRow
-            headerBlock
-            fieldListSection
+            iOSTaskTagStrip(task: task, allTags: tags, newTagName: $newTagName)
+            iOSTaskFieldListSection(draft: $draft, loggedMinutes: task.actualMinutes)
             subtasksSection
             notesSection
             statusActionsSection
@@ -200,77 +252,8 @@ struct iOSTaskDetailSheet: View {
         }
     }
 
-    /// At the top of the card, because Done is in the navigation bar directly above it — the
-    /// refusal reads where the user just tapped rather than at the far end of a scroll.
-    @ViewBuilder
-    private var saveFailureNoticeRow: some View {
-        if let saveFailureNotice {
-            CadenceInlineFailureNotice(text: saveFailureNotice)
-        }
-    }
-
-    /// Title row, then the task's `List › Section` line and its tags indented to the title column —
-    /// the same identity block `TaskDetailHeaderSection` draws on macOS.
-    ///
-    /// **The breadcrumb comes first as of T-1278**, so the block reads *circle · title · list name*
-    /// the way the chosen mockup drew it. Where a task lives is part of naming it; the tags are an
-    /// editable set below, and they were sitting between the title and the one line that says which
-    /// list you are looking at.
-    private var headerBlock: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            iOSTaskEditorTitleCard(task: task, onToggleCompletion: toggleCompletion)
-
-            VStack(alignment: .leading, spacing: 8) {
-                iOSTaskPlacementBreadcrumb(
-                    task: task,
-                    containerSelection: $containerSelection,
-                    areas: areas,
-                    projects: projects,
-                    availableSectionNames: availableSectionNames
-                )
-
-                iOSTaskTagStrip(task: task, allTags: tags, newTagName: $newTagName)
-            }
-            // Completion-circle width plus the title row's spacing, so everything under the title
-            // lines up with the title text rather than with the circle. Derived in
-            // `iOSTaskInspectorMetrics` from the circle itself, rather than restated here where it
-            // could — and did — go on ramping after the circle stopped.
-            .padding(.leading, iOSTaskInspectorMetrics.titleColumnInset)
-        }
-    }
-
-    @ToolbarContentBuilder
-    private var taskToolbar: some ToolbarContent {
-        ToolbarItem(placement: .cancellationAction) {
-            Button("Done") {
-                finishEditingAndDismiss()
-            }
-        }
-        ToolbarItem(placement: .destructiveAction) {
-            Button(role: .destructive) {
-                showDeleteConfirmation = true
-            } label: {
-                Image(systemName: "trash")
-            }
-        }
-    }
-
-    private var fieldListSection: some View {
-        iOSTaskFieldListSection(
-            task: task,
-            recurrenceSelection: recurrenceSelection,
-            applyRecurrenceEnd: selectRecurrenceEnd,
-            hasScheduledDate: $hasScheduledDate,
-            scheduledDate: $scheduledDate,
-            hasDueDate: $hasDueDate,
-            dueDate: $dueDate,
-            selectScheduledTime: selectScheduledTime,
-            scheduledTimeLabel: scheduledTimeLabel
-        )
-    }
-
     private var statusActionsSection: some View {
-        iOSTaskStatusActionsSection(task: task) { status in
+        iOSTaskStatusActionsSection(task: task, onToggleCompletion: toggleCompletion) { status in
             CadenceTaskStatusEditing.setStatus(status, for: task, in: modelContext)
         }
     }
@@ -322,15 +305,11 @@ struct iOSTaskDetailSheet: View {
         }
     }
 
+    /// The markdown well, writing the **draft's** note: it is saved with everything else the panel
+    /// holds, in the one commit, rather than on each keystroke behind a swallowed `try?`.
     private var notesSection: some View {
         iOSTaskNotesSection(
-            notesText: Binding(
-                get: { task.notes },
-                set: {
-                    task.notes = $0
-                    try? modelContext.save()
-                }
-            ),
+            notesText: $draft.notes,
             isFocused: $isNotesFocused,
             referenceNotes: allNotes,
             referenceTasks: allTasks,
@@ -353,131 +332,43 @@ struct iOSTaskDetailSheet: View {
         !newSubtaskTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
-    private var recurrenceSelection: Binding<TaskRecurrenceRule> {
-        Binding(
-            get: { task.recurrenceRule },
-            set: { selectRecurrenceRule($0) }
-        )
-    }
-
-    private var recurrenceScopeDialogPresentation: Binding<Bool> {
-        Binding(
-            get: { pendingRecurrenceChange != nil },
-            set: { isPresented in
-                if !isPresented {
-                    pendingRecurrenceChange = nil
-                }
-            }
-        )
-    }
-
-    /// The time picker's own "No time" row is what clears the time, so this is the single control
-    /// for the field — there is no separate switch beside it to fall out of step.
+    /// The panel's commit. `nil` always: a series edit stops at the scope question, and every
+    /// outcome is reported through `saveFailureNotice`, which the panel draws.
     ///
-    /// **T-761.** This used to be a plain `Binding<Int>`: `iOSChoicePopoverList`'s draft form writes
-    /// a binding's setter and closes the popover unconditionally, so a refused
-    /// `try? modelContext.save()` two calls down closed over it anyway — the same shape T-614 named
-    /// for a dismissed sheet, this time for a popover that never dismisses at all. Now the popover
-    /// uses the committing form: this answers whether the write landed, and `saveFailureNotice` is
-    /// the one slot this sheet reports every refusal through (T-646), same as `applyContainerSelection`.
-    private func selectScheduledTime(_ minutes: Int) -> Bool {
-        let landed: Bool
-        if minutes >= 0 {
-            // A time needs a day under it, so an untimed task adopts today first. `applyDates`
-            // reconciles the new day; the wrapper below reconciles the minute (T-362) — before this
-            // ticket neither half's answer stopped a picker that was about to close over it.
-            if !hasScheduledDate {
-                scheduledDate = Date()
-                hasScheduledDate = true
-                guard applyDates() else {
-                    saveFailureNotice = CadenceTaskFieldEditCommit.saveFailureNotice
-                    return false
-                }
-            }
-            landed = CadenceTaskDateEditing.setScheduledTime(minutes, for: task, in: modelContext)
-        } else {
-            landed = CadenceTaskDateEditing.clearScheduledTime(task, in: modelContext)
+    /// A task with no series has nothing to propagate to, so there is no scope to ask about and the
+    /// save lands at once — the rule the per-field series edit this replaces followed.
+    private func save() -> String? {
+        isNotesFocused = false
+        if draft.changesRecurrence(from: openedDraft) && task.isRecurrenceSeriesMember {
+            isAskingRecurrenceScope = true
+            return nil
         }
-        saveFailureNotice = landed ? nil : CadenceTaskFieldEditCommit.saveFailureNotice
-        return landed
+        applySave(scope: .thisTask)
+        return nil
     }
 
-    /// **T-497.** This ended `try? modelContext.save(); dismiss()`, and the dismissal is what told
-    /// the user the sheet's last edit had landed. Every field on this sheet is an in-place write to
-    /// a task the store already holds, so there is nothing to un-insert and nothing worth undoing
-    /// under a caret the user still has in the notes field: the sheet stays open, keeps what they
-    /// typed, and names the refusal. See `CadenceInPlaceEditFlush` for the decision.
-    private func finishEditingAndDismiss() {
-        isNotesFocused = false
-        // `applyDates()` answers now rather than swallowing (T-497), so both halves of "the sheet's
-        // last edit landed" are one condition: the dates it writes, and whatever else the eleven
-        // field observers left pending.
-        guard applyDates(), CadenceInPlaceEditFlush.flush(in: modelContext) else {
-            saveFailureNotice = CadenceInPlaceEditFlush.failureNotice
+    /// **T-497's rule, one commit wide.** The sheet this replaces flushed each field as it changed
+    /// and closed on Done only once the flush landed. Here every drafted field is one commit: a
+    /// refusal puts the task — and any later occurrence a series edit reached — back as it was,
+    /// which is what makes `editFailureNotice`'s "Nothing was changed" true of the record, while
+    /// the draft still holds what the user chose and the sheet stays open over it. Retrying is
+    /// pressing Save again.
+    private func applySave(scope: CadenceTaskRecurrenceEditScope) {
+        guard CadenceTaskEditDraftCommit.save(
+            draft,
+            opened: openedDraft,
+            to: task,
+            area: selectedArea,
+            project: selectedProject,
+            allTasks: allTasks,
+            scope: scope,
+            in: modelContext
+        ) else {
+            saveFailureNotice = CadencePendingChangePersistence.editFailureNotice
             return
         }
         saveFailureNotice = nil
         dismiss()
-    }
-
-    private var scheduledTimeLabel: String {
-        task.scheduledStartMin >= 0 ? TimeFormatters.timeString(from: task.scheduledStartMin) : "No time"
-    }
-
-    private func initializeTaskSheet() {
-        loadDates()
-        loadContainerSelection()
-    }
-
-    private func loadContainerSelection() {
-        containerSelection = containerToken
-        normalizeSectionForCurrentContainer()
-    }
-
-    /// The token for the list the task is **actually** in. Read twice: once to seed the picker on
-    /// open, and once to put it back when a move is refused.
-    private var containerToken: String {
-        if let area = task.area {
-            return "area:\(area.id.uuidString)"
-        }
-        if let project = task.project {
-            return "project:\(project.id.uuidString)"
-        }
-        return "inbox"
-    }
-
-    private func loadDates() {
-        if let date = DateFormatters.date(from: task.scheduledDate) {
-            scheduledDate = date
-            hasScheduledDate = true
-        } else {
-            scheduledDate = Date()
-            hasScheduledDate = false
-        }
-
-        if let date = DateFormatters.date(from: task.dueDate) {
-            dueDate = date
-            hasDueDate = true
-        } else {
-            dueDate = Date()
-            hasDueDate = false
-        }
-    }
-
-    /// Already reconciled before T-362 — this is the shape the rest of the app was missing. It
-    /// now says so through the shared wrapper rather than pairing the two calls by hand.
-    ///
-    /// **Answers since T-497.** `false` means the store refused the two date fields. The eleven
-    /// field observers above discard it — an `onChange` has nothing to report and nothing to close —
-    /// and `finishEditingAndDismiss` does not, because closing is a claim.
-    @discardableResult
-    private func applyDates() -> Bool {
-        CadenceTaskDateEditing.setPlanningDates(
-            scheduledDate: hasScheduledDate ? DateFormatters.dateKey(from: scheduledDate) : nil,
-            dueDate: hasDueDate ? DateFormatters.dateKey(from: dueDate) : nil,
-            for: task,
-            in: modelContext
-        )
     }
 
     /// **Deliberately not routed through `CadenceTaskStatusEditing` (T-407).**
@@ -501,75 +392,6 @@ struct iOSTaskDetailSheet: View {
         case .task:
             selectedReferenceTask = iOSMarkdownReferenceResolver.task(for: target, in: allTasks)
         }
-    }
-
-    /// **T-702.** This discarded what `moveToContainer` answered, and `containerSelection` is a
-    /// token the user has just changed: on a refusal the task went back to the list it started in
-    /// while the picker — and the breadcrumb reading off it — went on naming the one it never
-    /// reached. That is a report in the family the `try? save()` rule already names, because here
-    /// the token *is* the claim, and it is more visible than the pending move it replaced.
-    ///
-    /// The sheet stays open, so it answers inline rather than with the row's alert, and it uses
-    /// the slot every other refusal on this sheet uses — one notice per surface, as T-646 decided,
-    /// rather than a second flag the two could disagree through.
-    private func applyContainerSelection() {
-        // The restore below re-enters here through `onChange`. Without this the second pass would
-        // re-commit the refused move and clear the notice the first pass just set.
-        guard !isRestoringContainerSelection else {
-            isRestoringContainerSelection = false
-            return
-        }
-
-        // **T-726.** `onAppear` seeds this token from the task's own container, and `onChange`
-        // cannot tell that seed from a pick — so opening the sheet on any task filed in a list ran
-        // the move. `assignContainer` guards the *order* against a re-assert, so nothing moved, but
-        // the commit still happened; since T-702 a refusal on it names itself, which put
-        // "Couldn't save this change." on a sheet the user had only just opened for an edit they
-        // never made. The same question `assignContainer` asks internally, asked one frame up so
-        // the commit is not reached at all.
-        //
-        // The open path loses no write by returning here: `loadContainerSelection()` has already
-        // run `normalizeSectionForCurrentContainer()`, and Done flushes through
-        // `CadenceInPlaceEditFlush`.
-        guard !CadenceTaskMutationSupport.isAlreadyInContainer(
-            task,
-            area: selectedArea,
-            project: selectedProject
-        ) else { return }
-
-        guard CadenceTaskMutationSupport.moveToContainer(
-            task,
-            area: selectedArea,
-            project: selectedProject,
-            sectionName: task.resolvedSectionName,
-            allTasks: allTasks,
-            modelContext: modelContext
-        ) else {
-            saveFailureNotice = CadenceTaskFieldEditCommit.saveFailureNotice
-            restoreContainerSelection()
-            return
-        }
-        saveFailureNotice = nil
-    }
-
-    /// Puts the picker back on the list the refused move left the task in.
-    ///
-    /// Written only when it actually differs: an unconditional write would leave
-    /// `isRestoringContainerSelection` set with no `onChange` coming to consume it, and the flag
-    /// would then swallow the user's next pick instead of the restore it was raised for.
-    private func restoreContainerSelection() {
-        let restored = containerToken
-        guard restored != containerSelection else { return }
-        isRestoringContainerSelection = true
-        containerSelection = restored
-    }
-
-    private func normalizeSectionForCurrentContainer() {
-        task.sectionName = CadenceTaskMutationSupport.normalizedSectionName(
-            task.resolvedSectionName,
-            area: selectedArea,
-            project: selectedProject
-        )
     }
 
     /// **T-634.** This cleared the field *first* and swallowed the save after it, so an emptied
@@ -626,6 +448,8 @@ struct iOSTaskDetailSheet: View {
         subtaskFailureNotice = nil
     }
 
+    /// The completion half of the old title card's circle — it settles the task the moment it is
+    /// tapped. T-344's rule is `toggleCompletion`'s: on a cancelled task it restores to todo.
     private func toggleCompletion() {
         CadenceTaskStatusEditing.toggleCompletion(task, in: modelContext)
     }
@@ -650,103 +474,6 @@ struct iOSTaskDetailSheet: View {
         }
         dismiss()
     }
-
-    private func selectRecurrenceRule(_ rule: TaskRecurrenceRule) {
-        guard task.recurrenceRule != rule else { return }
-        stage(.rule(rule))
-    }
-
-    /// The Ends rows' one write path. Same shape as the rule edit above, and deliberately the same
-    /// scope question: an end condition belongs to the series, so "only this one" against "this and
-    /// future" is exactly as meaningful here as it is for the frequency, and it would be strange
-    /// for one of the two edits in the same well to ask and the other to decide silently.
-    private func selectRecurrenceEnd(mode: TaskRecurrenceEndMode, dateKey: String, count: Int) {
-        let normalizedDate = mode == .onDate ? dateKey : ""
-        let normalizedCount = mode == .afterCount
-            ? CadenceTaskRecurrenceEndPresentation.normalizedEndCount(count)
-            : 0
-        guard mode != task.recurrenceEndMode
-                || normalizedDate != task.recurrenceEndDate
-                || normalizedCount != task.recurrenceEndCount else { return }
-        stage(.end(mode: mode, dateKey: normalizedDate, count: normalizedCount))
-    }
-
-    /// A task with no siblings has nothing to propagate to, so there is no scope to ask about and
-    /// the edit lands immediately. One staging function for both edits, so a future change to how
-    /// the scope is asked — the inline "APPLY TO" row macOS uses instead of this dialog — has one
-    /// place to land rather than two.
-    private func stage(_ change: PendingRecurrenceChange) {
-        guard task.isRecurrenceSeriesMember else {
-            apply(change, scope: .thisTask)
-            return
-        }
-        pendingRecurrenceChange = change
-    }
-
-    private func applyPendingRecurrenceChange(scope: CadenceTaskRecurrenceEditScope) {
-        guard let pendingRecurrenceChange else { return }
-        // Closed either way: the dialog dismisses itself on the button tap, and the alert below
-        // cannot present from behind it.
-        self.pendingRecurrenceChange = nil
-        apply(pendingRecurrenceChange, scope: scope)
-    }
-
-    /// **Commits, and says so when it could not (T-633).**
-    ///
-    /// This used to end `try? modelContext.save()` with `applyPendingRecurrenceChange` clearing the
-    /// pending change — the thing that closes the scope dialog — immediately before it. So a
-    /// refused write closed the dialog exactly as an accepted one does, having already rewritten
-    /// the rule on every later occurrence of the series in memory.
-    ///
-    /// `alsoRestoring:` carries those later occurrences, because that is how far the edit reaches:
-    /// `recurrenceTargets` is the same list `applyRecurrenceRule`/`applyRecurrenceEnd` walk, asked
-    /// for once rather than derived a second way. The row chip's copy of this dialog
-    /// (`iOSTaskRowRecurrenceScopeDialogModifier`) is the same shape, through the same unit.
-    private func apply(_ change: PendingRecurrenceChange, scope: CadenceTaskRecurrenceEditScope) {
-        let targets = CadenceTaskRecurrenceWorkflowSupport.recurrenceTargets(
-            from: task,
-            allTasks: allTasks,
-            scope: scope
-        )
-        let landed = CadenceTaskFieldEditCommit.commit(task, alsoRestoring: targets, in: modelContext) {
-            switch change {
-            case .rule(let rule):
-                CadenceTaskRecurrenceWorkflowSupport.applyRecurrenceRule(
-                    rule,
-                    to: task,
-                    allTasks: allTasks,
-                    scope: scope
-                )
-                if rule == .none {
-                    // An end condition on a task that no longer repeats is meaningless, and leaving
-                    // it behind would re-arm the moment repeating is switched back on.
-                    CadenceTaskRecurrenceWorkflowSupport.applyRecurrenceEnd(
-                        mode: .never,
-                        to: task,
-                        allTasks: allTasks,
-                        scope: scope
-                    )
-                }
-            case .end(let mode, let dateKey, let count):
-                CadenceTaskRecurrenceWorkflowSupport.applyRecurrenceEnd(
-                    mode: mode,
-                    endDateKey: dateKey,
-                    endCount: count,
-                    to: task,
-                    allTasks: allTasks,
-                    scope: scope
-                )
-            }
-        }
-        recurrenceUpdateFailure = landed ? nil : CadencePendingChangePersistence.editFailureNotice
-    }
-}
-
-/// One recurrence edit awaiting its scope. Rule and end changes share a single case list — the
-/// same shape macOS's inspector uses — so neither can grow a path that forgets the scope.
-private enum PendingRecurrenceChange {
-    case rule(TaskRecurrenceRule)
-    case end(mode: TaskRecurrenceEndMode, dateKey: String, count: Int)
 }
 
 #endif

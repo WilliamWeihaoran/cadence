@@ -890,20 +890,32 @@ struct CadenceCancelledTaskReachabilityTests {
     /// — T-344 moved it onto the shared finished predicate, because the label describes a gesture
     /// that now restores a cancelled task as well as a done one, and a label that disagrees with the
     /// gesture it names was the concrete complaint T-344 was filed about.
+    ///
+    /// **The inspector title moved, not its rule ([[T-3171]]).** The title is the shared schedule
+    /// panel's now, which strikes it through on `titleStatus.isSettled`; the sheet hands that in
+    /// from the same shared resolve, once, and the panel draws nothing settled of its own.
     @Test func theIOSRowAndTheInspectorTitleBothReadTheSharedSettledState() throws {
         try expectOccurrences(
             of: "isSettled",
             at: [
                 "Cadence/iOS/iOSTaskViews.swift": 5,
-                "Cadence/iOS/iOSTaskDetailComponents.swift": 4
+                "Cadence/iOS/iOSTaskDetailSheet.swift": 2
             ]
         )
         try expectOccurrences(
             of: "CadenceTaskCompletionState.resolve(task: task).isSettled",
             at: [
                 "Cadence/iOS/iOSTaskViews.swift": 1,
-                "Cadence/iOS/iOSTaskDetailComponents.swift": 1
+                "Cadence/iOS/iOSTaskDetailSheet.swift": 1
             ]
+        )
+        try expectOccurrences(
+            of: "private var isTitleSettled: Bool { titleStatus?.isSettled ?? false }",
+            at: ["Cadence/Shared/Components/CadenceSchedulePanel.swift": 1]
+        )
+        try expectOccurrences(
+            of: ".strikethrough(isTitleSettled, color: Theme.dim)",
+            at: ["Cadence/Shared/Components/CadenceSchedulePanel.swift": 1]
         )
         try expectOccurrences(
             of: "strikethrough(task.isDone",
@@ -911,7 +923,7 @@ struct CadenceCancelledTaskReachabilityTests {
         )
         try expectOccurrences(
             of: "task.isDone || task.isCancelled",
-            at: ["Cadence/iOS/iOSTaskDetailComponents.swift": 0]
+            at: ["Cadence/iOS/iOSTaskDetailComponents.swift": 0, "Cadence/iOS/iOSTaskDetailSheet.swift": 0]
         )
         try expectOccurrences(
             of: "task.isDone",

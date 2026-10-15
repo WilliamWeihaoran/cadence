@@ -19,9 +19,10 @@ import SwiftUI
 /// `CadenceInlineFailureNotice` where the user is — plus a way for the shell to know to stay quiet,
 /// which is `CadenceTaskSettleFailureCenter`'s claim stack.
 ///
-/// **Applied to the sheet's whole content, not to the control.** The circle is drawn by
-/// `iOSTaskEditorTitleCard` and the status well by `statusActionsSection`; a notice owned by either
-/// would be missing from the other, which is the reasoning T-636(a) used to put the sentence at the
+/// **Applied to the sheet's whole content, not to the control.** Completion and the status
+/// transitions are drawn by `iOSTaskStatusActionsSection` inside the schedule panel's host slot,
+/// and the panel's own footer is elsewhere again; a notice owned by any one of them would be
+/// missing from the rest, which is the reasoning T-636(a) used to put the sentence at the
 /// shell in the first place. One notice per *surface* is the smallest thing that keeps that
 /// property while moving the sentence nearer.
 ///

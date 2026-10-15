@@ -180,19 +180,57 @@ struct CadenceRecurrenceScopeCommitTests {
 
     /// The sheet is the second door onto the same dialog and had the same defect one frame down —
     /// `apply` swallowed, `applyPendingRecurrenceChange` closed the dialog.
+    ///
+    /// **Re-pointed by [[T-3171]].** The sheet is the shared schedule panel now and its series is a
+    /// field of the draft, so the dialog is asked once, at Save, and both of its scopes reach the
+    /// one draft save — which commits through the same unit with the same `alsoRestoring:` walk.
+    /// The refusal is named in the panel's notice slot rather than a second alert, the one-notice-
+    /// per-surface rule (T-646), with the sentence that the undo makes true.
     @Test func thesheetScopeDialogCommitsThroughTheSameUnitAndReportsTheSameWay() throws {
         let source = try CadenceCommitSurfaceScan.scanned(Self.sheetPath)
-        let apply = try CadenceCommitSurfaceScan.declarationBody(named: "apply", in: source)
-
-        #expect(CadenceSourceScan.matchCount(#"try\?\s*modelContext"#, in: apply) == 0)
-        #expect(apply.contains("CadenceTaskFieldEditCommit.commit(task, alsoRestoring: targets, in: modelContext)"))
-        #expect(apply.contains("recurrenceUpdateFailure = landed ? nil : CadencePendingChangePersistence.editFailureNotice"))
-        #expect(source.contains("@State private var recurrenceUpdateFailure: String?"))
-        #expect(source.contains("presenting: recurrenceUpdateFailure"))
-
-        // One title over both dialogs, from the copy holder that already owns the dialog's prose.
-        #expect(source.contains("CadenceRecurrenceScopeCopy.taskScopeFailureTitle"))
         #expect(source.contains("struct iOSTaskDetailSheet: View"))
+        #expect(source.contains("CadenceRecurrenceScopeCopy.taskScopeTitle"))
+        #expect(CadenceSourceScan.matchCount(#"applySave\(scope: \.(thisTask|thisAndFuture)\)"#, in: source) == 3,
+                "the dialog's two scopes and the direct save do not all reach the one save")
+        let apply = try CadenceCommitSurfaceScan.declarationBody(named: "applySave", in: source)
+        #expect(CadenceSourceScan.matchCount(#"try\?\s*modelContext"#, in: apply) == 0)
+        #expect(apply.contains("saveFailureNotice = CadencePendingChangePersistence.editFailureNotice"))
+        #expect(source.contains("failureNotice: saveFailureNotice"))
+
+        let writer = try CadenceCommitSurfaceScan.scanned("Cadence/Shared/CadenceScheduleDraftTaskEditing.swift")
+        let save = try CadenceCommitSurfaceScan.declarationBody(named: "save", in: writer)
+        #expect(save.contains("CadenceTaskRecurrenceWorkflowSupport.recurrenceTargets(from: task, allTasks: allTasks, scope: scope)"))
+        #expect(save.contains("alsoRestoring: targets,"))
+        #expect(CadenceSourceScan.matchCount(#"try\?"#, in: save) == 0)
+    }
+
+    /// The behavioural half for the sheet's door: a refused this-and-future end edit through the
+    /// draft save puts every occurrence it reached back.
+    @Test func arefusedDraftSeriesEditRestoresEveryLaterOccurrence() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let tasks = try series(in: context)
+        let opened = CadenceScheduleDraft(editing: tasks[0])
+        var draft = opened
+        draft.repeatRule = .weekly
+        draft.seriesEndMode = .afterCount
+        draft.seriesEndCount = 7
+
+        let landed = CadenceTaskEditDraftCommit.save(
+            draft, opened: opened, to: tasks[0], area: nil, project: nil,
+            allTasks: tasks, scope: .thisAndFuture, in: context, reconciler: .inert,
+            commit: { _ in throw CommitRefused() }
+        )
+        #expect(!landed)
+        #expect(tasks.map(\.recurrenceRule) == [.daily, .daily, .daily], "a refused series edit left a new rule behind")
+        #expect(tasks.map(\.recurrenceEndCount) == [0, 0, 0], "a refused series edit left a new bound behind")
+
+        #expect(CadenceTaskEditDraftCommit.save(
+            draft, opened: opened, to: tasks[0], area: nil, project: nil,
+            allTasks: tasks, scope: .thisAndFuture, in: context, reconciler: .inert
+        ))
+        #expect(tasks.map(\.recurrenceRule) == [.weekly, .weekly, .weekly], "this-and-future did not reach the series")
+        #expect(tasks.map(\.recurrenceEndCount) == [7, 7, 7])
     }
 
     /// The two sentences are different sentences, and the lookup one is the only place "Try again"

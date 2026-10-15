@@ -376,13 +376,19 @@ struct CadenceEmptyTitleFallbackSweepTests {
     /// `defaultTaskTitle` would freeze that drift under a change that looks like cleanup. The fix
     /// was never "capitalise" — it is "say what the field is", which is what every other title
     /// prompt already does.
-    @Test func theTaskInspectorTitleFieldPromptsWithANounPhrase() throws {
-        let inspector = CadenceSourceScan.strippingComments(
-            try CadenceSourceScan.sourceFile("Cadence/iOS/iOSTaskDetailComponents.swift")
+    ///
+    /// [[T-3171]] moved the inspector's title field into the shared schedule panel, which prompts
+    /// with the draft kind's `titlePlaceholder` — so the noun phrase is pinned where it is spelled
+    /// now, and the panel is pinned to read it.
+    @Test @MainActor func theTaskInspectorTitleFieldPromptsWithANounPhrase() throws {
+        let panel = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/Shared/Components/CadenceSchedulePanel.swift")
         )
-        #expect(inspector.contains("struct iOSTaskEditorTitleCard"), "non-vacuity: wrong file read")
-        #expect(inspector.contains("TextField(\"Task title\", text: $task.title"))
-        #expect(inspector.contains("Untitled task") == false,
+        #expect(panel.contains("struct CadenceSchedulePanel<NotesField: View>: View"), "non-vacuity: wrong file read")
+        #expect(panel.contains("TextField(draft.kind.titlePlaceholder, text: $draft.title"))
+        #expect(CadenceScheduleDraftKind.task.titlePlaceholder == "Task title")
+        #expect(CadenceScheduleDraftKind.event.titlePlaceholder == "Event title")
+        #expect(CadenceScheduleDraftKind.allCases.allSatisfy { !$0.titlePlaceholder.lowercased().hasPrefix("untitled") },
                 "the prompt is back to a placeholder value")
     }
 

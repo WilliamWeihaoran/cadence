@@ -44,19 +44,27 @@ import SwiftData
 /// same "Nothing was changed" sentence. It is the field this doc named as *not* carried until a
 /// caller started writing it, which is exactly the sequence the boundary below asks for.
 ///
-/// **The stated boundary.** `restore(to:)` assigns the nineteen properties below and nothing else.
-/// A task's `notes`, `actualMinutes`, `createdAt`, the `recurrenceEnd*` and
-/// `recurrenceSource*`/`recurrenceOccurrenceIndex` fields, `goal`, and the to-many `subtasks` /
-/// `tags` / `focusSessions` are **not** carried — the to-manys because a snapshot of a relationship
-/// array cannot restore an insert, and the rest because no caller of
-/// `CadenceTaskFieldEditCommit.commit` writes them. A caller that starts to must add the field
-/// here in the same change, and `thefieldSnapshotCapturesAndRestoresTheSameNineteenFields` in
-/// `CadenceEditorSaveCommitSurfaceTests` pins the covered set exactly, so an addition on one side
-/// of the pair cannot be forgotten on the other.
+/// **`notes` and the three `recurrenceEnd*` fields are here because the task editor writes them
+/// ([[T-3171]]).** The iOS task sheet became the shared schedule panel, which saves every field in
+/// one commit through this unit — the note included. The end condition was already written through
+/// here by the sheet's old per-field scope edit, so a refused end edit used to restore the rule and
+/// leave the new bound on every occurrence it reached: the boundary below named the fields as not
+/// carried while a caller wrote them.
+///
+/// **The stated boundary.** `restore(to:)` assigns the twenty-three properties below and nothing
+/// else. A task's `actualMinutes`, `createdAt`, the `recurrenceSource*`/`recurrenceOccurrenceIndex`
+/// fields, `goal`, and the to-many `subtasks` / `tags` / `focusSessions` are **not** carried — the
+/// to-manys because a snapshot of a relationship array cannot restore an insert, and the rest
+/// because no caller of `CadenceTaskFieldEditCommit.commit` writes them. A caller that starts to
+/// must add the field here in the same change, and
+/// `thefieldSnapshotCapturesAndRestoresTheSameNamedFields` in `CadenceEditorSaveCommitSurfaceTests`
+/// pins the covered set exactly, so an addition on one side of the pair cannot be forgotten on the
+/// other.
 struct CadenceTaskFieldSnapshot {
     let taskID: UUID
 
     private let title: String
+    private let notes: String
     private let order: Int
     private let statusRaw: String
     private let completedAt: Date?
@@ -70,6 +78,9 @@ struct CadenceTaskFieldSnapshot {
     private let recurrenceRaw: String
     private let recurrenceSeriesIDRaw: String
     private let recurrenceSpawnedTaskIDRaw: String
+    private let recurrenceEndModeRaw: String
+    private let recurrenceEndDate: String
+    private let recurrenceEndCount: Int
     private let area: Area?
     private let project: Project?
     private let context: Context?
@@ -79,6 +90,7 @@ struct CadenceTaskFieldSnapshot {
     init(_ task: AppTask) {
         taskID = task.id
         title = task.title
+        notes = task.notes
         order = task.order
         statusRaw = task.statusRaw
         completedAt = task.completedAt
@@ -92,6 +104,9 @@ struct CadenceTaskFieldSnapshot {
         recurrenceRaw = task.recurrenceRaw
         recurrenceSeriesIDRaw = task.recurrenceSeriesIDRaw
         recurrenceSpawnedTaskIDRaw = task.recurrenceSpawnedTaskIDRaw
+        recurrenceEndModeRaw = task.recurrenceEndModeRaw
+        recurrenceEndDate = task.recurrenceEndDate
+        recurrenceEndCount = task.recurrenceEndCount
         area = task.area
         project = task.project
         context = task.context
@@ -109,6 +124,7 @@ struct CadenceTaskFieldSnapshot {
 
     func restore(to task: AppTask) {
         task.title = title
+        task.notes = notes
         task.order = order
         task.statusRaw = statusRaw
         task.completedAt = completedAt
@@ -122,6 +138,9 @@ struct CadenceTaskFieldSnapshot {
         task.recurrenceRaw = recurrenceRaw
         task.recurrenceSeriesIDRaw = recurrenceSeriesIDRaw
         task.recurrenceSpawnedTaskIDRaw = recurrenceSpawnedTaskIDRaw
+        task.recurrenceEndModeRaw = recurrenceEndModeRaw
+        task.recurrenceEndDate = recurrenceEndDate
+        task.recurrenceEndCount = recurrenceEndCount
         task.area = area
         task.project = project
         task.context = context
@@ -145,7 +164,7 @@ struct CadenceTaskFieldSnapshot {
 /// through it would have changed what the drop does on the way to fixing what it reports.
 ///
 /// `restore(to:)` is spelled `restore(to bundle:)` so the task snapshot's own `restore` stays the
-/// only `func restore(to task: AppTask)` in this file; `thefieldSnapshotCapturesAndRestoresTheSameNineteenFields`
+/// only `func restore(to task: AppTask)` in this file; `thefieldSnapshotCapturesAndRestoresTheSameNamedFields`
 /// reads that declaration by its full prefix for exactly that reason.
 struct CadenceTaskBundleSlotSnapshot {
     let bundleID: UUID

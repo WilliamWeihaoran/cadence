@@ -81,7 +81,8 @@ struct CadenceIconOnlyButtonAccessibilityTests {
     /// distinction on a literal, so the count above cannot be inflated by self-naming labels.
     private static let knownUnnamedIconButtonSites: [String: Int] = [
         "Cadence/iOS/iOSMarkdownPreview.swift": 2,                          // T-611
-        "Cadence/iOS/iOSTaskDetailSheet.swift": 1,                          // T-611
+        // `iOSTaskDetailSheet.swift`'s one — the toolbar's bare `trash` glyph — went with the
+        // toolbar in [[T-3171]]: Delete is the shared schedule panel's titled footer button now.
     ]
 
     @Test func noIconOnlyButtonInTheAppIsLeftWithoutAnAccessibleName() throws {
@@ -124,8 +125,8 @@ struct CadenceIconOnlyButtonAccessibilityTests {
         // The headline, so the report and the ledger cannot disagree: T-637 measured 31 in 24;
         // T-672 closed 10, T-674 a further 10, and T-673 the last 8 on the desktop tree. What
         // remains is T-611's original iOS population and nothing else.
-        #expect(actual.values.reduce(0, +) == 3)
-        #expect(actual.count == 2)
+        #expect(actual.values.reduce(0, +) == 2)
+        #expect(actual.count == 1)
         // And the file the ticket was filed about is clean — see the ledger's own note.
         #expect(actual["Cadence/iOS/iOSTaskRowActionViews.swift"] == nil)
     }
@@ -141,9 +142,10 @@ struct CadenceIconOnlyButtonAccessibilityTests {
         let touch = ledger.filter { $0.key.hasPrefix("Cadence/iOS/") }
         let desktop = ledger.filter { $0.key.hasPrefix("Cadence/macOS/") }
 
-        // T-611's population, unchanged: 3 sites in 2 files.
-        #expect(touch.values.reduce(0, +) == 3)
-        #expect(touch.count == 2)
+        // T-611's population: 3 sites in 2 files, then 2 in 1 once [[T-3171]] took the task
+        // sheet's toolbar (and its bare trash glyph) with the old form.
+        #expect(touch.values.reduce(0, +) == 2)
+        #expect(touch.count == 1)
         // T-637's 28 desktop sites are all closed — T-672's 10, T-674's 10, T-673's 8. Zero is
         // the correct number here and it is the reason this test can no longer prove reach from
         // the ledger: an empty desktop half reads identically whether the widening shipped or was
@@ -220,7 +222,9 @@ struct CadenceIconOnlyButtonAccessibilityTests {
     @Test func theIconOnlyButtonDetectorSeesABareGlyphAndLeavesALabelledOneAlone() throws {
         let instrument = try unnamedIconButtonInstrument()
 
-        let offending = try CadenceSourceScan.sourceFile("Cadence/iOS/iOSTaskDetailSheet.swift")
+        // The witness moved with the ledger: the task sheet's trash glyph is gone ([[T-3171]]), and
+        // `iOSMarkdownPreview.swift` is the file still carrying two.
+        let offending = try CadenceSourceScan.sourceFile("Cadence/iOS/iOSMarkdownPreview.swift")
         #expect(instrument.fires(on: offending), "the detector cannot see an unnamed icon-only button")
 
         // T-637's half. This was a real `Cadence/macOS/` file until T-673 named its last two

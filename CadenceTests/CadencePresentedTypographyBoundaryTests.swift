@@ -292,7 +292,11 @@ struct CadencePresentedTypographyBoundaryTests {
         }
 
         // T-1466 removes the inspector's milestone popover from these five workflow files.
-        #expect(popoverCount == 14, "the workflows' popover count moved; re-derive the list")
+        // [[T-3171]] took five more: the iOS inspector's priority, list, section, time and estimate
+        // pickers are the shared schedule panel's rows now, and the panel's own popovers open the
+        // same declared pickers (`CadenceChoicePopoverList`, `EstimatePickerControl`) from inside
+        // the inspector's scaled scope.
+        #expect(popoverCount == 9, "the workflows' popover count moved; re-derive the list")
         #expect(Set(found).count >= 4, "the sweep matched one type thirteen times, which proves nothing")
     }
 

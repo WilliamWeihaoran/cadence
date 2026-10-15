@@ -476,7 +476,12 @@ struct CadenceMarkdownImageCommitSurfaceTests {
         // [[T-2079]] made it 69: `GoalsView`'s goal-link change alert went with
         // `detachGoalListLink`, the only write it could report on. The notice itself is unchanged
         // and so is every other site — one surface stopped having a refusal to name.
-        #expect(total == 69, "the inline notice has \(total) call sites, not the 69 this test was written over")
+        // [[T-3171]] made it 68: the iOS task inspector became the shared schedule panel, which
+        // draws its refusal with `CadenceInlineNotice(text:tone: .failure)` above its own footer,
+        // so the sheet's top-of-card `CadenceInlineFailureNotice` went with the old form. The
+        // refusal is still named — `CadenceTaskEditorPanelAdoptionTests` holds that it is handed
+        // to the panel — through the panel's one notice component instead of this one.
+        #expect(total == 68, "the inline notice has \(total) call sites, not the 68 this test was written over")
         #expect(withDismissal == 7, "\(withDismissal) call sites offer a dismissal, not 7")
 
         // And each of the six is named, so one swapping places with another is still a failure.

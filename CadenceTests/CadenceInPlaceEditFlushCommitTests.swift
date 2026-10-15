@@ -233,21 +233,25 @@ struct CadenceInPlaceEditFlushCommitTests {
     /// runs is the same lie with a sentence on top of it.
     @Test func everyInPlaceEditFlushSurfaceClosesOnlyBelowItsRefusal() throws {
         // Each site's *report* is named individually, because each site claims success in its own
-        // spelling: the two note editors answer `true` to a `body` that then dismisses, and the
-        // task sheet dismisses itself.
+        // spelling: the two note editors answer `true` to a `body` that then dismisses.
+        //
+        // **Two, not three, since [[T-3171]].** The task sheet was the third: it wrote each field as
+        // it changed and flushed on Done. It is the shared schedule panel now, which writes nothing
+        // until Save and then commits every drafted field at once *with* an undo — the
+        // `CadenceTaskFieldEditCommit` family, not this one. `CadenceEditorSaveCommitSurfaceTests`
+        // holds its Save (`applySave`) to the same rule this test holds these two to: the refusal
+        // branch reports and returns, and the close is below it, exactly once.
         let surfaces = [
             ("Cadence/iOS/iOSSearchSupportViews.swift", "flushBeforeDismissing", "return true"),
-            ("Cadence/iOS/iOSMarkdownReferenceSupport.swift", "flushBeforeDismissing", "return true"),
-            ("Cadence/iOS/iOSTaskDetailSheet.swift", "finishEditingAndDismiss", "dismiss()")
+            ("Cadence/iOS/iOSMarkdownReferenceSupport.swift", "flushBeforeDismissing", "return true")
         ]
 
         for (path, name, report) in surfaces {
             let view = try CadenceCommitSurfaceScan.scanned(path)
             let body = try CadenceCommitSurfaceScan.declarationBody(named: name, in: view)
 
-            // Not anchored on `guard ` — the task sheet's condition has a first clause
-            // (`applyDates()`), asserted on its own below. What every site must share is that the
-            // flush *is* the condition rather than a statement above one.
+            // Not anchored on `guard `: what every site must share is that the flush *is* the
+            // condition rather than a statement above one.
             #expect(
                 body.contains("CadenceInPlaceEditFlush.flush(in: modelContext) else {"),
                 "\(path).\(name) does not guard on the shared flush"
@@ -285,16 +289,14 @@ struct CadenceInPlaceEditFlushCommitTests {
             )
         }
 
-        // The task sheet writes its two date fields on the way out, through a wrapper that used to
-        // end `try? modelContext.save()` — so the sheet's own commit was honest while the frame
-        // under it swallowed, which is the chain half 2 of the rule follows. Both frames answer
-        // now, and the dismissal is one condition over both.
+        // The task sheet left this family rather than stopped being checked: it no longer flushes in
+        // place at all, and its one commit is the undo-backed draft save.
         let sheet = try CadenceCommitSurfaceScan.scanned("Cadence/iOS/iOSTaskDetailSheet.swift")
-        let finish = try CadenceCommitSurfaceScan.declarationBody(named: "finishEditingAndDismiss", in: sheet)
-        #expect(
-            finish.contains("guard applyDates(), CadenceInPlaceEditFlush.flush(in: modelContext) else {"),
-            "iOSTaskDetailSheet dismisses without asking whether its date write landed"
-        )
+        #expect(!sheet.contains("CadenceInPlaceEditFlush"), "the task sheet flushes in place again")
+        let save = try CadenceCommitSurfaceScan.declarationBody(named: "applySave", in: sheet)
+        #expect(save.contains("guard CadenceTaskEditDraftCommit.save("), "the task sheet's Save is not one guarded commit")
+        // The planning-date wrapper the sheet used to close over still answers rather than
+        // swallowing; other callers reach it.
         for (path, name) in [
             ("Cadence/Shared/CadenceTaskDateEditing.swift", "setPlanningDates"),
             ("Cadence/Shared/CadenceTaskMutationSupport.swift", "setPlanningDates")
@@ -328,8 +330,7 @@ struct CadenceInPlaceEditFlushCommitTests {
     @Test func everyInPlaceEditFlushNoticeIsDrawnOnTheSurfaceThatStaysOpen() throws {
         for path in [
             "Cadence/iOS/iOSSearchSupportViews.swift",
-            "Cadence/iOS/iOSMarkdownReferenceSupport.swift",
-            "Cadence/iOS/iOSTaskDetailSheet.swift"
+            "Cadence/iOS/iOSMarkdownReferenceSupport.swift"
         ] {
             let view = try CadenceCommitSurfaceScan.scanned(path)
             #expect(
@@ -341,6 +342,14 @@ struct CadenceInPlaceEditFlushCommitTests {
                 "\(path) sets a notice it never draws"
             )
         }
+        // The task sheet's notice is drawn by the panel it hosts ([[T-3171]]): handed in as
+        // `failureNotice`, and drawn above the footer whose Save set it.
+        let sheet = try CadenceCommitSurfaceScan.scanned("Cadence/iOS/iOSTaskDetailSheet.swift")
+        #expect(sheet.contains("@State private var saveFailureNotice: String?"))
+        #expect(sheet.contains("failureNotice: saveFailureNotice"), "the task sheet sets a notice it never hands the panel")
+        let panel = try CadenceCommitSurfaceScan.scanned("Cadence/Shared/Components/CadenceSchedulePanel.swift")
+        #expect(panel.contains("if let failure = actionError ?? failureNotice {"))
+        #expect(panel.contains("CadenceInlineNotice(text: failure, tone: .failure)"))
     }
 
     /// **Source shape.** The kanban list picker guards on the move, names the refusal, and closes
@@ -403,83 +412,45 @@ struct CadenceInPlaceEditFlushCommitTests {
 
     // MARK: - T-702: the three callers that discarded the answer
 
-    /// **Source shape.** The iOS task inspector's list picker is driven by a `@State` token the
-    /// user has just changed, so discarding the move's answer left the picker — and the breadcrumb
-    /// reading off it — naming a list the task is not in. It guards, names the refusal in the slot
-    /// this sheet already draws, and puts the token back.
-    @Test func theiOSTaskInspectorPutsItsListPickerBackOverARefusedMove() throws {
+    /// **T-702, re-pointed by [[T-3171]].** The iOS task inspector's list picker was a `@State`
+    /// token committed on every pick, so a refused move left the picker naming a list the task was
+    /// not in until the token was put back. The inspector is the shared schedule panel now: the
+    /// list is a field of the **draft**, the move happens inside the one Save commit, and a refusal
+    /// restores the task's list and order while the draft — the picker's only source — keeps what
+    /// was chosen. `CadenceScheduleDraftTaskEditingTests.aRefusedSavePutsEveryFieldBack` holds that
+    /// behaviourally; this holds that the sheet has no second token to fall out of step with it.
+    @Test func theiOSTaskInspectorsListIsADraftFieldMovedOnlyInsideTheSaveCommit() throws {
         let path = "Cadence/iOS/iOSTaskDetailSheet.swift"
         let view = try CadenceCommitSurfaceScan.scanned(path)
-        let body = try CadenceCommitSurfaceScan.declarationBody(named: "applyContainerSelection", in: view)
+        #expect(view.contains("struct iOSTaskDetailSheet: View {"), "non-vacuity: \(path) did not read as itself")
+        for retired in ["containerSelection", "applyContainerSelection", "isRestoringContainerSelection", "restoreContainerSelection"] {
+            #expect(!view.contains(retired), "\(path) holds a list token beside the draft again: \(retired)")
+        }
+        #expect(view.contains("CadenceTaskComposerSupport.selection(fromToken: draft.listToken)"))
 
-        #expect(
-            body.contains("guard CadenceTaskMutationSupport.moveToContainer("),
-            "\(path).applyContainerSelection does not guard on the move"
-        )
-        #expect(
-            body.contains("saveFailureNotice = CadenceTaskFieldEditCommit.saveFailureNotice"),
-            "\(path).applyContainerSelection does not name the refusal"
-        )
-        #expect(
-            body.contains("restoreContainerSelection()"),
-            "\(path).applyContainerSelection leaves the token on the list the move never reached"
-        )
-        #expect(
-            refusalPrecedes(
-                marker: "saveFailureNotice = CadenceTaskFieldEditCommit.saveFailureNotice",
-                report: "saveFailureNotice = nil",
-                in: body
-            ),
-            "\(path).applyContainerSelection clears the notice below the branch that sets it"
-        )
-
-        // The restore re-enters through `onChange`, so the guard that stops the second pass
-        // re-committing the refused move is part of the fix rather than an implementation detail.
-        #expect(view.contains("guard !isRestoringContainerSelection else {"))
-        let restore = try CadenceCommitSurfaceScan.declarationBody(named: "restoreContainerSelection", in: view)
-        #expect(
-            restore.contains("guard restored != containerSelection else { return }"),
-            "the restore writes unconditionally, so its flag can outlive the onChange it was raised for"
-        )
+        let writer = try CadenceCommitSurfaceScan.scanned("Cadence/Shared/CadenceScheduleDraftTaskEditing.swift")
+        let save = try CadenceCommitSurfaceScan.declarationBody(named: "save", in: writer)
+        #expect(save.contains("CadenceTaskFieldEditCommit.commit("), "the draft save is not the undo-backed commit")
+        #expect(save.contains("apply(draft, opened: opened, to: task, area: area, project: project"))
     }
 
-    /// **T-726, source shape.** Opening the sheet is not an edit, and it must not commit one.
-    ///
-    /// `onAppear` seeds `containerSelection` from the task's own container, and `onChange` cannot
-    /// tell that seed from a pick — so merely opening the inspector of any task filed in a list
-    /// ran `moveToContainer` and committed. `assignContainer` guards the *order* against a
-    /// re-assert, so nothing moved; the commit still happened, and after T-702 a refusal on it
-    /// paints "Couldn't save this change." onto a sheet the user has only just opened, for an edit
-    /// they did not make.
-    ///
-    /// The guard is the shared predicate `assignContainer` already reads, not a second seeding
-    /// flag beside `isRestoringContainerSelection` — one stateless question the two cannot
-    /// disagree through. **Order is the assertion**: below the `moveToContainer` call it would
-    /// stop nothing, so the scan pins that it sits above.
-    @Test func theiOSTaskInspectorDoesNotCommitAMoveWhenItsPickerIsMerelySeeded() throws {
-        let path = "Cadence/iOS/iOSTaskDetailSheet.swift"
-        let view = try CadenceCommitSurfaceScan.scanned(path)
-        let body = try CadenceCommitSurfaceScan.declarationBody(named: "applyContainerSelection", in: view)
-
-        let guardText = "guard !CadenceTaskMutationSupport.isAlreadyInContainer("
+    /// **T-726, re-pointed by [[T-3171]].** Opening the sheet is not an edit, and it must not commit
+    /// one — and saving a task into the list it is already in must not re-assert that list, which
+    /// re-derives the context and sends it to the tail. Both are behavioural now
+    /// (`openingATaskWritesNothing`, `anUntouchedSaveWritesTheTaskBackAsItWas`); this pins the
+    /// order the second one depends on: the question is asked **above** the assignment.
+    @Test func theTaskDraftSaveDoesNotReassertTheListATaskIsAlreadyIn() throws {
+        let writer = try CadenceCommitSurfaceScan.scanned("Cadence/Shared/CadenceScheduleDraftTaskEditing.swift")
+        let apply = try CadenceCommitSurfaceScan.declarationBody(named: "apply", in: writer)
+        let guardText = "if CadenceTaskMutationSupport.isAlreadyInContainer(task, area: area, project: project) {"
+        #expect(apply.contains(guardText), "the draft save re-asserts a list that did not change")
         #expect(
-            body.contains(guardText),
-            "\(path).applyContainerSelection commits a move for a pick that moves nothing"
+            refusalPrecedes(marker: guardText, report: "CadenceTaskMutationSupport.assignContainer(", in: apply),
+            "the draft save assigns the list before asking whether it moved"
         )
-        #expect(
-            refusalPrecedes(
-                marker: guardText,
-                report: "guard CadenceTaskMutationSupport.moveToContainer(",
-                in: body
-            ),
-            "\(path).applyContainerSelection asks whether the task moved after committing the move"
-        )
-        // The seed is still the only thing that reaches here on open, so the sheet must not have
-        // grown a second flag to recognise it by.
-        #expect(
-            !view.contains("isSeedingContainerSelection"),
-            "\(path) recognises the seed by a flag as well as by the container it names"
-        )
+        // Opening reads; it never writes.
+        let open = try #require(CadenceSourceScan.declarationBody("init(editing task: AppTask)", in: writer))
+        #expect(CadenceSourceScan.matchCount(#"task\.\w+ = "#, in: open) == 0, "building the draft writes to the task")
     }
 
     /// **Source shape, and [[T-727]] split the two affordances apart.**
@@ -614,8 +585,9 @@ struct CadenceInPlaceEditFlushCommitTests {
 
         #expect(filesRead >= 300, "the caller harvest read \(filesRead) files")
         #expect(
+            // [[T-3171]] took the task sheet off this list: its move is part of the one draft save,
+            // undone with every other field by `CadenceTaskFieldEditCommit`, not a commit of its own.
             callers.sorted() == [
-                "Cadence/iOS/iOSTaskDetailSheet.swift",
                 "Cadence/iOS/iOSTaskRowActionViews.swift",
                 "Cadence/macOS/Views/KanbanCardMetaSupportViews.swift"
             ],
@@ -686,7 +658,9 @@ struct CadenceInPlaceEditFlushCommitTests {
         )
         // Non-vacuity: a classifier that called everything discarded, or a reader handing back
         // empty text, would both produce a `consumed` of zero.
-        #expect(consumed == 8, "the harvest classified \(consumed) calls as consuming the answer")
+        // 6, not 8, since [[T-3171]]: two of the eight were this file's own needles for the iOS
+        // task inspector's list picker, which no longer calls `moveToContainer` at all.
+        #expect(consumed == 6, "the harvest classified \(consumed) calls as consuming the answer")
     }
 
     /// The alert's title, in the shape the family already keeps: title-case, no full stop, and its

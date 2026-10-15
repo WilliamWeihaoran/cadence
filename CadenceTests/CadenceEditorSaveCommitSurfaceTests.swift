@@ -392,10 +392,10 @@ struct CadenceEditorSaveCommitSurfaceTests {
     /// set silently shrank a caller's undo to half an edit was that `init` and `restore(to:)` are
     /// two lists nothing held level with each other. So this pins the set from three directions:
     /// every field survives a refused edit that moved it (behavioural), `init` captures exactly
-    /// those nineteen, and `restore(to:)` writes back exactly those nineteen. A field added to one
+    /// those fields, and `restore(to:)` writes back exactly those fields. A field added to one
     /// list and not the other fails here rather than in whichever screen next reaches for it.
     ///
-    /// The nineteen are named individually rather than counted. Counting would let one field drop
+    /// The fields are named individually rather than counted. Counting would let one field drop
     /// out while another arrived, which is the change this exists to catch.
     ///
     /// `bundle` and `bundleOrder` joined the set with [[T-1952]], when the Calendar Board's
@@ -409,14 +409,20 @@ struct CadenceEditorSaveCommitSurfaceTests {
     /// calendar link as part of moving a block, so a refused move that restored only the two
     /// schedule fields left the members silently unlinked. `CalendarBoardDayDropCommitTests` holds
     /// the behavioural half for it.
+    ///
+    /// `notes` and the three `recurrenceEnd*` fields joined with [[T-3171]], making twenty-three:
+    /// the iOS task editor became the shared schedule panel and saves the note in the same commit,
+    /// and its series edit had been writing the end condition through this unit already, with
+    /// nothing to put it back on a refusal.
     private static let snapshottedTaskFields = [
         "area", "bundle", "bundleOrder", "calendarEventID", "completedAt", "context", "dueDate",
-        "estimatedMinutes", "order", "priorityRaw", "project", "recurrenceRaw",
+        "estimatedMinutes", "notes", "order", "priorityRaw", "project", "recurrenceEndCount",
+        "recurrenceEndDate", "recurrenceEndModeRaw", "recurrenceRaw",
         "recurrenceSeriesIDRaw", "recurrenceSpawnedTaskIDRaw", "scheduledDate", "scheduledStartMin",
         "sectionName", "statusRaw", "title"
     ]
 
-    @Test func thefieldSnapshotCapturesAndRestoresTheSameNineteenFields() throws {
+    @Test func thefieldSnapshotCapturesAndRestoresTheSameNamedFields() throws {
         let source = try CadenceCommitSurfaceScan.scanned("Cadence/Shared/CadenceTaskFieldEditCommit.swift")
 
         let initStart = try #require(source.range(of: "init(_ task: AppTask)"))
@@ -441,7 +447,7 @@ struct CadenceEditorSaveCommitSurfaceTests {
         #expect(restored.sorted() == Self.snapshottedTaskFields, "the snapshot restores \(restored.sorted())")
     }
 
-    /// The behavioural half: one refused edit that moves all nineteen, and all nineteen come back.
+    /// The behavioural half: one refused edit that moves every snapshotted field, and all come back.
     @Test func arefusedEditRestoresEverySnapshottedFieldAtOnce() throws {
         let modelContainer = try container()
         let modelContext = ModelContext(modelContainer)
@@ -475,6 +481,10 @@ struct CadenceEditorSaveCommitSurfaceTests {
         task.recurrenceRaw = TaskRecurrenceRule.daily.rawValue
         task.recurrenceSeriesIDRaw = seriesID.uuidString
         task.recurrenceSpawnedTaskIDRaw = successorID.uuidString
+        task.notes = "Before the edit"
+        task.recurrenceEndModeRaw = TaskRecurrenceEndMode.afterCount.rawValue
+        task.recurrenceEndDate = ""
+        task.recurrenceEndCount = 5
         task.area = area
         task.context = homeContext
         task.bundle = block
@@ -501,6 +511,10 @@ struct CadenceEditorSaveCommitSurfaceTests {
             task.recurrenceRaw = TaskRecurrenceRule.weekly.rawValue
             task.recurrenceSeriesIDRaw = ""
             task.recurrenceSpawnedTaskIDRaw = ""
+            task.notes = "Typed in the panel"
+            task.recurrenceEndModeRaw = TaskRecurrenceEndMode.onDate.rawValue
+            task.recurrenceEndDate = "2026-12-31"
+            task.recurrenceEndCount = 0
             task.area = nil
             task.project = project
             task.context = officeContext
@@ -523,6 +537,10 @@ struct CadenceEditorSaveCommitSurfaceTests {
         #expect(task.recurrenceRaw == TaskRecurrenceRule.daily.rawValue)
         #expect(task.recurrenceSeriesIDRaw == seriesID.uuidString)
         #expect(task.recurrenceSpawnedTaskIDRaw == successorID.uuidString)
+        #expect(task.notes == "Before the edit")
+        #expect(task.recurrenceEndModeRaw == TaskRecurrenceEndMode.afterCount.rawValue)
+        #expect(task.recurrenceEndDate == "")
+        #expect(task.recurrenceEndCount == 5)
         #expect(task.area?.id == area.id)
         #expect(task.project == nil)
         #expect(task.context?.id == homeContext.id)
@@ -774,6 +792,14 @@ struct CadenceEditorSaveCommitSurfaceTests {
                 path: "Cadence/iOS/iOSTaskDetailSheet.swift",
                 function: "deleteSubtask",
                 successSpellings: ["subtaskFailureNotice = nil"]
+            ),
+            // [[T-3171]]: the task inspector became the shared schedule panel, and Save is one
+            // commit over every drafted field through `CadenceTaskEditDraftCommit`, restored on a
+            // refusal. `dismiss()` is the report — closing is what says the edit landed.
+            SaveSurface(
+                path: "Cadence/iOS/iOSTaskDetailSheet.swift",
+                function: "applySave",
+                successSpellings: ["dismiss()"]
             ),
 
             // T-645: the column editor's other two discrete writes, which reached no commit at
