@@ -626,20 +626,7 @@ struct CadenceSchedulePanel<NotesField: View>: View {
     /// a feature. The field writes the same `AppTask.notes` / `EKEvent.notes` either way, and both
     /// stay markdown — a note started here opens in the full editor afterwards.
     private var notesRow: some View {
-        CadenceFieldSection(title: nil, style: .ruled) {
-            HStack(alignment: .top, spacing: 8) {
-                Image(systemName: "text.alignleft")
-                    .cadenceFont(.metadata)
-                    .foregroundStyle(Theme.dim)
-                    .padding(.top, 4)
-                TextField("Add notes", text: $draft.notes, axis: .vertical)
-                    .textFieldStyle(.plain)
-                    .cadenceFont(.fieldValue)
-                    .foregroundStyle(Theme.text)
-                    .lineLimit(1...4)
-            }
-            .frame(minHeight: 36)
-        }
+        CadenceSchedulePanelNotesRow(notes: $draft.notes)
     }
 
     @ViewBuilder
@@ -846,6 +833,34 @@ extension CadenceSchedulePanel where NotesField == EmptyView {
             actions: actions,
             customNotesField: nil
         )
+    }
+}
+
+/// The panel's plain notes field, as a view of its own so a host that hands in a `notesField` of
+/// its own can still draw it.
+///
+/// The macOS event editor is that host ([[T-3171]]): it puts the Cadence event note's card in the
+/// slot, which the panel must not disable on a read-only event, and wants the plain Apple Calendar
+/// notes field beneath it, which it must. One spelling of the field rather than a near-copy in the
+/// host.
+struct CadenceSchedulePanelNotesRow: View {
+    @Binding var notes: String
+
+    var body: some View {
+        CadenceFieldSection(title: nil, style: .ruled) {
+            HStack(alignment: .top, spacing: 8) {
+                Image(systemName: "text.alignleft")
+                    .cadenceFont(.metadata)
+                    .foregroundStyle(Theme.dim)
+                    .padding(.top, 4)
+                TextField("Add notes", text: $notes, axis: .vertical)
+                    .textFieldStyle(.plain)
+                    .cadenceFont(.fieldValue)
+                    .foregroundStyle(Theme.text)
+                    .lineLimit(1...4)
+            }
+            .frame(minHeight: 36)
+        }
     }
 }
 

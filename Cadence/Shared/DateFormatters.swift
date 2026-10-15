@@ -435,9 +435,8 @@ nonisolated enum TimeFormatters {
     /// The 12-hour branch is byte-for-byte what it was, so nothing that already reads `1:15 AM`
     /// moves. The 24-hour branch is always zero-padded `HH:mm`, including on the hour: a bare `13`
     /// beside a bare `9` does not read as a clock, and the hour rails are a column of these. It is
-    /// also what `CalendarEventEditPopover.parseTime` already accepts — `"16:55"` was in that
-    /// parser's doc comment before this change — so the editor's format-parse-reformat round trip
-    /// survives, which is the one call site whose output is read back rather than only drawn.
+    /// also what `minutes(fromTimeString:)` below already accepts — `"16:55"` was in that parser's
+    /// doc comment before this change — so a format-parse-reformat round trip survives.
     ///
     /// `.oneToTwentyFour` (`h24`, where midnight is `24:00`) is folded into the `h23` spelling
     /// deliberately: one 24-hour face for the app, the way there is one 12-hour face.
@@ -462,12 +461,14 @@ nonisolated enum TimeFormatters {
     /// or `nil` when it is not a time at all.
     ///
     /// The inverse of `timeString(from:locale:)`, and it lives beside it because of what the one
-    /// surface that uses it does: `CalendarEventEditPopover`'s start and end fields are seeded with
-    /// `timeString`, edited by hand, parsed by this, and then **re-seeded with `timeString`**. That
-    /// is the only call site in the app whose output is read back rather than only drawn, so the
-    /// pair has to agree, and a pair that agrees cannot be a private helper in a view file that no
-    /// test can reach — which is what this was before [[T-1135]] moved it. The body is unchanged;
-    /// the move is what makes `aTypedTimeSurvivesTheEditorsFormatParseReformatRoundTrip` possible.
+    /// surface that used it did: the macOS event editor's typed Start and End fields were seeded
+    /// with `timeString`, edited by hand, parsed by this, and **re-seeded with `timeString`**, so
+    /// the pair had to agree — and a pair that agrees cannot be a private helper in a view file no
+    /// test can reach, which is what this was before [[T-1135]] moved it.
+    ///
+    /// **No product caller is left** ([[T-3171]]): that editor became the shared schedule panel,
+    /// whose clock is a roller. It stays because `aTypedTimeSurvivesTheEditorsFormatParseReformatRoundTrip`
+    /// still pins the pair; retiring it is filed rather than done in that slice.
     ///
     /// Locale-free on purpose, and that is the asymmetry worth stating. Display follows the user's
     /// clock; *input* accepts both faces from everyone, because a 24-hour user who types `4 PM` out

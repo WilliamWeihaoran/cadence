@@ -636,9 +636,18 @@ struct CadenceEventKitPlatformParityTests {
             CadenceSourceScan.matchCount(#"@Binding var actionFailureNotice: String\?"#, in: code) == 1,
             "CalendarEventEditPopover does not take the host's failure notice"
         )
+        // [[T-3171]]: the popover's form is the shared schedule panel now, so the panel draws the
+        // notice — the popover hands it in, exactly once, and the panel draws what it is handed.
         #expect(
-            CadenceSourceScan.matchCount(#"CadenceInlineFailureNotice\(text: actionFailureNotice\)"#, in: code) == 1,
-            "CalendarEventEditPopover never draws the host's failure notice"
+            CadenceSourceScan.matchCount(#"failureNotice: actionFailureNotice"#, in: code) == 1,
+            "CalendarEventEditPopover never hands the shared panel the host's failure notice"
+        )
+        let panel = CadenceSourceScan.codeOnly(
+            try CadenceSourceScan.sourceFile("Cadence/Shared/Components/CadenceSchedulePanel.swift")
+        )
+        #expect(
+            CadenceSourceScan.matchCount(#"if let failure = actionError \?\? failureNotice \{\s*CadenceInlineNotice\(text: failure, tone: \.failure\)"#, in: panel) == 1,
+            "the shared panel never draws the failure notice its host hands it"
         )
     }
 

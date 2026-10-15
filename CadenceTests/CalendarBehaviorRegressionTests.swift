@@ -69,7 +69,7 @@ struct CalendarBehaviorRegressionTests {
         let item = CalendarEventItem(event: event)
         _ = CalendarEventEditPopover(
             item: item,
-            onSave: { _, _, _, _, _ in },
+            onSave: { _, _ in },
             onDelete: { _ in },
             actionFailureNotice: .constant(nil)
         )

@@ -481,7 +481,11 @@ struct CadenceMarkdownImageCommitSurfaceTests {
         // so the sheet's top-of-card `CadenceInlineFailureNotice` went with the old form. The
         // refusal is still named — `CadenceTaskEditorPanelAdoptionTests` holds that it is handed
         // to the panel — through the panel's one notice component instead of this one.
-        #expect(total == 68, "the inline notice has \(total) call sites, not the 68 this test was written over")
+        // [[T-3171]] made it 67, the same move on the Mac: `CalendarEventEditPopover`'s form became
+        // the shared panel, and the host's refused-save notice is handed to it as `failureNotice:`
+        // rather than drawn by the popover — `theMacOSEventEditPopoverDrawsTheHostsFailureNotice`
+        // holds both halves. Its event-note notice is still this component, beside its button.
+        #expect(total == 67, "the inline notice has \(total) call sites, not the 67 this test was written over")
         #expect(withDismissal == 7, "\(withDismissal) call sites offer a dismissal, not 7")
 
         // And each of the six is named, so one swapping places with another is still a failure.

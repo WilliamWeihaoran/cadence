@@ -120,12 +120,14 @@ struct TimelineEventBlock: View {
             ) {
                 CalendarEventEditPopover(
                     item: item,
-                    onSave: { title, startMin, duration, calendarID, scope in
+                    onSave: { request, scope in
                         // Closing the popover is the only report that Save worked, so a refusal has
                         // to leave it open — the title, notes, calendar and time range the user
                         // typed live in its `@State` and nothing else on screen holds them (T-658).
-                        // An unformable range never reached EventKit, so it names no cause.
-                        guard let range = item.eventDateRangeForEditedSegment(startMin: startMin, durationMinutes: duration) else {
+                        // An unformable range never reached EventKit, so it names no cause. The
+                        // range is the WHOLE event's, from the shared panel's draft ([[T-3171]]),
+                        // not this block's segment of it.
+                        guard let range = request.range else {
                             calendarManager.report(
                                 .refused(notice: CadenceCalendarEventEditingSupport.saveFailureNotice(for: nil)),
                                 into: $actionFailureNotice
@@ -134,11 +136,14 @@ struct TimelineEventBlock: View {
                         }
                         let failure = calendarManager.updateEvent(
                             item.ekEvent,
-                            title: title,
+                            title: request.title,
                             startDate: range.start,
                             endDate: range.end,
-                            calendarID: calendarID,
-                            scope: scope
+                            calendarID: request.calendarID,
+                            notes: request.notes,
+                            scope: scope,
+                            isAllDay: request.isAllDay,
+                            location: request.location
                         )
                         calendarManager.report(
                             CadenceCalendarEventEditingSupport.saveOutcome(for: failure),

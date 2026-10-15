@@ -496,11 +496,26 @@ final class CalendarManager {
         endDate: Date,
         calendarID: String? = nil,
         notes: String? = nil,
-        scope: CalendarRecurrenceEditScope = .thisOccurrence
+        scope: CalendarRecurrenceEditScope = .thisOccurrence,
+        /// `nil` leaves the event's all-day flag and location as they are — the default, so a
+        /// caller that edits neither (a drag, a resize) cannot change one. The shared schedule
+        /// panel ([[T-3171]]) is the first macOS editor with an All-day switch and a Location row,
+        /// and passes each only when the user changed it. Set before the dates, because EventKit
+        /// reads an all-day event's dates as whole days.
+        isAllDay: Bool? = nil,
+        location: String? = nil
     ) -> CalendarWriteFailure? {
         guard isAuthorized else { return record(.notAuthorized) }
         guard endDate > startDate else { return record(.invalidRange) }
         event.title = CadenceEventTitleSupport.storedTitle(title)
+        if let isAllDay {
+            event.isAllDay = isAllDay
+        }
+        if let location {
+            let trimmedLocation = location.trimmingCharacters(in: .whitespacesAndNewlines)
+            // `nil` rather than `""`, as iOS writes it: "no location" is the absence of one.
+            event.location = trimmedLocation.isEmpty ? nil : trimmedLocation
+        }
         event.startDate = startDate
         event.endDate = endDate
         if let notes {

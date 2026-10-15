@@ -201,12 +201,13 @@ struct CalendarBoardEventCard: View {
             let editItem = item.editItem
             CalendarEventEditPopover(
                 item: editItem,
-                onSave: { title, startMin, duration, calendarID, scope in
+                onSave: { request, scope in
                     // Both refusals used to close the popover: the unformable range silently, and
                     // the rejected write behind a global alert with nothing to retype into. The
                     // range branch has no cause to name — EventKit was never asked — so it passes
                     // `nil`, the way `iOSCalendarQuickCreateSheet` does for an unparseable date key.
-                    guard let range = editItem.eventDateRangeForEditedSegment(startMin: startMin, durationMinutes: duration) else {
+                    // The range is the whole event's, from the shared panel's draft ([[T-3171]]).
+                    guard let range = request.range else {
                         calendarManager.report(
                             .refused(notice: CadenceCalendarEventEditingSupport.saveFailureNotice(for: nil)),
                             into: $actionFailureNotice
@@ -215,11 +216,14 @@ struct CalendarBoardEventCard: View {
                     }
                     let failure = calendarManager.updateEvent(
                         item.ekEvent,
-                        title: title,
+                        title: request.title,
                         startDate: range.start,
                         endDate: range.end,
-                        calendarID: calendarID,
-                        scope: scope
+                        calendarID: request.calendarID,
+                        notes: request.notes,
+                        scope: scope,
+                        isAllDay: request.isAllDay,
+                        location: request.location
                     )
                     calendarManager.report(
                         CadenceCalendarEventEditingSupport.saveOutcome(for: failure),

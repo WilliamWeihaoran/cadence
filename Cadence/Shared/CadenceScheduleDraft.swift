@@ -334,6 +334,28 @@ struct CadenceScheduleDraft: Equatable {
             && isAllDay == other.isAllDay
     }
 
+    /// The two instants an edit of an existing event writes: the event's **own**, untouched, when
+    /// nothing about the schedule moved since `opened`; otherwise the wall-clock reading of the
+    /// draft (`eventDateRange(calendar:)`, T-3119's gap rule included). `nil` when neither can be
+    /// formed, which the editors report as a save that never reached EventKit.
+    ///
+    /// The macOS event editor reads this ([[T-3171]], its slice); `iOSCalendarEventEditSheet`
+    /// still spells the same two branches as its own `savedRange`.
+    func savedEventRange(
+        openedAs opened: CadenceScheduleDraft,
+        originalStart: Date?,
+        originalEnd: Date?,
+        calendar: Calendar = .current
+    ) -> (start: Date, end: Date)? {
+        if hasSameSchedule(as: opened),
+           let originalStart,
+           let originalEnd,
+           originalEnd > originalStart {
+            return (originalStart, originalEnd)
+        }
+        return eventDateRange(calendar: calendar)
+    }
+
     // MARK: Geometry
 
     /// Minutes from midnight, snapped to the touch grid and held inside the drawn day.
@@ -342,7 +364,12 @@ struct CadenceScheduleDraft: Equatable {
     /// `CadenceCaptureDropSlotRule` all already land on — so a block dragged to a minute is a
     /// minute the rest of the canvas can express.
     static func snapped(_ minute: Int) -> Int {
-        let snap = max(1, CadenceScheduleSupport.touchTimeGridMinutes)
+        snapped(minute, grid: CadenceScheduleSupport.touchTimeGridMinutes)
+    }
+
+    /// The same clamp on another grid — the panel's rollers use `rollerGridMinutes`.
+    static func snapped(_ minute: Int, grid: Int) -> Int {
+        let snap = max(1, grid)
         let floor = CadenceScheduleSupport.calendarStartHour * 60
         let ceiling = CadenceScheduleSupport.calendarEndHour * 60
         return max(floor, min(ceiling, (max(floor, min(ceiling, minute)) / snap) * snap))
@@ -417,27 +444,45 @@ struct CadenceScheduleDraft: Equatable {
 
     /// Moving the start carries the block's length with it, rather than stretching it against a
     /// pinned end — which is what a user dragging a *start* time means by it.
+    ///
+    /// **A roller's value, so the roller's grid** ([[T-3171]], the macOS event editor's slice).
+    /// This is what the panel's Start roller writes, and that roller steps in
+    /// `rollerGridMinutes` precisely so a time like 4:05 can be reached; snapping it to the 15-minute
+    /// touch grid here turned a picked 4:05 into 4:00 with nothing on screen to say so. The macOS
+    /// editor this panel replaced took any typed minute, so the coarser grid was a regression there.
     mutating func moveStart(toMinute minute: Int) {
         let length = durationMinutes
-        startMin = Self.snapped(minute)
+        startMin = Self.snapped(minute, grid: Self.rollerGridMinutes)
         guard !spansMultipleDays else { return }
         endMin = min(CadenceScheduleSupport.calendarEndHour * 60, startMin + length)
     }
 
     /// What the panel's **End** time writes, on a block of one day or of several.
     ///
-    /// Inside one day this is the bottom handle, with its non-inversion rule. Across a midnight the
-    /// end is a clock time on a *later* day, so no minute can put it before the start and the
+    /// Inside one day this is the bottom handle's non-inversion rule, on the roller's grid. Across
+    /// a midnight the end is a clock time on a *later* day, so no minute can put it before the start and the
     /// handle's guard — which refuses a multi-day block because a drag on one day's canvas cannot
     /// mean a time on another — does not apply. Without this the End row of a multi-day timed
     /// event would be a control with nowhere to write.
+    ///
+    /// Snapped to `rollerGridMinutes`, like `moveStart(toMinute:)` and for the same reason: this is
+    /// a roller's value, not a finger's.
     mutating func setEndMinute(_ minute: Int) {
+        let picked = Self.snapped(minute, grid: Self.rollerGridMinutes)
         guard spansMultipleDays else {
-            moveEndEdge(toMinute: minute)
+            endMin = min(
+                CadenceScheduleSupport.calendarEndHour * 60,
+                max(picked, startMin + Self.minimumDurationMinutes)
+            )
+            estimateMinutes = durationMinutes
             return
         }
-        endMin = Self.snapped(minute)
+        endMin = picked
     }
+
+    /// The grid the panel's time rollers step in — `CadenceTimeRollerModel.minuteStep` is this same
+    /// figure. Finer than the touch grid a dragged edge lands on, because a roller is not aimed.
+    static let rollerGridMinutes = CadenceScheduleSupport.pointerTimeGridMinutes
 
     /// Re-establishes "the end follows the start" after a **day** moved.
     ///

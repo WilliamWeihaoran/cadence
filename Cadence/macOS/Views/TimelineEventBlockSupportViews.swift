@@ -5,33 +5,94 @@ import SwiftData
 
 // MARK: - Calendar Event Edit Popover
 
+/// What one Save asks the host to write, worked out from the panel's draft ([[T-3171]]).
+///
+/// A value rather than five closure arguments because the popover is no longer the frame that knows
+/// the instants: the **draft** is, through `CadenceScheduleDraft.savedEventRange(openedAs:…)`. The
+/// two hosts still perform the write, see the typed `CalendarWriteFailure`, and decide whether to
+/// close (T-658), which is why this is handed to them rather than written here.
+///
+/// Every field the user did not touch is `nil`, so an untouched Save writes nothing it did not
+/// read: the event's own instants (not a wall-clock re-derivation that could move it by the
+/// seconds, or the repeated fall-back hour, a minute cannot spell), and no notes, location or
+/// all-day flag at all. The notes half matters more than it looks: on this platform a Cadence
+/// event note mirrors itself into `EKEvent.notes`, and a Save that re-wrote the notes it opened
+/// with would undo that mirror's later flush.
+struct CalendarEventEditRequest {
+    let title: String
+    /// `nil` when no range can be formed. EventKit was never asked, so the host names no cause.
+    let range: (start: Date, end: Date)?
+    let calendarID: String
+    let notes: String?
+    let location: String?
+    let isAllDay: Bool?
+
+    init(
+        draft: CadenceScheduleDraft,
+        opened: CadenceScheduleDraft,
+        originalStart: Date?,
+        originalEnd: Date?,
+        calendar: Calendar = .current
+    ) {
+        title = draft.title
+        range = draft.savedEventRange(
+            openedAs: opened,
+            originalStart: originalStart,
+            originalEnd: originalEnd,
+            calendar: calendar
+        )
+        calendarID = draft.calendarID
+        notes = draft.notes == opened.notes ? nil : draft.notes
+        location = draft.location == opened.location ? nil : draft.location
+        isAllDay = draft.isAllDay == opened.isAllDay ? nil : draft.isAllDay
+    }
+}
+
+/// Edits an existing Apple Calendar event on the Mac through **the one shared schedule panel**
+/// ([[T-3171]], the fourth adoption slice) — the same view the iOS event editor, task editor and
+/// quick-create sheet draw.
+///
+/// This file is what cannot be shared: the `EKEvent`, the recurrence-scope question, the Cadence
+/// event note and its sheet, and the hand-off of each write to the host that owns the popover.
+///
+/// **What it gained:** an All-day switch, a separate end DATE (so a timed event can be moved across
+/// a midnight), a Location row, the Apple Calendar notes field, and **the whole event** rather than
+/// the clicked day's segment of it — the old Start/End fields edited one day of a multi-day event,
+/// and only that day's own end. Both ends are now set on the wall clock (T-3119's gap rule), where
+/// the old fields added elapsed minutes to the segment's midnight. **What it deliberately does not
+/// offer** is Repeat: an existing series is not re-ruled from here (`offersEventRepeat: false`), as
+/// on iOS. **Changed on purpose:** the clock is the shared roller, not two typed fields; Save greys
+/// out on an empty title; and an event on a read-only calendar is read-only here — the panel draws
+/// no Save and no Delete for one, where this popover used to offer both and let EventKit refuse.
 struct CalendarEventEditPopover: View {
     let item: CalendarEventItem
-    let onSave: (String, Int, Int, String, CalendarRecurrenceEditScope) -> Void
+    let onSave: (CalendarEventEditRequest, CalendarRecurrenceEditScope) -> Void
     let onDelete: (CalendarRecurrenceEditScope) -> Void
     /// What to say when the host's save was refused (T-658).
     ///
     /// A binding rather than local `@State`, for the reason `TaskBundleDetailPopover` records for
     /// its own: the host is the frame that performs the write, the frame that sees the typed
     /// `CalendarWriteFailure`, and the frame that decides *not* to close this popover — a notice
-    /// this view set itself would be drawn for one frame and dismissed with it.
+    /// this view set itself would be drawn for one frame and dismissed with it. The panel draws it
+    /// (`failureNotice:`), because a recurring event's Save reaches the host only after the scope
+    /// question, so its answer cannot come back through the panel's own commit.
     ///
     /// Save only. Delete leaves through `DeleteConfirmationManager`'s full-window overlay, which
-    /// closes this popover on the way, so its refusal is reported by the global alert instead.
+    /// closes this popover on the way, so its refusal is reported by that overlay instead.
     @Binding var actionFailureNotice: String?
     @Environment(CalendarManager.self) private var calendarManager
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.dismiss) private var dismiss
     @Query(sort: \Note.updatedAt, order: .reverse) private var allNotes: [Note]
 
-    @State private var title: String
-    @State private var startMin: Int
-    @State private var endMin: Int
-    @State private var startText: String
-    @State private var endText: String
-    @State private var selectedCalendarID: String
+    @State private var draft: CadenceScheduleDraft
     @State private var presentedEventNote: Note?
     @State private var pendingAction: PendingAction?
     @State private var noteFailureNotice: String?
+
+    /// The draft as the popover opened it. A Save compares against it — see
+    /// `CalendarEventEditRequest`.
+    private let openedDraft: CadenceScheduleDraft
 
     private enum PendingAction {
         case save
@@ -40,7 +101,7 @@ struct CalendarEventEditPopover: View {
 
     init(
         item: CalendarEventItem,
-        onSave: @escaping (String, Int, Int, String, CalendarRecurrenceEditScope) -> Void,
+        onSave: @escaping (CalendarEventEditRequest, CalendarRecurrenceEditScope) -> Void,
         onDelete: @escaping (CalendarRecurrenceEditScope) -> Void,
         actionFailureNotice: Binding<String?>
     ) {
@@ -48,14 +109,32 @@ struct CalendarEventEditPopover: View {
         self.onSave = onSave
         self.onDelete = onDelete
         _actionFailureNotice = actionFailureNotice
-        let s = item.startMin
-        let e = item.startMin + item.durationMinutes
-        _title = State(initialValue: item.title)
-        _startMin = State(initialValue: s)
-        _endMin   = State(initialValue: e)
-        _startText = State(initialValue: TimeFormatters.timeString(from: s))
-        _endText   = State(initialValue: TimeFormatters.timeString(from: e))
-        _selectedCalendarID = State(initialValue: Self.calendarIdentifier(of: item.ekEvent))
+        let opened = Self.openingDraft(for: item)
+        self.openedDraft = opened
+        _draft = State(initialValue: opened)
+    }
+
+    /// The draft over the **whole** event, whichever day's segment was clicked.
+    ///
+    /// Read off the `EKEvent`'s own instants, not the segment's: the panel names a start day and an
+    /// end day, so a multi-day event is one record with two dates here rather than the one day the
+    /// timeline happened to draw. The title is the item's, the display title the block and card
+    /// already print, as it was before.
+    static func openingDraft(for item: CalendarEventItem, calendar: Calendar = .current) -> CadenceScheduleDraft {
+        let event = item.ekEvent
+        let start = event.startDate ?? item.eventStartDate
+        let end = event.endDate ?? item.eventEndDate
+        return CadenceScheduleDraft(
+            editingEventID: item.id,
+            title: item.title,
+            notes: event.notes ?? "",
+            location: event.location ?? "",
+            calendarID: calendarIdentifier(of: event),
+            start: start,
+            end: end,
+            isAllDay: event.isAllDay,
+            calendar: calendar
+        )
     }
 
     /// The event's calendar identifier, or `""` when it has none (T-2047).
@@ -63,13 +142,34 @@ struct CalendarEventEditPopover: View {
     /// `EKEvent.calendar` is an implicitly-unwrapped `EKCalendar!`, and an unsaved event built
     /// without one returns `nil`. Every other reader on this path (`CalendarEventItem`,
     /// `CalendarBoardEventDisplayItem`) already goes through `?.`; reading it bare here trapped in
-    /// `init` the moment such an event's card was clicked. All three readers in this popover go
+    /// `init` the moment such an event's card was clicked. All the readers in this popover go
     /// through this one function so none of them can drift back to the bare read.
     static func calendarIdentifier(of event: EKEvent) -> String {
         CalendarEventIdentity.calendarIdentifier(of: event)
     }
 
-    private var durationMinutes: Int { max(0, endMin - startMin) }
+    /// Whether EventKit will take a write to this event — `iOSCalendarManager.canModify`'s rule.
+    /// Birthdays, Holidays and subscribed feeds are visible on the timeline and read-only, and an
+    /// event with no calendar at all (T-2047's fixture) has nowhere to be written.
+    static func isEditable(_ event: EKEvent) -> Bool {
+        event.calendar?.allowsContentModifications ?? false
+    }
+
+    private var isEditable: Bool { Self.isEditable(item.ekEvent) }
+
+    private var writableCalendarIDs: [String] {
+        calendarManager.writableCalendars.map(\.calendarIdentifier)
+    }
+
+    private var canSave: Bool {
+        CadenceCalendarEventEditingSupport.canSave(
+            title: draft.title,
+            isEventEditable: isEditable,
+            selectedCalendarID: draft.calendarID,
+            writableCalendarIDs: writableCalendarIDs
+        )
+    }
+
     private var eventNotes: [Note] {
         allNotes.filter { $0.kind == .meeting }
     }
@@ -87,17 +187,44 @@ struct CalendarEventEditPopover: View {
         )
     }
 
-    /// Was its own copy of the hours-and-minutes format, and it used an ordinary space — inside a
-    /// timeline event block, which is exactly the hard-clipped narrow container the non-breaking
-    /// space exists for. Only the en-dash empty sentinel was ever this surface's own.
-    private var durationLabel: String {
-        CadenceTaskPresentationSupport.estimateLabel(minutes: durationMinutes, emptyPlaceholder: "–")
+    /// The length the header's capsule prints, read off the instants the draft would write so a
+    /// multi-day block reads its real length. `nil` for an all-day event — the panel's schedule row
+    /// already says "All day" — and for a schedule that names no instant.
+    ///
+    /// The format is the shared estimate label, with its non-breaking space, as before.
+    private var durationLabel: String? {
+        guard !draft.isAllDay, let range = draft.eventDateRange() else { return nil }
+        let minutes = Int(range.end.timeIntervalSince(range.start) / 60)
+        return CadenceTaskPresentationSupport.estimateLabel(minutes: minutes, emptyPlaceholder: "–")
     }
 
     var body: some View {
-        editorContent
-        .frame(width: 320)
+        VStack(alignment: .leading, spacing: 0) {
+            header
+            CadenceSchedulePanel(
+                draft: $draft,
+                calendarChoices: calendarChoices,
+                calendarUnavailableNotice: calendarUnavailableNotice,
+                readOnlyNotice: isEditable
+                    ? nil
+                    : CadenceCalendarEventEditingSupport.readOnlyNotice(calendarName: item.calendarTitle),
+                failureNotice: actionFailureNotice,
+                canCommit: canSave,
+                offersEventRepeat: false,
+                actions: panelActions
+            ) {
+                linkedNoteCard
+                // The Apple Calendar note is written back through EventKit on Save, which a
+                // read-only calendar refuses. The *Cadence* event note above stays usable on one —
+                // it is our own data — which is why the panel leaves this slot to the host rather
+                // than disabling it.
+                CadenceSchedulePanelNotesRow(notes: $draft.notes)
+                    .disabled(!isEditable)
+            }
+        }
+        .frame(width: CadenceSchedulePanelMetrics.preferredWidth)
         .cadenceCard(cornerRadius: Theme.radiusPanel)
+        .onAppear(perform: ensureWritableCalendar)
         .sheet(isPresented: Binding(
             get: { presentedEventNote != nil },
             set: { if !$0 { presentedEventNote = nil } }
@@ -128,51 +255,26 @@ struct CalendarEventEditPopover: View {
         }
     }
 
-    private var editorContent: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            VStack(alignment: .leading, spacing: 16) {
-                header
-                timeCard
-                calendarCard
-                linkedNoteCard
-                actionButtons
-                if let actionFailureNotice {
-                    CadenceInlineFailureNotice(text: actionFailureNotice)
-                }
-            }
-            .padding(20)
-        }
-    }
-
+    /// The event's calendar and whether it repeats, with its length — the facts this popover's old
+    /// header carried and the panel has no row for. The title moved into the panel.
     private var header: some View {
-        HStack(alignment: .top, spacing: 10) {
-            RoundedRectangle(cornerRadius: 8)
-                .fill(item.calendarColor.opacity(0.2))
-                .frame(width: 34, height: 34)
-                .overlay {
-                    Image(systemName: "calendar")
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(item.calendarColor)
-                }
-
-            VStack(alignment: .leading, spacing: 4) {
-                TextField("Event title", text: $title)
-                    .textFieldStyle(.plain)
-                    .font(.system(size: 17, weight: .bold))
-                    .foregroundStyle(Theme.text)
-                calendarLabel
+        HStack(alignment: .center, spacing: 8) {
+            calendarLabel
+            Spacer(minLength: 0)
+            if let durationLabel {
+                Text(durationLabel)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(Theme.dim)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Theme.surface)
+                    .clipShape(Capsule())
             }
-
-            Spacer()
-
-            Text(durationLabel)
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(Theme.dim)
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
-                .background(Theme.surfaceElevated)
-                .clipShape(Capsule())
         }
+        .padding(.horizontal, 14)
+        .padding(.top, 12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Theme.surfaceElevated)
     }
 
     @ViewBuilder
@@ -186,6 +288,7 @@ struct CalendarEventEditPopover: View {
                     Text(item.calendarTitle)
                         .font(.system(size: 11))
                         .foregroundStyle(Theme.dim)
+                        .lineLimit(1)
                 }
                 if item.isRecurringSeriesMember {
                     Image(systemName: "repeat")
@@ -199,65 +302,92 @@ struct CalendarEventEditPopover: View {
         }
     }
 
-    private var timeCard: some View {
-        infoCard {
-            timeFieldRow(label: "Start", icon: "clock", text: $startText) {
-                if let parsed = parseTime(startText) { startMin = parsed }
-                startText = TimeFormatters.timeString(from: startMin)
-            }
-            timeFieldRow(label: "End", icon: "clock.badge.checkmark", text: $endText) {
-                if let parsed = parseTime(endText) { endMin = parsed }
-                endText = TimeFormatters.timeString(from: endMin)
+    /// Save, Cancel and — on an event that can be written — Delete. The panel draws them; a
+    /// recurring event's Save and Delete both stop at the scope question here before anything is
+    /// written, so their outcome reaches the user through the host rather than as a return value.
+    private var panelActions: CadenceSchedulePanelActions {
+        var actions = CadenceSchedulePanelActions(commit: save, cancel: { dismiss() })
+        // Absent, not disabled, on a read-only event: EventKit refuses the removal.
+        if isEditable {
+            actions.delete = {
+                requestAction(.delete)
+                return nil
             }
         }
+        return actions
     }
 
-    /// **T-467.** The event's calendar link, as the row and the menu both read it.
+    /// **T-467.** The event's calendar link, as the panel's Calendar row reads it.
     ///
     /// This card used to hand the picker `writableCalendars` alone and let it title whatever it
     /// could find. The timeline's events come from `availableCalendars`, which filters by
     /// visibility and not by writability, so an event on an **active read-only** subscribed
-    /// calendar reached this card, printed its calendar's name two rows above in `calendarLabel`,
-    /// and had "No calendar" underneath — the [[T-441]] collapse, on a second surface.
+    /// calendar reached this editor, printed its calendar's name in `calendarLabel`, and had "No
+    /// calendar" underneath — the [[T-441]] collapse, on a second surface.
     ///
     /// The universe here is `availableCalendars`, not `allCalendars`: it is exactly what the
     /// timeline can show, so `availableCalendars` minus `writableCalendars` is exactly the active
     /// read-only calendars and `.readOnly` is always the true word for anything this offer adds
     /// back. Hidden calendars never reach this editor at all — the fetch dropped them first — so
-    /// `.hidden` is not a state this card can be in.
+    /// `.hidden` is not a state this editor can be in.
     private var calendarLink: CadenceCalendarLink {
         CadenceCalendarLink(
-            linkedCalendarID: selectedCalendarID,
+            linkedCalendarID: draft.calendarID,
             allCalendars: calendarManager.availableCalendars,
             visibleCalendars: calendarManager.writableCalendars,
             exclusion: .readOnly
         )
     }
 
-    private var calendarCard: some View {
-        infoCard {
-            HStack(spacing: 10) {
-                Label("Calendar", systemImage: "calendar")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(Theme.dim)
-                    .frame(width: 88, alignment: .leading)
-                CadenceCalendarPickerButton(
-                    calendars: calendarLink.pickableCalendars(from: calendarManager.availableCalendars),
-                    selectedID: $selectedCalendarID,
-                    link: calendarLink
-                )
-                Spacer(minLength: 0)
-            }
-        }
+    private var calendarChoices: [CadenceSchedulePanelChoice] {
+        Self.calendarChoices(
+            calendars: calendarLink.pickableCalendars(from: calendarManager.availableCalendars),
+            link: calendarLink,
+            selectedID: draft.calendarID
+        )
     }
 
+    /// The panel's calendar rows: the writable offer plus the calendar the event is already on,
+    /// each worded by the link — so a read-only one reads "Holidays (Read-only)" in the row and the
+    /// menu alike. When the event's calendar is in neither (an event with no calendar, or one the
+    /// fetch no longer lists) the row still names what the link calls it rather than falling back
+    /// to the panel's "Choose Calendar", which would read as a choice still to make.
+    static func calendarChoices(
+        calendars: [EKCalendar],
+        link: CadenceCalendarLink,
+        selectedID: String
+    ) -> [CadenceSchedulePanelChoice] {
+        var choices = calendars.map {
+            CadenceSchedulePanelChoice(
+                id: $0.calendarIdentifier,
+                name: link.pickerLabel(title: $0.title, calendarID: $0.calendarIdentifier),
+                // `cgColor` is implicitly unwrapped and nil on a calendar EventKit has not
+                // coloured yet; read as the orphan row's dim rather than trapping.
+                color: $0.cgColor.map { Color(cgColor: $0) } ?? Theme.dim,
+                systemImage: "calendar"
+            )
+        }
+        if !choices.contains(where: { $0.id == selectedID }) {
+            choices.append(
+                CadenceSchedulePanelChoice(id: selectedID, name: link.rowState.valueText, color: Theme.dim)
+            )
+        }
+        return choices
+    }
+
+    private var calendarUnavailableNotice: String? {
+        guard isEditable, calendarManager.writableCalendars.isEmpty else { return nil }
+        return "No writable calendars are available."
+    }
+
+    /// The Cadence event note, in the panel's notes slot because it stays usable on a read-only
+    /// event — see `body`.
     private var linkedNoteCard: some View {
-        infoCard {
+        CadenceFieldSection(title: nil, style: .ruled) {
             HStack(alignment: .center, spacing: 10) {
-                Label("Note", systemImage: "doc.text")
-                    .font(.system(size: 11, weight: .semibold))
+                Image(systemName: "doc.text")
+                    .cadenceFont(.metadata)
                     .foregroundStyle(Theme.dim)
-                    .frame(width: 88, alignment: .leading)
 
                 VStack(alignment: .leading, spacing: 3) {
                     Text(linkedEventNote?.displayTitle ?? "No linked note yet")
@@ -279,6 +409,7 @@ struct CalendarEventEditPopover: View {
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(Theme.blue)
             }
+            .frame(minHeight: 36)
 
             if let noteFailureNotice {
                 CadenceInlineFailureNotice(text: noteFailureNotice)
@@ -286,30 +417,11 @@ struct CalendarEventEditPopover: View {
         }
     }
 
-    private var actionButtons: some View {
-        HStack(spacing: 10) {
-            Button { requestAction(.save) } label: {
-                Label("Save", systemImage: "checkmark.circle.fill")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(Theme.blue)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 10)
-                    .background(Theme.surfaceElevated)
-                    .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl))
-            }
-            .buttonStyle(.cadencePlain)
-
-            Button { requestAction(.delete) } label: {
-                Label("Delete", systemImage: "trash")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(Theme.red)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 10)
-                    .background(Theme.surfaceElevated)
-                    .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl))
-            }
-            .buttonStyle(.cadencePlain)
-        }
+    /// The panel's commit. `nil` always: a recurring event stops at the scope question, and every
+    /// outcome — this one's included — is reported by the host through `actionFailureNotice`.
+    private func save() -> String? {
+        requestAction(.save)
+        return nil
     }
 
     private func requestAction(_ action: PendingAction) {
@@ -329,47 +441,29 @@ struct CalendarEventEditPopover: View {
     private func applyAction(_ action: PendingAction, scope: CalendarRecurrenceEditScope) {
         switch action {
         case .save:
-            onSave(title, startMin, durationMinutes, selectedCalendarID, scope)
+            onSave(
+                CalendarEventEditRequest(
+                    draft: draft,
+                    opened: openedDraft,
+                    originalStart: item.ekEvent.startDate,
+                    originalEnd: item.ekEvent.endDate
+                ),
+                scope
+            )
         case .delete:
             onDelete(scope)
         }
     }
 
-    @ViewBuilder
-    private func timeFieldRow(label: String, icon: String, text: Binding<String>, onCommit: @escaping () -> Void) -> some View {
-        HStack(spacing: 12) {
-            Label(label, systemImage: icon)
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(Theme.dim)
-                .frame(width: 88, alignment: .leading)
-            TextField("", text: text)
-                .textFieldStyle(.plain)
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(Theme.text)
-                .onSubmit(onCommit)
-            Spacer(minLength: 0)
-        }
-    }
-
-    @ViewBuilder
-    private func infoCard<Content: View>(@ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            content()
-        }
-        .padding(16)
-        .cadenceCard(background: Theme.surface.opacity(0.85), cornerRadius: Theme.radiusCard, shadowRadius: 8, shadowY: 3)
-    }
-
-    /// Parses a time string like "4:55 PM", "16:55", "4 PM" → minutes from midnight.
-    ///
-    /// The body moved to `TimeFormatters.minutes(fromTimeString:)` for [[T-1135]], unchanged. These
-    /// two fields are seeded by `TimeFormatters.timeString`, parsed here, and re-seeded by
-    /// `timeString` again, so the parser and the formatter have to stay a pair — and the formatter
-    /// now spells 24-hour time on a 24-hour Mac, which is a spelling this round trip has to accept.
-    /// A test cannot reach a `private` method on a macOS view, so the pair is pinned where the pair
-    /// lives.
-    private func parseTime(_ raw: String) -> Int? {
-        TimeFormatters.minutes(fromTimeString: raw)
+    /// Keeps a writable event pointed at a calendar the picker lists, and leaves a read-only event
+    /// on its own calendar — `CadenceCalendarEventEditingSupport.resolvedCalendarID`'s rule, which
+    /// the iOS editor reads too.
+    private func ensureWritableCalendar() {
+        draft.calendarID = CadenceCalendarEventEditingSupport.resolvedCalendarID(
+            eventCalendarID: draft.calendarID,
+            isEventEditable: isEditable,
+            writableCalendarIDs: writableCalendarIDs
+        )
     }
 
     /// **T-503, and the macOS twin of the site [[T-497]] fixed on iOS** — one platform behind, and
