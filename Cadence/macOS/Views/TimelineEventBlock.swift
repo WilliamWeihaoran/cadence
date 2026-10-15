@@ -362,20 +362,22 @@ struct TimelineEventBlock: View {
             // is this" must not change colour under the pointer. The state ladder is carried by
             // the plate and the labels, which is why `railColor` takes no `isSelected`/`isActive`.
             //
-            // Its leading corners follow the block's so the strip ends exactly where the plate
-            // does; the trailing edge is square because this is a rail, not a pill. In a cascade
-            // (T-3161) an indented block's rail is drawn **over the body of the block beneath it**,
-            // which is what Apple does — and why the rail is an opaque fill rather than a wash,
-            // since a translucent one would show the neighbour's hue through the marker that is
-            // supposed to name this event's calendar.
+            // **A plain strip, shaped by the block's clip rather than by its own corners**
+            // (T-3167). The rail used to round its own leading corners, but a 3pt-wide shape
+            // cannot carry the plate's corner radius — the radii clamp to the strip — so the rail
+            // ran the block's full height while the plate's corners curved away from it, leaving
+            // ~5pt of bare rail standing proud at the top and bottom. Apple clips its rail to the
+            // block's rounded rectangle; so does this, through `.clipShape(blockShape)` below,
+            // which is the same construction the iOS event block uses. In a cascade (T-3161) an
+            // indented block's rail is drawn **over the body of the block beneath it**, which is
+            // what Apple does — and why the rail is an opaque fill rather than a wash, since a
+            // translucent one would show the neighbour's hue through the marker that is supposed
+            // to name this event's calendar.
             //
             // `CadenceCalendarEventStyle.railWidth`, not a sixth hand-typed `3`.
-            UnevenRoundedRectangle(
-                topLeadingRadius: style.cornerRadius,
-                bottomLeadingRadius: style.cornerRadius
-            )
-            .fill(railColor)
-            .frame(width: CadenceCalendarEventStyle.railWidth)
+            Rectangle()
+                .fill(railColor)
+                .frame(width: CadenceCalendarEventStyle.railWidth)
 
             VStack(alignment: .leading, spacing: 2) {
                 if frame.height >= 36 {
@@ -425,7 +427,9 @@ struct TimelineEventBlock: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
         .frame(width: frame.width, height: frame.height, alignment: .topLeading)
-        .clipped()
+        // The block's own shape, not its bounding box: the rail and the labels end where the
+        // plate's rounded corners do (T-3167).
+        .clipShape(blockShape)
         // Hover and selection are carried by the plate's own luminance ladder, not by a wash
         // stacked on top of it. A wash is the wrong lever here twice over: it lifts the block by
         // draining the hue it is supposed to be showing, and every `rail*` label tier is solved
@@ -437,7 +441,7 @@ struct TimelineEventBlock: View {
         // to Y = 0.030-0.060 it composites brighter than the rail itself: a second, colourless
         // accent marker competing with the one element that now says which calendar this is.
         .background(
-            RoundedRectangle(cornerRadius: style.cornerRadius)
+            blockShape
                 .fill(
                     CadenceCalendarEventStyle.railFill(
                         for: item.calendarColor,
@@ -447,7 +451,7 @@ struct TimelineEventBlock: View {
                 )
         )
         .overlay(
-            RoundedRectangle(cornerRadius: style.cornerRadius)
+            blockShape
                 .strokeBorder(
                     TimelineHoverVisuals.borderColor(
                         tint: railColor,
@@ -489,6 +493,12 @@ struct TimelineEventBlock: View {
             isSelected: isSelected,
             isActive: isHovered
         )
+    }
+
+    /// The plate, its rim and the clip are one shape, so the rail cannot stand proud of the
+    /// corners the plate draws (T-3167).
+    private var blockShape: RoundedRectangle {
+        RoundedRectangle(cornerRadius: style.cornerRadius)
     }
 
     /// The leading rail and the block's edge resolve from one call, so the two cannot drift.

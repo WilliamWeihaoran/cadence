@@ -967,36 +967,36 @@ private struct iOSCalendarTimelineDayColumn: View {
 
             dayWash
 
+            // **One overlap layout for every timed block in the column** (T-3161 for events,
+            // T-3165 for the rest). Tasks, bundles and events go through the same shared solver
+            // macOS's `computeUnifiedLayouts` reads, in one pass, so each reserves a column against
+            // the other two: a task that overlaps an event now sits *beside* it instead of being
+            // painted full width across its title. Only events cascade. A day with no overlaps
+            // keeps the exact width and inset every block had.
+            let placements = blockPlacements
+
             ForEach(bundles) { bundle in
+                let slot = horizontalFrame(placements[.bundle(bundle.persistentModelID)], kind: .bundle)
                 iOSTimelineBundleBlock(bundle: bundle)
-                    .frame(width: colWidth - 14, height: blockHeight(start: bundle.startMin, end: bundle.endMin))
-                    .offset(x: 7, y: yOffset(for: bundle.startMin))
+                    .frame(width: slot.width, height: blockHeight(start: bundle.startMin, end: bundle.endMin))
+                    .offset(x: slot.x, y: yOffset(for: bundle.startMin))
             }
 
-            // **This column had no overlap layout at all** (T-3161): every event was drawn at the
-            // full `colWidth - 18`, so two overlapping events sat exactly on top of one another
-            // and the lower one was simply invisible. It now reads the same shared solver macOS
-            // does — equal columns for events that start close together, and Apple-Calendar-style
-            // cascade for one that starts a header's worth of minutes after the one it overlaps.
-            // Tasks and bundles are left alone: they still draw full width, as they always have.
-            let placements = eventPlacements
             ForEach(timedEvents, id: \.calendarItemIdentifier) { event in
                 // The column's own day, so an event that crosses midnight draws the part that
                 // belongs here. `frame` uses the range clamped into the drawn hours; the block
                 // still labels itself with the true one.
                 let range = iOSCalendarEventSupport.minuteRange(for: event, on: date)
                 let drawn = CadenceScheduleSupport.timelineVisibleRange(start: range.start, end: range.end)
-                let slot = eventSlotFrame(for: placements[event.calendarItemIdentifier] ?? .single)
+                let slot = horizontalFrame(placements[.event(event.calendarItemIdentifier)], kind: .event)
                 iOSCalendarEventBlock(event: event, startMin: range.start, endMin: range.end)
                     .frame(width: slot.width, height: blockHeight(start: drawn.start, end: drawn.end))
                     .offset(x: slot.x, y: yOffset(for: drawn.start))
             }
 
             ForEach(tasks) { task in
-                let range = CadenceScheduleSupport.blockRange(
-                    startMinute: task.scheduledStartMin,
-                    fallbackDuration: task.estimatedMinutes
-                )
+                let range = taskRange(task)
+                let slot = horizontalFrame(placements[.task(task.persistentModelID)], kind: .task)
                 iOSTimelineTaskBlock(
                     task: task,
                     startMin: range.start,
@@ -1004,8 +1004,8 @@ private struct iOSCalendarTimelineDayColumn: View {
                     onClearTime: onClearTime.map { clear in { clear(task) } },
                     bundleFormingDrop: bundleFormingDrop(onto: task)
                 )
-                .frame(width: colWidth - 18, height: blockHeight(start: range.start, end: range.end))
-                .offset(x: 9, y: yOffset(for: range.start))
+                .frame(width: slot.width, height: blockHeight(start: range.start, end: range.end))
+                .offset(x: slot.x, y: yOffset(for: range.start))
             }
 
             draftLayer
@@ -1275,11 +1275,6 @@ private struct iOSCalendarTimelineDayColumn: View {
         CGFloat(CadenceScheduleSupport.calendarHourCount) * hourHeight
     }
 
-    /// Gutter between two event blocks that split a column, matching the Mac canvas's
-    /// `TimelineBlockStyle.columnSpacing`. Not applied when there is only one column, so a day with
-    /// no overlaps keeps the exact width it had before T-3161.
-    private var iOSTimelineEventColumnSpacing: CGFloat { 2 }
-
     /// The day's timed events **in start order**, ties broken by their order in `events`.
     ///
     /// The order is load-bearing rather than tidy: a `ZStack` draws its children in order and
@@ -1303,50 +1298,72 @@ private struct iOSCalendarTimelineDayColumn: View {
             .map(\.element)
     }
 
-    /// Column + cascade depth per timed event, keyed the way the `ForEach` identifies them.
-    ///
-    /// Solved over the **drawn** minute range, not the true one, because overlap here is a question
-    /// about rectangles on this column: an event that began yesterday is clamped to the top of the
-    /// grid and overlaps whatever is drawn there.
-    ///
-    /// Events only. Tasks and bundles on this surface have never had an overlap layout — they draw
-    /// full width and stack — and giving events one does not change that, so an event and a task at
-    /// the same hour still overlap exactly as they did before this ticket.
-    private var eventPlacements: [String: CadenceCalendarOverlapPlacement] {
-        let ordered = timedEvents
-        let slots = ordered.map { event -> CadenceCalendarOverlapLayout.Slot in
-            let range = iOSCalendarEventSupport.minuteRange(for: event, on: date)
-            let drawn = CadenceScheduleSupport.timelineVisibleRange(start: range.start, end: range.end)
-            return CadenceCalendarOverlapLayout.Slot(
-                startMin: drawn.start,
-                endMin: max(drawn.end, drawn.start + CadenceCalendarOverlapLayout.minimumSlotMinutes),
-                mayCascade: true
-            )
-        }
-        let placements = CadenceCalendarOverlapLayout.solve(
-            slots: slots,
-            cascadeGapMinutes: CadenceCalendarOverlapLayout.cascadeGapMinutes(
-                headerHeight: CadenceCalendarOverlapLayout.iOSEventHeaderHeight,
-                hourHeight: hourHeight
-            )
-        )
-        return Dictionary(
-            zip(ordered.map(\.calendarItemIdentifier), placements),
-            uniquingKeysWith: { first, _ in first }
+    /// What a block in this column is drawn by, across its three `ForEach`es.
+    private enum BlockKey: Hashable {
+        case task(PersistentIdentifier)
+        case bundle(PersistentIdentifier)
+        case event(String)
+    }
+
+    /// The minutes a task block is drawn over — read by both the block and the layout, so the
+    /// rectangle that is columned is the rectangle that is drawn.
+    private func taskRange(_ task: AppTask) -> (start: Int, end: Int) {
+        CadenceScheduleSupport.blockRange(
+            startMinute: task.scheduledStartMin,
+            fallbackDuration: task.estimatedMinutes
         )
     }
 
-    /// Leading offset and width for one placed event block.
+    /// Column + cascade depth for **every** timed block in the column — tasks, bundles and events
+    /// in one pass of the shared solver (T-3165), the way macOS's `computeUnifiedLayouts` does.
     ///
-    /// The 9pt inset and the `colWidth - 18` usable width are the ones this column has always used;
-    /// a single un-overlapped event gets exactly them back, so a day with no overlaps is unchanged.
-    private func eventSlotFrame(for placement: CadenceCalendarOverlapPlacement) -> (x: CGFloat, width: CGFloat) {
-        let usable = max(0, colWidth - 18)
-        let columns = max(placement.totalColumns, 1)
-        let columnWidth = usable / CGFloat(columns)
-        let slotWidth = max(0, columnWidth - (columns > 1 ? iOSTimelineEventColumnSpacing : 0))
-        let indent = CadenceCalendarOverlapLayout.cascadeIndent(slotWidth: slotWidth, depth: placement.cascadeDepth)
-        return (9 + CGFloat(placement.column) * columnWidth + indent, max(0, slotWidth - indent))
+    /// Events are solved over their **drawn** minute range, not the true one, because overlap here
+    /// is a question about rectangles on this column: an event that began yesterday is clamped to
+    /// the top of the grid and overlaps whatever is drawn there. Tasks and bundles are solved over
+    /// the same range their blocks are drawn at. The order is the column's draw order.
+    private var blockPlacements: [BlockKey: CadenceCalendarOverlapPlacement] {
+        var blocks: [iOSCalendarTimelineBlockLayout.Block<BlockKey>] = []
+        for bundle in bundles {
+            blocks.append(.init(
+                key: .bundle(bundle.persistentModelID),
+                kind: .bundle,
+                startMin: bundle.startMin,
+                endMin: bundle.endMin
+            ))
+        }
+        for event in timedEvents {
+            let range = iOSCalendarEventSupport.minuteRange(for: event, on: date)
+            let drawn = CadenceScheduleSupport.timelineVisibleRange(start: range.start, end: range.end)
+            blocks.append(.init(
+                key: .event(event.calendarItemIdentifier),
+                kind: .event,
+                startMin: drawn.start,
+                endMin: drawn.end
+            ))
+        }
+        for task in tasks {
+            let range = taskRange(task)
+            blocks.append(.init(
+                key: .task(task.persistentModelID),
+                kind: .task,
+                startMin: range.start,
+                endMin: range.end
+            ))
+        }
+        return iOSCalendarTimelineBlockLayout.placements(for: blocks, hourHeight: hourHeight)
+    }
+
+    /// Leading offset and width for one placed block. A block the solver did not see draws as a
+    /// lone block, which is what it was before it had a placement at all.
+    private func horizontalFrame(
+        _ placement: CadenceCalendarOverlapPlacement?,
+        kind: iOSCalendarTimelineBlockLayout.Kind
+    ) -> (x: CGFloat, width: CGFloat) {
+        iOSCalendarTimelineBlockLayout.horizontalFrame(
+            for: placement ?? .single,
+            kind: kind,
+            columnWidth: colWidth
+        )
     }
 
     private func yOffset(for minute: Int) -> CGFloat {
@@ -1407,20 +1424,17 @@ private struct iOSCalendarEventBlock: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 0) {
-            // The identity marker. Its leading corners follow the block's so the strip ends
-            // exactly where the plate does; the trailing edge is square because this is a rail,
-            // not a pill. Opaque rather than a wash: this column gained an overlap layout in
-            // T-3161, so an indented block's rail is now drawn over the body of the block beneath
-            // it, and a translucent marker would show the neighbour's hue through it.
+            // The identity marker: a plain strip, shaped by the block's `.clipShape(blockShape)`
+            // below rather than by corners of its own (T-3167) — a 3pt strip cannot carry the
+            // plate's corner radius, so only the clip makes it end where the plate does. The same
+            // construction the macOS event block uses. Opaque rather than a wash: this column has
+            // an overlap layout (T-3161), so an indented block's rail is drawn over the body of the
+            // block beneath it, and a translucent marker would show the neighbour's hue through it.
             //
             // `CadenceCalendarEventStyle.railWidth`, not a hand-typed `3`.
-            UnevenRoundedRectangle(
-                topLeadingRadius: Theme.radiusControl,
-                bottomLeadingRadius: Theme.radiusControl,
-                style: .continuous
-            )
-            .fill(railColor)
-            .frame(width: CadenceCalendarEventStyle.railWidth)
+            Rectangle()
+                .fill(railColor)
+                .frame(width: CadenceCalendarEventStyle.railWidth)
 
             HStack(alignment: .top, spacing: 6) {
                 Image(systemName: "calendar")

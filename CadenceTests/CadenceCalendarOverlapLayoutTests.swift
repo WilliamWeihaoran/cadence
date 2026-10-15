@@ -384,4 +384,163 @@ struct CadenceCalendarOverlapLayoutTests {
     }
 
     #endif
+
+    // MARK: - T-3165: the iOS day column lays tasks, bundles and events out together
+
+    private typealias IOSLayout = iOSCalendarTimelineBlockLayout
+
+    /// The iPad week column at its narrowest preferred width, which is where a split costs most.
+    private static let iosColumnWidth: CGFloat = CadenceCalendarWeekGridLayout.preferredDayColumnWidth(isRegularWidth: true)
+    private static let iosHourHeight: CGFloat = iOSCalendarTimelineMetrics.hourHeight
+
+    /// Lays `blocks` out exactly as the day column does and returns each one's x range.
+    private static func iosRanges(
+        _ blocks: [IOSLayout.Block<String>]
+    ) -> [String: (placement: CadenceCalendarOverlapPlacement, minX: CGFloat, maxX: CGFloat)] {
+        let placements = IOSLayout.placements(for: blocks, hourHeight: iosHourHeight)
+        var ranges: [String: (placement: CadenceCalendarOverlapPlacement, minX: CGFloat, maxX: CGFloat)] = [:]
+        for block in blocks {
+            let placement = placements[block.key] ?? .single
+            let frame = IOSLayout.horizontalFrame(for: placement, kind: block.kind, columnWidth: iosColumnWidth)
+            ranges[block.key] = (placement, frame.x, frame.x + frame.width)
+        }
+        return ranges
+    }
+
+    private static func disjoint(_ lhs: (minX: CGFloat, maxX: CGFloat), _ rhs: (minX: CGFloat, maxX: CGFloat)) -> Bool {
+        lhs.maxX <= rhs.minX || rhs.maxX <= lhs.minX
+    }
+
+    /// The ticket's first fixture pair, by its literal times: "Prep slides" (task, 12:45-1:30) was
+    /// painted full width across "Lunch with Sam" (event, 12:30-1:30). They must take two columns
+    /// whose x ranges do not overlap, both inside the day column.
+    @Test func theIOSDayColumnPutsAnOverlappingTaskBesideTheEventInsteadOfOverIt() throws {
+        let ranges = Self.iosRanges([
+            .init(key: "lunch", kind: .event, startMin: Self.minutes(12, 30), endMin: Self.minutes(13, 30)),
+            .init(key: "prep", kind: .task, startMin: Self.minutes(12, 45), endMin: Self.minutes(13, 30)),
+        ])
+        let lunch = try #require(ranges["lunch"])
+        let prep = try #require(ranges["prep"])
+        #expect(lunch.placement.column != prep.placement.column, "the task and the event share a column")
+        #expect(lunch.placement.totalColumns == 2 && prep.placement.totalColumns == 2)
+        #expect(Self.disjoint((lunch.minX, lunch.maxX), (prep.minX, prep.maxX)), "the task block is drawn over the event block")
+        for block in [lunch, prep] {
+            #expect(block.minX >= 0 && block.maxX <= Self.iosColumnWidth, "a block runs outside its day column")
+            #expect(block.maxX > block.minX, "a block was squeezed to nothing")
+        }
+    }
+
+    /// The second pair: a 6 PM event over a bundle, which sliced "Post office" in half.
+    @Test func theIOSDayColumnPutsAnEventBesideTheBundleItOverlaps() throws {
+        let ranges = Self.iosRanges([
+            .init(key: "bundle", kind: .bundle, startMin: Self.minutes(17, 30), endMin: Self.minutes(18, 30)),
+            .init(key: "event", kind: .event, startMin: Self.minutes(18, 0), endMin: Self.minutes(19, 0)),
+        ])
+        let bundle = try #require(ranges["bundle"])
+        let event = try #require(ranges["event"])
+        #expect(bundle.placement.column != event.placement.column, "the bundle and the event share a column")
+        #expect(Self.disjoint((bundle.minX, bundle.maxX), (event.minX, event.maxX)), "the event block is drawn over the bundle block")
+    }
+
+    /// A start gap that is plenty for one event to cascade over another is still not licence for
+    /// an event to lay itself over a task — on iOS exactly as on the Mac. The two-event control
+    /// proves the gap really is a cascading one, so the task half is not passing by accident.
+    @Test func anIOSEventStartingWellAfterATaskStillTakesAColumnBesideIt() throws {
+        let gap = CadenceCalendarOverlapLayout.cascadeGapMinutes(
+            headerHeight: CadenceCalendarOverlapLayout.iOSEventHeaderHeight,
+            hourHeight: Self.iosHourHeight
+        )
+        let start = Self.minutes(9, 0)
+        let late = start + gap + 15
+
+        let control = Self.iosRanges([
+            .init(key: "first", kind: .event, startMin: start, endMin: start + 180),
+            .init(key: "second", kind: .event, startMin: late, endMin: late + 60),
+        ])
+        #expect(try #require(control["second"]).placement.cascadeDepth == 1, "non-vacuity: this gap no longer cascades two events")
+
+        for kind in [IOSLayout.Kind.task, .bundle] {
+            let ranges = Self.iosRanges([
+                .init(key: "work", kind: kind, startMin: start, endMin: start + 180),
+                .init(key: "event", kind: .event, startMin: late, endMin: late + 60),
+            ])
+            let work = try #require(ranges["work"])
+            let event = try #require(ranges["event"])
+            #expect(event.placement.cascadeDepth == 0, "an event cascaded over a \(kind)")
+            #expect(Self.disjoint((work.minX, work.maxX), (event.minX, event.maxX)), "an event is drawn over a \(kind)")
+        }
+    }
+
+    /// Three kinds at one hour take three columns, in draw order, and none of the three covers
+    /// another — the property macOS's `computeUnifiedLayouts` already had.
+    @Test func threeIOSBlocksOfThreeKindsAtOneHourTakeThreeDisjointColumns() throws {
+        let ranges = Self.iosRanges([
+            .init(key: "bundle", kind: .bundle, startMin: Self.minutes(14, 0), endMin: Self.minutes(15, 0)),
+            .init(key: "event", kind: .event, startMin: Self.minutes(14, 0), endMin: Self.minutes(15, 0)),
+            .init(key: "task", kind: .task, startMin: Self.minutes(14, 0), endMin: Self.minutes(15, 0)),
+        ])
+        let keys = ["bundle", "event", "task"]
+        let placed = try keys.map { try #require(ranges[$0]) }
+        #expect(Set(placed.map(\.placement.column)).count == 3, "three overlapping blocks share columns")
+        #expect(placed.allSatisfy { $0.placement.totalColumns == 3 })
+        for (index, lhs) in placed.enumerated() {
+            for rhs in placed[(index + 1)...] {
+                #expect(Self.disjoint((lhs.minX, lhs.maxX), (rhs.minX, rhs.maxX)), "two of the three blocks overlap")
+            }
+        }
+    }
+
+    /// Blocks that do not overlap keep the whole of their strip, so a day with no overlaps draws
+    /// what it drew before T-3165 — a task as wide as a lone event, a bundle wider than both.
+    @Test func iOSBlocksThatDoNotOverlapEachKeepTheirWholeStrip() throws {
+        let ranges = Self.iosRanges([
+            .init(key: "task", kind: .task, startMin: Self.minutes(8, 0), endMin: Self.minutes(9, 0)),
+            .init(key: "event", kind: .event, startMin: Self.minutes(9, 0), endMin: Self.minutes(10, 0)),
+            .init(key: "bundle", kind: .bundle, startMin: Self.minutes(10, 0), endMin: Self.minutes(11, 0)),
+        ])
+        let task = try #require(ranges["task"])
+        let event = try #require(ranges["event"])
+        let bundle = try #require(ranges["bundle"])
+        for block in [task, event, bundle] {
+            #expect(block.placement == .single, "a block that overlaps nothing was split")
+        }
+        #expect(task.minX == event.minX && task.maxX == event.maxX, "a lone task and a lone event are drawn at different widths")
+        #expect(bundle.minX < task.minX && bundle.maxX > task.maxX, "a lone bundle lost its wider strip")
+    }
+
+    /// **The view really feeds all three kinds in.** `Cadence/iOS/` is invisible to this target,
+    /// so the arithmetic above is only half the claim; the other half is that the day column hands
+    /// every task, bundle and event to one `placements` call and draws each block at the frame it
+    /// gets back, rather than at a hand-written full width.
+    @Test func theIOSDayColumnSolvesEveryTimedBlockInOnePassAndDrawsEachAtItsSolvedFrame() throws {
+        let path = "Cadence/iOS/iOSCalendarTimelineViews.swift"
+        let raw = try CadenceSourceScan.sourceFile(path)
+        let code = CadenceSourceScan.strippingComments(raw)
+        #expect(code.count == raw.count && code != raw, "non-vacuity: the comment stripper did not run over \(path)")
+        let column = try #require(
+            CadenceSourceScan.declarationBody("private struct iOSCalendarTimelineDayColumn: View", in: code),
+            "iOSCalendarTimelineDayColumn was not found in \(path)"
+        )
+        #expect(column.count > 4_000, "non-vacuity: the day column read as \(column.count) characters")
+
+        #expect(
+            CadenceSourceScan.matchCount(#"iOSCalendarTimelineBlockLayout\.placements\(for:"#, in: column) == 1,
+            "the day column does not solve its blocks in exactly one pass"
+        )
+        for kind in ["task", "bundle", "event"] {
+            #expect(
+                CadenceSourceScan.matchCount(#"key: \.\#(kind)\("#, in: column) == 1,
+                "the day column does not hand its \(kind) blocks to the solver"
+            )
+            #expect(
+                CadenceSourceScan.matchCount(#"horizontalFrame\(placements\[\.\#(kind)\("#, in: column) == 1,
+                "the day column does not draw its \(kind) blocks at their solved frame"
+            )
+        }
+        // The two full-width spellings the tasks and bundles were drawn at before T-3165.
+        #expect(
+            CadenceSourceScan.matchCount(#"\.frame\(width: colWidth - [0-9]+, height:"#, in: column) == 0,
+            "a timed block is still drawn at a hand-written full column width"
+        )
+    }
 }

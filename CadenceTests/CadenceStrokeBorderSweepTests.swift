@@ -163,8 +163,9 @@ struct CadenceStrokeBorderSweepTests {
                 "RoundedRectangle\\(cornerRadius: Theme\\.radiusCard\\)\\s*\\.strokeBorder\\(\\s*TaskHoverVisuals\\.borderColor"
             ),
             (
+                // Since T-3167 the plate, its rim and its clip are one `blockShape`.
                 "Cadence/macOS/Views/TimelineEventBlock.swift",
-                "RoundedRectangle\\(cornerRadius: style\\.cornerRadius\\)\\s*\\.strokeBorder\\(\\s*TimelineHoverVisuals\\.borderColor"
+                "blockShape\\s*\\.strokeBorder\\(\\s*TimelineHoverVisuals\\.borderColor"
             ),
         ]
         for site in sites {

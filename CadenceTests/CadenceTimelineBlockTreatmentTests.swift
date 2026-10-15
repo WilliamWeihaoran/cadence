@@ -94,9 +94,15 @@ struct CadenceTimelineBlockTreatmentTests {
             ("the iOS task block", try t3160IOSTaskBlock(), 0),
         ]
         for surface in surfaces {
+            // Since T-3167 an event rail is a plain strip shaped by its block's clip, so the
+            // self-cornered spelling the bundle block still draws is no rail on any block here.
             #expect(
-                CadenceSourceScan.matchCount(t3160RailNeedle, in: surface.body) == surface.rails,
-                "\(surface.name) draws \(CadenceSourceScan.matchCount(t3160RailNeedle, in: surface.body)) rails, expected \(surface.rails)"
+                CadenceSourceScan.matchCount(t3167EventRailNeedle, in: surface.body) == surface.rails,
+                "\(surface.name) draws \(CadenceSourceScan.matchCount(t3167EventRailNeedle, in: surface.body)) rails, expected \(surface.rails)"
+            )
+            #expect(
+                CadenceSourceScan.matchCount(t3160RailNeedle, in: surface.body) == 0,
+                "\(surface.name) still draws a rail that rounds its own corners instead of being clipped by the block"
             )
             #expect(
                 CadenceSourceScan.matchCount(#"CadenceCalendarEventStyle\.railWidth"#, in: surface.body) == surface.rails,
@@ -142,6 +148,61 @@ struct CadenceTimelineBlockTreatmentTests {
             CadenceCalendarOverlapLayout.minimumCascadedWidth > CadenceCalendarEventStyle.railWidth * 4,
             "the narrowest cascaded block is \(CadenceCalendarOverlapLayout.minimumCascadedWidth)pt against a \(CadenceCalendarEventStyle.railWidth)pt rail"
         )
+    }
+
+    // MARK: - The rail is clipped to the block (T-3167)
+
+    /// **Why the clip is required, as geometry.** A shape's corner radii are clamped to half its
+    /// own width, so a strip `railWidth` wide cannot carry the plate's corner radius: rounding the
+    /// rail's own corners leaves it standing proud of the plate. How proud is the plate corner's
+    /// height at the rail's trailing edge — positive on both platforms, which is the overhang the
+    /// ticket photographed (~2.3pt at macOS's 9pt `TimelineBlockStyle.calendar` corner, ~5px at 2x).
+    @Test func aRailNarrowerThanThePlateCornerOverhangsItUnlessTheBlockClipsIt() {
+        let rail = CadenceCalendarEventStyle.railWidth
+        for (name, radius) in [
+            ("macOS Calendar page", TimelineBlockStyle.calendar.cornerRadius),
+            ("macOS Schedule panel", TimelineBlockStyle.schedule.cornerRadius),
+            ("iOS timeline", Theme.radiusControl),
+        ] {
+            #expect(radius > rail / 2, "\(name): a \(rail)pt rail can carry a \(radius)pt corner by itself")
+            let inset: CGFloat = radius - rail
+            let overhang: CGFloat = radius - (radius * radius - inset * inset).squareRoot()
+            #expect(overhang > 1, "\(name): an unclipped rail stands only \(overhang)pt proud of the plate corner")
+        }
+    }
+
+    /// **One construction on both platforms.** Each event block names one `blockShape`, fills or
+    /// rims its plate with it, and clips its whole content — rail included — to it. A rectangular
+    /// `.clipped()` is what let the macOS rail overhang; a self-cornered rail is the construction
+    /// that could not follow the corner.
+    @Test func bothEventBlocksClipTheirRailToTheOneShapeThePlateIsDrawnIn() throws {
+        let blocks: [(name: String, body: String)] = [
+            ("the macOS event block", try t3160EventSource()),
+            ("the iOS event block", try t3160IOSEventBlock()),
+        ]
+        for block in blocks {
+            #expect(
+                CadenceSourceScan.matchCount(#"\.clipShape\(blockShape\)"#, in: block.body) == 1,
+                "\(block.name) does not clip its content, rail included, to the block's own shape"
+            )
+            #expect(
+                CadenceSourceScan.matchCount(#"\.clipped\(\)"#, in: block.body) == 0,
+                "\(block.name) clips to its bounding box, which leaves the rail proud of the rounded corners"
+            )
+            #expect(
+                CadenceSourceScan.matchCount(#"blockShape\s*\.strokeBorder\("#, in: block.body) == 1,
+                "\(block.name) rims its plate with a shape other than the one it clips to"
+            )
+            // One declaration of the shape, so the clip and the plate cannot drift apart.
+            #expect(
+                CadenceSourceScan.matchCount(#"RoundedRectangle\(cornerRadius:"#, in: block.body) == 1,
+                "\(block.name) spells its rounded rectangle more than once"
+            )
+            #expect(
+                CadenceSourceScan.matchCount(#"UnevenRoundedRectangle"#, in: block.body) == 0,
+                "\(block.name) still shapes a part of itself with corners of its own"
+            )
+        }
     }
 
     // MARK: - The iOS blocks
@@ -335,6 +396,9 @@ private let t3160IOSEventSupportFile = "Cadence/iOS/iOSCalendarEventSupport.swif
 /// A rail is an `UnevenRoundedRectangle` whose *leading* corners are the ones given a radius — it
 /// follows the block's rounding on the outside and is square where it meets the label column.
 private let t3160RailNeedle = #"UnevenRoundedRectangle\(\s*topLeadingRadius:"#
+
+/// An event rail since T-3167: a plain opaque strip, shaped by the block's own clip.
+private let t3167EventRailNeedle = #"Rectangle\(\)\s*\.fill\(railColor\)"#
 
 private let t3160BlockStates: [(name: String, isSelected: Bool, isActive: Bool)] = [
     ("at rest", false, false),

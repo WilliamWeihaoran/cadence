@@ -341,3 +341,97 @@ nonisolated enum iOSCalendarPageMetrics {
         CadencePageHeaderMetrics.metrics(role: .page, isRegularWidth: isRegularWidth).horizontalPadding
     }
 }
+
+// MARK: - The timed grid's side-by-side layout
+
+/// Where each block in one iOS day column sits **across** the column: tasks, bundles and events
+/// laid out against each other by the one shared solver, as macOS's
+/// `TimelineMetricsSupport.computeUnifiedLayouts` does (T-3165).
+///
+/// **Why this exists.** T-3161 gave the iOS day column an overlap layout for EVENTS ONLY. Tasks and
+/// bundles kept drawing full width on top of whatever they overlapped, so a scheduled task at
+/// 12:45-1:30 was painted straight across a 12:30-1:30 event, cutting through its title and hiding
+/// its time row, while the Mac drew the same pair as two columns. The three kinds now go through
+/// one `CadenceCalendarOverlapLayout.solve` pass, so each reserves a column against the others.
+/// Only events cascade (`Slot.mayCascade`), exactly as on the Mac: a task never lays itself over an
+/// event and an event never lays itself over a task.
+///
+/// Outside `#if os(iOS)` for the reason the rest of this file is: the macOS-built test target can
+/// read the decision, and the view in `iOSCalendarTimelineViews.swift` only draws what it says.
+nonisolated enum iOSCalendarTimelineBlockLayout {
+
+    /// The three kinds of timed block a day column draws.
+    enum Kind: Equatable, Sendable {
+        case task
+        case bundle
+        case event
+
+        /// Only calendar events cascade — the owner ruled on events, and macOS's
+        /// `computeUnifiedLayouts` passes the same answer.
+        var mayCascade: Bool { self == .event }
+
+        /// Leading and trailing inset of this kind's strip inside the day column. The figures this
+        /// column has always drawn: tasks and events at 9, bundles slightly wider at 7, so a day
+        /// with no overlaps keeps exactly the blocks it had.
+        var inset: CGFloat { self == .bundle ? 7 : 9 }
+    }
+
+    /// One block offered to the layout, under whatever key the caller draws it by.
+    struct Block<Key: Hashable> {
+        let key: Key
+        let kind: Kind
+        let startMin: Int
+        let endMin: Int
+    }
+
+    /// Gutter between two blocks that split a column, matching the Mac canvas's
+    /// `TimelineBlockStyle.columnSpacing`. Not applied when there is only one column.
+    static let columnSpacing: CGFloat = 2
+
+    /// Column and cascade depth for every block, keyed the way the caller identifies it.
+    ///
+    /// Blocks are solved in the order given, which is the order the column draws them in, so a tie
+    /// at the same start minute is broken the same way every pass. A block shorter than
+    /// `CadenceCalendarOverlapLayout.minimumSlotMinutes` is widened to it, as macOS does.
+    static func placements<Key: Hashable>(
+        for blocks: [Block<Key>],
+        hourHeight: CGFloat
+    ) -> [Key: CadenceCalendarOverlapPlacement] {
+        let slots = blocks.map { block in
+            CadenceCalendarOverlapLayout.Slot(
+                startMin: block.startMin,
+                endMin: max(block.endMin, block.startMin + CadenceCalendarOverlapLayout.minimumSlotMinutes),
+                mayCascade: block.kind.mayCascade
+            )
+        }
+        let solved = CadenceCalendarOverlapLayout.solve(
+            slots: slots,
+            cascadeGapMinutes: CadenceCalendarOverlapLayout.cascadeGapMinutes(
+                headerHeight: CadenceCalendarOverlapLayout.iOSEventHeaderHeight,
+                hourHeight: hourHeight
+            )
+        )
+        return Dictionary(
+            zip(blocks.map(\.key), solved),
+            uniquingKeysWith: { first, _ in first }
+        )
+    }
+
+    /// Leading offset and width of one placed block inside a day column `columnWidth` wide.
+    ///
+    /// The kind's own strip, split into `totalColumns` equal columns with a `columnSpacing` gutter,
+    /// then indented by the cascade if the block is stacked over an earlier event. A single
+    /// un-overlapped block gets its strip back whole.
+    static func horizontalFrame(
+        for placement: CadenceCalendarOverlapPlacement,
+        kind: Kind,
+        columnWidth: CGFloat
+    ) -> (x: CGFloat, width: CGFloat) {
+        let usable = max(0, columnWidth - kind.inset * 2)
+        let columns = max(placement.totalColumns, 1)
+        let slotColumnWidth = usable / CGFloat(columns)
+        let slotWidth = max(0, slotColumnWidth - (columns > 1 ? columnSpacing : 0))
+        let indent = CadenceCalendarOverlapLayout.cascadeIndent(slotWidth: slotWidth, depth: placement.cascadeDepth)
+        return (kind.inset + CGFloat(placement.column) * slotColumnWidth + indent, max(0, slotWidth - indent))
+    }
+}
