@@ -390,10 +390,10 @@ read_path_state() {
 # Fills the parallel arrays `behind_paths` / `behind_kind` / `behind_detail`, plus `skipped`,
 # `inflight` and `cannot_tell`.
 
-typeset -ga behind_paths behind_kind behind_detail skipped inflight cannot_tell
+typeset -ga behind_paths behind_kind behind_detail skipped inflight cannot_tell untracked
 
 read_tree_state() {
-    behind_paths=(); behind_kind=(); behind_detail=(); skipped=(); inflight=(); cannot_tell=()
+    behind_paths=(); behind_kind=(); behind_detail=(); skipped=(); inflight=(); cannot_tell=(); untracked=()
 
     local root
     root=$(git rev-parse --show-toplevel 2>/dev/null) || refuse NOT-REPO-ROOT "not inside a git checkout"
@@ -422,6 +422,10 @@ read_tree_state() {
             *)           inflight+=("$p") ;;
         esac
     done
+    # Untracked files are never drift -- no commit has them, so nothing can be behind -- but they
+    # ARE uncommitted work in the tree a run compiles, and the headline must not call that tree
+    # clean (T-3181). Counted only; `--exclude-standard` keeps build output out of it.
+    untracked=(${(f)"$(git ls-files --others --exclude-standard 2>/dev/null)"})
     rm -rf "$scratch"
 }
 
@@ -429,8 +433,17 @@ print_reading() {
     local i p gone                    # `gone` hoisted: bare `local` in the loop below prints it
                                       # on every path after the first, straight into this report
                                       # (T-1074). Two behind paths is the ordinary case.
-    if (( ${#behind_paths} == 0 )); then
-        say "worktree matches HEAD: ${#inflight} path(s) changed and every one is built on HEAD."
+    # THE HEADLINE IS THE WHOLE REPORT for `xcb.sh`, which prints only this first line (T-3181).
+    # It used to read "worktree matches HEAD: ${#inflight} path(s) changed", counting only the
+    # in-flight bucket -- so a tree whose edits were all cannot-tell (any edit that deletes a line),
+    # deleted tracked files, or new untracked files printed "0 path(s) changed" over real,
+    # uncommitted work. Reproduced in an agent-scratch tree. Every bucket is counted now, and
+    # "matches HEAD" is said only of a tree with nothing uncommitted in it at all.
+    local tracked=$(( ${#inflight} + ${#cannot_tell} + ${#skipped} ))
+    if (( ${#behind_paths} == 0 && tracked == 0 && ${#untracked} == 0 )); then
+        say "worktree matches HEAD: no tracked path differs from HEAD and no untracked file."
+    elif (( ${#behind_paths} == 0 )); then
+        say "worktree not behind HEAD, but NOT clean: ${tracked} tracked path(s) differ from HEAD (${#inflight} built on HEAD, ${#cannot_tell} cannot tell, ${#skipped} not compared) and ${#untracked} untracked file(s)."
     else
         say "WORKTREE BEHIND HEAD -- ${#behind_paths} tracked file(s) hold code HEAD has moved past:"
         for (( i = 1; i <= ${#behind_paths}; i++ )); do
@@ -600,6 +613,26 @@ cmd_selftest() {
     out=$( cd "$ws" && zsh "$here" check 2>&1 ); rc=$?
     check "a clean tree passes" $(( rc == 0 )) "exit $rc: $out"
     check "and says so" $( [[ "$out" == *"worktree matches HEAD"* ]] && print 1 || print 0 ) "$out"
+
+    say ""
+    say " mode 0b (T-3181) -- a dirty tree that is not behind HEAD is NOT called clean"
+    # The measured shape: xcb.sh prints only the first line, and it used to count only the in-flight
+    # bucket, so these three kinds of uncommitted work printed "0 path(s) changed". Each is one of
+    # the buckets that count missed: a deletion-only edit (cannot tell), a deleted tracked file (not
+    # compared), and a new untracked file.
+    ( cd "$ws" && print -rl -- "alpha entry" "charlie entry" > ordered.txt && rm -f TODO.md \
+        && print -r -- "struct Fresh {}" > fresh.swift )
+    out=$( cd "$ws" && zsh "$here" check 2>&1 ); rc=$?
+    local headline; headline=$(print -r -- "$out" | head -1)
+    check "it passes -- uncommitted work is not drift" $(( rc == 0 )) "exit $rc: $out"
+    check "but its first line does not say the tree matches HEAD" \
+        $( [[ "$headline" != *"matches HEAD"* && "$headline" == *"NOT clean"* ]] && print 1 || print 0 ) "$headline"
+    check "and counts every bucket: 2 tracked (0 built on HEAD, 1 cannot tell, 1 not compared), 1 untracked" \
+        $( [[ "$headline" == *"2 tracked path(s)"*"(0 built on HEAD, 1 cannot tell, 1 not compared)"*"1 untracked file(s)"* ]] && print 1 || print 0 ) "$headline"
+    ( cd "$ws" && git checkout -q HEAD -- ordered.txt TODO.md && rm -f fresh.swift )
+    out=$( cd "$ws" && zsh "$here" check 2>&1 )
+    check "and restored, the same tree reads clean again" \
+        $( [[ "$(print -r -- "$out" | head -1)" == "worktree matches HEAD:"* ]] && print 1 || print 0 ) "$out"
 
     say ""
     say " mode 1 (WORKTREE-BEHIND-HEAD) -- the stale copy agent-commit.sh leaves behind"
