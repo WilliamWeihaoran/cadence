@@ -1669,3 +1669,44 @@ and never point it at the owner's container, the real app group, or any backup d
 **If the reproduction needs a production file to become testable** — an accessibility identifier on
 the tab bar's `+`, say — **stop and ask.** That is a change to a shipping surface and it belongs in
 its own grant with its own reasoning, not folded into a test file's.
+
+### T-3170 — GRANTED: nine paths, to finish removing the Block feature
+
+**`Cadence/macOS/Views/TimelineDropInteractionSupport.swift`,
+`Cadence/macOS/Views/CalendarBoardDayColumnSupportViews.swift`,
+`Cadence/macOS/Services/FocusManager.swift`,
+`Cadence/Shared/CadenceFocusPlanningSupport.swift`,
+`Cadence/iOS/iOSCalendarBoardView.swift`,
+`Cadence/iOS/iOSBoardCards.swift`,
+`Cadence/iOS/iOSFocusView.swift`,
+`CadenceTests/CadenceSharedConstantReuseSweepTests.swift`,
+`CadenceTests/CadenceSavedLinkPersistenceTests.swift`
+— GRANTED, narrowly, for the removal of `TaskBundle` and nothing else.**
+
+The owner's instruction was *"the whole concept of bundle feels a bit unnecessary and adds confusion.
+just remove it altogether."* [[T-3170]] carries the measured footprint and the staging rule.
+
+**The set is exact, not defensive.** Agent `debundle` matched all 53 live lease patterns against the
+119 Swift files naming `TaskBundle` / `bundleID` / `bundleOrder`; these nine are the intersection.
+`CalendarEventPresentationSupport.swift` and `CadenceTests/CadenceCodex*.swift` are leased and were
+checked and EXCLUDED — their `bundle` hits are Foundation's `Bundle`, not this feature. The other
+~110 block-bearing files were never leased and need no grant.
+
+**What these nine unblock, which is the whole reason the grant exists:** the macOS timeline's
+drop-a-task-on-a-task-to-form-a-Block gesture, the iOS calendar board's Block cards, and Block Focus
+mode. Left ungranted, the feature would be removed everywhere except three places where it still
+looks alive, backed by a model nothing writes.
+
+**Scope limit, and it is narrow.** Only code that exists because Blocks exist may be deleted.
+`FocusManager` and `CadenceFocusPlanningSupport` keep Focus itself — `.task(id)` targets already
+exist and are independent of Blocks; only the Block-shaped variant goes. Do not refactor these files
+while you are in them; an unrelated change inside a grant is how a grant stops being narrow.
+
+**`TaskBundle` STAYS in `Cadence/Services/CadenceSchema.swift` and stays a `@Model`.** This project
+has no `SchemaMigrationPlan` (said outright in `CadenceStoreSupport.swift:171`,
+`CadenceDataExportService.swift:17/52/825`, `Note.swift:39`), and build 22 shipped Blocks to App
+Store Connect on 2026-10-13. Dropping the entity is a later build's job, once no device can hold a
+record. A grant to delete UI is not a grant to touch the schema.
+
+**Codex's own work is not disturbed by this.** Checked at grant time: its worktree is on
+`codex/phone-capture-load`, last commit 2026-10-12, and no `codex/*` branch touches any of the nine.
