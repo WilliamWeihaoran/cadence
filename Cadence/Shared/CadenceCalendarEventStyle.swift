@@ -53,6 +53,31 @@ import UIKit
 /// 2. Every content tier is solved against the plate it actually lands on, so the state ladder
 ///    cannot quietly push a label under AA.
 ///
+/// ## Why luminance alone was not enough for the rail plate (T-3168)
+///
+/// Point 1 above is half true, and T-3168 is the half it missed. Solving to a luminance target
+/// does make the result hue-neutral *in lightness*. It does nothing at all about **chroma**, and
+/// the two are not the same axis: relative luminance is weighted `0.2126 R / 0.7152 G / 0.0722 B`,
+/// so a blue has to spend nearly the whole gamut to reach the Y a green reaches with almost no
+/// colour at all. Measured on the T-3160 hue sweep, the rail plate at rest came out at OKLab
+/// chroma 0.039 for a cyan, 0.064 for a mid blue — and **0.134 for `#3d0000`, 0.234 for
+/// `#0000ff`**. One luminance, a six-fold spread of colourfulness.
+///
+/// That spread is not cosmetic, because the eye does not read luminance. The
+/// **Helmholtz–Kohlrausch effect** is the documented result that a more saturated sample is judged
+/// *brighter* than a less saturated one at the same luminance, with the brightness-to-luminance
+/// ratio rising as chroma rises. WCAG 2.x does not model it, and neither does APCA; both are
+/// luminance-only. So the two deep hues above sat at Y = 0.030, four times darker than the task
+/// plate at Y = 0.098 *by measurement*, and read as the loudest blocks on the canvas — the exact
+/// hierarchy T-3160's darker plate existed to create, inverted.
+///
+/// The fix is `railPlateChromaCeiling`: a ceiling on the rail plate's OKLab chroma, applied **at
+/// constant luminance** by walking saturation down and re-solving brightness. Holding Y exactly is
+/// what makes it free — every contrast ratio in this file is `(L1 + 0.05) / (L2 + 0.05)` over two
+/// luminances, so a plate that keeps its Y keeps every ratio solved against it, to the last digit.
+/// The ceiling touches the **plate only**. `railColor` is untouched, because the rail is the
+/// identity marker and laundering it is the one thing this treatment cannot afford.
+///
 /// The unprefixed legacy spellings (`fill`, `fillLuminance`, `primaryLabelColor`, …) are the
 /// `plate` treatment under its historical name and are kept live for call sites that have not been
 /// renamed; they forward and add nothing.
@@ -238,6 +263,60 @@ enum CadenceCalendarEventStyle {
     /// 11 L* below the secondary line, so the glyph tier is the one that is genuinely separable.
     static let railTertiaryContrastTarget: Double = 3.2
 
+    /// Greatest OKLab chroma the rail treatment's **plate** may carry, as a fraction of that
+    /// plate's own perceptual lightness.
+    ///
+    /// Stated as a ratio rather than as three chroma numbers so it cannot drift from the ladder it
+    /// belongs to: `railPlateChromaCeiling` multiplies this by `CadenceOKLab.neutralLightness` of
+    /// the plate's luminance, so moving `railFillLuminance` moves the ceiling with it — the same
+    /// discipline `railLabelColor` already uses to derive each label tier from its own plate.
+    ///
+    /// ## Why 0.25, with both ends of the window measured
+    ///
+    /// The number is not free. It is squeezed from both sides, and the admissible window turns out
+    /// to be narrow enough that picking the middle of it is nearly the whole decision.
+    ///
+    /// **From below — do not launder an ordinary calendar.** Across Cadence's three shipped accent
+    /// palettes, eighteen colours, the rail plate's chroma against this same anchor runs 0.126
+    /// (the `#4fd6e0` teal) to 0.281 (the `#ff5a5f` red), and every non-red accent tops out at
+    /// 0.230. So anything under about **0.231** starts removing chroma from blues, greens and
+    /// purples that were never the problem, which is the thing a ceiling must not do.
+    ///
+    /// **From above — the hierarchy has to survive.** The loudest plate any calendar colour can
+    /// now produce *is* the ceiling, by construction. For an event to stay quieter than a task,
+    /// that worst case has to stay under the plate treatment's chroma for an ordinary mid blue —
+    /// `#4a9eff`, which is also `Theme.blueHex`. That bound is 0.289 at rest, 0.278 active and
+    /// **0.270** selected, and the tightest one is the one that counts.
+    ///
+    /// The window is therefore roughly **[0.231, 0.270]**, and 0.25 is its middle. Inside it
+    /// exactly one of the eighteen accents is touched — the `#ff5a5f` red, which is also where the
+    /// dark-UI literature puts the worst halation on a dark surface — and on the T-3160 sweep it
+    /// binds on exactly the two hues T-3168 was filed about: `#3d0000` measures 0.432 here and
+    /// `#0000ff` measures 0.752, three times the band every ordinary hue lives in.
+    ///
+    /// ## What it costs
+    ///
+    /// A vivid calendar's plate gives up chroma. `#0000ff`'s rest plate goes from (0, 0, 173) at
+    /// chroma 0.234 — a saturated royal blue, and the loudest block on the canvas — to (44, 44, 88)
+    /// at 0.078, a quiet navy. `#3d0000`'s goes from (105, 0, 0) at 0.134 to (84, 32, 32) at the
+    /// same 0.078. Both land within 1.22x of an ordinary blue event plate, against 3.66x before.
+    ///
+    /// The identity that chroma was carrying is not lost, because the plate was never where it
+    /// lived: the rail still keeps 0.96 of the calendar's chroma at full brightness and is not
+    /// touched by any of this, and the title is still drawn **in the hue**, solved to
+    /// `railTitleContrastTarget` against a plate whose luminance has not moved a digit.
+    ///
+    /// It is spelled as a ceiling, not a target, for the same reason `railMinimumLuminance` is
+    /// spelled as a floor: it must never remove chroma it did not have to.
+    static let railPlateChromaRatio: Double = 0.25
+
+    /// The rail plate's chroma ceiling at a given state, derived from that state's own luminance.
+    static func railPlateChromaCeiling(isSelected: Bool = false, isActive: Bool = false) -> Double {
+        railPlateChromaRatio * CadenceOKLab.neutralLightness(
+            relativeLuminance: railFillLuminance(isSelected: isSelected, isActive: isActive)
+        )
+    }
+
     /// The leading rail: the calendar's hue at near-full chroma, lifted to full brightness, and
     /// desaturated only if that still leaves it under `railMinimumLuminance`.
     ///
@@ -255,19 +334,19 @@ enum CadenceCalendarEventStyle {
 
     /// The dark tinted plate behind a rail-treated block.
     static func railFill(for calendarColor: Color, isSelected: Bool = false, isActive: Bool = false) -> Color {
-        solvedFill(
+        cappedFill(
             for: calendarColor,
-            saturationScale: railPlateSaturationScale,
-            luminance: railFillLuminance(isSelected: isSelected, isActive: isActive)
+            luminance: railFillLuminance(isSelected: isSelected, isActive: isActive),
+            chromaCeiling: railPlateChromaCeiling(isSelected: isSelected, isActive: isActive)
         )
     }
 
     /// The rail treatment's plate at chip size. Same solve, same reason as `plateChipFill`.
     static func railChipFill(for calendarColor: Color, isActive: Bool = false) -> Color {
-        solvedFill(
+        cappedFill(
             for: calendarColor,
-            saturationScale: railPlateSaturationScale,
-            luminance: railFillLuminance(isActive: isActive)
+            luminance: railFillLuminance(isActive: isActive),
+            chromaCeiling: railPlateChromaCeiling(isActive: isActive)
         )
     }
 
@@ -391,6 +470,85 @@ enum CadenceCalendarEventStyle {
                 saturation: source.saturation * saturationScale,
                 luminance: target
             )
+        )
+    }
+
+    /// `solvedFill`, then held to a **chroma ceiling at that same luminance**.
+    ///
+    /// Two knobs again, in a fixed order, and the order is what makes this safe. Brightness solves
+    /// for the luminance target first, exactly as `solvedFill` does. If the result is already
+    /// inside the ceiling — which it is for every ordinary calendar hue — nothing else happens and
+    /// no chroma is removed. Only when it is outside does saturation walk down, and every step of
+    /// that walk **re-solves brightness for the same target**, so the colour that comes back has
+    /// the luminance it was asked for whatever its chroma ended up being.
+    ///
+    /// That invariant is the whole argument for doing it this way. Every contrast guarantee in
+    /// this file is `(L1 + 0.05) / (L2 + 0.05)` over two relative luminances and nothing else — so
+    /// a plate that keeps its Y keeps every ratio solved against it unchanged, to the digit. The
+    /// ceiling therefore buys a quieter plate for exactly zero contrast.
+    ///
+    /// Chroma falls monotonically as saturation falls at fixed luminance — the colour is walking
+    /// toward the grey of that luminance, which has no chroma at all — so a bisection converges,
+    /// and `low` is returned because `low` is the end of the bracket known to be *under* the
+    /// ceiling.
+    ///
+    /// That choice is correctness-by-construction rather than a visible difference, and T-3168's
+    /// mutation run says so out loud: returning `high` instead **survived**, and is a measured
+    /// no-op. After 20 steps the two ends of the bracket are 9.5e-7 apart in saturation and 3.3e-7
+    /// apart in chroma — for `#0000ff`'s rest plate both ends round to the *same* 8-bit colour,
+    /// (44, 44, 88). Nothing a screen can show and nothing an assertion should pretend to see; the
+    /// tolerance that would catch it is four orders of magnitude inside float noise. `low` is
+    /// still the right end to return, because it is the one the ceiling's definition guarantees.
+    ///
+    /// **What it costs, since `solvedBrightness` claims a month grid runs it once per chip.** The
+    /// common path is one extra brightness solve plus one OKLab conversion — the early return.
+    /// Only a hue that is actually over the ceiling pays for the nested search, and that search is
+    /// a bisection whose every step contains a brightness bisection, so it is roughly twenty times
+    /// the old cost for those hues alone. It is still only plain arithmetic with no allocation,
+    /// and the hues it binds on are the rare ones, which is the trade this is worth making.
+    private static func cappedFill(
+        for calendarColor: Color,
+        luminance target: Double,
+        chromaCeiling ceiling: Double
+    ) -> Color {
+        let source = hsb(of: calendarColor)
+        let saturation = source.saturation * railPlateSaturationScale
+        if chroma(hue: source.hue, saturation: saturation, luminance: target) <= ceiling {
+            return Color(
+                hue: source.hue,
+                saturation: saturation,
+                brightness: solvedBrightness(hue: source.hue, saturation: saturation, luminance: target)
+            )
+        }
+
+        var low = 0.0
+        var high = saturation
+        for _ in 0..<20 {
+            let mid = (low + high) / 2
+            if chroma(hue: source.hue, saturation: mid, luminance: target) > ceiling {
+                high = mid
+            } else {
+                low = mid
+            }
+        }
+        return Color(
+            hue: source.hue,
+            saturation: low,
+            brightness: solvedBrightness(hue: source.hue, saturation: low, luminance: target)
+        )
+    }
+
+    /// OKLab chroma of this hue and saturation once brightness has been solved to `target`.
+    private static func chroma(hue: Double, saturation: Double, luminance target: Double) -> Double {
+        let components = rgbComponents(
+            hue: hue,
+            saturation: saturation,
+            brightness: solvedBrightness(hue: hue, saturation: saturation, luminance: target)
+        )
+        return CadenceOKLab.chroma(
+            red: components.red,
+            green: components.green,
+            blue: components.blue
         )
     }
 

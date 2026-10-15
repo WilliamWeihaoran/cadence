@@ -723,6 +723,213 @@ struct CadenceContrastFloorTests {
         }
     }
 
+    // MARK: - T-3168: the chroma ceiling
+
+    /// The arithmetic the ceiling rests on, checked against answers that do not come from this app.
+    ///
+    /// Same discipline as `theContrastArithmeticAgreesWithWCAGOnPairsWhoseAnswerIsKnown` above: a
+    /// chroma function that agrees with Cadence's own numbers has proved nothing. OKLab's defining
+    /// landmarks are public — white is lightness 1, black is 0, every neutral has chroma exactly 0,
+    /// and sRGB's primary blue is the most chromatic thing the gamut holds at about 0.313.
+    @Test func theOKLabArithmeticAgreesWithKnownAnswers() {
+        #expect(abs(CadenceOKLab.lightness(red: 1, green: 1, blue: 1) - 1) < 0.0005)
+        #expect(abs(CadenceOKLab.lightness(red: 0, green: 0, blue: 0)) < 0.0005)
+        #expect(abs(CadenceOKLab.chroma(red: 0, green: 0, blue: 1) - 0.3132) < 0.002)
+
+        // Every neutral is colourless, which is the property the ceiling's bisection walks toward.
+        for step in stride(from: 0.0, through: 1.0, by: 0.1) {
+            #expect(
+                CadenceOKLab.chroma(red: step, green: step, blue: step) < 0.0005,
+                "a grey at \(step) measured as carrying chroma"
+            )
+        }
+
+        // Chroma orders the way the eye does: a primary blue is more colourful than a mid blue,
+        // which is more colourful than a grey. Without this the ceiling could be monotonic in the
+        // wrong direction and every assertion below would still pass.
+        let primary = t853Chroma(Color(hex: "#0000ff"))
+        let mid = t853Chroma(Color(hex: "#4a9eff"))
+        let grey = t853Chroma(Color(hex: "#6b7a99"))
+        #expect(primary > mid)
+        #expect(mid > grey)
+
+        // `neutralLightness` is a closed form (`cbrt`) standing in for the general path. If the
+        // identity it rests on is ever wrong, the ceiling is computed against the wrong anchor.
+        for luminance in [0.030, 0.044, 0.060, 0.098, 0.5] {
+            let neutral = t853Grey(luminance: luminance)
+            let parts = t853Components(neutral)
+            #expect(
+                abs(CadenceOKLab.neutralLightness(relativeLuminance: luminance)
+                    - CadenceOKLab.lightness(red: parts.r, green: parts.g, blue: parts.b)) < 0.002,
+                "neutralLightness disagrees with the general path at Y = \(luminance)"
+            )
+        }
+    }
+
+    /// **The guarantee that makes the ceiling free.** T-3168's whole argument is that a chroma
+    /// ceiling applied *at constant luminance* costs no contrast, because every ratio in
+    /// `CadenceCalendarEventStyle` is `(L1 + 0.05) / (L2 + 0.05)` over two luminances and nothing
+    /// else — so a plate that keeps its Y keeps every tier solved against it, to the digit.
+    ///
+    /// That is only true if the plate really does keep its Y. The ceiling's bisection re-solves
+    /// brightness at every step precisely so it does, and this is the measurement of it: the
+    /// delivered fill's relative luminance must still *be* `railFillLuminance`, at every hue
+    /// including the ones the ceiling pulls hardest. If it drifts, every derived label target in
+    /// `everyRailTreatmentTierLandsOnItsDeclaredRatioAgainstItsOwnPlate` is aiming at a plate that
+    /// is not there.
+    @Test func everyRailPlateHoldsItsChromaCeilingWithoutMovingItsLuminance() {
+        var measured = 0
+        for hex in t853CalendarHues {
+            let swatch = Color(hex: hex)
+            for (selected, active) in [(false, false), (false, true), (true, false)] {
+                measured += 1
+                let plate = CadenceCalendarEventStyle.railFill(for: swatch, isSelected: selected, isActive: active)
+                let ceiling = CadenceCalendarEventStyle.railPlateChromaCeiling(isSelected: selected, isActive: active)
+                let declared = CadenceCalendarEventStyle.railFillLuminance(isSelected: selected, isActive: active)
+
+                #expect(
+                    t853Chroma(plate) <= ceiling + 0.002,
+                    "the rail plate for \(hex) (selected: \(selected), active: \(active)) carries chroma \(t853Rounded(t853Chroma(plate))), over its \(t853Rounded(ceiling)) ceiling"
+                )
+                #expect(
+                    abs(t853Luminance(plate) - declared) < 0.0015,
+                    "the rail plate for \(hex) (selected: \(selected), active: \(active)) came back at Y = \(t853Luminance(plate)) rather than its declared \(declared) — the chroma cap moved the luminance, so every tier solved against this plate is now aimed at the wrong number"
+                )
+            }
+        }
+        #expect(measured == 21, "non-vacuity: seven hues, three states; \(measured) measured")
+
+        // The ceiling is derived from the ladder rather than typed beside it, so it cannot be left
+        // behind when the ladder moves.
+        for (selected, active) in [(false, false), (false, true), (true, false)] {
+            let expected = CadenceCalendarEventStyle.railPlateChromaRatio
+                * CadenceOKLab.neutralLightness(
+                    relativeLuminance: CadenceCalendarEventStyle.railFillLuminance(isSelected: selected, isActive: active)
+                )
+            #expect(
+                abs(CadenceCalendarEventStyle.railPlateChromaCeiling(isSelected: selected, isActive: active) - expected) < 1e-9,
+                "the chroma ceiling stopped being derived from railFillLuminance"
+            )
+        }
+        #expect(
+            CadenceCalendarEventStyle.railPlateChromaCeiling()
+                < CadenceCalendarEventStyle.railPlateChromaCeiling(isActive: true),
+            "the ceiling no longer rises with the plate it belongs to"
+        )
+    }
+
+    /// A ceiling, not a target: it must never remove chroma it did not have to.
+    ///
+    /// Spelled as the exact set of hues it binds on, the way
+    /// `theRailClearsTheNonTextFloorOnBgWhileKeepingTheCalendarsChroma` spells the rail's. Two
+    /// claims live here. On the T-3160 sweep the ceiling touches **only** the two hues T-3168 was
+    /// filed about. Across all three of Cadence's shipped accent palettes — eighteen colours, the
+    /// ones a reader sees beside an event every day — it touches **two of eighteen**, both reds,
+    /// and leaves every blue, green, purple, amber and teal exactly where the calendar put it.
+    ///
+    /// A third hue appearing in either list is news: either the ceiling has been tightened, or a
+    /// palette has gained a colour vivid enough to need laundering, and both are decisions rather
+    /// than accidents.
+    @Test func theChromaCeilingBindsOnlyOnHuesOutsideTheOrdinaryBand() {
+        func clipped(_ hexes: [String]) -> [String] {
+            hexes.filter { hex in
+                let swatch = Color(hex: hex)
+                let source = t853Saturation(swatch) * CadenceCalendarEventStyle.railPlateSaturationScale
+                return [(false, false), (false, true), (true, false)].contains { selected, active in
+                    let plate = CadenceCalendarEventStyle.railFill(for: swatch, isSelected: selected, isActive: active)
+                    return t853Saturation(plate) < source - 0.01
+                }
+            }
+        }
+
+        #expect(
+            clipped(t853CalendarHues) == ["#3d0000", "#0000ff"],
+            "the set of sweep hues the chroma ceiling binds on changed: \(clipped(t853CalendarHues))"
+        )
+
+        var offered: [String] = []
+        for palette in CadenceAccentPalette.all { offered.append(contentsOf: palette.swatchHexes) }
+        #expect(offered.count == 18, "non-vacuity: \(offered.count) accent swatches swept")
+        #expect(
+            clipped(offered) == ["#ff5a5f"],
+            "the set of Cadence accents whose plate the chroma ceiling launders changed: \(clipped(offered)). One of eighteen, and it is a red, which is where the dark-UI halation literature puts the worst of it"
+        )
+
+        // Whatever chroma it gives up, the plate is still that calendar's hue — the cap walks
+        // saturation toward grey at a fixed hue, it does not rotate anything.
+        for hex in ["#3d0000", "#0000ff"] {
+            let swatch = Color(hex: hex)
+            let plate = CadenceCalendarEventStyle.railFill(for: swatch)
+            #expect(t853Hue(plate) == t853Hue(swatch), "the capped plate for \(hex) is no longer that hue")
+            #expect(t853Saturation(plate) > 0.05, "the capped plate for \(hex) was laundered to a grey")
+        }
+    }
+
+    /// **The inversion T-3168 was filed about, measured in the axis that inverted.**
+    ///
+    /// `bothCalendarPlateLaddersStayOrderedAndTheRailPlateStaysTheDarkerOne` above pins the
+    /// *lightness* half, and the lightness half was never in doubt: the rail plate has always been
+    /// four times darker. What the owner could see is that it was not therefore *quieter*, because
+    /// the eye reads chroma as loudness (Helmholtz–Kohlrausch) and the luminance solve left chroma
+    /// completely unbounded — `#0000ff`'s rail plate measured 0.234 against a mid blue's 0.064.
+    ///
+    /// Two claims, and the second is the one that could not be made before the ceiling existed:
+    ///
+    /// 1. **Per hue**, the rail plate is quieter than the plate plate on *both* axes.
+    /// 2. **Across hues**, the loudest rail plate any calendar colour can produce — which is now
+    ///    the ceiling, by construction — is still less colourful than the plate plate of an
+    ///    ordinary mid blue. No calendar colour can make an event the loudest block on the canvas.
+    ///
+    /// Claim 2 fails on the pre-T-3168 solve by a factor of three, which is what the ticket is.
+    @Test func noCalendarHueMakesTheEventPlateLouderThanAnOrdinaryTaskPlate() {
+        let ordinary = Color(hex: "#4a9eff")
+        var measured = 0
+
+        for hex in t853CalendarHues {
+            let swatch = Color(hex: hex)
+            for (selected, active) in [(false, false), (false, true), (true, false)] {
+                measured += 1
+                let railPlate = CadenceCalendarEventStyle.railFill(for: swatch, isSelected: selected, isActive: active)
+                let platePlate = CadenceCalendarEventStyle.plateFill(for: swatch, isSelected: selected, isActive: active)
+
+                #expect(
+                    t853LStar(t853Luminance(railPlate)) < t853LStar(t853Luminance(platePlate)),
+                    "the rail plate for \(hex) is no longer the darker of the two"
+                )
+                #expect(
+                    t853Chroma(railPlate) <= t853Chroma(platePlate) + 0.0005,
+                    "the rail plate for \(hex) (selected: \(selected), active: \(active)) is MORE colourful than the plate plate of the same hue, at \(t853Rounded(t853Chroma(railPlate))) against \(t853Rounded(t853Chroma(platePlate)))"
+                )
+
+                // Claim 2. The reference is a literal mid blue rather than `Theme.blueHex` because
+                // the accent palette is selectable and this bound must not move with it.
+                let loudestPossible = CadenceCalendarEventStyle.railPlateChromaCeiling(isSelected: selected, isActive: active)
+                let ordinaryTask = t853Chroma(
+                    CadenceCalendarEventStyle.plateFill(for: ordinary, isSelected: selected, isActive: active)
+                )
+                #expect(
+                    loudestPossible < ordinaryTask,
+                    "the loudest event plate reachable (\(t853Rounded(loudestPossible))) is at or above an ordinary blue task plate (\(t853Rounded(ordinaryTask))) — the hierarchy T-3160 built is inverted again"
+                )
+                #expect(
+                    t853Chroma(railPlate) <= loudestPossible + 0.002,
+                    "non-vacuity: \(hex) is not actually held by the bound claim 2 rests on"
+                )
+            }
+        }
+        #expect(measured == 21, "non-vacuity: seven hues, three states; \(measured) measured")
+
+        // The two the owner can see, named so a regression reads as news rather than as a number.
+        for hex in ["#3d0000", "#0000ff"] {
+            let plate = CadenceCalendarEventStyle.railFill(for: Color(hex: hex))
+            let ordinaryEvent = t853Chroma(CadenceCalendarEventStyle.railFill(for: ordinary))
+            #expect(
+                t853Chroma(plate) < ordinaryEvent * 1.3,
+                "\(hex)'s event plate reads \(t853Rounded(t853Chroma(plate))) against an ordinary blue event's \(t853Rounded(ordinaryEvent)) — it is back to being the loudest block on the canvas, which is T-3168"
+            )
+        }
+    }
+
     /// What is still allowed to say `Theme.onColor` without asking which fill it lands on.
     ///
     /// The migration is only durable if the *next* accent-filled button is caught, and the whole
@@ -800,6 +1007,13 @@ private let t853CalendarHues = ["#ffc857", "#4fd6e0", "#ffffff", "#4a9eff", "#3d
 /// just-noticeable difference of about 1.
 private func t853LStar(_ luminance: Double) -> Double {
     luminance > 0.008856 ? 116 * pow(luminance, 1.0 / 3.0) - 16 : 903.3 * luminance
+}
+
+/// OKLab chroma of a colour: how much colour it carries, independent of how light it is. The axis
+/// WCAG relative luminance cannot see, and the one T-3168's ceiling is stated in.
+private func t853Chroma(_ color: Color) -> Double {
+    let parts = t853Components(color)
+    return CadenceOKLab.chroma(red: parts.r, green: parts.g, blue: parts.b)
 }
 
 private func t853Hue(_ color: Color) -> Double {
