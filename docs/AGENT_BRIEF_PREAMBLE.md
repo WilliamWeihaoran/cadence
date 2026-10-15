@@ -40,6 +40,9 @@ a sibling's in-flight work. Waiting politely and dying are the same thing here.
 with the Bash `timeout` raised (up to 600000 ms). Batch your runs — failing-first, green and mutations
 in one script — rather than one call per step.
 
+For `mutate.sh`, use `./scripts/wait-mutate.sh <id> [timeout] [pid]` instead of that loop: a `pgrep -f` naming the
+runner matches its own watcher and never reads as gone (T-3182).
+
 ## Verifying
 
 - **Failing-first before the fix**, red for the right reason. For a deletion, prove absence with a scan

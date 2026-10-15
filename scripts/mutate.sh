@@ -121,6 +121,14 @@
 # THAT, not a `pkill -f` pattern, and never with -9. That file is REMOVED on the way out of a run
 # whose own tree check came back clean, so finding one means the previous run under this ident
 # did not finish over a clean tree -- which is exactly what the next run needs to know (T-1044).
+#
+# WAIT FOR IT WITH `./scripts/wait-mutate.sh <id> [timeout] [pid]`, NEVER `pgrep -f` (T-3182). A
+# watcher polling `! pgrep -f "mutate.sh <id>"` matches its own command line and never exits. Every
+# run that gets past argument parsing writes <scratch>/exit.status (`status=`, `pid=`,
+# `finished=`) on the way out -- success, failure, or SIGINT/SIGTERM/SIGHUP -- unless a LIVE runner
+# owns the ident (that one's waiters are not ours to answer). The wrapper below deletes the previous
+# run's file before the interpreter starts, so a stale one cannot answer a new wait. SIGKILL writes
+# nothing: pass the runner's pid and the helper says so instead of waiting out its timeout.
 set -uo pipefail
 ROOT_DIR="${0:A:h:h}"
 # zsh writes here-document temp files to $TMPPREFIX, and zsh SETS that itself at startup, to
@@ -145,6 +153,11 @@ fi
 if [[ -z "$PYTHON_BIN" ]]; then
     print -r -- "mutate.sh: no working python3 found (tried /usr/bin, Xcode, homebrew)." >&2
     exit 2
+fi
+# T-3182: the previous run's exit sentinel goes first, before anything below can fail, so a waiter
+# armed for THIS run can never be answered by the last one. Same path as `exit_sentinel_path`.
+if (( $# >= 2 )) && [[ "$1" != selftest && "$1" != -* ]]; then
+    rm -f -- "${CADENCE_MUTATE_SCRATCH_ROOT:-/private/tmp}/cadence-mut-$1/exit.status"
 fi
 # exec, so the pid you see IS the python process: a signal sent to this script has to reach the
 # handler that restores the tree, and a zsh parent waiting on a child does not forward it.
@@ -207,6 +220,11 @@ INCONCLUSIVE = "INCONCLUSIVE"
 # -- a signal this runner does not otherwise plan to handle (e.g. SIGKILL, which cannot be blocked
 # or handled at all) is deliberately excluded from both.
 CLEANUP_SIGNALS = (signal.SIGINT, signal.SIGTERM, signal.SIGHUP)
+
+# Where every per-ident scratch lives. Overridable only so `wait-mutate.sh selftest` can drive real
+# runs without touching anyone's real `/private/tmp/cadence-mut-<id>`; nothing else should set it.
+SCRATCH_ROOT = os.environ.get("CADENCE_MUTATE_SCRATCH_ROOT") or "/private/tmp"
+EXIT_SENTINEL = "exit.status"
 
 
 def say(*parts):
@@ -913,13 +931,70 @@ def load_suite_labels(tree):
     return labels
 
 
+# --- the exit sentinel (T-3182) ----------------------------------------------
+
+def scratch_for(ident):
+    return os.path.join(SCRATCH_ROOT, "cadence-mut-%s" % ident)
+
+
+def exit_sentinel_path(ident):
+    return os.path.join(scratch_for(ident), EXIT_SENTINEL)
+
+
+def write_exit_sentinel(ident, status):
+    """Record how this run ended, atomically, for `scripts/wait-mutate.sh`.
+
+    Skipped when `runner.pid` names a LIVE process other than this one: that is the refusal of a
+    second run under a held ident, and answering the live run's waiters with the refusal's exit
+    code would tell them a batch that is still mutating had finished.
+    """
+    scratch = scratch_for(ident)
+    owner = read_marker(os.path.join(scratch, "runner.pid"))
+    if owner.isdigit() and int(owner) != os.getpid() and pid_is_alive(int(owner)):
+        return False
+    try:
+        os.makedirs(scratch, exist_ok=True)
+        final = os.path.join(scratch, EXIT_SENTINEL)
+        partial = "%s.%d.partial" % (final, os.getpid())
+        with open(partial, "w") as handle:
+            handle.write("status=%d\npid=%d\nfinished=%d\n" % (status, os.getpid(), int(time.time())))
+        os.replace(partial, final)
+        return True
+    except OSError as problem:
+        say("!! could not write the exit sentinel %s: %s" % (exit_sentinel_path(ident), problem))
+        return False
+
+
+def with_exit_sentinel(ident, body):
+    """Run `body` and write the exit sentinel however it ends: a return, an exception, or one of
+    CLEANUP_SIGNALS. Python's default SIGTERM/SIGHUP disposition kills the process WITHOUT running
+    a `finally`, so a provisional handler turns them into SystemExit until `Runner.on_signal` takes
+    over (it also ends in sys.exit, so the `finally` below still runs). SIGKILL cannot be caught;
+    the helper detects that case from the pid instead."""
+    def provisional(signum, _frame):
+        sys.exit(128 + signum)
+    for sig in CLEANUP_SIGNALS:
+        signal.signal(sig, provisional)
+    status = 1
+    try:
+        status = body()
+        return status
+    except SystemExit as stop:
+        status = stop.code if isinstance(stop.code, int) else (0 if stop.code is None else 1)
+        raise
+    finally:
+        # A second signal mid-write must not cut the record short; we are leaving anyway.
+        signal.pthread_sigmask(signal.SIG_BLOCK, CLEANUP_SIGNALS)
+        write_exit_sentinel(ident, status if isinstance(status, int) else 1)
+
+
 # --- the driver ---------------------------------------------------------------
 
 class Runner:
     def __init__(self, ident, options):
         self.ident = ident
         self.options = options
-        self.scratch = os.path.join("/private/tmp", "cadence-mut-%s" % ident)
+        self.scratch = scratch_for(ident)
         self.tree = None
         self.baselines = {}      # absolute path -> bytes at runner start
         self.backups = {}        # absolute path -> backup file
@@ -996,7 +1071,10 @@ def main():
     if len(ARGV) < 2:
         say("usage: ./scripts/mutate.sh <id> <plan-file> [options]")
         return 2
+    return with_exit_sentinel(ARGV[0], run_plan)
 
+
+def run_plan():
     ident, plan_path = ARGV[0], ARGV[1]
     options = {"tree": None, "in_place": False, "lock": True, "build": True,
                "scheme": "Cadence", "destination": "platform=macOS", "keep_tree": False}

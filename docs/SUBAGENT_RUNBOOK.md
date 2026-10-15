@@ -134,6 +134,8 @@ under the same bundle id as your debug build. Every rule in this section is abou
   ways a hand-rolled runner has printed SURVIVED over a mutation that never applied, never compiled
   or never ran are in the reference. Run it backgrounded (`nohup ... &`) — the 10-minute foreground
   tool cap cuts a batch mid-mutation — and kill it by the pid in `<scratch>/runner.pid`.
+  Wait for it with `./scripts/wait-mutate.sh <id> [timeout] [pid]`, never a `pgrep -f` loop — that
+  matches its own command line and never exits (T-3182).
 - **Never hand-mutate a tracked file in the shared checkout, guard scripts above all** (T-3071).
   A full run read `scripts/xcb.sh` mid-mutation and went red; restored before exit, no drift check saw it.
   Mutate an `agent-scratch.sh new <id>` tree or a worktree. **Prefer a warning-free mutation** (T-3092):
