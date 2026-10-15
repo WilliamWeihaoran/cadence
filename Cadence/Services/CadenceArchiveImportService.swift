@@ -182,6 +182,9 @@ nonisolated enum CadenceArchiveImportService {
     ) throws -> CadenceArchiveImportOutcome {
         var destination = try DestinationIndex(in: modelContext)
         let plan = try makePlan(archive, mode: mode, against: destination)
+        // [[T-3170]]: everything past validation reads the archive with its blocks already undone,
+        // so no `TaskBundle` row is written and every member arrives holding a real time.
+        let archive = unbundled(archive)
 
         var tally = Tally()
         let wired = write(archive, mode: mode, into: &destination, tally: &tally, in: modelContext)
@@ -493,7 +496,12 @@ nonisolated enum CadenceArchiveImportService {
         mode: CadenceArchiveImportMode,
         against destination: DestinationIndex
     ) throws -> CadenceArchiveImportPlan {
-        let archiveIDs = try validate(archive, mode: mode, against: destination)
+        // Validated as written — a task naming a block the file does not carry is still a refusal,
+        // exactly as before — and planned as it will be written ([[T-3170]]): blocks undone, so the
+        // preview counts no block to insert and compares each member at the time it will arrive at.
+        var archiveIDs = try validate(archive, mode: mode, against: destination)
+        archiveIDs["TaskBundle"] = []
+        let archive = unbundled(archive)
         let destinationIDs = destination.idsByEntityName
 
         var inserts: [String: Int] = [:]
@@ -562,6 +570,60 @@ nonisolated enum CadenceArchiveImportService {
                 + archive.projects.filter { !$0.linkedCalendarID.isEmpty }.count,
             differingMatchedCountsByEntityName: differingCounts
         )
+    }
+
+    /// **The archive with its blocks undone** ([[T-3170]]): every `TaskBundle` record removed, and
+    /// each block's day and time pushed down onto the tasks that named it.
+    ///
+    /// **Why the import does this at all.** The Block feature is leaving the product and every
+    /// archive the owner has taken so far contains blocks, so the import must keep *reading* them.
+    /// What it must not do is restore them: a member carries `scheduledStartMin == -1` because its
+    /// block owned the slot, so a restored block hands the user tasks on a date with no time, drawn
+    /// by no surface once the block views are gone.
+    ///
+    /// **Why on the record and not in the store.** Retiring the rows after `write` would leave the
+    /// plan describing a different import from the one `apply` performs — a block counted as an
+    /// insert that never lands, members compared at `-1` against a store holding their real times —
+    /// so a second import of the same file would never read as the no-op a restore has to be. Done
+    /// here, before planning, the preview, the write and the re-import comparison are all about
+    /// the same rows. It also leaves alone any block already in the destination, which is the
+    /// launch pass's to retire (`TaskBundleRetirement.runIfNeeded`), not an import's.
+    ///
+    /// **The layout is the launch pass's, called rather than re-spelled**: `TaskBundleRetirement.layout`
+    /// orders the members and gives each its slot, and each then takes the walk's five field writes —
+    /// detached, `bundleOrder` 0, the block's day, their own start, `calendarEventID` cleared.
+    /// Membership is read from the task side (`bundleID`), as the store walk reads `task.bundle`.
+    /// A task naming a block the archive does not carry is left as it is; `validate` has already
+    /// either refused it or found that block in the destination.
+    nonisolated static func unbundled(_ archive: CadenceArchive) -> CadenceArchive {
+        guard !archive.taskBundles.isEmpty else { return archive }
+        var result = archive
+        let blocks = Dictionary(archive.taskBundles.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        var membersByBlock: [UUID: [Int]] = [:]
+        for (index, task) in result.tasks.enumerated() {
+            guard let blockID = task.bundleID, blocks[blockID] != nil else { continue }
+            membersByBlock[blockID, default: []].append(index)
+        }
+        for (blockID, indices) in membersByBlock {
+            guard let block = blocks[blockID] else { continue }
+            let placed = TaskBundleRetirement.layout(
+                indices,
+                bundleOrder: { result.tasks[$0].bundleOrder },
+                createdAt: { result.tasks[$0].createdAt },
+                estimatedMinutes: { result.tasks[$0].estimatedMinutes },
+                blockStart: block.startMin,
+                blockDuration: block.durationMinutes
+            )
+            for (index, start) in placed {
+                result.tasks[index].bundleID = nil
+                result.tasks[index].bundleOrder = 0
+                result.tasks[index].scheduledDate = block.dateKey
+                result.tasks[index].scheduledStartMin = start
+                result.tasks[index].calendarEventID = ""
+            }
+        }
+        result.taskBundles = []
+        return result
     }
 
     /// Whether overwriting `present` with `record` would change it — every scalar field the

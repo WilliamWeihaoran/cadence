@@ -109,14 +109,18 @@ struct CadenceArchiveImportSurfaceTests {
         let destination = ModelContext(try CadenceTestStore.container())
         let outcome = try CadenceArchiveImportService.apply(archive, in: destination)
 
-        #expect(outcome.insertedRecordCount == archive.totalRecordCount)
+        // [[T-3170]]: every table but one comes back row for row; the fixture's one block comes back
+        // as its member task, timed, which `anArchivesBlockComesBackAsItsTasksAtTheirOwnTimes` reads.
+        #expect(archive.taskBundles.count == 1, "the fixture carries no block, so this proves nothing about one")
+        #expect(outcome.insertedRecordCount == Self.restorableRecordCount(archive))
         #expect(outcome.overwrittenRecordCount == 0)
         #expect(outcome.skippedRecordCount == 0)
 
         let restored = try CadenceDataExportService.makeArchive(in: destination)
         for name in CadenceArchive.recordCountsByEntityName.keys.sorted() {
+            let expected = name == "TaskBundle" ? 0 : archive.recordCount(forEntityNamed: name)
             #expect(
-                restored.recordCount(forEntityNamed: name) == archive.recordCount(forEntityNamed: name),
+                restored.recordCount(forEntityNamed: name) == expected,
                 """
                 \(name): archive holds \(archive.recordCount(forEntityNamed: name) ?? -1), \
                 restored store holds \(restored.recordCount(forEntityNamed: name) ?? -1)
@@ -184,7 +188,6 @@ struct CadenceArchiveImportSurfaceTests {
         let completion = try #require(try Self.one(HabitCompletion.self, in: destination))
         let session = try #require(try Self.one(FocusSessionLog.self, in: destination))
         let saved = try #require(try Self.one(SavedLink.self, in: destination))
-        let bundle = try #require(try Self.one(TaskBundle.self, in: destination))
 
         // To-one, down every level of the graph.
         #expect(area.context?.name == "Work")
@@ -193,7 +196,13 @@ struct CadenceArchiveImportSurfaceTests {
         #expect(task.project?.id == project.id)
         #expect(task.area?.id == area.id)
         #expect(task.goal?.id == goal.id)
-        #expect(task.bundle?.id == bundle.id)
+        // The one link the archive carries that is deliberately NOT wired back up ([[T-3170]]): the
+        // block is undone on the way in, so its member arrives detached and holding the block's slot.
+        #expect(archive.tasks.first?.bundleID != nil, "the fixture's task names no block")
+        #expect(task.bundle == nil)
+        #expect(try destination.fetchCount(FetchDescriptor<TaskBundle>()) == 0)
+        #expect(task.scheduledDate == "2026-02-02")
+        #expect(task.scheduledStartMin == 540)
         #expect(subtask.parentTask?.id == task.id)
         #expect(completion.habit?.title == "Stretch")
         #expect(session.task?.id == task.id)
@@ -250,6 +259,90 @@ struct CadenceArchiveImportSurfaceTests {
         #expect(try observer.fetchCount(FetchDescriptor<AppTask>()) == 1)
     }
 
+    // MARK: - Blocks are undone on the way in ([[T-3170]])
+
+    /// Two blocks on one day: one whose members fit end to end, one overcommitted. Members are
+    /// created in the reverse of their `bundleOrder`, so a layout that read creation order instead
+    /// of the block's own order would put them in the wrong slots.
+    private static func seedTwoBlocks(into modelContext: ModelContext) throws {
+        let blocks: [(title: String, startMin: Int, duration: Int, estimate: Int)] = [
+            ("Morning", 540, 60, 15),
+            ("Crammed", 600, 30, 30),
+        ]
+        for block in blocks {
+            let bundle = TaskBundle(
+                title: block.title, dateKey: "2026-05-01", startMin: block.startMin,
+                durationMinutes: block.duration
+            )
+            modelContext.insert(bundle)
+            for order in (0..<3).reversed() {
+                let task = AppTask(title: "\(block.title) \(order)")
+                task.estimatedMinutes = block.estimate
+                modelContext.insert(task)
+                task.bundle = bundle
+                task.bundleOrder = order
+            }
+        }
+        try modelContext.save()
+    }
+
+    /// **An archive with blocks imports as unbundled tasks, each at its own time inside its old
+    /// block.** No `TaskBundle` row is written, no member is left on the `-1` sentinel its block
+    /// gave it, the plan counts no block to insert, and no estimate is rewritten to make the
+    /// members fit.
+    @Test func anArchivesBlockComesBackAsItsTasksAtTheirOwnTimes() throws {
+        let source = ModelContext(try CadenceTestStore.container())
+        try Self.seedTwoBlocks(into: source)
+        let archive = try CadenceDataExportService.makeArchive(in: source)
+        // Non-vacuity: the file really carries blocks and members at the sentinel.
+        #expect(archive.taskBundles.count == 2)
+        #expect(archive.tasks.filter { $0.bundleID != nil && $0.scheduledStartMin == -1 }.count == 6)
+
+        let destination = ModelContext(try CadenceTestStore.container())
+        let plan = try CadenceArchiveImportService.plan(archive, in: destination)
+        #expect(plan.insertCountsByEntityName["TaskBundle"] == 0)
+        #expect(plan.insertCountsByEntityName["AppTask"] == 6)
+
+        let outcome = try CadenceArchiveImportService.apply(archive, in: destination)
+        #expect(outcome.insertedRecordCount == Self.restorableRecordCount(archive))
+        #expect(try destination.fetchCount(FetchDescriptor<TaskBundle>()) == 0)
+
+        let tasks = try destination.fetch(FetchDescriptor<AppTask>())
+        let starts = Dictionary(uniqueKeysWithValues: tasks.map { ($0.title, $0.scheduledStartMin) })
+        // Fits: end to end from the block's start. Overcommitted: the block's own 30 minutes in
+        // equal slices, nobody past 630.
+        #expect(starts == [
+            "Morning 0": 540, "Morning 1": 555, "Morning 2": 570,
+            "Crammed 0": 600, "Crammed 1": 610, "Crammed 2": 620,
+        ])
+        #expect(tasks.allSatisfy { $0.scheduledDate == "2026-05-01" })
+        #expect(tasks.allSatisfy { $0.bundle == nil && $0.bundleOrder == 0 })
+        #expect(tasks.filter { $0.title.hasPrefix("Crammed") }.allSatisfy { $0.estimatedMinutes == 30 })
+    }
+
+    /// **The import and the launch pass undo a block the same way.** The import rewrites the
+    /// archive's records; `TaskBundleRetirement` rewrites a store's rows; both call
+    /// `TaskBundleRetirement.layout`. Run each over the same blocks and every task must land on the
+    /// same day and minute — the one rule, held from both of its callers.
+    @Test func theImportUndoesABlockExactlyAsTheLaunchPassDoes() throws {
+        let source = ModelContext(try CadenceTestStore.container())
+        try Self.seedTwoBlocks(into: source)
+        let archive = try CadenceDataExportService.makeArchive(in: source)
+
+        let destination = ModelContext(try CadenceTestStore.container())
+        try CadenceArchiveImportService.apply(archive, in: destination)
+        #expect(try TaskBundleRetirement.retireAllBundles(in: source) == 2)
+
+        func slots(_ context: ModelContext) throws -> [UUID: String] {
+            Dictionary(uniqueKeysWithValues: try context.fetch(FetchDescriptor<AppTask>()).map {
+                ($0.id, "\($0.scheduledDate) \($0.scheduledStartMin) \($0.bundle == nil)")
+            })
+        }
+        let imported = try slots(destination)
+        #expect(imported.count == 6)
+        #expect(imported == (try slots(source)))
+    }
+
     // MARK: - Idempotence
 
     @Test func aSecondImportOfTheSameFileChangesNothing() throws {
@@ -267,12 +360,12 @@ struct CadenceArchiveImportSurfaceTests {
         let plan = try CadenceArchiveImportService.plan(archive, in: destination)
         #expect(plan.changesAnything == false)
         #expect(plan.totalInsertCount == 0)
-        #expect(plan.totalMatchedCount == archive.totalRecordCount)
+        #expect(plan.totalMatchedCount == Self.restorableRecordCount(archive))
 
         let second = try CadenceArchiveImportService.apply(archive, in: destination)
         #expect(second.insertedRecordCount == 0)
         #expect(second.overwrittenRecordCount == 0)
-        #expect(second.skippedRecordCount == archive.totalRecordCount)
+        #expect(second.skippedRecordCount == Self.restorableRecordCount(archive))
         #expect(try CadenceDataExportService.makeArchive(in: destination, exportedAt: stamp) == after)
     }
 
@@ -906,7 +999,7 @@ struct CadenceArchiveImportSurfaceTests {
             foldingLegacyNotes: { _ in throw CadenceArchiveImportSurfaceTests.FoldRefusal.disk }
         )
 
-        #expect(outcome.insertedRecordCount == archive.totalRecordCount)
+        #expect(outcome.insertedRecordCount == Self.restorableRecordCount(archive))
         #expect(outcome.notesFoldedFromLegacyRows == 0)
         #expect(outcome.isComplete == false)
         let reason = try #require(outcome.legacyNoteFoldFailure)
@@ -1331,7 +1424,7 @@ struct CadenceArchiveImportSurfaceTests {
         #expect(note.hasPrefix("1 task already here differs"))
 
         let outcome = try CadenceArchiveImportService.apply(archive, in: destination)
-        #expect(outcome.skippedRecordCount == archive.totalRecordCount)
+        #expect(outcome.skippedRecordCount == Self.restorableRecordCount(archive))
         #expect(outcome.insertedRecordCount == 0)
         #expect(outcome.plan.totalDifferingMatchedCount == 1)
         #expect(task.area == nil, "the count must not have become a repair")
@@ -1632,6 +1725,13 @@ struct CadenceArchiveImportSurfaceTests {
         try destination.save()
 
         return (archive, destination, drifted)
+    }
+
+    /// The rows an import of `archive` writes: all of them but its blocks, which are undone on the
+    /// way in rather than restored ([[T-3170]]). A relation to the archive's own count, so a table
+    /// added to the fixture moves both sides.
+    static func restorableRecordCount(_ archive: CadenceArchive) -> Int {
+        archive.totalRecordCount - archive.taskBundles.count
     }
 
     /// One row of every entity in `CadenceSchema`, wired into one connected graph.

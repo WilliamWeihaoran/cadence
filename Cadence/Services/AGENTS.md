@@ -32,6 +32,8 @@ Open a section when you are about to change the behaviour it explains, not to ob
   `CadenceArchiveImportService.importArchive`/`.apply`, surfaced by
   `Shared/CadenceArchiveImportPresentation.swift`; it restores `linkedCalendarID` verbatim and its
   preview counts those links (T-1084). Keep that warning: a CloudKit restore is not a local write.
+  It **never restores a Block** (T-3170): `unbundled(_:)` undoes each archived block onto its
+  members' own times before planning, through `TaskBundleRetirement.layout`, the launch pass's rule.
   Reference: "Data Export: The Archive Timestamp, And Import".
 - **List/context deletion** - `CadenceListDeleteHelpers.swift` (prefixed file, unprefixed
   `ListDeleteHelpers` name on the `ModelContext` extension it declares). `deleteContext`,

@@ -61,13 +61,17 @@ import SwiftData
 /// archive, this pass has to stay armed rather than latch itself off.
 ///
 /// **It has two entry points and they are isolated differently, on purpose.**
-/// `retireAllBundles(in:capturing:)` is the walk — `nonisolated`, because
-/// `CadenceArchiveImportService.apply` is `nonisolated` and has to run it inside its own
-/// transaction so an imported archive's blocks never reach disk. `runIfNeeded(modelContext:commit:)`
-/// is the launch pass that wraps the walk in a commit and a refusal path; it is `MainActor` by
-/// this module's default because `CadenceDeleteSurvivorSnapshot` is, and its only caller
-/// `PersistenceController.performStartupMaintenance` is too. The walk is written once and both
-/// use it; do not grow a second member loop for the import.
+/// `retireAllBundles(in:capturing:)` is the walk — `nonisolated`, so it stays callable from the
+/// `nonisolated` side of the module. `runIfNeeded(modelContext:commit:)` is the launch pass that
+/// wraps the walk in a commit and a refusal path; it is `MainActor` by this module's default
+/// because `CadenceDeleteSurvivorSnapshot` is, and its only caller
+/// `PersistenceController.performStartupMaintenance` is too.
+///
+/// **The archive import undoes blocks on the record, not through this walk** ([[T-3170]]):
+/// `CadenceArchiveImportService.unbundled(_:)` rewrites the archive before planning, so its preview
+/// and its re-import comparison describe the rows it will actually write. It shares the one rule
+/// that matters — which member goes where — through `layout(_:…)` below, so the order and the
+/// slots are written once for both; do not grow a second copy of either.
 nonisolated enum TaskBundleRetirement {
 
     /// The shortest slot a member may be credited with, and the end of the day a start minute is
@@ -92,8 +96,8 @@ nonisolated enum TaskBundleRetirement {
     /// How long a member counts as, for the purpose of deciding whether a block's members fit
     /// inside it. The same expression `CadenceTaskMutationSupport.bundleDuration(startingAt:tasks:)`
     /// used to *build* a block out of these tasks, which is what makes the fit question symmetric.
-    static func naturalLength(of task: AppTask) -> Int {
-        max(task.estimatedMinutes, minimumSlotMinutes)
+    static func naturalLength(estimatedMinutes: Int) -> Int {
+        max(estimatedMinutes, minimumSlotMinutes)
     }
 
     /// The start minute each member takes when its block is retired, in `bundleOrder` order.
@@ -103,7 +107,7 @@ nonisolated enum TaskBundleRetirement {
     /// poor place to read them.
     ///
     /// - Parameters:
-    ///   - lengths: each member's `naturalLength(of:)`, in the order the members are laid out.
+    ///   - lengths: each member's `naturalLength(estimatedMinutes:)`, in the order the members are laid out.
     ///   - blockStart: the block's `startMin`.
     ///   - blockDuration: the block's `durationMinutes`.
     /// - Returns: one start minute per entry in `lengths`, non-decreasing, each inside the day.
@@ -132,14 +136,39 @@ nonisolated enum TaskBundleRetirement {
         }
     }
 
+    /// **Which member goes where**: `members` in `bundleOrder` order, `createdAt` breaking a tie,
+    /// each paired with the start minute `memberStartMinutes` gives it from its
+    /// `naturalLength(estimatedMinutes:)`.
+    ///
+    /// Generic over the member so the launch pass (an `AppTask`) and the archive import (a
+    /// `CadenceArchiveTask`, by index) share one ordering and one layout rather than two that can
+    /// drift; each caller then makes its own five field writes on whatever it holds.
+    static func layout<Member>(
+        _ members: [Member],
+        bundleOrder: (Member) -> Int,
+        createdAt: (Member) -> Date,
+        estimatedMinutes: (Member) -> Int,
+        blockStart: Int,
+        blockDuration: Int
+    ) -> [(member: Member, start: Int)] {
+        let ordered = members.sorted {
+            if bundleOrder($0) != bundleOrder($1) { return bundleOrder($0) < bundleOrder($1) }
+            return createdAt($0) < createdAt($1)
+        }
+        let starts = memberStartMinutes(
+            lengths: ordered.map { naturalLength(estimatedMinutes: estimatedMinutes($0)) },
+            blockStart: blockStart,
+            blockDuration: blockDuration
+        )
+        return Array(zip(ordered, starts)).map { (member: $0.0, start: $0.1) }
+    }
+
     /// **The walk: pushes every block's schedule down onto its members and ends the blocks,
     /// committing nothing.**
     ///
-    /// Shared by the launch pass below and by `CadenceArchiveImportService.apply`, which runs it
-    /// after wiring and before its own `save()` so that an archive's blocks are unbundled *on the
-    /// way in* and never reach disk. That is not an optimisation: every archive the owner has
-    /// taken so far contains blocks, and an import that materialised them would restore a set of
-    /// tasks that no surface can show until the next launch retires them.
+    /// Called by the launch pass below. An imported archive's blocks never reach it: the import
+    /// undoes them on the record first (`CadenceArchiveImportService.unbundled(_:)`), through the
+    /// same `layout(_:…)`.
     ///
     /// Membership is read from the **task** side (`task.bundle`), not from `bundle.tasks`:
     /// `CadenceTaskMutationSupport.bundleMembers(in:)` makes the same choice for the same reason —
@@ -148,8 +177,7 @@ nonisolated enum TaskBundleRetirement {
     ///
     /// - Parameter capture: handed each block and its members *before* they are rewritten, so a
     ///   caller that owns a commit can snapshot the rows that survive the delete. The launch pass
-    ///   below is the one caller that does; the import does not, because its own `rollback()`
-    ///   covers the whole transaction.
+    ///   below does.
     /// - Returns: the number of blocks retired. `0` means the store held none.
     /// - Throws: whatever the two fetches throw. Nothing is written before both have succeeded.
     @discardableResult
@@ -234,16 +262,15 @@ nonisolated enum TaskBundleRetirement {
     /// the reason recorded there — with exactly one difference, which is the whole ticket:
     /// `scheduledStartMin` is given the member's own slot instead of `-1`.
     private static func retire(_ bundle: TaskBundle, members: [AppTask], in modelContext: ModelContext) {
-        let ordered = members.sorted {
-            if $0.bundleOrder != $1.bundleOrder { return $0.bundleOrder < $1.bundleOrder }
-            return $0.createdAt < $1.createdAt
-        }
-        let starts = memberStartMinutes(
-            lengths: ordered.map { naturalLength(of: $0) },
+        let placed = layout(
+            members,
+            bundleOrder: \.bundleOrder,
+            createdAt: \.createdAt,
+            estimatedMinutes: \.estimatedMinutes,
             blockStart: bundle.startMin,
             blockDuration: bundle.durationMinutes
         )
-        for (member, start) in zip(ordered, starts) {
+        for (member, start) in placed {
             member.bundle = nil
             member.bundleOrder = 0
             member.scheduledDate = bundle.dateKey
