@@ -1710,3 +1710,30 @@ record. A grant to delete UI is not a grant to touch the schema.
 
 **Codex's own work is not disturbed by this.** Checked at grant time: its worktree is on
 `codex/phone-capture-load`, last commit 2026-10-12, and no `codex/*` branch touches any of the nine.
+
+### T-3192 — GRANTED: the two iOS list files, for one add-section row and nothing else
+
+**`Cadence/iOS/iOSListDetailView.swift` and `Cadence/iOS/iOSListEditorViews.swift` — GRANTED,
+narrowly, to adopt a shared add-section control. No other change.**
+
+`Cadence/iOS/iOSList*.swift` is the first pattern on this lease, so the iOS half of T-3192 could not
+be written at all without this. The owner asked for the control on **both** platforms through one
+shared implementation, and iOS is the side that needs it most: a section currently **cannot be
+created anywhere on iPhone or iPad**. The only `addSection()` in the product is the macOS Kanban
+board's trailing rail (`KanbanListSectionSupportViews.swift:242`).
+
+**Checked before granting, not assumed.** No `codex/*` branch has touched `iOS/iOSList*.swift`
+since **2026-10-07** (`codex/leased-followup-batch`, `codex/typography-lifecycle-batch`); the two
+newer ones that touch them, `codex/mobile-project-deadline` and `codex/parity-functional-batch`,
+last committed 2026-10-09 and both already landed. Codex's active worktree is on
+`codex/phone-capture-load`, which touches neither. `iOSListDetailView.swift` last changed on main in
+`39bc9f21` on 2026-10-09, itself a landed Codex branch.
+
+**Scope limit.** Add the row and wire it to the existing committed write path
+(`CadenceSectionConfigMerge.addSectionConfig`, which already answers a declined/committed outcome).
+Do not restructure these files, do not change their grouping or sorting, and do not touch the
+typography or list-layout work the lease is protecting. An unrelated change inside a grant is how a
+grant stops being narrow.
+
+**No schema change.** `Area` / `Project` already carry `sectionNamesRaw` and `sectionConfigsRaw`,
+and `AppTask` carries `sectionName`. This is a second entry point onto a path that already exists.
