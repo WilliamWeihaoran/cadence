@@ -2203,15 +2203,68 @@ runstate_exit_for() {  # $1 = verdict
 # its ticket as `xcb-<id>`, so the holder and the wait are both already recorded there -- and a
 # QUEUED verdict that can also say "waiting 800s behind xcb-widgetdrop" is the difference between
 # an agent waiting and an agent starting a second run on top of the first.
-runstate_lock_line() {  # $1 = id
+#
+# AND WHEN THIS ID IS NOT ON THE LOCK AT ALL, IT IS NOT WAITING FOR IT (T-3172). "QUEUED" means
+# "named, xcodebuild not launched" -- and that span covers the whole preflight as well as the wait:
+# the drift gate, the suite index, the automation-prompt `log show`, and the exec of the lock script
+# itself. `acquire` files its ticket before its first look, and the holder is recorded under the
+# same `xcb-<id>`, so a QUEUED run that is neither the holder nor in the queue has not reached the
+# queue. MEASURED 2026-10-14 (agent `debundle`, the two "~20-minute hangs against a free host"):
+# one run printed `operation timed out: …/scripts/test-host-lock.sh` -- zsh's exec of the lock
+# script failed with ETIMEDOUT after ~2.5 minutes -- and the retry sat 30 minutes reading
+# `QUEUED … test host: free` with `queue: empty` and its own log ending at
+# `other xcodebuild processes: 0`, i.e. before `worktree vs HEAD` had printed. Neither was the lock.
+# This checkout lives inside iCloud Drive (`~/Desktop` is a File Provider domain), so every exec
+# and read of it can stall on the filesystem. The verdict above told that agent "Do not start a
+# second run. Elapsed time says nothing about it" -- the right advice for a queue and the wrong one
+# for a stall -- so this says which it is, and names what the run is executing right now.
+runstate_lock_line() {  # $1 = id, $2 = the run's pid (optional)
   # NOT `status`: that name is a zsh special (an alias for `$?`) and assigning it is a read-only
   # error printed into the middle of the verdict -- the same shape as T-1074's stray assignment.
-  local lock_status holder
+  local lock_status holder mine
   lock_status="$("$ROOT_DIR/scripts/test-host-lock.sh" status 2>/dev/null)"
   [[ -z "$lock_status" ]] && return 1
   holder="$(print -r -- "$lock_status" | head -1)"
   print -r -- "test host: $holder"
-  print -r -- "$lock_status" | grep -F "xcb-$1" | sed 's/^[[:space:]]*/this id on the lock: /'
+  mine="$(print -r -- "$lock_status" | grep -F "xcb-$1")"
+  if [[ -n "$mine" ]]; then
+    print -r -- "$mine" | sed 's/^[[:space:]]*/this id on the lock: /'
+    return 0
+  fi
+  print -r -- "this id on the lock: NOT ON IT -- not the holder and no ticket in the queue (T-3172)."
+  print -r -- "  So this run is NOT waiting its turn: it is still in preflight, or the lock script"
+  print -r -- "  never started. Once is a moment; across readings it is a stall, not the queue."
+  [[ -n "${2:-}" ]] && runstate_doing_now "$2"
+  return 0
+}
+
+# What a run is executing right now: its descendants, oldest first, with their elapsed time. One
+# `ps` read, walked breadth-first by parent pid. Says "unknown" rather than nothing when the
+# process list cannot be read, for the T-1152 reason: silence there reads as "doing nothing".
+runstate_doing_now() {  # $1 = pid
+  local table line cpid cppid rest p
+  local -a frontier found
+  table="$(ps -A -o pid=,ppid=,etime=,command= 2>/dev/null)"
+  if [[ -z "$table" ]]; then
+    print -r -- "  doing now: unknown -- the process list cannot be read here."
+    return 0
+  fi
+  frontier=("$1")
+  while (( ${#frontier} )); do
+    p=${frontier[1]}; shift frontier
+    for line in ${(f)table}; do
+      read -r cpid cppid rest <<< "$line"
+      [[ "$cppid" == "$p" ]] || continue
+      frontier+=("$cpid"); found+=("$cpid $rest")
+    done
+  done
+  if (( ${#found} == 0 )); then
+    print -r -- "  doing now: pid $1 has no child process (its own shell code, between commands)."
+    return 0
+  fi
+  print -r -- "  doing now (pid, elapsed, command):"
+  for line in "${(@)found[1,6]}"; do print -r -- "    ${line[1,150]}"; done
+  (( ${#found} > 6 )) && print -r -- "    … and $(( ${#found} - 6 )) more"
   return 0
 }
 
@@ -2236,7 +2289,7 @@ runstate_print() {  # $@ = a classified record
       say "             The log name is chosen before \`test-host-lock.sh acquire\` is called, so an"
       say "             absent or empty log with a live owner means this run is WAITING ITS TURN."
       say "             Do not start a second run. Elapsed time says nothing about it."
-      runstate_lock_line "$id" | sed 's/^/             /'
+      runstate_lock_line "$id" "$pid" | sed 's/^/             /'
       ;;
     RUNNING)
       say "  run-state: RUNNING -- the xcb log GREW by $extra byte(s) over the sample window"
@@ -3724,6 +3777,9 @@ selftest_only_testing() {
     'if [[ "$1" == acquire && -n "${FAKE_LOCK_BLOCK:-}" ]]; then' \
     '  print -r -- "$$" > "$FAKE_LOCK_BLOCK"; while :; do sleep 1; done' \
     'fi' \
+    'if [[ "$1" == status && -n "${FAKE_LOCK_STATUS_FREE:-}" ]]; then' \
+    '  print -r -- "free"; print -r -- "queue: empty"; print -r -- "live test hosts: 0"; exit 0' \
+    'fi' \
     'if [[ "$1" == status ]]; then' \
     '  print -r -- "locked by xcb-sibling / pid 4242 (held) for 812s"' \
     '  print -r -- "queue (1 waiting, first served first):"' \
@@ -3794,6 +3850,20 @@ selftest_only_testing() {
          && "$rsout" != *"run-state: ABANDONED"* ]] && print 1 || print 0 ) "$rsout"
   check "...and it names the lock it is behind, so the reader does not start a second run" \
     $( [[ "$rsout" == *"locked by xcb-sibling"* && "$rsout" == *"Do not start a second run"* ]] && print 1 || print 0 ) "$rsout"
+  check "...and a run that IS in the queue is not called absent from it (the T-3172 control)" \
+    $( [[ "$rsout" == *"this id on the lock: xcb-rsqueue"* && "$rsout" != *"NOT ON IT"* ]] && print 1 || print 0 ) "$rsout"
+  # T-3172: the same live run, the same absent log, the same running lock script -- only the lock's
+  # own reading changes, to a free host with an empty queue. That is what the 2026-10-14 "hang
+  # against a free host" looked like from outside: the lock script exec stalled before it filed a
+  # ticket. The run is still QUEUED by the log's reading, and it must now say that it is NOT in the
+  # queue and name what it is executing, rather than tell the reader to keep waiting for a turn.
+  FAKE_LOCK_STATUS_FREE=1 rs_probe rsqueue
+  check "a QUEUED run that is neither the holder nor in the queue says it is NOT ON the lock (T-3172)" \
+    $( (( rsrc == RUNSTATE_EXIT_QUEUED )) && [[ "$rsout" == *"run-state: QUEUED"* && "$rsout" == *"test host: free"* \
+         && "$rsout" == *"this id on the lock: NOT ON IT"* ]] && print 1 || print 0 ) "exit $rsrc: $rsout"
+  check "...and names what the run is executing instead: here, the lock script that never filed a ticket" \
+    $( [[ "$rsout" == *"doing now (pid, elapsed, command):"* && "$rsout" == *"scripts/test-host-lock.sh acquire"* ]] \
+         && print 1 || print 0 ) "$rsout"
   # The same run, the same log, the same absent output -- only the OWNER's pulse changes. Nothing
   # in the log can tell these two apart, which is why the pid is read out of the log's NAME.
   rs_owner=$(cat "$ws/rs/lock-waiter" 2>/dev/null)
