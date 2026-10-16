@@ -463,8 +463,8 @@ struct CadenceDeletedSelectionGuardTests {
             ("Cadence/iOS/iOSMarkdownReferenceSupport.swift", "selectedReferenceTask", "task"),
             ("Cadence/iOS/iOSCalendarBundleDetailSheet.swift", "selectedTask", "task"),
             ("Cadence/iOS/iOSSearchView.swift", "selectedTask", "task"),
-            ("Cadence/iOS/iOSCalendarInspectorView.swift", "selectedBundle", "bundle"),
-            ("Cadence/iOS/iOSCalendarMonthAgendaViews.swift", "selectedBundle", "bundle")
+            // The month agenda's row went with its Block agenda row in [[T-3170]].
+            ("Cadence/iOS/iOSCalendarInspectorView.swift", "selectedBundle", "bundle")
         ]
 
         for (path, binding, subject) in sheets {

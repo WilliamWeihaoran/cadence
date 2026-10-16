@@ -28,7 +28,6 @@ struct iOSCalendarMonthStack<Detail: View>: View {
     @Binding var topRowDate: Date
     @Binding var selectedDate: Date
     let monthTasksByDate: [String: [AppTask]]
-    let bundlesByDate: [String: [TaskBundle]]
     let eventsByDate: [String: [EKEvent]]
     @ViewBuilder let detail: () -> Detail
 
@@ -56,7 +55,6 @@ struct iOSCalendarMonthStack<Detail: View>: View {
                     weekdayHeaderHeight: weekdayHeaderHeight,
                     bottomPadding: gridBottomPadding,
                     monthTasksByDate: monthTasksByDate,
-                    bundlesByDate: bundlesByDate,
                     eventsByDate: eventsByDate
                 )
                 // Explicit, because the grid is a scroll view now and a scroll view left flexible
@@ -99,7 +97,6 @@ struct iOSCalendarMonthAgendaList: View {
     let monthDate: Date
     @Binding var selectedDate: Date
     let monthTasksByDate: [String: [AppTask]]
-    let bundlesByDate: [String: [TaskBundle]]
     let eventsByDate: [String: [EKEvent]]
 
     /// The agenda section at the top of the scroll view — both the position the agenda is *set* to
@@ -118,7 +115,6 @@ struct iOSCalendarMonthAgendaList: View {
     /// Set by the first report that agrees with the placement. Until then this agenda believes
     /// nothing it is told about where it is scrolled — see the switch in `agenda`.
     @State private var didConfirmInitialDay = false
-    @State private var selectedBundle: TaskBundle?
     @State private var selectedEvent: iOSCalendarEventSelection?
 
     private let calendar = Calendar.current
@@ -127,13 +123,11 @@ struct iOSCalendarMonthAgendaList: View {
         monthDate: Date,
         selectedDate: Binding<Date>,
         monthTasksByDate: [String: [AppTask]],
-        bundlesByDate: [String: [TaskBundle]],
         eventsByDate: [String: [EKEvent]]
     ) {
         self.monthDate = monthDate
         self._selectedDate = selectedDate
         self.monthTasksByDate = monthTasksByDate
-        self.bundlesByDate = bundlesByDate
         self.eventsByDate = eventsByDate
         self._scrolledDayKey = State(
             initialValue: CadenceCalendarMonthAgendaSupport.initialScrollTarget(
@@ -142,7 +136,6 @@ struct iOSCalendarMonthAgendaList: View {
                     monthDate: monthDate,
                     calendar: .current,
                     monthTasksByDate: monthTasksByDate,
-                    bundlesByDate: bundlesByDate,
                     eventsByDate: eventsByDate
                 ).map(\.key)
             )
@@ -162,7 +155,6 @@ struct iOSCalendarMonthAgendaList: View {
         monthDate: Date,
         calendar: Calendar,
         monthTasksByDate: [String: [AppTask]],
-        bundlesByDate: [String: [TaskBundle]],
         eventsByDate: [String: [EKEvent]]
     ) -> [iOSCalendarAgendaDaySection] {
         CadenceCalendarMonthAgendaSupport.agendaDays(forMonthContaining: monthDate, calendar: calendar)
@@ -173,7 +165,6 @@ struct iOSCalendarMonthAgendaList: View {
                     date: date,
                     calendar: calendar,
                     monthTasksByDate: monthTasksByDate,
-                    bundlesByDate: bundlesByDate,
                     eventsByDate: eventsByDate
                 )
                 guard !items.isEmpty else { return nil }
@@ -186,7 +177,6 @@ struct iOSCalendarMonthAgendaList: View {
             monthDate: monthDate,
             calendar: calendar,
             monthTasksByDate: monthTasksByDate,
-            bundlesByDate: bundlesByDate,
             eventsByDate: eventsByDate
         )
     }
@@ -194,9 +184,6 @@ struct iOSCalendarMonthAgendaList: View {
     var body: some View {
         content
             .background(Theme.bg)
-            .sheet(item: $selectedBundle) { bundle in
-                iOSBundleInspectorSheet(bundle: bundle) { selectedBundle = nil }
-            }
             .sheet(item: $selectedEvent) { selection in
                 iOSCalendarEventEditSheet(event: selection.event)
             }
@@ -318,31 +305,14 @@ struct iOSCalendarMonthAgendaList: View {
             }
             .buttonStyle(.iosPressable)
 
-        case .bundle(let bundle):
-            Button {
-                selectedBundle = bundle
-            } label: {
-                iOSFeatureSummaryRow(
-                    title: bundle.displayTitle,
-                    subtitle: CadenceScheduleSupport.timeRangeLabel(
-                        startMinute: bundle.startMin,
-                        endMinute: bundle.endMin
-                    ),
-                    detail: "\(bundle.sortedTasks.count) task\(bundle.sortedTasks.count == 1 ? "" : "s")",
-                    icon: "tray.full.fill",
-                    color: Theme.amber
-                )
-            }
-            .buttonStyle(.iosPressable)
-
         case .task(let task):
             iOSTaskRow(task: task, dayAlreadyStatedBySurface: dayKey)
         }
     }
 
-    /// One day's items, in the order a board day column would put them: events, then blocks, then
-    /// tasks, all interleaved by start time. Reuses `iOSCalendarBoardColumnItem` rather than
-    /// introducing a second ordering for the same three kinds of thing.
+    /// One day's items, in the order a board day column would put them: events, then tasks, all
+    /// interleaved by start time. Reuses `iOSCalendarBoardColumnItem` rather than introducing a
+    /// second ordering for the same two kinds of thing.
     ///
     /// Tasks come from the **same** `monthTasksByDate` the grid dots are drawn from, so a day the
     /// grid marks is never a day the agenda shows as empty.
@@ -351,7 +321,6 @@ struct iOSCalendarMonthAgendaList: View {
         date: Date,
         calendar: Calendar,
         monthTasksByDate: [String: [AppTask]],
-        bundlesByDate: [String: [TaskBundle]],
         eventsByDate: [String: [EKEvent]]
     ) -> [iOSCalendarBoardColumnItem] {
         let events = iOSCalendarBoardEventItem
@@ -361,12 +330,10 @@ struct iOSCalendarMonthAgendaList: View {
                 calendar: calendar
             )
             .map { iOSCalendarBoardColumnItem.event($0) }
-        let bundles = CadenceScheduleSupport.items(on: key, in: bundlesByDate)
-            .map { iOSCalendarBoardColumnItem.bundle($0) }
         let tasks = CadenceScheduleSupport.items(on: key, in: monthTasksByDate)
             .map { iOSCalendarBoardColumnItem.task($0) }
 
-        return (events + bundles + tasks).sorted { $0.sortKey < $1.sortKey }
+        return (events + tasks).sorted { $0.sortKey < $1.sortKey }
     }
 
     /// A tap on a grid day. Most days have no section of their own now, so the resolution to the
@@ -431,7 +398,6 @@ private struct iOSCalendarMonthCompactGrid: View {
     let weekdayHeaderHeight: CGFloat
     let bottomPadding: CGFloat
     let monthTasksByDate: [String: [AppTask]]
-    let bundlesByDate: [String: [TaskBundle]]
     let eventsByDate: [String: [EKEvent]]
 
     private let calendar = Calendar.current
@@ -459,7 +425,6 @@ private struct iOSCalendarMonthCompactGrid: View {
 
     private func hasItems(on key: String) -> Bool {
         !CadenceScheduleSupport.items(on: key, in: monthTasksByDate).isEmpty ||
-        !CadenceScheduleSupport.items(on: key, in: bundlesByDate).isEmpty ||
         !CadenceScheduleSupport.items(on: key, in: eventsByDate).isEmpty
     }
 }

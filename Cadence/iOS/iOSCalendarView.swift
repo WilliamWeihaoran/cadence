@@ -359,8 +359,6 @@ struct iOSCalendarView: View {
                 anchorDate: $anchorDate,
                 selectedDate: $selectedDate,
                 allTasks: allTasks,
-                allBundles: allBundles,
-                bundlesByDate: bundlesByDate,
                 eventsByDate: visibleEventsByDate,
                 onAddItem: openQuickCreate
             )
@@ -411,7 +409,6 @@ struct iOSCalendarView: View {
                 topRowDate: $anchorDate,
                 selectedDate: $selectedDate,
                 monthTasksByDate: monthTasksByDate,
-                bundlesByDate: bundlesByDate,
                 eventsByDate: visibleEventsByDate
             ) {
                 monthDetailPane
@@ -427,7 +424,6 @@ struct iOSCalendarView: View {
                 monthDate: displayedMonth,
                 selectedDate: $selectedDate,
                 monthTasksByDate: monthTasksByDate,
-                bundlesByDate: bundlesByDate,
                 eventsByDate: visibleEventsByDate
             )
         case .day:

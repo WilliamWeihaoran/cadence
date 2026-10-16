@@ -348,14 +348,17 @@ struct CadenceSaveCommitDisciplineTests {
     /// The separation the half above claims to draw, on the real sites [[T-1299]] measured it
     /// against — the evidence that it is *declining* them rather than blind to the shape.
     ///
-    /// Three files, each holding a `try?` over one of the helpers in question. A detector that had
+    /// Two files, each holding a `try?` over one of the helpers in question. A detector that had
     /// stopped reading `try?` call sites at all would satisfy the emptiness assertion below
     /// trivially, so each file also has to still contain the call it is listed for.
+    ///
+    /// It was three. The Calendar Board's row — `try? CadenceTaskMutationSupport.moveBundle(`, the
+    /// in-place move of a Block onto another day — went with the Board's Block card in [[T-3170]],
+    /// and so did its `addTask` sibling. The shape they stood for, a `try?` over an in-place field
+    /// edit the store already holds, is still measured by the two rows below.
     @Test func theUnrepairedCommitHalfDeclinesTheCleanSwallowsItWasMeasuredAgainst() throws {
         let repairing = try repairIndexOverTheApp()
         for (path, call) in [
-            // `moveBundle` and `addTask`: in-place moves between objects the store already holds.
-            ("Cadence/iOS/iOSCalendarBoardView.swift", "try? CadenceTaskMutationSupport.moveBundle("),
             // `duplicate`: an insert, committed through `commitInsert` since T-1299 converted its
             // hand-rolled undo. Its `insertBundle` sibling row went with [[T-3170]]: the one
             // `try?` over it was SchedulingActions.createBundle(from:adding:in:), removed with

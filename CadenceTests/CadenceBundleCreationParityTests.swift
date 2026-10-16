@@ -259,42 +259,31 @@ struct CadenceBundleCreationParityTests {
         #expect(occurrences(of: "clampedBundleDuration", in: source) == 0)
     }
 
-    /// The point of the ticket. A shared mutation with no iOS call site is the defect, not the fix.
-    @Test func theCalendarBoardWiresTheSharedBundleFormingMutation() throws {
-        let source = try strippingBundleTestComments(sourceFile("Cadence/iOS/iOSCalendarBoardView.swift"))
-
-        #expect(occurrences(of: "try CadenceTaskMutationSupport.insertBundle(from:", in: source) == 1)
-        #expect(occurrences(of: "bundleFormingDrop:", in: source) == 1)
-        // The board must not grow its own `TaskBundle(` — that would be the near-copy this ticket
-        // exists to avoid.
-        #expect(occurrences(of: "TaskBundle(", in: source) == 0)
-    }
-
-    /// The card offers the gesture only where a block can sit, so a do-dated-only card declines and
-    /// the day column still reads the release as the reschedule it is. Without this guard the drop
-    /// would light up amber and then silently do nothing, because the shared mutation returns `nil`.
-    @Test func theBoardOffersTheGestureOnlyOnCardsThatOccupyASlot() throws {
-        let source = try strippingBundleTestComments(sourceFile("Cadence/iOS/iOSCalendarBoardView.swift"))
-
-        #expect(source.contains("guard task.scheduledStartMin >= 0 else { return nil }"))
-        #expect(occurrences(of: "iOSBundleFormingDrop(", in: source) == 1)
-    }
-
-    /// **The opt-in is one type, and since [[T-3170]] it has one user.** The day timeline dropped
-    /// its half of the gesture; the Board keeps it. A second struct of the same shape under another
-    /// name would satisfy every assertion above and none of these.
-    @Test func theBoardIsTheOneSurfaceLeftReachingTheGestureThroughTheOptInValue() throws {
-        let cards = try strippingBundleTestComments(sourceFile("Cadence/iOS/iOSBoardCards.swift"))
+    /// **The Calendar Board is the last surface to lose the gesture ([[T-3170]]).** It was the one
+    /// T-190 built the shared mutation *for*; with the Block feature gone the board forms nothing,
+    /// offers no opt-in and names no refusal, and a task dropped on a card falls through to the
+    /// column's own reschedule.
+    @Test func thecalendarBoardNoLongerFormsABlockFromATaskDroppedOnACard() throws {
         let board = try strippingBundleTestComments(sourceFile("Cadence/iOS/iOSCalendarBoardView.swift"))
-        let timeline = try strippingBundleTestComments(sourceFile("Cadence/iOS/iOSCalendarTimelineViews.swift"))
+        let cards = try strippingBundleTestComments(sourceFile("Cadence/iOS/iOSBoardCards.swift"))
 
-        #expect(occurrences(of: "struct iOSBundleFormingDrop {", in: cards) == 1)
-        #expect(occurrences(of: "var bundleFormingDrop: iOSBundleFormingDrop? = nil", in: cards) == 1)
-        #expect(occurrences(of: "-> iOSBundleFormingDrop?", in: board) == 1)
-        #expect(occurrences(of: "iOSBundleFormingDrop", in: timeline) == 0)
-        // Exactly one declaration in the whole app: a second `struct iOSBundleFormingDrop` anywhere
-        // else would not even compile, but a `struct iOSTimelineBundleFormingDrop` would.
-        #expect(occurrences(of: "struct iOSBundleFormingDrop", in: board) == 0)
+        for source in [board, cards] {
+            #expect(occurrences(of: "CadenceTaskMutationSupport.insertBundle(", in: source) == 0)
+            #expect(occurrences(of: "TaskBundle(", in: source) == 0)
+            #expect(occurrences(of: "formBundle", in: source) == 0)
+            #expect(occurrences(of: "bundleFormingDrop", in: source) == 0)
+            #expect(occurrences(of: "iOSBundleFormingDrop", in: source) == 0)
+            #expect(occurrences(of: "bundleCreateFailed", in: source) == 0)
+        }
+        // The Block card itself is gone, and with it the only other nested drop target a column
+        // card could own — so the column arbitrates nothing and suppresses nothing.
+        #expect(occurrences(of: "iOSCalendarBoardBundleCard", in: cards) == 0)
+        #expect(occurrences(of: "nestedDropTargetID", in: board) == 0)
+        #expect(occurrences(of: "recentlyBundledTaskID", in: board) == 0)
+        // Non-vacuity: the column and its task card are still here, and the day drop still works.
+        #expect(occurrences(of: "struct iOSCalendarBoardDayColumn: View", in: board) == 1)
+        #expect(occurrences(of: "onDropTaskOnDay(task)", in: board) == 1)
+        #expect(occurrences(of: "struct iOSBoardTaskCard: View", in: cards) == 1)
     }
 
     /// **Today's schedule pane draws no block of its own at all, which is the stronger form of the
@@ -321,18 +310,10 @@ struct CadenceBundleCreationParityTests {
         #expect(occurrences(of: "iOSCalendarTimelineGrid(", in: source) == 1)
     }
 
-    /// A nested card that claimed the drag has to tell the column, or the column's own
-    /// `dropDestination` reads the same release as a drop onto the day and reschedules the task out
-    /// of the block it was just put in. The bundle card already needed this; a task card needs the
-    /// identical thing, so the state is named for the mechanism rather than for one of its users.
-    @Test func aTaskCardClaimingADragSuppressesTheDayDropTheSameWayABundleCardDoes() throws {
-        let source = try strippingBundleTestComments(sourceFile("Cadence/iOS/iOSCalendarBoardView.swift"))
-
-        #expect(occurrences(of: "nestedDropTargetID", in: source) == 5)
-        #expect(occurrences(of: "updateNestedDropTarget(", in: source) == 3)
-        // The bundle-specific name is gone rather than surviving beside the general one.
-        #expect(occurrences(of: "targetedBundleID", in: source) == 0)
-    }
+    // [[T-3170]] retired `aTaskCardClaimingADragSuppressesTheDayDropTheSameWayABundleCardDoes`.
+    // It pinned the column's nested-drop-target arbitration, which existed only because a Block
+    // card and a block-forming task card could claim a drag. Neither can, so the column reads
+    // every release as the reschedule it is — pinned by the absence test above.
 
     /// Non-vacuity. Every absence assertion above passes trivially against an empty string, so the
     /// reader itself is checked: a needle that is certainly present must be found, and a needle that

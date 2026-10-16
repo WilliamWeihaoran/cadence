@@ -6,7 +6,7 @@ import Testing
 /// T-217: **the iOS bundle panel used to dismiss itself the moment an edit succeeded.**
 ///
 /// `iOSCalendarBundleDetailSheet` was presented by the card that opened it — `@State showDetail` plus
-/// `.sheet(isPresented:)` on `iOSCalendarBoardBundleCard` and on `iOSTimelineBundleBlock`. Both sit
+/// `.sheet(isPresented:)` on the Board's Block card and on `iOSTimelineBundleBlock`. Both sat
 /// inside a `ForEach(bundles)` that the surface has already filtered by day, and Today's schedule
 /// pane filters the same block by *hour* on top of that. So the panel's own Save — the write that
 /// changes `dateKey` or `startMin` — moved the block out of the collection drawing it, SwiftUI removed
@@ -189,41 +189,34 @@ struct CadenceBundleInspectorHostTests {
 
     // MARK: - Ownership: no card presents the bundle panel
 
-    /// The two surfaces that owned presentation from a card. Each carried exactly one
+    /// The surface that owned presentation from a card. It carried exactly one
     /// `@State private var showDetail` and one `.sheet(isPresented: $showDetail)` before the fix and
-    /// carries neither now — and `CadenceTaskInspectorHostTests` pinned those two survivors at `1`
-    /// while T-201 was fixing the task half, which is how this defect stayed visible rather than
-    /// being rediscovered.
+    /// carries neither now — and `CadenceTaskInspectorHostTests` pinned the survivors at `1` while
+    /// T-201 was fixing the task half, which is how this defect stayed visible rather than being
+    /// rediscovered. It was two surfaces until [[T-3170]] deleted the Calendar Board's Block card.
     @Test func noCardStillOwnsBundlePanelPresentationState() throws {
         try expectOccurrences(
             of: "@State private var showDetail",
-            at: [
-                "Cadence/iOS/iOSBoardCards.swift": 0,
-                "Cadence/iOS/iOSCalendarTimelineViews.swift": 0
-            ]
+            at: ["Cadence/iOS/iOSCalendarTimelineViews.swift": 0]
         )
         try expectOccurrences(
             of: ".sheet(isPresented: $showDetail)",
-            at: [
-                "Cadence/iOS/iOSBoardCards.swift": 0,
-                "Cadence/iOS/iOSCalendarTimelineViews.swift": 0
-            ]
+            at: ["Cadence/iOS/iOSCalendarTimelineViews.swift": 0]
         )
-        // …and each asks the host instead, twice: the card's own tap and its "Edit Block" context
+        // …and it asks the host instead, twice: the block's own tap and its "Edit Block" context
         // menu item are two controls onto one panel.
         try expectOccurrences(
             of: "bundleInspector(bundle)",
-            at: [
-                "Cadence/iOS/iOSBoardCards.swift": 2,
-                "Cadence/iOS/iOSCalendarTimelineViews.swift": 2
-            ]
+            at: ["Cadence/iOS/iOSCalendarTimelineViews.swift": 2]
         )
         try expectOccurrences(
             of: "@Environment(\\.iOSBundleInspector)",
-            at: [
-                "Cadence/iOS/iOSBoardCards.swift": 1,
-                "Cadence/iOS/iOSCalendarTimelineViews.swift": 1
-            ]
+            at: ["Cadence/iOS/iOSCalendarTimelineViews.swift": 1]
+        )
+        // The Board's card is gone outright, so it owns nothing to count.
+        try expectOccurrences(
+            of: "iOSBundleInspector",
+            at: ["Cadence/iOS/iOSBoardCards.swift": 0]
         )
     }
 
@@ -261,7 +254,7 @@ struct CadenceBundleInspectorHostTests {
         )
     }
 
-    /// The other side of that count: the three places that present, all now through the guard.
+    /// The other side of that count: the places that present, all now through the guard.
     /// Without this, deleting a `.sheet` outright would leave the panel count at one and read green.
     @Test func everyPaneThatPresentsTheBundlePanelGoesThroughTheGuardedWrapper() throws {
         var presenters: [String: Int] = [:]
@@ -278,8 +271,8 @@ struct CadenceBundleInspectorHostTests {
                 // The host. The only one reached from a card.
                 "Cadence/iOS/iOSBundleInspectorHost.swift": 1,
                 // Pane-owned `.sheet(item:)`, immune to re-filtering, guarded since T-347.
-                "Cadence/iOS/iOSCalendarInspectorView.swift": 1,
-                "Cadence/iOS/iOSCalendarMonthAgendaViews.swift": 1
+                // The month agenda's went with its Block row in [[T-3170]].
+                "Cadence/iOS/iOSCalendarInspectorView.swift": 1
             ],
             "presenters of iOSBundleInspectorSheet changed: \(presenters)"
         )
@@ -469,12 +462,10 @@ struct CadenceBundleInspectorHostTests {
         let host = try strippingComments(sourceFile("Cadence/iOS/iOSBundleInspectorHost.swift"))
         #expect(host.contains("func iOSBundleInspectorHost()"))
         #expect(host.contains(".sheet(item: $selection)"))
-        let card = try strippingComments(sourceFile("Cadence/iOS/iOSBoardCards.swift"))
-        #expect(card.contains("struct iOSCalendarBoardBundleCard: View"))
         let block = try strippingComments(sourceFile("Cadence/iOS/iOSCalendarTimelineViews.swift"))
         #expect(block.contains("struct iOSTimelineBundleBlock: View"))
         // The two panes that keep ownership really do keep it the way this file says they do.
-        for path in ["Cadence/iOS/iOSCalendarInspectorView.swift", "Cadence/iOS/iOSCalendarMonthAgendaViews.swift"] {
+        for path in ["Cadence/iOS/iOSCalendarInspectorView.swift"] {
             let pane = try strippingComments(sourceFile(path))
             #expect(pane.contains("@State private var selectedBundle: TaskBundle?"))
             #expect(pane.contains(".sheet(item: $selectedBundle)"))

@@ -5,26 +5,25 @@ import SwiftUI
 
 enum iOSCalendarBoardColumnItem: Identifiable {
     case event(iOSCalendarBoardEventItem)
-    case bundle(TaskBundle)
     case task(AppTask)
 
     var id: String {
         switch self {
         case .event(let item):
             return "event-\(item.id)"
-        case .bundle(let bundle):
-            return "bundle-\(bundle.id.uuidString)"
         case .task(let task):
             return "task-\(task.id.uuidString)"
         }
     }
 
+    // The kind ranks are 0 and 2 rather than 0 and 1 because [[T-3170]] removed the Block card
+    // that sat between them. They are a sort order, not a dense index, and renumbering the task
+    // rank would have to agree with macOS's column — which still ranks the same three kinds —
+    // for no gain.
     var sortKey: CalendarBoardSortKey {
         switch self {
         case .event(let item):
             return item.sortKey
-        case .bundle(let bundle):
-            return CalendarBoardPlannerSupport.sortKey(for: bundle, kindRank: 1)
         case .task(let task):
             return CalendarBoardPlannerSupport.sortKey(for: task, kindRank: 2)
         }
@@ -102,14 +101,14 @@ struct iOSCalendarBoardEventItem: Identifiable {
     }
 }
 
-/// An event as it appears in a **board column**, next to task and bundle cards.
+/// An event as it appears in a **board column**, next to task cards.
 ///
 /// It used to be a solid plate of the calendar's colour — the treatment that belongs to a
 /// *timeline* block, where the plate is the whole affordance. In a column of neutral washed cards
 /// it read as a slab dropped in from another screen, and its metadata chips had to fight it. This
 /// is now the same neutral-card-plus-tint-wash macOS's `CalendarBoardEventCard` uses, on the shared
-/// `CadenceCalendarEventStyle` opacity ladder, so an event, a bundle and a task in one column read
-/// as three cards rather than three designs.
+/// `CadenceCalendarEventStyle` opacity ladder, so an event and a task in one column read as two
+/// cards rather than two designs.
 struct iOSCalendarBoardEventCard: View {
     let item: iOSCalendarBoardEventItem
 
@@ -208,42 +207,12 @@ let iOSBoardColumnWidth: CGFloat = 300
 /// This replaced a second card in `iOSListSupportViews` — a flat `Theme.surface` rectangle with a
 /// 13.5pt title and plain icon-and-text metadata — that made the same task read as a different
 /// kind of object depending on which board you opened.
-/// What a surface has to supply before its task cards **or its timeline blocks** will accept "drop
-/// a task on a task to make a block". The three things only make sense together — the dragged task
-/// has to be resolvable from a payload, the drop has to go somewhere, and the enclosing column has
-/// to hear about targeting so it can stop treating the same drop as a reschedule — so they arrive as
-/// one value and a surface opts in whole.
-///
-/// It was `iOSBoardTaskCardBundleDrop` until T-243 gave the day timeline the same gesture, and the
-/// rename is the lesson `nestedDropTargetID` already recorded one file over: **a helper named for
-/// one subject is why the second one never got checked against it.** `iOSTimelineTaskBlock` takes
-/// this exact value rather than a near-copy of it, which is what keeps the two surfaces' answer to
-/// "may this task be dropped on" a single decision.
-///
-/// `onTargetedChanged` defaults to a no-op because only one of the two surfaces needs it: the
-/// Calendar Board's day column carries its own `dropDestination` that fires on the same release, and
-/// the timeline's day column carries none — its only gesture is the `SpatialTapGesture` that creates
-/// a task at a minute, and a drag is not a tap.
-struct iOSBundleFormingDrop {
-    let allTasks: [AppTask]
-    let onDropTask: (AppTask) -> Void
-    var onTargetedChanged: (Bool) -> Void = { _ in }
-}
-
 struct iOSBoardTaskCard: View {
     @Bindable var task: AppTask
     var showsContainerChip: Bool = true
     /// The day this card's surface has already stated, if it states one. See
     /// `CadenceBoardCardMetadata.repeatsSurfaceDay`.
     var dayAlreadyStatedBySurface: String? = nil
-    /// Non-`nil` only where dropping another task on this one can form a block: the card needs a day
-    /// *and* a time-of-day slot, because that is what a `TaskBundle` is. A list's task list has
-    /// neither, and a completed card is not something you plan around, so both leave this `nil` and
-    /// the drop falls through to whatever is underneath.
-    var bundleFormingDrop: iOSBundleFormingDrop? = nil
-
-    @State private var isBundleFormingTargeted = false
-
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.cadenceTypographyScaling) private var scaling
 
@@ -291,26 +260,7 @@ struct iOSBoardTaskCard: View {
     }
 
     var body: some View {
-        if let drop = bundleFormingDrop {
-            // `.dropDestination` has no erased form and `isTargeted` fires whether or not the
-            // closure accepts the drop, so a card that cannot form a block must not carry the
-            // modifier at all — an always-attached version returning `false` would still light up
-            // under the drag. Same reasoning as `iOSBoardColumnPaging` in iOSCalendarBoardView.
-            // `bundleFormingDrop` is fixed per call site, so this branch never flips at runtime.
-            card.dropDestination(for: String.self) { items, _ in
-                guard let payload = items.first,
-                      let taskID = TaskDragPayload.taskID(from: payload),
-                      taskID != task.id,
-                      let dragged = drop.allTasks.first(where: { $0.id == taskID }) else { return false }
-                drop.onDropTask(dragged)
-                return true
-            } isTargeted: { targeted in
-                isBundleFormingTargeted = targeted
-                drop.onTargetedChanged(targeted)
-            }
-        } else {
-            card
-        }
+        card
     }
 
     private var card: some View {
@@ -365,21 +315,12 @@ struct iOSBoardTaskCard: View {
             ZStack {
                 cardShape.fill(Theme.surfaceElevated.opacity(0.82))
                 cardShape.fill(listColor.opacity(isSettled ? 0.05 : 0.12))
-                if isBundleFormingTargeted {
-                    cardShape.fill(Theme.amber.opacity(0.16))
-                }
             }
         }
         .clipShape(cardShape)
-        // One layer, one radius: the targeted state re-tints the border this card already draws
-        // rather than adding a second ring. Amber because that is what a block reads as on this
-        // board — `iOSCalendarBoardBundleCard` is amber, at this same stroke weight and opacity, so
-        // a card about to *become* one says so in the colour it is about to take.
+        // One layer, one radius.
         .overlay {
-            cardShape.strokeBorder(
-                isBundleFormingTargeted ? Theme.amber.opacity(0.74) : Theme.borderSubtle,
-                lineWidth: isBundleFormingTargeted ? 1.5 : 1
-            )
+            cardShape.strokeBorder(Theme.borderSubtle, lineWidth: 1)
         }
         .overlay(alignment: .leading) {
             Rectangle()
@@ -474,110 +415,6 @@ struct iOSBoardTaskCard: View {
 
     private func toggleCompletion() {
         CadenceTaskStatusEditing.toggleCompletion(task, in: modelContext)
-    }
-}
-
-struct iOSCalendarBoardBundleCard: View {
-    let bundle: TaskBundle
-    let allTasks: [AppTask]
-    let onDropTask: (AppTask) -> Void
-    var onDropTargetedChanged: (Bool) -> Void = { _ in }
-
-    // T-217: the panel is opened on the host, not owned here. This card lives in a
-    // `ForEach(bundles)` filtered by the column's day, so a `@State showDetail` + `.sheet` was torn
-    // down by the panel's own Save the moment it moved the block to another date.
-    @Environment(\.iOSBundleInspector) private var bundleInspector
-
-    @State private var isTargeted = false
-
-    private var tasks: [AppTask] {
-        bundle.sortedTasks
-    }
-
-    private var allDone: Bool {
-        !tasks.isEmpty && tasks.allSatisfy(\.isDone)
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .top, spacing: 10) {
-                Image(systemName: "tray.full.fill")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(allDone ? Theme.dim : Theme.amber)
-                    .padding(.top, 1)
-
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack(spacing: 6) {
-                        Text(bundle.displayTitle)
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundStyle(allDone ? Theme.dim : Theme.text)
-                            .strikethrough(allDone, color: Theme.dim)
-                            .lineLimit(1)
-                        Spacer(minLength: 4)
-                        Text("×\(tasks.count)")
-                            .font(.system(size: 11, weight: .bold))
-                            .foregroundStyle(Theme.subdued)
-                    }
-
-                    CadenceBoardMetadataChip(
-                        title: TimeFormatters.timeRange(startMin: bundle.startMin, endMin: bundle.endMin),
-                        systemImage: "clock",
-                        tint: allDone ? Theme.dim : Theme.amber,
-                        cardCornerRadius: Theme.radiusCard,
-                        fillsWidth: true
-                    )
-
-                    VStack(alignment: .leading, spacing: 4) {
-                        ForEach(tasks.prefix(2)) { task in
-                            HStack(spacing: 5) {
-                                iOSTaskCompletionCircle(glyph: .resolve(task: task))
-                                    .frame(width: 10, height: 10)
-                                Text(TaskTitleSupport.displayTitle(task.title, fallback: TaskTitleSupport.defaultCompactDisplayTitle))
-                                    .font(.system(size: 11, weight: .medium))
-                                    .foregroundStyle(task.isDone ? Theme.dim : Theme.text.opacity(0.85))
-                                    .strikethrough(task.isDone, color: Theme.dim)
-                                    .lineLimit(1)
-                            }
-                        }
-                        if tasks.count > 2 {
-                            Text(CadenceTaskSurfaceOptions.moreLabel(hidden: tasks.count - 2))
-                                .font(.system(size: 10, weight: .medium))
-                                .foregroundStyle(Theme.dim)
-                        }
-                    }
-                }
-            }
-        }
-        .padding(12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .contentShape(Rectangle())
-        .background(allDone ? Theme.doneFill.opacity(0.10) : Theme.amber.opacity(isTargeted ? 0.20 : 0.09))
-        .clipShape(RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous)
-                .strokeBorder(isTargeted ? Theme.amber.opacity(0.74) : (allDone ? Theme.doneFill.opacity(0.35) : Theme.amber.opacity(0.2)), lineWidth: isTargeted ? 1.5 : 1)
-        }
-        .onTapGesture {
-            bundleInspector(bundle)
-        }
-        .contextMenu {
-            Button {
-                bundleInspector(bundle)
-            } label: {
-                Label("Edit Block", systemImage: "square.and.pencil")
-            }
-        }
-        .draggable(TaskDragPayload.bundleString(for: bundle.id))
-        .dropDestination(for: String.self) { items, _ in
-            guard let payload = items.first,
-                  let taskID = TaskDragPayload.taskID(from: payload),
-                  let task = allTasks.first(where: { $0.id == taskID }) else { return false }
-            onDropTask(task)
-            return true
-        } isTargeted: { targeted in
-            isTargeted = targeted
-            onDropTargetedChanged(targeted)
-        }
     }
 }
 

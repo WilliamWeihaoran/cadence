@@ -7,8 +7,6 @@ struct iOSCalendarBoardPlanner: View {
     @Binding var anchorDate: Date
     @Binding var selectedDate: Date
     let allTasks: [AppTask]
-    let allBundles: [TaskBundle]
-    let bundlesByDate: [String: [TaskBundle]]
     let eventsByDate: [String: [EKEvent]]
     let onAddItem: (String) -> Void
 
@@ -37,10 +35,6 @@ struct iOSCalendarBoardPlanner: View {
     /// nothing it is told about where it is scrolled — see the switch in `board(columnWidth:)`.
     @State private var didConfirmInitialColumn = false
     @State private var windowStartDate: Date?
-    /// T-760: `formBundle` commits through the shared mutation now, and this is the one place on
-    /// this board that can name a refusal. Same alert macOS's `TimelineDayCanvas` already shows for
-    /// the identical gesture.
-    @State private var bundleCreateFailed = false
     @State private var selectedEvent: iOSCalendarEventSelection?
 
     private let calendar = Calendar.current
@@ -102,11 +96,6 @@ struct iOSCalendarBoardPlanner: View {
         .sheet(item: $selectedEvent) { selection in
             iOSCalendarEventEditSheet(event: selection.event)
         }
-        .alert(CadenceTaskMutationSupport.bundleCreateFailureAlertTitle, isPresented: $bundleCreateFailed) {
-            Button("OK", role: .cancel) {}
-        } message: {
-            Text(CadenceTaskMutationSupport.bundleSaveFailureNotice)
-        }
     }
 
     private func board(columnWidth: CGFloat) -> some View {
@@ -119,16 +108,11 @@ struct iOSCalendarBoardPlanner: View {
                         date: date,
                         dateKey: dateKey,
                         tasks: boardTasksByDate[dateKey] ?? [],
-                        bundles: bundlesByDate[dateKey] ?? [],
                         events: eventsByDate[dateKey] ?? [],
                         allTasks: allTasks,
-                        allBundles: allBundles,
                         onOpenEvent: { selectedEvent = iOSCalendarEventSelection(event: $0) },
                         onAddTask: { onAddItem(dateKey) },
-                        onDropTaskOnDay: { task in schedule(task, on: dateKey) },
-                        onDropBundleOnDay: { bundle in move(bundle, on: dateKey) },
-                        onDropTaskOnBundle: { task, bundle in add(task, to: bundle) },
-                        onFormBundleFromTasks: { target, dragged in formBundle(from: target, adding: dragged) }
+                        onDropTaskOnDay: { task in schedule(task, on: dateKey) }
                     )
                     .frame(width: columnWidth)
                     .id(dayIndex)
@@ -244,40 +228,6 @@ struct iOSCalendarBoardPlanner: View {
         CadenceTaskDateEditing.moveTaskToDate(task, dateKey: dateKey, in: modelContext)
     }
 
-    /// The swallow here is the one the `try? save()` rule allows, and it is the same one
-    /// `schedule(_:on:)` three lines above already takes: a drag commits in-place field edits, and
-    /// nothing after it dismisses a sheet or reports success — the column redraws from the model
-    /// and the next fetch corrects it. `updateBundle` throws for the sheet that *does* report
-    /// (T-566); this caller is the other kind, and has no notice to land a failure in.
-    private func move(_ bundle: TaskBundle, on dateKey: String) {
-        try? CadenceTaskMutationSupport.moveBundle(bundle, to: dateKey, modelContext: modelContext)
-    }
-
-    /// **Still the swallow the `try? save()` rule allows (T-760).** `addTask` now throws — it has
-    /// to, since `insertBundle` below shares its committing shape — but this call is the in-place
-    /// move onto a bundle that already exists, the same shape `move(_:on:)` above swallows: nothing
-    /// is inserted or deleted, the column redraws from the model, and there is no notice to land a
-    /// refusal in.
-    private func add(_ task: AppTask, to bundle: TaskBundle) {
-        try? CadenceTaskMutationSupport.addTask(task, to: bundle, modelContext: modelContext)
-    }
-
-    /// Drop a task on a timed task and the two become a block — the gesture macOS's timeline has
-    /// had all along as `SchedulingActions.createBundle(from:adding:)`, which now delegates to the
-    /// same shared mutation this calls (T-190).
-    ///
-    /// **Names a refusal now (T-760).** `insertBundle` used to commit through two saves nobody
-    /// could hear refuse — the block landed in the store either way, so this call reported nothing
-    /// because there was, in the swallowed sense, nothing to report. It throws now, and this is one
-    /// of the three canvases sharing that one answer, alongside macOS's `TimelineDayCanvas` and this
-    /// board's sibling in `iOSCalendarTimelineViews.swift`.
-    private func formBundle(from target: AppTask, adding dragged: AppTask) {
-        do {
-            _ = try CadenceTaskMutationSupport.insertBundle(from: target, adding: dragged, modelContext: modelContext)
-        } catch {
-            bundleCreateFailed = true
-        }
-    }
 }
 
 /// `.scrollTargetBehavior` has no erased form, so the compact/regular choice needs a modifier
@@ -299,25 +249,15 @@ private struct iOSCalendarBoardDayColumn: View {
     let date: Date
     let dateKey: String
     let tasks: [AppTask]
-    let bundles: [TaskBundle]
     let events: [EKEvent]
     let allTasks: [AppTask]
-    let allBundles: [TaskBundle]
     let onOpenEvent: (EKEvent) -> Void
     let onAddTask: () -> Void
     let onDropTaskOnDay: (AppTask) -> Void
-    let onDropBundleOnDay: (TaskBundle) -> Void
-    let onDropTaskOnBundle: (AppTask, TaskBundle) -> Void
-    /// `(target, dragged)` — the argument order `CadenceTaskMutationSupport.insertBundle(from:adding:)`
-    /// takes, so the card that was dropped *on* stays the one that supplies the slot.
-    let onFormBundleFromTasks: (AppTask, AppTask) -> Void
 
     // No `horizontalSizeClass`. It was declared here and read by nothing: the column draws one way
     // at every width, and has since its "today" treatment collapsed into `CadenceBoardColumnHeader`.
     @State private var isDropTargeted = false
-    @State private var nestedDropTargetID: UUID?
-    @State private var recentlyBundledTaskID: UUID?
-    @State private var recentlyBundledTaskDropExpiresAt = Date.distantPast
     @State private var isCompletedCollapsed = true
 
     private var isToday: Bool {
@@ -338,9 +278,8 @@ private struct iOSCalendarBoardDayColumn: View {
 
     private var activeItems: [iOSCalendarBoardColumnItem] {
         let eventItems = iOSCalendarBoardEventItem.items(from: events, for: date).map { iOSCalendarBoardColumnItem.event($0) }
-        let bundleItems = bundles.map { iOSCalendarBoardColumnItem.bundle($0) }
         let taskItems = activeTasks.map { iOSCalendarBoardColumnItem.task($0) }
-        return (eventItems + bundleItems + taskItems).sorted(by: sortColumnItems)
+        return (eventItems + taskItems).sorted(by: sortColumnItems)
     }
 
     var body: some View {
@@ -491,45 +430,13 @@ private struct iOSCalendarBoardDayColumn: View {
                 iOSCalendarBoardEventCard(item: item)
             }
             .buttonStyle(.iosPressable)
-        case .bundle(let bundle):
-            iOSCalendarBoardBundleCard(
-                bundle: bundle,
-                allTasks: allTasks,
-                onDropTask: { task in
-                    rememberNestedTaskDrop(task)
-                    onDropTaskOnBundle(task, bundle)
-                },
-                onDropTargetedChanged: { targeted in
-                    updateNestedDropTarget(bundle.id, targeted: targeted)
-                }
-            )
         case .task(let task):
             iOSBoardTaskCard(
                 task: task,
-                dayAlreadyStatedBySurface: dateKey,
-                bundleFormingDrop: bundleFormingDrop(onto: task)
+                dayAlreadyStatedBySurface: dateKey
             )
             .draggable(TaskDragPayload.string(for: task.id))
         }
-    }
-
-    /// Offered only by a card that already occupies a slot on the day. A block is `dateKey` plus
-    /// `startMin`; a card that is merely do-dated has no start minute for one to sit on, and
-    /// `CadenceTaskMutationSupport.insertBundle(from:adding:)` refuses it — so rather than lighting
-    /// up and then silently doing nothing, such a card declines the drop and lets the day column
-    /// handle it as the reschedule it already is.
-    private func bundleFormingDrop(onto task: AppTask) -> iOSBundleFormingDrop? {
-        guard task.scheduledStartMin >= 0 else { return nil }
-        return iOSBundleFormingDrop(
-            allTasks: allTasks,
-            onDropTask: { dragged in
-                rememberNestedTaskDrop(dragged)
-                onFormBundleFromTasks(task, dragged)
-            },
-            onTargetedChanged: { targeted in
-                updateNestedDropTarget(task.id, targeted: targeted)
-            }
-        )
     }
 
     @ViewBuilder
@@ -548,48 +455,16 @@ private struct iOSCalendarBoardDayColumn: View {
         }
     }
 
+    /// **No nested drop target to arbitrate any more ([[T-3170]]).** A card inside the column used
+    /// to be able to claim the drag — a Block card, and since T-190 a timed task card about to form
+    /// one — so the column had to know which, and suppress its own reschedule for 0.75s afterwards.
+    /// Neither card exists, so every release on this column is the reschedule it reads as.
     private func handleDrop(_ items: [String]) -> Bool {
-        guard let payload = items.first else { return false }
-        if let bundleID = TaskDragPayload.bundleID(from: payload),
-           let bundle = allBundles.first(where: { $0.id == bundleID }) {
-            onDropBundleOnDay(bundle)
-            return true
-        }
-        if let taskID = TaskDragPayload.taskID(from: payload),
-           let task = allTasks.first(where: { $0.id == taskID }) {
-            if shouldSuppressDayDrop(for: taskID) {
-                return true
-            }
-            onDropTaskOnDay(task)
-            return true
-        }
-        return false
-    }
-
-    /// A card nested inside the column claimed the drag. Both a bundle card and — since T-190 — a
-    /// timed task card can, and the column has to know which so its own `dropDestination` does not
-    /// also read the release as a reschedule onto the day.
-    private func updateNestedDropTarget(_ id: UUID, targeted: Bool) {
-        if targeted {
-            nestedDropTargetID = id
-        } else if nestedDropTargetID == id {
-            nestedDropTargetID = nil
-        }
-    }
-
-    private func rememberNestedTaskDrop(_ task: AppTask) {
-        recentlyBundledTaskID = task.id
-        recentlyBundledTaskDropExpiresAt = Date().addingTimeInterval(0.75)
-    }
-
-    private func shouldSuppressDayDrop(for taskID: UUID) -> Bool {
-        if nestedDropTargetID != nil {
-            return true
-        }
-        if recentlyBundledTaskID == taskID, Date() < recentlyBundledTaskDropExpiresAt {
-            return true
-        }
-        return false
+        guard let payload = items.first,
+              let taskID = TaskDragPayload.taskID(from: payload),
+              let task = allTasks.first(where: { $0.id == taskID }) else { return false }
+        onDropTaskOnDay(task)
+        return true
     }
 
     private func sortColumnItems(_ lhs: iOSCalendarBoardColumnItem, _ rhs: iOSCalendarBoardColumnItem) -> Bool {
@@ -599,11 +474,6 @@ private struct iOSCalendarBoardDayColumn: View {
         switch (lhs, rhs) {
         case (.task(let lhsTask), .task(let rhsTask)):
             return CalendarBoardPlannerSupport.boardTaskSort(lhsTask, rhsTask)
-        case (.bundle(let lhsBundle), .bundle(let rhsBundle)):
-            if lhsBundle.createdAt != rhsBundle.createdAt {
-                return lhsBundle.createdAt < rhsBundle.createdAt
-            }
-            return lhsBundle.id.uuidString < rhsBundle.id.uuidString
         case (.event(let lhsEvent), .event(let rhsEvent)):
             return lhsEvent.id < rhsEvent.id
         default:

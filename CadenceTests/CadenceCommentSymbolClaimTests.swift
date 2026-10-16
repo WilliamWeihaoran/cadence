@@ -918,14 +918,13 @@ enum CadenceCommentSymbolClaim {
     /// sentence names a real declaration, which is the tombstones' territory only if the repo
     /// later removes what it now correctly names.
     ///
-    /// **One is back, and it is held here rather than fixed because its file is Codex-leased
-    /// ([[T-3170]]).** The Calendar Board's formBundle doc says the Mac timeline "has had" the
-    /// gesture as SchedulingActions.createBundle(from:adding:), which "now delegates" to the shared
-    /// mutation. T-3170 removed both the gesture and that spelling from the Mac, so the sentence is
-    /// stale in the present tense. Delete this line in the change that corrects the comment.
-    static let staleClaims: [String] = [
-        "Cadence/iOS/iOSCalendarBoardView.swift `SchedulingActions.createBundle(from:adding:)`"
-    ]
+    /// **Empty, and it was emptied by the change it named.** The one entry was the Calendar
+    /// Board's formBundle doc, whose sentence about the Mac timeline having the gesture as
+    /// SchedulingActions.createBundle(from:adding:) went stale when [[T-3170]] removed that
+    /// gesture; it was held here rather than fixed because the file was Codex-leased. The grant
+    /// `41ded784` unblocked the file and T-3170's Board pass deleted the whole function the
+    /// comment documented, so the claim is gone with its comment rather than struck off.
+    static let staleClaims: [String] = []
 
     static var ledger: [String] { (deliberateTombstones + staleClaims).sorted() }
 
@@ -1010,8 +1009,10 @@ enum CadenceCommentSymbolClaim {
         // 36 before T-1091 ledgered its two examples; 37 since [[T-1571]] removed the one of
         // those two that was never a finding, only a member the reader could not reach.
         #expect(tombstones.count == 37)
-        // 1 since [[T-3170]]: the leased Calendar Board's sentence about the Mac spelling it removed.
-        #expect(stale.count == 1)
+        // 0 again. It was 1 while the Calendar Board's formBundle doc named a Mac spelling
+        // [[T-3170]] had removed and the file was still Codex-leased; the grant `41ded784`
+        // unblocked it and T-3170's Board pass deleted the function that comment documented.
+        #expect(stale.isEmpty)
     }
 
     /// The sweep. Exact set equality, both directions, over every Swift file in all five targets.
