@@ -1873,3 +1873,43 @@ is landed, not in flight. No local agent holds either.
 the Block removal passed through, and the remaining T-3170 work (the macOS board column) does not
 touch it — but if a later Block pass needs it, that pass must coordinate rather than assume. The
 archive-import half of T-3170 is already landed, so this should not arise.
+
+### T-3140 — GRANTED to Codex: nine macOS/Views paths for observed-day plumbing, one held back
+
+**GRANTED to Codex, for [[T-3140]]'s observed-day parameter chain and nothing else:**
+
+```
+Cadence/macOS/Views/CalendarPageView.swift
+Cadence/macOS/Views/CalendarPageSupportViews.swift
+Cadence/macOS/Views/CalendarTimelineViewportSupportViews.swift
+Cadence/macOS/Views/CalendarPageComponents.swift
+Cadence/macOS/Views/CalendarPageMonthSupportViews.swift
+Cadence/macOS/Views/TimelineDayCanvas.swift
+Cadence/macOS/Views/TimelineDayCanvasSupportLayers.swift
+Cadence/macOS/Views/TimelineTaskBlock.swift
+Cadence/macOS/Views/TimelineTaskBlockSupportViews.swift
+```
+
+T-3140: the macOS calendar page observes no day change, so after midnight its due labels, urgency,
+its own "today" reads and its board columns all stay on yesterday. No `cadenceTracksDayChanges`,
+timer or `scenePhase` anywhere in `Calendar*.swift`. The shared helper exists —
+`Cadence/Shared/CadenceDayChangeSupport.swift` — and **`cadenceTracksDayChanges(_:)` must be called
+inline in `body`**, which is [[T-3124]]'s finding; do not hoist it into a stored property.
+
+**`Cadence/macOS/Views/CalendarPageBoardSupportViews.swift` is NOT granted yet — it is dirty in the
+shared checkout right now.** Agent `blockgrant` is mid-edit on it for T-3170's ninth pass (the macOS
+board column's Block card and drop arbitration). Ask again once that lands and it will be granted;
+taking it now is the two-writers-one-file case this document exists to prevent.
+
+**`Cadence/macOS/Views/TimelineBundleBlock.swift`: do NOT plumb a today-key through it. The removal
+lands first.** Codex asked exactly the right question. That file is 57 `TaskBundle`/`bundle`
+references deep and is being deleted entirely under T-3170 — threading an observed-day parameter
+into it would be work thrown away, and a merge conflict against the deletion. Leave it reading
+`today` directly until it is gone. If T-3140's chain genuinely cannot compile without it, say so and
+stop rather than working around it.
+
+**Checked per file before granting**, which is the method correction recorded in the amendments
+above: all nine are clean in the shared checkout and none is held by a local agent. Two were touched
+recently by landed commits — `TimelineDayCanvas.swift` by `afc57985` (2026-10-16) and
+`CalendarPageMonthSupportViews.swift` by `10d47357` (2026-10-15) — so **rebase onto current
+origin/main before starting**, or the chain will be written against a shape that has moved.
