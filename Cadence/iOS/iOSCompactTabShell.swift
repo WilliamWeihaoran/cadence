@@ -151,10 +151,7 @@ struct iOSCompactRootShell: View {
     }
 
     private func pathBinding(for tab: CadenceCompactTab) -> Binding<NavigationPath> {
-        Binding(
-            get: { paths[tab] },
-            set: { paths[tab] = $0 }
-        )
+        $paths[dynamicMember: \.[tab]]
     }
 
 }

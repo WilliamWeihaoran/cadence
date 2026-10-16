@@ -22,6 +22,7 @@ struct CalendarTimelineTimeRail: View {
 }
 
 struct CalendarTimelineDayScroller: View {
+    let todayKey: String
     let bufferStart: Date
     let allTasks: [AppTask]
     let allBundles: [TaskBundle]
@@ -57,6 +58,7 @@ struct CalendarTimelineDayScroller: View {
                         let key = DateFormatters.dateKey(from: date)
                         CalDayColumn(
                             date: date,
+                            todayKey: todayKey,
                             tasks: tasksByDate[key] ?? [],
                             bundles: bundlesByDate[key] ?? [],
                             allTasks: allTasks,

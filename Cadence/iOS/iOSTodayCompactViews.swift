@@ -4,8 +4,6 @@ import SwiftUI
 
 struct iOSCompactTodayView: View {
     var showsHeader = true
-    @Environment(\.dismiss) private var dismiss
-    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     let completedTodayTasks: [AppTask]
     let todayTaskGroups: [CadenceTodayTaskGroup]
     /// Today's rollover banner, or `nil` when there is nothing to roll. Forwarded straight to
@@ -80,13 +78,15 @@ struct iOSCompactTodayView: View {
     /// bar below reads `completedCount`. What is gone is the sentence beside the date, not the day's
     /// arithmetic.
     private var header: some View {
-        iOSCompactPageHeader(
-            eyebrow: DateFormatters.longDate.string(from: Date()),
-            title: "Today",
-            color: Theme.amber,
-            count: summary.activeCount,
-            onBack: horizontalSizeClass == .compact ? { dismiss() } : nil
-        )
+        iOSCompactBackActionReader { onBack in
+            iOSCompactPageHeader(
+                eyebrow: DateFormatters.longDate.string(from: Date()),
+                title: "Today",
+                color: Theme.amber,
+                count: summary.activeCount,
+                onBack: onBack
+            )
+        }
         .padding(.top, 2)
         .padding(.bottom, 1)
     }

@@ -65,7 +65,7 @@ enum CadenceSavedLinkPersistence {
 /// What it deliberately does **not** do is re-case the scheme the user typed. `HTTP://example.com`
 /// is a valid URL and stays as it is; rewriting it would be a second guess stacked on the first,
 /// and the defect here was guessing, not casing.
-enum CadenceSavedLinkURL {
+nonisolated enum CadenceSavedLinkURL {
     /// The schemes a typed link may already carry. Anything else — including a scheme this list
     /// does not know, like `ftp://` — is treated as scheme-less and gets `https://`, which is what
     /// both platforms already did.

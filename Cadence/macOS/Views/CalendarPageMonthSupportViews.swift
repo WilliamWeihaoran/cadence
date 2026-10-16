@@ -57,12 +57,13 @@ struct CalendarChipDueMarker: View {
     let dueDateKey: String
     /// `yyyy-MM-dd` of the day cell / column this chip is drawn in.
     let dayKey: String
+    var todayKey: String = DateFormatters.todayKey()
     var isDone: Bool = false
     var calendar: Calendar = .current
 
     private var urgency: CadenceDueUrgency? {
         guard !dueDateKey.isEmpty, dueDateKey != dayKey else { return nil }
-        return CadenceDueUrgency.evaluate(dueDateKey: dueDateKey, isDone: isDone)
+        return CadenceDueUrgency.evaluate(dueDateKey: dueDateKey, isDone: isDone, todayKey: todayKey)
     }
 
     var body: some View {
@@ -138,6 +139,7 @@ struct MonthTaskChip: View {
     let task: AppTask
     /// `yyyy-MM-dd` of the cell this chip is drawn in.
     let dayKey: String
+    var todayKey: String = DateFormatters.todayKey()
 
     private var glyph: String {
         if task.isCancelled { return "xmark.circle.fill" }
@@ -155,7 +157,7 @@ struct MonthTaskChip: View {
         if task.isDone { return Theme.green }
         // No due date is not urgency-free noise: it collapses to the same neutral `.later`
         // tint, so only a real deadline ever colours the circle.
-        return CadenceDueUrgency.evaluate(dueDateKey: task.dueDate, isDone: task.isDone)?.tint
+        return CadenceDueUrgency.evaluate(dueDateKey: task.dueDate, isDone: task.isDone, todayKey: todayKey)?.tint
             ?? CadenceCalendarEventStyle.plateTertiaryLabelColor()
     }
 
@@ -173,7 +175,7 @@ struct MonthTaskChip: View {
                 )
                 .lineLimit(1)
             Spacer(minLength: 2)
-            CalendarChipDueMarker(dueDateKey: task.dueDate, dayKey: dayKey, isDone: task.isDone)
+            CalendarChipDueMarker(dueDateKey: task.dueDate, dayKey: dayKey, todayKey: todayKey, isDone: task.isDone)
         }
         // No `wash`: the fill is already this task's list colour solved to its own luminance, so a
         // second tint of the same hue over it would only move the plate off the target the ink is
@@ -332,6 +334,7 @@ enum CalendarMonthCellEventSupport {
 
 struct MonthDayCell: View {
     let date: Date
+    var todayKey: String = DateFormatters.todayKey()
     let tasks: [AppTask]
     let bundles: [TaskBundle]
     let allTasks: [AppTask]
@@ -384,7 +387,7 @@ struct MonthDayCell: View {
         let emphasis = CalendarMonthDayLabelSupport.emphasis(
             for: date,
             displayMonth: displayMonth,
-            today: Date(),
+            today: DateFormatters.date(from: todayKey) ?? Date(),
             calendar: cal
         )
         let layout = CalendarMonthCellLayout.chipLayout(
@@ -433,7 +436,7 @@ struct MonthDayCell: View {
                     MonthEventChip(event: event)
                 }
                 ForEach(taskChips) { task in
-                    MonthTaskChip(task: task, dayKey: dateKey)
+                    MonthTaskChip(task: task, dayKey: dateKey, todayKey: todayKey)
                 }
                 if split.hidden > 0 {
                     Text(CadenceTaskSurfaceOptions.moreLabel(hidden: split.hidden))
@@ -478,11 +481,12 @@ struct MonthDayCell: View {
 
 struct CalDayHeaderView: View {
     let date: Date
+    var todayKey: String = DateFormatters.todayKey()
     var allDayEvents: [EKEvent] = []
     var unscheduledTasks: [AppTask] = []
 
     private let cal = Calendar.current
-    private var isToday: Bool { cal.isDateInToday(date) }
+    private var isToday: Bool { DateFormatters.dateKey(from: date) == todayKey }
     private var allDayEventItems: [CalendarAllDayEventItem] {
         allDayEvents.map { CalendarAllDayEventItem(event: $0) }
     }
@@ -528,7 +532,7 @@ struct CalDayHeaderView: View {
         ScrollView(.vertical, showsIndicators: false) {
             VStack(alignment: .leading, spacing: 2) {
                 ForEach(unscheduledTasks) { task in
-                    AllDayTaskChip(task: task, dayKey: DateFormatters.dateKey(from: date))
+                    AllDayTaskChip(task: task, dayKey: DateFormatters.dateKey(from: date), todayKey: todayKey)
                 }
                 ForEach(allDayEventItems) { item in
                     AllDayEventChip(event: item.event)
@@ -545,6 +549,7 @@ struct AllDayTaskChip: View {
     /// Day column this chip is parked in. A task reaches the all-day lane by either its
     /// scheduled date or its due date, so the chip cannot let its column stand in for a deadline.
     let dayKey: String
+    var todayKey: String = DateFormatters.todayKey()
     @State private var showInspector = false
 
     /// Same rule as `MonthTaskChip.glyphTint`, and for the same reason: urgency and done-green are
@@ -553,7 +558,7 @@ struct AllDayTaskChip: View {
     private var allDayGlyphTint: Color {
         if task.isCancelled { return CadenceCalendarEventStyle.plateTertiaryLabelColor() }
         if task.isDone { return Theme.green }
-        return CadenceDueUrgency.evaluate(dueDateKey: task.dueDate, isDone: task.isDone)?.tint
+        return CadenceDueUrgency.evaluate(dueDateKey: task.dueDate, isDone: task.isDone, todayKey: todayKey)?.tint
             ?? CadenceCalendarEventStyle.plateTertiaryLabelColor()
     }
 
@@ -571,7 +576,7 @@ struct AllDayTaskChip: View {
                 )
                 .lineLimit(1)
             Spacer(minLength: 2)
-            CalendarChipDueMarker(dueDateKey: task.dueDate, dayKey: dayKey, isDone: task.isDone)
+            CalendarChipDueMarker(dueDateKey: task.dueDate, dayKey: dayKey, todayKey: todayKey, isDone: task.isDone)
         }
         .padding(.horizontal, 5)
         .padding(.vertical, 3)
@@ -659,6 +664,7 @@ struct AllDayEventChip: View {
 
 struct CalDayColumn: View {
     let date: Date
+    let todayKey: String
     let tasks: [AppTask]
     let bundles: [TaskBundle]
     let allTasks: [AppTask]
@@ -687,6 +693,7 @@ struct CalDayColumn: View {
         TimelineDayCanvas(
             date: date,
             dateKey: dateKey,
+            todayKey: todayKey,
             tasks: tasks,
             bundles: bundles,
             allTasks: allTasks,

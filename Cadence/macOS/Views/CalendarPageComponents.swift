@@ -51,6 +51,7 @@ struct CalTimeRailLabel: View {
 }
 
 struct MonthGridView: View {
+    let todayKey: String
     let allTasks: [AppTask]
     let tasksByDate: [String: [AppTask]]
     let bundlesByDate: [String: [TaskBundle]]
@@ -125,6 +126,7 @@ struct MonthGridView: View {
                     ForEach(0..<totalMonths, id: \.self) { idx in
                         let month = cal.date(byAdding: .month, value: idx - todayMonthIdx, to: currentMonthStart)!
                         MonthWeeksView(
+                            todayKey: todayKey,
                             month: month,
                             monthIndex: idx,
                             // The grid's month, not this block's. A block passing its own `month`
@@ -186,7 +188,7 @@ struct MonthGridView: View {
                 CalendarMonthGridInteractionSupport.handleTodayTrigger(
                     proxy: proxy,
                     todayMonthIdx: todayMonthIdx,
-                    todayKey: DateFormatters.todayKey(),
+                    todayKey: todayKey,
                     currentMonthStart: currentMonthStart,
                     calendar: cal,
                     centersTodayCell: todayBlockOverflowsViewport(viewportHeight),
@@ -214,6 +216,7 @@ struct MonthGridView: View {
 }
 
 struct MonthWeeksView: View {
+    let todayKey: String
     /// The block's own month. It decides which days this block **draws** — nothing about how they
     /// are tinted. Those two used to be the same value; see `displayedMonth`.
     let month: Date
@@ -239,6 +242,7 @@ struct MonthWeeksView: View {
                             let key = DateFormatters.dateKey(from: date)
                             MonthDayCell(
                                 date: date,
+                                todayKey: todayKey,
                                 tasks: tasksByDate[key] ?? [],
                                 bundles: bundlesByDate[key] ?? [],
                                 allTasks: allTasks,

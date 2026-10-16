@@ -4,6 +4,7 @@ import SwiftData
 
 struct TimelineTaskBlock: View {
     let task: AppTask
+    var todayKey: String = DateFormatters.todayKey()
     let column: Int
     let totalColumns: Int
     let totalWidth: CGFloat
@@ -54,6 +55,7 @@ struct TimelineTaskBlock: View {
     private func blockContent(now: Date?) -> some View {
         timelineBlockBody(
             task: task,
+            todayKey: todayKey,
             durationMinutes: task.timelineDurationMinutes,
             timeRangeLabel: timeRangeLabel,
             frame: frame,

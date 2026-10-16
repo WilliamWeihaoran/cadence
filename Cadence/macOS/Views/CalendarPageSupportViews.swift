@@ -219,6 +219,7 @@ private struct CalendarIconGhostButton: View {
 }
 
 struct CalendarTimelineHeaderStrip: View {
+    let todayKey: String
     let bufferStart: Date
     let colWidth: CGFloat
     let totalDaysWidth: CGFloat
@@ -252,6 +253,7 @@ struct CalendarTimelineHeaderStrip: View {
                     let key = DateFormatters.dateKey(from: date)
                     CalDayHeaderView(
                         date: date,
+                        todayKey: todayKey,
                         allDayEvents: eventCache.allDayEvents(for: date, calendarManager: calendarManager),
                         unscheduledTasks: unscheduledTasksByDate[key] ?? []
                     )
@@ -286,6 +288,7 @@ func calendarTimelineHeaderVisibleRange(
 }
 
 struct CalendarTimelineViewport: View {
+    let todayKey: String
     let geoSize: CGSize
     let viewMode: CadenceCalendarViewMode
     @Binding var zoomLevel: Int
@@ -340,6 +343,7 @@ struct CalendarTimelineViewport: View {
                     .padding(.bottom, 6)
                     }
                 CalendarTimelineHeaderStrip(
+                    todayKey: todayKey,
                     bufferStart: bufferStart,
                     colWidth: viewportMetrics.colWidth,
                     totalDaysWidth: viewportMetrics.totalDaysWidth,
@@ -363,6 +367,7 @@ struct CalendarTimelineViewport: View {
                         CalendarTimelineTimeRail(hourHeight: viewportMetrics.hourHeight)
 
                         CalendarTimelineDayScroller(
+                            todayKey: todayKey,
                             bufferStart: bufferStart,
                             allTasks: allTasks,
                             allBundles: allBundles,
