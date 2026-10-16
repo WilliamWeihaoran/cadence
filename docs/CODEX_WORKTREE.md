@@ -1798,3 +1798,36 @@ the AI note actions each show one for their own reason and are out of scope.
 **Checked before granting, per file rather than as a group** — the method correction recorded in the
 T-3170 grant amendment above. `rg -n "TaskBundle|estimate" <path>` was read for each of the three,
 and no `codex/*` branch has touched any of them since the branches that landed on 2026-10-09.
+
+### T-3170 — GRANT AMENDED AGAIN: the second and last Codex test file, with the glob question settled
+
+**`CadenceTests/CadenceCodexKanbanRenderingTests.swift` — GRANTED, for four argument labels in one
+call site. Nothing else.**
+
+`CalendarBoardDayColumn`'s Block parameters are constructed in this file at lines 36-42:
+`bundles: []`, `allBundles: []`, `onDropBundleOnDay:` and `onDropTaskOnBundle:`. Removing those
+parameters from the view stops this file compiling, so the ninth granted path
+(`CalendarBoardDayColumnSupportViews.swift`) cannot be finished without it. Agent `blockgrant`
+stopped at the boundary and reported rather than editing, which is correct.
+
+**The permitted change is to drop those four labels from that one call site** so it matches the
+view's new signature. Every other assertion in the file stays; it is Codex's record of the Kanban
+rendering contract and keeps that job.
+
+**THE GLOB QUESTION IS NOW SETTLED BY MEASUREMENT, SO NOBODY RE-DERIVES IT.** All 23
+`CadenceTests/CadenceCodex*.swift` files were checked **individually** for
+`TaskBundle|bundleID|bundleOrder|bundleControls|bundles:|allBundles:|onDropBundleOnDay|onDropTaskOnBundle|moveBundle|formBundle`:
+
+- `CadenceCodexFocusLandscapeTests.swift` — 1 hit, granted in the first amendment above, already
+  landed by heartbeat `hb1016` in `7c614341`.
+- `CadenceCodexKanbanRenderingTests.swift` — 3 hits (`:38`, `:40`, `:41`), granted here.
+- **The other 21 are clean.** Their `bundle` hits, where they have any, are Foundation's `Bundle`.
+
+So the original exclusion was right for 21 files and wrong for 2 — which is exactly the failure mode
+a glob invites, and the third time in this ticket that reasoning about a group instead of checking
+per file has cost a stop-and-amend. The per-file command above is the check; it takes a second.
+
+**Also recorded, because the next person will want it:** the macOS board column cascades into
+`CalendarBoardItemSupportViews`, `CalendarPageBoardSupportViews`, `SchedulePanel`,
+`SchedulePanelShellViews` and `CalendarPageMonthSupportViews`, **none of which are leased**. This
+one test file was the only lock on that door.
