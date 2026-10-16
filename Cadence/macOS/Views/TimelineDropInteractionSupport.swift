@@ -9,14 +9,6 @@ struct TimelineDropDelegate: DropDelegate {
     let onDropTaskAtMinute: (AppTask, Int) -> Void
     let onDropBundleAtMinute: (TaskBundle, Int) -> Void
     let onDropAllDayEventAtMinute: ((CalendarAllDayEventDropPayload, Int) -> Void)?
-    /// Rects owned by the "drop here to bundle" shelves currently on screen.
-    ///
-    /// A single user drop used to reach both this delegate and a shelf's, and which one took
-    /// effect was decided by a 750 ms wall-clock window armed by whichever async `loadObject`
-    /// callback returned first — so the same gesture bundled the task or moved it to a minute
-    /// depending on timing. The shelf sits above the canvas and owns its own rect; that is a
-    /// question about geometry, and it is answered synchronously, before any payload is loaded.
-    let bundleShelfFrames: [TimelineBlockFrame]
 
     @Binding var isTargeted: Bool
     @Binding var previewTaskID: UUID?
@@ -65,10 +57,6 @@ struct TimelineDropDelegate: DropDelegate {
     func performDrop(info: DropInfo) -> Bool {
         isTargeted = false
         let startMin = previewStartMin ?? metrics.snappedMinute(fromY: info.location.y - dragYOffset)
-        let landedOnBundleShelf = TimelineMetricsSupport.isInsideBlockedBlock(
-            point: info.location,
-            blockedFrames: bundleShelfFrames
-        )
 
         previewTaskID = nil
         previewStartMin = nil
@@ -94,7 +82,7 @@ struct TimelineDropDelegate: DropDelegate {
                     guard let bundle = allBundles.first(where: { $0.id == bundleID }) else { return }
                     onDropBundleAtMinute(bundle, startMin)
                 }
-            } else if !landedOnBundleShelf, let uuid = taskID(from: payloadString) {
+            } else if let uuid = taskID(from: payloadString) {
                 Task { @MainActor in
                     guard let task = allTasks.first(where: { $0.id == uuid }) else { return }
                     onDropTaskAtMinute(task, startMin)

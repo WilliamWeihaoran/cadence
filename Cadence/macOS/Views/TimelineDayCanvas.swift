@@ -94,9 +94,8 @@ struct TimelineDayCanvas: View {
                     onDropBundleAtMinute: onDropBundleAtMinute,
                     onDropAllDayEventAtMinute: onDropAllDayEventAtMinute,
                     // [[T-3170]]: no task block draws a bundle shelf any more, so no region of
-                    // the canvas defers a task drop to one. The delegate's parameter is in a
-                    // Codex-leased file and stays until that lease lets it go.
-                    bundleShelfFrames: [],
+                    // the canvas defers a task drop to one — and the delegate's parameter for
+                    // those rects is gone with them, now the grant has let that file go.
                     isTargeted: $isDropTargeted,
                     previewTaskID: $dropPreviewTaskID,
                     previewStartMin: $dropPreviewStartMin,

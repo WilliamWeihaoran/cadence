@@ -197,27 +197,32 @@ struct CadenceBundleCreationParityTests {
 
     /// **The chosen behaviour on the Mac: a task released over a task is rescheduled.** The block
     /// carries no `.onDrop` any more, so the release reaches the canvas's `TimelineDropDelegate`,
-    /// and the only thing that delegate ever stood aside for — a bundle shelf's rect — is now an
-    /// empty set. Its task arm is guarded on `!landedOnBundleShelf`, which an empty set can never
-    /// make true, so the payload goes to `onDropTaskAtMinute` like any other release.
+    /// and the only thing that delegate ever stood aside for — a bundle shelf's rect — is gone.
+    /// The fourth pass left it starved of rects because the delegate's file was Codex-leased; the
+    /// grant `41ded784` released it, so the parameter and the guard are deleted rather than fed an
+    /// empty set, and the payload goes to `onDropTaskAtMinute` like any other release.
     @Test func onTheMacATaskDroppedOnATaskFallsThroughToTheRescheduleDrop() throws {
         let block = try strippingBundleTestComments(sourceFile("Cadence/macOS/Views/TimelineTaskBlock.swift"))
         #expect(occurrences(of: ".onDrop(", in: block) == 0)
 
         let canvas = try strippingBundleTestComments(sourceFile("Cadence/macOS/Views/TimelineDayCanvas.swift"))
-        #expect(occurrences(of: "bundleShelfFrames: [],", in: canvas) == 1)
-        #expect(occurrences(of: "bundleShelfFrames:", in: canvas) == 1)
+        #expect(occurrences(of: "bundleShelfFrames", in: canvas) == 0)
         #expect(occurrences(of: "onDropTaskAtMinute: onDropTaskAtMinute,", in: canvas) == 1)
 
         // The delegate's own guard, read rather than assumed: the task arm is the reschedule, and
         // it yields only to a shelf rect.
         let delegate = try strippingBundleTestComments(sourceFile("Cadence/macOS/Views/TimelineDropInteractionSupport.swift"))
-        #expect(occurrences(of: "blockedFrames: bundleShelfFrames", in: delegate) == 1)
-        #expect(occurrences(of: "!landedOnBundleShelf, let uuid = taskID(from: payloadString)", in: delegate) == 1)
+        // The guard itself is gone now, not merely starved of rects: the parameter, the
+        // `landedOnBundleShelf` reading and the condition it gated are all deleted, so a task
+        // dropped anywhere on the canvas reaches the reschedule unconditionally.
+        #expect(occurrences(of: "bundleShelfFrames", in: delegate) == 0)
+        #expect(occurrences(of: "landedOnBundleShelf", in: delegate) == 0)
+        #expect(occurrences(of: "let uuid = taskID(from: payloadString)", in: delegate) == 1)
         #expect(occurrences(of: "onDropTaskAtMinute(task, startMin)", in: delegate) == 1)
 
-        // And the geometry that guard asks: with no shelf rects, no point on the canvas — the top
-        // of a block where the shelf used to sit included — is inside one.
+        // `isInsideBlockedBlock` itself survives and is NOT collateral: the drag-to-create layer
+        // in `TimelineDayCanvasSupportLayers` asks it whether a drag started on top of an existing
+        // block, which has nothing to do with the retired shelf.
         for point in [CGPoint(x: 0, y: 0), CGPoint(x: 120, y: 540), CGPoint(x: 299, y: 1_439)] {
             #expect(!TimelineMetricsSupport.isInsideBlockedBlock(point: point, blockedFrames: []))
         }
