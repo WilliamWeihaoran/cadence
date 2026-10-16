@@ -36,7 +36,8 @@ struct CadenceCodexFocusLandscapeTests {
         let landscape = try #require(CadenceSourceScan.declarationBody("private func landscapeLayout", in: source))
         #expect(landscape.contains("sessionClock(fontSize: 66)"))
         #expect(landscape.contains("focusControls(for: task)"))
-        #expect(landscape.contains("bundleControls(for: bundle)"))
+        // T-3170: Block Focus mode is gone, so the landscape layout has no block transport.
+        #expect(!landscape.contains("bundleControls"))
         #expect(landscape.contains("taskListPane"))
         #expect(landscape.contains(".cadenceFixedTypography()"))
         #expect(!landscape.contains("timerState ="))
