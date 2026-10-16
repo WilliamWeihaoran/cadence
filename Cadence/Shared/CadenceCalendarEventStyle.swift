@@ -184,13 +184,6 @@ enum CadenceCalendarEventStyle {
 
     // MARK: - Rail treatment
 
-    /// Fraction of the calendar's own saturation the **rail** keeps.
-    ///
-    /// Near-full, because in Apple Calendar the rail is the one element that is allowed to read as
-    /// raw paint: it is the identity marker, and everything else on the block has been pulled down
-    /// so that it can be. The 4% it gives up only takes the hard edge off a 100%-saturation primary.
-    static let railSaturationScale: Double = 0.96
-
     /// Floor the rail's relative luminance is lifted to when its own hue cannot reach it.
     ///
     /// The rail is a non-text UI component, so it owes WCAG's **3:1**, and it owes it against the
@@ -317,19 +310,56 @@ enum CadenceCalendarEventStyle {
         )
     }
 
-    /// The leading rail: the calendar's hue at near-full chroma, lifted to full brightness, and
-    /// desaturated only if that still leaves it under `railMinimumLuminance`.
+    /// The leading rail: **the same colour as the block's own title** ([[T-3168]]).
     ///
-    /// **Stateless on purpose.** The rail is the answer to "which calendar is this", and an
-    /// identity marker that changes colour on hover is a different calendar. The state ladder is
-    /// carried by the plate and the labels below it.
+    /// ## What this replaced, and why it had to go
+    ///
+    /// The rail used to be `Color(hue:, saturation: source.saturation * 0.96, brightness: 1)` —
+    /// full brightness at 96% chroma, near-neon — while every label beside it is *solved* to a
+    /// ratio against the plate and is therefore lightened and desaturated to land on it. The two
+    /// were built by different rules, and the consequence was not a matter of taste: **the rail
+    /// could never be quieter than its own title.** Agent `calfixture` photographed the result and
+    /// reported the rail, not the plate, as the loudest element on the canvas — after [[T-3168]]'s
+    /// chroma ceiling had already quietened the plate and left the rail untouched by design.
+    ///
+    /// The owner's target is an Apple Calendar screenshot, where a block's rail and its title are
+    /// one colour and the rail reads as *part of* the block rather than as a stripe laid over it.
+    /// Adopting the title's colour is the whole change, and it costs no contrast: this function
+    /// does not touch `railFillLuminance`, so every tier still solves against exactly the plate it
+    /// solved against before and the whole AA ladder stands unmoved.
+    ///
+    /// ## Still stateless, and that is a deliberate pin rather than an oversight
+    ///
+    /// `railTitleColor` takes `isSelected`/`isActive` and brightens with them; this calls it at its
+    /// **rest** defaults and never passes the state through. The rail is the answer to "which
+    /// calendar is this", and an identity marker that changes colour on hover is a different
+    /// calendar — the constraint the old implementation satisfied by being a fixed derivation per
+    /// hue, and which survives here for the same reason.
+    ///
+    /// The visible consequence, stated rather than discovered later: rail and title are *exactly*
+    /// the same colour at rest, and on hover and selection the title steps one and two stops
+    /// brighter while the rail stays put. At those stops the rail is the quieter of the two, which
+    /// is the right way round — it is never again the loudest thing in the frame.
+    ///
+    /// ## The floor is still enforced, and it is currently inert by arithmetic
+    ///
+    /// `railMinimumLuminance` is the 3:1 non-text bar against `Theme.bg`, and two month-grid call
+    /// sites still rely on this function carrying it. It cannot bind today: a rest title is solved
+    /// to `railTitleContrastTarget * (railFillLuminance() + 0.05) - 0.05` = 5.1 * 0.080 - 0.05 =
+    /// **Y 0.358**, three times the 0.120 floor, at every hue. It is kept rather than deleted
+    /// because that inertness is a *consequence* of two other constants and not a property of this
+    /// one: drop the title target or lift the rest plate far enough and the floor is what stops a
+    /// rail going invisible. `theRailIsTheTitlesColourAndClearsTheNonTextFloorByConstruction`
+    /// measures both halves.
     static func railColor(for calendarColor: Color) -> Color {
-        let source = hsb(of: calendarColor)
-        let saturation = source.saturation * railSaturationScale
-        if relativeLuminance(hue: source.hue, saturation: saturation, brightness: 1) >= railMinimumLuminance {
-            return Color(hue: source.hue, saturation: saturation, brightness: 1)
-        }
-        return desaturatedTint(hue: source.hue, ceiling: saturation, luminance: railMinimumLuminance)
+        let title = railTitleColor(for: calendarColor)
+        guard Theme.relativeLuminance(of: title) < railMinimumLuminance else { return title }
+        let source = hsb(of: title)
+        return desaturatedTint(
+            hue: source.hue,
+            ceiling: source.saturation,
+            luminance: railMinimumLuminance
+        )
     }
 
     /// The dark tinted plate behind a rail-treated block.
