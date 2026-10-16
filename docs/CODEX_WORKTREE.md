@@ -79,8 +79,6 @@ Cadence/macOS/Views/CalendarBoardDayColumnSupportViews.swift
 Cadence/macOS/Views/TimelineDropInteractionSupport.swift
 Cadence/Services/CadenceRemindersManager.swift
 Cadence/Services/CadenceForkedOccurrenceRemover.swift
-CadenceWidgets/FocusSessionWidget.swift
-Cadence/Shared/CadenceFocusSessionSnapshot.swift
 Cadence/Services/CadenceWidgetRefreshCenter.swift
 Cadence/Services/CadenceTodayWidgetSupport.swift
 Cadence/iOS/iOSCompactTabShell.swift
@@ -1831,3 +1829,20 @@ per file has cost a stop-and-amend. The per-file command above is the check; it 
 `CalendarBoardItemSupportViews`, `CalendarPageBoardSupportViews`, `SchedulePanel`,
 `SchedulePanelShellViews` and `CalendarPageMonthSupportViews`, **none of which are leased**. This
 one test file was the only lock on that door.
+
+### Lease hygiene 2026-10-16 — two dead reservations removed
+
+`CadenceWidgets/FocusSessionWidget.swift` and `Cadence/Shared/CadenceFocusSessionSnapshot.swift`
+were removed from the lease block. **Neither has ever existed**: `git log --all -- <path>` returns
+zero commits for both, and no `FocusSessionSnapshot` symbol appears anywhere in the tree. They were
+reservations for a Focus session widget that was never built, and they survived because a lease
+pattern that matches nothing fails silently — it costs nobody anything until someone audits.
+
+The other 51 patterns were checked the same way and all match at least one real file. Note the test
+has a trap worth recording: in zsh an unquoted `$p` does **not** glob, so a naive
+`ls $p` reports every pattern as stale. `eval "ls -1 $p"` is what actually answers the question —
+the first run of this audit produced two false positives (`Cadence/iOS/iOSList*.swift` and
+`CadenceTests/CadenceCodex*.swift`) before that was caught.
+
+`Cadence/macOS/Views/TimelineDropInteractionSupport.swift` shows as both leased and dirty in the
+shared checkout; that is the T-3170 grant above being exercised, not a violation.
