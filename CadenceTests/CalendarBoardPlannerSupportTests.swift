@@ -187,72 +187,14 @@ struct CalendarBoardPlannerSupportTests {
         #expect(folded["2026-06-05"] == nil)
     }
 
-    // MARK: - Bundle-card vs day-column drop
-
-    /// A day column and the bundle cards inside it are both drop destinations, and one release can
-    /// reach both. The column used to defer via a 0.75-second wall-clock window armed by the card's
-    /// drop handler, so which handler won depended on delivery order; when the column's ran first
-    /// it re-filed the task onto the day and `removeTaskFromBundle` undid the bundling. The
-    /// arbitration is a hit test now, decided before either handler runs.
-    @Test func aReleaseInsideABundleCardBelongsToThatCardNotToTheDayColumn() {
-        let breakfast = UUID()
-        let admin = UUID()
-        let frames: [UUID: CGRect] = [
-            breakfast: CGRect(x: 0, y: 100, width: 220, height: 64),
-            admin: CGRect(x: 0, y: 172, width: 220, height: 64)
-        ]
-
-        #expect(CalendarBoardPlannerSupport.bundleOwningBoardDrop(
-            at: CGPoint(x: 110, y: 130),
-            bundleIDs: [breakfast, admin],
-            bundleFrames: frames
-        ) == breakfast)
-
-        #expect(CalendarBoardPlannerSupport.bundleOwningBoardDrop(
-            at: CGPoint(x: 110, y: 200),
-            bundleIDs: [breakfast, admin],
-            bundleFrames: frames
-        ) == admin)
-    }
-
-    @Test func aReleaseOnBareColumnBackgroundBelongsToTheDayEvenBetweenTwoCards() {
-        let breakfast = UUID()
-        let admin = UUID()
-        let frames: [UUID: CGRect] = [
-            breakfast: CGRect(x: 0, y: 100, width: 220, height: 64),
-            // Deliberately not adjacent: the 8 pt gutter between cards is column background.
-            admin: CGRect(x: 0, y: 172, width: 220, height: 64)
-        ]
-        let ids = [breakfast, admin]
-
-        #expect(CalendarBoardPlannerSupport.bundleOwningBoardDrop(
-            at: CGPoint(x: 110, y: 168),
-            bundleIDs: ids,
-            bundleFrames: frames
-        ) == nil)
-        #expect(CalendarBoardPlannerSupport.bundleOwningBoardDrop(
-            at: CGPoint(x: 110, y: 40),
-            bundleIDs: ids,
-            bundleFrames: frames
-        ) == nil)
-        #expect(CalendarBoardPlannerSupport.bundleOwningBoardDrop(
-            at: CGPoint(x: 110, y: 400),
-            bundleIDs: ids,
-            bundleFrames: frames
-        ) == nil)
-    }
-
-    @Test func aFrameLeftBehindByABundleThatMovedAwayCannotClaimADrop() {
-        // Measured frames outlive the card that reported them. The column's current bundles are the
-        // authority on which rects are still real, or a bundle dragged to another day would keep
-        // swallowing drops in the hole it left.
-        let departed = UUID()
-        let frames: [UUID: CGRect] = [departed: CGRect(x: 0, y: 100, width: 220, height: 64)]
-
-        #expect(CalendarBoardPlannerSupport.bundleOwningBoardDrop(
-            at: CGPoint(x: 110, y: 130),
-            bundleIDs: [],
-            bundleFrames: frames
-        ) == nil)
-    }
+    // [[T-3170]] retired `aReleaseInsideABundleCardBelongsToThatCardNotToTheDayColumn`,
+    // `aReleaseOnBareColumnBackgroundBelongsToTheDayEvenBetweenTwoCards` and
+    // `aFrameLeftBehindByABundleThatMovedAwayCannotClaimADrop`, with the
+    // CalendarBoardPlannerSupport.bundleOwningBoardDrop they pinned. All three argued which of
+    // two overlapping drop destinations owned a release — the day column or a Block card sitting
+    // in it. The Block card is gone, so the column has no second claimant and the arbitration it
+    // needed is deleted rather than left callerless. The column's own behaviour, that a release
+    // is a reschedule onto the day, is pinned by
+    // `CalendarBoardDayDropCommitTests` and by the absence scan in
+    // `CadenceBundleCreationParityTests`.
 }

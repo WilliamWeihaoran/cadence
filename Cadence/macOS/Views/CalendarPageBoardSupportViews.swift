@@ -308,10 +308,8 @@ struct CalendarPageBoardView: View {
     let anchorDate: Date
     @Binding var selectedDate: Date
     let allTasks: [AppTask]
-    let allBundles: [TaskBundle]
     let areas: [Area]
     let projects: [Project]
-    let bundlesByDate: [String: [TaskBundle]]
     /// The calendar page's own `CalendarEventDayCache`, handed down rather than made here (T-1570).
     /// The month grid and the timeline viewport were always given it; the board was the one
     /// presentation reading `EKEventStore` straight through, once per realized column per render.
@@ -462,19 +460,12 @@ struct CalendarPageBoardView: View {
                             date: date,
                             dateKey: dateKey,
                             tasks: tasksByDate[dateKey] ?? [],
-                            bundles: bundlesByDate[dateKey] ?? [],
                             events: calendarDisplayItems(for: date),
                             allTasks: allTasks,
-                            allBundles: allBundles,
                             areas: areas,
                             projects: projects,
                             add: addBehavior(for: .day(dateKey)),
-                            onDropTaskOnDay: { task in handleDayColumnDrop(task, on: dateKey) },
-                            onDropBundleOnDay: { bundle in handleBlockMoveDrop(bundle, on: dateKey) },
-                            onDropTaskOnBundle: { task, bundle in
-                                SchedulingActions.addTask(task, to: bundle)
-                                try? modelContext.save()
-                            }
+                            onDropTaskOnDay: { task in handleDayColumnDrop(task, on: dateKey) }
                         )
                         .frame(width: Self.columnWidth)
                         .id(dayIndex)
@@ -645,19 +636,6 @@ struct CalendarPageBoardView: View {
             CalendarPageBoardDropSupport.schedule(
                 task,
                 on: dateKey,
-                modelContext: modelContext
-            )
-        }
-        dropFailureNotice = outcome == .refused ? CadencePendingChangePersistence.editFailureNotice : nil
-        return outcome == .applied
-    }
-
-    /// A day column's drop of a whole block ([[T-1980]]). Same mapping, same slot.
-    private func handleBlockMoveDrop(_ bundle: TaskBundle, on dateKey: String) -> Bool {
-        let outcome = withAnimation(kanbanCardReorderAnimation) {
-            CalendarPageBoardDropSupport.move(
-                bundle,
-                to: dateKey,
                 modelContext: modelContext
             )
         }

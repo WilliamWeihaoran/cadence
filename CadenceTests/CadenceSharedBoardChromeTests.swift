@@ -226,9 +226,10 @@ struct CadenceSharedBoardChromeTests {
 
     /// **The T-161 test for the chip.** Both boards' cards must reach the shared chip.
     @Test func bothBoardsDrawTheSharedMetadataChip() throws {
-        // iOS was 4 until [[T-3170]] deleted the Block card, which drew one of them.
+        // Both boards were 4 until [[T-3170]] deleted their Block cards: the iOS card drew one
+        // chip, the macOS one drew two.
         let callSites = [
-            "Cadence/macOS/Views/CalendarBoardItemSupportViews.swift": 4,
+            "Cadence/macOS/Views/CalendarBoardItemSupportViews.swift": 2,
             "Cadence/iOS/iOSBoardCards.swift": 3,
         ]
         try expectCallSites(of: "CadenceBoardMetadataChip", at: callSites)

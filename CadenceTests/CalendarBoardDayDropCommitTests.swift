@@ -485,10 +485,16 @@ struct CalendarBoardDayDropCommitTests {
             "Cadence/macOS/Views/CalendarPageBoardSupportViews.swift"
         )
 
-        // Four declarations, deliberately named apart: `schedule`/`move` are the units that commit,
-        // and `handleDayColumnDrop`/`handleBlockMoveDrop` are the view's mapping of their three
-        // answers onto the one `Bool` the column reads. `declarationBody(named:)` asserts there is
-        // exactly one of each, so a second copy cannot hide behind a name.
+        // Three declarations, deliberately named apart: `schedule`/`move` are the units that
+        // commit, and `handleDayColumnDrop` is the view's mapping of their three answers onto the
+        // one `Bool` the column reads. `declarationBody(named:)` asserts there is exactly one of
+        // each, so a second copy cannot hide behind a name.
+        //
+        // It was four. [[T-3170]] deleted `handleBlockMoveDrop` with the Block card the day column
+        // drew — there is no longer a board gesture that moves a whole block to another day. The
+        // unit it called, `CalendarPageBoardDropSupport.move`, is KEPT and still asserted below:
+        // it is reached only by this suite now, and it goes with the rest of the block-move story
+        // when the surfaces that edit an existing block are removed, not half of it here.
         for unit in ["schedule", "move"] {
             let body = try CadenceCommitSurfaceScan.declarationBody(named: unit, in: source)
             #expect(!body.contains("try? "), "\(unit): the swallowed commit is gone")
@@ -508,7 +514,7 @@ struct CalendarBoardDayDropCommitTests {
             "the block drop snapshots the block's own slot as well as its members"
         )
 
-        for handler in ["handleDayColumnDrop", "handleBlockMoveDrop"] {
+        for handler in ["handleDayColumnDrop"] {
             let body = try CadenceCommitSurfaceScan.declarationBody(named: handler, in: source)
             #expect(!body.contains("try? modelContext.save()"), "\(handler): no swallow left in the view")
             #expect(
@@ -527,24 +533,26 @@ struct CalendarBoardDayDropCommitTests {
     /// The other file, and the half no amount of work inside `CalendarPageBoardView` could have
     /// fixed: `CalendarBoardDayColumn.handleDrop` answered `.dropDestination` `true` whatever the
     /// store did, because the callbacks it forwards to returned `Void`. That `Void` is also why
-    /// `CadenceSaveCommitRule`'s report half could not see either drop.
+    /// `CadenceSaveCommitRule`'s report half could not see either drop. One callback remains since
+    /// [[T-3170]]; the rule it proves is unchanged.
     @Test func thecalendarBoardDayColumnForwardsTheDropAnswerItIsGiven() throws {
         let source = try CadenceCommitSurfaceScan.scanned(
             "Cadence/macOS/Views/CalendarBoardDayColumnSupportViews.swift"
         )
 
         #expect(source.contains("let onDropTaskOnDay: (AppTask) -> Bool"))
-        #expect(source.contains("let onDropBundleOnDay: (TaskBundle) -> Bool"))
+        // [[T-3170]] removed `onDropBundleOnDay` with the Block card, so the `Bool` this test is
+        // about is now carried by the one remaining callback.
+        #expect(source.contains("onDropBundleOnDay") == false)
 
         let handleDrop = try CadenceCommitSurfaceScan.declarationBody(named: "handleDrop", in: source)
-        #expect(handleDrop.contains("return onDropBundleOnDay(bundle)"))
         #expect(handleDrop.contains("return onDropTaskOnDay(task)"))
-        // The one `return true` that survives is the deferral: the release landed on a bundle card
-        // inside this column, that card's own handler owns the gesture, and the column answering
-        // `false` would spring a card back that was in fact accepted.
+        // No unconditional accept left at all. There used to be exactly one — the hit-test
+        // deferral to a Block card that had claimed the release — and with no card to claim one
+        // the column answers only what the store told it.
         #expect(
-            CadenceSourceScan.matchCount(#"return true"#, in: handleDrop) == 1,
-            "the only unconditional accept left is the hit-test deferral"
+            CadenceSourceScan.matchCount(#"return true"#, in: handleDrop) == 0,
+            "the column accepts a drop only by forwarding the store's answer"
         )
     }
 

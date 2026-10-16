@@ -6,10 +6,8 @@ struct CalendarBoardDayColumn: View {
     let date: Date
     let dateKey: String
     let tasks: [AppTask]
-    let bundles: [TaskBundle]
     let events: [CalendarBoardEventDisplayItem]
     let allTasks: [AppTask]
-    let allBundles: [TaskBundle]
     let areas: [Area]
     let projects: [Project]
     /// What the column's ghost row does. A day column always composes in place — it supplies the
@@ -22,14 +20,9 @@ struct CalendarBoardDayColumn: View {
     /// frame up in `CalendarPageBoardView`. A refused drop was drawn on the day it was released and
     /// reverted at the next launch, the [[T-566]] shape the rail drop had until [[T-1952]].
     let onDropTaskOnDay: (AppTask) -> Bool
-    let onDropBundleOnDay: (TaskBundle) -> Bool
-    let onDropTaskOnBundle: (AppTask, TaskBundle) -> Void
 
     @Environment(HoveredKanbanColumnManager.self) private var hoveredKanbanColumnManager
     @State private var isDropTargeted = false
-    /// Where each bundle card sits, in this column's own coordinate space — the space
-    /// `dropDestination` reports its release point in. See `bundleOwningBoardDrop`.
-    @State private var bundleFrames: [UUID: CGRect] = [:]
     @State private var isCompletedCollapsed = true
     @State private var isHovered = false
     @State private var isComposing = false
@@ -63,9 +56,8 @@ struct CalendarBoardDayColumn: View {
 
     private var activeItems: [CalendarBoardColumnItem] {
         let eventItems = events.map { CalendarBoardColumnItem.event($0) }
-        let bundleItems = bundles.map { CalendarBoardColumnItem.bundle($0) }
         let taskItems = activeTasks.map { CalendarBoardColumnItem.task($0) }
-        return (eventItems + bundleItems + taskItems).sorted(by: sortColumnItems)
+        return (eventItems + taskItems).sorted(by: sortColumnItems)
     }
 
     var body: some View {
@@ -177,21 +169,6 @@ struct CalendarBoardDayColumn: View {
         switch item {
         case .event(let item):
             CalendarBoardEventCard(item: item)
-        case .bundle(let bundle):
-            CalendarBoardBundleCard(
-                bundle: bundle,
-                allTasks: allTasks,
-                areas: areas,
-                projects: projects,
-                onDropTask: { task in
-                    onDropTaskOnBundle(task, bundle)
-                }
-            )
-            .onGeometryChange(for: CGRect.self) { proxy in
-                proxy.frame(in: .named(coordinateSpaceName))
-            } action: { rect in
-                bundleFrames[bundle.id] = rect
-            }
         case .task(let task):
             KanbanCard(task: task, showsContainerChip: true, dayAlreadyStatedBySurface: dateKey)
                 .draggable(TaskDragPayload.string(for: task.id))
@@ -214,25 +191,21 @@ struct CalendarBoardDayColumn: View {
         }
     }
 
+    /// **Nothing nested in this column can claim a drag any more ([[T-3170]]).** A release used to
+    /// be arbitrated: a Block card sitting in the column owned its own drop, so answering the day
+    /// drop as well would re-file the task onto the day and, through `removeTaskFromBundle`, undo
+    /// the bundling that had just happened. With the Block card gone there is no second claimant,
+    /// so every release is the reschedule this column already reads it as — the same simplification
+    /// the iOS board made in the pass before this one.
+    ///
+    /// `location` is kept in the signature: `.dropDestination` supplies it, and the parameter
+    /// costing nothing is cheaper than a call-site change that would have to be undone if this
+    /// column ever gains a nested target again.
     private func handleDrop(_ items: [String], at location: CGPoint) -> Bool {
-        guard let payload = items.first else { return false }
-        if let bundleID = TaskDragPayload.bundleID(from: payload),
-           let bundle = allBundlesLookup(bundleID) {
-            return onDropBundleOnDay(bundle)
-        }
-        if let taskID = TaskDragPayload.taskID(from: payload),
-           let task = allTasks.first(where: { $0.id == taskID }) {
-            // Released on top of one of this column's bundle cards: that card's own drop handler
-            // owns the gesture. Answering the day drop as well would re-file the task onto the day
-            // and, through `removeTaskFromBundle`, undo the bundling that just happened.
-            guard CalendarBoardPlannerSupport.bundleOwningBoardDrop(
-                at: location,
-                bundleIDs: bundles.map(\.id),
-                bundleFrames: bundleFrames
-            ) == nil else { return true }
-            return onDropTaskOnDay(task)
-        }
-        return false
+        guard let payload = items.first,
+              let taskID = TaskDragPayload.taskID(from: payload),
+              let task = allTasks.first(where: { $0.id == taskID }) else { return false }
+        return onDropTaskOnDay(task)
     }
 
     private func sortColumnItems(_ lhs: CalendarBoardColumnItem, _ rhs: CalendarBoardColumnItem) -> Bool {
@@ -242,11 +215,6 @@ struct CalendarBoardDayColumn: View {
         switch (lhs, rhs) {
         case (.task(let lhsTask), .task(let rhsTask)):
             return CalendarBoardPlannerSupport.boardTaskSort(lhsTask, rhsTask)
-        case (.bundle(let lhsBundle), .bundle(let rhsBundle)):
-            if lhsBundle.createdAt != rhsBundle.createdAt {
-                return lhsBundle.createdAt < rhsBundle.createdAt
-            }
-            return lhsBundle.id.uuidString < rhsBundle.id.uuidString
         case (.event(let lhsEvent), .event(let rhsEvent)):
             return lhsEvent.id < rhsEvent.id
         default:
@@ -254,33 +222,28 @@ struct CalendarBoardDayColumn: View {
         }
     }
 
-    private func allBundlesLookup(_ id: UUID) -> TaskBundle? {
-        allBundles.first(where: { $0.id == id }) ?? bundles.first(where: { $0.id == id })
-    }
 }
 
 private enum CalendarBoardColumnItem: Identifiable {
     case event(CalendarBoardEventDisplayItem)
-    case bundle(TaskBundle)
     case task(AppTask)
 
     var id: String {
         switch self {
         case .event(let item):
             return "event-\(item.id)"
-        case .bundle(let bundle):
-            return "bundle-\(bundle.id.uuidString)"
         case .task(let task):
             return "task-\(task.id.uuidString)"
         }
     }
 
+    // Rank 2 for tasks, with no rank 1 above it: [[T-3170]] removed the Block card that held the
+    // middle rank. These are a sort order rather than a dense index, and renumbering would make
+    // this column disagree with `CalendarBoardPlannerSupport.sortKey`'s other callers for nothing.
     var sortKey: CalendarBoardSortKey {
         switch self {
         case .event(let item):
             return item.sortKey
-        case .bundle(let bundle):
-            return CalendarBoardPlannerSupport.sortKey(for: bundle, kindRank: 1)
         case .task(let task):
             return CalendarBoardPlannerSupport.sortKey(for: task, kindRank: 2)
         }

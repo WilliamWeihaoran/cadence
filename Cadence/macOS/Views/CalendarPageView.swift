@@ -89,10 +89,8 @@ struct CalendarPageView: View {
                     anchorDate: selectedBoardDate,
                     selectedDate: $selectedBoardDate,
                     allTasks: allTasks,
-                    allBundles: allBundles,
                     areas: areas,
                     projects: projects,
-                    bundlesByDate: bundlesByDate,
                     eventCache: calendarEventDayCache
                 )
             } else if viewMode == .month {

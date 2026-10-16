@@ -35,10 +35,9 @@ struct CadenceCodexKanbanRenderingTests {
             ))),
             ("day", AnyView(CalendarBoardDayColumn(
                 dayIndex: 0, date: day, dateKey: "2026-10-06", tasks: tasks,
-                bundles: [], events: [], allTasks: tasks, allBundles: [], areas: [], projects: [],
+                events: [], allTasks: tasks, areas: [], projects: [],
                 add: .compose(.day(dateKey: "2026-10-06", startMin: 540)),
-                onDropTaskOnDay: { _ in false }, onDropBundleOnDay: { _ in false },
-                onDropTaskOnBundle: { _, _ in }
+                onDropTaskOnDay: { _ in false }
             ))),
             ("rail", AnyView(CalendarBoardRailColumn(
                 rail: .unscheduled, tasks: tasks, add: .presentSheet {}, onDrop: { _ in false }
