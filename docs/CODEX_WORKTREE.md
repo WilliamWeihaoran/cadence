@@ -1771,3 +1771,30 @@ four times and wrong once.
 written, and the agent that reported it credited the coordinator, who did not make it. It is correct
 and minimal, so it stands — but it was made against a leased path with no grant in force, which is
 the thing this document exists to prevent.
+
+### T-3196 / T-3197 — GRANTED: three iOS files, to remove two pieces of row and page chrome
+
+**`Cadence/iOS/iOSTaskRowActionViews.swift`, `Cadence/iOS/iOSTaskViews.swift` and
+`Cadence/iOS/iOSTodayCompactViews.swift` — GRANTED, narrowly, for two removals. Nothing else.**
+
+The owner asked for the trailing **estimate chip** to come off task rows on every platform
+([[T-3196]]), and for Today's **"Nothing planned"** empty-state card to come off ([[T-3197]]). All
+three files are leased and none of the work is reachable without this.
+
+**Exactly what may change.** `iOSTaskRowEstimateChip` (`iOSTaskRowActionViews.swift:414`) and its two
+call sites (`iOSTaskViews.swift:195`, `:268`); the "Nothing planned" card in
+`iOSTodayCompactViews.swift`. Nothing else in these files — they carry the task row's whole layout
+and the compact Today page, and both are surfaces this lease exists to protect.
+
+**Explicitly NOT granted, and not needed:** the `#if DEBUG` seed card at
+`iOSTodayCompactViews.swift:200`. The owner asked whether it was dev-only; it is, so it stays
+exactly as it is.
+
+**The estimate is not being deleted from the product.** `AppTask.estimatedMinutes` stays, the
+capture card keeps Estimate in its overflow, and `iOSFocusView.swift:373` still reads it. Do not
+sweep other `estimatedMinutes` readers — the markdown embed, search results, the timeline draft and
+the AI note actions each show one for their own reason and are out of scope.
+
+**Checked before granting, per file rather than as a group** — the method correction recorded in the
+T-3170 grant amendment above. `rg -n "TaskBundle|estimate" <path>` was read for each of the three,
+and no `codex/*` branch has touched any of them since the branches that landed on 2026-10-09.
