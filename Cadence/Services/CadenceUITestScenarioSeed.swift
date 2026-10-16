@@ -38,6 +38,12 @@ enum CadenceUITestScenarioSeed {
         /// `CalendarBoardBundleCard`. The point is that all five of the board's `arrowEdge:
         /// .trailing` anchors are on screen in ONE window, so their frames are comparable.
         case popoverAnchors = "popover-anchors"
+        /// **The calendar fixture scenario** ([[T-3186]]). Both halves of one launch: the tasks
+        /// below, and the events `CadenceCalendarFixtureEvents` answers the day cache with. They
+        /// share one scenario name on purpose — the question the fixture exists to answer is how an
+        /// event plate reads *beside a task plate*, and a selector that could turn on one half
+        /// without the other would make that frame impossible to ask for.
+        case calendarHues = "calendar-hues"
     }
 
     /// The alt text on the seeded picture, and the text of the paragraph under it. Both are read
@@ -137,17 +143,52 @@ enum CadenceUITestScenarioSeed {
         /// optional and an event without one crashes the app when its card is clicked — measured
         /// 2026-10-03, see [[T-2047]]. Not a user-facing name on any shipping surface.
         static let boardEventCalendarTitle = "Anchor Calendar"
+
+        // MARK: - calendar-hues (T-3186)
+
+        /// The one task this scenario seeds, and it is the **control** the whole fixture exists
+        /// for. [[T-3168]]'s claim is that an event plate now reads quieter than a *task* plate, so
+        /// the frame has to hold both; a screenshot of three event blocks proves nothing about a
+        /// comparison.
+        static let hueTaskTitle = "Fixture Task"
+
+        /// Read from the event fixture rather than respelled. The task **opens** the band and the
+        /// deep red event starts `cascadeOffsetMinutes` into it, so the two overlap — which is what
+        /// puts an event plate beside a task plate in one frame — and they cascade rather than
+        /// splitting, which is what agent `compactcascade` found this fixture could not show.
+        ///
+        /// A `static let` over the other constant, **not** a computed `var` over it: `Fixture` is
+        /// one of the six nested helper types `CadenceSaveCommitDisciplineTests`'
+        /// `theAppsNestedHelperTypesNoLongerSwallowTheDeclarationsBelowThem` pins as owning **no**
+        /// declaration at all, and a computed property is a declaration. That assertion is the
+        /// non-vacuity half of the containment reader — it goes red if anyone re-files declarations
+        /// by proximity — so the derivation is spelled in a way that leaves it standing. Measured:
+        /// the `var` form failed it 2026-10-15.
+        static let hueTaskStartMinute = CadenceCalendarFixtureEvents.Fixture.bandStartMinute
+
+        /// Minutes, so the task block is the same height as the event beside it. A size difference
+        /// would be a second variable in a reading that is only about colour.
+        static let hueTaskEstimateMinutes = 60
     }
 
-    static var requestedScenario: Scenario? {
-        guard let raw = ProcessInfo.processInfo.environment["CADENCE_UI_TEST_SCENARIO"], !raw.isEmpty else {
-            return nil
-        }
+    /// The variable this enum is selected by, named once so the tests and the readers agree on the
+    /// spelling — the shape `CadenceEventKitLaunchGate` already uses for its three.
+    static let scenarioVariable = "CADENCE_UI_TEST_SCENARIO"
+
+    /// The scenario `environment` asks for, if any. **Pure over its input** ([[T-3186]]), so a test
+    /// drives it with a literal dictionary instead of mutating the host's environment; a gate that
+    /// can only be checked by launching is a gate that does not get checked.
+    static func scenario(in environment: [String: String]) -> Scenario? {
+        guard let raw = environment[scenarioVariable], !raw.isEmpty else { return nil }
         guard let scenario = Scenario(rawValue: raw) else {
             print("[CadenceUITestScenarioSeed] unknown scenario '\(raw)'; nothing seeded")
             return nil
         }
         return scenario
+    }
+
+    static var requestedScenario: Scenario? {
+        scenario(in: ProcessInfo.processInfo.environment)
     }
 
     @MainActor
@@ -160,6 +201,8 @@ enum CadenceUITestScenarioSeed {
             seedTodayRowCrush(modelContext: modelContext)
         case .popoverAnchors:
             seedPopoverAnchors(modelContext: modelContext)
+        case .calendarHues:
+            seedCalendarHues(modelContext: modelContext)
         }
     }
 
@@ -350,6 +393,42 @@ enum CadenceUITestScenarioSeed {
             try modelContext.save()
         } catch {
             print("[CadenceUITestScenarioSeed] the popover-anchors seed could not be saved: \(error)")
+        }
+    }
+
+    /// **The task half of the calendar fixture** ([[T-3186]]) — one scheduled task, drawn on the
+    /// week timeline in the same window as the deep red event `CadenceCalendarFixtureEvents`
+    /// supplies.
+    ///
+    /// It carries no tag, no deadline and no list beyond the stock seed's area: every extra piece
+    /// of furniture is something else for an eye to read, and the only question being asked is
+    /// which plate is louder. **No block is seeded** — `TaskBundle` is being removed under
+    /// [[T-3170]], and the earlier hand-built version of this fixture used one.
+    @MainActor
+    private static func seedCalendarHues(modelContext: ModelContext) {
+        let todayKey = DateFormatters.ymd.string(from: Date())
+
+        // Idempotent by the same test the stock seed and the other scenarios use.
+        let existingTasks = (try? modelContext.fetch(FetchDescriptor<AppTask>())) ?? []
+        guard existingTasks.isEmpty else { return }
+
+        let areas = (try? modelContext.fetch(FetchDescriptor<Area>())) ?? []
+        let host = areas.first { $0.name == "Alpha Area" } ?? areas.first
+
+        let task = AppTask(title: Fixture.hueTaskTitle)
+        task.scheduledDate = todayKey
+        task.scheduledStartMin = Fixture.hueTaskStartMinute
+        task.estimatedMinutes = Fixture.hueTaskEstimateMinutes
+        task.order = 0
+        task.area = host
+        task.context = host?.context
+        modelContext.insert(task)
+
+        // **Not `try?`**, for the reason the three scenarios above state.
+        do {
+            try modelContext.save()
+        } catch {
+            print("[CadenceUITestScenarioSeed] the calendar-hues seed could not be saved: \(error)")
         }
     }
 

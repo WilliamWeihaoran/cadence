@@ -129,6 +129,15 @@ final class CalendarEventDayCache {
     private var recentlyAccessedDateKeys: [String] = []
 
     func timedEvents(for date: Date, calendarManager: any CalendarEventDaySource) -> [EKEvent] {
+        // **The fixture seam, and it is first on purpose** ([[T-3186]]). An agent or UI-test launch
+        // is disarmed by `CadenceEventKitLaunchGate`, so the guard below answers `[]` for every day
+        // and no calendar event has ever been on screen outside the owner's own session. When — and
+        // only when — the scenario asks for it, the day's events come from
+        // `CadenceCalendarFixtureEvents` and EventKit is not consulted at all. `nil` is "not under
+        // that scenario", which is every shipping launch, and is what keeps the authorisation guard
+        // the only thing a real timeline reads. Nothing is cached on this path: the fixtures are
+        // held by the enum and there is no store version for them to go stale against.
+        if let fixtures = CadenceCalendarFixtureEvents.timedEvents(for: date) { return fixtures }
         guard calendarManager.isAuthorized else {
             clear()
             return []
@@ -144,6 +153,10 @@ final class CalendarEventDayCache {
     }
 
     func allDayEvents(for date: Date, calendarManager: any CalendarEventDaySource) -> [EKEvent] {
+        // The all-day door, same seam and same contract as `timedEvents` above. Both are wired
+        // because the all-day banner is a surface of its own and a harness that could only show the
+        // timed lane would send the next agent back to hand-building the other half.
+        if let fixtures = CadenceCalendarFixtureEvents.allDayEvents(for: date) { return fixtures }
         guard calendarManager.isAuthorized else {
             clear()
             return []
