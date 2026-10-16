@@ -110,6 +110,7 @@ Cadence/macOS/Views/TimelineDayCanvas.swift
 Cadence/macOS/Views/TimelineDayCanvasSupportLayers.swift
 Cadence/macOS/Views/TimelineTaskBlock.swift
 Cadence/macOS/Views/TimelineTaskBlockSupportViews.swift
+Cadence/macOS/Views/CalendarPageBoardSupportViews.swift
 ```
 
 ### LEASE WIDENED 2026-10-09 (third batch) — three paths so [[T-3085]]'s shared wording has somewhere to live
@@ -1943,3 +1944,15 @@ called a "grant" in this document:
 
 The second kind must edit the fence. Writing only the reasoning produces a grant that reads correctly
 to a human and does not exist to the tooling — which is the failure mode this one was.
+
+### T-3140 — the tenth path, released now that the Block removal is off it
+
+**`Cadence/macOS/Views/CalendarPageBoardSupportViews.swift` — GRANTED to Codex, and IN THE FENCE
+above**, completing the ten paths requested for T-3140's observed-day plumbing.
+
+It was held back on 2026-10-16 because agent `blockgrant` had it dirty for T-3170's board-column
+pass. That pass landed as `aea7e087` and the file is clean. Codex asked to be told rather than
+assume, and left it untouched in the meantime, which is exactly right.
+
+Same scope limit as the other nine: the observed-day parameter chain and nothing else.
+`cadenceTracksDayChanges(_:)` must be called **inline in `body`** ([[T-3124]]).
