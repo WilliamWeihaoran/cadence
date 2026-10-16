@@ -10,6 +10,7 @@ struct TimelineDayCanvas: View {
 
     let date: Date
     let dateKey: String
+    var todayKey: String = DateFormatters.todayKey()
     let tasks: [AppTask]
     let bundles: [TaskBundle]
     let allTasks: [AppTask]
@@ -153,6 +154,7 @@ struct TimelineDayCanvas: View {
             )
 
             TimelineScheduledBlocksLayer(
+                todayKey: todayKey,
                 eventLayouts: eventLayouts,
                 bundleLayouts: bundleLayouts,
                 taskLayouts: layouts,

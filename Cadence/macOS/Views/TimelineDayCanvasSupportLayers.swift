@@ -84,6 +84,7 @@ struct TimelineWorkHoursHighlightLayer: View {
 }
 
 struct TimelineScheduledBlocksLayer: View {
+    let todayKey: String
     let eventLayouts: [TimelineEventLayout]
     let bundleLayouts: [TimelineBundleLayout]
     let taskLayouts: [TimelineBlockLayout]
@@ -138,6 +139,7 @@ struct TimelineScheduledBlocksLayer: View {
         ForEach(taskLayouts, id: \.task.id) { layout in
             TimelineTaskBlock(
                 task: layout.task,
+                todayKey: todayKey,
                 column: layout.column,
                 totalColumns: layout.totalColumns,
                 totalWidth: width,

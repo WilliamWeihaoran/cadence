@@ -133,6 +133,7 @@ private struct DiagonalStripeOverlay: View {
 @ViewBuilder
 func timelineBlockBody(
     task: AppTask,
+    todayKey: String = DateFormatters.todayKey(),
     durationMinutes: Int,
     timeRangeLabel: String,
     frame: TimelineBlockFrame,
@@ -144,7 +145,6 @@ func timelineBlockBody(
     onToggleDone: (() -> Void)? = nil
 ) -> some View {
     let taskColor = Color(hex: task.containerColor)
-    let todayKey = DateFormatters.todayKey()
     let dueUrgency = CadenceDueUrgency.evaluate(dueDateKey: task.dueDate, isDone: task.isDone, todayKey: todayKey)
     let dueLabel = CadenceFocusSupport.dueLabel(forDueDateKey: task.dueDate, todayKey: todayKey)
     let clampedProgress = min(max(completionProgress, 0), 1)

@@ -53,6 +53,7 @@ struct CalendarPageView: View {
     @State private var externalJumpToken: UUID?
     @State private var calendarEventDayCache = CalendarEventDayCache()
     @State private var timelineScrollState = CalendarTimelineScrollState()
+    @State private var observedDay = CadenceObservedDay()
 
     private let cal = Calendar.current
     private var bufferStart: Date {
@@ -95,6 +96,7 @@ struct CalendarPageView: View {
                 )
             } else if viewMode == .month {
                 MonthGridView(
+                    todayKey: observedDay.todayKey,
                     allTasks: allTasks,
                     tasksByDate: tasksByDateForMonth,
                     bundlesByDate: bundlesByDate,
@@ -107,6 +109,7 @@ struct CalendarPageView: View {
             } else {
                 GeometryReader { geo in
                     CalendarTimelineViewport(
+                        todayKey: observedDay.todayKey,
                         geoSize: geo.size,
                         viewMode: viewMode,
                         zoomLevel: $zoomLevel,
@@ -145,6 +148,7 @@ struct CalendarPageView: View {
             }
         }
         .background(Theme.bg)
+        .cadenceTracksDayChanges($observedDay)
         // The other surface that writes EventKit. Drag-to-create in the week/2W timeline, the
         // month grid's quick-create, the all-day → timed conversion, and the event popover's
         // save/delete all failed in silence here while `SchedulePanel` reported the same failures.

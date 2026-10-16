@@ -1,6 +1,23 @@
 import SwiftUI
 import SwiftData
 
+/// A foreground reconcile must not reuse models registered before an extension's write.
+@MainActor
+struct CadenceForegroundNotificationSnapshot {
+    let context: ModelContext
+    let tasks: [AppTask]
+
+    init(
+        container: ModelContainer,
+        fetch: ((ModelContext) throws -> [AppTask])? = nil
+    ) throws {
+        let context = ModelContext(container)
+        context.autosaveEnabled = false
+        self.tasks = try fetch?(context) ?? context.fetch(FetchDescriptor<AppTask>())
+        self.context = context
+    }
+}
+
 @main
 struct CadenceApp: App {
     // Optional since T-817: `PersistenceController.shared.container` is `nil` when the CloudKit

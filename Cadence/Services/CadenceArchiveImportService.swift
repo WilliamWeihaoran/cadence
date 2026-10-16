@@ -135,29 +135,9 @@ nonisolated enum CadenceArchiveImportService {
     /// archive cannot restore a `file://` or third-party scheme the Mac would open on one click
     /// (T-3106). A scheme other than `http(s)://` is demoted to `https://<raw>`, exactly as a typed
     /// one is; a blank field stays blank rather than becoming `https://`.
-    ///
-    /// **Why this restates the rule instead of calling `normalized`.** `CadenceSavedLinkURL` is
-    /// main-actor isolated by the target's default (`SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`)
-    /// and this importer is `nonisolated`, so calling it -- or even reading its static lets -- here
-    /// is an `#ActorIsolatedCall` warning, and that file is not this change's to edit. The restated
-    /// copy cannot drift silently: `CadenceArchiveImportSurfaceTests`
-    /// `.anImportedSavedLinkIsNormalizedLikeATypedOne` pins both constants equal to
-    /// `CadenceSavedLinkURL`'s and the function equal to `normalized` over every probe. Once
-    /// `CadenceSavedLinkURL` is marked `nonisolated`, delete these three and call
-    /// `CadenceSavedLinkURL.normalized(raw) ?? ""`.
     nonisolated static func importedSavedLinkURL(_ raw: String) -> String {
-        let trimmed = CadenceTitleNormalization.normalized(raw)
-        guard !trimmed.isEmpty else { return "" }
-        let recognised = importedSavedLinkSchemes.contains { scheme in
-            trimmed.range(of: scheme, options: [.caseInsensitive, .anchored]) != nil
-        }
-        return recognised ? trimmed : importedSavedLinkAssumedScheme + trimmed
+        CadenceSavedLinkURL.normalized(raw) ?? ""
     }
-
-    /// Mirrors `CadenceSavedLinkURL.recognisedSchemes`; see `importedSavedLinkURL(_:)`.
-    nonisolated static let importedSavedLinkSchemes = ["http://", "https://"]
-    /// Mirrors `CadenceSavedLinkURL.assumedScheme`; see `importedSavedLinkURL(_:)`.
-    nonisolated static let importedSavedLinkAssumedScheme = "https://"
 
     /// Apply an archive to `modelContext`, commit the archive once, and then fold its legacy notes.
     ///

@@ -1342,10 +1342,11 @@ struct CadenceArchiveImportSurfaceTests {
     /// raw strings -- `SavedLink.init` itself does not normalize -- which is exactly the shape a
     /// hand-edited file arrives in.
     @Test func anImportedSavedLinkIsNormalizedLikeATypedOne() throws {
-        // The importer restates the rule because the original is main-actor isolated; these two
-        // lines are what stop the restatement drifting from it.
-        #expect(CadenceArchiveImportService.importedSavedLinkSchemes == CadenceSavedLinkURL.recognisedSchemes)
-        #expect(CadenceArchiveImportService.importedSavedLinkAssumedScheme == CadenceSavedLinkURL.assumedScheme)
+        let importer = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile("Cadence/Services/CadenceArchiveImportService.swift"))
+        let normalization = try #require(CadenceSourceScan.functionBody(named: "importedSavedLinkURL", in: importer))
+        // codeOnly blanks the empty-string literal; the blank URL probe below pins its behavior.
+        #expect(normalization.trimmingCharacters(in: .whitespacesAndNewlines) == "CadenceSavedLinkURL.normalized(raw) ??")
+        #expect(!importer.contains("importedSavedLinkSchemes") && !importer.contains("importedSavedLinkAssumedScheme"))
 
         let source = ModelContext(try CadenceTestStore.container())
         let raw: [(title: String, url: String)] = [

@@ -76,10 +76,7 @@ struct iOSRootView: View {
                         get: { selectedTab },
                         set: { selectedTabRaw = $0.rawValue }
                     ),
-                    tasksSection: Binding(
-                        get: { tasksSection },
-                        set: { tasksSectionRaw = $0.rawValue }
-                    ),
+                    tasksSection: $tasksSectionRaw.compactTasksSection,
                     paths: $compactPaths,
                     onFeatureDestinationAppear: { tab, destination in
                         compactPushedFeature[tab] = destination
@@ -185,16 +182,23 @@ struct iOSRootView: View {
             if phase != .active {
                 CadenceWidgetRefreshCenter.reloadAllWidgets()
             }
-            // Both directions reconcile, and they reconcile for different reasons. Leaving active
-            // sweeps up what this process just changed. *Becoming* active is the only checkpoint
-            // iOS has for a write another process made while the app was away: a widget button or
-            // a Siri phrase runs `CompleteTaskIntent` / `CaptureTaskIntent` /
-            // `ToggleHabitCompletionIntent` inside the extension, which posts
-            // `CadenceStoreSupport.postExternalWrite` and deliberately does **not** reconcile
-            // there — its `UserDefaults.standard` is not the app's, so it cannot read
-            // `notificationsEnabled` and must not decide. Without this arm a task completed from
-            // the home screen keeps its pending reminder until something unrelated backgrounds the
-            // app. `docs/TODO.md` T-312, and T-306 for the macOS half of the same contract.
+            if phase == .active {
+                let container = modelContext.container
+                Task {
+                    do {
+                        let snapshot = try CadenceForegroundNotificationSnapshot(container: container)
+                        await NotificationManager.shared.reconcile(tasks: snapshot.tasks)
+                        withExtendedLifetime(snapshot) {}
+                    } catch {
+                        // An empty list cancels every request. A failed read must leave them alone.
+                        return
+                    }
+                }
+                return
+            }
+            // Leaving active still sees this process's pending edits. Returning uses a fresh
+            // read above, because the root's query can hold pre-widget versions of these models.
+            // This fixes notification input only; it deliberately does not replace the UI context.
             let tasks = allTasksForNotifications
             Task { await NotificationManager.shared.reconcile(tasks: tasks) }
         }
@@ -242,6 +246,13 @@ struct iOSRootView: View {
                 iOSMissingListView()
             }
         }
+    }
+}
+
+private extension String {
+    nonisolated var compactTasksSection: CadenceTasksSection {
+        get { CadenceTasksSection.resolved(self) }
+        set { self = newValue.rawValue }
     }
 }
 
