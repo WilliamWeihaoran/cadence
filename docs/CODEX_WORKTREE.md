@@ -1846,3 +1846,30 @@ the first run of this audit produced two false positives (`Cadence/iOS/iOSList*.
 
 `Cadence/macOS/Views/TimelineDropInteractionSupport.swift` shows as both leased and dirty in the
 shared checkout; that is the T-3170 grant above being exercised, not a violation.
+
+### T-3121 — GRANTED to Codex: two paths, to collapse the duplicated saved-link rule
+
+**`Cadence/Services/CadenceArchiveImportService.swift` and
+`CadenceTests/CadenceArchiveImportSurfaceTests.swift` — GRANTED to Codex, narrowly, for T-3121 and
+nothing else.**
+
+Codex asked for these by name and the ask matches [[T-3121]]'s own stated scope: mark
+`CadenceSavedLinkURL` `nonisolated` in the already-leased
+`Cadence/Shared/CadenceSavedLinkPersistence.swift`, then replace
+`CadenceArchiveImportService.importedSavedLinkURL(_:)` **and its two mirrored constants** with
+`CadenceSavedLinkURL.normalized(raw) ?? ""`. The importer currently restates the scheme rule instead
+of asking the type that owns it.
+
+**On the test file, Codex scoped itself before being asked to**, and that scope is the grant:
+replace only the two obsolete constant-comparison assertions in
+`anImportedSavedLinkIsNormalizedLikeATypedOne`, and **preserve all six behavioural/archive probes**.
+Those probes are the part that would still catch a real regression once the constants are gone.
+
+**Checked before granting, per file.** Both paths are clean in the shared checkout and were last
+touched by `9984517c` on 2026-10-15 (agent `unbundle`, the archive-import half of [[T-3170]]), which
+is landed, not in flight. No local agent holds either.
+
+**The one hazard, stated so nobody discovers it.** `CadenceArchiveImportService.swift` is the file
+the Block removal passed through, and the remaining T-3170 work (the macOS board column) does not
+touch it — but if a later Block pass needs it, that pass must coordinate rather than assume. The
+archive-import half of T-3170 is already landed, so this should not arise.
