@@ -1737,3 +1737,37 @@ grant stops being narrow.
 
 **No schema change.** `Area` / `Project` already carry `sectionNamesRaw` and `sectionConfigsRaw`,
 and `AppTask` carries `sectionName`. This is a second entry point onto a path that already exists.
+
+### T-3170 — GRANT AMENDED: one Codex test file the original grant wrongly excluded
+
+**`CadenceTests/CadenceCodexFocusLandscapeTests.swift` — GRANTED, for one assertion. Nothing else.**
+
+**This corrects an error in the T-3170 grant above.** That grant excluded
+`CadenceTests/CadenceCodex*.swift` with the stated reason that their `bundle` hits are Foundation's
+`Bundle` rather than this feature. That was checked across the Codex files **as a group** and is true
+of the others — it is **not** true of this one. Line 39 asserted
+`landscape.contains("bundleControls(for: bundle)")`, a `TaskBundle` pin by name. Removing Block
+Focus under T-3170 necessarily makes that assertion false, so the file had to change and the
+original grant left it unreachable.
+
+**The permitted change is one assertion**, inverted to pin the removal instead of the feature:
+
+```swift
+// T-3170: Block Focus mode is gone, so the landscape layout has no block transport.
+#expect(!landscape.contains("bundleControls"))
+```
+
+Every other assertion in that file — `sessionClock(fontSize: 66)`, `focusControls(for: task)`,
+`taskListPane`, `.cadenceFixedTypography()`, the `timerState =` negative — stays exactly as it is.
+This file is Codex's record of the Focus landscape layout and keeps that job.
+
+**Recorded because the method failed, not just the outcome.** The exclusion was reached by matching
+lease patterns against a list of files that name `TaskBundle`, then reasoning about the group. The
+right check is per file: `rg -n "TaskBundle|bundleID|bundleOrder|bundleControls" <path>` and read the
+hits. A group-level "these are all Foundation's Bundle" is exactly the shape of claim that is right
+four times and wrong once.
+
+**Attribution is unknown.** The edit was already in the working tree when this amendment was
+written, and the agent that reported it credited the coordinator, who did not make it. It is correct
+and minimal, so it stands — but it was made against a leased path with no grant in force, which is
+the thing this document exists to prevent.
