@@ -99,6 +99,17 @@ CadenceTests/CadenceInboxRemindersSurfaceTests.swift
 CadenceTests/CadenceSharedConstantReuseSweepTests.swift
 Cadence/macOS/Views/ListNotesView.swift
 CadenceUITests/CadenceCapturePaletteUITests.swift
+Cadence/Services/CadenceArchiveImportService.swift
+CadenceTests/CadenceArchiveImportSurfaceTests.swift
+Cadence/macOS/Views/CalendarPageView.swift
+Cadence/macOS/Views/CalendarPageSupportViews.swift
+Cadence/macOS/Views/CalendarTimelineViewportSupportViews.swift
+Cadence/macOS/Views/CalendarPageComponents.swift
+Cadence/macOS/Views/CalendarPageMonthSupportViews.swift
+Cadence/macOS/Views/TimelineDayCanvas.swift
+Cadence/macOS/Views/TimelineDayCanvasSupportLayers.swift
+Cadence/macOS/Views/TimelineTaskBlock.swift
+Cadence/macOS/Views/TimelineTaskBlockSupportViews.swift
 ```
 
 ### LEASE WIDENED 2026-10-09 (third batch) — three paths so [[T-3085]]'s shared wording has somewhere to live
@@ -1913,3 +1924,22 @@ above: all nine are clean in the shared checkout and none is held by a local age
 recently by landed commits — `TimelineDayCanvas.swift` by `afc57985` (2026-10-16) and
 `CalendarPageMonthSupportViews.swift` by `10d47357` (2026-10-15) — so **rebase onto current
 origin/main before starting**, or the chain will be written against a shape that has moved.
+
+### 2026-10-16 — a grant in prose is not a grant: the fence is the only thing that enforces
+
+The T-3121 (`f00429c0`) and T-3140 (`11d7f691`) grants were written as prose sections and **the
+fenced ```lease block was never updated**, so `codex-land.sh lease` kept reporting 51 patterns and
+omitted all eleven newly granted paths. Codex could not act on grants it had been given, and said so.
+Fixed here: the eleven paths are now IN the fence.
+
+**The distinction that caused it, recorded so it does not recur.** Two different things are both
+called a "grant" in this document:
+
+- A grant letting a LOCAL agent into a path the fence reserves for Codex. Prose is enough — local
+  agents read the section and `codex-land.sh review` is not what gates them.
+- A grant letting CODEX into a path outside the fence. **Prose is not enough.** The fence is the
+  machine-readable list `codex-land.sh lease` parses and `codex-land.sh review` refuses against, so
+  a path missing from it is a path Codex is refused, whatever the prose above says.
+
+The second kind must edit the fence. Writing only the reasoning produces a grant that reads correctly
+to a human and does not exist to the tooling — which is the failure mode this one was.
