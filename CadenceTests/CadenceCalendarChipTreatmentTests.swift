@@ -428,6 +428,94 @@ struct CadenceCalendarChipTreatmentTests {
         )
         #expect(macOS.contains("Theme.green"), "non-vacuity: the done glyph's tint went with it")
     }
+
+    // MARK: - T-3185: "no time yet" is not "all day"
+
+    private static let iOSTimeline = "Cadence/iOS/iOSCalendarTimelineViews.swift"
+
+    /// **The strip's two inhabitants are different ideas and must be told apart on more than one
+    /// channel.** Since T-3163 the iOS day-header band carries all-day EVENTS beside UNSCHEDULED
+    /// TASKS. T-3160's rail-vs-plate answers "event or task"; nothing answered "spans the whole
+    /// day" against "has no time yet", so "Buy milk" beside "Company offsite" read as an all-day
+    /// commitment. The owner ruled: an icon **and** other attributes.
+    ///
+    /// Both channels are asserted, and so is the thing they are not: the rail, which already means
+    /// "event" and would collide — and which does not survive a 17pt chip anyway, as
+    /// `noChipInEitherFileDrawsTheRailItself` measures.
+    @Test func theDayHeaderStripSetsAnUnscheduledTaskApartFromAnAllDayEvent() throws {
+        // `strippingComments`, NOT `codeOnly`: the masker blanks string LITERALS as well as
+        // comments, and the glyph this ticket turns on is a literal. Asked of `codeOnly` the
+        // assertions below read an empty chip and fail on a change that landed correctly.
+        let source = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(Self.iOSTimeline))
+        let header = try #require(
+            CadenceSourceScan.declarationBody("private struct iOSCalendarTimelineDayHeader: View", in: source),
+            "iOSCalendarTimelineDayHeader is gone from \(Self.iOSTimeline)"
+        )
+        #expect(header.count > 400, "non-vacuity: the day header read back \(header.count) characters")
+
+        let dense = header.filter { !$0.isWhitespace }
+        // Channel one: the glyph. `circle.dashed` is the app's existing word for a thing with
+        // nothing assigned to it, and the `circle.fill` it replaces said only "task".
+        #expect(dense.contains(#"icon:"circle.dashed""#), "the unscheduled chip lost its dashed glyph")
+        #expect(!dense.contains(#"icon:"circle.fill""#), "the unscheduled chip is back on the plain task dot")
+        // The all-day event keeps the glyph the month cell already uses to mean all-day.
+        #expect(dense.contains(#"icon:"calendar""#), "the all-day event chip lost its calendar glyph")
+
+        // Channel two: the chip's own rim, opted into exactly once, on the task list.
+        #expect(
+            CadenceSourceScan.matchCount(#"isUnscheduled: true"#, in: header) == 1,
+            "the second channel is opted into \(CadenceSourceScan.matchCount(#"isUnscheduled: true"#, in: header)) times in the day header, expected once"
+        )
+        // And it is the TASK list that opts in, not the event list: dense, because the formatter
+        // wraps the call and adjacency is the claim.
+        #expect(
+            dense.contains(#"icon:"circle.dashed",color:Color(hex:task.containerColor),isUnscheduled:true"#),
+            "the dashed treatment is not on the unscheduled task chip"
+        )
+        #expect(!dense.contains("isEvent:true,isUnscheduled:true"), "an all-day event was marked unscheduled")
+
+        // Not by the rail, on either side.
+        #expect(!header.contains("railWidth"), "the day header strip grew a rail, which already means event")
+    }
+
+    /// The chip's half: `isUnscheduled` moves the **rim's stroke style** and nothing else. It must
+    /// not reach the fill or the ink, because the owner's ruling was explicitly *not* colour alone
+    /// — a chip told apart by a tint is one channel wearing two names.
+    @Test func theMiniChipsUnscheduledFlagMovesTheRimAndNotTheColour() throws {
+        let source = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile(Self.iOSChips))
+        let body = try #require(
+            CadenceSourceScan.declarationBody("struct iOSCalendarMiniChip: View", in: source),
+            "iOSCalendarMiniChip is gone from \(Self.iOSChips)"
+        )
+        #expect(body.contains("var isUnscheduled = false"), "the mini chip lost its unscheduled flag")
+
+        let dense = body.filter { !$0.isWhitespace }
+        #expect(
+            dense.contains("StrokeStyle(lineWidth:1,dash:isUnscheduled?Self.unscheduledDash:[])"),
+            "the mini chip's rim no longer dashes for an unscheduled task"
+        )
+        #expect(dense.contains("style:rimStyle"), "the chip's border no longer draws through the branching style")
+        #expect(!dense.contains("lineWidth:1)"), "the chip still has a hard-wired solid border beside the branching one")
+
+        // The three colour properties are untouched by the flag.
+        for property in ["private var plate: Color", "private var rim: Color"] {
+            let declaration = try #require(
+                CadenceSourceScan.declarationBody(property, in: body),
+                "\(property) is gone from the mini chip"
+            )
+            #expect(
+                !declaration.contains("isUnscheduled"),
+                "\(property) branches on isUnscheduled, so the distinction is colour after all"
+            )
+        }
+
+        // The month grid is not in this ticket: every chip it draws is a scheduled or due item, so
+        // nothing there may opt in.
+        #expect(
+            CadenceSourceScan.matchCount(#"isUnscheduled: true"#, in: source) == 0,
+            "a month-cell chip was marked unscheduled"
+        )
+    }
 }
 
 // MARK: - Contrast arithmetic

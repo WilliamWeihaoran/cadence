@@ -45,10 +45,16 @@ nonisolated enum CadenceCalendarOverlapLayout {
         let endMin: Int
         /// Whether this block is allowed to cascade, and to be cascaded over.
         ///
-        /// Only calendar events pass `true`. The owner ruled on events; tasks and bundles keep the
-        /// equal-column behaviour they have always had, so they pass `false` and both halves of the
-        /// cascade test fail closed for them — a task never lays itself over an event, and an event
-        /// never lays itself over a task.
+        /// **Who passes `true` is the caller's ruling, not this file's.** macOS passes it for
+        /// calendar events alone, and so does iOS at regular width: tasks and bundles keep the
+        /// equal-column behaviour they have always had, both halves of the cascade test fail
+        /// closed for them, and a task never lays itself over an event. iOS at **compact** width
+        /// passes it for all three kinds (T-3184), because two ~75pt columns truncate both titles
+        /// where one indented stack truncates neither.
+        ///
+        /// The solver does not know or care which kind a slot is. That is deliberate: the
+        /// precedence rule is the same for every pair — later start in front — so a kind-based
+        /// precedence would have to live somewhere, and the only place it could live is here.
         let mayCascade: Bool
 
         init(startMin: Int, endMin: Int, mayCascade: Bool) {
@@ -273,15 +279,50 @@ nonisolated enum CadenceCalendarOverlapLayout {
     ///
     /// `TimelineBlockGeometry.handleCapsuleWidth` returns its full 18pt at a block width of 28 and
     /// shrinks below that, so 28pt is the narrowest block that still draws a full-size resize grab.
-    /// The decay above never reaches zero on its own; this is the floor for a pathological stack on
-    /// a very narrow column.
+    /// The decay above never reaches zero on its own; this is the ceiling the indent is clamped to
+    /// so that a pathological stack on a narrow column does not squeeze the front block away.
+    ///
+    /// **It is a ceiling, and since T-3184 it is no longer the last word** — see
+    /// `minimumVisibleLeadingEdge`, which outranks it. On a column where `slotWidth` is at or under
+    /// this figure the old clamp returned an indent of **zero**, which is a "cascade" that covers
+    /// the block behind edge to edge: T-3165's bug, reached by arithmetic rather than by paint.
     static let minimumCascadedWidth: CGFloat = 28
 
+    /// The least of the block *behind* a cascade that must stay uncovered.
+    ///
+    /// **This is the whole safety property of a cascade, stated as a number.** A cascade is only
+    /// allowed to be a cascade rather than a burial because the block underneath keeps its leading
+    /// edge: its rail if it is an event, its rim and plate if it is a task or a bundle. Cover that
+    /// and the result is indistinguishable from the full-width overpaint T-3165 removed, no matter
+    /// what the solver called it.
+    ///
+    /// **4pt**, which is what the leading edge is made of rather than a round number:
+    /// `CadenceCalendarEventStyle.railWidth` is 3 and both block bodies draw a 1pt `strokeBorder`
+    /// outside it. Anything less shows part of a rail; this shows the whole marker.
+    /// `CadenceCalendarOverlapLayoutTests` pins it against `railWidth` so the two cannot drift.
+    ///
+    /// It binds only on a slot narrower than about 32pt — at 20pt and up the decay already clears
+    /// it, and `minimumCascadedWidth` only pushes below it under `slotWidth` 32 — so no column any
+    /// shipped surface draws at changes shape because of it. It is the floor that makes the
+    /// guarantee true by construction instead of by measurement.
+    static let minimumVisibleLeadingEdge: CGFloat = 4
+
     /// Leading indent for a block drawn at `depth` inside a slot `slotWidth` points wide.
+    ///
+    /// Three rules, in priority order: the decay sets the shape of the stack, `minimumCascadedWidth`
+    /// stops the front block being squeezed away, and `minimumVisibleLeadingEdge` outranks both
+    /// because a block behind that shows nothing is the bug. On a slot too narrow to honour the
+    /// floor outright the sliver takes half the slot and no more, so neither block can vanish.
+    ///
+    /// The result is strictly inside `0 ..< slotWidth` for any `depth > 0` and `slotWidth > 0`:
+    /// the front block is always narrower than the slot, and the block behind always keeps
+    /// something.
     static func cascadeIndent(slotWidth: CGFloat, depth: Int) -> CGFloat {
         guard depth > 0, slotWidth > 0 else { return 0 }
         let remainingFraction = pow(1 - cascadeIndentFractionOfRemainingWidth, CGFloat(depth))
-        let indent = slotWidth * (1 - remainingFraction)
-        return min(indent, max(0, slotWidth - minimumCascadedWidth))
+        let decayed = slotWidth * (1 - remainingFraction)
+        let squeezeCeiling = max(0, slotWidth - minimumCascadedWidth)
+        let sliverFloor = min(minimumVisibleLeadingEdge, slotWidth / 2)
+        return max(min(decayed, squeezeCeiling), sliverFloor)
     }
 }

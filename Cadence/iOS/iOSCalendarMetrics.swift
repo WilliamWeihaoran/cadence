@@ -353,8 +353,10 @@ nonisolated enum iOSCalendarPageMetrics {
 /// 12:45-1:30 was painted straight across a 12:30-1:30 event, cutting through its title and hiding
 /// its time row, while the Mac drew the same pair as two columns. The three kinds now go through
 /// one `CadenceCalendarOverlapLayout.solve` pass, so each reserves a column against the others.
-/// Only events cascade (`Slot.mayCascade`), exactly as on the Mac: a task never lays itself over an
-/// event and an event never lays itself over a task.
+/// At **regular** width only events cascade, exactly as on the Mac: a task never lays itself over
+/// an event and an event never lays itself over a task. At **compact** width every kind cascades
+/// (T-3184) — see `Kind.mayCascade(isCompactWidth:)` for the owner's ruling and for why that is
+/// not T-3165's bug coming back.
 ///
 /// Outside `#if os(iOS)` for the reason the rest of this file is: the macOS-built test target can
 /// read the decision, and the view in `iOSCalendarTimelineViews.swift` only draws what it says.
@@ -366,9 +368,23 @@ nonisolated enum iOSCalendarTimelineBlockLayout {
         case bundle
         case event
 
-        /// Only calendar events cascade — the owner ruled on events, and macOS's
-        /// `computeUnifiedLayouts` passes the same answer.
-        var mayCascade: Bool { self == .event }
+        /// Whether a block of this kind may cascade, and be cascaded over, at this width.
+        ///
+        /// **Regular width is macOS's answer and T-3165's: events only.** A regular day column is
+        /// at least `CadenceCalendarWeekGridLayout.preferredDayColumnWidth`, so splitting a task
+        /// off an event costs a column each and both still label themselves;
+        /// `computeUnifiedLayouts` passes the same answer and the two surfaces agree.
+        ///
+        /// **Compact width is T-3184's: every kind.** The owner ruled that a task and an event
+        /// overlapping on a phone-width column cascade rather than split, under the one rule
+        /// [[T-3161]] already applies to events against each other — later start in front, no
+        /// kind-based precedence anywhere. Bundles are wired exactly as tasks are, with no new
+        /// `TaskBundle` machinery: the kind is a `Bool` to the solver and nothing else.
+        ///
+        /// This is **not** a return to T-3165's bug, and the thing that makes it not one is
+        /// `CadenceCalendarOverlapLayout.minimumVisibleLeadingEdge`: the block behind always keeps
+        /// its leading edge and its rail, where T-3165's task was drawn full width on top.
+        func mayCascade(isCompactWidth: Bool) -> Bool { isCompactWidth || self == .event }
 
         /// Leading and trailing inset of this kind's strip inside the day column. The figures this
         /// column has always drawn: tasks and events at 9, bundles slightly wider at 7, so a day
@@ -393,15 +409,21 @@ nonisolated enum iOSCalendarTimelineBlockLayout {
     /// Blocks are solved in the order given, which is the order the column draws them in, so a tie
     /// at the same start minute is broken the same way every pass. A block shorter than
     /// `CadenceCalendarOverlapLayout.minimumSlotMinutes` is widened to it, as macOS does.
+    ///
+    /// `isCompactWidth` is **required rather than defaulted**, for the reason
+    /// `computeUnifiedLayouts` requires its threshold: a silently-absent width is indistinguishable
+    /// from "regular", which is the branch that does not cascade, which is the bug T-3184 exists
+    /// to fix. See `Kind.mayCascade(isCompactWidth:)`.
     static func placements<Key: Hashable>(
         for blocks: [Block<Key>],
-        hourHeight: CGFloat
+        hourHeight: CGFloat,
+        isCompactWidth: Bool
     ) -> [Key: CadenceCalendarOverlapPlacement] {
         let slots = blocks.map { block in
             CadenceCalendarOverlapLayout.Slot(
                 startMin: block.startMin,
                 endMin: max(block.endMin, block.startMin + CadenceCalendarOverlapLayout.minimumSlotMinutes),
-                mayCascade: block.kind.mayCascade
+                mayCascade: block.kind.mayCascade(isCompactWidth: isCompactWidth)
             )
         }
         let solved = CadenceCalendarOverlapLayout.solve(
@@ -415,6 +437,48 @@ nonisolated enum iOSCalendarTimelineBlockLayout {
             zip(blocks.map(\.key), solved),
             uniquingKeysWith: { first, _ in first }
         )
+    }
+
+    // MARK: - Draw order
+
+    /// Everything the column draws *over* its blocks — the in-place draft and the now-line. Blocks
+    /// are given z values strictly below this, so raising them above the background layers cannot
+    /// raise them above the two marks that have to stay on top.
+    static let overlayZIndex: Double = 2
+
+    /// `zIndex` for every block in a day column: **start order, later start in front.**
+    ///
+    /// **This is half of the cascade, and without it the compact cascade is upside down.** A
+    /// cascaded block is indented past the one it is laid over and must be *painted over* it as
+    /// well — macOS gets that for free, because its blocks layer renders one array sorted by start
+    /// minute at a single `zIndex` and only events ever cascade. The iOS column draws three
+    /// separate `ForEach`es, bundles then events then tasks, so a task was painted over every event
+    /// in the column whatever the clock said. Let a task cascade in that arrangement and the event
+    /// it indented past is drawn back over it at full width: exactly T-3165's bug, from the fix for
+    /// it. Draw order is now the solver's own order, so the pair the solver put in front is the
+    /// pair on top — and, because SwiftUI hit-tests topmost first, the one that takes the tap where
+    /// a cascade overlaps.
+    ///
+    /// Ties at one start minute fall back to the order handed in, which is the order the column
+    /// builds its blocks in, so a redraw cannot swap two blocks' z between passes.
+    ///
+    /// Values land in `1 ..< overlayZIndex`: above the grid lines, the work-hours band and the day
+    /// wash, which are declared before the blocks and keep SwiftUI's default 0, and below the
+    /// draft and the now-line, which take `overlayZIndex`.
+    static func zIndexes<Key: Hashable>(for blocks: [Block<Key>]) -> [Key: Double] {
+        guard !blocks.isEmpty else { return [:] }
+        let order = blocks.indices.sorted { lhs, rhs in
+            if blocks[lhs].startMin != blocks[rhs].startMin {
+                return blocks[lhs].startMin < blocks[rhs].startMin
+            }
+            return lhs < rhs
+        }
+        let span = Double(blocks.count)
+        var result: [Key: Double] = [:]
+        for (rank, index) in order.enumerated() {
+            result[blocks[index].key] = 1 + Double(rank) / span
+        }
+        return result
     }
 
     /// Leading offset and width of one placed block inside a day column `columnWidth` wide.

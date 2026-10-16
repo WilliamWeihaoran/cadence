@@ -547,9 +547,45 @@ struct iOSCalendarMiniChip: View {
     let icon: String
     let color: Color
     var isEvent = false
+    /// **"Not placed on the clock yet", which is a different axis from "event or task"** (T-3184's
+    /// sibling, T-3185).
+    ///
+    /// The iOS day-header strip carries all-day EVENTS beside UNSCHEDULED TASKS since T-3163.
+    /// T-3160's rail-vs-plate says which of the two *kinds* a chip is, and says it well; what
+    /// nothing said is *spans the whole day* against *has no time yet*, so "Buy milk" sat beside
+    /// "Company offsite" reading as an all-day commitment. The owner ruled that the two are to be
+    /// set apart by an icon **and** other attributes — more than one channel, not colour alone —
+    /// and explicitly not by re-using the rail, which already means "event".
+    ///
+    /// So this flag turns on **two** channels at once, and neither is the rail:
+    ///
+    /// 1. The caller passes `circle.dashed` where it passed `circle.fill`. That glyph is already
+    ///    the app's word for a thing with nothing assigned to it — `HabitsView`'s "Unassigned",
+    ///    `GoalPickerViews`' "None", `iOSTimelineDraftCreate`'s not-yet-created task — so this is a
+    ///    vocabulary that exists rather than one invented at this size. The all-day event keeps
+    ///    `calendar`, which `iOSCalendarMonthCell` already uses to mean all-day against the
+    ///    `calendar.badge.clock` it gives a timed one.
+    /// 2. The chip's **own rim** goes dashed. This is the channel that survives the size: the chip
+    ///    is a 10pt line plus 2.5pt of padding, about **17pt** tall against a `Theme.radiusControl`
+    ///    of 10 — the measurement that rules a 3pt rail out entirely, because at that radius the
+    ///    leading edge is corner from end to end. A 1pt outline is not a bar at the leading edge,
+    ///    it is the whole perimeter, which on a strip-width chip is a couple of hundred points of
+    ///    line and tens of dash periods. It also says the same thing the glyph says, which is what
+    ///    makes the pair read as one idea rather than two decorations.
+    var isUnscheduled = false
 
     private var shape: RoundedRectangle {
         RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous)
+    }
+
+    /// 2pt on, 2pt off. Short enough that the chip's end curve — which at this height is the whole
+    /// of the leading edge — carries four or five periods rather than reading as one broken line,
+    /// and the repo's existing dashes ([5, 4], [6, 5]) are scaled to drop targets many times this
+    /// size rather than to a 17pt chip.
+    private static let unscheduledDash: [CGFloat] = [2, 2]
+
+    private var rimStyle: StrokeStyle {
+        StrokeStyle(lineWidth: 1, dash: isUnscheduled ? Self.unscheduledDash : [])
     }
 
     private var plate: Color {
@@ -591,7 +627,7 @@ struct iOSCalendarMiniChip: View {
         .overlay {
             shape.strokeBorder(
                 rim.opacity(CadenceCalendarEventStyle.chipBorderOpacity()),
-                lineWidth: 1
+                style: rimStyle
             )
         }
     }

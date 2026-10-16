@@ -266,6 +266,7 @@ struct iOSCalendarTimelineGrid: View {
             events: CadenceScheduleSupport.items(on: key, in: eventsByDate),
             colWidth: colWidth,
             hourHeight: hourHeight,
+            isCompactWidth: !isRegularWidth,
             workHoursStartMinute: workHoursStartMinute,
             workHoursEndMinute: workHoursEndMinute,
             onCreateAt: onCreateAt,
@@ -683,6 +684,13 @@ struct iOSCalendarTimelineGrid: View {
 /// The band over one day column: the weekday, the day number, the day's **all-day events**, and its
 /// **unscheduled** tasks.
 ///
+/// **Those two are different ideas, and since T-3185 the strip says which is which.** T-3160's
+/// rail-vs-plate answers "event or task"; it does not answer "spans the whole day" against "has no
+/// time yet", so an ordinary "Buy milk" beside "Company offsite" read as an all-day commitment.
+/// The unscheduled chips wear `circle.dashed` and a dashed rim — see
+/// `iOSCalendarMiniChip.isUnscheduled`. The seeded fixture hid this for a while by naming its task
+/// "All-day task: pack for trip", which is a coherent screenshot of an incoherent rule.
+///
 /// **All-day events live here since T-3163.** The column below has never drawn one — they are not
 /// blocks, so `iOSCalendarTimelineDayColumn.timedEvents` drops them — and until then nothing else
 /// did either, so on the week timeline a holiday or a trip did not exist. They take the band's
@@ -757,11 +765,16 @@ private struct iOSCalendarTimelineDayHeader: View {
                         )
                     }
 
+                    // **An unscheduled task is not an all-day commitment, and now says so**
+                    // (T-3185): a dashed glyph and a dashed rim, two channels, neither of them the
+                    // rail that already means "event". `iOSCalendarMiniChip.isUnscheduled` carries
+                    // the reasoning and the 17pt measurement the rail fails at.
                     ForEach(unscheduledTasks.prefix(split.tasks)) { task in
                         iOSCalendarMiniChip(
                             title: TaskTitleSupport.displayTitle(task.title, fallback: TaskTitleSupport.defaultCompactDisplayTitle),
-                            icon: "circle.fill",
-                            color: Color(hex: task.containerColor)
+                            icon: "circle.dashed",
+                            color: Color(hex: task.containerColor),
+                            isUnscheduled: true
                         )
                     }
 
@@ -899,6 +912,16 @@ private struct iOSCalendarTimelineDayColumn: View {
     let events: [EKEvent]
     let colWidth: CGFloat
     let hourHeight: CGFloat
+    /// **What "compact" means on this grid: the horizontal size class, nothing measured** (T-3184).
+    ///
+    /// The owner left the definition to the implementer and named the size class as the idiomatic
+    /// answer; it is taken, and the reason is that it is the only spelling that survives a narrow
+    /// iPad Split View, where a pane can be phone-width on a device whose screen is not. A raw
+    /// point threshold would need a constant nobody has measured *and* would have to be re-measured
+    /// for every pane the calendar can appear in. The grid already resolves the same environment
+    /// value one view up for the hour rail and the column width, so this is the width question the
+    /// surface already asks, answered once and handed down rather than read again here.
+    let isCompactWidth: Bool
     let workHoursStartMinute: Int
     let workHoursEndMinute: Int
     let onCreateAt: (String, Int) -> Void
@@ -928,15 +951,25 @@ private struct iOSCalendarTimelineDayColumn: View {
             // T-3165 for the rest). Tasks, bundles and events go through the same shared solver
             // macOS's `computeUnifiedLayouts` reads, in one pass, so each reserves a column against
             // the other two: a task that overlaps an event now sits *beside* it instead of being
-            // painted full width across its title. Only events cascade. A day with no overlaps
-            // keeps the exact width and inset every block had.
-            let placements = blockPlacements
+            // painted full width across its title. At regular width only events cascade; at
+            // compact width every kind does, with the later start in front (T-3184). A day with no
+            // overlaps keeps the exact width and inset every block had.
+            //
+            // **Draw order is the solver's order now, not the order of the three `ForEach`es**
+            // (T-3184). Each block carries the `zIndex` `iOSCalendarTimelineBlockLayout.zIndexes`
+            // gives it, so the later-starting block is painted on top whichever kind it is — which
+            // is what makes "later start in front" true of a task over an event and not only of an
+            // event over an event. See that function for what went wrong without it.
+            let solved = blockPlacements
+            let placements = solved.placements
 
             ForEach(bundles) { bundle in
+                let key = BlockKey.bundle(bundle.persistentModelID)
                 let slot = horizontalFrame(placements[.bundle(bundle.persistentModelID)], kind: .bundle)
                 iOSTimelineBundleBlock(bundle: bundle)
                     .frame(width: slot.width, height: blockHeight(start: bundle.startMin, end: bundle.endMin))
                     .offset(x: slot.x, y: yOffset(for: bundle.startMin))
+                    .zIndex(solved.zIndexes[key] ?? 1)
             }
 
             ForEach(timedEvents, id: \.calendarItemIdentifier) { event in
@@ -945,14 +978,17 @@ private struct iOSCalendarTimelineDayColumn: View {
                 // still labels itself with the true one.
                 let range = iOSCalendarEventSupport.minuteRange(for: event, on: date)
                 let drawn = CadenceScheduleSupport.timelineVisibleRange(start: range.start, end: range.end)
+                let key = BlockKey.event(event.calendarItemIdentifier)
                 let slot = horizontalFrame(placements[.event(event.calendarItemIdentifier)], kind: .event)
                 iOSCalendarEventBlock(event: event, startMin: range.start, endMin: range.end)
                     .frame(width: slot.width, height: blockHeight(start: drawn.start, end: drawn.end))
                     .offset(x: slot.x, y: yOffset(for: drawn.start))
+                    .zIndex(solved.zIndexes[key] ?? 1)
             }
 
             ForEach(tasks) { task in
                 let range = taskRange(task)
+                let key = BlockKey.task(task.persistentModelID)
                 let slot = horizontalFrame(placements[.task(task.persistentModelID)], kind: .task)
                 iOSTimelineTaskBlock(
                     task: task,
@@ -962,11 +998,16 @@ private struct iOSCalendarTimelineDayColumn: View {
                 )
                 .frame(width: slot.width, height: blockHeight(start: range.start, end: range.end))
                 .offset(x: slot.x, y: yOffset(for: range.start))
+                .zIndex(solved.zIndexes[key] ?? 1)
             }
 
+            // Above every block, which is where these two were by declaration order until the
+            // blocks were given a `zIndex` of their own.
             draftLayer
+                .zIndex(iOSCalendarTimelineBlockLayout.overlayZIndex)
 
             nowLine
+                .zIndex(iOSCalendarTimelineBlockLayout.overlayZIndex)
         }
         .frame(width: colWidth, height: timelineHeight, alignment: .topLeading)
         // **The column is a drop target, and the minute is part of what it hands over** (T-1276).
@@ -1253,8 +1294,15 @@ private struct iOSCalendarTimelineDayColumn: View {
     /// Events are solved over their **drawn** minute range, not the true one, because overlap here
     /// is a question about rectangles on this column: an event that began yesterday is clamped to
     /// the top of the grid and overlaps whatever is drawn there. Tasks and bundles are solved over
-    /// the same range their blocks are drawn at. The order is the column's draw order.
-    private var blockPlacements: [BlockKey: CadenceCalendarOverlapPlacement] {
+    /// the same range their blocks are drawn at.
+    ///
+    /// It returns the **z order** off the same array as well (T-3184). One build of the block list,
+    /// two answers from it: the order a tie is broken in has to be the same in both, or a cascade
+    /// can be indented one way and painted the other.
+    private var blockPlacements: (
+        placements: [BlockKey: CadenceCalendarOverlapPlacement],
+        zIndexes: [BlockKey: Double]
+    ) {
         var blocks: [iOSCalendarTimelineBlockLayout.Block<BlockKey>] = []
         for bundle in bundles {
             blocks.append(.init(
@@ -1283,7 +1331,11 @@ private struct iOSCalendarTimelineDayColumn: View {
                 endMin: range.end
             ))
         }
-        return iOSCalendarTimelineBlockLayout.placements(for: blocks, hourHeight: hourHeight)
+        // One line, deliberately: `CadenceCalendarOverlapLayoutTests` pins this call by the
+        // spelling `placements(for:`, so wrapping the first argument onto its own line silently
+        // takes the pin off the thing it guards.
+        let columned = iOSCalendarTimelineBlockLayout.placements(for: blocks, hourHeight: hourHeight, isCompactWidth: isCompactWidth)
+        return (columned, iOSCalendarTimelineBlockLayout.zIndexes(for: blocks))
     }
 
     /// Leading offset and width for one placed block. A block the solver did not see draws as a

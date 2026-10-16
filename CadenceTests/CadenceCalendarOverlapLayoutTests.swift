@@ -395,16 +395,42 @@ struct CadenceCalendarOverlapLayoutTests {
 
     /// Lays `blocks` out exactly as the day column does and returns each one's x range.
     private static func iosRanges(
-        _ blocks: [IOSLayout.Block<String>]
+        _ blocks: [IOSLayout.Block<String>],
+        isCompactWidth: Bool = false,
+        columnWidth: CGFloat? = nil
     ) -> [String: (placement: CadenceCalendarOverlapPlacement, minX: CGFloat, maxX: CGFloat)] {
-        let placements = IOSLayout.placements(for: blocks, hourHeight: iosHourHeight)
+        let width = columnWidth ?? iosColumnWidth
+        let placements = IOSLayout.placements(
+            for: blocks,
+            hourHeight: iosHourHeight,
+            isCompactWidth: isCompactWidth
+        )
         var ranges: [String: (placement: CadenceCalendarOverlapPlacement, minX: CGFloat, maxX: CGFloat)] = [:]
         for block in blocks {
             let placement = placements[block.key] ?? .single
-            let frame = IOSLayout.horizontalFrame(for: placement, kind: block.kind, columnWidth: iosColumnWidth)
+            let frame = IOSLayout.horizontalFrame(for: placement, kind: block.kind, columnWidth: width)
             ranges[block.key] = (placement, frame.x, frame.x + frame.width)
         }
         return ranges
+    }
+
+    /// The start gap a compact cascade needs at the grid's resting zoom, read the way the layout
+    /// reads it rather than typed.
+    private static var iosCascadeGap: Int {
+        CadenceCalendarOverlapLayout.cascadeGapMinutes(
+            headerHeight: CadenceCalendarOverlapLayout.iOSEventHeaderHeight,
+            hourHeight: iosHourHeight
+        )
+    }
+
+    /// A phone's Week column, measured rather than assumed: `CadenceCalendarWeekGridLayout` puts
+    /// `compactWeekDayCount` columns across a 393pt iPhone less its 48pt hour rail.
+    private static var iosCompactColumnWidth: CGFloat {
+        CadenceCalendarWeekGridLayout.dayColumnWidth(
+            availableWidth: 393 - CadenceCalendarWeekGridLayout.timeRailWidth(isRegularWidth: false),
+            dayCount: CadenceCalendarWeekGridLayout.compactWeekDayCount,
+            isRegularWidth: false
+        )
     }
 
     private static func disjoint(_ lhs: (minX: CGFloat, maxX: CGFloat), _ rhs: (minX: CGFloat, maxX: CGFloat)) -> Bool {
@@ -541,6 +567,219 @@ struct CadenceCalendarOverlapLayoutTests {
         #expect(
             CadenceSourceScan.matchCount(#"\.frame\(width: colWidth - [0-9]+, height:"#, in: column) == 0,
             "a timed block is still drawn at a hand-written full column width"
+        )
+    }
+
+    // MARK: - T-3184: a compact column cascades every kind, and never buries what it cascades over
+
+    /// **The ruling.** On a compact width a task that starts a header's worth of minutes after an
+    /// event it overlaps is laid *over* it — one column, depth 1 — instead of splitting the column
+    /// in two. The same pair at regular width still splits, which is the control that says the
+    /// fixture really is a cascading one and not merely a non-overlapping one.
+    @Test func aCompactIOSColumnCascadesATaskOverTheEventItStartsAfter() throws {
+        let start = Self.minutes(12, 30)
+        let later = start + Self.iosCascadeGap
+        let blocks: [IOSLayout.Block<String>] = [
+            .init(key: "lunch", kind: .event, startMin: start, endMin: start + 120),
+            .init(key: "prep", kind: .task, startMin: later, endMin: later + 60),
+        ]
+
+        let compact = Self.iosRanges(blocks, isCompactWidth: true, columnWidth: Self.iosCompactColumnWidth)
+        let lunch = try #require(compact["lunch"])
+        let prep = try #require(compact["prep"])
+        #expect(lunch.placement.cascadeDepth == 0 && prep.placement.cascadeDepth == 1)
+        #expect(lunch.placement.totalColumns == 1 && prep.placement.totalColumns == 1, "the compact pair still split into columns")
+        #expect(prep.minX > lunch.minX, "the cascaded task did not indent past the event it is laid over")
+        #expect(abs(prep.maxX - lunch.maxX) < 0.001, "a cascaded block must run to its column's trailing edge")
+
+        let regular = Self.iosRanges(blocks, isCompactWidth: false)
+        let wideLunch = try #require(regular["lunch"])
+        let widePrep = try #require(regular["prep"])
+        #expect(widePrep.placement.cascadeDepth == 0, "a regular width cascaded a task over an event")
+        #expect(wideLunch.placement.totalColumns == 2 && widePrep.placement.totalColumns == 2)
+        #expect(Self.disjoint((wideLunch.minX, wideLunch.maxX), (widePrep.minX, widePrep.maxX)))
+    }
+
+    /// Bundles are wired **exactly** as tasks are: the kind reaches the solver as one `Bool` and
+    /// nothing in the cascade knows what a `TaskBundle` is. Both directions, so neither half is
+    /// passing because the other kind happened to be drawn first.
+    @Test func aCompactIOSColumnCascadesBundlesOnTheSameRuleAsTasks() throws {
+        let start = Self.minutes(9, 0)
+        let later = start + Self.iosCascadeGap + 5
+
+        for (behind, front) in [(IOSLayout.Kind.event, IOSLayout.Kind.bundle), (.bundle, .event), (.task, .bundle), (.bundle, .task)] {
+            let ranges = Self.iosRanges(
+                [
+                    .init(key: "behind", kind: behind, startMin: start, endMin: start + 180),
+                    .init(key: "front", kind: front, startMin: later, endMin: later + 60),
+                ],
+                isCompactWidth: true,
+                columnWidth: Self.iosCompactColumnWidth
+            )
+            let back = try #require(ranges["behind"])
+            let forward = try #require(ranges["front"])
+            #expect(forward.placement.cascadeDepth == 1, "\(front) did not cascade over \(behind)")
+            #expect(forward.minX > back.minX, "\(front) covered \(behind)'s leading edge")
+        }
+    }
+
+    /// **The precedence is the clock, not the kind.** Handed the same pair in both orders and with
+    /// the kinds swapped, the block in front is always the later-starting one.
+    @Test func theCompactCascadePutsTheLaterStartInFrontWhicheverKindItIs() throws {
+        let early = Self.minutes(8, 0)
+        let late = early + Self.iosCascadeGap + 20
+
+        for (earlyKind, lateKind) in [(IOSLayout.Kind.task, IOSLayout.Kind.event), (.event, .task)] {
+            let ranges = Self.iosRanges(
+                [
+                    .init(key: "late", kind: lateKind, startMin: late, endMin: late + 90),
+                    .init(key: "early", kind: earlyKind, startMin: early, endMin: early + 240),
+                ],
+                isCompactWidth: true,
+                columnWidth: Self.iosCompactColumnWidth
+            )
+            #expect(try #require(ranges["early"]).placement.cascadeDepth == 0, "the earlier block was put in front")
+            #expect(try #require(ranges["late"]).placement.cascadeDepth == 1, "the later block was not put in front")
+        }
+    }
+
+    /// A start gap under the threshold still splits at compact width, exactly as it does at regular
+    /// width and on the Mac — the ticket's own 12:30/12:45 pair among them. Cascading a 15-minute
+    /// gap would paint the front block's body straight across the title row of the one behind,
+    /// which is the thing T-3165 removed; the threshold is what stops the ruling becoming that bug.
+    @Test func aCompactColumnStillSplitsAPairTooCloseToStackSafely() throws {
+        let start = Self.minutes(12, 30)
+        let ranges = Self.iosRanges(
+            [
+                .init(key: "lunch", kind: .event, startMin: start, endMin: start + 60),
+                .init(key: "prep", kind: .task, startMin: start + 15, endMin: start + 60),
+            ],
+            isCompactWidth: true,
+            columnWidth: Self.iosCompactColumnWidth
+        )
+        #expect(Self.iosCascadeGap > 15, "non-vacuity: a 15-minute gap already clears the threshold")
+        let lunch = try #require(ranges["lunch"])
+        let prep = try #require(ranges["prep"])
+        #expect(prep.placement.cascadeDepth == 0)
+        #expect(lunch.placement.totalColumns == 2 && prep.placement.totalColumns == 2)
+        #expect(Self.disjoint((lunch.minX, lunch.maxX), (prep.minX, prep.maxX)))
+    }
+
+    /// **The negative, as pure arithmetic: a cascaded block can never cover the one behind it.**
+    ///
+    /// This is the property that separates T-3184 from T-3165's bug, so it is swept rather than
+    /// sampled — every slot width from a degenerate 1pt up past the widest column any surface
+    /// draws, at every depth a stack can reach. The indent must stay strictly inside the slot at
+    /// both ends: above 0, so the block behind keeps a leading edge, and below `slotWidth`, so the
+    /// block in front is not squeezed out of existence.
+    ///
+    /// The old clamp failed the first half outright — at `slotWidth <= minimumCascadedWidth` it
+    /// returned 0 and the front block covered the whole slot.
+    @Test func noCascadedBlockEverCoversTheOneBehindIt() {
+        var narrowSlotsSeen = 0
+        for tenths in 1...4000 {
+            let slotWidth = CGFloat(tenths) / 10
+            if slotWidth <= CadenceCalendarOverlapLayout.minimumCascadedWidth { narrowSlotsSeen += 1 }
+            for depth in 1...12 {
+                let indent = CadenceCalendarOverlapLayout.cascadeIndent(slotWidth: slotWidth, depth: depth)
+                #expect(indent > 0, "a depth-\(depth) cascade covered a \(slotWidth)pt slot edge to edge")
+                #expect(indent < slotWidth, "a depth-\(depth) cascade squeezed a \(slotWidth)pt slot to nothing")
+            }
+        }
+        #expect(narrowSlotsSeen > 0, "non-vacuity: the sweep never reached a slot narrower than the squeeze ceiling")
+    }
+
+    /// The sliver the block behind keeps is **the width of its leading marker**, not a round
+    /// number: a 3pt rail and the 1pt `strokeBorder` both block bodies draw outside it. Pinned
+    /// against `railWidth` so the two cannot drift apart.
+    @Test func theCascadeLeavesTheWholeLeadingMarkerOfTheBlockBehindShowing() {
+        #expect(
+            CadenceCalendarOverlapLayout.minimumVisibleLeadingEdge == CadenceCalendarEventStyle.railWidth + 1,
+            "the uncovered sliver no longer matches the rail plus its rim"
+        )
+        // Wide slots are untouched: the decay already clears the floor, so T-3161's measured edges
+        // and macOS's behaviour are exactly what they were.
+        for slotWidth in [CGFloat(345), 154, 94, 40, 32] {
+            let indent = CadenceCalendarOverlapLayout.cascadeIndent(slotWidth: slotWidth, depth: 1)
+            #expect(indent >= CadenceCalendarOverlapLayout.minimumVisibleLeadingEdge)
+        }
+        // And a slot too narrow to pay for the whole marker still splits the difference rather
+        // than giving the whole slot to either block.
+        let pinched = CadenceCalendarOverlapLayout.cascadeIndent(slotWidth: 6, depth: 1)
+        #expect(pinched == 3, "a pinched slot no longer halves itself")
+    }
+
+    /// **Draw order is the clock's, across all three kinds.** The column draws bundles, then
+    /// events, then tasks, so without this a task was painted over every event whatever the solver
+    /// said — and a task that cascades under that z order is T-3165's full-width overpaint again.
+    @Test func theIOSColumnPaintsTheLaterStartingBlockOnTopWhateverKindItIs() throws {
+        let blocks: [IOSLayout.Block<String>] = [
+            .init(key: "bundle", kind: .bundle, startMin: Self.minutes(13, 0), endMin: Self.minutes(14, 0)),
+            .init(key: "event", kind: .event, startMin: Self.minutes(9, 0), endMin: Self.minutes(10, 0)),
+            .init(key: "task", kind: .task, startMin: Self.minutes(11, 0), endMin: Self.minutes(12, 0)),
+        ]
+        let z = IOSLayout.zIndexes(for: blocks)
+        let event = try #require(z["event"])
+        let task = try #require(z["task"])
+        let bundle = try #require(z["bundle"])
+        #expect(event < task && task < bundle, "the column does not paint in start order")
+        for value in [event, task, bundle] {
+            #expect(value >= 1 && value < IOSLayout.overlayZIndex, "a block was given a z outside the band reserved for blocks")
+        }
+    }
+
+    /// A tie at one start minute falls back to the order the column built its blocks in, so a
+    /// redraw cannot swap which of two blocks is on top — the same stability rule `solve` keeps.
+    @Test func blocksStartingInTheSameMinuteKeepTheOrderTheyWereHandedIn() throws {
+        let blocks: [IOSLayout.Block<String>] = [
+            .init(key: "first", kind: .task, startMin: 540, endMin: 600),
+            .init(key: "second", kind: .event, startMin: 540, endMin: 600),
+        ]
+        let z = IOSLayout.zIndexes(for: blocks)
+        let first = try #require(z["first"])
+        let second = try #require(z["second"])
+        #expect(first < second)
+        let empty: [IOSLayout.Block<String>] = []
+        #expect(IOSLayout.zIndexes(for: empty).isEmpty)
+    }
+
+    /// **The view really asks the width question and really paints in the answer's order.**
+    /// `Cadence/iOS/` is invisible to this target, so the arithmetic above is only half the claim.
+    @Test func theIOSDayColumnTakesItsCompactRulingFromTheSizeClassAndZOrdersEveryBlock() throws {
+        let path = "Cadence/iOS/iOSCalendarTimelineViews.swift"
+        let raw = try CadenceSourceScan.sourceFile(path)
+        let code = CadenceSourceScan.strippingComments(raw)
+        #expect(code.count == raw.count && code != raw, "non-vacuity: the comment stripper did not run over \(path)")
+        let column = try #require(
+            CadenceSourceScan.declarationBody("private struct iOSCalendarTimelineDayColumn: View", in: code),
+            "iOSCalendarTimelineDayColumn was not found in \(path)"
+        )
+        #expect(column.count > 4_000, "non-vacuity: the day column read as \(column.count) characters")
+
+        #expect(
+            CadenceSourceScan.matchCount(#"isCompactWidth: isCompactWidth"#, in: column) == 1,
+            "the day column does not pass its width ruling to the solver"
+        )
+        #expect(
+            CadenceSourceScan.matchCount(#"\.zIndex\(solved\.zIndexes\[key\]"#, in: column) == 3,
+            "the day column does not z-order all three of its block kinds"
+        )
+        #expect(
+            CadenceSourceScan.matchCount(#"\.zIndex\(iOSCalendarTimelineBlockLayout\.overlayZIndex\)"#, in: column) == 2,
+            "the draft layer and the now-line are no longer held above the blocks"
+        )
+        // The size class is resolved once by the grid and handed down, not re-read per column.
+        #expect(
+            CadenceSourceScan.matchCount(#"horizontalSizeClass"#, in: column) == 0,
+            "the day column reads the size class itself instead of taking the grid's answer"
+        )
+        let grid = try #require(
+            CadenceSourceScan.declarationBody("struct iOSCalendarTimelineGrid: View", in: code),
+            "iOSCalendarTimelineGrid was not found in \(path)"
+        )
+        #expect(
+            CadenceSourceScan.matchCount(#"isCompactWidth: !isRegularWidth"#, in: grid) == 1,
+            "the grid does not derive the column's compact ruling from the size class"
         )
     }
 }
