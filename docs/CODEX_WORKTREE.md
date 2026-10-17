@@ -126,7 +126,32 @@ CadenceTests/CadenceCalendarFixtureEventsTests.swift
 CadenceTests/CadenceCalendarChipTreatmentTests.swift
 CadenceTests/CadenceNoteReferencePanelSurfaceTests.swift
 CadenceTests/CadenceOutlineParserRegexTests.swift
+Cadence/iOS/iOSMarkdownEditor.swift
+CadenceUITests/CadenceIOSCalendarAndNoteParityUITests.swift
 ```
+
+### LEASE WIDENED 2026-10-17 — two more paths for T-1471's heading jump
+
+Codex asked rather than took, including for a file that **does not exist yet**. That is the less
+obvious half and the right call: a new file feels like it belongs to nobody, but `CadenceUITests/`
+is inside the fence's jurisdiction and creating a file there ungranted is the same violation as
+editing one.
+
+**Verified, not accepted:** `textView.selectedRange` is assigned at `iOSMarkdownEditor.swift:209`
+and `:410`, and **`scrollRangeToVisible` appears nowhere in the file**. The selection moves and the
+view does not follow — so a heading jump list would jump nowhere, and a parser-only test would pass
+over it. That is precisely the failure the T-1471 brief tried to pre-empt by asking for reachability
+coverage rather than parser coverage.
+
+`codex/leased-followup-batch` had modified that file (+26 −11). It is LANDED — four of its tests
+checked by name are all present on main. Checked with the branch-modification test, not the blob
+comparison.
+
+**Scope:** the explicit scroll request and what the jump needs to reach it. The selection clamping at
+`:207-209` and `:410` is OFF LIMITS — the comment at `:106` records a race that "not beginning is the
+stronger" guard resolves, and it is load-bearing. The new UI test must drive the T-1483 fixture
+harness and must never request EventKit permission; if `CadenceUITests` cannot run in Codex's
+environment it must say so rather than mark the behaviour covered.
 
 ### LEASE WIDENED 2026-10-17 — nine paths for Codex: T-1483, T-1468, T-1471 and T-1472
 
