@@ -69,15 +69,23 @@ struct CadenceTasksPanelMetricsTests {
         // 2. The decoration is one shedding child, not four siblings.
         #expect(body.contains("ViewThatFits(in: .horizontal)"))
         #expect(body.contains("metadataStrip"))
-        // Two wide readings and one narrow one. Counted over the call spellings rather than the
-        // name, so the declaration itself is not one of the three.
+        // One wide reading and one narrow one. Counted over the call spellings rather than the
+        // name, so the declaration itself is not one of the two.
+        //
+        // **It was three readings until [[T-3170]]**, the widest of which carried the block badge
+        // and shed it first. The Block feature is gone from this row, so the widest reading had
+        // nothing left to hold and went with it; the estimate is now what sheds.
         #expect(
-            body.components(separatedBy: "metadataRow(showsEstimate: true").count - 1 == 2,
-            "the strip no longer offers two progressively narrower wide readings"
+            body.components(separatedBy: "metadataRow(showsEstimate: true)").count - 1 == 1,
+            "the strip no longer offers a wide reading"
         )
         #expect(
-            body.components(separatedBy: "metadataRow(showsEstimate: false, showsBundle: false)").count - 1 == 1,
+            body.components(separatedBy: "metadataRow(showsEstimate: false)").count - 1 == 1,
             "the strip has no last-resort reading to shed down to"
+        )
+        #expect(
+            CadenceSourceScan.matchCount(#"showsBundle"#, in: body) == 0,
+            "the block badge is back in the strip the Block feature was removed from"
         )
 
         // 3. The chip that wrapped cannot wrap.
@@ -86,6 +94,39 @@ struct CadenceTasksPanelMetricsTests {
         )
         #expect(dueChip.contains("Text(DateFormatters.relativeDate(from: task.dueDate))"))
         #expect(dueChip.contains(".lineLimit(1)"))
+    }
+
+    // MARK: - [[T-3170]]: the block badge is gone from the row
+
+    /// **The Mac task row says nothing about block membership, because there is no Block.**
+    ///
+    /// The badge was a `square.stack` glyph plus the block's own time range, drawn on any row
+    /// whose task had a `bundle`. It was also the surviving half of **PA-04** in
+    /// `docs/PLATFORM_PARITY_AUDIT.md` — Mac shed block-time metadata on a narrow pane where iOS
+    /// kept its badges — and that finding is answered by removal rather than by re-ranking: there
+    /// is no block time left for either platform to shed. PA-04's **other** half, the estimate
+    /// chip, belongs to [[T-3196]] and is deliberately still here; the title/metadata test above
+    /// still pins the estimate as the thing that sheds.
+    ///
+    /// Scoped to the whole file rather than to `MacTaskRow`'s body, because the badge was a
+    /// private helper declared beside it: a body-only read would go green over a helper that is
+    /// still declared and merely unused, which is the state this test exists to refuse.
+    @Test func theMacTaskRowDrawsNoBlockBadge() throws {
+        let row = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/macOS/Views/TasksPanelComponents.swift")
+        )
+
+        #expect(CadenceSourceScan.matchCount(#"taskBundleBadge"#, in: row) == 0)
+        #expect(CadenceSourceScan.matchCount(#"showsBundle"#, in: row) == 0)
+        #expect(CadenceSourceScan.matchCount(#"\bTaskBundle\b"#, in: row) == 0)
+        #expect(CadenceSourceScan.matchCount(#"task\.bundle"#, in: row) == 0)
+        #expect(CadenceSourceScan.matchCount(#"square\.stack"#, in: row) == 0)
+
+        // Non-vacuity, three ways: the right file, past the comment stripper, and still drawing
+        // the two chips beside the one that was removed.
+        #expect(row.contains("struct MacTaskRow: View"))
+        #expect(row.contains("MacTaskRowEstimateChip(task: task)"))
+        #expect(row.contains("dueDateBadgeList"))
     }
 
     // MARK: - The row's fifth chip
@@ -114,11 +155,14 @@ struct CadenceTasksPanelMetricsTests {
         #expect(!window.contains(".padding(.horizontal, 6)"))
         #expect(!window.contains(".padding(.vertical, 3)"))
 
-        // Counted rather than only present: five chips read the secondary size now (the do-date
-        // pill spells it twice, once on the hidden `Text` that reserves its width), and a sixth
+        // Counted rather than only present: four chips read the secondary size now (the do-date
+        // pill spells it twice, once on the hidden `Text` that reserves its width), and a fifth
         // chip arriving with its own literal has to change this number to land.
+        //
+        // **Six until [[T-3170]].** The sixth reader was the block badge, which that ticket
+        // removed with the Block feature — a chip gone, not a chip that stopped reading the tier.
         #expect(
-            CadenceSourceScan.matchCount("size: metrics\\.secondaryFontSize", in: row) == 6
+            CadenceSourceScan.matchCount("size: metrics\\.secondaryFontSize", in: row) == 5
         )
         #expect(CadenceSourceScan.matchCount("size: 10", in: row) == 0)
     }
@@ -127,8 +171,9 @@ struct CadenceTasksPanelMetricsTests {
 
     /// **T-617.** The macOS row typed its chip plate inline — `4` horizontal, `2` vertical — at
     /// **four** sites in `TasksPanelComponents`: the Cancelled pill, the do-date pill, the due-date
-    /// pill and the estimate chip. (`docs/TODO.md` said five and the file's own comment names the
-    /// bundle badge as a fifth; the badge draws no background, so it has no plate and no inset.)
+    /// pill and the estimate chip. (`docs/TODO.md` said five and the file's own comment *used to*
+    /// name the block badge as a fifth; the badge drew no background, so it had no plate and no
+    /// inset, and [[T-3170]] has since removed it outright along with the Block feature.)
     /// iOS had already named the same measurement, on `iOSTaskAttributeChipSize` — which is two
     /// homes for one thing, the shape `CadenceTaskRowMetrics.desktop` exists to close.
     ///

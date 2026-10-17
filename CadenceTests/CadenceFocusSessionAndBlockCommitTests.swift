@@ -38,6 +38,7 @@ struct CadenceFocusSessionAndBlockCommitTests {
     private struct CommitRefused: Error {}
 
     private static let panelPath = "Cadence/macOS/Views/SchedulePanel.swift"
+    private static let viewportPath = "Cadence/macOS/Views/SchedulePanelShellViews.swift"
     private static let monthGridPath = "Cadence/macOS/Views/CalendarPageMonthSupportViews.swift"
     private static let dayCanvasPath = "Cadence/macOS/Views/TimelineDayCanvas.swift"
     private static let focusViewPath = "Cadence/iOS/iOSFocusView.swift"
@@ -165,6 +166,44 @@ struct CadenceFocusSessionAndBlockCommitTests {
         #expect(source.contains(".calendarWriteFailureAlert()"))
         #expect(source.contains("calendarManager.createStandaloneEvent("))
         #expect(source.contains("struct SchedulePanel: View"))
+    }
+
+    /// **[[T-3170]], the macOS show/edit pass: the Today Timeline panel has no Block arm left.**
+    ///
+    /// Two halves, because the panel and its viewport are two files and either one alone would let
+    /// the surface back:
+    ///
+    /// 1. `SchedulePanel` reads no block table and runs no block mutation — no `@Query` over
+    ///    `TaskBundle`, no day filter over one, and no `SchedulingActions` block call.
+    /// 2. `SchedulePanelTimelineViewport` hands the canvas **empty** block arrays and refusing
+    ///    closures. That is what actually takes the Block off the timeline: `TimelineDayCanvas`
+    ///    builds its block layouts from the `bundles:` array alone, so an empty one draws no
+    ///    `TimelineBundleBlock` and nothing can be opened, resized, moved or dropped on.
+    ///
+    /// The canvas is Codex-leased and still declares the four parameters for the Calendar page,
+    /// which is why this is a starve rather than a deletion. Asserting the literal `[]` and the
+    /// `{ _, _ in }` is therefore the assertion: anything else passed here is the arm coming back.
+    @Test func theTodayTimelinePanelNeitherDrawsABlockNorEditsOne() throws {
+        let panel = try CadenceCommitSurfaceScan.scanned(Self.panelPath)
+
+        #expect(CadenceSourceScan.matchCount(#"@Query[^\n]*\[TaskBundle\]"#, in: panel) == 0)
+        #expect(CadenceSourceScan.matchCount(#"\bTaskBundle\b"#, in: panel) == 0)
+        #expect(CadenceSourceScan.matchCount(#"\btodayBundles\b"#, in: panel) == 0)
+        #expect(CadenceSourceScan.matchCount(#"SchedulingActions\.(dropBundle|addTask)\("#, in: panel) == 0)
+        // Non-vacuity: the right file, and the task arm beside the removed block arm is untouched.
+        #expect(panel.contains("struct SchedulePanel: View"))
+        #expect(panel.contains("SchedulingActions.dropTask(task, to: todayKey, startMin: startMin)"))
+
+        let viewport = try CadenceCommitSurfaceScan.scanned(Self.viewportPath)
+
+        #expect(CadenceSourceScan.matchCount(#"\bTaskBundle\b"#, in: viewport) == 0)
+        #expect(CadenceSourceScan.matchCount(#"bundles: \[\]"#, in: viewport) == 1)
+        #expect(CadenceSourceScan.matchCount(#"allBundles: \[\]"#, in: viewport) == 1)
+        #expect(CadenceSourceScan.matchCount(#"onDropBundleAtMinute: \{ _, _ in \}"#, in: viewport) == 1)
+        #expect(CadenceSourceScan.matchCount(#"onDropTaskOnBundle: \{ _, _ in \}"#, in: viewport) == 1)
+        // Non-vacuity: the right declaration, still hosting the canvas it starves.
+        #expect(viewport.contains("struct SchedulePanelTimelineViewport: View"))
+        #expect(viewport.contains("TimelineDayCanvas("))
     }
 
     /// The create family's sentence has no "nothing was changed" clause and the title is its own —

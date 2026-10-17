@@ -68,7 +68,6 @@ struct SchedulePanel: View {
     var presentation: SchedulePanelPresentation = .standard
     var useStandardHeaderHeight = false
     @Query private var allTasks: [AppTask]
-    @Query private var allBundles: [TaskBundle]
     @Query(sort: \Area.order) private var areas: [Area]
     @Query(sort: \Project.order) private var projects: [Project]
 
@@ -100,9 +99,9 @@ struct SchedulePanel: View {
         SchedulePanelDataSupport.scheduledTasks(from: allTasks, todayKey: todayKey)
     }
 
-    private var todayBundles: [TaskBundle] {
-        allBundles.filter { $0.dateKey == todayKey && !$0.isCompleted }
-    }
+    // [[T-3170]] removed `todayBundles` and the `@Query private var allBundles` behind it. This
+    // panel neither draws a Block nor edits one, so it no longer reads the table at all; see
+    // `SchedulePanelTimelineViewport` for what the canvas is handed instead.
 
     /// iCal events for today. Raw tasks are never treated as event attachments.
     ///
@@ -140,11 +139,9 @@ struct SchedulePanel: View {
                             geoSize: geo.size,
                             zoomLevel: zoomLevel,
                             allTasks: allTasks,
-                            allBundles: allBundles,
                             areas: areas,
                             projects: projects,
                             scheduledTasks: scheduledTasks,
-                            bundles: todayBundles,
                             todayKey: todayKey,
                             externalEventItems: externalEventItems,
                             // **T-1433.** `doDateKey` was pinned to `todayKey` because the
@@ -166,12 +163,6 @@ struct SchedulePanel: View {
                             },
                             onDropTaskAtMinute: { task, startMin in
                                 SchedulingActions.dropTask(task, to: todayKey, startMin: startMin)
-                            },
-                            onDropBundleAtMinute: { bundle, startMin in
-                                SchedulingActions.dropBundle(bundle, to: todayKey, startMin: startMin)
-                            },
-                            onDropTaskOnBundle: { task, bundle in
-                                SchedulingActions.addTask(task, to: bundle)
                             },
                             onCreateEvent: { title, startMin, endMin, calendarID, notes in
                                 calendarManager.createStandaloneEvent(title: title, startMin: startMin, durationMinutes: endMin - startMin, calendarID: calendarID, date: Date(), notes: notes)

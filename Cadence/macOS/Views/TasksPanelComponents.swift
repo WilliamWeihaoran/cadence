@@ -106,12 +106,13 @@ struct MacTaskRow: View {
                 .padding(.leading, rowIndicators.isEmpty ? 0 : metrics.badgeSpacing)
 
             if task.isCancelled {
-                // The fifth chip on this row, drawn like the other four. It set its own `10` and
-                // `6/3` while the do-date pill, the due-date pill, the bundle badge and the
-                // estimate chip beside it all read `metrics.secondaryFontSize` at
+                // The last chip on this row, drawn like the others. It set its own `10` and
+                // `6/3` while the do-date pill, the due-date pill and the estimate chip beside it
+                // all read `metrics.secondaryFontSize` at
                 // `CadenceTaskChipPadding.desktop*` — which is the drift `CadenceTaskRowMetrics.desktop`
-                // exists to stop (T-597). The plate was four inline `4/2` pairs until T-617; the bundle
-                // badge named there is not a fifth, because it draws no background and so has no plate.
+                // exists to stop (T-597). The plate was four inline `4/2` pairs until T-617. The
+                // block badge was named here too, as a reader of the font size that drew no plate;
+                // [[T-3170]] removed it with the Block feature.
                 Text("Cancelled")
                     .font(.system(size: metrics.secondaryFontSize, weight: .semibold))
                     .foregroundStyle(Theme.dim)
@@ -221,14 +222,22 @@ struct MacTaskRow: View {
         hoveredEditableManager.endHovering(id: editableID)
     }
 
-    /// The trailing decoration — estimate, focus control, due date, block time — as **one child**
-    /// of the row's `HStack`, which is what lets it yield to the title (T-1432).
+    /// The trailing decoration — estimate, focus control, due date — as **one child** of the row's
+    /// `HStack`, which is what lets it yield to the title (T-1432).
     ///
-    /// Three variants, widest first, so `ViewThatFits` sheds rather than squeezes. The block's time
-    /// range goes first because it is the widest of the three and the one the row states least
-    /// usefully in a fragment — `6:10 AM…` names nothing — and the estimate goes second. The due
-    /// chip is in every variant: a red `51 days ago` is the most load-bearing thing on an overdue
-    /// row, and it is what wrapped onto three lines in the screenshot that filed this.
+    /// Two variants, widest first, so `ViewThatFits` sheds rather than squeezes. The estimate is
+    /// what yields; the due chip is in both variants, because a red `51 days ago` is the most
+    /// load-bearing thing on an overdue row, and it is what wrapped onto three lines in the
+    /// screenshot that filed this.
+    ///
+    /// **It was three variants until [[T-3170]].** The widest one led with the block's time range,
+    /// which shed first — it was the widest of the three and the one the row stated least usefully
+    /// in a fragment, `6:10 AM…` naming nothing. The Block feature is being removed, so the row
+    /// draws no block badge at all now and there is nothing left for the widest reading to hold.
+    /// That retires the surviving half of this row's parity finding, PA-04 in
+    /// `docs/PLATFORM_PARITY_AUDIT.md`: the Mac can no longer shed block-time metadata that iOS
+    /// keeps, because neither platform has it. PA-04's other half — the estimate — belongs to
+    /// [[T-3196]] and is deliberately untouched here.
     ///
     /// Each variant is `.fixedSize(horizontal: true, vertical: false)` **on purpose**: without it
     /// every variant "fits" by truncating its own text and the first one always wins, which is the
@@ -241,13 +250,12 @@ struct MacTaskRow: View {
     /// present in every variant, so it never sheds.
     private var metadataStrip: some View {
         ViewThatFits(in: .horizontal) {
-            metadataRow(showsEstimate: true, showsBundle: true)
-            metadataRow(showsEstimate: true, showsBundle: false)
-            metadataRow(showsEstimate: false, showsBundle: false)
+            metadataRow(showsEstimate: true)
+            metadataRow(showsEstimate: false)
         }
     }
 
-    private func metadataRow(showsEstimate: Bool, showsBundle: Bool) -> some View {
+    private func metadataRow(showsEstimate: Bool) -> some View {
         HStack(alignment: .center, spacing: 0) {
             if showsEstimate && task.estimatedMinutes > 0 {
                 MacTaskRowEstimateChip(task: task)
@@ -257,10 +265,6 @@ struct MacTaskRow: View {
 
             if datePlan.drawsDueDateChip {
                 dueDateBadgeList
-            }
-
-            if showsBundle, let bundle = task.bundle {
-                taskBundleBadge(bundle)
             }
         }
         .fixedSize(horizontal: true, vertical: false)
@@ -393,17 +397,9 @@ struct MacTaskRow: View {
         .popover(isPresented: $showDueDatePicker) { dueDatePickerPopover }
     }
 
-    private func taskBundleBadge(_ bundle: TaskBundle) -> some View {
-        HStack(spacing: 4) {
-            Image(systemName: "square.stack")
-                .font(.system(size: 9, weight: .semibold))
-            Text(TimeFormatters.timeRange(startMin: bundle.startMin, endMin: bundle.endMin))
-                .font(.system(size: metrics.secondaryFontSize, weight: .medium))
-                .lineLimit(1)
-        }
-        .foregroundStyle(Theme.amber.opacity(0.85))
-        .padding(.leading, metrics.badgeSpacing)
-    }
+    // [[T-3170]] removed taskBundleBadge(_:) — a `square.stack` glyph and the block's time range,
+    // drawn on any row whose task was a block member. Nothing replaces it: the row says nothing
+    // about block membership because there are no blocks to belong to.
 
     private var dueDatePickerPopover: some View {
         CadenceQuickDatePopover(
