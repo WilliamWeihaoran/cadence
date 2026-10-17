@@ -129,7 +129,35 @@ CadenceTests/CadenceOutlineParserRegexTests.swift
 Cadence/iOS/iOSMarkdownEditor.swift
 CadenceUITests/CadenceIOSCalendarAndNoteParityUITests.swift
 Cadence/iOS/iOSCalendarView.swift
+Cadence/iOS/iOSCreateTaskSheet.swift
+Cadence/iOS/iOSCreateTaskSheetSupportViews.swift
+Cadence/macOS/Views/KanbanListColumnView.swift
+Cadence/macOS/Views/KanbanColumnSupportViews.swift
+Cadence/macOS/Views/KanbanSupportViews.swift
+Cadence/macOS/Views/KanbanCardView.swift
+Cadence/Shared/CadenceSectionEditingSupport.swift
+Cadence/Shared/CadenceSectionConfigMerge.swift
 ```
+
+### LEASE WIDENED 2026-10-17 — eight paths for a SECOND Codex agent: T-3195 and T-3192
+
+The owner is running two Codex agents. The first holds T-1483/T-1468/T-1471/T-1472 — calendar
+fixtures and the notes editor. This widening is for the second, on the capture sheet and list
+sections, chosen so the two sets are disjoint and neither can land on the other's files.
+
+**Checked against the live tree, not assumed.** All eight are clean in the worktree right now, and
+no `codex/*` branch has modified any of them. **T-1467 was considered and REJECTED for this batch**:
+`TasksPanelComponents.swift` and `RightClickActionTrigger.swift` are dirty this minute, with
+`parkedland` mid-landing of `heartbeat/t1479-mac-context-menu`. A path being unleased says nothing
+about whether a local agent is inside it.
+
+**The one place two Codex agents CAN collide is `docs/CODEX_LEDGER_INBOX.md`**, which is always
+allowed and therefore ungoverned by the fence. Ticket ids are the live hazard there, since the
+ledger is the allocator and two agents filing concurrently will both reach for the same next number.
+**The second agent is therefore confined to T-1496, T-1497, T-1502, T-1505 through T-1509, and
+T-1511 through T-1515** — verified free at the time of writing. The first agent uses anything else.
+This is a reservation, not a guarantee: the ledger still allocates, and either agent must re-check
+with `ledger-view.sh show` before quoting an id.
 
 ### LEASE WIDENED 2026-10-17 — `Cadence/iOS/iOSCalendarView.swift`, T-1483's second blocker
 
