@@ -153,6 +153,30 @@ CadenceTests/CadenceContainerPickerConsolidationTests.swift
 CadenceTests/CadencePresentedTypographyBoundaryTests.swift
 ```
 
+### 2026-10-17 — `CadenceCodexSearchOptimizationTests.swift`: a FOURTH search path, and a lesson about where grants come from
+
+**GRANTED to a local agent for [[T-1476]] / [[T-1473]].** Prose, not a fence line: the file is
+already inside the fence via the standing `CadenceTests/CadenceCodex*.swift` glob, so what is
+granted here is a LOCAL agent's entry, exactly as for the three paths in `63b024d6`.
+
+**Why `63b024d6` missed it.** That grant was written from the parity audit's evidence rather than
+from the code. The audit found the `:129` pin in `CadenceCodexFunctionalParityTests`; it never found
+this one. **`:97` is `#expect(ascending.count == 14)` over twenty tied tasks — a SECOND pin on the
+silent macOS cap**, the exact twin of the one the grant did name, and either defends the bug alone.
+
+The general lesson, worth more than the path: **a grant scoped to the defects an audit happened to
+list is scoped to the audit's thoroughness, not the code's.** Next time a lease is drawn from a
+report, search the code for the same shape before fixing the scope.
+
+Verified landed before granting, with `--no-merges`: one branch modified it,
+`codex/search-widget-followups`, whose four sampled test functions are all present on main.
+
+Three of the agent's four edits there are mechanical. The fourth is the pin revision — and it
+reported one line it deliberately did NOT change, `:149`'s `sections: sections`, because it named
+the drawn sections `sections` and the uncapped ones `indexedSections`, which keeps the existing
+assertion true and reads better. Naming a line you left alone is as useful as naming the ones you
+touched.
+
 ### 2026-10-17 — `CalendarPageMonthSupportViews.swift` granted, and the test needs `--no-merges`
 
 **GRANTED to local agents for [[T-3170]].** Without it the trio pass cannot finish: `TimelineDayCanvas`
