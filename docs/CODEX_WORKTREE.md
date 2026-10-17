@@ -107,6 +107,7 @@ Cadence/macOS/Views/CalendarTimelineViewportSupportViews.swift
 Cadence/macOS/Views/CalendarPageComponents.swift
 Cadence/macOS/Views/CalendarPageMonthSupportViews.swift
 Cadence/macOS/Views/TimelineDayCanvas.swift
+Cadence/macOS/Views/CalendarPageMonthSupportViews.swift
 Cadence/macOS/Views/TimelineDayCanvasSupportLayers.swift
 Cadence/macOS/Views/TimelineTaskBlock.swift
 Cadence/macOS/Views/TimelineTaskBlockSupportViews.swift
@@ -151,6 +152,37 @@ CadenceTests/CadenceChoicePickerDismissalTests.swift
 CadenceTests/CadenceContainerPickerConsolidationTests.swift
 CadenceTests/CadencePresentedTypographyBoundaryTests.swift
 ```
+
+### 2026-10-17 — `CalendarPageMonthSupportViews.swift` granted, and the test needs `--no-merges`
+
+**GRANTED to local agents for [[T-3170]].** Without it the trio pass cannot finish: `TimelineDayCanvas`
+has two callers, and while `SchedulePanelShellViews.swift` was already starved (`bundles: []`,
+`allBundles: []`), `CalendarPageMonthSupportViews.swift:339` still passes a real `[TaskBundle]`. So
+removing those parameters from the granted canvas would break a file the agent could not touch —
+and leaving them is the exact "a parameter feeding an empty dictionary reads like a parameter that
+is gone" shape the ninth pass had to return for.
+
+It also answers the month-cell question in the same file: `MonthBundleChip` at `:193` and the
+`split(bundles:)` call at `:402` mean `MonthDayCell` DOES still draw Block chips. With this grant the
+chip goes in the trio pass and `CadenceCalendarMonthCellPriority.split`'s `bundles:` leg orphans
+cleanly, instead of costing a fourth trip.
+
+**A FIFTH refinement to the staleness test: pass `--no-merges`.**
+
+    git log --no-merges main..<branch> -- <path>
+
+The agent reported "exactly one branch modified it". The coordinator found TWO and checked the
+extra one rather than accepting the tidier number — `codex/parity-functional-batch`, whose only
+commit touching this path is `7ba0e1b1 Merge remote-tracking branch 'origin/main'`. **A merge
+commit authored nothing**; it pulled main in, and the path rode along. Without `--no-merges` a
+branch appears to have touched files it never edited, which inflates the candidate set and, on a
+busier repo, would eventually manufacture a false refusal.
+
+Both branches are landed regardless — `7343bfe8` is an ancestor of HEAD and its blob for this file
+is byte-identical to main's; the merge branch's sampled symbols are all present on main.
+
+The agent applied the branch test correctly and said in terms that it was "not assuming it carries
+over" from `4b4775f1`, which is why the extra branch surfaced at all.
 
 ### 2026-10-17 — a CROSS-AGENT dependency: one path granted, one REFUSED AND SEQUENCED
 
