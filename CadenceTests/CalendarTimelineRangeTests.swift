@@ -393,28 +393,42 @@ struct CalendarTimelineRangeTests {
         #expect(rows.contains { $0.contains { $0.title == "Someday" } } == false)
     }
 
-    @Test func bundlesTakeTheirOwnHourTheSameWay() {
-        let early = TaskBundle(title: "Morning block", dateKey: "2026-06-19", startMin: 5 * 60, durationMinutes: 60)
-        let normal = TaskBundle(title: "Deep work", dateKey: "2026-06-19", startMin: 10 * 60, durationMinutes: 60)
-
-        #expect(CadenceScheduleSupport.bundles(inHourRow: 5, from: [early, normal]).map(\.title) == ["Morning block"])
-        #expect(CadenceScheduleSupport.bundles(inHourRow: 10, from: [early, normal]).map(\.title) == ["Deep work"])
-        #expect(CadenceScheduleSupport.bundles(inHourRow: 0, from: [early, normal]).isEmpty)
-    }
+    // `bundlesTakeTheirOwnHourTheSameWay` was declared here. It pinned
+    // `CadenceScheduleSupport.bundles(inHourRow:from:)`, which [[T-3170]] deleted: no product
+    // caller was left once both platforms stopped drawing Block rows, and this test was the only
+    // thing holding it in the tree. The hour-row rule itself is unchanged and is pinned on the
+    // surviving subject by `aTaskAtFiveAMOrHalfPastElevenLandsInItsOwnRow` above and by the clamp
+    // test below.
 
     /// The clamp inside `timelineHourRow` no longer has a *range* to defend — every minute of the
-    /// day has a row. It is kept for the other job: `startMin` is a plain stored `Int`, and a value
-    /// from outside `0..<1440` must still be shown somewhere rather than dropped silently, which is
-    /// the failure the function was written for.
+    /// day has a row. It is kept for the other job: `scheduledStartMin` is a plain stored `Int`,
+    /// and a value from outside `0..<1440` must still be shown somewhere rather than dropped
+    /// silently, which is the failure the function was written for.
+    ///
+    /// Asked of a **task** rather than a block since [[T-3170]]: `tasks(inHourRow:)` is the only
+    /// bucketing left, and its own filter rejects the `-1` unscheduled sentinel and nothing else,
+    /// so an out-of-range positive minute reaches the clamp exactly as a block's `startMin` did.
     @Test func aGarbageMinuteIsStillShownRatherThanDropped() {
         #expect(CadenceScheduleSupport.timelineHourRow(forMinute: -600) == 0)
         #expect(CadenceScheduleSupport.timelineHourRow(forMinute: 40 * 60) == 23)
 
-        let corrupt = TaskBundle(title: "Impossible", dateKey: "2026-06-19", startMin: 99 * 60, durationMinutes: 60)
+        let corrupt = AppTask(title: "Impossible")
+        corrupt.scheduledDate = "2026-06-19"
+        corrupt.scheduledStartMin = 99 * 60
         let rows = CadenceScheduleSupport.calendarHours.map {
-            CadenceScheduleSupport.bundles(inHourRow: $0, from: [corrupt])
+            CadenceScheduleSupport.tasks(inHourRow: $0, from: [corrupt])
         }
-        #expect(rows.flatMap { $0 }.count == 1)
+        #expect(rows.flatMap { $0 }.count == 1, "a corrupt minute was dropped out of the pane")
+        #expect(rows[23].map(\.title) == ["Impossible"], "it landed somewhere other than the last row")
+
+        // Non-vacuity: the same walk over a minute that is genuinely absent really does score 0,
+        // so the 1 above is the clamp working rather than the filter passing everything.
+        let untimed = AppTask(title: "Someday")
+        untimed.scheduledDate = "2026-06-19"
+        untimed.scheduledStartMin = -1
+        #expect(CadenceScheduleSupport.calendarHours
+            .flatMap { CadenceScheduleSupport.tasks(inHourRow: $0, from: [untimed]) }
+            .isEmpty)
     }
 
     // MARK: - Read-only calendars

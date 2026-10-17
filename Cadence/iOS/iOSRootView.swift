@@ -122,13 +122,11 @@ struct iOSRootView: View {
         // host, since a host that is already presenting cannot present again; `iOSTaskInspectorHost`
         // records which surfaces that applies to.
         .iOSTaskInspectorHost()
-        // T-217, the same shape one subject over. `iOSCalendarBundleDetailSheet` was presented by
-        // the bundle card and the timeline bundle block, both of which sit in a `ForEach(bundles)`
-        // filtered by day — and by hour on Today's schedule pane — so the panel's own Save tore it
-        // down exactly when a re-date or a re-time succeeded. A separate host rather than a shared
-        // one because it presents a different sheet on a different model; the *decision* about when
-        // a held model is gone is shared, in `CadenceDetailPanelPresentation`.
-        .iOSBundleInspectorHost()
+        // `.iOSBundleInspectorHost()` was applied here, T-217's second host: the Block panel was
+        // presented by the bundle card and the timeline bundle block, both inside a
+        // `ForEach(bundles)`, so the panel's own Save tore it down exactly when a re-date or a
+        // re-time succeeded. [[T-3170]] removed every iOS Block surface, so there is no card, no
+        // panel and no host — `iOSBundleInspectorHost.swift` is deleted with this line.
         .background(Theme.bg)
         .preferredColorScheme(.dark)
         .statusBarHidden(horizontalSizeClass == .regular)

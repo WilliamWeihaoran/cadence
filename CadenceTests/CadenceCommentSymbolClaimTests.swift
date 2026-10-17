@@ -1147,6 +1147,88 @@ enum CadenceCommentSymbolClaim {
         "CadenceTests/TemporaryDefaultsSupport.swift `someTestName()`"
     ]
 
+    /// **[[T-3209]]: the population this whole suite cannot see, counted rather than described.**
+    ///
+    /// Both halves of `claims(inComments:)` root a qualified span on `^([A-Z][A-Za-z0-9_]*)\\.`, so a
+    /// span whose type begins lowercase never parses as a claim. Every `iOS*` view in this
+    /// repository begins lowercase, which is **396 types under `Cadence/iOS/` and 504 across the
+    /// tree, against 1,715 the grammar can root on** — measured 2026-10-17.
+    ///
+    /// **The failure is not "unchecked", it is "checked by the wrong arm".** `` `iOSCalendarBoardView.add(_:to:)` ``
+    /// *is* a qualified span. It is therefore the qualified half's business, and that half cannot
+    /// see it — so it never reaches `unqualifiedClaims(inComments:)`, whose base-name reading
+    /// against `calledNames(inCode:)` would have resolved it. The suite then goes green in a way
+    /// that reads as coverage. Three false present-tense claims survived twelve passes of
+    /// [[T-3170]] inside that blind spot, in a ticket whose whole job was removing a vocabulary.
+    ///
+    /// **Why a count and not a sample.** What failed here is an *absence* — nothing fired. A test
+    /// that asserted "these three comments are correct" would have passed before the repair and
+    /// after it, and said nothing about the 501 types nobody has looked at. Only a census of what
+    /// the reader can and cannot reach fails when the gap widens, and fails again when it closes
+    /// and this test has to be rewritten into its opposite.
+    @Test func theClaimGrammarCannotSeeALowercaseRootedTypeAndThatIsThisManyTypes() throws {
+        let sources = try Self.allSources()
+        let index = CadenceCommentSymbolClaim.SymbolIndex.build(
+            from: sources.map { (path: $0.path, code: CadenceCommentSymbolClaim.partition($0.text).code) }
+        )
+
+        // --- Hole 1, the anchor. A lowercase-rooted span never parses as a claim at all.
+        #expect(CadenceCommentSymbolClaim.claims(inComments: "/// `CadenceScheduleSupport.bundles(on:from:)`").count == 1)
+        #expect(CadenceCommentSymbolClaim.claims(inComments: "/// `iOSRootView.body`").isEmpty)
+        // Not the member spelling doing it: the same member under a capitalised root parses.
+        #expect(CadenceCommentSymbolClaim.claims(inComments: "/// `OSRootView.body`").count == 1)
+        // Nor does the other arm pick it up — the "checked by the arm that cannot see it" claim.
+        #expect(CadenceCommentSymbolClaim.unqualifiedClaims(inComments: "/// `iOSRootView.body`").isEmpty)
+
+        // --- Hole 2, and it is the one that actually cost [[T-3170]] its twelve passes.
+        // `offendingSpans` drops any claim whose root is not a declared nominal type, because a
+        // name this tree never declares is assumed to be an SDK type it cannot enumerate. So a
+        // comment naming a type that was RENAMED OR DELETED — exactly the stale claim worth
+        // catching — is unreachable even with a correct capital root and a widened anchor.
+        let deletedRoot = "/// `CadenceTypeThatWasDeletedLongAgo.someMember`"
+        #expect(CadenceCommentSymbolClaim.claims(inComments: deletedRoot).count == 1, "it parses as a claim")
+        #expect(!index.nominalTypes.contains("CadenceTypeThatWasDeletedLongAgo"), "and the tree has no such type")
+        #expect(
+            CadenceCommentSymbolClaim.offendingSpans(in: deletedRoot, against: index).isEmpty,
+            "a claim naming a type this tree does not declare is silently dropped; that is hole 2"
+        )
+        // The live comments that proved it: `iOSCalendarBoardView` is a FILE base name whose file
+        // declares `iOSCalendarBoardPlanner` and no type of its own name, so three comments naming
+        // `iOSCalendarBoardView.add(_:to:)` and `.formBundle` were unreachable twice over.
+        #expect(!index.nominalTypes.contains("iOSCalendarBoardView"))
+        #expect(index.nominalTypes.contains("iOSCalendarBoardPlanner"))
+
+        // --- The census, so neither hole can silently widen.
+        let visible = index.nominalTypes.filter { $0.first?.isUppercase == true }
+        let invisible = index.nominalTypes.filter { $0.first?.isUppercase == false }
+
+        // Non-vacuity first: an empty index would satisfy every bound below.
+        #expect(sources.count > 900, "the scan found \(sources.count) files and cannot be doing its job")
+        #expect(visible.count > 1_000, "only \(visible.count) rootable types; the index is not being built")
+
+        // Floors rather than exact pins: both populations grow with the app, so a pin would fail
+        // on every new view rather than on a change in the gap. Measured 2026-10-17: 504 and 1,715.
+        #expect(invisible.count >= 400, "the invisible population is \(invisible.count), measured at 504")
+        #expect(invisible.count < visible.count)
+
+        // Named witnesses, so the floor cannot be met by names that are not the problem. Each is
+        // confirmed a real `struct` declaration — an earlier draft of this test used
+        // `iOSCalendarBoardView` and `iOSTaskInspectorHost`, which are a file name and a function
+        // name respectively, and it went red for being wrong rather than for finding anything.
+        for witness in ["iOSRootView", "iOSCalendarBoardPlanner", "iOSCompactRootShell"] {
+            #expect(invisible.contains(witness), "\(witness) is not in the unreachable set; re-anchor this census")
+        }
+        #expect(visible.contains("CadenceScheduleSupport"), "the control type is missing; the index is wrong")
+
+        // **When [[T-3209]] closes, this goes red here**, and that is deliberate: widening the
+        // anchor makes the span parse. Rewrite this census into its opposite rather than deleting
+        // it, or the gap reopens behind a re-narrowed regex with nothing to say so.
+        #expect(
+            CadenceCommentSymbolClaim.claims(inComments: "/// `iOSRootView.body`").isEmpty,
+            "the grammar now roots on a lowercase type: T-3209 is fixed, so rewrite this census"
+        )
+    }
+
     /// [[T-999]]: every ledger line belongs to exactly one of the three groups, and the two named
     /// groups plus the remainder sum to the whole.
     ///
