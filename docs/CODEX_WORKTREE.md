@@ -137,7 +137,36 @@ Cadence/macOS/Views/KanbanSupportViews.swift
 Cadence/macOS/Views/KanbanCardView.swift
 Cadence/Shared/CadenceSectionEditingSupport.swift
 Cadence/Shared/CadenceSectionConfigMerge.swift
+Cadence/macOS/Views/ListDetailComponents.swift
+Cadence/Shared/Components/CadenceSectionCreationRow.swift
+Cadence/Shared/Components/CadenceSchedulePanel.swift
+Cadence/Shared/Components/CadenceScheduleCaptureCard.swift
+Cadence/Services/TaskCreationService.swift
 ```
+
+### LEASE WIDENED 2026-10-17 — five narrow paths the second Codex agent traced from source
+
+All five granted. Checked with the final-form test above: **zero `codex/*` commits that main lacks
+on any of them**, and all three existing files are clean in the worktree.
+
+- `Cadence/macOS/Views/ListDetailComponents.swift` — `ListTasksView`'s bottom row, which is where
+  T-3192's add-section control has to live, because the owner chose an INLINE ROW AT THE BOTTOM over
+  a toolbar button.
+- `Cadence/Shared/Components/CadenceSectionCreationRow.swift` (NEW) — the one shared control. The
+  owner's decision was explicitly "both platforms via a shared control", so a single new file in
+  `Shared/Components/` is the right shape and a second platform-local copy would not be.
+- `Cadence/Shared/Components/CadenceSchedulePanel.swift` and
+  `Cadence/Shared/Components/CadenceScheduleCaptureCard.swift` (NEW) — the agent proposes the
+  capture card as **a capture presentation of the existing panel, not a ninth independent form**.
+  That is the right instinct and matches [[T-3171]], which has spent four slices converting surfaces
+  ONTO `CadenceSchedulePanel`; adding a parallel form would spend the fifth slice undoing that.
+- `Cadence/Services/TaskCreationService.swift` — to carry recurrence through the EXISTING creation
+  commit rather than saving it afterwards. Granted on that reasoning specifically: a second write
+  after the create is the swallowed-save shape this repo has fixed repeatedly, most recently in
+  PA-13 / [[T-1470]].
+
+**What is NOT granted by this:** new recurrence semantics, new rule cases, or any schema change. See
+the spec answers recorded on [[T-3195]].
 
 ### THE LEASE-STALENESS TEST, FINAL FORM 2026-10-17 — supersedes every earlier version above
 
