@@ -111,7 +111,22 @@ Cadence/macOS/Views/TimelineDayCanvasSupportLayers.swift
 Cadence/macOS/Views/TimelineTaskBlock.swift
 Cadence/macOS/Views/TimelineTaskBlockSupportViews.swift
 Cadence/macOS/Views/CalendarPageBoardSupportViews.swift
+docs/PLATFORM_PARITY_AUDIT.md
 ```
+
+### LEASE WIDENED 2026-10-16 — one docs path, `docs/PLATFORM_PARITY_AUDIT.md`, for the platform parity audit
+
+The owner authorized Codex's read-only macOS/iOS parity audit to write its report to a new path.
+`codex/platform-parity-audit` wrote that report **before** the grant existed, so
+`codex-land.sh review` refused it as outside the lease, which is the script working correctly.
+
+**The grant is the line in the fence above, not this paragraph.** `codex-land.sh lease` parses the
+fenced ```lease block and nothing else, so a widening recorded only in prose does not exist to the
+tool — `840fe34f` is the commit where that was learned the expensive way. This section is the
+reasoning; the fence line is the grant.
+
+Scope is the report file alone. No product path is widened by this entry, and the audit branch
+touches no `.swift` file. `docs/CODEX_LEDGER_INBOX.md` needed no grant: it is always allowed.
 
 ### LEASE WIDENED 2026-10-09 (third batch) — three paths so [[T-3085]]'s shared wording has somewhere to live
 
