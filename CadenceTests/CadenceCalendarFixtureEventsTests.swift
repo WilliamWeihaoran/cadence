@@ -23,6 +23,19 @@ struct CadenceCalendarFixtureEventsTests {
 
     private static let active: [String: String] = [mode: "1", scenario: "calendar-hues"]
 
+    @Test func bothMobileCacheCallersAdmitTheActiveFixtureBeforeReachingTheManager() throws {
+        let source = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile("Cadence/iOS/iOSCalendarView.swift"))
+        for name in ["refreshVisibleEvents", "refreshSelectedDayEvents"] {
+            let body = try CadenceCommitSurfaceScan.declarationBody(named: name, in: source)
+            let guardRange = try #require(body.range(of: "guard calendarManager.isAuthorized || CadenceCalendarFixtureEvents.isActive()"))
+            let fetchRange = try #require(body.range(of: "calendarManager.fetchEvents("))
+            #expect(guardRange.lowerBound < fetchRange.lowerBound)
+            #expect(CadenceSourceScan.matchCount(#"CadenceCalendarFixtureEvents\.isActive\(\)"#, in: body) == 1)
+        }
+        let selected = try CadenceCommitSurfaceScan.declarationBody(named: "refreshSelectedDayEvents", in: source)
+        #expect(selected.contains("cached[selectedKey] == nil else"))
+    }
+
     // MARK: - 1. Unreachable without the variable
 
     /// The claim the whole design rests on: with nothing set, the fixture path does not exist and
@@ -218,9 +231,46 @@ struct CadenceCalendarFixtureEventsTests {
         }
     }
 
-    /// **The census.** The harness is reachable from exactly one production file — the day cache —
-    /// plus its own declaration. A second call site is how a fixture path reaches a surface nobody
-    /// gated, so a new one has to be argued for here rather than noticed later.
+    @Test func theMobileFixtureAnswerPrecedesAndCannotFallThroughTheDisarmedStoreGuard() throws {
+        let source = CadenceSourceScan.codeOnly(
+            try CadenceSourceScan.sourceFile("Cadence/iOS/iOSCalendarManager.swift")
+        )
+        let body = try CadenceCommitSurfaceScan.declarationBody(named: "fetchEvents", in: source)
+        let timed = try #require(body.range(of: "CadenceCalendarFixtureEvents.timedEvents(for: date)"))
+        let allDay = try #require(body.range(of: "CadenceCalendarFixtureEvents.allDayEvents(for: date)"))
+        let answer = try #require(body.range(of: "return (timed + allDay).sorted(by: CadenceCalendarEventSearchSupport.precedes)"))
+        let gate = try #require(body.range(of: "guard !isEventKitDisarmed, isAuthorized"))
+        let storeRead = try #require(body.range(of: "store.predicateForEvents("))
+        #expect(timed.upperBound < allDay.lowerBound)
+        #expect(allDay.upperBound < answer.lowerBound)
+        #expect(answer.upperBound < gate.lowerBound)
+        #expect(gate.upperBound < storeRead.lowerBound)
+    }
+
+    /// T-1483 was an absent call, despite a portable implementation. Count each door on each
+    /// platform: equality alone would also pass if both platforms lost the harness entirely.
+    @Test func bothPlatformsCallBothCalendarFixtureDoorsExactlyOnce() throws {
+        for door in ["timedEvents", "allDayEvents"] {
+            let pattern = #"\bCadenceCalendarFixtureEvents\."# + door + #"\s*\("#
+            let sample = "if let events = CadenceCalendarFixtureEvents.\(door)(for: date) { return events }"
+            #expect(CadenceSourceScan.matchCount(pattern, in: sample) == 1)
+            #expect(CadenceSourceScan.matchCount(pattern, in: "OtherFixture.\(door)(for: date)") == 0)
+            var counts: [Int] = []
+            for path in [
+                "Cadence/macOS/Views/CalendarTimelineSupport.swift",
+                "Cadence/iOS/iOSCalendarManager.swift"
+            ] {
+                let code = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile(path))
+                let count = CadenceSourceScan.matchCount(pattern, in: code)
+                #expect(count == 1, "\(path) must call the shared \(door) fixture once")
+                counts.append(count)
+            }
+            #expect(counts == [1, 1])
+        }
+    }
+
+    /// Both platform fetch paths are intentional. Keep the census closed so another fixture
+    /// consumer cannot appear without its launch gate and ordering being checked here.
     @Test func nothingElseInTheAppReachesTheFixture() throws {
         let files = try CadenceSourceScan.swiftFiles(under: "Cadence")
         #expect(files.count > 200, "non-vacuity: walked \(files.count) files")
@@ -234,6 +284,8 @@ struct CadenceCalendarFixtureEventsTests {
                 "Cadence/Services/CadenceCalendarFixtureEvents.swift",
                 "Cadence/Services/CadenceUITestScenarioSeed.swift",
                 "Cadence/macOS/Views/CalendarTimelineSupport.swift",
+                "Cadence/iOS/iOSCalendarManager.swift",
+                "Cadence/iOS/iOSCalendarView.swift",
             ],
             "unexpected reach of the calendar fixture harness: \(referencing.sorted())"
         )
