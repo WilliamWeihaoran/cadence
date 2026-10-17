@@ -267,15 +267,31 @@ extension CadenceTaskMutationSupport {
         return CadenceInPlaceEditFlush.flush(in: modelContext, commit: commit)
     }
 
-    static func moveTaskToDate(_ task: AppTask, dateKey: String, modelContext: ModelContext) {
-        task.bundle?.tasks = (task.bundle?.tasks ?? []).filter { $0.id != task.id }
-        task.bundle = nil
-        task.bundleOrder = 0
-        task.scheduledDate = dateKey
-        if task.estimatedMinutes <= 0 {
-            task.estimatedMinutes = 30
+    /// PA-13 / T-1470: a day drop must undo its fields before answering a refused save.
+    /// Reuse the Mac board's field transaction, including relationship restoration, rather than
+    /// rolling back the shared context and discarding unrelated pending edits. This primitive
+    /// stays notification-free; `CadenceTaskDateEditing` reconciles after either answer.
+    @discardableResult
+    static func moveTaskToDate(
+        _ task: AppTask,
+        dateKey: String,
+        modelContext: ModelContext,
+        commit: (ModelContext) throws -> Void = { try $0.save() }
+    ) -> Bool {
+        CadenceTaskFieldEditCommit.commit(
+            task,
+            in: modelContext,
+            reconciler: .inert,
+            commit: commit
+        ) {
+            task.bundle?.tasks = (task.bundle?.tasks ?? []).filter { $0.id != task.id }
+            task.bundle = nil
+            task.bundleOrder = 0
+            task.scheduledDate = dateKey
+            if task.estimatedMinutes <= 0 {
+                task.estimatedMinutes = 30
+            }
         }
-        try? modelContext.save()
     }
 
     /// **T-761.** Answers whether the minute landed, same as the sibling `setPlanningDates` beside

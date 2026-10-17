@@ -114,14 +114,21 @@ enum CadenceTaskDateEditing {
         return landed
     }
 
+    /// Forward the day drop's commit answer; a refusal has restored the fields before this
+    /// wrapper reconciles, so neither the caller nor notifications can accept the rejected day.
+    @discardableResult
     static func moveTaskToDate(
         _ task: AppTask,
         dateKey: String,
         in context: ModelContext,
-        reconciler: CadenceWindDownReconciler? = nil
-    ) {
-        CadenceTaskMutationSupport.moveTaskToDate(task, dateKey: dateKey, modelContext: context)
+        reconciler: CadenceWindDownReconciler? = nil,
+        commit: (ModelContext) throws -> Void = { try $0.save() }
+    ) -> Bool {
+        let landed = CadenceTaskMutationSupport.moveTaskToDate(
+            task, dateKey: dateKey, modelContext: context, commit: commit
+        )
         reconcile(context, reconciler)
+        return landed
     }
 
     // MARK: - Do time
