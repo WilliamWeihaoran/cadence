@@ -145,6 +145,11 @@ Cadence/Services/TaskCreationService.swift
 Cadence/iOS/iOSTimelineDraftCreate.swift
 CadenceUITests/CadenceCapturePaletteUITests.swift
 CadenceTests/CadenceComposerContainerSurfaceTests.swift
+CadenceTests/CadenceCapturePaletteTests.swift
+CadenceTests/CadenceInlineTagCommitSurfaceTests.swift
+CadenceTests/CadenceChoicePickerDismissalTests.swift
+CadenceTests/CadenceContainerPickerConsolidationTests.swift
+CadenceTests/CadencePresentedTypographyBoundaryTests.swift
 ```
 
 ### 2026-10-17 — a CROSS-AGENT dependency: one path granted, one REFUSED AND SEQUENCED
@@ -200,6 +205,35 @@ on any of them**, and all three existing files are clean in the worktree.
 
 **What is NOT granted by this:** new recurrence semantics, new rule cases, or any schema change. See
 the spec answers recorded on [[T-3195]].
+
+### 2026-10-17 — five more guard paths for T-3195, and a VACUOUS sample caught in the act
+
+All five granted. They are the downstream guards of T-3195's capture-UI contract change, traced
+from source by the second Codex agent rather than discovered by breaking them.
+
+**One of them nearly slipped through on a vacuous check, which is worth recording.**
+`CadencePresentedTypographyBoundaryTests.swift` had three candidate branches. Sampling their
+`@Test func` names against main returned **0 of 0 present** — and 0/0 is not a clean answer, it is
+*no answer*: the sample found nothing to sample, because that file's assertions are not shaped the
+way the sampler assumed. Reading 0/0 as "safe" would have been the same error as a `VACUOUS-COUNT`
+build read as "no warnings".
+
+Resolved by looking at the actual difference instead. Main asserts `popoverCount == 9` and carries a
+`[[T-3171]]` comment explaining the five popovers that moved to the shared schedule panel; the
+branch asserts `== 14` and has no such comment. **Main is ahead; the branch is stale.** Grantable.
+
+`CadenceChoicePickerDismissalTests.swift` resolved the ordinary way — 5 of 5 sampled functions
+present on main on both candidate branches.
+
+**Scope, as the agent proposed and on its own reasoning:** repoint
+`neitherPlacementSpellsTheComposersItself` to two card calls and zero calendar quick-create while
+**retaining all placement negatives**; move `CadenceInlineTagCommitSurfaceTests`' `Text(actionError)`
+pin onto `failureNotice` travelling to the shared card; delete the now-unreferenced value/date tile
+structs from the already-granted `iOSCreateTaskSheetSupportViews.swift` and update ONLY their
+entries in the four reader tests, **retaining each reader control and non-vacuity floor**, replacing
+the retired form's coverage with the shared card's picker/commit coverage. The agent stated "no
+exemption additions" unprompted, which is the right instinct: the cheap way to make these green is
+an allowlist entry, and that would convert a guard into a comment.
 
 ### THE STALENESS TEST, FOURTH AND ACTUAL FORM 2026-10-17 — the blob step is NOT sufficient
 
