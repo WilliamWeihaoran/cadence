@@ -728,6 +728,29 @@ struct CadenceEditorSaveCommitSurfaceTests {
         #expect(counter.runs == 0)
     }
 
+    /// PA-13: the mobile view owns the notice and returns the wrapper's answer, rather than
+    /// repainting the board as accepted after a refusal. Runtime refusal coverage lives beside
+    /// the Mac cases in CalendarBoardDayDropCommitTests; this pins the iOS-only wiring.
+    @Test func theMobileBoardDropNamesFailureBeforeReturningItsCommitAnswer() throws {
+        let raw = try CadenceSourceScan.sourceFile("Cadence/iOS/iOSCalendarBoardView.swift")
+        let source = CadenceSourceScan.codeOnly(raw)
+        #expect(source.contains("@State private var dropFailureNotice: String?"))
+        let schedule = try CadenceCommitSurfaceScan.declarationBody(named: "schedule", in: source)
+        let write = try #require(schedule.range(of: "let landed = CadenceTaskDateEditing.moveTaskToDate("))
+        let notice = try #require(schedule.range(of:
+            "dropFailureNotice = landed ? nil : CadencePendingChangePersistence.editFailureNotice"))
+        let answer = try #require(schedule.range(of: "return landed"))
+        #expect(write.upperBound < notice.lowerBound)
+        #expect(notice.upperBound < answer.lowerBound)
+        #expect(!schedule.contains("return true"))
+
+        let body = try #require(CadenceSourceScan.declarationBody("var body: some View", in: source))
+        let visibleNotice = try #require(body.range(of: "CadenceInlineFailureNotice(text: dropFailureNotice)"))
+        let board = try #require(body.range(of: "GeometryReader"))
+        #expect(body.contains("if let dropFailureNotice"))
+        #expect(visibleNotice.upperBound < board.lowerBound, "the notice must remain outside the scrolling columns")
+    }
+
     // MARK: - The surfaces
 
     private struct SaveSurface {

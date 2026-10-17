@@ -36,6 +36,7 @@ struct iOSCalendarBoardPlanner: View {
     @State private var didConfirmInitialColumn = false
     @State private var windowStartDate: Date?
     @State private var selectedEvent: iOSCalendarEventSelection?
+    @State private var dropFailureNotice: String?
 
     private let calendar = Calendar.current
     private let renderDays = CalendarBoardPlannerSupport.plannerRenderDayCount
@@ -90,8 +91,16 @@ struct iOSCalendarBoardPlanner: View {
     }
 
     var body: some View {
-        GeometryReader { geometry in
-            board(columnWidth: columnWidth(containerWidth: geometry.size.width))
+        VStack(spacing: 0) {
+            // Above the scrolling columns, so a refused drop stays visible at either width.
+            if let dropFailureNotice {
+                CadenceInlineFailureNotice(text: dropFailureNotice)
+                    .padding(.horizontal, horizontalPadding)
+                    .padding(.top, 8)
+            }
+            GeometryReader { geometry in
+                board(columnWidth: columnWidth(containerWidth: geometry.size.width))
+            }
         }
         .sheet(item: $selectedEvent) { selection in
             iOSCalendarEventEditSheet(event: selection.event)
@@ -224,8 +233,10 @@ struct iOSCalendarBoardPlanner: View {
         recenterWindowIfNeeded(visibleDayIndex: dayIndex, visibleDate: date)
     }
 
-    private func schedule(_ task: AppTask, on dateKey: String) {
-        CadenceTaskDateEditing.moveTaskToDate(task, dateKey: dateKey, in: modelContext)
+    private func schedule(_ task: AppTask, on dateKey: String) -> Bool {
+        let landed = CadenceTaskDateEditing.moveTaskToDate(task, dateKey: dateKey, in: modelContext)
+        dropFailureNotice = landed ? nil : CadencePendingChangePersistence.editFailureNotice
+        return landed
     }
 
 }
@@ -253,7 +264,7 @@ private struct iOSCalendarBoardDayColumn: View {
     let allTasks: [AppTask]
     let onOpenEvent: (EKEvent) -> Void
     let onAddTask: () -> Void
-    let onDropTaskOnDay: (AppTask) -> Void
+    let onDropTaskOnDay: (AppTask) -> Bool
 
     // No `horizontalSizeClass`. It was declared here and read by nothing: the column draws one way
     // at every width, and has since its "today" treatment collapsed into `CadenceBoardColumnHeader`.
@@ -463,8 +474,7 @@ private struct iOSCalendarBoardDayColumn: View {
         guard let payload = items.first,
               let taskID = TaskDragPayload.taskID(from: payload),
               let task = allTasks.first(where: { $0.id == taskID }) else { return false }
-        onDropTaskOnDay(task)
-        return true
+        return onDropTaskOnDay(task)
     }
 
     private func sortColumnItems(_ lhs: iOSCalendarBoardColumnItem, _ rhs: iOSCalendarBoardColumnItem) -> Bool {

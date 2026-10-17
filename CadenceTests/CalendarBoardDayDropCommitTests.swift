@@ -115,6 +115,117 @@ struct CalendarBoardDayDropCommitTests {
         )
     }
 
+    // MARK: - The mobile day-drop mutation (PA-13 / T-1470)
+
+    /// Both outcomes, with and without a materialised estimate. Use the last member rather than
+    /// the first: zeroing an already-zero bundleOrder would not exercise its restoration.
+    @Test(arguments: [true, false], [0, 45])
+    func mobileDayDropRestoresEveryMutatedFieldOnlyWhenRefused(refuses: Bool, estimate: Int) throws {
+        let modelContainer = try container()
+        let board = try fixture(in: modelContainer)
+        board.modelContext.autosaveEnabled = false
+        let task = board.siblings[1]
+        task.estimatedMinutes = estimate
+        task.scheduledStartMin = 615
+        task.dueDate = "2026-08-01"
+        try board.modelContext.save()
+        #expect(task.bundleOrder == 2)
+        let originalMemberIDs = board.block.sortedTasks.map(\.id)
+        let originalEventID = task.calendarEventID
+        let bystanderTitle = board.bystander.title
+        board.bystander.title = "An unrelated pending edit"
+
+        let counter = CountingDayDropCommit()
+        counter.refuses = refuses
+        final class Observed { var dates: [String] = [] }
+        let observed = Observed()
+        let recorder = CadenceWindDownReconciler(isLive: false) { _ in
+            observed.dates.append(task.scheduledDate)
+        }
+        let landed = CadenceTaskDateEditing.moveTaskToDate(
+            task,
+            dateKey: "2026-07-04",
+            in: board.modelContext,
+            reconciler: recorder,
+            commit: counter.commit
+        )
+
+        // Read live objects before any fetch can mask a missing in-memory restore.
+        #expect(landed == !refuses)
+        #expect(counter.commitCount == 1)
+        #expect(observed.dates == [refuses ? "2026-06-01" : "2026-07-04"], "reconcile once, after commit or restore")
+        #expect(task.scheduledDate == (refuses ? "2026-06-01" : "2026-07-04"))
+        #expect(task.estimatedMinutes == (refuses ? estimate : max(estimate, 30)))
+        #expect(task.bundle?.id == (refuses ? board.block.id : nil))
+        #expect(task.bundleOrder == (refuses ? 2 : 0))
+        #expect(board.block.sortedTasks.map(\.id) == (refuses
+            ? originalMemberIDs : originalMemberIDs.filter { $0 != task.id }))
+        #expect(board.dragged.bundleOrder == 0)
+        #expect(board.siblings[0].bundleOrder == 1)
+        #expect(task.scheduledStartMin == 615)
+        #expect(task.dueDate == "2026-08-01")
+        #expect(task.calendarEventID == originalEventID)
+        #expect(board.bystander.title == "An unrelated pending edit", "no context-wide rollback")
+        #expect(board.bystander.bundle?.id == board.otherBlock.id)
+
+        let stored = ModelContext(modelContainer)
+        let storedTasks = try stored.fetch(FetchDescriptor<AppTask>())
+        let storedTask = try #require(storedTasks.first { $0.id == task.id })
+        #expect(storedTask.scheduledDate == task.scheduledDate)
+        #expect(storedTask.estimatedMinutes == task.estimatedMinutes)
+        #expect(storedTask.bundle?.id == task.bundle?.id)
+        #expect(storedTask.bundleOrder == task.bundleOrder)
+        let storedBystander = try #require(storedTasks.first { $0.id == board.bystander.id })
+        #expect(storedBystander.title == (refuses ? bystanderTitle : "An unrelated pending edit"))
+    }
+
+    /// The original failure could escape twice: first as a success answer, then as pending fields
+    /// committed by somebody else's save. A second context checks both persistence boundaries.
+    @Test func aRefusedMobileDayDropCannotLeakThroughALaterUnrelatedSave() throws {
+        let modelContainer = try container()
+        let board = try fixture(in: modelContainer)
+        board.modelContext.autosaveEnabled = false
+        board.dragged.bundleOrder = 7
+        try board.modelContext.save()
+        let taskID = board.dragged.id
+        let blockID = board.block.id
+        let originalMemberIDs = Set((board.block.tasks ?? []).map(\.id))
+        let counter = CountingDayDropCommit()
+        counter.refuses = true
+
+        #expect(!CadenceTaskDateEditing.moveTaskToDate(
+            board.dragged,
+            dateKey: "2026-07-04",
+            in: board.modelContext,
+            reconciler: .inert,
+            commit: counter.commit
+        ))
+        #expect(board.dragged.scheduledDate == "2026-06-01")
+        #expect(board.dragged.estimatedMinutes == 0)
+        #expect(board.dragged.bundle?.id == blockID)
+        #expect(board.dragged.bundleOrder == 7)
+        #expect(Set((board.block.tasks ?? []).map(\.id)) == originalMemberIDs)
+
+        for saveUnrelatedEdit in [false, true] {
+            if saveUnrelatedEdit {
+                board.bystander.title = "A later committed edit"
+                try board.modelContext.save()
+            }
+            let stored = ModelContext(modelContainer)
+            let task = try #require(try stored.fetch(FetchDescriptor<AppTask>()).first { $0.id == taskID })
+            #expect(task.scheduledDate == "2026-06-01")
+            #expect(task.estimatedMinutes == 0)
+            #expect(task.bundle?.id == blockID)
+            #expect(task.bundleOrder == 7)
+            let block = try #require(task.bundle)
+            #expect(Set((block.tasks ?? []).map(\.id)) == originalMemberIDs)
+            let bystander = try #require(try stored.fetch(FetchDescriptor<AppTask>()).first {
+                $0.id == board.bystander.id
+            })
+            #expect(bystander.title == (saveUnrelatedEdit ? "A later committed edit" : "In the other block entirely"))
+        }
+    }
+
     // MARK: - The card drop, against its own control
 
     /// The card half of the ticket in one test, and it needs both readings: a refused drop and a
@@ -554,6 +665,18 @@ struct CalendarBoardDayDropCommitTests {
             CadenceSourceScan.matchCount(#"return true"#, in: handleDrop) == 0,
             "the column accepts a drop only by forwarding the store's answer"
         )
+    }
+
+    /// The mobile callback must carry the same refusal as Mac, all the way to dropDestination.
+    @Test func theMobileCalendarBoardColumnForwardsTheDropAnswerItIsGiven() throws {
+        let raw = try CadenceSourceScan.sourceFile("Cadence/iOS/iOSCalendarBoardView.swift")
+        let source = CadenceSourceScan.codeOnly(raw)
+        #expect(source.contains("let onDropTaskOnDay: (AppTask) -> Bool"))
+        let handleDrop = try CadenceCommitSurfaceScan.declarationBody(named: "handleDrop", in: source)
+        #expect(handleDrop.contains("guard let payload = items.first"))
+        #expect(handleDrop.contains("return onDropTaskOnDay(task)"))
+        #expect(!handleDrop.contains("return true"))
+        #expect(source.contains("onDropTaskOnDay: { task in schedule(task, on: dateKey) }"))
     }
 
     /// The sweep still exempts nothing in either file, which is the state [[T-1952]] reached and

@@ -485,7 +485,9 @@ struct CadenceMarkdownImageCommitSurfaceTests {
         // the shared panel, and the host's refused-save notice is handed to it as `failureNotice:`
         // rather than drawn by the popover — `theMacOSEventEditPopoverDrawsTheHostsFailureNotice`
         // holds both halves. Its event-note notice is still this component, beside its button.
-        #expect(total == 67, "the inline notice has \(total) call sites, not the 67 this test was written over")
+        // PA-13 / T-1470 adds the mobile Calendar Board's refused-drop notice. Like the Mac
+        // board's notice, the next successful drop clears it, so it offers no dismissal.
+        #expect(total == 68, "the inline notice has \(total) call sites, not the 68 this test was written over")
         #expect(withDismissal == 7, "\(withDismissal) call sites offer a dismissal, not 7")
 
         // And each of the six is named, so one swapping places with another is still a failure.
