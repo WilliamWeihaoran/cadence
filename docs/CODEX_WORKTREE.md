@@ -128,7 +128,29 @@ CadenceTests/CadenceNoteReferencePanelSurfaceTests.swift
 CadenceTests/CadenceOutlineParserRegexTests.swift
 Cadence/iOS/iOSMarkdownEditor.swift
 CadenceUITests/CadenceIOSCalendarAndNoteParityUITests.swift
+Cadence/iOS/iOSCalendarView.swift
 ```
+
+### LEASE WIDENED 2026-10-17 — `Cadence/iOS/iOSCalendarView.swift`, T-1483's second blocker
+
+**Verified, not accepted.** `refreshVisibleEvents()` guards on `calendarManager.isAuthorized` at
+`:436` and `refreshSelectedDayEvents()` at `:455`. Both exit BEFORE reaching the manager, so a
+fixture door added inside `iOSCalendarManager.fetchEvents` can never fire — the callers short-circuit
+first. Codex found this after taking the granted fix and is right that T-1483 is unfinished without
+it.
+
+Worth recording as a lesson about the original ticket: T-1483 was filed from a measurement — two
+product call sites, both macOS — and that measurement was correct but INCOMPLETE. It located where
+the fixture is read and never asked what stands between the caller and that read. A second gate
+upstream of the one you are fixing is invisible to a search for the thing you are fixing.
+
+**Scope, narrowly:** those two guards only, admitting the active fixture scenario. **Real-store
+authorization stays in the manager** — these guards may learn about fixtures, they may not learn to
+skip authorization. The two-part gate is unchanged: `CADENCE_UI_TEST_MODE=1` AND a recognised
+`CADENCE_UI_TEST_SCENARIO`, either half alone answering nil. Extend the fixture tests to pin BOTH
+callers, since the defect was that a caller nobody tested stood in front of a door everybody did.
+
+File is clean in the worktree and no `codex/*` branch has modified it.
 
 ### LEASE WIDENED 2026-10-17 — two more paths for T-1471's heading jump
 
