@@ -60,9 +60,15 @@ enum CadenceTodayPresentationSupport {
     // freeze on the palette active at first access.
     static var completedSectionAccent: Color { Theme.green }
 
-    /// Today's empty state, on every platform. `iOSCompactTodayEmptyState` draws it on iOS and
-    /// macOS's `TasksPanel` passes the same two strings to `EmptyStateView`; it is the only empty
-    /// state Today has.
+    /// Today's empty state. **macOS's `TasksPanel` is the only thing that draws it now
+    /// ([[T-3197]]).**
+    ///
+    /// iOS drew the same two strings in a component of its own until the owner asked for the box
+    /// off the phone — *"remove the box that says 'nothing planned add a task with + ......'"* —
+    /// so an empty Today is blank there and these constants have one reader rather than two. They
+    /// are kept rather than deleted precisely because that reader is live; whether macOS should
+    /// follow the phone is raised on [[T-3197]] and is the owner's to settle, since what they said
+    /// about every device they said about the estimate chip, not about this.
     ///
     /// macOS said "Nothing for today" over "Due-today and do-today tasks will appear here", which
     /// is a restatement of the page's scope rather than a next step. The name lost its `compact`

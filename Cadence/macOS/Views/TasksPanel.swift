@@ -398,10 +398,15 @@ struct TasksPanel: View {
     @ViewBuilder
     private func emptyStateSection(derived: TasksPanelDerivedState) -> some View {
         if derived.isEmptyState {
-            // Today's copy is `CadenceTodayPresentationSupport`'s, which is what iOS's
-            // `iOSCompactTodayEmptyState` draws. macOS said "Nothing for today" over
-            // "Due-today and do-today tasks will appear here" — a restatement of the page's scope
-            // where the shared subtitle names the next thing to do.
+            // Today's copy is `CadenceTodayPresentationSupport`'s. macOS said "Nothing for today"
+            // over "Due-today and do-today tasks will appear here" — a restatement of the page's
+            // scope where the shared subtitle names the next thing to do — so the two hosts were
+            // folded onto one pair of strings.
+            //
+            // **This is the only surviving reader of that pair ([[T-3197]]).** iOS drew it in a
+            // component of its own and the owner asked for the box off the phone; what they said
+            // about every device they said about the estimate chip, not about this, so the Mac was
+            // left alone and the divergence is raised on the ticket rather than decided in passing.
             //
             // The other arm read `CadenceEmptyStateCopy.allTasks*` and went with `.byDoDate`
             // (T-487). Those two constants stay live — iOS's `iOSTaskCollectionMetrics` draws the

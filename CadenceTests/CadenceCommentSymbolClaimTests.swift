@@ -873,7 +873,6 @@ enum CadenceCommentSymbolClaim {
         "Cadence/macOS/Views/CalendarPageMonthSupportViews.swift `SchedulingActions.createTask`",
         "Cadence/macOS/Views/SettingsSupportViews.swift `SidebarTabEditorSheet.settingsPanelRow`",
         "Cadence/macOS/Views/SettingsTemplatesSection.swift `SettingsAISection.settingsField`",
-        "Cadence/macOS/Views/TasksPanelComponents.swift `CadenceTaskMutationSupport.setEstimatedMinutes`",
         "Cadence/macOS/Views/TasksPanelSupport.swift `TasksPanel.taskSections`",
         "CadenceMCPServer/CadenceMCPToolDefinitions.swift `CadenceGoalSummary.subGoalCount`",
         "CadenceMCPServer/CadenceMCPToolDefinitions.swift `CadenceGoalSummary.taskCount`",
@@ -1007,8 +1006,12 @@ enum CadenceCommentSymbolClaim {
         #expect(tombstones == tombstones.sorted())
         #expect(stale == stale.sorted())
         // 36 before T-1091 ledgered its two examples; 37 since [[T-1571]] removed the one of
-        // those two that was never a finding, only a member the reader could not reach.
-        #expect(tombstones.count == 37)
+        // those two that was never a finding, only a member the reader could not reach; 36 again
+        // since [[T-3196]] deleted the macOS row's estimate chip, whose doc comment carried the
+        // TasksPanelComponents half of the setEstimatedMinutes tombstone. The comment went with
+        // the struct, so the row is removed rather than struck off. The iOS half stands: its chip
+        // is still there.
+        #expect(tombstones.count == 36)
         // 0 again. It was 1 while the Calendar Board's formBundle doc named a Mac spelling
         // [[T-3170]] had removed and the file was still Codex-leased; the grant `41ded784`
         // unblocked it and T-3170's Board pass deleted the function that comment documented.

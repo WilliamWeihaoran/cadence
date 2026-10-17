@@ -612,24 +612,28 @@ struct CadenceSharedTaskRowJobsTests {
     @Test func theMacRowDrawsItselfFromTheSharedFiguresRatherThanItsOwn() throws {
         try expectOccurrences(
             of: "CadenceTaskRowMetrics { .desktop }",
-            // The row and its estimate chip. The chip is its own `View` struct so its popover
-            // `@State` cannot invalidate the row; it reads the tier directly for the same reason.
-            at: ["Cadence/macOS/Views/TasksPanelComponents.swift": 2]
+            // The row, and only the row. It was two: the estimate chip was its own `View` struct,
+            // so its popover `@State` could not invalidate the row, and it read the tier directly
+            // for the same reason. [[T-3196]] removed that chip, so the row is the one reader.
+            at: ["Cadence/macOS/Views/TasksPanelComponents.swift": 1]
         )
 
         for (figure, count) in [
             ("metrics.horizontalPadding", 1),
             ("metrics.verticalPadding", 1),
             ("metrics.contentSpacing", 3),
-            // Seven until [[T-3170]] took the block badge off the row with the Block feature.
-            ("metrics.badgeSpacing", 6),
+            // Seven until [[T-3170]] took the block badge off the row with the Block feature, and
+            // six until [[T-3196]] took the estimate chip off it.
+            ("metrics.badgeSpacing", 5),
             ("metrics.titleFontSize", 1),
-            // Five, not four: the Cancelled chip joined its siblings on this row (T-597). It
-            // had set its own `size: 10` and `6/3` padding while every other chip beside it read
-            // this tier — which is the shape of drift `.desktop` exists to prevent, one chip late.
-            // The do-date pill spells the figure twice, once on the hidden `Text` reserving width.
-            // It was six until [[T-3170]] removed the block badge, the sixth reader.
-            ("metrics.secondaryFontSize", 5)
+            // Four, and the Cancelled chip is one of them: it joined its siblings on this row
+            // (T-597) having set its own `size: 10` and `6/3` padding while every other chip beside
+            // it read this tier — which is the shape of drift `.desktop` exists to prevent, one
+            // chip late. The do-date pill spells the figure twice, once on the hidden `Text`
+            // reserving width. It was six until [[T-3170]] removed the block badge and five until
+            // [[T-3196]] removed the estimate chip; both are chips that went, not readers that
+            // stopped reading.
+            ("metrics.secondaryFontSize", 4)
         ] {
             try expectOccurrences(of: figure, at: ["Cadence/macOS/Views/TasksPanelComponents.swift": count])
         }
@@ -695,10 +699,14 @@ struct CadenceSharedTaskRowJobsTests {
     }
 
     /// The hard constraint that predates T-175 and survives it. `MacTaskRow` gained a `metrics`
-    /// property and lost five literals; neither it nor the estimate chip may start observing the
-    /// animation manager, because a `TimelineView(.animation)` tick in the row body re-renders every
-    /// visible row rather than one glyph. `CadenceTodayUnificationTests` pins the environment count;
-    /// this pins that the extraction the property depends on is still there to hold it.
+    /// property and lost five literals; it may not start observing the animation manager, because a
+    /// `TimelineView(.animation)` tick in the row body re-renders every visible row rather than one
+    /// glyph. `CadenceTodayUnificationTests` pins the environment count; this pins that the
+    /// extraction the property depends on is still there to hold it.
+    ///
+    /// **The estimate chip was asked for its own zero here until [[T-3196]] removed it.** It is not
+    /// replaced in the roster below: the file-wide count at the end of this test is what refuses a
+    /// third observer, whatever it is called, so dropping the row carries no coverage with it.
     @Test func theRowsAnimatedPartsAreStillExtractedIntoTheirOwnSubViews() throws {
         let code = try strippingComments(sourceFile("Cadence/macOS/Views/TasksPanelComponents.swift"))
 
@@ -714,8 +722,7 @@ struct CadenceSharedTaskRowJobsTests {
         let observers = [
             "struct TaskCompletionButton: View": 1,
             "struct TaskRowBackground: View": 1,
-            "struct MacTaskRow: View": 0,
-            "struct MacTaskRowEstimateChip: View": 0
+            "struct MacTaskRow: View": 0
         ]
         for (declaration, expected) in observers {
             let body = try cadenceFunctionBody(declaration, in: code)
@@ -726,7 +733,7 @@ struct CadenceSharedTaskRowJobsTests {
             )
         }
 
-        // And nowhere else in the file: a fifth reader would be a third view re-rendering on every
+        // And nowhere else in the file: a third reader would be a third view re-rendering on every
         // display-link tick, and every count above would still hold.
         #expect(code.components(separatedBy: "@Environment(TaskCompletionAnimationManager.self)").count - 1 == 2)
     }

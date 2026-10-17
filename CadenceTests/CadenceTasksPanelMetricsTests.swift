@@ -8,7 +8,9 @@ import Testing
 ///
 /// Two shapes, one cause. The Cancelled chip set its own `10` and `6/3` while the four chips beside
 /// it — the do-date pill, the due-date pill, the bundle badge, the estimate chip — all read
-/// `CadenceTaskRowMetrics.desktop.secondaryFontSize` at `4/2`; and two *adjacent* section headings
+/// `CadenceTaskRowMetrics.desktop.secondaryFontSize` at `4/2`. (Two of those four have gone since:
+/// the bundle badge with the Block feature in [[T-3170]], the estimate chip in [[T-3196]]. The rule
+/// is about the chips the row draws, so the counts below move with it.) And two *adjacent* section headings
 /// were padded identically except for one point of bottom inset, over a gutter typed out as a bare
 /// `16` at six sites in two files. iOS puts every one of these in `CadenceTodaySectionMetrics`,
 /// keyed on layout. This is that shape for the Mac.
@@ -41,8 +43,9 @@ struct CadenceTasksPanelMetricsTests {
     /// Three claims, and each one is a separate way the defect comes back:
     ///
     /// 1. the title carries `.layoutPriority(1)`, so it is laid out before the decoration;
-    /// 2. the trailing decoration is **one** child of the row's stack — a `ViewThatFits` — rather
-    ///    than four siblings, because four siblings cannot shed as a group;
+    /// 2. the trailing decoration is **one** child of the row's stack rather than four siblings,
+    ///    because four siblings cannot yield to the title as a group. It was a `ViewThatFits` with
+    ///    a shedding ladder under it until [[T-3196]] left it with nothing to shed;
     /// 3. the due-date chip's `Text` is `.lineLimit(1)`, which is what makes wrapping impossible
     ///    rather than merely unlikely.
     ///
@@ -66,26 +69,47 @@ struct CadenceTasksPanelMetricsTests {
             "the row's promoted subview is no longer its title"
         )
 
-        // 2. The decoration is one shedding child, not four siblings.
-        #expect(body.contains("ViewThatFits(in: .horizontal)"))
-        #expect(body.contains("metadataStrip"))
-        // One wide reading and one narrow one. Counted over the call spellings rather than the
-        // name, so the declaration itself is not one of the two.
+        // 2. The decoration is **one** child of the row's stack, not several siblings — which is
+        // the claim that matters, because siblings cannot yield to the title as a group.
         //
-        // **It was three readings until [[T-3170]]**, the widest of which carried the block badge
-        // and shed it first. The Block feature is gone from this row, so the widest reading had
-        // nothing left to hold and went with it; the estimate is now what sheds.
+        // **The shedding ladder underneath it is gone, and that is not a weakening ([[T-3196]]).**
+        // It was three readings until [[T-3170]] took the block badge, two until [[T-3196]] took
+        // the estimate chip, and the estimate was the only thing the narrow reading dropped — so
+        // the two readings drew the same views and `ViewThatFits` was choosing between a view and
+        // itself. What replaced it is the same single `HStack` those readings both built.
+        //
+        // So the pin moves to what still holds the row's width honest: one strip, declared once
+        // and called once, that states a real minimum through `.fixedSize`. Without that modifier
+        // the strip "fits" any width by truncating its own text, which is the defect this test is
+        // named for, one layer down.
+        #expect(body.contains("metadataStrip"))
         #expect(
-            body.components(separatedBy: "metadataRow(showsEstimate: true)").count - 1 == 1,
-            "the strip no longer offers a wide reading"
+            body.components(separatedBy: "metadataStrip").count - 1 == 2,
+            "the trailing decoration is no longer exactly one declaration with one call site"
         )
         #expect(
-            body.components(separatedBy: "metadataRow(showsEstimate: false)").count - 1 == 1,
-            "the strip has no last-resort reading to shed down to"
+            !body.contains("ViewThatFits"),
+            "a ViewThatFits is back in the row — if the strip sheds again, pin its readings here"
+        )
+        #expect(
+            body.components(separatedBy: "metadataRow(").count - 1 == 0,
+            "the strip's shed readings are back without this test being told what they are"
+        )
+        let strip = try #require(
+            CadenceSourceScan.declarationBody("private var metadataStrip: some View", in: row),
+            "non-vacuity: the strip is gone or its braces do not balance"
+        )
+        #expect(
+            strip.contains(".fixedSize(horizontal: true, vertical: false)"),
+            "the strip can squeeze its own text again, so it reserves less than it needs"
         )
         #expect(
             CadenceSourceScan.matchCount(#"showsBundle"#, in: body) == 0,
             "the block badge is back in the strip the Block feature was removed from"
+        )
+        #expect(
+            CadenceSourceScan.matchCount(#"showsEstimate"#, in: body) == 0,
+            "the estimate is back in the strip [[T-3196]] removed it from"
         )
 
         // 3. The chip that wrapped cannot wrap.
@@ -123,17 +147,23 @@ struct CadenceTasksPanelMetricsTests {
         #expect(CadenceSourceScan.matchCount(#"square\.stack"#, in: row) == 0)
 
         // Non-vacuity, three ways: the right file, past the comment stripper, and still drawing
-        // the two chips beside the one that was removed.
+        // the chips beside the one that was removed. The estimate chip stood here as the second
+        // of those until [[T-3196]] removed it too; the do-date pill took its place rather than
+        // leaving this read with one survivor.
         #expect(row.contains("struct MacTaskRow: View"))
-        #expect(row.contains("MacTaskRowEstimateChip(task: task)"))
+        #expect(row.contains("doDatePill"))
         #expect(row.contains("dueDateBadgeList"))
     }
 
-    // MARK: - The row's fifth chip
+    // MARK: - The row's last chip
 
-    /// The four chips this one sits beside all read the same two figures. `.desktop` exists so they
+    /// The chips this one sits beside all read the same two figures. `.desktop` exists so they
     /// do not drift, and the one chip that never read it was drawing a point smaller and two points
     /// wider than the rest of the row.
+    ///
+    /// **The name says "four" for the row T-597 measured, and the row has shed two of them since:**
+    /// the block badge with the Block feature ([[T-3170]]) and the estimate chip with [[T-3196]].
+    /// The rule is unchanged and the counts below are re-pointed, not relaxed.
     @Test func theCancelledChipIsDrawnLikeTheFourChipsBesideIt() throws {
         #expect(CadenceTaskRowMetrics.desktop.secondaryFontSize == 11)
 
@@ -155,14 +185,15 @@ struct CadenceTasksPanelMetricsTests {
         #expect(!window.contains(".padding(.horizontal, 6)"))
         #expect(!window.contains(".padding(.vertical, 3)"))
 
-        // Counted rather than only present: four chips read the secondary size now (the do-date
-        // pill spells it twice, once on the hidden `Text` that reserves its width), and a fifth
+        // Counted rather than only present: three chips read the secondary size now (the do-date
+        // pill spells it twice, once on the hidden `Text` that reserves its width), and a further
         // chip arriving with its own literal has to change this number to land.
         //
-        // **Six until [[T-3170]].** The sixth reader was the block badge, which that ticket
-        // removed with the Block feature — a chip gone, not a chip that stopped reading the tier.
+        // **Six until [[T-3170]], five until [[T-3196]].** The sixth reader was the block badge and
+        // the fifth was the estimate chip; both are chips that went away, not chips that stopped
+        // reading the tier.
         #expect(
-            CadenceSourceScan.matchCount("size: metrics\\.secondaryFontSize", in: row) == 5
+            CadenceSourceScan.matchCount("size: metrics\\.secondaryFontSize", in: row) == 4
         )
         #expect(CadenceSourceScan.matchCount("size: 10", in: row) == 0)
     }
@@ -173,7 +204,8 @@ struct CadenceTasksPanelMetricsTests {
     /// **four** sites in `TasksPanelComponents`: the Cancelled pill, the do-date pill, the due-date
     /// pill and the estimate chip. (`docs/TODO.md` said five and the file's own comment *used to*
     /// name the block badge as a fifth; the badge drew no background, so it had no plate and no
-    /// inset, and [[T-3170]] has since removed it outright along with the Block feature.)
+    /// inset, and [[T-3170]] has since removed it outright along with the Block feature. The
+    /// estimate chip went the same way in [[T-3196]], so three of the original four are left.)
     /// iOS had already named the same measurement, on `iOSTaskAttributeChipSize` — which is two
     /// homes for one thing, the shape `CadenceTaskRowMetrics.desktop` exists to close.
     ///
@@ -201,24 +233,28 @@ struct CadenceTasksPanelMetricsTests {
         #expect(row.contains("struct MacTaskRow: View"), "non-vacuity: wrong file read")
 
         // The call sites read the name. Counted exactly, and each one also named below: a value-only
-        // assertion stays green while a fifth chip spells `4` and `2` out again.
+        // assertion stays green while a fourth chip spells `4` and `2` out again.
+        //
+        // **Three, not four, since [[T-3196]] took the estimate chip off this row.** The count is
+        // re-pointed rather than loosened: it was `4` with the estimate's plate in it, and the
+        // three anchors below are the three plates the row still draws.
         #expect(
-            CadenceSourceScan.matchCount(#"CadenceTaskChipPadding\.desktopHorizontal"#, in: row) == 4
+            CadenceSourceScan.matchCount(#"CadenceTaskChipPadding\.desktopHorizontal"#, in: row) == 3
         )
         #expect(
-            CadenceSourceScan.matchCount(#"CadenceTaskChipPadding\.desktopVertical"#, in: row) == 4
+            CadenceSourceScan.matchCount(#"CadenceTaskChipPadding\.desktopVertical"#, in: row) == 3
         )
         #expect(CadenceSourceScan.matchCount(#"\.padding\(\.horizontal, 4\)"#, in: row) == 0)
         #expect(CadenceSourceScan.matchCount(#"\.padding\(\.vertical, 2\)"#, in: row) == 0)
 
-        // Named, so a count that still adds to four while one chip drifts back cannot pass. The
-        // four anchors are in file order, so each region runs from its own chip to the next one and
-        // the regions do not overlap — one read of each figure in each, no chip covering another.
+        // Named, so a count that still adds to three while one chip drifts back cannot pass. The
+        // three anchors are in file order, so each region runs from its own chip to the next one
+        // and the regions do not overlap — one read of each figure in each, no chip covering
+        // another. The estimate chip was the fourth and last anchor until [[T-3196]].
         let chips = [
             #"Text("Cancelled")"#,
             "private var doDatePill",
             "private var dueDateBadgeList",
-            "struct MacTaskRowEstimateChip",
         ]
         var cursor = row.startIndex
         var bounds: [String.Index] = []

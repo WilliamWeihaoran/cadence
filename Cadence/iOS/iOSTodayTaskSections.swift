@@ -114,19 +114,27 @@ struct iOSTodayTaskSections: View {
     /// an empty day — the two hosts each re-derived this from their own `todayTasks` array instead,
     /// which is one more chance for them to disagree about when Today is empty.
     ///
+    /// **The two extra clauses are kept although the empty state they guarded is gone
+    /// ([[T-3197]]).** Each was added after the same defect: a day that plainly had content
+    /// announcing it had none. With the box removed the symptom would now be a *blank page* under
+    /// a rollover banner or a folded Completed group, which is the same wrong answer drawn more
+    /// quietly — and this predicate is also what gates the debug seed card, which must not appear
+    /// beside real rows. So the clauses still earn their place, and the histories are kept rather
+    /// than deleted with the component.
+    ///
     /// **The rollover notice counts as content.** While it is up the grouped list is deliberately
     /// *missing* the tasks it is offering, so a day whose only open work is yesterday's leftovers
-    /// has no groups — and without the last clause this view would draw "nothing planned" directly
-    /// under a banner listing four things to do. Since T-305 the withheld rows are missing from
-    /// *their lists'* groups rather than from a "Past Do" section, so confirming the roll makes a
-    /// list group appear rather than moving rows between two date buckets — which is the whole
-    /// point of the roll being visible.
+    /// has no groups — and without the last clause this view called a day empty under a banner
+    /// listing four things to do. Since T-305 the withheld rows are missing from *their lists'*
+    /// groups rather than from a "Past Do" section, so confirming the roll makes a list group
+    /// appear rather than moving rows between two date buckets — which is the whole point of the
+    /// roll being visible.
     ///
     /// **Finished work counts as content whether or not it is unfolded.** This read
     /// `!showsCompleted || completedTasks.isEmpty`, which was right while a chip decided whether the
     /// Completed section existed at all. It is always on the page now, so a day whose only work is
-    /// already done draws a folded "Completed Today" — and without this clause it would draw
-    /// "Nothing planned" directly above it, which is the same defect the two removed clauses were
+    /// already done draws a folded "Completed Today" — and without this clause the page called
+    /// itself empty directly above it, which is the same defect the two removed clauses were
     /// here to prevent.
     private var isEmpty: Bool {
         taskGroups.isEmpty
@@ -157,19 +165,22 @@ struct iOSTodayTaskSections: View {
     @ViewBuilder
     private var content: some View {
         if isEmpty {
-            // Not carded by `metrics`: `iOSCompactTodayEmptyState` draws its own card, at the one
-            // fill that reads against both hosts. A second card around it would be the stacked
-            // layers the standing rule rules out.
-            VStack(alignment: .leading, spacing: 12) {
-                iOSCompactTodayEmptyState()
-
-                #if DEBUG
-                iOSCompactSampleDataCard(
-                    status: sampleDataStatus,
-                    action: seedSampleData
-                )
-                #endif
-            }
+            // **An empty Today draws nothing here any more ([[T-3197]]).** The owner asked for the
+            // "Nothing planned" box off — *"remove the box that says 'nothing planned add a task
+            // with + ......'"* — so a day with no groups, no completed work and no rollover notice
+            // is a blank area under the sort control. `isEmpty` is still the question that decides
+            // it: it is what keeps the debug seed card from appearing under a populated list, and
+            // the three clauses it reads are documented on it because each one was a defect once.
+            //
+            // The seed card below is the only thing left in this branch, and in a release build
+            // there is nothing at all. That is deliberate and was checked, not assumed: the owner
+            // asked whether that card was dev-only, it is `#if DEBUG`, and it stays.
+            #if DEBUG
+            iOSCompactSampleDataCard(
+                status: sampleDataStatus,
+                action: seedSampleData
+            )
+            #endif
         } else {
             groupStack
         }

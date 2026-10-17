@@ -137,63 +137,21 @@ struct iOSCompactTodayView: View {
 
 }
 
-/// The one Today empty state, on both widths.
-///
-/// iPad used to run its own: a card, then a row of three tinted "Write notes" / "Check timeline" /
-/// "Completed" tiles, then two more "Capture" / "Plan" hint cards — five instructional cards
-/// standing in for content, one of which ("Plan — Use the inspector to switch notes and timeline")
-/// described the page it was drawn on. That is the mistake the deleted `iOSCompactHomeView` grid
-/// made. An empty day looks empty and says so once, in `Theme.dim`.
-///
-/// **It draws no card.** It used to: the two callers each wrapped it in one of their own and
-/// disagreed about the fill, so the component was pulled inward to draw one `Theme.surfaceElevated`
-/// card for both hosts. The user has since had the cards taken off task groups everywhere, and an
-/// empty state boxed on a page whose populated state is not boxed reads as a different kind of
-/// thing rather than the same list with nothing in it. So it is bare text on the page now, on both
-/// hosts. The fill reasoning is kept here only because it explains why a `Theme.surface` card would
-/// have been invisible on iPad if anyone reaches for one again.
-struct iOSCompactTodayEmptyState: View {
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-    @Environment(\.cadenceTypographyScaling) private var scaling
-    var body: some View {
-        emptyRow
-    }
-
-    private var emptyRow: some View {
-        let wraps = iOSTaskPageTypographyMetrics.stacksControls(at: dynamicTypeSize, scaling: scaling)
-        let side = iOSTaskPageTypographyMetrics.glyphFrame(42, glyph: 20, at: dynamicTypeSize, scaling: scaling)
-        let layout = wraps ? AnyLayout(VStackLayout(alignment: .leading, spacing: 13)) : AnyLayout(HStackLayout(spacing: 13))
-        return layout {
-            Image(systemName: "checkmark.circle")
-                .cadenceFont(.controlLabel, base: 20)
-                .foregroundStyle(Theme.dim)
-                .frame(width: side, height: side)
-                .background(Theme.surfaceElevated.opacity(0.54))
-                .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
-                .overlay {
-                    RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous)
-                        .strokeBorder(Theme.borderSubtle.opacity(0.42), lineWidth: 1)
-                }
-
-            VStack(alignment: .leading, spacing: 4) {
-                Text(CadenceTodayPresentationSupport.emptyTitle)
-                    .cadenceFont(.bodyText, weight: .semibold)
-                    .foregroundStyle(Theme.text)
-                    .lineLimit(wraps ? nil : 1)
-                    .fixedSize(horizontal: false, vertical: wraps)
-
-                Text(CadenceTodayPresentationSupport.emptySubtitle)
-                    .cadenceFont(.metadata)
-                    .foregroundStyle(Theme.dim)
-                    .lineLimit(wraps ? nil : 2)
-                    .fixedSize(horizontal: false, vertical: wraps)
-            }
-
-            if !wraps { Spacer(minLength: 0) }
-        }
-        .padding(14)
-    }
-}
+// [[T-3197]] removed iOSCompactTodayEmptyState — Today's "Nothing planned" / "Add a task with +,
+// or schedule one from Inbox." empty state, a checkmark tile beside two lines of text, drawn on
+// iPhone and iPad by iOSTodayTaskSections when the day had no groups, no completed work and no
+// rollover notice. The owner asked for it off: *"remove the box that says 'nothing planned add a
+// task with + ......'"*. A Today with nothing scheduled is now a blank area under the sort
+// control, which is the owner's call and was made knowing it.
+//
+// What is NOT gone, and was checked rather than assumed:
+//   - The debug seed card below. The owner asked whether it was dev-only; it is `#if DEBUG`, so it
+//     never compiles into a release build, and it stays exactly as it is.
+//   - CadenceTodayPresentationSupport.emptyTitle / .emptySubtitle. macOS's TasksPanel still draws
+//     them, so the constants keep a live reader and are not deleted out from under it. That leaves
+//     the two hosts saying different things about an empty Today for the first time — the owner's
+//     instruction named the phone's box and `for all devices` is what they said about the estimate
+//     chip, not about this. Raised on [[T-3197]] rather than decided here.
 
 /// Debug-only, on both widths — the seeding affordance cannot ship. iPad had its own "Samples"
 /// button welded into its empty-state card; it is this card now.

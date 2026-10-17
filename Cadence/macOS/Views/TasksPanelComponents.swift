@@ -107,12 +107,12 @@ struct MacTaskRow: View {
 
             if task.isCancelled {
                 // The last chip on this row, drawn like the others. It set its own `10` and
-                // `6/3` while the do-date pill, the due-date pill and the estimate chip beside it
-                // all read `metrics.secondaryFontSize` at
+                // `6/3` while the do-date pill and the due-date pill beside it both read
+                // `metrics.secondaryFontSize` at
                 // `CadenceTaskChipPadding.desktop*` — which is the drift `CadenceTaskRowMetrics.desktop`
-                // exists to stop (T-597). The plate was four inline `4/2` pairs until T-617. The
-                // block badge was named here too, as a reader of the font size that drew no plate;
-                // [[T-3170]] removed it with the Block feature.
+                // exists to stop (T-597). The plate was four inline `4/2` pairs until T-617. Two of
+                // those four readers have since gone: the block badge with the Block feature
+                // ([[T-3170]]), and the estimate chip with [[T-3196]].
                 Text("Cancelled")
                     .font(.system(size: metrics.secondaryFontSize, weight: .semibold))
                     .foregroundStyle(Theme.dim)
@@ -222,45 +222,46 @@ struct MacTaskRow: View {
         hoveredEditableManager.endHovering(id: editableID)
     }
 
-    /// The trailing decoration — estimate, focus control, due date — as **one child** of the row's
+    /// The trailing decoration — the focus control and the due date — as **one child** of the row's
     /// `HStack`, which is what lets it yield to the title (T-1432).
     ///
-    /// Two variants, widest first, so `ViewThatFits` sheds rather than squeezes. The estimate is
-    /// what yields; the due chip is in both variants, because a red `51 days ago` is the most
-    /// load-bearing thing on an overdue row, and it is what wrapped onto three lines in the
-    /// screenshot that filed this.
+    /// **There is no `ViewThatFits` ladder here any more, because nothing is left to shed
+    /// ([[T-3196]]).** The owner called the estimate noise — *"for all devices when seeing tasks in
+    /// a view like this, remove the estimated time chip on the right of the task cuz it just looks
+    /// noisy"* — and the estimate was the only thing that distinguished the last reading from the
+    /// first. Two readings that draw the same views are one reading, so the ladder is gone rather
+    /// than left as a `ViewThatFits` with one child, which renders that child unconditionally and
+    /// says nothing. The replacement is exactly equivalent: before this change `metadataRow` was
+    /// called with and without the estimate, and with the chip deleted both calls built the same
+    /// `HStack`.
     ///
-    /// **It was three variants until [[T-3170]].** The widest one led with the block's time range,
-    /// which shed first — it was the widest of the three and the one the row stated least usefully
-    /// in a fragment, `6:10 AM…` naming nothing. The Block feature is being removed, so the row
-    /// draws no block badge at all now and there is nothing left for the widest reading to hold.
-    /// That retires the surviving half of this row's parity finding, PA-04 in
-    /// `docs/PLATFORM_PARITY_AUDIT.md`: the Mac can no longer shed block-time metadata that iOS
-    /// keeps, because neither platform has it. PA-04's other half — the estimate — belongs to
-    /// [[T-3196]] and is deliberately untouched here.
+    /// **The due date is what stands in the vacated slot, and it needed no move to get there.**
+    /// The owner asked that *"where the estimated time chip was, now in that same place we should
+    /// put down the due date if any of that task. if there is no due date, leave it empty and use
+    /// that space."* On macOS the due chip already sat immediately after the estimate in this
+    /// strip, so deleting the estimate slides it to the trailing edge; a task with no due date
+    /// draws nothing and the width goes to the title, which is the "leave it empty and use that
+    /// space" half. iOS has further to go — its due date is a chip in the wrapping badge strip
+    /// under the title — and that half of [[T-3196]] is not this file's.
     ///
-    /// Each variant is `.fixedSize(horizontal: true, vertical: false)` **on purpose**: without it
-    /// every variant "fits" by truncating its own text and the first one always wins, which is the
-    /// behaviour being fixed. With it, each variant reports the width it actually needs, so the
-    /// strip's own minimum is the last variant's — and that minimum is all the row reserves before
-    /// the title, at `.layoutPriority(1)`, is offered the rest.
+    /// **The ladder was three readings until [[T-3170]] and two until this.** The widest led with
+    /// the block's time range, which shed first — it was the widest of the three and the one the
+    /// row stated least usefully in a fragment, `6:10 AM…` naming nothing. The Block feature is
+    /// gone, which retired the surviving half of this row's parity finding, PA-04 in
+    /// `docs/PLATFORM_PARITY_AUDIT.md`. PA-04's other half was the estimate, and this closes it:
+    /// the Mac row sheds no metadata that iOS keeps, because this strip sheds nothing at all.
     ///
-    /// The focus control is inside the strip rather than beside it only because it sits between
-    /// the estimate and the due chip in the row's reading order; it is a fixed 26pt slot and is
-    /// present in every variant, so it never sheds.
+    /// `.fixedSize(horizontal: true, vertical: false)` **stays, and is still load-bearing without
+    /// the ladder.** It was put here so each variant reported the width it actually needed rather
+    /// than "fitting" any width by truncating its own text; with one reading left it is what makes
+    /// the strip state a real minimum, and that minimum is all the row reserves before the title,
+    /// at `.layoutPriority(1)`, is offered the rest. Dropping it would let the due chip squeeze and
+    /// wrap, which is the defect T-1432 was filed from.
+    ///
+    /// The focus control is inside the strip rather than beside it only because it sits before the
+    /// due chip in the row's reading order; it is a fixed 26pt slot.
     private var metadataStrip: some View {
-        ViewThatFits(in: .horizontal) {
-            metadataRow(showsEstimate: true)
-            metadataRow(showsEstimate: false)
-        }
-    }
-
-    private func metadataRow(showsEstimate: Bool) -> some View {
         HStack(alignment: .center, spacing: 0) {
-            if showsEstimate && task.estimatedMinutes > 0 {
-                MacTaskRowEstimateChip(task: task)
-            }
-
             focusButtonSlot
 
             if datePlan.drawsDueDateChip {
@@ -550,85 +551,13 @@ struct MacTaskRow: View {
 
 }
 
-/// The row's estimate, and the picker for it.
-///
-/// **macOS's task row had no estimate control and iOS's did** — `docs/CLAUDE_REFERENCE.md` records
-/// that the old always-loaded guide called the absence deliberate ("the row has **no** estimate
-/// control"), which is what kept the gap open through two row passes. The user's call is that the
-/// iOS row wins, so it comes across: same figure from `CadenceTaskPresentationSupport.estimateLabel`,
-/// same `EstimatePickerPopoverContent` the inspector chip, the kanban card and every iOS surface
-/// open.
-///
-/// **Its own `View` struct, like `TaskCompletionButton` and `TaskRowBackground` beside it.** Not
-/// for `TaskCompletionAnimationManager` — this reads nothing from it, and must not start — but for
-/// the same reason those two are extracted: the popover's `@State` lives here rather than on
-/// `MacTaskRow`, so opening or dismissing it invalidates a chip instead of a whole row of
-/// sub-views. `NoteEditorPerformanceRegressionTests`' sibling in `CadenceTodayUnificationTests`
-/// pins that this file's only `TaskCompletionAnimationManager` environments stay in those two.
-private struct MacTaskRowEstimateChip: View {
-    @Bindable var task: AppTask
-    @Environment(\.modelContext) private var modelContext
-    @State private var showPicker = false
-    /// Set when the store refused an estimate change. See `EstimatePickerPopoverContent`'s
-    /// committing form (T-761(b)): this used to write through a `Binding` whose setter reached
-    /// `CadenceTaskMutationSupport.setEstimatedMinutes`'s swallowed `try? modelContext.save()`,
-    /// while the popover's own Done/Clear/preset buttons closed unconditionally.
-    @State private var estimateFailure: String?
-
-    /// Reads `.desktop` itself rather than taking it as a prop: it is a macOS-only chip that can
-    /// only ever be on a macOS row, and threading the value through would imply a caller gets to
-    /// choose the tier.
-    private var metrics: CadenceTaskRowMetrics { .desktop }
-
-    /// The figure the chip draws, read once. `.accessibilityValue` states the same string, and
-    /// `CadenceTodayUnificationTests` pins that this file reaches the shared label helper from
-    /// exactly one place — so the chip and its announcement cannot become "45m" and "45 min".
-    private var estimateLabel: String {
-        CadenceTaskPresentationSupport.estimateLabel(minutes: task.estimatedMinutes)
-    }
-
-    var body: some View {
-        Button {
-            showPicker.toggle()
-        } label: {
-            HStack(spacing: 4) {
-                Image(systemName: "clock")
-                    .font(.system(size: 9, weight: .semibold))
-                Text(estimateLabel)
-                    .font(.system(size: metrics.secondaryFontSize, weight: .medium))
-                    .lineLimit(1)
-            }
-            .foregroundStyle(Theme.dim.opacity(0.68))
-            .padding(.horizontal, CadenceTaskChipPadding.desktopHorizontal)
-            .padding(.vertical, CadenceTaskChipPadding.desktopVertical)
-            .background(isHovered ? Theme.surfaceElevated.opacity(0.55) : .clear)
-            .clipShape(RoundedRectangle(cornerRadius: 4))
-        }
-        .buttonStyle(.cadencePlain)
-        .padding(.trailing, metrics.badgeSpacing)
-        .accessibilityLabel(CadenceTaskControlAccessibility.estimate)
-        .accessibilityValue(estimateLabel)
-        .onHover { isHovered = $0 }
-        .popover(isPresented: $showPicker, arrowEdge: .bottom) {
-            EstimatePickerPopoverContent(
-                value: task.estimatedMinutes,
-                failureNotice: estimateFailure,
-                onClose: { showPicker = false },
-                onCommit: { minutes in
-                    let landed = CadenceTaskFieldEditCommit.commit(task, in: modelContext) {
-                        task.estimatedMinutes = max(0, min(minutes, 1440))
-                    }
-                    estimateFailure = landed ? nil : CadenceTaskFieldEditCommit.saveFailureNotice
-                    return landed
-                }
-            )
-        }
-    }
-
-    /// The same hover treatment the do/due badges beside it take: a wash at radius 4, and nothing
-    /// else. One layer, one radius.
-    @State private var isHovered = false
-}
+// [[T-3196]] removed MacTaskRowEstimateChip — a clock glyph and the task's estimate, drawn at the
+// head of the row's trailing strip and opening the shared EstimatePickerPopoverContent. The owner
+// asked for it off every platform's list row because a column of capsules reads before any task
+// title does. Nothing replaces it: the due date slid into the slot, and the estimate itself is
+// untouched everywhere else it is edited or read — AppTask.estimatedMinutes, the capture card's
+// overflow, the task inspector, the kanban card, the markdown embed and Focus all still have it.
+// It is the LIST ROW that stopped saying it, on purpose.
 
 // MARK: - Isolated sub-views to prevent full-row re-renders on animation state changes
 

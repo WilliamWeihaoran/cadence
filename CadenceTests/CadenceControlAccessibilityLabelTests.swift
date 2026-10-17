@@ -234,26 +234,28 @@ struct CadenceControlAccessibilityLabelTests {
         // The completion circle — the primary control on every row, which had neither.
         #expect(row.contains(".accessibilityLabel(glyph.state.accessibilityActionLabel)"))
 
-        // The three value-bearing chips: a name, and the reading as a separate value.
+        // The value-bearing chips: a name, and the reading as a separate value.
+        //
+        // **Two, not three, since [[T-3196]] took the estimate chip off this row.** The estimate's
+        // entry was `CadenceTaskControlAccessibility.estimate` over a drawn `estimateLabel`; the
+        // chip is gone, so the control it named is gone, and the two date chips are the row's whole
+        // value-bearing set. The accessibility constant itself stays live — iOS's row chip and both
+        // inspectors still read it — so nothing is deleted out from under another surface.
         for (label, value) in [
             ("CadenceTaskControlAccessibility.doDate", "DateFormatters.relativeDate(from: task.scheduledDate)"),
             ("CadenceTaskControlAccessibility.dueDate", "DateFormatters.relativeDate(from: task.dueDate)"),
-            ("CadenceTaskControlAccessibility.estimate", "estimateLabel"),
         ] {
             #expect(row.contains(".accessibilityLabel(\(label))"), "\(label) is not set on the row")
             #expect(row.contains(".accessibilityValue(\(value))"), "\(label) states no value")
         }
 
-        // The estimate chip's value is the string it draws, not a second call to the label helper:
-        // `CadenceTodayUnificationTests.bothRowsCarryAnEstimateChipOverTheSharedPicker` pins this
-        // file at exactly one `CadenceTaskPresentationSupport.estimateLabel` call site, and a
-        // second one would also let the drawn figure and the announced one drift.
-        #expect(row.contains("Text(estimateLabel)"))
+        // And the removal is asserted, not merely un-asserted: a chip that comes back has to come
+        // back named, through this test, rather than slipping in unlabelled under a shortened list.
         #expect(
             CadenceSourceScan.matchCount(
                 #"CadenceTaskPresentationSupport\.estimateLabel"#, in: row
-            ) == 1,
-            "the estimate chip reads the shared label helper more than once"
+            ) == 0,
+            "the macOS row draws an estimate again — give it a name and a value here"
         )
 
         // The container badge is named on the shared chip rather than on this row, so the composer

@@ -167,23 +167,54 @@ struct CadenceTodayUnificationTests {
         )
     }
 
-    /// And the empty day says one thing. macOS's "Due-today and do-today tasks will appear here"
-    /// restated the page's scope where the shared subtitle names the next thing to do.
+    /// **iOS's Today draws no empty state at all now, and macOS still does ([[T-3197]]).**
+    ///
+    /// This asserted that the empty day said one thing on both hosts, which was the point while
+    /// both drew one: macOS's "Due-today and do-today tasks will appear here" restated the page's
+    /// scope where the shared subtitle names the next thing to do, so the two were folded onto
+    /// `CadenceTodayPresentationSupport`'s pair.
+    ///
+    /// The owner has since asked for the box off: *"remove the box that says 'nothing planned add a
+    /// task with + ......'"*. The screenshot was iPhone Today and the instruction named that box;
+    /// *"for all devices"* is what they said about the estimate chip, not about this. So the phone
+    /// and the iPad draw nothing and macOS is untouched, which is a divergence this file exists to
+    /// notice — it is recorded here, and raised on [[T-3197]], rather than being settled by an
+    /// agent in passing.
+    ///
+    /// **The constants are deliberately not deleted.** `TasksPanel` is still a live reader of both,
+    /// so they keep a caller; a sweep that found them orphaned would be reading a tree where macOS
+    /// had gone too.
     @Test func bothPlatformsDrawTheSameEmptyToday() throws {
         try expectCallSites(
             of: "CadenceTodayPresentationSupport.emptyTitle",
             at: [
                 "Cadence/macOS/Views/TasksPanel.swift": 1,
-                "Cadence/iOS/iOSTodayCompactViews.swift": 1,
+                "Cadence/iOS/iOSTodayCompactViews.swift": 0,
             ]
         )
         try expectCallSites(
             of: "CadenceTodayPresentationSupport.emptySubtitle",
             at: [
                 "Cadence/macOS/Views/TasksPanel.swift": 1,
-                "Cadence/iOS/iOSTodayCompactViews.swift": 1,
+                "Cadence/iOS/iOSTodayCompactViews.swift": 0,
             ]
         )
+        // The component went with the card, not just its call site: a struct left declared and
+        // unused is what the next reader restores by accident.
+        try expectCallSites(
+            of: "iOSCompactTodayEmptyState",
+            at: [
+                "Cadence/iOS/iOSTodayCompactViews.swift": 0,
+                "Cadence/iOS/iOSTodayTaskSections.swift": 0,
+            ]
+        )
+        // Non-vacuity for the three zeros: both iOS files are still the files they name, and
+        // Today's sections still decide whether the day is empty — that predicate is what gates
+        // the debug seed card, and it outlived the card it used to gate.
+        let compact = CadenceSourceScan.codeOnly(try sourceFile("Cadence/iOS/iOSTodayCompactViews.swift"))
+        #expect(compact.contains("struct iOSCompactSampleDataCard: View"))
+        let sections = CadenceSourceScan.codeOnly(try sourceFile("Cadence/iOS/iOSTodayTaskSections.swift"))
+        #expect(sections.contains("private var isEmpty: Bool"))
     }
 
     // MARK: - The group heading
@@ -427,15 +458,28 @@ struct CadenceTodayUnificationTests {
             .contains("struct iOSTaskRow: View"))
     }
 
-    /// **The estimate chip crosses to macOS.** `docs/CLAUDE_REFERENCE.md` records that the old
-    /// always-loaded guide once called the absence deliberate — "the row has **no** estimate
-    /// control" — which is what kept the gap open through two row passes; the user overturned it.
-    /// Both rows open the one shared picker, which is the same `EstimatePickerPopoverContent` the
-    /// inspector and the kanban card open.
+    /// **The estimate chip is off the macOS row, and the iOS row still has it — on purpose, for
+    /// now ([[T-3196]]).**
+    ///
+    /// This test used to be `bothRowsCarryAnEstimateChipOverTheSharedPicker`, and it was right for
+    /// as long as the chip was wanted: `docs/CLAUDE_REFERENCE.md` records that the old
+    /// always-loaded guide once called macOS's absence deliberate — "the row has **no** estimate
+    /// control" — and the user overturned that, so the chip crossed. The user has now asked for it
+    /// off the list row everywhere: *"for all devices when seeing tasks in a view like this, remove
+    /// the estimated time chip on the right of the task cuz it just looks noisy."*
+    ///
+    /// **Why this is an asymmetry assertion rather than two zeros.** The macOS row is unleased and
+    /// the chip is gone from it. The iOS row is not: `Cadence/iOS/iOSTaskViews.swift` and
+    /// `iOSTaskRowActionViews.swift` are Codex-leased with a narrow grant, and
+    /// `CadenceTests/CadenceCodexTaskRowTypographyTests.swift` — which the grant does not cover —
+    /// asserts the two call sites and the two `wraps` branches by hand, so removing the chip from
+    /// iOS turns a leased test red and cannot be done from here. Rather than leave the iOS half
+    /// unpinned while it waits, the counts are stated exactly as they are, so the next pass has to
+    /// come back through this test and this comment to finish the job.
     @Test func bothRowsCarryAnEstimateChipOverTheSharedPicker() throws {
         try expectCallSites(
             of: "MacTaskRowEstimateChip",
-            at: ["Cadence/macOS/Views/TasksPanelComponents.swift": 2]
+            at: ["Cadence/macOS/Views/TasksPanelComponents.swift": 0]
         )
         try expectCallSites(
             of: "iOSTaskRowEstimateChip",
@@ -450,18 +494,26 @@ struct CadenceTodayUnificationTests {
             #expect(CadenceSourceScan.matchCount(#"\biOSTaskRowEstimateChip\s*\("#, in: branch) == 1,
                     "each mutually exclusive layout must draw exactly one estimate chip")
         }
+        // Non-vacuity for the macOS zero: the file is still the task row's file and still draws the
+        // chip the estimate used to sit in front of. Without this the zero above would also pass
+        // over a renamed file or an empty read.
+        let mac = CadenceSourceScan.codeOnly(try sourceFile("Cadence/macOS/Views/TasksPanelComponents.swift"))
+        #expect(mac.contains("struct MacTaskRow: View"))
+        #expect(mac.contains("dueDateBadgeList"))
+        // The picker and the shared label follow the chip: macOS reaches neither now, iOS reaches
+        // both exactly once, and the one surviving pair is still the one that cannot drift into
+        // "45m" here and "45 min" there.
         try expectCallSites(
             of: "EstimatePickerPopoverContent",
             at: [
-                "Cadence/macOS/Views/TasksPanelComponents.swift": 1,
+                "Cadence/macOS/Views/TasksPanelComponents.swift": 0,
                 "Cadence/iOS/iOSTaskRowActionViews.swift": 1,
             ]
         )
-        // Same label on both, rather than one row saying "45m" and the other "45 min".
         try expectCallSites(
             of: "CadenceTaskPresentationSupport.estimateLabel",
             at: [
-                "Cadence/macOS/Views/TasksPanelComponents.swift": 1,
+                "Cadence/macOS/Views/TasksPanelComponents.swift": 0,
                 "Cadence/iOS/iOSTaskRowActionViews.swift": 1,
             ]
         )
@@ -480,7 +532,10 @@ struct CadenceTodayUnificationTests {
         let environments = source.components(separatedBy: "@Environment(TaskCompletionAnimationManager.self)").count - 1
         #expect(environments == 2, "expected exactly the two extracted sub-views to observe the animation manager")
 
-        for owner in ["MacTaskRow", "MacTaskRowEstimateChip"] {
+        // `MacTaskRowEstimateChip` was asked for its own zero here until [[T-3196]] deleted it. The
+        // file-wide count above is what refuses a third observer whatever it is named, so the
+        // roster losing a row costs no coverage.
+        for owner in ["MacTaskRow"] {
             let body = try declarationBody(of: owner, in: "Cadence/macOS/Views/TasksPanelComponents.swift")
             // The rule is about *observation*, not about the identifier. `@Environment(...)` on a
             // row re-renders it on every display-link tick; a `.shared` call inside a button action
