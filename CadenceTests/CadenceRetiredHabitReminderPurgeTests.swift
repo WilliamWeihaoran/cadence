@@ -169,8 +169,10 @@ struct CadenceRetiredHabitReminderPurgeTests {
     @Test func theLaunchInitializerRunsThePurge() throws {
         let source = try CadenceSourceScan.sourceFile("Cadence/CadenceApp.swift")
         // `declarationBody("init(")` rather than `functionBody(named: "init")`: the latter looks
-        // for `func init(`, which an initializer is not, and returns `nil` for every file.
-        let initializer = try #require(CadenceSourceScan.declarationBody("init(", in: source))
+        // for `func init(`, which an initializer is not, and returns `nil` for every file. Scoped to
+        // the app struct first: the file declares other types with initializers above it.
+        let app = try #require(CadenceSourceScan.declarationBody("struct CadenceApp: App", in: source))
+        let initializer = try #require(CadenceSourceScan.declarationBody("init(", in: app))
 
         #expect(initializer.contains("CadenceRetiredHabitReminderPurge.run()"))
     }

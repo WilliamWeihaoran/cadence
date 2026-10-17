@@ -20,6 +20,7 @@ struct CadenceDayChangeAdoptionTests {
         ("Cadence/macOS/Views/SchedulePanel.swift", "struct SchedulePanel: View"),
         ("Cadence/macOS/Views/TasksPanelSupportViews.swift", "struct TasksPanelHeader<Trailing: View>: View"),
         ("Cadence/iOS/iOSTodaySchedulePanel.swift", "struct iOSSchedulePanel: View"),
+        ("Cadence/macOS/Views/CalendarPageView.swift", "struct CalendarPageView: View"),
     ]
 
     private static let install = ".cadenceTracksDayChanges($observedDay)"
