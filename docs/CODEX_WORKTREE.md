@@ -119,6 +119,25 @@ Cadence/Shared/CadenceTaskDateEditing.swift
 CadenceTests/CadenceMarkdownImageCommitSurfaceTests.swift
 ```
 
+### COORDINATOR GRANT 2026-10-17 — `blocktail` edits `CadenceTests/CalendarBoardDayDropCommitTests.swift`
+
+Prose, as always for a LOCAL agent entering a path Codex holds. Fence unchanged.
+
+The agent asked before editing rather than after, and its reading was right at every step: the file
+entered the fence in the 2026-10-16 PA-13 widening, that entry reserved `CadenceTaskMutationSupport`'s
+`:271-273` bundle lines for "a pass that runs AFTER this lands", and PA-13 landed in `749d67ad`.
+`blocktail` is that pass.
+
+**Verified no unlanded Codex work:** SEVENTEEN `codex/*` branches report that file as differing from
+main. That is the trap described in the correction above, not evidence — every landed branch differs
+for ever and differs more as main moves past it. Checked the way that actually works: main already
+holds those branches' tests by name.
+
+**Worth keeping from this pass:** it changed
+`mobileDayDropRestoresEveryMutatedFieldOnlyWhenRefused` to assert the membership fields are untouched
+in BOTH answers rather than only on a refusal. That is strictly stronger — it now fails if anything
+writes those fields again, which is the regression T-3170 cares about.
+
 ### CORRECTION 2026-10-17 — the refusal in `67b41992` was WRONG; those branches are LANDED
 
 `67b41992` refused a grant for `Cadence/macOS/Views/CalendarPageBoardSupportViews.swift` (for
