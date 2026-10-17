@@ -587,9 +587,12 @@ struct CadenceInPlaceEditFlushCommitTests {
         #expect(
             // [[T-3171]] took the task sheet off this list: its move is part of the one draft save,
             // undone with every other field by `CadenceTaskFieldEditCommit`, not a commit of its own.
+            // [[T-1479]] added the Mac row's right-click menu, which offers iOS's Move to List and
+            // guards the answer the same way.
             callers.sorted() == [
                 "Cadence/iOS/iOSTaskRowActionViews.swift",
-                "Cadence/macOS/Views/KanbanCardMetaSupportViews.swift"
+                "Cadence/macOS/Views/KanbanCardMetaSupportViews.swift",
+                "Cadence/macOS/Views/MacTaskRowContextMenu.swift"
             ],
             "the set of surfaces that move a task between lists moved: \(callers.sorted())"
         )

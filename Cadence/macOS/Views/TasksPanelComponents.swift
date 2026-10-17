@@ -47,6 +47,9 @@ struct MacTaskRow: View {
     @State private var showTaskInspector  = false
     @State private var isDoDateHovered    = false
     @State private var isDueDateHovered   = false
+    /// The context menu's two after-the-click states — see `MacTaskRowMenuOutcomeModifier`.
+    @State private var pendingMenuRecurrenceRule: TaskRecurrenceRule?
+    @State private var menuFailure: MacTaskRowMenuFailure?
 
     /// **The row's figures, from the type five iOS files already read.** This row hardcoded its own
     /// 14 / 8 / 15 / 11 / 6 while `CadenceTaskRowMetrics` sat in `Shared/` with no macOS reader at
@@ -143,11 +146,25 @@ struct MacTaskRow: View {
         .padding(.vertical, metrics.verticalPadding)
         .contentShape(Rectangle())
         .onTapGesture { showTaskInspector = true }
-        .overlay {
-            RightClickActionTrigger {
-                showTaskInspector = true
-            }
+        // **Right-click is a menu, not a second tap ([[T-1479]]).** It used to be a
+        // `RightClickActionTrigger` overlay running the same `showTaskInspector = true` as the
+        // line above, which spent the gesture macOS reserves for a menu on a duplicate. Tap keeps
+        // the inspector; right-click gains iOS's long-press actions. See `MacTaskRowContextMenu`.
+        .contextMenu {
+            MacTaskRowContextMenu(
+                task: task,
+                openDetail: { showTaskInspector = true },
+                startFocus: startFocus,
+                requestDelete: presentDelete,
+                pendingRecurrenceRule: $pendingMenuRecurrenceRule,
+                failure: $menuFailure
+            )
         }
+        .modifier(MacTaskRowMenuOutcomeModifier(
+            task: task,
+            pendingRecurrenceRule: $pendingMenuRecurrenceRule,
+            failure: $menuFailure
+        ))
         .background(TaskRowBackground(task: task, isHovered: isHovered, hoverFill: hoverBackgroundFill))
         .overlay {
             RoundedRectangle(cornerRadius: Theme.radiusCard)
@@ -208,12 +225,28 @@ struct MacTaskRow: View {
         hoveredEditableManager.beginHovering(id: editableID) {
             showTaskInspector = true
         } onDelete: {
-            deleteConfirmationManager.presentTaskDelete(task, in: modelContext) {
-                if hoveredTaskManager.hoveredTask?.id == task.id {
-                    hoveredTaskManager.hoveredTask = nil
-                }
-                hoveredEditableManager.endHovering(id: editableID)
+            presentDelete()
+        }
+    }
+
+    /// The row's one delete: Cmd+Delete over the hovered row and the context menu's Delete Task
+    /// both arrive here, so they share one confirmation and one hover teardown.
+    private func presentDelete() {
+        deleteConfirmationManager.presentTaskDelete(task, in: modelContext) {
+            if hoveredTaskManager.hoveredTask?.id == task.id {
+                hoveredTaskManager.hoveredTask = nil
             }
+            hoveredEditableManager.endHovering(id: editableID)
+        }
+    }
+
+    /// The row's one focus start: the hover ▶ and the context menu's Focus. T-654: `startFocus`
+    /// commits a pending bank and can refuse.
+    private func startFocus() {
+        do {
+            try focusManager.startFocus(task: task, in: modelContext)
+        } catch {
+            TaskCompletionAnimationManager.shared.recordSettleFailure()
         }
     }
 
@@ -277,14 +310,7 @@ struct MacTaskRow: View {
             // was the *only* surface in the app asking the question, and the three iOS entry points
             // added since did not ask it at all (T-276).
             if CadenceFocusSupport.canFocus(task) {
-                Button {
-                    // T-654: `startFocus` commits a pending bank and can refuse.
-                    do {
-                        try focusManager.startFocus(task: task, in: modelContext)
-                    } catch {
-                        TaskCompletionAnimationManager.shared.recordSettleFailure()
-                    }
-                } label: {
+                Button(action: startFocus) {
                     Image(systemName: "play.fill")
                         .font(.system(size: 8, weight: .semibold))
                         .foregroundStyle(Theme.onColor(for: Theme.blue))
