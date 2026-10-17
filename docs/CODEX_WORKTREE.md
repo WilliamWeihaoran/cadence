@@ -119,6 +119,37 @@ Cadence/Shared/CadenceTaskDateEditing.swift
 CadenceTests/CadenceMarkdownImageCommitSurfaceTests.swift
 ```
 
+### COORDINATOR GRANT 2026-10-17 — a LOCAL agent enters three leased search paths for T-1476 / T-1473
+
+**Prose, deliberately, and not a fence line.** The ```lease block says which paths CODEX may write.
+This grant runs the other way: it admits a LOCAL agent into paths Codex holds, which is recorded
+beside the fence, not in it. The fence stays at 69 patterns and Codex's own reach is unchanged.
+
+**Paths, for agent `searchscope` and its successors on these two tickets only:**
+- `Cadence/macOS/Views/GlobalSearchIndexSupport.swift` — holds BOTH the unconditional
+  `includingCompleted: true` and all three caps (`:186` tasks, `:218`/`:220` events, `:313` notes).
+- `Cadence/macOS/Views/GlobalSearchSupportViews.swift` — for the continuation row.
+- `CadenceTests/CadenceCodexFunctionalParityTests.swift` — `:129` builds 16 matching notes and
+  asserts 12, which PINS the silent cap the owner decided to remove. It must be revised or it
+  defends the bug. **Its ranking assertion is a real claim and must survive the revision.**
+
+**Why a grant rather than handing this to Codex, which already holds all three:** the owner is
+running batches for velocity and a round trip costs a batch slot. Codex's live branch at this
+moment, `codex/ios-board-drop-refusal`, touches none of these files, so there is nothing in flight
+to collide with.
+
+**`searchscope` stopped rather than pushing, and was right to.** It found this file's own T-3099
+entry, where agent `searchfix` edited a `CadenceCodex*.swift` path without a grant, and which states
+that `GlobalSearchIndexSupport.swift` and `GlobalSearchSupportViews.swift` "were NOT touched; the
+lease held there." Same two files, recently. The precedent is why this grant is written down instead
+of assumed.
+
+**Note for the lease-holder:** `Cadence/Shared/CadenceSearchResultCap.swift` is NOT leased and
+already exposes `visibleCount` / `hiddenCount` / `continuationLabel`. Its doc comment names this
+exact blocker — the Mac's cap lives inside `GlobalSearchIndexSupport`, "which is why only the mobile
+surface could adopt this first." The shape of the fix is to stop the three `*Results` functions
+returning pre-truncated arrays and let the presentation apply the cap, as `iOSSearchView` does.
+
 ### COORDINATOR REPAIR 2026-10-17 — one line removed from `CadenceTests/CadenceTagChipStyleTests.swift`
 
 **This is a repair inside a leased path, not a widening, and it does not belong in the fence.** The
