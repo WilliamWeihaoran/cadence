@@ -143,6 +143,8 @@ Cadence/Shared/Components/CadenceSchedulePanel.swift
 Cadence/Shared/Components/CadenceScheduleCaptureCard.swift
 Cadence/Services/TaskCreationService.swift
 Cadence/iOS/iOSTimelineDraftCreate.swift
+CadenceUITests/CadenceCapturePaletteUITests.swift
+CadenceTests/CadenceComposerContainerSurfaceTests.swift
 ```
 
 ### 2026-10-17 — a CROSS-AGENT dependency: one path granted, one REFUSED AND SEQUENCED
@@ -198,6 +200,52 @@ on any of them**, and all three existing files are clean in the worktree.
 
 **What is NOT granted by this:** new recurrence semantics, new rule cases, or any schema change. See
 the spec answers recorded on [[T-3195]].
+
+### THE STALENESS TEST, FOURTH AND ACTUAL FORM 2026-10-17 — the blob step is NOT sufficient
+
+The "final form" recorded below is still wrong, and it would have refused a correct grant minutes
+after being written. **Fourth correction in one day; read this one.**
+
+**Where it failed.** `CadenceUITests/CadenceCapturePaletteUITests.swift`, requested by the second
+Codex agent. `codex/phone-capture-hold` and `codex/phone-capture-load` BOTH show the supposedly
+decisive signature — `git log main..<branch> -- <path>` non-empty AND blob DIFFERS from main. By the
+rule below that is "genuinely pending work, do not grant". **Both branches landed days ago.**
+
+**Why the blob step cannot work.** This repo lands a Codex branch by APPLYING its files, so the
+branch's commits are NEVER in main's ancestry — not before landing, not after. `git log main..branch`
+therefore stays non-empty for ever. And once main edits the file again, the blob differs for ever
+too. So a landed-then-evolved file is indistinguishable from pending work by those two signals
+alone. Every signal that looks at the BRANCH fails the same way; the question is about MAIN.
+
+**The test that actually works — ask whether main already contains the branch's content, by name:**
+
+    git show <branch>:<path> | grep -oE '(func|struct|enum|let|var) [A-Za-z_]+'
+    # then for a handful:  rg -q "func <name>" <dir>/
+
+Present on main → landed, grant it. Absent → genuinely pending, refuse and sequence.
+
+Use the branch-ancestry and blob steps only to NARROW which branches are worth sampling. They can
+prove a branch irrelevant (empty log = never touched the file). They cannot prove one pending.
+
+**The scoreboard, recorded because the pattern is the lesson.** Five versions of this test in one
+day: ahead-of-main, `codex-land.sh review`, blob-vs-main, modified-vs-own-base, log+blob. Every one
+was written by the coordinator with confidence, and every one was falsified — three by agents, one
+by the owner, this one by its own first real use. **A check that keeps returning the answer you
+expect is not thereby correct**; the three earlier versions all "worked" for hours because almost
+everything they were asked about was genuinely stale.
+
+### 2026-10-17 — two test paths granted to the second Codex agent
+
+Both granted after the test above. `CadenceCapturePaletteUITests.swift` — the two branches holding
+differing blobs have all four sampled test functions present on main; landed. `CadenceComposerContainerSurfaceTests.swift` — clean, no `codex/*` commits at all.
+
+Scope as the agent proposed it, and the proposal is right: replace the retired "New task"
+navigation-bar and "Cancel" queries with the new capture-title and Cancel-capture identifiers,
+**keep every real coordinate tap/hold/slide gesture and the fixture isolation**, and add
+floating-card/chip assertions on phone and iPad. On the second file, repoint the stale
+`fields.container = .inbox` spelling to the schedule draft's Inbox token while preserving the
+missing-container, preflight and query controls. Keeping the real gestures matters: those tests
+exist because a capture palette that passes a synthetic tap can still be unreachable by a thumb.
 
 ### THE LEASE-STALENESS TEST, FINAL FORM 2026-10-17 — supersedes every earlier version above
 
