@@ -752,7 +752,9 @@ struct CadenceCalendarOverlapLayoutTests {
             "the day column does not pass its width ruling to the solver"
         )
         #expect(
-            CadenceSourceScan.matchCount(#"\.zIndex\(solved\.zIndexes\[key\]"#, in: column) == 2,
+            // [[T-1475]]: a task block lifted for a move or resize is raised to the overlay index
+            // while it is held, and reads the solver's order the rest of the time.
+            CadenceSourceScan.matchCount(#"\.zIndex\((isLifted \? iOSCalendarTimelineBlockLayout\.overlayZIndex : \()?solved\.zIndexes\[key\]"#, in: column) == 2,
             "the day column does not z-order both of its block kinds"
         )
         #expect(

@@ -242,7 +242,9 @@ struct CadenceTimelineBlockTreatmentTests {
 
         let task = try t3160IOSTaskBlock()
         #expect(
-            CadenceSourceScan.matchCount(#"CadenceCalendarEventStyle\.plateFill\(for: listColor\)"#, in: task) == 1,
+            // [[T-1475]]: a block lifted for a move or resize reads the same plate's selected rung,
+            // so the one fill call may carry `isSelected:` — still one call, still the plate.
+            CadenceSourceScan.matchCount(#"CadenceCalendarEventStyle\.plateFill\(for: listColor(, isSelected: isLifted)?\)"#, in: task) == 1,
             "the iOS task block no longer fills itself with the solved plate in its list's hue"
         )
         #expect(

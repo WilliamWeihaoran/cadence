@@ -255,6 +255,49 @@ holds those branches' tests by name.
 in BOTH answers rather than only on a refusal. That is strictly stronger — it now fails if anything
 writes those fields again, which is the regression T-3170 cares about.
 
+### COORDINATOR GRANT 2026-10-17 (`parkedland`) — two leased TEST files, so two finished features can land
+
+**Prose, deliberately, and not a fence line**, for the reason the grant further down gives: the
+```lease block says what CODEX may write, and admitting a LOCAL agent runs the other way. The fence
+is untouched -- 81 patterns at the moment this was written, none of them added or removed here --
+and Codex's own reach is unchanged.
+
+Two complete features were parked on `heartbeat/*` branches, each held back by exactly one leased
+test file the branch was not allowed to touch. Both files are granted, for these two tickets only,
+and both were edited and landed under this grant.
+
+| ticket / branch | the one blocking path | the edit |
+|---|---|---|
+| [[T-1475]], `heartbeat/t1475-ios-timeline-drag` | `CadenceTests/CadenceMarkdownImageCommitSurfaceTests.swift` | the bare inline-notice census at `:490`, 68 → 69 for the iOS timeline's refused move/resize notice — the edit [[T-3208]] prescribed, verbatim |
+| [[T-1479]], `heartbeat/t1479-mac-context-menu` | `CadenceTests/CadenceCodexTaskListVirtualizationTests.swift` | `largeSingleGroupsMountOnlyABoundedSubsetOfNativeTaskRows`'s mounted-row probe, re-keyed off the `taskRowTitle` accessibility identifier — the first option [[T-3201]] offered |
+
+**The evidence — and a sharper form of the check `d1162e10` corrected.** `d1162e10` is right that a
+blob differing from main proves nothing: this repo lands a Codex branch by APPLYING its files and
+never deletes the branch, so a landed branch differs for ever, and differs *more* as main moves past
+it. Its replacement — does main contain the branch's test names? — is sound but indirect, and has to
+be repeated per branch by hand. The question underneath it is answered directly, in one call per
+branch, by **`git log main..<branch> -- <path>`: does any `codex/*` branch carry a COMMIT touching
+this path that main does not have?**
+
+| path | branches carrying it | blob identical to main | branches with an UNLANDED commit on it | verdict |
+|---|---|---|---|---|
+| `CadenceTests/CadenceCodexTaskListVirtualizationTests.swift` | 11 | **all 11** | 1 — `codex/task-list-virtualization` `9cc2438c`, whose blob **equals main's** | landed; granted |
+| `CadenceTests/CadenceMarkdownImageCommitSurfaceTests.swift` | 23 | **1** (`codex/ios-board-drop-refusal`) | 1 — `codex/ios-board-drop-refusal` `405806ff`, whose blob **equals main's** | landed; granted |
+
+The twenty-two branches that "differ" on the census file are the exact trap `d1162e10` names, and
+the file says so out loud: they assert `total == 69` or `total == 67` and **lack** the `[[T-3171]]`
+and `PA-13 / T-1470` comment lines main carries at `68`. They are earlier states, not later ones —
+and **not one of them has a commit on the path at all**. A path with zero unlanded commits across
+every branch is not holding unlanded work, whatever its blobs look like.
+
+**For the lease-holder:** [[T-3208]] and [[T-3201]] are done and need no Codex pass. The probe
+re-key is worth a look rather than a revert — it was counting `RightClickActionTrigger.RightClickActionView`,
+an AppKit overlay the row carried only to duplicate its own tap, so [[T-1479]] removing that overlay
+made the positive control read 0 over a lazy-mount bound that still held. It now counts the row's
+own `taskRowTitle` identifier, which is on the row because a UI test needs it there, and a new
+control test (`theRowIdentifierProbeStillMatchesTheIdentifierTheRowDraws`) fails loudly if the
+identifier's shape ever moves out from under it.
+
 ### CORRECTION 2026-10-17 — the refusal in `67b41992` was WRONG; those branches are LANDED
 
 `67b41992` refused a grant for `Cadence/macOS/Views/CalendarPageBoardSupportViews.swift` (for
