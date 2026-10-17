@@ -3,7 +3,7 @@ import EventKit
 import SwiftData
 import SwiftUI
 
-/// One day, in sections: blocks, Apple Calendar, timed, do date, due.
+/// One day, in sections: Apple Calendar, timed, do date, due.
 ///
 /// It opens on an add row and then its first section heading. There used to be a bar above that
 /// carrying a rounded `SUN`/`30` tile, "Sunday, August 30" at 19pt, and an add button — a fixed 63pt
@@ -15,12 +15,10 @@ import SwiftUI
 struct iOSCalendarDayInspector: View {
     let date: Date
     let tasks: [AppTask]
-    let bundles: [TaskBundle]
     let events: [EKEvent]
     let unscheduledTasks: [AppTask]
     let dueOnlyTasks: [AppTask]
     let addItem: () -> Void
-    @State private var selectedBundle: TaskBundle?
     @State private var selectedEvent: iOSCalendarEventSelection?
 
     /// The day this pane is built for, as a `yyyy-MM-dd` key — the pane's own date, never
@@ -36,7 +34,7 @@ struct iOSCalendarDayInspector: View {
     }
 
     private var hasItems: Bool {
-        !bundles.isEmpty || !events.isEmpty || !timedTasks.isEmpty || !unscheduledTasks.isEmpty || !dueOnlyTasks.isEmpty
+        !events.isEmpty || !timedTasks.isEmpty || !unscheduledTasks.isEmpty || !dueOnlyTasks.isEmpty
     }
 
     var body: some View {
@@ -72,25 +70,6 @@ struct iOSCalendarDayInspector: View {
                             accessibilityLabel: "Add task on \(DateFormatters.longDate.string(from: date))",
                             action: addItem
                         )
-
-                        if !bundles.isEmpty {
-                            iOSCalendarInspectorSection(title: "Blocks", color: Theme.amber) {
-                                ForEach(bundles) { bundle in
-                                    Button {
-                                        selectedBundle = bundle
-                                    } label: {
-                                        iOSFeatureSummaryRow(
-                                            title: bundle.displayTitle,
-                                            subtitle: CadenceScheduleSupport.timeRangeLabel(startMinute: bundle.startMin, endMinute: bundle.endMin),
-                                            detail: "\(bundle.sortedTasks.count) task\(bundle.sortedTasks.count == 1 ? "" : "s")",
-                                            icon: "tray.full.fill",
-                                            color: Theme.amber
-                                        )
-                                    }
-                                    .buttonStyle(.iosPressable)
-                                }
-                            }
-                        }
 
                         if !events.isEmpty {
                             iOSCalendarInspectorSection(title: CadenceAppleCalendarNaming.integrationSectionTitle, color: Theme.green) {
@@ -149,9 +128,6 @@ struct iOSCalendarDayInspector: View {
             }
         }
         .background(Theme.bg)
-        .sheet(item: $selectedBundle) { bundle in
-            iOSBundleInspectorSheet(bundle: bundle) { selectedBundle = nil }
-        }
         .sheet(item: $selectedEvent) { selection in
             iOSCalendarEventEditSheet(event: selection.event)
         }

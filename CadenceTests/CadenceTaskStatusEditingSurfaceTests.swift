@@ -14,8 +14,9 @@ import Testing
 ///   already visible to the reconciler. Injecting a recorder is the only way to see this: the live
 ///   reconcile bottoms out in `NotificationManager`, which early-returns in a test host, so a real
 ///   call and no call look identical from outside.
-/// - **Shape.** A source scan that the seven status surfaces actually call the wrapper. All seven live
-///   under `Cadence/iOS/`, which is behind `#if os(iOS)` while this target builds for macOS, so for
+/// - **Shape.** A source scan that the routed status surfaces actually call the wrapper — seven of
+///   them until [[T-3170]] deleted the Block panel's member row with the Block feature. All of them
+///   live under `Cadence/iOS/`, which is behind `#if os(iOS)` while this target builds for macOS, so for
 ///   these files a scan is the only tool there is. It proves nobody re-typed a raw
 ///   `CadenceTaskMutationSupport.toggleCompletion`, not that the wrapper does anything.
 @MainActor
@@ -134,7 +135,12 @@ struct CadenceTaskStatusEditingSurfaceTests {
 
     // MARK: - Shape: the surfaces route through it
 
-    /// Every routed status surface. All seven are iOS, which is why this is a scan.
+    /// Every routed status surface. All of them are iOS, which is why this is a scan.
+    ///
+    /// **It was seven.** `iOSCalendarBundleDetailSheet.swift` — the Block panel's member row,
+    /// whose completion circle routed through `CadenceTaskStatusEditing.toggleCompletion` — went
+    /// with the Block feature in [[T-3170]]. Nothing about the rule changed; one of its surfaces
+    /// stopped existing.
     ///
     /// `iOSTaskDetailSheet.swift` joined the list with **T-407**. It was the residue T-343 recorded
     /// rather than fixed — the file was owned by another change in flight — and it is the one
@@ -147,7 +153,6 @@ struct CadenceTaskStatusEditingSurfaceTests {
         "Cadence/iOS/iOSTaskViews.swift",
         "Cadence/iOS/iOSBoardCards.swift",
         "Cadence/iOS/iOSMarkdownEditingSurface.swift",
-        "Cadence/iOS/iOSCalendarBundleDetailSheet.swift",
         "Cadence/iOS/iOSFocusView.swift",
         "Cadence/iOS/iOSTaskDetailSheet.swift"
     ]
@@ -168,7 +173,7 @@ struct CadenceTaskStatusEditingSurfaceTests {
     /// A raw assignment to `task.status`. `[^=]` keeps `if task.status == .inProgress` out of it.
     private static let rawStatusWrite = #"\btask\.status\s*=[^=]"#
 
-    @Test func theSevenStatusSurfacesRouteEveryTransitionThroughTheSharedWrapper() throws {
+    @Test func everyRoutedStatusSurfaceRoutesEveryTransitionThroughTheSharedWrapper() throws {
         var filesRead = 0
 
         for path in Self.routedStatusSurfaces {
@@ -201,7 +206,10 @@ struct CadenceTaskStatusEditingSurfaceTests {
             filesRead += 1
         }
 
-        #expect(filesRead == 7, "the scan read \(filesRead) of 7 routed status surfaces")
+        #expect(
+            filesRead == Self.routedStatusSurfaces.count,
+            "the scan read \(filesRead) of \(Self.routedStatusSurfaces.count) routed status surfaces"
+        )
     }
 
     /// Every entry point on the wrapper ends in the one private reconcile. Stated as a relation

@@ -209,12 +209,13 @@ struct CadenceTaskInspectorHostTests {
             at: [
                 "Cadence/iOS/iOSTaskViews.swift": 0,
                 "Cadence/iOS/iOSTodaySchedulePanel.swift": 0,
-                // These two read `1` until T-217, and the survivor in each was the bundle card /
-                // bundle block presenting `iOSCalendarBundleDetailSheet` from inside a filtered
-                // `ForEach` — the same defect on a different sheet, pinned here rather than fixed
-                // because it needed a bundle host and not this one. It has one now
-                // (`iOSBundleInspectorHost`), so no card in this app owns detail-panel presentation
-                // state at all; `CadenceBundleInspectorHostTests` is where that half is asserted.
+                // These two read `1` until T-217, and the survivor in each was the Block card /
+                // Block block presenting its own detail sheet from inside a filtered `ForEach` —
+                // the same defect on a different sheet, pinned here rather than fixed because it
+                // needed a Block host and not this one. T-217 gave it one and [[T-3170]] deleted
+                // the Block feature outright, so no card in this app owns detail-panel
+                // presentation state at all; `CadenceBundleInspectorHostTests` is where that half
+                // is asserted.
                 "Cadence/iOS/iOSBoardCards.swift": 0,
                 "Cadence/iOS/iOSCalendarTimelineViews.swift": 0
             ]
@@ -290,8 +291,10 @@ struct CadenceTaskInspectorHostTests {
                 "Cadence/iOS/iOSSearchView.swift": 1,
                 // Sheet-owned `.sheet(item:)` — a nearer host would have to live inside the sheet.
                 "Cadence/iOS/iOSMarkdownEditingSurface.swift": 1,
-                "Cadence/iOS/iOSMarkdownReferenceSupport.swift": 1,
-                "Cadence/iOS/iOSCalendarBundleDetailSheet.swift": 1
+                "Cadence/iOS/iOSMarkdownReferenceSupport.swift": 1
+                // `iOSCalendarBundleDetailSheet.swift` was the fifth, and was one of T-201's
+                // deliberate exceptions — a sheet presenting the task inspector from inside a
+                // sheet. [[T-3170]] deleted it with the Block feature.
             ],
             "presenters of iOSTaskInspectorSheet changed: \(presenters)"
         )
@@ -387,6 +390,9 @@ struct CadenceTaskInspectorHostTests {
 
         for modifier in [
             ".iOSTaskInspectorHost()",
+            // Still applied, and now a no-op: [[T-3170]] emptied the modifier but could not delete
+            // this line, because `iOSRootView.swift` is Codex-leased. See
+            // `CadenceBundleInspectorHostTests.theBundleHostIsANoOpStubHeldOpenByOneLeasedCallSite`.
             ".iOSBundleInspectorHost()",
             ".cadenceStartupIssueBanner(PersistenceController.startupIssue)"
         ] {

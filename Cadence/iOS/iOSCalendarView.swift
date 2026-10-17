@@ -11,7 +11,6 @@ struct iOSCalendarView: View {
     @Environment(iOSCalendarManager.self) private var calendarManager
     @Environment(CadenceDeepLinkManager.self) private var deepLinkManager
     @Query(sort: \AppTask.order) private var allTasks: [AppTask]
-    @Query private var allBundles: [TaskBundle]
     @AppStorage("ios.calendar.viewMode") private var viewModeRaw = CadenceCalendarViewMode.week.rawValue
     @AppStorage("ios.calendar.presentation") private var presentationRaw = CadenceCalendarPresentation.timeline.rawValue
     /// Continuous now, and a real multiplier of the base hour height. The key is unchanged because
@@ -86,10 +85,6 @@ struct iOSCalendarView: View {
         CadenceScheduleSupport.monthTasksByDate(allTasks)
     }
 
-    private var bundlesByDate: [String: [TaskBundle]] {
-        CadenceScheduleSupport.bundlesByDate(allBundles, includeCompleted: false)
-    }
-
     /// The days the timed grid holds *event data* for.
     ///
     /// This used to be the grid's contents — `CadenceScheduleSupport.dates(containing:mode:)`, a
@@ -110,10 +105,6 @@ struct iOSCalendarView: View {
 
     private var selectedTasks: [AppTask] {
         CadenceScheduleSupport.calendarDayTasks(on: selectedKey, from: allTasks)
-    }
-
-    private var selectedBundles: [TaskBundle] {
-        CadenceScheduleSupport.items(on: selectedKey, in: bundlesByDate)
     }
 
     /// The day inspector's events.
@@ -369,7 +360,6 @@ struct iOSCalendarView: View {
                 span: .scrollingDays(visibleDayCount: visibleDayCount),
                 scheduledTasksByDate: scheduledTasksByDate,
                 unscheduledTasksByDate: unscheduledTasksByDate,
-                bundlesByDate: bundlesByDate,
                 eventsByDate: visibleEventsByDate,
                 zoom: $zoomLevel,
                 onCreateAt: openQuickCreate
@@ -392,7 +382,6 @@ struct iOSCalendarView: View {
                     topRowDate: $anchorDate,
                     selectedDate: $selectedDate,
                     monthTasksByDate: monthTasksByDate,
-                    bundlesByDate: bundlesByDate,
                     eventsByDate: visibleEventsByDate
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -435,7 +424,6 @@ struct iOSCalendarView: View {
         iOSCalendarDayInspector(
             date: selectedDate,
             tasks: selectedTasks,
-            bundles: selectedBundles,
             events: selectedEvents,
             unscheduledTasks: selectedUnscheduledTasks,
             dueOnlyTasks: selectedDueOnlyTasks

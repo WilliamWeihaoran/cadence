@@ -19,7 +19,8 @@ import Testing
 /// `iOS/iOSMarkdownAccessoryViews.swift`'s "More formatting" menu were always clean. The two still
 /// open are `ListNotesHeaderView`'s "new note" menu
 /// (`Cadence/macOS/Views/ListNotesViewSupportViews.swift`) and the row overflow menu in
-/// `Cadence/iOS/iOSCalendarBundleDetailSheet.swift`, both fixed alongside this suite.
+/// `Cadence/iOS/iOSCalendarBundleDetailSheet.swift`, both fixed alongside this suite — the second
+/// of those went with its file in [[T-3170]].
 struct CadenceIconOnlyMenuAccessibilityTests {
 
     private func detector() throws -> CadenceScanInstrument {
@@ -138,28 +139,34 @@ struct CadenceIconOnlyMenuAccessibilityTests {
         )
     }
 
-    /// The five real files this ticket is about, each read fresh: the two the ticket's own count
-    /// had already gone stale on, the two fixed alongside this suite, and the one that was always
-    /// clean. Non-vacuity for the fixed pair, and a guard against re-trusting a stale count for
-    /// the other three.
+    /// The real files this ticket is about, each read fresh: the two the ticket's own count had
+    /// already gone stale on, the one fixed alongside this suite that still exists, and the one
+    /// that was always clean. Non-vacuity for the fix, and a guard against re-trusting a stale
+    /// count for the others.
+    ///
+    /// **It was five.** The fifth was `Cadence/iOS/iOSCalendarBundleDetailSheet.swift`, whose
+    /// member-row overflow `Menu` this suite named `"Task actions"`; [[T-3170]] deleted the sheet
+    /// with the Block feature, and the file's absence is asserted below rather than left as a path
+    /// that silently stops being read.
     @Test func everyRealMenuTheTicketNamedIsNowClean() throws {
         let files = [
             "Cadence/macOS/Views/ListNotesViewSupportViews.swift",
             "Cadence/macOS/Editor/MarkdownEditorView.swift",
             "Cadence/iOS/iOSCalendarSettingsSection.swift",
-            "Cadence/iOS/iOSCalendarBundleDetailSheet.swift",
             "Cadence/iOS/iOSMarkdownAccessoryViews.swift",
         ]
         for path in files {
             let source = try CadenceSourceScan.sourceFile(path)
             #expect(Self.unnamedIconOnlyMenuCount(in: source) == 0, "\(path) still has an unnamed icon-only Menu")
         }
-        // The two this suite actually changed carry the name it added, so the zero above is the
-        // fix rather than a detector that stopped looking.
+        #expect(
+            !(try CadenceSourceScan.swiftFiles(under: "Cadence"))
+                .contains("Cadence/iOS/iOSCalendarBundleDetailSheet.swift")
+        )
+        // The one this suite changed that is still here carries the name it added, so the zero
+        // above is the fix rather than a detector that stopped looking.
         let listNotes = try CadenceSourceScan.sourceFile("Cadence/macOS/Views/ListNotesViewSupportViews.swift")
         #expect(listNotes.contains(#".cadenceControlLabel("New note")"#))
-        let bundleDetail = try CadenceSourceScan.sourceFile("Cadence/iOS/iOSCalendarBundleDetailSheet.swift")
-        #expect(bundleDetail.contains(#".accessibilityLabel("Task actions")"#))
     }
 
     /// The detector against the two shapes it must not confuse: a titled `Menu`, and a `Menu`

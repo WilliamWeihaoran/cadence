@@ -251,9 +251,11 @@ struct CadenceTaskStatusLifecycleSurfaceTests {
     /// editor they were told about. Re-driven after the fix: the sheet stays, the sentence is drawn
     /// inside it, and the page tap still raises the alert.
     ///
-    /// A stack rather than a flag because these surfaces nest — `iOSCalendarBundleDetailSheet`
+    /// A stack rather than a flag because these surfaces nest — `iOSMarkdownEditingSurface`
     /// presents `iOSTaskInspectorSheet` over itself and a circle can be tapped in both — so the
-    /// **innermost** claim is the surface the user is actually looking at.
+    /// **innermost** claim is the surface the user is actually looking at. (The example this was
+    /// written against was the Block panel, which presented the task inspector over itself;
+    /// [[T-3170]] deleted it, and the nesting is unchanged.)
     @Test func theInnermostPresentedSurfaceOwnsTheRefusedSettleSentence() throws {
         let centre = CadenceTaskSettleFailureCenter.shared
         centre.clear()

@@ -104,12 +104,18 @@ import Testing
     /// only be read as text — and the macOS half is read the same way so that one of them going
     /// its own way again is caught by the same assertion rather than by two different ones.
     @Test func bothMonthDayCellsPartitionThroughTheSharedPriorityHelper() throws {
+        // **The third element is the cell's own bundle count, and iOS's is now the literal `0`**
+        // ([[T-3170]]). The Block feature is gone from every iOS surface, so that cell ranks two
+        // kinds of item; the shared helper keeps its `bundles:` leg because macOS's `MonthDayCell`
+        // still draws Block chips. What is pinned is that each cell hands the helper *its own*
+        // answer rather than re-deriving a partition — a literal `0` is an answer, a second
+        // `prefix` cap is not.
         let cells = [
-            ("Cadence/macOS/Views/CalendarPageMonthSupportViews.swift", "struct MonthDayCell"),
-            ("Cadence/iOS/iOSCalendarMonthViews.swift", "private struct iOSCalendarMonthDayCell")
+            ("Cadence/macOS/Views/CalendarPageMonthSupportViews.swift", "struct MonthDayCell", "bundles: bundles.count"),
+            ("Cadence/iOS/iOSCalendarMonthViews.swift", "private struct iOSCalendarMonthDayCell", "bundles: 0")
         ]
 
-        for (path, declaration) in cells {
+        for (path, declaration, bundleArgument) in cells {
             let raw = try CadenceSourceScan.sourceFile(path)
             let code = CadenceSourceScan.codeOnly(raw)
             // Non-vacuity, both halves: the file was really read, and the stripper really ran
@@ -122,7 +128,7 @@ import Testing
                 "\(path): could not read the body of \(declaration)"
             )
             #expect(body.contains("CadenceCalendarMonthCellPriority.split("), "\(path) does not route through the shared split")
-            #expect(body.contains("bundles: bundles.count"), "\(path) does not hand the helper its own bundle count")
+            #expect(body.contains(bundleArgument), "\(path) does not hand the helper its own bundle count")
             #expect(body.contains("events: events.count"), "\(path) does not hand the helper its own event count")
             #expect(body.contains("tasks: tasks.count"), "\(path) does not hand the helper its own task count")
 

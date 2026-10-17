@@ -478,12 +478,13 @@ struct TaskBundleTests {
     }
 
     /// The live sites T-843 found, each pinned to read the shared constant rather than a
-    /// re-typed literal. It was eleven; Block Focus took five of them in [[T-3170]]. `noNewSurfaceTypesTheRetiredBundleNounEither` below is the complementary
+    /// re-typed literal. It was eleven; Block Focus took five of them in [[T-3170]], and the same
+    /// ticket's iOS pass took `iOSCalendarBundleDetailSheet`'s `TaskBundle.shortLabel` with the
+    /// sheet. `noNewSurfaceTypesTheRetiredBundleNounEither` below is the complementary
     /// claim — that no *other* site still types "Bundle" — so together they cover both directions:
     /// the known sites moved, and nothing new took their place.
     @Test func everyKnownBundleSiteReadsTheSharedVocabulary() throws {
         let sites: [(path: String, needle: String)] = [
-            ("Cadence/iOS/iOSCalendarBundleDetailSheet.swift", "TaskBundle.shortLabel"),
             ("Cadence/macOS/Views/TimelineBundleBlock.swift", "TaskBundle.deleteConfirmationTitle"),
         ]
         for site in sites {
@@ -613,9 +614,6 @@ struct TaskBundleTests {
             // it names a SwiftData entity in a diagnostic, and never reaches a surface.
             "Cadence/Services/CadenceArchiveImportService.swift": [
                 "\"TaskBundle\""
-            ],
-            "Cadence/iOS/iOSBundleInspectorHost.swift": [
-                "\"No iOSBundleInspectorHost above this view — the block panel cannot open\""
             ],
             "Cadence/Shared/TaskDragPayload.swift": [
                 "\"taskBundle:\""

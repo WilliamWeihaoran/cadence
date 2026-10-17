@@ -385,7 +385,7 @@ struct CadenceCalendarOverlapLayoutTests {
 
     #endif
 
-    // MARK: - T-3165: the iOS day column lays tasks, bundles and events out together
+    // MARK: - T-3165: the iOS day column lays tasks and events out together
 
     private typealias IOSLayout = iOSCalendarTimelineBlockLayout
 
@@ -456,17 +456,11 @@ struct CadenceCalendarOverlapLayoutTests {
         }
     }
 
-    /// The second pair: a 6 PM event over a bundle, which sliced "Post office" in half.
-    @Test func theIOSDayColumnPutsAnEventBesideTheBundleItOverlaps() throws {
-        let ranges = Self.iosRanges([
-            .init(key: "bundle", kind: .bundle, startMin: Self.minutes(17, 30), endMin: Self.minutes(18, 30)),
-            .init(key: "event", kind: .event, startMin: Self.minutes(18, 0), endMin: Self.minutes(19, 0)),
-        ])
-        let bundle = try #require(ranges["bundle"])
-        let event = try #require(ranges["event"])
-        #expect(bundle.placement.column != event.placement.column, "the bundle and the event share a column")
-        #expect(Self.disjoint((bundle.minX, bundle.maxX), (event.minX, event.maxX)), "the event block is drawn over the bundle block")
-    }
+    // `theIOSDayColumnPutsAnEventBesideTheBundleItOverlaps` was declared here: T-3165's second
+    // fixture pair, a 6 PM event over a Block that sliced "Post office" in half. [[T-3170]] deleted
+    // the Block from every iOS surface, so a day column draws two kinds and the pair has no second
+    // member. `theIOSDayColumnPutsAnOverlappingTaskBesideTheEventInsteadOfOverIt` above is the same
+    // claim on the pair that still exists, and it is the ticket's *first* fixture.
 
     /// A start gap that is plenty for one event to cascade over another is still not licence for
     /// an event to lay itself over a task — on iOS exactly as on the Mac. The two-event control
@@ -485,7 +479,9 @@ struct CadenceCalendarOverlapLayoutTests {
         ])
         #expect(try #require(control["second"]).placement.cascadeDepth == 1, "non-vacuity: this gap no longer cascades two events")
 
-        for kind in [IOSLayout.Kind.task, .bundle] {
+        // One kind here since [[T-3170]]; the loop stays because the claim is "a non-event kind
+        // does not cascade at regular width", not "a task does not".
+        for kind in [IOSLayout.Kind.task] {
             let ranges = Self.iosRanges([
                 .init(key: "work", kind: kind, startMin: start, endMin: start + 180),
                 .init(key: "event", kind: .event, startMin: late, endMin: late + 60),
@@ -497,18 +493,21 @@ struct CadenceCalendarOverlapLayoutTests {
         }
     }
 
-    /// Three kinds at one hour take three columns, in draw order, and none of the three covers
-    /// another — the property macOS's `computeUnifiedLayouts` already had.
-    @Test func threeIOSBlocksOfThreeKindsAtOneHourTakeThreeDisjointColumns() throws {
+    /// Every kind at one hour takes a column each, in draw order, and none of them covers another
+    /// — the property macOS's `computeUnifiedLayouts` already had.
+    ///
+    /// **It was three kinds and three columns**; [[T-3170]] took the Block, so it is two and two.
+    /// The shape is what matters and it is unchanged: `n` blocks at one hour take `n` disjoint
+    /// columns, each `totalColumns == n`.
+    @Test func everyIOSBlockKindAtOneHourTakesADisjointColumn() throws {
         let ranges = Self.iosRanges([
-            .init(key: "bundle", kind: .bundle, startMin: Self.minutes(14, 0), endMin: Self.minutes(15, 0)),
             .init(key: "event", kind: .event, startMin: Self.minutes(14, 0), endMin: Self.minutes(15, 0)),
             .init(key: "task", kind: .task, startMin: Self.minutes(14, 0), endMin: Self.minutes(15, 0)),
         ])
-        let keys = ["bundle", "event", "task"]
+        let keys = ["event", "task"]
         let placed = try keys.map { try #require(ranges[$0]) }
-        #expect(Set(placed.map(\.placement.column)).count == 3, "three overlapping blocks share columns")
-        #expect(placed.allSatisfy { $0.placement.totalColumns == 3 })
+        #expect(Set(placed.map(\.placement.column)).count == 2, "two overlapping blocks share columns")
+        #expect(placed.allSatisfy { $0.placement.totalColumns == 2 })
         for (index, lhs) in placed.enumerated() {
             for rhs in placed[(index + 1)...] {
                 #expect(Self.disjoint((lhs.minX, lhs.maxX), (rhs.minX, rhs.maxX)), "two of the three blocks overlap")
@@ -517,27 +516,30 @@ struct CadenceCalendarOverlapLayoutTests {
     }
 
     /// Blocks that do not overlap keep the whole of their strip, so a day with no overlaps draws
-    /// what it drew before T-3165 — a task as wide as a lone event, a bundle wider than both.
+    /// what it drew before T-3165 — a task as wide as a lone event.
+    ///
+    /// **The third assertion was the Block's wider strip** — `inset` 7 against the other two kinds'
+    /// 9, the one figure the kind enum carried. [[T-3170]] deleted the Block, so `Kind.inset` is a
+    /// single 9 and the remaining claim is that the two kinds are drawn at the *same* width, which
+    /// is asserted here rather than left implied by one literal.
     @Test func iOSBlocksThatDoNotOverlapEachKeepTheirWholeStrip() throws {
         let ranges = Self.iosRanges([
             .init(key: "task", kind: .task, startMin: Self.minutes(8, 0), endMin: Self.minutes(9, 0)),
             .init(key: "event", kind: .event, startMin: Self.minutes(9, 0), endMin: Self.minutes(10, 0)),
-            .init(key: "bundle", kind: .bundle, startMin: Self.minutes(10, 0), endMin: Self.minutes(11, 0)),
         ])
         let task = try #require(ranges["task"])
         let event = try #require(ranges["event"])
-        let bundle = try #require(ranges["bundle"])
-        for block in [task, event, bundle] {
+        for block in [task, event] {
             #expect(block.placement == .single, "a block that overlaps nothing was split")
         }
         #expect(task.minX == event.minX && task.maxX == event.maxX, "a lone task and a lone event are drawn at different widths")
-        #expect(bundle.minX < task.minX && bundle.maxX > task.maxX, "a lone bundle lost its wider strip")
+        #expect(IOSLayout.Kind.task.inset == IOSLayout.Kind.event.inset, "the two surviving kinds inset differently")
     }
 
-    /// **The view really feeds all three kinds in.** `Cadence/iOS/` is invisible to this target,
-    /// so the arithmetic above is only half the claim; the other half is that the day column hands
-    /// every task, bundle and event to one `placements` call and draws each block at the frame it
-    /// gets back, rather than at a hand-written full width.
+    /// **The view really feeds every kind in.** `Cadence/iOS/` is invisible to this target, so the
+    /// arithmetic above is only half the claim; the other half is that the day column hands every
+    /// task and event to one `placements` call and draws each block at the frame it gets back,
+    /// rather than at a hand-written full width. It was three kinds until [[T-3170]].
     @Test func theIOSDayColumnSolvesEveryTimedBlockInOnePassAndDrawsEachAtItsSolvedFrame() throws {
         let path = "Cadence/iOS/iOSCalendarTimelineViews.swift"
         let raw = try CadenceSourceScan.sourceFile(path)
@@ -553,7 +555,7 @@ struct CadenceCalendarOverlapLayoutTests {
             CadenceSourceScan.matchCount(#"iOSCalendarTimelineBlockLayout\.placements\(for:"#, in: column) == 1,
             "the day column does not solve its blocks in exactly one pass"
         )
-        for kind in ["task", "bundle", "event"] {
+        for kind in ["task", "event"] {
             #expect(
                 CadenceSourceScan.matchCount(#"key: \.\#(kind)\("#, in: column) == 1,
                 "the day column does not hand its \(kind) blocks to the solver"
@@ -563,7 +565,7 @@ struct CadenceCalendarOverlapLayoutTests {
                 "the day column does not draw its \(kind) blocks at their solved frame"
             )
         }
-        // The two full-width spellings the tasks and bundles were drawn at before T-3165.
+        // The full-width spelling the tasks were drawn at before T-3165.
         #expect(
             CadenceSourceScan.matchCount(#"\.frame\(width: colWidth - [0-9]+, height:"#, in: column) == 0,
             "a timed block is still drawn at a hand-written full column width"
@@ -600,28 +602,16 @@ struct CadenceCalendarOverlapLayoutTests {
         #expect(Self.disjoint((wideLunch.minX, wideLunch.maxX), (widePrep.minX, widePrep.maxX)))
     }
 
-    /// Bundles are wired **exactly** as tasks are: the kind reaches the solver as one `Bool` and
-    /// nothing in the cascade knows what a `TaskBundle` is. Both directions, so neither half is
-    /// passing because the other kind happened to be drawn first.
-    @Test func aCompactIOSColumnCascadesBundlesOnTheSameRuleAsTasks() throws {
-        let start = Self.minutes(9, 0)
-        let later = start + Self.iosCascadeGap + 5
-
-        for (behind, front) in [(IOSLayout.Kind.event, IOSLayout.Kind.bundle), (.bundle, .event), (.task, .bundle), (.bundle, .task)] {
-            let ranges = Self.iosRanges(
-                [
-                    .init(key: "behind", kind: behind, startMin: start, endMin: start + 180),
-                    .init(key: "front", kind: front, startMin: later, endMin: later + 60),
-                ],
-                isCompactWidth: true,
-                columnWidth: Self.iosCompactColumnWidth
-            )
-            let back = try #require(ranges["behind"])
-            let forward = try #require(ranges["front"])
-            #expect(forward.placement.cascadeDepth == 1, "\(front) did not cascade over \(behind)")
-            #expect(forward.minX > back.minX, "\(front) covered \(behind)'s leading edge")
-        }
-    }
+    // `aCompactIOSColumnCascadesBundlesOnTheSameRuleAsTasks` was declared here.
+    //
+    // It walked all four orderings of a Block against an event and a Block against a task, to pin
+    // that T-3184 wired Blocks exactly as tasks are — the kind reaching the solver as one `Bool`
+    // and nothing in the cascade knowing what a `TaskBundle` was. [[T-3170]] deleted the Block, so
+    // there is no third kind to be wired like a second.
+    //
+    // The claim it protected survives as `theCompactCascadePutsTheLaterStartInFrontWhicheverKindItIs`
+    // below, which walks both orderings of the two kinds that are left and is the same statement:
+    // the clock decides, the kind does not.
 
     /// **The precedence is the clock, not the kind.** Handed the same pair in both orders and with
     /// the kinds swapped, the block in front is always the later-starting one.
@@ -709,21 +699,22 @@ struct CadenceCalendarOverlapLayoutTests {
         #expect(pinched == 3, "a pinched slot no longer halves itself")
     }
 
-    /// **Draw order is the clock's, across all three kinds.** The column draws bundles, then
-    /// events, then tasks, so without this a task was painted over every event whatever the solver
-    /// said — and a task that cascades under that z order is T-3165's full-width overpaint again.
+    /// **Draw order is the clock's, across every kind.** The column draws events, then tasks, so
+    /// without this a task was painted over every event whatever the solver said — and a task that
+    /// cascades under that z order is T-3165's full-width overpaint again. It was three `ForEach`es
+    /// until [[T-3170]], the first of them the Block's.
     @Test func theIOSColumnPaintsTheLaterStartingBlockOnTopWhateverKindItIs() throws {
         let blocks: [IOSLayout.Block<String>] = [
-            .init(key: "bundle", kind: .bundle, startMin: Self.minutes(13, 0), endMin: Self.minutes(14, 0)),
+            .init(key: "late", kind: .event, startMin: Self.minutes(13, 0), endMin: Self.minutes(14, 0)),
             .init(key: "event", kind: .event, startMin: Self.minutes(9, 0), endMin: Self.minutes(10, 0)),
             .init(key: "task", kind: .task, startMin: Self.minutes(11, 0), endMin: Self.minutes(12, 0)),
         ]
         let z = IOSLayout.zIndexes(for: blocks)
         let event = try #require(z["event"])
         let task = try #require(z["task"])
-        let bundle = try #require(z["bundle"])
-        #expect(event < task && task < bundle, "the column does not paint in start order")
-        for value in [event, task, bundle] {
+        let late = try #require(z["late"])
+        #expect(event < task && task < late, "the column does not paint in start order")
+        for value in [event, task, late] {
             #expect(value >= 1 && value < IOSLayout.overlayZIndex, "a block was given a z outside the band reserved for blocks")
         }
     }
@@ -761,8 +752,8 @@ struct CadenceCalendarOverlapLayoutTests {
             "the day column does not pass its width ruling to the solver"
         )
         #expect(
-            CadenceSourceScan.matchCount(#"\.zIndex\(solved\.zIndexes\[key\]"#, in: column) == 3,
-            "the day column does not z-order all three of its block kinds"
+            CadenceSourceScan.matchCount(#"\.zIndex\(solved\.zIndexes\[key\]"#, in: column) == 2,
+            "the day column does not z-order both of its block kinds"
         )
         #expect(
             CadenceSourceScan.matchCount(#"\.zIndex\(iOSCalendarTimelineBlockLayout\.overlayZIndex\)"#, in: column) == 2,

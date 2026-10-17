@@ -524,23 +524,24 @@ struct CadenceSharedTaskRowJobsTests {
 
     // MARK: - Bundle member row: the call sites
 
-    /// **The T-161 test for the bundle row.** Both remaining rows — one macOS, one iOS — must read
-    /// the one detail line. The iOS entry is the one that matters most: that row is the reason
-    /// `TaskDetailLineLabel` had to leave `#if os(macOS)`. It was three rows until [[T-3170]]
-    /// deleted the Focus panel's with Block Focus.
+    /// **The T-161 test for the bundle row.** It was three rows, then two, and is now one.
+    ///
+    /// [[T-3170]] deleted the Focus panel's row with Block Focus, and then
+    /// `iOSCalendarBundleDetailSheet.swift` with the whole iOS Block surface — the iOS row was the
+    /// reason `TaskDetailLineLabel` had to leave `#if os(macOS)`, and the shared spelling stays for
+    /// the four macOS call sites below whatever happens to the one that forced it. The macOS Block
+    /// rows are a sibling pass's business and are listed here unchanged.
     @Test func bothBundleMemberRowsReadTheOneDetailLine() throws {
         try expectCallSites(
             of: "CadenceBundleTaskRowSupport.detailParts",
             at: [
                 "Cadence/macOS/Views/TimelineBundleBlockSupportViews.swift": 1,
-                "Cadence/iOS/iOSCalendarBundleDetailSheet.swift": 1,
             ]
         )
         try expectCallSites(
             of: "CadenceTaskDetailLineLabel",
             at: [
                 "Cadence/macOS/Views/TimelineBundleBlockSupportViews.swift": 1,
-                "Cadence/iOS/iOSCalendarBundleDetailSheet.swift": 1,
                 // The focus rows and the bundle picker, which already used it under its old name.
                 "Cadence/macOS/Views/FocusSidebarSupportViews.swift": 1,
                 "Cadence/macOS/Views/FocusPickerSupportViews.swift": 1,
@@ -740,7 +741,7 @@ struct CadenceSharedTaskRowJobsTests {
         #expect(files.count > 300, "the source scan found \(files.count) files and cannot be doing its job")
         #expect(files.contains("Cadence/macOS/Views/KanbanCardView.swift"))
         #expect(files.contains("Cadence/iOS/iOSBoardCards.swift"))
-        #expect(files.contains("Cadence/iOS/iOSCalendarBundleDetailSheet.swift"))
+        #expect(files.contains("Cadence/iOS/iOSCalendarInspectorView.swift"))
         #expect(files.contains("Cadence/Shared/CadenceBoardCardMetadata.swift"))
         #expect(files.contains("Cadence/Shared/CadenceBundleTaskRowSupport.swift"))
         #expect(files.contains("Cadence/Shared/Components/CadenceTaskDetailLineLabel.swift"))

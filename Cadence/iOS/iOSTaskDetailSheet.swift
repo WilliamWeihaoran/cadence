@@ -263,9 +263,9 @@ struct iOSTaskDetailSheet: View {
     /// `iOSTaskRowContextMenu` is attached to `iOSTaskRow` and to nothing else, so a task met on
     /// the Calendar Board or on a day timeline had no route to a session at all.
     ///
-    /// It goes **here** rather than onto `iOSBoardTaskCard` and `iOSTimelineTaskBlock` for the same
-    /// reason `iOSCalendarBundleDetailSheet.focusSection` is on the block sheet rather than on the
-    /// two cards that open it: both of those surfaces open *this* sheet (pinned by
+    /// It goes **here** rather than onto `iOSBoardTaskCard` and `iOSTimelineTaskBlock`, for the
+    /// reason the Block sheet put its own focus section on the sheet rather than on the two cards
+    /// that opened it: both of those surfaces open *this* sheet (pinned by
     /// `CadenceTaskInspectorHostTests.noRowOrCardStillPresentsTheInspector`), so one entry is
     /// reachable from both, and neither a permanently visible play glyph on every board card nor a
     /// long-press on an 11pt timeline block is an affordance those surfaces can afford — the
@@ -276,11 +276,11 @@ struct iOSTaskDetailSheet: View {
     /// callback to hang a second half on. Sequence matters only in that order — reversing it would
     /// post the request from a view being torn down.
     ///
-    /// One reachable rough edge, left rather than papered over: `iOSCalendarBundleDetailSheet`
-    /// presents this sheet for a block's member tasks, and `dismiss()` there closes only this one,
-    /// so the block sheet is still standing over the routed Focus screen and needs its own Close.
-    /// Fixing it would mean a third observer of `CadenceFocusHandoffCenter`, and "the shell routes,
-    /// the Focus screen adopts" is the division T-266 is built on.
+    /// **The one reachable rough edge this used to carry is gone with its surface.** The Block
+    /// panel presented this sheet for a block's member tasks, and `dismiss()` there closed only
+    /// this one — so the block sheet was left standing over the routed Focus screen and needed its
+    /// own Close. [[T-3170]] deleted the Block panel; the surfaces that present this sheet from
+    /// inside another sheet are the two markdown ones, and neither offers this section's handoff.
     ///
     /// **T-276: absent on a settled task, not disabled.** The panel sits directly under
     /// `statusActionsSection`, so the button offering to spend time on a task and the control that

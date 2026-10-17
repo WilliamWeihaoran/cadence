@@ -500,59 +500,19 @@ struct CadenceCalendarEventTimingTests {
         }
     }
 
-    /// The delegation, in source. `timeDate` is `private static` inside an `#if os(iOS)` file, so
-    /// this is the only reachable pin that the sheet actually calls the shared rule — and it is
-    /// what fails if a later edit respells the conversion locally, which is how one rule reached
-    /// five copies.
-    @Test func theBundleEditSheetSeedsItsPickerBySettingTheClock() throws {
-        let sheet = try CadenceCommitSurfaceScan.scanned("Cadence/iOS/iOSCalendarBundleDetailSheet.swift")
-
-        // The stripper must be discriminating, or every absence below is free. The doc comments on
-        // this sheet quote both offending spellings on purpose.
-        let strippedProbe = CadenceSourceScan.strippingComments("let a = 1 // byAdding: .minute\n")
-        #expect(!strippedProbe.contains("byAdding"), "the comment stripper is not stripping")
-        #expect(strippedProbe.contains("let a = 1"), "the comment stripper ate code")
-
-        #expect(
-            CadenceSourceScan.matchCount("CadenceCalendarEventTiming\\.startDate\\(", in: sheet) == 1,
-            "the block edit sheet has exactly one minute-of-day seed and it routes through the helper"
-        )
-
-        // Negative, in both spellings — `addingTimeInterval` is the one an `rg 'byAdding: .minute'`
-        // scores 0 on, and it is how two audits walked past `createStandaloneEvent`.
-        let added = CadenceSourceScan.matchLines("byAdding:\\s*\\.minute,\\s*value:\\s*(max\\(0,\\s*)?minute", in: sheet)
-        #expect(added.isEmpty, "the block edit sheet still adds a minute-of-day to midnight: \(added)")
-        let elapsed = CadenceSourceScan.matchLines("addingTimeInterval", in: sheet)
-        #expect(elapsed.isEmpty, "the block edit sheet converts a time by elapsed seconds: \(elapsed)")
-
-        // Non-vacuity: the regex matches the line that was there and misses a real duration.
-        #expect(
-            CadenceSourceScan.matchCount(
-                "byAdding:\\s*\\.minute,\\s*value:\\s*(max\\(0,\\s*)?minute",
-                in: "return calendar.date(byAdding: .minute, value: max(0, minute), to: start) ?? start"
-            ) == 1
-        )
-        #expect(
-            CadenceSourceScan.matchCount(
-                "byAdding:\\s*\\.minute,\\s*value:\\s*(max\\(0,\\s*)?minute",
-                in: "x = cal.date(byAdding: .minute, value: max(5, durationMinutes), to: startDate)"
-            ) == 0
-        )
-
-        // The read-back direction is wall-clock and must stay that way: it is the half that turns
-        // a wrong seed into a wrong `bundle.startMin`.
-        #expect(
-            sheet.contains("calendar.dateComponents([.hour, .minute], from: startTime)"),
-            "the block edit sheet reads its picker back as a clock reading"
-        )
-        // And the write it feeds, so "this is a write path, not a preview" is pinned, not asserted
-        // in a comment.
-        #expect(
-            CadenceSourceScan.matchCount("CadenceTaskMutationSupport\\.updateBundle\\(", in: sheet) == 1,
-            "the block edit sheet's Save writes startMinute into the store"
-        )
-        #expect(sheet.contains("startMin: startMinute"), "and it is startMinute that it writes")
-    }
+    // `theBundleEditSheetSeedsItsPickerBySettingTheClock` was declared here.
+    //
+    // It was the source half of this section: the sheet's timeDate(on:minute:) was `private static` inside
+    // an `#if os(iOS)` file, so the only reachable pin that the sheet called the shared rule — and
+    // the one that would fail if a later edit respelled the conversion locally, which is how one
+    // rule reached five copies. [[T-3170]] deleted `iOSCalendarBundleDetailSheet.swift` with the
+    // Block feature, so the fifth site no longer exists.
+    //
+    // **The behavioural half above is deliberately kept.** Every other test in this section
+    // exercises `CadenceCalendarEventTiming.startDate(day:startMin:calendar:)` itself — the gap
+    // reading, the ambiguous reading, the two-sided clamp and the round trip to the identity —
+    // and that helper is still what the four surviving minute-of-day sites call. Those are the
+    // rule; the deleted test was one caller's conformance to it.
 
     // MARK: - 3. The lines that are CORRECT, pinned so they are not "fixed" symmetrically
 

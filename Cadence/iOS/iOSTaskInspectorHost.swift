@@ -17,13 +17,14 @@ import SwiftUI
 /// by remembering. A page or sheet that needs a nearer owner can apply its own; the environment
 /// resolves to the innermost one.
 ///
-/// **What is deliberately not converted.** Four other surfaces present `iOSTaskDetailSheet`, and all
-/// four already own their presentation on a view that does not re-filter under it —
-/// `iOSSearchView`, `iOSMarkdownEditingSurface`, `iOSMarkdownReferenceSupport` and
-/// `iOSCalendarBundleDetailSheet`, each with a `.sheet(item:)` on the surface. Three of those present
-/// from *inside* a sheet, where a host above the sheet is the wrong owner: it is already presenting,
-/// so a second request from it would do nothing at all. Converting them would trade a correct
-/// pattern for a broken one in the name of uniformity.
+/// **What is deliberately not converted.** Three other surfaces present `iOSTaskDetailSheet`, and
+/// all three already own their presentation on a view that does not re-filter under it —
+/// `iOSSearchView`, `iOSMarkdownEditingSurface` and `iOSMarkdownReferenceSupport`, each with a
+/// `.sheet(item:)` on the surface. Two of those present from *inside* a sheet, where a host above
+/// the sheet is the wrong owner: it is already presenting, so a second request from it would do
+/// nothing at all. Converting them would trade a correct pattern for a broken one in the name of
+/// uniformity. (It was four; `iOSCalendarBundleDetailSheet` went with the Block feature in
+/// [[T-3170]].)
 ///
 /// What *was* converted is the set that owned presentation from a row or a card: `iOSTaskRow`,
 /// `iOSBoardTaskCard`, `iOSTimelineTaskBlock` and Today's `iOSScheduleReadyTaskRow` — the last of
@@ -77,16 +78,17 @@ private struct iOSTaskInspectorHostModifier: ViewModifier {
 
 /// The selection outliving the row is the fix; the selection outliving the *model* is the sharp edge
 /// that comes with it. `CadenceDetailPanelPresentation` — in `Shared/`, where the macOS-built test
-/// target can reach it — is where that decision lives, and since T-217 the bundle panel's host reads
-/// the same instance of it rather than a second copy: a task that has merely left the page's query
-/// keeps its panel, a deleted one closes it.
-/// T-347 made this non-private. Four other surfaces present the panel from a `.sheet(item:)` they
-/// own — `iOSSearchView`, `iOSMarkdownEditingSurface`, `iOSMarkdownReferenceSupport` and
-/// `iOSCalendarBundleDetailSheet` — and each of them presented `iOSTaskDetailSheet` *directly*, so
-/// none of them had the deleted-model guard at all. Those four keep their own presentation, which is
-/// correct for them (three present from inside a sheet, where a host above the sheet is already
-/// presenting and could do nothing); what they gain is this wrapper between the binding and the
-/// panel. One guarded wrapper reused beats four `if !task.isDeleted` checks, and it means
+/// target can reach it — is where that decision lives. T-217 gave the Block panel's host a second
+/// reader of the same instance rather than a copy; [[T-3170]] deleted that panel, and this host is
+/// the one reader left: a task that has merely left the page's query keeps its panel, a deleted one
+/// closes it.
+/// T-347 made this non-private. Three other surfaces present the panel from a `.sheet(item:)` they
+/// own — `iOSSearchView`, `iOSMarkdownEditingSurface` and `iOSMarkdownReferenceSupport` — and each
+/// of them presented `iOSTaskDetailSheet` *directly*, so none of them had the deleted-model guard at
+/// all. Those three keep their own presentation, which is correct for them (two present from inside
+/// a sheet, where a host above the sheet is already presenting and could do nothing); what they gain
+/// is this wrapper between the binding and the panel. One guarded wrapper reused beats four
+/// `if !task.isDeleted` checks, and it means
 /// `iOSTaskDetailSheet(` now appears in exactly one place in the app.
 struct iOSTaskInspectorSheet: View {
     @Bindable var task: AppTask

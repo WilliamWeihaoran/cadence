@@ -3,123 +3,52 @@ import SwiftData
 import Testing
 @testable import Cadence
 
-/// T-217: **the iOS bundle panel used to dismiss itself the moment an edit succeeded.**
+/// **The iOS Block panel is gone, and this suite is what stops it coming back** ([[T-3170]]).
 ///
-/// `iOSCalendarBundleDetailSheet` was presented by the card that opened it — `@State showDetail` plus
-/// `.sheet(isPresented:)` on the Board's Block card and on `iOSTimelineBundleBlock`. Both sat
-/// inside a `ForEach(bundles)` that the surface has already filtered by day, and Today's schedule
-/// pane filters the same block by *hour* on top of that. So the panel's own Save — the write that
-/// changes `dateKey` or `startMin` — moved the block out of the collection drawing it, SwiftUI removed
-/// the card, and the sheet went with it. T-201's defect exactly, one subject over, and nothing in the
-/// panel called `dismiss()`.
+/// T-217 filed the defect this suite was built for: `iOSCalendarBundleDetailSheet` was presented by
+/// the card that opened it — `@State showDetail` plus `.sheet(isPresented:)` on the Board's Block
+/// card and on `iOSTimelineBundleBlock` — and both sat inside a `ForEach(bundles)` the surface had
+/// already filtered by day, with Today's pane filtering the same block by *hour* on top of that. So
+/// the panel's own Save moved the block out of the collection drawing it, SwiftUI removed the card,
+/// and the sheet went with it. The fix was a host above both shells whose lifetime outlived any
+/// card's.
 ///
-/// Two kinds of test, as in `CadenceTaskInspectorHostTests`. The decision is a value type in
-/// `Shared/` — the *same* one the task inspector reads, because nothing in it was ever about an
-/// `AppTask` — and is tested against a real store. The ownership, which is the actual fix, cannot be
-/// compiled here: all of `Cadence/iOS/` is inside `#if os(iOS)` and this target builds for macOS. So
-/// it is pinned as source text with exact per-file counts, and `theSourceScanIsNotVacuous` stops a
-/// broken reader making every zero pass silently.
+/// The owner then removed the whole Block feature. There is no card, no panel, no host selection
+/// and no pane-owned `.sheet(item: $selectedBundle)` left on iOS, so the ownership tests below are
+/// inverted: they count the presenters and require the dictionary to be **empty**. An empty
+/// dictionary is a weak assertion on its own, which is why `theSourceScanIsNotVacuousInBundleInspectorHost`
+/// still holds the corpus and still names live text in each file it reads.
+///
+/// **Two tests here are NOT about the panel and are kept deliberately.**
+/// `deletingABundleUnbundlesItsTasksInsteadOfDeletingThem` and
+/// `deletingABundleClearsTheSameStaleCalendarLinkTheSettledPathClears` pin
+/// `CadenceTaskMutationSupport.deleteBundle`'s `.nullify` loop and T-295's agreement between the
+/// two endings. `TaskBundle` is still a `@Model` — build 22 shipped it and this project has no
+/// `SchemaMigrationPlan` — so that mutation is still in the tree and still worth holding.
+///
+/// **Retired with the surfaces they pinned**, each named here rather than deleted silently:
+/// `reschedulingABundleOutOfTheDayAndHourQueriesKeepsThePanelOpen` and
+/// `deletingTheBundleUnderneathThePanelClosesItInBothPhasesOfTheDelete` (the panel's lifetime — the
+/// same rule is held on the surviving subject by
+/// `CadenceTaskInspectorHostTests.deletingTheTaskUnderneathTheInspectorClosesItInBothPhasesOfTheDelete`);
+/// `theBundleHostDrawsThePanelOnlyInTheStayBranchOfTheSharedRule` and
+/// `theRootAppliesTheBundleHostAboveBothShellsRatherThanInsideOne` (there is no branch and no
+/// selection left to place).
 @MainActor
 struct CadenceBundleInspectorHostTests {
 
-    // MARK: - The premise: the edit that used to close the panel
+    // MARK: - The premise, retired with the panel
 
-    /// **The bug, reproduced as data.** A bundle re-dated and re-timed from inside its own panel
-    /// leaves the day query the Calendar surfaces draw it from *and* the hour query Today's pane
-    /// draws it from — and the panel must survive both, because the user just typed that date.
-    ///
-    /// This is the bundle's version of `cancellingATaskLeavesTheModelForTheHostToKeepShowing`: the
-    /// model is untouched by the write that removed the card, so a host holding the model has
-    /// something to keep rendering.
-    @Test func reschedulingABundleOutOfTheDayAndHourQueriesKeepsThePanelOpen() throws {
-        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
-        let context = ModelContext(container)
-        let bundle = TaskBundle(title: "Admin sweep", dateKey: "2026-08-21", startMin: 600, durationMinutes: 30)
-        context.insert(bundle)
-        try context.save()
-
-        #expect(
-            CadenceScheduleSupport.bundlesByDate([bundle], includeCompleted: false)["2026-08-21"]?
-                .map(\.id) == [bundle.id]
-        )
-        #expect(CadenceScheduleSupport.bundles(inHourRow: 10, from: [bundle]).map(\.id) == [bundle.id])
-
-        // The panel's Save, spelled the way the panel spells it.
-        try CadenceTaskMutationSupport.updateBundle(
-            bundle,
-            title: "Admin sweep",
-            dateKey: "2026-08-24",
-            startMin: 900,
-            durationMinutes: 30,
-            modelContext: context
-        )
-
-        // Both collections the two converted surfaces draw from have dropped it…
-        #expect(CadenceScheduleSupport.bundlesByDate([bundle], includeCompleted: false)["2026-08-21"] == nil)
-        #expect(CadenceScheduleSupport.bundles(inHourRow: 10, from: [bundle]).isEmpty)
-        // …and it is exactly where the edit put it.
-        #expect(bundle.dateKey == "2026-08-24")
-        #expect(bundle.startMin == 900)
-        // …while the panel stays, which is the whole point.
-        #expect(
-            CadenceDetailPanelPresentation.resolveHeldSubject(
-                isDeleted: bundle.isDeleted,
-                hasNoModelContext: bundle.modelContext == nil
-            ) == .stay
-        )
-    }
-
-    /// The measured guard, re-measured on a `TaskBundle` rather than assumed to carry over. Both
-    /// halves of a real delete report through *different* properties, which is why the rule reads two
-    /// signals and why a draft guarding on `isDeleted` alone would pass the first half of this test
-    /// and fail the second.
-    ///
-    /// **Which signal fires in which half is bounded, not pinned (T-1318)** — the same treatment,
-    /// and the same reasoning, as `CadenceTaskInspectorHostTests
-    /// .deletingTheTaskUnderneathTheInspectorClosesItInBothPhasesOfTheDelete`, whose doc comment
-    /// carries the measurement and the [[T-1279]]/[[T-1296]] history. Each phase asserts that at
-    /// least one of the two signals fires and that the combined predicate closes the panel; the
-    /// `.stay` above the delete is what keeps that disjunction from being vacuous.
-    @Test func deletingTheBundleUnderneathThePanelClosesItInBothPhasesOfTheDelete() throws {
-        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
-        let context = ModelContext(container)
-        let bundle = TaskBundle(title: "Batch", dateKey: "2026-08-21", startMin: 600, durationMinutes: 30)
-        context.insert(bundle)
-        try context.save()
-
-        #expect(
-            CadenceDetailPanelPresentation.resolveHeldSubject(
-                isDeleted: bundle.isDeleted,
-                hasNoModelContext: bundle.modelContext == nil
-            ) == .stay
-        )
-
-        context.delete(bundle)
-        #expect(
-            bundle.isDeleted || bundle.modelContext == nil,
-            "a pending delete reported through neither of the two signals the guard reads"
-        )
-        #expect(
-            CadenceDetailPanelPresentation.resolveHeldSubject(
-                isDeleted: bundle.isDeleted,
-                hasNoModelContext: bundle.modelContext == nil
-            ) == .close
-        )
-
-        try context.save()
-        #expect(
-            bundle.isDeleted || bundle.modelContext == nil,
-            "a committed delete reported through neither of the two signals the guard reads"
-        )
-        // The store's own half, which is not an observation of anything: the row is gone.
-        #expect(try context.fetch(FetchDescriptor<TaskBundle>()).isEmpty)
-        #expect(
-            CadenceDetailPanelPresentation.resolveHeldSubject(
-                isDeleted: bundle.isDeleted,
-                hasNoModelContext: bundle.modelContext == nil
-            ) == .close
-        )
-    }
+    // `reschedulingABundleOutOfTheDayAndHourQueriesKeepsThePanelOpen` and
+    // `deletingTheBundleUnderneathThePanelClosesItInBothPhasesOfTheDelete` were declared here.
+    //
+    // Both pinned the *panel's* lifetime — that a block re-dated out of the day query kept its
+    // sheet, and that a delete underneath it closed the sheet in both phases. [[T-3170]] deleted
+    // the panel, so neither has a subject. `CadenceDetailPanelPresentation` itself is untouched and
+    // is still pinned on the surviving subject by `CadenceTaskInspectorHostTests`:
+    // `cancellingATaskLeavesTheModelForTheHostToKeepShowing` is the first test's shape and
+    // `deletingTheTaskUnderneathTheInspectorClosesItInBothPhasesOfTheDelete` is the second's,
+    // including [[T-1318]]'s bounded reading of which of the two signals fires in which phase.
 
     /// **The `.nullify` invariant, on the path the panel this host presents actually calls.**
     /// `TaskBundle.tasks` is a nullify relationship, so deleting a block must unbundle its tasks and
@@ -187,210 +116,135 @@ struct CadenceBundleInspectorHostTests {
         #expect(survivor.scheduledDate == "2026-08-21")
     }
 
-    // MARK: - Ownership: no card presents the bundle panel
+    // MARK: - Absence: nothing on iOS shows or edits a Block
 
-    /// The surface that owned presentation from a card. It carried exactly one
-    /// `@State private var showDetail` and one `.sheet(isPresented: $showDetail)` before the fix and
-    /// carries neither now — and `CadenceTaskInspectorHostTests` pinned the survivors at `1` while
-    /// T-201 was fixing the task half, which is how this defect stayed visible rather than being
-    /// rediscovered. It was two surfaces until [[T-3170]] deleted the Calendar Board's Block card.
-    @Test func noCardStillOwnsBundlePanelPresentationState() throws {
+    /// **No card owns a Block panel, because no card draws a Block.** This counted the timeline's
+    /// two asks of the host — the block's own tap and its "Edit Block" context-menu item — while
+    /// [[T-3170]]'s eighth pass had already taken the Board's card. Every count here is now zero,
+    /// and the surviving `@State private var showDetail` / `.sheet(isPresented:)` zeros are kept
+    /// rather than folded away: T-201's defect is a *shape*, and a card re-growing it is the thing
+    /// this test was filed over.
+    @Test func noIOSCardOwnsOrAsksForABlockPanel() throws {
+        for path in [
+            "Cadence/iOS/iOSCalendarTimelineViews.swift",
+            "Cadence/iOS/iOSBoardCards.swift",
+            "Cadence/iOS/iOSCalendarInspectorView.swift"
+        ] {
+            try expectOccurrences(of: "@State private var showDetail", at: [path: 0])
+            try expectOccurrences(of: ".sheet(isPresented: $showDetail)", at: [path: 0])
+            try expectOccurrences(of: "bundleInspector(", at: [path: 0])
+            try expectOccurrences(of: "iOSBundleInspector", at: [path: 0])
+        }
+        // The block itself, not only its presentation: the view that drew it is deleted.
         try expectOccurrences(
-            of: "@State private var showDetail",
+            of: "struct iOSTimelineBundleBlock",
             at: ["Cadence/iOS/iOSCalendarTimelineViews.swift": 0]
         )
-        try expectOccurrences(
-            of: ".sheet(isPresented: $showDetail)",
-            at: ["Cadence/iOS/iOSCalendarTimelineViews.swift": 0]
-        )
-        // …and it asks the host instead, twice: the block's own tap and its "Edit Block" context
-        // menu item are two controls onto one panel.
-        try expectOccurrences(
-            of: "bundleInspector(bundle)",
-            at: ["Cadence/iOS/iOSCalendarTimelineViews.swift": 2]
-        )
-        try expectOccurrences(
-            of: "@Environment(\\.iOSBundleInspector)",
-            at: ["Cadence/iOS/iOSCalendarTimelineViews.swift": 1]
-        )
-        // The Board's card is gone outright, so it owns nothing to count.
-        try expectOccurrences(
-            of: "iOSBundleInspector",
-            at: ["Cadence/iOS/iOSBoardCards.swift": 0]
-        )
     }
 
-    /// **Every presenter of the bundle panel, counted — and since T-347 there is exactly one.**
+    /// **The Block panel is drawn nowhere at all.** This read `["Cadence/iOS/iOSBundleInspectorHost.swift": 1]`
+    /// — the wrapper's `.stay` branch and nothing else. `iOSCalendarBundleDetailSheet.swift` is
+    /// deleted, so the dictionary is empty; a new `iOSCalendarBundleDetailSheet(` anywhere under
+    /// `Cadence/` fails here, which is the one way a 375-line sheet could come back unnoticed.
+    @Test func noSurfaceDrawsTheBlockPanel() throws {
+        #expect(try presenterCounts(of: "iOSCalendarBundleDetailSheet(").isEmpty)
+        #expect(try presenterCounts(of: "iOSBundleInspectorSheet(").isEmpty)
+        // And the files themselves are gone, which no occurrence count can say.
+        let files = try swiftFiles(under: "Cadence")
+        #expect(!files.contains("Cadence/iOS/iOSCalendarBundleDetailSheet.swift"))
+    }
+
+    /// **What is left of the host, and why it is still there.**
     ///
-    /// This read *three* until T-347: the host, plus `iOSCalendarDayInspector` and
-    /// `iOSCalendarMonthAgendaList`, which each hold the selection on the pane and attach
-    /// `.sheet(item:)` above the conditional deciding whether the pane lists anything, so a bundle
-    /// edited out of that day or month empties a section rather than removing the presenter. That
-    /// ownership argument is unchanged and still correct — but both panes reached
-    /// `iOSCalendarBundleDetailSheet` directly, so neither consulted
-    /// `CadenceDetailPanelPresentation`, and a delete arriving while one was open left it bound to a
-    /// dead bundle.
-    ///
-    /// Both keep their presentation and borrow the guard. What is left is the stronger invariant:
-    /// **the bundle panel is drawn only behind the wrapper that has just asked whether the bundle
-    /// still exists.** A new direct `.sheet { iOSCalendarBundleDetailSheet(...) }` anywhere fails
-    /// here, and would otherwise be invisible to a test suite that cannot build this folder.
-    @Test func theBundlePanelIsDrawnOnlyBehindTheGuardedWrapper() throws {
-        var presenters: [String: Int] = [:]
-        for path in try swiftFiles(under: "Cadence") {
-            let count = try strippingComments(sourceFile(path))
-                .components(separatedBy: "iOSCalendarBundleDetailSheet(").count - 1
-            if count > 0 {
-                presenters[path] = count
-            }
+    /// `iOSBundleInspectorHost.swift` holds one thing now: a `View` extension returning `self`.
+    /// The modifier survives only because `Cadence/iOS/iOSRootView.swift` applies it at the root
+    /// and that file is **Codex-leased**, so the last line of the Block panel could not be deleted
+    /// in the pass that deleted the panel. The next agent holding a grant on that path deletes the
+    /// call and this file with it — and until then this test is the record that the stub is a
+    /// residue rather than a decision, by pinning that it presents nothing.
+    @Test func theBundleHostIsANoOpStubHeldOpenByOneLeasedCallSite() throws {
+        let host = try strippingComments(sourceFile("Cadence/iOS/iOSBundleInspectorHost.swift"))
+
+        #expect(host.contains("func iOSBundleInspectorHost() -> some View { self }"))
+        // Nothing it could present, nothing it could hold, nothing it could decide.
+        for needle in [
+            ".sheet(",
+            "@State",
+            "TaskBundle",
+            "EnvironmentKey",
+            "iOSBundleInspectorPresentAction",
+            "CadenceDetailPanelPresentation"
+        ] {
+            #expect(
+                !host.contains(needle),
+                "iOSBundleInspectorHost.swift grew \(needle) back"
+            )
         }
 
+        // Exactly two live mentions in the app: the declaration, and the one leased call site.
         #expect(
-            presenters == [
-                // The wrapper's `.stay` branch, and nowhere else at all.
-                "Cadence/iOS/iOSBundleInspectorHost.swift": 1
-            ],
-            "presenters of iOSCalendarBundleDetailSheet changed: \(presenters)"
-        )
-    }
-
-    /// The other side of that count: the places that present, all now through the guard.
-    /// Without this, deleting a `.sheet` outright would leave the panel count at one and read green.
-    @Test func everyPaneThatPresentsTheBundlePanelGoesThroughTheGuardedWrapper() throws {
-        var presenters: [String: Int] = [:]
-        for path in try swiftFiles(under: "Cadence") {
-            let count = try strippingComments(sourceFile(path))
-                .components(separatedBy: "iOSBundleInspectorSheet(").count - 1
-            if count > 0 {
-                presenters[path] = count
-            }
-        }
-
-        #expect(
-            presenters == [
-                // The host. The only one reached from a card.
-                "Cadence/iOS/iOSBundleInspectorHost.swift": 1,
-                // Pane-owned `.sheet(item:)`, immune to re-filtering, guarded since T-347.
-                // The month agenda's went with its Block row in [[T-3170]].
-                "Cadence/iOS/iOSCalendarInspectorView.swift": 1
-            ],
-            "presenters of iOSBundleInspectorSheet changed: \(presenters)"
-        )
-    }
-
-    /// One host, applied once, above both shells — the placement `iOSTaskInspectorHost()` and
-    /// `cadenceStartupIssueBanner` have, for the same reason. The two live mentions are the
-    /// declaration and that single application; a second application anywhere would mean two hosts
-    /// racing to present, which on iOS means the inner one silently does nothing.
-    @Test func exactlyOneBundleHostIsInstalledAndItIsAboveBothShells() throws {
-        var applications: [String: Int] = [:]
-        for path in try swiftFiles(under: "Cadence") {
-            let count = try strippingComments(sourceFile(path))
-                .components(separatedBy: "iOSBundleInspectorHost()").count - 1
-            if count > 0 {
-                applications[path] = count
-            }
-        }
-
-        #expect(
-            applications == [
+            try presenterCounts(of: "iOSBundleInspectorHost()") == [
                 "Cadence/iOS/iOSBundleInspectorHost.swift": 1,
                 "Cadence/iOS/iOSRootView.swift": 1
-            ],
-            "iOSBundleInspectorHost applications changed: \(applications)"
+            ]
         )
-        // Beside the task host rather than instead of it: the two panels are independent, and a
-        // shell that lost one of them would still open the other.
+        // The task host is untouched by any of this and is still applied once at the root.
         try expectOccurrences(
             of: ".iOSTaskInspectorHost()",
             at: ["Cadence/iOS/iOSRootView.swift": 1]
         )
     }
 
+    /// **No iOS surface queries, buckets or draws a Block any more.**
+    ///
+    /// The day timeline, Today's schedule pane, the Calendar page, the month grid and the day
+    /// inspector each carried a `[String: [TaskBundle]]` the whole way down from a `@Query`. One
+    /// needle per rung, because a parameter left behind fed an empty dictionary reads exactly like
+    /// a parameter that is gone — which is the state [[T-3170]]'s ninth pass had to come back for
+    /// on the Mac.
+    @Test func noIOSCalendarSurfaceStillCarriesABlockQuery() throws {
+        #expect(try presenterCounts(of: "TaskBundle", under: "Cadence/iOS").isEmpty)
+        #expect(try presenterCounts(of: "bundlesByDate", under: "Cadence/iOS").isEmpty)
+        #expect(try presenterCounts(of: "CadenceScheduleSupport.bundles", under: "Cadence/iOS").isEmpty)
+    }
+
     // MARK: - Where in the file, not just how many (T-161)
 
-    /// **The per-file half of the two counts above.** The repo-wide dictionaries are the right
-    /// shape for "exactly N places in the whole app"; neither can say *where* in a file its one
-    /// occurrence sits, and `cfa3b3b` is the standing proof that a call moving between two
-    /// functions in one file is invisible to a count.
-    ///
-    /// The move that matters here is the panel leaving the `.stay` branch. `iOSBundleInspectorSheet`
-    /// exists to ask `CadenceDetailPanelPresentation.resolveHeldSubject` whether the held bundle is
-    /// still a thing to draw; swapping its two branches leaves `iOSCalendarBundleDetailSheet(` at
-    /// exactly one occurrence in exactly this file, with every card in the app opening nothing.
-    @Test func theBundleHostDrawsThePanelOnlyInTheStayBranchOfTheSharedRule() throws {
-        let host = try strippingComments(sourceFile("Cadence/iOS/iOSBundleInspectorHost.swift"))
-
-        #expect(
-            matches(#"case \.stay:\s*iOSCalendarBundleDetailSheet\(bundle: bundle\)"#, in: host) == 1,
-            "the bundle panel is not drawn directly in the .stay branch of resolveHeldSubject"
-        )
-        #expect(
-            matches(#"case \.close:\s*Color\.clear\.onAppear\(perform: close\)"#, in: host) == 1,
-            "the .close branch no longer clears the selection instead of drawing the panel"
-        )
-
-        // The modifier hands the sheet's content to the rule-checking view, never to the panel:
-        // presenting `iOSCalendarBundleDetailSheet` straight from `.sheet(item:)` would also read
-        // as one occurrence in one file, and would bind a deleted model.
-        let modifier = try cadenceFunctionBody("func body(content: Content) -> some View", in: host)
-        #expect(modifier.contains(".sheet(item: $selection)"))
-        #expect(modifier.contains("iOSBundleInspectorSheet(bundle: bundle)"))
-        #expect(!modifier.contains("iOSCalendarBundleDetailSheet("))
-    }
-
-    /// **"Above both shells" was a count of one in `iOSRootView.swift`.** Moving
-    /// `.iOSBundleInspectorHost()` inside the `horizontalSizeClass == .regular` branch — iPad gets
-    /// the bundle panel, the iPhone's board and timeline get dead taps — keeps that count at one.
-    /// So the claim is stated as placement: the two shells are the `Group`'s two branches, and the
-    /// host is applied to the `Group` rather than inside it.
-    @Test func theRootAppliesTheBundleHostAboveBothShellsRatherThanInsideOne() throws {
-        let root = try strippingComments(sourceFile("Cadence/iOS/iOSRootView.swift"))
-        let body = try cadenceFunctionBody("var body: some View", in: root)
-        let shells = try cadenceFunctionBody("Group", in: body)
-
-        #expect(shells.contains("iPadMacStyleRootShell("))
-        #expect(shells.contains("iOSCompactRootShell("))
-        #expect(body.contains(".iOSBundleInspectorHost()"))
-        #expect(
-            !shells.contains(".iOSBundleInspectorHost()"),
-            "the bundle host is applied inside one shell branch rather than above both"
-        )
-    }
-
-    /// **Self-check on the pattern helper.** A typo matches nothing, and every `== 1` above becomes
-    /// a silent zero-that-should-have-been-one.
-    @Test func thePatternHelperMatchesWhatItLooksLike() {
-        #expect(matches(#"case \.stay:\s*iOSCalendarBundleDetailSheet\(bundle: bundle\)"#, in: "case .stay:\n    iOSCalendarBundleDetailSheet(bundle: bundle)") == 1)
-        #expect(matches(#"case \.stay:\s*iOSCalendarBundleDetailSheet\(bundle: bundle\)"#, in: "case .close:\n    iOSCalendarBundleDetailSheet(bundle: bundle)") == 0)
-        #expect(matches("case (", in: "case (") == -1)
-    }
+    // `theBundleHostDrawsThePanelOnlyInTheStayBranchOfTheSharedRule` and
+    // `theRootAppliesTheBundleHostAboveBothShellsRatherThanInsideOne` were declared here, with
+    // `thePatternHelperMatchesWhatItLooksLike` as their self-check.
+    //
+    // The first pinned that `iOSCalendarBundleDetailSheet(bundle: bundle)` sat in the `.stay`
+    // branch of `resolveHeldSubject` and not the `.close` one — a swap `cfa3b3b` showed a
+    // per-file count cannot see. The second pinned that `.iOSBundleInspectorHost()` was applied to
+    // the `Group` rather than inside one of its two shell branches. [[T-3170]] deleted the panel
+    // and emptied the host, so there is no branch to be in and no selection to place; the
+    // `iOSRootView` residue is held instead by `theBundleHostIsANoOpStubHeldOpenByOneLeasedCallSite`
+    // above. The equivalent placement pin for the surviving subject is
+    // `CadenceTaskInspectorHostTests`'.
 
     /// The host reads the shared decision rather than re-deciding, about the two facts it can observe
     /// for itself — and it is the *shared* one, not a bundle-shaped copy of a measured rule. A host
     /// that started consulting a `@Query` here would be the page's filter creeping back into the
     /// panel's lifetime by another route.
-    @Test func theBundleHostAsksTheOneSharedRuleAboutTheTwoFactsItCanSee() throws {
-        try expectOccurrences(
-            of: "CadenceDetailPanelPresentation.resolveHeldSubject(",
-            at: [
-                "Cadence/iOS/iOSBundleInspectorHost.swift": 1,
-                // The task host reads the identical call. Two hosts, one rule.
+    @Test func theOneSurvivingHostAsksTheOneSharedRuleAboutTheTwoFactsItCanSee() throws {
+        // **One host left, and one call.** This read two — the task host and the block host — and
+        // the pair was the point: two panels, one rule, no bundle-shaped copy of it. [[T-3170]]
+        // took the second panel, so the dictionary is the census of what remains rather than a
+        // narrowed assertion.
+        #expect(
+            try presenterCounts(of: "CadenceDetailPanelPresentation.resolveHeldSubject(") == [
                 "Cadence/iOS/iOSTaskInspectorHost.swift": 1
             ]
         )
-        // Both signals, at the one call site. `isDeleted` on its own is the draft that did not work.
+        // Both signals, at that one call site. `isDeleted` on its own is the draft that did not work.
         try expectOccurrences(
-            of: "isDeleted: bundle.isDeleted",
-            at: ["Cadence/iOS/iOSBundleInspectorHost.swift": 1]
+            of: "isDeleted: task.isDeleted",
+            at: ["Cadence/iOS/iOSTaskInspectorHost.swift": 1]
         )
         try expectOccurrences(
-            of: "hasNoModelContext: bundle.modelContext == nil",
-            at: ["Cadence/iOS/iOSBundleInspectorHost.swift": 1]
-        )
-        try expectOccurrences(
-            of: "@Query",
-            at: ["Cadence/iOS/iOSBundleInspectorHost.swift": 0]
+            of: "hasNoModelContext: task.modelContext == nil",
+            at: ["Cadence/iOS/iOSTaskInspectorHost.swift": 1]
         )
         // The rule kept its old name in no file at all — a second copy under the old noun is the one
         // outcome this consolidation exists to prevent.
@@ -417,7 +271,7 @@ struct CadenceBundleInspectorHostTests {
             try swiftFiles(under: "Cadence"),
             // 558 files when this was written.
             atLeast: 300,
-            including: "Cadence/iOS/iOSBundleInspectorHost.swift",
+            including: "Cadence/iOS/iOSTaskInspectorHost.swift",
             read: sourceFile
         )
         #expect(
@@ -451,36 +305,54 @@ struct CadenceBundleInspectorHostTests {
             "Cadence/iOS/iOSCalendarTimelineViews.swift",
             "Cadence/iOS/iOSCalendarInspectorView.swift",
             "Cadence/iOS/iOSCalendarMonthAgendaViews.swift",
-            "Cadence/iOS/iOSCalendarBundleDetailSheet.swift",
+            "Cadence/iOS/iOSCalendarMonthViews.swift",
+            "Cadence/iOS/iOSCalendarView.swift",
             "Cadence/iOS/iOSTodaySchedulePanel.swift",
             "Cadence/Shared/CadenceDetailPanelPresentation.swift"
         ] {
             #expect(files.contains(path))
         }
 
-        // The needles above are only meaningful if the text they are looking for is really there.
-        let host = try strippingComments(sourceFile("Cadence/iOS/iOSBundleInspectorHost.swift"))
-        #expect(host.contains("func iOSBundleInspectorHost()"))
-        #expect(host.contains(".sheet(item: $selection)"))
-        let block = try strippingComments(sourceFile("Cadence/iOS/iOSCalendarTimelineViews.swift"))
-        #expect(block.contains("struct iOSTimelineBundleBlock: View"))
-        // The two panes that keep ownership really do keep it the way this file says they do.
-        for path in ["Cadence/iOS/iOSCalendarInspectorView.swift"] {
-            let pane = try strippingComments(sourceFile(path))
-            #expect(pane.contains("@State private var selectedBundle: TaskBundle?"))
-            #expect(pane.contains(".sheet(item: $selectedBundle)"))
+        // **Every zero above is a zero over text this reader really can see.** Each file named in
+        // the absence tests is asserted to hold something live, so a scan returning "" — the
+        // failure a `/tmp` against `/private/tmp` prefix mismatch produces — cannot read green.
+        for (path, witness) in [
+            ("Cadence/iOS/iOSBundleInspectorHost.swift", "func iOSBundleInspectorHost()"),
+            ("Cadence/iOS/iOSTaskInspectorHost.swift", "CadenceDetailPanelPresentation.resolveHeldSubject("),
+            ("Cadence/iOS/iOSRootView.swift", ".iOSTaskInspectorHost()"),
+            ("Cadence/iOS/iOSCalendarTimelineViews.swift", "struct iOSTimelineTaskBlock"),
+            ("Cadence/iOS/iOSCalendarInspectorView.swift", "@State private var selectedEvent"),
+            ("Cadence/iOS/iOSCalendarMonthViews.swift", "private var visibleEvents"),
+            ("Cadence/iOS/iOSCalendarView.swift", "iOSCalendarTimelineGrid("),
+            ("Cadence/iOS/iOSTodaySchedulePanel.swift", "iOSCalendarTimelineGrid(")
+        ] {
+            #expect(
+                try strippingComments(sourceFile(path)).contains(witness),
+                "\(path) no longer holds \(witness); re-anchor this witness"
+            )
         }
     }
 }
 
 // MARK: - Source-reading helpers
 
-/// Occurrence count for a regular expression. Returns `-1` on a malformed pattern so a typo reads
-/// as a failure rather than as zero matches; `thePatternHelperMatchesWhatItLooksLike` is the
-/// self-check.
-private func matches(_ pattern: String, in text: String) -> Int {
-    guard let regex = try? NSRegularExpression(pattern: pattern) else { return -1 }
-    return regex.numberOfMatches(in: text, range: NSRange(text.startIndex..., in: text))
+// `matches(_:in:)`, the regular-expression counter, was declared here, with
+// `thePatternHelperMatchesWhatItLooksLike` as its self-check. Its only callers were the two
+// branch-placement tests [[T-3170]] retired above; `expectOccurrences` and `presenterCounts` are
+// literal counts and need no pattern.
+
+/// Every file under `relativeDirectory` holding `text` as live code, and how many times.
+///
+/// An empty dictionary is the shape every absence test here asserts. It is a *repo-wide* reading
+/// on purpose: a per-file zero cannot see the same surface reappearing in a new file, which is how
+/// a deleted view comes back.
+private func presenterCounts(of text: String, under relativeDirectory: String = "Cadence") throws -> [String: Int] {
+    var counts: [String: Int] = [:]
+    for path in try swiftFiles(under: relativeDirectory) {
+        let count = try strippingComments(sourceFile(path)).components(separatedBy: text).count - 1
+        if count > 0 { counts[path] = count }
+    }
+    return counts
 }
 
 /// Fails unless `text` occurs exactly `count` times as live code in each listed file.

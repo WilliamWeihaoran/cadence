@@ -213,10 +213,12 @@ struct iOSEditorSheetMetricsTests {
 
         // [[T-3171]] moved the event editor, then the quick-create sheet, off this table: their
         // forms are the shared schedule panel now, which rules its own groups on its own plate.
-        // Pinned after the loop.
-        let sheets = [
-            "Cadence/iOS/iOSCalendarBundleDetailSheet.swift": 3
-        ]
+        // Pinned after the loop. [[T-3170]] then deleted the last entry,
+        // `iOSCalendarBundleDetailSheet.swift` (3 ruled groups), with the Block feature — so the
+        // table is empty and every remaining sheet is pinned individually below. The loop stays:
+        // the table is the right shape for the next sheet that owns its own form, and an empty one
+        // is a statement that none does today.
+        let sheets: [String: Int] = [:]
 
         for (path, expected) in sheets {
             let code = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(path))
@@ -298,26 +300,16 @@ struct iOSEditorSheetMetricsTests {
         #expect(CadenceSourceScan.matchCount(#"iOSEditorSection\("#, in: "iOSEditorSection(title: \"Schedule\") {") == 1)
     }
 
-    /// The one field each of the three sheets exists to fill in, read from one place. The block
-    /// sheet drew its title at a literal 22 inside an inset well of `Theme.surfaceElevated` at 65%
-    /// — legible only while the group sat on a card, and invisible once the group sat on the
-    /// sheet's own elevated plate. It is a bare field at the shared size now, like its two
-    /// siblings.
-    @Test func theBlockSheetsTitleFieldJoinedTheSharedSubjectSize() throws {
-        let code = CadenceSourceScan.strippingComments(
-            try CadenceSourceScan.sourceFile("Cadence/iOS/iOSCalendarBundleDetailSheet.swift")
-        )
-        #expect(code.contains("struct iOSCalendarBundleDetailSheet: View"))
-        #expect(code.contains("size: iOSEditorSheetMetrics.titleSize, weight: .bold"))
-        #expect(
-            CadenceSourceScan.matchCount(#"Theme\.surfaceElevated\.opacity\(0\.65\)"#, in: code) == 0,
-            "the block title still sits in a well that is its own plate at 65%"
-        )
-        #expect(
-            CadenceSourceScan.matchCount(#"size: 22, weight: \.bold"#, in: code) == 0,
-            "the block title still names its own size"
-        )
-    }
+    // `theBlockSheetsTitleFieldJoinedTheSharedSubjectSize` was declared here.
+    //
+    // It pinned that the Block sheet's title field had stopped naming its own `size: 22` and its
+    // own `Theme.surfaceElevated.opacity(0.65)` inset well — a well that was legible only while
+    // the group sat on a card, and that became the plate on itself once the group sat on the
+    // sheet's own elevated plate. [[T-3170]] deleted the sheet, so the field has no subject. The
+    // shared figure it joined, `iOSEditorSheetMetrics.titleSize`, is still read by its two
+    // siblings and is pinned by `theThreeCalendarSheetsShareOneSubjectSize` style assertions on
+    // those files.
+
 
     // MARK: - Where the regular arm can actually be reached (T-731)
 

@@ -10,8 +10,8 @@ import SwiftUI
 /// timed surface — `iOSScheduleHourRow`, a flow of 24 hour rows — and the owner reported three
 /// things wrong with it in one sentence: a `+` could not be dragged onto it, it showed none of the
 /// day's calendar events, and it could not be pinched. All three were the same defect. The hour-row
-/// grid queried `AppTask` and `TaskBundle` and **never opened EventKit at all**, so there was no
-/// event to drop anywhere; it carried no `iOSNewTaskDropTarget`, so a dragged `+` had nothing to
+/// grid queried `AppTask` alone and **never opened EventKit at all**, so there was no event to
+/// drop anywhere; it carried no `iOSNewTaskDropTarget`, so a dragged `+` had nothing to
 /// land on; and `MagnifyGesture` was attached to `iOSCalendarTimelineGrid`'s container, which this
 /// pane did not build. Every one of the three is a property of the Calendar's day column, and the
 /// fix the owner chose is to draw that column rather than to re-grow three behaviours beside it —
@@ -36,7 +36,6 @@ struct iOSSchedulePanel: View {
     /// `refreshTodayEvents`, which is the whole of this pane's calendar access.
     @Environment(iOSCalendarManager.self) private var calendarManager
     @Query(sort: \AppTask.order) private var allTasks: [AppTask]
-    @Query private var allBundles: [TaskBundle]
     /// Shared with the Calendar page through `CadenceCalendarZoom.storageKey`. See the type note.
     @AppStorage(CadenceCalendarZoom.storageKey) private var zoomLevel = CadenceCalendarZoom.defaultZoom
     /// Today's events, cached rather than fetched from `body`.
@@ -67,10 +66,6 @@ struct iOSSchedulePanel: View {
         CadenceScheduleSupport.tasksByScheduledDate(allTasks, includeCompleted: true)
     }
 
-    private var bundlesByDate: [String: [TaskBundle]] {
-        CadenceScheduleSupport.bundlesByDate(allBundles, includeCompleted: false)
-    }
-
     /// Drives the one-line hint, and it is about the *grid*, not the day: the hint's job is to say
     /// that tapping an hour is what fills the grid, so it stays for as long as the grid is empty —
     /// which is also the only time there is room for it. It goes the moment the first block lands,
@@ -82,7 +77,6 @@ struct iOSSchedulePanel: View {
     /// itself.
     private var hasNoBlocks: Bool {
         CadenceScheduleSupport.items(on: todayKey, in: scheduledTasksByDate).isEmpty
-            && CadenceScheduleSupport.items(on: todayKey, in: bundlesByDate).isEmpty
             && todayEvents.allSatisfy(\.isAllDay)
     }
 
@@ -109,7 +103,6 @@ struct iOSSchedulePanel: View {
                 scheduledTasksByDate: scheduledTasksByDate,
                 // The day header is the only thing that draws these and a single-day grid has none.
                 unscheduledTasksByDate: [:],
-                bundlesByDate: bundlesByDate,
                 eventsByDate: [todayKey: todayEvents],
                 zoom: $zoomLevel,
                 // **Unused on this pane now, and deliberately still passed** ([[T-3169]]).

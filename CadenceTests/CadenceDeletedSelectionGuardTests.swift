@@ -449,22 +449,25 @@ struct CadenceDeletedSelectionGuardTests {
         #expect(phoneState.contains("iOSEmptyPanel("))
     }
 
-    /// T-347: the six local sheets, pinned as *pairings* rather than as counts.
+    /// T-347: the local sheets, pinned as *pairings* rather than as counts.
     ///
     /// The repo-wide dictionaries in `CadenceTaskInspectorHostTests` and
     /// `CadenceBundleInspectorHostTests` say the panel is drawn in exactly one place and the wrapper
-    /// presented in five and three. What they cannot say is that each `.sheet(item:)` hands its
+    /// presented in a named few. What they cannot say is that each `.sheet(item:)` hands its
     /// subject to the wrapper and that the wrapper's close closure clears **that same** binding — a
     /// close that cleared a neighbouring selection would leave the sheet re-presenting forever, and
     /// every count in this suite green.
+    ///
+    /// **It was six, and the Block half is gone entirely** ([[T-3170]]). The iOS Block panel, its
+    /// host and the day inspector's `selectedBundle` are deleted, so every row left here hands an
+    /// `AppTask` to `iOSTaskInspectorSheet` — the `subject == "task"` branch is the only branch
+    /// with a subject, and the `wrapper` ternary is kept rather than folded away so a `bundle` row
+    /// coming back cannot slip in unpaired.
     @Test func eachLocalSheetPresentsTheGuardedWrapperAndClearsItsOwnBinding() throws {
         let sheets: [(String, String, String)] = [
             ("Cadence/iOS/iOSMarkdownEditingSurface.swift", "selectedEmbeddedTask", "task"),
             ("Cadence/iOS/iOSMarkdownReferenceSupport.swift", "selectedReferenceTask", "task"),
-            ("Cadence/iOS/iOSCalendarBundleDetailSheet.swift", "selectedTask", "task"),
-            ("Cadence/iOS/iOSSearchView.swift", "selectedTask", "task"),
-            // The month agenda's row went with its Block agenda row in [[T-3170]].
-            ("Cadence/iOS/iOSCalendarInspectorView.swift", "selectedBundle", "bundle")
+            ("Cadence/iOS/iOSSearchView.swift", "selectedTask", "task")
         ]
 
         for (path, binding, subject) in sheets {
@@ -522,7 +525,6 @@ struct CadenceDeletedSelectionGuardTests {
             "Cadence/macOS/Views/GoalsView.swift",
             "Cadence/iOS/iOSMarkdownEditingSurface.swift",
             "Cadence/iOS/iOSMarkdownReferenceSupport.swift",
-            "Cadence/iOS/iOSCalendarBundleDetailSheet.swift",
             "Cadence/iOS/iOSSearchView.swift",
             "Cadence/iOS/iOSCalendarInspectorView.swift",
             "Cadence/iOS/iOSCalendarMonthAgendaViews.swift"

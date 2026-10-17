@@ -19,7 +19,7 @@ final class iOSCalendarTimelineScrollState {
 /// **This is the whole of the difference between the app's two timed iOS surfaces**, and it is
 /// stated as one value rather than left to two views because the previous arrangement was a fork:
 /// Today's pane had its own hour grid — `iOSScheduleHourRow`, a flow of 24 rows — which drew tasks
-/// and bundles and **no EventKit events at all**, offered no create-drag drop target and carried no
+/// alone and **no EventKit events at all**, offered no create-drag drop target and carried no
 /// pinch. Three of the owner's reports in one place, every one of them a thing the Calendar's grid
 /// had already solved. See [[T-3081]].
 ///
@@ -91,7 +91,6 @@ struct iOSCalendarTimelineGrid: View {
     let span: iOSCalendarTimelineSpan
     let scheduledTasksByDate: [String: [AppTask]]
     let unscheduledTasksByDate: [String: [AppTask]]
-    let bundlesByDate: [String: [TaskBundle]]
     let eventsByDate: [String: [EKEvent]]
     /// A multiplier on the base hour height, 1…3. Written once per pinch, not per frame — see
     /// `pinchZoom`.
@@ -262,7 +261,6 @@ struct iOSCalendarTimelineGrid: View {
         return iOSCalendarTimelineDayColumn(
             date: date,
             tasks: CadenceScheduleSupport.items(on: key, in: scheduledTasksByDate),
-            bundles: CadenceScheduleSupport.items(on: key, in: bundlesByDate),
             events: CadenceScheduleSupport.items(on: key, in: eventsByDate),
             colWidth: colWidth,
             hourHeight: hourHeight,
@@ -671,12 +669,10 @@ struct iOSCalendarTimelineGrid: View {
             let key = DateFormatters.dateKey(from: date)
             let taskMinutes = CadenceScheduleSupport.items(on: key, in: scheduledTasksByDate)
                 .map(\.scheduledStartMin)
-            let bundleMinutes = CadenceScheduleSupport.items(on: key, in: bundlesByDate)
-                .map(\.startMin)
             let eventMinutes = CadenceScheduleSupport.items(on: key, in: eventsByDate)
                 .filter { !$0.isAllDay }
                 .map { iOSCalendarEventSupport.minuteRange(for: $0, on: date).start }
-            return taskMinutes + bundleMinutes + eventMinutes
+            return taskMinutes + eventMinutes
         }
     }
 }
@@ -698,10 +694,9 @@ struct iOSCalendarTimelineGrid: View {
 /// events-before-tasks rule), and wear the same rail-plate `iOSCalendarMiniChip` the iOS month cell
 /// draws an event with, which is the treatment macOS's `AllDayEventChip` wears.
 ///
-/// Nothing timed is named here. It used to end in an "N timed" chip counting the day's tasks,
-/// bundles and events, and that chip hid nothing — `iOSCalendarTimelineDayColumn` draws every one
-/// of those three as a block in the grid below, so the count restated the picture rather than
-/// adding to it. The unscheduled chips stay because those items genuinely have no block: they have
+/// Nothing timed is named here. It used to end in an "N timed" chip counting the day's tasks and
+/// events, and that chip hid nothing — `iOSCalendarTimelineDayColumn` draws every one of those as
+/// a block in the grid below, so the count restated the picture rather than adding to it. The unscheduled chips stay because those items genuinely have no block: they have
 /// no time, which is what puts them in the band at all. Apple Calendar's top band carries all-day
 /// items and nothing else, for the same reason. **T-1271.**
 ///
@@ -908,7 +903,6 @@ private struct iOSCalendarTimelineColumnGridLines: View {
 private struct iOSCalendarTimelineDayColumn: View {
     let date: Date
     let tasks: [AppTask]
-    let bundles: [TaskBundle]
     let events: [EKEvent]
     let colWidth: CGFloat
     let hourHeight: CGFloat
@@ -948,29 +942,20 @@ private struct iOSCalendarTimelineDayColumn: View {
             dayWash
 
             // **One overlap layout for every timed block in the column** (T-3161 for events,
-            // T-3165 for the rest). Tasks, bundles and events go through the same shared solver
-            // macOS's `computeUnifiedLayouts` reads, in one pass, so each reserves a column against
-            // the other two: a task that overlaps an event now sits *beside* it instead of being
-            // painted full width across its title. At regular width only events cascade; at
-            // compact width every kind does, with the later start in front (T-3184). A day with no
-            // overlaps keeps the exact width and inset every block had.
+            // T-3165 for the rest). Tasks and events go through the same shared solver macOS's
+            // `computeUnifiedLayouts` reads, in one pass, so each reserves a column against the
+            // other: a task that overlaps an event now sits *beside* it instead of being painted
+            // full width across its title. At regular width only events cascade; at compact width
+            // both kinds do, with the later start in front (T-3184). A day with no overlaps keeps
+            // the exact width and inset every block had.
             //
-            // **Draw order is the solver's order now, not the order of the three `ForEach`es**
+            // **Draw order is the solver's order now, not the order of the two `ForEach`es**
             // (T-3184). Each block carries the `zIndex` `iOSCalendarTimelineBlockLayout.zIndexes`
             // gives it, so the later-starting block is painted on top whichever kind it is — which
             // is what makes "later start in front" true of a task over an event and not only of an
             // event over an event. See that function for what went wrong without it.
             let solved = blockPlacements
             let placements = solved.placements
-
-            ForEach(bundles) { bundle in
-                let key = BlockKey.bundle(bundle.persistentModelID)
-                let slot = horizontalFrame(placements[.bundle(bundle.persistentModelID)], kind: .bundle)
-                iOSTimelineBundleBlock(bundle: bundle)
-                    .frame(width: slot.width, height: blockHeight(start: bundle.startMin, end: bundle.endMin))
-                    .offset(x: slot.x, y: yOffset(for: bundle.startMin))
-                    .zIndex(solved.zIndexes[key] ?? 1)
-            }
 
             ForEach(timedEvents, id: \.calendarItemIdentifier) { event in
                 // The column's own day, so an event that crosses midnight draws the part that
@@ -1272,10 +1257,9 @@ private struct iOSCalendarTimelineDayColumn: View {
             .map(\.element)
     }
 
-    /// What a block in this column is drawn by, across its three `ForEach`es.
+    /// What a block in this column is drawn by, across its two `ForEach`es.
     private enum BlockKey: Hashable {
         case task(PersistentIdentifier)
-        case bundle(PersistentIdentifier)
         case event(String)
     }
 
@@ -1288,13 +1272,13 @@ private struct iOSCalendarTimelineDayColumn: View {
         )
     }
 
-    /// Column + cascade depth for **every** timed block in the column — tasks, bundles and events
-    /// in one pass of the shared solver (T-3165), the way macOS's `computeUnifiedLayouts` does.
+    /// Column + cascade depth for **every** timed block in the column — tasks and events in one
+    /// pass of the shared solver (T-3165), the way macOS's `computeUnifiedLayouts` does.
     ///
     /// Events are solved over their **drawn** minute range, not the true one, because overlap here
     /// is a question about rectangles on this column: an event that began yesterday is clamped to
-    /// the top of the grid and overlaps whatever is drawn there. Tasks and bundles are solved over
-    /// the same range their blocks are drawn at.
+    /// the top of the grid and overlaps whatever is drawn there. Tasks are solved over the same
+    /// range their blocks are drawn at.
     ///
     /// It returns the **z order** off the same array as well (T-3184). One build of the block list,
     /// two answers from it: the order a tie is broken in has to be the same in both, or a cascade
@@ -1304,14 +1288,6 @@ private struct iOSCalendarTimelineDayColumn: View {
         zIndexes: [BlockKey: Double]
     ) {
         var blocks: [iOSCalendarTimelineBlockLayout.Block<BlockKey>] = []
-        for bundle in bundles {
-            blocks.append(.init(
-                key: .bundle(bundle.persistentModelID),
-                kind: .bundle,
-                startMin: bundle.startMin,
-                endMin: bundle.endMin
-            ))
-        }
         for event in timedEvents {
             let range = iOSCalendarEventSupport.minuteRange(for: event, on: date)
             let drawn = CadenceScheduleSupport.timelineVisibleRange(start: range.start, end: range.end)
@@ -1612,86 +1588,13 @@ struct iOSTimelineTaskBlock: View {
     }
 }
 
-/// The **one** bundle block on a timed grid, shared by the Calendar screen's day columns and
-/// Today's schedule pane, for the reason `iOSTimelineTaskBlock` documents. Today's pane used to
-/// draw a generic title/subtitle card that named the bundle and its hours but never said what was
-/// in it.
-struct iOSTimelineBundleBlock: View {
-    let bundle: TaskBundle
-    /// See `iOSTimelineTaskBlock.fillsAvailableHeight`.
-    var fillsAvailableHeight: Bool = true
-    // T-217, and the sharper half of it: this block is drawn from a `ForEach(bundles)` filtered by
-    // day on the Calendar screen and by *hour* on Today's schedule pane, so a card-owned sheet was
-    // torn down by a start-time edit as well as a date one.
-    @Environment(\.iOSBundleInspector) private var bundleInspector
+// `iOSTimelineBundleBlock` used to be declared here — the Block card a timed day column drew,
+// shared by the Calendar screen's day columns and Today's schedule pane, opening
+// `iOSCalendarBundleDetailSheet` on the root host.
+//
+// **It is gone with the Block feature** ([[T-3170]]). A day column draws two kinds of timed block
+// now, tasks and Apple Calendar events, and `CadenceTaskBundleRetirement` has already pushed every
+// Block's day and time down onto its members — so the tasks a Block used to hold are drawn here
+// individually, each at its own minute, rather than inside a card that owned them.
 
-    private var tasks: [AppTask] {
-        bundle.sortedTasks
-    }
-
-    private var allDone: Bool {
-        !tasks.isEmpty && tasks.allSatisfy(\.isDone)
-    }
-
-    var body: some View {
-        Button {
-            bundleInspector(bundle)
-        } label: {
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 4) {
-                    Image(systemName: "tray.full.fill")
-                        .font(.system(size: 9, weight: .semibold))
-                    Text(bundle.displayTitle)
-                        .font(.system(size: 11, weight: .semibold))
-                        .lineLimit(1)
-                    Spacer(minLength: 4)
-                    Text("×\(tasks.count)")
-                        .font(.system(size: 10, weight: .bold))
-                }
-                .foregroundStyle(allDone ? Theme.dim : Theme.text)
-                .strikethrough(allDone, color: Theme.dim)
-
-                ForEach(tasks.prefix(2)) { task in
-                    HStack(spacing: 4) {
-                        iOSTaskCompletionCircle(glyph: .resolve(task: task))
-                            .frame(width: 9, height: 9)
-                        Text(TaskTitleSupport.displayTitle(task.title, fallback: TaskTitleSupport.defaultCompactDisplayTitle))
-                            .font(.system(size: 9.5, weight: .medium))
-                            .foregroundStyle(task.isDone ? Theme.dim : Theme.text.opacity(0.85))
-                            .strikethrough(task.isDone, color: Theme.dim)
-                            .lineLimit(1)
-                    }
-                }
-
-                if tasks.count > 2 {
-                    Text(CadenceTaskSurfaceOptions.moreLabel(hidden: tasks.count - 2))
-                        .font(.system(size: 9, weight: .medium))
-                        .foregroundStyle(Theme.dim)
-                }
-
-                Text(CadenceScheduleSupport.timeRangeLabel(startMinute: bundle.startMin, endMinute: bundle.endMin))
-                    .font(.system(size: 9, weight: .medium))
-                    .foregroundStyle(Theme.dim)
-                    .lineLimit(1)
-            }
-            .padding(.horizontal, 7)
-            .padding(.vertical, 5)
-            .frame(maxWidth: .infinity, maxHeight: fillsAvailableHeight ? .infinity : nil, alignment: .topLeading)
-            .background(allDone ? Theme.doneFill.opacity(0.12) : Theme.amber.opacity(0.10))
-            .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
-            .overlay {
-                RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous)
-                    .strokeBorder(allDone ? Theme.doneFill.opacity(0.4) : Theme.amber.opacity(0.2), lineWidth: 1)
-            }
-        }
-        .buttonStyle(.iosPressable)
-        .contextMenu {
-            Button {
-                bundleInspector(bundle)
-            } label: {
-                Label("Edit Block", systemImage: "square.and.pencil")
-            }
-        }
-    }
-}
 #endif

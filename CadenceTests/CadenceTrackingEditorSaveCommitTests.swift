@@ -142,23 +142,18 @@ struct CadenceTrackingEditorSaveCommitTests {
         #expect(CadenceTaskMutationSupport.bundleSaveFailureNotice != CadenceTaskMutationSupport.bundleDeleteFailureNotice)
     }
 
-    /// The three iOS call sites, which this target does not compile.
-    @Test func theIOSTrackingEditorsAndBlockDeleteDismissOnlyThroughASuccessfulTry() throws {
-        // **The two iOS tracking editors left with [[T-2079]].** `iOSTrackingEditorSheets.swift`
-        // held `iOSGoalEditorSheet` and `iOSHabitEditorSheet`, both of which saved through
-        // `CadenceTrackingMutationSupport`; the file is deleted, so the assertions that each one
-        // reached `actionError` before `dismiss()` have no subject. The block half below is
-        // untouched and is what still gives this test its name.
-        let sheet = CadenceSourceScan.strippingComments(
-            try CadenceSourceScan.sourceFile("Cadence/iOS/iOSCalendarBundleDetailSheet.swift")
-        )
-        #expect(CadenceSourceScan.matchCount("try CadenceTaskMutationSupport\\.deleteBundle", in: sheet) == 1)
-        #expect(CadenceSourceScan.matchCount("deleteFailed = true", in: sheet) == 1)
-        #expect(
-            CadenceSourceScan.matchCount("bundleDeleteFailureAlertTitle", in: sheet) == 1,
-            "the block delete failure has no alert to land in"
-        )
-    }
+    // `theIOSTrackingEditorsAndBlockDeleteDismissOnlyThroughASuccessfulTry` was declared here.
+    //
+    // It began as three iOS call sites. [[T-2079]] deleted two of them with
+    // `iOSTrackingEditorSheets.swift` — `iOSGoalEditorSheet` and `iOSHabitEditorSheet`, both saving
+    // through `CadenceTrackingMutationSupport` — and left the block half, which gave the test its
+    // name. [[T-3170]] has now deleted `iOSCalendarBundleDetailSheet.swift` with the Block feature,
+    // so the last of the three is gone and the test has no call site left to read.
+    //
+    // **The rule itself is not retired**, only this surface's instance of it:
+    // `CadenceSaveCommitDisciplineTests` holds the repo-wide `try? save()` census, and
+    // `arefusedBlockDeletePutsEveryMemberBack` below still pins the mutation the deleted button
+    // called.
 
     // MARK: - Blocks
 
@@ -218,71 +213,37 @@ struct CadenceTrackingEditorSaveCommitTests {
         #expect(member.scheduledStartMin == -1)
     }
 
-    /// The Save button that reports it, which this target does not compile.
-    ///
-    /// Its sibling ten lines above — "Delete Block" — has caught since T-322, and the sibling
-    /// *create* sheet since T-471; this was the third exit from the same sheet and the one still
-    /// dismissing over a refusal.
-    @Test func theIOSBlockSheetSaveDismissesOnlyThroughASuccessfulTry() throws {
-        let sheet = CadenceSourceScan.strippingComments(
-            try CadenceSourceScan.sourceFile("Cadence/iOS/iOSCalendarBundleDetailSheet.swift")
-        )
-        #expect(CadenceSourceScan.matchCount("try CadenceTaskMutationSupport\\.updateBundle", in: sheet) == 1)
-        #expect(CadenceSourceScan.matchCount("private func save\\(\\) throws", in: sheet) == 1)
-        #expect(
-            CadenceSourceScan.matchCount("bundleEditFailureAlertTitle", in: sheet) == 1,
-            "the block edit failure has no alert to land in"
-        )
-        #expect(
-            CadenceSourceScan.matchCount("CadencePendingChangePersistence\\.editFailureNotice", in: sheet) == 1,
-            "the alert promises nothing changed, which only the undo can earn"
-        )
+    // `theIOSBlockSheetSaveDismissesOnlyThroughASuccessfulTry` was declared here, and read the
+    // "Save" button of `iOSCalendarBundleDetailSheet` to prove its `catch` returned before
+    // `dismiss()`. Its sibling "Delete Block" had caught since T-322 and the sibling *create*
+    // sheet since T-471; this was the third exit from the same sheet. [[T-3170]] deleted the sheet,
+    // so there is no button to read. `arefusedBlockEditPutsTheBlockAndItsMembersBack` above keeps
+    // the half that was never about the button: `updateBundle`'s undo really does put the block
+    // and its members back.
 
-        let saveButton = try #require(sheet.range(of: "Button(\"Save\")"))
-        let button = try #require(
-            CadenceSourceScan.matchedBody(
-                after: saveButton.upperBound,
-                in: sheet,
-                open: "{",
-                close: "}"
-            )
-        )
-        #expect(
-            failureBranchReturnsBeforeReportingSuccess(button, report: "dismiss()"),
-            "the Save button can still reach dismiss() from the catch"
-        )
-    }
-
-    /// Non-vacuity for the scans above: the reader really returned Swift.
+    /// Non-vacuity for the scans in this suite: the reader really returned Swift.
     ///
     /// It read `iOSTrackingEditorSheets.swift` and `CreateGoalSheet.swift` until [[T-2079]] deleted
-    /// both — they were pure goal/habit write surfaces. It reads the block sheet instead, which is
-    /// the one this suite still scans, and **asserts the two deleted paths are gone**: a
-    /// non-vacuity check that silently started reading a file that no longer exists would throw
-    /// rather than report, and a re-added editor should fail here rather than slip past.
+    /// both, then the block sheet until [[T-3170]] deleted that. It reads the shared mutation the
+    /// surviving tests are about, and **asserts the three deleted paths are gone**: a non-vacuity
+    /// check that silently started reading a file that no longer exists would throw rather than
+    /// report, and a re-added editor or Block sheet should fail here rather than slip past.
     @Test func thetrackingSaveCommitScansReadRealSource() throws {
-        let raw = try CadenceSourceScan.sourceFile("Cadence/iOS/iOSCalendarBundleDetailSheet.swift")
-        #expect(raw.contains("struct iOSCalendarBundleDetailSheet: View"))
+        let raw = try CadenceSourceScan.sourceFile("Cadence/Shared/CadenceTaskMutationSupport.swift")
+        #expect(raw.contains("static func updateBundle("))
         #expect(CadenceSourceScan.strippingComments(raw) != raw)
 
         let files = try CadenceSourceScan.swiftFiles(under: "Cadence")
         #expect(files.count > 300, "the sweep read \(files.count) files and cannot be doing its job")
         #expect(!files.contains("Cadence/iOS/iOSTrackingEditorSheets.swift"))
         #expect(!files.contains("Cadence/macOS/Sheets/CreateGoalSheet.swift"))
+        #expect(!files.contains("Cadence/iOS/iOSCalendarBundleDetailSheet.swift"))
     }
 
-    private func functionBody(_ name: String, in path: String) throws -> String {
-        let source = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(path))
-        return try #require(CadenceSourceScan.functionBody(named: name, in: source))
-    }
-
-    /// True when every `catch` in the body returns before the success report is reached.
-    private func failureBranchReturnsBeforeReportingSuccess(_ body: String, report: String) -> Bool {
-        guard let catchRange = body.range(of: "catch {") else { return false }
-        guard let reportRange = body.range(of: report) else { return false }
-        guard let returnRange = body.range(of: "return", range: catchRange.upperBound..<body.endIndex) else {
-            return false
-        }
-        return returnRange.upperBound < reportRange.lowerBound
-    }
+    // The local functionBody(_:in:) and failureBranchReturnsBeforeReportingSuccess(_:report:) were
+    // declared here. Both read a *button body* out of a view file to prove its `catch` returned
+    // before the success report, and every caller they had was one of the three iOS write surfaces
+    // this suite has now outlived — two to [[T-2079]], the Block sheet to [[T-3170]]. The scan is
+    // not lost: `CadenceSourceScan.functionBody(named:in:)` is the shared reader and the
+    // dismiss-over-a-refusal shape is held repo-wide by `CadenceSaveCommitDisciplineTests`.
 }

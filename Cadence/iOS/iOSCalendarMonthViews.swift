@@ -15,7 +15,6 @@ struct iOSCalendarMonthGrid: View {
     @Binding var topRowDate: Date
     @Binding var selectedDate: Date
     let monthTasksByDate: [String: [AppTask]]
-    let bundlesByDate: [String: [TaskBundle]]
     let eventsByDate: [String: [EKEvent]]
 
     private let calendar = Calendar.current
@@ -41,7 +40,6 @@ struct iOSCalendarMonthGrid: View {
                     displayMonth: displayMonth,
                     isSelected: calendar.isDate(date, inSameDayAs: selectedDate),
                     tasks: CadenceScheduleSupport.items(on: key, in: monthTasksByDate),
-                    bundles: CadenceScheduleSupport.items(on: key, in: bundlesByDate),
                     events: CadenceScheduleSupport.items(on: key, in: eventsByDate),
                     minHeight: rowHeight
                 ) {
@@ -301,7 +299,6 @@ private struct iOSCalendarMonthDayCell: View {
     let displayMonth: Date
     let isSelected: Bool
     let tasks: [AppTask]
-    let bundles: [TaskBundle]
     let events: [EKEvent]
     let minHeight: CGFloat
     let action: () -> Void
@@ -315,19 +312,22 @@ private struct iOSCalendarMonthDayCell: View {
     private static let chipCapacity = 5
 
     /// Who gets those slots. The ordering is `CadenceCalendarMonthCellPriority`'s and is shared
-    /// with macOS's `MonthDayCell`; it replaces three hardcoded per-kind caps (3 bundles,
-    /// `4 - bundles` events, `5 - bundles - events` tasks) that spelled the same events-before-
-    /// tasks intent without ever stating it, and that macOS had drifted the other way from.
+    /// with macOS's `MonthDayCell`; it replaces three hardcoded per-kind caps that spelled the same
+    /// events-before-tasks intent without ever stating it, and that macOS had drifted the other way
+    /// from.
+    ///
+    /// **`bundles: 0` is this cell's answer, not a missing count** ([[T-3170]]). The Block feature
+    /// is gone from every iOS surface, so this cell has two kinds of item to rank; the shared
+    /// function keeps the leg because macOS's `MonthDayCell` still draws Block chips.
     private var split: CadenceCalendarMonthCellPriority.Split {
         CadenceCalendarMonthCellPriority.split(
-            bundles: bundles.count,
+            bundles: 0,
             events: events.count,
             tasks: tasks.count,
             capacity: Self.chipCapacity
         )
     }
 
-    private var visibleBundles: [TaskBundle] { Array(bundles.prefix(split.bundles)) }
     private var visibleEvents: [EKEvent] { Array(events.prefix(split.events)) }
     private var visibleTasks: [AppTask] { Array(tasks.prefix(split.tasks)) }
     private var overflow: Int { split.hidden }
@@ -407,13 +407,6 @@ private struct iOSCalendarMonthDayCell: View {
                 .padding(.horizontal, 7)
 
                 VStack(alignment: .leading, spacing: 3) {
-                    ForEach(visibleBundles) { bundle in
-                        iOSCalendarMiniChip(
-                            title: bundle.displayTitle,
-                            icon: "tray.full.fill",
-                            color: Theme.amber
-                        )
-                    }
                     ForEach(visibleEvents, id: \.calendarItemIdentifier) { event in
                         iOSCalendarMiniChip(
                             title: iOSCalendarEventSupport.title(for: event),
@@ -470,7 +463,7 @@ private struct iOSCalendarMonthDayCell: View {
     }
 
     /// Exactly what the count capsule shows — one number, read once.
-    private var itemCount: Int { tasks.count + bundles.count + events.count }
+    private var itemCount: Int { tasks.count + events.count }
 
     /// **The plate is what says "not this month" now (T-568)** — the shape macOS's month grid
     /// settled on, and the reason it can avoid a cell-wide `.opacity`, which would fade the today
@@ -524,7 +517,7 @@ private struct iOSCalendarMonthDayCell: View {
 ///
 /// **Both branches are solved plates now (T-3160); what differs is which treatment.** An `isEvent`
 /// chip takes `CadenceCalendarEventStyle.rail*` — Apple Calendar's dark tinted plate with the
-/// title in the calendar's own hue — and everything Cadence owns, a task or a bundle, takes
+/// title in the calendar's own hue — and what Cadence owns, a task, takes
 /// `plate*`, the bright luminance-solved fill with `Theme.onColor` ink that an event wore here
 /// until this ticket. The two are still as far apart as they were, which is the point: before any
 /// of this an event chip was washed exactly like a task, so a day full of events and a day full of

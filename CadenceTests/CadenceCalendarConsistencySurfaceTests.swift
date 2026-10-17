@@ -306,7 +306,8 @@ struct CadenceCalendarConsistencySurfaceTests {
     /// which is the one spelling that cannot see a title of spaces: `"   ".isEmpty` is `false`, so
     /// the chip drew three spaces and read as a **blank line** on the grid, in the month cell and
     /// in the day card. `TaskTitleSupport.displayTitle` trims first, which is why
-    /// `iOSCalendarBundleDetailSheet` — the same surface — never had the defect.
+    /// `iOSCalendarBundleDetailSheet` — the same surface — never had the defect. That sheet went
+    /// with the Block feature in [[T-3170]]; the four chips this pins are untouched.
     ///
     /// The fallback is passed explicitly as `defaultCompactDisplayTitle`, because these four are
     /// narrow chips: the copy stays the "Untitled" they already drew rather than becoming
@@ -321,8 +322,10 @@ struct CadenceCalendarConsistencySurfaceTests {
         #expect(("   ".isEmpty ? "Untitled" : "   ") == "   ", "the retired spelling drew the spaces")
         #expect(TaskTitleSupport.defaultCompactDisplayTitle == "Untitled", "the copy changed")
 
+        // The timeline read **3** until [[T-3170]]: the day column's task block, its all-day
+        // band chip, and the Block card's member rows. The Block card is deleted.
         for (path, count) in [
-            ("Cadence/iOS/iOSCalendarTimelineViews.swift", 3),
+            ("Cadence/iOS/iOSCalendarTimelineViews.swift", 2),
             ("Cadence/iOS/iOSCalendarMonthViews.swift", 1),
         ] {
             let source = try scannedSource(path)
@@ -431,10 +434,12 @@ struct CadenceCalendarConsistencySurfaceTests {
         // [[T-3171]] took the event editor, and then the quick-create sheet, out of this list:
         // neither draws a Schedule card of its own any more, both host the shared schedule panel,
         // whose Start is the roller row that takes a label because the panel also carries an End.
-        // Re-pointed below, not dropped.
-        for (path, binding) in [
-            ("Cadence/iOS/iOSCalendarBundleDetailSheet.swift", "startMinuteBinding")
-        ] {
+        // Re-pointed below, not dropped. [[T-3170]] then deleted the last entry,
+        // `iOSCalendarBundleDetailSheet.swift` (`startMinuteBinding`), with the Block feature — so
+        // no sheet draws a Schedule card of its own today and the loop is empty. It stays, because
+        // the next sheet that owns one belongs in it; the shared row itself is pinned above.
+        let sheetsWithTheirOwnScheduleCard: [(String, String)] = []
+        for (path, binding) in sheetsWithTheirOwnScheduleCard {
             let source = try scannedSource(path)
 
             // Non-vacuity: this is still a sheet with a Schedule card in it.
@@ -500,8 +505,10 @@ struct CadenceCalendarConsistencySurfaceTests {
         // both numbers because nothing on that surface reveals the rest.
         #expect(CadenceTaskSurfaceOptions.overflowCaption(shown: 24, total: 40) == "Showing 24 of 40")
 
+        // The timeline read **2** until [[T-3170]]: the all-day band's "+N more" and the Block
+        // card's "+N more" over its members past the second. The Block card is deleted.
         for (path, count) in [
-            ("Cadence/iOS/iOSCalendarTimelineViews.swift", 2),
+            ("Cadence/iOS/iOSCalendarTimelineViews.swift", 1),
             ("Cadence/iOS/iOSCalendarMonthViews.swift", 1),
             ("Cadence/macOS/Views/CalendarPageMonthSupportViews.swift", 1)
         ] {

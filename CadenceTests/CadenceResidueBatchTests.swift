@@ -338,13 +338,17 @@ struct CadenceRowSeparatorWeightTests {
     /// of the "Ready to Schedule" stack, and that stack came off the Today Timeline tab whole. The
     /// file is not kept here at `0`: a `0` in this map would read as "this surface must never draw
     /// a separator", which is a rule nobody decided — the pane simply has no rows any more.
+    ///
+    /// **And three until [[T-3170]]**, which deleted `iOSCalendarBundleDetailSheet.swift` with the
+    /// Block feature. Its Block-member row drew the third, and it is left out for the same reason
+    /// the Today pane is: the file is gone, not forbidden.
     private static let separatorSites = [
         "Cadence/Shared/Components/CadenceFieldRows.swift": 2,
         "Cadence/iOS/iOSTaskDetailComponents.swift": 1,
-        "Cadence/iOS/iOSCalendarBundleDetailSheet.swift": 1,
     ]
 
-    /// The name resolves to what the four sites drew. A hoist that changes a pixel is not a hoist.
+    /// The name resolves to what the four original sites drew. A hoist that changes a pixel is not
+    /// a hoist.
     @Test func theSeparatorTokenIsTheWeightTheFourRowsWereAlreadyDrawing() {
         #expect(Theme.rowSeparator == Theme.borderSubtle.opacity(0.35))
         #expect(Theme.rowSeparator != Theme.borderSubtle)

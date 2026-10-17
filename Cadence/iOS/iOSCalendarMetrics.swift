@@ -28,8 +28,8 @@ import CoreGraphics
 ///
 /// **Nothing here takes a width.** The one figure that looks like it should — how tall an hour is —
 /// is the clearest case: `iOSSchedulePanel`, Today's timeline, draws the *same*
-/// `iOSTimelineTaskBlock` and `iOSTimelineBundleBlock` at a flat 58pt hour, having had its own
-/// unreachable `regular ? 58 : 48` ramp deleted in the Today slice. The Calendar grid's `64 : 58`
+/// `iOSTimelineTaskBlock` at a flat 58pt hour, having had its own unreachable
+/// `regular ? 58 : 48` ramp deleted in the Today slice. The Calendar grid's `64 : 58`
 /// therefore did not describe a phone against an iPad at all: it made the same scheduled task, in
 /// the same block, occupy a different number of points on the two timed surfaces of a single iPad.
 /// The grid also carries a 1×–3× pinch now, so the base height is a resting density the user can
@@ -170,11 +170,9 @@ nonisolated enum iOSCalendarTimelineMetrics {
 /// cadence stated a few lines up in this file. It is `CadenceCalendarHourLadderMetrics` now,
 /// because [[T-1129]] gave the Mac the same rung and the cadence had to travel with its weights.
 ///
-/// Two calendar hairlines are deliberately **not** here. The Board's column separator is
+/// One calendar hairline is deliberately **not** here: the Board's column separator is
 /// `iOSCalendarBoardMetrics`', because it already agrees with the Mac's Board rather than with this
-/// screen; and the bundle sheet's row rule is the app's row-separator weight (`CadenceFieldRows`,
-/// the task inspector, Today's schedule panel all draw 0.35), so pulling it in here would break the
-/// agreement it already has.
+/// screen.
 nonisolated enum iOSCalendarHairlineMetrics {
     /// A hairline: the thinnest rule that still resolves on a 2x screen. The grids drew 0.5
     /// everywhere already; it is stated so the next one does not arrive at 1.
@@ -344,15 +342,15 @@ nonisolated enum iOSCalendarPageMetrics {
 
 // MARK: - The timed grid's side-by-side layout
 
-/// Where each block in one iOS day column sits **across** the column: tasks, bundles and events
-/// laid out against each other by the one shared solver, as macOS's
+/// Where each block in one iOS day column sits **across** the column: tasks and events laid out
+/// against each other by the one shared solver, as macOS's
 /// `TimelineMetricsSupport.computeUnifiedLayouts` does (T-3165).
 ///
-/// **Why this exists.** T-3161 gave the iOS day column an overlap layout for EVENTS ONLY. Tasks and
-/// bundles kept drawing full width on top of whatever they overlapped, so a scheduled task at
-/// 12:45-1:30 was painted straight across a 12:30-1:30 event, cutting through its title and hiding
-/// its time row, while the Mac drew the same pair as two columns. The three kinds now go through
-/// one `CadenceCalendarOverlapLayout.solve` pass, so each reserves a column against the others.
+/// **Why this exists.** T-3161 gave the iOS day column an overlap layout for EVENTS ONLY. Tasks
+/// kept drawing full width on top of whatever they overlapped, so a scheduled task at 12:45-1:30
+/// was painted straight across a 12:30-1:30 event, cutting through its title and hiding its time
+/// row, while the Mac drew the same pair as two columns. Both kinds now go through one
+/// `CadenceCalendarOverlapLayout.solve` pass, so each reserves a column against the other.
 /// At **regular** width only events cascade, exactly as on the Mac: a task never lays itself over
 /// an event and an event never lays itself over a task. At **compact** width every kind cascades
 /// (T-3184) — see `Kind.mayCascade(isCompactWidth:)` for the owner's ruling and for why that is
@@ -362,10 +360,12 @@ nonisolated enum iOSCalendarPageMetrics {
 /// read the decision, and the view in `iOSCalendarTimelineViews.swift` only draws what it says.
 nonisolated enum iOSCalendarTimelineBlockLayout {
 
-    /// The three kinds of timed block a day column draws.
+    /// The two kinds of timed block a day column draws.
+    ///
+    /// **There used to be a third, `.bundle`** ([[T-3170]]). The Block feature is gone from every
+    /// iOS surface, and with it the one kind that took a different inset.
     enum Kind: Equatable, Sendable {
         case task
-        case bundle
         case event
 
         /// Whether a block of this kind may cascade, and be cascaded over, at this width.
@@ -378,18 +378,17 @@ nonisolated enum iOSCalendarTimelineBlockLayout {
         /// **Compact width is T-3184's: every kind.** The owner ruled that a task and an event
         /// overlapping on a phone-width column cascade rather than split, under the one rule
         /// [[T-3161]] already applies to events against each other — later start in front, no
-        /// kind-based precedence anywhere. Bundles are wired exactly as tasks are, with no new
-        /// `TaskBundle` machinery: the kind is a `Bool` to the solver and nothing else.
+        /// kind-based precedence anywhere.
         ///
         /// This is **not** a return to T-3165's bug, and the thing that makes it not one is
         /// `CadenceCalendarOverlapLayout.minimumVisibleLeadingEdge`: the block behind always keeps
         /// its leading edge and its rail, where T-3165's task was drawn full width on top.
         func mayCascade(isCompactWidth: Bool) -> Bool { isCompactWidth || self == .event }
 
-        /// Leading and trailing inset of this kind's strip inside the day column. The figures this
-        /// column has always drawn: tasks and events at 9, bundles slightly wider at 7, so a day
-        /// with no overlaps keeps exactly the blocks it had.
-        var inset: CGFloat { self == .bundle ? 7 : 9 }
+        /// Leading and trailing inset of this kind's strip inside the day column. The figure this
+        /// column has always drawn for both kinds it still draws, so a day with no overlaps keeps
+        /// exactly the blocks it had. The 7 a Block's strip took went with the Block ([[T-3170]]).
+        var inset: CGFloat { 9 }
     }
 
     /// One block offered to the layout, under whatever key the caller draws it by.
@@ -451,9 +450,9 @@ nonisolated enum iOSCalendarTimelineBlockLayout {
     /// **This is half of the cascade, and without it the compact cascade is upside down.** A
     /// cascaded block is indented past the one it is laid over and must be *painted over* it as
     /// well — macOS gets that for free, because its blocks layer renders one array sorted by start
-    /// minute at a single `zIndex` and only events ever cascade. The iOS column draws three
-    /// separate `ForEach`es, bundles then events then tasks, so a task was painted over every event
-    /// in the column whatever the clock said. Let a task cascade in that arrangement and the event
+    /// minute at a single `zIndex` and only events ever cascade. The iOS column draws two separate
+    /// `ForEach`es, events then tasks, so a task was painted over every event in the column
+    /// whatever the clock said. Let a task cascade in that arrangement and the event
     /// it indented past is drawn back over it at full width: exactly T-3165's bug, from the fix for
     /// it. Draw order is now the solver's own order, so the pair the solver put in front is the
     /// pair on top — and, because SwiftUI hit-tests topmost first, the one that takes the tap where

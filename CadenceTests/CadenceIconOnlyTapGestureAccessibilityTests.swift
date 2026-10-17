@@ -51,7 +51,8 @@ struct CadenceIconOnlyTapGestureAccessibilityTests {
     /// window with nothing else drawn in between. The window is not arbitrary: measured against
     /// the real tree (not assumed), the true site's gap was **246 characters** (`IconGrid`'s
     /// `Image` to its `.onTapGesture`) and the nearest look-alike's was **511**
-    /// (`iOSCalendarBundleDetailSheet`'s `Menu` trigger — its `Image` sits inside the `Menu`'s own
+    /// (`iOSCalendarBundleDetailSheet`'s `Menu` trigger, deleted with the Block feature in
+    /// [[T-3170]] — its `Image` sat inside the `Menu`'s own
     /// `label:` closure, and the row around it is tapped as a whole). 300 sits in the
     /// 265-character gap between them, and `theWindowSeparatesTheRealSiteFromItsNearestLookAlikes`
     /// below pins that measurement on real files rather than leaving it a comment.
@@ -98,9 +99,16 @@ struct CadenceIconOnlyTapGestureAccessibilityTests {
         )
     }
 
-    /// **The measurement the window comment states, pinned rather than left in prose.** All three
-    /// are real files this audit's own proximity search turned up as the closest things to a false
+    /// **The measurement the window comment states, pinned rather than left in prose.** These are
+    /// real files this audit's own proximity search turned up as the closest things to a false
     /// positive; none of them is one, and this is what proves it rather than assumes it.
+    ///
+    /// **It was three.** The third was `iOSCalendarBundleDetailSheet.swift` — the member-row
+    /// overflow `Menu` whose `Image` sat inside the `Menu`'s own `label:` closure, 511 characters
+    /// from the row's `.onTapGesture` and therefore the far side of the 300-character window.
+    /// [[T-3170]] deleted the file with the Block feature. The **measurement the window rests on
+    /// is unchanged** and is recorded on `iconOnlyTapGestureCount` above; the two look-alikes left
+    /// here are what can still be read from disk.
     @Test func theWindowSeparatesTheRealSiteFromItsNearestLookAlikes() throws {
         // A whole row (icon + task title) tapped to open an inspector — the glyph is not the
         // control, the row is, and `Text(task.title)` sits between them regardless.
@@ -110,13 +118,16 @@ struct CadenceIconOnlyTapGestureAccessibilityTests {
         // Two icon-only `Button`s (open link, delete) inside a card whose own background is
         // separately tapped to open the URL.
         let linksRow = try CadenceSourceScan.sourceFile("Cadence/macOS/Views/LinksView.swift")
-        // A `Menu` whose label is a bare glyph, in a row that is itself tapped as a whole.
-        let bundleDetailRow = try CadenceSourceScan.sourceFile(
-            "Cadence/iOS/iOSCalendarBundleDetailSheet.swift"
-        )
         #expect(Self.iconOnlyTapGestureCount(in: calendarMonthCell) == 0)
         #expect(Self.iconOnlyTapGestureCount(in: linksRow) == 0)
-        #expect(Self.iconOnlyTapGestureCount(in: bundleDetailRow) == 0)
+
+        // **The retired third look-alike is not replaced by a hand-written fixture, deliberately.**
+        // What made it a look-alike was a *measured* 511-character gap between its glyph and the
+        // row's `.onTapGesture` — a figure a fixture cannot have without being padded to order,
+        // and a padded fixture argues about the padding rather than about the window. The two
+        // files above are real, and the detector's own two-sided behaviour is pinned on fixtures
+        // by `noIconOnlyOnTapGestureControlIsLeftInTheApp`'s instrument, which carries a positive
+        // and a negative witness.
     }
 
     /// Non-vacuity: the fixed file must not still contain the shape this suite bans, read from
