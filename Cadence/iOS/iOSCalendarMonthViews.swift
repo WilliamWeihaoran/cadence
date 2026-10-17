@@ -306,10 +306,40 @@ private struct iOSCalendarMonthDayCell: View {
     private let calendar = Calendar.current
     private var isToday: Bool { calendar.isDateInToday(date) }
     private var isCurrentMonth: Bool { calendar.isDate(date, equalTo: displayMonth, toGranularity: .month) }
-    /// Chip slots this cell draws before the "+N more" line. A fixed count rather than macOS's
-    /// height-derived one: these rows have a `minHeight` and no fixed height, so there is no row
-    /// budget to divide.
-    private static let chipCapacity = 5
+    /// The scrolling grid fixes each week to `minHeight`. Timed event chips now use a second
+    /// line so a clock never steals the title's width; reserve the day header and overflow line
+    /// before allocating the same events-first order the shared priority helper uses.
+    private static let maximumChipCount = 5
+
+    private var chipCapacity: Int {
+        let heights = events.prefix(Self.maximumChipCount).map {
+            iOSCalendarMiniChip.height(hasTime: Self.timeLabel(for: $0, on: date) != nil)
+        } + tasks.prefix(Self.maximumChipCount).map { _ in iOSCalendarMiniChip.height(hasTime: false) }
+        var used: CGFloat = 0
+        var count = 0
+        for height in heights.prefix(Self.maximumChipCount) {
+            let next = used + (count == 0 ? 0 : 3) + height
+            guard next <= max(0, minHeight - 50) else { break }
+            used = next
+            count += 1
+        }
+        return count
+    }
+
+    /// The same endpoint rule as Mac month chips, in compact clock vocabulary. All-day and
+    /// middle-day segments have no clock. The shared formatter still owns locale/hour-cycle.
+    private static func timeLabel(for event: EKEvent, on date: Date, calendar: Calendar = .current) -> String? {
+        guard !event.isAllDay, let start = event.startDate, let end = event.endDate else { return nil }
+        let isStart = calendar.isDate(start, inSameDayAs: date)
+        let isEnd = calendar.isDate(end.addingTimeInterval(-1), inSameDayAs: date)
+        guard isStart || isEnd else { return nil }
+        let endpoint = isStart ? start : end
+        let minutes = calendar.component(.hour, from: endpoint) * 60 + calendar.component(.minute, from: endpoint)
+        let clock = TimeFormatters.timeString(from: minutes)
+            .replacingOccurrences(of: " AM", with: "a")
+            .replacingOccurrences(of: " PM", with: "p")
+        return isStart ? clock : "to \(clock)"
+    }
 
     /// Who gets those slots. The ordering is `CadenceCalendarMonthCellPriority`'s and is shared
     /// with macOS's `MonthDayCell`; it replaces three hardcoded per-kind caps that spelled the same
@@ -324,7 +354,7 @@ private struct iOSCalendarMonthDayCell: View {
             bundles: 0,
             events: events.count,
             tasks: tasks.count,
-            capacity: Self.chipCapacity
+            capacity: chipCapacity
         )
     }
 
@@ -412,7 +442,8 @@ private struct iOSCalendarMonthDayCell: View {
                             title: iOSCalendarEventSupport.title(for: event),
                             icon: event.isAllDay ? "calendar" : "calendar.badge.clock",
                             color: iOSCalendarEventSupport.color(for: event.calendar),
-                            isEvent: true
+                            isEvent: true,
+                            timeLabel: Self.timeLabel(for: event, on: date)
                         )
                     }
                     ForEach(visibleTasks) { task in
@@ -513,7 +544,7 @@ private struct iOSCalendarMonthDayCell: View {
     }
 }
 
-/// The one-line chip a month cell or a timeline day header draws per item.
+/// The compact chip a month cell or a timeline day header draws per item.
 ///
 /// **Both branches are solved plates now (T-3160); what differs is which treatment.** An `isEvent`
 /// chip takes `CadenceCalendarEventStyle.rail*` — Apple Calendar's dark tinted plate with the
@@ -527,10 +558,10 @@ private struct iOSCalendarMonthDayCell: View {
 /// the one thing on this chip that is *not* wearing the plate treatment and a name that says
 /// otherwise is a trap for the next reader.
 ///
-/// **No rail here either** — see `MonthEventChip` on macOS for the measurement. This chip is a
-/// 10pt line plus 2.5pt of padding, about 17pt tall, clipped to `Theme.radiusControl`; a 3pt
-/// `railWidth` bar down that leading edge is corner for most of its length. The treatment arrives
-/// as colour, which is what Apple's own month cells show at this size.
+/// **No rail here either** — see `MonthEventChip` on macOS for the measurement. The one-line
+/// form remains 17pt tall, clipped to `Theme.radiusControl`; its leading edge is mostly corner.
+/// T-1468 gives timed month events a second line (29pt total) but keeps the same treatment across
+/// both forms. The clock has its own width, so adding it never takes space from the title.
 ///
 /// The icon is each family's *tertiary* tier in both branches rather than the object's own colour.
 /// It has to be: the plate is now that colour, so a list-coloured glyph on a list-coloured fill is
@@ -540,6 +571,9 @@ struct iOSCalendarMiniChip: View {
     let icon: String
     let color: Color
     var isEvent = false
+    var timeLabel: String? = nil
+
+    static func height(hasTime: Bool) -> CGFloat { hasTime ? 29 : 17 }
     /// **"Not placed on the clock yet", which is a different axis from "event or task"** (T-3184's
     /// sibling, T-3185).
     ///
@@ -595,6 +629,31 @@ struct iOSCalendarMiniChip: View {
     }
 
     var body: some View {
+        VStack(alignment: .leading, spacing: 1) {
+            titleRow
+            if let timeLabel {
+                Text(timeLabel)
+                    .font(.system(size: 8, weight: .medium))
+                    .foregroundStyle(CadenceCalendarEventStyle.railSecondaryLabelColor(for: color))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+                    .padding(.horizontal, -2)
+            }
+        }
+        .padding(.horizontal, 5)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(height: Self.height(hasTime: timeLabel != nil))
+        .background { shape.fill(plate) }
+        .clipShape(shape)
+        .overlay {
+            shape.strokeBorder(
+                rim.opacity(CadenceCalendarEventStyle.chipBorderOpacity()),
+                style: rimStyle
+            )
+        }
+    }
+
+    private var titleRow: some View {
         HStack(spacing: 4) {
             Image(systemName: icon)
                 .font(.system(size: 8, weight: .semibold))
@@ -611,17 +670,6 @@ struct iOSCalendarMiniChip: View {
                         : CadenceCalendarEventStyle.platePrimaryLabelColor
                 )
                 .lineLimit(1)
-        }
-        .padding(.horizontal, 5)
-        .padding(.vertical, 2.5)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background { shape.fill(plate) }
-        .clipShape(shape)
-        .overlay {
-            shape.strokeBorder(
-                rim.opacity(CadenceCalendarEventStyle.chipBorderOpacity()),
-                style: rimStyle
-            )
         }
     }
 }
