@@ -59,9 +59,28 @@ struct GlobalSearchEventResultsTests {
         #expect(results.first?.title == exactTitle)
     }
 
-    @Test func theSectionStillCapsAtTwelveResultsForAQuery() {
-        let (events, _) = crowdedWindow()
-        #expect(GlobalSearchIndexSupport.eventResults(from: events, query: "roadmap").count == 12)
+    /// **The cap moved out of this function; it did not go away** (T-1473).
+    ///
+    /// `eventResults` returns every match now, and twelve lives in `resultCap(for:query:)` where
+    /// the section drawing it can also say how many it is withholding. Both halves are asserted
+    /// here on purpose: a cap that had merely been deleted would satisfy the first expectation and
+    /// hand the user a palette section as long as their calendar.
+    @Test func theSectionStillCapsAtTwelveForAQueryAndNowSaysWhatItHeldBack() {
+        let (events, exactTitle) = crowdedWindow()
+        let results = GlobalSearchIndexSupport.eventResults(from: events, query: "roadmap")
+        let cap = GlobalSearchIndexSupport.resultCap(for: .events, query: "roadmap")
+
+        #expect(results.count == 13)
+        #expect(cap == 12)
+        #expect(CadenceSearchResultCap.visibleCount(total: results.count, cap: cap, isExpanded: false) == 12)
+        #expect(CadenceSearchResultCap.hiddenCount(total: results.count, cap: cap, isExpanded: false) == 1)
+        #expect(CadenceSearchResultCap.continuationLabel(hidden: 1) == "1 more result")
+
+        // The thirteenth is reachable, which is the whole ticket: it used to be the one the
+        // returned array never contained, so no amount of scrolling or re-querying reached it.
+        #expect(CadenceSearchResultCap.visibleCount(total: results.count, cap: cap, isExpanded: true) == 13)
+        // And ranking still happens before any of that, which is T-149's claim.
+        #expect(results.first?.title == exactTitle)
     }
 
     /// Ranking is by match score, not by start date — the point of the section is to answer the
@@ -82,7 +101,7 @@ struct GlobalSearchEventResultsTests {
     /// wrong rather than merely redundant: an empty query scores every item equally and
     /// `CadenceSearchMatcher.rank` breaks the tie on title, which would list six events picked
     /// alphabetically out of a 365-day window.
-    @Test func anEmptyQueryKeepsTheSoonestSixInChronologicalOrder() {
+    @Test func anEmptyQueryKeepsTheSoonestSixVisibleInChronologicalOrder() {
         // Titles deliberately counter-sorted against time, so an alphabetical answer and a
         // chronological one cannot be confused for each other.
         let titles = ["Zulu", "Yankee", "Xray", "Whiskey", "Victor", "Uniform", "Tango", "Sierra"]
@@ -91,8 +110,15 @@ struct GlobalSearchEventResultsTests {
         }
 
         let results = GlobalSearchIndexSupport.eventResults(from: events, query: "")
+        let cap = GlobalSearchIndexSupport.resultCap(for: .events, query: "")
 
-        #expect(results.map(\.title) == Array(titles.prefix(6)))
+        // All eight, still unranked and still in start-date order — the order is the claim, and
+        // revealing the rest has to continue it rather than restart alphabetically.
+        #expect(results.map(\.title) == titles)
+        #expect(cap == 6)
+        let visible = CadenceSearchResultCap.visibleCount(total: results.count, cap: cap, isExpanded: false)
+        #expect(Array(results.prefix(visible)).map(\.title) == Array(titles.prefix(6)))
+        #expect(CadenceSearchResultCap.hiddenCount(total: results.count, cap: cap, isExpanded: false) == 2)
     }
 
     @Test func aWhitespaceOnlyQueryTakesTheEmptyBranch() {
@@ -100,7 +126,14 @@ struct GlobalSearchEventResultsTests {
             event(title: "Event \(index)", start: now.addingTimeInterval(TimeInterval(3_600 * (index + 1))))
         }
 
-        #expect(GlobalSearchIndexSupport.eventResults(from: events, query: "   ").count == 6)
+        let results = GlobalSearchIndexSupport.eventResults(from: events, query: "   ")
+
+        // The branch is now about ranking rather than length, so the tell is that the list is
+        // chronological rather than scored — and that the idle cap, not the live one, applies.
+        #expect(results.count == 8)
+        #expect(results.map(\.title) == (0..<8).map { "Event \($0)" })
+        #expect(GlobalSearchIndexSupport.resultCap(for: .events, query: "   ") == 6)
+        #expect(GlobalSearchIndexSupport.resultCap(for: .events, query: "roadmap") == 12)
     }
 
     // MARK: - Row content

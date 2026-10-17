@@ -101,7 +101,16 @@ struct CadenceSearchCandidateSupportTests {
     @Test func searchingDoneResolvesOneFixtureToTheSameTaskIdentitiesOnBothSurfaces() throws {
         let fixture = try makeTaskFixture()
 
-        let desktop = Set(GlobalSearchIndexSupport.taskResults(tasks: fixture.tasks, query: "done").map(\.id))
+        // `includingCompleted: true` is the *surface's* answer, not the helper's: since T-1476 the
+        // palette excludes completed work unless the user's persisted "Completed" filter is on, and
+        // `sharedTaskIdentities` below asks the shared helper with the same `true`. What is under
+        // test is that the two agree once both are asked the same question — which is why the flag
+        // has to be said out loud here rather than defaulted into.
+        let desktop = Set(
+            GlobalSearchIndexSupport.taskResults(
+                tasks: fixture.tasks, query: "done", includingCompleted: true
+            ).map(\.id)
+        )
         let shared = sharedTaskIdentities(fixture.tasks, query: "done")
 
         // Non-vacuity: the fixture is real, something matched, and the match was selective.
@@ -116,7 +125,15 @@ struct CadenceSearchCandidateSupportTests {
 
         // And the same call over an empty fixture pins nothing, which is why the assertions above
         // had to say what they found rather than only what they did not.
-        #expect(GlobalSearchIndexSupport.taskResults(tasks: [], query: "done").isEmpty)
+        #expect(
+            GlobalSearchIndexSupport.taskResults(
+                tasks: [], query: "done", includingCompleted: true
+            ).isEmpty
+        )
+        // And the default is the owner's decision rather than the old behaviour: the one match
+        // this fixture has for "done" is completed, so the same call without the flag finds
+        // nothing. That is T-1476's whole change, asserted where the parity claim above is made.
+        #expect(GlobalSearchIndexSupport.taskResults(tasks: fixture.tasks, query: "done").isEmpty)
         #expect(sharedTaskIdentities([], query: "done").isEmpty)
     }
 

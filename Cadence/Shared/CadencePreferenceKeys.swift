@@ -67,4 +67,24 @@ enum CadencePreferenceKeys {
     static let iosInboxShowCompleted = "ios.inbox.showCompleted"
     static let iosListDetailSortMode = "ios.listDetail.sortMode"
     static let iosListDetailShowCompleted = "ios.listDetail.showCompleted"
+
+    // MARK: - Search (T-1476)
+
+    /// Whether search lists completed tasks. **Default absent, which reads as `false`** — the
+    /// owner's decision is that both platforms exclude completed work from search until asked.
+    ///
+    /// **One key, read by `@AppStorage` on both platforms, and that is not the same thing as one
+    /// value.** A Mac and an iPhone have their own defaults domains, so this is still remembered
+    /// *per device*; what the single spelling buys is that the two surfaces cannot drift onto
+    /// different keys and then disagree about which one Settings would have to migrate.
+    ///
+    /// It is deliberately NOT in the `ios.*` family above. Those eight name a surface that exists
+    /// on one platform only — iOS has four task pages the Mac does not — whereas search is one
+    /// feature with one setting on both.
+    ///
+    /// **Why persisted at all, when iOS's was a plain `@State` until now.** With completed work
+    /// excluded by default, the toggle stops being a rare detour and becomes the thing you reach
+    /// for whenever you are looking for something you finished; a setting that forgets itself
+    /// between launches is then a papercut you hit constantly rather than once.
+    static let searchIncludesCompletedTasks = "searchIncludesCompletedTasks"
 }

@@ -15,24 +15,32 @@ enum GlobalSearchIndexSupport {
         tasks: [AppTask],
         notes: [Note],
         eventResults: [GlobalSearchResult],
-        sidebarTabColorsRaw: String
+        sidebarTabColorsRaw: String,
+        includesCompletedTasks: Bool
     ) -> GlobalSearchIndexedSource {
         var sections: [GlobalSearchSection] = []
 
         appendSection(
             .commands,
             results: commandResults(query: query, sidebarTabColorsRaw: sidebarTabColorsRaw),
+            query: query,
             into: &sections
         )
         appendSection(
             .pages,
             results: pageResults(query: query, hiddenTabs: hiddenTabs, sidebarTabColorsRaw: sidebarTabColorsRaw),
+            query: query,
             into: &sections
         )
-        appendSection(.areas, results: areaResults(areas: areas, query: query), into: &sections)
-        appendSection(.projects, results: projectResults(projects: projects, query: query), into: &sections)
-        appendSection(.tasks, results: taskResults(tasks: tasks, query: query), into: &sections)
-        appendSection(.events, results: eventResults, into: &sections)
+        appendSection(.areas, results: areaResults(areas: areas, query: query), query: query, into: &sections)
+        appendSection(.projects, results: projectResults(projects: projects, query: query), query: query, into: &sections)
+        appendSection(
+            .tasks,
+            results: taskResults(tasks: tasks, query: query, includingCompleted: includesCompletedTasks),
+            query: query,
+            into: &sections
+        )
+        appendSection(.events, results: eventResults, query: query, into: &sections)
         let taskTitles = MarkdownTaskEmbedTitleCache.titles(for: tasks)
         appendSection(
             .meetingNotes,
@@ -41,9 +49,15 @@ enum GlobalSearchIndexSupport {
                 query: query,
                 taskTitles: taskTitles
             ),
+            query: query,
             into: &sections
         )
-        appendSection(.notes, results: noteResults(notes: notes, query: query, taskTitles: taskTitles), into: &sections)
+        appendSection(
+            .notes,
+            results: noteResults(notes: notes, query: query, taskTitles: taskTitles),
+            query: query,
+            into: &sections
+        )
 
         return GlobalSearchIndexedSource(sections: sections)
     }
@@ -51,10 +65,37 @@ enum GlobalSearchIndexSupport {
     static func appendSection(
         _ category: GlobalSearchCategory,
         results: [GlobalSearchResult],
+        query: String,
         into sections: inout [GlobalSearchSection]
     ) {
         guard !results.isEmpty else { return }
-        sections.append(.init(category: category, results: results))
+        sections.append(.init(category: category, results: results, cap: resultCap(for: category, query: query)))
+    }
+
+    /// How many rows a section lists before its continuation row — **the whole of what used to be
+    /// a `prefix` inside each `*Results` function** (T-1473).
+    ///
+    /// **The numbers did not change and were not meant to.** The owner considered raising them and
+    /// rejected it: a large enough result set truncates silently again, which is the same defect at
+    /// a higher threshold. What changed is that the four functions below now return *everything*
+    /// they matched, so the count a section withholds is a number that exists and can be said out
+    /// loud, and the rows behind it can be revealed in place.
+    ///
+    /// **The idle numbers are lower than the live ones on purpose.** An empty field is a suggestion
+    /// list rather than an answer, so it shows a shorter sample of a set the user never narrowed.
+    ///
+    /// `Int.max` for the five uncapped categories rather than an optional: Commands and Pages are
+    /// fixed catalogs of six and seven, and Areas and Projects have never been capped here. Making
+    /// "no cap" a number keeps one arithmetic path through `CadenceSearchResultCap`, where an
+    /// optional would mean every caller branching before it could ask for a count.
+    static func resultCap(for category: GlobalSearchCategory, query: String) -> Int {
+        let isIdle = !CadenceListSearchSupport.isSearching(query)
+        switch category {
+        case .tasks: return isIdle ? 10 : 14
+        case .events: return isIdle ? 6 : 12
+        case .meetingNotes, .notes: return isIdle ? 8 : 12
+        case .commands, .pages, .areas, .projects: return .max
+        }
     }
 
     /// `sidebarTabColorsRaw` is `CadencePreferenceKeys.sidebarTabColors` — the same preference
@@ -151,16 +192,32 @@ enum GlobalSearchIndexSupport {
         }, query: query, preparedQuery: preparedQuery)
     }
 
-    /// The palette always includes completed tasks; iOS asks the same helper with its "Completed"
-    /// toggle. Fields, aliases and the glyph state come from `CadenceTaskSearchSupport` so the two
-    /// surfaces cannot drift apart again (T-377) — what stays here is the row: this subtitle, and
-    /// the symbol names the desktop draws.
-    static func taskResults(tasks: [AppTask], query: String) -> [GlobalSearchResult] {
+    /// **Completed work is excluded unless the caller asks for it** (T-1476), which is the iOS
+    /// behaviour the owner chose as the shared one. The palette used to pass `true`
+    /// unconditionally and offer no way to say otherwise, so the same query answered differently
+    /// on a Mac and on an iPhone. Fields, aliases and the glyph state come from
+    /// `CadenceTaskSearchSupport` so the two surfaces cannot drift apart again (T-377) — what
+    /// stays here is the row: this subtitle, and the symbol names the desktop draws.
+    ///
+    /// **The default is the decision, not a convenience.** `false` is what the owner settled on
+    /// for both platforms, so a call site that forgets to say gets the decided behaviour rather
+    /// than the old one — and the free test suite catches the difference, because
+    /// `CadenceSearchCandidateSupportTests` searches a fixture whose only match is completed.
+    ///
+    /// The surface that flips it is a persisted user setting
+    /// (`CadencePreferenceKeys.searchIncludesCompletedTasks`), not a second inclusion policy:
+    /// which tasks are searchable *at all* stays `CadenceTaskSearchSupport`'s to say, and
+    /// cancelled work is never searchable either way.
+    static func taskResults(
+        tasks: [AppTask],
+        query: String,
+        includingCompleted: Bool = false
+    ) -> [GlobalSearchResult] {
         let preparedQuery = CadenceSearchMatcher.PreparedQuery(query)
         let base = tasks
-            .filter { CadenceTaskSearchSupport.isSearchable($0, includingCompleted: true) }
+            .filter { CadenceTaskSearchSupport.isSearchable($0, includingCompleted: includingCompleted) }
 
-        return Array(rankedResults(base.compactMap { task in
+        return rankedResults(base.compactMap { task in
             let container = CadenceTaskSearchSupport.containerLabel(for: task)
             guard matches(query: preparedQuery, fields: CadenceTaskSearchSupport.searchFields(for: task)) else { return nil }
 
@@ -183,7 +240,7 @@ enum GlobalSearchIndexSupport {
                 tintHex: task.containerColor,
                 destination: .task(task.id)
             )
-        }, query: query, preparedQuery: preparedQuery).prefix(query.isEmpty ? 10 : 14))
+        }, query: query, preparedQuery: preparedQuery)
     }
 
     /// The desktop's symbols for the three shared glyph states. `completed` and `active` draw the
@@ -204,20 +261,25 @@ enum GlobalSearchIndexSupport {
     /// was dropped before scoring ever saw it if twelve weaker ones happened to fall earlier in
     /// the window. Every other section here already ranks first and prefixes second.
     ///
-    /// The empty-query branch keeps the truncate-first shape on purpose, and is not the same bug:
+    /// The empty-query branch stays **unranked** on purpose, and is not the same bug:
     /// `searchEvents` has already answered "what is coming up" in chronological order, so the
-    /// first six *are* the answer. Ranking them would be worse, not merely redundant — an empty
-    /// query scores everything equally, and `CadenceSearchMatcher.rank` breaks that tie on title,
-    /// which would have picked six events alphabetically out of a 365-day window. This is the
-    /// shape `iOSSearchView.eventResults` already had: chronological when idle, scored when
-    /// searching.
+    /// earliest ones *are* the answer. Ranking them would be worse, not merely redundant — an
+    /// empty query scores everything equally, and `CadenceSearchMatcher.rank` breaks that tie on
+    /// title, which would have ordered a 365-day window alphabetically. This is the shape
+    /// `iOSSearchView.eventResults` already had: chronological when idle, scored when searching.
+    ///
+    /// **Neither branch truncates any more** (T-1473). The six-and-twelve are unchanged as
+    /// *numbers* and now live in `resultCap(for:query:)`, where the section that draws them can
+    /// also say how many it is holding back. Returning the full list is what makes that count
+    /// expressible; the idle branch's chronological order is what makes revealing the rest mean
+    /// "the next events", which is the only order an idle list could continue in.
     static func eventResults(from events: [EKEvent], query: String) -> [GlobalSearchResult] {
-        guard !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+        guard CadenceListSearchSupport.isSearching(query) else {
             // Closures rather than `map(eventResult(for:))`: a method *reference* is passed as a
             // nonisolated function value and loses this enum's main-actor isolation.
-            return events.prefix(6).map { eventResult(for: $0) }
+            return events.map { eventResult(for: $0) }
         }
-        return Array(rankedResults(events.map { eventResult(for: $0) }, query: query).prefix(12))
+        return rankedResults(events.map { eventResult(for: $0) }, query: query)
     }
 
     static func eventResult(for event: EKEvent) -> GlobalSearchResult {
@@ -263,7 +325,7 @@ enum GlobalSearchIndexSupport {
             return $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending
         }
 
-        return Array(rankedResults(sorted.compactMap { note in
+        return rankedResults(sorted.compactMap { note in
             let title = note.displayTitle
             let dateLabel: String
             if let date = DateFormatters.date(from: note.eventDateKey) {
@@ -287,13 +349,13 @@ enum GlobalSearchIndexSupport {
                 tintHex: Theme.purpleHex,
                 destination: .eventNote(note.id)
             )
-        }, query: query, preparedQuery: preparedQuery).prefix(query.isEmpty ? 8 : 12))
+        }, query: query, preparedQuery: preparedQuery)
     }
 
     static func noteResults(notes: [Note], query: String, taskTitles: [UUID: String]) -> [GlobalSearchResult] {
         let preparedQuery = CadenceSearchMatcher.PreparedQuery(query)
         let candidates = notes.filter { NotesNavigationManager.page(for: $0.kind) != nil && $0.kind != .meeting }
-        return Array(rankedResults(candidates.compactMap { note in
+        return rankedResults(candidates.compactMap { note in
             let title = note.displayTitle
             let subtitle: String
             switch note.kind {
@@ -310,7 +372,7 @@ enum GlobalSearchIndexSupport {
                 title: title, subtitle: subtitle, icon: "doc.text",
                 tintHex: Theme.purpleHex, destination: .note(note.id)
             )
-        }, query: query, preparedQuery: preparedQuery).prefix(query.isEmpty ? 8 : 12))
+        }, query: query, preparedQuery: preparedQuery)
     }
 
     /// **T-372a: `id` is the tie-break.** `GlobalSearchResult.id` is already the

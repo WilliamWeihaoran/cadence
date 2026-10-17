@@ -244,11 +244,52 @@ struct GlobalSearchSubtitleParts {
     }
 }
 
+/// Everything a category matched, and how many of them the palette lists before it has to say
+/// something (T-1473).
+///
+/// **`results` is the whole match set, not the visible prefix.** It used to be the prefix: each
+/// `*Results` function returned an already-truncated array, so the fifteenth matching task was
+/// not merely unlisted but unreachable — nothing downstream held a number that could be reported
+/// or a row that could be revealed. Keeping the full list here is what makes
+/// `GlobalSearchVisibleSection` able to answer "and how many more?".
 struct GlobalSearchSection: Identifiable {
     let category: GlobalSearchCategory
     let results: [GlobalSearchResult]
+    /// `GlobalSearchIndexSupport.resultCap(for:query:)`'s number for this category and this query.
+    let cap: Int
 
     var id: String { category.rawValue }
+}
+
+/// One section as the palette actually draws it: the rows it is listing, and how many it is not.
+///
+/// **It exists so the rows and the keyboard cannot disagree.** `GlobalSearchOverlay` flattens the
+/// sections to drive arrow-key movement and Return, and it has to flatten *these* — flattening the
+/// uncapped `GlobalSearchSection.results` would let Down-arrow walk the highlight onto a row that
+/// is not on screen, which is a worse bug than the one this ticket is fixing.
+struct GlobalSearchVisibleSection: Identifiable {
+    let category: GlobalSearchCategory
+    /// The visible prefix, sized by `CadenceSearchResultCap.visibleCount`.
+    let results: [GlobalSearchResult]
+    /// How many matches this section is withholding, or `nil` when it is listing all of them —
+    /// `nil` rather than `0` so "no continuation row" is unspellable rather than merely unlikely.
+    let hidden: Int?
+
+    var id: String { category.rawValue }
+}
+
+/// The count row at the foot of a capped palette section (T-1473), the desktop counterpart of
+/// `iOSSearchResultContinuation`.
+struct GlobalSearchResultContinuation {
+    /// `CadenceSearchResultCap.continuationLabel(hidden:)`'s sentence — "38 more results".
+    ///
+    /// The sentence rather than the number, for the reason that type records: a second copy of
+    /// the count is a second place for the row and its accessibility label to disagree.
+    let label: String
+    /// Reveals the rest **in place**. The palette is one overlay with no second screen to push,
+    /// and the rows above are already the answer — the user's question is "is that all?", which a
+    /// row that both states the number and resolves it answers in one click.
+    let reveal: () -> Void
 }
 
 extension GlobalSearchCommandDefinition {
@@ -306,6 +347,7 @@ extension GlobalSearchPageDefinition {
 
 struct GlobalSearchHeader: View {
     @Binding var draftQuery: String
+    @Binding var includesCompletedTasks: Bool
     let clear: () -> Void
     let submit: () -> Void
     @FocusState.Binding var isSearchFocused: Bool
@@ -329,10 +371,109 @@ struct GlobalSearchHeader: View {
                 focus: $isSearchFocused,
                 onClear: clear
             )
+
+            GlobalSearchCompletedFilterToggle(
+                includesCompletedTasks: $includesCompletedTasks,
+                restoreFocus: { isSearchFocused = true }
+            )
         }
         .padding(.horizontal, 18)
         .padding(.vertical, 16)
         .background(Theme.surface.opacity(0.48))
+    }
+}
+
+/// Ends a section whose results were capped, and expands it where it stands.
+///
+/// **It is drawn as a row in the list rather than beside the eyebrow**, at the foot of the rows it
+/// is talking about: the thing being decided about is this list, and a control up in the header
+/// would read as a palette-level action. It borrows `GlobalSearchResultRow`'s geometry — the same
+/// 12/8 padding and radius-12 shape — so it sits in the column rather than interrupting it, and
+/// takes no tint of its own, because it is not a result and must not read as one.
+///
+/// **It is not keyboard-reachable, deliberately for now.** `onMoveCommand` and Return are typed to
+/// `GlobalSearchResult` and route into the palette's navigation callback; a synthetic result that
+/// expands instead of navigating would have to be special-cased in both, and that is a larger
+/// change to the palette's keyboard contract than this ticket decided. Recorded in the ledger
+/// rather than left unsaid.
+struct GlobalSearchMoreResultsRow: View {
+    let continuation: GlobalSearchResultContinuation
+
+    var body: some View {
+        Button(action: continuation.reveal) {
+            HStack(spacing: 12) {
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Theme.dim)
+                    .frame(width: 34, height: 34)
+
+                Text(continuation.label)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Theme.dim)
+                    .lineLimit(1)
+
+                Spacer()
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(RoundedRectangle(cornerRadius: 12))
+        }
+        .buttonStyle(.cadencePlain)
+        .padding(.horizontal, 6)
+        .accessibilityLabel(continuation.label)
+    }
+}
+
+/// The palette's "Completed" filter (T-1476).
+///
+/// **The Mac is losing results it used to return, so this ships in the same change.** The palette
+/// passed `includingCompleted: true` unconditionally and offered no control at all; now that the
+/// default excludes completed work, a user searching for something they finished last week needs
+/// somewhere to say so, and it has to be here rather than in Settings — a filter you cannot see
+/// from the list it is filtering is how a search comes to look broken.
+///
+/// **It restores focus to the field.** Clicking anything in this overlay takes first responder off
+/// the text field, and a command palette that stops accepting typing after one click is unusable;
+/// `CadenceSearchFieldClearButton` one sibling over solves the same problem the same way.
+///
+/// It borrows `GlobalSearchResultRow`'s selection vocabulary — tint at 0.18 behind the glyph, a
+/// hairline at 0.18, one radius — rather than inventing a fourth chip shape for this one screen.
+struct GlobalSearchCompletedFilterToggle: View {
+    @Binding var includesCompletedTasks: Bool
+    let restoreFocus: () -> Void
+
+    var body: some View {
+        Button {
+            includesCompletedTasks.toggle()
+            restoreFocus()
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: includesCompletedTasks ? "checkmark.circle.fill" : "checkmark.circle")
+                    .font(.system(size: 12, weight: .semibold))
+                Text("Completed")
+                    .font(.system(size: 12, weight: .semibold))
+            }
+            .foregroundStyle(includesCompletedTasks ? Theme.green : Theme.dim)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(
+                RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous)
+                    .fill(includesCompletedTasks ? Theme.green.opacity(0.18) : Color.clear)
+            )
+            .overlay {
+                RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous)
+                    .strokeBorder(
+                        includesCompletedTasks ? Theme.green.opacity(0.18) : Theme.borderSubtle,
+                        lineWidth: 1
+                    )
+            }
+            .contentShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
+        }
+        .buttonStyle(.cadencePlain)
+        .help(includesCompletedTasks ? "Hide completed tasks from results" : "Include completed tasks in results")
+        .accessibilityLabel("Include completed tasks")
+        .accessibilityAddTraits(includesCompletedTasks ? [.isSelected] : [])
     }
 }
 
