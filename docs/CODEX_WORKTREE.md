@@ -112,7 +112,36 @@ Cadence/macOS/Views/TimelineTaskBlock.swift
 Cadence/macOS/Views/TimelineTaskBlockSupportViews.swift
 Cadence/macOS/Views/CalendarPageBoardSupportViews.swift
 docs/PLATFORM_PARITY_AUDIT.md
+Cadence/Shared/CadenceTaskMutationSupport.swift
+CadenceTests/CalendarBoardDayDropCommitTests.swift
+CadenceTests/CadenceEditorSaveCommitSurfaceTests.swift
 ```
+
+### LEASE WIDENED 2026-10-16 — three paths for PA-13, the iOS board drop that cannot refuse
+
+The owner read the parity audit and picked **PA-13** as the one finding Codex should fix. Codex
+already holds `iOSCalendarBoardView.swift`, `iOSBoardCards.swift` and
+`CalendarBoardDayColumnSupportViews.swift`. The fix cannot be made from those alone, so three more
+paths enter the fence above:
+
+- `Cadence/Shared/CadenceTaskMutationSupport.swift` — `moveTaskToDate` ends in a bare
+  `try? modelContext.save()`. That swallowed save is the defect itself; the callback's `Void` return
+  type is only what makes it unreportable. Granted NARROWLY: `moveTaskToDate` and whatever its new
+  answer forces on its callers. **T-3170's Block removal also has work queued in this file** (the
+  residual `task.bundle` nils at :271-273), deliberately held for a pass that runs AFTER this lands —
+  so Codex should not take the bundle lines, and the coordinator must not schedule that pass
+  concurrently.
+- `CadenceTests/CalendarBoardDayDropCommitTests.swift` — holds the macOS rollback and
+  result-forwarding coverage at :123 and :531. The mobile case belongs beside it, not in a new suite.
+- `CadenceTests/CadenceEditorSaveCommitSurfaceTests.swift` — holds the shared commit contracts this
+  path has to join.
+
+**The grant is the three lines in the fence above, not this paragraph.** `codex-land.sh lease`
+parses the fenced ```lease block and nothing else.
+
+No other product path is widened. In particular `Cadence/iOS/iOSRootView.swift` is NOT granted: the
+neighbouring finding PA-26 is blocked on T-3109/T-1469, a design question about replacing the root's
+UI context without stranding retained models, and is not Codex's to answer unilaterally.
 
 ### LEASE WIDENED 2026-10-16 — one docs path, `docs/PLATFORM_PARITY_AUDIT.md`, for the platform parity audit
 
