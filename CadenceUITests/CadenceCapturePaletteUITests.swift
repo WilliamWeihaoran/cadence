@@ -233,8 +233,9 @@ final class CadenceCapturePaletteUITests: XCTestCase {
         app.buttons["capture-more"].tap()
         XCTAssertTrue(app.buttons["Repeat"].waitForExistence(timeout: 5))
         app.buttons["Repeat"].tap()
-        XCTAssertTrue(app.buttons["Weekly"].waitForExistence(timeout: 5))
-        app.buttons["Weekly"].tap()
+        let weekly = app.popovers.buttons["Weekly"]
+        XCTAssertTrue(weekly.waitForExistence(timeout: 5))
+        weekly.tap()
         XCTAssertTrue(app.buttons["capture-chip-repeatRule"].waitForExistence(timeout: 5))
         attach("capture-card-repeat-chip")
 
