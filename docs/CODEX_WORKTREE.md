@@ -115,7 +115,34 @@ docs/PLATFORM_PARITY_AUDIT.md
 Cadence/Shared/CadenceTaskMutationSupport.swift
 CadenceTests/CalendarBoardDayDropCommitTests.swift
 CadenceTests/CadenceEditorSaveCommitSurfaceTests.swift
+Cadence/Shared/CadenceTaskDateEditing.swift
 ```
+
+### LEASE WIDENED 2026-10-17 — a fourth path for PA-13, `Cadence/Shared/CadenceTaskDateEditing.swift`
+
+Codex asked for this one by name, because the 2026-10-16 section below says in terms that no other
+product path is widened. That was the right read of the grant and the right place to stop; this
+section supersedes that sentence for this single file.
+
+**The request was verified before it was granted, in the file itself.** `CadenceTaskDateEditing` is
+the app-side wrapper that mutates and then reconciles OS notifications, and its own header says
+every function there is "one line plus one reconcile". Two of its date functions already answer:
+`setScheduledDate` is `@discardableResult ... -> Bool` with an injectable
+`commit: (ModelContext) throws -> Void = { try $0.save() }`, and `clearScheduledDate` is the same
+shape and returns `landed`. **`moveTaskToDate` is the single function in the file that returns
+`Void` and takes no `commit:`.** Giving it the signature its two siblings already have is bringing
+an outlier into line with the file's established pattern, not inventing a seam — and PA-13's whole
+defect is that the iOS board has no value to refuse with, which this is upstream of.
+
+**Scope: `moveTaskToDate` only.** Forward the `Bool` from
+`CadenceTaskMutationSupport.moveTaskToDate` and accept an injectable `commit:`, matching the
+siblings. **Do NOT change the reconcile policy in this file** — whether a reconcile runs, when it
+runs, or on which platforms. The Mac board's missing immediate reconcile is finding PA-14, folded
+into T-362 as an evidence addendum, and it is a separate decision the owner has not made. The
+header's reasoning for why the reconcile lives here and not in `CadenceTaskMutationSupport` stays
+as written.
+
+**The grant is the line in the fence above, not this paragraph.**
 
 ### LEASE WIDENED 2026-10-16 — three paths for PA-13, the iOS board drop that cannot refuse
 
