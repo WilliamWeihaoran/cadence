@@ -467,7 +467,6 @@ struct CadenceTagChipScaleTests {
             "Cadence/Shared/Components/HabitProgressViews.swift",
             "Cadence/iOS/iOSAINoteActionsViews.swift",
             "Cadence/iOS/iOSArchiveImportSettingsSection.swift",
-            "Cadence/iOS/iOSCalendarBundleDetailSheet.swift",
             "Cadence/iOS/iOSCalendarEventEditSheet.swift",
             "Cadence/iOS/iOSCalendarQuickCreateSheet.swift",
             "Cadence/iOS/iOSCalendarSettingsSection.swift",

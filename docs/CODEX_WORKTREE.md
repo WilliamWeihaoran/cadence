@@ -119,6 +119,26 @@ Cadence/Shared/CadenceTaskDateEditing.swift
 CadenceTests/CadenceMarkdownImageCommitSurfaceTests.swift
 ```
 
+### COORDINATOR REPAIR 2026-10-17 — one line removed from `CadenceTests/CadenceTagChipStyleTests.swift`
+
+**This is a repair inside a leased path, not a widening, and it does not belong in the fence.** The
+fence governs which paths CODEX may write; a coordinator or local agent entering a Codex path is
+recorded in prose, which is what this is. Nothing was added to or removed from the ```lease block.
+
+`042a5767` (agent `iosblockui`, T-3170's eleventh pass) deleted
+`Cadence/iOS/iOSCalendarBundleDetailSheet.swift`. That file was named in this suite's
+`undeclaredControls` inventory, which the test reads with `try read(path)` — so the deletion turned
+`main` RED on `CadenceTagChipScaleTests`, *"Exactly one file that draws a tag chip has opted itself
+into scaling"*. The whole repair is removing the one line naming the deleted file. A red `main` is
+worse than a lease courtesy, so the coordinator took it rather than queueing a grant.
+
+**`iosblockui` reported the line as `:514`; it is `:470`.** Recorded because that figure would have
+sent the next reader to the wrong place, and because a line number in a handoff is a published claim.
+
+Codex's live branch at the time, `codex/ios-board-drop-refusal`, does not touch this file, so there
+was nothing to collide with. If Codex holds an unlanded edit to this suite, this one-line deletion is
+the whole of the coordinator's change and should be easy to reconcile.
+
 ### LEASE WIDENED 2026-10-17 — `CadenceMarkdownImageCommitSurfaceTests.swift`, for a census PA-13 forces
 
 Codex asked rather than took, again correctly. **Verified before granting:** that file's
