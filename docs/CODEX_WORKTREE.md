@@ -119,6 +119,45 @@ Cadence/Shared/CadenceTaskDateEditing.swift
 CadenceTests/CadenceMarkdownImageCommitSurfaceTests.swift
 ```
 
+### COORDINATOR 2026-10-17 (later) — one grant, one REFUSAL, and a correction to the grant above
+
+Four tickets were PARKED at once, every one of them on a leased path, so the lease had become the
+single bottleneck. Before granting any of it the coordinator asked a question it had skipped
+earlier: **does Codex actually hold UNLANDED work in these files?**
+
+**"Ahead of main" does not answer that.** Twenty-one `codex/*` branches are ahead, because this repo
+lands a Codex branch by APPLYING its files, never by merging — so a fully landed branch stays ahead
+for ever. `codex-land.sh review` does not answer it either: it refuses on its FIRST failing check,
+so an inbox-id clash masks whether the content already landed. The question that answers it is
+whether the branch's blob for that path equals main's.
+
+| path | branch | verdict |
+|---|---|---|
+| `CadenceTests/CadenceCodexFunctionalParityTests.swift` | `codex/mobile-project-deadline` | IDENTICAL to main |
+| `Cadence/iOS/iOSRootView.swift` | `codex/ui-refresh-reconciliation` | IDENTICAL to main |
+| `Cadence/iOS/iOSTaskViews.swift` | `codex/parity-functional-batch` | IDENTICAL to main |
+| `Cadence/macOS/Views/CalendarPageBoardSupportViews.swift` | `codex/calendar-day-drop-commit` | **DIFFERS, +23 −96** |
+| `Cadence/iOS/iOSCalendarBoardView.swift` | `codex/parity-functional-batch` | **DIFFERS, +147 −27** |
+
+**GRANTED to a local agent: `Cadence/iOS/iOSRootView.swift`, for T-3170 only.** It still applies
+`.iOSBundleInspectorHost()`, which is why `042a5767` had to leave that host as a documented no-op
+stub instead of deleting it. Scope is that one call site and the stub's deletion. Verified identical
+to main on the only branch that touches it, so nothing unlanded collides.
+
+**REFUSED, deliberately: `Cadence/macOS/Views/CalendarPageBoardSupportViews.swift` for [[T-1478]].**
+`codex/calendar-day-drop-commit` holds a real unlanded change there — 96 lines removed, 23 added.
+A local agent editing it would collide with work nobody has reviewed, which is precisely what the
+lease exists to prevent. **T-1478 is not unblocked by a grant; it is blocked on landing that
+branch**, which is coordinator work, not agent work. The same applies to `iOSCalendarBoardView.swift`
+and `codex/parity-functional-batch` (+147 −27) for anything that reaches the iOS board next.
+
+**Correction to the search grant above (`63b024d6`).** It justified itself with "Codex's live branch
+at this moment, `codex/ios-board-drop-refusal`, touches none of these files." That checked ONE
+branch, not the twenty-one that exist, and the honest basis was not established at the time. The
+grant's CONCLUSION survives the proper check — all three search paths are identical to main on every
+branch that touches them — but the reasoning as written was thinner than it sounded, and a grant is
+a published claim. Recorded rather than quietly repaired.
+
 ### COORDINATOR GRANT 2026-10-17 — a LOCAL agent enters three leased search paths for T-1476 / T-1473
 
 **Prose, deliberately, and not a fence line.** The ```lease block says which paths CODEX may write.
