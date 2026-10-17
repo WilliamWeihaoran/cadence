@@ -30,9 +30,13 @@ enum CadenceScheduleSupport {
     /// user can nudge before releasing, under a pointer that resolves a 5-minute step at any hour
     /// height the canvas offers. Five is also the shortest block the canvas can draw
     /// (`TimelineDayRange.minimumDuration`), so a coarser grid would take 10-, 20- and 25-minute
-    /// blocks away from the one gesture that can make them. iOS's timeline never drags: it taps or
-    /// drops, which commits a *start* with no preview and no chance to adjust, on a 58pt hour row
-    /// where five minutes is under five points — narrower than the finger that is hiding it.
+    /// blocks away from the one gesture that can make them. iOS's timeline taps or drops, which
+    /// commits a *start* with no preview and no chance to adjust, on a 58pt hour row where five
+    /// minutes is under five points — narrower than the finger that is hiding it. Since [[T-1475]]
+    /// it also drags an existing block (press-and-hold, then move or pull an edge), and that drag
+    /// lands on this touch grid too (`CadenceTimelineBlockEdit.gridMinutes`): a live preview helps
+    /// the eye, but not a fingertip covering the very five points it would have to aim at, and
+    /// Apple Calendar drags in quarter hours on the same argument.
     ///
     /// So they are not two answers to one question. They are one rule — *snap to what the input can
     /// actually aim at* — and the app already agrees with itself on both sides of it: every typed

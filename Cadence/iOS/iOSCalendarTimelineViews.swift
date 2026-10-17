@@ -137,6 +137,14 @@ struct iOSCalendarTimelineGrid: View {
     @State private var pinchZoom: Double?
     @State private var pinchStartZoom: Double = CadenceCalendarZoom.defaultZoom
     @State private var pinchStartOffset: CGFloat = 0
+    /// The one task block lifted for editing across the whole grid ([[T-1475]]). A long press
+    /// selects it and it keeps its resize handles after the finger lifts, as in Apple Calendar,
+    /// until a tap anywhere on the canvas or on the block puts it down. Grid-wide rather than per
+    /// column, so lifting a block on Tuesday puts Monday's down.
+    @State private var editingTaskID: PersistentIdentifier?
+    /// Set when a move or resize was refused by the store. The block is already back at its
+    /// stored minute by then (`CadenceTimelineBlockEdit.commit`); this is the sentence saying so.
+    @State private var blockEditFailureNotice: String?
 
     private let calendar = Calendar.current
     /// Read for the two figures that are still about the pane — the hour rail's width and how wide a
@@ -185,6 +193,20 @@ struct iOSCalendarTimelineGrid: View {
     }
 
     var body: some View {
+        VStack(spacing: 0) {
+            // Above the canvas, the Calendar Board's placement for its refused day drop
+            // ([[T-1470]]), so a refused move is named at either width and on either span. The
+            // next edit that lands clears it, which is why it carries no dismiss control.
+            if let blockEditFailureNotice {
+                CadenceInlineFailureNotice(text: blockEditFailureNotice)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+            }
+            canvas
+        }
+    }
+
+    private var canvas: some View {
         GeometryReader { geo in
             // Seven columns on screen is the guarantee; 112pt is the wish. See
             // `CadenceCalendarWeekGridLayout` — this used to be a `max(…, 112)` that made the wish
@@ -269,8 +291,26 @@ struct iOSCalendarTimelineGrid: View {
             workHoursEndMinute: workHoursEndMinute,
             onCreateAt: onCreateAt,
             drawsDraftBlocks: drawsDraftBlocks,
-            onClearTime: clearsTime
+            onClearTime: clearsTime,
+            editingTaskID: editingTaskID,
+            onSelectForEditing: { editingTaskID = $0 },
+            onCommitEdit: commitBlockEdit
         )
+    }
+
+    /// A finished move or resize, written through the shared field transaction ([[T-1475]]).
+    ///
+    /// The same shape as the Calendar Board's day drop (`iOSCalendarBoardPlanner.schedule`,
+    /// [[T-1470]]): the commit answers, a refusal has already put the task's fields back — so the
+    /// block, which draws the stored minute, snaps to where it started — and the answer is mapped
+    /// onto the shared edit-failure sentence.
+    private func commitBlockEdit(
+        _ task: AppTask,
+        kind: CadenceTimelineBlockEdit.Kind,
+        range: (start: Int, end: Int)
+    ) {
+        let landed = CadenceTimelineBlockEdit.commit(task, kind: kind, range: range, in: modelContext)
+        blockEditFailureNotice = landed ? nil : CadencePendingChangePersistence.editFailureNotice
     }
 
     /// The block's "put this back with the untimed work" corner, on the span that has somewhere to
@@ -924,6 +964,22 @@ private struct iOSCalendarTimelineDayColumn: View {
     /// Non-`nil` only where a cleared task has a visible place to land — see
     /// `iOSCalendarTimelineGrid.clearsTime`, which is the one decision of it in the app.
     let onClearTime: ((AppTask) -> Void)?
+    /// See `iOSCalendarTimelineGrid.editingTaskID`.
+    let editingTaskID: PersistentIdentifier?
+    let onSelectForEditing: (PersistentIdentifier?) -> Void
+    let onCommitEdit: (AppTask, CadenceTimelineBlockEdit.Kind, (start: Int, end: Int)) -> Void
+
+    /// The minute range the block under the finger is drawn at **while** it is moved or resized
+    /// ([[T-1475]]). Nothing is written to the task until the finger lifts: the preview lives
+    /// here, the commit happens once, and a refused commit leaves nothing to undo on screen
+    /// because the block was only ever drawn here at the new minute.
+    @State private var editPreview: BlockEditPreview?
+
+    private struct BlockEditPreview: Equatable {
+        let taskID: PersistentIdentifier
+        let start: Int
+        let end: Int
+    }
 
     /// The in-place draft, owned by the column that drew it. One column, one draft: a press lands
     /// on exactly one day, and a grid that windows a scrolling range would otherwise need a rule
@@ -972,18 +1028,26 @@ private struct iOSCalendarTimelineDayColumn: View {
             }
 
             ForEach(tasks) { task in
-                let range = taskRange(task)
+                let stored = taskRange(task)
+                let range = drawnRange(for: task, stored: stored)
                 let key = BlockKey.task(task.persistentModelID)
                 let slot = horizontalFrame(placements[.task(task.persistentModelID)], kind: .task)
+                let height = blockHeight(start: range.start, end: range.end)
+                let isLifted = editingTaskID == task.persistentModelID
+                    || editPreview?.taskID == task.persistentModelID
                 iOSTimelineTaskBlock(
                     task: task,
                     startMin: range.start,
                     endMin: range.end,
-                    onClearTime: onClearTime.map { clear in { clear(task) } }
+                    onClearTime: onClearTime.map { clear in { clear(task) } },
+                    editing: blockEditing(for: task, stored: stored, drawnHeight: height)
                 )
-                .frame(width: slot.width, height: blockHeight(start: range.start, end: range.end))
+                .frame(width: slot.width, height: height)
                 .offset(x: slot.x, y: yOffset(for: range.start))
-                .zIndex(solved.zIndexes[key] ?? 1)
+                // A lifted block is drawn over its neighbours, so the handle bands it hangs past
+                // its own edges are not under the block it is being dragged across. Still below
+                // the draft and the now-line, which are declared after it at the same index.
+                .zIndex(isLifted ? iOSCalendarTimelineBlockLayout.overlayZIndex : (solved.zIndexes[key] ?? 1))
             }
 
             // Above every block, which is where these two were by declaration order until the
@@ -1045,7 +1109,10 @@ private struct iOSCalendarTimelineDayColumn: View {
                 .gesture(draftPressGesture)
                 .simultaneousGesture(
                     SpatialTapGesture()
-                        .onEnded { value in beginDraft(atY: value.location.y) }
+                        .onEnded { value in
+                            guard !putDownLiftedBlock() else { return }
+                            beginDraft(atY: value.location.y)
+                        }
                 )
         } else {
             Rectangle()
@@ -1054,6 +1121,7 @@ private struct iOSCalendarTimelineDayColumn: View {
                 .gesture(
                     SpatialTapGesture()
                         .onEnded { value in
+                            guard !putDownLiftedBlock() else { return }
                             onCreateAt(DateFormatters.dateKey(from: date), minute(for: value.location.y))
                         }
                 )
@@ -1066,6 +1134,7 @@ private struct iOSCalendarTimelineDayColumn: View {
             .onChanged { value in
                 guard case .second(true, let drag?) = value else { return }
                 if draft == nil {
+                    onSelectForEditing(nil)
                     beginDraft(atY: drag.startLocation.y)
                     return
                 }
@@ -1080,6 +1149,68 @@ private struct iOSCalendarTimelineDayColumn: View {
                 guard draft != nil else { return }
                 isDraftEditorPresented = true
             }
+    }
+
+    /// Puts a lifted block down, answering whether there was one. A tap on empty canvas while a
+    /// block is lifted means "done", not "make something here" — Apple Calendar's answer too —
+    /// so the caller stops there.
+    private func putDownLiftedBlock() -> Bool {
+        guard editingTaskID != nil else { return false }
+        onSelectForEditing(nil)
+        return true
+    }
+
+    /// The range a task block is drawn at: the live preview while it is under the finger, the
+    /// stored range otherwise.
+    private func drawnRange(for task: AppTask, stored: (start: Int, end: Int)) -> (start: Int, end: Int) {
+        guard let editPreview, editPreview.taskID == task.persistentModelID else { return stored }
+        return (editPreview.start, editPreview.end)
+    }
+
+    /// The move and resize hooks for one block ([[T-1475]]).
+    ///
+    /// Every edit is measured from `stored`, the range the block had when the finger went down,
+    /// by `CadenceTimelineBlockEdit.editedRange` — never from the previous frame's preview, so a
+    /// slow drag cannot accumulate rounding. Overlap columns are still solved over the stored
+    /// ranges (`blockPlacements`), so neighbours hold still under a block being dragged past them.
+    private func blockEditing(
+        for task: AppTask,
+        stored: (start: Int, end: Int),
+        drawnHeight: CGFloat
+    ) -> iOSTimelineBlockEditing {
+        let taskID = task.persistentModelID
+        let resolve: (CadenceTimelineBlockEdit.Kind, CGFloat) -> (start: Int, end: Int) = { kind, translationY in
+            CadenceTimelineBlockEdit.editedRange(
+                kind: kind,
+                start: stored.start,
+                end: stored.end,
+                translationY: translationY,
+                hourHeight: hourHeight
+            )
+        }
+        return iOSTimelineBlockEditing(
+            isSelected: editingTaskID == taskID,
+            drawnHeight: drawnHeight,
+            onLift: { onSelectForEditing(taskID) },
+            onChanged: { kind, translationY in
+                let range = resolve(kind, translationY)
+                editPreview = BlockEditPreview(taskID: taskID, start: range.start, end: range.end)
+            },
+            onEnded: { kind, translationY in
+                let range = resolve(kind, translationY)
+                editPreview = nil
+                // A lift-and-release, or a drag that came back to where it began, writes nothing.
+                guard range.start != stored.start || range.end != stored.end else { return }
+                onCommitEdit(task, kind, range)
+            },
+            onSettled: {
+                // A gesture the system cancelled — a scroll, a second finger, an incoming call —
+                // never reaches `onEnded`. Drop its preview so the block goes back to the stored
+                // minute rather than staying drawn where the finger was.
+                if editPreview?.taskID == taskID { editPreview = nil }
+            },
+            onPutDown: { onSelectForEditing(nil) }
+        )
     }
 
     /// Opens a draft at a pressed point, or leaves the one already there alone.
@@ -1468,10 +1599,21 @@ struct iOSTimelineTaskBlock: View {
     /// did not change is that clearing a block's time still lands the task somewhere you can see.
     /// The destination moved one divider left; only its name was stale.
     var onClearTime: (() -> Void)? = nil
+    /// Move and resize ([[T-1475]]). `nil` draws a block that only opens the inspector; the day
+    /// column always supplies it.
+    var editing: iOSTimelineBlockEditing? = nil
     // T-201: the page's `iOSTaskInspectorHost` presents, not this block. Both hosts of this block
     // rebuild their grid from a query keyed on the day and the slot, so completing or cancelling a
     // task from inside the panel dropped the block and the panel with it.
     @Environment(\.iOSTaskInspector) private var taskInspector
+    /// True from the moment the hold completes until the finger lifts or the system cancels the
+    /// gesture — a `@GestureState`, so a cancelled press resets it without an `onEnded`.
+    @GestureState private var isMovePressActive = false
+    @GestureState private var activeResize: CadenceTimelineBlockEdit.Kind?
+    @State private var liftCount = 0
+    /// When the last hold ended. A finger lifted off a held block is not a tap, whichever order
+    /// SwiftUI reports the hold's end and the tap's in; see `handleTap`.
+    @State private var pressSettledAt: Date?
 
     private var listColor: Color {
         Color(hex: task.containerColor)
@@ -1484,75 +1626,190 @@ struct iOSTimelineTaskBlock: View {
         RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous)
     }
 
-    /// Both ink tiers, resolved against the plate they are actually drawn on. This block carries
-    /// no hover or selection state — the press is `.iosPressable` — so both are read at rest.
+    /// Both ink tiers, resolved against the plate they are actually drawn on — the selected rung
+    /// while the block is lifted for a move or resize ([[T-1475]]), the resting rung otherwise.
     private var primaryInk: Color {
         CadenceCalendarEventStyle.platePrimaryLabelColor
     }
 
     private var secondaryInk: Color {
-        CadenceCalendarEventStyle.plateSecondaryLabelColor()
+        CadenceCalendarEventStyle.plateSecondaryLabelColor(isSelected: isLifted)
     }
 
-    /// [[T-3170]]: the block is neither draggable nor a drop target any more. Its only drag was the
-    /// drop-a-block-on-a-block gesture that formed a Block, and this grid's day column has no
-    /// `dropDestination` of its own, so there is no reschedule drop for a lift to feed. A task
-    /// released over a block is simply not accepted; the time is moved from the task inspector.
+    /// **What the block answers to ([[T-1475]]).** It used to carry an explicit no-drag contract —
+    /// [[T-3170]] took away its only drag, the drop-a-block-on-a-block gesture that formed a Block,
+    /// and that gesture stays gone: there is no drag payload and no drop destination here, and
+    /// nothing below forms, joins or leaves a bundle. What the block has now is what the Mac
+    /// canvas's block has always had — moving and edge-resizing the task's **own** time:
+    ///
+    /// - **Tap** opens the task inspector, as before.
+    /// - **Press and hold, then drag** moves the block in quarter hours. The hold is the point: a
+    ///   finger that moves before `liftPressDuration` is a scroll, the long press fails, and the
+    ///   day scrolls exactly as it did — Apple Calendar's own answer to the same collision.
+    /// - **A held block stays lifted** after the finger comes up, and only then shows top and
+    ///   bottom handles, each a 44pt touch band hung across its edge rather than the edge's few
+    ///   points of paint. They are absent on a resting block, so a scroll that starts on one cannot
+    ///   resize it. A tap on the canvas, or on the block, puts it down.
+    ///
+    /// The block resolves nothing itself. It reports the finger's travel through `editing`, and
+    /// the day column turns that into minutes (`CadenceTimelineBlockEdit.editedRange`), draws the
+    /// preview, and on release commits once through `CadenceTimelineBlockEdit.commit` — whose
+    /// refusal leaves the block at its stored minute with the failure named above the canvas.
     var body: some View {
         block
     }
 
-    private var block: some View {
-        Button {
-            taskInspector(task)
-        } label: {
-            HStack(alignment: .top, spacing: 6) {
-                iOSTaskCompletionCircle(glyph: .resolve(task: task))
-                    .frame(width: 11, height: 11)
-                    .padding(.top, 2)
+    private var isLifted: Bool {
+        (editing?.isSelected ?? false) || isMovePressActive || activeResize != nil
+    }
 
-                VStack(alignment: .leading, spacing: 3) {
-                    // A finished task drops one ink tier rather than going grey. `Theme.dim` was
-                    // chosen for a near-black surface and this surface is no longer near-black —
-                    // it reads about 2:1 on the plate. The strikethrough is what still says done.
-                    Text(TaskTitleSupport.displayTitle(task.title, fallback: TaskTitleSupport.defaultCompactDisplayTitle))
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(task.isDone ? secondaryInk : primaryInk)
-                        .strikethrough(task.isDone, color: secondaryInk)
-                        .lineLimit(2)
-                    Text(CadenceScheduleSupport.timeRangeLabel(startMinute: startMin, endMinute: endMin))
-                        .font(.system(size: 9, weight: .medium))
-                        .foregroundStyle(secondaryInk)
-                        .lineLimit(1)
+    private var block: some View {
+        blockFace
+            .scaleEffect(isMovePressActive ? 1.02 : 1)
+            .animation(.easeOut(duration: 0.12), value: isMovePressActive)
+            .contentShape(blockShape)
+            .onTapGesture { handleTap() }
+            .gesture(movePressGesture, isEnabled: editing != nil)
+            .accessibilityElement(children: .combine)
+            .accessibilityAddTraits(.isButton)
+            .accessibilityAction { openInspector() }
+            .overlay(alignment: .top) { resizeHandle(.resizeStart) }
+            .overlay(alignment: .bottom) { resizeHandle(.resizeEnd) }
+            .overlay(alignment: .topTrailing) { clearTimeControl }
+            // One tick when the block lifts, one per grid line crossed while it moves — the
+            // feedback a finger hiding the time label has instead of reading it.
+            .sensoryFeedback(.impact(weight: .medium), trigger: liftCount)
+            .sensoryFeedback(.selection, trigger: startMin * 10_000 + endMin) { _, _ in
+                isMovePressActive || activeResize != nil
+            }
+            .onChange(of: isMovePressActive) { _, active in
+                if active {
+                    liftCount += 1
+                    editing?.onLift()
+                } else {
+                    pressSettledAt = Date()
+                    editing?.onSettled()
                 }
             }
-            .padding(.horizontal, 7)
-            .padding(.vertical, 5)
-            // Clears the trailing control when there is one, so a two-line title cannot run under it.
-            .padding(.trailing, onClearTime == nil ? 0 : 26)
-            .frame(maxWidth: .infinity, maxHeight: fillsAvailableHeight ? .infinity : nil, alignment: .topLeading)
-            // The solved plate, in the list's own hue. The neutral surface and the wash over it
-            // are gone: a wash says the hue with luminance it has to borrow from the surface, and
-            // the ink above is solved against `plateLuminance` rather than against whatever that
-            // borrowing happened to composite to. The done state is carried by the ink tier and
-            // the strikethrough, not by a second fill at a second opacity.
-            .background {
-                blockShape.fill(CadenceCalendarEventStyle.plateFill(for: listColor))
+            .onChange(of: activeResize) { _, kind in
+                if kind == nil { editing?.onSettled() }
             }
-            .clipShape(blockShape)
-            // The resting edge is the list colour's own lit rim at `chipBorderOpacity`, which is
-            // the edge a solved plate asks for. `Theme.borderSubtle` is a near-black hairline; it
-            // was the right edge for the near-black surface this plate replaced and is invisible
-            // on the plate itself.
-            .overlay {
-                blockShape.strokeBorder(
-                    listColor.opacity(CadenceCalendarEventStyle.chipBorderOpacity()),
-                    lineWidth: 1
+    }
+
+    /// A tap that is really the end of a hold is dropped: either the hold is still active when
+    /// the tap reports, or it settled a moment before. Anything else opens the inspector.
+    private func handleTap() {
+        if isMovePressActive { return }
+        if let pressSettledAt, Date().timeIntervalSince(pressSettledAt) < 0.3 { return }
+        openInspector()
+    }
+
+    /// The one route to the inspector, for the tap and for VoiceOver's activate alike. Opening it
+    /// also puts a lifted block down: the inspector is now where the block's time is edited.
+    private func openInspector() {
+        editing?.onPutDown()
+        taskInspector(task)
+    }
+
+    private var movePressGesture: some Gesture {
+        LongPressGesture(minimumDuration: CadenceTimelineBlockEdit.liftPressDuration)
+            // `.global`, not the block's own space: the block is redrawn under the finger at the
+            // previewed minute on every step, and a translation read in a space that moves with it
+            // would chase itself.
+            .sequenced(before: DragGesture(minimumDistance: 0, coordinateSpace: .global))
+            .updating($isMovePressActive) { value, state, _ in
+                if case .second(true, _) = value { state = true }
+            }
+            .onChanged { value in
+                guard case .second(true, let drag?) = value else { return }
+                editing?.onChanged(.move, drag.translation.height)
+            }
+            .onEnded { value in
+                guard case .second(true, let drag) = value else { return }
+                editing?.onEnded(.move, drag?.translation.height ?? 0)
+            }
+    }
+
+    /// A grab handle at one end of a **lifted** block.
+    ///
+    /// **A 44pt touch band over 4pt of paint.** The band reaches into the block only as far as
+    /// `CadenceTimelineBlockEdit.handleInsideReach` allows — never into the interior a press needs
+    /// to move it — and the rest hangs past the edge, the trade `iOSTimelineDraftBlock.edgeHandle`
+    /// makes for the same reason: a quarter-hour block is 24pt tall, well under a finger.
+    @ViewBuilder
+    private func resizeHandle(_ kind: CadenceTimelineBlockEdit.Kind) -> some View {
+        if let editing, editing.isSelected || activeResize == kind {
+            let band = CadenceTimelineBlockEdit.handleTouchTarget
+            let outside = band - CadenceTimelineBlockEdit.handleInsideReach(blockHeight: editing.drawnHeight)
+            let isTop = kind == .resizeStart
+            Color.clear
+                .frame(maxWidth: .infinity)
+                .frame(height: band)
+                .contentShape(Rectangle())
+                .overlay(alignment: isTop ? .top : .bottom) {
+                    // Drawn just inside the edge, where it reads on the plate.
+                    Capsule()
+                        .fill(CadenceCalendarEventStyle.plateTertiaryLabelColor(isActive: true))
+                        .frame(width: 30, height: 4)
+                        .offset(y: isTop ? outside + 3 : -(outside + 3))
+                }
+                .offset(y: isTop ? -outside : outside)
+                .highPriorityGesture(
+                    DragGesture(minimumDistance: 0, coordinateSpace: .global)
+                        .updating($activeResize) { _, state, _ in state = kind }
+                        .onChanged { value in editing.onChanged(kind, value.translation.height) }
+                        .onEnded { value in editing.onEnded(kind, value.translation.height) }
                 )
+                .accessibilityHidden(true)
+        }
+    }
+
+    private var blockFace: some View {
+        HStack(alignment: .top, spacing: 6) {
+            iOSTaskCompletionCircle(glyph: .resolve(task: task))
+                .frame(width: 11, height: 11)
+                .padding(.top, 2)
+
+            VStack(alignment: .leading, spacing: 3) {
+                // A finished task drops one ink tier rather than going grey. `Theme.dim` was
+                // chosen for a near-black surface and this surface is no longer near-black —
+                // it reads about 2:1 on the plate. The strikethrough is what still says done.
+                Text(TaskTitleSupport.displayTitle(task.title, fallback: TaskTitleSupport.defaultCompactDisplayTitle))
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(task.isDone ? secondaryInk : primaryInk)
+                    .strikethrough(task.isDone, color: secondaryInk)
+                    .lineLimit(2)
+                Text(CadenceScheduleSupport.timeRangeLabel(startMinute: startMin, endMinute: endMin))
+                    .font(.system(size: 9, weight: .medium))
+                    .foregroundStyle(secondaryInk)
+                    .lineLimit(1)
             }
         }
-        .buttonStyle(.iosPressable)
-        .overlay(alignment: .topTrailing) { clearTimeControl }
+        .padding(.horizontal, 7)
+        .padding(.vertical, 5)
+        // Clears the trailing control when there is one, so a two-line title cannot run under it.
+        .padding(.trailing, onClearTime == nil ? 0 : 26)
+        .frame(maxWidth: .infinity, maxHeight: fillsAvailableHeight ? .infinity : nil, alignment: .topLeading)
+        // The solved plate, in the list's own hue. The neutral surface and the wash over it
+        // are gone: a wash says the hue with luminance it has to borrow from the surface, and
+        // the ink above is solved against `plateLuminance` rather than against whatever that
+        // borrowing happened to composite to. The done state is carried by the ink tier and
+        // the strikethrough, not by a second fill at a second opacity. A lifted block reads the
+        // plate's own selected rung rather than a fill invented for it.
+        .background {
+            blockShape.fill(CadenceCalendarEventStyle.plateFill(for: listColor, isSelected: isLifted))
+        }
+        .clipShape(blockShape)
+        // The resting edge is the list colour's own lit rim at `chipBorderOpacity`, which is
+        // the edge a solved plate asks for. `Theme.borderSubtle` is a near-black hairline; it
+        // was the right edge for the near-black surface this plate replaced and is invisible
+        // on the plate itself.
+        .overlay {
+            blockShape.strokeBorder(
+                listColor.opacity(CadenceCalendarEventStyle.chipBorderOpacity()),
+                lineWidth: isLifted ? 1.5 : 1
+            )
+        }
     }
 
     /// A sibling of the block's own button rather than a child of it: nesting a `Button` inside
@@ -1586,6 +1843,24 @@ struct iOSTimelineTaskBlock: View {
             .accessibilityLabel("Move \(TaskTitleSupport.displayTitle(task.title)) back to Today's tasks")
         }
     }
+}
+
+/// What a day column hands a task block so the block can be moved and resized ([[T-1475]]).
+///
+/// The block reports **finger travel in points** and nothing else; the column owns the minutes,
+/// the preview and the commit. Keeping the arithmetic out of the block is what lets the one
+/// stored range every edit is measured from live in one place.
+struct iOSTimelineBlockEditing {
+    /// Lifted: drawn on the selected plate rung and carrying its resize handles.
+    let isSelected: Bool
+    /// The height the column drew the block at, which the handle bands are fitted to.
+    let drawnHeight: CGFloat
+    let onLift: () -> Void
+    let onChanged: (CadenceTimelineBlockEdit.Kind, CGFloat) -> Void
+    let onEnded: (CadenceTimelineBlockEdit.Kind, CGFloat) -> Void
+    /// The gesture is over, whether it ended or was cancelled.
+    let onSettled: () -> Void
+    let onPutDown: () -> Void
 }
 
 // `iOSTimelineBundleBlock` used to be declared here — the Block card a timed day column drew,
