@@ -781,16 +781,17 @@ struct FocusEntryGateCallSiteTests {
     /// macOS's row. The gate is not new here — what is new is that it is the shared predicate rather
     /// than the fourth hand-written `!isDone && !isCancelled` in the app.
     @Test func theMacRowsHoverPlayReadsTheSharedPredicate() throws {
-        let body = try cadenceFunctionBody(
-            "private var focusButtonSlot: some View",
-            in: focusStrippingComments(focusSourceFile("Cadence/macOS/Views/TasksPanelComponents.swift"))
-        )
+        let code = try focusStrippingComments(focusSourceFile("Cadence/macOS/Views/TasksPanelComponents.swift"))
+        let body = try cadenceFunctionBody("private var focusButtonSlot: some View", in: code)
 
         #expect(body.contains("CadenceFocusSupport.canFocus(task)"))
         #expect(body.contains("!task.isDone") == false)
-        // Non-vacuity: this really is the slot's body, spacer and all.
-        #expect(body.contains("focusManager.startFocus(task: task, in: modelContext)"))
+        // Non-vacuity: this really is the slot's body, spacer and all. The start itself is the
+        // row's one `startFocus()`, shared with the right-click menu's Focus since [[T-1479]].
+        #expect(body.contains("Button(action: startFocus)"))
         #expect(body.contains("Color.clear"))
+        let start = try cadenceFunctionBody("private func startFocus()", in: code)
+        #expect(start.contains("focusManager.startFocus(task: task, in: modelContext)"))
     }
 
     /// The row's long-press menu. A menu is a list of things you can do, so the item is *absent* on

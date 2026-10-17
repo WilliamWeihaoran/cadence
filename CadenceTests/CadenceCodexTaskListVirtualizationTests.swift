@@ -79,17 +79,85 @@ struct CadenceCodexTaskListVirtualizationTests {
             host.layoutSubtreeIfNeeded()
             try await Task.sleep(for: .milliseconds(100))
             host.layoutSubtreeIfNeeded()
-            let mounted = nativeTaskRowCount(in: host)
-            print("T-3004 \(grouping.rawValue): stored \(count), mounted native task rows \(mounted)")
+            let mounted = mountedTaskRowCount(in: host, window: window)
+            print("T-3004 \(grouping.rawValue): stored \(count), mounted task rows \(mounted)")
             #expect(mounted > 0, "positive control: the actual task rows must mount in this host")
             #expect(mounted < 100, "\(grouping.rawValue): mounted \(mounted) native task rows for \(count) tasks")
             #expect(mounted < count / 2, "an eager group may not pass as a lazy page")
         }
     }
 
-    private func nativeTaskRowCount(in view: NSView) -> Int {
-        let own = view is RightClickActionTrigger.RightClickActionView ? 1 : 0
-        return own + view.subviews.reduce(0) { $0 + nativeTaskRowCount(in: $1) }
+    /// **The probe is the row's own accessibility identifier, not an AppKit overlay ([[T-3201]]).**
+    ///
+    /// It used to count `RightClickActionTrigger.RightClickActionView`, which `MacTaskRow` carried
+    /// for one reason: to turn a right-click into the same "open the inspector" the row's tap
+    /// already did. [[T-1479]] replaced that overlay with a real `.contextMenu`, so the class left
+    /// the row and this probe read **0** — a positive-control failure over a lazy-mount bound that
+    /// still held perfectly well. The overlay was never what made a row a row; it was an
+    /// implementation detail the probe had borrowed.
+    ///
+    /// `CadenceAccessibilityIdentifiers.taskRowTitle(title:)` is on the row's title because the row
+    /// needs it there — `CadenceTodayRowCrushUITests` reads that element's width, and T-1432's
+    /// defect is a title too truncated to look up by its text. One per realized row, and it cannot
+    /// quietly disappear the way the overlay did without a UI test going red first.
+    ///
+    /// **Why the enhanced-user-interface dance.** SwiftUI builds no accessibility children until
+    /// something asks as an assistive client would; `CadenceEyebrowAccessibilityTests` measured
+    /// that for T-2022 and this is the same manoeuvre. Without it the tree comes back empty and
+    /// the positive control above fails for the harness's reason rather than the view's.
+    private func mountedTaskRowCount(in host: NSView, window: NSWindow) -> Int {
+        let app = NSApplication.shared
+        let enhanced = NSSelectorFromString("accessibilitySetEnhancedUserInterfaceAttribute:")
+        _ = app.perform(enhanced, with: NSNumber(value: true))
+        defer { _ = app.perform(enhanced, with: NSNumber(value: false)) }
+
+        window.orderFrontRegardless()
+        defer { window.orderOut(nil) }
+        host.layoutSubtreeIfNeeded()
+        _ = host.accessibilityChildren()
+        RunLoop.main.run(until: Date().addingTimeInterval(0.5))
+
+        var found = 0
+        let identifierSelector = NSSelectorFromString("accessibilityIdentifier")
+        let childrenSelector = NSSelectorFromString("accessibilityChildren")
+        func walk(_ element: Any, depth: Int) {
+            guard depth < 64 else { return }
+            let object = element as AnyObject
+            if object.responds(to: identifierSelector),
+               let raw = object.perform(identifierSelector)?.takeUnretainedValue(),
+               "\(raw)".hasPrefix(Self.taskRowTitlePrefix),
+               "\(raw)".hasSuffix(".title") {
+                found += 1
+            }
+            guard object.responds(to: childrenSelector),
+                  let children = object.perform(childrenSelector)?.takeUnretainedValue() as? [Any] else { return }
+            for child in children { walk(child, depth: depth + 1) }
+        }
+        walk(host, depth: 0)
+        return found
+    }
+
+    /// Read off the builder rather than spelled out, so a change to the identifier's shape moves
+    /// this probe with it instead of silently zeroing it. `marker` slugs to itself, so whatever
+    /// sits in front of it is the fixed prefix every task-row title identifier carries.
+    private static let taskRowTitlePrefix: String = {
+        let sample = CadenceAccessibilityIdentifiers.taskRowTitle(title: "marker")
+        guard let range = sample.range(of: "marker") else { return "task.row." }
+        return String(sample[sample.startIndex..<range.lowerBound])
+    }()
+
+    /// The prefix is only a prefix if the builder still puts the slug in the middle. If this ever
+    /// fails, `mountedTaskRowCount` is counting nothing and every bound below is vacuous.
+    @Test func theRowIdentifierProbeStillMatchesTheIdentifierTheRowDraws() {
+        let identifier = CadenceAccessibilityIdentifiers.taskRowTitle(title: "Virtualization probe 7")
+        #expect(!Self.taskRowTitlePrefix.isEmpty, "the task-row identifier lost its fixed prefix")
+        #expect(identifier.hasPrefix(Self.taskRowTitlePrefix), "\(identifier) no longer starts with \(Self.taskRowTitlePrefix)")
+        #expect(identifier.hasSuffix(".title"), "\(identifier) no longer ends in .title")
+        #expect(
+            !CadenceAccessibilityIdentifiers.taskRowDueChip(title: "Virtualization probe 7")
+                .hasSuffix(".title"),
+            "the due chip now answers the row-title probe, which would double every count"
+        )
     }
 }
 #endif

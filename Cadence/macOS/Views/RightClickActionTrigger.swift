@@ -8,7 +8,7 @@ import AppKit
 /// point and never looked at it: any `.rightMouseDown` in the window got this view back, so the
 /// first of these AppKit views AppKit asked was the one that answered, whatever the pointer was
 /// over. That is the whole of the spatial contract for `hitTest(_:)` discarded — the argument is
-/// the *only* thing that says "this click is mine". These overlays sit on macOS task rows, timeline
+/// the *only* thing that says "this click is mine". These overlays sit on timeline
 /// blocks, calendar month tasks, Kanban cards and sidebar lists, so the neighbour whose event this
 /// could take is another row of the same list.
 ///
