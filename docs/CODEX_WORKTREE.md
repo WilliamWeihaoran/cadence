@@ -500,6 +500,15 @@ own `taskRowTitle` identifier, which is on the row because a UI test needs it th
 control test (`theRowIdentifierProbeStillMatchesTheIdentifierTheRowDraws`) fails loudly if the
 identifier's shape ever moves out from under it.
 
+**Extended 2026-10-17 to [[T-3211]], same path, same agent.** The re-key above raised a fair doubt
+and [[T-3211]] was filed to record it: the probe read **16 rows for 200 stored and 16 for 1000**, and
+16 is also exactly what a 320pt host holds, so it was not established that an EAGER list would read
+differently -- which would have made `mounted < count / 2` vacuous. It is established now, and the
+answer is the good one. A negative control drawing the same 1000 tasks in a deliberately eager
+`VStack` reads **1000**, against the real page's **16**: SwiftUI's accessibility tree enumerates what
+the list REALIZED, not what is on screen, so the bound is real. The control is landed in the same
+file under this grant. Nothing was added to or removed from the ```lease block for it either.
+
 ### CORRECTION 2026-10-17 — the refusal in `67b41992` was WRONG; those branches are LANDED
 
 `67b41992` refused a grant for `Cadence/macOS/Views/CalendarPageBoardSupportViews.swift` (for

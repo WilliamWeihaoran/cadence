@@ -87,6 +87,61 @@ struct CadenceCodexTaskListVirtualizationTests {
         }
     }
 
+    /// **The negative control the re-key needs — and that the overlay probe never had.**
+    ///
+    /// A probe that only saw what is on screen would read the same bounded number from a lazy page
+    /// and from one that realized all thousand rows, and `mounted < count / 2` above would prove
+    /// nothing at all. So the same thousand tasks are drawn once more in a deliberately EAGER
+    /// `VStack` inside a `ScrollView` — the shape the section views had before T-3004 — and the
+    /// same probe is asked again. It has to read far more there than the real page reads, or this
+    /// harness cannot tell the two apart and every bound above is decorative.
+    @Test func theProbeReadsAnEagerListAsFarLargerThanALazyOne() async throws {
+        let count = 1_000
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = container.mainContext
+        var seeded: [AppTask] = []
+        for index in 0..<count {
+            let task = AppTask(title: "Eager probe \(index)")
+            task.order = index
+            context.insert(task)
+            seeded.append(task)
+        }
+        try context.save()
+
+        let host = NSHostingView(rootView:
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(seeded) { TaskListDisplayRow(task: $0) }
+                }
+            }
+                .modelContainer(container)
+                .environment(RemindersManager.shared)
+                .environment(CadenceDeepLinkManager.shared)
+                .environment(DeleteConfirmationManager.shared)
+                .environment(HoveredTaskManager.shared)
+                .environment(HoveredEditableManager.shared)
+                .environment(FocusManager.shared)
+                .environment(TaskCompletionAnimationManager.shared)
+        )
+        host.frame = NSRect(x: 0, y: 0, width: 640, height: 320)
+        let window = NSWindow(contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = host
+        defer {
+            window.contentView = nil
+            window.close()
+        }
+        host.layoutSubtreeIfNeeded()
+        try await Task.sleep(for: .milliseconds(100))
+        host.layoutSubtreeIfNeeded()
+        let eager = mountedTaskRowCount(in: host, window: window)
+        print("T-3201 eager control: stored \(count), mounted task rows \(eager)")
+        #expect(
+            eager > 100,
+            "the probe read \(eager) rows from an EAGER list of \(count): it cannot tell eager from lazy, so the bounds in largeSingleGroupsMountOnlyABoundedSubsetOfNativeTaskRows are vacuous"
+        )
+    }
+
     /// **The probe is the row's own accessibility identifier, not an AppKit overlay ([[T-3201]]).**
     ///
     /// It used to count `RightClickActionTrigger.RightClickActionView`, which `MacTaskRow` carried
