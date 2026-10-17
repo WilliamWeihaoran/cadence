@@ -57,6 +57,11 @@ struct iOSMarkdownEditingSurface: View {
     @State private var pendingCommitWorkItem: DispatchWorkItem?
     @State private var referencePickerKind: iOSMarkdownReferencePickerKind?
     @State private var selectedRange = NSRange(location: 0, length: 0)
+    @State private var scrollRequest: iOSMarkdownScrollRequest?
+    @State private var outlineItems: [MarkdownOutlineItem] = []
+    @State private var unlinkedMentions: [Note] = []
+    @State private var showsOutline = false
+    @State private var showsUnlinkedMentions = false
     @State private var isImagePickerPresented = false
     @State private var selectedImageItems: [PhotosPickerItem] = []
     /// Set when an image insertion loses pictures — because the store refused the commit (T-629),
@@ -103,6 +108,8 @@ struct iOSMarkdownEditingSurface: View {
                 commitDraftImmediately()
             }
         }
+        .sheet(isPresented: $showsOutline) { outlineSheet }
+        .sheet(isPresented: $showsUnlinkedMentions) { unlinkedMentionsSheet }
         .sheet(item: $referencePickerKind) { kind in
             iOSMarkdownReferencePickerSheet(
                 kind: kind,
@@ -159,6 +166,10 @@ struct iOSMarkdownEditingSurface: View {
                     openNote: openReferencedNote,
                     openTask: { task in openEmbeddedTask(id: task.id) }
                 )
+            }
+
+            if editingNote != nil {
+                noteNavigation
             }
 
             iOSMarkdownFormatToolbar(
@@ -235,12 +246,136 @@ struct iOSMarkdownEditingSurface: View {
                     onOpenReference: onOpenReference,
                     onCreatePastedImages: createPastedImageAssets,
                     onResizeImage: resizeImageAsset,
-                    allowsImageInsertion: allowsImageInsertion
+                    allowsImageInsertion: allowsImageInsertion,
+                    scrollRequest: scrollRequest
                 )
                 .background(Color.clear)
             }
         }
         .background(Theme.surface)
+    }
+
+    // Resolve on opening, against the live draft. This avoids scanning all note titles on every
+    // keystroke and does not confuse outgoing plain-title mentions with the backlinks above.
+    private var noteNavigation: some View {
+        HStack(spacing: 18) {
+            Button {
+                outlineItems = MarkdownOutlineParser.items(in: draftText)
+                isFocused = false
+                showsOutline = true
+            } label: {
+                Label("Outline", systemImage: "list.bullet.indent")
+                    .frame(minHeight: 44)
+            }
+            .accessibilityIdentifier("note.outline")
+            Button {
+                refreshUnlinkedMentions()
+                isFocused = false
+                showsUnlinkedMentions = true
+            } label: {
+                Label("Unlinked mentions", systemImage: "link.badge.plus")
+                    .frame(minHeight: 44)
+            }
+            .accessibilityIdentifier("note.unlinkedMentions")
+            Spacer(minLength: 0)
+        }
+        .font(.system(size: 12, weight: .medium))
+        .foregroundStyle(Theme.subdued)
+        .buttonStyle(.plain)
+        .padding(.horizontal, 14)
+    }
+
+    private var outlineSheet: some View {
+        NavigationStack {
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 2) {
+                    if outlineItems.isEmpty {
+                        Text("No headings").foregroundStyle(Theme.subdued)
+                    }
+                    ForEach(outlineItems) { item in
+                        Button {
+                            jumpToHeading(item)
+                        } label: {
+                            Text(item.title)
+                                .padding(.leading, CGFloat(item.level - 1) * 12)
+                                .foregroundStyle(Theme.text)
+                                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                        }
+                        .buttonStyle(.iosPressable)
+                    }
+                }
+                .padding(14)
+            }
+            .background(Theme.surface.ignoresSafeArea())
+            .navigationTitle("Outline")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { showsOutline = false }
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
+    }
+
+    private func jumpToHeading(_ item: MarkdownOutlineItem) {
+        let location = min(max(0, item.location), (draftText as NSString).length)
+        let range = NSRange(location: location, length: 0)
+        selectedRange = range
+        scrollRequest = iOSMarkdownScrollRequest(range: range)
+        showsOutline = false
+    }
+
+    private var unlinkedMentionsSheet: some View {
+        NavigationStack {
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 2) {
+                    if unlinkedMentions.isEmpty {
+                        Text("No unlinked mentions").foregroundStyle(Theme.subdued)
+                    }
+                    ForEach(unlinkedMentions) { note in
+                        Button {
+                            linkMention(note)
+                        } label: {
+                            Label(note.displayTitle, systemImage: "link.badge.plus")
+                                .foregroundStyle(Theme.text)
+                                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                        }
+                        .buttonStyle(.iosPressable)
+                        .accessibilityLabel("Link \(note.displayTitle)")
+                    }
+                }
+                .padding(14)
+            }
+            .background(Theme.surface.ignoresSafeArea())
+            .navigationTitle("Unlinked mentions")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { showsUnlinkedMentions = false }
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
+    }
+
+    private func refreshUnlinkedMentions() {
+        guard let editingNote else { unlinkedMentions = []; return }
+        unlinkedMentions = NoteUnlinkedMentionResolver.unlinkedMentions(
+            noteID: editingNote.id, content: draftText, in: referenceNotes
+        )
+    }
+
+    private func linkMention(_ note: Note) {
+        let title = note.displayTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let range = NoteUnlinkedMentionResolver.firstLoosePhraseRange(title, in: draftText) else {
+            refreshUnlinkedMentions()
+            return
+        }
+        let markdown = NoteReferenceParser.noteReferenceMarkdown(for: note)
+        updateDraft((draftText as NSString).replacingCharacters(in: range, with: markdown))
+        commitDraftImmediately()
+        refreshUnlinkedMentions()
     }
 
     private var taskEmbedInfos: [UUID: MarkdownTaskEmbedRenderInfo] {
