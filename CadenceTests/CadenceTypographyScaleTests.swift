@@ -321,6 +321,7 @@ struct CadenceTypographyConversionSweepTests {
         "Cadence/iOS/iOSTaskDetailSheetSections.swift",
         "Cadence/iOS/iOSTaskDetailComponents.swift",
         "Cadence/Shared/Components/CadenceValueTile.swift",
+        "Cadence/Shared/Components/CadenceScheduleCaptureCard.swift",
     ]
 
     private static func fontLiteralInstrument() throws -> CadenceScanInstrument {
@@ -355,10 +356,10 @@ struct CadenceTypographyConversionSweepTests {
     /// A file with every `.font` deleted satisfies the sweep above.
     @Test func everyWorkflowFileThatDrawsTextGoesThroughTheAdapter() throws {
         let read = CadenceSourceScan.strippedSourceReader()
-        // The detail sheet itself draws no text of its own — it hosts the sections that do — so it
-        // is the one file here that legitimately has no call.
+        // The detail sheet itself draws no text of its own; the capture host still draws its
+        // permission action, and its shared card is part of the converted workflow too.
         let drawsText = Self.workflow.filter { $0 != "Cadence/iOS/iOSTaskDetailSheet.swift" }
-        #expect(drawsText.count == 5)
+        #expect(drawsText.count == 6)
         for path in drawsText {
             #expect(try read(path).contains(".cadenceFont("), "\(path) draws no scaled font")
         }
@@ -424,6 +425,8 @@ struct CadenceTypographyConversionSweepTests {
         #expect(hits.sorted() == [
             "Cadence/Shared/Components/CadenceChoicePicker.swift",
             "Cadence/Shared/Components/CadenceDatePicker.swift",
+            "Cadence/Shared/Components/CadenceScheduleCaptureCard.swift",
+            "Cadence/Shared/Components/CadenceSectionCreationRow.swift",
             "Cadence/Shared/Components/CadenceTimeRoller.swift",
             "Cadence/Shared/Components/EstimatePickerControl.swift",
             "Cadence/iOS/iOSCreateTaskSheet.swift",

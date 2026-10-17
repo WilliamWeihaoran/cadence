@@ -280,6 +280,9 @@ struct iOSListDetailView: View {
                         listName: title
                     )
                 )
+                CadenceSectionCreationRow(area: area, project: project)
+                    .padding(.horizontal, iOSListDetailTaskMetrics.horizontalPadding)
+                    .padding(.bottom, iOSListDetailTaskMetrics.bottomPadding)
             } else {
                 sectionStack
             }
@@ -357,6 +360,7 @@ struct iOSListDetailView: View {
                         hiddenCount: CadenceTaskSurfaceOptions.hiddenCompletedCount(from: completedTasks, tier: .touch)
                     )
                 }
+                CadenceSectionCreationRow(area: area, project: project)
             }
             // One gutter, not two (T-613). This was `.padding(12)` — the inset of the
             // `.cadenceCard()` `85809ff` deleted — *plus* the panel's own 12, so the section

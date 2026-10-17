@@ -3,15 +3,13 @@ import UIKit
 import XCTest
 
 /// T-3147: drive the tab-bar gesture, not the button's accessibility actions.
+/// T-3195: verify the shared capture card's layout and field transitions on phone and iPad.
 @MainActor
 final class CadenceCapturePaletteUITests: XCTestCase {
     private var app: XCUIApplication!
 
     override func setUpWithError() throws {
         try CadenceUITestEnvironment.requireAnUnlockedScreen()
-        guard UIDevice.current.userInterfaceIdiom == .phone else {
-            throw XCTSkip("This reproduction measures the iPhone tab-bar placement.")
-        }
         continueAfterFailure = false
     }
 
@@ -25,9 +23,9 @@ final class CadenceCapturePaletteUITests: XCTestCase {
         attach("tap-before")
         plus.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
         attach("tap-after")
-        XCTAssertTrue(app.navigationBars["New task"].waitForExistence(timeout: 5),
+        XCTAssertTrue(app.textFields["capture-title"].waitForExistence(timeout: 5),
                       "The physical tap did not open task capture. \(app.debugDescription)")
-        XCTAssertTrue(app.buttons["Cancel"].exists)
+        XCTAssertTrue(app.buttons["capture-cancel"].exists)
     }
 
     /// Measures delivered hold durations, not XCTest command scheduling latency.
@@ -39,11 +37,11 @@ final class CadenceCapturePaletteUITests: XCTestCase {
             print("CAPTURE-DURATION-BEGIN seconds=\(duration) epoch=\(Date().timeIntervalSince1970)")
             plus.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
                 .press(forDuration: duration)
-            let openedTask = app.navigationBars["New task"].waitForExistence(timeout: 2)
+            let openedTask = app.textFields["capture-title"].waitForExistence(timeout: 2)
             print("CAPTURE-DURATION-RESULT seconds=\(duration) openedTask=\(openedTask)")
             attach("duration-\(duration)-after")
             if openedTask {
-                XCTAssertTrue(app.buttons["Cancel"].exists)
+                XCTAssertTrue(app.buttons["capture-cancel"].exists)
             } else {
                 XCTAssertTrue(app.buttons["New Task"].isHittable,
                               "Hold ended in neither task capture nor the tab-bar surface.")
@@ -98,11 +96,11 @@ final class CadenceCapturePaletteUITests: XCTestCase {
                     XCTAssertTrue(plus.isHittable)
                     print("CAPTURE-LOAD-BEGIN count=\(count) page=\(page) seconds=\(duration) epoch=\(Date().timeIntervalSince1970)")
                     plus.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).press(forDuration: duration)
-                    let openedTask = app.navigationBars["New task"].waitForExistence(timeout: 2)
+                    let openedTask = app.textFields["capture-title"].waitForExistence(timeout: 2)
                     print("CAPTURE-LOAD-RESULT count=\(count) page=\(page) seconds=\(duration) openedTask=\(openedTask)")
                     attach("load-\(count)-\(page)-\(duration)-after")
                     if openedTask {
-                        app.buttons["Cancel"].tap()
+                        app.buttons["capture-cancel"].tap()
                         XCTAssertTrue(app.buttons["New Task"].waitForExistence(timeout: 5))
                     } else {
                         XCTAssertTrue(plus.isHittable)
@@ -135,10 +133,10 @@ final class CadenceCapturePaletteUITests: XCTestCase {
         start.press(forDuration: 1.2, thenDragTo: event, withVelocity: .slow, thenHoldForDuration: 0.8)
         print("CAPTURE-HOLD-END epoch=\(Date().timeIntervalSince1970)")
         attach("hold-slide-after")
-        XCTAssertTrue(app.textFields["Event title"].waitForExistence(timeout: 5),
+        XCTAssertTrue(app.textFields["capture-title"].waitForExistence(timeout: 5),
                       "A stationary hold and slide to the event tile did not open event capture. "
-                      + "Task capture present=\(app.navigationBars["New task"].exists). \(app.debugDescription)")
-        XCTAssertFalse(app.navigationBars["New task"].exists)
+                      + "Capture present=\(app.textFields["capture-title"].exists). \(app.debugDescription)")
+        XCTAssertTrue(app.segmentedControls["capture-kind"].buttons["Event"].isSelected)
     }
 
     /// The recording, not this post-release assertion, measures mid-hold visibility.
@@ -160,12 +158,25 @@ final class CadenceCapturePaletteUITests: XCTestCase {
             plus.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).press(forDuration: 1.2)
             print("CAPTURE-STATIONARY-END tab=\(label) epoch=\(Date().timeIntervalSince1970)")
             attach("\(label)-stationary-after")
-            XCTAssertFalse(app.navigationBars["New task"].exists,
+            XCTAssertFalse(app.textFields["capture-title"].exists,
                            "A stationary hold on \(label) was delivered as a task tap.")
         }
     }
 
     private func launchAndFindTabBarPlus(storeID: String = "capture-\(UUID().uuidString)") throws -> XCUIElement {
+        guard UIDevice.current.userInterfaceIdiom == .phone else {
+            throw XCTSkip("This reproduction measures the iPhone tab-bar placement.")
+        }
+        let plus = try launchAndFindCapturePlus(storeID: storeID)
+        XCTAssertTrue(app.buttons["Calendar"].exists)
+        XCTAssertTrue(app.buttons["More"].exists)
+        let screen = app.windows.firstMatch.frame
+        XCTAssertGreaterThan(plus.frame.midY, screen.minY + screen.height * 0.75,
+                             "The selected plus is not the phone's bottom tab-bar control.")
+        return plus
+    }
+
+    private func launchAndFindCapturePlus(storeID: String = "capture-card-\(UUID().uuidString)") throws -> XCUIElement {
         app = XCUIApplication()
         app.launchEnvironment["CADENCE_LOCAL_STORE_ONLY"] = "1"
         CadenceUITestEnvironment.isolateStoreAndPreferences(app, storeID: storeID)
@@ -176,12 +187,68 @@ final class CadenceCapturePaletteUITests: XCTestCase {
         XCTAssertTrue(plus.waitForExistence(timeout: CadenceUITestBounds.firstPaint))
         XCTAssertEqual(buttons.count, 1, "The gesture must target one identifiable button, not a guessed match.")
         XCTAssertTrue(plus.isHittable)
-        XCTAssertTrue(app.buttons["Calendar"].exists)
-        XCTAssertTrue(app.buttons["More"].exists)
-        let screen = app.windows.firstMatch.frame
-        XCTAssertGreaterThan(plus.frame.midY, screen.minY + screen.height * 0.75,
-                             "The selected plus is not the phone's bottom tab-bar control.")
         return plus
+    }
+
+    /// Runs on both standing devices; the same icons and chips must survive either layout.
+    func testFloatingCaptureCardShrinksItsIconRowAndRestoresAClearedDueDate() throws {
+        let plus = try launchAndFindCapturePlus()
+        plus.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        let title = app.textFields["capture-title"]
+        XCTAssertTrue(title.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["capture-cancel"].isHittable)
+        XCTAssertTrue(app.segmentedControls["capture-kind"].buttons["Task"].isSelected)
+        XCTAssertFalse(app.staticTexts["None"].exists)
+        let window = app.windows.firstMatch.frame
+        let card = app.otherElements["capture-card"]
+        XCTAssertTrue(card.exists)
+        XCTAssertLessThan(card.frame.height, window.height * 0.8, "Capture is a card, not a full-screen form")
+        XCTAssertGreaterThan(card.frame.minX, window.minX)
+        XCTAssertLessThan(card.frame.maxX, window.maxX)
+        attach("capture-card-empty")
+
+        let due = app.buttons["capture-set-dueDate"]
+        XCTAssertTrue(due.isHittable)
+        let list = app.buttons["capture-set-list"]
+        let tags = app.buttons["capture-set-tags"]
+        XCTAssertLessThan(due.frame.minX, list.frame.minX)
+        XCTAssertLessThan(list.frame.minX, tags.frame.minX)
+        due.tap()
+        XCTAssertTrue(app.buttons["Tomorrow"].waitForExistence(timeout: 5))
+        app.buttons["Tomorrow"].tap()
+        app.buttons["Done"].tap()
+        let chip = app.buttons["capture-chip-dueDate"]
+        XCTAssertTrue(chip.waitForExistence(timeout: 5))
+        XCTAssertFalse(due.exists)
+        XCTAssertLessThan(list.frame.minX, tags.frame.minX)
+        attach("capture-card-due-chip")
+        chip.tap()
+        XCTAssertTrue(app.buttons["Clear Due"].waitForExistence(timeout: 5))
+        app.buttons["Clear Due"].tap()
+        XCTAssertTrue(due.waitForExistence(timeout: 5))
+        XCTAssertFalse(chip.exists)
+        XCTAssertLessThan(due.frame.minX, list.frame.minX)
+        attach("capture-card-cleared")
+
+        app.buttons["capture-more"].tap()
+        XCTAssertTrue(app.buttons["Repeat"].waitForExistence(timeout: 5))
+        app.buttons["Repeat"].tap()
+        XCTAssertTrue(app.buttons["Weekly"].waitForExistence(timeout: 5))
+        app.buttons["Weekly"].tap()
+        XCTAssertTrue(app.buttons["capture-chip-repeatRule"].waitForExistence(timeout: 5))
+        attach("capture-card-repeat-chip")
+
+        title.tap()
+        title.typeText("Capture mode round trip")
+        app.segmentedControls["capture-kind"].buttons["Event"].tap()
+        XCTAssertTrue(app.segmentedControls["capture-kind"].buttons["Event"].isSelected)
+        XCTAssertEqual(title.value as? String, "Capture mode round trip")
+        attach("capture-card-event")
+        app.segmentedControls["capture-kind"].buttons["Task"].tap()
+        XCTAssertTrue(app.buttons["capture-chip-repeatRule"].exists)
+        XCTAssertTrue(app.buttons["capture-set-doDate"].exists, "Visiting Event must not schedule the task")
+        XCTAssertEqual(title.value as? String, "Capture mode round trip")
+        attach("capture-card-task-restored")
     }
 
     private func attach(_ name: String) {

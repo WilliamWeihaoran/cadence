@@ -764,9 +764,13 @@ struct CadenceCapturePaletteTests {
             #expect(corner.contains(spelling) == false, "the corner button still spells \(spelling)")
         }
 
-        // And there is one implementation of each behind them both.
+        // Task and Event both open the capture card; the calendar's own quick-create is not a
+        // second palette destination. List and Note routing remain singular.
         let host = try strippingComments(sourceFile("Cadence/iOS/iOSCaptureRadialMenu.swift"))
-        for spelling in ["iOSCreateTaskSheet(", "iOSCalendarQuickCreateSheet(", "iOSNoteEditorCover(", "NoteMigrationService"] {
+        #expect(host.components(separatedBy: "iOSCreateTaskSheet(").count - 1 == 2)
+        #expect(host.components(separatedBy: "iOSCalendarQuickCreateSheet(").count - 1 == 0)
+        #expect(host.contains("initialKind: .event"))
+        for spelling in ["iOSNoteEditorCover(", "NoteMigrationService"] {
             #expect(host.components(separatedBy: spelling).count - 1 == 1, "\(spelling) is not stated once")
         }
     }

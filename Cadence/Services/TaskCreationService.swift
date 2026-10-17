@@ -25,6 +25,10 @@ struct TaskCreationDraft {
     let tags: [Tag]
     var scheduledStartMin: Int = -1
     var estimatedMinutes: Int = 30
+    var repeatRule: TaskRecurrenceRule = .none
+    var seriesEndMode: TaskRecurrenceEndMode = .never
+    var seriesEndDateKey: String = ""
+    var seriesEndCount: Int = 0
 
     var trimmedTitle: String {
         if let shortcut = TaskTitleSupport.priorityShortcut(in: title) {
@@ -181,6 +185,19 @@ struct TaskCreationService {
         task.estimatedMinutes = max(5, draft.estimatedMinutes)
         task.tags = TagSupport.sorted(draft.tags)
         containerResolver.applyContainer(draft.container, to: task)
+
+        // Recurrence belongs to the insertion, so a refused create cannot leave a second write.
+        if draft.repeatRule != .none {
+            CadenceTaskRecurrenceWorkflowSupport.applyRecurrenceRule(
+                draft.repeatRule, to: task, allTasks: [task], scope: .thisTask
+            )
+            CadenceTaskRecurrenceWorkflowSupport.applyRecurrenceEnd(
+                mode: draft.seriesEndMode,
+                endDateKey: draft.seriesEndDateKey,
+                endCount: draft.seriesEndCount,
+                to: task, allTasks: [task], scope: .thisTask
+            )
+        }
 
         modelContext.insert(task)
         let subtasks = CadenceTaskMutationSupport.insertSubtasks(

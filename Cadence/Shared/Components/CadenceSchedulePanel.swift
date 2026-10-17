@@ -106,6 +106,14 @@ struct CadenceSchedulePanel<NotesField: View>: View {
     var offersTaskRepeat = true
     let actions: CadenceSchedulePanelActions
     private let notesField: NotesField?
+    private var captureOptions: CadenceScheduleCaptureOptions?
+
+    /// Capture changes the presentation, not the draft, picker vocabulary or commit contract.
+    func capturePresentation(_ options: CadenceScheduleCaptureOptions) -> Self {
+        var panel = self
+        panel.captureOptions = options
+        return panel
+    }
 
     @State private var isDoExpanded = false
     @State private var isDueExpanded = false
@@ -185,7 +193,27 @@ struct CadenceSchedulePanel<NotesField: View>: View {
 
     private var isReadOnly: Bool { readOnlyNotice != nil }
 
+    @ViewBuilder
     var body: some View {
+        if let captureOptions {
+            CadenceScheduleCaptureCard(
+                draft: $draft,
+                listChoices: listChoices,
+                sectionChoices: sectionChoices,
+                calendarChoices: calendarChoices,
+                calendarUnavailableNotice: calendarUnavailableNotice,
+                failureNotice: failureNotice,
+                canCommit: canCommit,
+                options: captureOptions,
+                actions: actions,
+                notesField: notesField
+            )
+        } else {
+            standardPanel
+        }
+    }
+
+    private var standardPanel: some View {
         VStack(alignment: .leading, spacing: 12) {
             if let readOnlyNotice {
                 CadenceInlineNotice(text: readOnlyNotice, tone: .informational)

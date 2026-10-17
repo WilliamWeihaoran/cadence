@@ -118,10 +118,10 @@ struct CadenceChoicePickerDismissalTests {
             // here would write a half-made task on the way past a picker row. It is the same
             // answer, for the same reason, as the three sheets above it.
             "Cadence/Shared/Components/CadenceSchedulePanel.swift": (4, 0),
+            "Cadence/Shared/Components/CadenceScheduleCaptureCard.swift": (4, 0),
             "Cadence/Shared/Components/CadenceStartTimeFieldRow.swift": (1, 0),
             "Cadence/iOS/iOSArchiveImportSettingsSection.swift": (1, 0),
             "Cadence/iOS/iOSCalendarSettingsSection.swift": (1, 0),
-            "Cadence/iOS/iOSCreateTaskSheetSupportViews.swift": (3, 0),
             "Cadence/iOS/iOSListEditorViews.swift": (2, 0),
             "Cadence/iOS/iOSSettingsOverviewSections.swift": (4, 0),
             // [[T-3171]]: the task inspector is the shared schedule panel. The components file's
@@ -173,7 +173,8 @@ struct CadenceChoicePickerDismissalTests {
         // more (priority, list, section, time) and the one committing time picker: 30 and 2.
         // Its third slice takes the quick-create sheet's three (calendar, list, section) onto the
         // panel's own rows, none of them committing: 27 and 2.
-        #expect(found.values.map(\.calls).reduce(0, +) == 27)
+        // T-3195 retires the capture tiles' three and adds the card's four draft pickers.
+        #expect(found.values.map(\.calls).reduce(0, +) == 28)
         #expect(found.values.map(\.committing).reduce(0, +) == 2)
     }
 

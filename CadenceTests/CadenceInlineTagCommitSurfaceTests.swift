@@ -359,14 +359,21 @@ struct CadenceInlineTagCommitSurfaceTests {
             #expect(view.contains(notice), "\(path) sets a notice it never draws")
         }
 
-        // The composer's hint line is a plain `Text(actionError)` rather than the shared component,
-        // which is the row it already used for a refused task creation (T-364). Same sentence,
-        // same place, so the tag failure reads as one more thing that did not happen.
+        // The Mac still draws its notice directly. Capture hands the same notice to the shared
+        // panel, whose card renders it; pin the whole forwarding chain rather than only a wrapper.
         let composer = try CadenceCommitSurfaceScan.scanned("Cadence/macOS/Views/InlineTaskComposerView.swift")
         #expect(composer.contains("Text(actionError)"))
 
         let sheet = try CadenceCommitSurfaceScan.scanned("Cadence/iOS/iOSCreateTaskSheet.swift")
-        #expect(sheet.contains("Text(actionError)"))
+        #expect(sheet.contains("failureNotice: actionError"))
+        #expect(sheet.contains(".capturePresentation("))
+        let panel = try CadenceCommitSurfaceScan.scanned("Cadence/Shared/Components/CadenceSchedulePanel.swift")
+        #expect(panel.contains("CadenceScheduleCaptureCard("))
+        #expect(panel.contains("failureNotice: failureNotice"))
+        let card = try CadenceCommitSurfaceScan.scanned("Cadence/Shared/Components/CadenceScheduleCaptureCard.swift")
+        #expect(card.contains("struct CadenceScheduleCaptureCard"))
+        #expect(card.contains("if let notice = actionError ?? failureNotice"))
+        #expect(card.contains("CadenceInlineNotice(text: notice, tone: .failure)"))
     }
 
     /// **Source shape.** No picker selects, appends or clears over a refused creation.
