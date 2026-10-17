@@ -158,9 +158,8 @@ struct CadenceTaskInlinePanel: View {
 extension CadenceSchedulePanelChoice {
     /// The List rows for editing a task that already exists: the Inbox, the active lists, **plus
     /// the one the task is in**, archived or not, so the row names where the task actually lives
-    /// (T-514). The rule `iOSTaskDetailSheet.listChoices` spells for itself; that sheet's copy is
-    /// pinned in place by `CadenceContainerPickerConsolidationTests` and can be re-pointed here in
-    /// a change that re-points the test.
+    /// (T-514). The one copy of the rule: `iOSTaskDetailSheet.listChoices` calls this too (T-3204),
+    /// pinned by `CadenceContainerPickerConsolidationTests`.
     static func editableTaskListChoices(
         areas: [Area],
         projects: [Project],

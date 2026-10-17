@@ -80,40 +80,14 @@ struct iOSTaskDetailSheet: View {
     }
 
     /// The lists a task can be moved to — the active ones — **plus the one it is in**, archived or
-    /// not, so the List row names where the task actually lives. The narrowing the container popover
-    /// this replaces did for itself, through the same two calls.
+    /// not, so the List row names where the task actually lives (T-514). One rule, shared with the
+    /// Mac's inline schedule panel (T-3204).
     private var listChoices: [CadenceSchedulePanelChoice] {
-        var rows = [
-            CadenceSchedulePanelChoice(
-                id: CadenceTaskComposerSupport.token(for: .inbox),
-                name: CadenceTaskInspectorSupport.inboxSegmentTitle,
-                color: Theme.blue,
-                systemImage: "tray.full.fill"
-            )
-        ]
-        rows += CadenceTaskComposerSupport.pickableAreas(
-            areas,
-            selectedID: CadenceTaskComposerSupport.selectedAreaID(containerChoice)
-        ).map {
-            CadenceSchedulePanelChoice(
-                id: CadenceTaskComposerSupport.token(for: .area($0.id)),
-                name: $0.name,
-                color: Color(hex: $0.colorHex),
-                systemImage: "tray.full.fill"
-            )
-        }
-        rows += CadenceTaskComposerSupport.pickableProjects(
-            projects,
-            selectedID: CadenceTaskComposerSupport.selectedProjectID(containerChoice)
-        ).map {
-            CadenceSchedulePanelChoice(
-                id: CadenceTaskComposerSupport.token(for: .project($0.id)),
-                name: $0.name,
-                color: Color(hex: $0.colorHex),
-                systemImage: "checklist"
-            )
-        }
-        return rows
+        CadenceSchedulePanelChoice.editableTaskListChoices(
+            areas: areas,
+            projects: projects,
+            selection: containerChoice
+        )
     }
 
     private var sectionChoices: [String] {

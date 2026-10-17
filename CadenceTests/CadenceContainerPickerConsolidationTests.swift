@@ -311,6 +311,12 @@ struct CadenceContainerPickerConsolidationTests {
     /// the draft's token — so the sheet must build those rows the way the popover narrows: the
     /// active lists **plus the selected one**, from the unfiltered queries, and resolve the save's
     /// list from the same unfiltered arrays.
+    ///
+    /// **One rule, not two (T-3204).** The rows are built by the shared
+    /// `CadenceSchedulePanelChoice.editableTaskListChoices`, which the Mac's inline schedule panel
+    /// also calls. The sheet must hand it the unfiltered queries and its own token-read selection,
+    /// and must not grow a narrowing of its own beside it; the builder must narrow through the
+    /// popover's two calls, keyed by the selection it was handed.
     @Test func theTaskInspectorNamesItsListThroughTheUnfilteredArrays() throws {
         let sheet = try CadenceSourceScan.strippingComments(
             CadenceSourceScan.sourceFile("Cadence/iOS/iOSTaskDetailSheet.swift")
@@ -319,15 +325,39 @@ struct CadenceContainerPickerConsolidationTests {
             CadenceSourceScan.declarationBody("private var listChoices: [CadenceSchedulePanelChoice]", in: sheet),
             "the list rows this test is about are not built here any more"
         )
-        #expect(choices.contains("CadenceTaskComposerSupport.pickableAreas("))
-        #expect(choices.contains("CadenceTaskComposerSupport.pickableProjects("))
-        #expect(choices.contains("selectedID: CadenceTaskComposerSupport.selectedAreaID(containerChoice)"))
-        #expect(choices.contains("selectedID: CadenceTaskComposerSupport.selectedProjectID(containerChoice)"))
+        #expect(
+            CadenceSourceScan.matchCount(
+                #"^\s*CadenceSchedulePanelChoice\.editableTaskListChoices\(\s*areas: areas,\s*projects: projects,\s*selection: containerChoice\s*\)\s*$"#,
+                in: choices
+            ) == 1,
+            "the sheet's rows are the shared rule over the unfiltered queries and nothing else"
+        )
+        // No second copy of the narrowing anywhere in the sheet.
+        #expect(CadenceSourceScan.matchCount("pickableAreas|pickableProjects", in: sheet) == 0)
         #expect(sheet.contains("@Query(sort: \\Area.order) private var areas: [Area]"))
+        #expect(sheet.contains("@Query(sort: \\Project.order) private var projects: [Project]"))
         // The three things the breadcrumb used to re-derive: the filtered arrays, the prefix
         // arithmetic, and the fall-through that produced the wrong word.
         #expect(CadenceSourceScan.matchCount("activeAreas|activeProjects", in: sheet) == 0)
         #expect(CadenceSourceScan.matchCount("dropFirst\\(", in: sheet) == 0)
+
+        // The one rule: Inbox first, then the active lists plus the selected one, narrowed by the
+        // popover's own two calls from whatever arrays it was handed.
+        let shared = try CadenceSourceScan.strippingComments(
+            CadenceSourceScan.sourceFile("Cadence/Shared/Components/CadenceTaskInlinePanel.swift")
+        )
+        let rule = try #require(
+            CadenceSourceScan.declarationBody("static func editableTaskListChoices(", in: shared),
+            "the shared editable-list rule is gone"
+        )
+        #expect(rule.contains("CadenceTaskComposerSupport.token(for: .inbox)"))
+        #expect(rule.contains("CadenceTaskComposerSupport.pickableAreas("))
+        #expect(rule.contains("CadenceTaskComposerSupport.pickableProjects("))
+        #expect(rule.contains("selectedID: CadenceTaskComposerSupport.selectedAreaID(selection)"))
+        #expect(rule.contains("selectedID: CadenceTaskComposerSupport.selectedProjectID(selection)"))
+        #expect(CadenceSourceScan.matchCount("activeAreas|activeProjects|\\.filter", in: rule) == 0)
+        #expect(CadenceSourceScan.matchCount(#"static func editableTaskListChoices\("#, in: shared) == 1)
+
         // The panel names the row by the token, nothing else.
         let panel = try CadenceSourceScan.strippingComments(
             CadenceSourceScan.sourceFile("Cadence/Shared/Components/CadenceSchedulePanel.swift")
