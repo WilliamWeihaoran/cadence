@@ -377,6 +377,8 @@ enum MarkdownStylist {
             imageAssets: imageAssets,
             taskEmbeds: taskEmbeds
         )
+        // The open inline task panel follows its card to wherever this styling put it ([[T-1481]]).
+        (textView as? CadenceTextView)?.positionInlineTaskPanel()
     }
 
     /// The width every width-dependent block on this platform is measured against.
@@ -529,7 +531,13 @@ enum MarkdownStylist {
         textView: NSTextView
     ) {
         if let embed = standaloneTaskEmbed(in: line, taskEmbeds: taskEmbeds) {
-            applyTaskEmbedBlock(storage: storage, lineRange: lineRange, embed: embed)
+            applyTaskEmbedBlock(
+                storage: storage,
+                lineRange: lineRange,
+                embed: embed,
+                reservedBelow: (textView as? CadenceTextView)?
+                    .inlineTaskPanelReservedSpacing(forTaskID: embed.task.id) ?? 0
+            )
             return
         }
 
@@ -778,7 +786,8 @@ enum MarkdownStylist {
     private static func applyTaskEmbedBlock(
         storage: NSTextStorage,
         lineRange: NSRange,
-        embed: MarkdownTaskEmbedLayoutInfo
+        embed: MarkdownTaskEmbedLayoutInfo,
+        reservedBelow: CGFloat = 0
     ) {
         guard lineRange.length > 0 else { return }
 
@@ -787,7 +796,10 @@ enum MarkdownStylist {
         paragraph.maximumLineHeight = embed.task.paragraphLineHeight
         paragraph.lineBreakMode = .byClipping
         paragraph.paragraphSpacingBefore = 4
-        paragraph.paragraphSpacing = 4
+        // `reservedBelow` is the open inline task panel's room ([[T-1481]]): spacing *after* the
+        // paragraph, so the card keeps its place at the top of the fragment and only the lines
+        // below it move. Zero for every embed whose panel is not open.
+        paragraph.paragraphSpacing = 4 + reservedBelow
 
         storage.addAttribute(.paragraphStyle, value: paragraph, range: lineRange)
         storage.addAttribute(.cadenceMarkdownTaskEmbed, value: embed, range: lineRange)

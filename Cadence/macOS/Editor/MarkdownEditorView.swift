@@ -712,6 +712,8 @@ enum MarkdownEditorScrollSupport {
         MarkdownStylist.refreshWidthDependentLayout(in: textView)
 
         layoutManager.ensureLayout(for: textContainer)
+        // A new width moves the card and narrows or widens the inline task panel under it.
+        (textView as? CadenceTextView)?.positionInlineTaskPanel()
         let usedRect = layoutManager.usedRect(for: textContainer)
         let targetHeight = max(
             contentSize.height,

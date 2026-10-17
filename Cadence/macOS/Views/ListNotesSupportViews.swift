@@ -402,8 +402,15 @@ struct TaskNoteEditorPane: View {
         linkedTaskForPopover = embeddedTask
     }
 
+    /// Every field chip but status opens the shared task panel **inside the note**, under the
+    /// card ([[T-1481]]); status keeps its own small editor, which holds Start and Cancel. Without
+    /// a text view yet there is nowhere inline to put it, so the popover is the fallback.
     private func editEmbeddedTask(id: UUID, field: MarkdownTaskEmbedField) {
-        guard embeddedTask(id: id) != nil else { return }
+        guard let embeddedTask = embeddedTask(id: id) else { return }
+        if MarkdownInlineTaskPanelRouting.opensPanel(for: field), let editorTextView {
+            editorTextView.presentInlineTaskPanel(for: embeddedTask, in: modelContext, onSaved: refreshEmbeddedTask)
+            return
+        }
         embeddedTaskEditRequest = TaskEmbedFieldEditRequest(taskID: id, field: field)
     }
 

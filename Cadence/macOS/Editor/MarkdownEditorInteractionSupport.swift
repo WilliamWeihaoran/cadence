@@ -44,6 +44,11 @@ final class CadenceTextView: NSTextView, NSTextFieldDelegate {
     /// stylist has never touched behaves exactly as it did before this property existed.
     var markdownLayoutSignature: MarkdownStyleSignature?
 
+    /// The task panel open in this note's text flow, if any ([[T-1481]]). Written only by
+    /// `MarkdownInlineTaskPanelSupport.swift`; `MarkdownStylist` reads it to reserve the panel's
+    /// height under its embed's card.
+    var inlineTaskPanel: MarkdownInlineTaskPanelState?
+
     private var resizingImageID: UUID?
     private var resizeStartX: CGFloat = 0
     private var resizeStartWidth: CGFloat = 0

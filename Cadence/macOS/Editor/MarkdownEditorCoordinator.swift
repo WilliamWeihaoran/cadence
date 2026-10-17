@@ -82,6 +82,11 @@ final class MarkdownEditorCoordinator: NSObject, NSTextViewDelegate {
         if let handled = handleTagPickerCommand(commandSelector, in: textView) { return handled }
         if let handled = handleReferencePickerCommand(commandSelector, in: textView) { return handled }
         if let handled = handleSlashCommandPickerCommand(commandSelector, in: textView) { return handled }
+        // Escape closes an open inline task panel ([[T-1481]]) once no picker wanted it.
+        if commandSelector == #selector(NSResponder.cancelOperation(_:)),
+           (textView as? CadenceTextView)?.cancelInlineTaskPanel() == true {
+            return true
+        }
         if let handled = handleCaretMovementCommand(commandSelector, in: textView) { return handled }
         if let handled = handleIndentationCommand(commandSelector, in: textView) { return handled }
         if let handled = handleDeletionCommand(commandSelector, in: textView) { return handled }

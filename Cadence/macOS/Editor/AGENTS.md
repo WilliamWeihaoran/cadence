@@ -33,8 +33,11 @@ usually belong in `Services/`; only NSTextView lifecycle, drawing, and event han
   `MarkdownTableHitInfo`, the cache the draw pass writes and a click reads.
 - `MarkdownTableInteractionSupport.swift` - the hosted cell editor: click / Tab / Shift-Tab /
   Return, the row and column context menu, and the "Show Table Source" escape.
+- `MarkdownInlineTaskPanelSupport.swift` - the shared task panel hosted under an embed's card in
+  the text flow (T-1481): the embed paragraph's `paragraphSpacing` reserves its height, so the note
+  reflows and the source never changes; Save / Cancel / Escape close it.
 
-These thirteen Swift files were six until T-105 and eleven until T-221; `MarkdownEditorInteractionSupport.swift` was 1,996
+These fourteen Swift files were six until T-105, eleven until T-221 and thirteen until T-1481; `MarkdownEditorInteractionSupport.swift` was 1,996
 lines and the largest file in the repo, and is now 843. Split by responsibility (layout manager /
 text view / decorations / coordinator / geometry / diff), not by line count. (This paragraph said
 "seven ... were four" while the list directly above it named eleven — the count is the list.)
