@@ -117,7 +117,42 @@ CadenceTests/CalendarBoardDayDropCommitTests.swift
 CadenceTests/CadenceEditorSaveCommitSurfaceTests.swift
 Cadence/Shared/CadenceTaskDateEditing.swift
 CadenceTests/CadenceMarkdownImageCommitSurfaceTests.swift
+Cadence/iOS/iOSCalendarManager.swift
+Cadence/iOS/iOSCalendarMonthViews.swift
+Cadence/iOS/iOSNotesView.swift
+Cadence/iOS/iOSMarkdownEditingSurface.swift
+Cadence/iOS/iOSNoteEditorSheetHeader.swift
+CadenceTests/CadenceCalendarFixtureEventsTests.swift
+CadenceTests/CadenceCalendarChipTreatmentTests.swift
+CadenceTests/CadenceNoteReferencePanelSurfaceTests.swift
+CadenceTests/CadenceOutlineParserRegexTests.swift
 ```
+
+### LEASE WIDENED 2026-10-17 — nine paths for Codex: T-1483, T-1468, T-1471 and T-1472
+
+Three jobs, chosen so none of them touches a file the three running local agents hold
+(`parkedland`, `blocktail`, `searchscope`).
+
+**T-1483 is the one that matters most and should go first.** The calendar fixture harness has
+exactly two product call sites and both are macOS, so on iOS the `calendar-hues` scenario seeds
+tasks and yields NO events — found by building the app and looking at it, not by reading. The event
+rail is the half of [[T-3168]] nobody has ever seen, and until iOS has a fixture door it cannot be
+seen there at all, because the only alternative is real EventKit permission, which no agent may
+request. Fix is the same two lines `CalendarTimelineSupport.swift` carries, ahead of the
+`isAuthorized` guard in `iOSCalendarManager.fetchEvents(for:)`. The safety property is unchanged and
+structural: `CADENCE_UI_TEST_MODE=1` is also a `CadenceEventKitLaunchGate` disarm signal, so a launch
+that can see fixtures provably cannot reach a real store.
+
+**T-1468** — iOS month chips show the event time, answering `nil` for an all-day event the way the
+Mac's `chipTimeLabel` already does.
+
+**T-1471 / T-1472** — the iOS note editor gets the heading outline and jump list, and
+unlinked-mention discovery. One pass over the editing surface, not two. Actual backlinks already
+exist on iOS and are NOT the same thing as unlinked mentions.
+
+The nine paths above enter the fence. Codex holds none of them today, and no `codex/*` branch has
+modified any of them — checked with the test that works, `git diff --name-only $(git merge-base $b
+main)..$b -- <path>` per branch, rather than the blob comparison that staleness falsifies.
 
 ### COORDINATOR GRANT 2026-10-17 — the Mac timeline canvas, which unblocks the last Block surfaces
 
