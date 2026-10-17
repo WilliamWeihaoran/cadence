@@ -119,6 +119,44 @@ Cadence/Shared/CadenceTaskDateEditing.swift
 CadenceTests/CadenceMarkdownImageCommitSurfaceTests.swift
 ```
 
+### CORRECTION 2026-10-17 — the refusal in `67b41992` was WRONG; those branches are LANDED
+
+`67b41992` refused a grant for `Cadence/macOS/Views/CalendarPageBoardSupportViews.swift` (for
+[[T-1478]]) and flagged `Cadence/iOS/iOSCalendarBoardView.swift`, on the grounds that
+`codex/calendar-day-drop-commit` and `codex/parity-functional-batch` held unlanded work there.
+**They do not. Both branches landed; the refusal is void and the grants are given below.**
+
+**The faulty inference:** that a blob differing from main's means the branch is ahead. It does not.
+This repo lands a Codex branch by APPLYING its files and then never deletes the branch, so every
+landed branch differs from main for ever — and keeps differing MORE as main evolves past it. The
+diff direction said so plainly and was read past: `CalendarPageBoardSupportViews.swift` was
+**+23 −96**, i.e. the branch has ninety-six lines FEWER than main. That is an old branch, not a
+pending one.
+
+**The check that actually settles it — use this one.** Ask whether main already contains the
+branch's work, by name:
+
+    git show <branch>:<test file> | grep -oE '@Test func [a-zA-Z]+'
+    # then, for each name:  rg -q "func <name>" CadenceTests/
+
+- `codex/calendar-day-drop-commit`: all four of its `CalendarBoardUnscheduleCommitTests` functions
+  are PRESENT on main. Landed.
+- `codex/parity-functional-batch`: all five sampled `CadenceCodexFunctionalParityTests` functions
+  are PRESENT on main. Landed.
+
+Patch application does not settle it either — for these branches `git apply --check` and
+`git apply --reverse --check` BOTH exit 1, because main has diverged far enough that the old hunks
+no longer match in either direction. An ambiguous result there is not evidence of pending work.
+
+**GRANTED to local agents, the refusal lifted:**
+- `Cadence/macOS/Views/CalendarPageBoardSupportViews.swift` — for T-1478, the Mac board's success
+  reconcile.
+- `Cadence/iOS/iOSCalendarBoardView.swift` — for T-3170's remaining Board work.
+
+**Standing note for the next coordinator:** there is no twenty-one branch Codex backlog. The
+branches are landed and simply never deleted, which the repo's own rules require — never reset,
+delete or force-push a `codex/*` branch. Do not mistake the graveyard for a queue.
+
 ### COORDINATOR 2026-10-17 (later) — one grant, one REFUSAL, and a correction to the grant above
 
 Four tickets were PARKED at once, every one of them on a leased path, so the lease had become the
