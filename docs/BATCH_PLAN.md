@@ -5,6 +5,21 @@ ran `rm -rf scratchpad` during cleanup, believing the shared directory was its o
 deletion itself, first and plainly. **This copy is tracked in git so the next cleanup sweep cannot
 take it**, which is the actual lesson.
 
+## Usage ceiling — SUSPENDED until 2026-10-18 14:06
+
+The owner granted a 24-hour override at 2026-10-17 14:06: *"for the next 24 hours, you may ignore the 80/90%
+token gate."* The standing rule in `feedback-usage-budget-ceiling` (wrap at 80%, pause at 90%) does
+not gate work until then. **After 2026-10-18 14:06 it applies again automatically** — this is time-boxed, not
+repealed, and nobody should have to remember that.
+
+**What the override does and does not buy.** It stops the coordinator pausing EARLY. It does not
+raise the hard session limit, and that limit is not a soft landing: on 2026-10-17 it fired about an
+hour after the previous override and killed three agents mid-flight. Nothing was lost — all three
+resumed with their context intact, and their uncommitted work was still in the shared tree — but
+that was recoverable by luck of timing more than design. So while the override stands: keep the
+restart backup current, prefer committing green work over holding it, and report the number when it
+crosses rather than acting on it.
+
 ## Rules in force
 
 - 3 agents per batch; 2–3 small tickets each, grouped by file locality so siblings cannot collide.
