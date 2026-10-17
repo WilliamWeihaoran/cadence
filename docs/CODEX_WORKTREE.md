@@ -139,6 +139,38 @@ Cadence/Shared/CadenceSectionEditingSupport.swift
 Cadence/Shared/CadenceSectionConfigMerge.swift
 ```
 
+### THE LEASE-STALENESS TEST, FINAL FORM 2026-10-17 — supersedes every earlier version above
+
+Three versions of this test were written into this file in one day, each wrong or weak, each
+corrected by an agent rather than by the coordinator who wrote it. This is the one to use.
+
+    git log main..<branch> -- <path>
+
+- **Empty** — that branch carries no commit touching the path. It never opened the file; it differs
+  from main only because its base is old. **Irrelevant. Ignore it.**
+- **Non-empty** — the branch has commits on the path that main lacks by ancestry. Now compare the
+  blob: identical to main's means the content was LANDED by file-application, differing means
+  genuinely pending work. **Only this case can block a grant.**
+
+One call per branch. No test-name sampling, no patch application, no inference from diff direction.
+
+**What it replaces, and why each failed:**
+1. *"Branch is ahead of main"* — every landed branch is ahead for ever, because this repo lands by
+   APPLYING files and never deletes the branch. Twenty-one branches ahead; the backlog was fiction.
+2. *`codex-land.sh review`* — refuses on its FIRST failing check, so an unrelated inbox-id clash
+   masks whether the content landed.
+3. *Blob comparison against main* — a branch differs on a file it NEVER OPENED, because main moved
+   past its base. Twenty-two of twenty-three branches "differed" on a file only one had ever
+   touched. This produced a wrong refusal in `67b41992`.
+4. *Modified-vs-its-own-base* (`git diff --name-only $(git merge-base $b main)..$b -- <path>`) — the
+   coordinator's third attempt. Better, but still answers "did this branch change the file relative
+   to where it started", which a branch created before the file existed can answer misleadingly.
+
+Credit: agent `parkedland` reached this independently, having already rejected the blob heuristic on
+its own before the coordinator's correction arrived. Agent `blocktail` had separately measured six
+false positives from version 4. **The coordinator wrote three wrong answers into committed
+documents; the agents found all three.**
+
 ### LEASE WIDENED 2026-10-17 — eight paths for a SECOND Codex agent: T-3195 and T-3192
 
 The owner is running two Codex agents. The first holds T-1483/T-1468/T-1471/T-1472 — calendar
