@@ -142,7 +142,38 @@ Cadence/Shared/Components/CadenceSectionCreationRow.swift
 Cadence/Shared/Components/CadenceSchedulePanel.swift
 Cadence/Shared/Components/CadenceScheduleCaptureCard.swift
 Cadence/Services/TaskCreationService.swift
+Cadence/iOS/iOSTimelineDraftCreate.swift
 ```
+
+### 2026-10-17 — a CROSS-AGENT dependency: one path granted, one REFUSED AND SEQUENCED
+
+The second Codex agent needs two things for T-3195's event Custom repeat. One is granted, one is
+not, and the refusal is the first time the staleness test has caught a **live** conflict rather than
+a stale one.
+
+**GRANTED: `Cadence/iOS/iOSTimelineDraftCreate.swift`** — clean, zero `codex/*` commits main lacks.
+Scope is forwarding the draft's end-mode / date / count fields through to `createEvent`, nothing more.
+
+**REFUSED FOR NOW: `Cadence/iOS/iOSCalendarManager.swift`.** It is already leased to the FIRST Codex
+agent for T-1483's fixture door, and that work has NOT landed — `rg CadenceCalendarFixtureEvents`
+returns nothing in the file yet. Worse, `git log main..codex/mobile-calendar-notes-parity --
+<path>` returns a commit whose blob **DIFFERS** from main. That is the genuinely-pending case the
+final-form test exists to identify, and this is the first live instance; every previous "differs"
+in this document turned out to be staleness.
+
+**Two Codex agents writing one file concurrently is the exact collision the fence exists to
+prevent**, and it would be worse than a local collision because neither agent can see the other's
+worktree. So this is sequenced, not refused permanently: when the first agent's branch lands, the
+method scope is granted to the second on request.
+
+**What the second agent should do meanwhile, which it already proposed itself:** continue the
+card/task side without touching either file. Its instinct to ask rather than assume a shared file
+was free is what surfaced this.
+
+**Note on the request's third path:** `Cadence/iOS/iOSScheduleDraftCreation.swift` does not exist in
+the tree. `createEvent` is referenced from `iOSTimelineDraftCreate.swift`, `iOSCalendarManager.swift`
+and `iOSCalendarQuickCreateSheet.swift`; the agent likely means a type inside the granted file. Not
+granted as named, because a grant for a path that does not exist cannot be scoped.
 
 ### LEASE WIDENED 2026-10-17 — five narrow paths the second Codex agent traced from source
 
