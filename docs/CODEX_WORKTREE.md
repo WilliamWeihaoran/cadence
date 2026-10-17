@@ -116,7 +116,25 @@ Cadence/Shared/CadenceTaskMutationSupport.swift
 CadenceTests/CalendarBoardDayDropCommitTests.swift
 CadenceTests/CadenceEditorSaveCommitSurfaceTests.swift
 Cadence/Shared/CadenceTaskDateEditing.swift
+CadenceTests/CadenceMarkdownImageCommitSurfaceTests.swift
 ```
+
+### LEASE WIDENED 2026-10-17 — `CadenceMarkdownImageCommitSurfaceTests.swift`, for a census PA-13 forces
+
+Codex asked rather than took, again correctly. **Verified before granting:** that file's
+`theImageInsertionNoticeCountsWhatTheDoorLostBeforeTheCommit` region ends in
+`#expect(total == 67, "the inline notice has \(total) call sites, not the 67 this test was written
+over")`. It is a CENSUS of `CadenceInlineFailureNotice` call sites, so PA-13 adding a refusal notice
+to the iOS board moves it to 68 whether or not anyone intends to touch this file. The file's own
+comments record the same thing happening twice before: T-1132 made it 67, and T-3171 made it 67
+again on the Mac.
+
+**Scope: the integer and a comment naming [[T-1470]] / PA-13 beside the other two, in the house
+style those comments already set.** Not the test's logic, not its other assertions, not the
+surrounding image-commit coverage. A census test is supposed to fail when the census changes; the
+grant is to re-take the census, not to loosen it.
+
+**The grant is the line in the fence above, not this paragraph.**
 
 ### LEASE WIDENED 2026-10-17 — a fourth path for PA-13, `Cadence/Shared/CadenceTaskDateEditing.swift`
 
