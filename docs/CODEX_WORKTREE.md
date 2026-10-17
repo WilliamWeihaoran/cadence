@@ -119,6 +119,41 @@ Cadence/Shared/CadenceTaskDateEditing.swift
 CadenceTests/CadenceMarkdownImageCommitSurfaceTests.swift
 ```
 
+### COORDINATOR GRANT 2026-10-17 — the Mac timeline canvas, which unblocks the last Block surfaces
+
+Prose grant to LOCAL agents, for [[T-3170]] only. Fence unchanged.
+
+**Granted:** `Cadence/macOS/Views/TimelineDayCanvasSupportLayers.swift` and
+`Cadence/macOS/Views/TimelineDayCanvas.swift`.
+
+**Why this matters:** `TimelineBundleBlock.swift`, `TimelineBundleBlockSupportViews.swift` and
+`TaskBundlePickerSupportViews.swift` are themselves UNLEASED and ready to delete whole, but were
+unreachable — `TimelineBundleBlock` is constructed at `TimelineDayCanvasSupportLayers.swift:121` and
+`TaskBundleTaskPickerPanel` at `TimelineBundleBlockSupportViews.swift:145`. Blocked by construction,
+not by the lease on the files themselves. This grant is the last gate on finishing the Block removal.
+
+**A third demonstration of the staleness trap, and the sharpest one yet.** Twenty-one branches report
+BOTH canvas files as differing from main — including branches that never opened them. A branch
+differs on a file it never touched, purely because its base predates main's changes to that file. So
+"differs everywhere" is not weak evidence of pending work; it is evidence of NOTHING.
+
+**The question that works:** which branches actually MODIFIED the file, i.e. is it in that branch's
+own diff against its base?
+
+    for b in codex/*; do git diff --name-only $(git merge-base $b main)..$b -- <path>; done
+
+Answer here: `TimelineDayCanvasSupportLayers.swift` and `TimelineDayCanvas.swift` were touched by
+exactly ONE branch, `codex/ui-refresh-reconciliation` — landed by this coordinator in `7343bfe8`,
+and both files sit in that branch's identical-to-main set. `TimelineBundleBlock.swift` was touched by
+NO branch at all.
+
+**Use this test in preference to the blob comparison** recorded in the correction above. The blob
+test answers "is this file the same", which staleness alone can falsify. This one answers "did anyone
+change it", which is the question a lease is actually about.
+
+Credit where due: agent `blocktail` prompted this by declining to assume the canvas lease was real
+and asking for it to be re-checked.
+
 ### COORDINATOR GRANT 2026-10-17 — `blocktail` edits `CadenceTests/CalendarBoardDayDropCommitTests.swift`
 
 Prose, as always for a LOCAL agent entering a path Codex holds. Fence unchanged.
