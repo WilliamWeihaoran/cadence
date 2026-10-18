@@ -2643,6 +2643,30 @@ written, and the agent that reported it credited the coordinator, who did not ma
 and minimal, so it stands — but it was made against a leased path with no grant in force, which is
 the thing this document exists to prevent.
 
+### 2026-10-18 — T-3196 grant EXTENDED: the test that pins the chip's call sites
+
+**The 2026-10-16 grant above named three iOS SOURCE files and no test, so the removal it authorised
+was unreachable.** `CadenceTests/CadenceCodexTaskRowTypographyTests.swift:67` asserts
+
+    #expect(row.components(separatedBy: "iOSTaskRowEstimateChip(task: task)").count - 1 == 2)
+
+— exactly two call sites of the chip the grant says to delete. No spelling of the removal compiles
+past it. Agent `rowdue` reported this on 2026-10-17 and the grant was never widened, which is why
+**the estimate chip is still on iOS task rows today**: I confirmed it on the simulator just now,
+`⏱ 1h` on the trailing edge of the Today row, where the owner asked for the due date.
+
+**GRANTED, added to that section's scope:** `CadenceTests/CadenceCodexTaskRowTypographyTests.swift`,
+for T-3196 only — revise `:67`'s count and the paired `estimatedMinutes > 0` branch assertions to
+match the removal, and nothing else in the file.
+
+Verified landed before granting: one branch modified it, `codex/archive-typography-20261002`
+(2026-09-29), and all three sampled test functions are present on main.
+
+**The lesson, and it is the second time today:** a grant drawn from the files a *change* touches
+misses the files a *test* pins. `63b024d6` missed a second cap pin the same way. When scoping a
+grant for a removal, grep for the symbol being removed across `CadenceTests/` too — the guards are
+part of the work, not downstream of it.
+
 ### T-3196 / T-3197 — GRANTED: three iOS files, to remove two pieces of row and page chrome
 
 **`Cadence/iOS/iOSTaskRowActionViews.swift`, `Cadence/iOS/iOSTaskViews.swift` and
