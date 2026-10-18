@@ -375,7 +375,9 @@ struct CadenceRestoreSafetyGateTests {
         let code = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(path))
         #expect(code.contains("struct SettingsDataSafetySection"), "non-vacuity: wrong file")
         func count(_ needle: String) -> Int { code.components(separatedBy: needle).count - 1 }
-        #expect(count("StoreBackupManager.retainedUnrestoredOriginalDirectories()") == 1)
+        // Through the shared controls since [[T-1477]], which read the same listing for the store
+        // `forThisLaunch()` resolves; `CadenceStoreBackupControlsTests` pins that resolution.
+        #expect(count("retainedUnrestoredOriginals()") == 1)
         #expect(count("RetainedUnrestoredOriginalsRow(") == 1)
         #expect(count("ForEach(Array(retainedUnrestoredDirectories.enumerated())") == 1)
         #expect(count("deleteRetainedUnrestoredOriginals") == 0)

@@ -418,7 +418,11 @@ struct CadencePrivacyDataResetSurfaceTests {
             source.components(separatedBy: ".confirmationDialog(").count - 1 == 1,
             "the pane presents a second confirmationDialog again"
         )
-        #expect(source.contains("\"Restore Backup?\""), "non-vacuity: the surviving dialog is the restore one")
+        // The title is shared with the phone since [[T-1477]].
+        #expect(
+            source.contains("CadenceStoreBackupPresentation.confirmationTitle"),
+            "non-vacuity: the surviving dialog is the restore one"
+        )
         // Three mentions of the name and no more: the declaration, the sheet's `onConfirm:`, and
         // the shared sequence it calls. A fourth is a second route to the reset.
         #expect(

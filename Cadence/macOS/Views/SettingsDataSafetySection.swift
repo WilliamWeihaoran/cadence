@@ -76,7 +76,7 @@ struct SettingsDataSafetySection: View {
                             }
 
                         VStack(alignment: .leading, spacing: 6) {
-                            Text("Backups")
+                            Text(CadenceStoreBackupPresentation.title)
                                 .font(.system(size: 15, weight: .semibold))
                                 .foregroundStyle(Theme.text)
                             // What this said before: "Cadence backs up the local store, CloudKit
@@ -85,7 +85,7 @@ struct SettingsDataSafetySection: View {
                             // every launch, not only around a migration, and it never said the
                             // copies sit inside the app, which is the fact that decides whether a
                             // user needs an archive as well.
-                            Text("Cadence copies the local store — including CloudKit assets and external files — at every launch, before a restore, and whenever you ask. Automatic copies are thinned over time.")
+                            Text(CadenceStoreBackupPresentation.description)
                                 .font(.system(size: 12))
                                 .foregroundStyle(Theme.dim)
                                 .fixedSize(horizontal: false, vertical: true)
@@ -104,10 +104,10 @@ struct SettingsDataSafetySection: View {
 
                         HStack(spacing: 10) {
                             SettingsActionButton(tone: .filled(Theme.blue), action: createBackup) {
-                                Label("Create Backup", systemImage: "plus.circle.fill")
+                                Label(CadenceStoreBackupPresentation.createButtonTitle, systemImage: "plus.circle.fill")
                             }
                             SettingsActionButton(tone: .tinted(Theme.amber), action: cleanUpAutomaticBackups) {
-                                Label("Clean Automatic", systemImage: "wand.and.sparkles")
+                                Label(CadenceStoreBackupPresentation.cleanUpButtonTitle, systemImage: "wand.and.sparkles")
                             }
                             SettingsActionButton(tone: .tinted(Theme.blue), action: revealBackupFolder) {
                                 Label("Show Folder", systemImage: "folder.fill")
@@ -121,7 +121,7 @@ struct SettingsDataSafetySection: View {
             // card above it and 16pt above the list it labels, which is to say attached to
             // neither.
             VStack(alignment: .leading, spacing: CadenceSectionLabelMetrics.labelToNamedBlock) {
-                SettingsSectionLabel(text: "Available Backups")
+                SettingsSectionLabel(text: CadenceStoreBackupPresentation.availableBackupsLabel)
                 SettingsCard {
                     VStack(spacing: 0) {
                         if backups.isEmpty {
@@ -129,19 +129,19 @@ struct SettingsDataSafetySection: View {
                                 Image(systemName: "externaldrive")
                                     .font(.system(size: 14, weight: .semibold))
                                     .foregroundStyle(Theme.dim)
-                                Text("No backups available.")
+                                Text(CadenceStoreBackupPresentation.noBackupsText)
                                     .font(.system(size: 13))
                                     .foregroundStyle(Theme.dim)
                                 Spacer()
                             }
                         } else {
-                            ForEach(Array(backups.prefix(16).enumerated()), id: \.element.id) { index, backup in
+                            ForEach(Array(backups.prefix(CadenceStoreBackupPresentation.listedBackupLimit).enumerated()), id: \.element.id) { index, backup in
                                 StoreBackupRow(
                                     backup: backup,
                                     onReveal: { NSWorkspace.shared.activateFileViewerSelecting([backup.url]) },
                                     onRestore: { pendingRestore = backup }
                                 )
-                                if index < min(backups.count, 16) - 1 {
+                                if index < min(backups.count, CadenceStoreBackupPresentation.listedBackupLimit) - 1 {
                                     CadenceRowDivider(leadingInset: 42)
                                 }
                             }
@@ -195,13 +195,14 @@ struct SettingsDataSafetySection: View {
             //
             // Reveal only, for the reason the two lists below are: it may be the only copy of
             // those files, and the one thing allowed to remove it is Delete Account & Data,
-            // which says so. iOS has no section because iOS has no way to schedule a restore.
+            // which says so. iOS has no section because iOS has no way to schedule a restore yet
+            // (T-1477 is PARTIAL: the phone's section is parked, and lists these when it lands).
             if !retainedUnrestoredDirectories.isEmpty {
                 VStack(alignment: .leading, spacing: CadenceSectionLabelMetrics.labelToNamedBlock) {
-                    SettingsSectionLabel(text: "Unrestored Store Files")
+                    SettingsSectionLabel(text: CadenceStoreBackupPresentation.unrestoredSectionTitle)
                     SettingsCard {
                         VStack(alignment: .leading, spacing: 0) {
-                            Text("A restore that did not finish moved these store files aside, and Cadence kept them rather than delete them. They can be the only copy of your data as it was before that restore. Cadence does not back them up or read them; deleting all Cadence data removes them, and nothing else does.")
+                            Text(CadenceStoreBackupPresentation.unrestoredExplanation)
                                 .font(.system(size: 12))
                                 .foregroundStyle(Theme.dim)
                                 .fixedSize(horizontal: false, vertical: true)
@@ -282,24 +283,25 @@ struct SettingsDataSafetySection: View {
             exportDocument = nil
         }
         .confirmationDialog(
-            "Restore Backup?",
+            CadenceStoreBackupPresentation.confirmationTitle,
             isPresented: Binding(
                 get: { pendingRestore != nil },
                 set: { if !$0 { pendingRestore = nil } }
             ),
-            titleVisibility: .visible
-        ) {
-            Button("Stage Restore", role: .destructive) {
-                if let pendingRestore {
-                    stageRestore(pendingRestore)
-                }
+            titleVisibility: .visible,
+            presenting: pendingRestore
+        ) { backup in
+            Button(CadenceStoreBackupPresentation.confirmButtonTitle, role: .destructive) {
+                stageRestore(backup)
                 pendingRestore = nil
             }
-            Button("Cancel", role: .cancel) {
+            Button(CadenceStoreBackupPresentation.cancelButtonTitle, role: .cancel) {
                 pendingRestore = nil
             }
-        } message: {
-            Text("Cadence will restore this backup before the store opens on the next launch. Quit and reopen Cadence after staging.")
+        } message: { backup in
+            // T-1477: the shared sentence, which now also says the replaced store is kept and what
+            // iCloud sync can do afterwards — the words the phone's dialog is built on as well.
+            Text(CadenceStoreBackupPresentation.confirmationMessage(for: backup, on: .mac))
         }
         // Not a `confirmationDialog` (T-575). This was the one destructive action in the app whose
         // *less*-guarded path deleted the **more**: the Mac's dialog put a live "Delete Account &
@@ -313,12 +315,12 @@ struct SettingsDataSafetySection: View {
     }
 
     private func refreshBackups() {
-        backups = StoreBackupManager.listBackups()
+        backups = backupControls?.backups() ?? []
         // Read-only, and the only call on this screen that reaches a path outside the live store
         // directory. `unmanagedBackupDirectories` lists and sizes; nothing here can write.
         unmanagedBackupDirectories = StoreBackupManager.unmanagedBackupDirectories()
         unmanagedStoreDirectories = StoreBackupManager.unmanagedStoreDirectories()
-        retainedUnrestoredDirectories = StoreBackupManager.retainedUnrestoredOriginalDirectories()
+        retainedUnrestoredDirectories = backupControls?.retainedUnrestoredOriginals() ?? []
     }
 
     /// Builds the archive, then hands it to the system save panel. Encoding happens *before* the
@@ -351,29 +353,19 @@ struct SettingsDataSafetySection: View {
         }
     }
 
+    /// The calls this card makes — the same ones the phone's section will make (T-1477).
+    private var backupControls: CadenceStoreBackupControls? { CadenceStoreBackupControls.forThisLaunch() }
+
     private func createBackup() {
-        do {
-            if let url = try StoreBackupManager.createBackupIfStoreExists(reason: .manual) {
-                backupStatusMessage = "Created \(url.lastPathComponent)."
-            } else {
-                backupStatusMessage = "No active store exists yet."
-            }
-            refreshBackups()
-        } catch {
-            backupStatusMessage = "Backup failed: \(error.localizedDescription)"
-        }
+        guard let backupControls else { return }
+        backupStatusMessage = backupControls.createBackup()
+        refreshBackups()
     }
 
     private func cleanUpAutomaticBackups() {
-        do {
-            let removedCount = try StoreBackupManager.cleanUpAutomaticBackups()
-            backupStatusMessage = removedCount == 0
-                ? "Automatic backups are already thinned."
-                : "Removed \(removedCount) older automatic backup\(removedCount == 1 ? "" : "s")."
-            refreshBackups()
-        } catch {
-            backupStatusMessage = "Cleanup failed: \(error.localizedDescription)"
-        }
+        guard let backupControls else { return }
+        backupStatusMessage = backupControls.cleanUpAutomaticBackups()
+        refreshBackups()
     }
 
     private func revealBackupFolder() {
@@ -386,12 +378,8 @@ struct SettingsDataSafetySection: View {
     }
 
     private func stageRestore(_ backup: StoreBackupSnapshot) {
-        do {
-            try StoreBackupManager.scheduleRestore(from: backup.url)
-            backupStatusMessage = "Restore staged. Quit and reopen Cadence to apply it."
-        } catch {
-            backupStatusMessage = "Could not stage restore: \(error.localizedDescription)"
-        }
+        guard let backupControls else { return }
+        backupStatusMessage = backupControls.stageRestore(backup, on: .mac)
     }
 
     private func deleteCadenceData() {
@@ -800,10 +788,10 @@ private struct StoreBackupRow: View {
                 }
 
             VStack(alignment: .leading, spacing: 3) {
-                Text(backup.createdAt.formatted(date: .abbreviated, time: .shortened))
+                Text(CadenceStoreBackupPresentation.rowTitle(backup))
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(Theme.text)
-                Text("\(backup.reason) • \(backup.displaySize)")
+                Text(CadenceStoreBackupPresentation.rowDetail(backup))
                     .font(.system(size: 11))
                     .foregroundStyle(Theme.dim)
             }
@@ -814,7 +802,7 @@ private struct StoreBackupRow: View {
                 Text("Reveal")
             }
             SettingsActionButton(tone: .tinted(Theme.amber), action: onRestore) {
-                Text("Restore")
+                Text(CadenceStoreBackupPresentation.restoreButtonTitle)
             }
         }
         .padding(.vertical, 10)
