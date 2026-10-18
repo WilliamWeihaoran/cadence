@@ -26,9 +26,9 @@ import SwiftData
 /// **Why the declaration moved rather than the members being renamed into a second type.** An
 /// `extension CadenceTaskMutationSupport` in this file would still require the main file to
 /// declare the enum, which is the whole problem; and a differently-named helper type would break
-/// the spelling `CadenceTaskMutationSupport.insertBundle(` that source-text scans pin at their
-/// call sites — `CadenceBundleCreationParityTests` against `SchedulingService`, and
-/// `CadenceSaveCommitDisciplineTests` against the same file by path. Declaring the enum here and
+/// the `CadenceTaskMutationSupport.` spelling that source-text scans pin at call sites —
+/// `CadenceSaveCommitDisciplineTests` reads `try? CadenceTaskMutationSupport.duplicate(` in
+/// `iOSTaskRowActionViews.swift`, for one. Declaring the enum here and
 /// extending it there costs no call site and no pin a single character.
 ///
 /// Do not "tidy" this back into the main file, and do not add members here that reach further than

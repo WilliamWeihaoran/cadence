@@ -97,7 +97,7 @@ enum SchedulingActions {
 
     // [[T-3170]] removed createBundle(from:adding:in:) and insertBundle(from:adding:in:commit:)
     // with the Mac timeline's drag-a-task-onto-a-task gesture, their only caller. The shared
-    // `CadenceTaskMutationSupport.insertBundle(from:adding:)` stays for iOS's Calendar Board.
+    // constructor they forwarded to went too, once iOS's Calendar Board stopped forming blocks.
 
     static func removeTaskFromBundle(_ task: AppTask, keepOnBundleDate: Bool = true) {
         guard let bundle = task.bundle else { return }

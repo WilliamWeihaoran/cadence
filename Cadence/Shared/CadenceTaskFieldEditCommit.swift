@@ -158,11 +158,6 @@ struct CadenceTaskFieldSnapshot {
 /// because the block is not an `AppTask` and the move's subject is the block — a block with no
 /// members at all still moves, so there is no task to hang the commit on.
 ///
-/// **Deliberately not `CadenceTaskMutationSupport.updateBundle`**, which already undoes a block
-/// header plus its members' schedules. That unit writes `title` and clamps against its own
-/// literals, and it does **not** clear the members' calendar links, so routing the board's drop
-/// through it would have changed what the drop does on the way to fixing what it reports.
-///
 /// `restore(to:)` is spelled `restore(to bundle:)` so the task snapshot's own `restore` stays the
 /// only `func restore(to task: AppTask)` in this file; `thefieldSnapshotCapturesAndRestoresTheSameNamedFields`
 /// reads that declaration by its full prefix for exactly that reason.

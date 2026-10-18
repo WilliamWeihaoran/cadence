@@ -6,9 +6,11 @@ import SwiftData
 ///
 /// The owner asked for blocks to go ("the whole concept of bundle feels a bit unnecessary and adds
 /// confusion"). The hazard in doing that is not the `TaskBundle` rows; it is the **members**.
-/// `SchedulingActions.addTask` and `CadenceTaskMutationSupport.assignTask` both write
-/// `task.scheduledStartMin = -1` when a task joins a block, because the block carries the slot and
-/// the member deliberately does not. `-1` is this app's unscheduled sentinel. So removing blocks
+/// Every path that put a task in a block wrote `task.scheduledStartMin = -1` on it, because the
+/// block carries the slot and the member deliberately does not; those paths are gone (T-3170
+/// removed the last of them, the shared membership write and the Mac's add-to-block helper), but
+/// every member row they wrote still carries the value, in a store or arriving from CloudKit or an
+/// archive. `-1` is this app's unscheduled sentinel. So removing blocks
 /// and leaving the members alone would put every one of them on its date with **no time at all**,
 /// which is the state the timeline's layout filters out — the user's blocked work would simply
 /// stop being drawn, silently, with nothing to undo it from. Pushing the schedule down onto the

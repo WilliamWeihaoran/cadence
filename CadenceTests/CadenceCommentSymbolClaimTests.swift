@@ -930,14 +930,14 @@ enum CadenceCommentSymbolClaim {
     /// a real stale claim, not a memorial. They are held here so the sweep can stay exact; the
     /// product pass that rewrites each sentence deletes its line in the same change, which
     /// `everyQualifiedSymbolClaimInACommentResolvesOrIsLedgered` forces in both directions.
+    ///
+    /// **One, since the `staleclaims` pass.** Six were rewritten in one change: where the
+    /// substance was still live the sentence was reworded to the past tense or to a symbol that
+    /// exists (the retirement pass's `-1` members, the enum split's spelling pin), and where it was
+    /// gone the claim was deleted. The one left is TaskCreationService.swift's, held because that
+    /// file is leased to a live Codex agent; it comes off when that comment is fixed.
     static let staleClaims: [String] = [
-        "Cadence/Services/CadenceTaskBundleRetirement.swift `CadenceTaskMutationSupport.assignTask`",
-        "Cadence/Services/CadenceTaskBundleRetirement.swift `SchedulingActions.addTask`",
         "Cadence/Services/TaskCreationService.swift `CadenceTaskMutationSupport.bundleCreateFailureAlertTitle`",
-        "Cadence/Shared/CadenceScheduleDraft.swift `CadenceTaskMutationSupport.insertBundle(from:adding:)`",
-        "Cadence/Shared/CadenceTaskBundleMutationSupport.swift `CadenceTaskMutationSupport.insertBundle(`",
-        "Cadence/Shared/CadenceTaskFieldEditCommit.swift `CadenceTaskMutationSupport.updateBundle`",
-        "Cadence/macOS/Services/SchedulingService.swift `CadenceTaskMutationSupport.insertBundle(from:adding:)`",
     ]
 
     static var ledger: [String] { (deliberateTombstones + staleClaims).sorted() }
@@ -1044,8 +1044,9 @@ enum CadenceCommentSymbolClaim {
         // removed and the file was still Codex-leased; the grant `41ded784` unblocked it and
         // T-3170's Board pass deleted the function that comment documented, taking it to 0. It is
         // 7 since T-3170's trio pass left seven product comments naming what it deleted -- see
-        // `staleClaims`. A product pass that fixes them brings this back to 0.
-        #expect(stale.count == 7)
+        // `staleClaims`. The `staleclaims` pass fixed six, taking it to 1; the last is
+        // TaskCreationService.swift's, held for a live Codex lease. Fixing it brings this to 0.
+        #expect(stale.count == 1)
     }
 
     /// The sweep. Exact set equality, both directions, over every Swift file in all five targets.

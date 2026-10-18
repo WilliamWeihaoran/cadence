@@ -4,9 +4,9 @@ import Foundation
 ///
 /// **Deliberately two cases, not three.** The quick-create sheet's own kind enum carried a `.bundle`
 /// arm as well until [[T-3170]] took it out — and [[T-3171]] then retired that enum for this one,
-/// when the sheet adopted the shared panel; a Block is formed from tasks that already exist
-/// (`CadenceTaskMutationSupport.insertBundle(from:adding:)` takes two of them), so an empty slot has
-/// nothing to make one out of, and the feature is being retired in any case.
+/// when the sheet adopted the shared panel. A Block was only ever formed from tasks that already
+/// existed, so an empty slot had nothing to make one out of, and T-3170 has since removed every
+/// surface that formed a Block at all.
 @MainActor
 enum CadenceScheduleDraftKind: String, CaseIterable, Hashable, Identifiable, Sendable {
     case task
