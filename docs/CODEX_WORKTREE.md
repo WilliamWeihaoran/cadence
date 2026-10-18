@@ -154,6 +154,40 @@ CadenceTests/CadenceContainerPickerConsolidationTests.swift
 CadenceTests/CadencePresentedTypographyBoundaryTests.swift
 ```
 
+### 2026-10-17 — WHY ALL SIX VERSIONS FAILED: each asked a cheaper question than the one being asked
+
+Agent `blocktail`'s synthesis, recorded because it explains every failure above with one sentence
+and predicts the next one.
+
+**Each test answered a cheaper question than the one being asked, and read clean because of it:**
+
+| test | the question asked | the question answered |
+|---|---|---|
+| ahead-of-main | did anyone change this path | is the branch ahead at all |
+| `codex-land.sh review` | is this path safe | did the first check pass |
+| blob vs main | did anyone change it | is it the same right now |
+| modified-vs-own-base | did anyone change it | did it change since the branch began |
+| symbol sampling | did anyone EDIT this | was this name ADDED |
+| the agent's grep | does this test break | is the symbol mentioned |
+
+Every one is a real check. Every one is cheaper than the question, and the gap is where it fails —
+quietly, because a cheaper question returns an answer either way.
+
+**It predicts its own successor's failure.** The date check — "is any branch touching it dated
+inside this session" — answers *is it recent*, not *is it live*. A long-running branch nobody
+touched today will answer wrongly. **Expect a seventh correction and do not be surprised by it.**
+
+**The one clean signal found today**, worth more than the ladder: 24 branches report the identical
+September 4 commit `1b29d07b` on `TaskCreationService.swift`, and exactly one —
+`codex/capture-list-sections` — is dated today. The live branch is not merely different, it is the
+only one that is not a six-week-old echo of the same commit. **Distribution is more legible than any
+individual comparison**: when 24 of 25 agree exactly, the outlier is the finding.
+
+**The practical rule for the next coordinator:** do not look for a test that settles it. Narrow with
+`--no-merges`, then look at the SHAPE of what comes back. A path everyone touched identically six
+weeks ago is a graveyard. A path one branch touched today, with "pending" in its commit message, is
+someone's live work.
+
 ### 2026-10-17 — SIXTH refinement: symbol sampling cannot see a MODIFIED function body
 
 A pre-check for T-3170's stale-claims pass nearly cleared `Cadence/Services/TaskCreationService.swift`
