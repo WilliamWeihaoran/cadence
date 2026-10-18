@@ -1051,7 +1051,6 @@ enum CadenceCommentSymbolClaim {
         "Cadence/iOS/iOSSchedulePanelCopy.swift `CadenceTodayPresentationSupport.emptyScheduleHint`",
         "Cadence/iOS/iOSTaskCollectionPage.swift `iOSAllTasksView.allTasksPanel`",
         "Cadence/iOS/iOSTaskCollectionPage.swift `iOSInboxView.inboxColumn`",
-        "Cadence/iOS/iOSTaskRowActionViews.swift `CadenceTaskMutationSupport.setEstimatedMinutes`",
         "Cadence/macOS/Views/CalendarPageMonthSupportViews.swift `SchedulingActions.createTask`",
         "Cadence/macOS/Views/SettingsSupportViews.swift `SidebarTabEditorSheet.settingsPanelRow`",
         "Cadence/macOS/Views/SettingsTemplatesSection.swift `SettingsAISection.settingsField`",
@@ -1305,10 +1304,12 @@ enum CadenceCommentSymbolClaim {
         // those two that was never a finding, only a member the reader could not reach; 36 again
         // since [[T-3196]] deleted the macOS row's estimate chip, whose doc comment carried the
         // TasksPanelComponents half of the setEstimatedMinutes tombstone. The comment went with
-        // the struct, so the row is removed rather than struck off. The iOS half stands: its chip
-        // is still there. 49 since [[T-3209]] widened the root to lowercase and let a file base
-        // name be a root: thirteen memorials naming retired `iOS*` members became visible.
-        #expect(tombstones.count == 49)
+        // the struct, so the row is removed rather than struck off. 49 since [[T-3209]] widened
+        // the root to lowercase and let a file base name be a root: thirteen memorials naming
+        // retired `iOS*` members became visible. 48 since T-3196's iOS half deleted
+        // `iOSTaskRowEstimateChip`, whose doc comment carried the other half of the same
+        // tombstone; it went with the struct, as the macOS half did.
+        #expect(tombstones.count == 48)
         // It was 1 while the Calendar Board's formBundle doc named a Mac spelling [[T-3170]] had
         // removed and the file was still Codex-leased; the grant `41ded784` unblocked it and
         // T-3170's Board pass deleted the function that comment documented, taking it to 0. It is

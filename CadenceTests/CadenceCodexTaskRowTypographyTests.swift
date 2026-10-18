@@ -62,9 +62,11 @@ struct CadenceCodexTaskRowTypographyTests {
         #expect(reminder.contains(".iOSExpandedHitArea(max(0, (44 - frame) / 2))"))
         #expect(row.contains(".lineLimit(wraps ? nil : CadenceTaskRowMetrics.titleLineLimit)"))
         #expect(row.contains(".lineLimit(wraps ? nil : metrics.secondaryLineLimit)"))
-        #expect(row.contains("if task.estimatedMinutes > 0 && !wraps {"))
-        #expect(row.contains("if task.estimatedMinutes > 0 && wraps {"))
-        #expect(row.components(separatedBy: "iOSTaskRowEstimateChip(task: task)").count - 1 == 2)
+        // T-3196: the estimate chip is off the row at both widths, so neither `wraps` branch that
+        // used to place it survives and no call site does.
+        #expect(!row.contains("if task.estimatedMinutes > 0 && !wraps {"))
+        #expect(!row.contains("if task.estimatedMinutes > 0 && wraps {"))
+        #expect(row.components(separatedBy: "iOSTaskRowEstimateChip(task: task)").count - 1 == 0)
     }
 
     @Test func codexSwipeTrayUsesItsMeasuredFloorAndNamesIconOnlyActions() throws {

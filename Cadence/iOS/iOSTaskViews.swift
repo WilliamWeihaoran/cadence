@@ -179,21 +179,17 @@ struct iOSTaskRow: View {
             }
     }
 
-    /// Completion circle, the task, and the estimate — in that order, with nothing at the trailing
-    /// edge but the estimate.
+    /// Completion circle, then the task, and nothing at the trailing edge.
     ///
     /// There is **no disclosure chevron**. It said nothing the row's own tappability does not, and
-    /// it occupied the one piece of the row a finger reaches for last. The estimate took its place:
-    /// an estimate is a property of the task like its priority, and it has no business in the middle
-    /// of the date chips.
+    /// it occupied the one piece of the row a finger reaches for last. The estimate chip that took
+    /// its place is gone too (T-3196): the owner asked for it off the list row on every platform,
+    /// because a column of capsules down the trailing edge read before any title did. The estimate
+    /// is still on the task; it is edited from the inspector.
     private var rowContent: some View {
         HStack(alignment: .top, spacing: metrics.contentSpacing) {
             completionButton
             taskSummary
-
-            if task.estimatedMinutes > 0 && !wraps {
-                iOSTaskRowEstimateChip(task: task)
-            }
         }
     }
 
@@ -263,10 +259,6 @@ struct iOSTaskRow: View {
             }
 
             taskBadges
-
-            if task.estimatedMinutes > 0 && wraps {
-                iOSTaskRowEstimateChip(task: task)
-            }
 
             // The tag strip used to be here, wrapping onto its own line. It is one glyph beside
             // the title now (T-2058) — see `CadenceTaskRowIndicatorStrip`. The property it was

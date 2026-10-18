@@ -458,25 +458,20 @@ struct CadenceTodayUnificationTests {
             .contains("struct iOSTaskRow: View"))
     }
 
-    /// **The estimate chip is off the macOS row, and the iOS row still has it — on purpose, for
-    /// now ([[T-3196]]).**
+    /// **The estimate chip is off the task row on both platforms ([[T-3196]]).**
     ///
     /// This test used to be `bothRowsCarryAnEstimateChipOverTheSharedPicker`, and it was right for
     /// as long as the chip was wanted: `docs/CLAUDE_REFERENCE.md` records that the old
     /// always-loaded guide once called macOS's absence deliberate — "the row has **no** estimate
     /// control" — and the user overturned that, so the chip crossed. The user has now asked for it
     /// off the list row everywhere: *"for all devices when seeing tasks in a view like this, remove
-    /// the estimated time chip on the right of the task cuz it just looks noisy."*
+    /// the estimated time chip on the right of the task cuz it just looks noisy."* macOS went first;
+    /// the iOS half waited on a lease grant that had to cover the Codex test pinning its call sites.
     ///
-    /// **Why this is an asymmetry assertion rather than two zeros.** The macOS row is unleased and
-    /// the chip is gone from it. The iOS row is not: `Cadence/iOS/iOSTaskViews.swift` and
-    /// `iOSTaskRowActionViews.swift` are Codex-leased with a narrow grant, and
-    /// `CadenceTests/CadenceCodexTaskRowTypographyTests.swift` — which the grant does not cover —
-    /// asserts the two call sites and the two `wraps` branches by hand, so removing the chip from
-    /// iOS turns a leased test red and cannot be done from here. Rather than leave the iOS half
-    /// unpinned while it waits, the counts are stated exactly as they are, so the next pass has to
-    /// come back through this test and this comment to finish the job.
-    @Test func bothRowsCarryAnEstimateChipOverTheSharedPicker() throws {
+    /// The estimate is not gone from the product, only from the row: the inspector, the capture
+    /// card and Focus still read it. So the zeros below are about the two row files only, and the
+    /// shared picker and label are asserted absent from exactly those files, not from the app.
+    @Test func neitherRowCarriesAnEstimateChip() throws {
         try expectCallSites(
             of: "MacTaskRowEstimateChip",
             at: ["Cadence/macOS/Views/TasksPanelComponents.swift": 0]
@@ -484,37 +479,35 @@ struct CadenceTodayUnificationTests {
         try expectCallSites(
             of: "iOSTaskRowEstimateChip",
             at: [
-                "Cadence/iOS/iOSTaskViews.swift": 2,
-                "Cadence/iOS/iOSTaskRowActionViews.swift": 1,
+                "Cadence/iOS/iOSTaskViews.swift": 0,
+                "Cadence/iOS/iOSTaskRowActionViews.swift": 0,
             ]
         )
         let row = CadenceSourceScan.codeOnly(try sourceFile("Cadence/iOS/iOSTaskViews.swift"))
-        for condition in ["if task.estimatedMinutes > 0 && !wraps", "if task.estimatedMinutes > 0 && wraps"] {
-            let branch = try #require(CadenceSourceScan.declarationBody(condition, in: row))
-            #expect(CadenceSourceScan.matchCount(#"\biOSTaskRowEstimateChip\s*\("#, in: branch) == 1,
-                    "each mutually exclusive layout must draw exactly one estimate chip")
-        }
-        // Non-vacuity for the macOS zero: the file is still the task row's file and still draws the
-        // chip the estimate used to sit in front of. Without this the zero above would also pass
-        // over a renamed file or an empty read.
+        #expect(!row.contains("task.estimatedMinutes"),
+                "the iOS row reads no estimate once the chip is gone")
+        // Non-vacuity: both files are still the task rows' files. Without this the zeros above
+        // would also pass over a renamed file or an empty read.
+        #expect(row.contains("struct iOSTaskRow: View"))
+        #expect(row.contains("private var rowContent: some View"))
+        let actions = CadenceSourceScan.codeOnly(try sourceFile("Cadence/iOS/iOSTaskRowActionViews.swift"))
+        #expect(actions.contains("struct iOSTaskRowSubtaskRow: View"))
         let mac = CadenceSourceScan.codeOnly(try sourceFile("Cadence/macOS/Views/TasksPanelComponents.swift"))
         #expect(mac.contains("struct MacTaskRow: View"))
         #expect(mac.contains("dueDateBadgeList"))
-        // The picker and the shared label follow the chip: macOS reaches neither now, iOS reaches
-        // both exactly once, and the one surviving pair is still the one that cannot drift into
-        // "45m" here and "45 min" there.
+        // The picker and the shared label followed the chip off both rows.
         try expectCallSites(
             of: "EstimatePickerPopoverContent",
             at: [
                 "Cadence/macOS/Views/TasksPanelComponents.swift": 0,
-                "Cadence/iOS/iOSTaskRowActionViews.swift": 1,
+                "Cadence/iOS/iOSTaskRowActionViews.swift": 0,
             ]
         )
         try expectCallSites(
             of: "CadenceTaskPresentationSupport.estimateLabel",
             at: [
                 "Cadence/macOS/Views/TasksPanelComponents.swift": 0,
-                "Cadence/iOS/iOSTaskRowActionViews.swift": 1,
+                "Cadence/iOS/iOSTaskRowActionViews.swift": 0,
             ]
         )
     }

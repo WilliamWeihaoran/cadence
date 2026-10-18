@@ -335,19 +335,20 @@ struct CadenceIconOnlyButtonAccessibilityTests {
         for word in [
             "CadenceTaskControlAccessibility.list",
             "CadenceTaskControlAccessibility.recurrence",
-            "CadenceTaskControlAccessibility.estimate",
         ] {
             #expect(row.contains("field: \(word)"), "\(word) is not on the row")
         }
+        // T-3196 took the estimate chip off the row; a returning one must come back through here.
+        #expect(!row.contains("field: CadenceTaskControlAccessibility.estimate"))
         // The two date chips are one component, so the name comes off the field enum.
         #expect(row.contains("field: field.accessibilityLabel"))
         #expect(row.contains("case .doDate: return CadenceTaskControlAccessibility.doDate"))
         #expect(row.contains("case .dueDate: return CadenceTaskControlAccessibility.dueDate"))
 
-        // Four chips after T-1466 removed the milestone chip. A fifth would also have to name
-        // itself is the initialiser's job, not this test's — see
-        // `theSharedIOSChipCannotBeBuiltWithoutNamingItsField`.
-        #expect(CadenceSourceScan.matchCount(#"iOSTaskAttributeChip\("#, in: row) == 4)
+        // Four chips after T-1466 removed the milestone chip, three since T-3196 removed the
+        // estimate chip. That another would also have to name itself is the initialiser's job,
+        // not this test's — see `theSharedIOSChipCannotBeBuiltWithoutNamingItsField`.
+        #expect(CadenceSourceScan.matchCount(#"iOSTaskAttributeChip\("#, in: row) == 3)
         #expect(!row.contains("field: CadenceTaskControlAccessibility.milestone"))
 
         // Keep the shared words, including the retired label retained for future restoration.

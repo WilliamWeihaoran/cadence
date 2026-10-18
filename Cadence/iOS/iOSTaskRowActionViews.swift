@@ -405,51 +405,10 @@ enum iOSTaskRecurrenceSelection {
     }
 }
 
-/// The estimate, at the row's trailing edge — where the disclosure chevron used to be.
-///
-/// An estimate is a property of the task like its priority, not a date, which is the same reasoning
-/// that moved macOS's estimate out of the inspector's SCHEDULE well and onto its title row. It is
-/// drawn only when there is one: a placeholder on every row would put a permanent control at the
-/// edge of every task in the app for a field most tasks never use.
-struct iOSTaskRowEstimateChip: View {
-    let task: AppTask
-    @Environment(\.modelContext) private var modelContext
-    @State private var showPicker = false
-    /// Set when the store refused an estimate change. See `EstimatePickerPopoverContent`'s
-    /// committing form (T-761(b)): this used to write through a `Binding` whose setter reached
-    /// `CadenceTaskMutationSupport.setEstimatedMinutes`'s swallowed `try? modelContext.save()`,
-    /// while the popover's own Done/Clear/preset buttons closed unconditionally — the same shape
-    /// T-656 was written from, one component over.
-    @State private var estimateFailure: String?
-
-    var body: some View {
-        iOSTaskAttributeChip(
-            title: CadenceTaskPresentationSupport.estimateLabel(minutes: task.estimatedMinutes),
-            field: CadenceTaskControlAccessibility.estimate,
-            systemImage: "clock",
-            isSet: true,
-            size: .row,
-            textColor: Theme.dim
-        ) {
-            showPicker = true
-        }
-        .popover(isPresented: $showPicker, arrowEdge: .top) {
-            EstimatePickerPopoverContent(
-                value: task.estimatedMinutes,
-                failureNotice: estimateFailure,
-                onClose: { showPicker = false },
-                onCommit: { minutes in
-                    let landed = CadenceTaskFieldEditCommit.commit(task, in: modelContext) {
-                        task.estimatedMinutes = max(0, min(minutes, 1440))
-                    }
-                    estimateFailure = landed ? nil : CadenceTaskFieldEditCommit.saveFailureNotice
-                    return landed
-                }
-            )
-            .presentationCompactAdaptation(.popover)
-        }
-    }
-}
+// The row's trailing estimate chip used to be declared here. It is gone (T-3196): the owner asked
+// for it off the task list row on every platform because a column of capsules read as noise. The
+// estimate itself stays in the product: the task inspector, the capture card's overflow and Focus
+// still read and edit it. The macOS row lost its twin the same way.
 
 /// One unfinished subtask, listed beneath its task.
 ///
