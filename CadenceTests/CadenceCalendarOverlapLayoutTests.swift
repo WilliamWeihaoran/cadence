@@ -59,14 +59,17 @@ struct CadenceCalendarOverlapLayoutTests {
         #endif
     }
 
-    /// 29pt on the Mac, 32pt on iOS, each the sum of its own block's padding, spacing and two rows.
+    /// 29pt on the Mac, 45pt on iOS, each the sum of its own block's padding, spacing and rows.
     @Test func theEventHeaderHeightsAreTheSumsOfTheRowsTheBlocksActuallyDraw() {
         // 3pt padding + an 11pt time row + 2pt of spacing + a 13pt title row.
         #expect(CadenceCalendarOverlapLayout.macCalendarEventHeaderHeight == CGFloat(29))
         // The Schedule panel pads one point more.
         #expect(CadenceCalendarOverlapLayout.macEventHeaderHeight(verticalPadding: 4) == CGFloat(30))
-        // 5pt padding + a 13pt title row + 3pt of spacing + an 11pt time row.
-        #expect(CadenceCalendarOverlapLayout.iOSEventHeaderHeight == CGFloat(32))
+        // T-3193: 5pt padding + TWO 13pt title lines (the blocks' `.lineLimit(2)`) + 3pt of
+        // spacing + an 11pt time row. It was 32 — one title line — before.
+        #expect(CadenceCalendarOverlapLayout.iOSEventTitleLineLimit == 2)
+        #expect(CadenceCalendarOverlapLayout.iOSEventHeaderHeight == CGFloat(45))
+        #expect(Self.iosOneLineHeaderHeight == CGFloat(32), "the one-line header the old threshold was derived from")
     }
 
     /// The constants above are mirrored from two view files; this is what stops them drifting.
@@ -93,6 +96,28 @@ struct CadenceCalendarOverlapLayoutTests {
         #expect(phone.count > 20_000, "non-vacuity: read \(phone.count) characters of the iOS grid")
         #expect(phone.contains("VStack(alignment: .leading, spacing: 3)"))
         #expect(phone.contains(".padding(.vertical, 5)"))
+
+        // T-3193: the title's line limit, read off the title row of EACH iOS timed block — the
+        // first `.lineLimit(` after the 11pt semibold title font — rather than anywhere in the file.
+        for declaration in ["private struct iOSCalendarEventBlock: View", "struct iOSTimelineTaskBlock: View"] {
+            let body = try #require(
+                CadenceSourceScan.declarationBody(declaration, in: phone),
+                "\(declaration) was not found in the iOS grid"
+            )
+            let titleFont = try #require(
+                body.range(of: ".font(.system(size: 11, weight: .semibold))"),
+                "\(declaration) no longer draws an 11pt semibold title"
+            )
+            let limit = try #require(
+                body.range(of: ".lineLimit(", range: titleFont.upperBound..<body.endIndex),
+                "\(declaration)'s title has no line limit"
+            )
+            let argument = body[limit.upperBound...].prefix { $0 != ")" }
+            #expect(
+                Int(argument) == CadenceCalendarOverlapLayout.iOSEventTitleLineLimit,
+                "\(declaration)'s title is limited to \(argument) lines; the cascade threshold assumes \(CadenceCalendarOverlapLayout.iOSEventTitleLineLimit)"
+            )
+        }
     }
 
     // MARK: - 2. The threshold
@@ -420,6 +445,122 @@ struct CadenceCalendarOverlapLayoutTests {
             headerHeight: CadenceCalendarOverlapLayout.iOSEventHeaderHeight,
             hourHeight: iosHourHeight
         )
+    }
+
+    /// The iOS header as it was derived before T-3193 — ONE title line — kept only so the
+    /// before/after measurement below states its "before" out of the same constants.
+    private static var iosOneLineHeaderHeight: CGFloat {
+        CadenceCalendarOverlapLayout.headerHeight(
+            verticalPadding: CadenceCalendarOverlapLayout.iOSEventVerticalPadding,
+            rowSpacing: CadenceCalendarOverlapLayout.iOSEventLabelRowSpacing,
+            titleFontSize: CadenceCalendarOverlapLayout.eventTitleFontSize,
+            titleLineCount: 1,
+            timeFontSize: CadenceCalendarOverlapLayout.eventTimeFontSize
+        )
+    }
+
+    private static var iosOneLineCascadeGap: Int {
+        CadenceCalendarOverlapLayout.cascadeGapMinutes(headerHeight: iosOneLineHeaderHeight, hourHeight: iosHourHeight)
+    }
+
+    /// **T-3193: 47 minutes at rest, derived, not typed.** `ceil(45 / (58 / 60)) = 47`, against the
+    /// 34 a one-line header gave. Still zoom-aware: at the 3x pinch the same header costs a third.
+    @Test func theIOSThresholdAtRestClearsATwoLineTitleAndIsFortySevenMinutes() {
+        #expect(Self.iosHourHeight == CGFloat(58), "non-vacuity: the resting hour this arithmetic assumes moved")
+        #expect(Self.iosCascadeGap == 47)
+        #expect(Self.iosOneLineCascadeGap == 34, "the before figure the measurement compares against")
+        #expect(
+            CadenceCalendarOverlapLayout.cascadeGapMinutes(
+                headerHeight: CadenceCalendarOverlapLayout.iOSEventHeaderHeight,
+                hourHeight: Self.iosHourHeight * 3
+            ) == 16
+        )
+    }
+
+    /// One authored workweek — standups, 1:1s, lunches, reviews, focus blocks and errands, every
+    /// time on the quarter-hour grid a calendar actually schedules on. **Authored, not the owner's
+    /// data** (no agent may read a real calendar); its 20 overlapping pairs start 0 (x5), 15,
+    /// 30 (x5), 45 (x5), 60 (x3) and 75 minutes apart, so the reader can weigh it.
+    private static let measuredWeek: [[(String, IOSLayout.Kind, Int, Int)]] = [
+        [("standup", .event, 540, 555), ("triage", .task, 540, 570), ("design review", .event, 600, 660),
+         ("prep slides", .task, 630, 690), ("lunch with sam", .event, 750, 810), ("expenses", .task, 780, 810),
+         ("1:1 priya", .event, 840, 870), ("planning", .event, 840, 930), ("write spec", .task, 900, 1020),
+         ("team sync", .event, 960, 1005)],
+        [("standup", .event, 540, 555), ("code review", .task, 540, 600), ("customer call", .event, 585, 630),
+         ("interview", .event, 660, 720), ("lunch", .event, 720, 780), ("recruiter", .task, 735, 765),
+         ("architecture", .event, 780, 870), ("vendor demo", .event, 825, 870), ("refactor", .task, 900, 1020),
+         ("coffee chat", .event, 960, 990)],
+        [("standup", .event, 540, 555), ("all-hands", .event, 600, 660), ("blog post", .task, 600, 690),
+         ("lunch and learn", .event, 720, 780), ("sprint planning", .event, 810, 900), ("roadmap", .task, 855, 900),
+         ("1:1 manager", .event, 930, 960)],
+        [("standup", .event, 540, 555), ("triage", .task, 540, 570), ("workshop", .event, 600, 720),
+         ("critique", .event, 645, 690), ("follow-up", .task, 675, 720), ("lunch", .event, 750, 810),
+         ("doctor", .event, 900, 960), ("groceries", .task, 930, 990)],
+        [("standup", .event, 540, 555), ("prep demo", .task, 630, 675), ("demo day", .event, 660, 750),
+         ("retro", .event, 840, 900), ("weekly review", .task, 885, 930), ("happy hour", .event, 1020, 1110)],
+    ]
+
+    /// How many blocks of `measuredWeek` are drawn cascaded (depth >= 1) at one start-gap threshold.
+    private static func cascadedBlockCount(gap: Int, isCompactWidth: Bool) -> Int {
+        measuredWeek.reduce(0) { total, day in
+            let slots = day.map {
+                CadenceCalendarOverlapLayout.Slot(startMin: $0.2, endMin: $0.3, mayCascade: $0.1.mayCascade(isCompactWidth: isCompactWidth))
+            }
+            return total + CadenceCalendarOverlapLayout.solve(slots: slots, cascadeGapMinutes: gap)
+                .filter { $0.cascadeDepth > 0 }.count
+        }
+    }
+
+    /// **T-3193's measurement: how often the cascade fires before (34 min) and after (47 min).**
+    ///
+    /// Two fixtures, both pinned so the ledger's numbers are the test's numbers:
+    /// - `measuredWeek` (41 blocks): compact 6 -> 3 cascaded, regular (events only) 2 -> 0.
+    /// - Every overlapping pair of durations {30, 45, 60, 90, 120} min at start gaps on the
+    ///   quarter-hour grid 15...120 (90 pairs): 45 -> 30 cascade. On that grid the only gap in the
+    ///   34–46 band is 45, so "after" loses exactly the 45-minute pairs and nothing else.
+    @Test func theCascadeFiresLessOftenAtFortySevenMinutesAndByHowMuch() throws {
+        let before = Self.iosOneLineCascadeGap
+        let after = Self.iosCascadeGap
+        #expect(before == 34 && after == 47, "non-vacuity: the two thresholds being compared moved")
+
+        let blockCount = Self.measuredWeek.reduce(0) { $0 + $1.count }
+        #expect(blockCount == 41)
+        #expect(Self.cascadedBlockCount(gap: before, isCompactWidth: true) == 6)
+        #expect(Self.cascadedBlockCount(gap: after, isCompactWidth: true) == 3)
+        #expect(Self.cascadedBlockCount(gap: before, isCompactWidth: false) == 2)
+        #expect(Self.cascadedBlockCount(gap: after, isCompactWidth: false) == 0)
+
+        // The production path agrees with the "after" count: `placements` is what the column draws.
+        var productionCascaded = 0
+        for (dayIndex, day) in Self.measuredWeek.enumerated() {
+            let blocks = day.enumerated().map { index, entry in
+                IOSLayout.Block(key: "\(dayIndex)-\(index)-\(entry.0)", kind: entry.1, startMin: entry.2, endMin: entry.3)
+            }
+            let placements = IOSLayout.placements(for: blocks, hourHeight: Self.iosHourHeight, isCompactWidth: true)
+            productionCascaded += placements.values.filter { $0.cascadeDepth > 0 }.count
+        }
+        #expect(productionCascaded == 3, "the day column's own solver call cascades \(productionCascaded) of the week's blocks")
+
+        var pairs = 0
+        var firedBefore = 0
+        var firedAfter = 0
+        let durations = [30, 45, 60, 90, 120]
+        for first in durations {
+            for second in durations {
+                for gap in stride(from: 15, through: 120, by: 15) where gap < first {
+                    let slots = [
+                        CadenceCalendarOverlapLayout.Slot(startMin: 0, endMin: first, mayCascade: true),
+                        CadenceCalendarOverlapLayout.Slot(startMin: gap, endMin: gap + second, mayCascade: true),
+                    ]
+                    pairs += 1
+                    if CadenceCalendarOverlapLayout.solve(slots: slots, cascadeGapMinutes: before)[1].cascadeDepth > 0 { firedBefore += 1 }
+                    if CadenceCalendarOverlapLayout.solve(slots: slots, cascadeGapMinutes: after)[1].cascadeDepth > 0 { firedAfter += 1 }
+                }
+            }
+        }
+        #expect(pairs == 90)
+        #expect(firedBefore == 45)
+        #expect(firedAfter == 30)
     }
 
     /// A phone's Week column, measured rather than assumed: `CadenceCalendarWeekGridLayout` puts

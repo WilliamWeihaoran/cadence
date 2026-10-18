@@ -98,14 +98,20 @@ nonisolated enum CadenceCalendarOverlapLayout {
     /// This is the thing a cascading block must not cover, so it is the thing the threshold is
     /// derived from. It is read out of the block body rather than guessed: the row sizes, the stack
     /// spacing and the vertical padding are the block's own, and the line heights are AppKit's.
+    ///
+    /// `titleLineCount` is how many lines the title row is allowed to take — the block's own
+    /// `lineLimit` — and is **required**, not defaulted to one (T-3193): a title that wraps makes
+    /// the header the cascade has to clear one line taller, and a silent default of one is exactly
+    /// how iOS came to protect a 32pt header while drawing a 45pt one.
     static func headerHeight(
         verticalPadding: CGFloat,
         rowSpacing: CGFloat,
         titleFontSize: CGFloat,
+        titleLineCount: Int,
         timeFontSize: CGFloat
     ) -> CGFloat {
         verticalPadding
-            + lineHeight(forSystemFontSize: titleFontSize)
+            + lineHeight(forSystemFontSize: titleFontSize) * CGFloat(max(titleLineCount, 1))
             + rowSpacing
             + lineHeight(forSystemFontSize: timeFontSize)
     }
@@ -132,25 +138,42 @@ nonisolated enum CadenceCalendarOverlapLayout {
             verticalPadding: verticalPadding,
             rowSpacing: macEventLabelRowSpacing,
             titleFontSize: eventTitleFontSize,
+            titleLineCount: macEventTitleHeaderLineCount,
             timeFontSize: eventTimeFontSize
         )
     }
+
+    /// **One line, and knowingly so.** `TimelineEventBlock`'s title is `.lineLimit(2)` too, so the
+    /// Mac threshold has the same one-line derivation T-3193 corrected on iOS. T-3193 ruled on the
+    /// iOS threshold only, and the Mac's is pinned by the owner's reference screenshot (24 minutes
+    /// at a 75pt hour); moving it is filed as its own ledger entry rather than done here.
+    static let macEventTitleHeaderLineCount = 1
 
     /// **29pt** — `TimelineBlockStyle.calendar`'s 3pt padding + the 11pt time row + 2pt of spacing
     /// + the 13pt title row. This is the number T-3161's threshold is derived from on the Mac.
     static let macCalendarEventHeaderHeight: CGFloat =
         CadenceCalendarOverlapLayout.macEventHeaderHeight(verticalPadding: 3)
 
-    /// iOS `iOSCalendarEventBlock`: `.padding(.vertical, 5)`, `VStack(spacing: 3)`, an 11pt title
-    /// row *above* a 9pt time row. 5 + 13 + 3 + 11 = **32pt**. The two platforms order the rows
-    /// differently and pad differently; only the sum matters to the threshold, so they are measured
-    /// separately rather than converged.
+    /// iOS `iOSCalendarEventBlock` and `iOSTimelineTaskBlock`: `.padding(.vertical, 5)`,
+    /// `VStack(spacing: 3)`, an 11pt title row of up to `iOSEventTitleLineLimit` lines *above* a
+    /// 9pt time row. 5 + 2 × 13 + 3 + 11 = **45pt**. The two platforms order the rows differently
+    /// and pad differently; only the sum matters to the threshold, so they are measured separately
+    /// rather than converged.
+    ///
+    /// **It was 32pt — ONE title line — until T-3193**, while both blocks draw the title at
+    /// `.lineLimit(2)`. A block cascading at a 34–46 minute gap therefore covered the time row of
+    /// any block behind it whose title wrapped, and an iPad week column wraps `Lunch with Sam`. At
+    /// the grid's resting 58pt hour the threshold is now `ceil(45 / (58 / 60)) = 47` minutes.
     static let iOSEventLabelRowSpacing: CGFloat = 3
     static let iOSEventVerticalPadding: CGFloat = 5
+    /// The title's `.lineLimit` in both iOS timed blocks; `CadenceCalendarOverlapLayoutTests` pins
+    /// it to the literal in each block body.
+    static let iOSEventTitleLineLimit = 2
     static let iOSEventHeaderHeight: CGFloat = CadenceCalendarOverlapLayout.headerHeight(
         verticalPadding: iOSEventVerticalPadding,
         rowSpacing: iOSEventLabelRowSpacing,
         titleFontSize: eventTitleFontSize,
+        titleLineCount: iOSEventTitleLineLimit,
         timeFontSize: eventTimeFontSize
     )
 
