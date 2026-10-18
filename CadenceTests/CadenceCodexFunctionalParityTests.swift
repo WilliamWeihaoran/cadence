@@ -113,7 +113,7 @@ struct CadenceCodexFunctionalParityTests {
         ]
         let index = GlobalSearchIndexSupport.buildIndexedSource(
             query: "unique archive", hiddenTabs: [], areas: [], projects: [], tasks: [], notes: notes,
-            eventResults: [], sidebarTabColorsRaw: ""
+            eventResults: [], sidebarTabColorsRaw: "", includesCompletedTasks: false
         )
         let ordinary = index.sections.first { $0.category == .notes }?.results ?? []
         #expect(Set(ordinary.map(\.id)) == Set(notes.prefix(3).map { CadenceSearchIdentity.note($0.id) }))
@@ -126,6 +126,22 @@ struct CadenceCodexFunctionalParityTests {
         #expect(events.first?.id == CadenceSearchIdentity.eventNote(notes[3].id))
     }
 
+    /// **REVISED FOR T-1473, deliberately, because its two count assertions were the pin that
+    /// defended the bug.**
+    ///
+    /// This body used to end `...RanksBeforeItsLimit` with `results.count == 12` over sixteen
+    /// matching notes and `== 8` over the idle branch. Those were not claims about ranking; they
+    /// were the *silent* macOS cap written down, and the suite was green **because** the fifteenth
+    /// and sixteenth matches were unreachable. The owner decided the cap reports what it holds
+    /// back and offers a way to reveal it, so the numbers had to move from the returned array to
+    /// `resultCap(for:query:)` — and an assertion on the array's length would have forced the old
+    /// shape back.
+    ///
+    /// **Everything this test actually claims survives and is asserted more tightly than before:**
+    /// live embed titles resolve and stale ones do not match, tags match, the exact title outranks
+    /// the sixteen near-misses, and the order is stable across a reversed input. Ranking still
+    /// happens *before* the limit, which is what the name promises — that is now checked on the
+    /// visible prefix, where the user actually sees it.
     @MainActor @Test func macNoteSearchResolvesLiveEmbedsTagsAndRanksBeforeItsLimit() {
         let task = AppTask(title: "Live embedded title")
         let note = Note(kind: .permanent, content: "[[task:\(task.id.uuidString)|Obsolete title]]")
@@ -134,13 +150,33 @@ struct CadenceCodexFunctionalParityTests {
         #expect(GlobalSearchIndexSupport.noteResults(notes: [note], query: "Live embedded title", taskTitles: titles).count == 1)
         #expect(GlobalSearchIndexSupport.noteResults(notes: [note], query: "Obsolete title", taskTitles: titles).isEmpty)
         #expect(GlobalSearchIndexSupport.noteResults(notes: [note], query: "ArchiveTag", taskTitles: titles).count == 1)
+
         let exact = Note(kind: .permanent, title: "Roadmap")
         let crowded = (0..<15).map { Note(kind: .permanent, title: "Roadmap followup \($0)") } + [exact]
         let results = GlobalSearchIndexSupport.noteResults(notes: crowded, query: "roadmap", taskTitles: [:])
-        #expect(results.count == 12)
+        let cap = GlobalSearchIndexSupport.resultCap(for: .notes, query: "roadmap")
+
+        // Sixteen matches, all sixteen returned — the two this suite used to drop are the ticket.
+        #expect(crowded.count == 16)
+        #expect(results.count == 16)
+        // The number twelve is unchanged and still bounds the initial render; it now lives
+        // somewhere that can be asked how many it is withholding.
+        #expect(cap == 12)
+        #expect(CadenceSearchResultCap.visibleCount(total: results.count, cap: cap, isExpanded: false) == 12)
+        #expect(CadenceSearchResultCap.hiddenCount(total: results.count, cap: cap, isExpanded: false) == 4)
+        #expect(CadenceSearchResultCap.continuationLabel(hidden: 4) == "4 more results")
+
+        // THE RANKING CLAIM, which is the real content of this test and is kept exact: the one
+        // exact title wins, and it wins *inside the twelve the user is shown*, not merely
+        // somewhere in a sixteen-long array they would have to expand to reach.
         #expect(results.first?.destination == .note(exact.id))
-        #expect(GlobalSearchIndexSupport.noteResults(notes: crowded, query: "", taskTitles: [:]).count == 8)
+        #expect(Array(results.prefix(cap)).first?.destination == .note(exact.id))
         #expect(results.map(\.id) == GlobalSearchIndexSupport.noteResults(notes: crowded.reversed(), query: "roadmap", taskTitles: [:]).map(\.id))
+
+        // The idle branch keeps its own, smaller cap. It was `== 8` on the returned array here too.
+        let idle = GlobalSearchIndexSupport.noteResults(notes: crowded, query: "", taskTitles: [:])
+        #expect(idle.count == 16)
+        #expect(GlobalSearchIndexSupport.resultCap(for: .notes, query: "") == 8)
     }
 
     @MainActor @Test func requestedNoteSelectionConsumesOnlyAnExistingMatchingID() {

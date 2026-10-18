@@ -26,7 +26,11 @@ struct iOSSearchView: View {
     @State private var selectedEvent: iOSCalendarEventSelection?
     @State private var calendarSearchEvents: [EKEvent] = []
     @State private var scope: iOSSearchScope = .all
-    @State private var includeCompletedTasks = false
+    /// Persisted since T-1476, and shared in spelling with the Mac palette's toggle. It was a
+    /// plain `@State` for as long as it existed, so it reset on every rebuild of this view and
+    /// every launch — tolerable while the default *included* completed work and the toggle was a
+    /// rare narrowing, and a constant papercut now that the default excludes it.
+    @AppStorage(CadencePreferenceKeys.searchIncludesCompletedTasks) private var includeCompletedTasks = false
     /// Pushes are driven by these two rather than by `NavigationLink(value:)`.
     ///
     /// A whole result group is a *single* `List` row (`iOSSearchResultGroup` draws the eyebrow and

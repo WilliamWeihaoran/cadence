@@ -117,8 +117,11 @@ struct CalendarBoardDayDropCommitTests {
 
     // MARK: - The mobile day-drop mutation (PA-13 / T-1470)
 
-    /// Both outcomes, with and without a materialised estimate. Use the last member rather than
-    /// the first: zeroing an already-zero bundleOrder would not exercise its restoration.
+    /// Both outcomes, with and without a materialised estimate. The subject is still the last
+    /// member of a block — it was chosen because zeroing an already-zero `bundleOrder` would not
+    /// have exercised its restoration, and it is kept now for the opposite reason: [[T-3170]]
+    /// removed the detach, so a non-zero `bundleOrder` is what proves nothing writes those fields
+    /// in either answer.
     @Test(arguments: [true, false], [0, 45])
     func mobileDayDropRestoresEveryMutatedFieldOnlyWhenRefused(refuses: Bool, estimate: Int) throws {
         let modelContainer = try container()
@@ -156,10 +159,17 @@ struct CalendarBoardDayDropCommitTests {
         #expect(observed.dates == [refuses ? "2026-06-01" : "2026-07-04"], "reconcile once, after commit or restore")
         #expect(task.scheduledDate == (refuses ? "2026-06-01" : "2026-07-04"))
         #expect(task.estimatedMinutes == (refuses ? estimate : max(estimate, 30)))
-        #expect(task.bundle?.id == (refuses ? board.block.id : nil))
-        #expect(task.bundleOrder == (refuses ? 2 : 0))
-        #expect(board.block.sortedTasks.map(\.id) == (refuses
-            ? originalMemberIDs : originalMemberIDs.filter { $0 != task.id }))
+        // **The detach is gone, on purpose** ([[T-3170]]). `moveTaskToDate` used to clear
+        // `bundle`, zero `bundleOrder` and filter the card out of the block's `tasks`. Its one
+        // caller buckets its columns through
+        // `CalendarBoardPlannerSupport.tasksByBoardDateFoldingDueDates`, which excludes a bundled
+        // task outright, so no card this drop can reach was ever in a block and the detach could
+        // never fire. Asserted rather than dropped: the fields stay **untouched in both answers**,
+        // which is the shape that fails if anything starts writing them again. The macOS board's
+        // own drop still detaches and is pinned by the `CalendarPageBoardDropSupport` cases below.
+        #expect(task.bundle?.id == board.block.id)
+        #expect(task.bundleOrder == 2)
+        #expect(board.block.sortedTasks.map(\.id) == originalMemberIDs)
         #expect(board.dragged.bundleOrder == 0)
         #expect(board.siblings[0].bundleOrder == 1)
         #expect(task.scheduledStartMin == 615)

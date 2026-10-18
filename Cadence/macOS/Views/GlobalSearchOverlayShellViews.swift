@@ -2,11 +2,13 @@
 import SwiftUI
 
 struct GlobalSearchSectionsList: View {
-    let sections: [GlobalSearchSection]
+    let sections: [GlobalSearchVisibleSection]
     let query: String
     let highlightedResultID: String?
     let onSelect: (GlobalSearchResult) -> Void
     let onHover: (String) -> Void
+    /// Reveals one section's withheld matches in place, keyed by `GlobalSearchVisibleSection.id`.
+    let onReveal: (String) -> Void
 
     var body: some View {
         if sections.isEmpty {
@@ -26,6 +28,18 @@ struct GlobalSearchSectionsList: View {
                                         isHighlighted: highlightedResultID == result.id,
                                         onSelect: { onSelect(result) },
                                         onHover: { onHover(result.id) }
+                                    )
+                                }
+
+                                // No row when nothing is withheld: `continuationLabel` returns
+                                // `nil` at zero, so "0 more results" cannot be drawn.
+                                if let hidden = section.hidden,
+                                   let label = CadenceSearchResultCap.continuationLabel(hidden: hidden) {
+                                    GlobalSearchMoreResultsRow(
+                                        continuation: GlobalSearchResultContinuation(
+                                            label: label,
+                                            reveal: { onReveal(section.id) }
+                                        )
                                     )
                                 }
                             }

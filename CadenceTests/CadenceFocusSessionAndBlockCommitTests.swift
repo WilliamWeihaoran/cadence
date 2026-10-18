@@ -208,18 +208,23 @@ struct CadenceFocusSessionAndBlockCommitTests {
 
     /// The create family's sentence has no "nothing was changed" clause and the title is its own —
     /// a refused *creation* has nothing the user could fear losing, which is exactly what the
-    /// delete and edit families' second sentences exist to deny.
+    /// delete family's second sentence exists to deny.
+    ///
+    /// **This compared three titles until [[T-3170]].** `bundleEditFailureAlertTitle` and
+    /// `bundleDeleteFailureAlertTitle` were `iOSCalendarBundleDetailSheet`'s two alerts; that
+    /// sheet is deleted and the Mac's block reads the *notices*, so both titles had zero callers
+    /// and went with the shared-helper pass. The claim that survives is the one that was always
+    /// load-bearing: the create title is not the delete title, and the create *sentence* makes no
+    /// promise the create path cannot keep — so it is asserted against the delete pair that is
+    /// still in the tree.
     @Test func theblockCreateFailureTitleIsItsOwnAndItsSentenceMakesNoPromise() {
         #expect(CadenceTaskMutationSupport.bundleCreateFailureAlertTitle == "Couldn't Create Block")
         #expect(
             CadenceTaskMutationSupport.bundleCreateFailureAlertTitle
-                != CadenceTaskMutationSupport.bundleEditFailureAlertTitle
-        )
-        #expect(
-            CadenceTaskMutationSupport.bundleCreateFailureAlertTitle
-                != CadenceTaskMutationSupport.bundleDeleteFailureAlertTitle
+                != CadenceTaskMutationSupport.deleteFailureAlertTitle
         )
         #expect(!CadenceTaskMutationSupport.bundleSaveFailureNotice.contains("Nothing"))
+        #expect(CadenceTaskMutationSupport.bundleDeleteFailureNotice.contains("Nothing was removed."))
     }
 
     // MARK: - T-655, behavioural
@@ -365,9 +370,11 @@ struct CadenceFocusSessionAndBlockCommitTests {
     /// **The swallow is gone (T-760).** `addTask`'s five-field write moved into the pending,
     /// non-committing `assignTask(_:to:)`, and `insertBundle` writes both memberships through that
     /// rather than through `addTask` — so the pair is no longer committed by two saves nobody can
-    /// hear refuse before this frame's own `commit:` is ever asked. `addTask` keeps a default
-    /// commit only for its one legitimate direct caller left, `iOSCalendarBoardView.add(_:to:)`
-    /// (dragging onto a bundle that already exists, no insert anywhere in that call).
+    /// hear refuse before this frame's own `commit:` is ever asked. `addTask` kept a default
+    /// commit for one direct caller, the iOS Calendar Board's drag onto an existing block; that
+    /// caller went with the eighth pass of [[T-3170]] and `addTask` has none left. The default
+    /// stays only because the mutation does, pending the pass that takes the Mac's Block
+    /// surfaces.
     @Test func theSharedTwoTaskBlockMutationNoLongerCommitsThroughASwallowedSaveOfItsOwn() throws {
         let container = try CadenceModelContainerFactory.makeInMemoryContainer()
         let context = ModelContext(container)

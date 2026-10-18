@@ -53,14 +53,19 @@ The task inspector is presented by a host, never by a row.
 - Leave deliberate non-task-inspector sheets alone; see the archived reference before changing a
   presenter.
 
-## Bundle Panel And Bundle-Forming Drops
+## Blocks ("Bundles") Are Gone From iOS
 
-- Bundle inspection uses its own host for the same lifetime reason as the task inspector.
-- `iOSBundleInspectorHost()` is installed at the root.
-- Bundle-forming drag/drop is an opt-in surface behavior, not a default row behavior.
-- Only scheduled cards/blocks can form bundles; no slot means no bundle block to create.
-- Nested cards that claim a drag must say so to avoid parent column drop handling.
-- The shared mutation is `CadenceTaskMutationSupport.insertBundle(from:adding:)`.
+- [[T-3170]] removed every iOS Block surface. There is no Block card, no Block panel, no Block
+  host and no `TaskBundle` query anywhere under `Cadence/iOS/`.
+- `iOSBundleInspectorHost()` and `iOSCalendarBundleDetailSheet` are deleted; do not re-add a
+  second inspector host. `iOSTaskInspectorHost` is the only one, and the lifetime rule it exists
+  for is in "Task Inspector Host" above.
+- Do not re-add a bundle-forming drop. A task dropped on a task is a reorder or a no-op, per
+  surface; the gesture that made a block is gone from both platforms.
+- `TaskBundle` itself stays a `@Model` until a build ships that no device can hold a record for
+  — see `Cadence/Services/CadenceTaskBundleRetirement.swift`. Keeping the entity is not
+  permission to draw it.
+- Pinned by `CadenceTests/CadenceBundleInspectorHostTests`.
 
 ## List And Column Wind-Down
 

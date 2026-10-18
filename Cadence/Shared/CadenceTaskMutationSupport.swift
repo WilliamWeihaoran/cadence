@@ -271,6 +271,20 @@ extension CadenceTaskMutationSupport {
     /// Reuse the Mac board's field transaction, including relationship restoration, rather than
     /// rolling back the shared context and discarding unrelated pending edits. This primitive
     /// stays notification-free; `CadenceTaskDateEditing` reconciles after either answer.
+    ///
+    /// **It used to detach the task from its block first** — clear `bundle`, zero `bundleOrder`,
+    /// filter the task out of the block's `tasks` — because a Block owned the slot and a member
+    /// dropped on a day had to leave it. [[T-3170]] removed that: its one caller,
+    /// `iOSCalendarBoardView.schedule(_:on:)`, buckets its columns through
+    /// `CalendarBoardPlannerSupport.tasksByBoardDateFoldingDueDates`, which excludes a bundled
+    /// task outright — so no card this drop can reach is in a block, and the detach could never
+    /// fire. It is deleted rather than kept defensively because keeping it would be the only
+    /// remaining reason this primitive knows what a block is. The macOS board's own drop is a
+    /// separate implementation in `CalendarPageBoardDropSupport` and still detaches, which is
+    /// correct: the Mac's Calendar page still draws Block cards.
+    ///
+    /// The transaction and the `Bool` answer are exactly as PA-13 left them. Do not re-add a
+    /// swallowed save, and do not stop forwarding the commit's answer.
     @discardableResult
     static func moveTaskToDate(
         _ task: AppTask,
@@ -284,9 +298,6 @@ extension CadenceTaskMutationSupport {
             reconciler: .inert,
             commit: commit
         ) {
-            task.bundle?.tasks = (task.bundle?.tasks ?? []).filter { $0.id != task.id }
-            task.bundle = nil
-            task.bundleOrder = 0
             task.scheduledDate = dateKey
             if task.estimatedMinutes <= 0 {
                 task.estimatedMinutes = 30
@@ -693,10 +704,10 @@ extension CadenceTaskMutationSupport {
     /// The alert title that carries `bundleSaveFailureNotice` on a surface with no inline place to
     /// put it — the Mac's timeline, whose draft popover has already dismissed itself (T-636(e)).
     ///
-    /// Beside its two siblings for the reason `bundleDeleteFailureAlertTitle` gives: the title and
-    /// the body travel together, so there is no arrangement in which one is updated alone. It says
-    /// "Create" rather than "Save" because `bundleEditFailureAlertTitle` is already the *edit*
-    /// family's title, and the two failures are different events.
+    /// Beside its notice because the title and the body travel together, so there is no
+    /// arrangement in which one is updated alone. It says "Create" rather than "Save" because the
+    /// *edit* family had a title of its own — `bundleEditFailureAlertTitle`, deleted with the iOS
+    /// sheet by [[T-3170]] — and the two failures are different events.
     static let bundleCreateFailureAlertTitle = "Couldn't Create Block"
 
     /// Shown when a block the user asked to delete could not be committed (T-322).
@@ -708,21 +719,12 @@ extension CadenceTaskMutationSupport {
     /// refused *creation* has nothing to fear losing, and a refused deletion does.
     static let bundleDeleteFailureNotice = "Couldn't delete this block. Nothing was removed."
 
-    /// The alert title that carries `bundleDeleteFailureNotice` on iOS.
-    ///
-    /// Beside the sentence for the reason `deleteFailureAlertTitle` gives: the title and the body
-    /// travel together, so there is no arrangement in which one is updated alone.
-    static let bundleDeleteFailureAlertTitle = "Couldn't Delete Block"
-
-    /// The alert title that carries a refused block **edit** on iOS (T-566).
-    ///
-    /// Beside its sibling above for the same reason, and it deliberately does not reuse
-    /// `bundleSaveFailureNotice`: that sentence is the *create* family's, with no clause about
-    /// what became of the work, because a refused creation has nothing to lose. A refused edit
-    /// does, and `updateBundle` now undoes it — so the sheet reports
-    /// `CadencePendingChangePersistence.editFailureNotice`, whose "Nothing was changed." is a
-    /// promise that undo is what earns.
-    static let bundleEditFailureAlertTitle = "Couldn't Save Block"
+    // `bundleDeleteFailureAlertTitle` and `bundleEditFailureAlertTitle` were declared here, the
+    // two alert titles `iOSCalendarBundleDetailSheet` carried. [[T-3170]] deleted that sheet, and
+    // the Mac's block reads the *notices* above rather than any title, so both had zero callers
+    // left in the app. The notices stay: `TimelineBundleBlock` still reads
+    // `bundleDeleteFailureNotice`, and `bundleCreateFailureAlertTitle` stays with it as the
+    // create family's title until that surface goes too.
 
     /// - Parameter commit: See `deleteTasks(withIDs:modelContext:commitsImmediately:commit:…)`.
     @discardableResult
@@ -1143,8 +1145,8 @@ extension CadenceTaskMutationSupport {
     /// **Throws and takes `commit:` now (T-760).** It used to insert the bundle and call `addTask`
     /// twice, each ending its own `try? modelContext.save()` — so the block was committed by two
     /// saves nobody could hear refuse, from a frame with no `try?` of its own. That shape is why
-    /// the day timeline's formBundle (gone since [[T-3170]]) and `iOSCalendarBoardView.formBundle` reported nothing:
-    /// the mutation *did* reach a commit, just not one that answered. `addTask` now writes its five
+    /// the day timeline's formBundle and the iOS Calendar Board's — both gone since [[T-3170]] —
+    /// reported nothing: the mutation *did* reach a commit, just not one that answered. `addTask` now writes its five
     /// fields through the pending, non-committing `assignTask(_:to:)`, and this frame is the one
     /// commit for the whole unit — the bundle insert and both memberships — through
     /// `CadencePendingChangePersistence.commitInsert`. A refusal restores both tasks via
@@ -1264,15 +1266,23 @@ extension CadenceTaskMutationSupport {
 
     /// Moves a task into an existing bundle, and commits on its own behalf.
     ///
-    /// **Throws and takes `commit:` now (T-760), and this is the site that stays swallow-able.**
-    /// `iOSCalendarBoardView.add(_:to:)` calls this directly for "drag a task onto a bundle that
-    /// already exists" — an in-place move between two objects the store already holds, no insert or
-    /// delete anywhere in the call, the same shape its sibling `move(_:on:)` three lines above it
-    /// swallows on purpose: the row redraws from the model and the next fetch corrects it. The
-    /// default `commit:` keeps that caller's behaviour identical to before — still `try?`, still
-    /// self-committing — while `insertBundle(from:adding:modelContext:commit:)` below now moves
-    /// each task through the pending `assignTask(_:to:)` instead of calling this, because it needs
-    /// both memberships and the bundle's own insert to land under one commit rather than three.
+    /// **It has NO caller in the app** ([[T-3170]]). This said "`iOSCalendarBoardView.add(_:to:)`
+    /// calls this directly", and that stopped being true at the eighth pass, which took every
+    /// `TaskBundle` reference out of the iOS Calendar Board — the file now holds none at all.
+    /// The claim outlived its subject by four passes because nothing could see it: this repo's
+    /// stale-comment detector (`CadenceCommentSymbolClaimTests`) anchors a qualified claim on
+    /// `^[A-Z]`, so a type whose name begins lowercase — every `iOS*` view in this codebase — is
+    /// outside what it can check. Do not re-add a caller-naming sentence here without one.
+    ///
+    /// **Throws and takes `commit:` (T-760), and this is the site that stayed swallow-able**, for
+    /// a caller that no longer exists: an in-place move between two objects the store already
+    /// holds, no insert or delete anywhere in the call. The default `commit:` preserved that
+    /// caller's behaviour, while `insertBundle(from:adding:modelContext:commit:)` below moves each
+    /// task through the pending `assignTask(_:to:)` instead of calling this, because it needs both
+    /// memberships and the bundle's own insert to land under one commit rather than three.
+    /// `insertBundle` and `moveBundle` are callerless too; the three go together with the Mac's
+    /// Block surfaces rather than piecemeal, so that the whole wording family and its mutations
+    /// leave in one pass.
     ///
     /// - Parameter commit: See `CadencePendingChangePersistence.commitInsert(of:in:commit:)`.
     static func addTask(

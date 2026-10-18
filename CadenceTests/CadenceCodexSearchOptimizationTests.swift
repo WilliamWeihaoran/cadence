@@ -94,7 +94,15 @@ struct CadenceCodexSearchOptimizationTests {
             return task
         }
         let ascending = GlobalSearchIndexSupport.taskResults(tasks: tied, query: "admin").map(\.id)
-        #expect(ascending.count == 14)
+        // REVISED FOR T-1473. This read `ascending.count == 14`, which was the macOS section cap
+        // recorded as the length of the returned array — incidental data about where the list was
+        // being cut, not a claim this test makes. The owner removed the silent cut: the function
+        // returns every match now and the number lives in `resultCap(for:query:)`, where the
+        // section drawing it can also say how many it is holding back. Both facts are asserted so
+        // the cap cannot be deleted outright either.
+        #expect(ascending.count == 20)
+        #expect(GlobalSearchIndexSupport.resultCap(for: .tasks, query: "admin") == 14)
+        // The real claim, untouched: ties break on id, ascending, whatever order they arrived in.
         #expect(ascending == ascending.sorted())
         #expect(GlobalSearchIndexSupport.taskResults(tasks: tied.reversed(), query: "admin").map(\.id) == ascending)
     }
@@ -167,7 +175,7 @@ private struct CodexSearchDerivationHost: View {
     let isolated: Bool
     @State private var highlightedResultID: String?
 
-    private var sections: [GlobalSearchSection] {
+    private var sections: [GlobalSearchVisibleSection] {
         probe.derivations += 1
         return []
     }
@@ -175,9 +183,9 @@ private struct CodexSearchDerivationHost: View {
     var body: some View {
         Group {
             if isolated {
-                GlobalSearchHighlightList(sections: sections, query: probe.query, highlightedResultID: $highlightedResultID, onSelect: { _ in })
+                GlobalSearchHighlightList(sections: sections, query: probe.query, highlightedResultID: $highlightedResultID, onSelect: { _ in }, onReveal: { _ in })
             } else {
-                GlobalSearchSectionsList(sections: sections, query: probe.query, highlightedResultID: highlightedResultID, onSelect: { _ in }, onHover: { highlightedResultID = $0 })
+                GlobalSearchSectionsList(sections: sections, query: probe.query, highlightedResultID: highlightedResultID, onSelect: { _ in }, onHover: { highlightedResultID = $0 }, onReveal: { _ in })
             }
         }
         .onAppear { probe.selection = $highlightedResultID }

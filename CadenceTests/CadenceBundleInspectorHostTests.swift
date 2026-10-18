@@ -154,45 +154,36 @@ struct CadenceBundleInspectorHostTests {
         #expect(!files.contains("Cadence/iOS/iOSCalendarBundleDetailSheet.swift"))
     }
 
-    /// **What is left of the host, and why it is still there.**
+    /// **The last line of the Block panel is gone from the tree.**
     ///
-    /// `iOSBundleInspectorHost.swift` holds one thing now: a `View` extension returning `self`.
-    /// The modifier survives only because `Cadence/iOS/iOSRootView.swift` applies it at the root
-    /// and that file is **Codex-leased**, so the last line of the Block panel could not be deleted
-    /// in the pass that deleted the panel. The next agent holding a grant on that path deletes the
-    /// call and this file with it — and until then this test is the record that the stub is a
-    /// residue rather than a decision, by pinning that it presents nothing.
-    @Test func theBundleHostIsANoOpStubHeldOpenByOneLeasedCallSite() throws {
-        let host = try strippingComments(sourceFile("Cadence/iOS/iOSBundleInspectorHost.swift"))
+    /// This was `theBundleHostIsANoOpStubHeldOpenByOneLeasedCallSite`, which pinned a documented
+    /// no-op: `iOSBundleInspectorHost.swift` had been reduced to a `View` extension returning
+    /// `self` because `Cadence/iOS/iOSRootView.swift` still applied it and that file was
+    /// **Codex-leased**, so the panel's last line could not go in the pass that deleted the panel.
+    /// The grant arrived (`docs/CODEX_WORKTREE.md`, "GRANTED to a local agent:
+    /// `Cadence/iOS/iOSRootView.swift`, for T-3170 only"), the call site and the file went
+    /// together, and the pin is rewritten as the absence it now describes.
+    ///
+    /// Stated as an absence over the whole tree rather than as a missing file, because a stub that
+    /// came back under any other name would still be a Block host: the *spelling* must appear
+    /// nowhere, and the file must not be in the walk.
+    @Test func theBlockPanelsLastLineIsGoneFromTheTreeEntirely() throws {
+        #expect(try presenterCounts(of: "iOSBundleInspectorHost").isEmpty)
+        #expect(try presenterCounts(of: "iOSBundleInspectorPresentAction").isEmpty)
+        #expect(try presenterCounts(of: "iOSBundleInspectorSheet").isEmpty)
 
-        #expect(host.contains("func iOSBundleInspectorHost() -> some View { self }"))
-        // Nothing it could present, nothing it could hold, nothing it could decide.
-        for needle in [
-            ".sheet(",
-            "@State",
-            "TaskBundle",
-            "EnvironmentKey",
-            "iOSBundleInspectorPresentAction",
-            "CadenceDetailPanelPresentation"
-        ] {
-            #expect(
-                !host.contains(needle),
-                "iOSBundleInspectorHost.swift grew \(needle) back"
-            )
-        }
+        let files = try swiftFiles(under: "Cadence")
+        #expect(!files.contains("Cadence/iOS/iOSBundleInspectorHost.swift"))
 
-        // Exactly two live mentions in the app: the declaration, and the one leased call site.
-        #expect(
-            try presenterCounts(of: "iOSBundleInspectorHost()") == [
-                "Cadence/iOS/iOSBundleInspectorHost.swift": 1,
-                "Cadence/iOS/iOSRootView.swift": 1
-            ]
-        )
-        // The task host is untouched by any of this and is still applied once at the root.
+        // Non-vacuity, and the claim this absence is **about**: the surviving host is still
+        // declared, still applied exactly once at the root, and the root still reads as a root.
         try expectOccurrences(
             of: ".iOSTaskInspectorHost()",
             at: ["Cadence/iOS/iOSRootView.swift": 1]
         )
+        let root = try strippingComments(sourceFile("Cadence/iOS/iOSRootView.swift"))
+        #expect(root.contains("iOSCompactRootShell("))
+        #expect(!root.contains("iOSBundleInspectorHost"))
     }
 
     /// **No iOS surface queries, buckets or draws a Block any more.**
@@ -298,7 +289,6 @@ struct CadenceBundleInspectorHostTests {
 
         #expect(files.count > 300, "the source scan found \(files.count) files and cannot be doing its job")
         for path in [
-            "Cadence/iOS/iOSBundleInspectorHost.swift",
             "Cadence/iOS/iOSTaskInspectorHost.swift",
             "Cadence/iOS/iOSRootView.swift",
             "Cadence/iOS/iOSBoardCards.swift",
@@ -317,7 +307,6 @@ struct CadenceBundleInspectorHostTests {
         // the absence tests is asserted to hold something live, so a scan returning "" — the
         // failure a `/tmp` against `/private/tmp` prefix mismatch produces — cannot read green.
         for (path, witness) in [
-            ("Cadence/iOS/iOSBundleInspectorHost.swift", "func iOSBundleInspectorHost()"),
             ("Cadence/iOS/iOSTaskInspectorHost.swift", "CadenceDetailPanelPresentation.resolveHeldSubject("),
             ("Cadence/iOS/iOSRootView.swift", ".iOSTaskInspectorHost()"),
             ("Cadence/iOS/iOSCalendarTimelineViews.swift", "struct iOSTimelineTaskBlock"),

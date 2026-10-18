@@ -107,6 +107,7 @@ Cadence/macOS/Views/CalendarTimelineViewportSupportViews.swift
 Cadence/macOS/Views/CalendarPageComponents.swift
 Cadence/macOS/Views/CalendarPageMonthSupportViews.swift
 Cadence/macOS/Views/TimelineDayCanvas.swift
+Cadence/macOS/Views/CalendarPageMonthSupportViews.swift
 Cadence/macOS/Views/TimelineDayCanvasSupportLayers.swift
 Cadence/macOS/Views/TimelineTaskBlock.swift
 Cadence/macOS/Views/TimelineTaskBlockSupportViews.swift
@@ -143,6 +144,7 @@ Cadence/Shared/Components/CadenceSchedulePanel.swift
 Cadence/Shared/Components/CadenceScheduleCaptureCard.swift
 Cadence/Services/TaskCreationService.swift
 Cadence/iOS/iOSTimelineDraftCreate.swift
+Cadence/Shared/Components/EstimatePickerControl.swift
 CadenceUITests/CadenceCapturePaletteUITests.swift
 CadenceTests/CadenceComposerContainerSurfaceTests.swift
 CadenceTests/CadenceCapturePaletteTests.swift
@@ -151,6 +153,82 @@ CadenceTests/CadenceChoicePickerDismissalTests.swift
 CadenceTests/CadenceContainerPickerConsolidationTests.swift
 CadenceTests/CadencePresentedTypographyBoundaryTests.swift
 ```
+
+### 2026-10-17 — `EstimatePickerControl.swift` granted; `iOSCalendarManager.swift` still REFUSED
+
+**GRANTED:** `Cadence/Shared/Components/EstimatePickerControl.swift`, for an optional unset-value
+label on `EstimatePickerPopoverContent`. Existing callers keep "None"; capture alone says "Clear
+estimate". No storage semantics change. Clean in the worktree; **no `codex/*` branch has modified
+it** (`--no-merges`).
+
+Granted readily because of the shape: an OPTIONAL parameter whose default preserves every existing
+caller byte-for-byte is the same discipline `createEvent` already documents — *"Defaulted, so the
+two existing callers are byte-for-byte unchanged."* A shared control gaining a capture-specific
+wording without a second control is the right answer.
+
+**STILL REFUSED: `Cadence/iOS/iOSCalendarManager.swift`.** The second Codex agent asked whether the
+first agent's T-1483 fixture door had landed. **It has not** — `rg CadenceCalendarFixtureEvents`
+returns nothing in that file. The sequencing recorded earlier stands unchanged, and the agent said
+in advance it would keep the file untouched if the answer was no, which is the correct posture.
+
+**Already granted, no action needed:** `CadenceTests/CadenceCapturePaletteTests.swift` entered the
+fence earlier today. Asking again cost nothing and is better than assuming a remembered grant still
+covers a new edit — the opposite assumption is what made `63b024d6` too narrow.
+
+### 2026-10-17 — `CadenceCodexSearchOptimizationTests.swift`: a FOURTH search path, and a lesson about where grants come from
+
+**GRANTED to a local agent for [[T-1476]] / [[T-1473]].** Prose, not a fence line: the file is
+already inside the fence via the standing `CadenceTests/CadenceCodex*.swift` glob, so what is
+granted here is a LOCAL agent's entry, exactly as for the three paths in `63b024d6`.
+
+**Why `63b024d6` missed it.** That grant was written from the parity audit's evidence rather than
+from the code. The audit found the `:129` pin in `CadenceCodexFunctionalParityTests`; it never found
+this one. **`:97` is `#expect(ascending.count == 14)` over twenty tied tasks — a SECOND pin on the
+silent macOS cap**, the exact twin of the one the grant did name, and either defends the bug alone.
+
+The general lesson, worth more than the path: **a grant scoped to the defects an audit happened to
+list is scoped to the audit's thoroughness, not the code's.** Next time a lease is drawn from a
+report, search the code for the same shape before fixing the scope.
+
+Verified landed before granting, with `--no-merges`: one branch modified it,
+`codex/search-widget-followups`, whose four sampled test functions are all present on main.
+
+Three of the agent's four edits there are mechanical. The fourth is the pin revision — and it
+reported one line it deliberately did NOT change, `:149`'s `sections: sections`, because it named
+the drawn sections `sections` and the uncapped ones `indexedSections`, which keeps the existing
+assertion true and reads better. Naming a line you left alone is as useful as naming the ones you
+touched.
+
+### 2026-10-17 — `CalendarPageMonthSupportViews.swift` granted, and the test needs `--no-merges`
+
+**GRANTED to local agents for [[T-3170]].** Without it the trio pass cannot finish: `TimelineDayCanvas`
+has two callers, and while `SchedulePanelShellViews.swift` was already starved (`bundles: []`,
+`allBundles: []`), `CalendarPageMonthSupportViews.swift:339` still passes a real `[TaskBundle]`. So
+removing those parameters from the granted canvas would break a file the agent could not touch —
+and leaving them is the exact "a parameter feeding an empty dictionary reads like a parameter that
+is gone" shape the ninth pass had to return for.
+
+It also answers the month-cell question in the same file: `MonthBundleChip` at `:193` and the
+`split(bundles:)` call at `:402` mean `MonthDayCell` DOES still draw Block chips. With this grant the
+chip goes in the trio pass and `CadenceCalendarMonthCellPriority.split`'s `bundles:` leg orphans
+cleanly, instead of costing a fourth trip.
+
+**A FIFTH refinement to the staleness test: pass `--no-merges`.**
+
+    git log --no-merges main..<branch> -- <path>
+
+The agent reported "exactly one branch modified it". The coordinator found TWO and checked the
+extra one rather than accepting the tidier number — `codex/parity-functional-batch`, whose only
+commit touching this path is `7ba0e1b1 Merge remote-tracking branch 'origin/main'`. **A merge
+commit authored nothing**; it pulled main in, and the path rode along. Without `--no-merges` a
+branch appears to have touched files it never edited, which inflates the candidate set and, on a
+busier repo, would eventually manufacture a false refusal.
+
+Both branches are landed regardless — `7343bfe8` is an ancestor of HEAD and its blob for this file
+is byte-identical to main's; the merge branch's sampled symbols are all present on main.
+
+The agent applied the branch test correctly and said in terms that it was "not assuming it carries
+over" from `4b4775f1`, which is why the extra branch surfaced at all.
 
 ### 2026-10-17 — a CROSS-AGENT dependency: one path granted, one REFUSED AND SEQUENCED
 
@@ -499,6 +577,15 @@ made the positive control read 0 over a lazy-mount bound that still held. It now
 own `taskRowTitle` identifier, which is on the row because a UI test needs it there, and a new
 control test (`theRowIdentifierProbeStillMatchesTheIdentifierTheRowDraws`) fails loudly if the
 identifier's shape ever moves out from under it.
+
+**Extended 2026-10-17 to [[T-3211]], same path, same agent.** The re-key above raised a fair doubt
+and [[T-3211]] was filed to record it: the probe read **16 rows for 200 stored and 16 for 1000**, and
+16 is also exactly what a 320pt host holds, so it was not established that an EAGER list would read
+differently -- which would have made `mounted < count / 2` vacuous. It is established now, and the
+answer is the good one. A negative control drawing the same 1000 tasks in a deliberately eager
+`VStack` reads **1000**, against the real page's **16**: SwiftUI's accessibility tree enumerates what
+the list REALIZED, not what is on screen, so the bound is real. The control is landed in the same
+file under this grant. Nothing was added to or removed from the ```lease block for it either.
 
 ### CORRECTION 2026-10-17 — the refusal in `67b41992` was WRONG; those branches are LANDED
 

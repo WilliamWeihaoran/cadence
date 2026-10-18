@@ -378,8 +378,9 @@ struct CadenceTaskInspectorHostTests {
     /// **"Above both shells" was a count of one in `iOSRootView.swift`.** Moving
     /// `.iOSTaskInspectorHost()` inside the `horizontalSizeClass == .regular` branch — iPad gets the
     /// inspector, iPhone's four tabs get dead taps — keeps that count at one. So the claim is
-    /// stated as placement: the two shells are the `Group`'s two branches, and the host, the bundle
-    /// host and the startup banner are all applied to the `Group` rather than inside it.
+    /// stated as placement: the two shells are the `Group`'s two branches, and the host and the
+    /// startup banner are applied to the `Group` rather than inside it. (The bundle host was the
+    /// third subject of this placement claim until [[T-3170]] deleted it.)
     @Test func theRootAppliesTheHostAboveBothShellsRatherThanInsideOne() throws {
         let root = try strippingComments(sourceFile("Cadence/iOS/iOSRootView.swift"))
         let body = try cadenceFunctionBody("var body: some View", in: root)
@@ -390,10 +391,10 @@ struct CadenceTaskInspectorHostTests {
 
         for modifier in [
             ".iOSTaskInspectorHost()",
-            // Still applied, and now a no-op: [[T-3170]] emptied the modifier but could not delete
-            // this line, because `iOSRootView.swift` is Codex-leased. See
-            // `CadenceBundleInspectorHostTests.theBundleHostIsANoOpStubHeldOpenByOneLeasedCallSite`.
-            ".iOSBundleInspectorHost()",
+            // `.iOSBundleInspectorHost()` was the third entry here. [[T-3170]] emptied the
+            // modifier, then the `iOSRootView.swift` grant let the call site and the file go
+            // together; its absence is pinned by
+            // `CadenceBundleInspectorHostTests.theBlockPanelsLastLineIsGoneFromTheTreeEntirely`.
             ".cadenceStartupIssueBanner(PersistenceController.startupIssue)"
         ] {
             #expect(

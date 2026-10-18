@@ -130,12 +130,14 @@ enum CadenceScheduleSupport {
     /// are the whole day every real minute-of-day has a row of its own and nothing is clamped, and
     /// T-1273 removed that stack, so an untimed task's home is the task column, not this pane.
     ///
-    /// It stays because the argument is an `Int`, not a time. `bundles(inHourRow:)` reads
-    /// `TaskBundle.startMin` with no lower-bound filter of its own, and both fields are plain
-    /// stored properties that a drag, a bad import or a CloudKit row from an older build can leave
-    /// outside `0..<1440`. Clamping keeps such an item visible in the first or last row — where it
-    /// still prints its own real time range — instead of dropping it out of the pane silently,
-    /// which is the failure this function exists to prevent.
+    /// It stays because the argument is an `Int`, not a time. `tasks(inHourRow:)` reads
+    /// `AppTask.scheduledStartMin`, a plain stored property that a drag, a bad import or a
+    /// CloudKit row from an older build can leave outside `0..<1440`. Its own filter rejects the
+    /// unscheduled sentinel and nothing else, so clamping is what keeps an out-of-range minute
+    /// visible in the first or last row — where it still prints its own real time range — instead
+    /// of dropping it out of the pane silently, which is the failure this function exists to
+    /// prevent. ([[T-3170]] removed the `bundles(inHourRow:)` sibling this paragraph used to name;
+    /// the reason is the task half's unchanged.)
     static func timelineHourRow(
         forMinute minute: Int,
         startHour: Int = calendarStartHour,
@@ -188,17 +190,6 @@ enum CadenceScheduleSupport {
         tasks.filter {
             $0.scheduledStartMin >= 0 &&
             timelineHourRow(forMinute: $0.scheduledStartMin, startHour: startHour, endHour: endHour) == hour
-        }
-    }
-
-    static func bundles(
-        inHourRow hour: Int,
-        from bundles: [TaskBundle],
-        startHour: Int = calendarStartHour,
-        endHour: Int = calendarEndHour
-    ) -> [TaskBundle] {
-        bundles.filter {
-            timelineHourRow(forMinute: $0.startMin, startHour: startHour, endHour: endHour) == hour
         }
     }
 

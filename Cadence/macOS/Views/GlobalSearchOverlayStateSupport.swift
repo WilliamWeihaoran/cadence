@@ -11,7 +11,11 @@ enum GlobalSearchOverlayStateSupport {
         Set(layout.hidden.compactMap(\.sidebarStaticDestination))
     }
 
-    static func flattenedResults(from sections: [GlobalSearchSection]) -> [GlobalSearchResult] {
+    /// **The VISIBLE rows, in draw order** (T-1473). This drives arrow-key movement, the
+    /// highlight sync and Return, so it has to flatten what is on screen: flattening the uncapped
+    /// `GlobalSearchSection.results` would let Down-arrow move the highlight onto a row the list
+    /// is not drawing, and Return would then open something the user could not see.
+    static func flattenedResults(from sections: [GlobalSearchVisibleSection]) -> [GlobalSearchResult] {
         sections.flatMap(\.results)
     }
 
