@@ -177,8 +177,21 @@ struct iOSCalendarTimelineGrid: View {
     /// (`AGENTS.md`, "Non-Negotiable Patterns"), and it is also what T-1273 removed the pane's
     /// "Ready to Schedule" stack for, on exactly the argument that the column across the divider is
     /// already showing them.
+    ///
+    /// **On a scrolling grid it is as tall as the busiest day in view needs (T-1474)**, up to the
+    /// strip's capacity — 6 chip rows at compact width, 8 at regular — plus the "+N more" line. One
+    /// height for the whole pinned row, so every column's strip starts and ends on the same line.
+    /// The columns read are the visible ones plus the one a horizontal scroll half-reveals.
     private var dayHeaderHeight: CGFloat {
-        isSingleDay ? 0 : iOSCalendarTimelineMetrics.dayHeaderHeight
+        guard !isSingleDay else { return 0 }
+        let splits = (0...visibleDayCount).map { offset in
+            bandSplit(on: date(at: leadingIndex + offset))
+        }
+        return iOSCalendarTimelineMetrics.dayHeaderHeight(for: splits)
+    }
+    /// The strip's chip-row budget for this width. See `CadenceCalendarAllDayBandPriority`.
+    private var bandCapacity: Int {
+        CadenceCalendarAllDayBandPriority.capacity(isRegularWidth: isRegularWidth)
     }
     private var timelineHeight: CGFloat {
         CGFloat(CadenceScheduleSupport.calendarHourCount) * hourHeight
@@ -385,8 +398,10 @@ struct iOSCalendarTimelineGrid: View {
                         let date = date(at: index)
                         iOSCalendarTimelineDayHeader(
                             date: date,
-                            allDayEvents: items(eventsByDate, on: date).filter(\.isAllDay),
-                            unscheduledTasks: items(unscheduledTasksByDate, on: date)
+                            allDayEvents: allDayEvents(on: date),
+                            unscheduledTasks: items(unscheduledTasksByDate, on: date),
+                            capacity: bandCapacity,
+                            bandHeight: dayHeaderHeight
                         ) {
                             selectedDate = date
                         }
@@ -532,6 +547,23 @@ struct iOSCalendarTimelineGrid: View {
 
     private func items<Item>(_ source: [String: [Item]], on date: Date) -> [Item] {
         CadenceScheduleSupport.items(on: DateFormatters.dateKey(from: date), in: source)
+    }
+
+    /// **The strip's only door for an event: `isAllDay`** (T-1474). A timed event is never
+    /// promoted, however long it runs — Monday 07:30 to Thursday 16:15 is a block in the grid on
+    /// all four days and nothing here. Read by both the header and the band height, so the two
+    /// cannot count different sets.
+    private func allDayEvents(on date: Date) -> [EKEvent] {
+        items(eventsByDate, on: date).filter(\.isAllDay)
+    }
+
+    /// The split one day's strip draws at this width's capacity.
+    private func bandSplit(on date: Date) -> CadenceCalendarMonthCellPriority.Split {
+        CadenceCalendarAllDayBandPriority.split(
+            allDayEvents: allDayEvents(on: date).count,
+            unscheduledTasks: items(unscheduledTasksByDate, on: date).count,
+            capacity: bandCapacity
+        )
     }
 
     /// Rebuilds the rendered run around `date` and puts that day at the leading edge.
@@ -730,8 +762,9 @@ struct iOSCalendarTimelineGrid: View {
 /// **All-day events live here since T-3163.** The column below has never drawn one — they are not
 /// blocks, so `iOSCalendarTimelineDayColumn.timedEvents` drops them — and until then nothing else
 /// did either, so on the week timeline a holiday or a trip did not exist. They take the band's
-/// slots ahead of the unscheduled tasks, by `CadenceCalendarAllDayBandPriority` (the month cell's
-/// events-before-tasks rule), and wear the same rail-plate `iOSCalendarMiniChip` the iOS month cell
+/// rows ahead of the unscheduled tasks, by `CadenceCalendarAllDayBandPriority` — events fill first
+/// after a reserve of up to three task rows, nothing is rationed until the strip overflows, and the
+/// cap is 6 chip rows on iPhone and 8 on iPad (T-1474) — and wear the same rail-plate `iOSCalendarMiniChip` the iOS month cell
 /// draws an event with, which is the treatment macOS's `AllDayEventChip` wears.
 ///
 /// Nothing timed is named here. It used to end in an "N timed" chip counting the day's tasks and
@@ -749,13 +782,18 @@ private struct iOSCalendarTimelineDayHeader: View {
     let date: Date
     let allDayEvents: [EKEvent]
     let unscheduledTasks: [AppTask]
+    /// The strip's chip-row budget at this width (`CadenceCalendarAllDayBandPriority.capacity`).
+    let capacity: Int
+    /// The pinned row's height, shared by every column — the busiest visible day's need.
+    let bandHeight: CGFloat
     let action: () -> Void
 
-    /// Who gets the band's two rows, and how many items the "+N more" line stands for.
+    /// Who gets the strip's rows, and how many items the "+N more" line stands for.
     private var split: CadenceCalendarMonthCellPriority.Split {
         CadenceCalendarAllDayBandPriority.split(
             allDayEvents: allDayEvents.count,
-            unscheduledTasks: unscheduledTasks.count
+            unscheduledTasks: unscheduledTasks.count,
+            capacity: capacity
         )
     }
 
@@ -790,7 +828,7 @@ private struct iOSCalendarTimelineDayHeader: View {
                 }
                 .frame(height: iOSCalendarTimelineMetrics.dateBlockHeight)
 
-                VStack(alignment: .leading, spacing: 3) {
+                VStack(alignment: .leading, spacing: iOSCalendarTimelineMetrics.bandLineSpacing) {
                     ForEach(allDayEvents.prefix(split.events), id: \.calendarItemIdentifier) { event in
                         iOSCalendarMiniChip(
                             title: iOSCalendarEventSupport.title(for: event),
@@ -815,7 +853,7 @@ private struct iOSCalendarTimelineDayHeader: View {
 
                     if split.hidden > 0 {
                         Text(CadenceTaskSurfaceOptions.moreLabel(hidden: split.hidden))
-                            .font(.system(size: 9, weight: .medium))
+                            .font(.system(size: iOSCalendarTimelineMetrics.overflowLabelSize, weight: .medium))
                             .foregroundStyle(Theme.subdued)
                     }
                 }
@@ -827,7 +865,7 @@ private struct iOSCalendarTimelineDayHeader: View {
                 .padding(.horizontal, iOSCalendarTimelineMetrics.previewInset)
                 .padding(.bottom, iOSCalendarTimelineMetrics.previewInset)
             }
-            .frame(height: iOSCalendarTimelineMetrics.dayHeaderHeight)
+            .frame(height: bandHeight, alignment: .top)
             .background(isToday ? Theme.blue.opacity(0.035) : Theme.surface)
             .overlay(alignment: .trailing) {
                 Rectangle()

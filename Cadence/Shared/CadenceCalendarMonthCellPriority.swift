@@ -25,13 +25,13 @@ import Foundation
 /// (`CalendarMonthCellLayout.chipCapacity`, minus the slot the overflow label takes), the iOS cell
 /// has a fixed slot count. How many rows there are is a layout question; which items get them is
 /// this one.
-enum CadenceCalendarMonthCellPriority {
+nonisolated enum CadenceCalendarMonthCellPriority {
     /// How many of each kind a cell draws, and how many items it is not drawing.
     ///
     /// Carries counts rather than the items themselves so that one function can serve two call
     /// sites holding different types — macOS has `CalendarEventItem`, iOS has `EKEvent`, and the
     /// ordering is a fact about the *kinds*, not about either representation.
-    struct Split: Equatable, Sendable {
+    nonisolated struct Split: Equatable, Sendable {
         /// Event chips the cell draws.
         var events: Int
         /// Task chips the cell draws.
@@ -71,24 +71,76 @@ enum CadenceCalendarMonthCellPriority {
     }
 }
 
-/// Who gets the iOS timeline day header's band rows: the day's **all-day events**, then its
-/// **unscheduled** tasks. **T-3163.**
+/// Who gets the all-day strip's rows over a timeline day column: the day's **all-day events** and
+/// its **unscheduled** tasks. **T-1474**, which replaced T-3163's flat two-row budget.
 ///
-/// The month cell's rule, reused rather than restated — an all-day event is a commitment made with
-/// other people and an unscheduled task can move without asking anybody, which is the argument
-/// `CadenceCalendarMonthCellPriority` records for events over tasks. The band has no bundles: a
-/// bundle always has a time, so it is a block in the column below.
+/// **One rule for both platforms.** iOS draws the strip from this split. macOS's band scrolls
+/// inside a fixed frame and so never hides anything, which in this rule's terms is an unbounded
+/// `capacity` — `Int.max` is supported and draws every item, events first. Until T-1474 the two
+/// platforms stacked the strip in opposite orders (Mac tasks first, iOS events first), so a
+/// crowded day lost appointments on one and tasks on the other.
 ///
-/// `capacity` is the band's fixed row count. The band is a fixed-height strip pinned over the grid,
-/// so it cannot grow to fit a busy day; the rest goes into its "+N more" line.
-enum CadenceCalendarAllDayBandPriority {
-    static let capacity = 2
+/// **Why events fill first — the structural argument, not a ranking of importance.** An all-day
+/// event appears NOWHERE ELSE in the app: hiding one costs a navigation to find it again. An
+/// unscheduled task is also listed in Today, in its own list and in Inbox. (The rationale this
+/// replaced — that an all-day event is a commitment made with other people — was withdrawn by the
+/// owner: a subscribed holiday or a birthday is an all-day event nobody committed to, and an
+/// unscheduled task can be the most urgent thing in the store.)
+///
+/// **The owner's cap rule (2026-10-17), in three parts:**
+/// 1. **No rationing until overflow.** If `events + tasks <= capacity`, every item is drawn.
+/// 2. **On overflow, tasks are reserved `min(taskCount, min(capacity / 2, 3))` rows** and events
+///    take every remaining row. The `min(taskCount, …)` is load-bearing: a flat reserve with one
+///    task would leave blank rows. A reserve the tasks cannot fill flows back to events, and rows
+///    the events cannot fill flow back to tasks, so an overflowing strip is always full.
+/// 3. **Overflow keeps the "+N more" line**, which opens the day. It is drawn BELOW the capacity's
+///    chip rows rather than taking one of them.
+///
+/// **What does NOT reach the strip, however long it is: a timed event.** `EKEvent.isAllDay` is the
+/// only door. An event from Monday 07:30 to Thursday 16:15 is a block in the grid on all four days
+/// (its real start, two full days, its real end) and never touches the strip, because it genuinely
+/// occupies those hours and an all-day flag means something different from a long duration. The
+/// same for tasks: only UNSCHEDULED tasks reach the strip. `CadenceCalendarFixtureEvents.Fixture.
+/// multiDay` is the pinned example.
+nonisolated enum CadenceCalendarAllDayBandPriority {
+    /// Chip rows on a compact-width (iPhone) strip.
+    static let compactCapacity = 6
+    /// Chip rows on a regular-width (iPad) strip.
+    static let regularCapacity = 8
+    /// The most rows the task reserve ever holds, whatever the capacity.
+    static let maximumReservedTaskRows = 3
 
-    static func split(allDayEvents: Int, unscheduledTasks: Int) -> CadenceCalendarMonthCellPriority.Split {
-        CadenceCalendarMonthCellPriority.split(
-            events: allDayEvents,
-            tasks: unscheduledTasks,
-            capacity: capacity
+    /// The strip's chip-row budget. iPhone and iPad differ by layout, so the size class decides.
+    static func capacity(isRegularWidth: Bool) -> Int {
+        isRegularWidth ? regularCapacity : compactCapacity
+    }
+
+    /// Rows held for unscheduled tasks when the strip overflows: `min(tasks, min(capacity / 2, 3))`.
+    static func reservedTaskRows(unscheduledTasks: Int, capacity: Int) -> Int {
+        min(max(0, unscheduledTasks), min(max(0, capacity) / 2, maximumReservedTaskRows))
+    }
+
+    /// Fills `capacity` chip rows: events first, after holding the task reserve.
+    ///
+    /// Below overflow the reserve is never binding (`events <= capacity - tasks <= capacity -
+    /// reserve`), which is how part 1 of the rule falls out of the same arithmetic as part 2.
+    static func split(
+        allDayEvents: Int,
+        unscheduledTasks: Int,
+        capacity: Int
+    ) -> CadenceCalendarMonthCellPriority.Split {
+        let eventCount = max(0, allDayEvents)
+        let taskCount = max(0, unscheduledTasks)
+        let rows = max(0, capacity)
+
+        let reserve = reservedTaskRows(unscheduledTasks: taskCount, capacity: rows)
+        let drawnEvents = min(eventCount, rows - reserve)
+        let drawnTasks = min(taskCount, rows - drawnEvents)
+
+        return CadenceCalendarMonthCellPriority.Split(
+            events: drawnEvents,
+            tasks: drawnTasks,
+            hidden: (eventCount - drawnEvents) + (taskCount - drawnTasks)
         )
     }
 }

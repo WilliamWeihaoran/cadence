@@ -114,38 +114,82 @@ private final class FixedEventDaySource: CalendarEventDaySource {
                 "MonthDayCell asks the timed half on its own again")
     }
 
-    // MARK: - T-3163, iOS timeline band
+    // MARK: - T-1474 (was T-3163), the all-day strip's capped split
 
-    /// The band's two rows go to all-day events before unscheduled tasks, and the "+N more" line
-    /// counts exactly what was not drawn.
-    @Test func theTimelineBandSpendsItsRowsOnAllDayEventsBeforeUnscheduledTasks() {
-        let crowded = CadenceCalendarAllDayBandPriority.split(allDayEvents: 3, unscheduledTasks: 2)
-        #expect(crowded.events == CadenceCalendarAllDayBandPriority.capacity)
-        #expect(crowded.tasks == 0)
-        #expect(crowded.visible + crowded.hidden == 5)
+    private typealias Band = CadenceCalendarAllDayBandPriority
 
-        let mixed = CadenceCalendarAllDayBandPriority.split(allDayEvents: 1, unscheduledTasks: 4)
-        #expect(mixed.events == 1)
-        #expect(mixed.tasks == CadenceCalendarAllDayBandPriority.capacity - 1)
-        #expect(mixed.visible + mixed.hidden == 5)
-
-        // A band with no all-day events keeps the task rows it always had.
-        let tasksOnly = CadenceCalendarAllDayBandPriority.split(allDayEvents: 0, unscheduledTasks: 4)
-        #expect(tasksOnly.tasks == CadenceCalendarAllDayBandPriority.capacity)
-        #expect(tasksOnly.events == 0)
-
-        for events in 0...4 {
-            for tasks in 0...4 {
-                let split = CadenceCalendarAllDayBandPriority.split(allDayEvents: events, unscheduledTasks: tasks)
-                #expect(split.visible <= CadenceCalendarAllDayBandPriority.capacity)
-                #expect(split.visible + split.hidden == events + tasks)
-            }
-        }
+    /// The owner's caps: 6 chip rows at compact width (iPhone), 8 at regular (iPad), and a task
+    /// reserve of `min(tasks, min(cap / 2, 3))` — 3 on both today.
+    @Test func theStripCapIsSixOnIPhoneAndEightOnIPadWithAReserveOfThree() {
+        #expect(Band.capacity(isRegularWidth: false) == 6)
+        #expect(Band.capacity(isRegularWidth: true) == 8)
+        #expect(Band.reservedTaskRows(unscheduledTasks: 10, capacity: 6) == 3)
+        #expect(Band.reservedTaskRows(unscheduledTasks: 10, capacity: 8) == 3)
+        // The formula, not two constants: it keeps working if the cap moves.
+        #expect(Band.reservedTaskRows(unscheduledTasks: 10, capacity: 4) == 2)
+        #expect(Band.reservedTaskRows(unscheduledTasks: 10, capacity: 2) == 1)
+        // `min(taskCount, ...)`: one task reserves one row, not three blank ones.
+        #expect(Band.reservedTaskRows(unscheduledTasks: 1, capacity: 6) == 1)
+        #expect(Band.reservedTaskRows(unscheduledTasks: 0, capacity: 6) == 0)
     }
 
-    /// The iOS grid hands each header its day's all-day events, and the header draws them through
-    /// the split, as event chips, above the unscheduled tasks. `Cadence/iOS/` is behind
-    /// `#if os(iOS)`, so this half can only be read as text.
+    /// No rationing until overflow; on overflow events take every row the reserve leaves, and the
+    /// "+N more" count is exactly what was not drawn.
+    @Test func theStripRationsOnlyOnOverflowAndThenHoldsTheTaskReserve() {
+        // Fits: everything drawn, whatever the mix.
+        #expect(Band.split(allDayEvents: 5, unscheduledTasks: 1, capacity: 6)
+                == .init(events: 5, tasks: 1, hidden: 0))
+        #expect(Band.split(allDayEvents: 1, unscheduledTasks: 5, capacity: 6)
+                == .init(events: 1, tasks: 5, hidden: 0))
+        // The T-3163 starvation case: a holiday, a birthday and an overdue task all show now.
+        #expect(Band.split(allDayEvents: 2, unscheduledTasks: 1, capacity: 6)
+                == .init(events: 2, tasks: 1, hidden: 0))
+        // Overflow, iPhone: three task rows held, events take the other three.
+        #expect(Band.split(allDayEvents: 10, unscheduledTasks: 5, capacity: 6)
+                == .init(events: 3, tasks: 3, hidden: 9))
+        // Overflow, iPad: still three task rows, events take five.
+        #expect(Band.split(allDayEvents: 10, unscheduledTasks: 5, capacity: 8)
+                == .init(events: 5, tasks: 3, hidden: 7))
+        // A reserve the tasks cannot fill flows back to events.
+        #expect(Band.split(allDayEvents: 10, unscheduledTasks: 1, capacity: 6)
+                == .init(events: 5, tasks: 1, hidden: 5))
+        // Rows the events cannot fill flow back to tasks.
+        #expect(Band.split(allDayEvents: 2, unscheduledTasks: 10, capacity: 6)
+                == .init(events: 2, tasks: 4, hidden: 6))
+        // A day with no loose tasks gives events every row.
+        #expect(Band.split(allDayEvents: 9, unscheduledTasks: 0, capacity: 6)
+                == .init(events: 6, tasks: 0, hidden: 3))
+        // An unbounded capacity (the Mac's scrolling band) hides nothing.
+        #expect(Band.split(allDayEvents: 40, unscheduledTasks: 30, capacity: .max)
+                == .init(events: 40, tasks: 30, hidden: 0))
+    }
+
+    /// The invariants, over every small mix at both caps.
+    @Test func theStripSplitHoldsItsInvariantsAtBothCaps() {
+        var checked = 0
+        for capacity in [Band.capacity(isRegularWidth: false), Band.capacity(isRegularWidth: true)] {
+            for events in 0...12 {
+                for tasks in 0...12 {
+                    let split = Band.split(allDayEvents: events, unscheduledTasks: tasks, capacity: capacity)
+                    let total = events + tasks
+                    #expect(split.visible <= capacity)
+                    #expect(split.visible + split.hidden == total)
+                    if total <= capacity {
+                        #expect(split.hidden == 0, "rationed below overflow: \(events)e \(tasks)t cap \(capacity)")
+                    } else {
+                        #expect(split.visible == capacity, "an overflowing strip left a blank row")
+                        #expect(split.tasks >= Band.reservedTaskRows(unscheduledTasks: tasks, capacity: capacity))
+                    }
+                    checked += 1
+                }
+            }
+        }
+        #expect(checked == 2 * 13 * 13, "non-vacuity: \(checked) mixes")
+    }
+
+    /// The iOS grid hands each header its day's all-day events and this width's capacity, and the
+    /// header draws them through the split, as event chips, above the unscheduled tasks.
+    /// `Cadence/iOS/` is behind `#if os(iOS)`, so this half can only be read as text.
     @Test func theIOSTimelineHeaderIsHandedAndDrawsTheDaysAllDayEvents() throws {
         let raw = try CadenceSourceScan.sourceFile("Cadence/iOS/iOSCalendarTimelineViews.swift")
         let code = CadenceSourceScan.codeOnly(raw)
@@ -154,24 +198,74 @@ private final class FixedEventDaySource: CalendarEventDaySource {
 
         #expect(
             CadenceSourceScan.matchCount(
-                #"iOSCalendarTimelineDayHeader\(\s*date: date,\s*allDayEvents: items\(eventsByDate, on: date\)\.filter\(\\\.isAllDay\),"#,
+                #"iOSCalendarTimelineDayHeader\(\s*date: date,\s*allDayEvents: allDayEvents\(on: date\),\s*unscheduledTasks: items\(unscheduledTasksByDate, on: date\),\s*capacity: bandCapacity,\s*bandHeight: dayHeaderHeight"#,
                 in: code
             ) == 1,
-            "the grid no longer hands the header the day's all-day events"
+            "the grid no longer hands the header the day's all-day events, its capacity and the shared band height"
+        )
+        #expect(
+            CadenceSourceScan.matchCount(#"CadenceCalendarAllDayBandPriority\.capacity\(isRegularWidth: isRegularWidth\)"#, in: code) == 1,
+            "the strip's capacity is no longer the shared per-width rule"
         )
 
         let header = try #require(
             CadenceSourceScan.declarationBody("private struct iOSCalendarTimelineDayHeader", in: code)
         )
-        #expect(header.contains("CadenceCalendarAllDayBandPriority.split("))
+        #expect(CadenceSourceScan.matchCount(#"CadenceCalendarAllDayBandPriority\.split\(\s*allDayEvents: allDayEvents\.count,\s*unscheduledTasks: unscheduledTasks\.count,\s*capacity: capacity"#, in: header) == 1)
         let events = try #require(header.range(of: "ForEach(allDayEvents.prefix(split.events)"))
         let tasks = try #require(header.range(of: "ForEach(unscheduledTasks.prefix(split.tasks))"))
         #expect(events.lowerBound < tasks.lowerBound, "the band stacks its tasks above its all-day events")
         #expect(CadenceSourceScan.matchCount(#"isEvent: true"#, in: header) == 1,
                 "the band's all-day chip does not wear the event (rail) treatment")
         #expect(CadenceSourceScan.matchCount(#"split\.hidden"#, in: header) >= 1)
-        // The old fixed cap is gone: one rule, not a second count.
-        #expect(CadenceSourceScan.matchCount(#"prefix\(2\)"#, in: header) == 0)
+        // The band is the grid's one height, not the old fixed figure.
+        #expect(CadenceSourceScan.matchCount(#"\.frame\(height: bandHeight"#, in: header) == 1)
+        #expect(CadenceSourceScan.matchCount(#"iOSCalendarTimelineMetrics\.dayHeaderHeight\b(?!\()"#, in: header) == 0)
+        // No second, hand-rolled cap.
+        #expect(CadenceSourceScan.matchCount(#"prefix\(\d+\)"#, in: header) == 0)
+    }
+
+    // MARK: - T-1474, the span rule
+
+    /// **A timed event is never promoted to the strip, however long it runs.** The fixture runs
+    /// Monday 07:30 to Thursday 16:15; on each of its four days the grid's own clamp draws it as a
+    /// block — real start, two full days, real end — and on neither neighbouring day at all.
+    @Test func aFourDayTimedEventIsABlockOnEachDayAndNeverInTheStrip() throws {
+        let calendar = Calendar.current
+        let monday = try #require(calendar.date(from: DateComponents(year: 2026, month: 6, day: 1)))
+        #expect(calendar.component(.weekday, from: monday) == 2, "the anchor is not a Monday")
+
+        let spec = CadenceCalendarFixtureEvents.Fixture.multiDay
+        let span = spec.interval(anchoredOn: monday, calendar: calendar)
+        func day(_ offset: Int) throws -> Date {
+            try #require(calendar.date(byAdding: .day, value: offset, to: monday))
+        }
+        func range(on offset: Int) throws -> (start: Int, end: Int) {
+            CadenceScheduleSupport.minuteRange(from: span.start, to: span.end, on: try day(offset), calendar: calendar)
+        }
+        func overlaps(_ offset: Int) throws -> Bool {
+            let start = calendar.startOfDay(for: try day(offset))
+            let end = try #require(calendar.date(byAdding: .day, value: 1, to: start))
+            return span.start < end && span.end > start
+        }
+
+        #expect(try range(on: 0) == (7 * 60 + 30, 24 * 60), "Monday: its real start, to midnight")
+        #expect(try range(on: 1) == (0, 24 * 60), "Tuesday: the full column")
+        #expect(try range(on: 2) == (0, 24 * 60), "Wednesday: the full column")
+        #expect(try range(on: 3) == (0, 16 * 60 + 15), "Thursday: midnight to its real end")
+        #expect(try (0...3).allSatisfy(overlaps), "a day of the span would not be fetched for it")
+        #expect(try !overlaps(-1) && !overlaps(4), "the span leaks onto a neighbouring day")
+
+        // The strip's door is `isAllDay` and nothing else, on iOS and on the Mac's fetch alike.
+        let iOS = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile("Cadence/iOS/iOSCalendarTimelineViews.swift"))
+        #expect(CadenceSourceScan.matchCount(#"\.filter\(\\\.isAllDay\)"#, in: iOS) == 1,
+                "the iOS strip has a second door, or lost its one")
+        let helper = try #require(CadenceSourceScan.declarationBody("private func allDayEvents(on date: Date)", in: iOS))
+        #expect(helper.contains("filter(\\.isAllDay)"))
+        #expect(CadenceSourceScan.matchCount(#"duration|endDate|timeIntervalSince"#, in: helper) == 0,
+                "the strip's door started reading an event's length")
+        let mac = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile("Cadence/macOS/Services/CalendarManager.swift"))
+        #expect(CadenceSourceScan.matchCount(#"\.filter \{ \$0\.isAllDay \}"#, in: mac) == 1)
     }
 
     // MARK: - T-3164, completed timed tasks on the iOS timeline

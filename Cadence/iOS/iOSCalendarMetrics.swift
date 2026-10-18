@@ -126,8 +126,8 @@ nonisolated enum iOSCalendarTimelineMetrics {
         dateBlockVerticalPadding * 2 + weekdayLineHeight + dayLabelSpacing + dayCircleSize
     }
 
-    /// The strip of `iOSCalendarMiniChip`s under the date — two unscheduled tasks, a "N timed"
-    /// count, an overflow line. Already one figure for both widths before this sweep.
+    /// The strip of `iOSCalendarMiniChip`s under the date at its shortest. Since T-1474 the strip
+    /// grows past this with the day's split (`previewHeight(for:)`); this is the floor.
     static let previewMinHeight: CGFloat = 42
 
     /// Around that strip. 6 is the inset the month grid gives the identical chips in its cells;
@@ -144,6 +144,44 @@ nonisolated enum iOSCalendarTimelineMetrics {
     /// for. Computing the band from its parts is the only way that stays true when a part changes.
     static var dayHeaderHeight: CGFloat {
         dateBlockHeight + previewMinHeight + previewInset
+    }
+
+    // MARK: The strip's height follows what it draws (T-1474)
+
+    /// One `iOSCalendarMiniChip` line in the strip — the chip's untimed form,
+    /// `iOSCalendarMiniChip.height(hasTime: false)`. Restated here because that view sits inside
+    /// `#if os(iOS)` and this arithmetic must be testable on the macOS-built target;
+    /// `iOSCalendarMetricsTests` reads the chip's source to keep the two equal.
+    static let bandChipHeight: CGFloat = 17
+
+    /// Between lines of the strip — the chip `VStack`'s spacing.
+    static let bandLineSpacing: CGFloat = 3
+
+    /// The "+N more" line's point size, and the line it lays out in.
+    static let overflowLabelSize: CGFloat = 9
+    static var overflowLineHeight: CGFloat { overflowLabelSize * 1.2 }
+
+    /// The chip strip for one day's split: its chip rows, then the "+N more" line if anything is
+    /// hidden. Never shorter than `previewMinHeight`, so a quiet week keeps the band it always had.
+    static func previewHeight(for split: CadenceCalendarMonthCellPriority.Split) -> CGFloat {
+        let chips = max(0, split.visible)
+        let hasOverflowLine = split.hidden > 0
+        let lines = chips + (hasOverflowLine ? 1 : 0)
+        guard lines > 0 else { return previewMinHeight }
+        let content = CGFloat(chips) * bandChipHeight
+            + (hasOverflowLine ? overflowLineHeight : 0)
+            + CGFloat(lines - 1) * bandLineSpacing
+        return max(previewMinHeight, content)
+    }
+
+    /// **The band is as tall as the busiest day in view needs, up to the strip's capacity.** The
+    /// cap is on item COUNT (`CadenceCalendarAllDayBandPriority`); this turns the busiest visible
+    /// day's split into points. Every row added pushes the hour grid down, which is the trade the
+    /// owner accepted for 6 rows on iPhone and 8 on iPad: it is strip-versus-timeline, not
+    /// events-versus-tasks. `dayHeaderHeight` above is the floor.
+    static func dayHeaderHeight(for splits: [CadenceCalendarMonthCellPriority.Split]) -> CGFloat {
+        let preview = splits.map(previewHeight(for:)).max() ?? previewMinHeight
+        return dateBlockHeight + max(previewMinHeight, preview) + previewInset
     }
 }
 

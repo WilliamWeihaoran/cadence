@@ -148,6 +148,46 @@ enum CadenceCalendarFixtureEvents {
                 durationMinutes: 24 * 60
             )
         ]
+
+        /// **[[T-1474]] — the multi-day TIMED event, and the span rule it exists to pin.** Monday
+        /// 07:30 to Thursday 16:15: four calendar days, and `isAllDay` is false. The owner's rule
+        /// is that it draws as a block in the grid on all four days — its real start on the first,
+        /// full height on the two between, its real end on the last — and touches the all-day
+        /// strip on NONE of them. A long duration is not an all-day flag.
+        ///
+        /// It is a fixture so that a later reader who sees a four-day block and believes it a bug
+        /// has a pinned example to read first (`CalendarAllDayAndDoneTaskParityTests`). It is
+        /// deliberately NOT served by the `calendar-hues` doors below: that scenario answers today
+        /// alone, and its 09:00 cascade is the thing it photographs, which a 07:30 block over the
+        /// whole column would change.
+        static let multiDay = MultiDaySpec(
+            title: "Four-day timed event",
+            startMinute: 7 * 60 + 30,
+            endDayOffset: 3,
+            endMinute: 16 * 60 + 15
+        )
+    }
+
+    /// A timed event that starts on one day and ends `endDayOffset` days later. See
+    /// `Fixture.multiDay`.
+    struct MultiDaySpec {
+        let title: String
+        /// Minutes from midnight on the first day.
+        let startMinute: Int
+        /// How many days after the first one it ends on.
+        let endDayOffset: Int
+        /// Minutes from midnight on the last day.
+        let endMinute: Int
+
+        /// The span, anchored on `firstDay`. Dates only, so the rule is checked without an
+        /// `EKEventStore` of any kind.
+        func interval(anchoredOn firstDay: Date, calendar: Calendar = .current) -> DateInterval {
+            let dayStart = calendar.startOfDay(for: firstDay)
+            let start = calendar.date(byAdding: .minute, value: startMinute, to: dayStart) ?? dayStart
+            let lastDay = calendar.date(byAdding: .day, value: endDayOffset, to: dayStart) ?? dayStart
+            let end = calendar.date(byAdding: .minute, value: endMinute, to: lastDay) ?? lastDay
+            return DateInterval(start: start, end: max(start, end))
+        }
     }
 
     /// `true` only for a launch that asked for the fixture scenario by name **and** carries the

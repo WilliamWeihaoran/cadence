@@ -98,6 +98,64 @@ struct iOSCalendarMetricsTests {
         )
     }
 
+    /// **T-1474: the band grows with the busiest visible day, up to the strip's capacity.** The
+    /// floor is the band it always was; a full iPhone (6) or iPad (8) strip plus its "+N more"
+    /// line gets the room it needs, and more items never shrink it.
+    @Test func theDayHeaderBandGrowsWithTheBusiestDaysSplitUpToTheCap() {
+        typealias Grid = iOSCalendarTimelineMetrics
+        typealias Band = CadenceCalendarAllDayBandPriority
+
+        #expect(Grid.dayHeaderHeight(for: []) == Grid.dayHeaderHeight)
+        #expect(Grid.dayHeaderHeight(for: [Band.split(allDayEvents: 0, unscheduledTasks: 0, capacity: 6)])
+                == Grid.dayHeaderHeight)
+        #expect(Grid.dayHeaderHeight(for: [Band.split(allDayEvents: 1, unscheduledTasks: 1, capacity: 6)])
+                == Grid.dayHeaderHeight)
+
+        for capacity in [Band.capacity(isRegularWidth: false), Band.capacity(isRegularWidth: true)] {
+            let full = Band.split(allDayEvents: 20, unscheduledTasks: 20, capacity: capacity)
+            #expect(full.visible == capacity)
+            let needed = CGFloat(capacity) * Grid.bandChipHeight
+                + Grid.overflowLineHeight
+                + CGFloat(capacity) * Grid.bandLineSpacing
+            #expect(Grid.previewHeight(for: full) >= needed, "a full strip of \(capacity) is clipped")
+            #expect(Grid.dayHeaderHeight(for: [full])
+                    == Grid.dateBlockHeight + Grid.previewHeight(for: full) + Grid.previewInset)
+
+            // Monotonic in the item count, and the busiest day decides for the whole row.
+            var previous = Grid.dayHeaderHeight
+            for items in 0...(capacity + 4) {
+                let split = Band.split(allDayEvents: items, unscheduledTasks: 0, capacity: capacity)
+                let height = Grid.dayHeaderHeight(for: [split])
+                #expect(height >= previous)
+                previous = height
+                let quiet = Band.split(allDayEvents: 0, unscheduledTasks: 0, capacity: capacity)
+                #expect(Grid.dayHeaderHeight(for: [quiet, split, quiet]) == height)
+            }
+            // Past the cap the band stops growing: the rest is the "+N more" line's job.
+            let over = Band.split(allDayEvents: capacity + 1, unscheduledTasks: 0, capacity: capacity)
+            let farOver = Band.split(allDayEvents: capacity + 40, unscheduledTasks: 9, capacity: capacity)
+            #expect(Grid.dayHeaderHeight(for: [over]) == Grid.dayHeaderHeight(for: [farOver]))
+        }
+        #expect(
+            Grid.dayHeaderHeight(for: [Band.split(allDayEvents: 20, unscheduledTasks: 20, capacity: 8)])
+                > Grid.dayHeaderHeight(for: [Band.split(allDayEvents: 20, unscheduledTasks: 20, capacity: 6)])
+        )
+    }
+
+    /// The strip's chip line is the untimed `iOSCalendarMiniChip`'s height, restated because the
+    /// chip is behind `#if os(iOS)`. Read from its source so the two cannot drift.
+    @Test func theBandChipHeightIsTheUntimedMiniChipsHeight() throws {
+        let code = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile("Cadence/iOS/iOSCalendarMonthViews.swift"))
+        let untimed = Int(iOSCalendarTimelineMetrics.bandChipHeight)
+        #expect(
+            CadenceSourceScan.matchCount(
+                #"static func height\(hasTime: Bool\) -> CGFloat \{ hasTime \? \d+ : "# + "\(untimed)" + #" \}"#,
+                in: code
+            ) == 1,
+            "iOSCalendarMiniChip's untimed height is no longer \(untimed)pt"
+        )
+    }
+
     /// **T-588 finished: there is no second set of hour figures to keep in step.**
     ///
     /// That ticket found Today's timeline re-typing three of this file's numbers — the hour height,
