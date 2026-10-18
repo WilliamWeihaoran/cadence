@@ -3,7 +3,7 @@ import Testing
 @testable import Cadence
 
 /// **T-674 addendum (2026-09-04), found by an outside audit while the ticket's ten `Button` sites
-/// were in progress.** `CadenceIOSControlAccessibilityTests.unnamedIconButtonCount` keys on the
+/// were in progress.** `CadenceIconOnlyButtonAccessibilityTests.unnamedIconButtonCount` keys on the
 /// literal `Button` keyword, so a control drawn as a bare `.onTapGesture` is invisible to it — the
 /// detector is honest about what it can see, and this shape sits outside it.
 ///

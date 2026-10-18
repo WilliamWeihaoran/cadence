@@ -27,7 +27,7 @@ extension NSAttributedString.Key {
 /// storage string *is* the note.
 ///
 /// So the canvas becomes a decoration the layout manager paints, which is the approach the macOS
-/// editor already takes for its table rows (`MarkdownEditorInteractionSupport.drawTableRows`). The
+/// editor already takes for its table rows (`CadenceLayoutManager.drawTableRows`). The
 /// source run is hidden, the paragraph style reserves the height, and
 /// `iOSMarkdownBlockCanvasLayoutManager` draws the image into the space that reserved.
 final class iOSMarkdownBlockCanvas: NSObject {

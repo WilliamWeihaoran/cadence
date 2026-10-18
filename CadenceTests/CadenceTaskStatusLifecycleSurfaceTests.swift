@@ -173,7 +173,7 @@ struct CadenceTaskStatusLifecycleSurfaceTests {
     }
 
     /// **The refusal is named once, at the shell.** The wrapper catches rather than rethrows
-    /// because one of its six callers is `iOSTaskSwipeActions.trailing`, a `static func` returning
+    /// because one of its six callers is `iOSTaskRowSwipeActions.trailing`, a `static func` returning
     /// closures with no view state at all — so there is no "where the user is already looking" for
     /// it to report into. macOS reached the same answer in T-628 and put the notice on the manager
     /// for `macOSRootView` to show; this is that shape on the other platform.

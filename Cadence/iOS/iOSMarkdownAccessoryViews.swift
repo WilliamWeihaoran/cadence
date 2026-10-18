@@ -228,7 +228,7 @@ private struct iOSMarkdownNoteReferenceRow: View {
 
     /// Excerpted from the note's text with embed titles resolved against the live tasks first — the
     /// title stored in `[[task:UUID|Title]]` is a cache, so the raw string names a renamed task by
-    /// its old name. See `iOSMeetingNoteRow.preview`, which carries the same note.
+    /// its old name.
     private var preview: String {
         let resolved = MarkdownTaskEmbedTitleCache.resolving(note.content, titles: taskTitles)
         let preview = CadenceMarkdownPresentationSupport.plainPreviewText(from: resolved, limit: 120)

@@ -19,6 +19,11 @@ import Testing
 /// > in this repository and the member is declared **neither** on any type of that name **nor**
 /// > in a file named after it.
 ///
+/// > **And since [[T-3209]], a root that names nothing is a finding of its own**: not a declared
+/// > type, not a file base name, not an identifier the code spells, not a listed framework type,
+/// > and not a literal value the app spells. That is the claim a rename or a deletion leaves
+/// > behind, and the guard that used to drop it was blind in exactly the case it was built for.
+///
 /// Every hit therefore means one thing: *this name resolves to nothing in this tree.* Not "the
 /// sentence reads oddly" — the reader cannot follow the pointer, because there is nothing at the
 /// other end of it.
@@ -35,7 +40,11 @@ import Testing
 ///   all names this app also calls. See `calledNames(inCode:)`. What stays uncovered is [[T-647]]'s
 ///   own spelling: a name absent from the file the sentence is *about* but present elsewhere.
 /// - **SDK-rooted claims.** ``ModelContext.save()`` cannot be checked, because the repository
-///   cannot enumerate a framework's members. The root must be a type this tree declares.
+///   cannot enumerate a framework's members. Such a root is `uncheckable` — but only because the
+///   code spells it; a root nothing spells is no longer assumed to be a framework type ([[T-3209]]).
+/// - **A value root that happens to be spelled.** `task.title` is admitted by the grammar and
+///   excused because `task` is an identifier in code. A stale root that collides with a live
+///   variable name is excused the same way; that is the price of not keeping an SDK list.
 /// - **Behaviour, as opposed to existence.** T-555's fixture comment described a harvest as
 ///   `static let`-only after it was widened; every name in it still resolved. T-625 is the same
 ///   shape. A name-resolution rule is blind to both, on purpose.
@@ -234,6 +243,14 @@ enum CadenceCommentSymbolClaim {
     /// pattern without it reads that declaration as absent and accuses two correct comments.
     static let memberPattern =
         "\\b(?:func|var|let|case|typealias|struct|class|enum|actor)\\s+`?([A-Za-z_][A-Za-z0-9_]*)`?"
+    static let identifierPattern = "\\b([A-Za-z_][A-Za-z0-9_]*)\\b"
+
+    /// The content of every single-line literal in a `strings` half. Interpolations are kept as
+    /// written, so a literal holding one never equals a backticked span — which is the safe way
+    /// round: it can only leave a span to be judged, never excuse one.
+    static func literalContents(inStrings strings: String) -> Set<String> {
+        Set(CadenceSourceScan.captures("\"([^\"\\n]+)\"", in: strings).map(\.text))
+    }
 
     /// Whether `range` — a `nominalTypePattern` match's range, so it starts at the `struct` /
     /// `class` / `enum` / `protocol` / `actor` keyword — is modified by `private` or `fileprivate`
@@ -292,11 +309,53 @@ enum CadenceCommentSymbolClaim {
         /// depth would have counted `NotesPage` as a second public type and narrowed the exclusion
         /// away from `NotesView.NotesDateJumpButton`, which [[T-717]] says must stay excluded.
         var publicNominalTypesByFileBaseName: [String: Set<String>] = [:]
+        /// Every identifier the **code** half spells, at any position ([[T-3209]]). What the root
+        /// verdict asks of a name the tree does not declare: a framework type this app uses, or a
+        /// value a span is rooted on (`task.title`, `self.order`), is spelled in code somewhere;
+        /// a type that was renamed or deleted is not. The same trade `calledNames(inCode:)` makes,
+        /// for the same reason — it dissolves the SDK allowlist instead of maintaining one.
+        var codeIdentifiers: Set<String> = []
+        /// Every single-line string literal's content, whole. A backticked `tray.fill` or
+        /// `com.haoranwei.Cadence` is a *value* the tree spells in a literal, not a symbol claim,
+        /// and this is what tells the root verdict so without a list of SF Symbols ([[T-3209]]).
+        var literals: Set<String> = []
+        /// Every `typealias` name. A root that is an alias (`CadenceContextPickerSupport` is
+        /// `CadencePickerSupport<Context>`) has its members on another declaration, possibly a
+        /// generic one, so a claim rooted on it is uncheckable rather than missing ([[T-3209]]).
+        var typeAliases: Set<String> = []
+
+        /// The whole index for whole sources: partitions each once, indexes the code half, and
+        /// reads the literals off the strings half. The sweeps use this; fixtures that only have
+        /// code use `build(from:)`.
+        static let literalExcludedRoots = ["CadenceTests/", "CadenceUITests/"]
+
+        static func build(fromSources sources: [(path: String, text: String)]) -> SymbolIndex {
+            var index = SymbolIndex()
+            var files: [(path: String, code: String)] = []
+            for source in sources {
+                let regions = partition(source.text)
+                files.append((path: source.path, code: regions.code))
+                // Product literals only. A test spells a stale name as a *needle* constantly —
+                // `source.contains("iOSFoo.bar")` — and a needle must not vouch for the claim it
+                // is hunting; measured on the first run, when this suite's own expected-value
+                // literal excused the deleted-root witness it was asserting about.
+                if !literalExcludedRoots.contains(where: { source.path.hasPrefix($0) }) {
+                    index.literals.formUnion(literalContents(inStrings: regions.strings))
+                }
+            }
+            return index.merging(build(from: files))
+        }
 
         static func build(from files: [(path: String, code: String)]) -> SymbolIndex {
             var index = SymbolIndex()
             for file in files {
                 let code = file.code
+                for capture in CadenceSourceScan.captures(identifierPattern, in: code) {
+                    index.codeIdentifiers.insert(capture.text)
+                }
+                for capture in CadenceSourceScan.captures("\\btypealias\\s+([A-Za-z_][A-Za-z0-9_]*)", in: code) {
+                    index.typeAliases.insert(capture.text)
+                }
                 for capture in CadenceSourceScan.captures(nominalTypePattern, in: code) {
                     index.nominalTypes.insert(capture.text)
                 }
@@ -351,6 +410,9 @@ enum CadenceCommentSymbolClaim {
             for (base, nominals) in other.publicNominalTypesByFileBaseName {
                 merged.publicNominalTypesByFileBaseName[base, default: []].formUnion(nominals)
             }
+            merged.codeIdentifiers.formUnion(other.codeIdentifiers)
+            merged.literals.formUnion(other.literals)
+            merged.typeAliases.formUnion(other.typeAliases)
             return merged
         }
     }
@@ -372,7 +434,10 @@ enum CadenceCommentSymbolClaim {
     /// `Theme.swift` and `AGENTS.md` are paths, not symbols, and they parse identically.
     static let fileExtensions: Set<String> = [
         "swift", "md", "plist", "pbxproj", "sh", "json", "yml", "yaml", "xcodeproj",
-        "entitlements", "ts", "txt", "png", "xcassets"
+        "entitlements", "ts", "txt", "png", "xcassets",
+        // [[T-3209]]: `SecTask.h`, `iPhoneOS.sdk`, `CoreBuildSystem.xcspec` became visible to the
+        // root verdict once an undeclared root stopped being dropped, and are file names too.
+        "h", "sdk", "xcspec", "framework"
     ]
 
     /// Every backticked span in `comments` that reads as `Type.member`.
@@ -380,17 +445,25 @@ enum CadenceCommentSymbolClaim {
     /// A span containing `*` is skipped: this repo writes ``CadencePendingChangePersistence.commit*``
     /// on purpose, to name a family rather than a member, and a glob is not a claim about one
     /// declaration.
+    ///
+    /// **The root may begin lowercase ([[T-3209]]).** Both arms used to anchor on `[A-Z]`, which
+    /// left every `iOS*` type — 504 of the tree's nominal types on 2026-10-17 — unparseable here
+    /// and, being qualified, never handed to the unqualified half either. A lowercase root is now
+    /// a claim like any other; what a root *resolves to* is `verdict(of:in:)`'s question, not the
+    /// grammar's, so a value root such as `task.title` is admitted here and excused there.
+    static let qualifiedSpelling = "^([A-Za-z_][A-Za-z0-9_]*)\\.([A-Za-z_][A-Za-z0-9_]*)"
+
     static func claims(inComments comments: String) -> [Claim] {
         CadenceSourceScan.captures("`([^`\\n]+)`", in: comments).compactMap { capture in
             let span = capture.text
             guard !span.contains("*") else { return nil }
             guard let parsed = CadenceSourceScan.captures(
-                "^([A-Z][A-Za-z0-9_]*)\\.([A-Za-z_][A-Za-z0-9_]*)",
+                qualifiedSpelling,
                 in: span,
                 group: 1
             ).first else { return nil }
             let member = CadenceSourceScan.captures(
-                "^([A-Z][A-Za-z0-9_]*)\\.([A-Za-z_][A-Za-z0-9_]*)",
+                qualifiedSpelling,
                 in: span,
                 group: 2
             ).first
@@ -400,28 +473,109 @@ enum CadenceCommentSymbolClaim {
         }
     }
 
-    /// The offending spans in one file, read against the tree plus the file's own declarations.
+    /// What a qualified claim's root and member resolve to ([[T-3209]]).
     ///
-    /// Merging the file's own index in is what lets a literal fixture stand alone: the witnesses
-    /// `CadenceScanInstrument` checks declare their own type, so the detector answers the same
-    /// question for a five-line fixture and for a 900-line screen.
-    static func offendingSpans(in source: String, against index: SymbolIndex) -> [String] {
-        let regions = partition(source)
-        let world = index.merging(SymbolIndex.build(from: [(path: "", code: regions.code)]))
-        return claims(inComments: regions.comments).compactMap { claim in
-            guard world.nominalTypes.contains(claim.type) else { return nil }
-            guard !synthesizedMembers.contains(claim.member) else { return nil }
-            guard world.membersByType[claim.type]?.contains(claim.member) != true else { return nil }
+    /// **Why there are four answers and not two.** The sweep used to ask one question — *is the
+    /// member declared on the root?* — and answered "not my business" for every root the tree
+    /// does not declare, on the theory that such a root is an SDK type nobody can enumerate. That
+    /// silently excused exactly the claim most likely to be stale: one naming a type that was
+    /// **renamed or deleted**. Three such comments survived twelve passes of [[T-3170]].
+    ///
+    /// - `resolves`: the member is declared on the root type, or in the file the root names.
+    /// - `memberMissing`: the root is a declared type **or a file base name with a file behind
+    ///   it**, and the member is declared on neither. The offender the ledger has always held.
+    /// - `rootUnresolvable`: the root is not a declared type, not a file base name, not spelled
+    ///   anywhere in the tree's code (where every framework type this app uses is spelled), not a
+    ///   framework type in `frameworkRootsNamedButNeverSpelled`, and the span is a pure symbol
+    ///   path rather than a literal value the tree spells. **Nothing at the other end of it.**
+    /// - `uncheckable`: everything else — a typealias, or a framework or value root whose members
+    ///   the tree cannot enumerate, a span that is an expression rather than a name, or a literal value.
+    enum Verdict: Equatable {
+        // One case per line: `memberPattern` reads the first name after `case`, and this doc names
+        // each of them qualified.
+        case resolves
+        case memberMissing
+        case rootUnresolvable
+        case uncheckable
+    }
+
+    /// A span that is a symbol path and nothing else: dotted identifiers, then optionally a
+    /// selector's label list. `X.isEmpty ? a : b`, `dayTasks.filter { … }` and `MacOSX.sdk/System`
+    /// are not — they are expressions or paths, and only a name can be judged to name nothing.
+    static let symbolPathSpelling =
+        "^[A-Za-z_][A-Za-z0-9_]*(?:\\.[A-Za-z_][A-Za-z0-9_]*)+(?:\\((?:(?:[A-Za-z_][A-Za-z0-9_]*|_):)*\\))?$"
+
+    /// Framework types this tree's comments name but whose name its code never spells — so
+    /// `codeIdentifiers` cannot vouch for them. The residue of the SDK allowlist the root verdict
+    /// otherwise dissolves, the same trade [[T-999]] priced for the unqualified half; each entry
+    /// is pinned absent from both the declarations and the code by
+    /// `theFrameworkRootsAreNeitherDeclaredNorSpelled`, so one the app starts using goes stale.
+    static let frameworkRootsNamedButNeverSpelled: Set<String> = [
+        // SwiftUI: the app reads the phase through `onScrollPhaseChange`'s closure, never by name.
+        "ScrollPhase",
+        // SwiftUI: a `Canvas` closure's parameter, never named by its type.
+        "GraphicsContext",
+        // SwiftData: caught as `any Error` and described, never named.
+        "SwiftDataError",
+    ]
+
+    static func verdict(of claim: Claim, in world: SymbolIndex) -> Verdict {
+        if world.nominalTypes.contains(claim.type) {
+            guard !synthesizedMembers.contains(claim.member) else { return .resolves }
+            guard world.membersByType[claim.type]?.contains(claim.member) != true else { return .resolves }
             // File-qualified, and only when the file has exactly one non-private nominal type
             // ([[T-717]]): a second *public* type sharing the file has to say which one it means,
             // so the exclusion no longer covers that case — private helper types stay uncounted,
             // because they are exactly what the convention is for.
             if world.namesByFileBaseName[claim.type]?.contains(claim.member) == true,
                world.publicNominalTypesByFileBaseName[claim.type]?.count == 1 {
-                return nil
+                return .resolves
             }
-            return claim.span
+            return .memberMissing
         }
+        if world.typeAliases.contains(claim.type) { return .uncheckable }
+        // `<FileBaseName>.<symbol>` for a file that declares no type of its own name
+        // (`iOSCalendarBoardView.swift` declares `iOSCalendarBoardPlanner`). The convention makes
+        // that a legitimate spelling, so it is checked against the file rather than dropped.
+        if let names = world.namesByFileBaseName[claim.type] {
+            guard !synthesizedMembers.contains(claim.member) else { return .resolves }
+            return names.contains(claim.member) ? .resolves : .memberMissing
+        }
+        if world.codeIdentifiers.contains(claim.type) { return .uncheckable }
+        if frameworkRootsNamedButNeverSpelled.contains(claim.type) { return .uncheckable }
+        guard claim.span.range(of: symbolPathSpelling, options: .regularExpression) != nil else {
+            return .uncheckable
+        }
+        // A file name (`com.haoranwei.Cadence.plist`) is a path whatever its root.
+        if let last = claim.span.split(separator: ".").last, fileExtensions.contains(String(last)) {
+            return .uncheckable
+        }
+        if world.literals.contains(claim.span) { return .uncheckable }
+        return .rootUnresolvable
+    }
+
+    /// Every claim in one file with its verdict, read against the tree plus the file's own
+    /// declarations and identifiers.
+    ///
+    /// Merging the file's own index in is what lets a literal fixture stand alone: the witnesses
+    /// `CadenceScanInstrument` checks declare their own type, so the detector answers the same
+    /// question for a five-line fixture and for a 900-line screen.
+    static func verdicts(in source: String, against index: SymbolIndex) -> [(span: String, verdict: Verdict)] {
+        let regions = partition(source)
+        // Not the file's own literals: a product file's are in `index` already, and a test file's
+        // are needles (see `literalExcludedRoots`).
+        let world = index.merging(SymbolIndex.build(from: [(path: "", code: regions.code)]))
+        return claims(inComments: regions.comments).map { (span: $0.span, verdict: verdict(of: $0, in: world)) }
+    }
+
+    /// The offending spans in one file: a declared root, or a file, without the member.
+    static func offendingSpans(in source: String, against index: SymbolIndex) -> [String] {
+        verdicts(in: source, against: index).filter { $0.verdict == .memberMissing }.map(\.span)
+    }
+
+    /// The spans in one file whose root names nothing at all ([[T-3209]]).
+    static func unresolvableRootSpans(in source: String, against index: SymbolIndex) -> [String] {
+        verdicts(in: source, against: index).filter { $0.verdict == .rootUnresolvable }.map(\.span)
     }
 
     // MARK: - The unqualified half (T-718)
@@ -506,6 +660,23 @@ enum CadenceCommentSymbolClaim {
     /// The column sizes itself in `commentClaimGutterInset(for:)`.
     enum CadenceCommentClaimGutterFixture {
         static let inset = commentClaimGutterInset(for: .regular)
+    }
+    """
+
+    /// A claim rooted on a type nothing in the tree declares or spells ([[T-3209]]) — the shape a
+    /// rename leaves behind. Its root appears in this file only inside string literals.
+    static let rootPositiveWitness = """
+    /// The row draws through `CadenceCommentClaimRetiredFixture.render`.
+    enum CadenceCommentClaimWidgetFixture {
+        static let title = "Widget"
+    }
+    """
+
+    /// The nearest possible miss: the same sentence, in a tree where that type exists.
+    static let rootNegativeWitness = """
+    /// The row draws through `CadenceCommentClaimRetiredFixture.render`.
+    enum CadenceCommentClaimRetiredFixture {
+        static let render = "Widget"
     }
     """
 
@@ -805,8 +976,13 @@ enum CadenceCommentSymbolClaim {
             ).isEmpty
         }
 
-        // A root the tree does not declare cannot be checked at all.
+        // A root the tree does not declare is not a MEMBER offender — it is [[T-3209]]'s own
+        // verdict, which this fixture tree reports through the other door.
         #expect(fires("`NotATypeInThisTree.render`") == false)
+        #expect(CadenceCommentSymbolClaim.unresolvableRootSpans(
+            in: "/// `NotATypeInThisTree.render`\nlet unused = 0\n",
+            against: index
+        ) == ["NotATypeInThisTree.render"])
         // A glob names a family, not a declaration.
         #expect(fires("`CadenceCommentClaimOtherFixture.render*`") == false)
         // A path parses as `Type.member` and is not one.
@@ -863,12 +1039,18 @@ enum CadenceCommentSymbolClaim {
         "Cadence/Services/MarkdownTaskEmbedSupport.swift `CadenceTextView.legacyChecklistMarkerHit`",
         "Cadence/Services/TaskCreationService.swift `SchedulingActions.createTask`",
         "Cadence/Shared/CadenceColorPalette.swift `ColorGrid.colors`",
+        "Cadence/Shared/CadenceRegularPaneLayout.swift `iOSCalendarView.regularInspectorWidth(for:)`",
+        "Cadence/Shared/CadenceTaskDateEditing.swift `iOSTaskDetailSheet.applyDates()`",
         "Cadence/Shared/Components/CadenceFieldRows.swift `SettingsAISection.settingsField`",
         "Cadence/Shared/Components/CadenceFieldRows.swift `SidebarTabEditorSheet.settingsPanelRow`",
         "Cadence/Shared/Components/CadenceSidebarCountLabel.swift `SidebarMetrics.countFontSize`",
+        "Cadence/Shared/Components/CadenceSidebarCountLabel.swift `iOSSidebarMetrics.countFontSize`",
         "Cadence/iOS/iOSCalendarMetrics.swift `CadencePageHeaderMetrics.iconSize`",
+        "Cadence/iOS/iOSCalendarMetrics.swift `iOSSchedulePanel.rowHeight`",
         "Cadence/iOS/iOSListNotesView.swift `CadenceListNoteSupport.firstOrCreateNote`",
         "Cadence/iOS/iOSSchedulePanelCopy.swift `CadenceTodayPresentationSupport.emptyScheduleHint`",
+        "Cadence/iOS/iOSTaskCollectionPage.swift `iOSAllTasksView.allTasksPanel`",
+        "Cadence/iOS/iOSTaskCollectionPage.swift `iOSInboxView.inboxColumn`",
         "Cadence/iOS/iOSTaskRowActionViews.swift `CadenceTaskMutationSupport.setEstimatedMinutes`",
         "Cadence/macOS/Views/CalendarPageMonthSupportViews.swift `SchedulingActions.createTask`",
         "Cadence/macOS/Views/SettingsSupportViews.swift `SidebarTabEditorSheet.settingsPanelRow`",
@@ -876,11 +1058,14 @@ enum CadenceCommentSymbolClaim {
         "Cadence/macOS/Views/TasksPanelSupport.swift `TasksPanel.taskSections`",
         "CadenceMCPServer/CadenceMCPToolDefinitions.swift `CadenceGoalSummary.subGoalCount`",
         "CadenceMCPServer/CadenceMCPToolDefinitions.swift `CadenceGoalSummary.taskCount`",
+        "CadenceTests/CadenceBundleCreationParityTests.swift `iOSCalendarTimelineGrid.formBundle`",
         "CadenceTests/CadenceColorPaletteTests.swift `Theme.neutralHex`",
         "CadenceTests/CadenceEmptyStateAuditTests.swift `CadenceTodayPresentationSupport.emptyScheduleHint`",
         "CadenceTests/CadenceNoteFolderSurfaceTests.swift `CadenceListNoteSupport.firstOrCreateNote`",
         "CadenceTests/CadenceNoteFolderSurfaceTests.swift `ListNotesView.normalizedFolderPath`",
         "CadenceTests/CadenceNoteTitleSyncSurfaceTests.swift `NoteEditorPane.syncTitleFromH1IfNeeded`",
+        "CadenceTests/CadenceRecurrenceScopeCommitTests.swift `iOSTaskDetailSheet.apply(_:scope:)`",
+        "CadenceTests/CadenceSaveCommitDisciplineTests.swift `CadenceNoteFolderSupport.createNote`",
         // T-1091. Named as an *example of the defect being fixed* — a declaration the old filing
         // attributed to the last type declared above it rather than the type containing it: that
         // method belongs to the migration service, while the type it is credited to is a private
@@ -897,6 +1082,10 @@ enum CadenceCommentSymbolClaim {
         // the comment or the declaration moved. The irony is on the record: the sentence that
         // entry accused is the one explaining that T-1328 fixed this exact shape in `codeOnly`.
         "CadenceTests/CadenceSaveCommitDisciplineTests.swift `MigrationTracking.migrateIfNeeded`",
+        "CadenceTests/CadenceSaveCommitDisciplineTests.swift `iOSFocusView.logBundleSession`",
+        "CadenceTests/CadenceSaveCommitDisciplineTests.swift `iOSTaskDetailSheet.finishEditingAndDismiss`",
+        "CadenceTests/CadenceSidebarCountMetricsTests.swift `iOSSidebarStyle.rail`",
+        "CadenceTests/CadenceSidebarRailRetirementTests.swift `iOSSidebarStyle.rail`",
         "CadenceTests/CadenceTasksPanelMetricsTests.swift `TasksPanelCompletedSectionView.allTasks`",
         "CadenceTests/CadenceTodayUnificationTests.swift `CadenceTodayPresentationSupport.overdueSectionTitle`",
         "CadenceTests/CadenceTodayUnificationTests.swift `TasksPanel.taskSections`",
@@ -936,11 +1125,90 @@ enum CadenceCommentSymbolClaim {
     /// exists (the retirement pass's `-1` members, the enum split's spelling pin), and where it was
     /// gone the claim was deleted. The one left is TaskCreationService.swift's, held because that
     /// file is leased to a live Codex agent; it comes off when that comment is fixed.
+    ///
+    /// **Eleven, since [[T-3209]].** Widening the root to lowercase, and checking a
+    /// `<FileBaseName>.<symbol>` root against its file instead of dropping it, surfaced fourteen
+    /// present-tense claims naming members that are gone. Four were corrected in that change
+    /// (the styler, layout-manager, schedule-support and suite renames). The ten held here could
+    /// not be: two sit in Codex-leased files (`CadenceTaskMutationSupport.swift`,
+    /// `iOSTaskRowActionViews.swift`), and the rest describe a behaviour or a figure — a commit
+    /// exemption, a sidebar width, a timeline row height — whose correct present-tense replacement
+    /// needs the code read, not just a name swapped. [[T-3224]] owns them.
     static let staleClaims: [String] = [
         "Cadence/Services/TaskCreationService.swift `CadenceTaskMutationSupport.bundleCreateFailureAlertTitle`",
+        "Cadence/Shared/CadenceTaskMutationSupport.swift `CadenceCalendarPlanningSupport.bundlesByDate`",
+        "Cadence/Shared/CadenceTaskMutationSupport.swift `iOSTaskDetailSheet.applyDates`",
+        "Cadence/iOS/iOSMarkdownTextView.swift `iOSMarkdownStylingSupport.applyTableBlock`",
+        "Cadence/iOS/iOSTaskRowActionViews.swift `iOSTaskRowContainerChip.moveFailed`",
+        "CadenceTests/CadenceFocusSessionLedgerTests.swift `iOSFocusView.logBundleSession`",
+        "CadenceTests/CadenceSaveCommitDisciplineTests.swift `iOSCalendarBoardView.move`",
+        "CadenceTests/CadenceTagAndNoteCommitSurfaceTests.swift `iOSTaskDetailSheet.finishEditingAndDismiss`",
+        "CadenceTests/CadenceTodayLayoutSupportTests.swift `iOSSidebarMetrics.expandedWidth`",
+        "CadenceTests/CalendarTimelineGridTests.swift `iOSTodayView.iOSFloatingCreateTaskButton`",
+        "CadenceTests/iOSCalendarMetricsTests.swift `iOSSchedulePanel.rowHeight`",
     ]
 
     static var ledger: [String] { (deliberateTombstones + staleClaims).sorted() }
+
+    /// [[T-3209]]'s third verdict, ledgered. Every line was read by hand when the verdict landed;
+    /// the split is recorded rather than inferred, as for the member ledger above.
+    ///
+    /// Memorials: the sentence's subject is a type that is gone ("lived here", "was deleted",
+    /// "the first spelling was"), or a counterfactual or defect inventory naming one on purpose.
+    static let rootTombstones = [
+        "Cadence/Shared/CadenceColorPalette.swift `iOSListPalette.colors`",
+        "Cadence/Shared/CadenceFocusPlanningSupport.swift `CadenceHabitSupport.toggle`",
+        "Cadence/Shared/CadenceNotesEditorPreferences.swift `iOSMarkdownEditorPreferences.modeKey`",
+        "CadenceTests/CadenceCalendarEventTimingTests.swift `iOSCalendarBundleDetailSheet.timeDate(on:minute:)`",
+        "CadenceTests/CadenceCodexTaskSummaryTypographyTests.swift `CadenceTaskGroupHeadingMetrics.countSize`",
+        // A defect inventory of the four create sheets as audited; the habit sheet went with
+        // [[T-2079]] and the paragraph is the record of what it did.
+        "CadenceTests/CadenceCreateSheetCommitSurfaceTests.swift `CreateHabitSheet.create`",
+        "CadenceTests/CadenceIconOnlyHelperIdiomDuplicationTests.swift `TimelineBundleBlockSupportViews.rowIconButton`",
+        "CadenceTests/CadenceSaveCommitDisciplineTests.swift `CadenceMCPRowOrderSnapshot.restore()`",
+        "CadenceTests/CadenceSaveCommitDisciplineTests.swift `TimelineBundleBlock.body`",
+        // Illustrative: "a caller that cannot say Copy.goalsTitle in one token".
+        "CadenceTests/CadenceSharedConstantReuseSweepTests.swift `Copy.goalsTitle`",
+        "CadenceTests/SettingsCategoryReachTests.swift `iOSMobileCapability.all`",
+    ]
+
+    /// Spans shaped like a symbol path that are not Swift symbols at all: SF Symbol names the app
+    /// does not spell as a whole product literal, and Python names that [[T-3087]]'s
+    /// cross-language sweep checks against the script instead. A value, not a pointer.
+    static let rootNonSymbols = [
+        "Cadence/Shared/CadenceColorPalette.swift `dollarsign.circle.fill`",
+        "Cadence/iOS/iOSTrackingEditorComponents.swift `brain.head.profile`",
+        "Cadence/macOS/Sheets/ListEditorSupportViews.swift `arrow.up.bin`",
+        "Cadence/macOS/Views/QuickCreateChoiceSupportViews.swift `rectangle.on.rectangle.angled`",
+        "CadenceTests/CadenceCommentSymbolClaimTests.swift `MCPClient.__init__`",
+        "CadenceTests/CadenceMCPWriteFenceTests.swift `MCPClient.__init__`",
+        "CadenceTests/CadenceMCPWriteFenceTests.swift `tempfile.TemporaryDirectory`",
+    ]
+
+    /// Present-tense claims rooted on a type that no longer exists. `CreateGoalSheet` was deleted
+    /// by [[T-2079]], and the constant whose doc names it may have gone dead with it — whether to
+    /// reword the doc or delete the constant is [[T-3224]]'s call, not a rename.
+    static let rootStaleClaims = [
+        "Cadence/Shared/GoalListLinkHelpers.swift `CreateGoalSheet.save()`",
+    ]
+
+    static var rootLedger: [String] { (rootTombstones + rootNonSymbols + rootStaleClaims).sorted() }
+
+    @Test func theRootLedgerIsWellFormed() {
+        let groups = [Self.rootTombstones, Self.rootNonSymbols, Self.rootStaleClaims]
+        for group in groups {
+            #expect(group == group.sorted())
+            #expect(Set(group).count == group.count)
+        }
+        #expect(Set(Self.rootLedger).count == Self.rootLedger.count, "a line sits in two groups")
+        #expect(Set(Self.rootLedger).isDisjoint(with: Set(Self.ledger)), "one span, two verdicts")
+        // Measured when the verdict landed ([[T-3209]], 2026-10-18): 30 found while test
+        // literals still counted, 4 corrected in place, 10 excused by the file-extension rule;
+        // 3 more surfaced once test literals stopped vouching, leaving 11 + 7 + 1.
+        #expect(Self.rootTombstones.count == 11)
+        #expect(Self.rootNonSymbols.count == 7)
+        #expect(Self.rootStaleClaims.count == 1)
+    }
 
     /// The unqualified half's ledger — [[T-718]].
     ///
@@ -1038,15 +1306,18 @@ enum CadenceCommentSymbolClaim {
         // since [[T-3196]] deleted the macOS row's estimate chip, whose doc comment carried the
         // TasksPanelComponents half of the setEstimatedMinutes tombstone. The comment went with
         // the struct, so the row is removed rather than struck off. The iOS half stands: its chip
-        // is still there.
-        #expect(tombstones.count == 36)
+        // is still there. 49 since [[T-3209]] widened the root to lowercase and let a file base
+        // name be a root: thirteen memorials naming retired `iOS*` members became visible.
+        #expect(tombstones.count == 49)
         // It was 1 while the Calendar Board's formBundle doc named a Mac spelling [[T-3170]] had
         // removed and the file was still Codex-leased; the grant `41ded784` unblocked it and
         // T-3170's Board pass deleted the function that comment documented, taking it to 0. It is
         // 7 since T-3170's trio pass left seven product comments naming what it deleted -- see
         // `staleClaims`. The `staleclaims` pass fixed six, taking it to 1; the last is
-        // TaskCreationService.swift's, held for a live Codex lease. Fixing it brings this to 0.
-        #expect(stale.count == 1)
+        // TaskCreationService.swift's, held for a live Codex lease. 11 since [[T-3209]] made ten
+        // more visible that it could not fix in place -- see `staleClaims`. Fixing them brings
+        // this to 0.
+        #expect(stale.count == 11)
     }
 
     /// The sweep. Exact set equality, both directions, over every Swift file in all five targets.
@@ -1055,9 +1326,7 @@ enum CadenceCommentSymbolClaim {
         var text: [String: String] = [:]
         for source in sources { text[source.path] = source.text }
 
-        let index = CadenceCommentSymbolClaim.SymbolIndex.build(
-            from: sources.map { (path: $0.path, code: CadenceCommentSymbolClaim.partition($0.text).code) }
-        )
+        let index = CadenceCommentSymbolClaim.SymbolIndex.build(fromSources: sources)
 
         let instrument = try CadenceScanInstrument(
             "comment names a symbol that resolves to nothing",
@@ -1089,6 +1358,53 @@ enum CadenceCommentSymbolClaim {
         let stale = Self.ledger.filter { !found.contains($0) }
         #expect(stale.isEmpty, "the ledger names a claim that is no longer there: \(stale)")
         #expect(found == Self.ledger)
+    }
+
+    /// [[T-3209]]'s third verdict: a qualified claim whose ROOT names nothing — not a declared
+    /// type, not a file, not a name the code spells, not a known framework type — is a finding of
+    /// its own, ledgered with the same set equality as the member half.
+    @Test func everyQualifiedClaimRootsOnSomethingThatExistsOrIsLedgered() throws {
+        let sources = try Self.allSources()
+        var text: [String: String] = [:]
+        for source in sources { text[source.path] = source.text }
+
+        let index = CadenceCommentSymbolClaim.SymbolIndex.build(fromSources: sources)
+        // Non-vacuity for the two new halves of the index: an empty identifier set would turn
+        // every value root into a finding, and an empty literal set every SF Symbol name.
+        #expect(index.codeIdentifiers.count >= 10_000, "the code spells \(index.codeIdentifiers.count) identifiers")
+        #expect(index.codeIdentifiers.contains("ModelContext"))
+        #expect(index.literals.contains("tray.fill"), "the literal index lost an SF Symbol the app draws")
+
+        let instrument = try CadenceScanInstrument(
+            "comment roots a claim on a name that resolves to nothing",
+            fires: CadenceCommentSymbolClaim.rootPositiveWitness,
+            andNotOn: CadenceCommentSymbolClaim.rootNegativeWitness
+        ) { source in
+            !CadenceCommentSymbolClaim.unresolvableRootSpans(in: source, against: index).isEmpty
+        }
+
+        let offendingPaths = try instrument.sweep(
+            sources.map(\.path),
+            atLeast: 800,
+            including: "Cadence/Shared/Theme.swift",
+            read: { path in try Self.source(path, in: text) }
+        )
+
+        var found: [String] = []
+        for path in offendingPaths {
+            let spans = Set(CadenceCommentSymbolClaim.unresolvableRootSpans(
+                in: try Self.source(path, in: text),
+                against: index
+            ))
+            found.append(contentsOf: spans.map { "\(path) `\($0)`" })
+        }
+        found.sort()
+
+        let unlisted = found.filter { !Self.rootLedger.contains($0) }
+        #expect(unlisted.isEmpty, "a comment roots a claim on a name that resolves to nothing: \(unlisted)")
+        let stale = Self.rootLedger.filter { !found.contains($0) }
+        #expect(stale.isEmpty, "the root ledger names a claim that is no longer there: \(stale)")
+        #expect(found == Self.rootLedger)
     }
 
     /// The unqualified half ([[T-718]]): a call-shaped span with no type in front of it names
@@ -1178,86 +1494,99 @@ enum CadenceCommentSymbolClaim {
         "CadenceTests/TemporaryDefaultsSupport.swift `someTestName()`"
     ]
 
-    /// **[[T-3209]]: the population this whole suite cannot see, counted rather than described.**
+    /// **[[T-3209]], closed: the population this suite could not see is now seen, and counted.**
     ///
-    /// Both halves of `claims(inComments:)` root a qualified span on `^([A-Z][A-Za-z0-9_]*)\\.`, so a
-    /// span whose type begins lowercase never parses as a claim. Every `iOS*` view in this
-    /// repository begins lowercase, which is **396 types under `Cadence/iOS/` and 504 across the
-    /// tree, against 1,715 the grammar can root on** — measured 2026-10-17.
+    /// This test was written as `theClaimGrammarCannotSeeALowercaseRootedTypeAndThatIsThisManyTypes`
+    /// to go red when either hole closed, and has been rewritten into its opposite rather than
+    /// deleted, so the holes cannot reopen behind a re-narrowed regex or a restored guard with
+    /// nothing to say so.
     ///
-    /// **The failure is not "unchecked", it is "checked by the wrong arm".** `` `iOSCalendarBoardView.add(_:to:)` ``
-    /// *is* a qualified span. It is therefore the qualified half's business, and that half cannot
-    /// see it — so it never reaches `unqualifiedClaims(inComments:)`, whose base-name reading
-    /// against `calledNames(inCode:)` would have resolved it. The suite then goes green in a way
-    /// that reads as coverage. Three false present-tense claims survived twelve passes of
-    /// [[T-3170]] inside that blind spot, in a ticket whose whole job was removing a vocabulary.
+    /// - **Hole 1, the anchor.** Both arms of `claims(inComments:)` rooted on `[A-Z]`, so 504 of
+    ///   the tree's nominal types — 396 of them all of `Cadence/iOS/` — could not be the root of a
+    ///   claim (measured 2026-10-17). The census below now requires **every** declared type to be
+    ///   rootable, and still counts the lowercase ones so the requirement is not met vacuously.
+    /// - **Hole 2, the existence guard, and the one that cost [[T-3170]] twelve passes.**
+    ///   `offendingSpans` dropped any claim whose root was not a declared type, assuming an SDK
+    ///   type — so a comment naming a RENAMED OR DELETED type was unreportable. It is now
+    ///   `Verdict.rootUnresolvable`, a finding of its own; and a root that is a file base name
+    ///   with no type of that name is checked against the file instead of dropped.
     ///
-    /// **Why a count and not a sample.** What failed here is an *absence* — nothing fired. A test
-    /// that asserted "these three comments are correct" would have passed before the repair and
-    /// after it, and said nothing about the 501 types nobody has looked at. Only a census of what
-    /// the reader can and cannot reach fails when the gap widens, and fails again when it closes
-    /// and this test has to be rewritten into its opposite.
-    @Test func theClaimGrammarCannotSeeALowercaseRootedTypeAndThatIsThisManyTypes() throws {
+    /// **Why a count and not a sample.** What failed here was an *absence* — nothing fired. Only a
+    /// census of what the reader can and cannot reach fails when the gap reopens.
+    @Test func theClaimGrammarSeesALowercaseRootedTypeAndAnUndeclaredRootIsAFinding() throws {
         let sources = try Self.allSources()
-        let index = CadenceCommentSymbolClaim.SymbolIndex.build(
-            from: sources.map { (path: $0.path, code: CadenceCommentSymbolClaim.partition($0.text).code) }
-        )
+        let index = CadenceCommentSymbolClaim.SymbolIndex.build(fromSources: sources)
 
-        // --- Hole 1, the anchor. A lowercase-rooted span never parses as a claim at all.
+        // --- Hole 1, closed. A lowercase-rooted span parses, exactly like its capitalised twin.
         #expect(CadenceCommentSymbolClaim.claims(inComments: "/// `CadenceScheduleSupport.bundles(on:from:)`").count == 1)
-        #expect(CadenceCommentSymbolClaim.claims(inComments: "/// `iOSRootView.body`").isEmpty)
-        // Not the member spelling doing it: the same member under a capitalised root parses.
+        #expect(CadenceCommentSymbolClaim.claims(inComments: "/// `iOSRootView.body`").count == 1,
+                "the grammar no longer roots on a lowercase type: T-3209's hole 1 has reopened")
         #expect(CadenceCommentSymbolClaim.claims(inComments: "/// `OSRootView.body`").count == 1)
-        // Nor does the other arm pick it up — the "checked by the arm that cannot see it" claim.
+        // Still the qualified half's business alone: the unqualified arm must not double-report it.
         #expect(CadenceCommentSymbolClaim.unqualifiedClaims(inComments: "/// `iOSRootView.body`").isEmpty)
-
-        // --- Hole 2, and it is the one that actually cost [[T-3170]] its twelve passes.
-        // `offendingSpans` drops any claim whose root is not a declared nominal type, because a
-        // name this tree never declares is assumed to be an SDK type it cannot enumerate. So a
-        // comment naming a type that was RENAMED OR DELETED — exactly the stale claim worth
-        // catching — is unreachable even with a correct capital root and a widened anchor.
-        let deletedRoot = "/// `CadenceTypeThatWasDeletedLongAgo.someMember`"
-        #expect(CadenceCommentSymbolClaim.claims(inComments: deletedRoot).count == 1, "it parses as a claim")
-        #expect(!index.nominalTypes.contains("CadenceTypeThatWasDeletedLongAgo"), "and the tree has no such type")
+        // And a real lowercase type's real member resolves, while a missing one is an offender.
+        #expect(CadenceCommentSymbolClaim.offendingSpans(in: "/// `iOSRootView.body`", against: index).isEmpty)
         #expect(
-            CadenceCommentSymbolClaim.offendingSpans(in: deletedRoot, against: index).isEmpty,
-            "a claim naming a type this tree does not declare is silently dropped; that is hole 2"
+            CadenceCommentSymbolClaim.offendingSpans(in: "/// `iOSRootView.commentClaimNoSuchMember`", against: index)
+                == ["iOSRootView.commentClaimNoSuchMember"]
         )
-        // The live comments that proved it: `iOSCalendarBoardView` is a FILE base name whose file
-        // declares `iOSCalendarBoardPlanner` and no type of its own name, so three comments naming
-        // `iOSCalendarBoardView.add(_:to:)` and `.formBundle` were unreachable twice over.
+
+        // --- Hole 2, closed. A root the tree neither declares nor spells is its own verdict.
+        let deletedRoot = "/// `CadenceTypeThatWasDeletedLongAgo.someMember`"
+        #expect(!index.nominalTypes.contains("CadenceTypeThatWasDeletedLongAgo"), "the tree has no such type")
+        #expect(!index.codeIdentifiers.contains("CadenceTypeThatWasDeletedLongAgo"), "and no code spells it")
+        #expect(
+            CadenceCommentSymbolClaim.unresolvableRootSpans(in: deletedRoot, against: index)
+                == ["CadenceTypeThatWasDeletedLongAgo.someMember"],
+            "a claim naming a type this tree does not declare is silently dropped again: T-3209's hole 2 has reopened"
+        )
+        // A different verdict, not a louder offender: the member ledger is not where it lands.
+        #expect(CadenceCommentSymbolClaim.offendingSpans(in: deletedRoot, against: index).isEmpty)
+        // The excuses are each narrow: a framework type the app spells, a value root, and a
+        // literal value are not findings, and none of them is excused by the others' rule.
+        #expect(CadenceCommentSymbolClaim.verdicts(in: "/// `ModelContext.save()`", against: index).map(\.verdict) == [.uncheckable])
+        #expect(CadenceCommentSymbolClaim.verdicts(in: "/// `self.order`", against: index).map(\.verdict) == [.uncheckable])
+        #expect(CadenceCommentSymbolClaim.verdicts(in: "/// `tray.fill`", against: index).map(\.verdict) == [.uncheckable])
+
+        // The live witnesses that proved it: `iOSCalendarBoardView` is a FILE base name whose file
+        // declares `iOSCalendarBoardPlanner` and no type of its own name. Its claims are now read
+        // against the file — `schedule` is declared there, `formBundle` (gone with [[T-3170]]) is not.
         #expect(!index.nominalTypes.contains("iOSCalendarBoardView"))
         #expect(index.nominalTypes.contains("iOSCalendarBoardPlanner"))
-
-        // --- The census, so neither hole can silently widen.
-        let visible = index.nominalTypes.filter { $0.first?.isUppercase == true }
-        let invisible = index.nominalTypes.filter { $0.first?.isUppercase == false }
-
-        // Non-vacuity first: an empty index would satisfy every bound below.
-        #expect(sources.count > 900, "the scan found \(sources.count) files and cannot be doing its job")
-        #expect(visible.count > 1_000, "only \(visible.count) rootable types; the index is not being built")
-
-        // Floors rather than exact pins: both populations grow with the app, so a pin would fail
-        // on every new view rather than on a change in the gap. Measured 2026-10-17: 504 and 1,715.
-        #expect(invisible.count >= 400, "the invisible population is \(invisible.count), measured at 504")
-        #expect(invisible.count < visible.count)
-
-        // Named witnesses, so the floor cannot be met by names that are not the problem. Each is
-        // confirmed a real `struct` declaration — an earlier draft of this test used
-        // `iOSCalendarBoardView` and `iOSTaskInspectorHost`, which are a file name and a function
-        // name respectively, and it went red for being wrong rather than for finding anything.
-        for witness in ["iOSRootView", "iOSCalendarBoardPlanner", "iOSCompactRootShell"] {
-            #expect(invisible.contains(witness), "\(witness) is not in the unreachable set; re-anchor this census")
-        }
-        #expect(visible.contains("CadenceScheduleSupport"), "the control type is missing; the index is wrong")
-
-        // **When [[T-3209]] closes, this goes red here**, and that is deliberate: widening the
-        // anchor makes the span parse. Rewrite this census into its opposite rather than deleting
-        // it, or the gap reopens behind a re-narrowed regex with nothing to say so.
+        #expect(index.namesByFileBaseName["iOSCalendarBoardView"]?.contains("schedule") == true)
+        #expect(CadenceCommentSymbolClaim.offendingSpans(in: "/// `iOSCalendarBoardView.schedule(_:on:)`", against: index).isEmpty)
         #expect(
-            CadenceCommentSymbolClaim.claims(inComments: "/// `iOSRootView.body`").isEmpty,
-            "the grammar now roots on a lowercase type: T-3209 is fixed, so rewrite this census"
+            CadenceCommentSymbolClaim.offendingSpans(in: "/// `iOSCalendarBoardView.formBundle`", against: index)
+                == ["iOSCalendarBoardView.formBundle"],
+            "a file-qualified claim whose member the file does not declare is silently dropped again"
         )
+
+        // --- The census: no declared type may be unrootable, and the formerly invisible
+        // population is counted so the requirement cannot be met by an empty index.
+        let lowercase = index.nominalTypes.filter { $0.first?.isUppercase == false }
+        let unrootable = index.nominalTypes.filter {
+            CadenceCommentSymbolClaim.claims(inComments: "/// `\($0).body`").isEmpty
+        }
+        #expect(sources.count > 900, "the scan found \(sources.count) files and cannot be doing its job")
+        #expect(index.nominalTypes.count > 1_500, "only \(index.nominalTypes.count) types; the index is not being built")
+        #expect(lowercase.count >= 400, "the formerly invisible population is \(lowercase.count), measured at 504")
+        #expect(unrootable.isEmpty, "the claim grammar cannot root on \(unrootable.count) declared types: \(unrootable.sorted().prefix(5))")
+        for witness in ["iOSRootView", "iOSCalendarBoardPlanner", "iOSCompactRootShell"] {
+            #expect(lowercase.contains(witness), "\(witness) is not a declared lowercase type; re-anchor this census")
+        }
+    }
+
+    /// The framework allowlist is self-pruning: an entry the tree declares or its code spells is
+    /// already resolved some other way, and must come off rather than linger as a stale excuse.
+    @Test func theFrameworkRootsAreNeitherDeclaredNorSpelled() throws {
+        let index = CadenceCommentSymbolClaim.SymbolIndex.build(fromSources: try Self.allSources())
+        #expect(index.codeIdentifiers.count >= 10_000)
+        for root in CadenceCommentSymbolClaim.frameworkRootsNamedButNeverSpelled.sorted() {
+            #expect(!index.nominalTypes.contains(root), "\(root) is declared in this tree; it is not a framework root")
+            #expect(!index.codeIdentifiers.contains(root), "\(root) is spelled in code now; drop it from the allowlist")
+        }
+        #expect(CadenceCommentSymbolClaim.frameworkRootsNamedButNeverSpelled.count <= 12,
+                "past roughly a dozen, T-999's trade has changed: reconsider the allowlist")
     }
 
     /// [[T-999]]: every ledger line belongs to exactly one of the three groups, and the two named

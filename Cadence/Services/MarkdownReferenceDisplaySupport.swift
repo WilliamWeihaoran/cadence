@@ -62,7 +62,7 @@ nonisolated struct MarkdownReferenceDisplayRange: Equatable {
 /// call it once and get correct link text and correct card titles out of one pass.
 ///
 /// The live editor is the one reader that must **not** resolve
-/// (`iOSMarkdownStylingSupport.styleWikiReferences`; macOS reaches the same decision through its
+/// (`iOSMarkdownStyler.styleWikiReferences`; macOS reaches the same decision through its
 /// own copy in `MarkdownEditorSupport`). There the raw text *is* the document: the reference is
 /// hidden syntax wrapped around a title the caret can be placed inside, so drawing a different
 /// string would leave the text view and its own storage disagreeing about how long the line is.
