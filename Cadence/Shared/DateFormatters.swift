@@ -450,6 +450,17 @@ nonisolated enum TimeFormatters {
         return m == 0 ? "\(h12) \(ampm)" : String(format: "%d:%02d %@", h12, m, ampm)
     }
 
+    /// The month-chip spelling of `timeString`: 75 → "1:15a", 780 → "1p", or "13:00" unchanged on a
+    /// 24-hour face. Kept here, beside the hour-cycle check, so a surface that wants the compact
+    /// face never spells AM or PM itself (T-1135's population sweep).
+    static func compactTimeString(from minutes: Int, locale: Locale = .current) -> String {
+        let full = timeString(from: minutes, locale: locale)
+        guard !usesTwentyFourHourClock(locale) else { return full }
+        return full
+            .replacingOccurrences(of: " AM", with: "a")
+            .replacingOccurrences(of: " PM", with: "p")
+    }
+
     /// Formats a start/end minute pair as a range: "1:15 AM – 2:15 AM", or "01:15 – 02:15".
     static func timeRange(startMin: Int, endMin: Int, locale: Locale = .current) -> String {
         "\(timeString(from: startMin, locale: locale)) – \(timeString(from: endMin, locale: locale))"

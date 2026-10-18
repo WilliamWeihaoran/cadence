@@ -231,7 +231,7 @@ private final class FixedEventDaySource: CalendarEventDaySource {
     /// Monday 07:30 to Thursday 16:15; on each of its four days the grid's own clamp draws it as a
     /// block — real start, two full days, real end — and on neither neighbouring day at all.
     @Test func aFourDayTimedEventIsABlockOnEachDayAndNeverInTheStrip() throws {
-        let calendar = Calendar.current
+        let calendar = CadenceTestTimeZones.pinnedCalendar()
         let monday = try #require(calendar.date(from: DateComponents(year: 2026, month: 6, day: 1)))
         #expect(calendar.component(.weekday, from: monday) == 2, "the anchor is not a Monday")
 

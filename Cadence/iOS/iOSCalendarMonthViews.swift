@@ -335,9 +335,7 @@ private struct iOSCalendarMonthDayCell: View {
         guard isStart || isEnd else { return nil }
         let endpoint = isStart ? start : end
         let minutes = calendar.component(.hour, from: endpoint) * 60 + calendar.component(.minute, from: endpoint)
-        let clock = TimeFormatters.timeString(from: minutes)
-            .replacingOccurrences(of: " AM", with: "a")
-            .replacingOccurrences(of: " PM", with: "p")
+        let clock = TimeFormatters.compactTimeString(from: minutes)
         return isStart ? clock : "to \(clock)"
     }
 

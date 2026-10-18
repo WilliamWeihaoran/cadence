@@ -317,6 +317,23 @@ nonisolated enum CadenceHardCodedClockScan {
 
 struct ClockFaceFollowsTheSystemTests {
 
+    /// **The compact month-chip face follows the same hour cycle.** The 12-hour column abbreviates
+    /// the meridiem to one letter; the 24-hour column is the full face untouched, so a 24-hour user
+    /// never sees an `a` or `p` the formatter invented.
+    @Test func theCompactClockAbbreviatesOnlyTheTwelveHourFace() {
+        let expected: [(minutes: Int, twelve: String, twentyFour: String)] = [
+            (0, "12a", "00:00"),
+            (75, "1:15a", "01:15"),
+            (12 * 60, "12p", "12:00"),
+            (13 * 60, "1p", "13:00"),
+            (23 * 60 + 59, "11:59p", "23:59"),
+        ]
+        for probe in expected {
+            #expect(TimeFormatters.compactTimeString(from: probe.minutes, locale: CadenceTestClocks.twelveHour) == probe.twelve)
+            #expect(TimeFormatters.compactTimeString(from: probe.minutes, locale: CadenceTestClocks.twentyFourHour) == probe.twentyFour)
+        }
+    }
+
     /// **T-1135, the behaviour.** Minutes-from-midnight render on the face the locale names.
     ///
     /// Both faces in one walk over the same minutes, because the two ways this regresses are

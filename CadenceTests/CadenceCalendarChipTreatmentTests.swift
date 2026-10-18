@@ -43,7 +43,7 @@ struct CadenceCalendarChipTreatmentTests {
         let time = try CadenceCommitSurfaceScan.declarationBody(named: "timeLabel", in: source)
         #expect(time.contains("guard !event.isAllDay"))
         #expect(time.contains("guard isStart || isEnd else { return nil }"))
-        #expect(time.contains("TimeFormatters.timeString(from: minutes)"))
+        #expect(time.contains("TimeFormatters.compactTimeString(from: minutes)"))
         #expect(source.contains("timeLabel: Self.timeLabel(for: event, on: date)"))
         let chip = try #require(CadenceSourceScan.declarationBody("struct iOSCalendarMiniChip: View", in: source))
         #expect(chip.contains("if let timeLabel"))
