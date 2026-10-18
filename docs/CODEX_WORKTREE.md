@@ -145,6 +145,7 @@ Cadence/Shared/Components/CadenceScheduleCaptureCard.swift
 Cadence/Services/TaskCreationService.swift
 Cadence/iOS/iOSTimelineDraftCreate.swift
 Cadence/Shared/Components/EstimatePickerControl.swift
+Cadence/iOS/iOSCalendarManager.swift
 CadenceUITests/CadenceCapturePaletteUITests.swift
 CadenceTests/CadenceComposerContainerSurfaceTests.swift
 CadenceTests/CadenceCapturePaletteTests.swift
@@ -265,6 +266,29 @@ the run disagreed. Confirmed independently: **zero bundle references in that fil
 That is the right instinct and the rarer one. A blocker inherited from another run's report is as
 unverified as any other inherited claim, and the cheap move — ask for all three, since asking is
 free — would have widened the fence on someone else's mistake.
+
+### 2026-10-18 — the sequenced grant is PUBLISHED: `iOSCalendarManager.swift` opens for the second Codex agent
+
+**The dependency cleared.** `f1fe7afc` landed T-1483, and the fixture door is on main at both halves
+— `rg -c CadenceCalendarFixtureEvents Cadence/iOS/iOSCalendarManager.swift` = 2, and the two
+`iOSCalendarView` caller guards = 2. This grant was refused twice while that work existed only on a
+branch, which was the right call: the question was never whether the work existed, but whether a
+second agent would be editing a file whose other version was unlanded.
+
+**GRANTED, narrowly:** `eventRecurrenceRule` and `createEvent` only, to take defaulted recurrence
+end-mode / date / count parameters, then forward the draft fields through the already-granted
+`Cadence/iOS/iOSTimelineDraftCreate.swift`.
+
+**Follow the precedent already in that file.** `createEvent`'s own comment reads *"Defaulted, so the
+two existing callers are byte-for-byte unchanged."* The new parameters must do the same.
+
+**NOT granted by this, and all three are the owner's standing decisions on [[T-3195]]:** no schema
+change, no new repeat intervals beyond the five persisted cases, and no second EventKit save — the
+recurrence rides the original creation commit.
+
+**Do not touch the fixture door that just landed.** The `:101-103` fixture calls sit ahead of the
+`:105` `isAuthorized` guard, and the paired `if let` cannot half-open because both providers gate on
+the same `isActive()`. That property is what makes the harness safe; it is not to be refactored past.
 
 ### 2026-10-17 — `EstimatePickerControl.swift` granted; `iOSCalendarManager.swift` still REFUSED
 
