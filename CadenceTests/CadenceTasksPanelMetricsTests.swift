@@ -191,9 +191,12 @@ struct CadenceTasksPanelMetricsTests {
         //
         // **Six until [[T-3170]], five until [[T-3196]].** The sixth reader was the block badge and
         // the fifth was the estimate chip; both are chips that went away, not chips that stopped
-        // reading the tier.
+        // reading the tier. **Five since [[T-1467]]**: the fifth reader is the notes excerpt under
+        // the title, which is not a chip but is the row's secondary text and must not set its own
+        // size either. (The subtask list's "+N more" reads the tier through `overflowFontSize:`,
+        // which this pattern does not match; `CadenceSharedTaskRowJobsTests` counts it.)
         #expect(
-            CadenceSourceScan.matchCount("size: metrics\\.secondaryFontSize", in: row) == 4
+            CadenceSourceScan.matchCount("size: metrics\\.secondaryFontSize", in: row) == 5
         )
         #expect(CadenceSourceScan.matchCount("size: 10", in: row) == 0)
     }

@@ -154,6 +154,47 @@ struct SubtaskRow: View {
     }
 }
 
+/// The unfinished subtasks a dense macOS task surface lists beneath its task, each with its own
+/// checkbox, then a "+N more" line when the cap hid some ([[T-1467]], parity finding PA-02).
+///
+/// **What is listed is `CadenceTaskPresentationSupport.listedSubtasks(for:)`'s decision, not this
+/// view's** — unfinished only, in `order`, capped at `rowSubtaskLimit`, and nothing at all under a
+/// finished task. iOS's `iOSTaskRow.subtaskRows` asks the same pair of functions, so the two rows
+/// cannot disagree about which child work is shown.
+///
+/// **Each line is `SubtaskRow`, the inspector's own subtask control**, so a checkbox under a row
+/// and a checkbox in the inspector are one control. Only the circle is a `Button`; the title beside
+/// it is text, so a click there falls through to whatever the host does with a click (the task row
+/// opens its inspector). A `Button` inside the row's `.draggable` behaves exactly as the completion
+/// circle and the focus control already beside it do: a click fires it, a click-and-drag still
+/// starts the row's drag. That is the hit-testing question the owner raised when choosing
+/// checkboxes over bare names, and it is answered the same way iOS answers it — a `Button`, which
+/// outranks the host's tap gesture — rather than with a second gesture layer.
+///
+/// **The overflow line is text, not a control**, as on the Kanban card: clicking anywhere on the
+/// row already opens the inspector, which is where the rest of the checklist is, and a second hover
+/// layer inside a row that has one is the pattern this repo keeps unpicking.
+struct MacTaskSubtaskPreviewList: View {
+    let subtasks: [Subtask]
+    let hiddenCount: Int?
+    let overflowFontSize: CGFloat
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(subtasks) { subtask in
+                SubtaskRow(subtask: subtask)
+            }
+
+            if let hiddenCount {
+                Text(CadenceTaskSurfaceOptions.moreLabel(hidden: hiddenCount))
+                    .font(.system(size: overflowFontSize, weight: .medium))
+                    .foregroundStyle(Theme.dim)
+                    .padding(.vertical, 3)
+            }
+        }
+    }
+}
+
 struct ContainerPickerBadge: View {
     @Binding var selection: TaskContainerSelection
     let contexts: [Context]

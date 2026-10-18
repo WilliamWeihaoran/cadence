@@ -66,11 +66,104 @@ struct MacTaskRow: View {
     }
 
     var body: some View {
-        HStack(alignment: .center, spacing: 0) {
+        // **Two tiers since [[T-1467]]: the title line, then what the task holds.** The row was one
+        // `HStack` and said nothing about a task's notes or child work beyond two glyphs, while the
+        // iOS row printed a notes excerpt and listed the open subtasks with checkboxes — the same
+        // task told the desktop less (parity findings PA-01 and PA-02). The owner chose the full
+        // match: excerpt *and* checkboxes.
+        //
+        // The completion circle stays in its own leading column and is centred on the **title
+        // line**, not on the whole row, through `.macTaskRowTitleLine`: centred on the row it would
+        // drift down beside a task with three subtasks and stop reading as that title's control.
+        // A row with no notes and no open subtasks lays out exactly as before — the detail tier
+        // contributes no children, so the `VStack` holds one and adds no spacing.
+        HStack(alignment: .macTaskRowTitleLine, spacing: 0) {
             TaskCompletionButton(task: task)
                 .padding(.leading, metrics.horizontalPadding)
                 .padding(.trailing, metrics.contentSpacing)
 
+            VStack(alignment: .leading, spacing: metrics.summarySpacing) {
+                titleLine
+                    .alignmentGuide(.macTaskRowTitleLine) { $0[VerticalAlignment.center] }
+
+                inlineDetail
+            }
+        }
+        .padding(.vertical, metrics.verticalPadding)
+        .contentShape(Rectangle())
+        .onTapGesture { showTaskInspector = true }
+        // **Right-click is a menu, not a second tap ([[T-1479]]).** It used to be a
+        // `RightClickActionTrigger` overlay running the same `showTaskInspector = true` as the
+        // line above, which spent the gesture macOS reserves for a menu on a duplicate. Tap keeps
+        // the inspector; right-click gains iOS's long-press actions. See `MacTaskRowContextMenu`.
+        .contextMenu {
+            MacTaskRowContextMenu(
+                task: task,
+                openDetail: { showTaskInspector = true },
+                startFocus: startFocus,
+                requestDelete: presentDelete,
+                pendingRecurrenceRule: $pendingMenuRecurrenceRule,
+                failure: $menuFailure
+            )
+        }
+        .modifier(MacTaskRowMenuOutcomeModifier(
+            task: task,
+            pendingRecurrenceRule: $pendingMenuRecurrenceRule,
+            failure: $menuFailure
+        ))
+        .background(TaskRowBackground(task: task, isHovered: isHovered, hoverFill: hoverBackgroundFill))
+        .overlay {
+            RoundedRectangle(cornerRadius: Theme.radiusCard)
+                .strokeBorder(
+                    TaskHoverVisuals.borderColor(isHovered: isHovered),
+                    lineWidth: 1
+                )
+        }
+        .overlay(alignment: .bottom) {
+            Rectangle().fill(Theme.borderSubtle.opacity(0.22)).frame(height: 0.5)
+        }
+        .animation(nil, value: isHovered)
+        .animation(nil, value: isDoDateHovered)
+        .animation(nil, value: isDueDateHovered)
+        .onHover { hovering in
+            guard isHovered != hovering else { return }
+            isHovered = hovering
+            if hovering {
+                beginHoverRegistration()
+            } else {
+                endHoverRegistration()
+            }
+        }
+        .onDisappear {
+            // A row can vanish out from under a still-parked pointer — completed with
+            // Cmd+Return and filtered out of the section, deleted, or regrouped by a date/list
+            // change — in which case `.onHover(false)` never fires. Without this teardown the
+            // managers keep pointing at the gone row and hold its `onDelete` closure, so the
+            // next Cmd+Delete / Cmd+Return acts on the wrong task.
+            //
+            // Safe against a fast pointer move from this row to the next: the replacement
+            // registers first, and both managers' `endHovering` are identity-guarded, so this
+            // call no-ops once the hover has moved on.
+            guard isHovered else { return }
+            isHovered = false
+            endHoverRegistration()
+        }
+        .popover(isPresented: $showTaskInspector, attachmentAnchor: .rect(.bounds), arrowEdge: .trailing) {
+            TaskDetailPopover(task: task)
+        }
+        .opacity(task.isDone || task.isCancelled ? 0.5 : 1.0)
+        .onAppear(perform: handlePendingDeepLink)
+        .onChange(of: deepLinkManager.pendingTaskID) { _, _ in
+            handlePendingDeepLink()
+        }
+    }
+
+    /// The row's first line — do-date pill, title, glyphs, the Cancelled chip, then the trailing
+    /// metadata and list chip — exactly the single `HStack` the whole row used to be. It moved
+    /// into its own property unchanged when [[T-1467]] put a detail tier beneath it, so the
+    /// T-1432 layout argument below still holds line for line.
+    private var titleLine: some View {
+        HStack(alignment: .center, spacing: 0) {
             if datePlan.drawsDoDateChip {
                 doDatePill
                     .padding(.trailing, metrics.contentSpacing)
@@ -143,73 +236,52 @@ struct MacTaskRow: View {
                 .padding(.trailing, metrics.badgeSpacing)
             }
         }
-        .padding(.vertical, metrics.verticalPadding)
-        .contentShape(Rectangle())
-        .onTapGesture { showTaskInspector = true }
-        // **Right-click is a menu, not a second tap ([[T-1479]]).** It used to be a
-        // `RightClickActionTrigger` overlay running the same `showTaskInspector = true` as the
-        // line above, which spent the gesture macOS reserves for a menu on a duplicate. Tap keeps
-        // the inspector; right-click gains iOS's long-press actions. See `MacTaskRowContextMenu`.
-        .contextMenu {
-            MacTaskRowContextMenu(
-                task: task,
-                openDetail: { showTaskInspector = true },
-                startFocus: startFocus,
-                requestDelete: presentDelete,
-                pendingRecurrenceRule: $pendingMenuRecurrenceRule,
-                failure: $menuFailure
+    }
+
+    /// The notes excerpt, then the open subtasks — [[T-1467]], parity findings PA-01 and PA-02.
+    ///
+    /// **Both answers are the shared ones iOS's row reads**: the excerpt is
+    /// `CadenceTaskPresentationSupport.plainPreviewText` at this tier's `notesPreviewLimit`, one
+    /// line (`secondaryLineLimit`), and the subtasks are `listedSubtasks(for:)` with
+    /// `unlistedSubtaskCount(for:)` — unfinished only, capped at three, none under a finished task.
+    /// The figures are `.desktop`'s, which stated them at `.compact`'s answers for exactly this
+    /// day: a macOS task column is a narrow pane.
+    ///
+    /// The note / checklist glyphs on the title line **stay** for now. [[T-3196]] decided they
+    /// come off both platforms once both rows show what they stand for; this is the macOS half of
+    /// that precondition, and the glyph removal itself is [[T-3196]]'s (its iOS half is
+    /// lease-blocked), so taking them off here alone would make the two rows disagree again.
+    @ViewBuilder
+    private var inlineDetail: some View {
+        if let notesPreview {
+            Text(notesPreview)
+                .font(.system(size: metrics.secondaryFontSize))
+                .foregroundStyle(Theme.dim)
+                .lineLimit(metrics.secondaryLineLimit)
+                .truncationMode(.tail)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.trailing, metrics.horizontalPadding)
+        }
+
+        let subtasks = CadenceTaskPresentationSupport.listedSubtasks(for: task)
+        if !subtasks.isEmpty {
+            MacTaskSubtaskPreviewList(
+                subtasks: subtasks,
+                hiddenCount: CadenceTaskPresentationSupport.unlistedSubtaskCount(for: task),
+                overflowFontSize: metrics.secondaryFontSize
             )
+            .padding(.trailing, metrics.horizontalPadding)
         }
-        .modifier(MacTaskRowMenuOutcomeModifier(
-            task: task,
-            pendingRecurrenceRule: $pendingMenuRecurrenceRule,
-            failure: $menuFailure
-        ))
-        .background(TaskRowBackground(task: task, isHovered: isHovered, hoverFill: hoverBackgroundFill))
-        .overlay {
-            RoundedRectangle(cornerRadius: Theme.radiusCard)
-                .strokeBorder(
-                    TaskHoverVisuals.borderColor(isHovered: isHovered),
-                    lineWidth: 1
-                )
-        }
-        .overlay(alignment: .bottom) {
-            Rectangle().fill(Theme.borderSubtle.opacity(0.22)).frame(height: 0.5)
-        }
-        .animation(nil, value: isHovered)
-        .animation(nil, value: isDoDateHovered)
-        .animation(nil, value: isDueDateHovered)
-        .onHover { hovering in
-            guard isHovered != hovering else { return }
-            isHovered = hovering
-            if hovering {
-                beginHoverRegistration()
-            } else {
-                endHoverRegistration()
-            }
-        }
-        .onDisappear {
-            // A row can vanish out from under a still-parked pointer — completed with
-            // Cmd+Return and filtered out of the section, deleted, or regrouped by a date/list
-            // change — in which case `.onHover(false)` never fires. Without this teardown the
-            // managers keep pointing at the gone row and hold its `onDelete` closure, so the
-            // next Cmd+Delete / Cmd+Return acts on the wrong task.
-            //
-            // Safe against a fast pointer move from this row to the next: the replacement
-            // registers first, and both managers' `endHovering` are identity-guarded, so this
-            // call no-ops once the hover has moved on.
-            guard isHovered else { return }
-            isHovered = false
-            endHoverRegistration()
-        }
-        .popover(isPresented: $showTaskInspector, attachmentAnchor: .rect(.bounds), arrowEdge: .trailing) {
-            TaskDetailPopover(task: task)
-        }
-        .opacity(task.isDone || task.isCancelled ? 0.5 : 1.0)
-        .onAppear(perform: handlePendingDeepLink)
-        .onChange(of: deepLinkManager.pendingTaskID) { _, _ in
-            handlePendingDeepLink()
-        }
+    }
+
+    /// `nil` rather than an empty string, so a task whose notes are only markup or whitespace
+    /// draws no line at all — the same test iOS's `secondaryLine` makes.
+    private var notesPreview: String? {
+        let preview = CadenceTaskPresentationSupport.plainPreviewText(
+            from: task.notes,
+            limit: metrics.notesPreviewLimit
+        )
+        return preview.isEmpty ? nil : preview
     }
 
     // MARK: - Hover registration
@@ -691,6 +763,19 @@ private struct TaskRowBackground: View {
                 }
             }
     }
+}
+
+/// The vertical line `MacTaskRow` centres its completion circle on: the middle of the **title
+/// line**, not of the whole row, once [[T-1467]] let the row grow a notes excerpt and subtasks
+/// beneath that line. Only the title line sets it, so there is one answer to take.
+private extension VerticalAlignment {
+    enum MacTaskRowTitleLine: AlignmentID {
+        nonisolated static func defaultValue(in context: ViewDimensions) -> CGFloat {
+            context[VerticalAlignment.center]
+        }
+    }
+
+    static let macTaskRowTitleLine = VerticalAlignment(MacTaskRowTitleLine.self)
 }
 
 #endif

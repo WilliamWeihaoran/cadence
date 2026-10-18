@@ -40,15 +40,16 @@ nonisolated enum CadenceTaskRowSurface: String, CaseIterable, Sendable {
 /// That is one style at one width rather than a third setting, and they were the same rows that
 /// made the iPad disagree with itself between its Today column and its Calendar tab.
 ///
-/// **macOS reads six of these figures and pointedly not the rest, and that split is the finding.**
+/// **macOS reads nine of these figures and pointedly not the rest, and that split is the finding.**
 /// T-175 brought `MacTaskRow` onto this type; until then it hardcoded its own 14 / 8 / 15 / 11 / 6
 /// inline while a shared metrics type sat here with five iOS readers and none on macOS — the same
 /// shape `iOSPageHeaderMetrics` had before `5aa11dc` renamed it and gave macOS a tier. What macOS
 /// takes: `horizontalPadding`, `verticalPadding`, `contentSpacing`, `badgeSpacing`,
-/// `secondaryFontSize`, `titleFontSize`. What it deliberately does not, with the reason each time:
+/// `secondaryFontSize`, `titleFontSize`, and (below) the three notes/subtask-tier figures. What it
+/// deliberately does not, with the reason each time:
 ///
-/// - **`titleLineLimit`.** macOS's row is a single `HStack` — title, `Spacer`, trailing metadata —
-///   so its height is fixed and a two-line title reflows the entire row; iOS's is a `VStack` built
+/// - **`titleLineLimit`.** macOS's title line is a single `HStack` — title, `Spacer`, trailing
+///   metadata — so a two-line title reflows every chip on that line; iOS's is a `VStack` built
 ///   to grow. `titleLineLimit`'s own doc says "every surface", and it means every surface that
 ///   stacks. `MacTaskRow` is the exception it never named, so it is named here.
 /// - **`completionGlyphSize` and `completionCircleDiameter`.** Not shared because they are not the
@@ -58,10 +59,11 @@ nonisolated enum CadenceTaskRowSurface: String, CaseIterable, Sendable {
 ///   already set to 12 / 13 / 15 / 18 as a type ramp per surface. Folding them would push an iOS
 ///   touch-target ramp into a macOS type ramp and quietly resize four other controls. This is the
 ///   `cdf0896` pattern: an apparent fork that is two different jobs wearing one name.
-/// - **`summarySpacing`, `secondaryLineLimit`, `notesPreviewLimit`.** The macOS row has no second
-///   line and no notes preview, so nothing reads these on `.desktop`. They are still stated, at
-///   `.compact`'s answers, because a macOS Today task column is a narrow pane and that is the tier
-///   it would belong to — not left as a hole for the next agent to guess at.
+///
+/// **`summarySpacing`, `secondaryLineLimit` and `notesPreviewLimit` are read on `.desktop` since
+/// [[T-1467]]**, when `MacTaskRow` gained the notes excerpt and inline subtasks iOS's row draws.
+/// They had been stated at `.compact`'s answers while nothing read them, because a macOS Today task
+/// column is a narrow pane and that is the tier it belongs to — and those are the answers it reads.
 ///
 /// `nonisolated` for the same reason `TaskOrdering` is: the project compiles with
 /// `-default-isolation MainActor`, which would otherwise make even the synthesized `==`
@@ -90,7 +92,8 @@ nonisolated struct CadenceTaskRowMetrics: Equatable, Sendable {
     let verticalPadding: CGFloat
     /// Between the completion circle, the task, and the estimate chip.
     let contentSpacing: CGFloat
-    /// Between the title, the notes line, the chips, the tags and the subtask rows.
+    /// Between the title, the notes line, the chips, the tags and the subtask rows — on macOS,
+    /// between the title line, the notes line and the subtask rows.
     let summarySpacing: CGFloat
     /// Between chips on one line of the attribute strip. The *line* spacing is not here — it is
     /// derived from the chip's own hit inset, and a layout ramp must not be able to shrink it.
@@ -160,7 +163,7 @@ nonisolated struct CadenceTaskRowMetrics: Equatable, Sendable {
         horizontalPadding: 14,
         verticalPadding: 8,
         contentSpacing: 8,
-        // Stated, not read: the macOS row has no second line. See the type's doc comment.
+        // Read since [[T-1467]] gave the macOS row a notes line and subtask rows.
         summarySpacing: 6,
         badgeSpacing: 6,
         // Stated, not read either, and for a sharper reason — on macOS this same number would also

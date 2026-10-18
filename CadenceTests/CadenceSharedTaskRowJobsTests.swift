@@ -593,8 +593,9 @@ struct CadenceSharedTaskRowJobsTests {
         #expect(CadenceTaskRowMetrics.desktop.horizontalPadding == CadenceTaskRowMetrics.regularWidth.horizontalPadding)
         #expect(CadenceTaskRowMetrics.desktop.badgeSpacing == CadenceTaskRowMetrics.regularWidth.badgeSpacing)
 
-        // The three the macOS row cannot use are stated at compact's answers — a narrow pane's — so
-        // the tier is total rather than holed. Nothing reads them; the test below pins that.
+        // The three notes/subtask-tier figures are stated at compact's answers — a narrow pane's.
+        // Nothing read them on macOS until [[T-1467]] gave `MacTaskRow` its notes excerpt and
+        // subtask rows; the call-site test above now pins that it reads them exactly once each.
         #expect(CadenceTaskRowMetrics.desktop.summarySpacing == CadenceTaskRowMetrics.compactWidth.summarySpacing)
         #expect(CadenceTaskRowMetrics.desktop.secondaryLineLimit == CadenceTaskRowMetrics.compactWidth.secondaryLineLimit)
         #expect(CadenceTaskRowMetrics.desktop.notesPreviewLimit == CadenceTaskRowMetrics.compactWidth.notesPreviewLimit)
@@ -613,7 +614,9 @@ struct CadenceSharedTaskRowJobsTests {
         )
 
         for (figure, count) in [
-            ("metrics.horizontalPadding", 1),
+            // Three since [[T-1467]]: the row's leading inset, plus the trailing inset the notes
+            // excerpt and the subtask list each keep off the row's edge.
+            ("metrics.horizontalPadding", 3),
             ("metrics.verticalPadding", 1),
             ("metrics.contentSpacing", 3),
             // Seven until [[T-3170]] took the block badge off the row with the Block feature, and
@@ -626,8 +629,14 @@ struct CadenceSharedTaskRowJobsTests {
             // chip late. The do-date pill spells the figure twice, once on the hidden `Text`
             // reserving width. It was six until [[T-3170]] removed the block badge and five until
             // [[T-3196]] removed the estimate chip; both are chips that went, not readers that
-            // stopped reading.
-            ("metrics.secondaryFontSize", 4)
+            // stopped reading. Six since [[T-1467]]: the notes excerpt and the subtask list's
+            // "+N more" line both read it — new readers, not copies of a chip's figure.
+            ("metrics.secondaryFontSize", 6),
+            // [[T-1467]]: the notes/subtask tier. One read each, so a second inline spelling of
+            // any of them (or the row dropping back to abstaining) fails here.
+            ("metrics.summarySpacing", 1),
+            ("metrics.secondaryLineLimit", 1),
+            ("metrics.notesPreviewLimit", 1)
         ] {
             try expectOccurrences(of: figure, at: ["Cadence/macOS/Views/TasksPanelComponents.swift": count])
         }
@@ -656,7 +665,9 @@ struct CadenceSharedTaskRowJobsTests {
     /// while macOS's would also be an SF Symbol point size, and its four macOS call sites already
     /// use that as a per-surface type ramp (12 / 13 / 15 / 18).
     @Test func theMacRowAbstainsFromTheThreeFiguresThatAreNotItsMeasurements() throws {
-        for figure in ["titleLineLimit", "completionGlyphSize", "completionCircleDiameter", "summarySpacing", "secondaryLineLimit", "notesPreviewLimit"] {
+        // `summarySpacing`, `secondaryLineLimit` and `notesPreviewLimit` left this list with
+        // [[T-1467]]; they are pinned positively in `theMacRowDrawsItselfFromTheSharedFiguresRatherThanItsOwn`.
+        for figure in ["titleLineLimit", "completionGlyphSize", "completionCircleDiameter"] {
             try expectOccurrences(of: figure, at: ["Cadence/macOS/Views/TasksPanelComponents.swift": 0])
         }
 
