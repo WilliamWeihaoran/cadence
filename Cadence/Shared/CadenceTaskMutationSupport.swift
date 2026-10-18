@@ -1531,10 +1531,16 @@ nonisolated struct CadenceDeleteSurvivorSnapshot {
 /// `nonisolated` for the reason `Models/AGENTS.md` gives for the data enums: the app sets
 /// `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, and a bare protocol would hand a main-actor
 /// requirement to models that are not.
+///
+/// **The conformances are `nonisolated` too ([[T-3215]]).** A bare `extension AppTask: …` infers
+/// a *main-actor* conformance under that same default, and `capture`'s escaping closures are
+/// nonisolated, so Xcode 26 warned eleven times — and CI counts those warnings. Xcode 27 is silent
+/// about it, which is how it reached `main`. `@Model`'s `id` is readable off the main actor, so
+/// the nonisolated conformance compiles; were it not, the build would fail rather than warn.
 nonisolated protocol CadenceDeleteSurvivorMember: AnyObject {
     var id: UUID { get }
 }
 
-extension AppTask: CadenceDeleteSurvivorMember {}
-extension Habit: CadenceDeleteSurvivorMember {}
-extension Goal: CadenceDeleteSurvivorMember {}
+nonisolated extension AppTask: CadenceDeleteSurvivorMember {}
+nonisolated extension Habit: CadenceDeleteSurvivorMember {}
+nonisolated extension Goal: CadenceDeleteSurvivorMember {}

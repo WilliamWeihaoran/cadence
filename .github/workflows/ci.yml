@@ -240,6 +240,14 @@ jobs:
           name: xcresult
           path: ${{ runner.temp }}/dd-tests/Logs/Test/*.xcresult
           if-no-files-found: ignore
+      # T-3215: a test host that traps leaves only "Test crashed with signal trap." in the
+      # xcresult -- no message, no frame. The crash report is the one place the faulting stack is.
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: crash-reports
+          path: ~/Library/Logs/DiagnosticReports/*.ips
+          if-no-files-found: ignore
       # T-977: scripts/real-tree-sweep-manifest.sh selftest -- the proof that a stale manifest
       # still regenerates a non-empty body (T-873) -- had no caller anywhere: not this workflow,
       # not xcb.sh's own preflight, and not CadenceTests itself. The reason first given for that
