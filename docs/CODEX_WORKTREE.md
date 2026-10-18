@@ -154,6 +154,34 @@ CadenceTests/CadenceContainerPickerConsolidationTests.swift
 CadenceTests/CadencePresentedTypographyBoundaryTests.swift
 ```
 
+### 2026-10-17 — CORRECTION: the grant I praised an agent for NOT requesting was needed after all
+
+The section below records agent `blocktail` declining to request
+`CadenceTests/CadenceMarkdownImageCommitSurfaceTests.swift` because it could not reproduce the
+blocker, and the coordinator endorsing that as the rarer, better instinct. **The blocker was real.
+Granting it now, and correcting the praise rather than quietly adding the path.**
+
+**Why both of us missed it.** The agent grepped for `bundle`, `Bundle` and the symbols the pass
+removes. That file contains none — the grep was accurate. But `:494` asserts
+`#expect(total == 69)` over a repo-wide census of `CadenceInlineFailureNotice` call sites, and this
+pass removes one. Measured now: the literal says 69, the tree holds **68**.
+
+**A census test names no symbol from the thing it counts.** No symbol grep could ever have found it,
+on either side. The agent put the distinction better than the coordinator had: the honest claim was
+*"I cannot find a textual reference"*, not *"I cannot reproduce it as a blocker"* — and the gap
+between those is exactly the [[T-3209]] shape, **a check that comes back clean because it was asking
+the wrong question.**
+
+**What survives of the original praise:** declining to request a grant on an unreproduced claim is
+still right, and the agent did come back with the error rather than the assertion, exactly as it
+said it would. What does not survive is the coordinator's gloss that the heartbeat's report was
+*"someone else's mistake"*. It was not a mistake. It was a real blocker found by running the thing,
+which beats any amount of grepping — and the heartbeat had run it.
+
+**GRANTED:** that path, scope the `:494` literal `69 → 68` plus its explanatory comment. The
+surrounding prose already carries a [[T-1475]] history of the same number moving, so there is a
+house style to follow.
+
 ### 2026-10-17 — one line in `CadenceSharedConstantReuseSweepTests.swift`, and an agent declining to ask
 
 **GRANTED to a local agent for [[T-3170]]'s trio pass.** Prose: the file is already inside the fence,
