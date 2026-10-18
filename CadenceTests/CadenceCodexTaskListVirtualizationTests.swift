@@ -99,6 +99,7 @@ struct CadenceCodexTaskListVirtualizationTests {
         let count = 1_000
         let container = try CadenceModelContainerFactory.makeInMemoryContainer()
         let context = container.mainContext
+        context.autosaveEnabled = false
         var seeded: [AppTask] = []
         for index in 0..<count {
             let task = AppTask(title: "Eager probe \(index)")
@@ -106,7 +107,6 @@ struct CadenceCodexTaskListVirtualizationTests {
             context.insert(task)
             seeded.append(task)
         }
-        try context.save()
 
         let host = NSHostingView(rootView:
             ScrollView {
