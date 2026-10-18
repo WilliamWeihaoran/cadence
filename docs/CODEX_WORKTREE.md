@@ -2643,6 +2643,36 @@ written, and the agent that reported it credited the coordinator, who did not ma
 and minimal, so it stands — but it was made against a leased path with no grant in force, which is
 the thing this document exists to prevent.
 
+### 2026-10-18 — T-3196 grant WIDENED to `taskBadgeContent` and `taskSummary`, after a correctly refused dispatch
+
+**Agent `iosrowdue` was dispatched to finish T-3196's iOS half and wrote no UI code, correctly.** Two
+claims in its brief were wrong and it checked both rather than proceeding.
+
+**Wrong claim 1 — "the estimate chip is still on iOS rows."** It was removed in `7f9c0307` at
+**16:19**. The coordinator's simulator sighting was real at 14:43 and stale by the time it was
+repeated. The agent caught it by build provenance: the installed `Cadence.app` was built 15:11,
+an hour before the removal landed. It also recorded a shortcut that looked conclusive and was not —
+`strings` over the installed binary scored 0 for `iOSTaskRowEstimateChip` **and** 0 for four chips
+visibly on screen. Timestamps answer this; symbol greps over a binary do not.
+
+**Wrong claim 2 — "both are INSIDE `iOSTaskViews.swift`, so they are granted."** They are not. The
+2026-10-16 grant is **sub-file scoped**: it names `iOSTaskRowEstimateChip` and two call sites and
+then says *"Nothing else in these files — they carry the task row's whole layout."* **Being inside a
+granted file is not being inside the grant.** That misreading is what stalled this ticket the first
+time; `rowdue`, `iosrowchrome` and now `iosrowdue` have each stopped at the same boundary, which is
+three agents paying for one unwidened grant.
+
+**GRANTED for T-3196 only:** `taskBadgeContent` (`Cadence/iOS/iOSTaskViews.swift:402-409`) and
+`taskSummary` (`:225-250`). That is the remaining work: move the due date into the vacated trailing
+slot, remove the duplicate badge below the notes, and move the title-line glyphs under the notes.
+Keep the notes glyph — [[T-1467]] has not built the macOS excerpt that replaces it.
+
+**A design input the ticket was missing, supplied by the agent and settled here.** T-3196's DECIDED
+bullet says the trailing slot "turns RED when overdue", which is half a spec. `:407` already reads
+`tint: dueUrgency == .overdue ? Theme.red : Theme.dim`. **The trailing slot carries `Theme.dim` for
+an unpassed deadline and `Theme.red` once it passes** — the same two-tint rule the badge uses today.
+Without that, a non-overdue due date either vanishes or shouts.
+
 ### 2026-10-18 — T-3196 grant EXTENDED: the test that pins the chip's call sites
 
 **The 2026-10-16 grant above named three iOS SOURCE files and no test, so the removal it authorised
