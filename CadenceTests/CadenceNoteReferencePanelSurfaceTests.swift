@@ -24,6 +24,33 @@ import Testing
 /// non-vacuity test so a broken scan cannot make the absence assertions pass silently.
 @MainActor
 struct CadenceNoteReferencePanelSurfaceTests {
+    @Test func mobileUnlinkedMentionsResolveTheDraftAndReplaceOnlyTheOfferedPhrase() throws {
+        let target = note("Orchard plans")
+        let selfNote = note("Current note", content: "Current note names ORCHARD PLANS.\nKeep this paragraph.")
+        let candidates = [selfNote, target]
+        #expect(NoteUnlinkedMentionResolver.unlinkedMentions(for: selfNote, in: candidates).map(\.id) == [target.id])
+        let range = try #require(NoteUnlinkedMentionResolver.firstLoosePhraseRange(target.displayTitle, in: selfNote.content))
+        let markdown = NoteReferenceParser.noteReferenceMarkdown(for: target)
+        let linked = (selfNote.content as NSString).replacingCharacters(in: range, with: markdown)
+        #expect(linked == "Current note names \(markdown).\nKeep this paragraph.")
+        #expect(NoteUnlinkedMentionResolver.unlinkedMentions(noteID: selfNote.id, content: linked, in: candidates).isEmpty)
+        #expect(NoteReferenceParser.noteReferences(in: linked).compactMap(\.noteID) == [target.id])
+
+        let source = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile("Cadence/iOS/iOSMarkdownEditingSurface.swift"))
+        let resolve = try CadenceCommitSurfaceScan.declarationBody(named: "refreshUnlinkedMentions", in: source)
+        #expect(resolve.contains("guard let editingNote"))
+        #expect(resolve.contains("NoteUnlinkedMentionResolver.unlinkedMentions("))
+        #expect(resolve.contains("noteID: editingNote.id, content: draftText, in: referenceNotes"))
+        let link = try CadenceCommitSurfaceScan.declarationBody(named: "linkMention", in: source)
+        #expect(link.contains("NoteUnlinkedMentionResolver.firstLoosePhraseRange(title, in: draftText)"))
+        #expect(link.contains("NoteReferenceParser.noteReferenceMarkdown(for: note)"))
+        #expect(link.contains("updateDraft((draftText as NSString).replacingCharacters(in: range, with: markdown))"))
+        #expect(link.contains("commitDraftImmediately()"))
+        // The existing actual-reference panel remains a separate path with its own resolver.
+        #expect(source.contains("iOSNoteReferencePanel("))
+        #expect(source.contains("NoteReferencePanelSupport.contents("))
+    }
+
 
     // MARK: - Fixtures
 

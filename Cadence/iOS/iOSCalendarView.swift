@@ -433,7 +433,7 @@ struct iOSCalendarView: View {
     }
 
     private func refreshVisibleEvents() {
-        guard calendarManager.isAuthorized else {
+        guard calendarManager.isAuthorized || CadenceCalendarFixtureEvents.isActive() else {
             if !visibleEventsByDate.isEmpty { visibleEventsByDate = [:] }
             if !selectedDayEvents.isEmpty { selectedDayEvents = [] }
             return
@@ -452,7 +452,7 @@ struct iOSCalendarView: View {
     /// rebuilt one.
     private func refreshSelectedDayEvents(window: [String: [EKEvent]]? = nil) {
         let cached = window ?? visibleEventsByDate
-        guard calendarManager.isAuthorized, cached[selectedKey] == nil else {
+        guard calendarManager.isAuthorized || CadenceCalendarFixtureEvents.isActive(), cached[selectedKey] == nil else {
             if !selectedDayEvents.isEmpty { selectedDayEvents = [] }
             return
         }

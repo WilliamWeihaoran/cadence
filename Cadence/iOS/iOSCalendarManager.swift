@@ -95,7 +95,14 @@ final class iOSCalendarManager {
     }
 
     func fetchEvents(for date: Date) -> [EKEvent] {
-        guard isAuthorized, !availableCalendars.isEmpty else { return [] }
+        // T-1483: mobile fetches both kinds together. Consult both fixture doors before the
+        // authorization guard, just as the Mac day cache does. An empty fixture day is still
+        // the whole answer; it must never fall through to the real store.
+        if let timed = CadenceCalendarFixtureEvents.timedEvents(for: date),
+           let allDay = CadenceCalendarFixtureEvents.allDayEvents(for: date) {
+            return (timed + allDay).sorted(by: CadenceCalendarEventSearchSupport.precedes)
+        }
+        guard !isEventKitDisarmed, isAuthorized, !availableCalendars.isEmpty else { return [] }
         let bounds = dayBounds(for: date)
         let predicate = store.predicateForEvents(withStart: bounds.start, end: bounds.end, calendars: availableCalendars)
         return store.events(matching: predicate)

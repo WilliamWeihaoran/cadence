@@ -46,6 +46,37 @@ import Testing
 /// the literal changes which lines become rows and what those rows are called.
 @Suite
 struct CadenceOutlineParserRegexTests {
+    // T-1471: the parser-to-scroll connection. The UI suite separately reads the visible viewport.
+    @Test func mobileOutlineCarriesAnExplicitRepeatableScrollRequestToTheTextView() throws {
+        let surface = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile("Cadence/iOS/iOSMarkdownEditingSurface.swift"))
+        let editor = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile("Cadence/iOS/iOSMarkdownEditor.swift"))
+        #expect(surface.contains("outlineItems = MarkdownOutlineParser.items(in: draftText)"))
+        #expect(surface.contains("scrollRequest: scrollRequest"))
+        let jump = try CadenceCommitSurfaceScan.declarationBody(named: "jumpToHeading", in: surface)
+        #expect(jump.contains("selectedRange = range"))
+        #expect(jump.contains("scrollRequest = iOSMarkdownScrollRequest(range: range)"))
+        #expect(editor.contains("let id = UUID()"))
+        let update = try CadenceCommitSurfaceScan.declarationBody(named: "updateUIView", in: editor)
+        #expect(update.contains("context.coordinator.applyScrollRequestIfNeeded(to: textView)"))
+        let scroll = try CadenceCommitSurfaceScan.declarationBody(named: "applyScrollRequestIfNeeded", in: editor)
+        #expect(scroll.contains("request.id != consumedScrollRequestID"))
+        #expect(scroll.contains("textView.layoutManager.ensureLayout(for: textView.textContainer)"))
+        #expect(scroll.contains("textView.scrollRangeToVisible(clamped(request.range, in: textView.textStorage))"))
+        // Ordinary selection synchronization keeps its original guard, outside the navigation path.
+        let selection = try CadenceCommitSurfaceScan.declarationBody(named: "applyExternalSelectionIfNeeded", in: editor)
+        #expect(selection.contains("guard selection != textView.selectedRange else { return }"))
+        #expect(!selection.contains("scrollRangeToVisible"))
+    }
+
+    @Test func aLongUnicodeNoteUsesUTF16LocationsForTheNativeTextView() throws {
+        let prefix = String(repeating: "🪴 café 日本語\n", count: 200)
+        let content = prefix + "## Destination\n"
+        let heading = try #require(MarkdownOutlineParser.items(in: content).first)
+        #expect(heading.location == (prefix as NSString).length)
+        #expect((content as NSString).substring(from: heading.location).hasPrefix("## Destination"))
+        #expect(heading.location != prefix.count)
+    }
+
     // MARK: - The bound: a count of construction sites
 
     /// **Zero regular expressions compiled per line, where it was one.**

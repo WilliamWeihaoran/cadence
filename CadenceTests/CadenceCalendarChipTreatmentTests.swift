@@ -38,6 +38,24 @@ struct CadenceCalendarChipTreatmentTests {
     /// that only holds on the colours someone remembered is the defect both files exist to stop.
     private static let hues = ["#ffc857", "#4fd6e0", "#ffffff", "#4a9eff", "#3d0000", "#0000ff", "#000000"]
 
+    @Test func mobileMonthEventsCarryCompactEndpointTimesWithoutTakingTitleWidth() throws {
+        let source = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile(Self.iOSChips))
+        let time = try CadenceCommitSurfaceScan.declarationBody(named: "timeLabel", in: source)
+        #expect(time.contains("guard !event.isAllDay"))
+        #expect(time.contains("guard isStart || isEnd else { return nil }"))
+        #expect(time.contains("TimeFormatters.timeString(from: minutes)"))
+        #expect(source.contains("timeLabel: Self.timeLabel(for: event, on: date)"))
+        let chip = try #require(CadenceSourceScan.declarationBody("struct iOSCalendarMiniChip: View", in: source))
+        #expect(chip.contains("if let timeLabel"))
+        #expect(chip.contains("Text(timeLabel)"))
+        #expect(chip.contains("VStack(alignment: .leading, spacing: 1)"))
+        let title = try #require(CadenceSourceScan.declarationBody("private var titleRow: some View", in: chip))
+        #expect(title.contains("Text(title)"))
+        #expect(!title.contains("timeLabel"), "the clock must not take width from the title")
+        #expect(source.contains("capacity: chipCapacity"))
+        #expect(source.contains("iOSCalendarMiniChip.height(hasTime:"))
+    }
+
     // MARK: - What the two treatments do at chip size
 
     /// The swap is only visible if the two chip plates stay apart, so this measures the gap rather

@@ -2,6 +2,13 @@
 import SwiftUI
 import UIKit
 
+/// A deliberate navigation request, independent of ordinary caret synchronization. The token
+/// permits jumping to the same heading again after scrolling elsewhere.
+struct iOSMarkdownScrollRequest {
+    let id = UUID()
+    let range: NSRange
+}
+
 struct iOSMarkdownEditor: UIViewRepresentable {
     @Environment(\.openURL) private var openURL
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
@@ -26,6 +33,7 @@ struct iOSMarkdownEditor: UIViewRepresentable {
     /// unconditionally in `makeUIView` on purpose, and passing `nil` for a refusing host would make
     /// the paste *swallowed* instead of merely unoffered.
     var allowsImageInsertion = true
+    var scrollRequest: iOSMarkdownScrollRequest?
 
     init(
         text: Binding<String>,
@@ -41,7 +49,8 @@ struct iOSMarkdownEditor: UIViewRepresentable {
         onOpenReference: ((MarkdownReferenceDisplayTarget) -> Void)? = nil,
         onCreatePastedImages: (([UIImage]) -> [MarkdownImageAsset])? = nil,
         onResizeImage: ((UUID, CGFloat) -> Void)? = nil,
-        allowsImageInsertion: Bool = true
+        allowsImageInsertion: Bool = true,
+        scrollRequest: iOSMarkdownScrollRequest? = nil
     ) {
         _text = text
         _isFocused = isFocused
@@ -57,11 +66,13 @@ struct iOSMarkdownEditor: UIViewRepresentable {
         self.onCreatePastedImages = onCreatePastedImages
         self.onResizeImage = onResizeImage
         self.allowsImageInsertion = allowsImageInsertion
+        self.scrollRequest = scrollRequest
     }
 
     func makeUIView(context: UIViewRepresentableContext<iOSMarkdownEditor>) -> UITextView {
         let textView = iOSMarkdownTextView()
         textView.delegate = context.coordinator
+        textView.accessibilityIdentifier = "markdown.editor"
         textView.allowsMarkdownImageInsertion = allowsImageInsertion
         textView.formatCommandHandler = { [weak textView, weak coordinator = context.coordinator] command in
             guard let textView else { return }
@@ -227,6 +238,7 @@ struct iOSMarkdownEditor: UIViewRepresentable {
         } else if !isFocused, textView.isFirstResponder {
             textView.resignFirstResponder()
         }
+        context.coordinator.applyScrollRequestIfNeeded(to: textView)
     }
 
     func makeCoordinator() -> Coordinator {
@@ -242,6 +254,7 @@ struct iOSMarkdownEditor: UIViewRepresentable {
         private var styledContentSizeCategory: UIContentSizeCategory?
         private var styledDynamicTypeSize: DynamicTypeSize?
         private var pendingStyleWorkItem: DispatchWorkItem?
+        private var consumedScrollRequestID: UUID?
 
         // MARK: - Rendered tables (T-221)
 
@@ -404,6 +417,17 @@ struct iOSMarkdownEditor: UIViewRepresentable {
             }
 
             parent.openURL(url)
+        }
+
+        func applyScrollRequestIfNeeded(to textView: UITextView) {
+            guard let request = parent.scrollRequest,
+                  request.id != consumedScrollRequestID else { return }
+            consumedScrollRequestID = request.id
+            // Lay out the whole destination before scrolling; a long note may not have laid out
+            // the offscreen heading yet. Ordinary selection updates retain their existing guards.
+            textView.layoutIfNeeded()
+            textView.layoutManager.ensureLayout(for: textView.textContainer)
+            textView.scrollRangeToVisible(clamped(request.range, in: textView.textStorage))
         }
 
         func applyExternalSelectionIfNeeded(to textView: UITextView) {
