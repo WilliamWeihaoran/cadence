@@ -154,6 +154,27 @@ CadenceTests/CadenceContainerPickerConsolidationTests.swift
 CadenceTests/CadencePresentedTypographyBoundaryTests.swift
 ```
 
+### 2026-10-17 — one line in `CadenceSharedConstantReuseSweepTests.swift`, and an agent declining to ask
+
+**GRANTED to a local agent for [[T-3170]]'s trio pass.** Prose: the file is already inside the fence,
+so this admits local entry. Verified landed with `--no-merges` — one branch modified it,
+`codex/parity-functional-batch`, confirmed landed earlier today.
+
+**Scope is literally one line.** `:177` carries
+`path: "Cadence/macOS/Views/TaskBundlePickerSupportViews.swift"` inside a
+`CadenceUndeclaredPlaceholderLabel` inventory of a file the trio pass deletes. Removing that row is
+the entire repair.
+
+**The part worth recording is the grant NOT requested.** A heartbeat run listed three blockers; the
+agent reproduced two and could not reproduce the third — `CadenceMarkdownImageCommitSurfaceTests.swift`
+contains no reference to `bundle`, `Bundle`, or any symbol the pass removes. It declined to request a
+grant on an unreproduced claim, saying it would come back with the error rather than the assertion if
+the run disagreed. Confirmed independently: **zero bundle references in that file.**
+
+That is the right instinct and the rarer one. A blocker inherited from another run's report is as
+unverified as any other inherited claim, and the cheap move — ask for all three, since asking is
+free — would have widened the fence on someone else's mistake.
+
 ### 2026-10-17 — `EstimatePickerControl.swift` granted; `iOSCalendarManager.swift` still REFUSED
 
 **GRANTED:** `Cadence/Shared/Components/EstimatePickerControl.swift`, for an optional unset-value
