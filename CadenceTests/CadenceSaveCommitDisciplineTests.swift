@@ -122,7 +122,7 @@ struct CadenceSaveCommitDisciplineTests {
     /// The hole half 2 had, and it is not an oversight — it is mechanical. Half 2 needs a literal
     /// `try?` in the reporting declaration's own body, and this app writes its mutations one frame
     /// away from the button: the Save button called `save()`, `save()` called
-    /// `CadenceTaskMutationSupport.updateBundle`, and the third frame held the swallow. All three
+    /// CadenceTaskMutationSupport.updateBundle, and the third frame held the swallow. All three
     /// frames passed halves 1, 2 and 3 while the sheet closed over a store that had refused.
     @Test func noSuccessReportFollowsACommitSwallowedOneFrameDown() throws {
         let index = try swallowingIndexOverTheApp()
@@ -296,7 +296,7 @@ struct CadenceSaveCommitDisciplineTests {
     /// `Cadence/` at `454e778`: **ten** `try?` call sites reached such a helper.
     ///
     /// **"Any callee that commits" is the wrong widening**, which is what T-1299 was filed to say.
-    /// `CadenceTaskMutationSupport.moveBundle` and `addTask` are swallowed on purpose and are
+    /// CadenceTaskMutationSupport.moveBundle and `addTask` are swallowed on purpose and are
     /// correct: neither changes existence, so a refusal leaves nothing but field edits pending —
     /// the case the rule has always allowed. A half that cried wolf on them would be suppressed,
     /// and then it would guard nothing.
@@ -868,7 +868,7 @@ struct CadenceSaveCommitDisciplineTests {
     /// name is only allowed to vouch for itself when every overload of it agrees.
     ///
     /// Measured, and it cost a real finding before the rule existed: `SchedulingActions` declares
-    /// two `createBundle(…in:)`. One forwards to `CadenceTaskMutationSupport.insertBundle`, which
+    /// two `createBundle(…in:)`. One forwards to CadenceTaskMutationSupport.insertBundle, which
     /// commits; the other inserts and does not. Letting the committing one vouch for the name made
     /// the timeline canvas and the schedule panel — [[T-636]](e)'s two sites — go quiet.
     @Test func theCommitIndexNeedsEveryOverloadOfANameToAgreeBeforeItVouchesForIt() throws {
@@ -2589,7 +2589,7 @@ enum CadenceSaveCommitRule {
                 // index resolves a call by name and type and cannot see an argument list, so one
                 // committing overload would vouch for its siblings: `SchedulingActions` declares
                 // two `createBundle(…in:)`, and the one that forwards to
-                // `CadenceTaskMutationSupport.insertBundle` does commit while the one the timeline
+                // CadenceTaskMutationSupport.insertBundle does commit while the one the timeline
                 // canvas calls inserts and does not. Unanimity is the safe direction here — a
                 // missing committer costs a report, a wrong one costs the finding.
                 for declaration in declarations where names.contains(declaration.name) {
@@ -3004,7 +3004,7 @@ enum CadenceSaveCommitRule {
     ///
     /// **Published when *any* overload is unrepaired**, the opposite of `ExistenceIndex`'s
     /// unanimity rule and for the same reason it gives — the safe direction. The index cannot see
-    /// an argument list, so it cannot tell which `CadenceTaskMutationSupport.insertBundle` a call
+    /// an argument list, so it cannot tell which CadenceTaskMutationSupport.insertBundle a call
     /// site meant; a missing report costs the finding, a spurious one costs a sentence in an
     /// exemption list.
     ///
@@ -3194,7 +3194,7 @@ enum CadenceSaveCommitRule {
     /// chain of same-file calls, resolved to a fixed point **across** files.
     ///
     /// Two frames is the shape this exists for and one hop would have missed it: T-566's Save
-    /// button called `save()`, `save()` called `CadenceTaskMutationSupport.updateBundle`, and only
+    /// button called `save()`, `save()` called CadenceTaskMutationSupport.updateBundle, and only
     /// the third frame held the `try? modelContext.save()`.
     static func swallowingIndex(
         over files: [String],
@@ -3249,7 +3249,7 @@ enum CadenceSaveCommitRule {
             // **`buildingItsOwnAnswer: false`**, and it is measured rather than cautious. The
             // Optional spelling is a claim by the frame that *builds* the answer; one frame down,
             // an Optional handed back is a forward. Extending it here adds exactly three sites over
-            // 564 files and all three are forwards: `CadenceTaskMutationSupport.insertBundle` is
+            // 564 files and all three are forwards: CadenceTaskMutationSupport.insertBundle is
             // **handed** a `ModelContext` and returns its bundle to the caller that owns the
             // commit, and `macOSRootCommandSupport.handle` /
             // `RootCommandEventSupport.handleCommandKeyEvent` answer `NSEvent?` with the polarity

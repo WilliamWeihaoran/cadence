@@ -917,13 +917,28 @@ enum CadenceCommentSymbolClaim {
     /// sentence names a real declaration, which is the tombstones' territory only if the repo
     /// later removes what it now correctly names.
     ///
-    /// **Empty, and it was emptied by the change it named.** The one entry was the Calendar
-    /// Board's formBundle doc, whose sentence about the Mac timeline having the gesture as
+    /// **It was emptied once by the change it named.** The one entry was the Calendar Board's
+    /// formBundle doc, whose sentence about the Mac timeline having the gesture as
     /// SchedulingActions.createBundle(from:adding:) went stale when [[T-3170]] removed that
     /// gesture; it was held here rather than fixed because the file was Codex-leased. The grant
     /// `41ded784` unblocked the file and T-3170's Board pass deleted the whole function the
     /// comment documented, so the claim is gone with its comment rather than struck off.
-    static let staleClaims: [String] = []
+    ///
+    /// **Seven, since [[T-3170]]'s trio pass.** That pass deleted insertBundle, updateBundle,
+    /// assignTask, the Mac's addTask and the Block failure wording, and its test-repair half was
+    /// barred from product files, so seven present-tense product comments still name them -- each
+    /// a real stale claim, not a memorial. They are held here so the sweep can stay exact; the
+    /// product pass that rewrites each sentence deletes its line in the same change, which
+    /// `everyQualifiedSymbolClaimInACommentResolvesOrIsLedgered` forces in both directions.
+    static let staleClaims: [String] = [
+        "Cadence/Services/CadenceTaskBundleRetirement.swift `CadenceTaskMutationSupport.assignTask`",
+        "Cadence/Services/CadenceTaskBundleRetirement.swift `SchedulingActions.addTask`",
+        "Cadence/Services/TaskCreationService.swift `CadenceTaskMutationSupport.bundleCreateFailureAlertTitle`",
+        "Cadence/Shared/CadenceScheduleDraft.swift `CadenceTaskMutationSupport.insertBundle(from:adding:)`",
+        "Cadence/Shared/CadenceTaskBundleMutationSupport.swift `CadenceTaskMutationSupport.insertBundle(`",
+        "Cadence/Shared/CadenceTaskFieldEditCommit.swift `CadenceTaskMutationSupport.updateBundle`",
+        "Cadence/macOS/Services/SchedulingService.swift `CadenceTaskMutationSupport.insertBundle(from:adding:)`",
+    ]
 
     static var ledger: [String] { (deliberateTombstones + staleClaims).sorted() }
 
@@ -960,9 +975,15 @@ enum CadenceCommentSymbolClaim {
     /// standing instruction — *watch the SDK count; past roughly a dozen the trade has changed* —
     /// is asserted there too, rather than being a sentence for a reader to remember.
     ///
-    /// **Zero stale claims.** No comment in the tree points a present-tense reader at an unqualified
-    /// call that was supposed to exist, which is a finding in itself: the defect [[T-647]] found was
-    /// the *scoped* spelling, not this one.
+    /// **Zero stale claims, with one exception that is recorded rather than hidden.** No comment in
+    /// the tree pointed a present-tense reader at an unqualified call that was supposed to exist,
+    /// which is a finding in itself: the defect [[T-647]] found was the *scoped* spelling, not this
+    /// one. [[T-3170]]'s trio pass added five product lines below. Four are tombstones its own
+    /// product half wrote ("was declared here"). The fifth,
+    /// CadenceTaskMutationSupport.swift's "same rule as insertBundle(from:adding:)" on
+    /// rollOverTaskToToday, is a stale comparison to a deleted function, held here because that
+    /// pass's test half could not touch product files; it is counted in the tombstone remainder by
+    /// `theUnqualifiedLedgerSplitsIntoItsThreeGroups`, which has no stale group.
     static let unqualifiedLedger = [
         "Cadence/Models/GoalContributionSummary.swift `isHabit(_:dueOn:calendar:)`",
         "Cadence/Services/MarkdownInlinePreviewSupport.swift `plainText(in:)`",
@@ -973,10 +994,17 @@ enum CadenceCommentSymbolClaim {
         "Cadence/Shared/CadenceRegularPaneLayout.swift `regularInspectorWidth(for:)`",
         "Cadence/Shared/CadenceRegularPaneLayout.swift `splits(width:sides:)`",
         "Cadence/Shared/CadenceSettingsSectionCopy.swift `sectionTitle(_:of:)`",
+        // [[T-3170]]'s trio pass: two tombstones, and one stale comparison (see the doc above).
+        "Cadence/Shared/CadenceTaskMutationSupport.swift `addTask(_:to:modelContext:commit:)`",
+        "Cadence/Shared/CadenceTaskMutationSupport.swift `insertBundle(from:adding:)`",
+        "Cadence/Shared/CadenceTaskMutationSupport.swift `insertBundle(from:adding:modelContext:commit:)`",
         "Cadence/Shared/Components/CadenceBoardColumnHeader.swift `kanbanColumnHeaderPadding()`",
         "Cadence/iOS/iOSCalendarView.swift `moveAnchor(by:)`",
         "Cadence/macOS/Editor/MarkdownEditorInteractionSupport.swift `readSelection(from:)`",
         "Cadence/macOS/Editor/MarkdownTableInteractionSupport.swift `validateMenuItem(_:)`",
+        // [[T-3170]]'s trio pass: two tombstones for the Mac's SchedulingActions block helpers.
+        "Cadence/macOS/Services/SchedulingService.swift `addTask(_:to:)`",
+        "Cadence/macOS/Services/SchedulingService.swift `updateBundleTime(_:startMin:endMin:)`",
         "Cadence/macOS/Views/TasksPanel.swift `taskSections(derived:)`",
         "Cadence/macOS/Views/TasksPanelDerivedState.swift `isEmptyState(for:)`",
         "Cadence/macOS/Views/TasksPanelDropCoordinator.swift `taskDropHandler(scopeTasks:dropKey:)`",
@@ -1012,10 +1040,12 @@ enum CadenceCommentSymbolClaim {
         // the struct, so the row is removed rather than struck off. The iOS half stands: its chip
         // is still there.
         #expect(tombstones.count == 36)
-        // 0 again. It was 1 while the Calendar Board's formBundle doc named a Mac spelling
-        // [[T-3170]] had removed and the file was still Codex-leased; the grant `41ded784`
-        // unblocked it and T-3170's Board pass deleted the function that comment documented.
-        #expect(stale.isEmpty)
+        // It was 1 while the Calendar Board's formBundle doc named a Mac spelling [[T-3170]] had
+        // removed and the file was still Codex-leased; the grant `41ded784` unblocked it and
+        // T-3170's Board pass deleted the function that comment documented, taking it to 0. It is
+        // 7 since T-3170's trio pass left seven product comments naming what it deleted -- see
+        // `staleClaims`. A product pass that fixes them brings this back to 0.
+        #expect(stale.count == 7)
     }
 
     /// The sweep. Exact set equality, both directions, over every Swift file in all five targets.
@@ -1249,8 +1279,10 @@ enum CadenceCommentSymbolClaim {
         #expect(illustrative == illustrative.sorted())
 
         let tombstones = ledger.subtracting(sdk).subtracting(illustrative)
-        // 21 since [[T-3170]] ledgered the quick-create sheet's createBundle() tombstone.
-        #expect(tombstones.count == 21, "the tombstone remainder is \(tombstones.count), not 21")
+        // 21 since [[T-3170]] ledgered the quick-create sheet's createBundle() tombstone; 26 since
+        // its trio pass added five product lines (four tombstones and one stale comparison, see
+        // `unqualifiedLedger`'s doc).
+        #expect(tombstones.count == 26, "the tombstone remainder is \(tombstones.count), not 26")
         #expect(sdk.count == 5)
         #expect(illustrative.count == 2)
         #expect(tombstones.count + sdk.count + illustrative.count == Self.unqualifiedLedger.count)
@@ -1274,7 +1306,8 @@ enum CadenceCommentSymbolClaim {
         let ledger = Self.unqualifiedLedger
         #expect(Set(ledger).count == ledger.count)
         #expect(ledger == ledger.sorted())
-        #expect(ledger.count == 28)
+        // 28 until [[T-3170]]'s trio pass added five product lines; see the ledger's doc.
+        #expect(ledger.count == 33)
         #expect(Set(ledger).isDisjoint(with: Set(Self.ledger)))
     }
 

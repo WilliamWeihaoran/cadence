@@ -644,7 +644,7 @@ struct CadenceSectionEyebrowConvergenceTests {
             // `SettingsSevenPaneVocabularyTests.theSevenPanesReadTheSharedFieldVocabulary`, so a
             // pane that stops drawing labelled fields altogether still fails something.
             "Cadence/macOS/Views/SettingsTemplatesSection.swift": 0,
-            "Cadence/macOS/Views/TaskBundlePickerSupportViews.swift": 1,
+            // `TaskBundlePickerSupportViews.swift` held one until [[T-3170]]'s trio pass deleted it.
             "Cadence/Shared/CadenceSettingsSharedViews.swift": 1,
             "Cadence/Shared/Components/CadenceTodayOverdueSummaryCards.swift": 1,
             "Cadence/macOS/Views/CommitmentSharedViews.swift": 1,

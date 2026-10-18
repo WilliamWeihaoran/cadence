@@ -440,21 +440,10 @@ struct CadenceCreateTaskCommitSurfaceTests {
 
     // MARK: - T-470 / T-471: the iOS calendar quick-create sheet
 
-    /// The sentence a refused block creation shows. It names the object being made, and it is not
-    /// the task sentence, which is the whole reason it is a second constant rather than a reuse of
-    /// `TaskCreationService.saveFailureNotice`. The quick-create sheet's Block branch that first
-    /// read it is gone ([[T-3170]]); the drag-two-tasks-together gestures still do.
-    @Test func theBlockCreationFailureNoticeNamesTheBlockRatherThanATask() {
-        #expect(CadenceTaskMutationSupport.bundleSaveFailureNotice == "Couldn't save this block.")
-        #expect(CadenceTaskMutationSupport.bundleSaveFailureNotice != TaskCreationService.saveFailureNotice)
-        #expect(
-            CadenceTaskMutationSupport.bundleSaveFailureNotice
-                != CadenceTaskMutationSupport.deleteFailureNotice
-        )
-        // The create family's shape: one sentence, no "Nothing was …" promise.
-        #expect(!CadenceTaskMutationSupport.bundleSaveFailureNotice.contains("Nothing"))
-        #expect(CadenceTaskMutationSupport.bundleSaveFailureNotice.hasPrefix("Couldn't save this "))
-    }
+    // `theBlockCreationFailureNoticeNamesTheBlockRatherThanATask` was declared here. It pinned
+    // CadenceTaskMutationSupport.bundleSaveFailureNotice, which [[T-3170]]'s trio pass deleted
+    // with the last surface that could refuse a block: `TimelineBundleBlock`. The quick-create
+    // sheet's Block branch that first read it had gone earlier in the same ticket.
 
     /// T-470. `createTask()` guarded on `try? insertScheduledTask(...)` and returned on `nil`, so a
     /// refused save and an empty title produced the identical silent exit: the create button looked

@@ -685,46 +685,17 @@ extension CadenceTaskMutationSupport {
     /// `moveFailureAlertTitle`.
     static let recurrenceFailureAlertTitle = "Couldn't Change Repeat"
 
-    /// Shown when a block the user asked for could not be committed (T-471).
-    ///
-    /// "Block" rather than "task": a `TaskBundle` is a *block* everywhere the user meets one —
-    /// `iOSCalendarBundleDetailSheet`'s "Delete this block?" among them — so
-    /// `TaskCreationService.saveFailureNotice` would name an object the gesture was not making. It
-    /// is held here, beside the `insertBundle(from:adding:)` that throws, for the same reason the
-    /// other notices sit beside their mutations. Since [[T-3170]] the only surfaces that still
-    /// create a block are the drag-two-tasks-together gestures; the empty-slot Create Block is gone.
-    ///
-    /// No "Nothing was created." clause, even though `insertBundle` earns one — it deletes the
-    /// pending bundle before it rethrows. The *create* family does not carry that clause
-    /// (`TaskCreationService.saveFailureNotice`, `CadenceSavedLinkPersistence.saveFailureNotice`):
-    /// a refused creation has nothing the user could fear losing, which is exactly what the delete
-    /// family's second sentence exists to deny.
-    static let bundleSaveFailureNotice = "Couldn't save this block."
 
-    /// The alert title that carries `bundleSaveFailureNotice` on a surface with no inline place to
-    /// put it — the Mac's timeline, whose draft popover has already dismissed itself (T-636(e)).
-    ///
-    /// Beside its notice because the title and the body travel together, so there is no
-    /// arrangement in which one is updated alone. It says "Create" rather than "Save" because the
-    /// *edit* family had a title of its own — `bundleEditFailureAlertTitle`, deleted with the iOS
-    /// sheet by [[T-3170]] — and the two failures are different events.
-    static let bundleCreateFailureAlertTitle = "Couldn't Create Block"
 
-    /// Shown when a block the user asked to delete could not be committed (T-322).
-    ///
-    /// It carries the delete family's second sentence — `deleteFailureNotice`,
-    /// `CadenceListDeletionKind.deleteFailureNotice` and `CadenceNoteDeletionSummary` all promise
-    /// the same thing — because `deleteBundle` now rolls back, so the block really is back where
-    /// the user can see it. `bundleSaveFailureNotice` above deliberately has no such clause; a
-    /// refused *creation* has nothing to fear losing, and a refused deletion does.
-    static let bundleDeleteFailureNotice = "Couldn't delete this block. Nothing was removed."
 
-    // `bundleDeleteFailureAlertTitle` and `bundleEditFailureAlertTitle` were declared here, the
-    // two alert titles `iOSCalendarBundleDetailSheet` carried. [[T-3170]] deleted that sheet, and
-    // the Mac's block reads the *notices* above rather than any title, so both had zero callers
-    // left in the app. The notices stay: `TimelineBundleBlock` still reads
-    // `bundleDeleteFailureNotice`, and `bundleCreateFailureAlertTitle` stays with it as the
-    // create family's title until that surface goes too.
+    // THE WHOLE BLOCK FAILURE-WORDING FAMILY WAS DECLARED HERE, and it left in two pieces.
+    // [[T-3170]]'s shared-helper pass took the two iOS alert titles, `bundleEditFailureAlertTitle`
+    // and `bundleDeleteFailureAlertTitle`, when the sheet that raised them went. Its trio pass took
+    // the remaining three -- `bundleSaveFailureNotice`, `bundleCreateFailureAlertTitle` and
+    // `bundleDeleteFailureNotice` -- with `TimelineBundleBlock`, the last surface that could refuse
+    // a block operation and therefore the last thing that needed a sentence for it. Deliberately
+    // one family in one pass rather than split across two: a half-removed vocabulary is how a
+    // reader comes to believe a feature still exists.
 
     /// - Parameter commit: See `deleteTasks(withIDs:modelContext:commitsImmediately:commit:…)`.
     @discardableResult
@@ -1129,171 +1100,21 @@ extension CadenceTaskMutationSupport {
 
     /// Forms a new bundle out of a scheduled task plus a task dropped onto it.
     ///
-    /// **This is the one implementation of the drop-a-task-on-a-task gesture.** It was
-    /// SchedulingActions.createBundle(from:adding:) inside `#if os(macOS)`, in a file that imports
-    /// no AppKit, which is why the gesture existed only on the Mac timeline (T-190). That Mac
-    /// spelling forwarded here until [[T-3170]] removed the gesture from both timelines with it;
-    /// iOS's Calendar Board is the one caller left, kept while its file is Codex-leased.
-    ///
-    /// Returns `nil` when the drop cannot form a block: the same task twice, or a target with no day
-    /// or no time-of-day slot. A bundle *is* a timeline block — `dateKey` plus `startMin` — so a
-    /// target that is merely do-dated has nothing for the block to sit on, and inventing a start
-    /// minute for it would be this platform guessing where the other one refuses to. This is
-    /// "nothing to make" rather than a failure, so it does not throw — only a commit that was
-    /// actually attempted can be refused.
-    ///
-    /// **Throws and takes `commit:` now (T-760).** It used to insert the bundle and call `addTask`
-    /// twice, each ending its own `try? modelContext.save()` — so the block was committed by two
-    /// saves nobody could hear refuse, from a frame with no `try?` of its own. That shape is why
-    /// the day timeline's formBundle and the iOS Calendar Board's — both gone since [[T-3170]] —
-    /// reported nothing: the mutation *did* reach a commit, just not one that answered. `addTask` now writes its five
-    /// fields through the pending, non-committing `assignTask(_:to:)`, and this frame is the one
-    /// commit for the whole unit — the bundle insert and both memberships — through
-    /// `CadencePendingChangePersistence.commitInsert`. A refusal restores both tasks via
-    /// `BundleMembership`. macOS's own committing wrapper kept a twin of it until [[T-3170]]
-    /// removed that wrapper with the Mac timeline's gesture.
-    ///
-    /// - Parameter commit: See `CadencePendingChangePersistence.commitInsert(of:in:commit:)`.
-    @discardableResult
-    static func insertBundle(
-        from targetTask: AppTask,
-        adding draggedTask: AppTask,
-        modelContext: ModelContext,
-        commit: (ModelContext) throws -> Void = { try $0.save() }
-    ) throws -> TaskBundle? {
-        guard targetTask.id != draggedTask.id,
-              !targetTask.scheduledDate.isEmpty,
-              targetTask.scheduledStartMin >= 0 else { return nil }
 
-        let members = [BundleMembership(targetTask), BundleMembership(draggedTask)]
-        let bundle = TaskBundle(
-            title: TaskBundle.defaultDisplayTitle,
-            dateKey: targetTask.scheduledDate,
-            startMin: clampedBundleStart(targetTask.scheduledStartMin),
-            durationMinutes: bundleDuration(
-                startingAt: targetTask.scheduledStartMin,
-                tasks: [targetTask, draggedTask]
-            )
-        )
-        modelContext.insert(bundle)
-        assignTask(targetTask, to: bundle)
-        assignTask(draggedTask, to: bundle)
-        do {
-            try CadencePendingChangePersistence.commitInsert(of: bundle, in: modelContext, commit: commit)
-        } catch {
-            for member in members {
-                member.restore()
-            }
-            throw error
-        }
-        return bundle
-    }
+    // `insertBundle(from:adding:modelContext:commit:)` was declared here: the one implementation
+    // of the drop-a-task-on-a-task gesture, which formed a block out of two tasks. [[T-3170]]
+    // removed that gesture from both timelines and then every surface that could show the result,
+    // so it had no caller left. `BundleMembership` and `assignTask(_:to:)` went with it.
 
-    /// **Throws when the commit is refused (T-566).** It used to end `try? modelContext.save()`,
-    /// and `iOSCalendarBundleDetailSheet`'s "Save" dismissed straight afterwards, so a refused
-    /// save closed the sheet exactly as a successful one does — the block's own *delete* button
-    /// ten lines above already caught and reported (T-322), and so did the sibling create sheet
-    /// (T-471). This is the third way that sheet ends, and it was the one still swallowing.
-    ///
-    /// The undo is the caller-supplied kind `commitEdit(in:commit:undo:)` asks for, and it has to
-    /// reach further than the four fields on the block: moving a block moves its members' own
-    /// `scheduledDate`/`scheduledStartMin` too, so an undo that restored only the header would
-    /// leave the tasks on the day the store refused to put them on. `rollback()` is not the
-    /// answer here for the reasons `commitEdit` records — it would discard unrelated pending work
-    /// from the app's single context, and an edit it un-did would not be visible until something
-    /// re-fetched.
-    ///
-    /// - Parameter commit: See `CadencePendingChangePersistence.commitInsert(of:in:commit:)`.
-    static func updateBundle(
-        _ bundle: TaskBundle,
-        title: String,
-        dateKey: String,
-        startMin: Int,
-        durationMinutes: Int,
-        modelContext: ModelContext,
-        commit: (ModelContext) throws -> Void = { try $0.save() }
-    ) throws {
-        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
-        let clampedStart = min(max(0, startMin), (24 * 60) - 5)
-        let duration = min(max(5, durationMinutes), (24 * 60) - clampedStart)
 
-        let previousTitle = bundle.title
-        let previousDateKey = bundle.dateKey
-        let previousStartMin = bundle.startMin
-        let previousDuration = bundle.durationMinutes
-        let members = bundle.tasks ?? []
-        let previousSchedules = members.map { ($0.scheduledDate, $0.scheduledStartMin) }
+    // `updateBundle(...)` and `moveBundle(...)` were declared here. The first was the Block
+    // panel's Save, the second the Calendar page's re-date of a whole block; [[T-3170]] deleted
+    // both surfaces, and `moveBundle` was the only caller `updateBundle` had left.
 
-        bundle.title = trimmed
-        bundle.dateKey = dateKey
-        bundle.startMin = clampedStart
-        bundle.durationMinutes = duration
 
-        for task in members {
-            task.scheduledDate = dateKey
-            task.scheduledStartMin = -1
-        }
-
-        try CadencePendingChangePersistence.commitEdit(in: modelContext, commit: commit) {
-            bundle.title = previousTitle
-            bundle.dateKey = previousDateKey
-            bundle.startMin = previousStartMin
-            bundle.durationMinutes = previousDuration
-            for (task, schedule) in zip(members, previousSchedules) {
-                task.scheduledDate = schedule.0
-                task.scheduledStartMin = schedule.1
-            }
-        }
-    }
-
-    /// - Parameter commit: See `updateBundle(_:title:dateKey:startMin:durationMinutes:modelContext:commit:)`.
-    static func moveBundle(
-        _ bundle: TaskBundle,
-        to dateKey: String,
-        modelContext: ModelContext,
-        commit: (ModelContext) throws -> Void = { try $0.save() }
-    ) throws {
-        try updateBundle(
-            bundle,
-            title: bundle.title,
-            dateKey: dateKey,
-            startMin: bundle.startMin,
-            durationMinutes: bundle.durationMinutes,
-            modelContext: modelContext,
-            commit: commit
-        )
-    }
-
-    /// Moves a task into an existing bundle, and commits on its own behalf.
-    ///
-    /// **It has NO caller in the app** ([[T-3170]]). This said "`iOSCalendarBoardView.add(_:to:)`
-    /// calls this directly", and that stopped being true at the eighth pass, which took every
-    /// `TaskBundle` reference out of the iOS Calendar Board — the file now holds none at all.
-    /// The claim outlived its subject by four passes because nothing could see it: this repo's
-    /// stale-comment detector (`CadenceCommentSymbolClaimTests`) anchors a qualified claim on
-    /// `^[A-Z]`, so a type whose name begins lowercase — every `iOS*` view in this codebase — is
-    /// outside what it can check. Do not re-add a caller-naming sentence here without one.
-    ///
-    /// **Throws and takes `commit:` (T-760), and this is the site that stayed swallow-able**, for
-    /// a caller that no longer exists: an in-place move between two objects the store already
-    /// holds, no insert or delete anywhere in the call. The default `commit:` preserved that
-    /// caller's behaviour, while `insertBundle(from:adding:modelContext:commit:)` below moves each
-    /// task through the pending `assignTask(_:to:)` instead of calling this, because it needs both
-    /// memberships and the bundle's own insert to land under one commit rather than three.
-    /// `insertBundle` and `moveBundle` are callerless too; the three go together with the Mac's
-    /// Block surfaces rather than piecemeal, so that the whole wording family and its mutations
-    /// leave in one pass.
-    ///
-    /// - Parameter commit: See `CadencePendingChangePersistence.commitInsert(of:in:commit:)`.
-    static func addTask(
-        _ task: AppTask,
-        to bundle: TaskBundle,
-        modelContext: ModelContext,
-        commit: (ModelContext) throws -> Void = { try $0.save() }
-    ) throws {
-        assignTask(task, to: bundle)
-        try commit(modelContext)
-    }
+    // `addTask(_:to:modelContext:commit:)` was declared here -- "drag a task onto a block that
+    // already exists". Its last caller was the iOS Calendar Board, gone since [[T-3170]]'s eighth
+    // pass; the comment claiming otherwise survived four more passes and is recorded in [[T-3209]].
 
     static func removeTaskFromBundle(_ task: AppTask, modelContext: ModelContext) {
         let bundleDateKey = task.bundle?.dateKey ?? task.scheduledDate

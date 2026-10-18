@@ -107,7 +107,7 @@ struct TimelineMetricsTests {
         taskC.scheduledStartMin = 605
         taskC.estimatedMinutes = 10
 
-        let result = computeUnifiedLayouts(tasks: [taskA, taskB, taskC], bundles: [], events: [], cascadeGapMinutes: 24)
+        let result = computeUnifiedLayouts(tasks: [taskA, taskB, taskC], events: [], cascadeGapMinutes: 24)
 
         #expect(result.tasks.count == 3)
         let columns = Set(result.tasks.map(\.column))
@@ -119,27 +119,10 @@ struct TimelineMetricsTests {
         #expect(ids == Set([taskA.id, taskB.id, taskC.id]))
     }
 
-    @Test func overlappingBundleAndTaskShareColumnsWithoutCollision() {
-        let task = AppTask(title: "Overlapping task")
-        task.scheduledDate = "2026-06-02"
-        task.scheduledStartMin = 540
-        task.estimatedMinutes = 60
-
-        let bundle = TaskBundle(
-            title: "Overlapping bundle",
-            dateKey: "2026-06-02",
-            startMin: 550,
-            durationMinutes: 30
-        )
-
-        let result = computeUnifiedLayouts(tasks: [task], bundles: [bundle], events: [], cascadeGapMinutes: 24)
-
-        #expect(result.tasks.count == 1)
-        #expect(result.bundles.count == 1)
-        #expect(result.tasks[0].column != result.bundles[0].column)
-        #expect(result.tasks[0].totalColumns == 2)
-        #expect(result.bundles[0].totalColumns == 2)
-    }
+    // `overlappingBundleAndTaskShareColumnsWithoutCollision` was declared here. It pinned the
+    // solver's `bundles:` leg, which [[T-3170]]'s trio pass deleted with `TimelineBundleBlock`, the
+    // only view that drew a `TimelineBundleLayout`. Overlapping tasks still split columns, and the
+    // test above holds that.
 
     @Test func nonOverlappingTasksEachGetTheirOwnFullWidthColumn() {
         let earlyTask = AppTask(title: "Early")
@@ -152,7 +135,7 @@ struct TimelineMetricsTests {
         laterTask.scheduledStartMin = 600
         laterTask.estimatedMinutes = 30
 
-        let result = computeUnifiedLayouts(tasks: [earlyTask, laterTask], bundles: [], events: [], cascadeGapMinutes: 24)
+        let result = computeUnifiedLayouts(tasks: [earlyTask, laterTask], events: [], cascadeGapMinutes: 24)
         #expect(result.tasks.allSatisfy { $0.column == 0 && $0.totalColumns == 1 })
     }
 
@@ -291,7 +274,7 @@ struct TimelineMetricsTests {
         scheduled.scheduledStartMin = 600
         scheduled.estimatedMinutes = 30
 
-        let result = computeUnifiedLayouts(tasks: [unscheduled, scheduled], bundles: [], events: [], cascadeGapMinutes: 24)
+        let result = computeUnifiedLayouts(tasks: [unscheduled, scheduled], events: [], cascadeGapMinutes: 24)
 
         #expect(result.tasks.map { $0.task.id } == [scheduled.id])
         // ...and the real task keeps the full width it would have had to share.
@@ -364,7 +347,7 @@ struct TimelineMetricsTests {
         let bundle = TaskBundle(title: "Morning sweep", dateKey: "2026-06-01", startMin: 540, durationMinutes: 30)
         context.insert(task)
         context.insert(bundle)
-        SchedulingActions.addTask(task, to: bundle)
+        CadenceTestBundleFixture.place(task, in: bundle)
         #expect(task.scheduledDate == "2026-06-01")
 
         SchedulingActions.dropTask(task, to: "2026-06-05", startMin: 900)

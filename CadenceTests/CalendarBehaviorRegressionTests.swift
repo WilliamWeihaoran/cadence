@@ -679,7 +679,7 @@ struct CalendarBehaviorRegressionTests {
             startMin: 9 * 60,
             durationMinutes: 30
         )
-        SchedulingActions.addTask(bundled, to: bundle)
+        CadenceTestBundleFixture.place(bundled, in: bundle)
 
         let result = CalendarBoardPlannerSupport.tasksByBoardDate(
             from: [cancelled, bundled, completed, active]

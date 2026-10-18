@@ -29,9 +29,9 @@ import Testing
 /// …adding:in:)` behind them — is gone with the Block feature, so its three behavioural pins
 /// retired with it and its two source pins now hold the absence. The drag-a-task-onto-a-task block
 /// (T-655 below) is a separate gesture. [[T-3170]]'s next pass took it off the Mac timeline, with
-/// SchedulingActions.insertBundle(from:adding:in:); its behavioural pins now run the shared
-/// `CadenceTaskMutationSupport.insertBundle(from:adding:)` the iOS Calendar Board still calls, and
-/// the canvas's source pin holds the absence.
+/// SchedulingActions.insertBundle(from:adding:in:), and its trio pass deleted the shared
+/// CadenceTaskMutationSupport.insertBundle(from:adding:) once no surface called it, so T-655's
+/// block-forming behavioural pins retired too; the canvas's source pin holds the absence.
 @MainActor
 struct CadenceFocusSessionAndBlockCommitTests {
 
@@ -175,14 +175,11 @@ struct CadenceFocusSessionAndBlockCommitTests {
     ///
     /// 1. `SchedulePanel` reads no block table and runs no block mutation — no `@Query` over
     ///    `TaskBundle`, no day filter over one, and no `SchedulingActions` block call.
-    /// 2. `SchedulePanelTimelineViewport` hands the canvas **empty** block arrays and refusing
-    ///    closures. That is what actually takes the Block off the timeline: `TimelineDayCanvas`
-    ///    builds its block layouts from the `bundles:` array alone, so an empty one draws no
-    ///    `TimelineBundleBlock` and nothing can be opened, resized, moved or dropped on.
-    ///
-    /// The canvas is Codex-leased and still declares the four parameters for the Calendar page,
-    /// which is why this is a starve rather than a deletion. Asserting the literal `[]` and the
-    /// `{ _, _ in }` is therefore the assertion: anything else passed here is the arm coming back.
+    /// 2. `SchedulePanelTimelineViewport` hands the canvas no block argument at all. It used to
+    ///    pass **empty** block arrays and refusing closures, a starve, because the canvas still
+    ///    declared the four parameters for the Calendar page. [[T-3170]]'s trio pass deleted
+    ///    `TimelineBundleBlock` and the four parameters with it, so the starve became a deletion
+    ///    and any of the four labels reappearing here is the arm coming back.
     @Test func theTodayTimelinePanelNeitherDrawsABlockNorEditsOne() throws {
         let panel = try CadenceCommitSurfaceScan.scanned(Self.panelPath)
 
@@ -197,35 +194,20 @@ struct CadenceFocusSessionAndBlockCommitTests {
         let viewport = try CadenceCommitSurfaceScan.scanned(Self.viewportPath)
 
         #expect(CadenceSourceScan.matchCount(#"\bTaskBundle\b"#, in: viewport) == 0)
-        #expect(CadenceSourceScan.matchCount(#"bundles: \[\]"#, in: viewport) == 1)
-        #expect(CadenceSourceScan.matchCount(#"allBundles: \[\]"#, in: viewport) == 1)
-        #expect(CadenceSourceScan.matchCount(#"onDropBundleAtMinute: \{ _, _ in \}"#, in: viewport) == 1)
-        #expect(CadenceSourceScan.matchCount(#"onDropTaskOnBundle: \{ _, _ in \}"#, in: viewport) == 1)
+        #expect(CadenceSourceScan.matchCount(#"\bbundles:"#, in: viewport) == 0)
+        #expect(CadenceSourceScan.matchCount(#"\ballBundles:"#, in: viewport) == 0)
+        #expect(CadenceSourceScan.matchCount(#"\bonDropBundleAtMinute:"#, in: viewport) == 0)
+        #expect(CadenceSourceScan.matchCount(#"\bonDropTaskOnBundle:"#, in: viewport) == 0)
         // Non-vacuity: the right declaration, still hosting the canvas it starves.
         #expect(viewport.contains("struct SchedulePanelTimelineViewport: View"))
         #expect(viewport.contains("TimelineDayCanvas("))
     }
 
-    /// The create family's sentence has no "nothing was changed" clause and the title is its own —
-    /// a refused *creation* has nothing the user could fear losing, which is exactly what the
-    /// delete family's second sentence exists to deny.
-    ///
-    /// **This compared three titles until [[T-3170]].** `bundleEditFailureAlertTitle` and
-    /// `bundleDeleteFailureAlertTitle` were `iOSCalendarBundleDetailSheet`'s two alerts; that
-    /// sheet is deleted and the Mac's block reads the *notices*, so both titles had zero callers
-    /// and went with the shared-helper pass. The claim that survives is the one that was always
-    /// load-bearing: the create title is not the delete title, and the create *sentence* makes no
-    /// promise the create path cannot keep — so it is asserted against the delete pair that is
-    /// still in the tree.
-    @Test func theblockCreateFailureTitleIsItsOwnAndItsSentenceMakesNoPromise() {
-        #expect(CadenceTaskMutationSupport.bundleCreateFailureAlertTitle == "Couldn't Create Block")
-        #expect(
-            CadenceTaskMutationSupport.bundleCreateFailureAlertTitle
-                != CadenceTaskMutationSupport.deleteFailureAlertTitle
-        )
-        #expect(!CadenceTaskMutationSupport.bundleSaveFailureNotice.contains("Nothing"))
-        #expect(CadenceTaskMutationSupport.bundleDeleteFailureNotice.contains("Nothing was removed."))
-    }
+    // `theblockCreateFailureTitleIsItsOwnAndItsSentenceMakesNoPromise` was declared here. It held
+    // `bundleCreateFailureAlertTitle`, `bundleSaveFailureNotice` and `bundleDeleteFailureNotice`,
+    // the last of the Block failure wording, which [[T-3170]]'s trio pass deleted with
+    // `TimelineBundleBlock`. The task family's equivalent is
+    // `thetaskCreateFailureTitleIsItsOwnAndItsSentenceMakesNoPromise` below.
 
     // MARK: - T-655, behavioural
 
@@ -317,182 +299,23 @@ struct CadenceFocusSessionAndBlockCommitTests {
         #expect(try reader.fetch(FetchDescriptor<AppTask>()).isEmpty)
     }
 
-    /// A refused drop-a-task-on-a-task leaves no block **and both tasks where they were**. The
-    /// block being un-inserted does not put either task back: both were detached from whatever
-    /// block they were in, moved onto the block's day and stripped of their slot and calendar link.
-    @Test func arefusedDropOfATaskOnATaskLeavesNoBlockAndBothTasksWhereTheyWere() throws {
-        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
-        let context = ModelContext(container)
-        let target = AppTask(title: "Target")
-        target.scheduledDate = "2026-05-01"
-        target.scheduledStartMin = 600
-        target.calendarEventID = "evt-target"
-        let dragged = AppTask(title: "Dragged")
-        dragged.scheduledDate = "2026-04-28"
-        dragged.scheduledStartMin = 780
-        dragged.calendarEventID = "evt-dragged"
-        context.insert(target)
-        context.insert(dragged)
-        try context.save()
-
-        #expect(throws: CommitRefused.self) {
-            try CadenceTaskMutationSupport.insertBundle(
-                from: target,
-                adding: dragged,
-                modelContext: context
-            ) { _ in throw CommitRefused() }
-        }
-
-        #expect(target.bundle == nil)
-        #expect(dragged.bundle == nil)
-        #expect(target.scheduledStartMin == 600)
-        #expect(target.calendarEventID == "evt-target")
-        #expect(dragged.scheduledDate == "2026-04-28")
-        #expect(dragged.scheduledStartMin == 780)
-        #expect(dragged.calendarEventID == "evt-dragged")
-
-        // **Reads the store now, not just the context (T-760).** Before this ticket the pair was
-        // already committed by `addTask`'s own swallowed saves before this frame's injected
-        // `commit:` was ever consulted, so an injected refusal here could not model the store's
-        // real answer — asserting against `context` was the honest ceiling. `insertBundle` owns the
-        // whole unit under one commit now, so the injected refusal *is* the store's answer: saving
-        // the same context again proves nothing was left pending for an unrelated save to take, and
-        // a fresh context over the same container proves the block never landed.
-        try context.save()
-        let reader = ModelContext(container)
-        #expect(try reader.fetch(FetchDescriptor<TaskBundle>()).isEmpty, "the block reached the store")
-        let storedTarget = try #require(
-            try reader.fetch(FetchDescriptor<AppTask>(predicate: #Predicate { $0.title == "Target" })).first
-        )
-        #expect(storedTarget.scheduledStartMin == 600, "the store still disagrees with a task the refusal moved")
-    }
-
-    /// **The swallow is gone (T-760).** `addTask`'s five-field write moved into the pending,
-    /// non-committing `assignTask(_:to:)`, and `insertBundle` writes both memberships through that
-    /// rather than through `addTask` — so the pair is no longer committed by two saves nobody can
-    /// hear refuse before this frame's own `commit:` is ever asked. `addTask` kept a default
-    /// commit for one direct caller, the iOS Calendar Board's drag onto an existing block; that
-    /// caller went with the eighth pass of [[T-3170]] and `addTask` has none left. The default
-    /// stays only because the mutation does, pending the pass that takes the Mac's Block
-    /// surfaces.
-    @Test func theSharedTwoTaskBlockMutationNoLongerCommitsThroughASwallowedSaveOfItsOwn() throws {
-        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
-        let context = ModelContext(container)
-        let target = AppTask(title: "Target")
-        target.scheduledDate = "2026-05-01"
-        target.scheduledStartMin = 600
-        let dragged = AppTask(title: "Dragged")
-        context.insert(target)
-        context.insert(dragged)
-        try context.save()
-
-        _ = try CadenceTaskMutationSupport.insertBundle(from: target, adding: dragged, modelContext: context)
-
-        let reader = ModelContext(container)
-        #expect(try reader.fetch(FetchDescriptor<TaskBundle>()).count == 1, "the accepted drop still reaches the store")
-
-        let shared = try CadenceCommitSurfaceScan.scanned("Cadence/Shared/CadenceTaskMutationSupport.swift")
-        let addTask = try CadenceCommitSurfaceScan.declarationBody(named: "addTask", in: shared)
-        #expect(
-            addTask.contains("try? modelContext.save()") == false,
-            "the swallow this ticket removed must not come back"
-        )
-    }
-
-    /// **The shared mutation's own refusal proof (T-760).** Independent of `SchedulingActions`:
-    /// calling `CadenceTaskMutationSupport.insertBundle` directly with a refusing `commit:` has to
-    /// leave the store exactly where it was, since this is now the one frame that commits the
-    /// whole two-task drop.
-    @Test func arefusedSharedTwoTaskBlockMutationLeavesTheStoreUntouched() throws {
-        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
-        let context = ModelContext(container)
-        let target = AppTask(title: "Target")
-        target.scheduledDate = "2026-05-01"
-        target.scheduledStartMin = 600
-        target.calendarEventID = "evt-target"
-        let dragged = AppTask(title: "Dragged")
-        dragged.calendarEventID = "evt-dragged"
-        context.insert(target)
-        context.insert(dragged)
-        try context.save()
-
-        #expect(throws: CommitRefused.self) {
-            try CadenceTaskMutationSupport.insertBundle(
-                from: target,
-                adding: dragged,
-                modelContext: context,
-                commit: { _ in throw CommitRefused() }
-            )
-        }
-
-        #expect(target.bundle == nil)
-        #expect(dragged.bundle == nil)
-        #expect(target.calendarEventID == "evt-target")
-        #expect(dragged.calendarEventID == "evt-dragged")
-
-        try context.save()
-        let reader = ModelContext(container)
-        #expect(try reader.fetch(FetchDescriptor<TaskBundle>()).isEmpty)
-    }
-
-    /// The accepted drop: the block and both memberships are in the store together.
-    @Test func anAcceptedDropOfATaskOnATaskCommitsTheBlockAndBothMembers() throws {
-        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
-        let context = ModelContext(container)
-        let target = AppTask(title: "Target")
-        target.scheduledDate = "2026-05-01"
-        target.scheduledStartMin = 600
-        let dragged = AppTask(title: "Dragged")
-        context.insert(target)
-        context.insert(dragged)
-        try context.save()
-
-        let bundle = try #require(
-            try CadenceTaskMutationSupport.insertBundle(from: target, adding: dragged, modelContext: context)
-        )
-
-        #expect(bundle.dateKey == "2026-05-01")
-        #expect(!context.hasChanges, "the block or its members were left pending")
-        let reader = ModelContext(container)
-        let stored = try #require(try reader.fetch(FetchDescriptor<TaskBundle>()).first)
-        #expect((stored.tasks ?? []).count == 2)
-    }
-
-    /// A pair the shared mutation refuses — the same task dropped on itself — is "nothing to make",
-    /// so there is no block, nothing to commit and nothing to report. It must not throw: the drop
-    /// would raise an alert over a gesture that simply did not apply.
-    @Test func adropOfATaskOnItselfMakesNoBlockAndRaisesNoRefusal() throws {
-        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
-        let context = ModelContext(container)
-        let task = AppTask(title: "Target")
-        task.scheduledDate = "2026-05-01"
-        task.scheduledStartMin = 600
-        context.insert(task)
-        try context.save()
-
-        let bundle = try CadenceTaskMutationSupport.insertBundle(
-            from: task,
-            adding: task,
-            modelContext: context
-        ) { _ in throw CommitRefused() }
-
-        #expect(bundle == nil)
-        let reader = ModelContext(container)
-        #expect(try reader.fetch(FetchDescriptor<TaskBundle>()).isEmpty)
-    }
+    // Five behavioural pins of CadenceTaskMutationSupport.insertBundle(from:adding:) were
+    // declared here -- `arefusedDropOfATaskOnATaskLeavesNoBlockAndBothTasksWhereTheyWere`,
+    // `theSharedTwoTaskBlockMutationNoLongerCommitsThroughASwallowedSaveOfItsOwn`,
+    // `arefusedSharedTwoTaskBlockMutationLeavesTheStoreUntouched`,
+    // `anAcceptedDropOfATaskOnATaskCommitsTheBlockAndBothMembers` and
+    // `adropOfATaskOnItselfMakesNoBlockAndRaisesNoRefusal`. [[T-3170]]'s trio pass deleted
+    // `insertBundle` and `addTask` once no surface could form a block or add to one, so there is
+    // no drop left to refuse or accept.
 
     /// The task family's title is its own, and its sentence makes no promise — the same shape the
-    /// block family's pair has, and the reason both live beside their notice rather than at a call
-    /// site.
+    /// block family's pair had until [[T-3170]] deleted it, and the reason the title lives beside
+    /// its notice rather than at a call site.
     @Test func thetaskCreateFailureTitleIsItsOwnAndItsSentenceMakesNoPromise() {
         #expect(TaskCreationService.createFailureAlertTitle == "Couldn't Create Task")
         #expect(
             TaskCreationService.createFailureAlertTitle
                 != CadenceTaskMutationSupport.deleteFailureAlertTitle
-        )
-        #expect(
-            TaskCreationService.createFailureAlertTitle
-                != CadenceTaskMutationSupport.bundleCreateFailureAlertTitle
         )
         #expect(!TaskCreationService.saveFailureNotice.contains("Nothing"))
     }

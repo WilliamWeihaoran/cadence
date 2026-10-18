@@ -76,10 +76,10 @@ struct CalendarBoardUnscheduleCommitTests {
         for task in [dragged, firstSibling, secondSibling, bystander] {
             modelContext.insert(task)
         }
-        SchedulingActions.addTask(dragged, to: block)
-        SchedulingActions.addTask(firstSibling, to: block)
-        SchedulingActions.addTask(secondSibling, to: block)
-        SchedulingActions.addTask(bystander, to: otherBlock)
+        CadenceTestBundleFixture.place(dragged, in: block)
+        CadenceTestBundleFixture.place(firstSibling, in: block)
+        CadenceTestBundleFixture.place(secondSibling, in: block)
+        CadenceTestBundleFixture.place(bystander, in: otherBlock)
         dragged.scheduledStartMin = 600
         try modelContext.save()
 
