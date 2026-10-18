@@ -14,11 +14,10 @@ import Testing
     @Test func anOverfullMonthDayDrawsItsEventsAndOverflowsItsTasks() {
         // Four slots, three events and six tasks. Events-first fills three slots with events and
         // the last one with a task; tasks-first would draw four tasks and hide every event.
-        let split = CadenceCalendarMonthCellPriority.split(bundles: 0, events: 3, tasks: 6, capacity: 4)
+        let split = CadenceCalendarMonthCellPriority.split(events: 3, tasks: 6, capacity: 4)
 
         #expect(split.events == 3)
         #expect(split.tasks == 1)
-        #expect(split.bundles == 0)
         #expect(split.visible == 4)
         #expect(split.hidden == 5)
 
@@ -29,7 +28,7 @@ import Testing
 
     /// The case the ranking is actually load-bearing in: events alone exceed the cell.
     @Test func whenEventsAloneOverflowTheCellNoTaskTakesASlotFromThem() {
-        let split = CadenceCalendarMonthCellPriority.split(bundles: 0, events: 9, tasks: 4, capacity: 3)
+        let split = CadenceCalendarMonthCellPriority.split(events: 9, tasks: 4, capacity: 3)
 
         #expect(split.events == 3)
         #expect(split.tasks == 0)
@@ -38,38 +37,31 @@ import Testing
         #expect(split.hidden == 10)
     }
 
-    /// Bundles keep the rank both platforms already gave them, and the owner's argument did not
-    /// touch: they are the shape of the day, not one of its items.
-    @Test func bundlesOutrankBothAndEventsStillOutrankTasksBelowThem() {
-        let split = CadenceCalendarMonthCellPriority.split(bundles: 2, events: 4, tasks: 4, capacity: 5)
-
-        #expect(split.bundles == 2)
-        #expect(split.events == 3)
-        #expect(split.tasks == 0)
-        #expect(split.hidden == 5)
-    }
+    // `bundlesOutrankBothAndEventsStillOutrankTasksBelowThem` was declared here. Blocks ranked
+    // first, ahead of events and tasks; [[T-3170]]'s trio pass deleted the `bundles:` leg with
+    // macOS's `MonthBundleChip`, the last thing that drew one. Events-over-tasks is unchanged and
+    // is pinned by the two tests above.
 
     /// A day that fits draws everything, in every mix, and claims nothing is hidden.
     @Test func aDayThatFitsHidesNothingAndKeepsEveryKind() {
-        let split = CadenceCalendarMonthCellPriority.split(bundles: 1, events: 2, tasks: 2, capacity: 6)
+        let split = CadenceCalendarMonthCellPriority.split(events: 2, tasks: 2, capacity: 6)
 
-        #expect(split.bundles == 1)
         #expect(split.events == 2)
         #expect(split.tasks == 2)
-        #expect(split.visible == 5)
+        #expect(split.visible == 4)
         #expect(split.hidden == 0)
     }
 
     /// A row too short for even one chip reports every item hidden rather than going negative —
     /// macOS's `chipCapacity` really does return 0 on a 20pt row.
     @Test func aZeroCapacityMonthCellDrawsNothingAndHidesEverything() {
-        let split = CadenceCalendarMonthCellPriority.split(bundles: 1, events: 2, tasks: 3, capacity: 0)
+        let split = CadenceCalendarMonthCellPriority.split(events: 2, tasks: 3, capacity: 0)
 
         #expect(split.visible == 0)
-        #expect(split.hidden == 6)
+        #expect(split.hidden == 5)
 
         // A negative capacity is clamped, not trusted.
-        let negative = CadenceCalendarMonthCellPriority.split(bundles: 0, events: 1, tasks: 1, capacity: -4)
+        let negative = CadenceCalendarMonthCellPriority.split(events: 1, tasks: 1, capacity: -4)
         #expect(negative.visible == 0)
         #expect(negative.hidden == 2)
     }
@@ -77,22 +69,18 @@ import Testing
     /// `hidden` is always the complement of what was drawn, so the "+N more" line and the chips
     /// above it can never describe two different days.
     @Test func theHiddenCountAlwaysCompletesTheDrawnChips() {
-        for bundles in 0...3 {
-            for events in 0...4 {
-                for tasks in 0...4 {
-                    for capacity in 0...6 {
-                        let split = CadenceCalendarMonthCellPriority.split(
-                            bundles: bundles,
-                            events: events,
-                            tasks: tasks,
-                            capacity: capacity
-                        )
-                        #expect(split.visible + split.hidden == bundles + events + tasks)
-                        #expect(split.visible <= capacity)
-                        #expect(split.bundles <= bundles)
-                        #expect(split.events <= events)
-                        #expect(split.tasks <= tasks)
-                    }
+        for events in 0...4 {
+            for tasks in 0...4 {
+                for capacity in 0...6 {
+                    let split = CadenceCalendarMonthCellPriority.split(
+                        events: events,
+                        tasks: tasks,
+                        capacity: capacity
+                    )
+                    #expect(split.visible + split.hidden == events + tasks)
+                    #expect(split.visible <= capacity)
+                    #expect(split.events <= events)
+                    #expect(split.tasks <= tasks)
                 }
             }
         }
@@ -104,18 +92,17 @@ import Testing
     /// only be read as text — and the macOS half is read the same way so that one of them going
     /// its own way again is caught by the same assertion rather than by two different ones.
     @Test func bothMonthDayCellsPartitionThroughTheSharedPriorityHelper() throws {
-        // **The third element is the cell's own bundle count, and iOS's is now the literal `0`**
-        // ([[T-3170]]). The Block feature is gone from every iOS surface, so that cell ranks two
-        // kinds of item; the shared helper keeps its `bundles:` leg because macOS's `MonthDayCell`
-        // still draws Block chips. What is pinned is that each cell hands the helper *its own*
-        // answer rather than re-deriving a partition — a literal `0` is an answer, a second
-        // `prefix` cap is not.
+        // **The `bundles:` leg is gone from both cells** ([[T-3170]]'s trio pass). iOS had been
+        // passing a literal `0` since the Block feature left that platform, and macOS's
+        // `MonthBundleChip` was the last thing that drew one; the helper now ranks two kinds. What
+        // is pinned is still that each cell hands the helper *its own* counts rather than
+        // re-deriving a partition -- and, now, that neither grows a third leg back.
         let cells = [
-            ("Cadence/macOS/Views/CalendarPageMonthSupportViews.swift", "struct MonthDayCell", "bundles: bundles.count"),
-            ("Cadence/iOS/iOSCalendarMonthViews.swift", "private struct iOSCalendarMonthDayCell", "bundles: 0")
+            ("Cadence/macOS/Views/CalendarPageMonthSupportViews.swift", "struct MonthDayCell"),
+            ("Cadence/iOS/iOSCalendarMonthViews.swift", "private struct iOSCalendarMonthDayCell")
         ]
 
-        for (path, declaration, bundleArgument) in cells {
+        for (path, declaration) in cells {
             let raw = try CadenceSourceScan.sourceFile(path)
             let code = CadenceSourceScan.codeOnly(raw)
             // Non-vacuity, both halves: the file was really read, and the stripper really ran
@@ -128,7 +115,10 @@ import Testing
                 "\(path): could not read the body of \(declaration)"
             )
             #expect(body.contains("CadenceCalendarMonthCellPriority.split("), "\(path) does not route through the shared split")
-            #expect(body.contains(bundleArgument), "\(path) does not hand the helper its own bundle count")
+            #expect(
+                CadenceSourceScan.matchCount(#"CadenceCalendarMonthCellPriority\.split\([^)]*bundles:"#, in: body) == 0,
+                "\(path) hands the helper a Block count again"
+            )
             #expect(body.contains("events: events.count"), "\(path) does not hand the helper its own event count")
             #expect(body.contains("tasks: tasks.count"), "\(path) does not hand the helper its own task count")
 

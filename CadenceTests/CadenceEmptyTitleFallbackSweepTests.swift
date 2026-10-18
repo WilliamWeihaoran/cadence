@@ -195,10 +195,13 @@ struct CadenceEmptyTitleFallbackSweepTests {
         #expect(try read("Cadence/Models/ModelEnums.swift").contains("\"Untitled Task\""),
                 "the sweep's reader blanks string literals, so its needle can never match")
 
+        // The witness was `TaskBundlePickerSupportViews.swift` until [[T-3170]]'s trio pass deleted
+        // it; `GoalsSupportViews.swift` is its sibling in T-783's ledger below -- the other file
+        // that re-typed `containerLabel(for:)`'s untrimmed ternary -- and the walk must reach it.
         let hits = try instrument.sweep(
             paths,
             atLeast: 300,
-            including: "Cadence/macOS/Views/TaskBundlePickerSupportViews.swift",
+            including: "Cadence/macOS/Views/GoalsSupportViews.swift",
             read: read
         )
 

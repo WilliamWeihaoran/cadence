@@ -316,12 +316,12 @@ private struct iOSCalendarMonthDayCell: View {
     /// events-before-tasks intent without ever stating it, and that macOS had drifted the other way
     /// from.
     ///
-    /// **`bundles: 0` is this cell's answer, not a missing count** ([[T-3170]]). The Block feature
-    /// is gone from every iOS surface, so this cell has two kinds of item to rank; the shared
-    /// function keeps the leg because macOS's `MonthDayCell` still draws Block chips.
+    /// This cell ranks two kinds of item. It passed `bundles: 0` until [[T-3170]]'s trio pass took
+    /// macOS's `MonthBundleChip`, which was the last caller of that leg on either platform — so
+    /// the parameter is gone from the shared function rather than left taking a literal zero from
+    /// both cells.
     private var split: CadenceCalendarMonthCellPriority.Split {
         CadenceCalendarMonthCellPriority.split(
-            bundles: 0,
             events: events.count,
             tasks: tasks.count,
             capacity: Self.chipCapacity

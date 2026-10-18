@@ -189,26 +189,10 @@ struct MonthTaskChip: View {
     }
 }
 
-struct MonthBundleChip: View {
-    let bundle: TaskBundle
-
-    var body: some View {
-        HStack(spacing: 3) {
-            Image(systemName: "tray.full")
-                .font(.system(size: 8, weight: .semibold))
-                .foregroundStyle(Theme.amber)
-            Text(bundle.displayTitle)
-                .font(.system(size: 10, weight: .medium))
-                .foregroundStyle(Theme.text)
-                .lineLimit(1)
-        }
-        .monthChipPlate(
-            fill: Theme.surfaceHover,
-            wash: Theme.amber.opacity(0.14),
-            border: Theme.borderSubtle
-        )
-    }
-}
+// `MonthBundleChip` was declared here: a `tray.full` glyph in `Theme.amber` over the neutral
+// plate, the last thing on macOS that drew a Block. [[T-3170]] removed it, and with it the only
+// caller of `CadenceCalendarMonthCellPriority.split`'s `bundles:` leg on either platform — so
+// that parameter is gone from the shared helper too, rather than left taking a literal `0`.
 
 /// An event inside a month cell, wearing the **rail** treatment's colours since T-3160: the dark
 /// tinted plate and the title in the calendar's own hue.
@@ -336,6 +320,11 @@ struct MonthDayCell: View {
     let date: Date
     var todayKey: String = DateFormatters.todayKey()
     let tasks: [AppTask]
+    /// **Unread since [[T-3170]], and kept only because this cell's one caller is leased.**
+    /// `CalendarPageComponents.swift:243` constructs it and is Codex-leased and not granted, so
+    /// the parameter cannot go without breaking a file this pass may not touch. Nothing in this
+    /// view reads it: no chip is drawn from it and the ranking helper no longer takes a Block
+    /// count. The next agent granted that file deletes this line and the argument together.
     let bundles: [TaskBundle]
     let allTasks: [AppTask]
     /// The month the **grid** is reading as, from the scroll position. What decides whether this
@@ -391,7 +380,7 @@ struct MonthDayCell: View {
             calendar: cal
         )
         let layout = CalendarMonthCellLayout.chipLayout(
-            totalItems: bundles.count + tasks.count + events.count,
+            totalItems: tasks.count + events.count,
             rowHeight: rowHeight
         )
         // `chipLayout` says how many slots there are; `CadenceCalendarMonthCellPriority` says who
@@ -399,12 +388,10 @@ struct MonthDayCell: View {
         // its events and kept its tasks — see that type for why the owner reversed it, and why
         // both platforms now ask the same function.
         let split = CadenceCalendarMonthCellPriority.split(
-            bundles: bundles.count,
             events: events.count,
             tasks: tasks.count,
             capacity: layout.visible
         )
-        let bundleChips = Array(bundles.prefix(split.bundles))
         let eventChips = Array(events.prefix(split.events))
         let taskChips = Array(tasks.prefix(split.tasks))
 
@@ -427,9 +414,6 @@ struct MonthDayCell: View {
             .frame(height: CalendarMonthCellLayout.headerHeight, alignment: .top)
 
             VStack(alignment: .leading, spacing: CalendarMonthCellLayout.chipSpacing) {
-                ForEach(bundleChips) { bundle in
-                    MonthBundleChip(bundle: bundle)
-                }
                 // Drawn in the same order they were ranked, and in the same order the iOS cell
                 // draws them: what survives the cut reads top-down as what matters most.
                 ForEach(eventChips) { event in
@@ -666,6 +650,10 @@ struct CalDayColumn: View {
     let date: Date
     let todayKey: String
     let tasks: [AppTask]
+    /// **Unread since [[T-3170]]**, for the same reason `MonthDayCell.bundles` is: this column's
+    /// one caller, `CalendarTimelineViewportSupportViews.swift:59`, is Codex-leased and not
+    /// granted. `TimelineDayCanvas` no longer takes a Block list, so neither of these reaches
+    /// anything. They go with that file's grant.
     let bundles: [TaskBundle]
     let allTasks: [AppTask]
     let allBundles: [TaskBundle]
@@ -695,9 +683,7 @@ struct CalDayColumn: View {
             dateKey: dateKey,
             todayKey: todayKey,
             tasks: tasks,
-            bundles: bundles,
             allTasks: allTasks,
-            allBundles: allBundles,
             areas: areas,
             projects: projects,
             metrics: TimelineMetrics(startHour: calStartHour, endHour: calEndHour, hourHeight: hourHeight),
@@ -726,12 +712,6 @@ struct CalDayColumn: View {
             },
             onDropTaskAtMinute: { task, startMin in
                 SchedulingActions.dropTask(task, to: dateKey, startMin: startMin)
-            },
-            onDropBundleAtMinute: { bundle, startMin in
-                SchedulingActions.dropBundle(bundle, to: dateKey, startMin: startMin)
-            },
-            onDropTaskOnBundle: { task, bundle in
-                SchedulingActions.addTask(task, to: bundle)
             },
             externalEvents: externalEventItems,
             onCreateEvent: { title, startMin, endMin, calendarID, notes in

@@ -122,9 +122,7 @@ struct SchedulePanelTimelineViewport: View {
                 date: Date(),
                 dateKey: todayKey,
                 tasks: scheduledTasks,
-                bundles: [],
                 allTasks: allTasks,
-                allBundles: [],
                 areas: areas,
                 projects: projects,
                 metrics: metrics,
@@ -135,8 +133,6 @@ struct SchedulePanelTimelineViewport: View {
                 showWorkHoursHighlight: true,
                 onCreateTask: onCreateTask,
                 onDropTaskAtMinute: onDropTaskAtMinute,
-                onDropBundleAtMinute: { _, _ in },
-                onDropTaskOnBundle: { _, _ in },
                 externalEvents: externalEventItems,
                 onCreateEvent: onCreateEvent
             )

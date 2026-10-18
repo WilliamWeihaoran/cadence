@@ -110,7 +110,7 @@ struct TimelineEffectiveDurationTests {
         neighbour.scheduledStartMin = 570
         neighbour.estimatedMinutes = 30
 
-        let layouts = computeUnifiedLayouts(tasks: [noEstimate, neighbour], bundles: [], events: [], cascadeGapMinutes: 24)
+        let layouts = computeUnifiedLayouts(tasks: [noEstimate, neighbour], events: [], cascadeGapMinutes: 24)
         #expect(layouts.tasks.allSatisfy { $0.column == 0 && $0.totalColumns == 1 })
 
         let first = frame(for: noEstimate)

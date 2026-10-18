@@ -85,12 +85,32 @@ struct CalendarBoardDayDropCommitTests {
         for task in [dragged, firstSibling, secondSibling, bystander] {
             modelContext.insert(task)
         }
-        SchedulingActions.addTask(dragged, to: block)
-        SchedulingActions.addTask(firstSibling, to: block)
-        SchedulingActions.addTask(secondSibling, to: block)
-        SchedulingActions.addTask(bystander, to: otherBlock)
+        // **The fixture builds its own membership now** ([[T-3170]], trio pass).
+        // The Mac's addTask helper on SchedulingActions wrote these same fields and is deleted:
+        // the canvas arm that could express "drop a task onto a block" went with
+        // `TimelineBundleBlock`, leaving it callerless. (Named in prose rather than as a
+        // backticked Type.member on purpose -- it resolves to nothing now, and a memorial that
+        // trips the stale-claim sweep costs a ledger line to say what a sentence says for free.) The five writes are spelled here rather than through a surviving
+        // helper because there is no longer a production path that forms a block, and a test
+        // fixture reaching for one would be asserting against machinery the app does not have.
+        // `TaskBundle` itself is still a `@Model`, which is what keeps these rows constructible.
+        for (order, member) in [dragged, firstSibling, secondSibling].enumerated() {
+            member.bundle = block
+            member.bundleOrder = order
+            member.scheduledDate = block.dateKey
+            member.scheduledStartMin = -1
+            member.calendarEventID = ""
+        }
+        block.tasks = [dragged, firstSibling, secondSibling]
+        bystander.bundle = otherBlock
+        bystander.bundleOrder = 0
+        bystander.scheduledDate = otherBlock.dateKey
+        bystander.scheduledStartMin = -1
+        bystander.calendarEventID = ""
+        otherBlock.tasks = [bystander]
 
-        // `addTask` clears both of these, so they are written afterwards or they are not written.
+        // The membership write above clears both of these, so they are written afterwards or they
+        // are not written.
         dragged.scheduledStartMin = 600
         dragged.estimatedMinutes = 0
         for member in [dragged, firstSibling, secondSibling] {

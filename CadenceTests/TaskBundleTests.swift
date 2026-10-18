@@ -29,7 +29,7 @@ struct TaskBundleTests {
         let bundle = TaskBundle(title: "Morning block", dateKey: "2026-05-01", startMin: 600, durationMinutes: 30)
         context.insert(member)
         context.insert(bundle)
-        SchedulingActions.addTask(member, to: bundle)
+        CadenceTestBundleFixture.place(member, in: bundle)
         try context.save()
 
         #expect(throws: (any Error).self) {
@@ -61,7 +61,7 @@ struct TaskBundleTests {
         let bundle = TaskBundle(title: "Morning block", dateKey: "2026-05-01", startMin: 600, durationMinutes: 30)
         context.insert(member)
         context.insert(bundle)
-        SchedulingActions.addTask(member, to: bundle)
+        CadenceTestBundleFixture.place(member, in: bundle)
         try context.save()
 
         #expect(throws: (any Error).self) {
@@ -76,44 +76,11 @@ struct TaskBundleTests {
         #expect(bundles.first?.sortedTasks.count == 1)
     }
 
-    @Test func addingTaskToBundleUsesBundleDateWithoutTaskTime() throws {
-        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
-        let context = ModelContext(container)
-        let task = AppTask(title: "Five minute follow-up")
-        task.scheduledDate = "2026-05-02"
-        task.scheduledStartMin = 540
-        task.calendarEventID = "event-1"
-        let bundle = TaskBundle(title: "Admin sweep", dateKey: "2026-05-01", startMin: 600, durationMinutes: 30)
-        context.insert(task)
-        context.insert(bundle)
-
-        SchedulingActions.addTask(task, to: bundle)
-
-        #expect(task.bundle?.id == bundle.id)
-        #expect(task.scheduledDate == "2026-05-01")
-        #expect(task.scheduledStartMin == -1)
-        #expect(task.calendarEventID.isEmpty)
-        #expect(bundle.sortedTasks.map(\.id) == [task.id])
-    }
-
-    @Test func reassigningTaskBetweenBundlesRemovesOldMembership() throws {
-        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
-        let context = ModelContext(container)
-        let task = AppTask(title: "Tiny thing")
-        let first = TaskBundle(title: "First", dateKey: "2026-05-01", startMin: 600, durationMinutes: 30)
-        let second = TaskBundle(title: "Second", dateKey: "2026-05-02", startMin: 900, durationMinutes: 45)
-        context.insert(task)
-        context.insert(first)
-        context.insert(second)
-
-        SchedulingActions.addTask(task, to: first)
-        SchedulingActions.addTask(task, to: second)
-
-        #expect(task.bundle?.id == second.id)
-        #expect(task.scheduledDate == "2026-05-02")
-        #expect(first.sortedTasks.isEmpty)
-        #expect(second.sortedTasks.map(\.id) == [task.id])
-    }
+    // `addingTaskToBundleUsesBundleDateWithoutTaskTime` and
+    // `reassigningTaskBetweenBundlesRemovesOldMembership` were declared here. Both exercised
+    // SchedulingActions.addTask(_:to:) itself -- the Mac's "drop a task onto an existing block" --
+    // which [[T-3170]]'s trio pass deleted with the canvas arm that could express that drop. The
+    // tests below that still need a member build one with `CadenceTestBundleFixture.place`.
 
     @Test func droppingBundledTaskOntoTimelineRemovesBundleMembership() throws {
         let container = try CadenceModelContainerFactory.makeInMemoryContainer()
@@ -122,7 +89,7 @@ struct TaskBundleTests {
         let bundle = TaskBundle(title: "Batch", dateKey: "2026-05-01", startMin: 600, durationMinutes: 30)
         context.insert(task)
         context.insert(bundle)
-        SchedulingActions.addTask(task, to: bundle)
+        CadenceTestBundleFixture.place(task, in: bundle)
 
         SchedulingActions.dropTask(task, to: "2026-05-03", startMin: 720)
 
@@ -139,7 +106,7 @@ struct TaskBundleTests {
         let bundle = TaskBundle(title: "Delete me", dateKey: "2026-05-01", startMin: 600, durationMinutes: 30)
         context.insert(task)
         context.insert(bundle)
-        SchedulingActions.addTask(task, to: bundle)
+        CadenceTestBundleFixture.place(task, in: bundle)
 
         try SchedulingActions.deleteBundle(bundle, in: context)
 
@@ -156,7 +123,7 @@ struct TaskBundleTests {
         let bundle = TaskBundle(title: "Delete me", dateKey: "2026-05-01", startMin: 600, durationMinutes: 30)
         context.insert(task)
         context.insert(bundle)
-        SchedulingActions.addTask(task, to: bundle)
+        CadenceTestBundleFixture.place(task, in: bundle)
 
         try SchedulingActions.deleteBundle(bundle, in: context)
 
@@ -173,7 +140,7 @@ struct TaskBundleTests {
         let bundle = TaskBundle(title: "Finish me", dateKey: "2026-05-01", startMin: 600, durationMinutes: 30)
         [first, second].forEach(context.insert)
         context.insert(bundle)
-        [first, second].forEach { SchedulingActions.addTask($0, to: bundle) }
+        [first, second].forEach { CadenceTestBundleFixture.place($0, in: bundle) }
 
         try SchedulingActions.completeBundle(bundle, in: context)
 
@@ -195,7 +162,7 @@ struct TaskBundleTests {
         let bundle = TaskBundle(title: "Yesterday", dateKey: "2026-05-01", startMin: 600, durationMinutes: 30)
         context.insert(task)
         context.insert(bundle)
-        SchedulingActions.addTask(task, to: bundle)
+        CadenceTestBundleFixture.place(task, in: bundle)
 
         SchedulingActions.rollOverTaskToToday(task, todayKey: "2026-05-02", in: context)
 
@@ -213,7 +180,7 @@ struct TaskBundleTests {
         let bundle = TaskBundle(title: "Yesterday", dateKey: "2026-05-01", startMin: 600, durationMinutes: 30)
         [first, second].forEach(context.insert)
         context.insert(bundle)
-        [first, second].forEach { SchedulingActions.addTask($0, to: bundle) }
+        [first, second].forEach { CadenceTestBundleFixture.place($0, in: bundle) }
 
         SchedulingActions.rollOverTaskToToday(first, todayKey: "2026-05-02", in: context)
 
@@ -232,7 +199,7 @@ struct TaskBundleTests {
         let bundle = TaskBundle(title: "Batch", dateKey: "2026-05-01", startMin: 600, durationMinutes: 30)
         context.insert(task)
         context.insert(bundle)
-        SchedulingActions.addTask(task, to: bundle)
+        CadenceTestBundleFixture.place(task, in: bundle)
 
         SchedulingActions.removeTaskFromBundle(task)
 
@@ -251,7 +218,7 @@ struct TaskBundleTests {
         let bundle = TaskBundle(title: "Batch", dateKey: "2026-05-01", startMin: 600, durationMinutes: 30)
         [first, second, third].forEach(context.insert)
         context.insert(bundle)
-        [first, second, third].forEach { SchedulingActions.addTask($0, to: bundle) }
+        [first, second, third].forEach { CadenceTestBundleFixture.place($0, in: bundle) }
 
         SchedulingActions.moveTaskInBundle(third, direction: -1)
 
@@ -259,35 +226,9 @@ struct TaskBundleTests {
         #expect(bundle.sortedTasks.map(\.bundleOrder) == [0, 1, 2])
     }
 
-    @Test func creatingBundleFromTwoTimedTasksUsesTargetSlotAndMembersLoseIndividualTimes() throws {
-        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
-        let context = ModelContext(container)
-        let target = AppTask(title: "A")
-        target.scheduledDate = "2026-05-01"
-        target.scheduledStartMin = 600
-        target.estimatedMinutes = 25
-        let dragged = AppTask(title: "B")
-        dragged.scheduledDate = "2026-05-01"
-        dragged.scheduledStartMin = 630
-        dragged.estimatedMinutes = 10
-        context.insert(target)
-        context.insert(dragged)
-
-        // [[T-3170]]: SchedulingActions.createBundle(from:adding:in:) went with the Mac timeline's
-        // gesture; the shared mutation it forwarded to is what the iOS Calendar Board still calls.
-        let bundle = try #require(
-            try CadenceTaskMutationSupport.insertBundle(from: target, adding: dragged, modelContext: context)
-        )
-
-        #expect(bundle.dateKey == "2026-05-01")
-        #expect(bundle.startMin == 600)
-        #expect(bundle.durationMinutes == 35)
-        #expect(bundle.sortedTasks.map(\.title) == ["A", "B"])
-        #expect(target.scheduledDate == "2026-05-01")
-        #expect(target.scheduledStartMin == -1)
-        #expect(dragged.scheduledDate == "2026-05-01")
-        #expect(dragged.scheduledStartMin == -1)
-    }
+    // `creatingBundleFromTwoTimedTasksUsesTargetSlotAndMembersLoseIndividualTimes` was declared
+    // here. It pinned CadenceTaskMutationSupport.insertBundle(from:adding:), which [[T-3170]]
+    // deleted once no surface could form a block any more.
 
     @Test func unbundlingKeepsTasksOnBundleDateAndPreservesListMetadata() throws {
         let container = try CadenceModelContainerFactory.makeInMemoryContainer()
@@ -307,7 +248,7 @@ struct TaskBundleTests {
         context.insert(tag)
         context.insert(task)
         context.insert(bundle)
-        SchedulingActions.addTask(task, to: bundle)
+        CadenceTestBundleFixture.place(task, in: bundle)
 
         try SchedulingActions.unbundle(bundle, in: context)
 
@@ -324,16 +265,9 @@ struct TaskBundleTests {
         #expect(try context.fetch(FetchDescriptor<TaskBundle>()).isEmpty)
     }
 
-    /// Re-pointed at `updateBundleTime` when [[T-3170]] removed the empty-slot
-    /// `createBundle(title:…)` this used to read: the clamp is the same private `clampedRange`.
-    @Test func bundleTimesAreClampedInsideOneDay() throws {
-        let bundle = TaskBundle(title: "Clamp", dateKey: "2026-05-01", startMin: 600, durationMinutes: 30)
-        SchedulingActions.updateBundleTime(bundle, startMin: 1438, endMin: 1510)
-
-        #expect(bundle.startMin == 1435)
-        #expect(bundle.durationMinutes == 5)
-        #expect(bundle.endMin == 1440)
-    }
+    // `bundleTimesAreClampedInsideOneDay` was declared here, last re-pointed at
+    // SchedulingActions.updateBundleTime -- the block's resize handle. [[T-3170]]'s trio pass
+    // deleted that with `TimelineBundleBlock`, its only caller, so no path resizes a block.
 
     /// `AppTask.calendarEventID` is documented as write-only-empty: attaching a task to a calendar
     /// event is not a feature that exists, the readers that remain are there to *clear* values an
@@ -397,21 +331,20 @@ struct TaskBundleTests {
         SchedulingActions.removeFromCalendar(detached)
         #expect(detached.calendarEventID.isEmpty)
 
-        let bundled = stale("Bundled")
+        // "Added to a block" was the third entry point here; [[T-3170]]'s trio pass deleted
+        // SchedulingActions.addTask(_:to:), so the two block paths below start from a fixture
+        // member and re-arm the identifier before the site under test.
         let bundle = TaskBundle(title: "Sweep", dateKey: "2026-05-01", startMin: 600, durationMinutes: 60)
         context.insert(bundle)
-        SchedulingActions.addTask(bundled, to: bundle)
-        #expect(bundled.calendarEventID.isEmpty)
 
         let moved = stale("Moved with its bundle")
-        moved.calendarEventID = "legacy-event-id"
-        SchedulingActions.addTask(moved, to: bundle)
+        CadenceTestBundleFixture.place(moved, in: bundle)
         moved.calendarEventID = "legacy-event-id" // re-arm: the move below is the site under test
         SchedulingActions.dropBundle(bundle, to: "2026-05-03", startMin: 660)
         #expect(moved.calendarEventID.isEmpty)
 
         let unbundled = stale("Unbundled")
-        SchedulingActions.addTask(unbundled, to: bundle)
+        CadenceTestBundleFixture.place(unbundled, in: bundle)
         unbundled.calendarEventID = "legacy-event-id"
         try SchedulingActions.unbundle(bundle, in: context)
         #expect(unbundled.calendarEventID.isEmpty)
@@ -477,41 +410,14 @@ struct TaskBundleTests {
         #expect(Set(values).count == values.count)
     }
 
-    /// The live sites T-843 found, each pinned to read the shared constant rather than a
-    /// re-typed literal. It was eleven; Block Focus took five of them in [[T-3170]], and the same
-    /// ticket's iOS pass took `iOSCalendarBundleDetailSheet`'s `TaskBundle.shortLabel` with the
-    /// sheet. `noNewSurfaceTypesTheRetiredBundleNounEither` below is the complementary
-    /// claim — that no *other* site still types "Bundle" — so together they cover both directions:
-    /// the known sites moved, and nothing new took their place.
-    @Test func everyKnownBundleSiteReadsTheSharedVocabulary() throws {
-        let sites: [(path: String, needle: String)] = [
-            ("Cadence/macOS/Views/TimelineBundleBlock.swift", "TaskBundle.deleteConfirmationTitle"),
-        ]
-        for site in sites {
-            let source = try CadenceCommitSurfaceScan.scanned(site.path)
-            #expect(
-                CadenceSourceScan.matchCount(NSRegularExpression.escapedPattern(for: site.needle), in: source) >= 1,
-                "\(site.path) no longer reads \(site.needle)"
-            )
-        }
-
-        // `TimelineBundleBlockSupportViews` carries two of the sites, so both needles are pinned
-        // per file rather than folded into the loop above. `QuickCreateChoicePopover` carried two
-        // more until [[T-3170]] removed its Block tab, which was the only thing that read them.
-
-        let timelineBundleBlockSupport = try CadenceCommitSurfaceScan.scanned(
-            "Cadence/macOS/Views/TimelineBundleBlockSupportViews.swift"
-        )
-        #expect(
-            CadenceSourceScan.matchCount(#"TaskBundle\.titleFieldPlaceholder"#, in: timelineBundleBlockSupport) >= 1
-        )
-        #expect(
-            CadenceSourceScan.matchCount(
-                #"TaskBundle\.deleteConfirmationButtonTitle"#,
-                in: timelineBundleBlockSupport
-            ) >= 1
-        )
-    }
+    // `everyKnownBundleSiteReadsTheSharedVocabulary` was declared here: the live sites T-843
+    // found, each pinned to read the shared constant rather than a re-typed literal. It was
+    // eleven; Block Focus took five in [[T-3170]], the iOS pass took the detail sheet's, and the
+    // trio pass took the last three with `TimelineBundleBlock.swift` and
+    // `TimelineBundleBlockSupportViews.swift`. No product file reads those constants any more, so
+    // there is no site left to pin; `theRestOfTheBlockVocabularyIsOneWordEach` above still holds
+    // their values, and `noNewSurfaceTypesTheRetiredBundleNounEither` below still guards against
+    // the noun coming back.
 
     /// The other eight sites, which no behavioural test can reach: they are literals inside `View`
     /// bodies and one AppKit-side service. The iOS create sheet is not in this list because it
@@ -529,10 +435,13 @@ struct TaskBundleTests {
     /// this list; `noNewSurfaceTypesTheRetiredBundleNounEither` still sweeps all three.
     @Test func noSurfaceStillTypesTheRetiredBundleNoun() throws {
         for path in [
+            // [[T-3170]]'s trio pass took two entries out: `TimelineBundleBlockSupportViews.swift`
+            // is deleted, and `CadenceTaskMutationSupport.swift` read `defaultDisplayTitle` only
+            // inside `insertBundle`, which went with it. The two views left draw no Block now;
+            // their display-title reads are a task draft's and an event's, and they stay listed
+            // for the half that matters -- neither types "Task Bundle".
             "Cadence/Models/AppTask.swift",
-            "Cadence/Shared/CadenceTaskMutationSupport.swift",
             "Cadence/macOS/Views/TimelineDayCanvas.swift",
-            "Cadence/macOS/Views/TimelineBundleBlockSupportViews.swift",
             "Cadence/macOS/Views/CalendarPageMonthSupportViews.swift",
         ] {
             let source = try CadenceCommitSurfaceScan.scanned(path)
@@ -591,7 +500,10 @@ struct TaskBundleTests {
     /// vocabulary to be re-typed by hand — which is exactly how "Bundle" came back at eleven sites
     /// across nine files. All eleven read one of the constants added beside `defaultDisplayTitle`
     /// above; [[T-3170]] has since removed the Focus and quick-create surfaces among them, leaving
-    /// the block inspector sheet, `TimelineBundleBlock` and `TimelineBundleBlockSupportViews`.
+    /// the block inspector sheet, `TimelineBundleBlock` and `TimelineBundleBlockSupportViews` --
+    /// and its trio pass then deleted both of those files, along with
+    /// `TaskBundlePickerSupportViews`, whose `existingBundle` interpolation was the one false
+    /// positive this sweep exempted.
     ///
     /// This is the forward guard for a twelfth: every `.swift` file under the three product roots,
     /// comment-stripped so a doc comment cannot trip it, checked for a string literal containing
@@ -601,8 +513,7 @@ struct TaskBundleTests {
     /// The survivors are all technical, not product vocabulary, which is the line T-843 draws:
     /// SwiftData's schema-entity key (`"TaskBundle"`), a debug-only `assertionFailure` no user
     /// reads, the drag-payload's internal `"taskBundle:"` prefix, two Info.plist keys read through
-    /// `Bundle.main`, one string-interpolation false positive (`existingBundle` inside `"In
-    /// \(existingBundle.displayTitle)"`, which never renders the word "Bundle" at all), and
+    /// `Bundle.main`, and
     /// Settings' technical **"Bundle ID"** on both platforms — the ticket's explicit exemption.
     @Test func noNewSurfaceTypesTheRetiredBundleNounEither() throws {
         let allowedLiteralsByPath: [String: Set<String>] = [
@@ -627,9 +538,6 @@ struct TaskBundleTests {
             ],
             "Cadence/macOS/Views/SettingsAboutSection.swift": [
                 "\"Bundle ID\""
-            ],
-            "Cadence/macOS/Views/TaskBundlePickerSupportViews.swift": [
-                "\"In \\(existingBundle.displayTitle)\""
             ],
         ]
 

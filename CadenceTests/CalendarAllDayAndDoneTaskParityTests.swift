@@ -132,7 +132,7 @@ private final class FixedEventDaySource: CalendarEventDaySource {
         // A band with no all-day events keeps the task rows it always had.
         let tasksOnly = CadenceCalendarAllDayBandPriority.split(allDayEvents: 0, unscheduledTasks: 4)
         #expect(tasksOnly.tasks == CadenceCalendarAllDayBandPriority.capacity)
-        #expect(tasksOnly.bundles == 0)
+        #expect(tasksOnly.events == 0)
 
         for events in 0...4 {
             for tasks in 0...4 {

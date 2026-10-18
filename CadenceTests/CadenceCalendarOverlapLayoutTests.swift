@@ -374,7 +374,6 @@ struct CadenceCalendarOverlapLayoutTests {
 
         let result = TimelineMetricsSupport.computeUnifiedLayouts(
             tasks: [],
-            bundles: [],
             events: [middle, late, early],
             cascadeGapMinutes: 24
         )

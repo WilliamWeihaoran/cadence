@@ -48,7 +48,7 @@ struct CadenceTrackingEditorSaveCommitTests {
 
     // MARK: - Blocks
 
-    /// The delete family's promise, earned: `bundleDeleteFailureNotice` says nothing was removed,
+    /// The delete family's promise, earned: a refused block delete leaves nothing removed,
     /// and `commitDelete`'s rollback is what makes that true — the block is back **and so is the
     /// membership it had unpicked before the commit**, which is the half a `save()`-only fix would
     /// have left undone.
@@ -126,21 +126,12 @@ struct CadenceTrackingEditorSaveCommitTests {
 
     // MARK: - The five call sites
 
-    /// The notices are held beside the mutations that throw them, so a surface reaching for one
-    /// cannot invent a sixth spelling of "that didn't work".
-    ///
-    /// **Two of the five went with [[T-2079]]**: `goalSaveFailureNotice` and
-    /// `habitSaveFailureNotice` named refusals of `saveGoal` and `saveHabit`, and neither helper
-    /// nor either notice exists. What the pair proved — that a *create* carries no "Nothing was
-    /// removed." clause and a *delete* does, because a refused creation has nothing to fear losing
-    /// — is still proved, by the block family that remains.
-    @Test func eachRefusalNamesItsOwnObjectAndOnlyTheDeleteClaimsNothingWasRemoved() {
-        #expect(CadenceTaskMutationSupport.bundleDeleteFailureNotice.contains("Nothing was removed."))
-        #expect(!CadenceTaskMutationSupport.bundleSaveFailureNotice.contains("Nothing"))
-        // Non-vacuity: the two notices really are different sentences about the same object, so the
-        // contrast above is a property of the pair rather than of one string.
-        #expect(CadenceTaskMutationSupport.bundleSaveFailureNotice != CadenceTaskMutationSupport.bundleDeleteFailureNotice)
-    }
+    // `eachRefusalNamesItsOwnObjectAndOnlyTheDeleteClaimsNothingWasRemoved` was declared here.
+    // It contrasted `bundleSaveFailureNotice` with `bundleDeleteFailureNotice`, the last two of
+    // five notices this suite once held. [[T-3170]]'s trio pass deleted both with
+    // `TimelineBundleBlock`, the last surface that could refuse a block operation, so the pair it
+    // compared no longer exists. The delete family's "Nothing was removed." clause is still held
+    // by `CadenceTaskMutationSupport.deleteFailureNotice` and its siblings.
 
     // `theIOSTrackingEditorsAndBlockDeleteDismissOnlyThroughASuccessfulTry` was declared here.
     //
@@ -157,69 +148,17 @@ struct CadenceTrackingEditorSaveCommitTests {
 
     // MARK: - Blocks
 
-    /// **T-566.** A refused block edit puts the block *and its members* back.
-    ///
-    /// The member half is the one a header-only undo would have missed: moving a block moves every
-    /// task in it, so an undo that restored the four fields on `TaskBundle` would leave the tasks
-    /// sitting on the day the store had just refused to put them on — and the sheet would be
-    /// telling the user "Nothing was changed" over a context where something was.
-    @Test func arefusedBlockEditPutsTheBlockAndItsMembersBack() throws {
-        let modelContainer = try container()
-        let modelContext = ModelContext(modelContainer)
-        let bundle = TaskBundle(title: "Admin", dateKey: "2026-08-21", startMin: 600, durationMinutes: 30)
-        let member = AppTask(title: "Email")
-        // Whatever the member held before the edit is what the undo owes it back; 615 rather than
-        // the usual -1 so that a restore-to-a-constant would fail here.
-        member.scheduledDate = "2026-08-21"
-        member.scheduledStartMin = 615
-        modelContext.insert(bundle)
-        modelContext.insert(member)
-        member.bundle = bundle
-        bundle.tasks = [member]
-        try modelContext.save()
-
-        #expect(throws: CommitRefused.self) {
-            try CadenceTaskMutationSupport.updateBundle(
-                bundle,
-                title: "Deep work",
-                dateKey: "2026-08-24",
-                startMin: 900,
-                durationMinutes: 60,
-                modelContext: modelContext,
-                commit: { _ in throw CommitRefused() }
-            )
-        }
-
-        #expect(bundle.title == "Admin")
-        #expect(bundle.dateKey == "2026-08-21")
-        #expect(bundle.startMin == 600)
-        #expect(bundle.durationMinutes == 30)
-        #expect(member.scheduledDate == "2026-08-21")
-        #expect(member.scheduledStartMin == 615)
-        #expect(try ModelContext(modelContainer).fetch(FetchDescriptor<TaskBundle>()).map(\.dateKey) == ["2026-08-21"])
-
-        // And the same call still edits when the commit is accepted, so what was pinned above is
-        // the undo rather than a function that stopped writing.
-        try CadenceTaskMutationSupport.updateBundle(
-            bundle,
-            title: "Deep work",
-            dateKey: "2026-08-24",
-            startMin: 900,
-            durationMinutes: 60,
-            modelContext: modelContext
-        )
-        #expect(bundle.dateKey == "2026-08-24")
-        #expect(member.scheduledDate == "2026-08-24")
-        #expect(member.scheduledStartMin == -1)
-    }
+    // `arefusedBlockEditPutsTheBlockAndItsMembersBack` (T-566) was declared here. It pinned
+    // CadenceTaskMutationSupport.updateBundle's undo, which reached the members as well as the
+    // block's own four fields. [[T-3170]]'s trio pass deleted `updateBundle` and `moveBundle`
+    // with the last surfaces that called them, so there is no edit left to refuse.
 
     // `theIOSBlockSheetSaveDismissesOnlyThroughASuccessfulTry` was declared here, and read the
     // "Save" button of `iOSCalendarBundleDetailSheet` to prove its `catch` returned before
     // `dismiss()`. Its sibling "Delete Block" had caught since T-322 and the sibling *create*
     // sheet since T-471; this was the third exit from the same sheet. [[T-3170]] deleted the sheet,
-    // so there is no button to read. `arefusedBlockEditPutsTheBlockAndItsMembersBack` above keeps
-    // the half that was never about the button: `updateBundle`'s undo really does put the block
-    // and its members back.
+    // so there is no button to read. The half that was never about the button, `updateBundle`'s
+    // undo, went with `updateBundle` itself in [[T-3170]]'s trio pass.
 
     /// Non-vacuity for the scans in this suite: the reader really returned Swift.
     ///
@@ -230,7 +169,7 @@ struct CadenceTrackingEditorSaveCommitTests {
     /// report, and a re-added editor or Block sheet should fail here rather than slip past.
     @Test func thetrackingSaveCommitScansReadRealSource() throws {
         let raw = try CadenceSourceScan.sourceFile("Cadence/Shared/CadenceTaskMutationSupport.swift")
-        #expect(raw.contains("static func updateBundle("))
+        #expect(raw.contains("static func deleteBundle("))
         #expect(CadenceSourceScan.strippingComments(raw) != raw)
 
         let files = try CadenceSourceScan.swiftFiles(under: "Cadence")

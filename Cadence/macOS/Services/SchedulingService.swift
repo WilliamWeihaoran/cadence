@@ -92,26 +92,8 @@ enum SchedulingActions {
         }
     }
 
-    static func addTask(_ task: AppTask, to bundle: TaskBundle) {
-        if task.bundle?.id == bundle.id {
-            task.scheduledDate = bundle.dateKey
-            task.scheduledStartMin = -1
-            task.calendarEventID = ""
-            ensureTask(task, isLinkedIn: bundle)
-            normalizeBundleOrder(bundle)
-            return
-        }
-
-        removeTaskFromBundle(task, keepOnBundleDate: false)
-        let nextOrder = (memberTasks(in: bundle).map(\.bundleOrder).max() ?? -1) + 1
-        task.bundle = bundle
-        task.bundleOrder = nextOrder
-        task.scheduledDate = bundle.dateKey
-        task.scheduledStartMin = -1
-        task.calendarEventID = ""
-        ensureTask(task, isLinkedIn: bundle)
-        normalizeBundleOrder(bundle)
-    }
+    // `addTask(_:to:)` was declared here -- the Mac's "drop a task onto an existing block".
+    // [[T-3170]] deleted the canvas arm that could express that drop, so it has no caller.
 
     // [[T-3170]] removed createBundle(from:adding:in:) and insertBundle(from:adding:in:commit:)
     // with the Mac timeline's drag-a-task-onto-a-task gesture, their only caller. The shared
@@ -180,11 +162,8 @@ enum SchedulingActions {
         try CadenceTaskMutationSupport.deleteBundle(bundle, modelContext: context, commit: commit)
     }
 
-    static func updateBundleTime(_ bundle: TaskBundle, startMin: Int, endMin: Int) {
-        let range = clampedRange(startMin: startMin, endMin: endMin)
-        bundle.startMin = range.start
-        bundle.durationMinutes = range.duration
-    }
+    // `updateBundleTime(_:startMin:endMin:)` was declared here -- the block's resize handle.
+    // Its only caller was `TimelineBundleBlock`, deleted by [[T-3170]]'s trio pass.
 
     /// Detaches every member and ends the block, leaving the tasks on the block's day.
     ///

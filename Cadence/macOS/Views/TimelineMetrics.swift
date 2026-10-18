@@ -381,13 +381,11 @@ func computeTimelineBlockFrame(
 /// current zoom.
 func computeUnifiedLayouts(
     tasks: [AppTask],
-    bundles: [TaskBundle] = [],
     events: [CalendarEventItem],
     cascadeGapMinutes: Int
-) -> (tasks: [TimelineBlockLayout], bundles: [TimelineBundleLayout], events: [TimelineEventLayout]) {
+) -> (tasks: [TimelineBlockLayout], events: [TimelineEventLayout]) {
     TimelineMetricsSupport.computeUnifiedLayouts(
         tasks: tasks,
-        bundles: bundles,
         events: events,
         cascadeGapMinutes: cascadeGapMinutes
     )

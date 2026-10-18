@@ -13,8 +13,8 @@ import Testing
 ///   leading colour rail* compiles, renders, and looks almost right — it just reads as neither
 ///   treatment. Nothing in the repo asserted the absence of the rail, so the positive assertion
 ///   alone is not enough; `theScheduledTaskBlockHasNoLeadingColourRail` is the half that catches a
-///   half-finished swap, and it self-checks its needle against `TimelineBundleBlock.swift`, which
-///   still draws one.
+///   half-finished swap, and it self-checks its needle against the rail `TimelineBundleBlock.swift`
+///   drew until [[T-3170]] deleted it, kept as a fixture.
 /// - **The plate changed what ink is affordable, and the old ink was not re-measured anywhere.**
 ///   `Theme.dim`, `Theme.text` and `CadenceDueUrgency.tint` were all chosen against a near-black
 ///   `Theme.surfaceElevated`. Against a fill solved to Y = 0.098–0.150 they are 1.48–4.61:1. The
@@ -57,12 +57,11 @@ struct CadenceTimelineTaskPlateTests {
     @Test func theScheduledTaskBlockHasNoLeadingColourRail() throws {
         let needle = #"UnevenRoundedRectangle\(\s*topLeadingRadius:"#
 
-        // Self-check the needle on a file that still draws exactly this rail, so a `== 0` below
-        // cannot pass by the pattern having stopped matching anything anywhere.
-        let bundle = try t3160Source(t3160BundleBlockFile)
+        // Self-check the needle on the spelling it hunts, so a `== 0` below cannot pass by the
+        // pattern having stopped matching anything anywhere.
         #expect(
-            CadenceSourceScan.matchCount(needle, in: bundle) == 1,
-            "non-vacuity: the rail needle no longer finds the bundle block's own rail"
+            CadenceSourceScan.matchCount(needle, in: t3160RetiredBundleRailSpelling) == 1,
+            "non-vacuity: the rail needle no longer finds the retired bundle block's rail"
         )
 
         let body = try t3160TaskBlockBody()
@@ -290,7 +289,18 @@ struct CadenceTimelineTaskPlateTests {
 /// helpers below are not — a `Self.taskBlockFile` read from one of them is a Swift 6 error in
 /// waiting and a warning today, which this repo's baseline does not allow.
 private let t3160TaskBlockFile = "Cadence/macOS/Views/TimelineTaskBlockSupportViews.swift"
-private let t3160BundleBlockFile = "Cadence/macOS/Views/TimelineBundleBlock.swift"
+/// The leading rail `TimelineBundleBlock` drew, kept verbatim as the needle's self-check after
+/// [[T-3170]]'s trio pass deleted that file -- the last product view that drew this spelling. A
+/// fixture rather than another product file, so the check cannot start passing by a live view
+/// happening to stop (or start) drawing one.
+private let t3160RetiredBundleRailSpelling = """
+accent
+    .frame(width: 3)
+    .clipShape(UnevenRoundedRectangle(
+        topLeadingRadius: style.cornerRadius,
+        bottomLeadingRadius: style.cornerRadius
+    ))
+"""
 
 private let t3160PlateStates: [(name: String, isSelected: Bool, isActive: Bool)] = [
     ("at rest", false, false),

@@ -80,12 +80,11 @@ struct CadenceTimelineBlockTreatmentTests {
     /// Each event block draws exactly one rail, at the shared constant rather than a hand-typed
     /// `3`, and the task block draws none.
     @Test func eachEventBlockDrawsOneRailAtTheSharedWidthAndTheTaskBlockDrawsNone() throws {
-        // Self-check the needle against a block that still draws this rail, so a `== 0` below
-        // cannot pass by the pattern having stopped matching anything anywhere.
-        let bundle = try t3160Source(t3160BundleBlockFile)
+        // Self-check the needle against the spelling it hunts, so a `== 0` below cannot pass by
+        // the pattern having stopped matching anything anywhere.
         #expect(
-            CadenceSourceScan.matchCount(t3160RailNeedle, in: bundle) >= 1,
-            "non-vacuity: the rail needle no longer finds the bundle block's own rail"
+            CadenceSourceScan.matchCount(t3160RailNeedle, in: t3160RetiredBundleRailSpelling) == 1,
+            "non-vacuity: the rail needle no longer finds the retired bundle block's rail"
         )
 
         let surfaces: [(name: String, body: String, rails: Int)] = [
@@ -95,7 +94,7 @@ struct CadenceTimelineBlockTreatmentTests {
         ]
         for surface in surfaces {
             // Since T-3167 an event rail is a plain strip shaped by its block's clip, so the
-            // self-cornered spelling the bundle block still draws is no rail on any block here.
+            // self-cornered spelling the bundle block drew is no rail on any block here.
             #expect(
                 CadenceSourceScan.matchCount(t3167EventRailNeedle, in: surface.body) == surface.rails,
                 "\(surface.name) draws \(CadenceSourceScan.matchCount(t3167EventRailNeedle, in: surface.body)) rails, expected \(surface.rails)"
@@ -393,7 +392,18 @@ struct CadenceTimelineBlockTreatmentTests {
 // MARK: - Fixtures
 
 private let t3160EventBlockFile = "Cadence/macOS/Views/TimelineEventBlock.swift"
-private let t3160BundleBlockFile = "Cadence/macOS/Views/TimelineBundleBlock.swift"
+/// The leading rail `TimelineBundleBlock` drew, kept verbatim as the needle's self-check after
+/// [[T-3170]]'s trio pass deleted that file -- the last product view that drew this spelling. A
+/// fixture rather than another product file, so the check cannot start passing by a live view
+/// happening to stop (or start) drawing one.
+private let t3160RetiredBundleRailSpelling = """
+accent
+    .frame(width: 3)
+    .clipShape(UnevenRoundedRectangle(
+        topLeadingRadius: style.cornerRadius,
+        bottomLeadingRadius: style.cornerRadius
+    ))
+"""
 private let t3160IOSTimelineFile = "Cadence/iOS/iOSCalendarTimelineViews.swift"
 private let t3160IOSEventSupportFile = "Cadence/iOS/iOSCalendarEventSupport.swift"
 

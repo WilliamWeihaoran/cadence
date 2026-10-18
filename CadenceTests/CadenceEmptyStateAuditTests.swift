@@ -482,8 +482,11 @@ struct CadenceEmptyStateAuditTests {
             #expect(derived.contains(name), "the derivation no longer finds \(name)")
         }
         // Measured at 23. A floor rather than an equality, because adding a component should not
-        // fail a test that is about the derivation working.
-        #expect(derived.count >= 20, "the derivation found only \(derived.count) components")
+        // fail a test that is about the derivation working. The floor was 20 and is 19 since
+        // [[T-3170]]'s trio pass deleted `BundleInspectorEmptyTasksView` with
+        // `TimelineBundleBlockSupportViews.swift` -- 19 is the full-tree count measured that day,
+        // so a component leaving the app does not read as the walk failing.
+        #expect(derived.count >= 19, "the derivation found only \(derived.count) components")
     }
 
     /// **A view shaped like an empty state is one the sweep reads** — the guard that makes an

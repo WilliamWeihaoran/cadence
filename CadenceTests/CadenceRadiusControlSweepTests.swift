@@ -22,7 +22,7 @@ import Testing
 ///   same shape T-616's own sweep excluded `WidgetChrome.elevationRadius` for. Converging
 ///   `.schedule`'s `10` onto `Theme.radiusControl` would sever it from the tuning relationship its
 ///   own sibling shows it belongs to, and every `style.cornerRadius` call site downstream (in
-///   `TimelineEventBlock.swift`, `TimelineBundleBlock.swift`, `TimelineTaskBlockSupportViews.swift`,
+///   `TimelineEventBlock.swift`, `TimelineTaskBlockSupportViews.swift`,
 ///   etc.) already reads the field rather than a literal, so nothing there is a spelling of `10`
 ///   to convert in the first place.
 /// - `MarkdownEditorTextViewDecorations.swift`'s image-selection ring draws

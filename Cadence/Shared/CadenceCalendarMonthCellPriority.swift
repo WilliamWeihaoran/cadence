@@ -32,8 +32,6 @@ enum CadenceCalendarMonthCellPriority {
     /// sites holding different types — macOS has `CalendarEventItem`, iOS has `EKEvent`, and the
     /// ordering is a fact about the *kinds*, not about either representation.
     struct Split: Equatable, Sendable {
-        /// Bundle chips the cell draws.
-        var bundles: Int
         /// Event chips the cell draws.
         var events: Int
         /// Task chips the cell draws.
@@ -42,7 +40,7 @@ enum CadenceCalendarMonthCellPriority {
         var hidden: Int
 
         /// Chips drawn in total. Never exceeds the capacity it was built against.
-        var visible: Int { bundles + events + tasks }
+        var visible: Int { events + tasks }
     }
 
     /// Fills `capacity` chip slots from the three counts in priority order, and reports the
@@ -50,24 +48,25 @@ enum CadenceCalendarMonthCellPriority {
     ///
     /// `hidden` is computed from the same three counts the visible rows came out of, rather than
     /// taken from the caller, so the cell cannot draw one partition and label a different one.
-    static func split(bundles: Int, events: Int, tasks: Int, capacity: Int) -> Split {
-        let bundleCount = max(0, bundles)
+    /// **The `bundles:` leg went with [[T-3170]].** It ranked FIRST, ahead of events and tasks,
+    /// and it is gone from both platforms in the same pass rather than left taking a literal `0`
+    /// from each: macOS's `MonthBundleChip` was the last thing that drew a Block, and iOS's cell
+    /// had already been passing `0` since the eleventh pass. The order events-then-tasks is
+    /// unchanged and is still the whole argument this type exists to record.
+    static func split(events: Int, tasks: Int, capacity: Int) -> Split {
         let eventCount = max(0, events)
         let taskCount = max(0, tasks)
         var remaining = max(0, capacity)
 
-        let drawnBundles = min(bundleCount, remaining)
-        remaining -= drawnBundles
         let drawnEvents = min(eventCount, remaining)
         remaining -= drawnEvents
         let drawnTasks = min(taskCount, remaining)
 
-        let total = bundleCount + eventCount + taskCount
+        let total = eventCount + taskCount
         return Split(
-            bundles: drawnBundles,
             events: drawnEvents,
             tasks: drawnTasks,
-            hidden: total - (drawnBundles + drawnEvents + drawnTasks)
+            hidden: total - (drawnEvents + drawnTasks)
         )
     }
 }
@@ -87,7 +86,6 @@ enum CadenceCalendarAllDayBandPriority {
 
     static func split(allDayEvents: Int, unscheduledTasks: Int) -> CadenceCalendarMonthCellPriority.Split {
         CadenceCalendarMonthCellPriority.split(
-            bundles: 0,
             events: allDayEvents,
             tasks: unscheduledTasks,
             capacity: capacity

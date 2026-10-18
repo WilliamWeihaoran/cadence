@@ -34,7 +34,8 @@ struct CadenceSearchFieldClearButtonTests {
     /// Ten of these are the ticket's ledger. The eleventh, `FocusPickerSupportViews.swift`, was in
     /// no accessibility ledger at all — it already carried `.cadenceControlLabel("Clear search")`,
     /// so no naming rule could see it — and it is here because T-672 is a duplication ticket: the
-    /// one named copy is still a copy.
+    /// one named copy is still a copy. `TaskBundlePickerSupportViews.swift`'s row (11pt) left the
+    /// list when [[T-3170]]'s trio pass deleted the file with the Mac's Block.
     private static let callSites: [String: Int] = [
         "Cadence/macOS/CadenceCalendarPicker.swift": 12,
         "Cadence/macOS/Views/CadenceContextPicker.swift": 12,
@@ -42,7 +43,6 @@ struct CadenceSearchFieldClearButtonTests {
         "Cadence/macOS/Views/GlobalSearchSupportViews.swift": 16,
         "Cadence/macOS/Views/GoalPickerViews.swift": 12,
         "Cadence/macOS/Views/GoalTimelineSupportViews.swift": 12,
-        "Cadence/macOS/Views/TaskBundlePickerSupportViews.swift": 11,
         // T-790's shared row: the four pickers that used to spell this button themselves --
         // ContainerPickerSupportViews, TaskTitleInlineTagPicker, TasksPanelSupportViews and
         // TildeContainerPicker -- now hand their field to `CadenceSearchFieldRow`, which draws the
@@ -93,11 +93,12 @@ struct CadenceSearchFieldClearButtonTests {
         )
         // The headline, so this suite and the ticket cannot disagree. It was 11 -- ten from
         // T-672's ledger plus the eleventh copy no naming rule could see. T-790 then folded four of
-        // those into one shared row, so eight files spell the button and one of them is the shared
-        // row itself. **A falling count here is the shared component doing its job**; a rising one
-        // is a new hand-spelled copy.
-        #expect(actual.values.reduce(0, +) == 8)
-        #expect(actual.count == 8)
+        // those into one shared row, so eight files spelled the button and one of them was the
+        // shared row itself. [[T-3170]]'s trio pass deleted `TaskBundlePickerSupportViews.swift`,
+        // so seven. **A falling count here is the shared component doing its job** (or a field
+        // leaving the app); a rising one is a new hand-spelled copy.
+        #expect(actual.values.reduce(0, +) == 7)
+        #expect(actual.count == 7)
     }
 
     /// The size each call site states, which is the decision the ledger's comment explains. Stated
@@ -164,14 +165,14 @@ struct CadenceSearchFieldClearButtonTests {
         #expect(code.contains("FocusState<Bool>.Binding =") == false, "focus gained a default")
     }
 
-    /// The two fields that had **no** `@FocusState` at all before T-672, and so could not have
-    /// restored focus even if their copy had tried. Converging on "always restore" is what made
+    /// The fields that had **no** `@FocusState` at all before T-672, and so could not have
+    /// restored focus even if their copy had tried. There were two; the other,
+    /// `TaskBundleTaskPickerPanel`, went with its file in [[T-3170]]'s trio pass. Converging on "always restore" is what made
     /// them grow one; a `.focused` binding deleted here would leave the component setting focus on
     /// a state nothing is bound to, which no compiler and no sweep above would notice.
-    @Test func theTwoFieldsThatGainedAFocusStateStillBindIt() throws {
+    @Test func theFieldsThatGainedAFocusStateStillBindIt() throws {
         for (path, declaration) in [
             ("Cadence/macOS/Views/GoalTimelineSupportViews.swift", "struct GoalTimelineFilterPopover: View"),
-            ("Cadence/macOS/Views/TaskBundlePickerSupportViews.swift", "struct TaskBundleTaskPickerPanel: View"),
         ] {
             let code = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(path))
             guard let body = CadenceSourceScan.declarationBody(declaration, in: code) else {

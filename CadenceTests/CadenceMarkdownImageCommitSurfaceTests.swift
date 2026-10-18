@@ -491,7 +491,10 @@ struct CadenceMarkdownImageCommitSurfaceTests {
         // block now, and a refused one is named above the timeline while the block snaps back to
         // where it was. It is not dismissable for the reorder surfaces' reason -- the retry is the
         // same drag, and the next commit that lands clears it.
-        #expect(total == 69, "the inline notice has \(total) call sites, not the 69 this test was written over")
+        // [[T-3170]]'s trio pass makes it 68: the Mac's `TimelineBundleBlock` was the last surface
+        // that could refuse a Block operation, so the three sentences it raised -- the block save,
+        // create and delete notices -- went with it. One call site fewer, same rule.
+        #expect(total == 68, "the inline notice has \(total) call sites, not the 68 this test was written over")
         #expect(withDismissal == 7, "\(withDismissal) call sites offer a dismissal, not 7")
 
         // And each of the six is named, so one swapping places with another is still a failure.

@@ -33,8 +33,8 @@ import Testing
 /// name (`*icon*`/`*glyph*`/`*Button*`) and by parameter label (`icon:`/`systemName:`), cross-
 /// checked by reading every candidate — found **three more that already required a name and so
 /// were never in `knownUnnamedIconButtonSites` at any point**: `TimelineBundleBlockSupportViews
-/// .rowIconButton`, `TaskInspectorContentSupportViews.iconButton`, and
-/// `SettingsTagsSection.rowButton`. Seven near-identical private helpers, not four, is the
+/// .rowIconButton` (deleted with the Mac's Block by [[T-3170]]), `TaskInspectorContentSupportViews
+/// .iconButton`, and `SettingsTagsSection.rowButton`. Seven near-identical private helpers, not four, is the
 /// duplication surface T-791 says an accessibility ledger cannot show — hoisting them into one
 /// shared component (the `CadenceSearchFieldClearButton` treatment) is a separate design decision
 /// with its own parameter list to work out and is deliberately not attempted here; this suite's
@@ -52,26 +52,27 @@ import Testing
 /// naming gap, over the population that pattern search can reach.
 struct CadenceIconOnlyHelperIdiomDuplicationTests {
 
-    /// The six private helpers, keyed by the file that declares them. T-674 fixed the first
-    /// three of them; the last three already required a name before T-674 existed. It was seven
+    /// The five private helpers, keyed by the file that declares them. T-674 fixed the first
+    /// three of them; the last two already required a name before T-674 existed. It was seven
     /// until [[T-3170]] deleted FocusBundleTaskSupportViews.swift with Block Focus — a fourth
-    /// T-674 site, removed rather than renamed.
+    /// T-674 site, removed rather than renamed — and six until its trio pass deleted
+    /// `TimelineBundleBlockSupportViews.swift` and its `rowIconButton` with the Mac's Block.
     private static let iconButtonHelperSites: [String: String] = [
         "Cadence/macOS/Views/HabitsFormSupportViews.swift": "stepButton",
         "Cadence/macOS/Views/GoalTimelineView.swift": "timelineNavButton",
         "Cadence/macOS/Views/SettingsSupportViews.swift": "actionButton",
-        "Cadence/macOS/Views/TimelineBundleBlockSupportViews.swift": "rowIconButton",
         "Cadence/macOS/Views/TaskInspectorContentSupportViews.swift": "iconButton",
         "Cadence/macOS/Views/SettingsTagsSection.swift": "rowButton",
     ]
 
-    /// **The population T-791 says a naming-gap ledger cannot show.** Six, not
+    /// **The population T-791 says a naming-gap ledger cannot show.** Five, not
     /// `knownUnnamedIconButtonSites`' four (T-611's remaining iOS two plus whatever T-674 was
-    /// working through at the time) — three of the six were never unnamed, so no accessibility
-    /// sweep's report ever had a reason to mention them.
-    @Test func sixNearCopiesOfThePrivateIconButtonHelperExist() throws {
-        #expect(Self.iconButtonHelperSites.count == 6)
-        // Three of the six are files T-674's commit names as gaining the required parameter; its
+    /// working through at the time) — two of the five were never unnamed, so no accessibility
+    /// sweep's report ever had a reason to mention them. (Six, with three never unnamed, until
+    /// [[T-3170]]'s trio pass deleted `TimelineBundleBlockSupportViews.rowIconButton`.)
+    @Test func fiveNearCopiesOfThePrivateIconButtonHelperExist() throws {
+        #expect(Self.iconButtonHelperSites.count == 5)
+        // Three of the five are files T-674's commit names as gaining the required parameter; its
         // fourth, FocusBundleTaskSupportViews.swift, went with Block Focus in [[T-3170]].
         let t674Fixed: Set<String> = [
             "Cadence/macOS/Views/HabitsFormSupportViews.swift",
@@ -79,10 +80,10 @@ struct CadenceIconOnlyHelperIdiomDuplicationTests {
             "Cadence/macOS/Views/SettingsSupportViews.swift",
         ]
         let alreadyNamed = Set(Self.iconButtonHelperSites.keys).subtracting(t674Fixed)
-        #expect(alreadyNamed.count == 3, "expected exactly the three copies no ledger ever saw")
+        #expect(alreadyNamed.count == 2, "expected exactly the two copies no ledger ever saw")
     }
 
-    /// Each of the seven still draws the shape (a `Button` around a bare `Image(systemName:)`)
+    /// Each of the five still draws the shape (a `Button` around a bare `Image(systemName:)`)
     /// and still requires a name for it — read from disk rather than assumed from the ledger
     /// above, so a helper that quietly stopped being this idiom, or quietly stopped naming
     /// itself, fails here rather than going unnoticed because the ledger still lists its file.

@@ -7,11 +7,8 @@ struct TimelineBlockLayout {
     let totalColumns: Int
 }
 
-struct TimelineBundleLayout {
-    let bundle: TaskBundle
-    let column: Int
-    let totalColumns: Int
-}
+// `TimelineBundleLayout` was declared here, beside `TimelineBlockLayout`. [[T-3170]] deleted the
+// only view that consumed one, `TimelineBundleBlock`, so the solver no longer produces them.
 
 struct TimelineBlockFrame {
     let x: CGFloat
@@ -117,17 +114,17 @@ enum TimelineMetricsSupport {
     /// which is the bug this ticket exists to fix.
     static func computeUnifiedLayouts(
         tasks: [AppTask],
-        bundles: [TaskBundle],
         events: [CalendarEventItem],
         cascadeGapMinutes: Int
-    ) -> (tasks: [TimelineBlockLayout], bundles: [TimelineBundleLayout], events: [TimelineEventLayout]) {
+    ) -> (tasks: [TimelineBlockLayout], events: [TimelineEventLayout]) {
         struct RawSlot {
-            enum Kind { case task(AppTask); case bundle(TaskBundle); case event(CalendarEventItem) }
+            enum Kind { case task(AppTask); case event(CalendarEventItem) }
             let kind: Kind
             let startMin: Int
             let endMin: Int
-            /// Only events cascade. Tasks and bundles keep the equal-column packing they have
-            /// always had — the owner ruled on events and explicitly left this open.
+            /// Only events cascade. Tasks keep the equal-column packing they have always had —
+            /// the owner ruled on events and explicitly left this open. (Blocks packed the same
+            /// way until [[T-3170]] removed them; the rule is unchanged, it has one fewer kind.)
             var mayCascade: Bool { if case .event = kind { return true } else { return false } }
         }
 
@@ -143,10 +140,6 @@ enum TimelineMetricsSupport {
             let start = task.scheduledStartMin
             let end = start + task.timelineDurationMinutes
             slots.append(RawSlot(kind: .task(task), startMin: start, endMin: end))
-        }
-        for bundle in bundles {
-            let end = bundle.startMin + max(bundle.durationMinutes, 5)
-            slots.append(RawSlot(kind: .bundle(bundle), startMin: bundle.startMin, endMin: end))
         }
         for event in events {
             let end = event.startMin + max(event.durationMinutes, 5)
@@ -177,14 +170,11 @@ enum TimelineMetricsSupport {
         )
 
         var taskLayouts: [TimelineBlockLayout] = []
-        var bundleLayouts: [TimelineBundleLayout] = []
         var eventLayouts: [TimelineEventLayout] = []
         for (slot, placement) in zip(slots, placements) {
             switch slot.kind {
             case .task(let task):
                 taskLayouts.append(TimelineBlockLayout(task: task, column: placement.column, totalColumns: placement.totalColumns))
-            case .bundle(let bundle):
-                bundleLayouts.append(TimelineBundleLayout(bundle: bundle, column: placement.column, totalColumns: placement.totalColumns))
             case .event(let event):
                 eventLayouts.append(TimelineEventLayout(
                     item: event,
@@ -194,7 +184,7 @@ enum TimelineMetricsSupport {
                 ))
             }
         }
-        return (taskLayouts, bundleLayouts, eventLayouts)
+        return (taskLayouts, eventLayouts)
     }
 }
 #endif

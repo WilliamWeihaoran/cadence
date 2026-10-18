@@ -524,28 +524,22 @@ struct CadenceSharedTaskRowJobsTests {
 
     // MARK: - Bundle member row: the call sites
 
-    /// **The T-161 test for the bundle row.** It was three rows, then two, and is now one.
+    /// **The T-161 test for the bundle row.** It was three rows, then two, then one, and is now
+    /// none.
     ///
-    /// [[T-3170]] deleted the Focus panel's row with Block Focus, and then
-    /// `iOSCalendarBundleDetailSheet.swift` with the whole iOS Block surface — the iOS row was the
-    /// reason `TaskDetailLineLabel` had to leave `#if os(macOS)`, and the shared spelling stays for
-    /// the four macOS call sites below whatever happens to the one that forced it. The macOS Block
-    /// rows are a sibling pass's business and are listed here unchanged.
-    @Test func bothBundleMemberRowsReadTheOneDetailLine() throws {
-        try expectCallSites(
-            of: "CadenceBundleTaskRowSupport.detailParts",
-            at: [
-                "Cadence/macOS/Views/TimelineBundleBlockSupportViews.swift": 1,
-            ]
-        )
+    /// [[T-3170]] deleted the Focus panel's row with Block Focus, then
+    /// `iOSCalendarBundleDetailSheet.swift` with the whole iOS Block surface, and its trio pass
+    /// deleted the last two Mac files that drew a block member: `TimelineBundleBlockSupportViews`
+    /// (the only caller of `CadenceBundleTaskRowSupport.detailParts`) and
+    /// `TaskBundlePickerSupportViews`. What survives is the shared label the iOS row forced out of
+    /// `#if os(macOS)`, read by the two focus rows -- so this now pins those two call sites.
+    @Test func theSurvivingDetailLineRowsReadTheSharedLabel() throws {
         try expectCallSites(
             of: "CadenceTaskDetailLineLabel",
             at: [
-                "Cadence/macOS/Views/TimelineBundleBlockSupportViews.swift": 1,
-                // The focus rows and the bundle picker, which already used it under its old name.
+                // The focus rows, which already used it under its old name.
                 "Cadence/macOS/Views/FocusSidebarSupportViews.swift": 1,
                 "Cadence/macOS/Views/FocusPickerSupportViews.swift": 1,
-                "Cadence/macOS/Views/TaskBundlePickerSupportViews.swift": 1,
             ]
         )
     }

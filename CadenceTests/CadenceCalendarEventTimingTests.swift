@@ -342,7 +342,7 @@ struct CadenceCalendarEventTimingTests {
     //  filing called `iOSCalendarBundleDetailSheet.timeDate(on:minute:)` a `DatePicker` seed and
     //  listed it as display-only. It is not. The seed is read straight back out by that sheet's
     //  `startMinute`, and `save()` hands `startMinute` to
-    //  `CadenceTaskMutationSupport.updateBundle(startMin:)`, which assigns `bundle.startMin` and
+    //  CadenceTaskMutationSupport.updateBundle(startMin:), which assigns `bundle.startMin` and
     //  commits through `CadencePendingChangePersistence` — so on a transition day, *opening the
     //  sheet and tapping Save moved the block an hour with no user edit at all*.
     //

@@ -31,8 +31,9 @@ import Testing
 /// a different thing underneath it: on the Mac the block has no drop target of its own, so the
 /// release falls through to the canvas's reschedule drop; on the iOS timeline the column has no
 /// drop target at all, so the block is no longer draggable and nothing is accepted. iOS's Calendar
-/// *Board* still calls the shared mutation — that file is Codex-leased — so the mutation and its
-/// behavioural pins stay, and so do the Board's wiring pins.
+/// *Board* was the last caller of the shared mutation; it lost the gesture too, and the trio pass
+/// then deleted insertBundle(from:adding:) itself, taking its behavioural pins with it. What
+/// stays here is the absence of the gesture on every surface, and the clamps the mutation used.
 @MainActor
 struct CadenceBundleCreationParityTests {
 
@@ -48,95 +49,14 @@ struct CadenceBundleCreationParityTests {
 
     // MARK: - The shared mutation
 
-    @Test func droppingATaskOnAScheduledTaskFormsABlockHoldingBoth() throws {
-        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
-        let context = ModelContext(container)
-        let target = scheduledTask("Target", dateKey: "2026-08-21", startMin: 600, estimate: 25)
-        let dragged = scheduledTask("Dragged", dateKey: "2026-08-24", startMin: 300, estimate: 10)
-        context.insert(target)
-        context.insert(dragged)
-
-        let bundle = try #require(
-            try CadenceTaskMutationSupport.insertBundle(from: target, adding: dragged, modelContext: context)
-        )
-
-        #expect(bundle.dateKey == "2026-08-21")
-        #expect(bundle.startMin == 600)
-        #expect(bundle.durationMinutes == 35)
-        // The card that was dropped *on* supplies the slot; the dragged task comes to it, which is
-        // why its own date and time are overwritten rather than negotiated.
-        #expect(bundle.sortedTasks.map(\.title) == ["Target", "Dragged"])
-        #expect(target.scheduledStartMin == -1)
-        #expect(dragged.scheduledDate == "2026-08-21")
-        #expect(dragged.scheduledStartMin == -1)
-        #expect(dragged.bundle?.id == bundle.id)
-    }
-
-    /// A `TaskBundle` *is* a timeline block — a day plus a start minute. A target that has neither,
-    /// or has a day but no time of day, has nothing for a block to sit on, so the drop is refused
-    /// rather than resolved by inventing a start minute on one platform that the other refuses to.
-    @Test func aDropThatCannotBecomeABlockIsRefusedRatherThanGuessedAt() throws {
-        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
-        let context = ModelContext(container)
-
-        let sameTask = scheduledTask("Only one", dateKey: "2026-08-21", startMin: 600, estimate: 30)
-        context.insert(sameTask)
-        #expect(try CadenceTaskMutationSupport.insertBundle(from: sameTask, adding: sameTask, modelContext: context) == nil)
-
-        let undated = AppTask(title: "No day")
-        let dragged = scheduledTask("Dragged", dateKey: "2026-08-21", startMin: 600, estimate: 10)
-        context.insert(undated)
-        context.insert(dragged)
-        #expect(try CadenceTaskMutationSupport.insertBundle(from: undated, adding: dragged, modelContext: context) == nil)
-
-        let doDatedOnly = AppTask(title: "Day but no slot")
-        doDatedOnly.scheduledDate = "2026-08-21"
-        doDatedOnly.scheduledStartMin = -1
-        context.insert(doDatedOnly)
-        #expect(try CadenceTaskMutationSupport.insertBundle(from: doDatedOnly, adding: dragged, modelContext: context) == nil)
-
-        #expect(try context.fetch(FetchDescriptor<TaskBundle>()).isEmpty)
-    }
-
-    /// The members' own slots are gone once the bundle owns the block, so any stale calendar link
-    /// they still carry goes with them. `SchedulingActions.addTask` always did this;
-    /// `CadenceTaskMutationSupport.addTask` — the copy iOS's board has been calling — did not, and
-    /// that was the one field on which the two platforms' add-to-bundle paths disagreed.
-    @Test func formingABlockClearsStaleCalendarLinksOnBothMembers() throws {
-        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
-        let context = ModelContext(container)
-        let target = scheduledTask("Target", dateKey: "2026-08-21", startMin: 600, estimate: 20)
-        let dragged = scheduledTask("Dragged", dateKey: "2026-08-21", startMin: 660, estimate: 20)
-        target.calendarEventID = "stale-target"
-        dragged.calendarEventID = "stale-dragged"
-        context.insert(target)
-        context.insert(dragged)
-
-        _ = try CadenceTaskMutationSupport.insertBundle(from: target, adding: dragged, modelContext: context)
-
-        #expect(target.calendarEventID.isEmpty)
-        #expect(dragged.calendarEventID.isEmpty)
-    }
-
-    /// The one deliberate behaviour change the extraction makes. macOS took `targetTask.scheduledStartMin`
-    /// unclamped, so a corrupt slot near midnight produced a block ending after the day did — while
-    /// its sibling `insertBundle(title:…)` in the same shared enum clamped. Both clamp now.
-    @Test func formingABlockClampsAStartMinuteThatWouldOverflowTheDay() throws {
-        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
-        let context = ModelContext(container)
-        let target = scheduledTask("Late", dateKey: "2026-08-21", startMin: 1439, estimate: 25)
-        let dragged = scheduledTask("Later", dateKey: "2026-08-21", startMin: 1439, estimate: 10)
-        context.insert(target)
-        context.insert(dragged)
-
-        let bundle = try #require(
-            try CadenceTaskMutationSupport.insertBundle(from: target, adding: dragged, modelContext: context)
-        )
-
-        #expect(bundle.startMin == 1435)
-        #expect(bundle.durationMinutes == 5)
-        #expect(bundle.endMin == CadenceTaskMutationSupport.bundleDayEndMin)
-    }
+    // Four behavioural tests of CadenceTaskMutationSupport.insertBundle(from:adding:) were
+    // declared here: `droppingATaskOnAScheduledTaskFormsABlockHoldingBoth`,
+    // `aDropThatCannotBecomeABlockIsRefusedRatherThanGuessedAt`,
+    // `formingABlockClearsStaleCalendarLinksOnBothMembers` and
+    // `formingABlockClampsAStartMinuteThatWouldOverflowTheDay`. [[T-3170]]'s trio pass deleted the
+    // mutation once no surface could form a block, so there is nothing left for them to run. The
+    // duration floor and the day clamps it used survive -- `CadenceTaskBundleRetirementTests`
+    // cross-checks them -- and are still pinned below.
 
     /// `AppTask.estimatedMinutes` defaults to 30, so the floor only shows on a task whose estimate
     /// was explicitly cleared or set very low — which is exactly the case that would otherwise

@@ -173,14 +173,6 @@ let cadenceUndeclaredPlaceholderLabels: [CadenceUndeclaredPlaceholderLabel] = [
         """
     ),
     CadenceUndeclaredPlaceholderLabel(
-        "Untitled List",
-        path: "Cadence/macOS/Views/TaskBundlePickerSupportViews.swift",
-        why: """
-        Two sites in one file, the picker row and the chip beside it. Same reason as \
-        "Untitled subtask": one file, both visible at once, and no second target needs to read it.
-        """
-    ),
-    CadenceUndeclaredPlaceholderLabel(
         "Untitled Column",
         path: "Cadence/iOS/iOSColumnWindDownSupport.swift",
         why: """
@@ -765,7 +757,10 @@ struct CadenceSharedConstantReuseSweepTests {
         let declared = try cadenceDeclaredPlaceholderLabels()
         let family = CadenceTitleNormalization.defaultCompactTitle
 
-        #expect(cadenceUndeclaredPlaceholderLabels.count == 3,
+        // 3 until [[T-3170]]'s trio pass deleted `TaskBundlePickerSupportViews.swift`, whose
+        // "Untitled List" row left with it. This number is the list's own length, so it moves
+        // only when a row is added or a file holding one is removed -- never silently.
+        #expect(cadenceUndeclaredPlaceholderLabels.count == 2,
                 "the recorded list changed size; re-read T-515's decision before adding to it")
 
         for entry in cadenceUndeclaredPlaceholderLabels {

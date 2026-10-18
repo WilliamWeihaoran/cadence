@@ -61,73 +61,18 @@ enum CadenceTaskMutationSupport {
         return max(bundleMinimumDuration, min(total, bundleDayEndMin - clampedBundleStart(startMin)))
     }
 
-    /// The five-field write `addTask(_:to:modelContext:commit:)` and
-    /// `insertBundle(from:adding:modelContext:commit:)` both need — pending only, no commit,
-    /// because `insertBundle` credits two tasks under one commit and cannot call the committing
-    /// `addTask` twice without saving twice for a single gesture (T-760).
-    ///
-    /// **It lives here, and it is `internal` rather than `private`, for the reason this file
-    /// exists ([[T-1122]]).** This is the membership rule — five fields, one of them the
-    /// `calendarEventID` clear the two platforms used to disagree on — and `add_task_to_bundle`
-    /// is a headless caller with no timeline in front of it. A second copy of these five lines
-    /// inside `CadenceWriteService` is the exact failure T-1122 exists to refuse, so the rule
-    /// moved to the file `CadenceMCPServer`'s Sources phase can compile and opened up just far
-    /// enough for the extension file's two callers and that arm to ask it. Do not re-spell it
-    /// anywhere; call it.
-    static func assignTask(_ task: AppTask, to bundle: TaskBundle) {
-        let nextOrder = ((bundle.tasks ?? []).map(\.bundleOrder).max() ?? -1) + 1
-        task.bundle = bundle
-        task.bundleOrder = nextOrder
-        task.scheduledDate = bundle.dateKey
-        task.scheduledStartMin = -1
-        // The task's own slot is gone — the bundle owns the block now — so any stale calendar link
-        // it still carries has to go with it. `SchedulingActions.addTask` has always cleared this;
-        // this copy did not, which was the one field on which the two platforms' add-to-bundle
-        // paths disagreed. See "Calendar / Events" in `docs/CLAUDE_REFERENCE.md`: nothing writes
-        // this field a non-empty value any more, and every write site clears it.
-        task.calendarEventID = ""
-        if !(bundle.tasks ?? []).contains(where: { $0.id == task.id }) {
-            bundle.tasks = (bundle.tasks ?? []) + [task]
-        }
-    }
 
-    /// The fields `assignTask(_:to:)` writes on a task it moves into a bundle, captured before the
-    /// write (T-760). macOS's SchedulingActions kept a twin of it until [[T-3170]] removed it.
-    ///
-    /// The bundle itself is un-inserted by `commitInsert`, but that does not put either task back:
-    /// both were detached from whatever block they were in, given a `bundleOrder`, moved onto the
-    /// new block's day, stripped of their time slot and of any calendar-event link. A refusal that
-    /// restored only the block would leave both tasks scheduled somewhere the store never agreed to.
-    ///
-    /// **It came here with `assignTask` and is `internal` for the same reason ([[T-1122]]).** An
-    /// undo is half of what the MCP write path owes a caller, and `add_task_to_bundle` writes into
-    /// a block that already exists — so unlike `insertBundle(from:adding:)` it cannot lean on the
-    /// bundle's own un-insert to put the task back. It restores the task's five fields; a caller
-    /// writing into a surviving block restores that block's own `tasks` edge beside it, which is
-    /// the one thing this type deliberately does not know about.
-    struct BundleMembership {
-        private let task: AppTask
-        private let bundle: TaskBundle?
-        private let bundleOrder: Int
-        private let scheduledDate: String
-        private let scheduledStartMin: Int
-        private let calendarEventID: String
-
-        init(_ task: AppTask) {
-            self.task = task
-            bundle = task.bundle
-            bundleOrder = task.bundleOrder
-            scheduledDate = task.scheduledDate
-            scheduledStartMin = task.scheduledStartMin
-            calendarEventID = task.calendarEventID
-        }
-
-        func restore() {
-            task.bundle = bundle
-            task.bundleOrder = bundleOrder
-            task.scheduledDate = scheduledDate
-            task.scheduledStartMin = scheduledStartMin
-            task.calendarEventID = calendarEventID
-        }
-    }
+    // `assignTask(_:to:)` and `BundleMembership` were declared here -- the five-field membership
+    // write and the snapshot that undid it. [[T-3170]] removed every caller: the two timelines'
+    // drop-to-form-a-block gesture, the iOS Calendar Board's drag-onto-a-block, and finally
+    // `insertBundle`/`addTask` themselves in the trio pass.
+    //
+    // **The four clamps above STAY, and not by oversight.** Nothing builds a block any more, so on
+    // reachability alone they would go with the rest. They are kept because
+    // `CadenceTaskBundleRetirementTests.theClampsMatchTheOnesThatSizedTheBlocks` asserts
+    // `TaskBundleRetirement`'s own `minimumSlotMinutes`, `dayEndMin` and `clampedStart` against
+    // them -- the migration re-spells this arithmetic because it has to be reachable from the
+    // `nonisolated` archive import, and that test is the only thing keeping the two spellings
+    // honest. Deleting these would silently retire that cross-check on the one piece of Block code
+    // this ticket is deliberately keeping. They go when the migration does.
 }

@@ -12,9 +12,7 @@ struct TimelineDayCanvas: View {
     let dateKey: String
     var todayKey: String = DateFormatters.todayKey()
     let tasks: [AppTask]
-    let bundles: [TaskBundle]
     let allTasks: [AppTask]
-    let allBundles: [TaskBundle]
     let areas: [Area]
     let projects: [Project]
     let metrics: TimelineMetrics
@@ -26,8 +24,6 @@ struct TimelineDayCanvas: View {
     var usesTaskPanelForTaskCreation = true
     let onCreateTask: (QuickCreateTaskDraft) -> Void
     let onDropTaskAtMinute: (AppTask, Int) -> Void
-    let onDropBundleAtMinute: (TaskBundle, Int) -> Void
-    let onDropTaskOnBundle: (AppTask, TaskBundle) -> Void
     var externalEvents: [CalendarEventItem] = []
     /// Optional: if provided, the drag-to-create popover will offer a "Calendar Event" tab.
     ///
@@ -69,12 +65,10 @@ struct TimelineDayCanvas: View {
     var body: some View {
         let unified = computeUnifiedLayouts(
             tasks: tasks,
-            bundles: bundles,
             events: externalEvents,
             cascadeGapMinutes: cascadeGapMinutes
         )
         let layouts = unified.tasks
-        let bundleLayouts = unified.bundles
         let eventLayouts = unified.events
         let previewTask = TimelineDayCanvasOverlaySupport.previewTask(
             activeDragTaskID: activeDragTaskID,
@@ -90,9 +84,17 @@ struct TimelineDayCanvas: View {
                 dropDelegate: TimelineDropDelegate(
                     metrics: metrics,
                     allTasks: allTasks,
-                    allBundles: allBundles,
+                    // [[T-3170]]: STARVED, not cut. `TimelineDropDelegate` lives in
+                    // `TimelineDropInteractionSupport.swift`, which is Codex-leased AND holds real
+                    // unlanded work on `codex/leased-followup-batch` (+13 -1, `0efe3ade` is not an
+                    // ancestor of main) — the one path in this pass where the staleness test
+                    // produced a genuine refusal rather than a false one. So the delegate keeps its
+                    // Block parameters and this canvas hands it nothing: no block list to find a
+                    // dragged id in, and a drop callback that cannot fire. The next agent granted
+                    // that file deletes the four parameters and these two literals together.
+                    allBundles: [],
                     onDropTaskAtMinute: onDropTaskAtMinute,
-                    onDropBundleAtMinute: onDropBundleAtMinute,
+                    onDropBundleAtMinute: { _, _ in },
                     onDropAllDayEventAtMinute: onDropAllDayEventAtMinute,
                     // [[T-3170]]: no task block draws a bundle shelf any more, so no region of
                     // the canvas defers a task drop to one — and the delegate's parameter for
@@ -120,7 +122,7 @@ struct TimelineDayCanvas: View {
 
             TimelineCreateGridLayer(
                 metrics: metrics,
-                blockedFrames: blockedFrames(layouts: layouts, bundleLayouts: bundleLayouts, eventLayouts: eventLayouts),
+                blockedFrames: blockedFrames(layouts: layouts, eventLayouts: eventLayouts),
                 showHalfHourMarks: showHalfHourMarks,
                 activeDragTaskID: $activeDragTaskID,
                 onTapBackground: clearCreateGridSelection,
@@ -156,7 +158,6 @@ struct TimelineDayCanvas: View {
             TimelineScheduledBlocksLayer(
                 todayKey: todayKey,
                 eventLayouts: eventLayouts,
-                bundleLayouts: bundleLayouts,
                 taskLayouts: layouts,
                 allTasks: allTasks,
                 areas: areas,
@@ -165,13 +166,9 @@ struct TimelineDayCanvas: View {
                 metrics: metrics,
                 style: style,
                 selectedTaskID: $selectedTaskID,
-                selectedBundleID: $selectedBundleID,
                 selectedEventID: $selectedEventID,
                 activeDragTaskID: $activeDragTaskID,
-                activeDragBundleID: $activeDragBundleID,
-                onTaskDroppedOnBundle: onDropTaskOnBundle,
-                onTaskSelected: selectTaskBlock,
-                onBundleSelected: selectBundleBlock
+                onTaskSelected: selectTaskBlock
             )
 
             TimelineCurrentTimeOverlay(
@@ -240,12 +237,6 @@ struct TimelineDayCanvas: View {
         selectedBundleID = nil
     }
 
-    private func selectBundleBlock() {
-        clearDraftCreation()
-        selectedEventID = nil
-        selectedTaskID = nil
-    }
-
     private func finishDraftCreation() {
         showNewTaskPopover = false
         draftSelection = nil
@@ -307,20 +298,12 @@ struct TimelineDayCanvas: View {
 
     private func blockedFrames(
         layouts: [TimelineBlockLayout],
-        bundleLayouts: [TimelineBundleLayout],
         eventLayouts: [TimelineEventLayout]
     ) -> [TimelineBlockFrame] {
         layouts.map { layout in
             timelineFrame(
                 startMinute: layout.task.scheduledStartMin,
                 durationMinutes: layout.task.timelineDurationMinutes,
-                column: layout.column,
-                totalColumns: layout.totalColumns
-            )
-        } + bundleLayouts.map { layout in
-            timelineFrame(
-                startMinute: layout.bundle.startMin,
-                durationMinutes: layout.bundle.durationMinutes,
                 column: layout.column,
                 totalColumns: layout.totalColumns
             )

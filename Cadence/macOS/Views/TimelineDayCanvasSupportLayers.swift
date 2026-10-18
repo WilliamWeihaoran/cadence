@@ -86,7 +86,6 @@ struct TimelineWorkHoursHighlightLayer: View {
 struct TimelineScheduledBlocksLayer: View {
     let todayKey: String
     let eventLayouts: [TimelineEventLayout]
-    let bundleLayouts: [TimelineBundleLayout]
     let taskLayouts: [TimelineBlockLayout]
     let allTasks: [AppTask]
     let areas: [Area]
@@ -95,13 +94,9 @@ struct TimelineScheduledBlocksLayer: View {
     let metrics: TimelineMetrics
     let style: TimelineBlockStyle
     @Binding var selectedTaskID: UUID?
-    @Binding var selectedBundleID: UUID?
     @Binding var selectedEventID: String?
     @Binding var activeDragTaskID: UUID?
-    @Binding var activeDragBundleID: UUID?
-    let onTaskDroppedOnBundle: (AppTask, TaskBundle) -> Void
     let onTaskSelected: () -> Void
-    let onBundleSelected: () -> Void
 
     var body: some View {
         ForEach(eventLayouts, id: \.item.id) { layout in
@@ -117,24 +112,10 @@ struct TimelineScheduledBlocksLayer: View {
             .zIndex(2)
         }
 
-        ForEach(bundleLayouts, id: \.bundle.id) { layout in
-            TimelineBundleBlock(
-                bundle: layout.bundle,
-                allTasks: allTasks,
-                areas: areas,
-                projects: projects,
-                column: layout.column,
-                totalColumns: layout.totalColumns,
-                totalWidth: width,
-                metrics: metrics,
-                style: style,
-                selectedBundleID: $selectedBundleID,
-                activeDragBundleID: $activeDragBundleID,
-                onTaskDropped: onTaskDroppedOnBundle,
-                onSelect: onBundleSelected
-            )
-            .zIndex(3)
-        }
+        // [[T-3170]]: the Block layer was drawn here at `zIndex(3)`, between the events and the
+        // task blocks. `TimelineBundleBlock` is deleted, so events and tasks are the whole of what
+        // this layer draws. The remaining z-order is deliberate and unchanged: events below, task
+        // blocks above.
 
         ForEach(taskLayouts, id: \.task.id) { layout in
             TimelineTaskBlock(

@@ -6,7 +6,7 @@ import Testing
 /// **[[T-3170]]: the Block feature leaves, and no member task loses its place in the day.**
 ///
 /// The hazard this suite exists for is one line of the feature it is retiring:
-/// `CadenceTaskMutationSupport.assignTask` writes `task.scheduledStartMin = -1` on every task that
+/// CadenceTaskMutationSupport.assignTask writes `task.scheduledStartMin = -1` on every task that
 /// joins a block, because the block carries the slot. `-1` is the unscheduled sentinel the
 /// timeline's layout filters on. Delete the blocks and stop there and every member is on its date
 /// with no time — drawn nowhere, with nothing on screen to say it happened.
