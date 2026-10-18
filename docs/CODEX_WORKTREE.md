@@ -154,6 +154,35 @@ CadenceTests/CadenceContainerPickerConsolidationTests.swift
 CadenceTests/CadencePresentedTypographyBoundaryTests.swift
 ```
 
+### 2026-10-17 — SIXTH refinement: symbol sampling cannot see a MODIFIED function body
+
+A pre-check for T-3170's stale-claims pass nearly cleared `Cadence/Services/TaskCreationService.swift`
+as landed. It is **live work by the second Codex agent** and must not be touched.
+
+**How it nearly passed.** `codex/capture-list-sections` modifies that file; all four sampled
+function names — `availableSections`, `normalizedSectionName`, `applyContainer`, `insertTask` —
+report PRESENT on main. By the symbol test recorded above, that reads as landed.
+
+**They are present because they already existed.** The branch CHANGED their bodies; it added no new
+declarations. **Symbol sampling detects added symbols, never modified ones** — so any branch whose
+work is edits rather than additions samples as landed, which is most refactoring work.
+
+**What actually settled it, and the order to use:**
+1. **Branch date** — `10-17 22:38`, i.e. today, while this session was running.
+2. **Commit message** — *"T-3192 T-3195 checkpoint shared section entry and capture card; event ends
+   pending"*. A branch that calls itself a checkpoint with something pending is not landed.
+3. **Blob differs from main.**
+
+Together those are conclusive where symbols were not. **For a file a live agent may be holding,
+cheapest reliable check is: is any branch touching it dated inside this session?** A stale branch
+cannot be — the graveyard is weeks old.
+
+**The accumulated rule, after six corrections in one day:** no single signal answers "is this path
+safe to grant". `--no-merges` narrows the candidates; symbol sampling resolves ADDITIVE branches;
+date and commit message resolve live ones; the blob confirms. Every version of this test that was
+recorded as sufficient has been falsified by its next real use, and this entry should be read as
+likely to be too.
+
 ### 2026-10-17 — CORRECTION: the grant I praised an agent for NOT requesting was needed after all
 
 The section below records agent `blocktail` declining to request
