@@ -406,7 +406,7 @@ struct CadenceScheduleCaptureCard<NotesField: View>: View {
                         draft.estimateIsExplicit = true
                     }
                 }
-            ), onClose: { activeField = nil })
+            ), unsetValueLabel: "Clear estimate", onClose: { activeField = nil })
         case .calendar:
             CadenceChoicePopoverList(
                 rows: calendarChoices.map {

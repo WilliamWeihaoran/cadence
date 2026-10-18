@@ -1,10 +1,27 @@
 import Foundation
 import SwiftData
+import SwiftUI
 import Testing
 @testable import Cadence
 
 @MainActor
 struct CadenceCodexCaptureSectionBatchTests {
+    @Test func captureEstimateLabelIsOptInAndDoesNotChangeOtherPickerCallers() throws {
+        let ordinary = EstimatePickerPopoverContent(value: .constant(0))
+        let capture = EstimatePickerPopoverContent(value: .constant(0), unsetValueLabel: "Clear estimate")
+        let committing = EstimatePickerPopoverContent(value: 0, onCommit: { _ in true })
+        #expect(ordinary.unsetValueLabel == "None")
+        #expect(committing.unsetValueLabel == "None")
+        #expect(capture.unsetValueLabel == "Clear estimate")
+        let read = CadenceSourceScan.strippedSourceReader()
+        let picker = try read("Cadence/Shared/Components/EstimatePickerControl.swift")
+        #expect(picker.contains("struct EstimatePickerPopoverContent: View"))
+        #expect(picker.contains("Text(total > 0 ? CadenceTaskPresentationSupport.estimateLabel(minutes: total) : unsetValueLabel)"))
+        let card = try read("Cadence/Shared/Components/CadenceScheduleCaptureCard.swift")
+        #expect(card.contains("EstimatePickerPopoverContent(value: Binding("))
+        #expect(card.contains("unsetValueLabel: \"Clear estimate\""))
+    }
+
     @Test func captureSectionEntryPointsShareOneCommittedControlAndLeaveBoardMappingIntact() throws {
         let read = CadenceSourceScan.strippedSourceReader()
         let mac = try read("Cadence/macOS/Views/ListDetailComponents.swift")

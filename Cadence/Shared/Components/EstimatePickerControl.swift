@@ -79,6 +79,7 @@ struct EstimatePickerPopoverContent: View {
     /// Uppercase heading. Callers editing a duration that is not a planning estimate (logged
     /// "Actual" minutes) pass their own so the panel is not mislabelled.
     var title: String = "ESTIMATE"
+    var unsetValueLabel = "None"
     var onClose: () -> Void = {}
     /// **T-761(b).** `nil` on the draft form: `value`'s own setter is the only write, so nothing
     /// here can be refused and closing stays unconditional. Non-`nil` on the committing form: this
@@ -93,9 +94,15 @@ struct EstimatePickerPopoverContent: View {
     var failureNotice: String?
 
     /// The draft form. `value`'s setter is the only write, so every close is unconditional.
-    init(value: Binding<Int>, title: String = "ESTIMATE", onClose: @escaping () -> Void = {}) {
+    init(
+        value: Binding<Int>,
+        title: String = "ESTIMATE",
+        unsetValueLabel: String = "None",
+        onClose: @escaping () -> Void = {}
+    ) {
         self._value = value
         self.title = title
+        self.unsetValueLabel = unsetValueLabel
         self.onClose = onClose
         self.onCommit = nil
         self.failureNotice = nil
@@ -223,7 +230,7 @@ struct EstimatePickerPopoverContent: View {
     /// The live total. `lineLimit(1)` with **no** `minimumScaleFactor`: shrinking a duration back
     /// down to fit is the one thing a reader who enlarged their text did not ask for.
     private var totalLabel: some View {
-        Text(total > 0 ? CadenceTaskPresentationSupport.estimateLabel(minutes: total) : "None")
+        Text(total > 0 ? CadenceTaskPresentationSupport.estimateLabel(minutes: total) : unsetValueLabel)
             .cadenceFont(.fieldValue, base: EstimateRollerMetrics.totalLabelSize)
             .foregroundStyle(total > 0 ? Theme.text : Theme.dim)
             .monospacedDigit()

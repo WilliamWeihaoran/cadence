@@ -1280,12 +1280,19 @@ struct CadenceCapturePaletteTests {
     /// **One event composer, reached two ways.** The palette's Event segment names a kind and
     /// nothing about when; a day column names a day and an hour. Both land on the same
     /// `iOSCaptureRequest.Kind.event`, and `neitherPlacementSpellsTheComposersItself` already
-    /// pins that `iOSCalendarQuickCreateSheet(` is stated exactly once in this file — so this is
-    /// the half that says the one statement actually carries the drop's day and minute rather than
-    /// re-reading today.
+    /// pins that Task and Event use the capture card. This half checks that its Event presentation
+    /// carries the drop's day/minute seed and starts in Event mode rather than re-reading today.
     @Test func theEventComposerOpensOnTheDayAndMinuteTheDropResolved() throws {
         let host = try strippingComments(sourceFile("Cadence/iOS/iOSCaptureRadialMenu.swift"))
-        #expect(host.contains("iOSCalendarQuickCreateSheet(dateKey: dateKey, initialStartMinute: startMinute, initialKind: .event)"))
+        let seed = "CadenceTaskComposerSeed(doDateKey: dateKey, scheduledStartMin: startMinute ?? -1)"
+        let eventCard = #"iOSCreateTaskSheet\(\s*seed: CadenceTaskComposerSeed\(doDateKey: dateKey, scheduledStartMin: startMinute \?\? -1\),\s*initialKind: \.event\s*\)"#
+        func carriesResolvedPlacement(_ source: String) -> Bool {
+            source.range(of: eventCard, options: .regularExpression) != nil
+        }
+        #expect(carriesResolvedPlacement("iOSCreateTaskSheet(seed: \(seed), initialKind: .event)"))
+        #expect(!carriesResolvedPlacement("iOSCreateTaskSheet(seed: \(seed), initialKind: .task)"))
+        #expect(!carriesResolvedPlacement("iOSCreateTaskSheet(seed: CadenceTaskComposerSeed(), initialKind: .event)"))
+        #expect(carriesResolvedPlacement(host))
         // The segment's own arm is the one place `today` may still be named, and it passes no
         // minute: a segment is a choice about *what*, never about *when*.
         let button = try cadenceFunctionBody("struct iOSCaptureRadialMenuButton: View", in: host)
