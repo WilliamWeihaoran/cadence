@@ -1,82 +1,92 @@
-# Batch plan — regenerated 2026-10-17
+# Overnight batch plan — 2026-10-18
 
-The first copy of this lived at `scratchpad/batch-plan.md` and was destroyed when agent `rowdue`
-ran `rm -rf scratchpad` during cleanup, believing the shared directory was its own. It reported the
-deletion itself, first and plainly. **This copy is tracked in git so the next cleanup sweep cannot
-take it**, which is the actual lesson.
+Supersedes the 2026-10-17 plan. **Tracked in git on purpose**: the first copy lived in
+`scratchpad/` and an agent deleted it during cleanup.
 
-## Usage ceiling — SUSPENDED until 2026-10-18 14:06
+## Why this one has a mechanism and the last one did not
 
-The owner granted a 24-hour override at 2026-10-17 14:06: *"for the next 24 hours, you may ignore the 80/90%
-token gate."* The standing rule in `feedback-usage-budget-ceiling` (wrap at 80%, pause at 90%) does
-not gate work until then. **After 2026-10-18 14:06 it applies again automatically** — this is time-boxed, not
-repealed, and nobody should have to remember that.
+The 2026-10-17 plan listed five batches and only batch 1 ran. The coordinator is turn-based —
+it acts when invoked and stops — and nothing drove batch advancement except being poked. Nine
+hours of capacity went unused because a batch-1 agent was never launched after its dependency
+cleared.
 
-**What the override does and does not buy.** It stops the coordinator pausing EARLY. It does not
-raise the hard session limit, and that limit is not a soft landing: on 2026-10-17 it fired about an
-hour after the previous override and killed three agents mid-flight. Nothing was lost — all three
-resumed with their context intact, and their uncommitted work was still in the shared tree — but
-that was recoverable by luck of timing more than design. So while the override stands: keep the
-restart backup current, prefer committing green work over holding it, and report the number when it
-crosses rather than acting on it.
+**A recurring scheduled task now advances this queue.** It fires regardless of whether the owner
+is present, re-reads this file, and starts the next batch whose dependencies are met. If the
+scheduled task is cancelled, this plan stops — that is the single point of failure and it is
+named here deliberately.
 
-## Rules in force
+## Standing rules
 
-- 3 agents per batch; 2–3 small tickets each, grouped by file locality so siblings cannot collide.
-- Commit each agent's work as soon as it is green; do not hold a batch for its slowest member.
-- The owner **overrode the usage ceiling** for this run: *"ignore the ceiling, start batch 1 when
-  the agents finish."* It was at 78% when they said it, and the session limit was hit about an hour
-  later, which cost three agents mid-flight. All three resumed with context intact and nothing was
-  lost. Report the number when it crosses; do not pause on it.
+- 3 agents per batch, 2–3 tickets each, grouped by file locality so siblings cannot collide.
+- Commit each agent's work as soon as it is green; never hold a batch for its slowest member.
+- **The usage ceiling is suspended until 2026-10-18 14:06** by the owner. After that the 80/90
+  rule applies again automatically.
+- The session limit has fired **three times** in this run, killing agents mid-flight each time.
+  Nothing was lost because work was backed up and resumed — keep doing both.
+- **Local green is NOT the finish line.** This Mac runs Xcode 27, CI pins 26.0.1, and CI was red
+  for 27 pushes while every local check reported green ([[T-3215]]). CI is the gate.
 
-## Status — what actually happened, not what was planned
+## Before any batch starts
 
-Batches ran out of order while the coordinator was away. These landed:
+Check these, because they move:
+1. `git status` — a path dirty is a path someone is inside, lease or no lease.
+2. `./scripts/agent-commit.sh check` must exit 0.
+3. For any leased path: `git log --no-merges main..<branch> -- <path>`, then read the SHAPE of
+   what comes back. `docs/CODEX_WORKTREE.md` carries six corrections to that check and the
+   reason each failed.
 
-| ticket | state | commit |
+## Batch A — the Block tail and the board
+
+| agent | tickets | notes |
 |---|---|---|
-| T-1470 (PA-13) | **CLOSED**, 5/5 mutations killed, notice proven drawn by mutation | `749d67ad` |
-| T-3170 eleventh pass (iOS Block surfaces) | PARTIAL, 1293 deletions | `042a5767` |
-| T-3170 twelfth pass (macOS Block surfaces) | PARTIAL | `13d45076` |
-| T-3196 / T-3197 | PARTIAL — macOS half only; iOS half lease-blocked | `c52f347c` |
-| T-1481 | PARTIAL — Mac inline panel | `97514929` |
-| T-3204 | CLOSED | `39eb8d55` |
+| `staleclaims` | the 6 fixable stale claims | Reword where the symbol is stale but the substance is live. Leave `TaskCreationService.swift`'s line — a live Codex agent holds it. |
+| `blockchain` | T-3214 | The Block move chain reachable only from its own tests. Decide: goes with the `@Model`, or now. Retire the 5 test call sites in the same change if now. |
+| `boardreconcile` | T-1478 | PARKED no longer — `CalendarPageBoardSupportViews.swift` was granted in `d1162e10`. Land PA-13's sibling. |
 
-## PARKED, and why — the lease is the single bottleneck
+## Batch B — the information gaps
 
-| ticket | blocked on | unblocked by |
-|---|---|---|
-| T-1476 / T-1473 | three leased search paths | **GRANTED** `63b024d6`; needs an agent restarted |
-| T-3170 remainder | `iOSRootView.swift` + 10 leased Calendar/timeline paths | `iOSRootView.swift` **GRANTED** `67b41992`; the Calendar paths are not yet checked |
-| T-1478 | `CalendarPageBoardSupportViews.swift` | **NOT a grant.** `codex/calendar-day-drop-commit` holds real unlanded work there (+23 −96). Blocked on LANDING that branch. |
-| T-1475 | a leased `CadenceCodex*` census | parked on `heartbeat/t1475-ios-timeline-drag`; needs the census bumped |
+| agent | tickets |
+|---|---|
+| `macrowinfo` | T-1467 — macOS notes excerpt AND inline subtasks with checkboxes |
+| `alldaycap` | T-1474 — cap `min(T, min(cap/2, 3))`, 6 iPhone / 8 iPad, macOS adopts the shared rule, multi-day fixture pins the span rule |
+| `cascade47` | T-3193 — raise the cascade threshold to 47 minutes AND measure how often it then fires |
 
-## The check that matters before any further grant
+## Batch C — the broken guards
 
-**"Ahead of main" proves nothing** — 21 `codex/*` branches are ahead, because this repo lands a
-branch by applying its files rather than merging, so a landed branch stays ahead for ever.
-**`codex-land.sh review` proves nothing either** — it refuses on its first failing check, so an
-inbox-id clash masks whether the content already landed.
+Three repo guards were found defective on 2026-10-17, each by an agent hitting it while doing
+something else. All three are filed and none is fixed.
 
-Compare the branch's blob for the path against main's. Identical means landed and safe to grant;
-differing means real unlanded work and a collision waiting to happen. `67b41992` records the table.
+| agent | tickets |
+|---|---|
+| `claimguard` | T-3209 — the comment-claim detector. **Read the rewritten ticket**: the real hole is the existence guard at `:412`, not the `^[A-Z]` anchor, and the originally-prescribed fix does not work. |
+| `mutateparam` | T-3212 — `mutate.sh` cannot baseline a parameterised test; `_ran()` needles `Test <name>()` with empty args |
+| `menueffect` | T-3210 — the Mac context menu is pinned by parity, not by effect; no test invokes an action against a model |
 
-## Remaining queue
+## Batch D — the iOS halves, once their leases clear
 
-1. **Restart T-1476 / T-1473** — granted, and the owner has settled the open question: **persist the
-   include-completed toggle on BOTH platforms** behind a new preference key. Note this changes
-   shipped iOS behaviour, which today resets the flag every time the view is rebuilt — the ticket's
-   claim that iOS "already remembers" it was the coordinator's error, corrected in `63b024d6`.
-2. **Land `codex/calendar-day-drop-commit`**, which unblocks T-1478.
-3. **T-3170's Calendar remainder** — run the blob check on the ten leased Calendar/timeline paths
-   before asking for anything.
-4. **T-1467** — macOS notes excerpt and inline subtasks. Unblocks the iOS half of T-3196.
+| agent | tickets |
+|---|---|
+| `iosrowchrome` | T-3196 / T-3197 iOS halves — **needs `CadenceTests/CadenceCodexTaskRowTypographyTests.swift`**, request the grant first |
+| `inlinepanel2` | T-1481 iOS half — the shared panel inline in the note |
+| `capturland` | land `codex/capture-list-sections` once its calendar dependency clears |
 
-## Not in any batch, deliberately
+## Batch E — the last two, and the build
 
-- **T-3168, the rail** — computed, mutation-proven, never seen. Needs the owner's eyes.
+| agent | tickets |
+|---|---|
+| `iosbackup` | T-1477 — iOS backup and staged restore. **Highest blast radius in the repo**: a staged restore overwrites a CloudKit-backed store on a device with no Finder fallback. Disposable stores only. |
+| `widgetent` | T-3152 — widget iCloud entitlement; a signing-input change wanting its own diff and a two-device run |
+| `build23` | bump `CURRENT_PROJECT_VERSION` 22 → 23 and archive — **ONLY if CI is green and the T-3215 crash is diagnosed** |
+
+## Not in any batch
+
+- **T-3168, the rail** — needs the owner's eyes. Three independent blocks have stopped a machine
+  looking: the computing agent could not navigate, iOS had no fixture door (T-1483, landing now),
+  and macOS window capture needs an Accessibility grant the coordinator may not make.
 - **T-3125** — research the coordinator owes the owner on where name-merging fires.
-- **T-3199 / T-3200** — UI-test AX tree and page routing. Worth doing only if the "never seen on
-  screen" backlog is to be cleared by machine rather than by eye.
-- **T-3152** — widget iCloud entitlement; a signing-input change wanting its own diff and a
-  two-device run.
+- **T-3215's crash** — agent `cicrash` has it. It gates build 23 and nothing else should touch it.
+
+## Run log
+
+- 2026-10-18 (batch runner): launched **Batch A** — `staleclaims`, and `boardreconcile` carrying BOTH T-1478 and T-3214. `blockchain` not launched as a separate agent: T-3214 and T-1478 edit the same leased `CalendarPageBoardSupportViews.swift` and `CalendarBoardDayDropCommitTests.swift`, so two agents would collide; folded into `boardreconcile` (T-3214 first). Third slot left empty rather than pulling Batch B forward. Note for both: `CalendarBoardDayDropCommitTests.swift` and `CadenceTaskMutationSupport.swift` are leased with no explicit grant found — agents told to stop and park if needed. CI gate for Batch E not checked this run (E not reached).
+- 2026-10-18 01:25 (batch runner): **launched nothing.** Batch A (`staleclaims`, `boardreconcile`) was launched by the previous run at ~01:22, three minutes earlier, and has no commits yet; with `cicrash` on T-3215 and an unknown worker inside the iOS calendar/markdown files (all dirty at 01:12, `iOSCalendarMonthViews.swift` staged) the live count is at or over 3. Batch B not pulled forward: `alldaycap` (T-1474) would land on those dirty iOS calendar files. CI gate (E): latest CI run on `f75a5d24` in progress, previous two failed — `build23` stays blocked.
