@@ -144,6 +144,7 @@ Cadence/Shared/Components/CadenceSchedulePanel.swift
 Cadence/Shared/Components/CadenceScheduleCaptureCard.swift
 Cadence/Services/TaskCreationService.swift
 Cadence/iOS/iOSTimelineDraftCreate.swift
+Cadence/Shared/Components/EstimatePickerControl.swift
 CadenceUITests/CadenceCapturePaletteUITests.swift
 CadenceTests/CadenceComposerContainerSurfaceTests.swift
 CadenceTests/CadenceCapturePaletteTests.swift
@@ -152,6 +153,27 @@ CadenceTests/CadenceChoicePickerDismissalTests.swift
 CadenceTests/CadenceContainerPickerConsolidationTests.swift
 CadenceTests/CadencePresentedTypographyBoundaryTests.swift
 ```
+
+### 2026-10-17 — `EstimatePickerControl.swift` granted; `iOSCalendarManager.swift` still REFUSED
+
+**GRANTED:** `Cadence/Shared/Components/EstimatePickerControl.swift`, for an optional unset-value
+label on `EstimatePickerPopoverContent`. Existing callers keep "None"; capture alone says "Clear
+estimate". No storage semantics change. Clean in the worktree; **no `codex/*` branch has modified
+it** (`--no-merges`).
+
+Granted readily because of the shape: an OPTIONAL parameter whose default preserves every existing
+caller byte-for-byte is the same discipline `createEvent` already documents — *"Defaulted, so the
+two existing callers are byte-for-byte unchanged."* A shared control gaining a capture-specific
+wording without a second control is the right answer.
+
+**STILL REFUSED: `Cadence/iOS/iOSCalendarManager.swift`.** The second Codex agent asked whether the
+first agent's T-1483 fixture door had landed. **It has not** — `rg CadenceCalendarFixtureEvents`
+returns nothing in that file. The sequencing recorded earlier stands unchanged, and the agent said
+in advance it would keep the file untouched if the answer was no, which is the correct posture.
+
+**Already granted, no action needed:** `CadenceTests/CadenceCapturePaletteTests.swift` entered the
+fence earlier today. Asking again cost nothing and is better than assuming a remembered grant still
+covers a new edit — the opposite assumption is what made `63b024d6` too narrow.
 
 ### 2026-10-17 — `CadenceCodexSearchOptimizationTests.swift`: a FOURTH search path, and a lesson about where grants come from
 
