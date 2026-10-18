@@ -74,7 +74,7 @@ something else. All three are filed and none is fixed.
 
 | agent | tickets |
 |---|---|
-| `iosbackup` | T-1477 — iOS backup and staged restore. **Highest blast radius in the repo**: a staged restore overwrites a CloudKit-backed store on a device with no Finder fallback. Disposable stores only. |
+| `iosbackup` | T-1477 — iOS backup and staged restore. **OWNER RULING 2026-10-18, asked before the runner could reach it: BUILD IT, but it must not touch any real store.** Disposable stores under the test's own temp directory only. The restore PATH is tested; the restore is never exercised against the owner's data, the real app group, `~/Library/Containers/com.haoranwei.Cadence/Data/`, any `Cadence Store Backups` directory, the `Recovery/` store or the legacy stores. The owner reviews before anything runs for real. **This is the one ticket in the plan where a mistake costs data rather than a red test** — if any step cannot be done against a disposable store, stop and file it rather than improvising. |
 | `widgetent` | T-3152 — widget iCloud entitlement; a signing-input change wanting its own diff and a two-device run |
 | `build23` | bump `CURRENT_PROJECT_VERSION` 22 → 23 and archive — **ONLY if CI is green and the T-3215 crash is diagnosed** |
 
