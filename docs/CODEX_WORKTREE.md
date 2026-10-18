@@ -267,6 +267,46 @@ That is the right instinct and the rarer one. A blocker inherited from another r
 unverified as any other inherited claim, and the cheap move — ask for all three, since asking is
 free — would have widened the fence on someone else's mistake.
 
+### 2026-10-18 — GRANT for [[T-3215]]: the CI crash fix, two lines, any local agent
+
+**Published because an agent refused to act without it, correctly.** Agent `crashfix` was briefed to
+fix the crash, found that `CadenceTests/CadenceCodexTaskListVirtualizationTests.swift` sits inside
+the fence via `CadenceTests/CadenceCodex*.swift`, read the only prose grant on that path, and
+established it fails three ways: it names **T-1475 / T-1479 / T-3211**, not T-3215; it says "same
+path, same agent", meaning `parkedland`, not `crashfix`; and the granted edit is the probe re-key,
+not a save/autosave change. It made no edits and took no test-host lock. Verified independently:
+`rg -c '3215' docs/CODEX_WORKTREE.md` returned **0** before this section existed.
+
+**GRANTED to any local agent, for T-3215 only, scoped to exactly two edits inside
+`theProbeReadsAnEagerListAsFarLargerThanALazyOne`:**
+1. Insert `context.autosaveEnabled = false` immediately after `let context = container.mainContext`
+   (`:101`), before the insert loop.
+2. Delete `try context.save()` (`:109`).
+
+**Both halves are required and this is the correction that nearly did not get made.** A sibling
+proposed removing the save alone. `container.mainContext.autosaveEnabled` defaults to **`true`** —
+recorded at `Cadence/macOS/Views/SettingsView.swift:376` and the reason `CadenceApp.swift:15` sets
+it `false` — and the test file contains **zero** occurrences of `autosaveEnabled`. So dropping the
+save alone lets autosave post the same notification a runloop turn later, inside
+`layoutSubtreeIfNeeded` or the probe's `RunLoop.main.run(until:)`, where it is far harder to read.
+
+**NOT granted:** deleting or weakening the test. It is the negative control proving the probe reads
+1000 for an eager `VStack` against 16 for the real page. `crashfix` verified read-only that the fix
+cannot threaten it — the eager control renders `ForEach(seeded)` over an in-memory array with no
+`@Query` in its view tree, so inserted-but-unsaved objects render identically.
+
+**The stale-observer teardown is NOT in this grant and should be its own ticket.** `crashfix`
+assessed it read-only and it is not the small clean change hoped for: the sibling test's `defer`
+only does `window.contentView = nil; window.close()`, which drops the window's reference without
+deterministically deallocating the `NSHostingView`, and the four containers are loop-locals.
+`_SwiftData_SwiftUI` observers unregister on the hosting view's dealloc, deferred here to an
+autorelease pool drain the test never forces. A deterministic teardown needs an explicit
+`autoreleasepool` per iteration **plus** a way to assert the observer actually unregistered, and
+there is no public API for that second half.
+
+**Whoever lands this: a local pass proves nothing.** The crash does not reproduce on this Mac
+(Xcode 27 / macOS 27); CI pins Xcode 26.0.1 on macOS 26.6.2. Only a green CI run confirms it.
+
 ### 2026-10-18 — the sequenced grant is PUBLISHED: `iOSCalendarManager.swift` opens for the second Codex agent
 
 **The dependency cleared.** `f1fe7afc` landed T-1483, and the fixture door is on main at both halves
