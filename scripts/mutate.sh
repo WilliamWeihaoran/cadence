@@ -192,8 +192,19 @@ ARGV = sys.argv[2:]
 # Without that map (`labels={}`, the default), a display-named test's PASS reads as TEST-ABSENT,
 # not SURVIVED: nothing here silently regresses to the old wrong answer, it degrades to refusing to
 # guess, which `selftest` pins directly.
-TEST_RESULT = re.compile(r'(?:✔|✘) Test (?:[A-Za-z0-9_]+\(\)|"[^"]*")|Test [Cc]ase .*(?:passed|failed)')
-FAILED_SWIFT_TESTING = re.compile(r"✘ Test ([A-Za-z0-9_]+)\(\)")
+#
+# T-3212. A parameterised `@Test(arguments:)` case is spelled with its ARGUMENT LABELS, never with
+# `()`: `Test mobileDay...Refused(refuses:estimate:) recorded an issue with 2 arguments ...`, and
+# `(_:)` for an unlabelled parameter. Both patterns used to require a literal `()`, so such a test's
+# pass was invisible to the count and its failure was invisible to the harvest -- a genuine KILL
+# read as RED-WITHOUT-A-FAILING-TEST. `ARG_LIST` is the one spelling of "any argument list,
+# including none", shared by the count, the harvest and `classify_run`'s ran-check. It must follow
+# the name IMMEDIATELY, so a plan naming `foo` is never satisfied by `fooBar(...)`, and it admits only
+# `label:` runs, so it cannot swallow the rest of a line. The `◇ Test case passing N arguments ...`
+# lines between are progress, not results, and are not counted.
+ARG_LIST = r"\((?:[A-Za-z0-9_]+:)*\)"
+TEST_RESULT = re.compile(r'(?:✔|✘) Test (?:[A-Za-z0-9_]+' + ARG_LIST + r'|"[^"]*")|Test [Cc]ase .*(?:passed|failed)')
+FAILED_SWIFT_TESTING = re.compile(r"✘ Test ([A-Za-z0-9_]+)" + ARG_LIST)
 FAILED_SWIFT_TESTING_NAMED = re.compile(r'✘ Test "([^"]*)"')
 FAILED_XCTEST = re.compile(r"Test [Cc]ase '-\[[^ ]+ ([A-Za-z0-9_]+)\]' failed")
 COMPILE_ERROR = re.compile(r"\.swift:[0-9]+:[0-9]+: error:")
@@ -679,7 +690,10 @@ def classify_run(exit_code, log, suite=None, tests=(), labels=None, suite_labels
               + FAILED_XCTEST.findall(log))
 
     def _ran(t):
-        if ("Test %s()" % t) in log or ("%s]" % t) in log:
+        # T-3212: `Test <name>(` followed by ANY argument list -- `()` for a plain test,
+        # `(refuses:estimate:)` for a parameterised one. The name is escaped and the `(` must
+        # follow it immediately, so a plan naming `foo` is not satisfied by `fooBar(...)`.
+        if re.search(r"Test " + re.escape(t) + ARG_LIST, log) or ("%s]" % t) in log:
             return True
         label = labels.get(t)
         return bool(label) and ('Test "%s"' % label) in log
@@ -1415,7 +1429,10 @@ def selftest():
 
     def check(name, condition, detail=""):
         performed.append(name)
-        say("  %-4s %s%s" % ("ok" if condition else "FAIL", name, "" if condition else "  <- " + detail))
+        # str(): several checks pass a list or a count as `detail`, and `"  <- " + [...]` raised
+        # TypeError on exactly the failing path, so one red check aborted the report of every
+        # check after it (found while mutation-testing T-3212's fixture).
+        say("  %-4s %s%s" % ("ok" if condition else "FAIL", name, "" if condition else "  <- " + str(detail)))
         if not condition:
             failures.append(name)
 
@@ -1556,6 +1573,77 @@ def selftest():
                         "** TEST SUCCEEDED **\n")
         survivor = classify_run(0, survivor_log, "HabitFrequencyLabelTests", ["theFullLabelIsUnchanged"])
         check("a genuine survivor is still SURVIVED", survivor.verdict == SURVIVED, survivor.reason)
+
+        say("")
+        say(" T-3212 -- a parameterised @Test(arguments:) is named by its labels, never by ()")
+        # One fixture, both halves. The lines are copied from a real run of T-3212's own subject
+        # through this runner (2026-10-18, Xcode 27), including the zero-width space swift-testing
+        # puts before some of them: a parameterised case never prints `name()`, only
+        # `name(labels:)`; its failure line carries `with N arguments` before `at`; and its
+        # summary says `with 4 test cases`. Two of the four argument pairs fail, which is the shape
+        # a mutation of a refuse/take branch produces.
+        PARAM = "mobileDayDropRestoresEveryMutatedFieldOnlyWhenRefused"
+        ZWSP = "\u200b"
+        CASE = "%s◇ Test case passing 2 arguments refuses → %s, estimate → %s to " + PARAM + "(refuses:estimate:) started.\n"
+        ISSUE = ("✘ Test " + PARAM + "(refuses:estimate:) recorded an issue with 2 arguments refuses → true, "
+                 "estimate → %s at CalendarBoardDayDropCommitTests.swift:177:9: Expectation failed: "
+                 "landed == !refuses\n")
+        param_pass_log = ("◇ Suite CalendarBoardDayDropCommitTests started.\n"
+                          "◇ Test " + PARAM + "(refuses:estimate:) started.\n"
+                          + CASE % ("", "true", "0") + CASE % (ZWSP, "true", "45")
+                          + CASE % (ZWSP, "false", "0") + CASE % (ZWSP, "false", "45")
+                          + ZWSP + "✔ Test " + PARAM + "(refuses:estimate:) with 4 test cases passed after 0.044 seconds.\n"
+                          "✔ Suite CalendarBoardDayDropCommitTests passed after 0.174 seconds.\n"
+                          "** TEST SUCCEEDED **\n")
+        param_fail_log = ("◇ Suite CalendarBoardDayDropCommitTests started.\n"
+                          "◇ Test " + PARAM + "(refuses:estimate:) started.\n"
+                          + CASE % ("", "true", "0") + ISSUE % "0"
+                          + CASE % (ZWSP, "true", "45") + ISSUE % "45"
+                          + CASE % (ZWSP, "false", "0") + CASE % (ZWSP, "false", "45")
+                          + ZWSP + "✘ Test " + PARAM + "(refuses:estimate:) with 4 test cases failed after 0.041 seconds with 2 issues.\n"
+                          "✘ Suite CalendarBoardDayDropCommitTests failed after 5.355 seconds with 2 issues.\n"
+                          "\t-[CalendarBoardDayDropCommitTests " + PARAM + "(refuses:estimate:)]\n"
+                          "** TEST FAILED **\n")
+        check("the fixture really is the parameterised spelling: no `%s()` anywhere in it" % PARAM,
+              ("Test %s()" % PARAM) not in param_pass_log + param_fail_log)
+        param_green = classify_run(0, param_pass_log, "CalendarBoardDayDropCommitTests", [PARAM])
+        check("half 1: a parameterised test named in `tests:` is seen to run -- its green baseline is "
+              "SURVIVED, not TEST-ABSENT/BASELINE-NOT-GREEN",
+              param_green.verdict == SURVIVED, param_green.reason)
+        check("and its result line is counted, not read as zero tests", param_green.tests_ran >= 1,
+              str(param_green.tests_ran))
+        param_killed = classify_run(65, param_fail_log, "CalendarBoardDayDropCommitTests", [PARAM])
+        check("half 2: its failure `recorded an issue with 2 arguments` is KILLED, not "
+              "RED-WITHOUT-A-FAILING-TEST", param_killed.verdict == KILLED, param_killed.reason)
+        check("and the kill is attributed to the parameterised test by function name",
+              set(param_killed.failed) == {PARAM}, str(param_killed.failed))
+        check("an unlabelled parameter's `(_:)` spelling is read the same way",
+              classify_run(65, param_fail_log.replace("(refuses:estimate:)", "(_:)"),
+                           "CalendarBoardDayDropCommitTests", [PARAM]).failed[:1] == [PARAM])
+        # Any argument list must not mean any name: a plan naming a PREFIX of the test that ran is
+        # naming a test that did not run, and must still refuse rather than borrow its result.
+        prefix = classify_run(0, param_pass_log, "CalendarBoardDayDropCommitTests", ["mobileDayDrop"])
+        check("a name that is only a prefix of the parameterised test still reads as TEST-ABSENT",
+              prefix.verdict == "INVALID" and prefix.reason == "TEST-ABSENT", prefix.reason)
+        check("and so does a plain test whose name is a prefix of another's",
+              classify_run(0, survivor_log, "HabitFrequencyLabelTests", ["theFullLabel"]).reason
+              == "TEST-ABSENT")
+        # The T-786 label map is the display-name half of the same question: a parameterised test
+        # that ALSO carries `@Test("...", arguments:)` logs the quoted label, with the arguments.
+        PARAM_LABEL = "another key is not the panel's to take"
+        named_param_fail = ('◇ Test "%s" started.\n'
+                            '✘ Test "%s" recorded an issue with 2 arguments keyCode → 36, name → "Return" '
+                            'at Foo.swift:12:9: Expectation failed\n'
+                            '✘ Test "%s" failed after 0.001 seconds with 1 issue.\n'
+                            "Test Suite 'HabitFrequencyLabelTests' failed\n"
+                            "** TEST FAILED **\n") % (PARAM_LABEL, PARAM_LABEL, PARAM_LABEL)
+        named_param = classify_run(65, named_param_fail, "HabitFrequencyLabelTests",
+                                   ["anotherKeyIsNotThePanelsToTake"],
+                                   {"anotherKeyIsNotThePanelsToTake": PARAM_LABEL})
+        check("a display-named parameterised failure is KILLED and resolved through the label map",
+              named_param.verdict == KILLED
+              and set(named_param.failed) == {"anotherKeyIsNotThePanelsToTake"},
+              "%s %s" % (named_param.reason, named_param.failed))
 
         say("")
         say(" T-786 -- a display-named @Test's own result line is not silence")
