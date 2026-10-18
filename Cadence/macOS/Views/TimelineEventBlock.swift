@@ -362,8 +362,10 @@ struct TimelineEventBlock: View {
     private var eventBlockBody: some View {
         HStack(alignment: .top, spacing: 0) {
             // **T-3160: the event block wears Apple Calendar's rail treatment.** The leading rail
-            // is the identity marker — `railColor` keeps 96% of the calendar's own chroma at full
-            // brightness — and it is *stateless on purpose*: a marker that answers "which calendar
+            // is the identity marker — since [[T-3168]]'s second lever `railColor` carries the
+            // calendar's own chroma *whole*, at the brightness that keeps the most of it, while
+            // the plate behind it is washed down to a chroma ceiling of 0.12 — and it is
+            // *stateless on purpose*: a marker that answers "which calendar
             // is this" must not change colour under the pointer. The state ladder is carried by
             // the plate and the labels, which is why `railColor` takes no `isSelected`/`isActive`.
             //

@@ -19,8 +19,8 @@ import UIKit
 ///
 /// - **`plate*`** — a solved opaque fill in the calendar/list hue with `Theme.onColor` content and
 ///   no rail. This is the original Cadence event look.
-/// - **`rail*`** — Apple Calendar's look: a leading vertical rail at near-full chroma, a much
-///   darker tinted plate, and the **title in the hue** rather than in white.
+/// - **`rail*`** — Apple Calendar's look: a leading vertical rail at the calendar's own chroma, a
+///   much darker tinted plate, and the **title in the hue** rather than in white.
 ///
 /// ## Who wears which, and why that is not in the names (T-3160)
 ///
@@ -75,8 +75,19 @@ import UIKit
 /// constant luminance** by walking saturation down and re-solving brightness. Holding Y exactly is
 /// what makes it free — every contrast ratio in this file is `(L1 + 0.05) / (L2 + 0.05)` over two
 /// luminances, so a plate that keeps its Y keeps every ratio solved against it, to the last digit.
-/// The ceiling touches the **plate only**. `railColor` is untouched, because the rail is the
-/// identity marker and laundering it is the one thing this treatment cannot afford.
+/// The ceiling touches the **plate only**.
+///
+/// ## Where the colour ended up living, and why the plate is not it
+///
+/// The paragraph above used to end *"`railColor` is untouched, because the rail is the identity
+/// marker and laundering it is the one thing this treatment cannot afford."* Both halves of that
+/// sentence are now the other way round, and the device photograph is what turned them over:
+/// **the plate is laundered hard and the rail is not laundered at all.** The ceiling sits at 0.12
+/// rather than 0.25, so it binds on every colour any palette ships, and `railColor` returns the
+/// calendar's own hue and saturation rather than the title's solved tint. The identity the rail
+/// was protected to carry is exactly what it now carries, in three points of width, with a
+/// near-neutral wash behind it — which is the distribution the owner's Apple Calendar target has
+/// and the one Cadence did not. The reasoning for each number is on the two symbols themselves.
 ///
 /// The unprefixed legacy spellings (`fill`, `fillLuminance`, `primaryLabelColor`, …) are the
 /// `plate` treatment under its historical name and are kept live for call sites that have not been
@@ -264,44 +275,65 @@ enum CadenceCalendarEventStyle {
     /// the plate's luminance, so moving `railFillLuminance` moves the ceiling with it — the same
     /// discipline `railLabelColor` already uses to derive each label tier from its own plate.
     ///
-    /// ## Why 0.25, with both ends of the window measured
+    /// ## It was 0.25, and 0.25 was answering a different question ([[T-3168]])
     ///
-    /// The number is not free. It is squeezed from both sides, and the admissible window turns out
-    /// to be narrow enough that picking the middle of it is nearly the whole decision.
+    /// T-3168 set this to 0.25 with a window measured from both ends, and the lower end of that
+    /// window was the rule **"do not launder an ordinary calendar"**: across Cadence's three
+    /// palettes the least colourful accent's plate measures 0.0391, so anything under about 0.231
+    /// starts taking chroma off blues, greens and purples that were never the problem.
     ///
-    /// **From below — do not launder an ordinary calendar.** Across Cadence's three shipped accent
-    /// palettes, eighteen colours, the rail plate's chroma against this same anchor runs 0.126
-    /// (the `#4fd6e0` teal) to 0.281 (the `#ff5a5f` red), and every non-red accent tops out at
-    /// 0.230. So anything under about **0.231** starts removing chroma from blues, greens and
-    /// purples that were never the problem, which is the thing a ceiling must not do.
+    /// That rule was right *while the plate was where the calendar's colour lived*. It is no
+    /// longer, and the two halves of this ticket are one change: `railColor` now carries the
+    /// calendar's own chroma, so the plate does not have to, and a plate that keeps hue is not
+    /// preserving identity — it is competing with the rail for it. The owner's target says so in
+    /// as many words: *"Apple's events are a near-neutral wash with a saturated left rail and
+    /// coloured text; the colour lives in the rail. Ours are filled cards whose whole body carries
+    /// hue."* **So the old lower bound is not relaxed here, it is inverted: laundering an ordinary
+    /// calendar's plate is now the thing this constant is for.**
     ///
-    /// **From above — the hierarchy has to survive.** The loudest plate any calendar colour can
-    /// now produce *is* the ceiling, by construction. For an event to stay quieter than a task,
-    /// that worst case has to stay under the plate treatment's chroma for an ordinary mid blue —
-    /// `#4a9eff`, which is also `Theme.blueHex`. That bound is 0.289 at rest, 0.278 active and
-    /// **0.270** selected, and the tightest one is the one that counts.
+    /// ## Why 0.12, with both ends of the new window measured
     ///
-    /// The window is therefore roughly **[0.231, 0.270]**, and 0.25 is its middle. Inside it
-    /// exactly one of the eighteen accents is touched — the `#ff5a5f` red, which is also where the
-    /// dark-UI literature puts the worst halation on a dark surface — and on the T-3160 sweep it
-    /// binds on exactly the two hues T-3168 was filed about: `#3d0000` measures 0.432 here and
-    /// `#0000ff` measures 0.752, three times the band every ordinary hue lives in.
+    /// **From above, and this end is derived rather than judged.** "The fill is a near-neutral
+    /// wash" has to be a property of the *treatment*, not of which hue the account happened to
+    /// pick — a ceiling that only a pathological colour ever reaches leaves every ordinary
+    /// calendar exactly as the owner photographed it. So the ceiling must bind on the **least**
+    /// colourful swatch any shipped palette offers. That is `#4fd6e0`, whose uncapped rest plate
+    /// measures **0.0391**; against this anchor (`cbrt(0.030)` = 0.3107) it puts the bound at
+    /// **0.1258**. At 0.12 the ceiling binds on **all eighteen** accents and on five of the seven
+    /// sweep hues — the two it misses are `#ffffff` and `#000000`, which have no chroma to take.
+    /// At 0.20 it binds on eight of eighteen; at 0.25 on one.
     ///
-    /// ## What it costs
+    /// **From below — the plates must not collapse into one grey.** The pale `#ede7d3` control is
+    /// the fixture's "already quiet" calendar and its plate carries chroma **0.0075**, below every
+    /// ceiling considered here and therefore never touched by one. A ceiling that pulled a vivid
+    /// calendar under about twice that would make a deep red's plate no more coloured than a
+    /// cream one's, which is the "two calendars now look the same" failure T-3168 was watched for.
+    /// That puts the floor at a ceiling of 0.015, i.e. a ratio of **0.048**.
     ///
-    /// A vivid calendar's plate gives up chroma. `#0000ff`'s rest plate goes from (0, 0, 173) at
-    /// chroma 0.234 — a saturated royal blue, and the loudest block on the canvas — to (44, 44, 88)
-    /// at 0.078, a quiet navy. `#3d0000`'s goes from (105, 0, 0) at 0.134 to (84, 32, 32) at the
-    /// same 0.078. Both land within 1.22x of an ordinary blue event plate, against 3.66x before.
+    /// The window is therefore **[0.048, 0.126]**, and **0.12 is deliberately at the top of it
+    /// rather than in the middle** — the same reason this is spelled as a ceiling and not as a
+    /// target. It must never remove chroma it did not have to, so the right value is the largest
+    /// one at which the property still holds, with the remaining 0.006 left as margin for a
+    /// `colorHex` that has already been rounded to 8 bits. Rendered side by side at 0.25 / 0.18 /
+    /// 0.12 / 0.08 the step that stops the body reading as a coloured card is the one into 0.12;
+    /// 0.08 is past it and flattens a green and a teal into the same slate.
     ///
-    /// The identity that chroma was carrying is not lost, because the plate was never where it
-    /// lived: the rail still keeps 0.96 of the calendar's chroma at full brightness and is not
-    /// touched by any of this, and the title is still drawn **in the hue**, solved to
-    /// `railTitleContrastTarget` against a plate whose luminance has not moved a digit.
+    /// ## What it costs, measured
     ///
-    /// It is spelled as a ceiling, not a target, for the same reason `railMinimumLuminance` is
-    /// spelled as a floor: it must never remove chroma it did not have to.
-    static let railPlateChromaRatio: Double = 0.25
+    /// Every plate above the ceiling lands on **chroma 0.0373** at rest (0.0423 active, 0.0469
+    /// selected). `#3d0000`'s rest plate goes from (84, 32, 32) to **(67, 42, 42)**, `#0000ff`'s
+    /// from (44, 44, 88) to **(47, 47, 67)**, and an ordinary `#4a9eff` — untouched at 0.25 —
+    /// from (23, 49, 80) to **(35, 50, 67)**. The pale control stays exactly (50, 48, 44), which
+    /// is the measurement that says this ceiling still only ever removes, never adds.
+    ///
+    /// **And it still costs no contrast, for the same arithmetic as before:** the cap re-solves
+    /// brightness at every step of its saturation walk, so Y is held at 0.030 / 0.044 / 0.060 to
+    /// the bisection's precision, and every ratio in this file is `(L1 + 0.05) / (L2 + 0.05)` over
+    /// two luminances and nothing else. Re-measured rather than assumed: across the 63 tier
+    /// measurements the largest ratio that moved at all moved by **1.2e-05**, which is four orders
+    /// of magnitude inside one 8-bit code point. All 63 still land on 5.1 / 4.6 / 3.2 to four
+    /// decimal places.
+    static let railPlateChromaRatio: Double = 0.12
 
     /// The rail plate's chroma ceiling at a given state, derived from that state's own luminance.
     static func railPlateChromaCeiling(isSelected: Bool = false, isActive: Bool = false) -> Double {
@@ -310,51 +342,77 @@ enum CadenceCalendarEventStyle {
         )
     }
 
-    /// The leading rail: **the same colour as the block's own title** ([[T-3168]]).
+    /// The leading rail: **the calendar's own colour, at all the chroma it can carry**
+    /// ([[T-3168]]).
     ///
-    /// ## What this replaced, and why it had to go
+    /// ## This is the second half of one change, and it reverses the first half
     ///
-    /// The rail used to be `Color(hue:, saturation: source.saturation * 0.96, brightness: 1)` —
-    /// full brightness at 96% chroma, near-neon — while every label beside it is *solved* to a
-    /// ratio against the plate and is therefore lightened and desaturated to land on it. The two
-    /// were built by different rules, and the consequence was not a matter of taste: **the rail
-    /// could never be quieter than its own title.** Agent `calfixture` photographed the result and
-    /// reported the rail, not the plate, as the loudest element on the canvas — after [[T-3168]]'s
-    /// chroma ceiling had already quietened the plate and left the rail untouched by design.
+    /// T-3168's first lever made the rail adopt `railTitleColor(for:)` — the title's *solved*
+    /// colour, lightened and desaturated to clear 5.1:1 over the plate. It was read off an Apple
+    /// Calendar screenshot in which a block's rail and its title looked like one colour, and it
+    /// answered a real complaint: the rail was the loudest element in the frame.
     ///
-    /// The owner's target is an Apple Calendar screenshot, where a block's rail and its title are
-    /// one colour and the rail reads as *part of* the block rather than as a stripe laid over it.
-    /// Adopting the title's colour is the whole change, and it costs no contrast: this function
-    /// does not touch `railFillLuminance`, so every tier still solves against exactly the plate it
-    /// solved against before and the whole AA ladder stands unmoved.
+    /// **It was then looked at on a device, which had never happened, and the picture disagreed.**
+    /// With a deep red, a pure blue and a pale olive side by side, the deep red was still the
+    /// loudest thing on screen; the pale one nearly vanished; and none of the three read as Apple
+    /// Calendar. The reading that explains all three at once is that *the structure was already
+    /// Apple's and the distribution of colour was not*: Apple puts the hue in three points of rail
+    /// and leaves the body a near-neutral wash, while Cadence spread a middling amount of hue over
+    /// the rail, the title, the rim **and** the whole plate — so no part of the block was neutral
+    /// and the plate, being the largest, was what the eye read.
     ///
-    /// ## Still stateless, and that is a deliberate pin rather than an oversight
+    /// So the hue goes back into the rail and comes out of the plate, in one change:
+    /// `railPlateChromaRatio` drops from 0.25 to 0.12 and this function stops laundering itself.
+    /// Neither half works alone — a saturated rail over a hued plate is the block that was
+    /// photographed as too loud, and a neutral plate under a washed rail is a block with no
+    /// calendar identity anywhere.
     ///
-    /// `railTitleColor` takes `isSelected`/`isActive` and brightens with them; this calls it at its
-    /// **rest** defaults and never passes the state through. The rail is the answer to "which
-    /// calendar is this", and an identity marker that changes colour on hover is a different
-    /// calendar — the constraint the old implementation satisfied by being a fixed derivation per
-    /// hue, and which survives here for the same reason.
+    /// ## What it returns
     ///
-    /// The visible consequence, stated rather than discovered later: rail and title are *exactly*
-    /// the same colour at rest, and on hover and selection the title steps one and two stops
-    /// brighter while the rail stays put. At those stops the rail is the quieter of the two, which
-    /// is the right way round — it is never again the loudest thing in the frame.
+    /// The calendar's **own hue and saturation**, at the brightness that carries the most chroma —
+    /// full brightness — and lifted to `railMinimumLuminance` only when that is not enough to
+    /// clear the 3:1 non-text bar against `Theme.bg`.
     ///
-    /// ## The floor is still enforced, and it is currently inert by arithmetic
+    /// Saturation is taken whole rather than at the 0.96 the pre-T-3168 rail used. That 4% existed
+    /// to stop a fully-saturated primary reading as raw paint beside its neighbours, and the
+    /// neighbours have changed: the plate it sits on now carries a third of the chroma it did, so
+    /// the rail is the one place the calendar's colour appears at strength and that is the point
+    /// of it. The haircut was worth ΔC = 0.0018 on `#3d0000` — well inside a just-noticeable
+    /// difference — against the cost of the rail not quite being the colour the account chose.
     ///
-    /// `railMinimumLuminance` is the 3:1 non-text bar against `Theme.bg`, and two month-grid call
-    /// sites still rely on this function carrying it. It cannot bind today: a rest title is solved
-    /// to `railTitleContrastTarget * (railFillLuminance() + 0.05) - 0.05` = 5.1 * 0.080 - 0.05 =
-    /// **Y 0.358**, three times the 0.120 floor, at every hue. It is kept rather than deleted
-    /// because that inertness is a *consequence* of two other constants and not a property of this
-    /// one: drop the title target or lift the rest plate far enough and the floor is what stops a
-    /// rail going invisible. `theRailIsTheTitlesColourAndClearsTheNonTextFloorByConstruction`
-    /// measures both halves.
+    /// ## The floor is live again, and that is the measurement to keep
+    ///
+    /// Under the title-coloured rail `railMinimumLuminance` was inert by arithmetic: a rest title
+    /// solves to Y 0.358, three times the 0.120 floor, at every hue. It binds again now, on
+    /// exactly one of the seven sweep hues — `#0000ff`, which maxes out at Y 0.0756 with its
+    /// chroma intact and is desaturated to s = 0.75 to reach the floor. That is the honest trade
+    /// the floor was written for and it is back to doing its job rather than being carried.
+    ///
+    /// ## Two consequences, stated rather than discovered later
+    ///
+    /// 1. **The rail is no longer the same colour as the title, and for a light calendar it is
+    ///    brighter than the title.** `#ede7d3` goes from a dull (166, 161, 147) at Y 0.358 to
+    ///    (255, 249, 227) at Y 0.943 — which is the direct answer to "the pale event nearly
+    ///    vanishes", since nothing else on that block clears 2:1 against the canvas. A
+    ///    zero-saturation calendar (`#000000`, `#ffffff`) therefore gets a white rail, as it did
+    ///    before T-3168.
+    /// 2. **Still stateless, and that pin is unchanged.** The rail answers "which calendar is
+    ///    this", and an identity marker that changes colour on hover is a different calendar. It
+    ///    takes no `isSelected`/`isActive` and reads nothing that does, so it cannot acquire a
+    ///    state ladder by someone adding a defaulted argument upstream.
+    ///
+    /// The rim drawn around the block reads this same function at `railBorderOpacity`, so a rail
+    /// that gained chroma and lost luminance makes the rim *quieter*, not louder: `#3d0000`'s rest
+    /// rim composites to **(112, 32, 32)** against the **(125, 53, 53)** that was sampled off the
+    /// device before this change — a measurement, not a model: that pixel was read out of
+    /// `scratchpad/raillever/before-04.png` and the simple sRGB composite reproduces it exactly.
     static func railColor(for calendarColor: Color) -> Color {
-        let title = railTitleColor(for: calendarColor)
-        guard Theme.relativeLuminance(of: title) < railMinimumLuminance else { return title }
-        let source = hsb(of: title)
+        let source = hsb(of: calendarColor)
+        guard relativeLuminance(hue: source.hue, saturation: source.saturation, brightness: 1)
+            < railMinimumLuminance
+        else {
+            return Color(hue: source.hue, saturation: source.saturation, brightness: 1)
+        }
         return desaturatedTint(
             hue: source.hue,
             ceiling: source.saturation,
@@ -507,8 +565,9 @@ enum CadenceCalendarEventStyle {
     ///
     /// Two knobs again, in a fixed order, and the order is what makes this safe. Brightness solves
     /// for the luminance target first, exactly as `solvedFill` does. If the result is already
-    /// inside the ceiling — which it is for every ordinary calendar hue — nothing else happens and
-    /// no chroma is removed. Only when it is outside does saturation walk down, and every step of
+    /// inside the ceiling — which, since the ratio moved to 0.12, is true only of a calendar that
+    /// is already near-neutral — nothing else happens and no chroma is removed. Only when it is
+    /// outside does saturation walk down, and every step of
     /// that walk **re-solves brightness for the same target**, so the colour that comes back has
     /// the luminance it was asked for whatever its chroma ended up being.
     ///
@@ -530,12 +589,16 @@ enum CadenceCalendarEventStyle {
     /// tolerance that would catch it is four orders of magnitude inside float noise. `low` is
     /// still the right end to return, because it is the one the ceiling's definition guarantees.
     ///
-    /// **What it costs, since `solvedBrightness` claims a month grid runs it once per chip.** The
-    /// common path is one extra brightness solve plus one OKLab conversion — the early return.
-    /// Only a hue that is actually over the ceiling pays for the nested search, and that search is
-    /// a bisection whose every step contains a brightness bisection, so it is roughly twenty times
-    /// the old cost for those hues alone. It is still only plain arithmetic with no allocation,
-    /// and the hues it binds on are the rare ones, which is the trade this is worth making.
+    /// **What it costs, since `solvedBrightness` claims a month grid runs it once per chip, and
+    /// the bill went up.** The early return is one extra brightness solve plus one OKLab
+    /// conversion; the nested search is a bisection whose every step contains a brightness
+    /// bisection, so it is roughly twenty times the early return. At the old 0.25 that search ran
+    /// for two sweep hues and one of eighteen accents and the early return covered everything
+    /// else. At 0.12 the search is the **common** path: it runs for every colour any palette
+    /// ships. It is still plain arithmetic with no allocation per step — about four hundred
+    /// floating-point evaluations per chip — and a month grid is the worst case worth naming if
+    /// one ever shows up in a trace. If it does, the fix is a cache keyed on (hue, saturation,
+    /// state), not a looser ceiling.
     private static func cappedFill(
         for calendarColor: Color,
         luminance target: Double,

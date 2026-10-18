@@ -638,27 +638,30 @@ struct CadenceContrastFloorTests {
         #expect(CadenceCalendarEventStyle.railSecondaryContrastTarget > CadenceCalendarEventStyle.railTertiaryContrastTarget)
     }
 
-    /// **[[T-3168]]: the rail IS the title's colour, and the 3:1 non-text floor is now cleared as a
-    /// consequence of that rather than by a solve of its own.**
+    /// **[[T-3168]], second lever: the rail carries the CALENDAR'S OWN chroma, and the 3:1
+    /// non-text floor is live again.**
     ///
-    /// Three claims, because the change replaced one property with another and dropping either
-    /// half would let the rail drift back to being the loudest thing on the block.
+    /// This replaces `theRailIsTheTitlesColourAndClearsTheNonTextFloorByConstruction`, whose first
+    /// claim — rail *is* title — is the one the device photograph overturned. With a deep red, a
+    /// pure blue and a pale olive on screen, the deep red was still the loudest block and none of
+    /// the three read as Apple Calendar, because the hue was spread evenly over rail, title, rim
+    /// and plate rather than concentrated in three points of rail. Three claims now, and the third
+    /// was an empty set before:
     ///
-    /// 1. **Identity.** `railColor(for:)` returns exactly `railTitleColor(for:)` at rest, for every
-    ///    hue. Asserted as colour equality rather than as a luminance band, because "close enough"
-    ///    is how two colours that were meant to be one drift apart.
+    /// 1. **The colour lives in the rail.** The rail carries strictly more OKLab chroma than both
+    ///    the title solved over the plate and the plate itself. Stated as a comparison rather than
+    ///    as a threshold, because "more colourful than its own text and its own fill" is the
+    ///    property; an absolute number would pass on a near-grey calendar for the wrong reason.
+    ///    Zero-saturation calendars are exempted from the strict half and checked for equality
+    ///    instead — `#000000` and `#ffffff` have no chroma for anything to carry.
     /// 2. **The floor still holds**, against `Theme.bg` and not against the plate — the plate is
     ///    the same hue and cannot separate from it by chroma.
-    /// 3. **The floor is currently INERT, and that is arithmetic worth stating.** A rest title is
-    ///    solved to `railTitleContrastTarget * (railFillLuminance() + 0.05) - 0.05` = Y 0.358,
-    ///    three times `railMinimumLuminance`. So no hue gives up chroma to the floor any more —
-    ///    where the old rail desaturated `#0000ff` to reach 0.120, the title solve had already
-    ///    taken it far past it. The empty set is the assertion: a hue appearing here means the
-    ///    floor has started binding, which means some other constant moved.
-    ///
-    /// **Stateless is pinned separately**, below, because it is the constraint most easily lost by
-    /// someone "fixing" the rail to track the title's state ladder.
-    @Test func theRailIsTheTitlesColourAndClearsTheNonTextFloorByConstruction() {
+    /// 3. **The floor BINDS, on exactly `#0000ff`.** Under the title-coloured rail every hue
+    ///    solved to Y 0.358 and the floor was carried, inert, by two other constants. A primary
+    ///    blue at full chroma tops out at Y 0.0756 and gives saturation up to reach 0.120, which
+    ///    is the trade `railMinimumLuminance` was written for. A different set here is news:
+    ///    either the floor moved, or `railColor` stopped taking the calendar's saturation whole.
+    @Test func theRailCarriesTheCalendarsOwnChromaAndClearsTheNonTextFloor() {
         var measured = 0
         var flooredHues: [String] = []
         for hex in t853CalendarHues {
@@ -666,8 +669,20 @@ struct CadenceContrastFloorTests {
             let swatch = Color(hex: hex)
             let rail = CadenceCalendarEventStyle.railColor(for: swatch)
             let title = CadenceCalendarEventStyle.railTitleColor(for: swatch)
+            let plate = CadenceCalendarEventStyle.railFill(for: swatch)
 
-            #expect(rail == title, "the rail for \(hex) is not its title's colour")
+            if t853Saturation(swatch) > 0.01 {
+                #expect(
+                    t853Chroma(rail) > t853Chroma(title),
+                    "the rail for \(hex) carries \(t853Rounded(t853Chroma(rail))) chroma, no more than its own title's \(t853Rounded(t853Chroma(title))) — the colour has stopped living in the rail"
+                )
+                #expect(
+                    t853Chroma(rail) > t853Chroma(plate),
+                    "the rail for \(hex) carries \(t853Rounded(t853Chroma(rail))) chroma, no more than the plate behind it at \(t853Rounded(t853Chroma(plate)))"
+                )
+            } else {
+                #expect(t853Chroma(rail) < 0.001, "a calendar with no saturation got a coloured rail")
+            }
 
             let ratio = t853Ratio(rail, on: Theme.bg)
             #expect(
@@ -688,34 +703,39 @@ struct CadenceContrastFloorTests {
         }
         #expect(measured == 7, "non-vacuity: \(measured) hues measured")
         #expect(
-            flooredHues.isEmpty,
-            "the floor has started binding on \(flooredHues). It was inert because a rest title solves to Y 0.358 against a 0.120 floor; a hue here means railTitleContrastTarget or railFillLuminance moved"
+            flooredHues == ["#0000ff"],
+            "the floor now binds on \(flooredHues) rather than on #0000ff alone. It is live again because railColor takes the calendar's saturation whole; a change here means railMinimumLuminance moved or the rail stopped doing that"
         )
-        // The arithmetic the inertness rests on, asserted rather than left in prose.
-        let restTitleLuminance = CadenceCalendarEventStyle.railTitleContrastTarget
-            * (CadenceCalendarEventStyle.railFillLuminance() + 0.05) - 0.05
-        #expect(restTitleLuminance > CadenceCalendarEventStyle.railMinimumLuminance * 2)
+        // The arithmetic that makes the floor live rather than carried, asserted rather than left
+        // in prose: a primary blue at its own chroma cannot reach it on brightness alone.
+        #expect(
+            CadenceCalendarEventStyle.relativeLuminance(hue: 2.0 / 3.0, saturation: 1, brightness: 1)
+                < CadenceCalendarEventStyle.railMinimumLuminance
+        )
     }
 
-    /// **Agent `calfixture`'s secondary finding, carried into the change that could make it worse**
-    /// ([[T-3168]]).
+    /// **Agent `calfixture`'s secondary finding, carried through a second change that could make
+    /// it worse** ([[T-3168]]).
     ///
-    /// Looking at the real canvas, `calfixture` reported that a `#0000ff` EVENT plate and an
-    /// ordinary `#4a9eff` TASK plate had become close in hue and weight, and were being told apart
-    /// by the rail and the glyph rather than by the plate. Quietening the rail is therefore a
-    /// change that could trade one problem for another, so the pair is measured here rather than
-    /// argued about.
+    /// `calfixture` reported that a `#0000ff` EVENT plate and an ordinary `#4a9eff` TASK plate had
+    /// become close in hue and weight and were being told apart by the rail and the glyph rather
+    /// than by the plate. This lever makes both plates *less* separable still — the ceiling drops
+    /// to 0.12, so the event plate loses more than half its remaining chroma — so the pair is
+    /// measured here rather than argued about.
     ///
-    /// **It does not get worse, and the reason is that the rail did not get dimmer — it got less
-    /// saturated.** The old rail was brightness 1 floored at Y 0.120; the new one is a rest title
-    /// at Y 0.358. So the rail is *brighter* than it was, by roughly 3x, while giving up the neon
-    /// chroma that made it shout. A task block has no rail at all, so the separator this pair
-    /// leans on is strictly stronger after the change than before it.
+    /// **It survives, and this time the rail is doing the work explicitly rather than by luck.**
+    /// The first lever's answer was that the rail got three times brighter; that is no longer
+    /// true, and the honest number is that `#0000ff`'s rail went the other way — from the title's
+    /// Y 0.358 back down to the floor at Y 0.120. What it bought is chroma: 0.150 to **0.269**,
+    /// nearly double, and chroma is the axis a task plate has nothing on this scale to answer
+    /// with. A task block has no rail at all, so the separator remains, and it is now a
+    /// colourfulness difference rather than a brightness one — which is the right axis, since the
+    /// plate gap is already a brightness one.
     ///
     /// The plate gap is asserted too, because it is the separator that must not quietly erode:
     /// nothing here touches `railFillLuminance` or `plateLuminance`, and the test fails if a later
     /// change does.
-    @Test func theBluestEventAndAnOrdinaryBlueTaskStaySeparableAfterTheRailQuietens() {
+    @Test func theBluestEventAndAnOrdinaryBlueTaskStaySeparableAfterTheColourMovesToTheRail() {
         let eventHue = Color(hex: "#0000ff")
         let taskHue = Color(hex: "#4a9eff")
 
@@ -726,32 +746,47 @@ struct CadenceContrastFloorTests {
             "the task plate (Y \(t853Rounded(taskPlate))) is no longer clearly lighter than the event plate (Y \(t853Rounded(eventPlate)))"
         )
 
-        // The rail is the second separator, and it is louder than the task plate it sits beside —
-        // a task has no rail, so a rail that reads is the thing saying "this is an event".
+        // The rail is the second separator. It is still brighter than the task plate beside it —
+        // a task has no rail, so a rail that reads is the thing saying "this is an event" — and it
+        // is the floor, not the title solve, that guarantees that now.
         let rail = CadenceCalendarEventStyle.railColor(for: eventHue)
         let railLuminance = Theme.relativeLuminance(of: rail)
         #expect(
             railLuminance > taskPlate,
             "the #0000ff rail (Y \(t853Rounded(railLuminance))) is dimmer than the task plate beside it (Y \(t853Rounded(taskPlate)))"
         )
-        // ...and it did not merely survive the change, it is well above the floor the OLD rail was
-        // pinned to. This is the number that says the trade was not paid for in visibility.
+        // The axis the separation actually lives on after this lever. A task plate is solved for
+        // luminance with 0.90 of its own saturation and has no chroma ceiling, so this is not a
+        // free comparison — it is the claim that three points of rail out-colour a whole plate.
         #expect(
-            railLuminance > CadenceCalendarEventStyle.railMinimumLuminance * 2,
-            "the new rail is no brighter than the floor the old one was lifted to"
+            t853Chroma(rail) > t853Chroma(CadenceCalendarEventStyle.plateFill(for: taskHue)) * 2,
+            "the #0000ff rail carries \(t853Rounded(t853Chroma(rail))) chroma against the task plate's \(t853Rounded(t853Chroma(CadenceCalendarEventStyle.plateFill(for: taskHue)))) — the rail has stopped being the louder marker"
+        )
+        // ...and it bought that chroma by giving up luminance, which is exactly the trade the
+        // floor exists to bound. It may sit ON the floor; it may not sit under it.
+        #expect(
+            railLuminance >= CadenceCalendarEventStyle.railMinimumLuminance - 0.001,
+            "the #0000ff rail fell through the 3:1 non-text floor"
         )
     }
 
     /// **The rail does not move with the state ladder, and the title does** ([[T-3168]]).
     ///
     /// The rail answers "which calendar is this"; an identity marker that changes colour on hover
-    /// is a different calendar. Now that the rail is *derived from* a state-dependent function,
-    /// that constraint is one defaulted argument away from being lost, so it is measured: the rail
-    /// is one colour in all three states, and the title it matches at rest is strictly brighter in
-    /// the other two — which is what puts the rail on the quiet side of its own text everywhere
-    /// except rest, where the two are equal.
+    /// is a different calendar. `railColor` takes no `isSelected`/`isActive` and reads nothing
+    /// that does, and this is the measurement of that rather than a reading of the signature.
+    ///
+    /// **The second claim moved with the second lever, and the new one is the honest one.** While
+    /// the rail was the title's own colour it was necessarily dimmer than the title in hover and
+    /// selection, and the test said so. It is not any more: the rail is solved from the calendar
+    /// rather than from the plate, so a *light* calendar's rail is brighter than any of its title
+    /// stops and a *deep* one's is darker. Asserting an ordering would therefore be asserting
+    /// which calendars exist. What is asserted instead is the thing the change is about — the rail
+    /// is never the title's colour for a calendar that has a colour, because the two are now
+    /// solved by different rules on purpose — plus the ladder the title still climbs.
     @Test func theRailStaysOneColourWhileItsTitleClimbsTheStateLadder() {
         var measured = 0
+        var brighterThanEveryTitleStop: [String] = []
         for hex in t853CalendarHues {
             let swatch = Color(hex: hex)
             let rail = CadenceCalendarEventStyle.railColor(for: swatch)
@@ -763,13 +798,34 @@ struct CadenceContrastFloorTests {
                 of: CadenceCalendarEventStyle.railTitleColor(for: swatch, isSelected: true)
             )
             let railLuminance = Theme.relativeLuminance(of: rail)
-            #expect(abs(railLuminance - rest) < 0.002, "the rail for \(hex) is not its rest title")
+
             #expect(active > rest + 0.02, "the active title for \(hex) did not climb above rest")
             #expect(selected > active + 0.02, "the selected title for \(hex) did not climb above active")
-            #expect(railLuminance < active, "the rail for \(hex) is louder than its own active title")
+
+            if t853Saturation(swatch) > 0.01 {
+                #expect(
+                    rail != CadenceCalendarEventStyle.railTitleColor(for: swatch),
+                    "the rail for \(hex) is its rest title again — lever 1 has come back and the colour has left the rail"
+                )
+            }
+            // Whatever the ordering, the rail is one colour: it is read from the calendar and the
+            // state ladder is not an input to it. Measured by asking for it three times in three
+            // states' worth of surrounding context and getting the same answer.
+            #expect(
+                Theme.relativeLuminance(of: CadenceCalendarEventStyle.railColor(for: swatch)) == railLuminance,
+                "the rail for \(hex) is not a pure function of its calendar colour"
+            )
+            if railLuminance > selected { brighterThanEveryTitleStop.append(hex) }
             measured += 1
         }
         #expect(measured == 7, "non-vacuity: \(measured) hues measured")
+        // Named rather than left to be rediscovered: these are the calendars whose rail outshines
+        // their own text at every state, and they are exactly the light ones. A deep hue appearing
+        // here would mean the rail had stopped being solved from the calendar.
+        #expect(
+            brighterThanEveryTitleStop == ["#ffc857", "#4fd6e0", "#ffffff", "#000000"],
+            "the set of calendars whose rail is brighter than every title stop changed: \(brighterThanEveryTitleStop)"
+        )
     }
 
     /// Both ladders, measured in L* rather than in raw luminance, because raw luminance is not
@@ -909,19 +965,27 @@ struct CadenceContrastFloorTests {
         )
     }
 
-    /// A ceiling, not a target: it must never remove chroma it did not have to.
+    /// **The ceiling now launders EVERY calendar colour the palettes offer, and that inversion is
+    /// the whole of [[T-3168]]'s second lever.**
     ///
-    /// Spelled as the exact set of hues it binds on, the way
-    /// `theRailClearsTheNonTextFloorOnBgWhileKeepingTheCalendarsChroma` spells the rail's. Two
-    /// claims live here. On the T-3160 sweep the ceiling touches **only** the two hues T-3168 was
-    /// filed about. Across all three of Cadence's shipped accent palettes — eighteen colours, the
-    /// ones a reader sees beside an event every day — it touches **two of eighteen**, both reds,
-    /// and leaves every blue, green, purple, amber and teal exactly where the calendar put it.
+    /// This replaces `theChromaCeilingBindsOnlyOnHuesOutsideTheOrdinaryBand`, which asserted the
+    /// opposite: that the ceiling touched two of seven sweep hues and one of eighteen accents, and
+    /// that a third appearing in either list was news. That was the right assertion while the
+    /// plate was where the calendar's colour lived. It is not any more — `railColor` carries the
+    /// hue now — and a ceiling only a pathological colour ever reaches leaves every ordinary
+    /// calendar exactly as the device photograph showed it: a filled card whose whole body carries
+    /// hue.
     ///
-    /// A third hue appearing in either list is news: either the ceiling has been tightened, or a
-    /// palette has gained a colour vivid enough to need laundering, and both are decisions rather
-    /// than accidents.
-    @Test func theChromaCeilingBindsOnlyOnHuesOutsideTheOrdinaryBand() {
+    /// **So the claim flips, and it is the bound the constant is derived from.** "The fill is a
+    /// near-neutral wash" must be a property of the treatment rather than of which hue the account
+    /// picked, so the ceiling must bind on the *least* colourful swatch any shipped palette
+    /// offers. All eighteen are held, and five of the seven sweep hues; the two it misses are
+    /// `#ffffff` and `#000000`, which have no chroma to take. An accent escaping is news in the
+    /// other direction: it means the ceiling drifted up past a palette.
+    ///
+    /// The derivation is asserted too, because a ratio that merely *happens* to clear every accent
+    /// today is one new palette away from not doing so.
+    @Test func theChromaCeilingLaundersEveryCalendarColourThePalettesOffer() {
         func clipped(_ hexes: [String]) -> [String] {
             hexes.filter { hex in
                 let swatch = Color(hex: hex)
@@ -934,7 +998,7 @@ struct CadenceContrastFloorTests {
         }
 
         #expect(
-            clipped(t853CalendarHues) == ["#3d0000", "#0000ff"],
+            clipped(t853CalendarHues) == ["#ffc857", "#4fd6e0", "#4a9eff", "#3d0000", "#0000ff"],
             "the set of sweep hues the chroma ceiling binds on changed: \(clipped(t853CalendarHues))"
         )
 
@@ -942,17 +1006,44 @@ struct CadenceContrastFloorTests {
         for palette in CadenceAccentPalette.all { offered.append(contentsOf: palette.swatchHexes) }
         #expect(offered.count == 18, "non-vacuity: \(offered.count) accent swatches swept")
         #expect(
-            clipped(offered) == ["#ff5a5f"],
-            "the set of Cadence accents whose plate the chroma ceiling launders changed: \(clipped(offered)). One of eighteen, and it is a red, which is where the dark-UI halation literature puts the worst of it"
+            clipped(offered).count == 18,
+            "the ceiling no longer launders every shipped accent — these escaped it: \(Set(offered).subtracting(clipped(offered)).sorted())"
+        )
+
+        // The bound the ratio is derived from, measured rather than restated: the least colourful
+        // plate any palette can produce, and the ratio that just reaches it. 0.12 must sit under
+        // that, or at least one shipped calendar keeps a full-bodied hue.
+        let leastColourfulAccentPlate = offered
+            .map { t853Chroma(CadenceCalendarEventStyle.railFill(for: Color(hex: $0))) }
+            .min() ?? 0
+        #expect(leastColourfulAccentPlate > 0, "non-vacuity: no accent plate was measured")
+        let anchor = CadenceOKLab.neutralLightness(
+            relativeLuminance: CadenceCalendarEventStyle.railFillLuminance()
+        )
+        let bound = offered
+            .map { t853UncappedRailPlateChroma(Color(hex: $0)) / anchor }
+            .min() ?? 0
+        #expect(
+            CadenceCalendarEventStyle.railPlateChromaRatio < bound,
+            "railPlateChromaRatio \(CadenceCalendarEventStyle.railPlateChromaRatio) is at or above the \(t853Rounded(bound)) at which the least colourful shipped accent escapes the ceiling"
+        )
+        #expect(
+            CadenceCalendarEventStyle.railPlateChromaRatio > 0.048,
+            "railPlateChromaRatio is under the floor at which a vivid plate stops being twice as colourful as the pale #ede7d3 control's own plate"
         )
 
         // Whatever chroma it gives up, the plate is still that calendar's hue — the cap walks
-        // saturation toward grey at a fixed hue, it does not rotate anything.
-        for hex in ["#3d0000", "#0000ff"] {
+        // saturation toward grey at a fixed hue, it does not rotate anything, and it does not
+        // reach grey.
+        for hex in ["#3d0000", "#0000ff", "#4a9eff"] {
             let swatch = Color(hex: hex)
             let plate = CadenceCalendarEventStyle.railFill(for: swatch)
             #expect(t853Hue(plate) == t853Hue(swatch), "the capped plate for \(hex) is no longer that hue")
             #expect(t853Saturation(plate) > 0.05, "the capped plate for \(hex) was laundered to a grey")
+            #expect(
+                t853Chroma(plate) > t853Chroma(CadenceCalendarEventStyle.railFill(for: Color(hex: "#ede7d3"))) * 2,
+                "the capped plate for \(hex) is no more colourful than the pale control's own plate"
+            )
         }
     }
 
@@ -1121,6 +1212,35 @@ private func t853Saturation(_ color: Color) -> Double {
     let srgb = resolved.usingColorSpace(.sRGB) ?? resolved
     srgb.getHue(&hue, saturation: &saturation, brightness: &brightness, alpha: &alpha)
     return Double(saturation)
+}
+
+/// The OKLab chroma a rail plate would carry **if there were no ceiling at all** — the pre-T-3168
+/// solve, rebuilt here out of the one piece of `CadenceCalendarEventStyle` that is not private
+/// (`relativeLuminance(hue:saturation:brightness:)`) plus a bisection of its own.
+///
+/// It exists so the ceiling's upper bound can be *derived* in the assertion rather than copied out
+/// of the doc comment it is justified in. Deliberately the harness's arithmetic and not the code
+/// under test's: a bound measured with the capped solve would be the capped number, and would
+/// agree with anything.
+private func t853UncappedRailPlateChroma(_ color: Color) -> Double {
+    var hue: CGFloat = 0, saturation: CGFloat = 0, brightness: CGFloat = 0, alpha: CGFloat = 0
+    let resolved = NSColor(color)
+    let srgb = resolved.usingColorSpace(.sRGB) ?? resolved
+    srgb.getHue(&hue, saturation: &saturation, brightness: &brightness, alpha: &alpha)
+
+    let scaled = Double(saturation) * CadenceCalendarEventStyle.railPlateSaturationScale
+    let target = CadenceCalendarEventStyle.railFillLuminance()
+    var low = 0.0
+    var high = 1.0
+    for _ in 0..<20 {
+        let mid = (low + high) / 2
+        if CadenceCalendarEventStyle.relativeLuminance(hue: Double(hue), saturation: scaled, brightness: mid) < target {
+            low = mid
+        } else {
+            high = mid
+        }
+    }
+    return t853Chroma(Color(hue: Double(hue), saturation: scaled, brightness: high))
 }
 
 /// An opaque grey whose WCAG relative luminance is `luminance`, by inverting the sRGB transfer
