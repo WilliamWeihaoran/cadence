@@ -1,398 +1,221 @@
 #if os(iOS)
+import EventKit
 import SwiftData
 import SwiftUI
 
-/// iOS's full task-creation sheet — the counterpart of macOS's `CreateTaskSheet`.
-///
-/// Every iOS entry point used to be a one-line "Add a task…" capture bar, so a task acquired a list,
-/// a date or a priority only by being created first and then opened again in the inspector. This is
-/// the screen that lets it be said once.
-///
-/// **Keyboard-first, but nothing is pinned to the floor.** The title field takes focus on open and
-/// the keyboard comes straight up: capture is the app's highest-frequency action and sits on the
-/// tab bar of every screen, so speed is the point. Everything the task can be given is then stated
-/// **in the page** as a grid of value tiles — Do and Due, then List and Priority, two to a line,
-/// each captioned with the field's name and answering it underneath; Section when the picked list
-/// has any, and Tags, at full width below them.
-///
-/// **Why tiles, in two steps.** It used to be a horizontally-scrolling chip strip above the
-/// keyboard: six chips do not fit across a 390pt phone, and a chip that is set looks like a chip
-/// that is not. That matters here more than on most screens, because this sheet is opened from four
-/// places — the tab bar `+`, the iPad corner `+`, quick capture, and a `+` dragged onto a row — and
-/// three of them **seed** fields. Value rows fixed the legibility and broke the height: at 57pt each
-/// they spent a full line on a field whose caption and value together are half a line wide, and the
-/// Tags row ended up under the software keyboard. A tile says the same two things stacked instead of
-/// side by side, so two fields share a line and all of them clear the fold. The arithmetic is
-/// `CadenceTaskComposerLayout`, and `CadenceTaskComposerLayoutTests` holds it there.
-///
-/// **No estimate control**, deliberately: how long something takes is a judgement made once the
-/// task is real, and macOS's `CreateTaskSheet` has never had one either.
-///
-/// **Size class changes layout, never content.** iPhone and iPad get the same fields in the same
-/// order; only the width the sheet is drawn at differs.
-///
-/// The `~` list, `#` tag and `!`/`!!`/`!!!` priority title markers work here exactly as they do in
-/// macOS's `TaskTitleEntryField` — same parser (`TaskTitleSupport`), no second implementation. They
-/// pay off more here than anywhere: hands are already on the keyboard.
-///
-/// Creation goes through `TaskCreationService`, like every other path in the app. On success the
-/// sheet closes immediately and says nothing — matching macOS, where the feedback is the global
-/// toast rather than a confirmation inside the sheet. (iOS has no such toast yet; what it must not
-/// do is invent a private one.)
+/// Capture's floating presentation of the shared schedule panel. The host owns stores and commits;
+/// the panel owns the form. Both palette arms arrive here with their kind already selected.
 struct iOSCreateTaskSheet: View {
-    let seed: CadenceTaskComposerSeed
-    /// Handed the created task, for a caller that wants to select or scroll to it. The sheet
-    /// dismisses itself either way.
     let onCreated: ((AppTask) -> Void)?
-
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
+    @Environment(iOSCalendarManager.self) private var calendarManager
     @Query(sort: \Area.order) private var areas: [Area]
     @Query(sort: \Project.order) private var projects: [Project]
     @Query(sort: \Tag.order) private var tags: [Tag]
-
-    @State private var title: String
-    @State private var notes: String
-    @State private var fields: CadenceTaskComposerFields
-    @State private var selectedTags: [Tag] = []
-    @State private var newTagName = ""
-
-    /// Why the sheet is still open. `nil` on every path that has not failed, including the one
-    /// before the first Add — see `create()`.
+    @State private var draft: CadenceScheduleDraft
+    @State private var selectedTagIDs: Set<String> = []
     @State private var actionError: String?
-
-    /// A **real** `@FocusState`, attached to the title field with `.focused(_:equals:)`.
-    ///
-    /// `ToolbarItemGroup(placement: .keyboard)` is driven off SwiftUI's own focus system: seven of
-    /// those groups were declared across the iOS markdown surfaces against `@FocusState` properties
-    /// that were never attached to anything, and not one of them ever appeared. An unattached
-    /// `@FocusState` does not even hold a value.
-    @FocusState private var focusedField: Field?
-
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-
-    /// **This sheet is one of the two surfaces T-1364 converted**, so it says so rather than asking.
-    ///
-    /// A view cannot read an environment value its own `body` installs: `.cadenceScaledTypography()`
-    /// below hands `.enabled` to everything *inside* the sheet — the value tiles, their eyebrow
-    /// captions, the suggestion strip — while the title and notes fields here are the thing doing
-    /// the declaring. Holding it as a constant keeps the sheet's own two heights on the same answer
-    /// as its children's rather than a frame behind them.
-    private let typographyScaling: CadenceTypographyScaling = .enabled
-
-    private enum Field: Hashable {
-        case title
-        case notes
-    }
+    @State private var cardHeight: CGFloat = 260
 
     init(
         seed: CadenceTaskComposerSeed = CadenceTaskComposerSeed(),
+        initialKind: CadenceScheduleDraftKind = .task,
         onCreated: ((AppTask) -> Void)? = nil
     ) {
-        self.seed = seed
         self.onCreated = onCreated
-        _title = State(initialValue: seed.title)
-        _notes = State(initialValue: seed.notes)
-        _fields = State(initialValue: CadenceTaskComposerSupport.initialFields(for: seed))
+        var draft = CadenceScheduleDraft.quickCreate(
+            dateKey: seed.doDateKey.isEmpty ? DateFormatters.todayKey() : seed.doDateKey,
+            startMin: seed.scheduledStartMin >= 0 ? seed.scheduledStartMin : min(
+                max(Calendar.current.component(.hour, from: Date()) + 1, CadenceScheduleSupport.calendarStartHour),
+                CadenceScheduleSupport.calendarEndHour - 1
+            ) * 60,
+            opensTimed: seed.scheduledStartMin >= 0,
+            kind: initialKind
+        )
+        draft.title = seed.title
+        draft.notes = seed.notes
+        draft.dueDateKey = seed.dueDateKey
+        draft.priority = seed.priority
+        draft.listToken = CadenceTaskComposerSupport.token(for: seed.container)
+        draft.sectionName = seed.sectionName
+        draft.setEstimate(seed.estimatedMinutes)
+        draft.estimateIsExplicit = seed.estimatedMinutes != CadenceTaskComposerSupport.defaultEstimatedMinutes
+        if initialKind == .task, seed.doDateKey.isEmpty { draft.clearDoDate() }
+        _draft = State(initialValue: draft)
     }
 
     var body: some View {
-        NavigationStack {
-            content
-                .background(Theme.bg)
-                .navigationTitle("New task")
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbar {
-                    ToolbarItem(placement: .cancellationAction) {
-                        Button("Cancel") { dismiss() }
-                    }
-                    ToolbarItem(placement: .confirmationAction) {
-                        Button("Add", action: create)
-                            .fontWeight(.semibold)
-                            .disabled(!canCreate)
-                    }
-                }
-        }
-        .cadenceScaledTypography()
-        .tint(Theme.blue)
-        .preferredColorScheme(.dark)
-        .presentationBackground(Theme.bg)
-        // Focus has to be set after the sheet's first layout, or UIKit hands it straight back and
-        // the keyboard never comes up — the whole point of this screen.
-        .onAppear {
-            DispatchQueue.main.async { focusedField = .title }
-            reconcileContainer()
-        }
-        .onChange(of: fields.container) { _, _ in normalizeSection() }
-        // **T-317: the lists change too, not just the selection.** Re-normalizing only when the
-        // *selection* changes is what let a sheet go on naming a list that had been deleted in
-        // another window or removed by sync. `@Query` republishes when the store does, so this
-        // flips the moment the chosen list stops existing.
-        .onChange(of: containerStillExists) { _, _ in reconcileContainer() }
-    }
-
-    /// Spacings come from `CadenceTaskComposerLayout` rather than being written here, so the height
-    /// the tests check against the keyboard fold is the height this actually lays out to.
-    private var content: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: CadenceTaskComposerLayout.fieldSpacing) {
-                actionErrorNotice
-                titleField
+            CadenceSchedulePanel(
+                draft: $draft,
+                listChoices: iOSScheduleDraftCreation.listChoices(for: draft, areas: areas, projects: projects),
+                sectionChoices: iOSScheduleDraftCreation.sectionChoices(for: draft, areas: areas, projects: projects),
+                calendarChoices: iOSScheduleDraftCreation.calendarChoices(calendarManager),
+                calendarUnavailableNotice: calendarUnavailableNotice,
+                failureNotice: actionError,
+                canCommit: canCreate,
+                actions: CadenceSchedulePanelActions(commit: create, cancel: { dismiss() })
+            ) {
                 markerSuggestions
-                notesField
-                valueTiles
+                if draft.kind == .event, !calendarManager.isAuthorized {
+                    Button("Allow Calendar Access") {
+                        Task {
+                            _ = await calendarManager.requestAccess()
+                            normalizeCalendar()
+                        }
+                    }
+                    .cadenceFont(.controlLabel)
+                }
             }
-            .padding(.horizontal, 16)
-            .padding(.top, CadenceTaskComposerLayout.contentTopPadding)
-            .padding(.bottom, CadenceTaskComposerLayout.contentBottomPadding)
+            .capturePresentation(CadenceScheduleCaptureOptions(
+                tagChoices: TagSupport.uniqueBySlug(tags.filter { !$0.isArchived }).map {
+                    CadenceSchedulePanelChoice(id: $0.id.uuidString, name: $0.name, color: Color(hex: $0.colorHex), systemImage: "tag")
+                },
+                selectedTagIDs: $selectedTagIDs,
+                createTag: createTag
+            ))
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { cardHeight = $0 + 24 }
+            .frame(maxWidth: 540)
+            .padding(12)
+            .frame(maxWidth: .infinity)
         }
         .scrollDismissesKeyboard(.never)
         .scrollIndicators(.hidden)
-    }
-
-    /// Said at the top of the composer, in the same shape `iOSCalendarEventEditSheet` uses: the
-    /// sheet has stayed open, and this is the reason. It sits above the title field rather than
-    /// beside the Add button because the fields underneath it are the ones that survived, and the
-    /// user is about to press Add again.
-    @ViewBuilder
-    private var actionErrorNotice: some View {
-        if let actionError {
-            Text(actionError)
-                .cadenceFont(.controlLabel)
-                .foregroundStyle(Theme.red)
-                .fixedSize(horizontal: false, vertical: true)
-                .frame(maxWidth: .infinity, alignment: .leading)
+        .cadenceScaledTypography()
+        .tint(Theme.blue)
+        .preferredColorScheme(.dark)
+        .presentationBackground(.clear)
+        .presentationDragIndicator(.hidden)
+        .presentationDetents([.height(cardHeight)])
+        .onAppear {
+            reconcileContainer()
+            normalizeCalendar()
         }
-    }
-
-    /// A single-line field on purpose: on a vertical-axis `TextField` the Return key inserts a
-    /// newline and `onSubmit` never fires, and Return creating the task is the fastest path off
-    /// this screen.
-    private var titleField: some View {
-        TextField("What needs doing?", text: $title)
-            .textFieldStyle(.plain)
-            .cadenceFont(.composerTitle)
-            .foregroundStyle(Theme.text)
-            .tint(Theme.blue)
-            .focused($focusedField, equals: .title)
-            .submitLabel(.done)
-            .onSubmit(create)
-            .padding(.horizontal, CadenceTaskComposerLayout.fieldPadding)
-            // A minimum derived from the line the title is actually set on, not the 52 it is at the
-            // default size: a field pinned to 52 with 47pt of glyph in it is where "supports larger
-            // text" stops being true.
-            .frame(minHeight: CadenceTaskComposerLayout.titleHeight(at: dynamicTypeSize, scaling: typographyScaling))
-            .background(Theme.surface)
-            .clipShape(RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous))
-    }
-
-    /// One line at rest, growing to a three-to-six-line box once you are writing in it.
-    ///
-    /// It was `lineLimit(2...6)` — a permanently two-line box on a sheet whose height is the
-    /// binding constraint. The resting height is what `CadenceTaskComposerLayout` counts, and it is
-    /// the honest one to count: the keyboard is up because the *title* has focus, so notes is
-    /// collapsed in exactly the case the fold matters. A seeded sheet takes the `!notes.isEmpty`
-    /// branch, so pre-filled notes open expanded and are never hidden behind a collapsed box.
-    private var notesField: some View {
-        TextField("Notes", text: $notes, axis: .vertical)
-            .textFieldStyle(.plain)
-            .cadenceFont(.bodyText)
-            .foregroundStyle(Theme.text)
-            .tint(Theme.blue)
-            .focused($focusedField, equals: .notes)
-            // `3...6` focused, not `2...6`: a focused field that grew by only one line looked
-            // like it had failed to respond. The resting state is what the height saving comes
-            // from, and a seeded sheet takes the `!notes.isEmpty` branch so pre-filled notes are
-            // never hidden behind a collapsed box.
-            .lineLimit(focusedField == .notes || !notes.isEmpty ? 3...6 : 1...1)
-            .padding(CadenceTaskComposerLayout.fieldPadding)
-            .frame(
-                maxWidth: .infinity,
-                minHeight: CadenceTaskComposerLayout.notesRestingHeight(at: dynamicTypeSize, scaling: typographyScaling),
-                alignment: .leading
-            )
-            .background(Theme.surface)
-            .clipShape(RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous))
+        .onChange(of: draft.listToken) { _, _ in normalizeSection() }
+        .onChange(of: containerStillExists) { _, _ in reconcileContainer() }
+        .onChange(of: draft.kind) { _, _ in
+            actionError = nil
+            normalizeCalendar()
+        }
+        .onChange(of: calendarManager.writableCalendars.map(\.calendarIdentifier)) { _, _ in normalizeCalendar() }
     }
 
     @ViewBuilder
     private var markerSuggestions: some View {
-        if let shortcut = TaskTitleSupport.containerShortcut(in: title) {
+        if draft.kind == .task, let shortcut = TaskTitleSupport.containerShortcut(in: draft.title) {
             iOSTaskComposerMarkerSuggestions(
-                kind: .list,
-                shortcut: shortcut,
-                areas: areas,
-                projects: projects,
-                allTags: tags,
+                kind: .list, shortcut: shortcut, areas: areas, projects: projects, allTags: tags,
                 onPickContainer: { selection in
-                    title = CadenceTaskComposerSupport.title(removingShortcut: shortcut)
-                    fields.container = selection
+                    draft.title = CadenceTaskComposerSupport.title(removingShortcut: shortcut)
+                    draft.listToken = CadenceTaskComposerSupport.token(for: selection)
                     normalizeSection()
-                },
-                onPickTag: { _ in },
-                onCreateTag: { _ in }
+                }, onPickTag: { _ in }, onCreateTag: { _ in }
             )
-        } else if let shortcut = TaskTitleSupport.tagShortcut(in: title) {
+        } else if draft.kind == .task, let shortcut = TaskTitleSupport.tagShortcut(in: draft.title) {
             iOSTaskComposerMarkerSuggestions(
-                kind: .tag,
-                shortcut: shortcut,
-                areas: areas,
-                projects: projects,
-                allTags: tags,
+                kind: .tag, shortcut: shortcut, areas: areas, projects: projects, allTags: tags,
                 onPickContainer: { _ in },
                 onPickTag: { tag in
-                    title = CadenceTaskComposerSupport.title(removingShortcut: shortcut)
-                    select(tag)
+                    draft.title = CadenceTaskComposerSupport.title(removingShortcut: shortcut)
+                    selectedTagIDs.insert(tag.id.uuidString)
                 },
                 onCreateTag: { name in
-                    title = CadenceTaskComposerSupport.title(removingShortcut: shortcut)
-                    createTag(name)
+                    // Keep the shortcut on refusal, so no typed input is lost.
+                    if createTag(name) == nil {
+                        draft.title = CadenceTaskComposerSupport.title(removingShortcut: shortcut)
+                    }
                 }
             )
         }
     }
 
-    private var valueTiles: some View {
-        iOSTaskComposerValueTiles(
-            fields: $fields,
-            selectedTags: $selectedTags,
-            newTagName: $newTagName,
-            titleText: title,
-            areas: areas,
-            projects: projects,
-            availableSections: availableSections,
-            allTags: tags,
-            onPickPriority: { priority in
-                // Strip any `!` marker first: it wins at creation, so leaving it in place would
-                // silently overrule the choice just made here.
-                title = CadenceTaskComposerSupport.titleClearingPriorityMarker(title)
-                fields.priority = priority
-            }
-        )
-    }
-
-    // MARK: - Derived state
-
-    /// **One pair of arrays feeds everything this sheet does with a list.**
-    ///
-    /// The tile that names the destination, the sections its neighbour offers, and the
-    /// `TaskCreationService` the Add button builds all read `areas` / `projects`. The sheet used to
-    /// hand the tiles an `activeAreas` / `activeProjects` filtered copy while building the service
-    /// from the unfiltered one, so a list completed or archived while the sheet was open made the
-    /// tile read "Inbox" while the task landed in that list (T-318). Which lists a *picker* may
-    /// offer is a separate question, answered by `CadenceTaskComposerSupport.pickable*` at the
-    /// control that asks it.
-    private var containerResolver: TaskContainerResolver {
-        TaskContainerResolver(areas: areas, projects: projects)
-    }
-
-    /// `false` once the chosen list has stopped existing. Watched rather than read, so the sheet
-    /// reacts to the store changing under it — see the `onChange` in `body`.
+    private var selection: TaskContainerSelection { CadenceTaskComposerSupport.selection(fromToken: draft.listToken) }
+    private var resolver: TaskContainerResolver { TaskContainerResolver(areas: areas, projects: projects) }
     private var containerStillExists: Bool {
-        !CadenceTaskComposerSupport.namesMissingContainer(
-            fields.container,
-            areas: areas,
-            projects: projects
-        )
+        !CadenceTaskComposerSupport.namesMissingContainer(selection, areas: areas, projects: projects)
     }
-
-    private var availableSections: [String] {
-        containerResolver.availableSections(for: fields.container)
-    }
-
     private var canCreate: Bool {
-        CadenceTaskComposerSupport.canCreate(title: title)
-    }
-
-    // MARK: - Actions
-
-    private func select(_ tag: Tag) {
-        guard !selectedTags.contains(where: { $0.id == tag.id }) else { return }
-        selectedTags = TagSupport.sorted(selectedTags + [tag])
-    }
-
-    /// **T-631**, and macOS's `CreateTaskSheet.createTag` is the same function.
-    ///
-    /// The `#` suggestion row reached for the sheet's ambient `ModelContext`, inserted a `Tag` one
-    /// frame down in `TagSupport.resolveTags`, and committed nothing — so a tag typed into a sheet
-    /// the user then cancelled stayed pending for the next unrelated save anywhere in the app, and
-    /// turned up in Settings › Tags with nothing to explain it.
-    ///
-    /// No chip is selected over a refusal: the notice above the title field is the whole report,
-    /// and it is the one `create()` below already uses.
-    private func createTag(_ name: String) {
-        guard let tag = TagSupport.committedTag(named: name, in: modelContext) else {
-            actionError = CadencePendingChangePersistence.editFailureNotice
-            return
+        switch draft.kind {
+        case .task: return CadenceTaskComposerSupport.canCreate(title: draft.title)
+        case .event:
+            return !draft.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                && calendarManager.writableCalendars.contains { $0.calendarIdentifier == draft.calendarID }
         }
-        actionError = nil
-        select(tag)
+    }
+    private var calendarUnavailableNotice: String? {
+        guard draft.kind == .event else { return nil }
+        if !calendarManager.isAuthorized { return "Calendar access is needed to create events." }
+        return calendarManager.writableCalendars.isEmpty ? "No writable calendars are available." : nil
     }
 
     private func normalizeSection() {
-        fields.sectionName = containerResolver.normalizedSectionName(fields.sectionName, for: fields.container)
+        draft.sectionName = resolver.normalizedSectionName(draft.sectionName, for: selection)
     }
-
-    /// Puts the selection back where it can be honoured, and says so when it had to.
-    ///
-    /// **T-317.** `TaskContainerResolver.applyContainer` attaches nothing for an id it cannot find
-    /// and `insertTask` inserts the task regardless, so a stale selection produced an Inbox task
-    /// under a sheet that still named a list. Rather than let that reach the service, the sheet
-    /// resets the field the user can see and refuses this Add: the composer still holds every value
-    /// they typed, so confirming costs one more tap and nothing is lost by asking.
-    ///
-    /// Returns whether the selection was already good.
+    private func normalizeCalendar() {
+        guard draft.kind == .event else { return }
+        if !calendarManager.writableCalendars.contains(where: { $0.calendarIdentifier == draft.calendarID }) {
+            draft.calendarID = calendarManager.writableCalendars.first?.calendarIdentifier ?? ""
+        }
+    }
     @discardableResult
     private func reconcileContainer() -> Bool {
-        guard CadenceTaskComposerSupport.namesMissingContainer(
-            fields.container,
-            areas: areas,
-            projects: projects
-        ) else { return true }
-
-        fields.container = .inbox
+        guard CadenceTaskComposerSupport.namesMissingContainer(selection, areas: areas, projects: projects) else { return true }
+        draft.listToken = CadenceTaskComposerSupport.token(for: .inbox)
         normalizeSection()
         actionError = CadenceTaskComposerSupport.missingContainerNotice
         return false
     }
 
-    private func create() {
-        guard canCreate else { return }
-        guard reconcileContainer() else { return }
+    private func createTag(_ name: String) -> String? {
+        guard let tag = TagSupport.committedTag(named: name, in: modelContext) else {
+            actionError = CadencePendingChangePersistence.editFailureNotice
+            return actionError
+        }
+        selectedTagIDs.insert(tag.id.uuidString)
+        actionError = nil
+        return nil
+    }
 
-        let draft = CadenceTaskComposerSupport.draft(
-            title: title,
-            notes: notes,
-            fields: fields,
-            tags: selectedTags,
-            scheduledStartMin: seed.scheduledStartMin,
-            estimatedMinutes: seed.estimatedMinutes
+    private func create() -> String? {
+        guard canCreate else { return nil }
+        if draft.kind == .event { return createEvent() }
+        guard reconcileContainer() else { return actionError }
+        let fields = CadenceTaskComposerFields(
+            container: selection, sectionName: draft.sectionName, doDateKey: draft.startDateKey,
+            dueDateKey: draft.dueDateKey, priority: draft.priority
         )
-
-        // T-319: the commit is part of the creation, and it can fail. Everything below this line
-        // is the success experience — a reconcile pass, a task handed to the caller, a closed
-        // sheet — and none of it may run over a task the store did not take. On a throw
-        // `createTask` has already removed the task and its subtasks again, so the sheet is back
-        // to exactly what the user typed, with the reason above the title field.
+        var creation = CadenceTaskComposerSupport.draft(
+            title: draft.title, notes: draft.notes, fields: fields,
+            tags: tags.filter { selectedTagIDs.contains($0.id.uuidString) },
+            scheduledStartMin: draft.scheduledStartMin, estimatedMinutes: draft.estimateMinutes
+        )
+        creation.repeatRule = draft.repeatRule
+        creation.seriesEndMode = draft.seriesEndMode
+        creation.seriesEndDateKey = draft.seriesEndDateKey
+        creation.seriesEndCount = draft.seriesEndCount
         let created: AppTask?
         do {
             created = try TaskCreationService(areas: areas, projects: projects)
-                .createTask(from: draft, into: modelContext)
+                .createTask(from: creation, into: modelContext)
         } catch {
             actionError = TaskCreationService.saveFailureNotice
-            return
+            return actionError
         }
-
-        guard let task = created else { return }
-
+        guard let task = created else { return nil }
         actionError = nil
-        // Fast-path reconcile so a newly-created scheduled/due task's notification is picked up
-        // immediately rather than waiting for the next scenePhase checkpoint — the same call
-        // `CreateTaskSheet` makes on macOS.
         HabitNotificationReconcileSupport.scheduleReconcile(in: modelContext)
-
         onCreated?(task)
         dismiss()
+        return nil
+    }
+
+    private func createEvent() -> String? {
+        if let failure = iOSScheduleDraftCreation.createEvent(from: draft, calendarManager: calendarManager) {
+            return failure
+        }
+        dismiss()
+        return nil
     }
 }
 #endif

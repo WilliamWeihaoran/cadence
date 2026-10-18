@@ -1,4 +1,5 @@
 import Foundation
+import SwiftData
 
 /// One kanban column while it is being edited, carrying the identity of the `TaskSectionConfig` it
 /// came from.
@@ -61,6 +62,42 @@ struct CadenceSectionDraft: Identifiable, Hashable {
 /// exactly this; iOS did not, which stranded tasks on a name no column had any more. Those then
 /// surfaced back on macOS as a phantom column, via `CadenceReadService`'s `extraSections`.
 enum CadenceSectionEditingSupport {
+    static func creationRefusal(
+        for name: String,
+        existingConfigs: [TaskSectionConfig]
+    ) -> KanbanColumnRenameRefusal? {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return .emptyName }
+        return existingConfigs.contains {
+            $0.name.caseInsensitiveCompare(trimmed) == .orderedSame
+        } ? .nameAlreadyTaken : nil
+    }
+
+    /// Returns a notice on refusal; only a committed creation answers nil.
+    static func createSection(
+        named name: String,
+        colorHex: String,
+        in container: any CadenceSectionConfigContainer,
+        modelContext: ModelContext,
+        commit: (ModelContext) throws -> Void = { try $0.save() }
+    ) -> String? {
+        if let refusal = creationRefusal(for: name, existingConfigs: container.sectionConfigs) {
+            return refusal.notice
+        }
+        let config = TaskSectionConfig(
+            name: name.trimmingCharacters(in: .whitespacesAndNewlines),
+            colorHex: colorHex
+        )
+        switch container.addSectionConfig(config, in: modelContext, commit: commit) {
+        case .added:
+            return nil
+        case .declined:
+            return KanbanColumnRenameRefusal.nameAlreadyTaken.notice
+        case .refused:
+            return CadenceSectionConfigAddOutcome.refusalNotice
+        }
+    }
+
     static func drafts(from configs: [TaskSectionConfig]) -> [CadenceSectionDraft] {
         let drafts = configs.map { CadenceSectionDraft(config: $0) }
         return drafts.isEmpty ? [CadenceSectionDraft(name: TaskSectionDefaults.defaultName)] : drafts

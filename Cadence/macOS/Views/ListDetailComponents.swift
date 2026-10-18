@@ -118,6 +118,11 @@ struct ListTasksView: View {
                     onToggle: { isCompletedCollapsed.toggle() }
                 )
             }
+            CadenceSectionCreationRow(area: area, project: project)
+                .padding(.horizontal, TaskListDisplayMetrics.headerHorizontalInset)
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
+                .listRowInsets(.init())
         }
         .listStyle(.plain)
         .scrollContentBackground(.hidden)

@@ -106,6 +106,14 @@ struct CadenceSchedulePanel<NotesField: View>: View {
     var offersTaskRepeat = true
     let actions: CadenceSchedulePanelActions
     private let notesField: NotesField?
+    private var captureOptions: CadenceScheduleCaptureOptions?
+
+    /// Capture changes the presentation, not the draft, picker vocabulary or commit contract.
+    func capturePresentation(_ options: CadenceScheduleCaptureOptions) -> Self {
+        var panel = self
+        panel.captureOptions = options
+        return panel
+    }
 
     @State private var isDoExpanded = false
     @State private var isDueExpanded = false
@@ -185,7 +193,27 @@ struct CadenceSchedulePanel<NotesField: View>: View {
 
     private var isReadOnly: Bool { readOnlyNotice != nil }
 
+    @ViewBuilder
     var body: some View {
+        if let captureOptions {
+            CadenceScheduleCaptureCard(
+                draft: $draft,
+                listChoices: listChoices,
+                sectionChoices: sectionChoices,
+                calendarChoices: calendarChoices,
+                calendarUnavailableNotice: calendarUnavailableNotice,
+                failureNotice: failureNotice,
+                canCommit: canCommit,
+                options: captureOptions,
+                actions: actions,
+                notesField: notesField
+            )
+        } else {
+            standardPanel
+        }
+    }
+
+    private var standardPanel: some View {
         VStack(alignment: .leading, spacing: 12) {
             if let readOnlyNotice {
                 CadenceInlineNotice(text: readOnlyNotice, tone: .informational)
@@ -237,28 +265,10 @@ struct CadenceSchedulePanel<NotesField: View>: View {
     /// iPad timeline it is also the owner's actual complaint: that canvas carries both species and
     /// could make only one of them.
     private var kindSwitch: some View {
-        HStack(spacing: 6) {
-            ForEach(CadenceScheduleDraftKind.allCases) { kind in
-                let isSelected = draft.kind == kind
-                Button { draft.kind = kind } label: {
-                    Text(kind.title)
-                        .cadenceFont(.controlLabel, weight: isSelected ? .semibold : .regular)
-                        .foregroundStyle(isSelected ? Theme.onColor(for: Theme.blue) : Theme.muted)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 32)
-                        .background(isSelected ? Theme.blue : Theme.surface)
-                        .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControlCompact, style: .continuous))
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.cadencePlain)
-                .accessibilityAddTraits(isSelected ? .isSelected : [])
-            }
-        }
         // A kind switch on an existing record would offer to turn a saved task into an event,
         // which is a move between two stores and not an edit. Editing shows which kind it is and
         // does not offer to change it.
-        .opacity(draft.subject.isEditing ? 0.45 : 1)
-        .disabled(draft.subject.isEditing)
+        CadenceScheduleKindSwitch(kind: $draft.kind, isEditing: draft.subject.isEditing)
     }
 
     /// The title, with priority as a compact mark control at its trailing edge.
@@ -865,6 +875,50 @@ struct CadenceSchedulePanelNotesRow: View {
 }
 
 /// The panel's figures, outside the generic type: a static stored property cannot live on one.
+/// The Task/Event switch, drawn once for every surface that offers one.
+///
+/// **It is a shared view rather than a near-copy** because there are now two hosts — the standard
+/// panel and the capture card — and a second spelling of this control is the mistake [[T-3195]]
+/// was filed about: one editor, drawn one way. **It is Buttons rather than a
+/// `Picker(.pickerStyle(.segmented))`** because `Cadence/iOS` and `Cadence/Shared` draw no native
+/// pickers; `CadenceChoiceRow` and its siblings are this app's own vocabulary, and
+/// `SettingsSharedVocabularyTests.noMobileOrSharedSurfaceDrawsANativePicker` holds the rule for
+/// both directories. A selected arm carries `.isSelected`, so it reads to VoiceOver — and to a UI
+/// test — as a selected segment would.
+struct CadenceScheduleKindSwitch: View {
+    @Binding var kind: CadenceScheduleDraftKind
+    /// Editing an existing record: shown, dimmed, and not offered.
+    var isEditing: Bool
+    /// Each arm is identified `<prefix>-task` / `<prefix>-event`. A per-arm identifier rather than
+    /// one on the row: a UI test that reaches a segment through its container depends on how
+    /// SwiftUI happens to flatten the row that day, and "Event" on its own is ambiguous with the
+    /// capture palette's own Event tile.
+    var identifierPrefix: String = "schedule-kind"
+
+    var body: some View {
+        HStack(spacing: 6) {
+            ForEach(CadenceScheduleDraftKind.allCases) { kind in
+                let isSelected = self.kind == kind
+                Button { self.kind = kind } label: {
+                    Text(kind.title)
+                        .cadenceFont(.controlLabel, weight: isSelected ? .semibold : .regular)
+                        .foregroundStyle(isSelected ? Theme.onColor(for: Theme.blue) : Theme.muted)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 32)
+                        .background(isSelected ? Theme.blue : Theme.surface)
+                        .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControlCompact, style: .continuous))
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.cadencePlain)
+                .accessibilityAddTraits(isSelected ? .isSelected : [])
+                .accessibilityIdentifier("\(identifierPrefix)-\(kind.rawValue)")
+            }
+        }
+        .opacity(isEditing ? 0.45 : 1)
+        .disabled(isEditing)
+    }
+}
+
 enum CadenceSchedulePanelMetrics {
     /// The panel's width where its host gives it none — a popover has no container to be a fraction
     /// of. A sheet or an inspector column overrides it with its own frame.

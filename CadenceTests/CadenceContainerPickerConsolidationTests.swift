@@ -233,10 +233,11 @@ struct CadenceContainerPickerConsolidationTests {
 
     /// [[T-3171]] took `iOSCalendarQuickCreateSheet` off this list: its List row is the shared
     /// schedule panel's now, whose rows `iOSScheduleDraftCreation.listChoices` narrows — pinned by
-    /// `theQuickCreateRowsAreNarrowedByTheSharedPickableRule` below.
+    /// `theQuickCreateRowsAreNarrowedByTheSharedPickableRule` below. T-3195's capture host uses
+    /// the same builder; the sweep also pins that handoff rather than pretending it is a direct picker.
     private static let containerPickerCallSites = [
         "Cadence/iOS/iOSTaskDetailComponents.swift",
-        "Cadence/iOS/iOSCreateTaskSheetSupportViews.swift",
+        "Cadence/iOS/iOSCreateTaskSheet.swift",
         "Cadence/iOS/iOSTaskRowActionViews.swift"
     ]
 
@@ -281,6 +282,12 @@ struct CadenceContainerPickerConsolidationTests {
         )
 
         #expect(hits.isEmpty)
+        // Capture's list control is now the shared panel rather than a direct container picker.
+        // Keep the three-file floor, and positively verify its query handoff too.
+        let capture = try CadenceSourceScan.strippedSourceReader()("Cadence/iOS/iOSCreateTaskSheet.swift")
+        #expect(capture.contains("struct iOSCreateTaskSheet: View"))
+        #expect(capture.contains("listChoices: iOSScheduleDraftCreation.listChoices(for: draft, areas: areas, projects: projects)"))
+        #expect(capture.contains(".capturePresentation("))
     }
 
     /// **And the control narrows for itself.** Absence of a filter at the call sites is not

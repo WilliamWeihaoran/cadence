@@ -366,25 +366,29 @@ struct CadenceComposerContainerSurfaceTests {
 
         let reconcile = try #require(CadenceSourceScan.functionBody(named: "reconcileContainer", in: source))
         #expect(reconcile.contains("namesMissingContainer"))
-        #expect(reconcile.contains("fields.container = .inbox"))
+        #expect(reconcile.contains("draft.listToken = CadenceTaskComposerSupport.token(for: .inbox)"))
         #expect(reconcile.contains("CadenceTaskComposerSupport.missingContainerNotice"))
 
         #expect(source.contains(".onChange(of: containerStillExists)"),
                 "the sheet re-normalizes only when the selection changes, which is T-317's cause")
     }
 
-    /// **T-318, at the tile.** The List tile's name comes from the shared resolver over the same
-    /// arrays, and its picker narrows to the active lists itself rather than being handed a second
-    /// pair.
+    /// **T-318, at capture.** The shared panel receives the raw queries; its builder narrows via
+    /// the existing selectable rule and its chip resolves the same token the creation saves.
     @Test func theListTileNamesItsContainerThroughTheSharedResolver() throws {
-        let source = try strippedSource("Cadence/iOS/iOSCreateTaskSheetSupportViews.swift")
-        #expect(source.contains("struct iOSTaskComposerValueTiles: View"))
-        #expect(source.contains("let areas: [Area]"))
-        #expect(source.contains("let projects: [Project]"))
-        #expect(source.contains("CadenceTaskComposerSupport.containerName("))
-        #expect(source.contains("CadenceTaskComposerSupport.resolvedContainer("))
-        #expect(source.contains("CadenceTaskComposerSupport.pickableAreas(areas)"))
-        #expect(source.contains("CadenceTaskComposerSupport.pickableProjects(projects)"))
+        let host = try strippedSource("Cadence/iOS/iOSCreateTaskSheet.swift")
+        #expect(host.contains("struct iOSCreateTaskSheet: View"))
+        #expect(host.contains("listChoices: iOSScheduleDraftCreation.listChoices(for: draft, areas: areas, projects: projects)"))
+        #expect(host.contains("CadenceTaskComposerSupport.selection(fromToken: draft.listToken)"))
+        let source = try strippedSource("Cadence/iOS/iOSTimelineDraftCreate.swift")
+        let choices = try #require(CadenceSourceScan.functionBody(named: "listChoices", in: source))
+        #expect(choices.contains("CadenceTaskComposerSupport.selection(fromToken: draft.listToken)"))
+        #expect(choices.contains("CadenceTaskComposerSupport.pickableAreas("))
+        #expect(choices.contains("CadenceTaskComposerSupport.pickableProjects("))
+        let card = try strippedSource("Cadence/Shared/Components/CadenceScheduleCaptureCard.swift")
+        #expect(card.contains("struct CadenceScheduleCaptureCard"))
+        #expect(card.contains("listChoices.first { $0.id == draft.listToken }"))
+        #expect(card.contains("selection: $draft.listToken"))
     }
 
     /// **T-317, at the macOS sheet.** Same preflight, same watch, and the badge that names the

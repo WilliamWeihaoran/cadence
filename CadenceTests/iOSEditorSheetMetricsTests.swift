@@ -379,7 +379,10 @@ struct iOSEditorSheetMetricsTests {
             "Cadence/iOS/iOSCalendarMonthAgendaViews.swift": "iOSCalendarEventEditSheet(",
             "Cadence/iOS/iOSCalendarQuickCreateSheet.swift": "iOSEditorSheetMetrics.gutter(",
             "Cadence/iOS/iOSCalendarView.swift": "iOSCalendarQuickCreateSheet(",
-            "Cadence/iOS/iOSCaptureRadialMenu.swift": "iOSCalendarQuickCreateSheet(",
+            // [[T-3195]] unified capture on `iOSCreateTaskSheet`, so the palette's Event arm no
+            // longer reaches `iOSCalendarQuickCreateSheet(`. The file stays in the chain as the
+            // presenter of two sheets and one cover; the needle follows the sheet it presents now.
+            "Cadence/iOS/iOSCaptureRadialMenu.swift": "iOSCreateTaskSheet(",
             "Cadence/iOS/iOSEventNoteEditorSheet.swift": "iOSNoteEditorSheetHeader(",
             "Cadence/iOS/iOSMarkdownReferenceSupport.swift": "iOSLinkedNoteEditorSheet(",
             "Cadence/iOS/iOSNoteEditorSheetHeader.swift": "iOSEditorSheetMetrics.gutter(",

@@ -618,12 +618,10 @@ private struct iOSCaptureHostModifier: ViewModifier {
                 case .task(let seed):
                     iOSCreateTaskSheet(seed: seed, onCreated: onCreated)
                 case .event(let dateKey, let startMinute):
-                    // The day and the hour come from the request, so the palette's Event segment
-                    // and a `+` dropped on a calendar day column open one composer rather than
-                    // two. `initialStartMinute` is what puts the dropped hour into the sheet's
-                    // start-time row; `nil` leaves the sheet on its own default, which is what the
-                    // segment has always done.
-                    iOSCalendarQuickCreateSheet(dateKey: dateKey, initialStartMinute: startMinute, initialKind: .event)
+                    iOSCreateTaskSheet(
+                        seed: CadenceTaskComposerSeed(doDateKey: dateKey, scheduledStartMin: startMinute ?? -1),
+                        initialKind: .event
+                    )
                 case .list(let contextID):
                     // The iOS twin of macOS's `CreateListSheet(context:)`: the drop decides which
                     // group the list joins and nothing else, and the editor states that group in

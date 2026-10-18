@@ -33,7 +33,7 @@ import Testing
 /// is the one that is pinned.
 struct CadencePresentedTypographyBoundaryTests {
 
-    /// The four view types every `.popover` in T-1364's two converted workflows presents, and
+    /// The five picker types presented by the converted workflows, including capture, and
     /// **which answer each one gives**.
     ///
     /// T-1398 put all four on `.fixed`, which was the regression being stopped rather than the
@@ -44,8 +44,8 @@ struct CadencePresentedTypographyBoundaryTests {
     /// `CadenceTagChip`, so converting the chip retired it. T-1413 replaces the last panel's
     /// seven-column arrangement with date rows where the enlarged cells cannot fit.
     ///
-    /// Not a guess: `everyPopoverInAConvertedWorkflowOpensADeclaredPicker` re-derives the list out
-    /// of the five workflow files and fails if a sixth appears.
+    /// `everyPopoverInAConvertedWorkflowOpensADeclaredPicker` re-derives the presentations from
+    /// the workflow roots and their shared panel/card, including the card's item-backed editor.
     private static let presentedPickers: [String: (path: String, scope: String)] = [
         // Converted. `iOSFittedPopover` / `iOSChoicePopoverList` / `iOSContainerChoicePopover` are
         // typealiases onto this, so the declaration belongs on the panel that owns the frame.
@@ -66,6 +66,9 @@ struct CadencePresentedTypographyBoundaryTests {
         "iOSTaskTagPickerPopover": (
             "Cadence/iOS/iOSTaskDetailComponents.swift", ".cadenceScaledTypography()"
         ),
+        "CadenceTimeRoller": (
+            "Cadence/Shared/Components/CadenceTimeRoller.swift", ".cadenceScaledTypography()"
+        ),
     ]
 
     private static let scopeModifiers = [".cadenceScaledTypography()", ".cadenceFixedTypography()"]
@@ -76,6 +79,8 @@ struct CadencePresentedTypographyBoundaryTests {
         "Cadence/iOS/iOSTaskDetailSheet.swift",
         "Cadence/iOS/iOSTaskDetailSheetSections.swift",
         "Cadence/iOS/iOSTaskDetailComponents.swift",
+        "Cadence/Shared/Components/CadenceSchedulePanel.swift",
+        "Cadence/Shared/Components/CadenceScheduleCaptureCard.swift",
     ]
 
     // MARK: - The two scopes are opposites, at every size
@@ -251,7 +256,7 @@ struct CadencePresentedTypographyBoundaryTests {
             #expect(!source.contains(other ?? ""),
                     "\(type) declares both scopes, so the panel states no answer")
         }
-        #expect(Self.presentedPickers.count == 4)
+        #expect(Self.presentedPickers.count == 5)
         let scopes = Set(Self.presentedPickers.values.map(\.scope))
         #expect(scopes == [".cadenceScaledTypography()"])
     }
@@ -272,14 +277,30 @@ struct CadencePresentedTypographyBoundaryTests {
             "EstimatePickerPopoverContent",
             "CadenceQuickDatePopover",
             "iOSTaskTagPickerPopover",
+            "CadenceTimeRoller",
         ]
 
         var found: [String] = []
         var popoverCount = 0
         for path in Self.convertedWorkflowFiles {
             let lines = try read(path).components(separatedBy: "\n")
-            for (index, line) in lines.enumerated() where line.contains(".popover(isPresented:") {
+            for (index, line) in lines.enumerated() where line.contains(".popover(") {
                 popoverCount += 1
+                if line.contains(".popover(item:") {
+                    // Capture keeps the popover on the card, because its icon disappears on a
+                    // selection. Its editor is a switch, not one type in the next three lines.
+                    #expect(path == "Cadence/Shared/Components/CadenceScheduleCaptureCard.swift")
+                    let source = try read(path)
+                    #expect(line.contains("$activeField"))
+                    #expect(source.contains(".background(Theme.surfaceElevated)\n            .cadenceScaledTypography()\n            .presentationCompactAdaptation(.popover)"))
+                    let editor = try #require(CadenceSourceScan.functionBody(named: "editor", in: source))
+                    for name in ["CadenceChoicePopoverList", "CadenceQuickDatePopover", "CadenceTimeRoller", "EstimatePickerPopoverContent"] {
+                        #expect(editor.contains("\(name)("), "capture's editor lost \(name)")
+                        #expect(declared.contains(name))
+                        found.append(name)
+                    }
+                    continue
+                }
                 // The content type is the first capitalised identifier on one of the next lines.
                 let window = lines[(index + 1)..<min(index + 4, lines.count)]
                 let opened = window.compactMap { candidate -> String? in
@@ -296,6 +317,8 @@ struct CadencePresentedTypographyBoundaryTests {
         // pickers are the shared schedule panel's rows now, and the panel's own popovers open the
         // same declared pickers (`CadenceChoicePopoverList`, `EstimatePickerControl`) from inside
         // the inspector's scaled scope.
+        // T-3195 removes the tiles' five, walks the shared panel's four, and adds the card's one
+        // item-backed editor: still nine, with all four of its picker branches explicitly pinned.
         #expect(popoverCount == 9, "the workflows' popover count moved; re-derive the list")
         #expect(Set(found).count >= 4, "the sweep matched one type thirteen times, which proves nothing")
     }
