@@ -205,7 +205,14 @@ enum CalendarPageBoardDropSupport {
             }
             CalendarBoardPlannerSupport.apply(action, to: task)
         }
-        return landed ? .applied : .refused
+        guard landed else { return .refused }
+        // [[T-1478]]: a taken drop reconciles NOW, after the commit and not inside the write --
+        // `TasksPanelSupport.assignTask`'s shape and `CadenceTaskDateEditing`'s contract, because
+        // the reconcile fetches and must read the arrangement the store took. Without it a
+        // reminder kept describing the old schedule until the scene next changed phase. A refusal
+        // already reconciled once in `CadenceTaskFieldEditCommit`'s undo, so this is the only one.
+        (reconciler ?? .default).run(in: modelContext)
+        return .applied
     }
 
     /// A **day column's** drop of a card ([[T-1980]]), the sibling of `unschedule` above and the
@@ -255,7 +262,10 @@ enum CalendarPageBoardDropSupport {
                 task.estimatedMinutes = AppTask.defaultTimelineDurationMinutes
             }
         }
-        return landed ? .applied : .refused
+        guard landed else { return .refused }
+        // [[T-1478]], `unschedule`'s reason: one reconcile in each answer, this one after the commit.
+        (reconciler ?? .default).run(in: modelContext)
+        return .applied
     }
 
     /// A **day column's** drop of a whole block ([[T-1980]]), the third of this board's drops and
