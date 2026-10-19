@@ -187,7 +187,6 @@ struct iOSCalendarEventEditSheet: View {
         .presentationDragIndicator(.hidden)
         .presentationDetents([.height(cardHeight)])
         .interactiveDismissDisabled(draft != openedDraft)
-        .cadenceScaledTypography()
         .iOSMarkdownReferenceSheets(
             selectedNote: $selectedReferenceNote,
             selectedTask: $selectedReferenceTask,

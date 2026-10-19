@@ -67,8 +67,10 @@ struct CadenceCaptureEditorTests {
             #expect(!host.contains("NavigationStack {"))
         }
         let task = try source("Cadence/iOS/iOSTaskDetailSheet.swift")
-        #expect(task.contains("statusActionsSection"))
-        #expect(task.contains("onToggleCompletion: toggleCompletion"))
+        let sections = try #require(CadenceSourceScan.declarationBody("private var recordSections: some View", in: task))
+        #expect(sections.contains("statusActionsSection"))
+        let status = try #require(CadenceSourceScan.declarationBody("private var statusActionsSection: some View", in: task))
+        #expect(status.contains("onToggleCompletion: toggleCompletion"))
         #expect(task.contains("showDeleteConfirmation = true"))
         #expect(task.contains("notesText: $draft.notes"))
     }

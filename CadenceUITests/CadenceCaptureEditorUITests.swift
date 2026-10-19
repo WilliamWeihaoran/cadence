@@ -55,7 +55,13 @@ final class CadenceCaptureEditorUITests: XCTestCase {
         app.buttons["Mark task todo"].tap()
         for _ in 0..<6 where !app.buttons["capture-save"].isHittable { app.scrollViews.firstMatch.swipeDown() }
         app.buttons["capture-save"].tap()
-        XCTAssertFalse(title.waitForExistence(timeout: 2))
+        XCTAssertTrue(title.waitForNonExistence(timeout: 5))
+        let create = app.buttons["New Task"]
+        XCTAssertTrue(create.waitForExistence(timeout: 5))
+        create.tap()
+        XCTAssertTrue(app.buttons["capture-create"].waitForExistence(timeout: 5))
+        photograph("iPad creation card primary arrow")
+        app.buttons["capture-cancel"].tap()
     }
 
     func testFixtureEventUsesReadOnlyCaptureCardWithoutCalendarAccess() {
