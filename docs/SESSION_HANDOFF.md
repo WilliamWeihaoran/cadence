@@ -103,6 +103,21 @@ roughly thirty DerivedData directories at 2.5–2.8 GB each — one per agent ru
 - **CI is the real gate.** This Mac runs Xcode 27; CI pins 26.0.1. CI was red for 27 consecutive
   pushes while every local check reported green (T-3215).
 
+- **THIS REPO LIVES IN AN iCLOUD-SYNCED FOLDER, and that breaks builds.** It is under `~/Desktop`,
+  which macOS syncs to iCloud Drive. On 2026-10-19 agent `iosbackupland` wrote to three tracked
+  files and iCloud immediately produced conflict copies beside them — `iOSSettingsView 2.swift` and
+  two others, byte-identical to HEAD. `Cadence/iOS/` is a `PBXFileSystemSynchronizedRootGroup`, so
+  Xcode **compiled them**, and the build died with *"invalid redeclaration"* and *"ambiguous use of
+  iOSSettingsView"*. The same ` 2.` pattern is all through `.codex-build/`.
+  **Any agent editing a tracked file here can hit this.** It is not a code defect and no amount of
+  care in the edit avoids it. Move the copies aside rather than deleting them (they may be the only
+  copy of something), then rebuild. A durable fix is the owner's call: move the repo off the synced
+  path, or exclude it from iCloud.
+- **`agent-commit.sh <path>=<content-file>` leaves the WORKTREE stale.** The content lands correctly
+  in the commit, but the working copy keeps the old text — so `ledger-view.sh` can report PARTIAL
+  while HEAD says CLOSED, and the next whole-file staging of that path would revert it. After using
+  that form, re-read the file and realign only the lines that differ from HEAD.
+
 ## 7. Where the product actually is
 
 **Build 23 is shipped.** CI green. Since it shipped: the recurrence end-condition bug fixed, the
