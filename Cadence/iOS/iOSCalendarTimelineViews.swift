@@ -1161,12 +1161,13 @@ private struct iOSCalendarTimelineDayColumn: View {
                     SpatialTapGesture()
                         .onEnded { value in
                             guard !putDownLiftedBlock() else { return }
-                            // A draft with no editor is the one state the press-drag can leave
-                            // behind: the editor now opens when the finger lifts, so a press the
-                            // system cancels never reaches the line that opens it. A tap re-opens
-                            // it rather than leaving a rectangle on the canvas that nothing can
-                            // clear — which is the leak `onChange(of: isDraftEditorPresented)`
-                            // exists to prevent, arriving by the other door.
+                            // A draft with no editor is a reachable state, and now a routine one:
+                            // the editor opens when the finger lifts, so a press the system
+                            // cancels never reaches the line that opens it — and since [[T-3240]]
+                            // an adjusting touch on the block's own edge handles dismisses the
+                            // editor while leaving the block standing. This tap is how both get
+                            // their editor back, which is why it re-opens rather than leaving a
+                            // rectangle on the canvas that nothing can clear.
                             guard draft == nil else {
                                 isDraftEditorPresented = true
                                 return
@@ -1320,10 +1321,7 @@ private struct iOSCalendarTimelineDayColumn: View {
     private var draftLayer: some View {
         if drawsDraftBlocks, let current = draft, current.startDateKey == DateFormatters.dateKey(from: date) {
             iOSTimelineDraftBlock(
-                draft: Binding(
-                    get: { draft ?? current },
-                    set: { draft = $0 }
-                ),
+                draft: draftBinding(fallingBackTo: current),
                 hourHeight: hourHeight
             )
             .frame(
@@ -1333,24 +1331,70 @@ private struct iOSCalendarTimelineDayColumn: View {
             .offset(x: 9, y: yOffset(for: current.isAllDay ? CadenceScheduleSupport.calendarStartHour * 60 : current.startMin))
             .popover(isPresented: $isDraftEditorPresented, arrowEdge: .trailing) {
                 iOSTimelineDraftPanelHost(
-                    draft: Binding(
-                        get: { draft ?? current },
-                        set: { draft = $0 }
-                    ),
-                    onCancel: { isDraftEditorPresented = false },
-                    onCommitted: {
-                        isDraftEditorPresented = false
-                        draft = nil
-                    }
+                    draft: draftBinding(fallingBackTo: current),
+                    onCancel: finishDraftCreation,
+                    onCommitted: finishDraftCreation
                 )
-            }
-            // Dismissing the popover by tapping outside it abandons the draft: there is no half-made
-            // block to leave on the canvas, and a rectangle outliving the editor that owned it is
-            // the shape of a leak the next tap cannot clear.
-            .onChange(of: isDraftEditorPresented) { _, isPresented in
-                if !isPresented { draft = nil }
+                // **The editor hangs off the block it is editing, and that block has handles.**
+                // `iOSTimelineDraftBlock` hangs a 32pt touch band off each end for exactly one
+                // purpose — adjusting the draft after the editor is up — and a popover is modal by
+                // default, so its outside-tap dismissal took every touch on the pane before the
+                // column saw it: a press on a handle produced zero gesture callbacks and tore the
+                // block down instead ([[T-3240]]). Enabling background interaction makes the
+                // presentation non-modal, so a touch aimed at the block reaches the block.
+                //
+                // **Measured, and it is only half of what one would want.** The touch now reaches
+                // the handle *and* is still reported as an outside-tap dismissal, so the editor
+                // closes while the adjustment runs — the block survives it, keeps its handles, and
+                // a tap on the block re-opens the editor, which is the behaviour this fix is for.
+                // `interactiveDismissDisabled()` would hold the editor open and was tried: it
+                // pushes the presentation out of its popover representation entirely, and the
+                // panel renders clipped off the right edge of the pane with Cancel and Add
+                // unreachable (measured on `Cadence-iPadPro11`, 2026-10-19). An editor that cannot
+                // be dismissed or committed is a worse bug than the one being fixed, so the
+                // dismissal stays and the teardown is what moved.
+                .presentationBackgroundInteraction(.enabled)
             }
         }
+    }
+
+    /// The draft as the non-optional binding both the block and the editor take, with the drawn
+    /// value standing in for the state while SwiftUI still holds a view that was built from it.
+    ///
+    /// **The setter refuses to write once the draft is gone, and that refusal is load-bearing.**
+    /// The getter has to fall back to something, because both readers want a `CadenceScheduleDraft`
+    /// and not an optional one; the fallback is the value this layer was drawn from. That makes any
+    /// write arriving from a view on its way out a *resurrection* — it puts the fallback back into
+    /// the state the column just cleared. Measured on `Cadence-iPadPro11`: with the teardown made
+    /// explicit, Cancel dismissed the editor and the block stayed on the canvas at its adjusted
+    /// range, because the dismissing panel wrote once more on the way down. The reactive
+    /// `.onChange` teardown this replaces hid that by clearing a second time, after the
+    /// presentation had settled and the late write had already landed.
+    private func draftBinding(fallingBackTo current: CadenceScheduleDraft) -> Binding<CadenceScheduleDraft> {
+        Binding(
+            get: { draft ?? current },
+            set: { updated in
+                guard draft != nil else { return }
+                draft = updated
+            }
+        )
+    }
+
+    /// Ends the draft session: the editor and the block it owned go together, in one step, from a
+    /// site that meant it.
+    ///
+    /// **This is `TimelineDayCanvas.finishDraftCreation`'s shape, adopted** — the Mac has never had
+    /// this bug because nothing there clears a draft reactively. What stood here was
+    /// `.onChange(of: isDraftEditorPresented) { if !isPresented { draft = nil } }`, and the clearing
+    /// it did was right: a rectangle outliving the editor that owned it is the shape of a leak the
+    /// next tap cannot clear. The *trigger* was wrong. Anything that toggled the presentation
+    /// destroyed the draft, and the popover's own outside-tap dismissal toggles it — including on a
+    /// touch that was aimed at the block's own edge handles, which is [[T-3240]]. Clearing from the
+    /// commit, the cancel and nowhere else makes the teardown a decision rather than a side effect,
+    /// and leaves the block adjustable while its editor is up.
+    private func finishDraftCreation() {
+        isDraftEditorPresented = false
+        draft = nil
     }
 
     /// What this column offers a dropped `+`, or `""` — no target — on a day that has already gone
