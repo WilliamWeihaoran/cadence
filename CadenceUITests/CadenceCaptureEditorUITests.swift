@@ -80,7 +80,6 @@ final class CadenceCaptureEditorUITests: XCTestCase {
 
     func testFixtureEventUsesCaptureCardWithoutCalendarAccess() {
         launch("calendar-hues")
-        XCUIDevice.shared.orientation = .landscapeLeft
         let calendar = app.buttons.matching(NSPredicate(format: "label == %@", "Calendar")).firstMatch
         XCTAssertTrue(calendar.waitForExistence(timeout: 10), app.debugDescription)
         if !calendar.isHittable {
@@ -89,8 +88,13 @@ final class CadenceCaptureEditorUITests: XCTestCase {
             sidebar.tap()
         }
         calendar.tap()
-        app.buttons.matching(NSPredicate(format: "label == %@", "Month")).firstMatch.tap()
-        let event = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", "Deep red event")).firstMatch
+        let hideSidebar = app.buttons["Hide Sidebar"]
+        if hideSidebar.isHittable { hideSidebar.tap() }
+        let month = app.buttons.matching(NSPredicate(format: "label == %@", "Month")).firstMatch
+        XCTAssertTrue(month.waitForExistence(timeout: 5), app.debugDescription)
+        for _ in 0..<3 where !month.isSelected { month.tap() }
+        XCTAssertTrue(month.isSelected, app.debugDescription)
+        let event = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", "Deep red event")).firstMatch
         XCTAssertTrue(event.waitForExistence(timeout: 10), app.debugDescription)
         event.tap()
         let title = app.textFields["capture-title"]
