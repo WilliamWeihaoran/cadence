@@ -1,3 +1,7 @@
+// T-3244: compiled for macOS only. `CadenceTests` now also builds for an iOS destination, and
+// this suite runs the repository's own build and CI gate scripts through `CadenceSelftestRun`,
+// which is itself host-only. The gate preserves exactly the coverage this file had before.
+#if os(macOS)
 import Foundation
 import Testing
 
@@ -1646,3 +1650,5 @@ enum CadenceTestRunGuard {
         return ids
     }
 }
+
+#endif

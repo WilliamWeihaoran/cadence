@@ -1,3 +1,8 @@
+// T-3244: compiled for macOS only. `CadenceTests` now also builds for an iOS destination, and
+// this suite runs the repository's own guard scripts through `Process`, which does not exist on
+// iOS and could not reach the checkout from a simulator if it did. The gate preserves exactly the
+// coverage this file had before.
+#if os(macOS)
 import Foundation
 import Testing
 
@@ -3853,3 +3858,5 @@ struct CadenceSelftestRun {
         return nil
     }
 }
+
+#endif

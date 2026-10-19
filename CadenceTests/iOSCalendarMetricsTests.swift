@@ -243,7 +243,10 @@ struct iOSCalendarMetricsTests {
         #expect(CadenceCalendarDayBadge.outOfMonthLabelOpacity > 0.35)
 
         // macOS reads it rather than holding a second copy — the token moved out of
-        // `CalendarMonthDayEmphasis` so that iOS could compile it at all.
+        // `CalendarMonthDayEmphasis` so that iOS could compile it at all. T-3244: this target now
+        // also builds for iOS, where that macOS-only type does not exist, so the parity half is
+        // gated to the leg that can see it. The token assertions above run on both.
+        #if os(macOS)
         #expect(
             CalendarMonthDayEmphasis.outOfMonth.dateLabelColor
                 == Theme.dim.opacity(CadenceCalendarDayBadge.outOfMonthLabelOpacity)
@@ -253,6 +256,7 @@ struct iOSCalendarMetricsTests {
             CalendarMonthDayEmphasis.outOfMonth.cellBackground
                 != CalendarMonthDayEmphasis.inMonth.cellBackground
         )
+        #endif
 
         let grid = CadenceSourceScan.strippingComments(
             try CadenceSourceScan.sourceFile("Cadence/iOS/iOSCalendarMonthViews.swift")

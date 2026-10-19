@@ -1,4 +1,3 @@
-import AppKit
 import Combine
 import Foundation
 import os
@@ -7,6 +6,7 @@ import Testing
 @testable import Cadence
 
 #if os(macOS)
+import AppKit
 /// A `NotificationCenter` that counts how many observers are added to it. Combine's
 /// `NotificationCenter.Publisher` adds exactly one per subscription, so this is a subscription
 /// counter for any stream built over it.
