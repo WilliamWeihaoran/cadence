@@ -87,10 +87,16 @@ struct CadenceCaptureEditorTests {
         #expect(card.contains("Text(\"Save\")"))
         #expect(card.contains(".strikethrough(titleStatus?.isSettled == true)"))
         #expect(card.contains("if notesField == nil || !draft.subject.isEditing"))
+        #expect(card.contains("if draft.subject.isEditing, let notesField { notesField }"))
         #expect(card.contains("if fields.contains(.repeatRule)"))
         #expect(card.contains(".cadenceFont(.editorTitle)"))
         let commit = try #require(CadenceSourceScan.functionBody(named: "commit", in: card))
-        #expect(commit.contains("guard !isReadOnly, canCommit"))
+        #expect(commit.contains("guard !isReadOnly else"))
+        let titleGate = try #require(commit.range(of: "guard draft.hasCommittableTitle else"))
+        let hostGate = try #require(commit.range(of: "guard canCommit else"))
+        #expect(titleGate.lowerBound < hostGate.lowerBound)
+        #expect(commit.contains("guard draft.hasCommittableTitle else"))
+        #expect(commit.contains("actionError = \"Add a title first.\""))
         #expect(CadenceSourceScan.matchCount(#"\.disabled\(isReadOnly\)"#, in: card) >= 5)
     }
 }
