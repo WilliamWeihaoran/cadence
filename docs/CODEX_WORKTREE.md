@@ -119,6 +119,9 @@ CadenceTests/CadenceEditorSaveCommitSurfaceTests.swift
 Cadence/Shared/CadenceTaskDateEditing.swift
 CadenceTests/CadenceMarkdownImageCommitSurfaceTests.swift
 Cadence/iOS/iOSCalendarManager.swift
+Cadence/iOS/iOSTaskDetailSheet.swift
+Cadence/iOS/iOSTaskDetailSheetSections.swift
+Cadence/iOS/iOSCalendarEventEditSheet.swift
 Cadence/iOS/iOSCalendarMonthViews.swift
 Cadence/iOS/iOSNotesView.swift
 Cadence/iOS/iOSMarkdownEditingSurface.swift
@@ -2642,6 +2645,39 @@ four times and wrong once.
 written, and the agent that reported it credited the coordinator, who did not make it. It is correct
 and minimal, so it stands — but it was made against a leased path with no grant in force, which is
 the thing this document exists to prevent.
+
+### 2026-10-19 — three EDITING surfaces granted to Codex for [[T-3238]]: one editor app-wide
+
+The owner, after using build 23: *"on ipados, when i click on a task from today or wherever, i still
+see the old task inspector... make sure there is only 1 task editor/inspector throughout the entire
+app."*
+
+**The measured inventory of every `CadenceSchedulePanel` host and how it presents** — this is the
+whole diagnosis and it is not what the complaint sounds like:
+
+| surface | presentation |
+|---|---|
+| `iOSCreateTaskSheet` (the `+`) | capture card |
+| `iOSCalendarQuickCreateSheet` (drag-create) | capture card |
+| **`iOSTaskDetailSheet`** (tapping a task) | **sheet chrome** |
+| **`iOSCalendarEventEditSheet`** (tapping an event) | **sheet chrome** |
+
+`iOSTaskDetailSheet` already holds **8** `CadenceSchedulePanel` references. **Every surface already
+shares the same FORM; only the chrome differs.** So this is not an old editor — it is the right
+panel in a `NavigationStack` sheet instead of a floating card. **The work is the presentation, not
+the form**, exactly as it was for drag-create.
+
+**GRANTED:** the three paths above. All clean and unleased at the time of granting, and disjoint
+from both agents currently live in this checkout (`dragcreate` holds the creation surfaces,
+`dragbug` holds `iOSCalendarTimelineViews.swift`).
+
+**The question that must NOT be decided silently.** An editing surface needs what a creating one
+does not: delete, completion state, and the fact that the thing is already saved. The capture
+presentation may have nowhere to put them. **If so, say so and propose** — do not drop the
+affordances, and do not quietly keep two chromes. That is a decision for the owner.
+
+Do not touch `Cadence/Shared/Components/CadenceScheduleCaptureCard.swift` — it is mid-edit here and
+carries its own owner-filed ticket, [[T-3237]].
 
 ### 2026-10-19 — `iOSMarkdownEditor.swift` granted to a local agent for [[T-1481]]'s iOS half
 
