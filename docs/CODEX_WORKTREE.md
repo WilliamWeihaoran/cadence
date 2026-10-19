@@ -3042,3 +3042,35 @@ assume, and left it untouched in the meantime, which is exactly right.
 
 Same scope limit as the other nine: the observed-day parameter chain and nothing else.
 `cadenceTracksDayChanges(_:)` must be called **inline in `body`** ([[T-3124]]).
+
+### 2026-10-19 — `iOSMarkdownEditingSurface.swift` granted to a local agent for [[T-1481]]'s iOS routing
+
+**GRANTED for T-1481 only**, scoped to the task-embed presentation site — the call that today opens
+the full inspector sheet, which becomes the shared panel opened inline in the note. Nothing else in
+the file: the outline, unlinked-mentions, reference-picker and scroll-request surfaces are NOT in
+this grant even though they sit in the same `body`.
+
+**Staleness, checked properly and worth recording because the first check was wrong.**
+`codex/mobile-calendar-notes-parity` has a commit touching this file (`c17deac0`, T-1471/T-1472), and
+a three-dot `git diff main...codex/mobile-calendar-notes-parity` shows it ADDING the outline and
+unlinked-mentions sheets — which reads as pending work. It is not. Three-dot diffs merge-base to
+branch, so they show what the BRANCH added, never what `main` is missing. `main` already carries
+those lines. The blob comparison `git diff main:<path> <branch>:<path>` returns **empty**: the branch
+holds nothing `main` lacks for this file. That is the test that answers the question a grant asks.
+
+### 2026-10-19 — `iOSTaskRowActionViews.swift` granted to a local agent for [[T-3210]]'s iOS half
+
+**GRANTED for T-3210 only, and ONLY within `struct iOSTaskRowContextMenu`** (lines 456–744 at
+`1c3baa95`, next symbol `iOSTaskRowRecurrenceScopeDialogModifier` at 745). The work is making the four
+menu actions — Duplicate, Move to List, Move Section, Repeat — invokable and readable by effect, to
+match the Mac half landed in `45673bc2`. The earlier T-3196 grant on this file is **removal-only** and
+does not cover this; this entry does, and does not widen that one.
+
+**Nothing else in the file.** Two Codex branches hold REAL unlanded work here, and both were verified
+by blob comparison rather than by a three-dot diff: `codex/archive-typography-20261002` differs by
+132/4 and `codex/tracking-ui-retirement` by 45/4. **Both branches' only hunk on `main`'s side is lines
+405–414**, inside `enum iOSTaskRecurrenceSelection` and above `iOSTaskRowSubtaskRow` (423). That range
+is disjoint from 456–744, which is what makes this grant safe to give while those branches are still
+out. Do not touch 405–414, `iOSTaskRowSubtaskRow`, `iOSTaskRowRepeatChip` or the estimate-chip
+typography; a change there collides with one or both branches.
+
