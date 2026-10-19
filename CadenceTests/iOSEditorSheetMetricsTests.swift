@@ -269,8 +269,11 @@ struct iOSEditorSheetMetricsTests {
         #expect(CadenceSourceScan.matchCount(#"iOSEditorSection\("#, in: editor) == 2)
         #expect(CadenceSourceScan.matchCount(#"style: \.ruled"#, in: editor) == 2)
         #expect(CadenceSourceScan.matchCount(#"style: \.card"#, in: editor) == 0)
-        #expect(editor.contains("cornerRadius: Theme.radiusPanel"))
-        #expect(editor.contains("iOSEditorSheetMetrics.gutter(isRegularWidth:"))
+        // [[T-3238]] moved the event editor onto the capture presentation, so the two sheet
+        // assertions that stood here (`cornerRadius: Theme.radiusPanel` and the gutter) have no
+        // subject left in that file; these two pin where it went instead.
+        #expect(editor.contains(".capturePresentation(CadenceScheduleCaptureOptions())"))
+        #expect(editor.contains(".presentationBackground(.clear)"))
         // The quick-create sheet is **not** an editor-sheet host any more. [[T-3171]]'s seventh
         // adoption slice put the calendar's drag-create on the capture presentation, so it reads
         // none of this enum's ramps, draws no group of its own, and is sized by the card rather
@@ -390,7 +393,7 @@ struct iOSEditorSheetMetricsTests {
             "Cadence/iOS/iOSNoteEditorSheetHeader.swift": "iOSEditorSheetMetrics.gutter(",
             "Cadence/iOS/iOSNotesView.swift": "iOSEventNoteEditorSheet(",
             "Cadence/iOS/iOSSearchView.swift": "iOSCalendarEventEditSheet(",
-            "Cadence/iOS/iOSTaskDetailSheet.swift": "iOSTaskInspectorMetrics.sheetGutter(",
+            "Cadence/iOS/iOSTaskDetailSheet.swift": ".capturePresentation(",
             "Cadence/iOS/iOSTaskInspectorHost.swift": "iOSTaskDetailSheet(",
             "Cadence/iOS/iOSTrackingEditorComponents.swift": "iOSEditorSheetMetrics.gutter("
         ]
@@ -405,8 +408,10 @@ struct iOSEditorSheetMetricsTests {
                 CadenceSourceScan.matchCount(#"presentationSizing"#, in: code) == 0,
                 "\(path) asks for a sheet size — the regular ramp may now be live on iPad, re-read T-731"
             )
+            let isCaptureEditor = path == "Cadence/iOS/iOSTaskDetailSheet.swift"
+                || path == "Cadence/iOS/iOSCalendarEventEditSheet.swift"
             #expect(
-                CadenceSourceScan.matchCount(#"presentationDetents"#, in: code) == 0,
+                CadenceSourceScan.matchCount(#"presentationDetents"#, in: code) == (isCaptureEditor ? 1 : 0),
                 "\(path) asks for sheet detents — re-measure the sheet's width before trusting T-731"
             )
 

@@ -156,6 +156,9 @@ CadenceTests/CadenceInlineTagCommitSurfaceTests.swift
 CadenceTests/CadenceChoicePickerDismissalTests.swift
 CadenceTests/CadenceContainerPickerConsolidationTests.swift
 CadenceTests/CadencePresentedTypographyBoundaryTests.swift
+CadenceTests/CadenceCaptureEditorTests.swift
+CadenceTests/iOSEditorSheetMetricsTests.swift
+CadenceUITests/CadenceCaptureEditorUITests.swift
 ```
 
 **Admission 2026-10-19 (coordinator), one line in `CadenceTests/CadenceMarkdownImageCommitSurfaceTests.swift`.**
@@ -3100,3 +3103,21 @@ The coordinator PRE-FILED T-3238 as a stub (`docs/TODO.md:246`, "filed by the co
 owner's report"). At landing, REPLACE THE STUB BODY IN PLACE — one id, no second entry, per T-1458 /
 T-3003 / T-3004. Never delete the entry, renumber it, or edit the check.
 
+**Recorded at landing (agent `editorland`, 2026-10-19): the grant above was written as prose only —
+the three paths were never added to the `lease` block, so `codex-land.sh review` kept refusing with
+`CODEX-LEASE-VIOLATION` after the grant.** The block is this file's machine-readable half and the
+prose is its reasoning; a grant that lives in one and not the other is the drift the block exists to
+prevent. All three are now in the block (111 patterns). **Retire them when T-3238 is CLOSED** — they
+were granted for this landing only.
+
+**The conflict resolved, for the record.** `git merge-tree main codex/unified-editors` conflicted in
+**two** files, not one. `CadenceTests/iOSEditorSheetMetricsTests.swift` conflicted exactly where the
+grant predicted (main-side 271-276): `dragcreate`'s edit there is the quick-create comment and
+assertions, Codex's is the two `editor` assertions two lines above, and the two edit sets are
+disjoint — both were kept whole. `Cadence/Shared/Components/CadenceScheduleCaptureCard.swift`
+conflicted too and the grant did not predict it: both writers rewrote the same `fields` property.
+`dragcreate` added `CadenceCaptureFieldInventory.isOffered(_:by:)` and filtered through it; Codex
+inlined the identical tag predicate while adding `offersTaskRepeat:` / `offersEventRepeat:`.
+Resolved as `fields(for:offersTaskRepeat:offersEventRepeat:).filter { isOffered($0, by: options) }`,
+which keeps both behaviours and keeps `isOffered` a live call rather than a helper only its own unit
+test reaches.

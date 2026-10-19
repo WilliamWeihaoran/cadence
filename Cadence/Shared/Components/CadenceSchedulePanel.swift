@@ -220,6 +220,10 @@ struct CadenceSchedulePanel<NotesField: View>: View {
                 calendarUnavailableNotice: calendarUnavailableNotice,
                 failureNotice: failureNotice,
                 canCommit: canCommit,
+                readOnlyNotice: readOnlyNotice,
+                titleStatus: titleStatus,
+                offersTaskRepeat: offersTaskRepeat,
+                offersEventRepeat: offersEventRepeat,
                 options: captureOptions,
                 actions: actions,
                 notesField: notesField

@@ -31,11 +31,11 @@ struct iOSCalendarEventEditSheet: View {
     let event: EKEvent
 
     @Environment(\.dismiss) private var dismiss
-    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.modelContext) private var modelContext
     @Environment(iOSCalendarManager.self) private var calendarManager
     @Query(sort: \Note.updatedAt, order: .reverse) private var allNotes: [Note]
     @Query(sort: \AppTask.order) private var allTasks: [AppTask]
+    @State private var cardHeight: CGFloat = 520
     @State private var draft: CadenceScheduleDraft
     @State private var notesEditorFocused = false
     @State private var presentedEventNote: Note?
@@ -101,11 +101,6 @@ struct iOSCalendarEventEditSheet: View {
         )
     }
 
-    /// Read for the sheet's gutter only — a fact about the host. Nothing the panel draws consults it.
-    private var isRegularWidth: Bool {
-        horizontalSizeClass == .regular
-    }
-
     init(event: EKEvent) {
         self.event = event
         let start = event.startDate ?? Date()
@@ -125,72 +120,73 @@ struct iOSCalendarEventEditSheet: View {
     }
 
     var body: some View {
-        NavigationStack {
-            ScrollView {
-                CadenceSchedulePanel(
-                    draft: $draft,
-                    calendarChoices: calendarChoices,
-                    calendarUnavailableNotice: calendarUnavailableNotice,
-                    readOnlyNotice: isEditable
-                        ? nil
-                        : CadenceCalendarEventEditingSupport.readOnlyNotice(calendarName: eventCalendarName),
-                    // T-497: every failure this sheet reports — a refused EventKit save, a refused
-                    // delete, a refused event-note commit — is drawn by the panel, in one place,
-                    // whatever the width. Most of them arrive after a confirmation dialog rather
-                    // than as the panel's own call returning, which is why this is a parameter.
-                    failureNotice: actionError,
-                    canCommit: canSave,
-                    offersEventRepeat: false,
-                    actions: panelActions
-                ) {
-                    eventNoteSection
-                    notesSection
-                }
-                .clipShape(RoundedRectangle(cornerRadius: Theme.radiusPanel, style: .continuous))
-                // One column now, so the widest column the old two-column form allowed is the cap.
-                .frame(maxWidth: iOSEditorSheetMetrics.secondaryColumnMaxWidth)
-                .padding(iOSEditorSheetMetrics.gutter(isRegularWidth: isRegularWidth))
-                .frame(maxWidth: .infinity, alignment: .top)
-            }
-            .background(Theme.bg)
-            .navigationTitle(isEditable ? "Edit Event" : "Event Details")
-            .navigationBarTitleDisplayMode(.inline)
-            .confirmationDialog("Delete Event?", isPresented: $confirmDelete, titleVisibility: .visible) {
-                Button("Delete Event", role: .destructive) {
-                    requestDelete()
-                }
-                Button("Cancel", role: .cancel) {}
-            } message: {
-                Text("This removes the event from Apple Calendar.")
-            }
-            .confirmationDialog(
-                CadenceRecurrenceScopeCopy.eventScopeTitle,
-                isPresented: Binding(
-                    get: { pendingAction != nil },
-                    set: { if !$0 { pendingAction = nil } }
-                ),
-                titleVisibility: .visible
+        ScrollView {
+            CadenceSchedulePanel(
+                draft: $draft,
+                calendarChoices: calendarChoices,
+                calendarUnavailableNotice: calendarUnavailableNotice,
+                readOnlyNotice: isEditable
+                    ? nil
+                    : CadenceCalendarEventEditingSupport.readOnlyNotice(calendarName: eventCalendarName),
+                // T-497: every failure this sheet reports — a refused EventKit save, a refused
+                // delete, a refused event-note commit — is drawn by the panel, in one place,
+                // whatever the width. Most of them arrive after a confirmation dialog rather
+                // than as the panel's own call returning, which is why this is a parameter.
+                failureNotice: actionError,
+                canCommit: canSave,
+                offersEventRepeat: false,
+                actions: panelActions
             ) {
-                Button(CalendarRecurrenceEditScope.thisOccurrence.label) {
-                    applyPendingAction(scope: .thisOccurrence)
-                }
-                Button(CalendarRecurrenceEditScope.futureOccurrences.label) {
-                    applyPendingAction(scope: .futureOccurrences)
-                }
-                Button("Cancel", role: .cancel) {
-                    pendingAction = nil
-                }
-            } message: {
-                Text(CadenceRecurrenceScopeCopy.eventScopeMessage)
+                eventNoteSection
+                notesSection
             }
-            .onAppear(perform: ensureWritableCalendar)
-            .onChange(of: calendarManager.storeVersion) { _, _ in
-                draft.notes = event.notes ?? ""
-            }
-            .sheet(item: $presentedEventNote) { note in
-                iOSEventNoteEditorSheet(note: note, eventTitle: draft.title, event: event)
-            }
+            .capturePresentation(CadenceScheduleCaptureOptions())
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { cardHeight = $0 + 24 }
+            .frame(maxWidth: 540)
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .top)
         }
+        .scrollDismissesKeyboard(.never)
+        .scrollIndicators(.hidden)
+        .confirmationDialog("Delete Event?", isPresented: $confirmDelete, titleVisibility: .visible) {
+            Button("Delete Event", role: .destructive) {
+                requestDelete()
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This removes the event from Apple Calendar.")
+        }
+        .confirmationDialog(
+            CadenceRecurrenceScopeCopy.eventScopeTitle,
+            isPresented: Binding(
+                get: { pendingAction != nil },
+                set: { if !$0 { pendingAction = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button(CalendarRecurrenceEditScope.thisOccurrence.label) {
+                applyPendingAction(scope: .thisOccurrence)
+            }
+            Button(CalendarRecurrenceEditScope.futureOccurrences.label) {
+                applyPendingAction(scope: .futureOccurrences)
+            }
+            Button("Cancel", role: .cancel) {
+                pendingAction = nil
+            }
+        } message: {
+            Text(CadenceRecurrenceScopeCopy.eventScopeMessage)
+        }
+        .onAppear(perform: ensureWritableCalendar)
+        .onChange(of: calendarManager.storeVersion) { _, _ in
+            draft.notes = event.notes ?? ""
+        }
+        .sheet(item: $presentedEventNote) { note in
+            iOSEventNoteEditorSheet(note: note, eventTitle: draft.title, event: event)
+        }
+        .presentationBackground(.clear)
+        .presentationDragIndicator(.hidden)
+        .presentationDetents([.height(cardHeight)])
+        .interactiveDismissDisabled(draft != openedDraft)
         .iOSMarkdownReferenceSheets(
             selectedNote: $selectedReferenceNote,
             selectedTask: $selectedReferenceTask,
