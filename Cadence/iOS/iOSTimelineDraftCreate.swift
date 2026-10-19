@@ -381,7 +381,16 @@ enum iOSScheduleDraftCreation {
             notes: draft.notes,
             isAllDay: draft.isAllDay,
             location: draft.location,
-            repeatRule: draft.repeatRule
+            repeatRule: draft.repeatRule,
+            // The EFFECTIVE mode, not the stored one ([[T-3229]]). `.onDate` with no day and
+            // `.afterCount` with no count both mean "never", and the draft already owns that
+            // degrade for every control that reads it; passing the raw mode would ask EventKit to
+            // bound a series by a value the card never captured. Forwarded here rather than
+            // resolved inside the manager, so the event write and the task write agree about what
+            // the user's answer WAS before either of them acts on it.
+            seriesEndMode: draft.effectiveSeriesEndMode,
+            seriesEndDateKey: draft.seriesEndDateKey,
+            seriesEndCount: draft.seriesEndCount
         ) {
             return CadenceCalendarEventEditingSupport.saveFailureNotice(for: failure)
         }
