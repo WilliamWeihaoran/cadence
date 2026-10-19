@@ -175,6 +175,27 @@ final class iOSMarkdownTextView: UITextView {
         lastMarkdownLayoutSize = size
         layoutInvalidationHandler?()
     }
+
+    /// The inline task panel's hosted view while one is open ([[T-1481]]); set by
+    /// `iOSMarkdownInlineTaskPanelSupport`, and gone with the view.
+    weak var inlineTaskPanelView: UIView?
+
+    /// **A touch on the inline task panel belongs to the panel.** Every recognizer attached to the
+    /// text view — its own selection and caret taps, and the coordinator's reference, block and
+    /// table taps — also sees touches that land in a subview, so without this a tap on a panel
+    /// control would drop a caret into the hidden markdown behind it and raise the keyboard. Only
+    /// the scroll pan still begins there, so the note scrolls under a finger resting on the panel.
+    override func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+        if gestureRecognizer.view === self,
+           gestureRecognizer !== panGestureRecognizer,
+           let panel = inlineTaskPanelView,
+           panel.superview === self,
+           !panel.isHidden,
+           panel.frame.contains(gestureRecognizer.location(in: self)) {
+            return false
+        }
+        return super.gestureRecognizerShouldBegin(gestureRecognizer)
+    }
 }
 
 /// Bridges an `NSRange` in the storage to the `UITextRange` every `UITextInput` mutation wants.

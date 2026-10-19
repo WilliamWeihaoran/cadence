@@ -22,6 +22,10 @@ struct iOSMarkdownEditor: UIViewRepresentable {
     var onToggleEmbeddedSubtask: ((UUID, UUID) -> MarkdownTaskEmbedRenderInfo?)?
     var onCreateEmbeddedTask: ((String) -> String?)?
     var onOpenEmbeddedTask: ((UUID) -> Void)?
+    /// When set, a tap on an embedded task's card opens this panel **inside the note**, under the
+    /// card, instead of calling `onOpenEmbeddedTask` ([[T-1481]]). `nil` from the factory (the task
+    /// is gone) falls back to `onOpenEmbeddedTask`. See `iOSMarkdownInlineTaskPanelSupport`.
+    var inlineTaskPanelContent: iOSMarkdownInlineTaskPanelContent?
     var onOpenReference: ((MarkdownReferenceDisplayTarget) -> Void)?
     var onCreatePastedImages: (([UIImage]) -> [MarkdownImageAsset])?
     var onResizeImage: ((UUID, CGFloat) -> Void)?
@@ -46,6 +50,7 @@ struct iOSMarkdownEditor: UIViewRepresentable {
         onToggleEmbeddedSubtask: ((UUID, UUID) -> MarkdownTaskEmbedRenderInfo?)? = nil,
         onCreateEmbeddedTask: ((String) -> String?)? = nil,
         onOpenEmbeddedTask: ((UUID) -> Void)? = nil,
+        inlineTaskPanelContent: iOSMarkdownInlineTaskPanelContent? = nil,
         onOpenReference: ((MarkdownReferenceDisplayTarget) -> Void)? = nil,
         onCreatePastedImages: (([UIImage]) -> [MarkdownImageAsset])? = nil,
         onResizeImage: ((UUID, CGFloat) -> Void)? = nil,
@@ -62,6 +67,7 @@ struct iOSMarkdownEditor: UIViewRepresentable {
         self.onToggleEmbeddedSubtask = onToggleEmbeddedSubtask
         self.onCreateEmbeddedTask = onCreateEmbeddedTask
         self.onOpenEmbeddedTask = onOpenEmbeddedTask
+        self.inlineTaskPanelContent = inlineTaskPanelContent
         self.onOpenReference = onOpenReference
         self.onCreatePastedImages = onCreatePastedImages
         self.onResizeImage = onResizeImage
@@ -278,6 +284,10 @@ struct iOSMarkdownEditor: UIViewRepresentable {
         /// proposes around it — see `MarkdownProgrammaticEditSupport` for the measurement that made
         /// this necessary and for why the smart-punctuation traits are not the lever.
         var pendingProgrammaticEdit: MarkdownProgrammaticEdit?
+
+        /// The task panel open inside this note, if any ([[T-1481]]); see
+        /// `iOSMarkdownInlineTaskPanelSupport`.
+        let inlineTaskPanel = Coordinator.makeInlineTaskPanelController()
 
         init(parent: iOSMarkdownEditor) {
             self.parent = parent
@@ -670,6 +680,7 @@ struct iOSMarkdownEditor: UIViewRepresentable {
                     tableSourceAnchors: tableSourceAnchors
                 )
                 storage.setAttributedString(styled)
+                applyInlineTaskPanelReservation(to: storage)
                 textView.typingAttributes = iOSMarkdownStyler.baseTypingAttributes
                 if let field = tableCellEditor, let address = tableCellEditAddress {
                     let selection = field.selectedTextRange
@@ -690,6 +701,7 @@ struct iOSMarkdownEditor: UIViewRepresentable {
             // that no longer exist. Reposition rather than tear down: a keyboard appearing resizes
             // the view, and closing the field there would close it the instant it opened.
             repositionTableCellEditor(in: textView)
+            positionInlineTaskPanel(in: textView)
         }
 
         private func scheduleMarkdownStyleRefresh(on textView: UITextView, text: String) {
@@ -814,6 +826,10 @@ struct iOSMarkdownEditor: UIViewRepresentable {
             case .card:
                 parent.isFocused = false
                 textView.resignFirstResponder()
+                if let makeContent = parent.inlineTaskPanelContent,
+                   presentInlineTaskPanel(taskID: hit.task.id, in: textView, makeContent: makeContent) {
+                    return
+                }
                 parent.onOpenEmbeddedTask?(hit.task.id)
                 return
             }
@@ -1116,7 +1132,7 @@ struct iOSMarkdownEditor: UIViewRepresentable {
     }
 }
 
-private extension UITextView {
+extension UITextView {
     var markdownContentWidth: CGFloat {
         max(
             1,
