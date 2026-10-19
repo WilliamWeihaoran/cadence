@@ -19,13 +19,13 @@ import SwiftUI
 struct iOSTaskDetailSheet: View {
     @Bindable var task: AppTask
     @Environment(\.dismiss) private var dismiss
-    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \Note.updatedAt, order: .reverse) private var allNotes: [Note]
     @Query(sort: \AppTask.order) private var allTasks: [AppTask]
     @Query(sort: \Area.order) private var areas: [Area]
     @Query(sort: \Project.order) private var projects: [Project]
     @Query(sort: \Tag.order) private var tags: [Tag]
+    @State private var cardHeight: CGFloat = 520
     @State private var draft: CadenceScheduleDraft
     @State private var newSubtaskTitle = ""
     /// Set when a subtask insert or delete was refused by the store. See `addSubtask()`.
@@ -107,13 +107,6 @@ struct iOSTaskDetailSheet: View {
         )
     }
 
-    /// The **only** thing this sheet reads the size class for: the margin between its card and the
-    /// edge of the host. Everything else it draws is `iOSTaskInspectorMetrics`, which takes no
-    /// width — see that file for why a sheet's measurements are its own.
-    private var isRegularWidth: Bool {
-        horizontalSizeClass == .regular
-    }
-
     /// **Split from `editorSurface` (T-407).** The sheet presents a dialog and two alerts, and the
     /// moment the second alert joined the chain the whole of `body` stopped type-checking on the
     /// iOS-simulator build. Two expressions rather than one is the whole fix.
@@ -153,9 +146,10 @@ struct iOSTaskDetailSheet: View {
     }
 
     private var editorSurface: some View {
-        NavigationStack {
-            editorScrollView
-        }
+        editorScrollView
+            .presentationBackground(.clear)
+            .presentationDragIndicator(.hidden)
+            .presentationDetents([.height(cardHeight)])
         // **The other half of T-1364's one converted workflow.** Creating a task and then opening
         // it are the same errand, so the sheet that reads it back scales exactly where the sheet
         // that wrote it does. Everything below here is inside the scope.
@@ -188,14 +182,14 @@ struct iOSTaskDetailSheet: View {
             ) {
                 recordSections
             }
-            .clipShape(RoundedRectangle(cornerRadius: Theme.radiusPanel, style: .continuous))
-            .frame(maxWidth: iOSTaskInspectorMetrics.contentMaxWidth)
+            .capturePresentation(CadenceScheduleCaptureOptions())
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { cardHeight = $0 + 24 }
+            .frame(maxWidth: 540)
+            .padding(12)
             .frame(maxWidth: .infinity)
-            .padding(iOSTaskInspectorMetrics.sheetGutter(isRegularWidth: isRegularWidth))
         }
-        .background(Theme.bg)
-        .navigationTitle("Edit Task")
-        .navigationBarTitleDisplayMode(.inline)
+        .scrollDismissesKeyboard(.never)
+        .scrollIndicators(.hidden)
         .tint(Theme.blue)
     }
 

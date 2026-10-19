@@ -56,8 +56,18 @@ enum CadenceCaptureFieldInventory {
         }
     }
 
-    static func fields(for kind: CadenceScheduleDraftKind) -> [CadenceCaptureField] {
-        kind == .task ? taskIcons + overflow : [.doDate, .calendar, .location, .repeatRule]
+    static func fields(
+        for kind: CadenceScheduleDraftKind,
+        offersTaskRepeat: Bool = true,
+        offersEventRepeat: Bool = true
+    ) -> [CadenceCaptureField] {
+        let fields = kind == .task ? taskIcons + overflow : [.doDate, .calendar, .location, .repeatRule]
+        return fields.filter { field in
+            switch field {
+            case .repeatRule: return kind == .task ? offersTaskRepeat : offersEventRepeat
+            default: return true
+            }
+        }
     }
 
     static func clear(_ field: CadenceCaptureField, draft: inout CadenceScheduleDraft) {
@@ -91,7 +101,7 @@ struct CadenceCaptureKindMemory {
     private var event: CadenceScheduleDraft?
 
     mutating func select(_ kind: CadenceScheduleDraftKind, draft: inout CadenceScheduleDraft) {
-        guard draft.kind != kind else { return }
+        guard !draft.subject.isEditing, draft.kind != kind else { return }
         if draft.kind == .task { task = draft } else { event = draft }
         let remembered = kind == .task ? task : event
         var next = remembered ?? draft
@@ -118,6 +128,10 @@ struct CadenceScheduleCaptureCard<NotesField: View>: View {
     var calendarUnavailableNotice: String?
     var failureNotice: String?
     var canCommit: Bool
+    var readOnlyNotice: String?
+    var titleStatus: CadenceSchedulePanelTitleStatus?
+    var offersTaskRepeat: Bool
+    var offersEventRepeat: Bool
     var options: CadenceScheduleCaptureOptions
     var actions: CadenceSchedulePanelActions
     var notesField: NotesField?
@@ -133,7 +147,12 @@ struct CadenceScheduleCaptureCard<NotesField: View>: View {
     @FocusState private var notesIsFocused: Bool
 
     private var selectedTags: Set<String> { options.selectedTagIDs.wrappedValue }
-    private var fields: [CadenceCaptureField] { CadenceCaptureFieldInventory.fields(for: draft.kind) }
+    private var isReadOnly: Bool { readOnlyNotice != nil }
+    private var fields: [CadenceCaptureField] {
+        CadenceCaptureFieldInventory.fields(
+            for: draft.kind, offersTaskRepeat: offersTaskRepeat, offersEventRepeat: offersEventRepeat
+        ).filter { $0 != .tags || !options.tagChoices.isEmpty || options.createTag != nil }
+    }
     private func isSet(_ field: CadenceCaptureField) -> Bool {
         CadenceCaptureFieldInventory.isSet(field, draft: draft, tagIDs: selectedTags)
     }
@@ -141,14 +160,20 @@ struct CadenceScheduleCaptureCard<NotesField: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 12) {
-                CadenceScheduleKindSwitch(kind: kindBinding, isEditing: false, identifierPrefix: "capture-kind")
+                CadenceScheduleKindSwitch(kind: kindBinding, isEditing: draft.subject.isEditing, identifierPrefix: "capture-kind")
                     .frame(maxWidth: 240)
                 Spacer(minLength: 0)
                 Button(action: actions.cancel) { Image(systemName: "xmark") }
-                    .accessibilityLabel("Cancel capture")
+                    .accessibilityLabel(isReadOnly ? "Done" : "Cancel")
                     .accessibilityIdentifier("capture-cancel")
-                    .help("Cancel capture")
+                    .help(isReadOnly ? "Done" : "Cancel")
                     .frame(width: 44, height: 44)
+            }
+            if let readOnlyNotice {
+                CadenceInlineNotice(text: readOnlyNotice, tone: .informational)
+            }
+            if let eyebrow = titleStatus?.eyebrow {
+                Text(eyebrow).cadenceFont(.metadata).foregroundStyle(titleStatus?.eyebrowTint ?? Theme.dim)
             }
             TextField(draft.kind.titlePlaceholder, text: $draft.title)
                 .textFieldStyle(.plain)
@@ -157,12 +182,17 @@ struct CadenceScheduleCaptureCard<NotesField: View>: View {
                 .submitLabel(.done)
                 .onSubmit(commit)
                 .accessibilityIdentifier("capture-title")
-            if let notesField { notesField }
-            TextField("Notes", text: $draft.notes, axis: .vertical)
-                .textFieldStyle(.plain)
-                .cadenceFont(.bodyText)
-                .lineLimit(notesIsFocused || !draft.notes.isEmpty ? 3...6 : 1...1)
-                .focused($notesIsFocused)
+                .strikethrough(titleStatus?.isSettled == true)
+                .foregroundStyle(titleStatus?.isSettled == true ? Theme.dim : Theme.text)
+                .disabled(isReadOnly)
+            if notesField == nil || !draft.subject.isEditing {
+                TextField("Notes", text: $draft.notes, axis: .vertical)
+                    .textFieldStyle(.plain)
+                    .cadenceFont(.bodyText)
+                    .lineLimit(notesIsFocused || !draft.notes.isEmpty ? 3...6 : 1...1)
+                    .focused($notesIsFocused)
+                    .disabled(isReadOnly)
+            }
 
             let chips = fields.filter(isSet)
             if !chips.isEmpty {
@@ -179,10 +209,17 @@ struct CadenceScheduleCaptureCard<NotesField: View>: View {
                         }
                         .accessibilityLabel("\(field.title): \(chipTitle(field))")
                         .accessibilityIdentifier("capture-chip-\(field.rawValue)")
+                        .disabled(isReadOnly)
                     }
                 }
             }
             HStack(spacing: 0) {
+                if !isReadOnly, let delete = actions.delete {
+                    Button("Delete", role: .destructive) { actionError = delete() }
+                        .foregroundStyle(Theme.red)
+                        .frame(minHeight: 44)
+                        .accessibilityIdentifier("capture-delete")
+                }
                 Spacer(minLength: 0)
                 ForEach(fields.filter { !isSet($0) && !CadenceCaptureFieldInventory.overflow.contains($0) }) { field in
                     Button { open(field) } label: {
@@ -191,26 +228,40 @@ struct CadenceScheduleCaptureCard<NotesField: View>: View {
                     .help(field.title)
                     .accessibilityLabel("Set \(field.title)")
                     .accessibilityIdentifier("capture-set-\(field.rawValue)")
+                    .disabled(isReadOnly)
                 }
-                Menu {
-                    Button("Repeat", systemImage: "repeat") { open(.repeatRule) }
-                    if draft.kind == .task {
-                        Button("Priority", systemImage: "exclamationmark") { open(.priority) }
-                        Button("Estimate", systemImage: "clock") { open(.estimate) }
+                if draft.kind == .task || fields.contains(.repeatRule) {
+                    Menu {
+                        if fields.contains(.repeatRule) {
+                            Button("Repeat", systemImage: "repeat") { open(.repeatRule) }
+                        }
+                        if draft.kind == .task {
+                            Button("Priority", systemImage: "exclamationmark") { open(.priority) }
+                            Button("Estimate", systemImage: "clock") { open(.estimate) }
+                        }
+                    } label: { Image(systemName: "ellipsis").frame(width: 44, height: 44) }
+                    .help("More capture options")
+                    .accessibilityLabel("More capture options")
+                    .accessibilityIdentifier("capture-more")
+                    .disabled(isReadOnly)
+                }
+                if !isReadOnly {
+                    Button(action: commit) {
+                        if draft.subject.isEditing {
+                            Text("Save").cadenceFont(.controlLabel, weight: .semibold)
+                                .frame(minWidth: 44, minHeight: 44)
+                        } else {
+                            Image(systemName: "arrow.up.circle.fill")
+                                .cadenceFont(.editorTitle)
+                                .imageScale(.large)
+                                .frame(minWidth: 44, minHeight: 44)
+                        }
                     }
-                } label: { Image(systemName: "ellipsis").frame(width: 44, height: 44) }
-                .help("More capture options")
-                .accessibilityLabel("More capture options")
-                .accessibilityIdentifier("capture-more")
-                Button(action: commit) {
-                    Image(systemName: "arrow.up.circle.fill")
-                        .cadenceFont(.composerTitle)
-                        .frame(minWidth: 44, minHeight: 44)
+                    .accessibilityLabel(draft.subject.isEditing ? "Save" : "Create \(draft.kind.title.lowercased())")
+                    .accessibilityIdentifier(draft.subject.isEditing ? "capture-save" : "capture-create")
+                    .help(draft.subject.isEditing ? "Save" : "Create \(draft.kind.title.lowercased())")
+                    .disabled(!canCommit || TaskTitleSupport.normalized(draft.title).isEmpty)
                 }
-                .accessibilityLabel("Create \(draft.kind.title.lowercased())")
-                .accessibilityIdentifier("capture-create")
-                .help("Create \(draft.kind.title.lowercased())")
-                .disabled(!canCommit || TaskTitleSupport.normalized(draft.title).isEmpty)
             }
             if draft.kind == .event, let calendarUnavailableNotice {
                 CadenceInlineNotice(text: calendarUnavailableNotice, tone: .informational)
@@ -221,6 +272,7 @@ struct CadenceScheduleCaptureCard<NotesField: View>: View {
             if draft.kind == .task, let notice = draft.doAfterDueNotice {
                 CadenceInlineNotice(text: notice, tone: .warning)
             }
+            if let notesField { notesField }
         }
         .padding(16)
         .foregroundStyle(Theme.text)
@@ -254,8 +306,8 @@ struct CadenceScheduleCaptureCard<NotesField: View>: View {
             .cadenceScaledTypography()
             .presentationCompactAdaptation(.popover)
         }
-        .onAppear { titleIsFocused = true }
-        .onChange(of: activeField) { _, field in if field == nil { titleIsFocused = true } }
+        .onAppear { titleIsFocused = !draft.subject.isEditing && !isReadOnly }
+        .onChange(of: activeField) { _, field in if field == nil { titleIsFocused = !draft.subject.isEditing && !isReadOnly } }
         .onChange(of: draft.title) { _, _ in actionError = nil }
     }
 
@@ -308,7 +360,7 @@ struct CadenceScheduleCaptureCard<NotesField: View>: View {
     }
 
     private func commit() {
-        guard canCommit, !TaskTitleSupport.normalized(draft.title).isEmpty else { return }
+        guard !isReadOnly, canCommit, !TaskTitleSupport.normalized(draft.title).isEmpty else { return }
         actionError = actions.commit()
     }
 

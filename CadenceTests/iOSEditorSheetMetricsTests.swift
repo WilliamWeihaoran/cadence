@@ -269,8 +269,8 @@ struct iOSEditorSheetMetricsTests {
         #expect(CadenceSourceScan.matchCount(#"iOSEditorSection\("#, in: editor) == 2)
         #expect(CadenceSourceScan.matchCount(#"style: \.ruled"#, in: editor) == 2)
         #expect(CadenceSourceScan.matchCount(#"style: \.card"#, in: editor) == 0)
-        #expect(editor.contains("cornerRadius: Theme.radiusPanel"))
-        #expect(editor.contains("iOSEditorSheetMetrics.gutter(isRegularWidth:"))
+        #expect(editor.contains(".capturePresentation(CadenceScheduleCaptureOptions())"))
+        #expect(editor.contains(".presentationBackground(.clear)"))
         // The quick-create sheet: one group of its own (the markdown well it hands the panel's
         // notes slot), ruled, with its header spaced from the panel by the shared group figure.
         let quick = CadenceSourceScan.strippingComments(
@@ -388,7 +388,7 @@ struct iOSEditorSheetMetricsTests {
             "Cadence/iOS/iOSNoteEditorSheetHeader.swift": "iOSEditorSheetMetrics.gutter(",
             "Cadence/iOS/iOSNotesView.swift": "iOSEventNoteEditorSheet(",
             "Cadence/iOS/iOSSearchView.swift": "iOSCalendarEventEditSheet(",
-            "Cadence/iOS/iOSTaskDetailSheet.swift": "iOSTaskInspectorMetrics.sheetGutter(",
+            "Cadence/iOS/iOSTaskDetailSheet.swift": ".capturePresentation(",
             "Cadence/iOS/iOSTaskInspectorHost.swift": "iOSTaskDetailSheet(",
             "Cadence/iOS/iOSTrackingEditorComponents.swift": "iOSEditorSheetMetrics.gutter("
         ]
@@ -403,8 +403,10 @@ struct iOSEditorSheetMetricsTests {
                 CadenceSourceScan.matchCount(#"presentationSizing"#, in: code) == 0,
                 "\(path) asks for a sheet size — the regular ramp may now be live on iPad, re-read T-731"
             )
+            let isCaptureEditor = path == "Cadence/iOS/iOSTaskDetailSheet.swift"
+                || path == "Cadence/iOS/iOSCalendarEventEditSheet.swift"
             #expect(
-                CadenceSourceScan.matchCount(#"presentationDetents"#, in: code) == 0,
+                CadenceSourceScan.matchCount(#"presentationDetents"#, in: code) == (isCaptureEditor ? 1 : 0),
                 "\(path) asks for sheet detents — re-measure the sheet's width before trusting T-731"
             )
 
