@@ -1,6 +1,6 @@
 import Foundation
 
-/// The three facts a task row states as a glyph rather than as content (T-2058).
+/// The facts a task row states as a glyph rather than as content (T-2058).
 ///
 /// The owner asked for them by what they are, not by how they look: *"for tasks with subtasks,
 /// comments, and tags, show corresponding icons after the title"*. **"Comments" is `AppTask.notes`**
@@ -8,9 +8,39 @@ import Foundation
 /// (`CreateTaskSheet`, `iOSCalendarEventEditSheet`). There is no comment model in this app, and
 /// inventing one to satisfy the word would have been a schema change nobody asked for.
 ///
-/// **Why an enum and not three `Bool`s on a view.** The question "does this task have a note, a
+/// **There were three; there are two. `case notes` -> `note.text` came off both rows in
+/// [[T-3231]], because both rows now draw the notes themselves.** A glyph earns its place by
+/// saying something the row cannot say in words, and this one stopped doing that: iOS has printed
+/// a notes excerpt under the title throughout, and macOS gained the same excerpt in [[T-1467]]
+/// (`MacTaskRow.inlineDetail`), which is the precondition [[T-3196]]'s 2026-10-16 decision gated
+/// the drop on — *"give the macOS row a notes preview too, so both platforms can drop the glyph"*.
+/// The owner's own words for it: *"since we're showing the notes of a task under the title, we can
+/// probably just remove the notes icon right?"*
+///
+/// **Both platforms at once, and that is the point rather than a convenience.** The glyph was kept
+/// through the whole of T-3196 precisely because dropping it on iOS alone would have left one row
+/// vocabulary spelled two ways. Removing the case here is the entire change on both rows: each
+/// asks `indicators(for:)` and draws what it answers, so neither row file needs a line.
+///
+/// **`.subtasks` and `.tags` STAY, and the asymmetry is real rather than an oversight.** Neither
+/// row draws what those stand for: the tag glyph *replaced* the named chips outright (you cannot
+/// see which tags without opening the task), and the subtask lists both rows now draw are
+/// `listedSubtasks` — unfinished only, capped at three, empty under a finished task — so a task
+/// whose boxes are all ticked shows a checklist glyph and no list. The notes excerpt has no such
+/// gap, which is why it is the only one that could go.
+///
+/// **This does not touch the app's NOTES FEATURE.** `note.text` still names it at
+/// `CadenceFeatureDestination.swift:201`, `iPadTodaySupportViews.swift:158`,
+/// `iOSSearchSupportViews.swift:32` and `FocusNotesPanel.swift:14`. Dropping the task-row reading
+/// REDUCES that symbol's double duty rather than creating a gap — which is the answer to the
+/// owner's stated worry that *"the notes icon is used elsewhere in the app for task notes, so it'd
+/// be inconsistent"*.
+///
+/// **Why an enum and not a `Bool` per fact on a view.** The question "does this task have a
 /// checklist, tags" is a fact about an `AppTask` with no platform in it; only the row's layout is
-/// per-platform. `CompactTagStrip` is this repo's own record of what the other answer costs — three
+/// per-platform. (It read "a note, a checklist, tags" until [[T-3231]]; the argument is the same
+/// one short, and the case list shrinking without either row changing is the argument working.)
+/// `CompactTagStrip` is this repo's own record of what the other answer costs — three
 /// hand-written copies of one strip, de-duplicated three times. So the answer is a value, the value
 /// is testable without SwiftUI, and `CadenceTaskRowIndicatorStrip` is the only thing that draws it.
 ///
@@ -18,15 +48,13 @@ import Foundation
 /// its answer in that order, so the row and the accessibility label cannot disagree about which
 /// glyph comes first.
 enum CadenceTaskRowIndicator: String, CaseIterable, Hashable, Sendable {
-    case notes
     case subtasks
     case tags
 
-    /// Symbols already in this tree rather than three new ones: `note.text` is what
-    /// `FocusNotesPanel` heads itself with, and `checklist` is the app's subtask glyph.
+    /// Symbols already in this tree rather than new ones: `checklist` is the app's subtask glyph
+    /// and `tag` is what the chips it replaced were dotted with.
     var symbolName: String {
         switch self {
-        case .notes:    return "note.text"
         case .subtasks: return "checklist"
         case .tags:     return "tag"
         }
@@ -40,7 +68,6 @@ enum CadenceTaskRowIndicator: String, CaseIterable, Hashable, Sendable {
     /// saying "3 tags" would promise VoiceOver a precision the screen does not show.
     var accessibilityPhrase: String {
         switch self {
-        case .notes:    return "Has notes"
         case .subtasks: return "Has subtasks"
         case .tags:     return "Has tags"
         }
@@ -49,25 +76,26 @@ enum CadenceTaskRowIndicator: String, CaseIterable, Hashable, Sendable {
 
 /// Which indicators a task earns, and what a screen reader hears when it has any.
 ///
-/// Not `nonisolated`, and that is a measurement rather than an oversight: the notes predicate goes
-/// through `CadenceTaskPresentationSupport.plainPreviewText`, which is itself
-/// `CadenceMarkdownPresentationSupport.plainPreviewText` (`:13`) and carries no `nonisolated` of
-/// its own. Under this project's `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor` a `nonisolated` caller
-/// cannot reach it, so this type is isolated exactly as `CadenceTaskPresentationSupport` is — which
-/// is also the type `CadenceTaskPresentationSupportTests` already exercises from the test target.
+/// Still not `nonisolated`, and that is now a choice rather than a constraint. It was a
+/// measurement while `hasNotes` was here: that predicate reached
+/// `CadenceTaskPresentationSupport.plainPreviewText`, which carries no `nonisolated` of its own,
+/// and under this project's `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor` a `nonisolated` caller
+/// cannot reach it. [[T-3231]] removed that call, so nothing left in this type forces the
+/// isolation. It is kept because both remaining predicates read `AppTask` relationships
+/// (`subtasks`, `sortedTags`) off a SwiftData model the rows touch on the main actor, and marking
+/// the type `nonisolated` to serve no caller would be a change with a migration cost and no
+/// benefit. `CadenceTaskPresentationSupportTests` already exercises this isolation from the test
+/// target, which is where the guarantee is checked.
 enum CadenceTaskRowIndicatorSupport {
 
-    /// **`plainPreviewText(...).isEmpty`, not `notes.isEmpty`.** This is the predicate
-    /// `iOSTaskRow.secondaryLine` already uses to decide whether a row has a notes line to draw, so
-    /// a row whose glyph says "note" and whose preview line is blank is impossible by construction.
-    /// A `notes` field holding only markdown punctuation — a stray `---`, an empty bullet left by
-    /// the editor — renders as nothing and must light nothing.
-    ///
-    /// No `limit:`. The limit only truncates the string the parser has already built, so it cannot
-    /// change emptiness; passing one would be a figure this predicate does not use.
-    static func hasNotes(_ task: AppTask) -> Bool {
-        !CadenceTaskPresentationSupport.plainPreviewText(from: task.notes).isEmpty
-    }
+    // `hasNotes` lived here until [[T-3231]], answering
+    // `!CadenceTaskPresentationSupport.plainPreviewText(from: task.notes).isEmpty` — deliberately
+    // the preview parser rather than `notes.isEmpty`, so a field holding only `---` lit nothing.
+    // **The predicate is not lost, it is the one each row draws its excerpt from:** iOS's
+    // `secondaryLine` and `MacTaskRow.notesPreview` both ask `plainPreviewText` and both return
+    // `nil` on the same input the glyph used to go dark on. That is why the glyph could go without
+    // a replacement check — the excerpt is the check, one layer up, and it shows the note as well
+    // as reporting it.
 
     /// Any subtask at all, finished or not.
     ///
@@ -87,7 +115,6 @@ enum CadenceTaskRowIndicatorSupport {
     static func indicators(for task: AppTask) -> [CadenceTaskRowIndicator] {
         CadenceTaskRowIndicator.allCases.filter { indicator in
             switch indicator {
-            case .notes:    return hasNotes(task)
             case .subtasks: return hasSubtasks(task)
             case .tags:     return hasTags(task)
             }
