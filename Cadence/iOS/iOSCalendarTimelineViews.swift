@@ -1025,6 +1025,17 @@ private struct iOSCalendarTimelineDayColumn: View {
     @State private var draft: CadenceScheduleDraft?
     @State private var isDraftEditorPresented = false
 
+    /// The draft's minute range **as the press left it**, held for as long as the press-drag that
+    /// is sizing it is still down ([[T-3239]]).
+    ///
+    /// Every other resize on this canvas is measured from the range the block had when the finger
+    /// went down — `blockEditing` says so in as many words, and `iOSTimelineDraftBlock.edgeDrag`
+    /// keeps its own `resizeAnchor` for it. The press-drag was the one that did not, and it is the
+    /// reason a press-and-twitch collapsed a one-hour draft to fifteen minutes: it set the end to
+    /// *the finger's own minute*, which at the moment of the press is the block's **start**, an
+    /// hour above the end the press had just drawn.
+    @State private var draftPressAnchor: (start: Int, end: Int)?
+
     var body: some View {
         ZStack(alignment: .topLeading) {
             createSurface
@@ -1137,7 +1148,8 @@ private struct iOSCalendarTimelineDayColumn: View {
     /// behaviour. The tap is kept, and now opens the same draft rather than the docked bar: it is
     /// what this canvas has always done, and removing it would be a behaviour the owner did not ask
     /// to lose. `beginDraft` is idempotent, so a tap arriving at the end of a long press finds the
-    /// draft already there and does nothing.
+    /// draft already there and makes no second one; it opens that draft's editor, which is what the
+    /// press's own `onEnded` is about to do anyway, so the two doors agree rather than race.
     @ViewBuilder
     private var createSurface: some View {
         if drawsDraftBlocks {
@@ -1149,6 +1161,16 @@ private struct iOSCalendarTimelineDayColumn: View {
                     SpatialTapGesture()
                         .onEnded { value in
                             guard !putDownLiftedBlock() else { return }
+                            // A draft with no editor is the one state the press-drag can leave
+                            // behind: the editor now opens when the finger lifts, so a press the
+                            // system cancels never reaches the line that opens it. A tap re-opens
+                            // it rather than leaving a rectangle on the canvas that nothing can
+                            // clear — which is the leak `onChange(of: isDraftEditorPresented)`
+                            // exists to prevent, arriving by the other door.
+                            guard draft == nil else {
+                                isDraftEditorPresented = true
+                                return
+                            }
                             beginDraft(atY: value.location.y)
                         }
                 )
@@ -1173,17 +1195,42 @@ private struct iOSCalendarTimelineDayColumn: View {
                 guard case .second(true, let drag?) = value else { return }
                 if draft == nil {
                     onSelectForEditing(nil)
-                    beginDraft(atY: drag.startLocation.y)
+                    // **The editor does not open here.** It opens when the finger lifts — see
+                    // `onEnded` — because a popover presented in the middle of the drag that is
+                    // still sizing the block is the whole of the owner's report ([[T-3239]]):
+                    // the presentation starved the drag of about 0.4s of touches on the way up,
+                    // and from then on the popover's own outside-tap dismissal owned every touch
+                    // on the canvas, so the block the user then reached for was torn down instead
+                    // of resized.
+                    beginDraft(atY: drag.startLocation.y, presentingEditor: false)
+                    draftPressAnchor = draft.map { ($0.startMin, $0.endMin) }
                     return
                 }
                 // Still the same press: dragging away from the start sizes the block rather than
-                // moving it, which is what a user who presses and then pulls means by it. A drag
-                // that has not travelled a row is left alone so a press-and-release keeps the
-                // default hour.
-                guard abs(drag.translation.height) > 2 else { return }
-                draft?.moveEndEdge(toMinute: minute(for: drag.location.y) + CadenceScheduleSupport.touchTimeGridMinutes)
+                // moving it, which is what a user who presses and then pulls means by it.
+                //
+                // **Measured from the anchor, by the shared resize arithmetic.** This is
+                // `CadenceTimelineBlockEdit.editedRange(kind: .resizeEnd, …)` — the function whose
+                // own note already names this gesture — so the press-drag, the draft's bottom
+                // handle and a committed block's bottom handle are one rule, snapped to one grid,
+                // with one answer for the day's last minute. It is **relative**, so a press that
+                // has not travelled half a grid step leaves the default hour exactly as drawn
+                // instead of teleporting the end to the finger.
+                guard let anchor = draftPressAnchor else { return }
+                let resized = CadenceTimelineBlockEdit.editedRange(
+                    kind: .resizeEnd,
+                    start: anchor.start,
+                    end: anchor.end,
+                    translationY: drag.translation.height,
+                    hourHeight: hourHeight
+                )
+                // No step, no write. `draft` is `@State`, so an assignment that lands on the same
+                // minute still rebuilds the column and everything in it for nothing.
+                guard resized.end != draft?.endMin else { return }
+                draft?.moveEndEdge(toMinute: resized.end)
             }
             .onEnded { _ in
+                draftPressAnchor = nil
                 guard draft != nil else { return }
                 isDraftEditorPresented = true
             }
@@ -1252,13 +1299,18 @@ private struct iOSCalendarTimelineDayColumn: View {
     }
 
     /// Opens a draft at a pressed point, or leaves the one already there alone.
-    private func beginDraft(atY yPosition: CGFloat) {
+    ///
+    /// `presentingEditor` is `false` for exactly one caller, the press-drag, and for one reason:
+    /// that gesture is still down. A tap is over by the time it gets here, so its editor opens in
+    /// the same breath as the block; a press has a drag still to run, and the editor it would
+    /// raise is a popover that takes every touch on the canvas with it.
+    private func beginDraft(atY yPosition: CGFloat, presentingEditor: Bool = true) {
         guard drawsDraftBlocks, draft == nil else { return }
         draft = CadenceScheduleDraft(
             dateKey: DateFormatters.dateKey(from: date),
             startMin: minute(for: yPosition)
         )
-        isDraftEditorPresented = true
+        if presentingEditor { isDraftEditorPresented = true }
     }
 
     /// The draft block, drawn where every other block on this column is drawn — same inset, same

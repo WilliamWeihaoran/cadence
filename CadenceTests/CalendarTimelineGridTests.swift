@@ -1234,3 +1234,89 @@ struct CadenceTodayTimelinePaneTests {
         )
     }
 }
+
+/// The press-and-drag that creates a block on the iOS timeline ([[T-3239]]).
+///
+/// **The owner's report, on shipped build 23:** *"on ios, dragging on calendar to create stuff is
+/// behaving really bad. when i drag, it lags and jitters a lot, then when i try to move around, the
+/// entire event just disappears"*. Two mechanisms, both in `draftPressGesture`, both measured on an
+/// instrumented build on `Cadence-iPadPro11` before they were touched.
+///
+/// **(1) The editor was raised in the middle of the drag.** `beginDraft` ended with
+/// `isDraftEditorPresented = true`, and `onChanged` called it on the first gesture callback — so
+/// the popover, and the keyboard its autofocused title field raises, were built while the finger
+/// was still sizing the block. The probe recorded the gesture receiving **no touch samples for
+/// 397 ms** immediately after that line, against a ~35 ms callback cadence either side of it. From
+/// that moment the popover's own outside-tap dismissal owned every touch over the pane, so the
+/// block the user reached for next was torn down instead of resized — the second half of the
+/// report. The editor now opens in `onEnded`, with the finger off the glass.
+///
+/// **(2) The end edge followed the finger absolutely, with no anchor.** It was set to
+/// `minute(for: drag.location.y) + 15`, and at the moment of the press the finger is on the block's
+/// **start**, an hour above the end the press had just drawn — so the first drag sample teleported
+/// the end up to the finger. Measured: a 5pt movement turned a 10:00–11:00 draft into 10:00–10:15,
+/// and a 12pt movement into 10:00–10:30, each then growing back as the finger descended. That
+/// collapse-and-regrow is the jitter. It is now measured from a press-time anchor through
+/// `CadenceTimelineBlockEdit.editedRange`, the shared resize arithmetic whose own doc comment
+/// already names this gesture, so a press that has not travelled half a grid step leaves the
+/// default hour exactly as drawn.
+///
+/// What is NOT pinned here, because it is not fixed: a draft block is still inert while its editor
+/// is up, so its edge handles remain unreachable. That is [[T-3240]], and its fix is a presentation
+/// decision in a file this ticket does not own.
+struct CadenceTimelineDraftPressGestureTests {
+    private static let gridFile = "Cadence/iOS/iOSCalendarTimelineViews.swift"
+
+    private func grid() throws -> String {
+        CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(Self.gridFile))
+    }
+
+    /// Non-vacuity, then the two halves of the fix.
+    @Test func thePressDragDoesNotRaiseItsEditorWhileTheFingerIsStillDown() throws {
+        let grid = try grid()
+        #expect(grid.contains("private var draftPressGesture: some Gesture"), "non-vacuity: wrong file")
+
+        // The press arm asks for a draft WITHOUT an editor; the default, which the tap arm takes,
+        // still opens one.
+        #expect(grid.contains("private func beginDraft(atY yPosition: CGFloat, presentingEditor: Bool = true)"))
+        #expect(grid.contains("if presentingEditor { isDraftEditorPresented = true }"))
+        #expect(
+            CadenceSourceScan.matchCount(#"beginDraft\(atY: drag\.startLocation\.y, presentingEditor: false\)"#, in: grid) == 1,
+            "the press-drag opens its editor from inside the gesture again"
+        )
+        // Three presentations and no fourth: `beginDraft`'s guarded one, the press's `onEnded`,
+        // and the tap that re-opens a draft an interrupted press left without an editor. An
+        // unguarded fourth is how this fired mid-gesture.
+        #expect(
+            CadenceSourceScan.matchCount(#"isDraftEditorPresented = true"#, in: grid) == 3,
+            "the editor is presented from somewhere new, or no longer from all three"
+        )
+    }
+
+    @Test func thePressDragSizesTheBlockFromAPressTimeAnchor() throws {
+        let grid = try grid()
+        #expect(grid.contains("private var draftPressGesture: some Gesture"), "non-vacuity: wrong file")
+
+        // The anchor is taken once, where the draft is made, and dropped when the finger lifts.
+        #expect(grid.contains("@State private var draftPressAnchor: (start: Int, end: Int)?"))
+        #expect(
+            CadenceSourceScan.matchCount(#"draftPressAnchor = draft\.map \{ \(\$0\.startMin, \$0\.endMin\) \}"#, in: grid) == 1,
+            "the press-drag no longer anchors on the range the press drew"
+        )
+        #expect(
+            CadenceSourceScan.matchCount(#"draftPressAnchor = nil"#, in: grid) == 1,
+            "the press anchor is no longer released when the finger lifts"
+        )
+
+        // Sized by the shared resize arithmetic, relative to that anchor.
+        #expect(grid.contains("CadenceTimelineBlockEdit.editedRange("))
+        #expect(grid.contains("kind: .resizeEnd,"))
+        #expect(grid.contains("translationY: drag.translation.height,"))
+
+        // And never again by the finger's own absolute minute, which is what collapsed the block.
+        #expect(
+            CadenceSourceScan.matchCount(#"moveEndEdge\(toMinute: minute\(for: drag"#, in: grid) == 0,
+            "the press-drag sizes the block from the finger's absolute minute again"
+        )
+    }
+}
