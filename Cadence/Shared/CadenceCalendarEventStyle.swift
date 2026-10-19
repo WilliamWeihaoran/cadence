@@ -335,6 +335,75 @@ enum CadenceCalendarEventStyle {
     /// decimal places.
     static let railPlateChromaRatio: Double = 0.12
 
+    /// Greatest OKLab chroma the **rail itself** may carry ([[T-3230]]).
+    ///
+    /// ## What this is for, and it is the one thing [[T-3168]]'s second lever did not fix
+    ///
+    /// That lever moved the hue out of the plate and into the rail, and the body half of it
+    /// worked: a deep red block's plate went from (84, 32, 32) to (67, 42, 42), chroma 0.0777 to
+    /// 0.0373, decisively quieter than the task plate beside it over 97% of its area. The rail
+    /// half overshot. `railColor` returned the calendar's hue and saturation **whole**, at full
+    /// brightness — and for a saturation-1.0 hue that is the gamut corner: `#3d0000` and
+    /// `#ff0000` both gave **(255, 0, 0)**, OKLab chroma **0.2577**. A fully-saturated primary on
+    /// a near-black canvas is textbook halation, and photographed on the device it was still the
+    /// first thing the eye landed on even though the block around it had gone quiet.
+    ///
+    /// ## Why a chroma ceiling and not a luminance one
+    ///
+    /// T-3230 recorded three options. A **luminance** ceiling was measured and rejected there
+    /// rather than offered blind: red is already at Y 0.213 and blue at Y 0.120, so a luminance
+    /// cap set anywhere useful does nothing to either of them and instead bites the bright end —
+    /// `#ede7d3` from Y 0.943 — which is precisely the half of the lever that made the pale event
+    /// visible at all. Chroma is the axis the problem is actually on, and it is the axis the plate
+    /// is already bounded on by `railPlateChromaRatio`, so the treatment ends up stated the same
+    /// way at both ends instead of in two different units.
+    ///
+    /// ## The value is derived from the palettes, not judged
+    ///
+    /// The property is **"the rail is never louder than the loudest rail Cadence already ships"** —
+    /// those rails have been on screen since T-3160 and no one has complained about one. So the
+    /// ceiling is the maximum rail chroma over all eighteen shipped accents, which is `#4ecb71`'s
+    /// **0.2030** (`#ff5a5f` is second at 0.2004). Perturbing every one of the eighteen by ±1 in
+    /// every channel — the `colorHex` rounding this file budgets for everywhere else — lifts that
+    /// worst case to **0.20538**, and **0.206** is the next three-decimal step above it.
+    ///
+    /// Stated as an absolute chroma rather than as a ratio of something, unlike
+    /// `railPlateChromaRatio`: the plate has a luminance ladder to hang a ratio on, and the rail
+    /// does not — it sits at full brightness and its luminance is whatever the hue gives.
+    ///
+    /// ## What it costs, measured over every colour that can reach it
+    ///
+    /// **All eighteen accents are byte-identical** — the ceiling is above every one of them, which
+    /// is the measurement that says it launders nothing Cadence offers. Of the seven sweep hues
+    /// exactly two move, and both are EventKit-only:
+    ///
+    /// - `#3d0000`: **(255, 0, 0) → (255, 85, 85)**, chroma 0.2577 → 0.2060, Y 0.213 → 0.285.
+    /// - `#0000ff`: **(64, 64, 255) → (113, 113, 255)**, chroma 0.2693 → 0.2060, Y 0.120 → 0.225.
+    ///
+    /// `#ede7d3`'s rail stays exactly **(255, 249, 227)** at Y 0.943, chroma 0.0290 — a twentieth
+    /// of the way to the ceiling and therefore untouchable by it. That is the number that says
+    /// this is not option (c) wearing a different hat.
+    ///
+    /// **And it costs no contrast at all, structurally rather than by measurement.** Nothing in
+    /// the tier ladder reads `railColor`: `railFill` solves from the calendar colour and each
+    /// `railLabelColor` solves against `railFillLuminance`. All 63 tier ratios are therefore
+    /// bit-identical across this change — 0 of 63 moved, not 45 of 63 by 1.2e-05 as the previous
+    /// lever's bisection noise did — and the plates still land on Y 0.030 / 0.044 / 0.060 exactly.
+    ///
+    /// ## The 3:1 floor is carried again, and that is this change's one real cost
+    ///
+    /// [[T-3168]] made `railMinimumLuminance` live for the first time: `#0000ff` could not reach
+    /// Y 0.120 with its chroma intact and gave saturation up to get there. The ceiling now takes
+    /// that saturation away first, and taking chroma off at full brightness walks the colour
+    /// toward white — so luminance *rises* and the floor is satisfied before it is consulted.
+    /// Swept over 3,600 hues at this ceiling the dimmest rail the gamut can produce is **Y 0.222**,
+    /// a shade under twice the floor, so the floor cannot bind on any colour a `colorHex` can
+    /// express. It is kept rather than deleted because it is the stated 3:1 guarantee and the
+    /// ceiling's job is chroma, not luminance; if this constant is ever raised past about 0.31 the
+    /// floor binds again on a primary blue. Pinned both ways by
+    /// `theRailIsHeldToItsChromaCeilingAndStillClearsTheNonTextFloor`.
+    static let railChromaCeiling: Double = 0.206
+
     /// The rail plate's chroma ceiling at a given state, derived from that state's own luminance.
     static func railPlateChromaCeiling(isSelected: Bool = false, isActive: Bool = false) -> Double {
         railPlateChromaRatio * CadenceOKLab.neutralLightness(
@@ -342,8 +411,8 @@ enum CadenceCalendarEventStyle {
         )
     }
 
-    /// The leading rail: **the calendar's own colour, at all the chroma it can carry**
-    /// ([[T-3168]]).
+    /// The leading rail: **the calendar's own colour, at all the chroma it may carry**
+    /// ([[T-3168]], bounded by [[T-3230]]).
     ///
     /// ## This is the second half of one change, and it reverses the first half
     ///
@@ -370,23 +439,35 @@ enum CadenceCalendarEventStyle {
     /// ## What it returns
     ///
     /// The calendar's **own hue and saturation**, at the brightness that carries the most chroma —
-    /// full brightness — and lifted to `railMinimumLuminance` only when that is not enough to
-    /// clear the 3:1 non-text bar against `Theme.bg`.
+    /// full brightness — held to `railChromaCeiling`, and then lifted to `railMinimumLuminance`
+    /// only when that is still not enough to clear the 3:1 non-text bar against `Theme.bg`.
     ///
-    /// Saturation is taken whole rather than at the 0.96 the pre-T-3168 rail used. That 4% existed
-    /// to stop a fully-saturated primary reading as raw paint beside its neighbours, and the
-    /// neighbours have changed: the plate it sits on now carries a third of the chroma it did, so
-    /// the rail is the one place the calendar's colour appears at strength and that is the point
-    /// of it. The haircut was worth ΔC = 0.0018 on `#3d0000` — well inside a just-noticeable
-    /// difference — against the cost of the rail not quite being the colour the account chose.
+    /// Saturation is taken whole, rather than at the 0.96 the pre-T-3168 rail used, for every
+    /// calendar whose colour is inside the ceiling — which is every colour Cadence's own palettes
+    /// offer. That blanket 4% existed to stop a fully-saturated primary reading as raw paint
+    /// beside its neighbours, and it was the wrong shape for the job twice over: it shaved an
+    /// ordinary accent that was never loud (ΔC = 0.0018 on `#3d0000`, well inside a
+    /// just-noticeable difference) and it did not come close to fixing the primary it was aimed
+    /// at. `railChromaCeiling` does exactly the half that was needed — see it for the measurement
+    /// and for why the axis is chroma rather than luminance.
     ///
-    /// ## The floor is live again, and that is the measurement to keep
+    /// ## The order of the two bounds, and why it is safe in only this order
+    ///
+    /// The ceiling runs first and the floor second. At full brightness both knobs turn the same
+    /// way — taking saturation off walks the colour toward white, which *lowers* chroma and
+    /// *raises* luminance — so the floor, if it ever fires, can only take the result further
+    /// inside the ceiling. The reverse order would not hold: a floor solve can hand back a colour
+    /// the ceiling has to re-cut, and re-cutting it could drop it back under the floor.
+    ///
+    /// ## The floor was live for one lever, and the ceiling has taken it back over
     ///
     /// Under the title-coloured rail `railMinimumLuminance` was inert by arithmetic: a rest title
-    /// solves to Y 0.358, three times the 0.120 floor, at every hue. It binds again now, on
-    /// exactly one of the seven sweep hues — `#0000ff`, which maxes out at Y 0.0756 with its
-    /// chroma intact and is desaturated to s = 0.75 to reach the floor. That is the honest trade
-    /// the floor was written for and it is back to doing its job rather than being carried.
+    /// solves to Y 0.358, three times the 0.120 floor, at every hue. [[T-3168]] made it bind, on
+    /// exactly `#0000ff`. The ceiling now takes that blue's saturation down to 0.558 before the
+    /// floor is consulted, which puts it at Y 0.225 — so the floor is carried again, this time by
+    /// the ceiling, and swept over 3,600 hues it cannot bind on anything a `colorHex` can express.
+    /// Stated here rather than found later: this is a genuine loss of a live guarantee, and what
+    /// replaces it is a bound that is strictly tighter in the direction that matters.
     ///
     /// ## Two consequences, stated rather than discovered later
     ///
@@ -401,21 +482,24 @@ enum CadenceCalendarEventStyle {
     ///    takes no `isSelected`/`isActive` and reads nothing that does, so it cannot acquire a
     ///    state ladder by someone adding a defaulted argument upstream.
     ///
-    /// The rim drawn around the block reads this same function at `railBorderOpacity`, so a rail
-    /// that gained chroma and lost luminance makes the rim *quieter*, not louder: `#3d0000`'s rest
-    /// rim composites to **(112, 32, 32)** against the **(125, 53, 53)** that was sampled off the
-    /// device before this change — a measurement, not a model: that pixel was read out of
-    /// `scratchpad/raillever/before-04.png` and the simple sRGB composite reproduces it exactly.
+    /// The rim drawn around the block reads this same function at `railBorderOpacity`, so every
+    /// move the rail makes the rim makes with it. `#3d0000`'s rest rim has now been through both
+    /// levers: **(125, 53, 53)** sampled off the device before T-3168, **(112, 32, 32)** after it,
+    /// and **(112, 52, 52)** under T-3230's ceiling. The first of those three is a measurement and
+    /// not a model — that pixel was read out of `scratchpad/raillever/before-04.png` and the
+    /// simple sRGB composite reproduces it exactly, which is why the other two can be composited
+    /// rather than photographed.
     static func railColor(for calendarColor: Color) -> Color {
         let source = hsb(of: calendarColor)
-        guard relativeLuminance(hue: source.hue, saturation: source.saturation, brightness: 1)
+        let saturation = chromaCappedSaturation(hue: source.hue, ceiling: source.saturation)
+        guard relativeLuminance(hue: source.hue, saturation: saturation, brightness: 1)
             < railMinimumLuminance
         else {
-            return Color(hue: source.hue, saturation: source.saturation, brightness: 1)
+            return Color(hue: source.hue, saturation: saturation, brightness: 1)
         }
         return desaturatedTint(
             hue: source.hue,
-            ceiling: source.saturation,
+            ceiling: saturation,
             luminance: railMinimumLuminance
         )
     }
@@ -694,6 +778,47 @@ enum CadenceCalendarEventStyle {
             }
         }
         return high
+    }
+
+    /// The **most saturated** this hue may be at full brightness without carrying more than
+    /// `railChromaCeiling` of OKLab chroma, never more than `ceiling` ([[T-3230]]).
+    ///
+    /// Chroma rises monotonically with saturation at fixed brightness — saturation 0 is the white
+    /// point, which has none, and the colour walks away from it in a straight line — so a
+    /// bisection converges. `low` is returned for the same reason `cappedFill` returns it: `low`
+    /// is the end of the bracket the ceiling's definition guarantees is *under* the ceiling.
+    ///
+    /// The early return is not an optimisation, it is the exactness: a calendar already inside the
+    /// ceiling gets its own saturation back **unchanged**, where the bisection would hand back
+    /// `ceiling * (1 - 2^-20)`. Same 8-bit colour either way, but "the ceiling only ever removes,
+    /// never adds, and most often does nothing" is a property worth being literally true. It is
+    /// the common path: all eighteen shipped accents and five of the seven sweep hues take it.
+    private static func chromaCappedSaturation(hue: Double, ceiling: Double) -> Double {
+        let top = max(ceiling, 0)
+        if fullBrightnessChroma(hue: hue, saturation: top) <= railChromaCeiling { return top }
+
+        var low = 0.0
+        var high = top
+        for _ in 0..<20 {
+            let mid = (low + high) / 2
+            if fullBrightnessChroma(hue: hue, saturation: mid) > railChromaCeiling {
+                high = mid
+            } else {
+                low = mid
+            }
+        }
+        return low
+    }
+
+    /// OKLab chroma of this hue and saturation at full brightness — the rail's own working point,
+    /// where `chroma(hue:saturation:luminance:)` is the plate's.
+    private static func fullBrightnessChroma(hue: Double, saturation: Double) -> Double {
+        let components = rgbComponents(hue: hue, saturation: saturation, brightness: 1)
+        return CadenceOKLab.chroma(
+            red: components.red,
+            green: components.green,
+            blue: components.blue
+        )
     }
 
     /// The **most saturated** colour at this hue and full brightness whose luminance still reaches

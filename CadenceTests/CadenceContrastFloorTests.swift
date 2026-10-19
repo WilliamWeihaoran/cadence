@@ -638,8 +638,8 @@ struct CadenceContrastFloorTests {
         #expect(CadenceCalendarEventStyle.railSecondaryContrastTarget > CadenceCalendarEventStyle.railTertiaryContrastTarget)
     }
 
-    /// **[[T-3168]], second lever: the rail carries the CALENDAR'S OWN chroma, and the 3:1
-    /// non-text floor is live again.**
+    /// **[[T-3168]], second lever, as bounded by [[T-3230]]: the rail carries the CALENDAR'S OWN
+    /// chroma, up to a ceiling, and clears the 3:1 non-text floor.**
     ///
     /// This replaces `theRailIsTheTitlesColourAndClearsTheNonTextFloorByConstruction`, whose first
     /// claim — rail *is* title — is the one the device photograph overturned. With a deep red, a
@@ -656,14 +656,18 @@ struct CadenceContrastFloorTests {
     ///    instead — `#000000` and `#ffffff` have no chroma for anything to carry.
     /// 2. **The floor still holds**, against `Theme.bg` and not against the plate — the plate is
     ///    the same hue and cannot separate from it by chroma.
-    /// 3. **The floor BINDS, on exactly `#0000ff`.** Under the title-coloured rail every hue
-    ///    solved to Y 0.358 and the floor was carried, inert, by two other constants. A primary
-    ///    blue at full chroma tops out at Y 0.0756 and gives saturation up to reach 0.120, which
-    ///    is the trade `railMinimumLuminance` was written for. A different set here is news:
-    ///    either the floor moved, or `railColor` stopped taking the calendar's saturation whole.
+    /// 3. **The CEILING binds, on exactly `#3d0000` and `#0000ff`, and the floor binds on
+    ///    nothing.** T-3168 made `railMinimumLuminance` live for one lever — a primary blue tops
+    ///    out at Y 0.0756 with its chroma intact and gave saturation up to reach 0.120. T-3230's
+    ///    `railChromaCeiling` now takes that saturation first, and taking chroma off at full
+    ///    brightness raises luminance, so the floor is satisfied before it is consulted. Both sets
+    ///    are asserted by name. A hue joining or leaving the ceiling's set is news about which
+    ///    calendars are louder than the loudest one Cadence ships; the floor's set becoming
+    ///    non-empty is news that the ceiling stopped covering it.
     @Test func theRailCarriesTheCalendarsOwnChromaAndClearsTheNonTextFloor() {
         var measured = 0
         var flooredHues: [String] = []
+        var ceilingHues: [String] = []
         for hex in t853CalendarHues {
             measured += 1
             let swatch = Color(hex: hex)
@@ -700,17 +704,84 @@ struct CadenceContrastFloorTests {
             if abs(railLuminance - CadenceCalendarEventStyle.railMinimumLuminance) < 0.002 {
                 flooredHues.append(hex)
             }
+            if t853Chroma(t3230UncappedRail(swatch)) > CadenceCalendarEventStyle.railChromaCeiling {
+                ceilingHues.append(hex)
+            }
         }
         #expect(measured == 7, "non-vacuity: \(measured) hues measured")
         #expect(
-            flooredHues == ["#0000ff"],
-            "the floor now binds on \(flooredHues) rather than on #0000ff alone. It is live again because railColor takes the calendar's saturation whole; a change here means railMinimumLuminance moved or the rail stopped doing that"
+            flooredHues == [],
+            "the luminance floor binds on \(flooredHues). Under T-3230's chroma ceiling it should bind on nothing: the ceiling cuts saturation first and that raises luminance, so a hue arriving here means railChromaCeiling went up or railMinimumLuminance did"
         )
-        // The arithmetic that makes the floor live rather than carried, asserted rather than left
-        // in prose: a primary blue at its own chroma cannot reach it on brightness alone.
+        #expect(
+            ceilingHues == ["#3d0000", "#0000ff"],
+            "railChromaCeiling binds on \(ceilingHues) rather than on the two fully-saturated EventKit hues. Fewer means the ceiling rose above a colour that was louder than anything Cadence ships; more means it dropped onto one that is not"
+        )
+        // The arithmetic that makes the floor carried rather than live, asserted rather than left
+        // in prose. A primary blue at its own chroma cannot reach the floor on brightness alone —
+        // that part is unchanged and is why T-3168 could make the floor bind...
         #expect(
             CadenceCalendarEventStyle.relativeLuminance(hue: 2.0 / 3.0, saturation: 1, brightness: 1)
                 < CadenceCalendarEventStyle.railMinimumLuminance
+        )
+        // ...but it never gets there now, because the ceiling has already walked it toward white.
+        #expect(
+            Theme.relativeLuminance(of: CadenceCalendarEventStyle.railColor(for: Color(hex: "#0000ff")))
+                > CadenceCalendarEventStyle.railMinimumLuminance * 1.8
+        )
+    }
+
+    /// **[[T-3230]]: the rail's chroma ceiling is derived from the palettes, and the assertion is
+    /// that derivation rather than the number.**
+    ///
+    /// T-3168's second lever gave a saturation-1.0 calendar the gamut corner — `#3d0000` and
+    /// `#ff0000` both rendered **(255, 0, 0)**, OKLab chroma 0.2577 — and on a near-black canvas
+    /// that stayed the first thing the eye landed on even after the block's body had gone quiet.
+    /// The ceiling's defining property is **"no louder than the loudest rail Cadence already
+    /// ships"**, so it is bounded from below by the eighteen shipped accents and from above by
+    /// the fact that it has to actually bite the primary. Both ends are measured here:
+    ///
+    /// 1. **It launders nothing Cadence offers.** Every accent in every palette comes back from
+    ///    `railColor` byte-identical in luminance *and* chroma. This is the assertion that makes
+    ///    the constant's lower bound live — drop it under `#4ecb71`'s 0.2030 and this goes red.
+    /// 2. **It binds on the primary it was written for**, cutting (255, 0, 0) to (255, 85, 85).
+    ///    Raise it to 0.26 and this goes red, which is the upper bound.
+    /// 3. **It does not take the pale event's edge away**, which is the trap T-3230 recorded
+    ///    option (c) — a luminance ceiling — falling into. `#ede7d3`'s rail carries chroma 0.029,
+    ///    a twentieth of the ceiling, and comes back at Y 0.943 untouched.
+    @Test func theRailIsHeldToItsChromaCeilingAndStillClearsTheNonTextFloor() {
+        var measured = 0
+        for palette in CadenceAccentPalette.all {
+            for hex in palette.swatchHexes {
+                measured += 1
+                let swatch = Color(hex: hex)
+                let rail = CadenceCalendarEventStyle.railColor(for: swatch)
+                #expect(
+                    t853Chroma(rail) <= CadenceCalendarEventStyle.railChromaCeiling,
+                    "\(palette.id) \(hex)'s rail carries \(t853Rounded(t853Chroma(rail))) chroma, over the ceiling"
+                )
+                #expect(
+                    abs(t853Chroma(rail) - t853Chroma(t3230UncappedRail(swatch))) < 1e-9,
+                    "\(palette.id) \(hex)'s rail lost chroma to the ceiling — \(t853Rounded(t853Chroma(rail))) against the \(t853Rounded(t853Chroma(t3230UncappedRail(swatch)))) its own colour carries. The ceiling is under a shipped accent and is now laundering an ordinary calendar"
+                )
+            }
+        }
+        #expect(measured == 18, "non-vacuity: three palettes of six, \(measured) measured")
+
+        // The upper bound: it has to bite the hue it was written for, and land where recorded.
+        let red = CadenceCalendarEventStyle.railColor(for: Color(hex: "#3d0000"))
+        #expect(t853Chroma(t3230UncappedRail(Color(hex: "#3d0000"))) > 0.25)
+        #expect(abs(t853Chroma(red) - CadenceCalendarEventStyle.railChromaCeiling) < 0.001)
+        #expect(abs(t853Components(red).r - 1) < 1e-9)
+        #expect(abs(t853Components(red).g - 85.0 / 255) < 1.0 / 255)
+        #expect(abs(t853Components(red).g - t853Components(red).b) < 1e-9)
+
+        // Option (c)'s trap, asserted so a later luminance cap cannot be slipped in beside this.
+        let pale = CadenceCalendarEventStyle.railColor(for: Color(hex: "#ede7d3"))
+        #expect(t853Chroma(pale) < CadenceCalendarEventStyle.railChromaCeiling / 5)
+        #expect(
+            Theme.relativeLuminance(of: pale) > 0.9,
+            "the pale event's rail reads Y \(t853Rounded(Theme.relativeLuminance(of: pale))) — it has lost the edge T-3168's second lever gave it"
         )
     }
 
@@ -1241,6 +1312,30 @@ private func t853UncappedRailPlateChroma(_ color: Color) -> Double {
         }
     }
     return t853Chroma(Color(hue: Double(hue), saturation: scaled, brightness: high))
+}
+
+/// The rail as `railColor` would return it with [[T-3230]]'s chroma ceiling removed: the
+/// calendar's own hue and saturation at full brightness, which is where T-3168's second lever put
+/// it.
+///
+/// `railMinimumLuminance` is deliberately left out. It is a floor on *luminance* and it reaches it
+/// by taking saturation off, so including it could only lower the chroma this returns — and every
+/// call site here uses this as an **upper bound** on the chroma the calendar's own colour carries.
+/// Leaving it out therefore makes each assertion strictly harder to pass, never easier, and keeps
+/// the reference arithmetic to one line.
+private func t3230UncappedRail(_ color: Color) -> Color {
+    Color(hue: t853RawHue(color), saturation: t853Saturation(color), brightness: 1)
+}
+
+/// `t853Hue` without its three-decimal rounding. That rounding is right for the equality checks it
+/// was written for and wrong here: a hue nudged by 5e-4 reconstructs a visibly different colour,
+/// and this helper's whole job is to reconstruct one exactly.
+private func t853RawHue(_ color: Color) -> Double {
+    var hue: CGFloat = 0, saturation: CGFloat = 0, brightness: CGFloat = 0, alpha: CGFloat = 0
+    let resolved = NSColor(color)
+    let srgb = resolved.usingColorSpace(.sRGB) ?? resolved
+    srgb.getHue(&hue, saturation: &saturation, brightness: &brightness, alpha: &alpha)
+    return Double(hue)
 }
 
 /// An opaque grey whose WCAG relative luminance is `luminance`, by inverting the sRGB transfer
