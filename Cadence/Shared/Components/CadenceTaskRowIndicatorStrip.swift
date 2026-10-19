@@ -1,17 +1,25 @@
 import SwiftUI
 
-/// The note / checklist / tag glyphs a task row draws **after its title** (T-2058).
+/// The checklist / tag glyphs a task row draws — after the title on macOS, beneath the notes
+/// preview on iOS (T-2058, the iOS position from [[T-3196]]).
 ///
 /// One component, both platforms, for the reason `CadenceTaskRowIndicator`'s doc comment gives: the
-/// three questions are facts about an `AppTask`, and only the row around them is per-platform.
+/// questions are facts about an `AppTask`, and only the row around them is per-platform.
 ///
-/// **It sits with the title, not in the metadata strip, and that is the design.** macOS's
-/// `metadataStrip` is a `ViewThatFits` that sheds chips as the window narrows — which is right for
-/// chips that restate information the row gives elsewhere, and wrong for these: a glyph that comes
-/// and goes with the window width is worse than no glyph, because the row then says a different
-/// thing about the same task depending on how wide the pane is. Three glyphs are a constant 48pt;
-/// the three tag chips they replaced were ~150pt of name-length-dependent width, so the title has
-/// *more* room than it did, not less.
+/// **There were three glyphs until [[T-3231]].** The `note.text` reading came off both rows at
+/// once, because both rows now print the notes themselves — iOS always did, and macOS gained the
+/// excerpt in [[T-1467]]. Nothing here changed to do it: the strip draws whatever
+/// `CadenceTaskRowIndicator.allCases` holds, so dropping the case dropped the glyph on both
+/// platforms in one edit, which is also why neither could drift away from the other.
+///
+/// **It is never in macOS's shedding metadata strip, and that is the design.** That
+/// `metadataStrip` is a
+/// `ViewThatFits` that sheds chips as the window narrows — which is right for chips that restate
+/// information the row gives elsewhere, and wrong for these: a glyph that comes and goes with the
+/// window width is worse than no glyph, because the row then says a different thing about the same
+/// task depending on how wide the pane is. Two glyphs are a constant 31pt (three were 48pt before
+/// [[T-3231]]); the three tag chips they replaced were ~150pt of name-length-dependent width, so
+/// the title has *more* room than it did, not less.
 ///
 /// **Colour is reserved for the exceptional.** Everything here is `Theme.dim`, which is the
 /// standing row rule and is also what the owner's reference shot shows — the only coloured things
@@ -38,7 +46,8 @@ struct CadenceTaskRowIndicatorStrip: View {
 
     /// Each glyph takes a fixed box rather than its own symbol width. `checklist` is wider than
     /// `tag`, so natural widths would make the strip's total depend on *which* indicators a task
-    /// earned — and `maximumIntrinsicWidth` would then be an estimate.
+    /// earned — and `maximumIntrinsicWidth` would then be an estimate. That is still true of the
+    /// two that remain, and is why [[T-3231]] shrank the total without touching this figure.
     static let glyphWidth: CGFloat = 14
 
     static let spacing: CGFloat = 3
@@ -63,12 +72,12 @@ struct CadenceTaskRowIndicatorStrip: View {
             }
             // Default layout priority, under the title's `.layoutPriority(1)`: the title is the
             // only part of a row that identifies its task, so it is laid out first and this takes
-            // what it needs out of what is left. `fixedSize` horizontally because 48pt is the whole
-            // of what it needs — there is no "narrower" rendering of three glyphs worth having.
+            // what it needs out of what is left. `fixedSize` horizontally because 31pt is the whole
+            // of what it needs — there is no "narrower" rendering of two glyphs worth having.
             .fixedSize(horizontal: true, vertical: false)
-            // One element, not three. Three bare `Image`s are three stops a screen reader lands on
-            // and reads nothing at; `CadenceSidebarLayout.rowAccessibilityLabel` folds its phrases
-            // the same way, with the same `", "`.
+            // One element, however many glyphs. Bare `Image`s are one stop each that a screen
+            // reader lands on and reads nothing at; `CadenceSidebarLayout.rowAccessibilityLabel`
+            // folds its phrases the same way, with the same `", "`.
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(CadenceTaskRowIndicatorSupport.accessibilityLabel(for: indicators) ?? "")
         }

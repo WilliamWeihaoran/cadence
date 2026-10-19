@@ -71,6 +71,37 @@
 # that removal from the filesystem and exits non-zero when there was nothing to remove
 # (T-1066), because `stop` with the wrong id, or none, used to print success over a
 # store it had never looked at.
+#
+# HOW TO ACTUALLY SEE THE WINDOW, INCLUDING THROUGH A LOCKED SCREEN (T-3231, 2026-10-19).
+#
+# Starting the app is half the job; a ledger line that says "macOS not verified on screen" is
+# usually the other half failing. A full-screen `screencapture -x out.png` returns the LOCK SCREEN
+# when the screen is locked -- a clock on black -- and that is what "I could not capture the Mac
+# app" has meant here. Measured the same session: capture the WINDOW instead and it works.
+#
+#   1. Get the window number (NOT the pid). `CGWindowListCopyWindowInfo` with
+#      `[.excludeDesktopElements]` lists every window; match `kCGWindowOwnerName == "Cadence"` and
+#      read `kCGWindowNumber`. A ~12-line Swift file run with `xcrun swift <file>` is enough; the
+#      system python3 has no Quartz module, so do not reach for pyobjc.
+#   2. `screencapture -x -o -l<windowNumber> out.png`   (`-x` no sound, `-o` no window shadow)
+#
+# That returns the window's own backing store, so the app's live content comes out even with
+# `loginwindow` in front of it. Verified 2026-10-19 on Darwin 27: screen locked since 00:26, app
+# launched by this script at 00:44, capture at 00:45 showed the real Today list -- rows, sidebar,
+# seeded data -- while the full-screen capture one minute earlier showed only the clock.
+#
+# WHAT IT NEEDS, and what it does NOT:
+#   * Screen Recording for the controlling process. REQUIRED, and cheap to confirm before you rely
+#     on it: if the window list comes back with `kCGWindowName` populated (real titles, not empty
+#     strings), you have it. Without it `screencapture` produces nothing useful either.
+#   * Accessibility: NOT USED. Nothing in this path touches an AX API or System Events, so an
+#     Accessibility grant is irrelevant to it. This reads a window; it cannot click one.
+#   * No unlock, no foreground, no interaction, and the user'"'"'s session is not disturbed.
+#
+# LIMITS, stated so the next agent does not over-claim it. This captures what the window has
+# DRAWN. A window that has never rendered, or one that was closed, yields nothing; and because
+# there is no way to click, this verifies a VIEW, not a flow. For anything needing interaction the
+# screen still has to be unlocked.
 
 set -uo pipefail
 CMD="${1:-status}"

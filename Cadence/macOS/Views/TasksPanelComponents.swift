@@ -58,9 +58,11 @@ struct MacTaskRow: View {
     /// the figures macOS keeps to itself and the ones it deliberately does not read.
     private var metrics: CadenceTaskRowMetrics { .desktop }
 
-    /// The note / checklist / tag glyphs this row draws after its title — the shared answer, asked
-    /// once so the strip and the padding beside it cannot disagree about whether there is anything
-    /// to pad. `iOSTaskRow` asks the same function.
+    /// The checklist / tag glyphs this row draws after its title — the shared answer, asked once
+    /// so the strip and the padding beside it cannot disagree about whether there is anything to
+    /// pad. `iOSTaskRow` asks the same function, which is how [[T-3231]] took the `note.text`
+    /// glyph off both rows without editing either: the case left `CadenceTaskRowIndicator` and
+    /// both call sites stopped drawing it.
     private var rowIndicators: [CadenceTaskRowIndicator] {
         CadenceTaskRowIndicatorSupport.indicators(for: task)
     }
@@ -193,8 +195,9 @@ struct MacTaskRow: View {
             // and, asked directly whether the icon should replace the named chips, chose replace:
             // you no longer see *which* tags without opening the task. The side benefit is the one
             // this row needed most — `CompactTagStrip` shed chips through `ViewThatFits` as the
-            // pane narrowed, so what the row said about a task changed with the window; three
-            // glyphs are the same 48pt at every width.
+            // pane narrowed, so what the row said about a task changed with the window; the
+            // glyphs are the same width at every width (31pt lit, since [[T-3231]] took the
+            // third).
             //
             // It attaches **here**, with the title, rather than in `metadataStrip` below, for the
             // same reason: that strip is where things go to be shed.
@@ -247,10 +250,16 @@ struct MacTaskRow: View {
     /// The figures are `.desktop`'s, which stated them at `.compact`'s answers for exactly this
     /// day: a macOS task column is a narrow pane.
     ///
-    /// The note / checklist glyphs on the title line **stay** for now. [[T-3196]] decided they
-    /// come off both platforms once both rows show what they stand for; this is the macOS half of
-    /// that precondition, and the glyph removal itself is [[T-3196]]'s (its iOS half is
-    /// lease-blocked), so taking them off here alone would make the two rows disagree again.
+    /// **This excerpt is what retired the `note.text` glyph ([[T-3231]]), and the two are one
+    /// change read in order.** [[T-3196]]'s 2026-10-16 decision was that the glyph comes off both
+    /// platforms only once both rows show what it stood for; this tier is the macOS half of that
+    /// precondition, and T-3231 is the drop. It draws for **every** row the glyph used to light:
+    /// `notesPreview` is `nil` on exactly the input the retired notes predicate answered `false`
+    /// on — both asked `CadenceTaskPresentationSupport.plainPreviewText`, and the `limit:` here
+    /// only truncates a string the parser has already built, so it cannot turn prose into nothing.
+    /// No row traded a glyph for silence. (The predicate itself is gone with the glyph, so it is
+    /// deliberately not named here: `CadenceCommentSymbolClaimTests` is right that a comment
+    /// naming a symbol nothing defines is a comment nobody can check.)
     @ViewBuilder
     private var inlineDetail: some View {
         if let notesPreview {

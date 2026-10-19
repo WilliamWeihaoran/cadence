@@ -570,11 +570,64 @@ struct CadenceTodayUnificationTests {
         #expect(chipIndex.upperBound < notesIndex.lowerBound,
                 "the title line, including its due chip, is closed before the notes line opens")
 
-        // **The notes glyph survives**, on both platforms, until [[T-3231]] drops it from both at
-        // once. Asserted on the shared vocabulary so dropping it on one platform alone fails;
-        // T-3231 revises this line.
-        #expect(CadenceTaskRowIndicator.allCases.contains(.notes))
-        #expect(CadenceTaskRowIndicator.notes.symbolName == "note.text")
+        // **The notes glyph is GONE, from both platforms at once ([[T-3231]]).** This asserted
+        // `allCases.contains(.notes)` while it survived, and the assertion sat here rather than in
+        // the row files precisely so that dropping it on one platform alone would fail. It is
+        // re-pointed to the same place for the same reason, inverted: the glyph went by losing its
+        // case from the shared vocabulary, which is a single edit both rows read, so there is no
+        // spelling of this change that reaches one row and not the other.
+        //
+        // Stated as an absence over `allCases` rather than as a grep for `note.text`, because that
+        // symbol is still the app's NOTES FEATURE glyph in four other files and always will be.
+        #expect(!CadenceTaskRowIndicator.allCases.map(\.symbolName).contains("note.text"))
+        #expect(CadenceTaskRowIndicator.allCases == [.subtasks, .tags])
+
+        // **And the fact it stood for is still on both rows, as text.** That was [[T-3196]]'s
+        // whole condition for the drop — the glyph comes off only once both rows show what it
+        // stood for. iOS prints its excerpt in `taskSummary`, asserted above the strip by the
+        // positional check two blocks up; macOS gained the same excerpt in [[T-1467]]. Both read
+        // the one parser, so neither can print a line the other would not.
+        let mac = CadenceSourceScan.codeOnly(try sourceFile("Cadence/macOS/Views/TasksPanelComponents.swift"))
+        #expect(mac.contains("struct MacTaskRow: View"),
+                "non-vacuity: the macOS source really was read")
+
+        // iOS: the notes line, and the parser it comes from.
+        #expect(summary.contains("if let secondaryLine {"),
+                "the iOS row must still draw the notes line the glyph used to report")
+        #expect(row.contains("CadenceTaskPresentationSupport.plainPreviewText"),
+                "`secondaryLine` is where that text comes from")
+
+        // macOS: the [[T-1467]] excerpt, asserted as something the row DRAWS rather than as a
+        // symbol the file merely mentions. A property that computed the preview and returned `nil`
+        // would satisfy a bare `contains("plainPreviewText")` while the row showed nothing — which
+        // is the exact failure that would make this ticket a net loss of information on the Mac.
+        let macDetail = try #require(
+            CadenceSourceScan.declarationBody("private var inlineDetail: some View", in: mac),
+            "inlineDetail is the tier that draws the notes excerpt and the subtask list"
+        )
+        let macPreview = try #require(
+            CadenceSourceScan.declarationBody("private var notesPreview: String?", in: mac),
+            "notesPreview is the excerpt itself"
+        )
+        #expect(macDetail.contains("Text(notesPreview)"),
+                "the macOS row must print the notes, not merely compute them")
+        #expect(macPreview.contains("CadenceTaskPresentationSupport.plainPreviewText"))
+        #expect(macPreview.contains("preview.isEmpty ? nil : preview"),
+                "nil on empty ONLY: a preview that always answered nil would draw no excerpt at all")
+
+        // **No second vocabulary for the glyph that left.** Neither row, and not the strip, may
+        // hard-code `note.text` back onto a task row — which is how this removal would be undone
+        // without touching `CadenceTaskRowIndicator` at all, and the one spelling every assertion
+        // above would still pass over.
+        try expectCallSites(
+            of: "\"note.text\"",
+            at: [
+                "Cadence/macOS/Views/TasksPanelComponents.swift": 0,
+                "Cadence/iOS/iOSTaskViews.swift": 0,
+                "Cadence/Shared/Components/CadenceTaskRowIndicatorStrip.swift": 0,
+                "Cadence/Shared/CadenceTaskRowIndicators.swift": 0,
+            ]
+        )
     }
 
     /// `MacTaskRow`'s documented performance constraint, and the reason the estimate chip is its
