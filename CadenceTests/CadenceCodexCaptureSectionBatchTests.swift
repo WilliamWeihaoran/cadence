@@ -57,7 +57,7 @@ struct CadenceCodexCaptureSectionBatchTests {
         #expect(panel.contains("CadenceScheduleCaptureCard("))
         #expect(panel.contains("draft: $draft"))
         #expect(card.contains("struct CadenceScheduleCaptureCard"))
-        let fields = try #require(CadenceSourceScan.declarationBody("private var fields: [CadenceCaptureField]", in: card))
+        let fields = try #require(CadenceSourceScan.declarationBody("private var fields: [CadenceCaptureField]", in: CadenceSourceScan.codeOnly(card)))
         #expect(fields.contains("CadenceCaptureFieldInventory.fields("))
         #expect(fields.contains("for: draft.kind"))
         #expect(fields.contains("offersTaskRepeat: offersTaskRepeat"))

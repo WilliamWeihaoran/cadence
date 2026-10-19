@@ -60,13 +60,13 @@ struct CadenceCaptureEditorTests {
 
     @Test func bothRecordEditorsPresentTheCaptureCard() throws {
         for name in ["iOSTaskDetailSheet", "iOSCalendarEventEditSheet"] {
-            let host = try source("Cadence/iOS/\(name).swift")
+            let host = CadenceSourceScan.codeOnly(try source("Cadence/iOS/\(name).swift"))
             #expect(host.contains(".capturePresentation(CadenceScheduleCaptureOptions())"))
             #expect(host.contains(".presentationBackground(.clear)"))
             #expect(host.contains(".interactiveDismissDisabled(draft != openedDraft)"))
             #expect(!host.contains("NavigationStack {"))
         }
-        let task = try source("Cadence/iOS/iOSTaskDetailSheet.swift")
+        let task = CadenceSourceScan.codeOnly(try source("Cadence/iOS/iOSTaskDetailSheet.swift"))
         let sections = try #require(CadenceSourceScan.declarationBody("private var recordSections: some View", in: task))
         #expect(sections.contains("statusActionsSection"))
         let status = try #require(CadenceSourceScan.declarationBody("private var statusActionsSection: some View", in: task))
@@ -76,15 +76,16 @@ struct CadenceCaptureEditorTests {
     }
 
     @Test func captureForwardsAndEnforcesReadOnlyAndStatus() throws {
-        let panel = try source("Cadence/Shared/Components/CadenceSchedulePanel.swift")
-        let card = try source("Cadence/Shared/Components/CadenceScheduleCaptureCard.swift")
+        let panel = CadenceSourceScan.codeOnly(try source("Cadence/Shared/Components/CadenceSchedulePanel.swift"))
+        let cardSource = try source("Cadence/Shared/Components/CadenceScheduleCaptureCard.swift")
+        let card = CadenceSourceScan.codeOnly(cardSource)
         let route = try #require(CadenceSourceScan.declarationBody("var body: some View", in: panel))
         for parameter in ["readOnlyNotice", "titleStatus", "offersTaskRepeat", "offersEventRepeat"] {
             #expect(route.contains("\(parameter): \(parameter)"))
         }
         #expect(card.contains("isEditing: draft.subject.isEditing"))
         #expect(card.contains("if !isReadOnly, let delete = actions.delete"))
-        #expect(card.contains("Text(\"Save\")"))
+        #expect(cardSource.contains("Text(\"Save\")"))
         #expect(card.contains(".strikethrough(titleStatus?.isSettled == true)"))
         #expect(card.contains("if notesField == nil || !draft.subject.isEditing"))
         #expect(card.contains("if draft.subject.isEditing, let notesField { notesField }"))
@@ -96,7 +97,11 @@ struct CadenceCaptureEditorTests {
         let hostGate = try #require(commit.range(of: "guard canCommit else"))
         #expect(titleGate.lowerBound < hostGate.lowerBound)
         #expect(commit.contains("guard draft.hasCommittableTitle else"))
-        #expect(commit.contains("actionError = \"Add a title first.\""))
-        #expect(CadenceSourceScan.matchCount(#"\.disabled\(isReadOnly\)"#, in: card) >= 5)
+        let commitCopy = try #require(CadenceSourceScan.functionBody(named: "commit", in: cardSource))
+        #expect(commitCopy.contains("actionError = \"Add a title first.\""))
+        let readOnlyPattern = #"\.disabled\(isReadOnly\)"#
+        #expect(CadenceSourceScan.matchCount(readOnlyPattern, in: ".disabled(isReadOnly)") == 1)
+        #expect(CadenceSourceScan.matchCount(readOnlyPattern, in: ".disabled(false)") == 0)
+        #expect(CadenceSourceScan.matchCount(readOnlyPattern, in: card) >= 5)
     }
 }
