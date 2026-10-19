@@ -48,7 +48,7 @@
 #
 # `$HOME` plus `/private/tmp` and `/tmp`, pruning `.git`, `.Trash`, `Library`, `DerivedData`,
 # `node_modules`, `Pods`, `.build` and `.codex-build` wherever they occur -- deep enough for both an
-# agent's `/private/tmp/<scratch>/.../Cadence.xcodeproj` and a normal `~/Desktop/Projects/Cadence`,
+# agent's `/private/tmp/<scratch>/.../Cadence.xcodeproj` and a normal `~/Developer/Cadence`,
 # and fast because `$HOME/Library` (where the directory being audited itself lives, plus every other
 # Xcode cache) is never descended into. A project living somewhere this does not look is
 # unattributable and its entry reads as an orphan -- widen `SEARCH_ROOTS` below if that ever matters
