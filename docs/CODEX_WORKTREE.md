@@ -2643,6 +2643,28 @@ written, and the agent that reported it credited the coordinator, who did not ma
 and minimal, so it stands — but it was made against a leased path with no grant in force, which is
 the thing this document exists to prevent.
 
+### 2026-10-19 — `iOSMarkdownEditor.swift` granted to a local agent for [[T-1481]]'s iOS half
+
+**Unblocking a queue that has been idling on this for hours.** The hourly batch runner has reported
+"nothing launched; inlinepanel2 leased" on every fire since, and the lease was the only thing in the
+way.
+
+T-1481 gives both platforms the shared panel inline in a note. The macOS half landed; the iOS half
+needs the editor to apply a task-embed block and host a `UIHostingController` view inside its
+`UITextView`, so that `iOSMarkdownEditingSurface` can route a card tap to `CadenceTaskInlinePanel`
+rather than `iOSTaskInspectorSheet`.
+
+**GRANTED for T-1481 only**, scoped to that embed plumbing. Verified with `--no-merges`: two branches
+have modified this path, `codex/leased-followup-batch` (2026-10-07) and
+`codex/mobile-calendar-notes-parity` (2026-10-17). **Both landed** — the second by this coordinator
+in `f1fe7afc`, the first confirmed landed on 2026-10-18 when its four sampled test functions were all
+found on main. Graveyard.
+
+**The caution that applies here specifically:** this file carries a documented selection-clamping
+race at `:207-209` and `:410`, whose comment at `:106` records why "not beginning is the stronger"
+guard resolves it. Codex was granted a scroll request here on 2026-10-18 and was told the clamping
+is load-bearing and off limits. **The same holds for this grant.**
+
 ### 2026-10-19 — `CalendarPageMonthSupportViews.swift` grant EXTENDED to the drag-create conversion
 
 The 2026-10-17 grant on this path was scoped to [[T-3170]]'s trio pass. Agent `dragcreate` hit it
