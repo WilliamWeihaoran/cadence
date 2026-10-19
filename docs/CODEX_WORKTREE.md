@@ -2643,6 +2643,28 @@ written, and the agent that reported it credited the coordinator, who did not ma
 and minimal, so it stands — but it was made against a leased path with no grant in force, which is
 the thing this document exists to prevent.
 
+### 2026-10-19 — `CalendarPageMonthSupportViews.swift` grant EXTENDED to the drag-create conversion
+
+The 2026-10-17 grant on this path was scoped to [[T-3170]]'s trio pass. Agent `dragcreate` hit it
+while converting the macOS drag-create onto the shared panel and **stopped rather than reading
+"granted once" as "granted"** — the right call, and the one three agents got wrong earlier this week
+in the other direction.
+
+**EXTENDED to the drag-create conversion.** Verified again rather than carried over: with
+`--no-merges`, exactly one branch has ever modified this path, `codex/ui-refresh-reconciliation`,
+landed by this coordinator in `7343bfe8`. Graveyard.
+
+**The constraint that makes this delicate, and the agent found it before asking.** This file hosts
+the macOS calendar page's own day column — the exact host of drag-create — and **its two create
+closures cannot take a day.** So a day changed inside the converted panel has nowhere to be written.
+The agent's recommendation is right and is adopted as the scope: **gate that case through the
+panel's existing `canCommit` / `failureNotice` inputs rather than reshaping the panel's contract.**
+[[T-3171]] has spent six slices converting surfaces ONTO that panel; widening its contract to fit
+one host would undo the programme.
+
+If gating proves impossible without a contract change, **STOP and report** — that is a decision for
+the owner, not an implementation detail.
+
 ### 2026-10-19 — GRANT: the calendar's DRAG-CREATE path, iOS and macOS, for one creation surface
 
 **The owner's report:** *"on at least ios and possibly mac os too, the task and event creation from
