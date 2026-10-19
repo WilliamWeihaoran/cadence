@@ -108,6 +108,49 @@ struct CadenceScanInstrumentTests {
 /// suites that happen to call them.
 struct CadenceSourceScanReaderTests {
 
+    /// **[[T-3241]]: the whole-tree walk stops at a nested checkout.** The desktop app creates
+    /// agent worktrees INSIDE the repository, at `.claude/worktrees/<name>/`, and each one is a
+    /// complete copy of the checkout — so the guide, doc, script and runbook sweeps each saw two
+    /// of everything, and one session's worktree reddened every other session's suite. Nothing
+    /// noticed for as long as it did because `.claude/worktrees/` sits in `.git/info/exclude`: the
+    /// tree looks clean while the scans see double.
+    ///
+    /// A fixture tree rather than the checkout, so this holds whether or not a worktree exists
+    /// today. Three things it has to separate: a nested checkout is pruned WHOLE, the directory
+    /// that merely CONTAINS one is not pruned, and the test is the `.git` ENTRY rather than the
+    /// name `worktrees` — a submodule or a stray clone is the same defect under another path, and
+    /// a worktree spells `.git` as a file where a clone spells it as a directory.
+    @Test func theWholeTreeWalkStopsAtANestedCheckout() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("nested-checkout-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        for path in [
+            "AGENTS.md",
+            "docs/guide.md",
+            ".claude/worktrees/other/AGENTS.md",
+            ".claude/worktrees/other/docs/guide.md",
+            "vendor/clone/AGENTS.md",
+            ".build/vendored/AGENTS.md",
+        ] {
+            let file = root.appendingPathComponent(path)
+            try FileManager.default.createDirectory(
+                at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try Data("# fixture\n".utf8).write(to: file)
+        }
+        try Data("gitdir: /elsewhere/.git/worktrees/other\n".utf8)
+            .write(to: root.appendingPathComponent(".claude/worktrees/other/.git"))
+        try FileManager.default.createDirectory(
+            at: root.appendingPathComponent("vendor/clone/.git"), withIntermediateDirectories: true)
+
+        let paths = CadenceSourceScan.repositoryPaths(under: root).sorted()
+
+        #expect(paths == ["AGENTS.md", "docs/guide.md"], "the walk returned \(paths)")
+        #expect(CadenceSourceScan.isNestedCheckout(".claude/worktrees/other", under: root))
+        #expect(CadenceSourceScan.isNestedCheckout("vendor/clone", under: root))
+        #expect(!CadenceSourceScan.isNestedCheckout(".claude/worktrees", under: root))
+        #expect(!CadenceSourceScan.isNestedCheckout("docs", under: root))
+    }
+
     /// **T-644.** The exact shape that broke it: a `commit:` parameter defaulted to a closure. The
     /// old reader took the first `{` after `func <name>(` and returned `try $0.save()`; the reader
     /// balances the parameter list first, so it returns the body.

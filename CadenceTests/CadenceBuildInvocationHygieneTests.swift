@@ -1352,21 +1352,19 @@ struct CadenceBuildInvocationHygieneTests {
 
     /// Every markdown file and shell script that belongs to this repository, repository-relative.
     /// Discovered rather than listed, so a runbook added tomorrow is covered tomorrow.
+    /// The walk is `CadenceSourceScan.repositoryPaths`, which is also what prunes **nested
+    /// checkouts** ([[T-3241]]): an agent worktree at `.claude/worktrees/<name>/` carries a second
+    /// copy of every runbook and every script this sweep reads, so an offending command there
+    /// would be reported against a path this checkout cannot fix, and a corrected one would be
+    /// reported until that session committed.
     static func scannedPaths() -> [String] {
-        let root = CadenceSourceScan.repositoryRoot()
-        guard let walker = FileManager.default.enumerator(atPath: root.path) else { return [] }
-        var found: [String] = []
-        for case let entry as String in walker {
-            if Self.excludedPrefixes.contains(where: { entry == $0 || entry.hasPrefix($0 + "/") }) { continue }
-            if entry.contains("/SourcePackages/") || entry.contains("/DerivedData/") { continue }
-            if entry.hasSuffix(".md") || entry.hasSuffix(".sh") || entry.hasSuffix(".yml") || entry.hasSuffix(".yaml") {
-                found.append(entry)
+        CadenceSourceScan.repositoryPaths()
+            .filter { !$0.contains("/SourcePackages/") }
+            .filter {
+                $0.hasSuffix(".md") || $0.hasSuffix(".sh") || $0.hasSuffix(".yml") || $0.hasSuffix(".yaml")
             }
-        }
-        return found.sorted()
+            .sorted()
     }
-
-    private static let excludedPrefixes = [".git", ".build", ".codex-build", "build"]
 
     /// The shell text of a file: a script is shell throughout, a markdown file only inside its
     /// fenced code blocks, and a GitHub Actions workflow only inside its `run:` steps.
