@@ -179,13 +179,17 @@ struct iOSTaskRow: View {
             }
     }
 
-    /// Completion circle, then the task, and nothing at the trailing edge.
+    /// Completion circle, then the task. The trailing edge belongs to `taskSummary`'s title line.
     ///
     /// There is **no disclosure chevron**. It said nothing the row's own tappability does not, and
     /// it occupied the one piece of the row a finger reaches for last. The estimate chip that took
     /// its place is gone too (T-3196): the owner asked for it off the list row on every platform,
     /// because a column of capsules down the trailing edge read before any title did. The estimate
     /// is still on the task; it is edited from the inspector.
+    ///
+    /// That slot is **not empty now** — it carries the due date, drawn one level down on the title
+    /// line rather than as a third child here, so the deadline shares a baseline with the title it
+    /// belongs to and a task with no due date gives the width back to the title automatically.
     private var rowContent: some View {
         HStack(alignment: .top, spacing: metrics.contentSpacing) {
             completionButton
@@ -224,11 +228,18 @@ struct iOSTaskRow: View {
 
     private var taskSummary: some View {
         VStack(alignment: .leading, spacing: metrics.summarySpacing) {
-            // The glyphs sit **with** the title, as they do on macOS, which is what the owner's
-            // reference shot shows: title, then the note / checklist / tag icons, then the row's
-            // red overdue flag further along. `Spacer(minLength: 0)` keeps the old
-            // `.frame(maxWidth: .infinity, alignment: .leading)` behaviour for the pair while
-            // leaving the glyphs against the title's trailing edge rather than against the row's.
+            // **The title line carries the title and the DEADLINE, and nothing else** (T-3196).
+            // This reverses T-1432(3), which put the note / checklist / tag glyphs here *"with the
+            // title, as they do on macOS"*; the owner asked for the opposite — *"remove these icons
+            // from the title line of the task and put them under the notes"* — so the comment is
+            // rewritten rather than left describing a layout this file no longer has.
+            //
+            // What sits at the trailing edge is the due date, in the slot the estimate chip
+            // vacated: *"where the estimated time chip was, now in that same place we should put
+            // down the due date if any of that task. if there is no due date, leave it empty and
+            // use that space."* `Spacer(minLength: 0)` is what gives that width back to the title
+            // when there is no deadline — the empty case is a Spacer that simply has nothing to
+            // push against, not a branch.
             HStack(alignment: .firstTextBaseline, spacing: metrics.badgeSpacing) {
                 // `CadenceTaskRowMetrics.titleLineLimit`, not a per-width or per-host number. Today used
                 // to truncate to one line while the next tab along wrapped to two, and it is the day's
@@ -239,13 +250,36 @@ struct iOSTaskRow: View {
                     .strikethrough(isSettled, color: Theme.dim)
                     .lineLimit(wraps ? nil : CadenceTaskRowMetrics.titleLineLimit)
                     .fixedSize(horizontal: false, vertical: wraps)
-                    // The title identifies the task; the glyphs are chrome over facts you can
-                    // reach by opening it. Same priority split as `MacTaskRow` (T-1432(3)).
+                    // Still laid out first, but it is now a deadline it yields to rather than
+                    // chrome. The chip below is `fixedSize`, so it states a real minimum and this
+                    // truncates into what is left — the same resolution `MacTaskRow` reaches, where
+                    // the metadata strip's `fixedSize` is what stops the row "fitting" any width by
+                    // truncating its own text (T-1432).
                     .layoutPriority(1)
 
-                CadenceTaskRowIndicatorStrip(indicators: rowIndicators)
-
                 Spacer(minLength: 0)
+
+                // **The row's one and only statement of when the task is due** (T-3196, DECIDED
+                // 2026-10-17). It used to be drawn down in `taskBadgeContent` as a red `51 days
+                // ago` badge beneath the notes; drawing it here *as well* would have stated the
+                // deadline twice on one row, so it moved rather than being copied.
+                //
+                // **Two tints, not one.** The decision reads "it turns RED when overdue", which is
+                // half a spec — `Theme.dim` is what an unpassed deadline takes, exactly as it did
+                // in the badge strip. A slot that only ever drew red would either shout at every
+                // task with a date or say nothing until one went late.
+                //
+                // Date only: `AppTask.dueDate` is a `yyyy-MM-dd` key and there is no due-*time*
+                // field anywhere in the model to draw.
+                if datePlan.drawsDueDateChip, let dueUrgency {
+                    iOSTaskRowDateChip(
+                        task: task,
+                        field: .dueDate,
+                        title: CadenceTaskPresentationSupport.dueDateLabel(for: task),
+                        tint: dueUrgency == .overdue ? Theme.red : Theme.dim
+                    )
+                    .fixedSize(horizontal: true, vertical: false)
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
@@ -257,6 +291,19 @@ struct iOSTaskRow: View {
                     .fixedSize(horizontal: false, vertical: wraps)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
+
+            // **Beneath the notes, which is where the owner asked for them** — directly under the
+            // preview rather than after the chip strip, because "under the notes" is a position
+            // relative to the text they annotate.
+            //
+            // **The notes glyph SURVIVES, deliberately.** The owner asked *"we can probably just
+            // remove the notes icon right?"*, reasoning that the preview above already says the
+            // task has notes — which is true on iOS and false on macOS, whose row draws no notes
+            // text at all and would lose the fact outright. T-3196 settled it: the glyph comes off
+            // **both** platforms at once, after the macOS row has an excerpt to replace it. That
+            // excerpt landed with [[T-1467]], and the drop itself is [[T-3231]]. Dropping it here
+            // alone would split one row vocabulary across two platforms for the sake of one glyph.
+            CadenceTaskRowIndicatorStrip(indicators: rowIndicators)
 
             taskBadges
 
@@ -399,14 +446,16 @@ struct iOSTaskRow: View {
             )
         }
 
-        if datePlan.drawsDueDateChip, let dueUrgency {
-            iOSTaskRowDateChip(
-                task: task,
-                field: .dueDate,
-                title: CadenceTaskPresentationSupport.dueDateLabel(for: task),
-                tint: dueUrgency == .overdue ? Theme.red : Theme.dim
-            )
-        }
+        // [[T-3196]] moved the DUE DATE chip out of this strip and onto the title line, into the
+        // slot the estimate chip vacated. It is not gone from the row and it is not gone from this
+        // file — `taskSummary` draws the same `iOSTaskRowDateChip`, with the same two tints and the
+        // same picker, so the deadline is still set from the row by tapping it. What changed is
+        // that the row states it **once**: the owner asked for the due date at the trailing edge,
+        // and iOS already answered the question lower down, which is the duplication the
+        // 2026-10-17 decision resolved by moving rather than copying.
+        //
+        // The do-date chip above stays here. It is the field that did *not* move, and a strip that
+        // kept one date and lost the other would read as an oversight.
 
         if task.recurrenceRule != .none {
             iOSTaskRowRepeatChip(task: task, pendingRecurrenceRule: $pendingRecurrenceRule)

@@ -512,6 +512,71 @@ struct CadenceTodayUnificationTests {
         )
     }
 
+    /// **The iOS row states its deadline ONCE, at the trailing edge, and its glyphs sit under the
+    /// notes ([[T-3196]]).** This is the half the estimate removal left behind, and it is pinned by
+    /// *position* rather than by count because every count it could move was already right before
+    /// the move: the due chip was drawn exactly once before and exactly once after, and the
+    /// indicator strip likewise. `CadenceSharedTaskRowJobsTests` holds those totals; without this
+    /// test, putting either back where it came from passes the whole suite.
+    ///
+    /// The owner asked for the trailing slot the estimate chip vacated to carry the deadline —
+    /// *"where the estimated time chip was, now in that same place we should put down the due date
+    /// if any of that task"* — and for the glyphs to leave the title line for *"under the notes,
+    /// which is under the title"*. iOS already drew the deadline below the notes, so a second
+    /// reading at the trailing edge would have stated it twice; the 2026-10-17 decision was to
+    /// **move** it, which is why `taskBadgeContent` must be asserted empty of it rather than merely
+    /// having the title line asserted full.
+    @Test func theIOSRowDrawsItsDueDateAtTheTrailingEdgeAndItsGlyphsBeneathTheNotes() throws {
+        let row = CadenceSourceScan.codeOnly(try sourceFile("Cadence/iOS/iOSTaskViews.swift"))
+        // Non-vacuity: the two declarations this test reasons about are both present, so a rename
+        // or a failed read cannot pass as "the layout is correct".
+        let summary = try #require(
+            CadenceSourceScan.declarationBody("private var taskSummary: some View", in: row),
+            "taskSummary is where the row's title, notes and glyphs are laid out"
+        )
+        let badges = try #require(
+            CadenceSourceScan.declarationBody("private var taskBadgeContent: some View", in: row),
+            "taskBadgeContent is the wrapping chip strip beneath the notes"
+        )
+
+        // The deadline is on the title line and nowhere else on the row.
+        #expect(summary.contains("if datePlan.drawsDueDateChip, let dueUrgency {"))
+        #expect(summary.contains("field: .dueDate"))
+        #expect(!badges.contains("drawsDueDateChip"),
+                "the due chip moved to the title line; drawing it here too states the deadline twice")
+        #expect(!badges.contains("field: .dueDate"))
+        // The do date did NOT move, and is the reason the strip still exists.
+        #expect(badges.contains("field: .doDate"))
+
+        // **Both tints.** "Red when overdue" alone would leave an unpassed deadline either shouting
+        // or invisible; `Theme.dim` is what it took in the badge strip and what it takes here.
+        #expect(summary.contains("tint: dueUrgency == .overdue ? Theme.red : Theme.dim"))
+
+        // Trailing edge: the `Spacer` sits between the title and the chip, so the chip is pushed
+        // to the edge and a task with no deadline gives that width back to the title.
+        let titleIndex = try #require(summary.range(of: "TaskTitleSupport.displayTitle"))
+        let spacerIndex = try #require(summary.range(of: "Spacer(minLength: 0)"))
+        let chipIndex = try #require(summary.range(of: "iOSTaskRowDateChip("))
+        #expect(titleIndex.upperBound < spacerIndex.lowerBound)
+        #expect(spacerIndex.upperBound < chipIndex.lowerBound)
+
+        // Under the notes: the glyph strip follows the secondary (notes preview) line rather than
+        // sharing the title's `HStack`, which is what T-1432(3) used to require and the owner
+        // reversed.
+        let notesIndex = try #require(summary.range(of: "metrics.secondaryLineLimit"))
+        let stripIndex = try #require(summary.range(of: "CadenceTaskRowIndicatorStrip("))
+        #expect(notesIndex.upperBound < stripIndex.lowerBound,
+                "the glyphs belong beneath the notes they annotate")
+        #expect(chipIndex.upperBound < notesIndex.lowerBound,
+                "the title line, including its due chip, is closed before the notes line opens")
+
+        // **The notes glyph survives**, on both platforms, until [[T-3231]] drops it from both at
+        // once. Asserted on the shared vocabulary so dropping it on one platform alone fails;
+        // T-3231 revises this line.
+        #expect(CadenceTaskRowIndicator.allCases.contains(.notes))
+        #expect(CadenceTaskRowIndicator.notes.symbolName == "note.text")
+    }
+
     /// `MacTaskRow`'s documented performance constraint, and the reason the estimate chip is its
     /// own `View` struct rather than three lines inline: the row itself must **not** observe
     /// `TaskCompletionAnimationManager`, because that manager ticks at display-link rate during a
