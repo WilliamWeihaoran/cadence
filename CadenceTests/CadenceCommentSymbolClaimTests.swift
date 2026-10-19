@@ -1178,7 +1178,6 @@ enum CadenceCommentSymbolClaim {
         "Cadence/Shared/CadenceColorPalette.swift `dollarsign.circle.fill`",
         "Cadence/iOS/iOSTrackingEditorComponents.swift `brain.head.profile`",
         "Cadence/macOS/Sheets/ListEditorSupportViews.swift `arrow.up.bin`",
-        "Cadence/macOS/Views/QuickCreateChoiceSupportViews.swift `rectangle.on.rectangle.angled`",
         "CadenceTests/CadenceCommentSymbolClaimTests.swift `MCPClient.__init__`",
         "CadenceTests/CadenceMCPWriteFenceTests.swift `MCPClient.__init__`",
         "CadenceTests/CadenceMCPWriteFenceTests.swift `tempfile.TemporaryDirectory`",
@@ -1203,9 +1202,13 @@ enum CadenceCommentSymbolClaim {
         #expect(Set(Self.rootLedger).isDisjoint(with: Set(Self.ledger)), "one span, two verdicts")
         // Measured when the verdict landed ([[T-3209]], 2026-10-18): 30 found while test
         // literals still counted, 4 corrected in place, 10 excused by the file-extension rule;
-        // 3 more surfaced once test literals stopped vouching, leaving 11 + 7 + 1.
+        // 3 more surfaced once test literals stopped vouching, leaving 11 + 7 + 1. **One
+        // non-symbol left with [[T-3171]]'s seventh adoption slice**, which deleted the file it
+        // pointed at — QuickCreateChoiceSupportViews.swift, and with it the SF Symbol name its
+        // doc comment spelled — so the second group is 6. (Named without backticks here on
+        // purpose: this file is swept too, and prose about the ledger must not add rows to it.)
         #expect(Self.rootTombstones.count == 11)
-        #expect(Self.rootNonSymbols.count == 7)
+        #expect(Self.rootNonSymbols.count == 6)
         #expect(Self.rootStaleClaims.count == 1)
     }
 

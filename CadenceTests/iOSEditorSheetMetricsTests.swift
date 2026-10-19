@@ -271,18 +271,18 @@ struct iOSEditorSheetMetricsTests {
         #expect(CadenceSourceScan.matchCount(#"style: \.card"#, in: editor) == 0)
         #expect(editor.contains("cornerRadius: Theme.radiusPanel"))
         #expect(editor.contains("iOSEditorSheetMetrics.gutter(isRegularWidth:"))
-        // The quick-create sheet: one group of its own (the markdown well it hands the panel's
-        // notes slot), ruled, with its header spaced from the panel by the shared group figure.
+        // The quick-create sheet is **not** an editor-sheet host any more. [[T-3171]]'s seventh
+        // adoption slice put the calendar's drag-create on the capture presentation, so it reads
+        // none of this enum's ramps, draws no group of its own, and is sized by the card rather
+        // than by a sheet. Asserted rather than dropped: a reader looking for it here should find
+        // out where it went.
         let quick = CadenceSourceScan.strippingComments(
             try CadenceSourceScan.sourceFile("Cadence/iOS/iOSCalendarQuickCreateSheet.swift")
         )
         #expect(quick.contains("CadenceSchedulePanel("), "the quick-create sheet no longer hosts the shared panel")
-        #expect(CadenceSourceScan.matchCount(#"iOSEditorSection\("#, in: quick) == 1)
-        #expect(CadenceSourceScan.matchCount(#"style: \.ruled"#, in: quick) == 1)
-        #expect(CadenceSourceScan.matchCount(#"style: \.card"#, in: quick) == 0)
-        #expect(quick.contains("cornerRadius: Theme.radiusPanel"))
-        #expect(quick.contains("iOSEditorSheetMetrics.gutter(isRegularWidth:"))
-        #expect(quick.contains("iOSEditorSheetMetrics.groupSpacing"))
+        #expect(quick.contains(".capturePresentation("), "the quick-create sheet is not the capture card")
+        #expect(CadenceSourceScan.matchCount(#"iOSEditorSection\("#, in: quick) == 0)
+        #expect(CadenceSourceScan.matchCount(#"iOSEditorSheetMetrics\."#, in: quick) == 0)
         // And the panel is a ruled form on a plate of its own — the same decision, taken once for
         // every host instead of once per sheet.
         let panel = CadenceSourceScan.strippingComments(
@@ -348,8 +348,6 @@ struct iOSEditorSheetMetricsTests {
             "Cadence/iOS/iOSCalendarEventEditSheet.swift",
             "Cadence/iOS/iOSCalendarInspectorView.swift",
             "Cadence/iOS/iOSCalendarMonthAgendaViews.swift",
-            "Cadence/iOS/iOSCalendarQuickCreateSheet.swift",
-            "Cadence/iOS/iOSCalendarView.swift",
             "Cadence/iOS/iOSCaptureRadialMenu.swift",
             "Cadence/iOS/iOSEventNoteEditorSheet.swift",
             "Cadence/iOS/iOSMarkdownReferenceSupport.swift",
@@ -377,11 +375,15 @@ struct iOSEditorSheetMetricsTests {
             "Cadence/iOS/iOSCalendarEventEditSheet.swift": "iOSEventNoteEditorSheet(",
             "Cadence/iOS/iOSCalendarInspectorView.swift": "iOSCalendarEventEditSheet(",
             "Cadence/iOS/iOSCalendarMonthAgendaViews.swift": "iOSCalendarEventEditSheet(",
-            "Cadence/iOS/iOSCalendarQuickCreateSheet.swift": "iOSEditorSheetMetrics.gutter(",
-            "Cadence/iOS/iOSCalendarView.swift": "iOSCalendarQuickCreateSheet(",
             // [[T-3195]] unified capture on `iOSCreateTaskSheet`, so the palette's Event arm no
             // longer reaches `iOSCalendarQuickCreateSheet(`. The file stays in the chain as the
             // presenter of two sheets and one cover; the needle follows the sheet it presents now.
+            //
+            // `iOSCalendarQuickCreateSheet.swift` and its only presenter `iOSCalendarView.swift`
+            // left the chain in [[T-3171]]'s seventh adoption slice: the sheet reads no ramp now,
+            // and a presenter of nothing that reads one has nothing to stay for. That sheet *does*
+            // ask for detents — it is the capture card, sized by its content — which is exactly
+            // the assertion below, and why it had to leave rather than be left failing.
             "Cadence/iOS/iOSCaptureRadialMenu.swift": "iOSCreateTaskSheet(",
             "Cadence/iOS/iOSEventNoteEditorSheet.swift": "iOSNoteEditorSheetHeader(",
             "Cadence/iOS/iOSMarkdownReferenceSupport.swift": "iOSLinkedNoteEditorSheet(",

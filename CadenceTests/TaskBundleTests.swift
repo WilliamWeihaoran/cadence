@@ -487,12 +487,17 @@ struct TaskBundleTests {
         #expect(CadenceSourceScan.matchCount(#"case \.(task|bundle|event):"#, in: body) == 2)
         #expect(CadenceSourceScan.matchCount(#"case \.bundle:"#, in: body) == 0)
 
-        // The read really was one declaration's body: the sibling in `showsTimedControls` is
-        // outside it.
+        // The read really was one declaration's body, and not the whole file. The negative used
+        // to be `showsTimedControls`/`isTimed`'s own `case .task: return hasTime`; [[T-3171]]'s
+        // seventh adoption slice deleted that pair when the sheet moved to the capture
+        // presentation, whose `CadenceCaptureKindMemory` remembers each kind's draft instead. The
+        // discriminator follows to a sibling that is still there: the two writes in `create()`,
+        // which switch on the same `draft.kind` this body does and must stay outside this read.
         #expect(!body.contains("hasTime"))
+        #expect(!body.contains("iOSScheduleDraftCreation.createTask("))
         #expect(
-            CadenceSourceScan.matchCount(#"case \.task:\s*return hasTime"#, in: source) == 1,
-            "showsTimedControls no longer holds the negative this scan is discriminated against"
+            CadenceSourceScan.matchCount(#"case \.task:\s*failure = iOSScheduleDraftCreation\.createTask\("#, in: source) == 1,
+            "create() no longer holds the negative this scan is discriminated against"
         )
     }
 

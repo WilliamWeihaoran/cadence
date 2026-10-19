@@ -3,23 +3,31 @@ import SwiftData
 import Testing
 @testable import Cadence
 
-/// **T-1433, owner-reported: the calendar quick-create popover stops being a signpost.**
+/// **[[T-3171]]'s seventh adoption slice, owner-reported: the macOS calendar's drag-to-create is
+/// the shared schedule panel.**
 ///
-/// Its Task tab used to open with a blue tile headed *"Use the task panel"*, a recessed card of
-/// three read-only `Text` rows built by a private `handoffDetail` helper — the date, the time range and
-/// the list name — and a tip saying that typing `~` in the title was how you routed the task to a
-/// list *before opening the panel*. None of the three rows could be acted on, and the blurb and
-/// the tip existed to say where to go and act on them.
+/// *"on at least ios and possibly mac os too, the task and event creation from the calendar view
+/// (that is, dragging to create an event or task) is still using the old task and event creation
+/// sheet. fix that."* — and on macOS it genuinely was: `QuickCreateChoicePopover` carried its own
+/// Task/Event tabs, two near-duplicate Task composers in a 394-line support file, a second copy of
+/// the `~` list flow, and an `enum Mode { case timeBlock, calendarEvent }` that outlived the Block
+/// feature [[T-3170]] removed, because every Block pass hunted surfaces that *display* a block and
+/// this one only creates.
 ///
-/// So the deletions here are not tidying. Making the list editable and adding a priority field is
-/// what stops the blurb and the tip being **true**, and that is the thing these tests pin: the
-/// four removals and the four fields are one change, and reverting either half leaves the surface
-/// lying about itself again.
+/// This file is what T-1433's and T-1436's tests became. The claims those tickets pinned —
+/// *the quick-create Task arm can set a date, a time, a list, a section and a priority*, and
+/// *the priority it names reaches the stored task* — are still here; they are asserted against the
+/// panel and the write path rather than against the two composers that drew them.
+///
+/// The new claims are this slice's: the draft opens on the **drag's own length**, the notes slots
+/// stay per-kind across a kind switch ([[T-1610]], re-keyed off the retired kind enum), and **every
+/// field the panel offers that this host's two fixed write closures cannot carry is either
+/// withheld or refused out loud** (T-470).
 @MainActor
 struct CadenceQuickCreateTaskInspectorTests {
 
-    private static let supportPath = "Cadence/macOS/Views/QuickCreateChoiceSupportViews.swift"
     private static let popoverPath = "Cadence/macOS/Views/QuickCreateChoicePopover.swift"
+    private static let canvasPath = "Cadence/macOS/Views/TimelineDayCanvas.swift"
     private static let createSheetPath = "Cadence/macOS/Sheets/CreateTaskSheet.swift"
     private static let createSheetSupportPath = "Cadence/macOS/Sheets/CreateTaskSheetSupportViews.swift"
     private static let tildePickerPath = "Cadence/macOS/Views/TildeContainerPicker.swift"
@@ -33,195 +41,425 @@ struct CadenceQuickCreateTaskInspectorTests {
         return code
     }
 
-    // MARK: - Moving the start moves the slot
+    /// Through the popover's own opener, not a hand-built draft: what a dragged slot hands the
+    /// panel is the thing under test.
+    private func dragDraft(
+        dateKey: String = "2026-05-01",
+        startMin: Int = 9 * 60,
+        endMin: Int = 10 * 60 + 30,
+        kind: CadenceScheduleDraftKind = .task
+    ) -> CadenceScheduleDraft {
+        QuickCreateChoicePopover.openingDraft(
+            dateKey: dateKey,
+            startMin: startMin,
+            endMin: endMin,
+            defaultsToCalendarEvent: kind == .event
+        )
+    }
 
-    /// The one piece of arithmetic the editable time field introduced. The drag draws a duration;
-    /// the field moves only the start, so the end has to follow rather than the block silently
-    /// growing or shrinking behind a control that never named a duration.
+    // MARK: - The draft opens on the slot the user drew
+
+    /// **The seed is the drag's own length**, not `CadenceScheduleDraft.quickCreateLengthMinutes`.
+    /// That half hour is the calendar *sheet*'s opening length, for a surface whose slot is a tap;
+    /// a popover opened by a range the user dragged would redraw their block the instant it
+    /// appeared.
+    @Test func theDragCreateDraftOpensOnTheLengthTheDragDrew() {
+        let draft = dragDraft()
+        #expect(draft.startMin == 9 * 60)
+        #expect(draft.endMin == 10 * 60 + 30)
+        #expect(draft.durationMinutes == 90)
+        // And the task's own Estimate says the same, rather than the sheet's figure.
+        #expect(draft.estimateMinutes == 90)
+        #expect(draft.estimateMinutes != CadenceScheduleDraft.quickCreateLengthMinutes)
+        #expect(draft.startDateKey == "2026-05-01")
+        #expect(draft.endDateKey == "2026-05-01")
+        #expect(draft.isAllDay == false)
+        // Creating, so the panel draws no Delete and no Clear on the Do grid.
+        #expect(draft.subject == CadenceScheduleDraft.Subject.creating)
+    }
+
+    /// `defaultsToCalendarEvent` is the Calendar page's "treat a dragged slot as an event first";
+    /// the Today timeline passes nothing and opens on Task. The opener is where that is decided,
+    /// so a kind switch afterwards is the user's and not the host's.
+    @Test func theOpeningKindFollowsTheHostsPreference() {
+        #expect(
+            QuickCreateChoicePopover.openingDraft(
+                dateKey: "2026-05-01",
+                startMin: 9 * 60,
+                endMin: 10 * 60,
+                defaultsToCalendarEvent: true
+            ).kind == .event
+        )
+        #expect(
+            QuickCreateChoicePopover.openingDraft(
+                dateKey: "2026-05-01",
+                startMin: 9 * 60,
+                endMin: 10 * 60,
+                defaultsToCalendarEvent: false
+            ).kind == .task
+        )
+    }
+
+    /// An Event arm with no event host behind it is never opened on: `onCreateEvent == nil` means
+    /// the canvas cannot create one, and `create()` refuses rather than looking as though it had.
+    @Test func thePopoverOnlyOpensOnEventWhereThereIsAnEventHost() throws {
+        let popover = try code(Self.popoverPath)
+        #expect(
+            popover.contains("defaultsToCalendarEvent: defaultsToCalendarEvent && onCreateEvent != nil"),
+            "the popover can open on Event on a canvas that cannot create one"
+        )
+        let create = try #require(CadenceSourceScan.functionBody(named: "create", in: popover))
+        #expect(create.contains("guard let onCreateEvent else { return"), "the Event arm commits into nothing")
+    }
+
+    /// **T-1433's arithmetic, now the draft's.** The popover's time control moves only the start,
+    /// so the end has to follow rather than the block silently growing or shrinking behind a
+    /// control that never named a duration. It was a static on the task draft, which the popover
+    /// kept because its own date and time were drawn as text and could not do it; the panel's
+    /// Start roller writes `moveStart(toMinute:)`, which is the same rule at the roller's finer
+    /// grid.
     @Test func movingTheStartCarriesTheDurationTheDragDrew() {
-        // 09:00–10:30 dragged, then moved to 14:00: still ninety minutes.
-        #expect(
-            QuickCreateTaskDraft.endMinute(forStart: 14 * 60, holdingDuration: 90) == 15 * 60 + 30
-        )
+        var draft = dragDraft()
+        draft.moveStart(toMinute: 14 * 60)
+        #expect(draft.startMin == 14 * 60)
+        #expect(draft.endMin == 15 * 60 + 30)
+
         // Moved earlier, same duration.
-        #expect(
-            QuickCreateTaskDraft.endMinute(forStart: 6 * 60, holdingDuration: 90) == 7 * 60 + 30
-        )
+        draft.moveStart(toMinute: 6 * 60)
+        #expect(draft.endMin == 7 * 60 + 30)
+
         // The identity case: a start that did not move gives the range back unchanged.
+        draft.moveStart(toMinute: 9 * 60)
+        #expect(draft.startMin == 9 * 60)
+        #expect(draft.endMin == 10 * 60 + 30)
+    }
+
+    /// A late start clamps rather than producing a block that ends on the following day, which no
+    /// host of this popover knows how to store.
+    @Test func aLateStartClampsToTheEndOfTheDayRatherThanRunningPastMidnight() {
+        var draft = dragDraft()
+        draft.moveStart(toMinute: 23 * 60 + 45)
+        #expect(draft.endMin == 24 * 60)
+        #expect(draft.spansMultipleDays == false)
+
+        var hourLong = dragDraft(startMin: 9 * 60, endMin: 10 * 60)
+        hourLong.moveStart(toMinute: 23 * 60)
+        #expect(hourLong.endMin == 24 * 60)
+
+        // Exactly reaching midnight is not clamping, and must still read as the full duration.
+        var twoHours = dragDraft(startMin: 9 * 60, endMin: 11 * 60)
+        twoHours.moveStart(toMinute: 22 * 60)
+        #expect(twoHours.endMin == 24 * 60)
+        #expect(twoHours.durationMinutes == 120)
+    }
+
+    /// A click that drew no range at all still opens a block one snap step tall, so the popover is
+    /// never anchored to a zero-height ghost and the host's `max(5, endMin - startMin)` is never
+    /// asked to floor a negative.
+    @Test func aDegenerateSlotStillYieldsABlockOfOneSnapStep() {
+        #expect(dragDraft(startMin: 9 * 60, endMin: 9 * 60).durationMinutes == CadenceScheduleDraft.minimumDurationMinutes)
+        #expect(dragDraft(startMin: 9 * 60, endMin: 8 * 60 + 30).endMin == 9 * 60 + CadenceScheduleDraft.minimumDurationMinutes)
+    }
+
+    // MARK: - What the two fixed write closures cannot carry is refused, never dropped
+
+    /// **The day gate.** `CalendarPageMonthSupportViews.swift` is Codex-leased, and its column
+    /// hands `createStandaloneEvent` its *own* `date:` and overwrites `draft.dateKey` with its own
+    /// column's — so a day picked in the panel has nowhere to be written from this popover. T-470's
+    /// rule is that a refusal is said; this is the sentence.
+    @Test func adayTheHostCannotWriteIsRefusedRatherThanDropped() {
+        var moved = dragDraft()
+        moved.startDateKey = "2026-05-04"
+        moved.endDateKey = "2026-05-04"
+
+        let notice = QuickCreateChoicePopover.hostLimitNotice(
+            for: moved,
+            hostDateKey: "2026-05-01",
+            hostWritesDraftDay: false
+        )
+        #expect(notice != nil, "a day the host overwrites was accepted silently")
+        #expect(notice?.contains(DateFormatters.shortDateString(from: "2026-05-01")) == true)
+        #expect(notice?.contains(DateFormatters.shortDateString(from: "2026-05-04")) == true)
+
+        // The same draft on the host that DOES forward the day is not refused — the Today
+        // timeline's task handoff passes `draft.dateKey` into `TaskCreationManager.present`, which
+        // is T-1433's behaviour and must survive this slice.
         #expect(
-            QuickCreateTaskDraft.endMinute(forStart: 9 * 60, holdingDuration: 90) == 10 * 60 + 30
+            QuickCreateChoicePopover.hostLimitNotice(
+                for: moved,
+                hostDateKey: "2026-05-01",
+                hostWritesDraftDay: true
+            ) == nil,
+            "the panel-handoff host lost T-1433's editable day"
         )
     }
 
-    /// The field offers every quarter hour up to 23:45, and the drag it is seeded from cannot
-    /// reach past midnight — so a late start clamps rather than producing a block that ends on
-    /// the following day, which no host of this popover knows how to store.
-    @Test func aLateStartClampsToTheEndOfTheDayRatherThanRunningPastMidnight() {
-        #expect(QuickCreateTaskDraft.endMinute(forStart: 23 * 60 + 45, holdingDuration: 90) == 24 * 60)
-        #expect(QuickCreateTaskDraft.endMinute(forStart: 23 * 60, holdingDuration: 60) == 24 * 60)
-        // Exactly reaching midnight is not clamping, and must still read as the full duration.
-        #expect(QuickCreateTaskDraft.endMinute(forStart: 22 * 60, holdingDuration: 120) == 24 * 60)
+    /// The draft the drag opens with is writable by both hosts, on both kinds — otherwise the gate
+    /// above would be refusing the common case and no test here would notice.
+    @Test func theDraftADragOpensWithIsAcceptedByEitherHost() {
+        for kind in [CadenceScheduleDraftKind.task, .event] {
+            for writesDay in [true, false] {
+                #expect(
+                    QuickCreateChoicePopover.hostLimitNotice(
+                        for: dragDraft(kind: kind),
+                        hostDateKey: "2026-05-01",
+                        hostWritesDraftDay: writesDay
+                    ) == nil,
+                    "a freshly dragged \(kind.title) is refused on a host that writes-day=\(writesDay)"
+                )
+            }
+        }
     }
 
-    /// `SchedulePanel` derives `estimatedMinutes` from this range, so a zero- or negative-length
-    /// slot would seed the panel with an estimate it floors anyway. Floor it once, here.
-    @Test func aDegenerateSlotStillYieldsAFiveMinuteBlock() {
-        #expect(QuickCreateTaskDraft.endMinute(forStart: 9 * 60, holdingDuration: 0) == 9 * 60 + 5)
-        #expect(QuickCreateTaskDraft.endMinute(forStart: 9 * 60, holdingDuration: -30) == 9 * 60 + 5)
+    /// `createStandaloneEvent` writes `isAllDay = false` and the task hosts take a minute, not a
+    /// `-1`. Both spellings of "no time" are refused by name.
+    @Test func anAllDayDraftIsRefusedBecauseNeitherWriteCanExpressOne() {
+        var allDayEvent = dragDraft(kind: .event)
+        allDayEvent.isAllDay = true
+        let eventNotice = QuickCreateChoicePopover.hostLimitNotice(
+            for: allDayEvent,
+            hostDateKey: "2026-05-01",
+            hostWritesDraftDay: false
+        )
+        #expect(eventNotice?.contains("All day") == true, "the all-day event refusal does not name the control: \(eventNotice ?? "nil")")
+
+        var untimedTask = dragDraft()
+        untimedTask.isAllDay = true
+        let taskNotice = QuickCreateChoicePopover.hostLimitNotice(
+            for: untimedTask,
+            hostDateKey: "2026-05-01",
+            hostWritesDraftDay: true
+        )
+        #expect(taskNotice != nil, "an untimed task was accepted by a host that stores a minute")
+        #expect(taskNotice != eventNotice, "both kinds answered one sentence; the task's control is not All day")
     }
 
-    // MARK: - The signpost is gone
+    /// The host takes a day and a length, so a block that crosses a midnight has nowhere to be
+    /// written — and the refusal names the day it would have to end on.
+    @Test func ablockThatCrossesMidnightIsRefusedWithTheDayItMustEndOn() {
+        var spanning = dragDraft(kind: .event)
+        spanning.endDateKey = "2026-05-02"
+        #expect(spanning.spansMultipleDays)
 
-    @Test func theHandoffBlurbAndItsReadOnlyRowsAreGone() throws {
-        let support = try code(Self.supportPath)
-        for needle in [
-            "Use the task panel",
-            "Continue to the shared task creator",
-            "QuickCreateTaskPanelHandoffView",
-            "handoffDetail",
-            "rectangle.on.rectangle.angled"
-        ] {
+        let notice = QuickCreateChoicePopover.hostLimitNotice(
+            for: spanning,
+            hostDateKey: "2026-05-01",
+            hostWritesDraftDay: false
+        )
+        #expect(notice?.contains(DateFormatters.shortDateString(from: "2026-05-01")) == true)
+    }
+
+    /// **None is a real estimate everywhere else and cannot be one here.** Both task writes floor
+    /// the length at five minutes (`SchedulingActions.insertTask`, `TaskCreationManager.present`),
+    /// so a task created from a drag always has one — the panel's Estimate row says so rather than
+    /// storing 15 minutes over the top of the user's answer.
+    @Test func anEstimateOfNoneIsRefusedBecauseBothTaskWritesFloorTheLength() {
+        var noEstimate = dragDraft()
+        noEstimate.setEstimate(0)
+        #expect(noEstimate.estimateMinutes == 0)
+        #expect(
+            QuickCreateChoicePopover.hostLimitNotice(
+                for: noEstimate,
+                hostDateKey: "2026-05-01",
+                hostWritesDraftDay: true
+            ) != nil,
+            "Estimate: None was accepted and would have been stored as a quarter hour"
+        )
+        // An event has no estimate at all, so the same zero must not refuse one.
+        var zeroOnAnEvent = dragDraft(kind: .event)
+        zeroOnAnEvent.estimateMinutes = 0
+        #expect(
+            QuickCreateChoicePopover.hostLimitNotice(
+                for: zeroOnAnEvent,
+                hostDateKey: "2026-05-01",
+                hostWritesDraftDay: false
+            ) == nil,
+            "an event was refused for a task's field"
+        )
+    }
+
+    // MARK: - [[T-1610]]: the Event arm's prose is not the Task arm's
+
+    /// **The defect, as a value.** A note typed on the Event arm must not come back out of the
+    /// draft the Task arm builds — they are not the same field in the first place: one is
+    /// `EKEvent.notes` and leaves the store, the other is `AppTask.notes`.
+    ///
+    /// Both directions, because one alone is satisfiable by a slot that always answers empty.
+    /// **Keyed on `CadenceScheduleDraftKind` since [[T-3171]]**: the popover's own kind enum, which
+    /// this used to read and whose first case was the last of [[T-3170]]'s Block vocabulary in the
+    /// tree, is gone with the popover's own form.
+    @Test func theEventArmsProseNeverReachesTheTaskDraft() {
+        var draft = QuickCreateNotesDraft()
+        draft.set("Bring the referral letter", for: .event)
+
+        #expect(
+            draft.notes(for: .task).isEmpty,
+            "the Event arm's note rode into the Task draft: \(draft.notes(for: .task))"
+        )
+        #expect(draft.notes(for: .event) == "Bring the referral letter")
+
+        draft.set("Draft the brief first", for: .task)
+        #expect(
+            draft.notes(for: .task) == "Draft the brief first",
+            "the Task arm cannot keep its own prose, which is not a fix but a second defect"
+        )
+        #expect(
+            draft.notes(for: .event) == "Bring the referral letter",
+            "the Task arm's note overwrote the Event arm's"
+        )
+        #expect(
+            draft.notes(for: .task) != draft.notes(for: .event),
+            "both arms answered the same prose; this test measures nothing"
+        )
+    }
+
+    /// The wiring, because the value above is only the fix if the popover is holding it.
+    ///
+    /// `CadenceScheduleDraft` carries **one** `notes`, so the two slots survive only if the popover
+    /// parks the outgoing kind's prose and loads the incoming kind's on every switch. A host that
+    /// held `QuickCreateNotesDraft` and never read it back would satisfy a binding assertion and
+    /// still carry the note across.
+    @Test func thePopoverParksAndRestoresTheNotesSlotOnEveryKindSwitch() throws {
+        let popover = try code(Self.popoverPath)
+        #expect(
+            CadenceSourceScan.matchCount(#"@State private var notesDraft = QuickCreateNotesDraft\(\)"#, in: popover) == 1,
+            "the popover no longer holds exactly one notes draft"
+        )
+        let carry = try #require(
+            CadenceSourceScan.functionBody(named: "carryNotes", in: popover),
+            "the popover no longer carries notes across a kind switch"
+        )
+        #expect(carry.contains("notesDraft.set(draft.notes, for: previousKind)"), "the outgoing kind's prose is not parked")
+        #expect(carry.contains("draft.notes = notesDraft.notes(for: newKind)"), "the incoming kind's prose is not restored")
+        #expect(
+            popover.contains("carryNotes(leaving: previousKind, entering: newKind)"),
+            "nothing calls the carry when the kind changes"
+        )
+    }
+
+    // MARK: - The old form is gone
+
+    /// **The Block vocabulary with it.** The popover's kind enum, its two case names and the
+    /// selector over them were the twelve occurrences [[T-3170]] never reached, in the one
+    /// Block-aware file that creates rather than displays.
+    @Test func thePopoverCarriesNoModeEnumAndNoBlockVocabulary() throws {
+        let popover = try code(Self.popoverPath)
+        #expect(popover.contains("struct QuickCreateChoicePopover: View"), "non-vacuity: file unread")
+        for needle in ["enum Mode", "timeBlock", "calendarEvent", "modeSelector", "modeButton", "selectMode"] {
             #expect(
-                CadenceSourceScan.matchCount(NSRegularExpression.escapedPattern(for: needle), in: support) == 0,
-                "\(Self.supportPath) still carries the handoff signpost's \(needle)"
+                CadenceSourceScan.matchCount(NSRegularExpression.escapedPattern(for: needle), in: popover) == 0,
+                "the drag-create popover still carries \(needle)"
             )
         }
     }
 
-    /// The sentence goes; the feature does not. `~` routing is `TildeContainerPicker`, still built
-    /// and still reached from the popover's title field — an editable List row is the discoverable
-    /// form of the same thing, which is the only reason the advertisement could be retired.
-    @Test func theTipSentenceIsGoneButTildeRoutingIsNot() throws {
-        let support = try code(Self.supportPath)
+    /// The whole of the old form, and the file it lived in.
+    ///
+    /// `QuickCreateChoiceSupportViews.swift` declared the two Task composers, the Event composer,
+    /// the read-only slot summary and their row/section/value/notes primitives, and **nothing
+    /// outside the popover ever constructed one** — which is why adopting the panel deleted the
+    /// file rather than leaving it orphaned.
+    @Test func theOldQuickCreateComposersAreGoneFromTheWholeTree() throws {
+        let files = try cadenceAppSwiftFiles()
+        #expect(files.count > 300, "non-vacuity: \(files.count) app sources swept")
         #expect(
-            CadenceSourceScan.matchCount(
-                NSRegularExpression.escapedPattern(for: "route the task to a list before opening the panel"),
-                in: support
-            ) == 0,
-            "the tip advertising `~` is still in the quick-create card"
+            files.contains("Cadence/macOS/Views/QuickCreateChoiceSupportViews.swift") == false,
+            "the quick-create support file is still in the tree"
         )
+        let symbols = [
+            "QuickCreateTaskSlotInspectorView",
+            "QuickCreateTaskDetailsView",
+            "QuickCreateEventDetailsView",
+            "QuickCreateSlotSummary",
+            "QuickCreateContainerFieldControls",
+            "QuickCreateDetailRow",
+            "QuickCreateCompactSection",
+            "QuickCreateInspectorValue",
+            "QuickCreateNotesEditor"
+        ]
+        // One read per file, not one per file per symbol: the sweep is ~400 sources wide.
+        for path in files {
+            let source = CadenceSourceScan.codeOnly(try cadenceTestSource(path))
+            for symbol in symbols where source.contains(symbol) {
+                Issue.record("\(path) still names the deleted composer \(symbol)")
+            }
+        }
+    }
 
+    /// The `~` shortcut goes with the form; the routing does not. The panel's List row is the
+    /// discoverable form of the same choice, and `TildeContainerPicker` itself is untouched — it is
+    /// still `TaskTitleEntryField`'s.
+    @Test func theSecondCopyOfTheTildeFlowIsGoneAndThePickerIsNot() throws {
         let popover = try code(Self.popoverPath)
-        #expect(
-            CadenceSourceScan.matchCount(#"TildeContainerPicker\("#, in: popover) == 1,
-            "the popover no longer builds the shared `~` panel"
-        )
+        for needle in ["TildeContainerPicker", "tildeSearchQuery", "tildeMode", "selectTildeContainerItem"] {
+            #expect(
+                CadenceSourceScan.matchCount(NSRegularExpression.escapedPattern(for: needle), in: popover) == 0,
+                "the popover still carries its copy of the `~` flow's \(needle)"
+            )
+        }
         #expect(
             CadenceSourceScan.matchCount(#"struct TildeContainerPicker: View"#, in: try code(Self.tildePickerPath)) == 1,
-            "the `~` picker itself is gone, which T-1433 never asked for"
+            "the `~` picker itself is gone, which this slice never asked for"
         )
+        // And the panel's List row is what replaces it.
+        #expect(popover.contains("listChoices: CadenceScheduleDraftChoices.listChoices("))
+        #expect(popover.contains("sectionChoices: CadenceScheduleDraftChoices.sectionChoices("))
     }
 
-    // MARK: - The fields the signpost pointed at
+    /// The adoption itself, in the shape the six earlier slices landed: the draft goes in, the two
+    /// writes come back as `String?`, and **Delete is absent** because nothing exists to delete.
+    @Test func thePopoverHostsTheSharedPanelInCreateMode() throws {
+        let popover = try code(Self.popoverPath)
+        #expect(CadenceSourceScan.matchCount(#"CadenceSchedulePanel\("#, in: popover) == 1)
+        #expect(popover.contains("draft: $draft"))
+        #expect(popover.contains("CadenceSchedulePanelActions("))
+        #expect(popover.contains("delete: nil"), "the creating popover offers a Delete control")
+        // Withheld, not drawn-and-dropped: neither write closure carries any of the three.
+        for flag in ["offersEventRepeat: false", "offersTaskRepeat: false", "offersTaskDue: false", "offersEventLocation: false"] {
+            #expect(popover.contains(flag), "the popover offers a field its host cannot write: \(flag) missing")
+        }
+        #expect(popover.contains("canCommit: canCommit"))
+        #expect(popover.contains("failureNotice: createFailureNotice ?? hostLimitNotice"))
+    }
 
-    @Test func theTaskTabCarriesEditableDateTimeListAndPriorityFields() throws {
-        let support = try code(Self.supportPath)
-        let declaration = try #require(
-            CadenceSourceScan.declarationBody(
-                "struct QuickCreateTaskSlotInspectorView: View",
-                in: support
-            ),
-            "no quick-create task inspector in \(Self.supportPath)"
-        )
-        let inspector = try #require(
-            CadenceSourceScan.declarationBody("var body: some View", in: declaration),
-            "no body on the quick-create task inspector"
-        )
-
-        // Date and time lead, and both are the app's existing controls.
-        #expect(inspector.contains("CadenceDatePicker(selection: dateSelection)"))
-        #expect(inspector.contains("CadenceStartTimeFieldRow(minutes: $startMin)"))
-        // The list row is a picker now, not a `tray` glyph beside a `Text`.
-        #expect(inspector.contains("QuickCreateContainerFieldControls("))
-        // And the field the popover never had.
-        #expect(inspector.contains("TaskPriorityPicker(selection: $priority, trigger: .value)"))
-
-        let datePosition = try #require(inspector.range(of: "CadenceDatePicker"))
-        let timePosition = try #require(inspector.range(of: "CadenceStartTimeFieldRow"))
-        let listPosition = try #require(inspector.range(of: "QuickCreateContainerFieldControls"))
+    /// The canvas forwards the **popover's** minutes. It used to capture the drag's own `start` and
+    /// `end` in the event closure, which was right while the Event tab had no time control and is
+    /// the displays-one-makes-another split the moment the panel's rollers can move them.
+    @Test func theCanvasCreatesTheRangeThePopoverConfirmedNotTheOneTheDragDrew() throws {
+        let canvas = try code(Self.canvasPath)
+        #expect(canvas.contains("struct TimelineDayCanvas: View"), "non-vacuity: file unread")
         #expect(
-            datePosition.lowerBound < timePosition.lowerBound,
-            "the date field is not first in the inspector"
+            canvas.contains("{ title, startMin, endMin, calendarID, notes in"),
+            "the canvas's event closure no longer takes the popover's range"
         )
-        #expect(
-            timePosition.lowerBound < listPosition.lowerBound,
-            "the date and time fields no longer lead the inspector"
-        )
-    }
-
-    /// The persisted form is `yyyy-MM-dd`, so the date field writes a key through `DateFormatters`
-    /// rather than storing whatever the picker's `Date` stringifies to.
-    @Test func theDateFieldRoundTripsThroughTheRepositoryDateKey() throws {
-        let support = try code(Self.supportPath)
-        let binding = try #require(
-            CadenceSourceScan.declarationBody("private var dateSelection: Binding<Date>", in: support),
-            "no dateSelection binding on the inspector"
-        )
-        #expect(binding.contains("DateFormatters.date(from: dateKey)"))
-        #expect(binding.contains("DateFormatters.dateKey(from: $0)"))
-    }
-
-    // MARK: - One priority control, one time display
-
-    /// A second priority picker on one platform is the drift T-1412 spent a ticket undoing for the
-    /// tag chip. The create sheet's private `priorityMarkButton` became `TaskPriorityPicker`, and
-    /// both surfaces read it.
-    @Test func bothMacOSPrioritySurfacesReadTheOneSharedPicker() throws {
+        let popoverBody = try #require(CadenceSourceScan.functionBody(named: "quickCreatePopover", in: canvas))
+        // The forwarded range is the popover's. The needle spans the title argument above it, so a
+        // closure that renamed its parameters and kept creating `start`/`end` cannot satisfy it.
         #expect(
             CadenceSourceScan.matchCount(
-                #"struct TaskPriorityPicker: View"#,
-                in: try code(Self.createSheetSupportPath)
+                #"storedTitle\(title\),\s*\n\s*startMin,\s*\n\s*endMin,"#,
+                in: popoverBody
             ) == 1,
-            "the shared priority picker is not declared where the create sheet's spellings live"
+            "the canvas does not forward the range the popover confirmed"
         )
-        // The create sheet builds it once; the support file builds it once per Task composer,
-        // which is twice since T-1436 gave the in-place spelling its own Priority row. What the
-        // count guards is that none of them is a *private* copy — the declaration above is still
-        // the only one in the app.
-        #expect(
-            CadenceSourceScan.matchCount(#"TaskPriorityPicker\("#, in: try code(Self.createSheetPath)) == 1,
-            "the create sheet does not build the shared priority picker"
-        )
-        #expect(
-            CadenceSourceScan.matchCount(#"TaskPriorityPicker\("#, in: try code(Self.supportPath)) == 2,
-            "the two quick-create Task composers do not each build the shared priority picker"
-        )
-        #expect(
-            CadenceSourceScan.matchCount(#"priorityMarkButton"#, in: try code(Self.createSheetPath)) == 0,
-            "the create sheet still carries its private priority button"
-        )
-        // The labelled trigger says the word the composers already agreed on, through the helper
-        // whose own note records why a captioned field spells it rather than showing the mark.
         #expect(
             CadenceSourceScan.matchCount(
-                #"CadenceTaskComposerSupport\.priorityValueLabel\(selection\)"#,
-                in: try code(Self.createSheetSupportPath)
-            ) == 1,
-            "the priority field invents its own wording instead of reading the shared one"
+                #"storedTitle\(title\),\s*\n\s*start,\s*\n\s*end,"#,
+                in: popoverBody
+            ) == 0,
+            "the canvas still creates the drag's own range instead of the confirmed one"
         )
+        // The seed is still the drag's, which is the half that must not move.
+        #expect(popoverBody.contains("startMin: start,"))
+        #expect(popoverBody.contains("endMin: end,"))
     }
 
-    /// **The dedupe.** The popover printed `TimeFormatters.timeRange` above the Task/Event/Block
-    /// control *and* again in every tab below it — the handoff card's `clock` row, and
-    /// `QuickCreateSlotSummary` on the other two. Moving the fields up had to remove one of the
-    /// two displays, not stack a third. One site now, in the summary that owns it.
-    @Test func theTimeRangeIsDrawnOnceAcrossThePopoverAndItsTabs() throws {
-        #expect(
-            CadenceSourceScan.matchCount(#"TimeFormatters\.timeRange\("#, in: try code(Self.popoverPath)) == 0,
-            "the popover header still prints a second copy of the slot's time range"
-        )
-        #expect(
-            CadenceSourceScan.matchCount(#"TimeFormatters\.timeRange\("#, in: try code(Self.supportPath)) == 1,
-            "the quick-create tabs no longer draw the time range exactly once"
-        )
-    }
+    // MARK: - T-1436: the priority the composer names reaches the stored task
 
-    // MARK: - T-1436: the third composer can set a priority
-
-    /// **Behavioural, through the real write path.** The Calendar page's day column is the one
-    /// macOS Task composer that creates in place, and it writes through
-    /// `SchedulingActions.insertTask` — which hardcoded `priority: .none` into the draft it built,
-    /// so `QuickCreateTaskDraft.priority` was dropped on the floor no matter what the tab drew.
+    /// **Behavioural, through the real write path.** The Calendar page's day column is the macOS
+    /// composer that creates in place, and it writes through `SchedulingActions.insertTask` — which
+    /// hardcoded `priority: .none` into the draft it built, so `QuickCreateTaskDraft.priority` was
+    /// dropped on the floor no matter what the form drew.
     ///
     /// Read back through a **second** context, so the creating context's own memory cannot satisfy
     /// it: the priority the composer names is the priority in the store.
@@ -319,23 +557,14 @@ struct CadenceQuickCreateTaskInspectorTests {
         #expect(createdTask.priority != TaskPriority.low, "the picker's value survived a typed shortcut")
     }
 
-    /// The source half: the tab draws the row, and the host forwards the field. Either alone goes
+    /// The source half: the panel carries the priority and the host forwards it. Either alone goes
     /// quietly green — a picker whose value is dropped at the call site looks like a working
     /// control, and a forwarded field with no control to set it is unreachable.
-    @Test func theInPlaceTaskComposerDrawsThePriorityRowAndItsHostForwardsIt() throws {
-        let inPlaceComposer = try #require(
-            CadenceSourceScan.declarationBody(
-                "struct QuickCreateTaskDetailsView: View",
-                in: try code(Self.supportPath)
-            )
-        )
+    @Test func theDragCreateDraftCarriesThePriorityAndItsHostForwardsIt() throws {
+        let popover = try code(Self.popoverPath)
         #expect(
-            inPlaceComposer.contains("TaskPriorityPicker(selection: $priority, trigger: .value)"),
-            "the in-place Task composer draws no priority control"
-        )
-        #expect(
-            inPlaceComposer.contains("@Binding var priority: TaskPriority"),
-            "the in-place Task composer cannot write a priority back to the popover"
+            popover.contains("priority: draft.priority"),
+            "the popover never hands the panel's priority to the host's draft"
         )
 
         let host = try code(Self.monthGridPath)
@@ -359,128 +588,96 @@ struct CadenceQuickCreateTaskInspectorTests {
         )
     }
 
-    // MARK: - [[T-1610]]: the Event tab's prose is not the Task tab's
-
-    /// **The defect, as a value.** A note typed on the Event tab must not come back out of the
-    /// draft the Task tab builds — they are not the same field in the first place: one is
-    /// `EKEvent.notes` and leaves the store, the other is `AppTask.notes`.
-    ///
-    /// Both directions and a third tab, because one direction alone is satisfiable by a slot that
-    /// always answers empty: the Task tab's own prose has to come back out of `.timeBlock`
-    /// unchanged while the Event tab's comes back out of `.calendarEvent`, and the two readings
-    /// must differ. (The `.bundle` tab, which composed none, went with [[T-3170]].)
-    @Test func theEventTabsProseNeverReachesTheTaskDraft() {
-        var draft = QuickCreateNotesDraft()
-        draft.event = "Bring the referral letter"
-
-        #expect(
-            draft.notes(for: .timeBlock).isEmpty,
-            "the Event tab's note rode into the Task draft: \(draft.notes(for: .timeBlock))"
-        )
-        #expect(draft.notes(for: .calendarEvent) == "Bring the referral letter")
-
-        draft.task = "Draft the brief first"
-        #expect(
-            draft.notes(for: .timeBlock) == "Draft the brief first",
-            "the Task tab cannot keep its own prose, which is not a fix but a second defect"
-        )
-        #expect(
-            draft.notes(for: .calendarEvent) == "Bring the referral letter",
-            "the Task tab's note overwrote the Event tab's"
-        )
-        #expect(
-            draft.notes(for: .timeBlock) != draft.notes(for: .calendarEvent),
-            "both tabs answered the same prose; this test measures nothing"
-        )
-    }
-
-    /// The wiring, because the value above is only the fix if the popover is holding it.
-    ///
-    /// One `@State`, two slots, and each composer handed its own — the shape that fails while a
-    /// single `notes` is passed to both. The two `create()` branches are pinned with it: a popover
-    /// that bound the slots correctly and then built its draft out of the other one would satisfy
-    /// every binding assertion here.
-    @Test func theTwoQuickCreateComposersAreHandedTwoDifferentNotesSlots() throws {
-        let popover = try code(Self.popoverPath)
-
-        #expect(
-            CadenceSourceScan.matchCount(#"@State private var notesDraft = QuickCreateNotesDraft\(\)"#, in: popover) == 1,
-            "the popover no longer holds exactly one notes draft"
-        )
-        #expect(
-            CadenceSourceScan.matchCount(#"@State private var notes\s*="#, in: popover) == 0,
-            "the one shared notes state is back"
-        )
-        #expect(popover.contains("notes: $notesDraft.task"), "the Task composer is not bound to the Task slot")
-        #expect(popover.contains("notes: $notesDraft.event"), "the Event composer is not bound to the Event slot")
-        #expect(
-            CadenceSourceScan.matchCount(#"notes: \$notes\b"#, in: popover) == 0,
-            "a composer is still handed the shared binding"
-        )
-
-        let create = try #require(CadenceSourceScan.functionBody(named: "create", in: popover))
-        #expect(
-            create.contains("notes: notesDraft.notes(for: .timeBlock)"),
-            "the Task draft is built from something other than the Task tab's slot"
-        )
-        #expect(
-            create.contains("notesDraft.notes(for: .calendarEvent)"),
-            "the event is created from something other than the Event tab's slot"
-        )
-    }
-
-    /// **There are exactly two Task spellings and only one of them draws a Notes field** — which is
-    /// the asymmetry that made the carry invisible rather than merely surprising, and the reason
-    /// this is fixed by splitting the state rather than by giving the other spelling a Notes row.
-    ///
-    /// Counted rather than asserted one at a time: a third Task composer, or a Notes row appearing
-    /// on the handoff inspector, both change a number here. `QuickCreateNotesEditor` is drawn twice
-    /// in the file — once by the in-place Task composer, once by the Event composer.
-    @Test func thePanelHandoffTaskSpellingStillDrawsNoNotesFieldAndNowCarriesNone() throws {
-        let support = try code(Self.supportPath)
-        let popover = try code(Self.popoverPath)
-
-        #expect(
-            CadenceSourceScan.matchCount(#"struct QuickCreateTask\w+View: View"#, in: support) == 2,
-            "the popover's Task tab has stopped being exactly two spellings"
-        )
-        #expect(
-            CadenceSourceScan.matchCount(#"QuickCreateTask\w+View\("#, in: popover) == 2,
-            "the popover draws a number of Task composers other than two"
-        )
-
-        let handoff = try #require(
-            CadenceSourceScan.declarationBody("struct QuickCreateTaskSlotInspectorView: View", in: support)
-        )
-        #expect(!handoff.contains("QuickCreateNotesEditor"), "the handoff inspector drew a Notes field")
-        #expect(!handoff.contains("notes"), "the handoff inspector took a notes binding")
-
-        let inPlace = try #require(
-            CadenceSourceScan.declarationBody("struct QuickCreateTaskDetailsView: View", in: support)
-        )
-        #expect(inPlace.contains("QuickCreateNotesEditor(text: $notes"), "the in-place composer lost its Notes field")
-        #expect(
-            CadenceSourceScan.matchCount(#"QuickCreateNotesEditor\("#, in: support) == 2,
-            "the file draws a number of notes editors other than the in-place composer's and the Event tab's"
-        )
-    }
-
-    /// The List row's controls are one component read by both Task composers in the file. The
-    /// read-only `tray` row this replaces is precisely what drifting from its editable sibling
-    /// looks like.
-    @Test func bothQuickCreateTaskComposersReadTheOneListField() throws {
+    /// A second priority picker on one platform is the drift T-1412 spent a ticket undoing for the
+    /// tag chip. The create sheet's private `priorityMarkButton` became `TaskPriorityPicker`; the
+    /// drag-create popover's two copies of it went with its form, and the mark control the panel
+    /// draws is the shared `TaskPriorityMarkControl` (T-1278's ruling).
+    @Test func macOSHasExactlyOneTaskPriorityPickerDeclarationAndNoPrivateCopy() throws {
         #expect(
             CadenceSourceScan.matchCount(
-                #"QuickCreateContainerFieldControls\("#,
-                in: try code(Self.supportPath)
-            ) == 2,
-            "the two quick-create Task composers do not share one List field"
+                #"struct TaskPriorityPicker: View"#,
+                in: try code(Self.createSheetSupportPath)
+            ) == 1,
+            "the shared priority picker is not declared where the create sheet's spellings live"
         )
         #expect(
+            CadenceSourceScan.matchCount(#"TaskPriorityPicker\("#, in: try code(Self.createSheetPath)) == 1,
+            "the create sheet does not build the shared priority picker"
+        )
+        #expect(
+            CadenceSourceScan.matchCount(#"priorityMarkButton"#, in: try code(Self.createSheetPath)) == 0,
+            "the create sheet still carries its private priority button"
+        )
+        // The labelled trigger says the word the composers already agreed on, through the helper
+        // whose own note records why a captioned field spells it rather than showing the mark.
+        #expect(
             CadenceSourceScan.matchCount(
-                #"struct QuickCreateContainerFieldControls: View"#,
-                in: try code(Self.supportPath)
-            ) == 1
+                #"CadenceTaskComposerSupport\.priorityValueLabel\(selection\)"#,
+                in: try code(Self.createSheetSupportPath)
+            ) == 1,
+            "the priority field invents its own wording instead of reading the shared one"
+        )
+    }
+
+    // MARK: - The list rows are the shared, narrowed ones
+
+    /// The panel takes rows, not `[Area]`/`[Project]`, so every creating host has to build them —
+    /// and building them per host is how the iPad popover came to offer archived and completed
+    /// lists while the sheet beside it did not. macOS reads the shared rule.
+    @Test func theDragCreateListRowsAreNarrowedByTheSharedPickableRule() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+
+        let live = Area(name: "Operations")
+        live.order = 0
+        let archived = Area(name: "Archive Me")
+        archived.order = 1
+        archived.status = .archived
+        let shipping = Project(name: "Cadence")
+        shipping.order = 0
+        shipping.sectionNames = ["Build", "Ship"]
+        let shelved = Project(name: "Shelved")
+        shelved.order = 1
+        shelved.status = .archived
+        for model in [live, archived] { context.insert(model) }
+        for model in [shipping, shelved] { context.insert(model) }
+        try context.save()
+
+        let draft = dragDraft()
+        let names = CadenceScheduleDraftChoices.listChoices(
+            for: draft,
+            areas: [live, archived],
+            projects: [shipping, shelved]
+        ).map(\.name)
+
+        #expect(names.first == "Inbox", "the Inbox is no longer the first row")
+        #expect(names.contains("Operations"))
+        #expect(names.contains("Cadence"))
+        #expect(names.contains("Archive Me") == false, "an archived list is offered to a new task")
+        #expect(names.contains("Shelved") == false, "an archived project is offered to a new task")
+
+        // The Inbox has no sections, so the panel greys its Section row out there.
+        #expect(CadenceScheduleDraftChoices.sectionChoices(for: draft, areas: [live], projects: [shipping]).isEmpty)
+
+        var inProject = draft
+        inProject.listToken = CadenceTaskComposerSupport.token(for: .project(shipping.id))
+        #expect(
+            CadenceScheduleDraftChoices.sectionChoices(for: inProject, areas: [live], projects: [shipping])
+                == [TaskSectionDefaults.defaultName, "Build", "Ship"],
+            "a list's own sections are offered beside the default every task surface shows"
+        )
+        // A list change re-resolves the section rather than leaving the old list's name behind: a
+        // name the new list has survives, one it does not have falls back to that list's first.
+        inProject.sectionName = "Ship"
+        #expect(
+            CadenceScheduleDraftChoices.normalizedSectionName(for: inProject, areas: [live], projects: [shipping]) == "Ship",
+            "a section the chosen list really has was re-resolved away"
+        )
+        inProject.sectionName = "Nowhere"
+        #expect(
+            CadenceScheduleDraftChoices.normalizedSectionName(for: inProject, areas: [live], projects: [shipping])
+                == TaskSectionDefaults.defaultName,
+            "a section the chosen list does not have survived the list change"
         )
     }
 }

@@ -85,6 +85,12 @@ struct CadenceSchedulePanelActions {
 /// - `offersTaskRepeat` — `false` where the host draws a task's series itself. The task editor
 ///   does, because its Repeat row is followed by the end condition and the series-scope question,
 ///   neither of which a creating panel has.
+/// - `offersTaskDue` — `false` where the host has nowhere to write a due date. The macOS
+///   drag-create popover is that host ([[T-3171]], its seventh slice): both of its write closures
+///   are fixed by a leased caller and neither carries one, and a Due row whose value is dropped on
+///   the way to the store is the inert control T-470 went through this app removing.
+/// - `offersEventLocation` — `false` for the same reason, one field over: that popover's event
+///   write is `CalendarManager.createStandaloneEvent`, which has no `location:`.
 /// - `notesField` — the host's own notes editor. A sheet has room for the platform's full
 ///   markdown well and its reference sheets; a popover hanging off a block does not, and gets the
 ///   plain field below. Both write the same `draft.notes`.
@@ -104,6 +110,8 @@ struct CadenceSchedulePanel<NotesField: View>: View {
     var offersEventRepeat = true
     var titleStatus: CadenceSchedulePanelTitleStatus?
     var offersTaskRepeat = true
+    var offersTaskDue = true
+    var offersEventLocation = true
     let actions: CadenceSchedulePanelActions
     private let notesField: NotesField?
     private var captureOptions: CadenceScheduleCaptureOptions?
@@ -141,6 +149,8 @@ struct CadenceSchedulePanel<NotesField: View>: View {
         offersEventRepeat: Bool = true,
         titleStatus: CadenceSchedulePanelTitleStatus? = nil,
         offersTaskRepeat: Bool = true,
+        offersTaskDue: Bool = true,
+        offersEventLocation: Bool = true,
         actions: CadenceSchedulePanelActions,
         @ViewBuilder notesField: () -> NotesField
     ) {
@@ -156,6 +166,8 @@ struct CadenceSchedulePanel<NotesField: View>: View {
             offersEventRepeat: offersEventRepeat,
             titleStatus: titleStatus,
             offersTaskRepeat: offersTaskRepeat,
+            offersTaskDue: offersTaskDue,
+            offersEventLocation: offersEventLocation,
             actions: actions,
             customNotesField: notesField()
         )
@@ -173,6 +185,8 @@ struct CadenceSchedulePanel<NotesField: View>: View {
         offersEventRepeat: Bool,
         titleStatus: CadenceSchedulePanelTitleStatus?,
         offersTaskRepeat: Bool,
+        offersTaskDue: Bool,
+        offersEventLocation: Bool,
         actions: CadenceSchedulePanelActions,
         customNotesField: NotesField?
     ) {
@@ -187,6 +201,8 @@ struct CadenceSchedulePanel<NotesField: View>: View {
         self.offersEventRepeat = offersEventRepeat
         self.titleStatus = titleStatus
         self.offersTaskRepeat = offersTaskRepeat
+        self.offersTaskDue = offersTaskDue
+        self.offersEventLocation = offersEventLocation
         self.actions = actions
         self.notesField = customNotesField
     }
@@ -389,27 +405,29 @@ struct CadenceSchedulePanel<NotesField: View>: View {
             }
         }
 
-        CadenceFieldSection(title: nil, style: .ruled) {
-            disclosureRow(
-                label: "Due",
-                value: draft.dueRowLabel,
-                systemImage: "calendar.badge.exclamationmark",
-                color: draft.isDueDateOverdue ? Theme.red : Theme.amber,
-                isExpanded: $isDueExpanded
-            )
-
-            // The grid and nothing else. There is no due *time* in the models to put beside it,
-            // and a Time row here would be a control with nowhere to write.
-            if isDueExpanded {
-                CadenceFieldDivider()
-                CadenceQuickDatePopover(
-                    selection: dueDateBinding,
-                    viewMonth: $dueViewMonth,
-                    isOpen: .constant(true),
-                    showsClear: true,
-                    onClear: { draft.dueDateKey = "" },
-                    inlineStyle: true
+        if offersTaskDue {
+            CadenceFieldSection(title: nil, style: .ruled) {
+                disclosureRow(
+                    label: "Due",
+                    value: draft.dueRowLabel,
+                    systemImage: "calendar.badge.exclamationmark",
+                    color: draft.isDueDateOverdue ? Theme.red : Theme.amber,
+                    isExpanded: $isDueExpanded
                 )
+
+                // The grid and nothing else. There is no due *time* in the models to put beside it,
+                // and a Time row here would be a control with nowhere to write.
+                if isDueExpanded {
+                    CadenceFieldDivider()
+                    CadenceQuickDatePopover(
+                        selection: dueDateBinding,
+                        viewMonth: $dueViewMonth,
+                        isOpen: .constant(true),
+                        showsClear: true,
+                        onClear: { draft.dueDateKey = "" },
+                        inlineStyle: true
+                    )
+                }
             }
         }
 
@@ -567,14 +585,17 @@ struct CadenceSchedulePanel<NotesField: View>: View {
         }
     }
 
+    @ViewBuilder
     private var locationRow: some View {
-        CadenceFieldSection(title: nil, style: .ruled) {
-            CadenceFieldRow(label: "Location", systemImage: "mappin.and.ellipse", color: Theme.red) {
-                TextField("Add location", text: $draft.location)
-                    .textFieldStyle(.plain)
-                    .cadenceFont(.fieldValue)
-                    .foregroundStyle(Theme.text)
-                    .multilineTextAlignment(.trailing)
+        if offersEventLocation {
+            CadenceFieldSection(title: nil, style: .ruled) {
+                CadenceFieldRow(label: "Location", systemImage: "mappin.and.ellipse", color: Theme.red) {
+                    TextField("Add location", text: $draft.location)
+                        .textFieldStyle(.plain)
+                        .cadenceFont(.fieldValue)
+                        .foregroundStyle(Theme.text)
+                        .multilineTextAlignment(.trailing)
+                }
             }
         }
     }
@@ -826,6 +847,9 @@ extension CadenceSchedulePanel where NotesField == EmptyView {
         failureNotice: String? = nil,
         canCommit: Bool = true,
         offersEventRepeat: Bool = true,
+        offersTaskRepeat: Bool = true,
+        offersTaskDue: Bool = true,
+        offersEventLocation: Bool = true,
         actions: CadenceSchedulePanelActions
     ) {
         self.init(
@@ -839,7 +863,9 @@ extension CadenceSchedulePanel where NotesField == EmptyView {
             canCommit: canCommit,
             offersEventRepeat: offersEventRepeat,
             titleStatus: nil,
-            offersTaskRepeat: true,
+            offersTaskRepeat: offersTaskRepeat,
+            offersTaskDue: offersTaskDue,
+            offersEventLocation: offersEventLocation,
             actions: actions,
             customNotesField: nil
         )

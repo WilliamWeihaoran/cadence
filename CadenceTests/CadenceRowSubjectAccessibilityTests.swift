@@ -46,30 +46,19 @@ struct CadenceRowSubjectAccessibilityTests {
 
     // MARK: - Sites 2 and 3: the compact quick-create popover
 
-    private static let quickCreatePath = "Cadence/macOS/Views/QuickCreateChoiceSupportViews.swift"
-
-    @Test func quickCreateDraftSubtaskRemoveButtonNamesTheDraftItRemoves() throws {
-        let source = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(Self.quickCreatePath))
-        let body = try #require(
-            CadenceSourceScan.declarationBody(
-                "private func subtaskRow(title: String, index: Int) -> some View",
-                in: source
-            )
-        )
-
-        #expect(body.contains(#".accessibilityLabel("Remove")"#))
-        // The subject is the row's own `title` parameter, not a re-read of `subtaskTitles[index]`
-        // — a second, independent read would drift the moment either copy changed.
-        #expect(body.contains(
-            ".accessibilityValue(TaskTitleSupport.displayTitle(title, fallback: TaskTitleSupport.defaultCompactDisplayTitle))"
-        ))
-    }
-
+    // **`quickCreateDraftSubtaskRemoveButtonNamesTheDraftItRemoves` left with [[T-3171]]'s seventh
+    // adoption slice.** It was [[T-673]]'s second site: the drag-create popover's in-place Task
+    // composer listed the subtasks typed into a new task, each with a "Remove" button naming its
+    // draft. That popover is `CadenceSchedulePanel` now, `CadenceScheduleDraft` carries no
+    // subtasks, and `QuickCreateChoiceSupportViews.swift` — the file the composer and its
+    // `subtaskRow` were declared in — is deleted. The surviving subtask rows are the create
+    // sheet's and the task panel's, both still swept below.
+    //
     // **`quickCreateSelectedTaskRemoveButtonNamesTheTaskItRemoves` left with [[T-3170]].** It was
     // [[T-673]]'s third site: the popover's Block tab listed the tasks ticked into a new block,
     // each with a "Remove" button naming its task. The Block tab, and
     // `QuickCreateBundleTaskSelectionView` with its `selectedTaskRow`, went with the Block
-    // feature's creation paths; the draft-subtask row above is the popover's surviving site.
+    // feature's creation paths.
 
     // MARK: - Sites 4 and 5: a goal's attached work
 
@@ -183,17 +172,14 @@ struct CadenceRowSubjectAccessibilityTests {
 
         var total = 0
         total += try count("private func subtaskRow(at index: Int) -> some View", in: Self.createTaskSheetPath)
-        total += try count(
-            "private func subtaskRow(title: String, index: Int) -> some View",
-            in: Self.quickCreatePath
-        )
         total += try count("struct GoalTaskContributorRow: View", in: Self.goalsSupportPath)
         // Both subtask-row sites (the circle and the delete button) live in one struct.
         total += try count("struct SubtaskRow: View", in: Self.tasksPanelSupportPath)
         // `GoalLinkedListRow` and `HabitListCard` were the fourth and eighth sites and left with
         // [[T-2079]]; see the two notes above. The third, the Block tab's `selectedTaskRow`, left
-        // with [[T-3170]] — one `.accessibilityValue(` with it.
+        // with [[T-3170]] — one `.accessibilityValue(` with it. The second, the drag-create
+        // popover's draft-subtask row, left with [[T-3171]]'s seventh slice, taking another.
 
-        #expect(total == 5)
+        #expect(total == 4)
     }
 }

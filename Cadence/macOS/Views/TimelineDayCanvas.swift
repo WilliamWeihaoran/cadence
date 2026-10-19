@@ -243,15 +243,14 @@ struct TimelineDayCanvas: View {
         eventCreateFailureNotice = nil
     }
 
-    /// `start`/`end` are the range the ghost is drawing and the popover is anchored to. The Event
-    /// closure below creates *that* range: they used to shadow these parameters and
-    /// re-read `pendingStartMin`/`pendingEndMin`, so the popover displayed one range and made
-    /// another.
+    /// `start`/`end` are the range the ghost is drawing and the popover is anchored to — the
+    /// **seed**, and nothing more.
     ///
-    /// **The Task closure no longer supplies the slot at all (T-1433).** Its tab seeds editable
-    /// date and start-time fields from this range and hands back what the user confirmed, so the
-    /// range in `QuickCreateTaskDraft` is the authority and reading `start`/`end` there would
-    /// reintroduce exactly the displays-one-makes-another split described above.
+    /// **Neither closure supplies the slot any more** ([[T-3171]]'s seventh adoption slice; the
+    /// Task half since T-1433). The popover is `CadenceSchedulePanel` now and its Start and End
+    /// rollers move the range for both kinds, so what the user confirmed travels back in the
+    /// closure arguments and reading `start`/`end` here would be the displays-one-makes-another
+    /// split this comment has warned about since the Event closure shadowed its own parameters.
     private func quickCreatePopover(start: Int, end: Int) -> AnyView {
         AnyView(
             QuickCreateChoicePopover(
@@ -275,11 +274,11 @@ struct TimelineDayCanvas: View {
                     onCreateTask(resolved)
                     finishDraftCreation()
                 },
-                onCreateEvent: onCreateEvent == nil ? nil : { title, calendarID, notes in
+                onCreateEvent: onCreateEvent == nil ? nil : { title, startMin, endMin, calendarID, notes in
                     let failure = onCreateEvent?(
                         CadenceEventTitleSupport.storedTitle(title),
-                        start,
-                        end,
+                        startMin,
+                        endMin,
                         calendarID,
                         notes
                     ) ?? nil

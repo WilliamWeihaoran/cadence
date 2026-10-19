@@ -753,9 +753,18 @@ struct CadenceEventKitPlatformParityTests {
             CadenceSourceScan.matchCount(#"@Binding var createFailureNotice: String\?"#, in: popover) == 1,
             "the quick-create popover has nowhere to show a refused event write"
         )
+        // **Re-pointed, not relaxed** ([[T-3171]]'s seventh adoption slice): the popover's own form
+        // is gone, so it no longer draws a notice itself — it hands the binding to
+        // `CadenceSchedulePanel`'s `failureNotice:`, which draws it through `CadenceInlineNotice`
+        // above the footer. The claim is unchanged: the refused write the host learned about
+        // reaches a drawing surface rather than dying in the binding.
         #expect(
-            CadenceSourceScan.matchCount(#"CadenceInlineFailureNotice\(text: createFailureNotice\)"#, in: popover) == 1,
-            "the quick-create popover never draws its failure notice"
+            CadenceSourceScan.matchCount(#"failureNotice: createFailureNotice \?\? hostLimitNotice"#, in: popover) == 1,
+            "the quick-create popover never hands its failure notice to the panel that draws it"
+        )
+        #expect(
+            CadenceSourceScan.matchCount(#"CadenceSchedulePanel\("#, in: popover) == 1,
+            "non-vacuity: the quick-create popover no longer hosts the shared panel"
         )
     }
 

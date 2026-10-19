@@ -60,6 +60,23 @@ enum CadenceCaptureFieldInventory {
         kind == .task ? taskIcons + overflow : [.doDate, .calendar, .location, .repeatRule]
     }
 
+    /// Whether the host can actually serve `field`, as opposed to merely leaving it unset.
+    ///
+    /// **Tags are the one row a host can genuinely not serve** ([[T-3171]]). The calendar's
+    /// drag-create offers no tag and cannot make one, because the create helper it shares with the
+    /// iPad timeline writes none — so its tag icon would open a popover with an empty list and
+    /// nothing to type into, which is a control that does nothing rather than a field waiting to
+    /// be filled. Every other field is unconditional: an empty List picker is still a picker, and
+    /// a Calendar row with nothing in it already says so in words.
+    ///
+    /// Applied to `fields(for:)`'s result rather than folded into it, so the inventory stays the
+    /// one ordered list every presentation reads and the host's answer is a separate, testable
+    /// question.
+    static func isOffered(_ field: CadenceCaptureField, by options: CadenceScheduleCaptureOptions) -> Bool {
+        guard field == .tags else { return true }
+        return !options.tagChoices.isEmpty || options.createTag != nil
+    }
+
     static func clear(_ field: CadenceCaptureField, draft: inout CadenceScheduleDraft) {
         switch field {
         case .doDate: draft.clearDoDate()
@@ -133,7 +150,10 @@ struct CadenceScheduleCaptureCard<NotesField: View>: View {
     @FocusState private var notesIsFocused: Bool
 
     private var selectedTags: Set<String> { options.selectedTagIDs.wrappedValue }
-    private var fields: [CadenceCaptureField] { CadenceCaptureFieldInventory.fields(for: draft.kind) }
+    private var fields: [CadenceCaptureField] {
+        CadenceCaptureFieldInventory.fields(for: draft.kind)
+            .filter { CadenceCaptureFieldInventory.isOffered($0, by: options) }
+    }
     private func isSet(_ field: CadenceCaptureField) -> Bool {
         CadenceCaptureFieldInventory.isSet(field, draft: draft, tagIDs: selectedTags)
     }

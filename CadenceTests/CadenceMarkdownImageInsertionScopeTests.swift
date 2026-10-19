@@ -361,39 +361,12 @@ struct CadenceMarkdownImageInsertionScopeTests {
         #expect(tasksRefused == CadenceSourceScan.matchCount("allowsImageInsertion: false", in: code))
     }
 
-    /// Quick create is the one host where the flat refusal would be **wrong**, and this is the test
-    /// that says so.
-    ///
-    /// Its single draft note has two destinations: `calendarManager.createEvent(notes:)` in event
-    /// mode, which is EventKit and outside the store, and `task.notes` otherwise. `AppTask.notes` is
-    /// in the inventory — reaching it was the whole of T-411 — so an image pasted into a *task* note
-    /// here is safe and refusing it would remove a working capability to fix a hazard that mode does
-    /// not have. Copying the sibling sheet's `false` is the plausible mistake; this fails on it.
-    ///
-    /// [[T-3171]] moved the form onto the shared panel and the two writes into
-    /// `iOSScheduleDraftCreation`, shared with the iPad timeline; the markdown well stayed in the
-    /// sheet, in the panel's `notesField` slot, so the condition is read there and the premise —
-    /// where each mode's note goes — is read in the helper.
-    @Test func quickCreateRefusesImagesOnlyInEventMode() throws {
-        let code = try strippedSource("Cadence/iOS/iOSCalendarQuickCreateSheet.swift")
-
-        #expect(
-            code.contains("allowsImageInsertion: draft.kind != .event"),
-            "quick create does not condition the refusal on the mode that decides where notes go"
-        )
-        #expect(
-            CadenceSourceScan.matchCount("allowsImageInsertion: false", in: code) == 0,
-            "quick create refuses images in task mode too, where AppTask.notes is in the inventory"
-        )
-
-        // Non-vacuity plus the premise: the two destinations really are what the condition claims.
-        #expect(code.contains("allowsEmbeddedTaskCreation: false"))
-        #expect(code.contains("text: $draft.notes"), "the well no longer edits the draft note both writes read")
-        #expect(code.contains("iOSScheduleDraftCreation.createTask(") && code.contains("iOSScheduleDraftCreation.createEvent("))
-        let creation = try strippedSource("Cadence/iOS/iOSTimelineDraftCreate.swift")
-        #expect(creation.contains("task.notes = draft.notes"), "the task destination is gone; re-check the condition")
-        #expect(creation.contains("notes: draft.notes"), "the event destination is gone; re-check the condition")
-    }
+    // `quickCreateRefusesImagesOnlyInEventMode` lived here. Its host — the calendar quick-create
+    // sheet's markdown well — went with the full-sheet chrome in [[T-3171]]'s seventh adoption
+    // slice, so the per-mode condition it pinned has no site left to read. The judgement it
+    // recorded stands and is restated in the sheet's own header: that sheet's single draft note
+    // reaches `AppTask.notes` in task mode (in the inventory since T-411) and `EKEvent.notes` in
+    // event mode, so a flat refusal would have been wrong there if the well had stayed.
 
     /// The claim the three tests above add up to, stated once as a relation over the whole editor's
     /// host set: **every** `iOSMarkdownEditingSurface(` in the app either writes a row this store
@@ -407,7 +380,12 @@ struct CadenceMarkdownImageInsertionScopeTests {
         let outOfStore = [
             "Cadence/iOS/iOSSettingsTemplateAndListSections.swift",
             "Cadence/iOS/iOSCalendarEventEditSheet.swift",
-            "Cadence/iOS/iOSCalendarQuickCreateSheet.swift",
+            // `iOSCalendarQuickCreateSheet.swift` was the third entry until [[T-3171]]'s seventh
+            // adoption slice put the calendar's drag-create on the capture presentation: the card
+            // draws the plain Notes field, the sheet presents no markdown editor at all, and a host
+            // with no editor cannot satisfy the `editors > 0` relation below. The *rule* it carried
+            // did not move — `quickCreateRefusesImagesOnlyInEventMode` went with the host, and the
+            // two destinations it reasoned about are still `iOSScheduleDraftCreation`'s.
             // T-442. The same template body, edited on the other platform — the macOS host
             // arrived when its `TextEditor` became a `MarkdownEditor` and inherited the door.
             "Cadence/macOS/Views/SettingsTemplatesSection.swift"
@@ -489,7 +467,6 @@ struct CadenceMarkdownImageInsertionScopeTests {
             "Cadence/iOS/iOSMarkdownAccessoryViews.swift",
             "Cadence/iOS/iOSSettingsTemplateAndListSections.swift",
             "Cadence/iOS/iOSCalendarEventEditSheet.swift",
-            "Cadence/iOS/iOSCalendarQuickCreateSheet.swift",
             "Cadence/macOS/Editor/MarkdownEditorView.swift",
             "Cadence/macOS/Views/SettingsTemplatesSection.swift",
             "Cadence/Services/CadenceMarkdownSourceInventory.swift"

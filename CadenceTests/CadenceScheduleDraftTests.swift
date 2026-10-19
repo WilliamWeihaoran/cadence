@@ -1111,6 +1111,27 @@ struct CadenceQuickCreatePanelAdoptionTests {
         }
     }
 
+    /// **The owner's report, as a test.** The calendar's drag-create and the `+` palette draw the
+    /// same form and used to put two different surfaces round it — a floating card on one path, a
+    /// navigation sheet with its own day header and markdown well on the other — which is what the
+    /// owner read as "still the old creation sheet". One presentation now, applied in both hosts.
+    @Test("Drag-create opens the same capture card the palette does")
+    func dragCreateOpensTheCaptureCard() throws {
+        let sheet = try code("Cadence/iOS/iOSCalendarQuickCreateSheet.swift")
+        let palette = try code("Cadence/iOS/iOSCreateTaskSheet.swift")
+        for (name, host) in [("quick-create", sheet), ("palette", palette)] {
+            #expect(CadenceSourceScan.matchCount(#"\.capturePresentation\("#, in: host) == 1, "\(name)")
+            #expect(host.contains(".presentationBackground(.clear)"), "\(name)")
+            #expect(host.contains(".presentationDetents([.height(cardHeight)])"), "\(name)")
+        }
+        for retired in ["NavigationStack {", "iOSEditorSection(", "iOSMarkdownEditingSurface(", "private var header"] {
+            #expect(!sheet.contains(retired), "drag-create still carries \(retired)")
+        }
+        // The seed is what the two entry points differ by, and it survived the move.
+        #expect(sheet.contains("startMin: Self.defaultStartMinute(dateKey: dateKey, startMinute: initialStartMinute)"))
+        #expect(sheet.contains("opensTimed: opensTimed"))
+    }
+
     /// Add greys out as the old arrow did: a title for either kind, and for an event a calendar
     /// that can be written to — a gate the draft cannot see, so the host hands it in.
     @Test("An event needs a writable calendar before Add is offered")
@@ -1133,27 +1154,78 @@ struct CadenceQuickCreatePanelAdoptionTests {
         #expect(CadenceSourceScan.matchCount(#"calendarManager\.requestAccess\(\)"#, in: request) == 1)
         #expect(CadenceSourceScan.matchCount(#"calendarManager\.requestAccess\(\)"#, in: sheet) == 1)
         #expect(request.contains("normalizeCalendarSelection()"), "access granted, and no calendar chosen")
-        // Drawn in the panel's host slot, first, ahead of the notes.
-        #expect(CadenceSourceScan.matchCount(#"\) \{\s*calendarAccessRequest\s*notesSection\s*\}"#, in: sheet) == 1)
+        // Drawn in the panel's host slot. The markdown well that used to follow it there went with
+        // the full-sheet chrome ([[T-3171]]'s seventh slice): the capture card draws the notes.
+        #expect(CadenceSourceScan.matchCount(#"\) \{\s*calendarAccessRequest\s*\}"#, in: sheet) == 1)
         #expect(sheet.contains("calendarUnavailableNotice: calendarUnavailableNotice"))
         let panel = try code("Cadence/Shared/Components/CadenceSchedulePanel.swift")
         #expect(!panel.contains("requestAccess"), "the shared panel raises a permission prompt")
     }
 
-    /// Each kind keeps its own time choice across a switch, as the two separate toggles did.
+    /// Each kind keeps its own time choice across a switch, as the two separate toggles did —
+    /// **and that is no longer this sheet's own pair of flags.** The seventh adoption slice moved
+    /// the sheet onto the capture presentation, whose `CadenceCaptureKindMemory` remembers each
+    /// kind's whole draft; the sheet's `hasTime` / `eventIsAllDay` pair would have fought it,
+    /// reading the landing kind's `isAllDay` as the leaving kind's answer. Behavioural now, over
+    /// the shared memory, which is the thing every capture host actually gets.
     @Test("A kind switch restores the time choice of the kind it lands on")
     func aKindSwitchRestoresTheLandingKindsTimeChoice() throws {
+        var memory = CadenceCaptureKindMemory()
+        // A task tapped from no slot: on the day, at no particular time.
+        var draft = CadenceScheduleDraft.quickCreate(dateKey: "2026-10-16", startMin: 9 * 60, opensTimed: false, kind: .task)
+        #expect(draft.isAllDay)
+
+        memory.select(.event, draft: &draft)
+        #expect(draft.kind == .event)
+        #expect(!draft.isAllDay, "an event opens timed however the task was left")
+        #expect(draft.startDateKey == "2026-10-16", "the slot's day survives the switch")
+
+        memory.select(.task, draft: &draft)
+        #expect(draft.kind == .task)
+        #expect(draft.isAllDay, "the task's own untimed choice came back, not the event's")
+
+        // And the other direction: a timed task stays timed across a round trip.
+        var timed = CadenceScheduleDraft.quickCreate(dateKey: "2026-10-16", startMin: 10 * 60, opensTimed: true, kind: .task)
+        var timedMemory = CadenceCaptureKindMemory()
+        timedMemory.select(.event, draft: &timed)
+        timedMemory.select(.task, draft: &timed)
+        #expect(!timed.isAllDay)
+        #expect(timed.startMin == 10 * 60)
+
+        // The sheet no longer carries a second answer to the same question.
         let sheet = try code("Cadence/iOS/iOSCalendarQuickCreateSheet.swift")
-        #expect(CadenceSourceScan.matchCount(
-            #"\.onChange\(of: draft\.kind\) \{ oldKind, newKind in\s*rememberTimeChoice\(of: oldKind\)\s*draft\.isAllDay = !isTimed\(newKind\)"#,
-            in: sheet
-        ) == 1)
-        let timed = try #require(CadenceSourceScan.functionBody(named: "isTimed", in: sheet))
-        #expect(timed.contains("case .task: return hasTime"))
-        #expect(timed.contains("case .event: return !eventIsAllDay"))
-        let remember = try #require(CadenceSourceScan.functionBody(named: "rememberTimeChoice", in: sheet))
-        #expect(remember.contains("case .task: hasTime = !draft.isAllDay"))
-        #expect(remember.contains("case .event: eventIsAllDay = draft.isAllDay"))
+        for retired in ["func isTimed(", "func rememberTimeChoice(", "eventIsAllDay", "hasTime"] {
+            #expect(!sheet.contains(retired), "the quick-create sheet still carries \(retired)")
+        }
+    }
+
+    /// The capture card's own inventory, behavioural: the one row a host can genuinely not serve
+    /// is left out rather than drawn dead. Drag-create offers no tag and no way to make one,
+    /// because the create helper it shares with the iPad timeline writes none.
+    @Test("A host with no tags and no way to add one is offered no tag field")
+    func aHostWithNoTagsIsOfferedNoTagField() {
+        let bare = CadenceScheduleCaptureOptions()
+        let withChoices = CadenceScheduleCaptureOptions(
+            tagChoices: [CadenceSchedulePanelChoice(id: "t1", name: "Deep work")]
+        )
+        let withCreate = CadenceScheduleCaptureOptions(createTag: { _ in nil })
+
+        #expect(!CadenceCaptureFieldInventory.isOffered(.tags, by: bare))
+        #expect(CadenceCaptureFieldInventory.isOffered(.tags, by: withChoices), "a tag to pick is enough")
+        #expect(CadenceCaptureFieldInventory.isOffered(.tags, by: withCreate), "a way to make one is enough")
+
+        // Tags are the ONLY row this answers for: an empty List picker is still a picker, and the
+        // Calendar row says what is missing in words.
+        for field in CadenceCaptureField.allCases where field != .tags {
+            #expect(CadenceCaptureFieldInventory.isOffered(field, by: bare), "\(field.rawValue)")
+        }
+
+        // The inventory itself is untouched — the host's answer filters it, it does not rewrite it.
+        let task = CadenceCaptureFieldInventory.fields(for: .task)
+        #expect(task.contains(.tags))
+        #expect(task.filter { CadenceCaptureFieldInventory.isOffered($0, by: bare) } == task.filter { $0 != .tags })
+        // An event never had a tag row to lose.
+        #expect(!CadenceCaptureFieldInventory.fields(for: .event).contains(.tags))
     }
 
     /// A list change re-resolves the section, and the Inbox offers none — its Section row greys

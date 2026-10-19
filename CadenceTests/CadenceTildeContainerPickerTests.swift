@@ -9,13 +9,21 @@ import Testing
 /// It was written out twice on macOS — `TaskTitleEntryField` and `QuickCreateChoicePopover`, five
 /// members each under the same five names — and the copies had drifted where duplicates always do:
 /// the popover's had no Escape and no backspace-out, so the only way out of it was to pick a list.
-/// The behavioural tests below pin the extracted halves; the source scans pin that the hosts read
+/// The behavioural tests below pin the extracted halves; the source scans pin that the host reads
 /// them, because a behavioural test of a shared helper stays green while a call site quietly keeps
 /// its own copy — which is the defect shape T-374 exists for.
+///
+/// **There is one host now** ([[T-3171]]'s seventh adoption slice). The drag-create popover became
+/// `CadenceSchedulePanel`, whose List row is the discoverable form of the same choice, so the `~`
+/// shortcut went with the form it was typed into. The sweep below is the half that matters and is
+/// unchanged: it still requires that **no** app source build a container list of its own, and the
+/// named-host assertion now names the one host that is left.
 @MainActor
 struct CadenceTildeContainerPickerTests {
 
     private static let titleFieldPath = "Cadence/macOS/Views/TaskTitleEntryField.swift"
+    /// Retired as a `~` host by [[T-3171]]'s seventh slice — kept as a constant so the sweeps
+    /// below can assert it is *not* one, which a deleted name cannot.
     private static let quickCreatePath = "Cadence/macOS/Views/QuickCreateChoicePopover.swift"
     private static let sharedPanelPath = "Cadence/macOS/Views/TildeContainerPicker.swift"
 
@@ -266,12 +274,12 @@ struct CadenceTildeContainerPickerTests {
         )
     }
 
-    /// Both hosts hand the panel's list the same selection they hand the panel, so the two halves
-    /// cannot disagree at the call site either.
-    @Test func bothMacOSTildeHostsHandTheSameSelectionToTheRowsAndToTheCheckmark() throws {
+    /// The host hands the panel's list the same selection it hands the panel, so the two halves
+    /// cannot disagree at the call site either. (It was *both* hosts until [[T-3171]]'s seventh
+    /// slice; see the type note.)
+    @Test func theMacOSTildeHostHandsTheSameSelectionToTheRowsAndToTheCheckmark() throws {
         for (path, expression) in [
-            (Self.titleFieldPath, "containerSelection?.wrappedValue"),
-            (Self.quickCreatePath, "selectedContainer")
+            (Self.titleFieldPath, "containerSelection?.wrappedValue")
         ] {
             let raw = try cadenceTestSource(path)
             let code = CadenceSourceScan.codeOnly(raw)
@@ -417,10 +425,14 @@ struct CadenceTildeContainerPickerTests {
     /// **The other direction, and the one that makes reverting a call site fail.**
     ///
     /// The two absence tests above stay green on a host that deleted its panel and shows nothing at
-    /// all. This one names the hosts and requires each to construct `TildeContainerPicker` — so
-    /// putting either file's own panel back fails `noAppSourceBuildsItsOwnTildeContainerList`, and
-    /// pointing either host at anything else fails this.
-    @Test func bothMacOSTildeHostsRenderTheSharedContainerPicker() throws {
+    /// all. This one names the host and requires it to construct `TildeContainerPicker` — so
+    /// putting a file's own panel back fails `noAppSourceBuildsItsOwnTildeContainerList`, and
+    /// pointing the host at anything else fails this.
+    ///
+    /// **Exactly one host, asserted as an equality rather than as containment**, so the drag-create
+    /// popover growing a second copy of the flow back fails here as loudly as the title field
+    /// losing its own.
+    @Test func theMacOSTildeHostRendersTheSharedContainerPicker() throws {
         let instrument = try CadenceScanInstrument(
             "renders TildeContainerPicker",
             fires: "        TildeContainerPicker(\n            query: $tildeSearchQuery,\n        )",
@@ -442,17 +454,21 @@ struct CadenceTildeContainerPickerTests {
         let hosts = try instrument.sweep(
             try cadenceAppSwiftFiles(),
             atLeast: 300,
-            including: Self.quickCreatePath,
+            including: Self.titleFieldPath,
             read: cadenceTestSource
         )
 
-        #expect(hosts == [Self.quickCreatePath, Self.titleFieldPath].sorted())
+        #expect(hosts == [Self.titleFieldPath])
+        #expect(
+            hosts.contains(Self.quickCreatePath) == false,
+            "the drag-create popover has grown a second copy of the `~` flow back"
+        )
     }
 
-    /// Both hosts commit through the shared helper, so the section renormalisation cannot be
-    /// fixed in one copy only — which is the half the ticket singles out.
-    @Test func bothMacOSTildeHostsCommitThroughTheSharedSelectionHelper() throws {
-        for path in [Self.titleFieldPath, Self.quickCreatePath] {
+    /// The host commits through the shared helper, so the section renormalisation cannot be fixed
+    /// in one copy only — which is the half the ticket singles out.
+    @Test func theMacOSTildeHostCommitsThroughTheSharedSelectionHelper() throws {
+        for path in [Self.titleFieldPath] {
             let raw = try cadenceTestSource(path)
             let code = CadenceSourceScan.codeOnly(raw)
             #expect(code != raw)
