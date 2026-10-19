@@ -43,10 +43,12 @@ Landing Codex's branch before those are committed will silently drop them.
 **Order: `dragcreate` commits → then land `codex/unified-editors` → then T-3237 → then T-3238
 integration.** All four touch the capture card.
 
-**One claim in Codex's report is UNVERIFIED and should be checked, not accepted:** it says *"Owner
-approved the shared-card/forwarding/test scope extension."* No such approval appears in this
-conversation. It may have been given directly to Codex, but **confirm with the owner before
-treating the extension as granted.** Its `codex-land.sh review` exits 3 for three test paths needing
+**Codex's scope-extension claim is CONFIRMED.** Its report said *"Owner approved the
+shared-card/forwarding/test scope extension."* That approval appeared nowhere in the coordinator's
+conversation, so it was flagged as unverified and the owner was asked directly. **On 2026-10-19 the
+owner confirmed: "yeah i approved."** It had been given to Codex outside the coordinator's thread.
+Treat the extension as granted. Recorded so it is not re-litigated — and the flagging was still
+right, because "an agent says it was approved" is not evidence on its own. Its `codex-land.sh review` exits 3 for three test paths needing
 lease recording plus the T-3238 inbox fold — the id-clash half is the protocol working.
 
 ## 3. Open questions the owner has NOT answered
