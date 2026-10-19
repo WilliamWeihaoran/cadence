@@ -30,6 +30,34 @@ Two things told to `dragbug` that are not in its ticket:
   explicit `finishDraftCreation()` called at three deliberate sites. iOS clears it REACTIVELY from
   `.onChange(of: isDraftEditorPresented)`, which is what lets an unrelated re-render destroy it.
 
+## 1a. UPDATE — status at the time of the last edit
+
+- **`dragbug` is DONE.** T-3239 CLOSED at `01b81215`, pushed. Both of the owner's symptoms had ONE
+  cause: `beginDraft` presented the popover from inside `onChanged`, which stalled touch delivery
+  for a measured 397 ms AND handed every subsequent touch to the popover's outside-tap dismissal.
+  The coordinator's per-frame-rebuild theory was wrong — body evaluations ran ~1:1 with gesture
+  callbacks. It filed **T-3240** for the part it could not reach and stopped at the lease boundary.
+- **`iosbackupland` is DONE.** T-1477 CLOSED at `2417702b`.
+- **`dragmac` is DONE/absorbed** — `dragcreate` took its macOS work.
+- **`dragcreate` is the ONLY agent still live**, holding the test-host lock on a full suite. It
+  commits when that reports. **Its shared-card edits must be committed before
+  `codex/unified-editors` lands or they will be dropped.**
+- **`dupsweep`** (the owner's own spun-off task for the iCloud ` 2.swift` copies) is queued behind it.
+
+**A false alarm worth knowing about, because it nearly cost a push.** `dragbug` reported that
+`dragcreate`'s uncommitted `CadenceScheduleDraftTests.swift` had 3 compile errors and would fail CI.
+The coordinator relayed that as live. It was **stale** — the errors were real but `dragcreate` had
+already fixed them, and `dragbug` had compiled a snapshot from the ~15-minute window when they
+existed. Verified: zero `#expect` calls pass a bare identifier as a comment argument.
+**A sibling's report about another agent's dirty file is a snapshot, not a current fact.**
+
+**iOS has TWO drag-create surfaces, selected by a flag and not by gesture** —
+`iOSCalendarTimelineDayColumn.drawsDraftBlocks`, whose only `true` call site is
+`iOSTodaySchedulePanel.swift:114` (the iPad Today pane). The Calendar page uses the default `false`
+and routes a tap to a sheet with no draft block at all. So the owner's jitter bug and the
+drag-create conversion were on DIFFERENT surfaces, which is why two agents in adjacent code did not
+collide. That Today pane is a **third** presentation of the same form and is still unconverted.
+
 ## 2. THE MERGE HAZARD — read before landing anything
 
 **Codex has finished T-3238 on `codex/unified-editors` (tip `0c3cfff9`, worktree
