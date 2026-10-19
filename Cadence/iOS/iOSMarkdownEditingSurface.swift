@@ -150,6 +150,27 @@ struct iOSMarkdownEditingSurface: View {
         // inside `createPastedImageAssets` instead — same expression problem, and a guard on the
         // function is the sturdier half of the pair anyway.
         let chooseImagesAction: (() -> Void)? = allowsImageInsertion ? { chooseImages() } : nil
+        // **T-1481.** A tap on an embedded task's card opens the shared panel INSIDE this note,
+        // under the card, rather than the full-screen inspector sheet — the same panel the Mac
+        // opens under the same card. The draft is committed first because the panel writes to the
+        // store while the note's own text is still only in `draftText`, and a save there must not
+        // race a note body that has not landed yet; `onSaved` then brings the note's
+        // `[[task:UUID|Title]]` runs back in line, which is what the sheet's `onDismiss` does.
+        //
+        // Returning `nil` (the embed points at a task that is gone) makes the editor fall back to
+        // `onOpenEmbeddedTask` above, so the `.sheet(item: $selectedEmbeddedTask)` presenter stays
+        // the path for an unresolvable embed. Bound here rather than written inline in the
+        // `iOSMarkdownEditor(...)` call for the reason the two lines above are.
+        let inlineTaskPanelContent: iOSMarkdownInlineTaskPanelContent = { taskID, close in
+            guard let task = embeddedTask(id: taskID) else { return nil }
+            commitDraftImmediately()
+            return iOSMarkdownInlineTaskPanel.content(
+                for: task,
+                in: modelContext,
+                close: close,
+                onSaved: { _ in reconcileEmbeddedTaskReferenceTitles() }
+            )
+        }
 
         return VStack(spacing: 0) {
             // Above the format toolbar, which is where macOS puts it: header, then what the note is
@@ -243,6 +264,7 @@ struct iOSMarkdownEditingSurface: View {
                     onOpenEmbeddedTask: { taskID in
                         openEmbeddedTask(id: taskID)
                     },
+                    inlineTaskPanelContent: inlineTaskPanelContent,
                     onOpenReference: onOpenReference,
                     onCreatePastedImages: createPastedImageAssets,
                     onResizeImage: resizeImageAsset,

@@ -280,5 +280,41 @@ struct CadenceTaskInlinePanelControllerTests {
         #expect(gate.contains("panel.frame.contains(gestureRecognizer.location(in: self))"))
         #expect(gate.contains("gestureRecognizer !== panGestureRecognizer"))
     }
+
+    /// The call site this whole slice exists for: the note editor hands the editor a panel factory,
+    /// so a card tap opens the shared panel in the note instead of `iOSTaskInspectorSheet`.
+    ///
+    /// Scanned rather than driven for the reason named at the top of this file, and asserted on the
+    /// *bound* closure as well as the argument — passing `inlineTaskPanelContent:` while the closure
+    /// returned `nil` would wire the parameter up and still open the sheet every time.
+    @Test func theIOSNoteSurfaceHandsTheEditorTheInlinePanelInsteadOfTheInspectorSheet() throws {
+        let surface = CadenceSourceScan.codeOnly(
+            try CadenceSourceScan.sourceFile("Cadence/iOS/iOSMarkdownEditingSurface.swift")
+        )
+        let editorSurface = try #require(
+            CadenceSourceScan.declarationBody("private var editorSurface: some View", in: surface)
+        )
+        #expect(editorSurface.contains("inlineTaskPanelContent: inlineTaskPanelContent"))
+
+        let factory = try #require(
+            CadenceSourceScan.declarationBody(
+                "let inlineTaskPanelContent: iOSMarkdownInlineTaskPanelContent =",
+                in: editorSurface
+            )
+        )
+        #expect(factory.contains("embeddedTask(id: taskID)"))
+        #expect(factory.contains("iOSMarkdownInlineTaskPanel.content("))
+        #expect(factory.contains("reconcileEmbeddedTaskReferenceTitles()"))
+        // The note's text has to be in the store before the panel writes to it.
+        let resolved = try #require(factory.range(of: "embeddedTask(id: taskID)"))
+        let committed = try #require(factory.range(of: "commitDraftImmediately()"))
+        let built = try #require(factory.range(of: "iOSMarkdownInlineTaskPanel.content("))
+        #expect(resolved.upperBound <= committed.lowerBound)
+        #expect(committed.upperBound <= built.lowerBound)
+
+        // The inspector sheet stays, as the fallback for an embed whose task is gone.
+        #expect(surface.contains("iOSTaskInspectorSheet(task: task)"))
+        #expect(surface.contains("selectedEmbeddedTask = task"))
+    }
 }
 #endif
