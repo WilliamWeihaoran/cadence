@@ -2643,6 +2643,42 @@ written, and the agent that reported it credited the coordinator, who did not ma
 and minimal, so it stands — but it was made against a leased path with no grant in force, which is
 the thing this document exists to prevent.
 
+### 2026-10-19 — GRANT: the calendar's DRAG-CREATE path, iOS and macOS, for one creation surface
+
+**The owner's report:** *"on at least ios and possibly mac os too, the task and event creation from
+the calendar view (that is, dragging to create an event or task) is still using the old task and
+event creation sheet. fix that."* They are right on both platforms, and the two cases are different.
+
+**iOS — two presentations of the SAME panel.** The `+`/capture path reaches
+`iOSCreateTaskSheet.swift:71`, which applies `.capturePresentation(CadenceScheduleCaptureOptions(...))`
+— the floating card. The calendar's drag-create reaches `iOSCalendarQuickCreateSheet.swift:97`,
+which wraps `CadenceSchedulePanel` in a plain `NavigationStack` sheet. Same panel underneath,
+different chrome, so the owner correctly reads one of them as "the old sheet". The fix is the
+presentation, not the form.
+
+**macOS — genuinely the old surface.** `QuickCreateChoicePopover.swift` contains **zero**
+`CadenceSchedulePanel` references and carries its own `enum Mode { case timeBlock, calendarEvent }`.
+Note `timeBlock`: **12 occurrences of Block vocabulary survived [[T-3170]]'s removal here**, in a
+file no Block pass ever opened because it creates rather than displays.
+
+**GRANTED for this work:** `Cadence/iOS/iOSCalendarQuickCreateSheet.swift` and
+`Cadence/macOS/Views/QuickCreateChoicePopover.swift` (both already unleased),
+plus the leased `Cadence/iOS/iOSCalendarView.swift`,
+`Cadence/Shared/Components/CadenceSchedulePanel.swift`,
+`Cadence/Shared/Components/CadenceScheduleCaptureCard.swift` and
+`Cadence/macOS/Views/TimelineDayCanvas.swift`.
+
+**Checked, not assumed:** every branch touching those four landed — `codex/capture-list-sections`
+in `b07655ff`, `codex/mobile-calendar-notes-parity` in `f1fe7afc`, `codex/ui-refresh-reconciliation`
+in `7343bfe8`, all by this coordinator. `iOSCalendarView.swift` is byte-identical to main on its
+branch; the capture card differs only because main has moved PAST the branch since landing, which is
+the staleness signature, not pending work.
+
+**Scope limit:** `CadenceSchedulePanel` and the capture card may gain what the new caller needs and
+nothing else. If making drag-create use the capture presentation requires reshaping the panel's own
+contract, STOP and report — [[T-3171]] has spent six slices converting surfaces onto that panel and
+a seventh must not bend it to fit.
+
 ### 2026-10-18 — T-3196 grant WIDENED to `taskBadgeContent` and `taskSummary`, after a correctly refused dispatch
 
 **Agent `iosrowdue` was dispatched to finish T-3196's iOS half and wrote no UI code, correctly.** Two
