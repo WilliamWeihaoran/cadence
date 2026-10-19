@@ -70,7 +70,9 @@ struct MacTaskRowContextMenu: View {
         sectionMenu
         moveToListMenu
 
-        Button(action: duplicate) {
+        Button {
+            settle(Self.duplicate(task, allTasks: allTasks, modelContext: modelContext))
+        } label: {
             Label("Duplicate", systemImage: "plus.square.on.square")
         }
 
@@ -108,7 +110,7 @@ struct MacTaskRowContextMenu: View {
         Menu {
             ForEach(TaskRecurrenceRule.allCases, id: \.self) { recurrence in
                 Button {
-                    selectRecurrenceRule(recurrence)
+                    settle(Self.selectRecurrenceRule(recurrence, for: task, allTasks: allTasks, modelContext: modelContext))
                 } label: {
                     Label(
                         recurrence.label,
@@ -192,7 +194,7 @@ struct MacTaskRowContextMenu: View {
             Menu {
                 ForEach(names, id: \.self) { section in
                     Button {
-                        CadenceTaskMutationSupport.moveToSection(section, task: task, modelContext: modelContext)
+                        settle(Self.moveSection(section, task: task, modelContext: modelContext))
                     } label: {
                         Label(section, systemImage: section.caseInsensitiveCompare(task.resolvedSectionName) == .orderedSame ? "checkmark.circle.fill" : "rectangle.split.3x1")
                     }
@@ -206,7 +208,7 @@ struct MacTaskRowContextMenu: View {
     private var moveToListMenu: some View {
         Menu {
             Button {
-                moveToContainer(area: nil, project: nil)
+                settle(Self.moveToList(task, area: nil, project: nil, allTasks: allTasks, modelContext: modelContext))
             } label: {
                 Label("Inbox", systemImage: task.area == nil && task.project == nil ? "checkmark.circle.fill" : "tray.fill")
             }
@@ -216,7 +218,7 @@ struct MacTaskRowContextMenu: View {
 
                 ForEach(offerableAreas) { area in
                     Button {
-                        moveToContainer(area: area, project: nil)
+                        settle(Self.moveToList(task, area: area, project: nil, allTasks: allTasks, modelContext: modelContext))
                     } label: {
                         Label(CadenceAreaPickerSupport.title(for: area), systemImage: task.area?.id == area.id && task.project == nil ? "checkmark.circle.fill" : area.icon)
                     }
@@ -228,7 +230,7 @@ struct MacTaskRowContextMenu: View {
 
                 ForEach(offerableProjects) { project in
                     Button {
-                        moveToContainer(area: nil, project: project)
+                        settle(Self.moveToList(task, area: nil, project: project, allTasks: allTasks, modelContext: modelContext))
                     } label: {
                         Label(CadenceProjectPickerSupport.title(for: project), systemImage: task.project?.id == project.id ? "checkmark.circle.fill" : project.icon)
                     }
@@ -239,27 +241,56 @@ struct MacTaskRowContextMenu: View {
         }
     }
 
+    /// What one of the four testable actions left for the row to do. The menu has closed by the
+    /// time an action returns, so anything it cannot say itself goes back through the two bindings.
+    enum ActionOutcome: Equatable {
+        /// Written, or nothing to write (the rule already chosen).
+        case settled
+        /// A series member must answer "this one" or "this and future" first.
+        case needsRecurrenceScope(TaskRecurrenceRule)
+        case refused(MacTaskRowMenuFailure)
+    }
+
+    private func settle(_ outcome: ActionOutcome) {
+        switch outcome {
+        case .settled: break
+        case .needsRecurrenceScope(let rule): pendingRecurrenceRule = rule
+        case .refused(let refusal): failure = refusal
+        }
+    }
+
+    // [[T-3210]] The four actions below are `static` so a test can invoke each one against an
+    // in-memory store and read the model back -- the menu itself is SwiftUI and cannot be
+    // presented from a unit test. They stay inside this struct so the parity reader in
+    // `MacTaskRowContextMenuParityTests` still sees every shared call in the menu's body.
+    // `MacTaskRowContextMenuEffectTests` holds them by effect. `commit:` is threaded wherever the
+    // shared helper takes one; `duplicate` and `moveToSection` take none.
+
     /// iOS swallows this one (`_ = try?`), which the save rule permits because `duplicate` commits
     /// through `commitInsert`; but a refused duplicate then looks exactly like a menu that did
     /// nothing. Here the refusal is named, as every other write in this menu that can refuse is.
-    private func duplicate() {
+    static func duplicate(_ task: AppTask, allTasks: [AppTask], modelContext: ModelContext) -> ActionOutcome {
         do {
             _ = try CadenceTaskMutationSupport.duplicate(task, allTasks: allTasks, modelContext: modelContext)
         } catch {
-            failure = .duplicate
+            return .refused(.duplicate)
         }
+        return .settled
     }
 
     /// The same three-way answer `iOSTaskRecurrenceSelection.select` gives: unchanged, parked for
     /// the scope dialog (a series member must say "this one" or "this and future" first), or
     /// committed — and a refused commit is reported, not dropped (T-761(c)).
-    private func selectRecurrenceRule(_ rule: TaskRecurrenceRule) {
-        guard task.recurrenceRule != rule else { return }
-        guard !task.isRecurrenceSeriesMember else {
-            pendingRecurrenceRule = rule
-            return
-        }
-        let landed = CadenceTaskFieldEditCommit.commit(task, in: modelContext) {
+    static func selectRecurrenceRule(
+        _ rule: TaskRecurrenceRule,
+        for task: AppTask,
+        allTasks: [AppTask],
+        modelContext: ModelContext,
+        commit: (ModelContext) throws -> Void = { try $0.save() }
+    ) -> ActionOutcome {
+        guard task.recurrenceRule != rule else { return .settled }
+        guard !task.isRecurrenceSeriesMember else { return .needsRecurrenceScope(rule) }
+        let landed = CadenceTaskFieldEditCommit.commit(task, in: modelContext, commit: commit) {
             CadenceTaskRecurrenceWorkflowSupport.applyRecurrenceRule(
                 rule,
                 to: task,
@@ -267,25 +298,38 @@ struct MacTaskRowContextMenu: View {
                 scope: .thisTask
             )
         }
-        if !landed {
-            failure = .recurrence(CadenceTaskFieldEditCommit.saveFailureNotice)
-        }
+        return landed ? .settled : .refused(.recurrence(CadenceTaskFieldEditCommit.saveFailureNotice))
+    }
+
+    /// The shared helper's own `try? save()` is an in-place field edit the save rule permits, and
+    /// it reports nothing, so there is nothing here to refuse.
+    static func moveSection(_ section: String, task: AppTask, modelContext: ModelContext) -> ActionOutcome {
+        CadenceTaskMutationSupport.moveToSection(section, task: task, modelContext: modelContext)
+        return .settled
     }
 
     /// T-702's shape: the checkmarks read the task, so they self-correct on the restore; what the
     /// closed menu cannot do is say so, which is the row's alert.
-    private func moveToContainer(area: Area?, project: Project?) {
+    static func moveToList(
+        _ task: AppTask,
+        area: Area?,
+        project: Project?,
+        allTasks: [AppTask],
+        modelContext: ModelContext,
+        commit: (ModelContext) throws -> Void = { try $0.save() }
+    ) -> ActionOutcome {
         guard CadenceTaskMutationSupport.moveToContainer(
             task,
             area: area,
             project: project,
             sectionName: task.resolvedSectionName,
             allTasks: allTasks,
-            modelContext: modelContext
+            modelContext: modelContext,
+            commit: commit
         ) else {
-            failure = .move
-            return
+            return .refused(.move)
         }
+        return .settled
     }
 }
 
