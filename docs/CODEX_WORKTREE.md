@@ -3074,3 +3074,29 @@ is disjoint from 456–744, which is what makes this grant safe to give while th
 out. Do not touch 405–414, `iOSTaskRowSubtaskRow`, `iOSTaskRowRepeatChip` or the estimate-chip
 typography; a change there collides with one or both branches.
 
+### 2026-10-19 — lease widened for `codex/unified-editors` ([[T-3238]]), three test paths, one of them contested
+
+`codex-land.sh review` refused with `CODEX-LEASE-VIOLATION` on three paths. Decided path by path
+rather than as a block, because they are not the same case.
+
+**Granted, uncontested — both are NEW files the branch creates.** `CadenceTests/CadenceCaptureEditorTests.swift`
+and `CadenceUITests/CadenceCaptureEditorUITests.swift` do not exist on `main` at all, so no other
+writer holds them and widening costs nothing.
+
+**Granted WITH A CONDITION — `CadenceTests/iOSEditorSheetMetricsTests.swift` has two writers and they
+overlap.** It exists on `main` and its most recent change is `d32ae3a1` (agent `dragcreate`, T-3171),
+which is 22 commits newer than this branch's base `3b4756e2`. Measured hunks: `dragcreate` edits the
+`main`-side ranges 271-288, 348-355 and 377-387 (14/12); Codex edits 269-276, 388-394 and 403-410
+against its own base (6/4). **271-276 is common ground, so the rebase WILL conflict there** — this is
+not a hypothetical. Resolve it keeping BOTH sides; `dragcreate`'s hunks must survive the landing, and
+the lander must show they did rather than assert it. This is precisely the drop the session handoff
+warned about when it said the shared-card work had to be committed before this branch landed.
+
+**Not widened by implication.** This entry covers these three paths for T-3238's landing only. It does
+not grant the branch anything else, and it does not widen any earlier Codex grant.
+
+**Also recorded for the lander: `CODEX-INBOX-ID-CLASH` on T-3238 is the protocol working, not a block.**
+The coordinator PRE-FILED T-3238 as a stub (`docs/TODO.md:246`, "filed by the coordinator from the
+owner's report"). At landing, REPLACE THE STUB BODY IN PLACE — one id, no second entry, per T-1458 /
+T-3003 / T-3004. Never delete the entry, renumber it, or edit the check.
+
