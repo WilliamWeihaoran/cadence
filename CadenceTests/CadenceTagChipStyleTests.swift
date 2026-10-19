@@ -495,6 +495,12 @@ struct CadenceTagChipScaleTests {
             "Cadence/iOS/iOSSettingsTemplateAndListSections.swift",
             "Cadence/iOS/iOSSettingsView.swift",
             "Cadence/iOS/iOSSidebarLayoutSettingsSection.swift",
+            // [[T-1477]], and the same answer as T-1841 below for the same reason. The phone's
+            // backup list draws an `iOSIconTile` per row and `iOSActionButton` for create, clean,
+            // restore and cancel. Undeclared, like every other card on Settings → Data Safety and
+            // like `iOSSettingsView` that hosts them: the environment default is that page's
+            // answer, and this section renders as the rest of that screen does.
+            "Cadence/iOS/iOSStoreBackupSettingsSection.swift",
             "Cadence/iOS/iOSTaskDetailSheetSections.swift",
             "Cadence/iOS/iOSTodayCompactViews.swift",
             // T-1841. The store-folder list on Settings → Data Safety draws an `iOSIconTile` for

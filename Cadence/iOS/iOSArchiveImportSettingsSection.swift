@@ -6,9 +6,11 @@ import UniformTypeIdentifiers
 /// Settings → Data Safety on iPhone and iPad: the route *back in*.
 ///
 /// The phone has been able to write an archive since T-19 and has never been able to read one. That
-/// asymmetry mattered more here than on the Mac: iOS has no backup list, no reveal-in-Finder and no
-/// staged store restore, so a file chosen through the document picker is the only copy of a
-/// Cadence store this platform can act on at all.
+/// asymmetry mattered more here than on the Mac: iOS has no reveal-in-Finder and no Files route
+/// into its container, so a file chosen through the document picker is the only copy from *outside*
+/// the app this platform can act on. (A staged restore of a local store backup arrived with
+/// T-1477 — `iOSStoreBackupSettingsSection` — but those copies live inside the container and die
+/// with the app; an archive is the route that does not.)
 ///
 /// Every word is `CadenceArchiveImportPresentation`'s and every decision about when the store is
 /// touched is `CadenceArchiveImportFlow`'s — the same two types `SettingsArchiveImportCard` reads.

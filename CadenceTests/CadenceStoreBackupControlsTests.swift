@@ -245,6 +245,31 @@ struct CadenceStoreBackupControlsTests {
         #expect(count("CadenceStoreBackupPresentation.confirmationMessage(for: backup, on: .mac)") == 1)
     }
 
+    // MARK: - The phone makes the same calls
+
+    /// The mirror of the Mac test above, for the section [[T-1477]] added to Settings → Data
+    /// Safety on iPhone and iPad. It reads the phone section's SOURCE for the same reason: this
+    /// target never compiles `Cadence/iOS/`, and the one thing worth pinning is that the section
+    /// reaches backups only through the shared controls and shows only the shared sentences.
+    @Test func thePhoneSectionReachesBackupsOnlyThroughTheSharedControls() throws {
+        let code = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/iOS/iOSStoreBackupSettingsSection.swift")
+        )
+        #expect(code.contains("struct iOSStoreBackupSettingsSection: View"), "non-vacuity: wrong file")
+        func count(_ needle: String) -> Int { code.components(separatedBy: needle).count - 1 }
+        #expect(count("CadenceStoreBackupControls.forThisLaunch()") == 1)
+        #expect(count("StoreBackupManager.") == 0, "the phone section calls the engine directly")
+        #expect(count(".stageRestore(backup, on: .phone)") == 1)
+        #expect(count(".cancelStagedRestore()") == 1)
+        #expect(count("CadenceStoreBackupPresentation.confirmationMessage(for: backup, on: .phone)") == 1)
+        #expect(count("role: .destructive") == 1, "the stage button is the dialog's one destructive action")
+        #expect(count("deleteAllBackups") == 0)
+        #expect(count("deleteRetainedUnrestoredOriginals") == 0)
+
+        let settings = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile("Cadence/iOS/iOSSettingsView.swift"))
+        #expect(settings.components(separatedBy: "iOSStoreBackupSettingsSection()").count - 1 == 1)
+    }
+
     /// `forThisLaunch()` is the only place the controls learn where the real store is, and it asks
     /// the redirect-aware, non-creating resolution — never the app group directly.
     @Test func theControlsResolveTheRealStoreInExactlyOnePlaceAndThroughTheRedirect() throws {

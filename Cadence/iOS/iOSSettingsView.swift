@@ -290,6 +290,11 @@ struct iOSSettingsView: View {
             iOSArchiveImportSettingsSection()
             iOSDataResetSettingsSection()
 
+            // Local store backups and the staged restore (T-1477). Below the archive, as on the
+            // Mac: these copies live inside the app's container and die with it, so the archive is
+            // the route that answers "I lost the device" and reads first.
+            iOSStoreBackupSettingsSection()
+
             // Below the reset, because the reset's own copy now ends by saying these are "listed
             // further down this page" and that has to be true of the order as well as of the
             // screen (T-1841). It draws nothing when there is nothing to list, which on a healthy

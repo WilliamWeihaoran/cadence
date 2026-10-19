@@ -7,10 +7,11 @@ import UniformTypeIdentifiers
 /// app.
 ///
 /// **Why this exists.** `StoreBackupManager` already snapshots the store at every launch on this
-/// platform too — but iOS has never had a single control over any of it: no create, no list, no
-/// restore, and no way to get a copy off the device. The one data-safety action the phone had was
-/// the irreversible one. Every backup it takes also lives inside the app's own container, so the
-/// automatic copies do not answer "what if I lose the phone" for either platform.
+/// platform too — but until T-1477 iOS had no control over any of it: no create, no list, no
+/// restore, and no way to get a copy off the device; the one data-safety action the phone had was
+/// the irreversible one. This card is still the only way off the device: every backup either
+/// platform takes lives inside the app's own container, so the automatic copies do not answer
+/// "what if I lose the phone" on either one.
 ///
 /// The archive it writes is `CadenceDataExportService`'s, the same bytes macOS writes, and every
 /// word on this card is `CadenceDataExportPresentation`'s — including the last sentence, which is
@@ -102,10 +103,11 @@ struct iOSDataExportSettingsSection: View {
     /// **Not `CadenceDataExportService.exportArchive(in: modelContext)` any more ([[T-3102]]).**
     /// That reads the container the app *opened*, which is the user's store on every launch except
     /// the one where this card matters most: a launch that fell back to a recovery store exported
-    /// an archive of nothing, and on this platform that was the whole escape route — iOS schedules
-    /// no restore, lists no backup, and has no Files route into the container, while Delete
-    /// Cadence Data on the screen below still reaches `deleteAllBackups()`. The decision about
-    /// which store to read lives in `PersistenceController`, with the search it reuses, so it can
+    /// an archive of nothing, and on this platform that was the whole escape route — iOS then
+    /// scheduled no restore and listed no backup (T-1477 added both), and it still has no Files
+    /// route into the container, while Delete Cadence Data on the screen below reaches
+    /// `deleteAllBackups()`. The decision about which store to read lives in
+    /// `PersistenceController`, with the search it reuses, so it can
     /// be driven against real isolated stores by a macOS test target that never compiles this file.
     private func prepareArchiveExport() {
         do {
