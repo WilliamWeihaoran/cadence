@@ -382,10 +382,18 @@ struct CadenceScheduleCaptureCard<NotesField: View>: View {
         case .doDate, .dueDate:
             CadenceQuickDatePopover(
                 selection: dateBinding(field), viewMonth: $dateMonth, isOpen: .constant(true),
-                showsClear: false, inlineStyle: true
+                showsClear: false, inlineStyle: true,
+                markedDay: field == .doDate && draft.kind == .task
+                    ? DateFormatters.date(from: draft.dueDateKey) : nil
             )
             if field == .doDate {
-                Toggle(draft.kind == .event ? "All day" : "Without time", isOn: $draft.isAllDay)
+                Toggle(draft.kind == .event ? "All day" : "Without time", isOn: Binding(
+                    get: { draft.isAllDay },
+                    set: { isAllDay in
+                        if draft.kind == .task, !isAllDay { draft.addTime() }
+                        else { draft.isAllDay = isAllDay }
+                    }
+                ))
                 if !draft.isAllDay {
                     CadenceTimeRoller(minutes: Binding(get: { draft.startMin }, set: { draft.moveStart(toMinute: $0) })) {}
                 }

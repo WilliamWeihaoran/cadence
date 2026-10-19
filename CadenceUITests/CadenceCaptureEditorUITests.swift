@@ -46,14 +46,16 @@ final class CadenceCaptureEditorUITests: XCTestCase {
         app.buttons["capture-delete"].tap()
         XCTAssertTrue(app.alerts["Delete Task?"].waitForExistence(timeout: 5))
         app.alerts.buttons["Cancel"].tap()
-        let complete = app.buttons["Complete task"]
-        for _ in 0..<6 where !complete.isHittable { app.scrollViews.firstMatch.swipeUp() }
+        let card = app.otherElements["capture-card"]
+        let editorScroll = app.scrollViews.containing(.any, identifier: "capture-card").firstMatch
+        let complete = card.buttons["Complete task"]
+        for _ in 0..<6 where !complete.isHittable { editorScroll.swipeUp() }
         XCTAssertTrue(complete.isHittable, app.debugDescription)
         photograph("iPad task completion and status")
         complete.tap()
-        XCTAssertTrue(app.buttons["Mark task todo"].waitForExistence(timeout: 5))
-        app.buttons["Mark task todo"].tap()
-        for _ in 0..<6 where !app.buttons["capture-save"].isHittable { app.scrollViews.firstMatch.swipeDown() }
+        XCTAssertTrue(card.buttons["Mark task todo"].waitForExistence(timeout: 5))
+        card.buttons["Mark task todo"].tap()
+        for _ in 0..<6 where !app.buttons["capture-save"].isHittable { editorScroll.swipeDown() }
         app.buttons["capture-save"].tap()
         XCTAssertTrue(title.waitForNonExistence(timeout: 5))
         let create = app.buttons["New Task"]
@@ -61,10 +63,22 @@ final class CadenceCaptureEditorUITests: XCTestCase {
         create.tap()
         XCTAssertTrue(app.buttons["capture-create"].waitForExistence(timeout: 5))
         photograph("iPad creation card primary arrow")
+        app.buttons["capture-set-doDate"].tap()
+        let datePopover = app.popovers.firstMatch
+        let untimed = datePopover.switches["Without time"]
+        XCTAssertTrue(untimed.waitForExistence(timeout: 5), app.debugDescription)
+        untimed.tap()
+        let done = datePopover.buttons["Done"].firstMatch
+        if done.waitForExistence(timeout: 2) { done.tap() }
+        XCTAssertTrue(datePopover.waitForNonExistence(timeout: 5))
+        let timedDay = app.buttons["capture-chip-doDate"]
+        XCTAssertTrue(timedDay.waitForExistence(timeout: 5))
+        XCTAssertTrue(timedDay.label.contains(" · "), timedDay.label)
+        photograph("iPad capture time adopts today")
         app.buttons["capture-cancel"].tap()
     }
 
-    func testFixtureEventUsesReadOnlyCaptureCardWithoutCalendarAccess() {
+    func testFixtureEventUsesCaptureCardWithoutCalendarAccess() {
         if UIDevice.current.userInterfaceIdiom == .pad {
             XCUIDevice.shared.orientation = .landscapeLeft
         }
@@ -78,11 +92,13 @@ final class CadenceCaptureEditorUITests: XCTestCase {
         event.tap()
         let title = app.textFields["capture-title"]
         XCTAssertTrue(title.waitForExistence(timeout: 10), app.debugDescription)
-        XCTAssertFalse(title.isEnabled)
-        XCTAssertFalse(app.buttons["capture-save"].exists)
-        XCTAssertFalse(app.buttons["capture-delete"].exists)
+        XCTAssertTrue(title.isEnabled)
+        XCTAssertTrue(app.buttons["capture-save"].exists)
+        XCTAssertFalse(app.buttons["capture-save"].isEnabled)
+        XCTAssertTrue(app.buttons["capture-delete"].exists)
+        XCTAssertTrue(app.staticTexts["No writable calendars are available."].exists)
         XCTAssertTrue(app.buttons["capture-cancel"].exists)
-        photograph("iPad read-only event capture card")
+        photograph("iPad event capture card without writable calendars")
         app.buttons["capture-cancel"].tap()
     }
 }
