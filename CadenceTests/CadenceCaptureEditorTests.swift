@@ -32,6 +32,26 @@ struct CadenceCaptureEditorTests {
         #expect(CadenceCaptureFieldInventory.fields(for: .event).contains(.repeatRule))
     }
 
+    @Test func clearingAnEditedEstimateMeansNoneWithoutRewritingTheTitle() {
+        var draft = CadenceScheduleDraft(dateKey: "2026-10-19", startMin: 600, kind: .task)
+        draft.subject = .editingTask(UUID())
+        draft.title = "!! Keep this literal title"
+        #expect(TaskTitleSupport.priorityShortcut(in: draft.title) != nil)
+        draft.setEstimate(20)
+        draft.estimateIsExplicit = true
+        #expect(CadenceCaptureFieldInventory.isSet(.estimate, draft: draft, tagIDs: []))
+        CadenceCaptureFieldInventory.clear(.estimate, draft: &draft)
+        #expect(draft.estimateMinutes == 0)
+        #expect(!draft.estimateIsExplicit)
+        CadenceCaptureFieldInventory.clear(.priority, draft: &draft)
+        #expect(draft.title == "!! Keep this literal title")
+        #expect(CadenceCaptureFieldInventory.priority(for: draft) == .none)
+        #expect(!CadenceCaptureFieldInventory.isSet(.priority, draft: draft, tagIDs: []))
+        draft.subject = .creating
+        CadenceCaptureFieldInventory.clear(.estimate, draft: &draft)
+        #expect(draft.estimateMinutes == CadenceTaskComposerSupport.defaultEstimatedMinutes)
+    }
+
     private func source(_ path: String) throws -> String {
         let raw = try CadenceSourceScan.sourceFile(path)
         #expect(raw.count > 1_000)

@@ -42,6 +42,10 @@ enum CadenceCaptureFieldInventory {
     static let taskIcons: [CadenceCaptureField] = [.doDate, .dueDate, .list, .tags]
     static let overflow: [CadenceCaptureField] = [.repeatRule, .priority, .estimate]
 
+    static func priority(for draft: CadenceScheduleDraft) -> TaskPriority {
+        draft.subject.isEditing ? draft.priority : (TaskTitleSupport.priorityShortcut(in: draft.title)?.priority ?? draft.priority)
+    }
+
     static func isSet(_ field: CadenceCaptureField, draft: CadenceScheduleDraft, tagIDs: Set<String>) -> Bool {
         switch field {
         case .doDate: return !draft.startDateKey.isEmpty
@@ -49,7 +53,7 @@ enum CadenceCaptureFieldInventory {
         case .list: return CadenceTaskComposerSupport.selection(fromToken: draft.listToken) != .inbox
         case .tags: return !tagIDs.isEmpty
         case .repeatRule: return draft.repeatRule != .none
-        case .priority: return (TaskTitleSupport.priorityShortcut(in: draft.title)?.priority ?? draft.priority) != .none
+        case .priority: return priority(for: draft) != .none
         case .estimate: return draft.estimateIsExplicit
         case .calendar: return !draft.calendarID.isEmpty
         case .location: return !draft.location.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -83,10 +87,12 @@ enum CadenceCaptureFieldInventory {
             draft.seriesEndDateKey = ""
             draft.seriesEndCount = 0
         case .priority:
-            draft.title = CadenceTaskComposerSupport.titleClearingPriorityMarker(draft.title)
+            if !draft.subject.isEditing {
+                draft.title = CadenceTaskComposerSupport.titleClearingPriorityMarker(draft.title)
+            }
             draft.priority = .none
         case .estimate:
-            draft.setEstimate(CadenceTaskComposerSupport.defaultEstimatedMinutes)
+            draft.setEstimate(draft.subject.isEditing ? 0 : CadenceTaskComposerSupport.defaultEstimatedMinutes)
             draft.estimateIsExplicit = false
         case .calendar: draft.calendarID = ""
         case .location: draft.location = ""
@@ -185,6 +191,7 @@ struct CadenceScheduleCaptureCard<NotesField: View>: View {
                 .strikethrough(titleStatus?.isSettled == true)
                 .foregroundStyle(titleStatus?.isSettled == true ? Theme.dim : Theme.text)
                 .disabled(isReadOnly)
+            if !draft.subject.isEditing, let notesField { notesField }
             if notesField == nil || !draft.subject.isEditing {
                 TextField("Notes", text: $draft.notes, axis: .vertical)
                     .textFieldStyle(.plain)
@@ -272,7 +279,7 @@ struct CadenceScheduleCaptureCard<NotesField: View>: View {
             if draft.kind == .task, let notice = draft.doAfterDueNotice {
                 CadenceInlineNotice(text: notice, tone: .warning)
             }
-            if let notesField { notesField }
+            if draft.subject.isEditing, let notesField { notesField }
         }
         .padding(16)
         .foregroundStyle(Theme.text)
@@ -336,7 +343,7 @@ struct CadenceScheduleCaptureCard<NotesField: View>: View {
             case .onDate: return "\(draft.repeatRule.label) until \(DateFormatters.shortDateString(from: draft.seriesEndDateKey))"
             case .afterCount: return "\(draft.repeatRule.label) · \(draft.seriesEndCount) times"
             }
-        case .priority: return "\((TaskTitleSupport.priorityShortcut(in: draft.title)?.priority ?? draft.priority).label) priority"
+        case .priority: return "\(CadenceCaptureFieldInventory.priority(for: draft).label) priority"
         case .estimate: return "\(draft.estimateMinutes) min"
         case .calendar: return calendarChoices.first { $0.id == draft.calendarID }?.name ?? "Calendar"
         case .location: return draft.location
@@ -438,8 +445,10 @@ struct CadenceScheduleCaptureCard<NotesField: View>: View {
                 rows: TaskPriority.allCases.filter { $0 != .none }.map {
                     CadenceChoiceRow(value: $0, title: $0.label, color: Theme.priorityColor($0))
                 },
-                selection: Binding(get: { TaskTitleSupport.priorityShortcut(in: draft.title)?.priority ?? draft.priority }, set: { priority in
-                    draft.title = CadenceTaskComposerSupport.titleClearingPriorityMarker(draft.title)
+                selection: Binding(get: { CadenceCaptureFieldInventory.priority(for: draft) }, set: { priority in
+                    if !draft.subject.isEditing {
+                        draft.title = CadenceTaskComposerSupport.titleClearingPriorityMarker(draft.title)
+                    }
                     draft.priority = priority
                 }),
                 isPresented: editorIsOpen

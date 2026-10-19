@@ -51,7 +51,8 @@ struct iOSTaskDetailSheet: View {
 
     init(task: AppTask) {
         _task = Bindable(wrappedValue: task)
-        let opened = CadenceScheduleDraft(editing: task)
+        var opened = CadenceScheduleDraft(editing: task)
+        opened.estimateIsExplicit = task.estimatedMinutes > 0
         openedDraft = opened
         _draft = State(initialValue: opened)
     }

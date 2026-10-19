@@ -34,7 +34,7 @@ final class CadenceCaptureEditorUITests: XCTestCase {
 
     func testTodayTaskUsesCaptureCardAndKeepsRecordActions() {
         launch("today-row-crush")
-        let row = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "Crushed title")).firstMatch
+        let row = app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH %@", "Crushed title")).firstMatch
         XCTAssertTrue(row.waitForExistence(timeout: 15), app.debugDescription)
         row.tap()
         let title = app.textFields["capture-title"]
