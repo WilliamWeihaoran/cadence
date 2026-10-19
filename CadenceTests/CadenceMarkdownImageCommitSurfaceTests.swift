@@ -494,7 +494,13 @@ struct CadenceMarkdownImageCommitSurfaceTests {
         // [[T-3170]]'s trio pass makes it 68: the Mac's `TimelineBundleBlock` was the last surface
         // that could refuse a Block operation, so the three sentences it raised -- the block save,
         // create and delete notices -- went with it. One call site fewer, same rule.
-        #expect(total == 68, "the inline notice has \(total) call sites, not the 68 this test was written over")
+        // [[T-3171]]'s seventh adoption slice makes it 67: `QuickCreateChoicePopover`'s own form
+        // became the shared panel, so the popover's top-of-card notice went with the old form.
+        // Its two sentences -- the create refusal and the host-limit notice -- are handed to the
+        // panel as `failureNotice: createFailureNotice ?? hostLimitNotice` rather than drawn here,
+        // and `CadenceQuickCreateTaskInspectorTests` holds that hand-off. One call site fewer,
+        // same rule: the refusal is still named, through the panel's one notice component.
+        #expect(total == 67, "the inline notice has \(total) call sites, not the 67 this test was written over")
         #expect(withDismissal == 7, "\(withDismissal) call sites offer a dismissal, not 7")
 
         // And each of the six is named, so one swapping places with another is still a failure.

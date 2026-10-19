@@ -158,6 +158,21 @@ CadenceTests/CadenceContainerPickerConsolidationTests.swift
 CadenceTests/CadencePresentedTypographyBoundaryTests.swift
 ```
 
+**Admission 2026-10-19 (coordinator), one line in `CadenceTests/CadenceMarkdownImageCommitSurfaceTests.swift`.**
+That file is leased above and stays leased. The coordinator changed exactly one assertion in it --
+the inline-notice census `#expect(total == 68, ...)` to `67`, with the comment sentence the census
+block's house style requires -- and nothing else in the file. **Why it could not wait for Codex:**
+`d32ae3a1` (T-3171's seventh adoption slice) removed a notice call site by folding
+`QuickCreateChoicePopover`'s form into the shared panel, so the census pinned a number the tree no
+longer held and `main` was red on a count CI reproduces regardless of local worktrees. Agent
+`dragcreate` measured it, correctly refused to touch a leased path, and requested the grant rather
+than taking it. **Checked before admitting:** `codex/unified-editors`, the branch waiting to land,
+never opens this file. `codex/ios-board-drop-refusal` does -- it moves the same census 67 -> 68 by
+ADDING the mobile board's refused-drop notice, from a base that read 67. That branch is one commit
+ahead of `main` and unlanded; its product change (`Cadence/iOS/iOSCalendarBoardView.swift`) is not
+on `main`. Whoever lands it should expect a one-line conflict in this comment block and resolve it
+to 68, because its notice is a real added call site on top of this 67.
+
 ### 2026-10-17 — WHY ALL SIX VERSIONS FAILED: each asked a cheaper question than the one being asked
 
 Agent `blocktail`'s synthesis, recorded because it explains every failure above with one sentence
