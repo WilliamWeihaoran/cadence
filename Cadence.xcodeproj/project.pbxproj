@@ -977,6 +977,12 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 23;
 				DEVELOPMENT_TEAM = SM6Y3D2D55;
+				EXCLUDED_SOURCE_FILE_NAMES = "";
+				"EXCLUDED_SOURCE_FILE_NAMES[sdk=iphone*]" = (
+					CadenceCodexDropLifetimeTests.swift,
+					CadenceCodexFunctionalParityTests.swift,
+					CadenceCodexWidgetReopenTests.swift,
+				);
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
 				MACOSX_DEPLOYMENT_TARGET = 26.1;
@@ -1002,6 +1008,12 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 23;
 				DEVELOPMENT_TEAM = SM6Y3D2D55;
+				EXCLUDED_SOURCE_FILE_NAMES = "";
+				"EXCLUDED_SOURCE_FILE_NAMES[sdk=iphone*]" = (
+					CadenceCodexDropLifetimeTests.swift,
+					CadenceCodexFunctionalParityTests.swift,
+					CadenceCodexWidgetReopenTests.swift,
+				);
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
 				MACOSX_DEPLOYMENT_TARGET = 26.1;

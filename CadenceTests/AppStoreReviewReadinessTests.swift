@@ -1,3 +1,7 @@
+// T-3244: compiled for macOS only. `CadenceTests` now also builds for an iOS destination, and
+// this suite depends on a host-only test helper (CadenceBuildInvocation) that is itself macOS-gated.
+// The gate preserves exactly the coverage this file had before.
+#if os(macOS)
 import Foundation
 import Testing
 @testable import Cadence
@@ -827,3 +831,5 @@ struct AppStoreReviewReadinessTests {
         return Set(reasons as? [String] ?? [])
     }
 }
+
+#endif

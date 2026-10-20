@@ -1,3 +1,8 @@
+// T-3244: compiled for macOS only. This suite reaches AppKit directly, and `CadenceTests` now
+// also builds for an iOS destination, where that import does not resolve. The gate preserves
+// exactly the coverage this file had before; narrowing it so the cross-platform half runs on iOS
+// too is follow-up, not part of making the target iOS-capable.
+#if os(macOS)
 import AppKit
 import Foundation
 import SwiftUI
@@ -172,3 +177,5 @@ struct CadenceCreateTaskSheetSurfaceTests {
         }
     }
 }
+
+#endif

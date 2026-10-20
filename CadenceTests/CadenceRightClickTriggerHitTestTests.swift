@@ -1,9 +1,9 @@
 import Testing
-import AppKit
 import Foundation
 @testable import Cadence
 
 #if os(macOS)
+import AppKit
 /// **T-1096.** `RightClickActionTrigger.RightClickActionView.hitTest(_:)` used to be this:
 ///
 /// ```swift

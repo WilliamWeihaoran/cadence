@@ -1,3 +1,8 @@
+// T-3244: compiled for macOS only. `CadenceTests` now also builds for an iOS destination, and
+// this suite reaches macOS-only app types that do not exist there. The gate preserves exactly the
+// coverage this file had before; narrowing it so any cross-platform half runs on iOS too is
+// follow-up, not part of making the target iOS-capable.
+#if os(macOS)
 import CoreGraphics
 import Foundation
 import Testing
@@ -429,3 +434,5 @@ struct CalendarMonthDisplayedMonthTests {
         )
     }
 }
+
+#endif

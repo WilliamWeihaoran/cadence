@@ -1,8 +1,8 @@
-import AppKit
 import Testing
 @testable import Cadence
 
 #if os(macOS)
+import AppKit
 
 /// **T-1742, the half of the fix a unit test can carry.**
 ///
