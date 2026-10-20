@@ -338,6 +338,70 @@ struct CadenceTodayTimelineDraftCreationTests {
         #expect(block.contains("CadenceCalendarEventStyle.railColor(for:"))
         #expect(block.contains("CadenceCalendarEventStyle.platePrimaryLabelColor"))
     }
+
+    /// Lines of the column that are **code**, with its prose dropped.
+    ///
+    /// The two pins below are negative — they say a shape is *gone* — and the commentary that
+    /// explains why it went quotes the retired line verbatim. A bare substring sweep would read
+    /// that explanation as the thing it is warning about, so the comments come out first.
+    private func timelineColumnCode() -> String {
+        source("Cadence/iOS/iOSCalendarTimelineViews.swift")
+            .split(separator: "\n", omittingEmptySubsequences: false)
+            .filter { !$0.trimmingCharacters(in: .whitespaces).hasPrefix("//") }
+            .joined(separator: "\n")
+    }
+
+    /// **[[T-3240]].** The draft editor is a popover hanging off the block it edits, and that block
+    /// carries a 32pt touch band at each end for adjusting it. A popover is modal by default, so
+    /// its outside-tap dismissal took every touch on the pane: reaching for a handle produced no
+    /// gesture at all and tore the block down instead — *"the entire event just disappears"*.
+    ///
+    /// Two things had to change together and both are pinned here, because a reader who undoes
+    /// either one alone puts the bug back. The presentation stops swallowing the touch, and the
+    /// teardown stops being reactive: `.onChange(of: isDraftEditorPresented)` cleared the draft
+    /// from *anything* that toggled the presentation, the swallowed touch included. The clearing
+    /// was right and the trigger was wrong, so it moved into an explicit `finishDraftCreation()`,
+    /// which is `TimelineDayCanvas`'s rule on the Mac and the reason the Mac never had this.
+    ///
+    /// **Source text, and it pins the shape rather than the behaviour.** Neither a presentation's
+    /// modality nor "a gesture reached its view" is a value any runtime check in this target can
+    /// read, and the column is `#if os(iOS)`, so no macOS test run can even name its symbols. The
+    /// behaviour was measured on `Cadence-iPadPro11` instead (T-3240's own line says how).
+    @Test("The draft editor lets a touch reach the block it hangs off")
+    func draftEditorLetsATouchReachTheBlockItHangsOff() {
+        let timeline = timelineColumnCode()
+        #expect(!timeline.isEmpty)
+        #expect(timeline.contains(".presentationBackgroundInteraction(.enabled)"))
+        #expect(timeline.contains("private func finishDraftCreation()"))
+        #expect(
+            !timeline.contains("onChange(of: isDraftEditorPresented)"),
+            "the draft is cleared by a decision, not by whatever toggled the presentation"
+        )
+    }
+
+    /// **The other half of [[T-3240]], and the one that is easiest to undo by tidying.**
+    ///
+    /// Both readers of the draft want a `CadenceScheduleDraft` rather than an optional one, so the
+    /// binding's getter falls back to the value the layer was drawn from. That makes a write
+    /// arriving from a view on its way down a *resurrection*: it puts the fallback back into the
+    /// state the column just cleared. Measured on `Cadence-iPadPro11` with the guard removed —
+    /// Cancel dismissed the editor and left the block on the canvas at its adjusted range, which
+    /// is the leak the retired reactive teardown used to mop up by clearing a second time.
+    @Test("A dismissing editor cannot resurrect a cleared draft")
+    func aDismissingEditorCannotResurrectAClearedDraft() {
+        let timeline = timelineColumnCode()
+        #expect(timeline.contains("private func draftBinding(fallingBackTo current: CadenceScheduleDraft)"))
+        // The guard, in the setter it belongs to. `guard draft != nil` on its own is not a pin:
+        // the press gesture higher up the file carries the same line for its own reason, so the
+        // sweep would pass on a `draftBinding` that had been tidied back to `set: { draft = $0 }`.
+        // Matched on whitespace-collapsed text, so a reflow of the closure is not a failure.
+        let collapsed = timeline.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+        #expect(collapsed.contains("set: { updated in guard draft != nil else { return } draft = updated }"))
+        #expect(
+            !timeline.contains("set: { draft = $0 }"),
+            "an unguarded setter over the draft is the resurrection path"
+        )
+    }
 }
 
 /// The draft over an event that **already exists** — the model half of [[T-3171]]'s first
