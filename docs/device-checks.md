@@ -9,8 +9,8 @@ remainder of [T-55], re-read from the ledger 2026-10-20.
 
 **Before using any recipe below:** the runs recorded here were done on the owner's **iPhone 17
 Pro** simulator in September, when that was the arrangement. It is not any more. There are two
-standing simulators to reuse and the owner's is on the do-not-touch list; `docs/SESSION_HANDOFF.md`
-names all three. Take the *recipe* from this file and the *device* from the handoff.
+standing simulators to reuse and the owner's is on the do-not-touch list; `docs/AGENT_BRIEF.md`,
+"Safety", names all three by UDID. Take the *recipe* from this file and the *device* from the brief.
 
 **Re-triaged 2026-09-02 ([T-561]).** It was five items and fifteen steps, written in August when
 nobody could drive anything. Agents drive iPhone and iPad simulators now, so most of it is somebody
