@@ -1,20 +1,15 @@
 # Cadence Agent Guide
 
-This file is the first stop for coding agents. Keep it compact: `CLAUDE.md` is the Claude Code
-startup router, and `docs/AGENTS_REFERENCE.md` preserves the former long root guide.
+This file is the directory map and the non-negotiable patterns. **The rules you work under — build, test, mutation, lease, commit gate, safety, reporting — are in [docs/AGENT_BRIEF.md](docs/AGENT_BRIEF.md); read that first.** `CLAUDE.md` is the Claude Code startup router, `docs/SESSION_HANDOFF.md` is today's state, and `docs/AGENTS_REFERENCE.md` preserves the former long root guide. Keep this file compact: it is startup context, and every line here is paid for on every run.
 
 ## Project Snapshot
 
 Cadence is a native SwiftUI productivity app: a fully built macOS surface and a large real
 iOS/iPadOS one, shared SwiftData models, CloudKit sync, EventKit, widgets and MCP support.
 
-Primary target:
+Primary target: `Cadence.xcodeproj`, scheme `Cadence`, platform macOS.
 
-- Project: `Cadence.xcodeproj`
-- Scheme: `Cadence`
-- Platform: macOS
-
-Build from the **repo root** with private DerivedData — agent shells reset their working directory between calls, so a relative `-project ../Cadence.xcodeproj` will not resolve, and the private path must appear in the log before a green run means anything:
+**You invoke builds through `scripts/xcb.sh <id> build|test`, never by hand.** The two commands below are what it runs; they are here so the two load-bearing flags are readable, not as an invitation to type them. A build runs from the **repo root** with private DerivedData — agent shells reset their working directory between calls, so a relative `-project ../Cadence.xcodeproj` will not resolve, and the private path must appear in the log before a green run means anything:
 
 ```sh
 /Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild \
@@ -30,13 +25,8 @@ Tests must be scoped to `CadenceTests`:
   -derivedDataPath /tmp/cadence-test-$$ -only-testing:CadenceTests
 ```
 
-Scope unit runs to `CadenceTests`: they RUN here, re-measured 2026-10-04 and again 2026-10-06 (T-2049) — never read a harness failure as "tests can't run on this Mac".
-`CadenceUITests` runs too, but the 2026-08-31 automation grant is per-SESSION, not a one-time switch: `/var/db/com.apple.dt.automationmode/automation-enabled` is absent again today, so a cold UI run raises an owner-only Touch ID prompt and, unattended, dies ~70s later having executed 0 tests on *"Timed out while enabling automation mode"*. Once the owner answers it UI tests really do run — agent `escape2` went red then green on real bodies 2026-10-04 19:12-20:02. Never write the authorization database to get round the prompt (T-1742, T-2049).
-A UI run launches a real `Cadence.app`, so it MUST hold the test-host lock: `scripts/xcb.sh <id> test`
-`-only-testing:CadenceUITests`, never a bare `xcodebuild`. Zero **compiler** warnings, **enforced not asserted**
-(T-1147/T-1149): `xcb.sh` **exits 9** when a run that recompiled Swift has any and `.github/scripts/check-log.sh` fails CI
-the same way; tool notices count separately, a vacuous run never gates, and `CADENCE_ALLOW_WARNINGS=1` downgrades it to a
-report for `mutate.sh` alone. **Both counters are destination-AGNOSTIC and a macOS build is not** (T-1781): it compiles no `#if os(iOS)`, so its `0` says nothing about the iOS surface — the same tree, one injected iOS-only warning, gave **2** on `generic/platform=iOS Simulator` with `xcb.sh` 9 and `check-log.sh` 1 (measured 2026-09-30). **A compile-task count is an ARCH count, not a floor** (T-1703): `generic/platform=iOS Simulator` builds arm64 **and** x86_64, while a concrete `platform=iOS Simulator,id=<udid>` and `platform=macOS` each build one — so generic is exactly **2x** the other two over a byte-identical file list (691/1382 on 2026-10-06; 695/1390 on 2026-09-30, the same pair one month of files earlier). **~695 on a concrete iOS destination is NON-vacuous and must not be read as a failed build**, and no count distinguishes a macOS build from an iOS one — read the destination line, never the number. CI's `ios-build` gates its own log the same way on every push, so an iOS-only warning reaches you AFTER the push; build iOS yourself when you touch `Shared/`, `Models/` or `Services/`. Pinned by `CadenceBuildInvocationHygieneTests.everyCompilingCIJobRoutesItsOwnLogThroughTheSameWarningGate`.
+Unit tests RUN here, re-measured 2026-10-06 (T-2049) — never read a harness failure as "tests can't run on this Mac". `CadenceUITests` runs too, but the macOS automation grant is per-SESSION, not a one-time switch: with `/var/db/com.apple.dt.automationmode/automation-enabled` absent, a cold UI run raises an owner-only Touch ID prompt and, unattended, dies ~70s later having executed 0 tests on *"Timed out while enabling automation mode"*. Ask `./scripts/xcb.sh check-automation`. **Never write the authorization database to get round the prompt** (T-1742, T-2049).
+Zero **compiler** warnings, **enforced not asserted** (T-1147/T-1149): `xcb.sh` **exits 9** when a run that recompiled Swift has any and `.github/scripts/check-log.sh` fails CI the same way; tool notices count separately, a vacuous run never gates, and `CADENCE_ALLOW_WARNINGS=1` downgrades it to a report for `mutate.sh` alone. **Both counters are destination-AGNOSTIC and a macOS build is not** (T-1781): it compiles no `#if os(iOS)`, so its `0` says nothing about the iOS surface — the same tree with one injected iOS-only warning gave **2** on `generic/platform=iOS Simulator` (measured 2026-09-30). **A compile-task count is an ARCH count, not a floor** (T-1703): `generic/platform=iOS Simulator` builds arm64 **and** x86_64 while a concrete `platform=iOS Simulator,id=<udid>` and `platform=macOS` each build one, so generic is exactly **2x** the other two over a byte-identical file list. **~695 on a concrete iOS destination is NON-vacuous and must not be read as a failed build**, and no count distinguishes a macOS build from an iOS one — read the destination line, never the number. Both dated pairs: `docs/AGENTS_REFERENCE.md`, "The iOS compile-task count is an ARCH count, not a floor". CI's `ios-build` gates its own log the same way on every push, so an iOS-only warning reaches you AFTER the push; build iOS yourself when you touch `Shared/`, `Models/` or `Services/`. Pinned by `CadenceBuildInvocationHygieneTests.everyCompilingCIJobRoutesItsOwnLogThroughTheSameWarningGate`.
 The `TestAction` pins **`TZ=UTC`** (T-1116): zones via `CadenceTestTimeZones`, never a shell `TZ=`.
 
 ## Where Things Live
@@ -52,11 +42,13 @@ The `TestAction` pins **`TZ=UTC`** (T-1116): zones via `CadenceTestTimeZones`, n
 - `CadenceWidgets/` - widget extension; the `Cadence` scheme already builds it.
 - `CadenceMCPServer/`, `plugins/cadence-mcp/` - separate MCP boundary.
 - `CadenceTests/` - unit tests. Look for an existing file before adding one.
-- `docs/` - shipped docs plus detailed agent references. **Codex holds a write lease on some paths; before you edit one, ask `./scripts/codex-land.sh lease` (2.4 KB, parsed from the doc's authoritative `lease` block) rather than reading `docs/CODEX_WORKTREE.md` whole — that file is 117 KB and the lease is 53 lines of it. Read the doc itself only for a grant's reasoning or an instruction attached to a path.**
+- `docs/` - shipped docs plus detailed agent references. **Codex holds a write lease on some paths; before you edit one, ask `./scripts/codex-land.sh lease`, which parses the authoritative `lease` block, rather than opening `docs/CODEX_WORKTREE.md` — that file is two orders of magnitude larger than the block inside it. Read the doc itself only for a grant's reasoning or an instruction attached to a path.**
+- `docs/TODO.md` is the ledger and is **large — never read or `rg` it whole.** Ask `./scripts/ledger-view.sh head T-NNNN` for an entry's first line and state, `show T-NNNN` for the whole entry once you need the history, and `brief` for the open list.
 
 ## Scoped Guides
 
-Read the nearest scoped `AGENTS.md` before editing under that tree:
+Read the nearest scoped `AGENTS.md` before editing under that tree. Each says what is true of its
+own subtree and routes up to here for the rest.
 
 - `Cadence/AGENTS.md`
 - `Cadence/Models/AGENTS.md`
@@ -94,16 +86,8 @@ Long references, searchable only when needed:
   `knownRegions` is `en`/`Base`; user-facing copy stays an English literal. T-18 is deferred scope,
   not an oversight. Pinned by `CadenceTests/CadenceAgentOperatingRuleTests`.
 - Do not revert unrelated user or agent changes.
-- **Commit with `scripts/agent-commit.sh <id> -m <msg> <path>...`, not `git commit`** (T-679). The
-  index is shared: it refuses a foreign staged path, commits a private one, then repairs the shared one.
-  `HEAD-MOVED` (T-974) means a sibling landed while you were validating — nothing was committed;
-  re-read `git show HEAD:<path>` and rerun. `agent-commit.sh check` must exit 0 before a batch
-  closes (T-781).
-- **Write your `docs/TODO.md` line AT COMMIT TIME, rebuilt on `git show HEAD:docs/TODO.md`** (T-679,
-  T-1783). Not merely sequencing: that file is staged whole-file, so a sibling committing it will
-  **silently revert prose you wrote early** — `git status` clean, your text simply gone, and
-  *nothing in the declined-hunk ledger*. Measured 2026-09-30. There is no signal; only rewriting
-  immediately before the commit is safe.
+- **Commit with `scripts/agent-commit.sh`, never `git commit`** (T-679). Flags and refusals: `docs/AGENT_BRIEF.md`. What is local here is that the index is shared, so `HEAD-MOVED` (T-974) means a sibling landed while you were validating and nothing was committed; re-read `git show HEAD:<path>` and rerun. `agent-commit.sh check` must exit 0 before a batch closes (T-781).
+- **Write your `docs/TODO.md` line AT COMMIT TIME, rebuilt on `git show HEAD:docs/TODO.md`** (T-679, T-1783). Not merely sequencing: that file is staged whole-file, so a sibling committing it will **silently revert prose you wrote early** — `git status` clean, your text simply gone, and *nothing in the declined-hunk ledger*. Measured 2026-09-30. There is no signal; only rewriting immediately before the commit is safe.
 - **`.githooks/pre-commit` is not yours to arm** (T-780). Never run `git config core.hooksPath`, or
   teach a script to. Why, and why an armed hook still lets `agent-commit.sh` through:
   `docs/AGENTS_REFERENCE.md`, "Why the pre-commit hook ships inert".
@@ -131,9 +115,9 @@ T-997, in `docs/AGENTS_REFERENCE.md`, "The `try? save()` rule".
 
 ## Build And Run Safety
 
-- Build through **`scripts/xcb.sh <id> build|test`**, or pass a private `-derivedDataPath` yourself:
-  it supplies one, refuses the shared path, takes `scripts/test-host-lock.sh` for `test`, names a
-  silent T-117 stall, and **fails a run that executed 0 tests** (T-552 — a wrong suite name exits 0).
+The refusals themselves — never a bare `xcodebuild`, `-only-testing:` takes a SUITE, read the real `XCODEBUILD_EXIT=` line, which simulators you may touch, how to launch the app — are in `docs/AGENT_BRIEF.md`. What is local to this repository's runner:
+
+- `scripts/xcb.sh` supplies a private `-derivedDataPath`, refuses the shared path, takes `scripts/test-host-lock.sh` for `test`, names a silent T-117 stall, and **fails a run that executed 0 tests** (T-552 — a wrong suite name exits 0).
 - The lock lives at **`${TMPDIR}/cadence-macos-test-host.lock`**, not `/private/tmp` — which reports
   the host free while a run is live. Ask `test-host-lock.sh status`; it prints the holder and queue.
 - **It is FIFO (T-650), so release-and-re-acquire goes to the back.** For one lease across many
@@ -144,13 +128,8 @@ T-997, in `docs/AGENTS_REFERENCE.md`, "The `try? save()` rule".
   drive the lock from inside a test** (T-1152): there `pgrep` runs but is denied the process list, so
   it refuses and `status` prints `unknown` (`CadenceTestHostSandboxCapabilityTests` holds that).
 - `xcodebuild` idle at `Command line invocation` with 0% CPU is a project-file lock, not Swift.
-- Never create simulator devices. Use one existing stock simulator and `scripts/simulator-claim.sh`.
-- Launch the macOS app only through `scripts/run-macos-app.sh start <Cadence.app> <id>`, and pair it
-  with `stop <id>` in the same turn.
-- **Mint and release scratch through `scripts/agent-scratch.sh`** (T-1094): `new <id>` does the
-  `git archive HEAD | tar -x` and refuses a generic name; `release` refuses to delete a tree holding
-  work that is in neither its base nor HEAD. `rsync` copies 464 MB and siblings' in-flight edits.
-- Launch long build/test runs and poll them in one shell invocation; confirm the log names your tree.
+- Pair `scripts/run-macos-app.sh start <Cadence.app> <id>` with `stop <id>` in the same turn.
+- **Mint and release scratch through `scripts/agent-scratch.sh`** (T-1094), never `rsync` and never `rm -rf`; the measurement behind that is `docs/SUBAGENT_RUNBOOK.md` §2.
 
 ## Red-Run Triage
 
@@ -165,9 +144,7 @@ Before treating a red run as a code regression, check:
 - A few zero-second failures and one host PID: inspect the `.xcresult`; the test runner may have
   exited early.
 - UI-test failures in an ordinary test run: the run was not scoped to `CadenceTests`.
-- **`CadenceUITests` was never flaky — it cannot pass while the Mac's screen is locked (T-563).**
-  `app.launch()` then fails ~60s in on whichever line called it; `xcb.sh` refuses such a run and the
-  tests skip themselves, so a red UI run **is** evidence. Measurements: `docs/AGENTS_REFERENCE.md`.
+- **`CadenceUITests` was never flaky — it cannot pass while the Mac's screen is locked (T-563),** and `xcb.sh` refuses such a run, so a red UI run **is** evidence. Measurements: `docs/AGENTS_REFERENCE.md`.
 - Compile failures that name your file are real until proven otherwise. **A warning or red in a file you did not touch may be a sibling mid-mutation of the shared tree** (T-3071, T-3092): `git diff --stat` that file and re-run; mutations belong in a scratch tree or worktree, never the shared checkout (`docs/SUBAGENT_RUNBOOK.md` §4).
 - **Count hosts with `pgrep -f '^/Applications/.*/xcodebuild( .*)? test(-without-building)?( |$)'`** — anchored, so
   the poller is not counted, and action-as-a-token, because `xcb.sh` puts the action **last** (T-1162, calibrated).
@@ -175,22 +152,16 @@ Before treating a red run as a code regression, check:
 - **A count from a run that did not recompile is vacuous** — an incremental run reuses object files and
   returns 0 either way. `xcb.sh` prints `swift compile tasks: N`, says `!! VACUOUS-COUNT` at 0 (T-1147), and never gates on one.
 - **Count errors and warnings `grep -cE '\.swift:[0-9]+:[0-9]+: (error|warning):'`**, never loosely: the loose form over-counts. Why, and the T-1147 measurement, in `docs/AGENTS_REFERENCE.md`.
-- **Warnings need a SECOND anchored pattern, `grep -cE 'macro expansion [^ :]+:[0-9]+:[0-9]+: warning:'` (T-1516).** A warning raised inside a macro expansion — `#expect` is in ~5,200 tests here — is attributed to the expansion buffer and has **no `.swift:N:C:` prefix**, so the pattern above scores 0 on it. Both spellings count: freestanding macros print `#expect`, attached ones print `@ObservationTracked`. `xcb.sh` and `check-log.sh` gate on the sum and say `MACRO-EXPANSION-WARNING` when the second is non-zero; grepping a log by hand for warnings means grepping for both.
+- **Warnings need a SECOND anchored pattern, `grep -cE 'macro expansion [^ :]+:[0-9]+:[0-9]+: warning:'` (T-1516)** — a warning raised inside a macro expansion has **no `.swift:N:C:` prefix**, so the first pattern scores 0 on it. `xcb.sh` and `check-log.sh` gate on the sum and say `MACRO-EXPANSION-WARNING`; grepping a log by hand means grepping for both.
 - `sleep` is blocked in a **foreground** tool call (a poll loop there exits 0 having watched nothing);
   it works in a detached job or `Monitor` script, so `acquire` waits from a background runner.
 
 ## Risk Hotspots
 
+The four high-risk macOS families — `Timeline*`/`SchedulePanel*`/`CalendarPage*`, `TasksPanel*`/`ListDetail*`/`Inbox*`/`Kanban*`, `CalendarManager`/`SchedulingService`/`TaskWorkflowService` and the deletion helpers, and the AppKit editor bridge — are enumerated once in `Cadence/macOS/AGENTS.md`, "High-Risk Areas", beside the files. Two that are not macOS's to state:
+
 - `Cadence/Models/` and `Cadence/Services/CadenceSchema.swift` - schema changes need migration and
   CloudKit awareness.
-- `Cadence/macOS/Editor/MarkdownEditorInteractionSupport.swift` and `MarkdownEditorSupport.swift` -
-  AppKit/SwiftUI bridge, custom caret/drawing/slash commands/undo.
-- `Cadence/macOS/Views/Timeline*`, `SchedulePanel*`, `CalendarPage*` - timeline math, drag/drop,
-  EventKit, schedule state.
-- `Cadence/macOS/Views/TasksPanel*`, `ListDetail*`, `Inbox*`, `Kanban*` - task surfaces, sorting,
-  grouping, drag reorder.
-- `Cadence/macOS/Services/CalendarManager.swift`, `SchedulingService.swift`,
-  `TaskWorkflowService.swift`, deletion helpers - mutations and EventKit side effects.
 - Model or shared-service changes must review the MCP boundary; build `CadenceMCPServer` separately
   when relevant.
 
