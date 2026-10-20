@@ -39,6 +39,19 @@ enum CadenceCaptureField: String, CaseIterable, Identifiable {
 
 /// The same ordered inventory drives icons and chips; setting one closes a gap, never reorders it.
 enum CadenceCaptureFieldInventory {
+    /// **The relative-date window, stated because the ticket left it to be chosen** ([[T-3237]]
+    /// item 3). Seven days each way, then an absolute `Oct 19`.
+    ///
+    /// A week is the span a person is already holding: inside it `in 4 days` and `Yesterday` are
+    /// read directly, and they are shorter than the date. Past it they stop being shorter in the
+    /// only sense that matters — `in 23 days` is arithmetic the reader has to undo before they know
+    /// which day it is, while `Nov 11` is the answer. Seven rather than fourteen because a chip is
+    /// glanced at rather than read, and because a week is a boundary the reader already has.
+    ///
+    /// Symmetric, unlike `DateFormatters.relativeDate(from:)`'s own unbounded backward arm: a do
+    /// date thirty days gone is a date, not a measure of how late it is.
+    static let relativeDateCutoffDays = 7
+
     static let taskIcons: [CadenceCaptureField] = [.doDate, .dueDate, .list, .tags]
     static let overflow: [CadenceCaptureField] = [.repeatRule, .priority, .estimate]
 
@@ -240,7 +253,11 @@ struct CadenceScheduleCaptureCard<NotesField: View>: View {
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 130), alignment: .leading)], alignment: .leading, spacing: 6) {
                     ForEach(chips) { field in
                         Button { open(field) } label: {
-                            Label(chipTitle(field), systemImage: field.symbol)
+                            Label {
+                                Text(chipTitle(field))
+                            } icon: {
+                                Image(systemName: chipSymbol(field)).foregroundStyle(chipTint(field))
+                            }
                                 .cadenceFont(.metadata)
                                 .lineLimit(2)
                                 .frame(maxWidth: .infinity, minHeight: 36, alignment: .leading)
@@ -360,12 +377,60 @@ struct CadenceScheduleCaptureCard<NotesField: View>: View {
         })
     }
 
+    private var doDayText: String {
+        draft.startDateKey.isEmpty ? draft.doRowLabel
+            : DateFormatters.relativeDate(from: draft.startDateKey, withinDays: CadenceCaptureFieldInventory.relativeDateCutoffDays)
+    }
+
+    /// Whether the do date is today, which is the one day it gets its own glyph and hue.
+    private var doDateIsToday: Bool {
+        !draft.startDateKey.isEmpty && draft.startDateKey == DateFormatters.todayKey()
+    }
+
+    /// The glyph a chip draws, which is the field's own except on the day the do date is today.
+    ///
+    /// `CadenceBoardCardMetadata.doDateIcon` is read rather than respelled — `sun.max.fill` is the
+    /// do date's glyph everywhere in this app and this is not the place to type it a tenth time.
+    private func chipSymbol(_ field: CadenceCaptureField) -> String {
+        field == .doDate && draft.kind == .task && doDateIsToday
+            ? CadenceBoardCardMetadata.doDateIcon : field.symbol
+    }
+
+    /// **The glyph's colour, and only the glyph's** ([[T-3237]] item 3).
+    ///
+    /// Every hue here is one the app already owns: `Theme.red`, `Theme.amber`, the list's own
+    /// `colorHex` through its choice, and `Theme.priorityColor` for the marks. Nothing new is
+    /// invented, and a field with nothing to say in colour says it in `Theme.dim` rather than
+    /// borrowing a meaning from a neighbour.
+    ///
+    /// **The do date is red by default and amber only on today**, which is the owner's call and is
+    /// deliberately NOT `CadenceBoardCardMetadata`'s always-amber identity. The board card is a
+    /// readout of a saved task; this card is the thing you are composing, where the do date is the
+    /// commitment you are making and today is the one answer worth singling out.
+    private func chipTint(_ field: CadenceCaptureField) -> Color {
+        switch field {
+        case .doDate:
+            guard draft.kind == .task else { return Theme.dim }
+            return doDateIsToday ? Theme.amber : Theme.red
+        case .dueDate: return Theme.red
+        case .list: return listChoices.first { $0.id == draft.listToken }?.color ?? Theme.dim
+        case .priority: return Theme.priorityColor(CadenceCaptureFieldInventory.priority(for: draft))
+        case .tags, .repeatRule, .estimate, .calendar, .location: return Theme.dim
+        }
+    }
+
     private func chipTitle(_ field: CadenceCaptureField) -> String {
         switch field {
         case .doDate:
             if draft.kind == .event { return draft.scheduleLabel }
-            return draft.scheduledStartMin < 0 ? draft.doRowLabel : "\(draft.doRowLabel) · \(draft.doTimeLabel)"
-        case .dueDate: return "Due \(draft.dueRowLabel)"
+            guard draft.scheduledStartMin >= 0 else { return doDayText }
+            return "\(doDayText) · \(draft.doTimeLabel)"
+        case .dueDate:
+            // No "Due" in front of it. The glyph beside it is the app's red due-date flag, and on
+            // a line that sits the two dates side by side a word on one chip and not the other
+            // reads as a difference between the fields rather than as a label.
+            return draft.dueDateKey.isEmpty ? draft.dueRowLabel
+                : DateFormatters.relativeDate(from: draft.dueDateKey, withinDays: CadenceCaptureFieldInventory.relativeDateCutoffDays)
         case .list:
             let list = listChoices.first { $0.id == draft.listToken }?.name ?? "Inbox"
             return draft.sectionName == TaskSectionDefaults.defaultName ? list : "\(list) · \(draft.sectionName)"
