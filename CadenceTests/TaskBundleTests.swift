@@ -331,17 +331,10 @@ struct TaskBundleTests {
         SchedulingActions.removeFromCalendar(detached)
         #expect(detached.calendarEventID.isEmpty)
 
-        // "Added to a block" was the third entry point here; [[T-3170]]'s trio pass deleted
-        // SchedulingActions.addTask(_:to:), so the two block paths below start from a fixture
-        // member and re-arm the identifier before the site under test.
+        // T-3170 retired the Block move. The legacy unbundle check below still starts from
+        // a fixture because no production entry point forms a Block.
         let bundle = TaskBundle(title: "Sweep", dateKey: "2026-05-01", startMin: 600, durationMinutes: 60)
         context.insert(bundle)
-
-        let moved = stale("Moved with its bundle")
-        CadenceTestBundleFixture.place(moved, in: bundle)
-        moved.calendarEventID = "legacy-event-id" // re-arm: the move below is the site under test
-        SchedulingActions.dropBundle(bundle, to: "2026-05-03", startMin: 660)
-        #expect(moved.calendarEventID.isEmpty)
 
         let unbundled = stale("Unbundled")
         CadenceTestBundleFixture.place(unbundled, in: bundle)

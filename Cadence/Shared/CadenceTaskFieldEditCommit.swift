@@ -36,13 +36,8 @@ import SwiftData
 /// destination's siblings but writes only the moved task, so putting that one value back is the
 /// whole undo.
 ///
-/// **`calendarEventID` is here for the same reason one ticket later ([[T-1980]]).** The Calendar
-/// Board's day-column drop moves a *block*, and `SchedulingActions.dropBundle` clears every
-/// member's calendar link as part of that move — the block owns the slot now, so a stale link
-/// cannot stay. An undo that put back the two schedule fields and not this one would have left a
-/// refused block move having silently unlinked its members from their calendar events, under the
-/// same "Nothing was changed" sentence. It is the field this doc named as *not* carried until a
-/// caller started writing it, which is exactly the sequence the boundary below asks for.
+/// `calendarEventID` joined the snapshot in T-1980 for the retired Block move. It remains
+/// task data: a refused edit must restore a legacy calendar link along with the schedule fields.
 ///
 /// **`notes` and the three `recurrenceEnd*` fields are here because the task editor writes them
 /// ([[T-3171]]).** The iOS task sheet became the shared schedule panel, which saves every field in
@@ -149,39 +144,6 @@ struct CadenceTaskFieldSnapshot {
     }
 }
 
-/// The three fields a **block move** writes on the block itself, captured before the write
-/// ([[T-1980]]).
-///
-/// The member tasks' half of the same move is `CadenceTaskFieldSnapshot` above, reused rather than
-/// near-copied: `SchedulingActions.dropBundle` writes each member's `scheduledDate`,
-/// `scheduledStartMin` and `calendarEventID`, and all three are in that set. This type exists
-/// because the block is not an `AppTask` and the move's subject is the block — a block with no
-/// members at all still moves, so there is no task to hang the commit on.
-///
-/// `restore(to:)` is spelled `restore(to bundle:)` so the task snapshot's own `restore` stays the
-/// only `func restore(to task: AppTask)` in this file; `thefieldSnapshotCapturesAndRestoresTheSameNamedFields`
-/// reads that declaration by its full prefix for exactly that reason.
-struct CadenceTaskBundleSlotSnapshot {
-    let bundleID: UUID
-
-    private let dateKey: String
-    private let startMin: Int
-    private let durationMinutes: Int
-
-    init(_ bundle: TaskBundle) {
-        bundleID = bundle.id
-        dateKey = bundle.dateKey
-        startMin = bundle.startMin
-        durationMinutes = bundle.durationMinutes
-    }
-
-    func restore(to bundle: TaskBundle) {
-        bundle.dateKey = dateKey
-        bundle.startMin = startMin
-        bundle.durationMinutes = durationMinutes
-    }
-}
-
 /// One field edit made from a task **embed card**, committed, with the card told only if it landed.
 ///
 /// **What it fixes (T-366).** `TaskEmbedFieldEditorPopover` mutated the live `AppTask`, ran
@@ -250,44 +212,6 @@ enum CadenceTaskFieldEditCommit {
         do {
             try CadencePendingChangePersistence.commitEdit(in: modelContext, commit: commit) {
                 undo(snapshots, on: targets, in: modelContext, reconciler: reconciler)
-            }
-        } catch {
-            return false
-        }
-        return true
-    }
-
-    /// A **block move**, committed, with the board told only if it landed ([[T-1980]]).
-    ///
-    /// The sibling of `commit(_:alsoRestoring:in:reconciler:commit:apply:)` above, and separate
-    /// from it for one reason: the subject is a `TaskBundle`, not an `AppTask`. A block with no
-    /// members still moves, so there is no task to pass as the primary, and threading an optional
-    /// one through the existing entry point would have made every caller read a parameter that is
-    /// meaningful for exactly one of them.
-    ///
-    /// - Parameter members: The block's member tasks, read **before** `apply` runs. `dropBundle`
-    ///   writes each one's `scheduledDate`, `scheduledStartMin` and `calendarEventID`, and does not
-    ///   change the membership itself, so the list stays valid across the write.
-    /// - Parameter commit: See `commit(_:alsoRestoring:in:reconciler:commit:apply:)`.
-    @discardableResult
-    static func commitBlockMove(
-        _ bundle: TaskBundle,
-        members: [AppTask],
-        in modelContext: ModelContext,
-        commit: (ModelContext) throws -> Void = { try $0.save() },
-        apply: () -> Void
-    ) -> Bool {
-        let slot = CadenceTaskBundleSlotSnapshot(bundle)
-        let memberSnapshots = members.map(CadenceTaskFieldSnapshot.init)
-
-        apply()
-
-        do {
-            try CadencePendingChangePersistence.commitEdit(in: modelContext, commit: commit) {
-                slot.restore(to: bundle)
-                for (snapshot, member) in zip(memberSnapshots, members) {
-                    snapshot.restore(to: member)
-                }
             }
         } catch {
             return false

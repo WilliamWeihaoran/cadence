@@ -358,175 +358,14 @@ struct CalendarBoardDayDropCommitTests {
         #expect(storedBlock.sortedTasks.map(\.bundleOrder) == [0, 1, 2])
     }
 
-    // MARK: - The block drop, against its own control
-
-    /// The block half, and the field that made it a different shape: `SchedulingActions.dropBundle`
-    /// clears every member's `calendarEventID`, which `CadenceTaskFieldSnapshot` did not carry
-    /// until this change. A refusal that restored only the two schedule fields would have left the
-    /// block's members silently unlinked from their calendar events, under a notice reading
-    /// "Nothing was changed".
-    @Test func adayColumnBlockDropRefusedByTheStoreKeepsTheBlockAndItsMembersWhereTheyWere() throws {
-        let modelContainer = try container()
-
-        let refusing = try fixture(in: modelContainer)
-        let refusingCommit = CountingDayDropCommit()
-        refusingCommit.refuses = true
-        let refusedOutcome = CalendarPageBoardDropSupport.move(
-            refusing.block,
-            to: "2026-07-04",
-            modelContext: refusing.modelContext,
-            commit: refusingCommit.commit
-        )
-
-        #expect(refusedOutcome == .refused)
-        #expect(refusingCommit.commitCount == 1)
-        #expect(refusing.block.dateKey == "2026-06-01", "the block came back to its day")
-        #expect(
-            refusing.block.sortedTasks.map(\.scheduledDate) == ["2026-06-01", "2026-06-01", "2026-06-01"],
-            "and so did every member it dragged with it"
-        )
-        #expect(
-            refusing.block.sortedTasks.map(\.calendarEventID).allSatisfy { !$0.isEmpty },
-            "and so did the calendar links the move cleared"
-        )
-        #expect(refusing.otherBlock.dateKey == "2026-06-02", "a block this drop never named is untouched")
-        #expect(refusing.bystander.calendarEventID == "event-bystander")
-
-        let taking = try fixture(in: modelContainer)
-        let takingCommit = CountingDayDropCommit()
-        let appliedOutcome = CalendarPageBoardDropSupport.move(
-            taking.block,
-            to: "2026-07-04",
-            modelContext: taking.modelContext,
-            commit: takingCommit.commit
-        )
-
-        #expect(appliedOutcome == .applied)
-        #expect(takingCommit.commitCount == 1)
-        #expect(taking.block.dateKey == "2026-07-04")
-        #expect(taking.block.sortedTasks.allSatisfy { $0.scheduledDate == "2026-07-04" })
-        #expect(taking.block.sortedTasks.allSatisfy { $0.calendarEventID.isEmpty })
-        #expect(taking.otherBlock.dateKey == "2026-06-02")
-
-        #expect(refusingCommit.commitCount == takingCommit.commitCount)
-        #expect(
-            refusing.block.dateKey != taking.block.dateKey,
-            "a refused move and a taken move that read the same prove nothing"
-        )
-        #expect(
-            refusing.block.sortedTasks.map(\.calendarEventID) != taking.block.sortedTasks.map(\.calendarEventID)
-        )
-    }
-
-    /// The block's own slot is three fields, not one, and `dropBundle` **clamps** two of them — so
-    /// a block whose stored slot is out of range is moved *and* re-shaped by one drop. Two blocks
-    /// shaped so that each clamp actually bites, because a fixture whose `startMin` and
-    /// `durationMinutes` happen to survive the clamp cannot tell a restore from a no-op.
-    @Test func arefusedDayColumnBlockDropRestoresTheWholeSlotTheClampReshaped() throws {
-        let modelContainer = try container()
-        let modelContext = ModelContext(modelContainer)
-
-        // 1430 + 60 runs past the end of the day, so `clampStart` pulls the start back to 1380.
-        let lateBlock = TaskBundle(title: "Late block", dateKey: "2026-06-01", startMin: 1_430, durationMinutes: 60)
-        // A duration an older build could have stored below the floor; the move raises it to 5.
-        let shortBlock = TaskBundle(title: "Short block", dateKey: "2026-06-01", startMin: 60, durationMinutes: 30)
-        modelContext.insert(lateBlock)
-        modelContext.insert(shortBlock)
-        shortBlock.durationMinutes = 2
-        try modelContext.save()
-
-        let refusing = CountingDayDropCommit()
-        refusing.refuses = true
-
-        #expect(
-            CalendarPageBoardDropSupport.move(
-                lateBlock,
-                to: "2026-07-04",
-                modelContext: modelContext,
-                commit: refusing.commit
-            ) == .refused
-        )
-        #expect(lateBlock.startMin == 1_430, "the start the clamp pulled back came back")
-        #expect(lateBlock.durationMinutes == 60)
-        #expect(lateBlock.dateKey == "2026-06-01")
-
-        #expect(
-            CalendarPageBoardDropSupport.move(
-                shortBlock,
-                to: "2026-07-04",
-                modelContext: modelContext,
-                commit: refusing.commit
-            ) == .refused
-        )
-        #expect(shortBlock.durationMinutes == 2, "the duration the clamp raised came back")
-        #expect(shortBlock.dateKey == "2026-06-01")
-        #expect(refusing.commitCount == 2)
-
-        // The control the refusals are worthless without: the same two moves, taken, reshape the
-        // slot exactly as claimed. Two readings that differ, over fresh rows on the same container.
-        let takingContext = ModelContext(modelContainer)
-        let takenLate = TaskBundle(title: "Late block", dateKey: "2026-06-01", startMin: 1_430, durationMinutes: 60)
-        let takenShort = TaskBundle(title: "Short block", dateKey: "2026-06-01", startMin: 60, durationMinutes: 30)
-        takingContext.insert(takenLate)
-        takingContext.insert(takenShort)
-        takenShort.durationMinutes = 2
-        try takingContext.save()
-
-        let taking = CountingDayDropCommit()
-        #expect(
-            CalendarPageBoardDropSupport.move(
-                takenLate,
-                to: "2026-07-04",
-                modelContext: takingContext,
-                commit: taking.commit
-            ) == .applied
-        )
-        #expect(
-            CalendarPageBoardDropSupport.move(
-                takenShort,
-                to: "2026-07-04",
-                modelContext: takingContext,
-                commit: taking.commit
-            ) == .applied
-        )
-        #expect(takenLate.startMin == 1_380, "the clamp does move the start, so restoring it is a claim")
-        #expect(takenShort.durationMinutes == 5, "and it does raise the duration")
-        #expect(lateBlock.startMin != takenLate.startMin)
-        #expect(shortBlock.durationMinutes != takenShort.durationMinutes)
-        #expect(refusing.commitCount == taking.commitCount)
-    }
-
-    /// The reading the next launch makes of a refused block move.
-    @Test func therefusedDayColumnBlockDropIsInvisibleToASecondContext() throws {
-        let modelContainer = try container()
-        let board = try fixture(in: modelContainer)
-        let refusingCommit = CountingDayDropCommit()
-        refusingCommit.refuses = true
-
-        #expect(
-            CalendarPageBoardDropSupport.move(
-                board.block,
-                to: "2026-07-04",
-                modelContext: board.modelContext,
-                commit: refusingCommit.commit
-            ) == .refused
-        )
-
-        let stored = ModelContext(modelContainer)
-        let storedBlock = try #require(
-            try stored.fetch(FetchDescriptor<TaskBundle>()).first { $0.title == "Morning block" }
-        )
-        #expect(storedBlock.dateKey == "2026-06-01", "the store never took the move")
-        #expect(storedBlock.sortedTasks.count == 3)
-        #expect(storedBlock.sortedTasks.allSatisfy { $0.scheduledDate == "2026-06-01" })
-        #expect(storedBlock.sortedTasks.allSatisfy { !$0.calendarEventID.isEmpty })
-    }
+    // T-3170 retired the three Block-move refusal/slot/store tests with the move chain.
+    // Card-drop refusal, sibling restoration and second-context checks above remain live.
 
     // MARK: - Resolution happens before anything is written
 
     /// A day the board cannot place a drop on must never reach `commit`, because the app has one
     /// `ModelContext` and committing over a drop that moved nothing commits whatever unrelated
-    /// pending work it happens to be holding — `unschedule`'s reason, asked of both day drops. The
+    /// pending work it happens to be holding — the same reason the rail drop guards it. The
     /// two readings are asserted to **differ**, so a path that simply never commits cannot pass.
     @Test func adayColumnDropWithNoDayNeverReachesTheCommit() throws {
         let modelContainer = try container()
@@ -539,14 +378,6 @@ struct CalendarBoardDayDropCommitTests {
                 on: "",
                 modelContext: board.modelContext,
                 reconciler: .inert,
-                commit: unplaceable.commit
-            ) == .resolvedNothing
-        )
-        #expect(
-            CalendarPageBoardDropSupport.move(
-                board.block,
-                to: "",
-                modelContext: board.modelContext,
                 commit: unplaceable.commit
             ) == .resolvedNothing
         )
@@ -564,18 +395,10 @@ struct CalendarBoardDayDropCommitTests {
                 commit: placeable.commit
             ) == .applied
         )
-        #expect(
-            CalendarPageBoardDropSupport.move(
-                board.block,
-                to: "2026-07-04",
-                modelContext: board.modelContext,
-                commit: placeable.commit
-            ) == .applied
-        )
-        #expect(placeable.commitCount == 2)
+        #expect(placeable.commitCount == 1)
         #expect(
             unplaceable.commitCount != placeable.commitCount,
-            "two unplaceable drops and two placeable ones must not commit the same number of times"
+            "an unplaceable drop and a placeable one must not commit the same number of times"
         )
     }
 
@@ -601,42 +424,19 @@ struct CalendarBoardDayDropCommitTests {
 
         #expect(counter.commitCount == 6)
 
-        for index in 0..<6 {
-            let board = try fixture(in: modelContainer)
-            #expect(
-                CalendarPageBoardDropSupport.move(
-                    board.block,
-                    to: "2026-08-0\(index + 1)",
-                    modelContext: board.modelContext,
-                    commit: counter.commit
-                ) == .applied
-            )
-        }
 
-        #expect(counter.commitCount == 12, "a block move is one commit too, however many members it drags")
     }
 
     // MARK: - What the surface does with the three answers
 
-    /// The commit is only half of it. Both of these drops reported through a `Void` callback whose
-    /// caller answered `.dropDestination` `true` regardless, so the defect lived in two files and
-    /// the fix has to as well.
+    /// The commit is only half of it: the task callback must carry a refusal to the column.
     @Test func theCalendarBoardNamesARefusedDayColumnDropOnScreen() throws {
         let source = try CadenceCommitSurfaceScan.scanned(
             "Cadence/macOS/Views/CalendarPageBoardSupportViews.swift"
         )
 
-        // Three declarations, deliberately named apart: `schedule`/`move` are the units that
-        // commit, and `handleDayColumnDrop` is the view's mapping of their three answers onto the
-        // one `Bool` the column reads. `declarationBody(named:)` asserts there is exactly one of
-        // each, so a second copy cannot hide behind a name.
-        //
-        // It was four. [[T-3170]] deleted `handleBlockMoveDrop` with the Block card the day column
-        // drew — there is no longer a board gesture that moves a whole block to another day. The
-        // unit it called, `CalendarPageBoardDropSupport.move`, is KEPT and still asserted below:
-        // it is reached only by this suite now, and it goes with the rest of the block-move story
-        // when the surfaces that edit an existing block are removed, not half of it here.
-        for unit in ["schedule", "move"] {
+        // The task drop is the one day-column mutation left after T-3170.
+        for unit in ["schedule"] {
             let body = try CadenceCommitSurfaceScan.declarationBody(named: unit, in: source)
             #expect(!body.contains("try? "), "\(unit): the swallowed commit is gone")
             #expect(
@@ -648,11 +448,6 @@ struct CalendarBoardDayDropCommitTests {
             try CadenceCommitSurfaceScan.declarationBody(named: "schedule", in: source)
                 .contains("alsoRestoring: blockSiblings"),
             "the card drop snapshots the block members its detach renumbers"
-        )
-        #expect(
-            try CadenceCommitSurfaceScan.declarationBody(named: "move", in: source)
-                .contains("commitBlockMove("),
-            "the block drop snapshots the block's own slot as well as its members"
         )
 
         for handler in ["handleDayColumnDrop"] {

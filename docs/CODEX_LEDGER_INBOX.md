@@ -816,3 +816,6 @@ The pending host waiter was cancelled, the iPad waiter timed out without acquiri
 
   **Calendar plumbing slice:** remove CalendarPageView’s TaskBundle query, the derived Block day map and the unused Block arrays through month/timeline wrappers and cells. Restore scrolling from the task/event sources the day column actually draws. CadenceCodexCalendarBlockRemovalTests keeps both surviving data paths and rejects the retired query/forwarding.
   **Source attribution so far:** timeline `74a20503`.
+
+  **Dead move slice / T-3214 resolved:** delete CalendarPageBoardDropSupport.move, SchedulingActions.dropBundle, CadenceTaskBundleSlotSnapshot and CadenceTaskFieldEditCommit.commitBlockMove. Retire three Block-only refusal/slot/store tests, remove only the Block arms from mixed tests, and preserve task refusal, sibling restoration, second-context and commit-count assertions. The TaskBundleTests grant is used only for the moved fixture/assertion and its adjacent comment; every subsequent calendar-link check is byte-identical. Keep the task snapshot’s membership/calendar fields.
+  **Source attribution so far:** timeline `74a20503`, calendar `db047ee1`.
