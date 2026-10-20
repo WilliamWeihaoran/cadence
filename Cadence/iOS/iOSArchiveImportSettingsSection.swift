@@ -40,17 +40,17 @@ struct iOSArchiveImportSettingsSection: View {
 
                         VStack(alignment: .leading, spacing: 4) {
                             Text(CadenceArchiveImportPresentation.title)
-                                .font(.system(size: 15, weight: .semibold))
+                                .cadenceFont(.rowTitle, base: 15, weight: .semibold)
                                 .foregroundStyle(Theme.text)
 
                             Text(CadenceArchiveImportPresentation.description)
-                                .font(.system(size: 12))
+                                .cadenceFont(.metadata, base: 12, weight: .regular)
                                 .foregroundStyle(Theme.subdued)
                                 .fixedSize(horizontal: false, vertical: true)
 
                             if let statusMessage = flow.statusMessage {
                                 Text(statusMessage)
-                                    .font(.system(size: 11))
+                                    .cadenceFont(.metadata, base: 11, weight: .regular)
                                     .foregroundStyle(Theme.muted)
                                     .fixedSize(horizontal: false, vertical: true)
                             }
@@ -113,7 +113,7 @@ private struct iOSArchiveImportPreviewSheet: View {
                         VStack(alignment: .leading, spacing: 10) {
                             HStack(spacing: 12) {
                                 Text(CadenceArchiveImportPresentation.modeQuestion)
-                                    .font(.system(size: 13, weight: .semibold))
+                                    .cadenceFont(.controlLabel, base: 13, weight: .semibold)
                                     .foregroundStyle(Theme.text)
 
                                 Spacer(minLength: 12)
@@ -140,7 +140,7 @@ private struct iOSArchiveImportPreviewSheet: View {
                             }
 
                             Text(CadenceArchiveImportPresentation.modeExplanation(mode))
-                                .font(.system(size: 12))
+                                .cadenceFont(.metadata, base: 12, weight: .regular)
                                 .foregroundStyle(Theme.subdued)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
@@ -149,25 +149,25 @@ private struct iOSArchiveImportPreviewSheet: View {
                     iOSSettingsCard {
                         VStack(alignment: .leading, spacing: 10) {
                             Text(CadenceArchiveImportPresentation.planSummary(plan))
-                                .font(.system(size: 13, weight: .semibold))
+                                .cadenceFont(.controlLabel, base: 13, weight: .semibold)
                                 .foregroundStyle(Theme.text)
                                 .fixedSize(horizontal: false, vertical: true)
 
                             let lines = CadenceArchiveImportPresentation.planLines(plan)
                             if !lines.isEmpty {
                                 Text(CadenceArchiveImportPresentation.previewTitle)
-                                    .font(.system(size: 11, weight: .semibold))
+                                    .cadenceFont(.metadata, base: 11, weight: .semibold)
                                     .foregroundStyle(Theme.muted)
 
                                 VStack(spacing: 0) {
                                     ForEach(Array(lines.enumerated()), id: \.element.id) { index, line in
                                         HStack(spacing: 12) {
                                             Text(line.title)
-                                                .font(.system(size: 13))
+                                                .cadenceFont(.controlLabel, base: 13, weight: .regular)
                                                 .foregroundStyle(Theme.text)
                                             Spacer(minLength: 12)
                                             Text(line.detail)
-                                                .font(.system(size: 13))
+                                                .cadenceFont(.controlLabel, base: 13, weight: .regular)
                                                 .foregroundStyle(Theme.subdued)
                                         }
                                         .padding(.vertical, 7)
@@ -182,14 +182,14 @@ private struct iOSArchiveImportPreviewSheet: View {
                             // to repair rows that differ from the archive is worth acting on.
                             if let note = CadenceArchiveImportPresentation.matchedDifferencesNote(plan) {
                                 Text(note)
-                                    .font(.system(size: 11))
+                                    .cadenceFont(.metadata, base: 11, weight: .regular)
                                     .foregroundStyle(Theme.amber)
                                     .fixedSize(horizontal: false, vertical: true)
                             }
 
                             if let note = CadenceArchiveImportPresentation.unreadableKindsNote(plan) {
                                 Text(note)
-                                    .font(.system(size: 11))
+                                    .cadenceFont(.metadata, base: 11, weight: .regular)
                                     .foregroundStyle(Theme.amber)
                                     .fixedSize(horizontal: false, vertical: true)
                             }
@@ -199,7 +199,7 @@ private struct iOSArchiveImportPreviewSheet: View {
                             // inert, not lost.
                             if let note = CadenceArchiveImportPresentation.calendarLinksNote(plan) {
                                 Text(note)
-                                    .font(.system(size: 11))
+                                    .cadenceFont(.metadata, base: 11, weight: .regular)
                                     .foregroundStyle(Theme.dim)
                                     .fixedSize(horizontal: false, vertical: true)
                             }
@@ -210,7 +210,7 @@ private struct iOSArchiveImportPreviewSheet: View {
                     // and this is the last moment the reader can learn that from the app rather
                     // than from the result.
                     Text(CadenceArchiveImportPresentation.neverDeletesNote)
-                        .font(.system(size: 11))
+                        .cadenceFont(.metadata, base: 11, weight: .regular)
                         .foregroundStyle(Theme.dim)
                         .fixedSize(horizontal: false, vertical: true)
 
@@ -230,6 +230,7 @@ private struct iOSArchiveImportPreviewSheet: View {
                 .padding(.bottom, 28)
             }
             .scrollIndicators(.hidden)
+            .cadenceScaledTypography()
             .background(Theme.bg.ignoresSafeArea())
             .navigationTitle(CadenceArchiveImportPresentation.title)
             .navigationBarTitleDisplayMode(.inline)

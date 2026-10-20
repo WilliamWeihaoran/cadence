@@ -466,15 +466,12 @@ struct CadenceTagChipScaleTests {
         let undeclaredControls: Set<String> = [
             "Cadence/Shared/Components/HabitProgressViews.swift",
             "Cadence/iOS/iOSAINoteActionsViews.swift",
-            "Cadence/iOS/iOSArchiveImportSettingsSection.swift",
             "Cadence/iOS/iOSCalendarSettingsSection.swift",
             "Cadence/iOS/iOSDataExportSettingsSection.swift",
-            "Cadence/iOS/iOSDataResetSettingsSection.swift",
             "Cadence/iOS/iOSFeatureComponents.swift",
             "Cadence/iOS/iOSFeatureDetailViews.swift",
             "Cadence/iOS/iOSFocusView.swift",
             "Cadence/iOS/iOSInboxRemindersSection.swift",
-            "Cadence/iOS/iOSListDeletionSupport.swift",
             "Cadence/iOS/iOSListEditorViews.swift",
             "Cadence/iOS/iOSListNotesView.swift",
             "Cadence/iOS/iOSListSupportViews.swift",
@@ -487,28 +484,27 @@ struct CadenceTagChipScaleTests {
             "Cadence/iOS/iOSRootSidebar.swift",
             "Cadence/iOS/iOSSearchSupportViews.swift",
             "Cadence/iOS/iOSSettingsComponents.swift",
-            "Cadence/iOS/iOSSettingsContextSection.swift",
             "Cadence/iOS/iOSSettingsOverviewSections.swift",
             "Cadence/iOS/iOSSettingsTagsSection.swift",
             "Cadence/iOS/iOSSettingsTemplateAndListSections.swift",
-            "Cadence/iOS/iOSSettingsView.swift",
             "Cadence/iOS/iOSSidebarLayoutSettingsSection.swift",
             // [[T-1477]], and the same answer as T-1841 below for the same reason. The phone's
             // backup list draws an `iOSIconTile` per row and `iOSActionButton` for create, clean,
-            // restore and cancel. Undeclared, like every other card on Settings → Data Safety and
-            // like `iOSSettingsView` that hosts them: the environment default is that page's
-            // answer, and this section renders as the rest of that screen does.
+            // restore and cancel. This section inherits the declared Settings workflow scope.
             "Cadence/iOS/iOSStoreBackupSettingsSection.swift",
             "Cadence/iOS/iOSTaskDetailSheetSections.swift",
             "Cadence/iOS/iOSTodayCompactViews.swift",
             // T-1841. The store-folder list on Settings → Data Safety draws an `iOSIconTile` for
-            // each folder. Undeclared, like every other section on that page and like the page
-            // itself: it is inside `iOSSettingsView`, which is undeclared, so the environment
-            // default is its answer and it renders as the rest of that screen does.
+            // each folder. This section inherits the declared Settings workflow scope.
             "Cadence/iOS/iOSUnmanagedStoreSettingsSection.swift",
             "Cadence/iOS/iOSWindDownConfirmation.swift",
         ]
         let declaredControls: Set<String> = [
+            "Cadence/iOS/iOSSettingsView.swift",
+            "Cadence/iOS/iOSSettingsContextSection.swift",
+            "Cadence/iOS/iOSArchiveImportSettingsSection.swift",
+            "Cadence/iOS/iOSDataResetSettingsSection.swift",
+            "Cadence/iOS/iOSListDeletionSupport.swift",
             "Cadence/iOS/iOSCalendarEventEditSheet.swift",
             "Cadence/iOS/iOSCalendarQuickCreateSheet.swift",
             "Cadence/iOS/iOSTaskDetailSheet.swift",

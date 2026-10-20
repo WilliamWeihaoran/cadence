@@ -48,7 +48,7 @@ struct iOSStoreBackupSettingsSection: View {
                     VStack(alignment: .leading, spacing: 0) {
                         if backups.isEmpty {
                             Text(CadenceStoreBackupPresentation.noBackupsText)
-                                .font(.system(size: 13))
+                                .cadenceFont(.controlLabel, base: 13, weight: .regular)
                                 .foregroundStyle(Theme.dim)
                         } else {
                             let listed = Array(backups.prefix(CadenceStoreBackupPresentation.listedBackupLimit))
@@ -104,18 +104,18 @@ struct iOSStoreBackupSettingsSection: View {
 
                         VStack(alignment: .leading, spacing: 4) {
                             Text(CadenceStoreBackupPresentation.description)
-                                .font(.system(size: 12))
+                                .cadenceFont(.metadata, base: 12, weight: .regular)
                                 .foregroundStyle(Theme.subdued)
                                 .fixedSize(horizontal: false, vertical: true)
 
                             Text(CadenceDataExportPresentation.localBackupLocationNote)
-                                .font(.system(size: 12))
+                                .cadenceFont(.metadata, base: 12, weight: .regular)
                                 .foregroundStyle(Theme.subdued)
                                 .fixedSize(horizontal: false, vertical: true)
 
                             if let statusMessage {
                                 Text(statusMessage)
-                                    .font(.system(size: 11))
+                                    .cadenceFont(.metadata, base: 11, weight: .regular)
                                     .foregroundStyle(Theme.muted)
                                     .fixedSize(horizontal: false, vertical: true)
                             }
@@ -153,7 +153,7 @@ struct iOSStoreBackupSettingsSection: View {
             iOSSettingsCard {
                 VStack(alignment: .leading, spacing: 12) {
                     Text(CadenceStoreBackupPresentation.pendingRestoreDescription(backup: pending.snapshot, on: .phone))
-                        .font(.system(size: 12))
+                        .cadenceFont(.metadata, base: 12, weight: .regular)
                         .foregroundStyle(Theme.subdued)
                         .fixedSize(horizontal: false, vertical: true)
 
@@ -175,14 +175,14 @@ struct iOSStoreBackupSettingsSection: View {
             iOSSettingsCard {
                 VStack(alignment: .leading, spacing: 8) {
                     Text(CadenceStoreBackupPresentation.unrestoredExplanation)
-                        .font(.system(size: 12))
+                        .cadenceFont(.metadata, base: 12, weight: .regular)
                         .foregroundStyle(Theme.dim)
                         .fixedSize(horizontal: false, vertical: true)
 
                     // Read-only, as on the Mac: it may be the only copy of those files.
                     ForEach(retainedUnrestoredDirectories, id: \.self) { directoryURL in
                         Text(directoryURL.path)
-                            .font(.system(size: 12, design: .monospaced))
+                            .cadenceFont(.metadata, base: 12, weight: .regular, design: .monospaced)
                             .foregroundStyle(Theme.text)
                             .textSelection(.enabled)
                             .fixedSize(horizontal: false, vertical: true)
@@ -240,10 +240,10 @@ private struct iOSStoreBackupRow: View {
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(CadenceStoreBackupPresentation.rowTitle(backup))
-                    .font(.system(size: 13, weight: .semibold))
+                    .cadenceFont(.controlLabel, base: 13, weight: .semibold)
                     .foregroundStyle(Theme.text)
                 Text(CadenceStoreBackupPresentation.rowDetail(backup))
-                    .font(.system(size: 11))
+                    .cadenceFont(.metadata, base: 11, weight: .regular)
                     .foregroundStyle(Theme.dim)
             }
 

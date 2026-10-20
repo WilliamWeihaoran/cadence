@@ -57,10 +57,10 @@ struct iOSSyncSettingsSection: View {
 
                         VStack(alignment: .leading, spacing: 3) {
                             Text(health.title)
-                                .font(.system(size: 15, weight: .semibold))
+                                .cadenceFont(.rowTitle, base: 15, weight: .semibold)
                                 .foregroundStyle(Theme.text)
                             Text(health.detail)
-                                .font(.system(size: 12))
+                                .cadenceFont(.metadata, base: 12, weight: .regular)
                                 .foregroundStyle(Theme.subdued)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
@@ -87,7 +87,7 @@ struct iOSSyncSettingsSection: View {
 
                         if let lastChecked = probe.lastChecked {
                             Text("Last checked \(lastChecked.formatted(date: .abbreviated, time: .shortened))")
-                                .font(.system(size: 11))
+                                .cadenceFont(.metadata, base: 11, weight: .regular)
                                 .foregroundStyle(Theme.dim)
                         }
                     }
@@ -110,10 +110,10 @@ struct iOSSyncSettingsSection: View {
 
                         VStack(alignment: .leading, spacing: 3) {
                             Text(activity.headline)
-                                .font(.system(size: 15, weight: .semibold))
+                                .cadenceFont(.rowTitle, base: 15, weight: .semibold)
                                 .foregroundStyle(Theme.text)
                             Text(activity.statusLine(now: Date()))
-                                .font(.system(size: 12))
+                                .cadenceFont(.metadata, base: 12, weight: .regular)
                                 .foregroundStyle(Theme.subdued)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
@@ -168,10 +168,10 @@ struct iOSLocalDataSettingsSection: View {
 
                             VStack(alignment: .leading, spacing: 2) {
                                 Text("Simulator Samples")
-                                    .font(.system(size: 14, weight: .semibold))
+                                    .cadenceFont(.rowTitle, base: 14, weight: .semibold)
                                     .foregroundStyle(Theme.text)
                                 Text("Adds Today, Inbox, and timed tasks for UI review.")
-                                    .font(.system(size: 12))
+                                    .cadenceFont(.metadata, base: 12, weight: .regular)
                                     .foregroundStyle(Theme.subdued)
                             }
 
@@ -188,7 +188,7 @@ struct iOSLocalDataSettingsSection: View {
 
                         if let sampleDataStatus {
                             Text(sampleDataStatus)
-                                .font(.system(size: 11, weight: .medium))
+                                .cadenceFont(.metadata, base: 11, weight: .medium)
                                 .foregroundStyle(Theme.dim)
                         }
                     }
@@ -364,7 +364,7 @@ struct iOSNavigationSettingsSection: View {
             }
 
             Text("Used when a list does not have a saved page.")
-                .font(.system(size: 11))
+                .cadenceFont(.metadata, base: 11, weight: .regular)
                 .foregroundStyle(Theme.dim)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.top, 2)
@@ -462,7 +462,7 @@ private struct iOSReviewLinkButton: View {
         if let url = link.url {
             Link(destination: url) {
                 Label(link.title, systemImage: link.systemImage)
-                    .font(.system(size: 13, weight: .semibold))
+                    .cadenceFont(.controlLabel, base: 13, weight: .semibold)
                     .foregroundStyle(Theme.blue)
                     .frame(maxWidth: .infinity)
                     .frame(minHeight: 36)
@@ -481,10 +481,10 @@ private struct iOSReviewLinkButton: View {
             #if DEBUG
             VStack(alignment: .leading, spacing: 4) {
                 Label(link.title, systemImage: link.systemImage)
-                    .font(.system(size: 13, weight: .semibold))
+                    .cadenceFont(.controlLabel, base: 13, weight: .semibold)
                     .foregroundStyle(Theme.dim)
                 Text(link.missingMessage)
-                    .font(.system(size: 11, weight: .medium))
+                    .cadenceFont(.metadata, base: 11, weight: .medium)
                     .foregroundStyle(Theme.amber)
                     .fixedSize(horizontal: false, vertical: true)
             }

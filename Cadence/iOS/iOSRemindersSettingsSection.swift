@@ -57,11 +57,11 @@ struct iOSRemindersSettingsSection: View {
 
                 VStack(alignment: .leading, spacing: 4) {
                     Text(state.accessTitle)
-                        .font(.system(size: 15, weight: .semibold))
+                        .cadenceFont(.rowTitle, base: 15, weight: .semibold)
                         .foregroundStyle(Theme.text)
 
                     Text(state.accessMessage)
-                        .font(.system(size: 12))
+                        .cadenceFont(.metadata, base: 12, weight: .regular)
                         .foregroundStyle(Theme.subdued)
                         .fixedSize(horizontal: false, vertical: true)
 
@@ -101,7 +101,7 @@ struct iOSRemindersSettingsSection: View {
                         ProgressView()
                             .controlSize(.small)
                         Text("Loading reminders...")
-                            .font(.system(size: 14))
+                            .cadenceFont(.controlLabel, base: 14, weight: .regular)
                             .foregroundStyle(Theme.dim)
                         Spacer(minLength: 0)
                     }
@@ -144,6 +144,8 @@ struct iOSRemindersSettingsSection: View {
 }
 
 private struct iOSRemindersListRow: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.cadenceTypographyScaling) private var scaling
     let row: RemindersListSummaryRow
 
     var body: some View {
@@ -156,14 +158,14 @@ private struct iOSRemindersListRow: View {
             )
 
             Text(row.title)
-                .font(.system(size: 15, weight: .medium))
+                .cadenceFont(.rowTitle, base: 15, weight: .medium)
                 .foregroundStyle(Theme.text)
-                .lineLimit(1)
+                .lineLimit(CadenceSettingsTypographyLayout.stacks(at: dynamicTypeSize, scaling: scaling) ? nil : 1)
 
             Spacer(minLength: 8)
 
             Text(row.count == 1 ? "1 open" : "\(row.count) open")
-                .font(.system(size: 12))
+                .cadenceFont(.metadata, base: 12, weight: .regular)
                 .foregroundStyle(Theme.dim)
         }
         .padding(.vertical, iOSSettingsMetrics.rowVerticalPadding)

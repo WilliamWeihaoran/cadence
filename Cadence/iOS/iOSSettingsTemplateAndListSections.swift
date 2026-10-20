@@ -2,6 +2,8 @@
 import SwiftUI
 
 struct iOSTemplatesSettingsSection: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.cadenceTypographyScaling) private var scaling
     @Binding var templateOverridesRaw: String
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     /// The width the card's own content was handed, which is **not** what the size class says about
@@ -30,7 +32,8 @@ struct iOSTemplatesSettingsSection: View {
     /// too narrow to split, which on the target iPad in portrait it is: the chain from pane to card
     /// content costs 337pt, so 646pt of pane left this `HStack` 341 and the editor 16 of it.
     private var cardLayout: CadenceSettingsCardLayout {
-        CadenceSettingsTemplatesCardLayout.layout(
+        if CadenceSettingsTypographyLayout.stacks(at: dynamicTypeSize, scaling: scaling) { return .oneColumn }
+        return CadenceSettingsTemplatesCardLayout.layout(
             isRegularWidth: horizontalSizeClass == .regular,
             hostWidth: cardContentWidth,
             isDesktop: false
@@ -57,11 +60,11 @@ struct iOSTemplatesSettingsSection: View {
             iOSSettingsCard {
                 HStack(alignment: .top, spacing: 12) {
                     Image(systemName: "info.circle.fill")
-                        .font(.system(size: 14, weight: .semibold))
+                        .cadenceFont(.metadata, base: 14, weight: .semibold)
                         .foregroundStyle(Theme.blue)
 
                     Text(CadenceTemplateSettingsCopy.editScopeFootnote)
-                        .font(.system(size: 12))
+                        .cadenceFont(.metadata, base: 12, weight: .regular)
                         .foregroundStyle(Theme.dim)
                         .fixedSize(horizontal: false, vertical: true)
 
@@ -148,14 +151,14 @@ struct iOSTemplatesSettingsSection: View {
                 HStack(alignment: .firstTextBaseline, spacing: 10) {
                     VStack(alignment: .leading, spacing: 3) {
                         Text(selectedTemplate.title)
-                            .font(.system(size: 17, weight: .semibold))
+                            .cadenceFont(.rowTitle, base: 17, weight: .semibold)
                             .foregroundStyle(Theme.text)
-                            .lineLimit(1)
+                            .lineLimit(CadenceSettingsTypographyLayout.stacks(at: dynamicTypeSize, scaling: scaling) ? nil : 1)
 
                         Text(selectedTemplate.subtitle)
-                            .font(.system(size: 12, weight: .medium))
+                            .cadenceFont(.metadata, base: 12, weight: .medium)
                             .foregroundStyle(Theme.dim)
-                            .lineLimit(2)
+                            .lineLimit(CadenceSettingsTypographyLayout.stacks(at: dynamicTypeSize, scaling: scaling) ? nil : 2)
                     }
 
                     Spacer(minLength: 0)
@@ -380,6 +383,8 @@ struct iOSListsLifecycleSettingsSection: View {
 }
 
 struct iOSAISettingsSection: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.cadenceTypographyScaling) private var scaling
     let aiSettingsManager: AISettingsManager
     @Binding var aiAPIKeyDraft: String
 
@@ -392,26 +397,26 @@ struct iOSAISettingsSection: View {
                     HStack(alignment: .top, spacing: 13) {
                         RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous)
                             .fill((aiSettingsManager.hasAPIKey ? Theme.green : Theme.dim).opacity(0.16))
-                            .frame(width: 42, height: 42)
+                            .frame(width: CadenceSettingsTypographyLayout.glyphFrame(42, glyph: 18, role: .rowTitle, at: dynamicTypeSize, scaling: scaling), height: CadenceSettingsTypographyLayout.glyphFrame(42, glyph: 18, role: .rowTitle, at: dynamicTypeSize, scaling: scaling))
                             .overlay {
                                 Image(systemName: "sparkles")
-                                    .font(.system(size: 18, weight: .semibold))
+                                    .cadenceFont(.rowTitle, base: 18, weight: .semibold)
                                     .foregroundStyle(aiSettingsManager.hasAPIKey ? Theme.green : Theme.dim)
                             }
 
                         VStack(alignment: .leading, spacing: 5) {
                             Text("OpenAI API Key")
-                                .font(.system(size: 15, weight: .semibold))
+                                .cadenceFont(.rowTitle, base: 15, weight: .semibold)
                                 .foregroundStyle(Theme.text)
 
                             Text(CadenceAISettingsCopy.keyPrivacyDisclosure)
-                                .font(.system(size: 12))
+                                .cadenceFont(.metadata, base: 12, weight: .regular)
                                 .foregroundStyle(Theme.dim)
                                 .fixedSize(horizontal: false, vertical: true)
 
                             if let statusMessage = aiSettingsManager.statusMessage {
                                 Text(statusMessage)
-                                    .font(.system(size: 11, weight: .medium))
+                                    .cadenceFont(.metadata, base: 11, weight: .medium)
                                     .foregroundStyle(Theme.muted)
                                     .fixedSize(horizontal: false, vertical: true)
                             }
@@ -520,6 +525,8 @@ struct iOSAISettingsSection: View {
 }
 
 private struct iOSTemplateSettingsRow: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.cadenceTypographyScaling) private var scaling
     let template: NoteTemplate
     let isSelected: Bool
     let isCustomized: Bool
@@ -535,9 +542,9 @@ private struct iOSTemplateSettingsRow: View {
                     VStack(alignment: .leading, spacing: 2) {
                         HStack(spacing: 6) {
                             Text(template.title)
-                                .font(.system(size: 13, weight: .semibold))
+                                .cadenceFont(.controlLabel, base: 13, weight: .semibold)
                                 .foregroundStyle(isSelected ? Theme.text : Theme.muted)
-                                .lineLimit(1)
+                                .lineLimit(CadenceSettingsTypographyLayout.stacks(at: dynamicTypeSize, scaling: scaling) ? nil : 1)
 
                             if isCustomized {
                                 Circle()
@@ -547,9 +554,9 @@ private struct iOSTemplateSettingsRow: View {
                         }
 
                         Text(template.subtitle)
-                            .font(.system(size: 11))
+                            .cadenceFont(.metadata, base: 11, weight: .regular)
                             .foregroundStyle(Theme.dim)
-                            .lineLimit(1)
+                            .lineLimit(CadenceSettingsTypographyLayout.stacks(at: dynamicTypeSize, scaling: scaling) ? nil : 1)
                     }
 
                     Spacer(minLength: 0)
@@ -574,6 +581,8 @@ private struct iOSTemplateSettingsRow: View {
 }
 
 private struct iOSTemplateSettingsChip: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.cadenceTypographyScaling) private var scaling
     let template: NoteTemplate
     let isSelected: Bool
     let isCustomized: Bool
@@ -583,11 +592,11 @@ private struct iOSTemplateSettingsChip: View {
         Button(action: action) {
             HStack(spacing: 8) {
                 Image(systemName: "doc.text")
-                    .font(.system(size: 12, weight: .semibold))
+                    .cadenceFont(.metadata, base: 12, weight: .semibold)
 
                 Text(template.title)
-                    .font(.system(size: 12, weight: .semibold))
-                    .lineLimit(1)
+                    .cadenceFont(.metadata, base: 12, weight: .semibold)
+                    .lineLimit(CadenceSettingsTypographyLayout.stacks(at: dynamicTypeSize, scaling: scaling) ? nil : 1)
 
                 if isCustomized {
                     Circle()
@@ -608,15 +617,17 @@ private struct iOSTemplateSettingsChip: View {
 }
 
 private struct iOSTemplateIcon: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.cadenceTypographyScaling) private var scaling
     let isSelected: Bool
 
     var body: some View {
         RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous)
             .fill((isSelected ? Theme.blue : Theme.dim).opacity(isSelected ? 0.18 : 0.12))
-            .frame(width: iOSSettingsMetrics.glyphSlot, height: iOSSettingsMetrics.glyphSlot)
+            .frame(width: CadenceSettingsTypographyLayout.glyphFrame(iOSSettingsMetrics.glyphSlot, glyph: 12, at: dynamicTypeSize, scaling: scaling), height: CadenceSettingsTypographyLayout.glyphFrame(iOSSettingsMetrics.glyphSlot, glyph: 12, at: dynamicTypeSize, scaling: scaling))
             .overlay {
                 Image(systemName: "doc.text")
-                    .font(.system(size: 12, weight: .semibold))
+                    .cadenceFont(.controlLabel, base: 12, weight: .semibold)
                     .foregroundStyle(isSelected ? Theme.blue : Theme.dim)
             }
     }
@@ -655,6 +666,8 @@ private struct iOSTemplateBodyEditor: View {
 }
 
 private struct iOSListLifecycleSettingsRow: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.cadenceTypographyScaling) private var scaling
     let icon: String
     let title: String
     let subtitle: String
@@ -671,7 +684,10 @@ private struct iOSListLifecycleSettingsRow: View {
     }
 
     var body: some View {
-        HStack(alignment: .center, spacing: iOSSettingsMetrics.glyphLabelSpacing) {
+        let layout = CadenceSettingsTypographyLayout.stacks(at: dynamicTypeSize, scaling: scaling)
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 12))
+            : AnyLayout(HStackLayout(alignment: .center, spacing: iOSSettingsMetrics.glyphLabelSpacing))
+        layout {
             iOSIconTile(
                 systemImage: icon,
                 color: color,
@@ -682,17 +698,17 @@ private struct iOSListLifecycleSettingsRow: View {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 7) {
                     Text(title)
-                        .font(.system(size: 15, weight: .semibold))
+                        .cadenceFont(.rowTitle, base: 15, weight: .semibold)
                         .foregroundStyle(Theme.text)
-                        .lineLimit(1)
+                        .lineLimit(CadenceSettingsTypographyLayout.stacks(at: dynamicTypeSize, scaling: scaling) ? nil : 1)
 
                     iOSMetaChip(label: statusLabel, color: statusTint)
                 }
 
                 Text(subtitle)
-                    .font(.system(size: 12))
+                    .cadenceFont(.metadata, base: 12, weight: .regular)
                     .foregroundStyle(Theme.subdued)
-                    .lineLimit(1)
+                    .lineLimit(CadenceSettingsTypographyLayout.stacks(at: dynamicTypeSize, scaling: scaling) ? nil : 1)
             }
 
             Spacer(minLength: 10)
@@ -716,6 +732,8 @@ private struct iOSListLifecycleSettingsRow: View {
 }
 
 private struct iOSAISettingsDisclosureRow: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.cadenceTypographyScaling) private var scaling
     let icon: String
     let title: String
     let detail: String
@@ -723,17 +741,17 @@ private struct iOSAISettingsDisclosureRow: View {
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
             Image(systemName: icon)
-                .font(.system(size: 12, weight: .semibold))
+                .cadenceFont(.metadata, base: 12, weight: .semibold)
                 .foregroundStyle(Theme.blue)
-                .frame(width: 18)
+                .frame(width: CadenceSettingsTypographyLayout.glyphFrame(18, glyph: 12, role: .metadata, at: dynamicTypeSize, scaling: scaling))
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
-                    .font(.system(size: 12, weight: .semibold))
+                    .cadenceFont(.metadata, base: 12, weight: .semibold)
                     .foregroundStyle(Theme.text)
 
                 Text(detail)
-                    .font(.system(size: 11))
+                    .cadenceFont(.metadata, base: 11, weight: .regular)
                     .foregroundStyle(Theme.dim)
                     .fixedSize(horizontal: false, vertical: true)
             }

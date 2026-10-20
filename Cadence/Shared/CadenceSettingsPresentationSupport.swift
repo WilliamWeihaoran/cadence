@@ -222,3 +222,19 @@ enum CadenceMobileSettingsNavigation {
         return kind
     }
 }
+
+/// Settings reflows labels and controls through the existing typography boundary.
+nonisolated enum CadenceSettingsTypographyLayout {
+    static func stacks(at size: DynamicTypeSize, scaling: CadenceTypographyScaling) -> Bool {
+        scaling == .enabled && CadenceTypeScale.isAccessibilitySize(size)
+    }
+
+    static func usesRail(isRegularWidth: Bool, at size: DynamicTypeSize) -> Bool {
+        isRegularWidth && !CadenceTypeScale.isAccessibilitySize(size)
+    }
+
+    static func glyphFrame(_ base: CGFloat, glyph: CGFloat, role: CadenceTypographyRole = .controlLabel,
+                           at size: DynamicTypeSize, scaling: CadenceTypographyScaling) -> CGFloat {
+        base + CadenceTypeScale.growth(role, base: glyph, at: size, scaling: scaling) * CadenceTypeScale.lineHeightRatio
+    }
+}

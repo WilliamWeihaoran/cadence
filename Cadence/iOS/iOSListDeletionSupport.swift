@@ -197,11 +197,11 @@ struct iOSListDeleteConfirmationSheet: View {
 
                                 VStack(alignment: .leading, spacing: 4) {
                                     Text("This cannot be undone")
-                                        .font(.system(size: 15, weight: .semibold))
+                                        .cadenceFont(.rowTitle, base: 15, weight: .semibold)
                                         .foregroundStyle(Theme.text)
 
                                     Text(target.kind.cascadeSentence)
-                                        .font(.system(size: 12))
+                                        .cadenceFont(.metadata, base: 12, weight: .regular)
                                         .foregroundStyle(Theme.subdued)
                                         .fixedSize(horizontal: false, vertical: true)
                                 }
@@ -212,7 +212,7 @@ struct iOSListDeleteConfirmationSheet: View {
                             iOSRowDivider()
 
                             Text("Cadence syncs through your private iCloud database, so this deletion reaches your other devices.")
-                                .font(.system(size: 12))
+                                .cadenceFont(.metadata, base: 12, weight: .regular)
                                 .foregroundStyle(Theme.dim)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
@@ -231,7 +231,7 @@ struct iOSListDeleteConfirmationSheet: View {
                                 )
 
                                 Text(target.name)
-                                    .font(.system(size: 15, weight: .semibold))
+                                    .cadenceFont(.rowTitle, base: 15, weight: .semibold)
                                     .foregroundStyle(Theme.text)
                                     .lineLimit(2)
 
@@ -242,7 +242,7 @@ struct iOSListDeleteConfirmationSheet: View {
 
                             if summary.isEmpty {
                                 Text(target.kind.nothingElseFiledSentence)
-                                    .font(.system(size: 12))
+                                    .cadenceFont(.metadata, base: 12, weight: .regular)
                                     .foregroundStyle(Theme.subdued)
                                     .fixedSize(horizontal: false, vertical: true)
                             } else {
@@ -250,11 +250,11 @@ struct iOSListDeleteConfirmationSheet: View {
                                     ForEach(summary.lostItemLines, id: \.self) { line in
                                         HStack(spacing: 8) {
                                             Image(systemName: "trash")
-                                                .font(.system(size: 11, weight: .semibold))
+                                                .cadenceFont(.controlLabel, base: 11, weight: .semibold)
                                                 .foregroundStyle(Theme.red)
 
                                             Text(line)
-                                                .font(.system(size: 13, weight: .medium))
+                                                .cadenceFont(.controlLabel, base: 13, weight: .medium)
                                                 .foregroundStyle(Theme.text)
 
                                             Spacer(minLength: 0)
@@ -275,7 +275,7 @@ struct iOSListDeleteConfirmationSheet: View {
 
                     if let failureNotice {
                         Text(failureNotice)
-                            .font(.system(size: 13, weight: .semibold))
+                            .cadenceFont(.controlLabel, base: 13, weight: .semibold)
                             .foregroundStyle(Theme.red)
                             .fixedSize(horizontal: false, vertical: true)
                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -307,6 +307,7 @@ struct iOSListDeleteConfirmationSheet: View {
                 }
             }
         }
+        .cadenceScaledTypography()
         .preferredColorScheme(.dark)
     }
 

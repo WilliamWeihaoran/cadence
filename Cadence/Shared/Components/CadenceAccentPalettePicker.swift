@@ -47,7 +47,7 @@ struct CadenceAccentPalettePicker: View {
             }
 
             Text(CadenceAccentPalettePresentation.note)
-                .font(.system(size: 11))
+                .cadenceFont(.metadata, base: 11, weight: .regular)
                 .foregroundStyle(Theme.subdued)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.top, 2)
@@ -69,16 +69,16 @@ struct CadenceAccentPaletteRow: View {
             VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 8) {
                     Text(palette.name)
-                        .font(.system(size: 13, weight: .semibold))
+                        .cadenceFont(.controlLabel, base: 13, weight: .semibold)
                         .foregroundStyle(Theme.text)
                     Spacer(minLength: 0)
                     Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                        .font(.system(size: 14))
+                        .cadenceFont(.controlLabel, base: 14, weight: .regular)
                         .foregroundStyle(isSelected ? Theme.blue : Theme.dim)
                 }
 
                 Text(palette.detail)
-                    .font(.system(size: 11))
+                    .cadenceFont(.metadata, base: 11, weight: .regular)
                     .foregroundStyle(Theme.muted)
                     .fixedSize(horizontal: false, vertical: true)
 

@@ -45,7 +45,7 @@ struct iOSUnmanagedStoreSettingsSection: View {
                     iOSSettingsCard {
                         VStack(alignment: .leading, spacing: 0) {
                             Text(Self.explanation)
-                                .font(.system(size: 12))
+                                .cadenceFont(.metadata, base: 12, weight: .regular)
                                 .foregroundStyle(Theme.dim)
                                 .fixedSize(horizontal: false, vertical: true)
                                 .padding(.bottom, 12)
@@ -106,7 +106,7 @@ private struct iOSUnmanagedStoreDirectoryRow: View {
                 // makes the folder nameable, and none of these are guessable. Selectable because
                 // on a phone quoting it to someone is the only thing a reader can do with it.
                 Text(directory.url.path)
-                    .font(.system(size: 12, design: .monospaced))
+                    .cadenceFont(.metadata, base: 12, weight: .regular, design: .monospaced)
                     .foregroundStyle(Theme.text)
                     .textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
@@ -114,7 +114,7 @@ private struct iOSUnmanagedStoreDirectoryRow: View {
                 // Kind, size and when a store file in it was last written — the shared string, so
                 // the two platforms cannot come to describe the same folder differently.
                 Text(directory.displayDetail)
-                    .font(.system(size: 11))
+                    .cadenceFont(.metadata, base: 11, weight: .regular)
                     .foregroundStyle(Theme.dim)
                     .fixedSize(horizontal: false, vertical: true)
             }

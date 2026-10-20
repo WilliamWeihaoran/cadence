@@ -217,6 +217,8 @@ private struct iOSTagList: View {
 }
 
 private struct iOSTagSettingsRow: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.cadenceTypographyScaling) private var scaling
     let tag: Tag
     let isArchivedList: Bool
     let archive: () -> Void
@@ -234,15 +236,15 @@ private struct iOSTagSettingsRow: View {
 
             VStack(alignment: .leading, spacing: 5) {
                 Text("#\(tag.name)")
-                    .font(.system(size: 15, weight: .semibold))
+                    .cadenceFont(.rowTitle, base: 15, weight: .semibold)
                     .foregroundStyle(tag.isArchived ? Theme.muted : Theme.text)
-                    .lineLimit(1)
+                    .lineLimit(CadenceSettingsTypographyLayout.stacks(at: dynamicTypeSize, scaling: scaling) ? nil : 1)
 
                 if !tag.desc.isEmpty {
                     Text(tag.desc)
-                        .font(.system(size: 12))
+                        .cadenceFont(.metadata, base: 12, weight: .regular)
                         .foregroundStyle(Theme.subdued)
-                        .lineLimit(2)
+                        .lineLimit(CadenceSettingsTypographyLayout.stacks(at: dynamicTypeSize, scaling: scaling) ? nil : 2)
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
@@ -279,11 +281,11 @@ private struct iOSTagNoticeRow: View {
     var body: some View {
         HStack(spacing: 10) {
             Image(systemName: icon)
-                .font(.system(size: 13, weight: .semibold))
+                .cadenceFont(.metadata, base: 13, weight: .semibold)
                 .foregroundStyle(Theme.amber)
 
             Text(text)
-                .font(.system(size: 12, weight: .medium))
+                .cadenceFont(.metadata, base: 12, weight: .medium)
                 .foregroundStyle(Theme.subdued)
                 .fixedSize(horizontal: false, vertical: true)
 

@@ -202,13 +202,13 @@ struct iOSCalendarSettingsSection: View {
 
                 VStack(alignment: .leading, spacing: 4) {
                     Text(calendarManager.isDenied ? CadenceCalendarSettingsCopy.accessDeniedTitle : CadenceCalendarSettingsCopy.connectOfferTitle)
-                        .font(.system(size: 15, weight: .semibold))
+                        .cadenceFont(.rowTitle, base: 15, weight: .semibold)
                         .foregroundStyle(Theme.text)
 
                     Text(calendarManager.isDenied
                          ? "Allow Cadence from the iOS Settings app to show Apple Calendar events."
                          : CadenceCalendarSettingsCopy.accessRequiredDetail)
-                        .font(.system(size: 12))
+                        .cadenceFont(.metadata, base: 12, weight: .regular)
                         .foregroundStyle(Theme.subdued)
                         .fixedSize(horizontal: false, vertical: true)
 
@@ -304,13 +304,18 @@ struct iOSCalendarSettingsSection: View {
 
 /// One dead list-to-calendar link, with the two ways out of it.
 private struct iOSMissingCalendarLinkRow: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.cadenceTypographyScaling) private var scaling
     let link: CadenceMissingCalendarLink
     let calendars: [EKCalendar]
     let onRelink: (String) -> Void
     let onUnlink: () -> Void
 
     var body: some View {
-        HStack(alignment: .top, spacing: iOSSettingsMetrics.glyphLabelSpacing) {
+        let layout = CadenceSettingsTypographyLayout.stacks(at: dynamicTypeSize, scaling: scaling)
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 12))
+            : AnyLayout(HStackLayout(alignment: .top, spacing: iOSSettingsMetrics.glyphLabelSpacing))
+        layout {
             iOSIconTile(
                 systemImage: link.icon,
                 color: Color(hex: link.colorHex),
@@ -321,12 +326,12 @@ private struct iOSMissingCalendarLinkRow: View {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 8) {
                     Text(link.name)
-                        .font(.system(size: 15, weight: .semibold))
+                        .cadenceFont(.rowTitle, base: 15, weight: .semibold)
                         .foregroundStyle(Theme.text)
-                        .lineLimit(1)
+                        .lineLimit(CadenceSettingsTypographyLayout.stacks(at: dynamicTypeSize, scaling: scaling) ? nil : 1)
 
                     Text(CadenceCalendarLinkHealth.missingLinkTitle)
-                        .font(.system(size: 10, weight: .semibold))
+                        .cadenceFont(.metadata, base: 10, weight: .semibold)
                         .foregroundStyle(Theme.amber)
                         .padding(.horizontal, 7)
                         .padding(.vertical, 3)
@@ -335,7 +340,7 @@ private struct iOSMissingCalendarLinkRow: View {
                 }
 
                 Text(CadenceCalendarLinkHealth.missingLinkSummary(for: link))
-                    .font(.system(size: 12))
+                    .cadenceFont(.metadata, base: 12, weight: .regular)
                     .foregroundStyle(Theme.subdued)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -367,14 +372,14 @@ private struct iOSMissingCalendarLinkRow: View {
             Button(CadenceCalendarLinkHealth.removeLinkLabel, role: .destructive, action: onUnlink)
         } label: {
             Image(systemName: "wrench.and.screwdriver")
-                .font(.system(size: 13, weight: .semibold))
+                .cadenceFont(.controlLabel, base: 13, weight: .semibold)
                 .foregroundStyle(Theme.amber)
-                .frame(width: 36, height: 36)
+                .frame(width: CadenceSettingsTypographyLayout.glyphFrame(36, glyph: 13, at: dynamicTypeSize, scaling: scaling), height: CadenceSettingsTypographyLayout.glyphFrame(36, glyph: 13, at: dynamicTypeSize, scaling: scaling))
                 .background(Theme.surfaceElevated)
                 .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
                 .frame(
-                    width: iOSSettingsMetrics.minimumTapTarget,
-                    height: iOSSettingsMetrics.minimumTapTarget
+                    minWidth: iOSSettingsMetrics.minimumTapTarget,
+                    minHeight: iOSSettingsMetrics.minimumTapTarget
                 )
                 .contentShape(Rectangle())
         }
@@ -389,11 +394,16 @@ private struct iOSMissingCalendarLinkRow: View {
 /// stored identifier against nothing, which is what keeps it silent on a device that has never seen
 /// the calendar (T-624).
 private struct iOSDormantCalendarLinkRow: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.cadenceTypographyScaling) private var scaling
     let link: CadenceDormantCalendarLink
     let onDisconnect: () -> Void
 
     var body: some View {
-        HStack(alignment: .top, spacing: iOSSettingsMetrics.glyphLabelSpacing) {
+        let layout = CadenceSettingsTypographyLayout.stacks(at: dynamicTypeSize, scaling: scaling)
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 12))
+            : AnyLayout(HStackLayout(alignment: .top, spacing: iOSSettingsMetrics.glyphLabelSpacing))
+        layout {
             iOSIconTile(
                 systemImage: link.icon,
                 color: Color(hex: link.colorHex),
@@ -404,12 +414,12 @@ private struct iOSDormantCalendarLinkRow: View {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 8) {
                     Text(link.name)
-                        .font(.system(size: 15, weight: .semibold))
+                        .cadenceFont(.rowTitle, base: 15, weight: .semibold)
                         .foregroundStyle(Theme.text)
-                        .lineLimit(1)
+                        .lineLimit(CadenceSettingsTypographyLayout.stacks(at: dynamicTypeSize, scaling: scaling) ? nil : 1)
 
                     Text(link.statusLabel)
-                        .font(.system(size: 10, weight: .semibold))
+                        .cadenceFont(.metadata, base: 10, weight: .semibold)
                         .foregroundStyle(Theme.dim)
                         .padding(.horizontal, 7)
                         .padding(.vertical, 3)
@@ -418,7 +428,7 @@ private struct iOSDormantCalendarLinkRow: View {
                 }
 
                 Text(CadenceCalendarLinkHealth.dormantLinkSummary(for: link))
-                    .font(.system(size: 12))
+                    .cadenceFont(.metadata, base: 12, weight: .regular)
                     .foregroundStyle(Theme.subdued)
                     .fixedSize(horizontal: false, vertical: true)
 
@@ -497,10 +507,10 @@ private struct iOSCalendarWorkHoursSection: View {
 
                         VStack(alignment: .leading, spacing: 4) {
                             Text(CadenceCalendarSettingsCopy.workdayBoundaryTitle)
-                                .font(.system(size: 15, weight: .semibold))
+                                .cadenceFont(.rowTitle, base: 15, weight: .semibold)
                                 .foregroundStyle(Theme.text)
                             Text("Calendar day columns gently highlight \(workHoursLabel) on weekdays. A day column showing neither today nor anything timed opens at the start of this window.")
-                                .font(.system(size: 12))
+                                .cadenceFont(.metadata, base: 12, weight: .regular)
                                 .foregroundStyle(Theme.subdued)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
@@ -517,7 +527,7 @@ private struct iOSCalendarWorkHoursSection: View {
                         )
 
                         Text("to")
-                            .font(.system(size: 12, weight: .medium))
+                            .cadenceFont(.metadata, base: 12, weight: .medium)
                             .foregroundStyle(Theme.dim)
 
                         picker(
@@ -579,6 +589,8 @@ private struct iOSCalendarWorkHoursSection: View {
 }
 
 private struct iOSCalendarSettingsRow: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.cadenceTypographyScaling) private var scaling
     let calendar: EKCalendar
     let areas: [Area]
     let projects: [Project]
@@ -588,7 +600,10 @@ private struct iOSCalendarSettingsRow: View {
     let onToggleProject: (Project) -> Void
 
     var body: some View {
-        HStack(alignment: .top, spacing: 12) {
+        let layout = CadenceSettingsTypographyLayout.stacks(at: dynamicTypeSize, scaling: scaling)
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 12))
+            : AnyLayout(HStackLayout(alignment: .top, spacing: 12))
+        layout {
             Circle()
                 .fill(calendarColor)
                 .frame(width: 12, height: 12)
@@ -597,13 +612,13 @@ private struct iOSCalendarSettingsRow: View {
             VStack(alignment: .leading, spacing: 5) {
                 HStack(spacing: 7) {
                     Text(calendar.title)
-                        .font(.system(size: 15, weight: .semibold))
+                        .cadenceFont(.rowTitle, base: 15, weight: .semibold)
                         .foregroundStyle(isActive ? Theme.text : Theme.muted)
-                        .lineLimit(1)
+                        .lineLimit(CadenceSettingsTypographyLayout.stacks(at: dynamicTypeSize, scaling: scaling) ? nil : 1)
 
                     if !calendar.allowsContentModifications {
                         Text(CadenceCalendarLinkExclusion.readOnly.qualifier)
-                            .font(.system(size: 10, weight: .semibold))
+                            .cadenceFont(.metadata, base: 10, weight: .semibold)
                             .foregroundStyle(Theme.dim)
                             .padding(.horizontal, 7)
                             .padding(.vertical, 3)
@@ -613,14 +628,14 @@ private struct iOSCalendarSettingsRow: View {
                 }
 
                 Text(sourceTitle)
-                    .font(.system(size: 11))
+                    .cadenceFont(.metadata, base: 11, weight: .regular)
                     .foregroundStyle(Theme.dim)
-                    .lineLimit(1)
+                    .lineLimit(CadenceSettingsTypographyLayout.stacks(at: dynamicTypeSize, scaling: scaling) ? nil : 1)
 
                 Text(connectionSummary)
-                    .font(.system(size: 11))
+                    .cadenceFont(.metadata, base: 11, weight: .regular)
                     .foregroundStyle(connectedNames.isEmpty ? Theme.dim : Theme.subdued)
-                    .lineLimit(2)
+                    .lineLimit(CadenceSettingsTypographyLayout.stacks(at: dynamicTypeSize, scaling: scaling) ? nil : 2)
                     .fixedSize(horizontal: false, vertical: true)
             }
 
@@ -675,14 +690,14 @@ private struct iOSCalendarSettingsRow: View {
             }
         } label: {
             Image(systemName: "link")
-                .font(.system(size: 13, weight: .semibold))
+                .cadenceFont(.controlLabel, base: 13, weight: .semibold)
                 .foregroundStyle(Theme.text)
-                .frame(width: 36, height: 36)
+                .frame(width: CadenceSettingsTypographyLayout.glyphFrame(36, glyph: 13, at: dynamicTypeSize, scaling: scaling), height: CadenceSettingsTypographyLayout.glyphFrame(36, glyph: 13, at: dynamicTypeSize, scaling: scaling))
                 .background(Theme.surfaceElevated)
                 .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
                 .frame(
-                    width: iOSSettingsMetrics.minimumTapTarget,
-                    height: iOSSettingsMetrics.minimumTapTarget
+                    minWidth: iOSSettingsMetrics.minimumTapTarget,
+                    minHeight: iOSSettingsMetrics.minimumTapTarget
                 )
                 .contentShape(Rectangle())
         }
