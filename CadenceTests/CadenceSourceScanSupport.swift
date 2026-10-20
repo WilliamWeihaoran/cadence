@@ -349,6 +349,67 @@ enum CadenceSourceScan {
         return paths
     }
 
+    // MARK: - The whole-tree walk
+
+    /// Directory names that hold build output, a vendored checkout or a cache. Never this
+    /// repository's own source, and expensive to walk.
+    static let prunedDirectoryNames: Set<String> = [
+        ".git", ".build", ".codex-build", "build", "DerivedData",
+        "node_modules", "Pods", ".swiftpm", "__pycache__", ".venv",
+    ]
+
+    /// Is the directory at `relativePath` a checkout of its OWN rather than part of this one?
+    ///
+    /// **The test is a `.git` entry inside it**, which holds for a git worktree (where `.git` is a
+    /// file, not a directory), a submodule and a stray clone alike. Spelling `.claude/worktrees/`
+    /// here instead would cover today's instance and miss the next one.
+    static func isNestedCheckout(_ relativePath: String, under root: URL = repositoryRoot()) -> Bool {
+        FileManager.default.fileExists(
+            atPath: root.appendingPathComponent(relativePath).appendingPathComponent(".git").path
+        )
+    }
+
+    /// Every file under `root`, repository-relative, with build output and **nested checkouts**
+    /// pruned. This is the WHOLE-TREE walk; `files(under:)` above is the scoped-subtree one.
+    ///
+    /// **[[T-3241]], and the exclusion lives here for the reason that ticket exists.** The desktop
+    /// app creates agent worktrees INSIDE the repository, at `.claude/worktrees/<name>/`, and each
+    /// one is a complete copy of the checkout — `AGENTS.md`, `CLAUDE.md`, `scripts/`,
+    /// `docs/TODO.md`, the lot. Four whole-tree walks had each grown a prune list of its own and
+    /// not one of them named it, so a guide scan saw two sets of guides and a script scan two sets
+    /// of scripts. Measured on a probe worktree, before this existed:
+    /// `AgentContextBudgetTests.everyScopedAgentGuideIsRoutedFromTheRootGuide` failed with 12
+    /// issues, every one of them the root guide being asked why it does not route to another
+    /// checkout's copy of a guide; and `CadenceCrossLanguageCommentClaimTests`' sweep failed with
+    /// 2 unlisted and 8 stale, because `repositoryScriptPaths()` indexes scripts by basename and
+    /// resolves only a UNIQUE match — once every script exists twice, nothing resolves and the
+    /// claims the ledger holds stop being made at all. `git status` says nothing throughout:
+    /// `.claude/worktrees/` is in `.git/info/exclude`, so the tree looks clean while the scans see
+    /// double. Four copies of a prune list is exactly how one omission reaches four suites.
+    ///
+    /// `pruningAtRoot` is for a directory that is only skipped at the top level — the repository's
+    /// own `scratchpad/`, where a nested one is still swept ([[T-3180]]).
+    static func repositoryPaths(
+        under root: URL = repositoryRoot(),
+        pruningDirectoriesNamed extraNames: Set<String> = [],
+        pruningAtRoot rootOnly: Set<String> = []
+    ) -> [String] {
+        guard let walker = FileManager.default.enumerator(atPath: root.path) else { return [] }
+        var paths: [String] = []
+        while let name = walker.nextObject() as? String {
+            guard walker.fileAttributes?[.type] as? FileAttributeType == .typeDirectory else {
+                paths.append(name)
+                continue
+            }
+            let leaf = (name as NSString).lastPathComponent
+            if prunedDirectoryNames.contains(leaf) || extraNames.contains(leaf)
+                || rootOnly.contains(name) || isNestedCheckout(name, under: root) {
+                walker.skipDescendants()
+            }
+        }
+        return paths
+    }
+
     /// Reads each file once and hands a sweep source with its comments already blanked.
     ///
     /// Reading and stripping every file once per *needle* would be quadratic twice over:

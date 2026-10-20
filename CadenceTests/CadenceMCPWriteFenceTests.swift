@@ -167,30 +167,19 @@ struct CadenceMCPWriteFenceTests {
     /// to fence — and `.git` is skipped because it is large and holds no source. `.github` and
     /// `.githooks` are **not** skipped: a CI step that enabled writes would be the worst version of
     /// this bug.
+    /// The walk is `CadenceSourceScan.repositoryPaths`, which is also what prunes **nested
+    /// checkouts** ([[T-3241]]). It matters more here than anywhere: every caller that resolves a
+    /// script by BASE NAME — `CadenceCrossLanguageCommentClaimTests` does — requires the match to
+    /// be unique, and an agent worktree at `.claude/worktrees/<name>/` makes every script in this
+    /// list exist twice. Nothing then resolves, and a sweep that resolves nothing reports its whole
+    /// ledger as stale rather than reporting nothing.
     static func repositoryScriptPaths() throws -> [String] {
         let root = CadenceSourceScan.repositoryRoot()
-        let skipped: Set<String> = [
-            ".git", ".codex-build", ".build", "build", "DerivedData",
-            "node_modules", "Pods", ".swiftpm", "__pycache__", ".venv",
-        ]
         let scriptExtensions: Set<String> = ["sh", "bash", "zsh", "py", "rb", "pl", "js", "mjs", "command"]
 
-        guard let enumerator = FileManager.default.enumerator(
-            at: root,
-            includingPropertiesForKeys: [.isDirectoryKey],
-            options: []
-        ) else { return [] }
-
         var paths: [String] = []
-        let rootPath = root.standardizedFileURL.path
-        while let url = enumerator.nextObject() as? URL {
-            let name = url.lastPathComponent
-            let isDirectory = (try? url.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory ?? false
-            if isDirectory {
-                if skipped.contains(name) { enumerator.skipDescendants() }
-                continue
-            }
-            let relative = String(url.standardizedFileURL.path.dropFirst(rootPath.count + 1))
+        for relative in CadenceSourceScan.repositoryPaths(under: root) {
+            let url = root.appendingPathComponent(relative)
             let ext = url.pathExtension.lowercased()
             if scriptExtensions.contains(ext) {
                 paths.append(relative)

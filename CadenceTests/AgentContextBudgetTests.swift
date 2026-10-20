@@ -573,13 +573,14 @@ private func expectSizeBudget(_ relativePath: String, lines lineLimit: Int, byte
 /// Every `AGENTS.md` in the repository, repository-relative, discovered rather than enumerated.
 /// Build products and dependency checkouts are skipped; a vendored guide is not this repo's
 /// context budget.
+///
+/// The walk is `CadenceSourceScan.repositoryPaths`, which is also what prunes **nested checkouts**
+/// ([[T-3241]]). This function used to do its own `enumerator(atPath:)` with a two-name skip list,
+/// and an agent worktree at `.claude/worktrees/<name>/` carries a complete set of this repo's
+/// guides: the routing sweep below then failed with 12 issues, one per guide, asking the root
+/// guide why it does not route to another checkout's copy of itself.
 private func agentGuidePaths() throws -> [String] {
-    let root = repositoryRoot()
-    guard let walker = FileManager.default.enumerator(atPath: root.path) else { return [] }
-    var guides: [String] = []
-    for case let entry as String in walker {
-        if entry.hasPrefix(".git/") || entry.contains("/.build/") || entry.hasPrefix(".build/") { continue }
-        if entry == "AGENTS.md" || entry.hasSuffix("/AGENTS.md") { guides.append(entry) }
-    }
-    return guides.sorted()
+    CadenceSourceScan.repositoryPaths(under: repositoryRoot())
+        .filter { $0 == "AGENTS.md" || $0.hasSuffix("/AGENTS.md") }
+        .sorted()
 }

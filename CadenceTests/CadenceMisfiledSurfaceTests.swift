@@ -1013,22 +1013,10 @@ private let misfiledRetiredIPadNames = [
 /// routes to it, and an agent's rebuild-on-HEAD working copy of `docs/TODO.md` kept there is a
 /// ledger under another path — swept, it reddened the next runner's full run on a green tree.
 private func misfiledAgentFacingDocs(under root: URL = misfiledRepositoryRoot()) throws -> [String] {
-    let pruned: Set<String> = [".git", ".build", ".codex-build", "node_modules", "DerivedData", "build"]
-    let prunedAtRoot: Set<String> = ["scratchpad"]
     let ledgers: Set<String> = ["docs/TODO.md", "docs/TODO_DONE.md"]
-    guard let enumerator = FileManager.default.enumerator(atPath: root.path) else { return [] }
-
-    var paths: [String] = []
-    for element in enumerator {
-        guard let name = element as? String else { continue }
-        if pruned.contains((name as NSString).lastPathComponent) || prunedAtRoot.contains(name) {
-            enumerator.skipDescendants()
-            continue
-        }
-        guard name.hasSuffix(".md"), !ledgers.contains(name) else { continue }
-        paths.append(name)
-    }
-    return paths.sorted()
+    return CadenceSourceScan.repositoryPaths(under: root, pruningAtRoot: ["scratchpad"])
+        .filter { $0.hasSuffix(".md") && !ledgers.contains($0) }
+        .sorted()
 }
 
 /// Whole-word, so `iPadTodayView` does not fire on `iPadTodayViewModel`. The negative witness is
