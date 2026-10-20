@@ -1041,6 +1041,7 @@ enum CadenceCommentSymbolClaim {
         "Cadence/Shared/CadenceColorPalette.swift `ColorGrid.colors`",
         "Cadence/Shared/CadenceRegularPaneLayout.swift `iOSCalendarView.regularInspectorWidth(for:)`",
         "Cadence/Shared/CadenceTaskDateEditing.swift `iOSTaskDetailSheet.applyDates()`",
+        "Cadence/Shared/CadenceTodayPresentationSupport.swift `TasksPanel.emptyStateSection`",
         "Cadence/Shared/Components/CadenceFieldRows.swift `SettingsAISection.settingsField`",
         "Cadence/Shared/Components/CadenceFieldRows.swift `SidebarTabEditorSheet.settingsPanelRow`",
         "Cadence/Shared/Components/CadenceSidebarCountLabel.swift `SidebarMetrics.countFontSize`",
@@ -1054,6 +1055,7 @@ enum CadenceCommentSymbolClaim {
         "Cadence/macOS/Views/CalendarPageMonthSupportViews.swift `SchedulingActions.createTask`",
         "Cadence/macOS/Views/SettingsSupportViews.swift `SidebarTabEditorSheet.settingsPanelRow`",
         "Cadence/macOS/Views/SettingsTemplatesSection.swift `SettingsAISection.settingsField`",
+        "Cadence/macOS/Views/TasksPanelDerivedState.swift `TasksPanel.emptyStateSection`",
         "Cadence/macOS/Views/TasksPanelSupport.swift `TasksPanel.taskSections`",
         "CadenceMCPServer/CadenceMCPToolDefinitions.swift `CadenceGoalSummary.subGoalCount`",
         "CadenceMCPServer/CadenceMCPToolDefinitions.swift `CadenceGoalSummary.taskCount`",
@@ -1311,8 +1313,16 @@ enum CadenceCommentSymbolClaim {
         // the root to lowercase and let a file base name be a root: thirteen memorials naming
         // retired `iOS*` members became visible. 48 since T-3196's iOS half deleted
         // `iOSTaskRowEstimateChip`, whose doc comment carried the other half of the same
-        // tombstone; it went with the struct, as the macOS half did.
-        #expect(tombstones.count == 48)
+        // tombstone; it went with the struct, as the macOS half did. 50 since [[T-3197]] took
+        // Today's "Nothing planned" box off macOS as well as iOS: the removed macOS empty-state
+        // section is named by the tombstones left in `CadenceTodayPresentationSupport` (the copy
+        // it was the last drawing reader of) and in `TasksPanelDerivedState` (whose
+        // `isEmptyState` it was the last view reader of). Both are memorials to a deletion the
+        // owner asked for, so they are ledgered rather than reworded — the reader of either file
+        // wants to know what used to draw there. This comment spells the section's name without
+        // its type on purpose: a qualified claim here would be a third dangling one, in the very
+        // file that keeps the list of them.
+        #expect(tombstones.count == 50)
         // It was 1 while the Calendar Board's formBundle doc named a Mac spelling [[T-3170]] had
         // removed and the file was still Codex-leased; the grant `41ded784` unblocked it and
         // T-3170's Board pass deleted the function that comment documented, taking it to 0. It is

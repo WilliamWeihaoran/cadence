@@ -228,7 +228,6 @@ struct TasksPanel: View {
                 LazyVStack(alignment: .leading, spacing: 0, pinnedViews: .sectionHeaders) {
                     todayOverviewSections(derived: derived, showsRollover: showsRollover)
                     completedSection(derived: derived)
-                    emptyStateSection(derived: derived)
                 }
                 .padding(.top, showsHeader ? 12 : 0)
                 // The floating `+`'s footprint, on the one Today layout where the page corner is
@@ -396,32 +395,24 @@ struct TasksPanel: View {
     }
 
     @ViewBuilder
-    private func emptyStateSection(derived: TasksPanelDerivedState) -> some View {
-        if derived.isEmptyState {
-            // Today's copy is `CadenceTodayPresentationSupport`'s. macOS said "Nothing for today"
-            // over "Due-today and do-today tasks will appear here" — a restatement of the page's
-            // scope where the shared subtitle names the next thing to do — so the two hosts were
-            // folded onto one pair of strings.
-            //
-            // **This is the only surviving reader of that pair ([[T-3197]]).** iOS drew it in a
-            // component of its own and the owner asked for the box off the phone; what they said
-            // about every device they said about the estimate chip, not about this, so the Mac was
-            // left alone and the divergence is raised on the ticket rather than decided in passing.
-            //
-            // The other arm read `CadenceEmptyStateCopy.allTasks*` and went with `.byDoDate`
-            // (T-487). Those two constants stay live — iOS's `iOSTaskCollectionMetrics` draws the
-            // All Tasks empty state from them. What is gone with the mode is a macOS empty state
-            // that nothing could reach, which is why it still spelled "No tasks yet" / "Add a task
-            // above to get started" for as long as it did: the first is a string T-285 retired,
-            // and the second named a field that does not exist.
-            EmptyStateView(
-                message: CadenceTodayPresentationSupport.emptyTitle,
-                subtitle: CadenceTodayPresentationSupport.emptySubtitle,
-                icon: "checkmark.circle"
-            )
-            .padding(.top, 40)
-        }
-    }
+    // [[T-3197]] removed TasksPanel.emptyStateSection — Today's "Nothing planned" / "Add a task
+    // with +, or schedule one from Inbox." box, an `EmptyStateView` with a `checkmark.circle` tile
+    // drawn under the rows whenever `derived.isEmptyState`. The owner asked for the box off:
+    // *"remove the box that says 'nothing planned add a task with + ......'"*. iOS took its own
+    // component off on 2026-10-17 and the Mac was left alone because the owner's screenshot was
+    // iPhone Today; that divergence is what this removal ends. Their words named the box, not a
+    // platform, and this app's rule is that one idea gets one sentence on both hosts — a Mac that
+    // kept drawing a box the phone had removed is the disagreement `CadenceTodayUnificationTests`
+    // exists to catch. A Today with nothing on it is now a blank area under the header on every
+    // host, which is the owner's call and is made knowing it.
+    //
+    // What is NOT gone, and was checked per reader rather than assumed:
+    //   - `CadenceTodayPresentationSupport.emptyTitle` / `.emptySubtitle`. This was their last
+    //     drawing reader, so the pair is now tombstoned in place rather than deleted: the strings
+    //     are still named by `CadenceRetiredCopyTests` as what retired "Add a task above" and
+    //     "Nothing planned for today", and `CadenceEmptyStateAuditTests` still requires the
+    //     declarations, so deleting them would break two suites to save two lines.
+    //   - `TasksPanelDerivedState.isEmptyState`. It keeps its tests and its meaning; see its doc.
 
     /// **The rows Today draws, in natural order — and therefore the only list the hover freeze may
     /// snapshot.**

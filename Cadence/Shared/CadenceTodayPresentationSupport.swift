@@ -60,15 +60,19 @@ enum CadenceTodayPresentationSupport {
     // freeze on the palette active at first access.
     static var completedSectionAccent: Color { Theme.green }
 
-    /// Today's empty state. **macOS's `TasksPanel` is the only thing that draws it now
-    /// ([[T-3197]]).**
+    /// Today's empty state. **Nothing draws it any more, on any host ([[T-3197]]).**
     ///
-    /// iOS drew the same two strings in a component of its own until the owner asked for the box
-    /// off the phone — *"remove the box that says 'nothing planned add a task with + ......'"* —
-    /// so an empty Today is blank there and these constants have one reader rather than two. They
-    /// are kept rather than deleted precisely because that reader is live; whether macOS should
-    /// follow the phone is raised on [[T-3197]] and is the owner's to settle, since what they said
-    /// about every device they said about the estimate chip, not about this.
+    /// iOS and macOS each drew these two strings from a component of its own until the owner asked
+    /// for the box off — *"remove the box that says 'nothing planned add a task with + ......'"*.
+    /// iOS went first (2026-10-17, `iOSCompactTodayEmptyState`); the Mac's `EmptyStateView` inside
+    /// `TasksPanel.emptyStateSection` followed once it was read that the instruction named the box
+    /// and not a platform. An empty Today is a blank area under the header on both now.
+    ///
+    /// **They are kept rather than deleted, and the reason is other tests rather than other
+    /// views.** `CadenceRetiredCopyTests` names both as the copy that retired "Add a task above"
+    /// and "Nothing planned for today", and `CadenceEmptyStateAuditTests` reads the declarations
+    /// out of this file; deleting two strings would redden two suites. Whoever gives Today an
+    /// empty state again should start here rather than write a third spelling.
     ///
     /// macOS said "Nothing for today" over "Due-today and do-today tasks will appear here", which
     /// is a restatement of the page's scope rather than a next step. The name lost its `compact`
