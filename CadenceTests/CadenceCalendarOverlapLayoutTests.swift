@@ -407,6 +407,91 @@ struct CadenceCalendarOverlapLayoutTests {
         #expect(result.events.map(\.totalColumns) == [1, 1, 1])
     }
 
+    // MARK: - T-3166: a covered block drops its calendar-name row rather than stubbing it
+
+    private static func t3166Item(hour: Int, minute: Int, durationMinutes: Int) throws -> CalendarEventItem {
+        let calendar = Calendar.current
+        let day = try #require(calendar.date(from: DateComponents(year: 2026, month: 8, day: 10)))
+        let event = EKEvent(eventStore: EKEventStore())
+        event.title = "\(hour):\(minute)"
+        let start = try #require(calendar.date(byAdding: DateComponents(hour: hour, minute: minute), to: day))
+        event.startDate = start
+        event.endDate = start.addingTimeInterval(TimeInterval(durationMinutes * 60))
+        return CalendarEventItem(event: event)
+    }
+
+    /// Each event learns where the earliest block cascaded over it starts; a split cluster, whose
+    /// blocks sit side by side, covers nothing.
+    @Test func eachEventKnowsWhereTheBlockInFrontOfItStarts() throws {
+        let cascade = TimelineMetricsSupport.computeUnifiedLayouts(
+            tasks: [],
+            events: [
+                try Self.t3166Item(hour: 2, minute: 15, durationMinutes: 240),
+                try Self.t3166Item(hour: 3, minute: 0, durationMinutes: 165),
+                try Self.t3166Item(hour: 4, minute: 0, durationMinutes: 120),
+            ],
+            cascadeGapMinutes: 24
+        )
+        #expect(cascade.events.map(\.cascadeDepth) == [0, 1, 2], "non-vacuity: the cluster no longer cascades")
+        #expect(cascade.events.map(\.coveredFromMinute) == [180, 240, nil])
+
+        let split = TimelineMetricsSupport.computeUnifiedLayouts(
+            tasks: [],
+            events: [
+                try Self.t3166Item(hour: 7, minute: 0, durationMinutes: 235),
+                try Self.t3166Item(hour: 7, minute: 15, durationMinutes: 165),
+            ],
+            cascadeGapMinutes: 24
+        )
+        #expect(split.events.map(\.totalColumns) == [2, 2], "non-vacuity: the cluster no longer splits")
+        #expect(split.events.map(\.coveredFromMinute) == [nil, nil])
+    }
+
+    /// The row is drawn on a covered block only when even a two-line title leaves all of it above
+    /// the block in front. At the reference 75pt hour that is a 44-minute start gap.
+    @Test func aCoveredBlockDrawsItsCalendarRowOnlyWhenAllOfItClearsTheCover() {
+        // 3 padding + 11 time + 2 + 2 x 13 title + 2 + 11 calendar row.
+        #expect(TimelineEventBlockRows.calendarRowWorstCaseBottom(verticalPadding: 3) == CGFloat(55))
+
+        func shows(gapMinutes: Int?) -> Bool {
+            TimelineEventBlockRows.showsCalendarRow(
+                frameHeight: 300,
+                hasCalendarTitle: true,
+                uncoveredHeight: TimelineEventBlockRows.uncoveredHeight(
+                    startMinute: 135,
+                    coveredFromMinute: gapMinutes.map { 135 + $0 },
+                    hourHeight: 75
+                ),
+                verticalPadding: 3
+            )
+        }
+        #expect(shows(gapMinutes: nil), "an uncovered block lost its calendar row")
+        #expect(shows(gapMinutes: 45), "the owner's 45-minute cascade leaves room for the row")
+        // The boundary: 44 minutes is exactly 55pt uncovered, 43 is 53.75pt.
+        #expect(shows(gapMinutes: 44), "a row that exactly clears the cover was dropped")
+        #expect(!shows(gapMinutes: 43), "a row that overruns the cover by a point was kept")
+        #expect(!shows(gapMinutes: 24), "the row ran under the block in front at the threshold gap")
+        // 45pt clears a ONE-line title's row (42pt) but not a wrapped one's: the case T-3166 saw.
+        #expect(!shows(gapMinutes: 36), "the row was kept on the assumption the title does not wrap")
+        // The block's own height floor still applies.
+        #expect(!TimelineEventBlockRows.showsCalendarRow(
+            frameHeight: 53, hasCalendarTitle: true, uncoveredHeight: nil, verticalPadding: 3
+        ))
+    }
+
+    /// The view draws the calendar row through that rule and with those constants.
+    @Test func theMacEventBlockGatesItsCalendarRowOnTheCoveredRule() throws {
+        let mac = CadenceSourceScan.codeOnly(
+            try CadenceSourceScan.sourceFile("Cadence/macOS/Views/TimelineEventBlock.swift")
+        )
+        #expect(mac.count > 2_000, "non-vacuity: read \(mac.count) characters of the Mac event block")
+        #expect(mac.contains("if TimelineEventBlockRows.showsCalendarRow("))
+        #expect(mac.contains("coveredFromMinute: layout.coveredFromMinute"))
+        #expect(mac.contains(".lineLimit(TimelineEventBlockRows.titleLineLimit)"))
+        #expect(mac.contains(".font(.system(size: TimelineEventBlockRows.calendarRowFontSize))"))
+        #expect(!mac.contains("frame.height >= 54"), "a second, ungated copy of the row's height floor")
+    }
+
     #endif
 
     // MARK: - T-3165: the iOS day column lays tasks and events out together
