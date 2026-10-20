@@ -187,6 +187,7 @@ Cadence/iOS/iOSStoreBackupSettingsSection.swift
 Cadence/iOS/iOSUnmanagedStoreSettingsSection.swift
 CadenceTests/CadenceRealTreeSweepManifest.txt
 CadenceTests/iOSCalendarMetricsTests.swift
+CadenceTests/TaskBundleTests.swift
 ```
 
 **Admission 2026-10-19 (coordinator), one line in `CadenceTests/CadenceMarkdownImageCommitSurfaceTests.swift`.**
@@ -3249,3 +3250,19 @@ Codex is `docs/CODEX_LEDGER_INBOX.md`, which is always allowed and needs no gran
 **For the next Codex request:** ask before writing, as `codex/block-removal-finish` did twice. That
 branch stopped at its boundary, reported, and waited — it cost two round trips and no collision. This
 one cost a retroactive grant.
+
+### 2026-10-20 — `CadenceTests/TaskBundleTests.swift` granted to Codex for [[T-3170]]'s move chain
+
+**GRANTED on the owner's decision, scoped to retiring the Block-move assertion and its adjacent
+comment, and nothing else.** `TaskBundleTests.swift:343` calls `SchedulingActions.dropBundle`
+directly, so deleting `dropBundle` breaks compilation — the dependency is real, not a pretext.
+**The test's other calendar-link checks stay**; this grant does not cover them. Count 140 → 141.
+
+**Verified before granting, not taken on report:** line 343 does call it; the file is outside the
+fence; it is not dirty and no unmerged `claude/*` branch touches it. Six files call `dropBundle` in
+all and four are already inside Codex's lease, so this is the last one in the way.
+
+**Asked before writing, which is why this one is cheap.** `codex/block-removal-finish` has now
+stopped at its boundary twice and reported rather than editing. Compare the 2026-10-20 T-1364 entry
+above, where 27 paths were written first and granted afterwards. Same protocol, opposite order, and
+the difference is entirely in what it cost to approve.
