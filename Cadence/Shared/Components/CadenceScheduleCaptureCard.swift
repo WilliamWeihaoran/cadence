@@ -198,9 +198,17 @@ struct CadenceScheduleCaptureCard<NotesField: View>: View {
             if let eyebrow = titleStatus?.eyebrow {
                 Text(eyebrow).cadenceFont(.metadata).foregroundStyle(titleStatus?.eyebrowTint ?? Theme.dim)
             }
-            TextField(draft.kind.titlePlaceholder, text: $draft.title)
+            // **Wraps onto a second and third line rather than truncating** ([[T-3237]] item 1).
+            // `CadenceSchedulePanel.titleField` has read `axis: .vertical` + `lineLimit(1...3)`
+            // since it was built; this card was the near-copy that kept the single-line form, so a
+            // long title lost its tail at the one moment the reader is still composing it. Matching
+            // the panel rather than inventing a height keeps one title treatment across the two
+            // presentations, and keeps Return on `onSubmit` the way the panel documents at its own
+            // field: a vertical-axis field still submits, and the submit is deliberately unguarded.
+            TextField(draft.kind.titlePlaceholder, text: $draft.title, axis: .vertical)
                 .textFieldStyle(.plain)
                 .cadenceFont(.composerTitle)
+                .lineLimit(1...3)
                 .focused($titleIsFocused)
                 .submitLabel(.done)
                 .onSubmit(commit)
