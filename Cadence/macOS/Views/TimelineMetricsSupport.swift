@@ -27,6 +27,53 @@ struct TimelineEventLayout {
     /// How many earlier events in this same column this one is drawn over (T-3161). 0 for an
     /// ordinary column block; tasks and bundles have no equivalent and always draw at 0.
     let cascadeDepth: Int
+    /// The start minute of the earliest later event drawn OVER this one (T-3166): same column,
+    /// deeper cascade, overlapping. `nil` when nothing covers it. The block uses it to drop a label
+    /// row that would land under the block in front — where only the strip left of that block's
+    /// indent shows, as a three-character stub — rather than to clip it.
+    let coveredFromMinute: Int?
+}
+
+/// Which of the Mac event block's label rows may be drawn, given how much of it is not covered
+/// (T-3166). Kept out of `TimelineEventBlock` so it can be tested without building the view.
+enum TimelineEventBlockRows {
+    /// The title's `.lineLimit` in `TimelineEventBlock.eventBlockBody`.
+    static let titleLineLimit = 2
+    /// The calendar-name row's font size in `TimelineEventBlock.eventBlockBody`.
+    static let calendarRowFontSize: CGFloat = 9
+
+    /// The lowest point the calendar-name row can reach: padding, the time row, the title at its
+    /// line limit, and the row itself, with the VStack's spacing between each. The worst case on
+    /// purpose — the title's wrap depends on the column width, and a row that is shown only when
+    /// even a two-line title leaves room for it can never land under the block in front.
+    static func calendarRowWorstCaseBottom(verticalPadding: CGFloat) -> CGFloat {
+        let spacing = CadenceCalendarOverlapLayout.macEventLabelRowSpacing
+        return verticalPadding
+            + CadenceCalendarOverlapLayout.lineHeight(forSystemFontSize: CadenceCalendarOverlapLayout.eventTimeFontSize)
+            + spacing
+            + CadenceCalendarOverlapLayout.lineHeight(forSystemFontSize: CadenceCalendarOverlapLayout.eventTitleFontSize)
+                * CGFloat(titleLineLimit)
+            + spacing
+            + CadenceCalendarOverlapLayout.lineHeight(forSystemFontSize: calendarRowFontSize)
+    }
+
+    /// The block's height not covered by a later cascading block, or `nil` when none covers it.
+    static func uncoveredHeight(startMinute: Int, coveredFromMinute: Int?, hourHeight: CGFloat) -> CGFloat? {
+        coveredFromMinute.map { CGFloat($0 - startMinute) * hourHeight / 60 }
+    }
+
+    /// Whether the calendar-name row is drawn. The 54pt floor is the block's own pre-existing gate;
+    /// T-3166 adds that a covered block draws the row only when all of it sits above the cover.
+    static func showsCalendarRow(
+        frameHeight: CGFloat,
+        hasCalendarTitle: Bool,
+        uncoveredHeight: CGFloat?,
+        verticalPadding: CGFloat
+    ) -> Bool {
+        guard frameHeight >= 54, hasCalendarTitle else { return false }
+        guard let uncoveredHeight else { return true }
+        return uncoveredHeight >= calendarRowWorstCaseBottom(verticalPadding: verticalPadding)
+    }
 }
 
 enum TimelineMetricsSupport {
@@ -169,9 +216,23 @@ enum TimelineMetricsSupport {
             cascadeGapMinutes: cascadeGapMinutes
         )
 
+        // T-3166: for each event, the earliest start among the later events cascaded over it. Only
+        // a deeper block in the same column is drawn over another; equal columns sit side by side.
+        func coveredFromMinute(_ index: Int) -> Int? {
+            slots.indices.lazy
+                .filter { other in
+                    placements[other].column == placements[index].column
+                        && placements[other].cascadeDepth > placements[index].cascadeDepth
+                        && slots[other].startMin < slots[index].endMin
+                        && slots[other].endMin > slots[index].startMin
+                }
+                .map { slots[$0].startMin }
+                .min()
+        }
+
         var taskLayouts: [TimelineBlockLayout] = []
         var eventLayouts: [TimelineEventLayout] = []
-        for (slot, placement) in zip(slots, placements) {
+        for (index, (slot, placement)) in zip(slots, placements).enumerated() {
             switch slot.kind {
             case .task(let task):
                 taskLayouts.append(TimelineBlockLayout(task: task, column: placement.column, totalColumns: placement.totalColumns))
@@ -180,7 +241,8 @@ enum TimelineMetricsSupport {
                     item: event,
                     column: placement.column,
                     totalColumns: placement.totalColumns,
-                    cascadeDepth: placement.cascadeDepth
+                    cascadeDepth: placement.cascadeDepth,
+                    coveredFromMinute: coveredFromMinute(index)
                 ))
             }
         }

@@ -406,7 +406,7 @@ struct TimelineEventBlock: View {
                                 isActive: isHovered
                             )
                         )
-                        .lineLimit(2)
+                        .lineLimit(TimelineEventBlockRows.titleLineLimit)
                     // The recurrence glyph stays with the event. T-3160 moved paint, not
                     // affordances — this marker and the task's completion circle are what still
                     // say which species a block is where the two treatments come closest.
@@ -422,9 +422,22 @@ struct TimelineEventBlock: View {
                             )
                     }
                 }
-                if frame.height >= 54 && !item.calendarTitle.isEmpty {
+                // T-3166: a block another event is cascaded over drops this row rather than
+                // letting it run under the block in front, where only the strip left of that
+                // block's indent showed — "Cas" — and read as a glitch. The rail already names the
+                // calendar, so the row is the one label a covered block can lose.
+                if TimelineEventBlockRows.showsCalendarRow(
+                    frameHeight: frame.height,
+                    hasCalendarTitle: !item.calendarTitle.isEmpty,
+                    uncoveredHeight: TimelineEventBlockRows.uncoveredHeight(
+                        startMinute: effectiveStartMin,
+                        coveredFromMinute: layout.coveredFromMinute,
+                        hourHeight: metrics.hourHeight
+                    ),
+                    verticalPadding: style.verticalPadding
+                ) {
                     Text(item.calendarTitle)
-                        .font(.system(size: 9))
+                        .font(.system(size: TimelineEventBlockRows.calendarRowFontSize))
                         .foregroundStyle(secondaryLabelColor)
                         .lineLimit(1)
                 }
