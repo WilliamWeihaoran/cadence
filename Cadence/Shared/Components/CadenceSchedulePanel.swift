@@ -123,6 +123,18 @@ struct CadenceSchedulePanel<NotesField: View>: View {
         return panel
     }
 
+    /// Why this appearance is happening, which decides whether the title field takes focus on it.
+    /// Defaulted to `.opened`, so every host that does not say otherwise keeps the focus it had.
+    private var titleFocusAppearance: CadenceSchedulePanelTitleFocus.Appearance = .opened
+
+    /// See `CadenceSchedulePanelTitleFocus`. A modifier rather than an init parameter, so the
+    /// panel's other call sites stay byte-identical.
+    func appearing(_ appearance: CadenceSchedulePanelTitleFocus.Appearance) -> Self {
+        var panel = self
+        panel.titleFocusAppearance = appearance
+        return panel
+    }
+
     @State private var isDoExpanded = false
     @State private var isDueExpanded = false
     @State private var isDoTimeExpanded = false
@@ -268,7 +280,12 @@ struct CadenceSchedulePanel<NotesField: View>: View {
         }
         .padding(14)
         .background(Theme.surfaceElevated)
-        .onAppear { isTitleFocused = !draft.subject.isEditing }
+        .onAppear {
+            isTitleFocused = CadenceSchedulePanelTitleFocus.takesFocusOnAppear(
+                titleFocusAppearance,
+                isEditing: draft.subject.isEditing
+            )
+        }
         .onChange(of: draft.kind) { _, _ in
             draft.normalizeForKind()
             actionError = nil
@@ -946,6 +963,28 @@ struct CadenceScheduleKindSwitch: View {
         }
         .opacity(isEditing ? 0.45 : 1)
         .disabled(isEditing)
+    }
+}
+
+/// Whether the panel's title field takes focus when the panel appears ([[T-3252]]).
+///
+/// **A new draft focuses its title; an existing record does not; and neither does a draft whose
+/// editor is coming BACK.** The iPad timeline's draft editor is a popover that goes down while an
+/// edge handle is dragged and is put back when the finger lifts (`draftAdjustmentObserver`,
+/// [[T-3246]]). Every re-presentation is a fresh `onAppear`, so the focus a new draft rightly takes
+/// re-raised the keyboard on every adjustment — on a gesture that was about the block's range, not
+/// its name. The returning editor leaves the keyboard down; a tap on the title still raises it.
+enum CadenceSchedulePanelTitleFocus {
+    enum Appearance: Equatable {
+        /// The editor is opening on this draft: the first presentation, or one a tap asked for.
+        case opened
+        /// The editor is being put back after an adjustment of the draft it was already showing.
+        case returnedAfterAdjustment
+    }
+
+    static func takesFocusOnAppear(_ appearance: Appearance, isEditing: Bool) -> Bool {
+        guard !isEditing else { return false }
+        return appearance == .opened
     }
 }
 
