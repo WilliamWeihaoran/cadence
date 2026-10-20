@@ -412,6 +412,9 @@ struct iOSTimelineDraftPanelHost: View {
     @Binding var draft: CadenceScheduleDraft
     let onCancel: () -> Void
     let onCommitted: () -> Void
+    /// `.returnedAfterAdjustment` when the column is putting the editor back after an edge drag
+    /// ([[T-3252]]), so the keyboard does not come back with it. See `CadenceSchedulePanelTitleFocus`.
+    var titleFocusAppearance: CadenceSchedulePanelTitleFocus.Appearance = .opened
 
     @Environment(\.modelContext) private var modelContext
     @Environment(iOSCalendarManager.self) private var calendarManager
@@ -435,6 +438,7 @@ struct iOSTimelineDraftPanelHost: View {
                     delete: nil
                 )
             )
+            .appearing(titleFocusAppearance)
         }
         .frame(width: CadenceSchedulePanelMetrics.preferredWidth)
         .frame(maxHeight: 620)

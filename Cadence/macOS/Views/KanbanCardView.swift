@@ -183,22 +183,19 @@ struct KanbanCard: View {
     /// The overflow line is deliberately not a control. Clicking anywhere on this card already
     /// opens the inspector, which is where the rest of the list is, and a second hover layer inside
     /// a card that has one is the pattern this repo keeps having to unpick.
+    ///
+    /// **The list itself is `MacTaskSubtaskPreviewList`, the macOS task row's own view** ([[T-3221]]),
+    /// so the card and the row cannot drift apart. Only the overflow font size (11, the card's
+    /// metadata size) and the card's leading inset are the card's own.
     @ViewBuilder
     private var subtaskRows: some View {
         let subtasks = CadenceTaskPresentationSupport.listedSubtasks(for: task)
         if !subtasks.isEmpty {
-            VStack(alignment: .leading, spacing: 0) {
-                ForEach(subtasks) { subtask in
-                    SubtaskRow(subtask: subtask)
-                }
-
-                if let hidden = CadenceTaskPresentationSupport.unlistedSubtaskCount(for: task) {
-                    Text(CadenceTaskSurfaceOptions.moreLabel(hidden: hidden))
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(Theme.dim)
-                        .padding(.vertical, 3)
-                }
-            }
+            MacTaskSubtaskPreviewList(
+                subtasks: subtasks,
+                hiddenCount: CadenceTaskPresentationSupport.unlistedSubtaskCount(for: task),
+                overflowFontSize: 11
+            )
             .padding(.leading, 10)
             .padding(.top, 2)
         }
