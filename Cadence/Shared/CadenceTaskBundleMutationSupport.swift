@@ -1,17 +1,17 @@
 import Foundation
 import SwiftData
 
-/// **The declaration site of `CadenceTaskMutationSupport`, holding the block clamps and the
-/// bundle-membership rule.** (The empty-slot block constructor, `insertBundle(title:…)`, was here
-/// until [[T-3170]] removed the last surface that created a block from an empty slot, so the
-/// member counts below are one high.) The enum's other sixty-two members live in
-/// `CadenceTaskMutationSupport.swift`, which extends this enum rather than declaring it —
-/// fifty-six `internal` and six `private`.
-/// (T-1122's entry counted this enum at "61 static members" when five were here; it is **62**
-/// now, because `assignTask(_:to:)` came across and stopped being `private` in the process.
-/// Count the `internal` ones only — 49 `static func` + 12 `static let` + 1 `static var`, of which
-/// six are here — or the next re-measure will disagree with the ledger for no reason. A naive
-/// `static` grep returns 68: the six surviving `private` members are the discrepancy.)
+/// **The declaration site of `CadenceTaskMutationSupport`, holding the four block clamps.** The
+/// empty-slot block constructor, `assignTask(_:to:)` and the snapshot that undid it were here too,
+/// until [[T-3170]] removed every surface that formed or grew a block (see the note at the foot of
+/// the enum). The enum's other members live in `CadenceTaskMutationSupport.swift`, which extends
+/// this enum rather than declaring it.
+/// (Measured by declaration at [[T-3217]], not by grep: this file declares 4 members, all
+/// `internal` -- 2 `static let` + 2 `static func`. The extension declares 54 -- 49 `static func`
+/// (two of them `nonisolated`) + 5 `static let` -- of which 6 are `private`, so 58 in all and 52
+/// `internal`. A file-wide `static` grep of the extension file returns 55: the extra one is
+/// `CadenceTaskReopenWidgetEffects.live`, a different type's `static var`. Earlier counts in this
+/// header -- "sixty-two", T-1122's "61" -- predate the trio pass and are not comparable.)
 ///
 /// **That inversion is the point of the file, and it is deliberate (T-1122).** The enum's main file
 /// reaches `NotificationManager` and `CadenceWidgetRefreshCenter`, and the latter is
@@ -19,7 +19,7 @@ import SwiftData
 /// command-line tool whose Sources phase compiles whole *files*. `create_task_bundle` needed
 /// the empty-slot constructor and the four clamps; `add_task_to_bundle` needed `assignTask(_:to:)`
 /// and the snapshot that undoes it, and nothing else in the enum (both tools went with
-/// [[T-3170]]). So those members are declared here,
+/// [[T-3170]]). So those members were declared here,
 /// on `Foundation`/`SwiftData` alone, and everything they touch — `AppTask`, `TaskBundle` and
 /// `CadencePendingChangePersistence` — is already in that target.
 ///
