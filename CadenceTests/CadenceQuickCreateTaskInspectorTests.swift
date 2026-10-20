@@ -187,8 +187,8 @@ struct CadenceQuickCreateTaskInspectorTests {
         #expect(notice?.contains(DateFormatters.shortDateString(from: "2026-05-04")) == true)
 
         // The same draft on the host that DOES forward the day is not refused — the Today
-        // timeline's task handoff passes `draft.dateKey` into `TaskCreationManager.present`, which
-        // is T-1433's behaviour and must survive this slice.
+        // timeline creates on `draft.dateKey` (`QuickCreateTaskDraft.insert`, [[T-3171]]'s eighth
+        // slice), which is T-1433's behaviour and must survive.
         #expect(
             QuickCreateChoicePopover.hostLimitNotice(
                 for: moved,
@@ -255,7 +255,7 @@ struct CadenceQuickCreateTaskInspectorTests {
     }
 
     /// **None is a real estimate everywhere else and cannot be one here.** Both task writes floor
-    /// the length at five minutes (`SchedulingActions.insertTask`, `TaskCreationManager.present`),
+    /// the length at five minutes (`SchedulingActions.insertTask`, on both hosts since the eighth slice),
     /// so a task created from a drag always has one — the panel's Estimate row says so rather than
     /// storing 15 minutes over the top of the user's answer.
     @Test func anEstimateOfNoneIsRefusedBecauseBothTaskWritesFloorTheLength() {
@@ -560,6 +560,84 @@ struct CadenceQuickCreateTaskInspectorTests {
         // having been created at all.
         let createdTask = try #require(created)
         #expect(createdTask.priority != TaskPriority.low, "the picker's value survived a typed shortcut")
+    }
+
+    // MARK: - The Today timeline creates in place ([[T-3171]], the eighth adoption slice)
+
+    private static let todayTimelinePath = "Cadence/macOS/Views/SchedulePanel.swift"
+
+    /// **The Today timeline's Add creates the task, on the draft's own day.** It used to hand the
+    /// draft to `TaskCreationManager.present`, which opened the full create sheet over the popover
+    /// the user had just filled in — the panel's footer said Add and added nothing. Now it writes
+    /// through `QuickCreateTaskDraft.insert`, and what the panel confirmed is what is stored.
+    ///
+    /// The day is the load-bearing field: it is the one thing this host writes that the Calendar
+    /// page's column overwrites, and T-1433 is the reason it must be the draft's. So it is set to a
+    /// day that is neither today nor the drag's, and read back through a **second** context.
+    @Test func theTodayTimelinesTaskLandsOnTheDraftsOwnDayWithEveryFieldThePanelConfirmed() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let draft = QuickCreateTaskDraft(
+            title: "Moved to Monday on the panel",
+            dateKey: "2026-05-04",
+            startMin: 10 * 60,
+            endMin: 11 * 60 + 30,
+            container: .inbox,
+            sectionName: TaskSectionDefaults.defaultName,
+            priority: .high,
+            notes: "typed in the popover",
+            subtaskTitles: []
+        )
+
+        _ = try #require(try draft.insert(areas: [], projects: [], in: context))
+
+        let stored = try #require(try ModelContext(container).fetch(FetchDescriptor<AppTask>()).first)
+        #expect(stored.scheduledDate == "2026-05-04", "the Today timeline wrote a day other than the draft's")
+        #expect(stored.scheduledStartMin == 10 * 60)
+        #expect(stored.estimatedMinutes == 90, "the block the panel confirmed is not the block stored")
+        #expect(stored.priority == .high)
+        #expect(stored.notes == "typed in the popover")
+        #expect(stored.title == "Moved to Monday on the panel")
+    }
+
+    /// A refused write still says so ([[T-655]]): the store's error reaches the caller rather than
+    /// being swallowed by the helper, and nothing is left behind in the context.
+    @Test func aRefusedTodayTimelineWriteThrowsAndLeavesNoTask() throws {
+        struct Refused: Error {}
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let draft = QuickCreateTaskDraft(
+            title: "Refused",
+            dateKey: "2026-05-01",
+            startMin: 600,
+            endMin: 660,
+            container: .inbox,
+            sectionName: TaskSectionDefaults.defaultName,
+            priority: .none,
+            notes: "",
+            subtaskTitles: []
+        )
+
+        #expect(throws: Refused.self) {
+            try draft.insert(areas: [], projects: [], in: context, commit: { _ in throw Refused() })
+        }
+        #expect(try context.fetch(FetchDescriptor<AppTask>()).isEmpty, "a refused drag-create left a task behind")
+    }
+
+    /// The source half: the Today timeline's closure is that write, it opens no second sheet, and a
+    /// refusal has an alert to land in. Each alone goes quietly green — a helper nobody calls, a
+    /// call that still also presents the sheet, a `catch` that sets a flag nothing draws.
+    @Test func theTodayTimelineCreatesInPlaceRatherThanOpeningASecondSheet() throws {
+        let panel = try code(Self.todayTimelinePath)
+        #expect(panel.contains("onCreateTask: createDraggedTask"), "the Today timeline no longer routes its drag-create through createDraggedTask")
+        let body = try #require(CadenceSourceScan.functionBody(named: "createDraggedTask", in: panel))
+        #expect(body.contains("draft.insert(areas: areas, projects: projects, in: modelContext)"))
+        #expect(body.contains("taskCreateFailed = true"), "a refused drag-create is swallowed")
+        #expect(
+            CadenceSourceScan.matchCount(#"taskCreationManager\.present\("#, in: panel) == 0,
+            "the Today timeline still opens the full create sheet over the panel"
+        )
+        #expect(panel.contains("isPresented: $taskCreateFailed"), "nothing draws the refusal")
     }
 
     /// The source half: the panel carries the priority and the host forwards it. Either alone goes

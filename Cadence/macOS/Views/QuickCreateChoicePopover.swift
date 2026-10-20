@@ -13,10 +13,11 @@ import SwiftData
 ///
 /// **It is the shape of the two hosts' write closures, not of the form** ([[T-3171]], the seventh
 /// adoption slice). The form is `CadenceSchedulePanel` now; this is what survives the handoff into
-/// `SchedulingActions.insertTask` on the Calendar page and into `TaskCreationManager.present` on
-/// the Today timeline. Both call sites are fixed — one of them is in a Codex-leased file — so a
-/// field the panel offers that has no member here has nowhere to go, and the popover refuses such
-/// a draft out loud rather than dropping it (T-470). See `QuickCreateChoicePopover.hostLimitNotice`.
+/// `SchedulingActions.insertTask` — on the Calendar page through its column's own `createTask`, on
+/// the Today timeline through `insert(areas:projects:in:)` below. Both write paths are fixed — one
+/// of them is in a Codex-leased file — so a field the panel offers that has no member here has
+/// nowhere to go, and the popover refuses such a draft out loud rather than dropping it (T-470).
+/// See `QuickCreateChoicePopover.hostLimitNotice`.
 struct QuickCreateTaskDraft {
     var title: String
     /// `yyyy-MM-dd`, the repo's persisted form.
@@ -31,10 +32,50 @@ struct QuickCreateTaskDraft {
     /// kept rather than removed: `CadenceScheduleDraft` has no subtasks, so adopting the shared
     /// panel dropped the old Task tab's subtask composer, and the Calendar page's leased host still
     /// declares a `subtaskTitles:` argument this value has to fill. Nothing else writes it — the
-    /// composer a drag-created task's subtasks were typed into is gone, and the full create sheet
-    /// the Today timeline hands off to has its own. Retiring the member means editing
-    /// `CalendarPageMonthSupportViews.swift`, which is on the Codex lease.
+    /// composer a drag-created task's subtasks were typed into is gone. Retiring the member means
+    /// editing `CalendarPageMonthSupportViews.swift`, which is on the Codex lease.
     var subtaskTitles: [String]
+}
+
+extension QuickCreateTaskDraft {
+    /// **The Today timeline's write: the task the panel's Add confirmed, created in place on the
+    /// draft's own day** ([[T-3171]], the eighth adoption slice).
+    ///
+    /// The Today timeline used to hand this draft to `TaskCreationManager.present`, which opened the
+    /// full create sheet over the popover the user had just filled in — so the panel's footer said
+    /// **Add** and added nothing, and a drag on Today reached a second form where a drag on the
+    /// Calendar page created the task. Both hosts now write through `SchedulingActions.insertTask`,
+    /// the Calendar page's path, so one popover means one thing on both.
+    ///
+    /// **`dateKey` is the draft's, not the host's.** That is the one difference from the Calendar
+    /// page's column, which overwrites it with its own column's day, and it is T-1433's behaviour:
+    /// a slot dragged on Today and moved to tomorrow on the panel's Do grid lands on tomorrow. It is
+    /// what `QuickCreateChoicePopover.hostWritesDraftDay` promises for this host.
+    ///
+    /// - Parameter commit: See `SchedulingActions.insertTask`.
+    @discardableResult
+    func insert(
+        areas: [Area],
+        projects: [Project],
+        in context: ModelContext,
+        commit: (ModelContext) throws -> Void = { try $0.save() }
+    ) throws -> AppTask? {
+        try SchedulingActions.insertTask(
+            title: title,
+            dateKey: dateKey,
+            startMin: startMin,
+            endMin: endMin,
+            containerSelection: container,
+            sectionName: sectionName,
+            priority: priority,
+            notes: notes,
+            subtaskTitles: subtaskTitles,
+            areas: areas,
+            projects: projects,
+            in: context,
+            commit: commit
+        )
+    }
 }
 
 /// The prose each kind of the drag-create popover composes, kept apart.
@@ -124,15 +165,16 @@ struct QuickCreateChoicePopover: View {
     ///
     /// Host-owned, like `CalendarEventEditPopover`'s: the host is the frame that dismisses this
     /// popover, so it is the only frame that can decide to keep the draft on screen instead. The
-    /// Task arm deliberately keeps its alerts — its hosts hand the draft to a separate panel or
-    /// sheet, so by the time the store answers there is nothing left here.
+    /// Task arm deliberately keeps its alerts — the popover has closed by the time the store
+    /// answers, so there is nothing left here to write under.
     @Binding var createFailureNotice: String?
-    /// Whether the host hands the draft on to the task panel (the Today timeline) or creates in
-    /// place (the Calendar page's day column). **Kept** although both arms now draw one form:
-    /// `CalendarPageMonthSupportViews.swift` passes `false` and is Codex-leased, and it is also the
-    /// one fact that says whether the host honours the draft's own **day** — the panel-handoff host
-    /// forwards `draft.dateKey` to `TaskCreationManager.present`, the day column overwrites it with
-    /// its column's.
+    /// Whether the host honours the draft's own **day**. The name is historical and **kept**:
+    /// `true` meant the Today timeline handed the draft to the full task panel, which it no longer
+    /// does ([[T-3171]]'s eighth slice — both hosts now create in place), and
+    /// `CalendarPageMonthSupportViews.swift` passes `false` and is Codex-leased. What survives is
+    /// the one fact the flag still carries: the Today timeline writes `draft.dateKey`
+    /// (`QuickCreateTaskDraft.insert`), the Calendar page's day column overwrites it with its
+    /// column's.
     let usesTaskPanelForTaskCreation: Bool
 
     @Environment(CalendarManager.self) private var calendarManager
@@ -249,8 +291,8 @@ struct QuickCreateChoicePopover: View {
 
     /// Whether the host stores the day the panel's grid names, or supplies its own.
     ///
-    /// Only the Today timeline's task handoff does: it forwards `draft.dateKey` into
-    /// `TaskCreationManager.present`. The Calendar page's day column overwrites it with its own
+    /// Only the Today timeline's task write does: it creates on `draft.dateKey` through
+    /// `QuickCreateTaskDraft.insert`. The Calendar page's day column overwrites it with its own
     /// column's, and **both** hosts give `createStandaloneEvent` their own date, so no event
     /// created here can name another day.
     private var hostWritesDraftDay: Bool {

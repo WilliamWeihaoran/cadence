@@ -87,6 +87,9 @@ struct SchedulePanel: View {
     @State private var isFocusHighlighted = false
     @State private var exportDocument: PlainTextExportDocument?
     @State private var isExportingTimeline = false
+    /// A drag-created task the store refused ([[T-655]]'s rule, on the Today timeline since
+    /// [[T-3171]]'s eighth slice made this host create in place).
+    @State private var taskCreateFailed = false
 
     /// The invalidation token for the day this timeline draws (T-3120, after [[T-3104]]). Every
     /// host builds this panel with constant arguments, so a host's own body pass at midnight does
@@ -144,23 +147,11 @@ struct SchedulePanel: View {
                             scheduledTasks: scheduledTasks,
                             todayKey: todayKey,
                             externalEventItems: externalEventItems,
-                            // **T-1433.** `doDateKey` was pinned to `todayKey` because the
-                            // popover could not offer a date. It offers one now, and the seed
-                            // takes it: a slot dragged on this timeline and then moved to
-                            // tomorrow in the inspector must open the panel on tomorrow.
-                            onCreateTask: { draft in
-                                taskCreationManager.present(
-                                    title: draft.title,
-                                    notes: draft.notes,
-                                    doDateKey: draft.dateKey,
-                                    scheduledStartMin: draft.startMin,
-                                    estimatedMinutes: max(5, draft.endMin - draft.startMin),
-                                    priority: draft.priority,
-                                    container: draft.container,
-                                    sectionName: draft.sectionName,
-                                    subtaskTitles: draft.subtaskTitles
-                                )
-                            },
+                            // **[[T-3171]], eighth slice.** The popover's Add creates the task
+                            // here, as the Calendar page's does; it no longer opens the full
+                            // create sheet over the form the user just filled in. T-1433 holds:
+                            // the draft's own day is the one written.
+                            onCreateTask: createDraggedTask,
                             onDropTaskAtMinute: { task, startMin in
                                 SchedulingActions.dropTask(task, to: todayKey, startMin: startMin)
                             },
@@ -226,6 +217,13 @@ struct SchedulePanel: View {
                 .padding(.vertical, 6)
         }
         .calendarWriteFailureAlert()
+        // An alert, not an inline notice, for the reason the Calendar page's day column gives: the
+        // popover the user typed into has closed by the time the store answers (T-655).
+        .alert(TaskCreationService.createFailureAlertTitle, isPresented: $taskCreateFailed) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(TaskCreationService.saveFailureNotice)
+        }
         .cadenceTracksDayChanges($observedDay)
         .onChange(of: calendarManager.storeVersion) {
             SchedulePanelDataSupport.syncLinkedTasks(
@@ -240,6 +238,22 @@ struct SchedulePanel: View {
     private var headerHeight: CGFloat? {
         if presentation == .compact { return 58 }
         return useStandardHeaderHeight ? todayPanelHeaderHeight : nil
+    }
+
+    /// The drag-create popover's Task arm, committed here ([[T-3171]]'s eighth slice).
+    ///
+    /// A task the panel moved to another day leaves this timeline the moment it lands, so that one
+    /// case says so with the create sheet's own success toast rather than vanishing; a task created
+    /// on today is its own confirmation — it is the block now drawn where the ghost was.
+    private func createDraggedTask(_ draft: QuickCreateTaskDraft) {
+        do {
+            try draft.insert(areas: areas, projects: projects, in: modelContext)
+            if draft.dateKey != todayKey {
+                taskCreationManager.presentSuccessToast()
+            }
+        } catch {
+            taskCreateFailed = true
+        }
     }
 
     private func focusTimeline(using proxy: ScrollViewProxy) {
