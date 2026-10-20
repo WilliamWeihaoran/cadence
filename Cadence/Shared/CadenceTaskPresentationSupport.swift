@@ -111,7 +111,11 @@ nonisolated struct CadenceTaskRowMetrics: Equatable, Sendable {
     let titleFontSize: CGFloat
     let secondaryFontSize: CGFloat
     let secondaryLineLimit: Int
-    /// How many characters of the notes preview the secondary line asks for.
+    /// How many characters of the notes preview the secondary line is handed. Stated above what
+    /// the line can show at any width this tier is drawn at, so the `Text`'s own tail truncation
+    /// does the cutting; this is the bound for a very long note, cut on a word with an ellipsis by
+    /// `CadenceTaskPresentationSupport.plainPreviewText` ([[T-3222]]). It was 64 / 120, which cut a
+    /// note mid-word in a row with room for all of it.
     let notesPreviewLimit: Int
 
     static func metrics(for surface: CadenceTaskRowSurface) -> CadenceTaskRowMetrics {
@@ -138,7 +142,7 @@ nonisolated struct CadenceTaskRowMetrics: Equatable, Sendable {
         titleFontSize: 13,
         secondaryFontSize: 12,
         secondaryLineLimit: 2,
-        notesPreviewLimit: 120
+        notesPreviewLimit: 400
     )
 
     static let compactWidth = CadenceTaskRowMetrics(
@@ -151,7 +155,7 @@ nonisolated struct CadenceTaskRowMetrics: Equatable, Sendable {
         titleFontSize: 13,
         secondaryFontSize: 11,
         secondaryLineLimit: 1,
-        notesPreviewLimit: 64
+        notesPreviewLimit: 240
     )
 
     /// macOS. Three of these ten figures land on `.regular`'s answer exactly —
@@ -173,7 +177,7 @@ nonisolated struct CadenceTaskRowMetrics: Equatable, Sendable {
         titleFontSize: 15,
         secondaryFontSize: 11,
         secondaryLineLimit: 1,
-        notesPreviewLimit: 64
+        notesPreviewLimit: 240
     )
 }
 
@@ -347,8 +351,42 @@ extension CadenceTaskCompletionState {
 }
 
 enum CadenceTaskPresentationSupport {
+    /// The task row's notes excerpt: the shared search reader, but **cut the way a row reads** —
+    /// at a word boundary, with an ellipsis whenever anything was dropped ([[T-3222]]).
+    ///
+    /// `CadenceMarkdownPresentationSupport.plainPreviewText`'s own cut is a bare `prefix(limit)`,
+    /// which is right for search (a test pins it there) and wrong here: the rows draw this in a
+    /// one- or two-line `Text` with tail truncation, and a string already cut to `limit` fits, so
+    /// SwiftUI's ellipsis never fired and "...ask about the lease ren" read as the whole note.
+    /// Two halves fix that. `notesPreviewLimit` is now a bound on how much text a row is handed,
+    /// stated above what any row's line can show, so the `Text` truncates itself at its real
+    /// width; and on the rare note longer than that, this cut still ends on a whole word and says
+    /// it was cut. The result is at most `limit + 1` characters — the ellipsis is one.
     static func plainPreviewText(from markdown: String, limit: Int? = nil) -> String {
-        CadenceMarkdownPresentationSupport.plainPreviewText(from: markdown, limit: limit)
+        let text = CadenceMarkdownPresentationSupport.plainPreviewText(from: markdown)
+        guard let limit, text.count > limit else { return text }
+        return wordBoundaryExcerpt(of: text, limit: limit)
+    }
+
+    /// `text` cut to at most `limit` characters on the last whitespace, then marked with `…`.
+    /// A run with no whitespace in its back half (a pasted URL) is cut hard rather than shrunk to
+    /// a stub, and still carries the ellipsis.
+    static func wordBoundaryExcerpt(of text: String, limit: Int) -> String {
+        guard limit > 0 else { return "" }
+        guard text.count > limit else { return text }
+
+        let cutIndex = text.index(text.startIndex, offsetBy: limit)
+        var head = text[..<cutIndex]
+        // A cut that lands just before a space is already on a word boundary.
+        if !text[cutIndex].isWhitespace,
+           let lastSpace = head.lastIndex(where: \.isWhitespace),
+           head.distance(from: head.startIndex, to: lastSpace) >= limit / 2 {
+            head = head[..<lastSpace]
+        }
+        let trimmed = String(head).trimmingCharacters(
+            in: CharacterSet.whitespacesAndNewlines.union(CharacterSet(charactersIn: ",;:"))
+        )
+        return trimmed + "\u{2026}"
     }
 
     static func subtaskProgress(for task: AppTask) -> CadenceSubtaskProgress? {
