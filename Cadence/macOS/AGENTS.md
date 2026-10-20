@@ -35,7 +35,6 @@ This is the main product surface. Most implemented functionality lives here.
 
 ## Build Check
 
-Build through `scripts/xcb.sh <id> build|test`. The two invocations, the two load-bearing flags
-(`-only-testing:CadenceTests` and a private `-derivedDataPath`) and what each one is protecting
-against are in the root `AGENTS.md` — "Project Snapshot" and "Build And Run Safety" — and are not
+Build through `scripts/xcb.sh <id> build|test`. The invocations and the two load-bearing flags are
+in the root `AGENTS.md`, "Project Snapshot"; the refusals are in `docs/AGENT_BRIEF.md`. Neither is
 restated here, because a second copy is a second thing to keep in step.

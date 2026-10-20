@@ -1,7 +1,8 @@
 # Services Guide
 
-This folder contains shared app services and persistence-adjacent support (62 top-level `.swift`
-files at the time of writing — `ls Cadence/Services/*.swift | wc -l` — plus `AI/` and `MCPReadOnly/`). It is cross-platform: macOS-only managers live in `Cadence/macOS/Services/`.
+This folder contains shared app services and persistence-adjacent support — count the top-level
+files with `ls Cadence/Services/*.swift | wc -l` rather than trusting a figure in a guide, plus
+`AI/` and `MCPReadOnly/`. It is cross-platform: macOS-only managers live in `Cadence/macOS/Services/`.
 
 The rules are here. The measurements, the incidents and the arguments behind them are in
 `../../docs/SERVICES_AGENTS_REFERENCE.md`, one section per bullet below, named where it is needed.

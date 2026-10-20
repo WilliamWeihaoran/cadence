@@ -12,14 +12,13 @@ compact. The full former guide is preserved at `../../docs/IOS_AGENTS_REFERENCE.
   wind-down flows on their established paths.
 - When detail is missing here, search `../../docs/IOS_AGENTS_REFERENCE.md` for the relevant section
   rather than reading the full reference.
-- **The iOS gate needs a simulator that exists on this Mac, and a wrong name fails as a fake pass.**
-  `scripts/xcb.sh <id> raw -scheme Cadence -destination 'platform=iOS Simulator,name=iPhone 17 Pro'
-  build`. Xcode 27 ships no iPhone 15 — that name gave `XCODEBUILD_EXIT=70`, `compile errors: 0`
-  and `warnings: 0` over zero compiled files, which reads like a pass; only `VACUOUS-COUNT` and an
-  absent `swift compile tasks:` dissented. `xcb.sh` now refuses a device this Mac does not have
-  (`NO-SUCH-SIMULATOR`, exit 10) and names the ones it does, before building — so the name above is
-  a convenience, not the guard. The macOS test target never compiles this directory, so skipping
-  this gate means an iOS change was never compiled at all (T-1282).
+- **The iOS leg is mandatory: the macOS test target never compiles this directory, so skipping it
+  means an iOS change was never compiled at all** (T-1282). Build against one of the two standing
+  devices `docs/AGENT_BRIEF.md` names by UDID, claimed through `scripts/simulator-claim.sh` —
+  never a device you did not create, and never the owner's. A destination this Mac does not have
+  used to fail as a *fake pass*: `XCODEBUILD_EXIT=70` with `compile errors: 0` and `warnings: 0`
+  over zero compiled files, dissented from only by `VACUOUS-COUNT`. `xcb.sh` now refuses it
+  outright (`NO-SUCH-SIMULATOR`, exit 10) and names the devices it does have.
 - **An iOS UI test runs through `CadenceUITestsOnly`, never through `Cadence`** (T-2074).
   `xcodebuild` builds every testable in the scheme whatever `-only-testing:` says, and `CadenceTests`
   cannot compile for iOS — 35 files open with a bare `import AppKit`, so `-scheme Cadence` on an iOS
@@ -59,7 +58,7 @@ The task inspector is presented by a host, never by a row.
   host and no `TaskBundle` query anywhere under `Cadence/iOS/`.
 - `iOSBundleInspectorHost()` and `iOSCalendarBundleDetailSheet` are deleted; do not re-add a
   second inspector host. `iOSTaskInspectorHost` is the only one, and the lifetime rule it exists
-  for is in "Task Inspector Host" above.
+  for is in "Task Inspector" above.
 - Do not re-add a bundle-forming drop. A task dropped on a task is a reorder or a no-op, per
   surface; the gesture that made a block is gone from both platforms.
 - `TaskBundle` itself stays a `@Model` until a build ships that no device can hold a record for
@@ -112,6 +111,9 @@ not in platform editor files.
 ## Compact Tab Shell
 
 - `iOSCompactTabShell.swift` declares the compact root shell, tab bar, capture button, and helpers.
+  `../../docs/ios-tab-shell-plan.md` is its design record and the only place three owner-directed
+  cuts are written down — the up-next hero, the Today capture bar, the `VStack`-sibling bar. Where
+  it and the code disagree, the code wins.
 - The `+` is not a tab and never renders selected state.
 - The bar is a sibling of content in a `VStack`, not an overlay or `safeAreaInset`.
 - Tabs are built on first visit and kept alive to preserve state.

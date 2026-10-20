@@ -57,11 +57,13 @@ For each finding, include the grep, the snippet, or the test that distinguishes 
 reasoned about. Tag each claim `measured` (you executed it) or `inferred` (you read it). Then I
 verify the inferred ones and trust the measured ones, instead of re-checking everything.
 
-## 5. Check `docs/TODO.md` before writing the finding up
+## 5. Check the ledger before writing the finding up
 
-Two findings in the fourth audit were already filed from the second and third. A grep for the
-symbol name in `docs/TODO.md` costs nothing. If a ticket exists, say "extends T-NNN" and give only
-the new part — that is genuinely useful, and much cheaper than a rediscovery I have to detect.
+Two findings in the fourth audit were already filed from the second and third. Ask
+`./scripts/ledger-view.sh brief` and, for a candidate id, `head T-NNNN`; do **not** `rg docs/TODO.md`
+for the symbol name, which prints whole multi-kilobyte entries out of a very large file. If a ticket
+exists, say "extends T-NNNN" and give only the new part — that is genuinely useful, and much cheaper
+than a rediscovery I have to detect.
 
 ## 6. Reach for the sharpest available framing
 

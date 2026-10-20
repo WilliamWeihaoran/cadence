@@ -14,7 +14,8 @@ Read [AGENTS.md](../AGENTS.md) for the directory map and the non-negotiable UI p
   addenda counted rather than printed. Use `show T-NNNN` for the whole entry once you are
   working and need the history. On the largest ticket that is ~5k tokens instead of ~20k.
 - `brief` for the open list; `counts` for the census.
-- **Never read `docs/TODO.md` whole — it is 2.3 MB.** Single entries reach 79 KB.
+- **Never read `docs/TODO.md` whole.** It is a multi-megabyte file and single entries reach tens
+  of kilobytes, so a lexical `rg` for an id prints whole entries. Ask `ledger-view.sh`.
 - The lead token is the first word after `**`. Only `CLOSED`, `PARTIAL`, `OPEN`, `PARKED` are legal.
 - **Check whether a stated blocker is still true.** Tickets here go stale in one specific way: they
   name a live agent or a dirty file, that work lands, and the ticket stays parked on a condition

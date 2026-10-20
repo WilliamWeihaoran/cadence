@@ -85,4 +85,4 @@ get re-created instead of found. `HabitListSupport.swift`, `FocusLogSessionPopov
 
 - Search for moved type names to make sure references still resolve.
 - Run `git diff --check`.
-- Build the macOS scheme.
+- Build through `scripts/xcb.sh <id> build`; see the root `AGENTS.md` for the flags it supplies.
