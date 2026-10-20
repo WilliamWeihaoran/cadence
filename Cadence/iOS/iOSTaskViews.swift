@@ -296,13 +296,11 @@ struct iOSTaskRow: View {
             // preview rather than after the chip strip, because "under the notes" is a position
             // relative to the text they annotate.
             //
-            // **The notes glyph SURVIVES, deliberately.** The owner asked *"we can probably just
-            // remove the notes icon right?"*, reasoning that the preview above already says the
-            // task has notes — which is true on iOS and false on macOS, whose row draws no notes
-            // text at all and would lose the fact outright. T-3196 settled it: the glyph comes off
-            // **both** platforms at once, after the macOS row has an excerpt to replace it. That
-            // excerpt landed with [[T-1467]], and the drop itself is [[T-3231]]. Dropping it here
-            // alone would split one row vocabulary across two platforms for the sake of one glyph.
+            // **There is no notes glyph here, on either platform.** The preview above already says
+            // the task has notes, so [[T-3231]] removed `case notes` from `CadenceTaskRowIndicator`
+            // once the macOS row gained its own excerpt ([[T-1467]]). That one deletion took the
+            // glyph off both rows at once with no edit in this file, which is what T-3196 asked
+            // for: one row vocabulary, never split across the two platforms.
             CadenceTaskRowIndicatorStrip(indicators: rowIndicators)
 
             taskBadges
