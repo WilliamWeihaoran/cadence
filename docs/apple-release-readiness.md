@@ -154,7 +154,8 @@ them rather than as standing claims.
   or an `@Relationship` to a `@Model`. So nothing is owed, measured the way the paragraph above
   says to measure it — against the model's stored properties, not against a deployment diff.
   **This goes stale the moment someone adds a stored property.** Redo it, do not re-read it.
-- **The widget extension carries no iCloud container.**
+- **The widget extension carries no iCloud container** *(true of the committed tree; there is
+  uncommitted work in flight — see the warning under this list)*.
   `CadenceWidgets/CadenceWidgets.entitlements` holds the App Group and the sandbox flag and nothing
   else. That is deliberate and is T-3152: the owner decided to add one, and it was measured to turn
   every signed local build red because the `com.haoranwei.Cadence.CadenceWidgets` App ID has no
@@ -164,6 +165,14 @@ them rather than as standing claims.
   collected type, which is what the privacy-label table above claims.
 - `INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO` on both app configurations;
   `MACOSX_DEPLOYMENT_TARGET = 26.1`; `MARKETING_VERSION = 1.0`; `CURRENT_PROJECT_VERSION = 23`.
+
+**Before cutting an RC, read [[T-3152]]'s 2026-10-20 addendum.** The widget-entitlement owner
+step appears to have been taken, and the shared checkout has **uncommitted** entitlement changes
+that do not match what the ticket decided: an empty `icloud-container-identifiers` array rather
+than the named container, plus both push spellings, which
+`AppStoreReviewReadinessTests.widgetEntitlementsIncludeSandbox` asserts are absent. The committed
+tree is still clean; the working tree is not. Do not archive from a tree in that state without
+settling it.
 
 **Not verified here:** nobody ran the verification commands above as part of this check, and
 nothing in a document can establish that they were run. Anything needing an archive, a signed
