@@ -1262,7 +1262,8 @@ struct CadenceTodayTimelinePaneTests {
 /// default hour exactly as drawn.
 ///
 /// What is NOT pinned here, because it is not fixed: the editor is still absent for the length of
-/// an edge-handle drag and comes back with the keyboard when the finger lifts. That is [[T-3252]],
+/// an edge-handle drag. That is [[T-3252]] (its keyboard half — the title re-focusing when the
+/// editor comes back — is fixed and pinned in `CadenceScheduleDraftTests`),
 /// and holding it open is a presentation decision rather than a flag — both `.popover` levers are
 /// measured dead ends ([[T-3240]], [[T-3246]]). The two halves that ARE fixed are pinned
 /// elsewhere: the handle receives its touch ([[T-3240]]) and the editor returns to the adjusted

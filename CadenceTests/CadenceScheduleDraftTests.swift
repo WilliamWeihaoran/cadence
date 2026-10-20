@@ -451,6 +451,53 @@ struct CadenceTodayTimelineDraftCreationTests {
             "the dismissal is left alone — a refusing binding was measured to do nothing"
         )
     }
+
+    /// **[[T-3252]], the keyboard half.** The editor that `draftAdjustmentObserver` puts back after
+    /// an edge drag is a fresh presentation, so the panel's `onAppear` ran again and focused the
+    /// title — the keyboard came back on a gesture that was about the block's range, not its name.
+    ///
+    /// Behavioural on the decision: a new draft focuses its title, an existing record does not,
+    /// and a draft whose editor is RETURNING does not either. Then the wiring, as source text for
+    /// the reason the pins above are: the column is `#if os(iOS)`.
+    @Test("A draft editor returning after an adjustment leaves the keyboard down")
+    func aReturningDraftEditorLeavesTheKeyboardDown() {
+        #expect(CadenceSchedulePanelTitleFocus.takesFocusOnAppear(.opened, isEditing: false))
+        #expect(
+            !CadenceSchedulePanelTitleFocus.takesFocusOnAppear(.returnedAfterAdjustment, isEditing: false),
+            "the returning editor re-raises the keyboard"
+        )
+        #expect(!CadenceSchedulePanelTitleFocus.takesFocusOnAppear(.opened, isEditing: true))
+        #expect(!CadenceSchedulePanelTitleFocus.takesFocusOnAppear(.returnedAfterAdjustment, isEditing: true))
+
+        let panel = source("Cadence/Shared/Components/CadenceSchedulePanel.swift")
+        #expect(
+            panel.contains("isTitleFocused = CadenceSchedulePanelTitleFocus.takesFocusOnAppear("),
+            "the panel's onAppear no longer asks the policy"
+        )
+        let host = source("Cadence/iOS/iOSTimelineDraftCreate.swift")
+        #expect(host.contains(".appearing(titleFocusAppearance)"), "the draft host drops the appearance")
+
+        // Exactly one site says the editor is returning, and it is the adjustment observer, after
+        // its range comparison — so a tap, a press and a fresh draft all still focus the title.
+        let timeline = timelineColumnCode()
+        #expect(
+            CadenceSourceScan.matchCount(#"draftEditorAppearance = \.returnedAfterAdjustment"#, in: timeline) == 1,
+            "the returning appearance is written from somewhere other than the adjustment observer"
+        )
+        let collapsed = timeline.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+        #expect(
+            collapsed.contains(
+                "guard adjusted.startMin != before.start || adjusted.endMin != before.end else { return } "
+                    + "draftEditorAppearance = .returnedAfterAdjustment isDraftEditorPresented = true"
+            ),
+            "the returning appearance is not the adjustment observer's"
+        )
+        #expect(timeline.contains("titleFocusAppearance: draftEditorAppearance"))
+        // Every other presentation resets it, so a stale `.returnedAfterAdjustment` cannot leak
+        // into the next draft's first presentation: the tap, the press, `beginDraft` and the
+        // teardown.
+        #expect(CadenceSourceScan.matchCount(#"draftEditorAppearance = \.opened"#, in: timeline) == 4)
+    }
 }
 
 /// The draft over an event that **already exists** — the model half of [[T-3171]]'s first
