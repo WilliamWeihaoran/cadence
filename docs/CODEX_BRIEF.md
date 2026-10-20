@@ -119,9 +119,12 @@ Keep doing what you are doing. `docs/AUDIT_BRIEF.md` is the full version; the sh
 ## 5. Turn the user's UI dump into located tickets — highest-value new task
 
 The user sees the app; nobody else in this loop can. Claude's agents can drive an **iOS simulator**
-and verify there, but a macOS debug build vends no AX window tree and `screencapture` refuses its
-window, so macOS UI judgements come back to the user. That makes the user's own observations the
-scarcest input in the project — and writing them up longhand is the expensive part for them.
+and verify there. On macOS the debug build's AX window tree is *intermittently* empty, not absent
+(T-3199: populated and drivable early in one session, menu-bar-only later the same day; cause not
+found), and `screencapture -x -o -l<windowNumber>` captures the window in both states. So an agent
+can photograph a macOS view but not reliably drive a flow, and flow judgements come back to the
+user. That makes the user's own observations the scarcest input in the project — and writing them
+up longhand is the expensive part for them.
 
 **So: the user gives you one-liners, sometimes with screenshots. You give back tickets.** For each:
 
