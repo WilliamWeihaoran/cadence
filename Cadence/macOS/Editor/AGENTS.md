@@ -2,8 +2,9 @@
 
 This is a high-risk AppKit/SwiftUI bridge. Read the relevant files before editing and keep changes narrow.
 
-**Most markdown logic is not here.** The 27 `Markdown*.swift` files in
-`Cadence/Services/` own parsing, attributed-string construction, list/quote/checklist rules,
+**Most markdown logic is not here.** The `Markdown*.swift` files in `Cadence/Services/` — counted
+in `Cadence/Services/AGENTS.md`, which is the one place that number lives — own parsing,
+attributed-string construction, list/quote/checklist rules,
 typing transforms, backspace/line-break behavior, slash-command definitions, links, references,
 task embeds, inline preview, and image assets — and they are the ones with test coverage in
 `CadenceTests/`. The files here are the AppKit surface that calls into them. Behavior fixes

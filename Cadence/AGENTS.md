@@ -9,9 +9,9 @@ This subtree contains the app target source. Prefer reading `../AGENTS.md` first
 - `Services/` contains shared services, migrations, notifications, widget support, the markdown/note parsing layer, schema, and `AI/` + `MCPReadOnly/`.
 - `Shared/` contains design tokens (`Theme.swift`), common components, date/time formatting, and cross-platform presentation/query/mutation support.
 - `macOS/` contains the fully implemented desktop app — the primary product surface.
-- `iOS/` is a **large, actively-developed iOS/iPadOS surface — 93 `.swift` files at the time of
-  writing, not stubs.** (`ls Cadence/iOS/*.swift | wc -l` — run it; this line said 79 while the
-  root guides said 86 and the directory held 87, and it has been behind at every reading since.)
+- `iOS/` is a **large, actively-developed iOS/iPadOS surface, not stubs.** Count it with
+  `ls Cadence/iOS/*.swift | wc -l` rather than trusting a number in a guide: every figure written
+  down here has been behind the directory at its next reading, by as much as 2x.
   `iOSRootView.swift` is an adaptive root shell — `iPadMacStyleRootShell` (sidebar) at regular
   width, `iOSCompactRootShell` (a hand-built **four-tab bottom bar**, `[ Tasks ] [ Calendar ]
   ( + ) [ Notes ] [ More ]`) at compact width — routing to real implementations of Today,
@@ -21,12 +21,10 @@ This subtree contains the app target source. Prefer reading `../AGENTS.md` first
   opens a task: the inspector is presented by `iOSTaskInspectorHost`, and a row that owns the
   `.sheet` is the bug that guide's second section exists to stop you re-shipping.
 
-  This file described the compact shell as a "`TabView`" long after `iOS/AGENTS.md` was rewritten
-  to refute exactly that. There is no SwiftUI `TabView` anywhere under `iOS/`; the shell is a
-  `VStack` of content and a bar that is a **sibling** of the content, not an overlay and not a
-  `safeAreaInset`, with one type-erased `NavigationPath` per tab. Both of those are corrections of
-  shipped bugs, and "shells are `TabView`s" is the assumption that produced them — which is why
-  the wrong sentence mattered here, in the guide that is read before the iOS one.
+  **There is no SwiftUI `TabView` anywhere under `iOS/`.** The shell is a `VStack` of content and
+  a bar that is a **sibling** of the content, not an overlay and not a `safeAreaInset`, with one
+  type-erased `NavigationPath` per tab. Both halves are corrections of shipped bugs, and "shells
+  are `TabView`s" is the assumption that produced them.
 
 ## Working Rules
 
@@ -38,7 +36,6 @@ This subtree contains the app target source. Prefer reading `../AGENTS.md` first
 
 ## Build Check
 
-Build through `scripts/xcb.sh <id> build|test`. The two invocations, the two load-bearing flags
-(`-only-testing:CadenceTests` and a private `-derivedDataPath`) and what each one is protecting
-against are in the root `AGENTS.md` — "Project Snapshot" and "Build And Run Safety" — and are not
+Build through `scripts/xcb.sh <id> build|test`. The invocations and the two load-bearing flags are
+in the root `AGENTS.md`, "Project Snapshot"; the refusals are in `docs/AGENT_BRIEF.md`. Neither is
 restated here, because a second copy is a second thing to keep in step.

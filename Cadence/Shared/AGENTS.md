@@ -6,11 +6,10 @@ The full former guide is preserved at `../../docs/SHARED_AGENTS_REFERENCE.md`.
 
 ## Read First
 
-- Shared code must stay genuinely shared or intentionally platform-conditional.
-- Prefer `Theme`, existing shared components, and existing support types before adding a new helper.
-- Avoid pulling macOS-only managers or AppKit assumptions into shared code.
-- When a detail is not here, search `../../docs/SHARED_AGENTS_REFERENCE.md` for the relevant section
-  rather than reading that full file.
+Shared code must stay genuinely shared or intentionally platform-conditional: prefer `Theme`,
+existing components and existing support types over a new helper, and pull no macOS-only manager
+or AppKit assumption in here. When a detail is not in this file, search
+`../../docs/SHARED_AGENTS_REFERENCE.md` for the relevant section rather than reading it whole.
 
 ## Theme And Colour
 
@@ -35,9 +34,9 @@ The neutral ramp is fixed. Accents are selectable and computed:
 
 ## Date And Time
 
-- Persisted dates are `yyyy-MM-dd` strings unless an existing model says otherwise.
-- Use `DateFormatters` and `TimeFormatters`.
-- Do not create inline `DateFormatter()` instances in views.
+Both types are declared here, in `DateFormatters.swift`. The rule — persisted dates are
+`yyyy-MM-dd` strings, views build no inline `DateFormatter()` — is the root guide's
+(`../../AGENTS.md`, "Non-Negotiable Patterns") and is not restated.
 
 ## Source-Scanning Tests
 
@@ -51,6 +50,10 @@ Rules:
   the stripped string is never shorter: a `stripped.count < raw.count` guard is red whatever the
   code does. Assert `stripped != raw` instead, and pair it with `stripped.count == raw.count`.
 - Add non-vacuity checks so an empty or wrong-path read cannot pass.
+- **A non-vacuity anchor has to be a file where the needle can actually appear.** A type calls its
+  own members *unqualified*, so anchoring a qualified needle inside the declaring type reads zero
+  for a reason that is not absence — the scan is vacuous **and** green, which is the exact failure
+  the anchor exists to prevent. Pick a caller, not the declaration (T-3250).
 - For regex needles, include a self-check that must match and must not match.
 - Mutate the thing you claim to pin and confirm the test fails for the intended assertion.
 - `CadenceSourceScan.functionBody(named:)` cannot read a function whose signature carries a
@@ -131,19 +134,16 @@ Detailed examples are in `../../docs/SHARED_AGENTS_REFERENCE.md`.
 - One header per platform: `DesktopPageHeader` and `iOSPageHeader`.
 - Header wrappers such as `CommitmentPageHeader` and `CadenceSettingsHeader` are wrappers, not
   separate header systems.
-- Page headers do not carry descriptive subtitles or identity tiles.
-- Search rows, pickers, empty states, and other rows may keep subtitles when they add information.
-- Header tint belongs on the count capsule.
+- Page headers carry no descriptive subtitle or identity tile (root rule); header tint belongs on
+  the count capsule.
 - `CadencePageHeaderRole`: `.page` for full screens, `.pane` for columns.
 - `CadencePageHeaderSurface`: `.compact`, `.regular`, `.desktop`; macOS has its own tier.
 
 ## Shared Components
 
-- Prefer one parameterized shared component over platform near-copies.
-- iPhone and iPad share visual language; they differ by layout.
 - Preserve hover semantics in `CadenceHoverStyles.swift`: task/event/bundle hovers preserve colour
-  and lift/brighten rather than gray out.
-- Use one hover/selection layer at one radius.
+  and lift/brighten rather than gray out. One shared parameterized component over platform
+  near-copies, one hover/selection layer at one radius — both root rules, enforced here.
 - The shared board header is `CadenceBoardColumnHeader` in `Shared/Components/`.
 - The shared estimate popover is `EstimatePickerPopoverContent`; platform wrappers should delegate.
 - The hour ladder on a timed grid is `CadenceCalendarHourLadderMetrics` (T-1129): one cadence

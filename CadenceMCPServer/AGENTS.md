@@ -1,7 +1,7 @@
 # Cadence MCP Server Guide
 
 This is the canonical description of the MCP boundary. The other guides that mention it
-(`../AGENTS.md`, `../CLAUDE.md`, `../docs/CLAUDE_REFERENCE.md`, `../Cadence/Services/AGENTS.md`,
+(`../AGENTS.md`, `../docs/CLAUDE_REFERENCE.md`, `../Cadence/Services/AGENTS.md`,
 `../plugins/cadence-mcp/AGENTS.md`) state the procedure in one line and point here.
 The measured detail behind several rules below — commit archaeology, the T-259/T-409/T-415
 histories, the build-log forensics — lives in `../docs/MCP_AGENTS_REFERENCE.md`. Read the section a
@@ -106,25 +106,22 @@ Build **this** scheme; the `Cadence` scheme staying green is the thing that hide
 inside the app scheme (T-409), but it sees types, not free functions or extension members.
 
 ```sh
-/Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild \
-  -project Cadence.xcodeproj -scheme CadenceMCPServer -destination 'platform=macOS' \
-  -derivedDataPath /tmp/cadence-mcp-$$ build 2>&1 | tee /tmp/mcp-build-$$.log
+./scripts/xcb.sh <your-id> build -scheme CadenceMCPServer -destination 'platform=macOS'
 ```
 
-Then **grep the log**, with no path filter. Exit 0 says nothing about warnings, and a `grep
+Then **grep the log** `xcb.sh` names in its preflight, with no path filter. Exit 0 says nothing about warnings, and a `grep
 "/Cadence/"` misses the synthesized-macro paths a real isolation regression surfaced under — both
-measured, both in the reference. The private `-derivedDataPath` is not optional; see the
-non-negotiable in `../AGENTS.md` for what the shared one does to a running app.
+measured, both in the reference. The wrapper supplies the private `-derivedDataPath`, which is not
+optional; see the non-negotiable in `../AGENTS.md` for what the shared one does to a running app.
 
 Run `plugins/cadence-mcp/scripts/smoke-test.py` after any router, tool-definition or
 argument-parsing change. It verifies read-only mode and then drives a temp fixture store via
 `CADENCE_MCP_STORE_URL`, so it never touches the app-group store: `resolvedStoreURL()` prefers that
 override over `CadenceStoreSupport.primaryStoreURL()`, and `auditLogURL()` and `refreshMarkerURL()`
 derive from it, so the entire write path lands in the temp directory. That is the whole safety
-argument — check it in `CadenceModelContainerFactory.swift` rather than trusting this line. Set
-`CADENCE_MCP_DERIVED_DATA` to a path you have **already** built into, or the launcher rebuilds into
-the shared `.codex-build` and the lazy build outlasts the 45-second per-response timeout, failing
-as `timed out waiting for response 100` rather than naming a build.
+argument — check it in `CadenceModelContainerFactory.swift` rather than trusting this line. The
+launcher's own `CADENCE_MCP_DERIVED_DATA` rule, and the timeout that misreads as a server fault,
+are in `../plugins/cadence-mcp/AGENTS.md`.
 
 ## Working Rules
 
