@@ -6,6 +6,7 @@
 #   ./scripts/ledger-view.sh all            # every entry in both ledgers, one line each
 #   ./scripts/ledger-view.sh counts         # the census, beside the naive lexical count it corrects
 #   ./scripts/ledger-view.sh show T-1325    # the exact entry block(s) for one id, from both ledgers
+#   ./scripts/ledger-view.sh head T-1325    # the same entry's FIRST LINE only, with the addenda counted
 #   ./scripts/ledger-view.sh selftest       # prove every refusal and every hard reading still fires
 #
 # WHY THIS EXISTS
@@ -277,6 +278,35 @@ END {
         if (active(st[i])) id_open[e_id[i]] = 1; else id_closed[e_id[i]] = 1
     }
 
+    # `head` exists because an entry is unbounded: addenda accrete for the life of a ticket and
+    # `show` prints every one. T-3170 is 79 KB, so an agent assigned it spends ~20k tokens reading
+    # history before it writes a line. The first line carries the state and the claim, which is what
+    # a reader needs to decide; the addenda are the audit trail, which is what it needs only once it
+    # is working. This prints the first and COUNTS the second, naming `show` so the full entry is
+    # one command away -- a shorter read that hides nothing (T-3248).
+    if (mode == "head") {
+        hits = 0
+        for (i = 1; i <= n; i++) {
+            if (e_id[i] != want) continue
+            hits++
+            printf "%s:%d  %s  [%s]%s\n", e_file[i], e_line[i], st[i], e_sec[i], flags_of(i)
+            print e_first[i]
+            m = split(e_body[i], lines, "\n")
+            addenda = 0
+            for (j = 2; j <= m; j++) if (lines[j] ~ /ADDENDUM/) addenda++
+            if (m > 1)
+                printf "  [%d further line(s), %d ADDENDUM block(s) omitted -- ledger-view.sh show %s for the whole entry]\n",
+                    m - 1, addenda, want
+            print ""
+        }
+        if (hits == 0) {
+            printf "REFUSED (LEDGER-VIEW-NO-SUCH-ID): no formal `- [%s]` entry in %s or %s.\n  The ledger is the id allocator; an id that exists only in a commit message or in another\n  entry's prose is not filed (LEDGER-ID-UNFILED, scripts/agent-commit.sh).\n",
+                want, todo_label, done_label > "/dev/stderr"
+            exit 5
+        }
+        exit 0
+    }
+
     if (mode == "show") {
         hits = 0
         for (i = 1; i <= n; i++) {
@@ -343,7 +373,7 @@ END {
 AWK
 )
 
-run_view() {  # $1 = mode, $2 = wanted id (show only)
+run_view() {  # $1 = mode, $2 = wanted id (show/head only)
     [ -r "$TODO_PATH" ] || refuse LEDGER-VIEW-VACUOUS "$TODO_PATH is not readable; there is no ledger to read." 4
     [ -r "$DONE_PATH" ] || DONE_PATH=/dev/null
     awk -v mode="$1" -v want="${2:-}" -v min_entries="$MIN_ENTRIES" \
@@ -372,14 +402,14 @@ main() {
     case "$mode" in
         selftest) cmd_selftest; exit $? ;;
         -h|--help) sed -n '2,9p' "$SELF_PATH"; exit 0 ;;
-        show)
+        show|head)
             case "${2:-}" in
-                T-[0-9]*) run_view show "$2" ;;
-                *) refuse LEDGER-VIEW-BAD-ID "show takes one exact ticket id, spelled T-<number>; got '${2:-}'." 2 ;;
+                T-[0-9]*) run_view "$mode" "$2" ;;
+                *) refuse LEDGER-VIEW-BAD-ID "$mode takes one exact ticket id, spelled T-<number>; got '${2:-}'." 2 ;;
             esac
             ;;
         open|brief|all|counts) run_view "$mode" ;;
-        *) refuse LEDGER-VIEW-UNKNOWN-MODE "'$mode' is not a mode; use open, brief, all, counts, show <id> or selftest." 2 ;;
+        *) refuse LEDGER-VIEW-UNKNOWN-MODE "'$mode' is not a mode; use open, brief, all, counts, show <id>, head <id> or selftest." 2 ;;
     esac
 }
 
@@ -598,6 +628,31 @@ FIXTURE
     check "$rc" 2 "$out" "show with no id at all is refused the same way" LEDGER-VIEW-BAD-ID
 
     # --- mode 3b: the mode nobody defined -----------------------------------
+    # --- mode 3c: the capped read ------------------------------------------
+    # `head` is `show` with the audit trail counted instead of printed (T-3248). These say BOTH
+    # halves: that the first line and the location still arrive, and that the body does NOT -- a
+    # mode that quietly printed everything would pass a needle-only reading of the first half.
+    echo; echo " mode 3c (head; LEDGER-VIEW-NO-SUCH-ID, LEDGER-VIEW-BAD-ID) -- the first line, the rest counted"
+    out=$(run head T-10); rc=$?
+    check "$rc" 0 "$out" "head prints the first line and its location" "TODO.md:"
+    checkno "$rc" 0 "$out" "head does NOT print the body show prints whole" \
+        "must NOT be read as a new entry"
+    check "$rc" 0 "$out" "head says what it withheld, and how to get it" "omitted" "show T-10"
+
+    out=$(run head T-11); rc=$?
+    check "$rc" 0 "$out" "a single-line entry still prints its first line under head" "A plain open finding"
+    checkno "$rc" 0 "$out" "and an entry with no body claims nothing was omitted" "omitted"
+
+    out=$(run head T-9001); rc=$?
+    check "$rc" 5 "$out" "head refuses an unfiled id exactly as show does" \
+        LEDGER-VIEW-NO-SUCH-ID
+
+    out=$(run head nonsense); rc=$?
+    check "$rc" 2 "$out" "head refuses an argument that is not a ticket id" LEDGER-VIEW-BAD-ID
+
+    out=$(run head); rc=$?
+    check "$rc" 2 "$out" "head with no id at all is refused the same way" LEDGER-VIEW-BAD-ID
+
     echo; echo " mode 3b (LEDGER-VIEW-UNKNOWN-MODE) -- a typo must be refused, never quietly defaulted"
     out=$(run wibble); rc=$?
     check "$rc" 2 "$out" "an unknown mode is refused rather than quietly defaulting" LEDGER-VIEW-UNKNOWN-MODE
