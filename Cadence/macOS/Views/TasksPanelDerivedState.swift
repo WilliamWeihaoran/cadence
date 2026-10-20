@@ -77,6 +77,14 @@ struct TasksPanelDerivedState {
     ///
     /// A property rather than `isEmptyState(for:)`: the `TasksPanelMode` it switched over had one
     /// case and is gone (T-564(a)).
+    ///
+    /// **It no longer draws anything ([[T-3197]]).** `TasksPanel.emptyStateSection` was its one
+    /// view reader and the owner asked that box off every host. The clauses are kept rather than
+    /// deleted because they are the panel's tested statement of "this day has nothing on it" —
+    /// `CadenceTodayOverdueSummarySurfaceTests` pins that a day whose lists are past due is still
+    /// empty when its four task buckets are — and whatever answers "is Today blank" next should
+    /// read this rather than re-derive five bucket checks. iOS kept its `isEmpty` through the same
+    /// removal for the same reason.
     var isEmptyState: Bool {
         overdue.isEmpty &&
         overdoTasks.isEmpty &&

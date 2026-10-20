@@ -147,11 +147,10 @@ struct iOSCompactTodayView: View {
 // What is NOT gone, and was checked rather than assumed:
 //   - The debug seed card below. The owner asked whether it was dev-only; it is `#if DEBUG`, so it
 //     never compiles into a release build, and it stays exactly as it is.
-//   - CadenceTodayPresentationSupport.emptyTitle / .emptySubtitle. macOS's TasksPanel still draws
-//     them, so the constants keep a live reader and are not deleted out from under it. That leaves
-//     the two hosts saying different things about an empty Today for the first time — the owner's
-//     instruction named the phone's box and `for all devices` is what they said about the estimate
-//     chip, not about this. Raised on [[T-3197]] rather than decided here.
+//   - CadenceTodayPresentationSupport.emptyTitle / .emptySubtitle. They were left alone here
+//     because macOS's TasksPanel was still drawing them; the Mac's box has since come off too
+//     (same ticket), so the pair now has no drawing reader on either host and is tombstoned in
+//     place beside its own declarations. The two hosts agree about an empty Today again.
 
 /// Debug-only, on both widths — the seeding affordance cannot ship. iPad had its own "Samples"
 /// button welded into its empty-state card; it is this card now.

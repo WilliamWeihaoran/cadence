@@ -172,38 +172,46 @@ struct CadenceTodayUnificationTests {
         )
     }
 
-    /// **iOS's Today draws no empty state at all now, and macOS still does ([[T-3197]]).**
+    /// **Neither host draws an empty state for Today any more ([[T-3197]]).**
     ///
     /// This asserted that the empty day said one thing on both hosts, which was the point while
     /// both drew one: macOS's "Due-today and do-today tasks will appear here" restated the page's
     /// scope where the shared subtitle names the next thing to do, so the two were folded onto
     /// `CadenceTodayPresentationSupport`'s pair.
     ///
-    /// The owner has since asked for the box off: *"remove the box that says 'nothing planned add a
-    /// task with + ......'"*. The screenshot was iPhone Today and the instruction named that box;
-    /// *"for all devices"* is what they said about the estimate chip, not about this. So the phone
-    /// and the iPad draw nothing and macOS is untouched, which is a divergence this file exists to
-    /// notice — it is recorded here, and raised on [[T-3197]], rather than being settled by an
-    /// agent in passing.
+    /// The owner then asked for the box off: *"remove the box that says 'nothing planned add a
+    /// task with + ......'"*. iOS went first (2026-10-17) and the Mac was left behind only because
+    /// the screenshot they sent was iPhone Today — so for three days this file recorded the first
+    /// divergence it had ever had to record. That is now closed the way the ticket said it could
+    /// be closed: the instruction named the box rather than a platform, so the Mac's went too, and
+    /// the assertion is back to being a sameness check rather than an asymmetry one.
     ///
-    /// **The constants are deliberately not deleted.** `TasksPanel` is still a live reader of both,
-    /// so they keep a caller; a sweep that found them orphaned would be reading a tree where macOS
-    /// had gone too.
+    /// **The constants are still deliberately not deleted**, now with no drawing reader at all:
+    /// `CadenceRetiredCopyTests` names both as what retired an older spelling, and
+    /// `CadenceEmptyStateAuditTests` requires the declarations. Zero call sites in both hosts is
+    /// the assertion; the declarations staying put is checked there.
     @Test func bothPlatformsDrawTheSameEmptyToday() throws {
         try expectCallSites(
             of: "CadenceTodayPresentationSupport.emptyTitle",
             at: [
-                "Cadence/macOS/Views/TasksPanel.swift": 1,
+                "Cadence/macOS/Views/TasksPanel.swift": 0,
                 "Cadence/iOS/iOSTodayCompactViews.swift": 0,
             ]
         )
         try expectCallSites(
             of: "CadenceTodayPresentationSupport.emptySubtitle",
             at: [
-                "Cadence/macOS/Views/TasksPanel.swift": 1,
+                "Cadence/macOS/Views/TasksPanel.swift": 0,
                 "Cadence/iOS/iOSTodayCompactViews.swift": 0,
             ]
         )
+        // Zero readers is not permission to delete the strings: two other suites name them, and
+        // the next empty state Today gets should start from this pair rather than a third
+        // spelling. Asserted here because this test is what would otherwise read as "orphaned".
+        let shared = try strippingComments(sourceFile("Cadence/Shared/CadenceTodayPresentationSupport.swift"))
+        #expect(shared.contains("static let emptyTitle = \"Nothing planned\""))
+        #expect(shared.contains("static let emptySubtitle = "))
+
         // The component went with the card, not just its call site: a struct left declared and
         // unused is what the next reader restores by accident.
         try expectCallSites(
@@ -1221,7 +1229,9 @@ struct CadenceTodayUnificationTests {
         // the call; the declaration one line down reads `derived: TasksPanelDerivedState`, so a
         // bare `(derived:` prefix counts both -- which it did, at the first attempt to fix this.
         #expect(occurrences(of: "todayOverviewSections(derived: derived", in: panel) == 1)
-        #expect(occurrences(of: "derived.isEmptyState", in: panel) == 1)
+        // [[T-3197]] took the empty-state box off the Mac too, so the panel has no reader left. The
+        // property itself is still declared and still tested; that is asserted above, not here.
+        #expect(occurrences(of: "derived.isEmptyState", in: panel) == 0)
         #expect(occurrences(of: "isEmptyState(for:", in: panel) == 0)
     }
 
