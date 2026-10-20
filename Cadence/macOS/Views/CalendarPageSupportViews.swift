@@ -294,11 +294,9 @@ struct CalendarTimelineViewport: View {
     @Binding var zoomLevel: Int
     let bufferStart: Date
     let allTasks: [AppTask]
-    let allBundles: [TaskBundle]
     let areas: [Area]
     let projects: [Project]
     let tasksByDate: [String: [AppTask]]
-    let bundlesByDate: [String: [TaskBundle]]
     let unscheduledTasksByDate: [String: [AppTask]]
     let todayDayIdx: Int
     @Binding var scrollToTodayTrigger: Bool
@@ -370,11 +368,9 @@ struct CalendarTimelineViewport: View {
                             todayKey: todayKey,
                             bufferStart: bufferStart,
                             allTasks: allTasks,
-                            allBundles: allBundles,
                             areas: areas,
                             projects: projects,
                             tasksByDate: tasksByDate,
-                            bundlesByDate: bundlesByDate,
                             hourHeight: viewportMetrics.hourHeight,
                             colWidth: viewportMetrics.colWidth,
                             showHalfHourMarks: zoomLevel == 3,

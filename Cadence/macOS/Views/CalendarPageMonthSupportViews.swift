@@ -320,12 +320,6 @@ struct MonthDayCell: View {
     let date: Date
     var todayKey: String = DateFormatters.todayKey()
     let tasks: [AppTask]
-    /// **Unread since [[T-3170]], and kept only because this cell's one caller is leased.**
-    /// `CalendarPageComponents.swift:243` constructs it and is Codex-leased and not granted, so
-    /// the parameter cannot go without breaking a file this pass may not touch. Nothing in this
-    /// view reads it: no chip is drawn from it and the ranking helper no longer takes a Block
-    /// count. The next agent granted that file deletes this line and the argument together.
-    let bundles: [TaskBundle]
     let allTasks: [AppTask]
     /// The month the **grid** is reading as, from the scroll position. What decides whether this
     /// cell is lit or dropped back onto the carried plate.
@@ -664,13 +658,7 @@ struct CalDayColumn: View {
     let date: Date
     let todayKey: String
     let tasks: [AppTask]
-    /// **Unread since [[T-3170]]**, for the same reason `MonthDayCell.bundles` is: this column's
-    /// one caller, `CalendarTimelineViewportSupportViews.swift:59`, is Codex-leased and not
-    /// granted. `TimelineDayCanvas` no longer takes a Block list, so neither of these reaches
-    /// anything. They go with that file's grant.
-    let bundles: [TaskBundle]
     let allTasks: [AppTask]
-    let allBundles: [TaskBundle]
     let areas: [Area]
     let projects: [Project]
     let eventCache: CalendarEventDayCache

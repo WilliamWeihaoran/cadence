@@ -54,7 +54,6 @@ struct MonthGridView: View {
     let todayKey: String
     let allTasks: [AppTask]
     let tasksByDate: [String: [AppTask]]
-    let bundlesByDate: [String: [TaskBundle]]
     let eventCache: CalendarEventDayCache
     @Binding var visibleMonthIdx: Int
     /// The month every cell in the grid is tinted against — **one** value for the whole grid, not
@@ -133,7 +132,6 @@ struct MonthGridView: View {
                             // here is precisely the behaviour this replaced — see `displayedMonth`.
                             displayedMonth: tintMonth,
                             tasksByDate: tasksByDate,
-                            bundlesByDate: bundlesByDate,
                             allTasks: allTasks,
                             eventCache: eventCache,
                             rowHeight: CalendarMonthGridMetrics.rowHeight(
@@ -226,7 +224,6 @@ struct MonthWeeksView: View {
     /// question for itself is what made the grid light two months at once mid-scroll.
     let displayedMonth: Date
     let tasksByDate: [String: [AppTask]]
-    let bundlesByDate: [String: [TaskBundle]]
     let allTasks: [AppTask]
     let eventCache: CalendarEventDayCache
     let rowHeight: CGFloat
@@ -244,7 +241,6 @@ struct MonthWeeksView: View {
                                 date: date,
                                 todayKey: todayKey,
                                 tasks: tasksByDate[key] ?? [],
-                                bundles: bundlesByDate[key] ?? [],
                                 allTasks: allTasks,
                                 displayMonth: displayedMonth,
                                 blockMonth: month,
