@@ -11,9 +11,6 @@ three things an agent needs only when changing the behaviour, not when obeying i
 
 ## The Two Halves Of The To-Many Rule
 
-_Displaced verbatim from `Cadence/Models/AGENTS.md` on 2026-09-26 (T-1391). The rule stays in
-the guide; the measurement, the incident and the argument are here._
-
   **The two halves of that rule have different standing. Do not restate it without them (T-401).**
   - *Delete side — a repair.* T-296 measured the window: between `modelContext.delete(subtask)` and
     the next flush the parent's array still holds the deleted row, so a surface re-rendering in
@@ -30,9 +27,6 @@ the guide; the measurement, the incident and the argument are here._
     the measurement; red there means SwiftData changed and this half became a repair.
 
 ## Why A New Model Type Needs A Console Deploy
-
-_Displaced verbatim from `Cadence/Models/AGENTS.md` on 2026-09-26 (T-1391). The rule stays in
-the guide; the measurement, the incident and the argument are here._
 
 SwiftData auto-creates a record type in the **Development** database as a debug build runs; the
 **Production** database gets it only when a human presses *Deploy Schema Changes* in the CloudKit
@@ -61,22 +55,17 @@ it, and T-1290 is why.
 
 ## The One Write Path For A Goal List Link
 
-_Displaced verbatim from `Cadence/Models/AGENTS.md` on 2026-09-26 (T-1391). The rule stays in
-the guide; the measurement, the incident and the argument are here._
-
   **`GoalListLink` has one write path** — `ModelContext.attachList` / `detachGoalListLink` /
   `toggleGoalListLink` in `Shared/GoalListLinkHelpers.swift`, never a hand-rolled
-  `insert(GoalListLink(...))`. Attach is idempotent — but **not** because a duplicate link
-  double-counts that list's tasks in the goal's progress. It cannot: `contributingTasks` ends in
-  `dedupe(...)`, which filters by task `id`. What a duplicate breaks is everything counting
-  *links* — `linkedListCount`, the "N lists" chip, the attribution line, two MCP DTOs, and a second
-  identical row in both inspectors. **Detach deletes the row and edits nothing** — a pre-commit edit is what Xcode 26's
-  `rollback()` undoes late, so readers filter `isDeleted` ([[T-1321]]). Rationale and the substring-grep trap: `Cadence/Shared/AGENTS.md`.
+  `insert(GoalListLink(...))`. Attach is idempotent; detach deletes the row and edits nothing
+  ([[T-1321]] — readers filter `isDeleted`). **Why each of those is true**, and the substring-grep
+  trap that accuses every correctly-rewired call site, are argued once in
+  `Cadence/Shared/AGENTS.md` and `docs/SHARED_AGENTS_REFERENCE.md`, "One Write Path For
+  `GoalListLink`", beside the helpers. The model-level half is the part that belongs here: the
+  row's owner is `GoalLinkTarget`, exactly one of an area or a project, so a write that bypasses
+  the helpers leaves a row with no owner and no reader.
 
 ## Why The Enums And The Comparator Live Here
-
-_Displaced verbatim from `Cadence/Models/AGENTS.md` on 2026-09-26 (T-1391). The rule stays in
-the guide; the measurement, the incident and the argument are here._
 
 - **`ModelEnums.swift`** — the ten data enums (`TaskPriority`, `TaskStatus`,
   `TaskRecurrenceRule`, `TaskRecurrenceEndMode`, `ProjectStatus`, `AreaStatus`, `GoalStatus`,
@@ -101,9 +90,6 @@ the guide; the measurement, the incident and the argument are here._
 
 ## Why The Calendar Link Is A Bare Identifier
 
-_Displaced verbatim from `Cadence/Models/AGENTS.md` on 2026-09-26 (T-1391). The rule stays in
-the guide; the measurement, the incident and the argument are here._
-
 `Area.linkedCalendarID` / `Project.linkedCalendarID` hold a bare `EKCalendar.calendarIdentifier`
 and nothing else — no title, no source, nowhere in the app. T-390 decided that deliberately:
 EventKit identifiers are treated as opaque and permanent, so a calendar Apple Calendar deleted and
@@ -119,9 +105,6 @@ rebinding is the other branch. It is a stored-property change on two `@Model` ty
 
 ## Persisted Fields With No Readers
 
-_Displaced verbatim from `Cadence/Models/AGENTS.md` on 2026-09-26 (T-1391). The rule stays in
-the guide; the measurement, the incident and the argument are here._
-
 There is no `SchemaMigrationPlan` in this project, so removing a stored property **drops that
 column's data** in every existing store — it cleans nothing up. Two fields look like dead code and
 must not be deleted: `AppTask.calendarEventID`, which exactly three files touch and **all three
@@ -133,9 +116,6 @@ field name on **`Note`** is live and in use — and read the three files, and th
 `1d81864` corrected about them, in `docs/CLAUDE_REFERENCE.md`, "Calendar / Events".
 
 ## Why The Default Column Has No Lifecycle
-
-_Displaced verbatim from `Cadence/Models/AGENTS.md` on 2026-09-26 (T-1391). The rule stays in
-the guide; the measurement, the incident and the argument are here._
 
 **The Default column has no lifecycle, and that is a model rule, not a UI preference.**
 `Area.normalizedSectionConfigs` / `Project.normalizedSectionConfigs` force `isCompleted` and
