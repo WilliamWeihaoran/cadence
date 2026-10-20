@@ -10,8 +10,13 @@ This is the repo-tracked source for App Store Connect submission fields and revi
 with no iCloud entitlement on the widget extension** — the owner decided to add one (T-3152), and it
 was measured to turn every signed local build red because the `com.haoranwei.Cadence.CadenceWidgets`
 App ID has no iCloud capability. That is an owner step in the developer portal, and until it is
-taken the entitlement must stay out: do not re-add it to `CadenceWidgets/CadenceWidgets.entitlements`
-to make the capability list below look complete. The consequence to know at review time is only
+taken the entitlement must stay out of the committed tree: do not re-add it to
+`CadenceWidgets/CadenceWidgets.entitlements` to make the capability list below look complete.
+**As of 2026-10-20 that step appears to have been taken and there are UNCOMMITTED entitlement
+edits in the shared checkout that do not match what T-3152 decided** — an empty
+`icloud-container-identifiers` array rather than the named container, plus both push spellings,
+which `AppStoreReviewReadinessTests.widgetEntitlementsIncludeSandbox` asserts are absent. Read
+T-3152's 2026-10-20 addendum before archiving; do not cut a build from a tree in that state. The consequence to know at review time is only
 sync latency — a widget write reaches another device when the app next runs an export pass — and
 nothing about it is user-facing or reviewable.
 
@@ -159,8 +164,9 @@ Re-checked 2026-10-20 by reading the project and the entitlements, not by re-rea
 - `INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO` on both app configurations.
 - `Cadence/PrivacyInfo.xcprivacy` declares `NSPrivacyCollectedDataTypeOtherUserContent` and no
   other collected type, which is what the "Privacy Details" section above claims it does.
-- `CadenceWidgets/CadenceWidgets.entitlements` carries no `icloud-container-identifiers` — see the
-  T-3152 note at the top.
+- `CadenceWidgets/CadenceWidgets.entitlements`, **as committed**, carries no
+  `icloud-container-identifiers`. The working tree is a different matter — see the T-3152 note at
+  the top.
 - The four companion documents this file points at all exist: `docs/apple-release-readiness.md`,
   `docs/privacy.html`, `docs/support.html`, `docs/app-review-notes.md`.
 
