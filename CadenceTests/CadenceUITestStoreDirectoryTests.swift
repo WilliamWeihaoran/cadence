@@ -197,7 +197,8 @@ struct CadenceUITestStoreDirectoryTests {
     // MARK: - Which launches sweep, which only get a private store
 
     /// Every launch that names an id gets the redirect. `run-macos-app.sh` is the caller that sets
-    /// `CADENCE_UI_TEST_STORE_ID` without `CADENCE_UI_TEST_MODE`, and it must keep getting one:
+    /// `CADENCE_UI_TEST_STORE_ID` without `CADENCE_UI_TEST_MODE` unless it is asked to seed a
+    /// scenario ([[T-3247]]), and it must keep getting one:
     /// that redirect is what keeps an agent's app off the user's real store.
     @Test func anyLaunchThatNamesAnIdGetsItsOwnStoreDirectory() {
         #expect(CadenceUITestStoreDirectory.directoryID(in: [:]) == nil)
