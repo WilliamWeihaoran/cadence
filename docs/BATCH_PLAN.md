@@ -1,39 +1,32 @@
-# Overnight batch plan — 2026-10-18
+# Overnight batch plan — 2026-10-18 — **FINISHED PROGRAMME, NOT A QUEUE**
 
-Supersedes the 2026-10-17 plan. **Tracked in git on purpose**: the first copy lived in
-`scratchpad/` and an agent deleted it during cleanup.
+**This plan is spent. Do not launch anything from it.** Batches A–E were all launched, landed or
+parked; the run log's last eleven entries say "launched nothing", and the final one records that
+every plan agent had landed or was parked on a grant or an owner step. The recurring scheduled task
+that drove this queue has since been retired and replaced by one that carries its own queue, so
+nothing re-reads this file to decide what to start.
 
-## Why this one has a mechanism and the last one did not
+What it is kept for: the **run log** below is the record of what ran, what was skipped and why, and
+it is the only place several of those decisions are written down. The batch tables above it say what
+the programme contained. Both are history as of 2026-10-19.
 
-The 2026-10-17 plan listed five batches and only batch 1 ran. The coordinator is turn-based —
-it acts when invoked and stops — and nothing drove batch advancement except being poked. Nine
-hours of capacity went unused because a batch-1 agent was never launched after its dependency
-cleared.
+**Residual work is tracked in `docs/TODO.md`, not here.** The tickets this plan left open or partial
+carry their own live state there — read them with `./scripts/ledger-view.sh show T-NNNN`, never this
+file.
 
-**A recurring scheduled task now advances this queue.** It fires regardless of whether the owner
-is present, re-reads this file, and starts the next batch whose dependencies are met. If the
-scheduled task is cancelled, this plan stops — that is the single point of failure and it is
-named here deliberately.
+**Tracked in git on purpose**: the first copy lived in `scratchpad/` and an agent deleted it during
+cleanup.
 
-## Standing rules
+## Why this one had a mechanism and the last one did not
 
-- 3 agents per batch, 2–3 tickets each, grouped by file locality so siblings cannot collide.
-- Commit each agent's work as soon as it is green; never hold a batch for its slowest member.
-- **The usage ceiling is suspended until 2026-10-18 14:06** by the owner. After that the 80/90
-  rule applies again automatically.
-- The session limit has fired **three times** in this run, killing agents mid-flight each time.
-  Nothing was lost because work was backed up and resumed — keep doing both.
-- **Local green is NOT the finish line.** This Mac runs Xcode 27, CI pins 26.0.1, and CI was red
-  for 27 pushes while every local check reported green ([[T-3215]]). CI is the gate.
+The 2026-10-17 plan listed five batches and only batch 1 ran. The coordinator is turn-based — it
+acts when invoked and stops — and nothing drove batch advancement except being poked. Nine hours of
+capacity went unused because a batch-1 agent was never launched after its dependency cleared.
 
-## Before any batch starts
-
-Check these, because they move:
-1. `git status` — a path dirty is a path someone is inside, lease or no lease.
-2. `./scripts/agent-commit.sh check` must exit 0.
-3. For any leased path: `git log --no-merges main..<branch> -- <path>`, then read the SHAPE of
-   what comes back. `docs/CODEX_WORKTREE.md` carries six corrections to that check and the
-   reason each failed.
+So a recurring scheduled task drove this queue instead: it fired regardless of whether the owner was
+present, re-read this file, and started the next batch whose dependencies were met. The single point
+of failure was named here deliberately — if the scheduled task were cancelled, the plan would stop —
+and that is in the end how it ended, by replacement rather than by failure.
 
 ## Batch A — the Block tail and the board
 
@@ -80,11 +73,16 @@ something else. All three are filed and none is fixed.
 
 ## Not in any batch
 
-- **T-3168, the rail** — needs the owner's eyes. Three independent blocks have stopped a machine
-  looking: the computing agent could not navigate, iOS had no fixture door (T-1483, landing now),
-  and macOS window capture needs an Accessibility grant the coordinator may not make.
-- **T-3125** — research the coordinator owes the owner on where name-merging fires.
-- **T-3215's crash** — agent `cicrash` has it. It gates build 23 and nothing else should touch it.
+Three items were deliberately outside the batches. All three are tracked in `docs/TODO.md` and that
+is where their current state lives; the states below were read on 2026-10-20 and will go stale.
+
+- **T-3168, the rail** — needed the owner's eyes. Three independent blocks stopped a machine
+  looking: the computing agent could not navigate, iOS had no fixture door (T-1483), and macOS
+  window capture needs an Accessibility grant the coordinator may not make. Now PARTIAL.
+- **T-3125** — research the coordinator owed the owner on where name-merging fires. Still OPEN.
+- **T-3215's crash** — gated build 23. The crash was diagnosed (fix `2264d690`) and build 23
+  shipped as T-3228; the ticket is PARTIAL on its remaining half.
+
 
 ## Run log
 

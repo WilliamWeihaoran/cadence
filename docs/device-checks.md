@@ -4,7 +4,13 @@ Everything here has been pushed as far off-device as it goes; what is left is wh
 simulator** genuinely cannot settle. Each item says what to do, what should happen, what it means if
 it doesn't, and **what is already settled**, so nobody re-checks something a test now holds.
 
-Two items, four steps, all on a phone. Under two minutes.
+Two items, four steps, all on a phone. Under two minutes. **Both are still open** — they are the
+remainder of [T-55], re-read from the ledger 2026-10-20.
+
+**Before using any recipe below:** the runs recorded here were done on the owner's **iPhone 17
+Pro** simulator in September, when that was the arrangement. It is not any more. There are two
+standing simulators to reuse and the owner's is on the do-not-touch list; `docs/SESSION_HANDOFF.md`
+names all three. Take the *recipe* from this file and the *device* from the handoff.
 
 **Re-triaged 2026-09-02 ([T-561]).** It was five items and fifteen steps, written in August when
 nobody could drive anything. Agents drive iPhone and iPad simulators now, so most of it is somebody
@@ -153,7 +159,9 @@ is a queued simulator job, listed so the trail does not go cold.
   measured at ~577 x 639pt, and UIKit hands a sheet that narrow a **compact** horizontal size class.
   So sheet and header agreed, which is the T-447 predicate not failing — but it agreed on *compact*,
   and the regular branch was never entered. Whether it is reachable at all on iPad is [T-731]; the
-  simulator surface has no rotate action, so landscape is untested. Predicate two **did** land, and
+  simulator surface has no rotate action, so landscape is untested. **[T-731] is CLOSED (`dcd110c`,
+  2026-09-06)**, so that question is answered and is not an open thread off this item. Predicate
+  two **did** land, and
   is width-independent: on a note attached to a read-only *US Holidays* event, typing put *"This note
   is saved, but Apple Calendar didn't take the change."* in `Theme.red` **under the title, inside the
   header block**, above the divider — `iOSNoteEditorSheetHeader`'s `accessory` slot, exactly where
@@ -175,5 +183,6 @@ is a queued simulator job, listed so the trail does not go cold.
 
 - **"The UI target is unreliable" is no longer a reason to route anything here.** `CadenceUITests`
   was never flaky ([T-563]) — it cannot pass while the Mac's screen is locked, and unlocked it
-  reached the foreground in 20 of 20 runs, p50 0.91 s. The one live intermittency is [T-710], a
-  seeded sidebar row missing at 5 s in 4 of 20 runs — a macOS test-timing question, not a phone one.
+  reached the foreground in 20 of 20 runs, p50 0.91 s. The intermittency it named, [T-710] — a
+  seeded sidebar row missing at 5 s in 4 of 20 runs — was a macOS test-timing question rather than
+  a phone one, and it **CLOSED 2026-09-07 (`3eb023d`)**. Nothing here is waiting on it.

@@ -1,8 +1,19 @@
 # Cadence App Store Submission Packet
 
-Last updated: June 17, 2026
+Last updated: October 20, 2026. Every field below was re-checked against the tree that day; what was
+measured rather than re-read is named in "Checked against the tree" at the foot of this file.
 
 This is the repo-tracked source for App Store Connect submission fields and review preparation. Keep it aligned with `docs/apple-release-readiness.md`, `docs/privacy.html`, `docs/support.html`, and `docs/app-review-notes.md`.
+
+**Build state at the last check.** `MARKETING_VERSION = 1.0`, `CURRENT_PROJECT_VERSION = 23`
+(bumped and archived locally under T-3228; push, CI and upload are the owner's). **Build 23 ships
+with no iCloud entitlement on the widget extension** — the owner decided to add one (T-3152), and it
+was measured to turn every signed local build red because the `com.haoranwei.Cadence.CadenceWidgets`
+App ID has no iCloud capability. That is an owner step in the developer portal, and until it is
+taken the entitlement must stay out: do not re-add it to `CadenceWidgets/CadenceWidgets.entitlements`
+to make the capability list below look complete. The consequence to know at review time is only
+sync latency — a widget write reaches another device when the app next runs an export pass — and
+nothing about it is user-facing or reviewable.
 
 ## App Store Connect Fields
 
@@ -13,7 +24,7 @@ This is the repo-tracked source for App Store Connect submission fields and revi
 - Platforms: macOS
 - Minimum OS: macOS 26.1
 - Version: `1.0`
-- Build: current project build number
+- Build: current project build number — `CURRENT_PROJECT_VERSION`, 23 at the last check.
 - Copyright: `© 2026 Haoran Wei` — **confirmed by the user 2026-09-05 as their legal name.** They
   also hold a Chinese name; it is deliberately **not** included, because this field names the legal
   entity that owns the app and a name absent from the Apple Developer Program account is a
@@ -136,6 +147,23 @@ Metadata must avoid claims that are not true for the build:
 
 - Run the verification commands in `docs/apple-release-readiness.md`.
 - Confirm support/privacy URLs are publicly reachable.
-- Confirm App Store Connect capabilities match entitlements: iCloud/CloudKit, Sign in with Apple, App Groups, Calendar, widgets, and remote notification capability for CloudKit sync.
+- Confirm App Store Connect capabilities match entitlements: iCloud/CloudKit, Sign in with Apple, App Groups, Calendar, widgets, and remote notification capability for CloudKit sync. **The widget extension is the one deliberate gap** — it carries App Group and sandbox entitlements and no iCloud container, per the T-3152 note at the top of this file. Match the capability list to the entitlements files as they are; do not change the entitlements to match the list.
 - Confirm the submitted archive uses distribution signing and does not contain debug-only test frameworks.
 - Confirm `CadenceMCPServer` and `plugins/cadence-mcp` are not embedded in the app archive.
+
+## Checked Against The Tree
+
+Re-checked 2026-10-20 by reading the project and the entitlements, not by re-reading this file:
+
+- `MACOSX_DEPLOYMENT_TARGET = 26.1`, `MARKETING_VERSION = 1.0`, `CURRENT_PROJECT_VERSION = 23`.
+- `INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO` on both app configurations.
+- `Cadence/PrivacyInfo.xcprivacy` declares `NSPrivacyCollectedDataTypeOtherUserContent` and no
+  other collected type, which is what the "Privacy Details" section above claims it does.
+- `CadenceWidgets/CadenceWidgets.entitlements` carries no `icloud-container-identifiers` — see the
+  T-3152 note at the top.
+- The four companion documents this file points at all exist: `docs/apple-release-readiness.md`,
+  `docs/privacy.html`, `docs/support.html`, `docs/app-review-notes.md`.
+
+**Not verified here, and still the owner's:** whether App Store Connect → Business → Legal Entity
+Name matches the Copyright field above, whether the support and privacy URLs are publicly
+reachable, and anything that needs an archive or an App Store Connect session.

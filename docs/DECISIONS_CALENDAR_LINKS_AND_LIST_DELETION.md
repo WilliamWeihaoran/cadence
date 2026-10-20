@@ -3,9 +3,13 @@
 Companion to `docs/DECISIONS_PENDING.md`. Written 2026-09-06 against `main` at `4c091c1`, with
 every number in it re-measured that day rather than inherited from the ledger.
 
-`docs/TODO.md` entries **T-623**, **T-624**, **T-899** and **T-1043** have each been verified twice
-and moved neither time. They are not stuck on work. They are stuck on four questions only you can
-answer, and every previous write-up was addressed to an engineer. This one is not.
+`docs/TODO.md` entries **T-623**, **T-624**, **T-899** and **T-1043** had each been verified twice
+and moved neither time. They were not stuck on work. They were stuck on four questions only the
+owner could answer, and every previous write-up was addressed to an engineer. This one is not.
+
+**All four are closed now, and one question survives them: T-1117.** The status updates below say
+what happened to each; the memo itself is unchanged, because the reasoning is what makes a closed
+decision legible later.
 
 Each section says the same four things: **what you would notice**, **what fixing it costs**,
 **what leaving it costs**, and **what I would do**. Where a claim was measured today it says so;
@@ -86,6 +90,26 @@ it is one line back.
 (recorded in T-1072). The one this memo is about is the calendar-link ticket. The other one — text
 sitting on top of an image in a note — was fixed and closed on 2026-09-05 and has nothing to do with
 any of this.
+
+## Status update, 2026-10-20 — all four of the named tickets are closed; **T-1117 is the whole of what is left**
+
+Re-read from the ledger, not from this file. Every measurement in it still holds and nothing below
+is withdrawn; what has changed is that this memo is no longer asking four questions.
+
+- **T-623 — CLOSED 2026-09-11**, as a recorded decision to park. The "say stay parked once" ask in
+  the last section of this memo is discharged; it is parked, on the record, and the recommendation
+  below is the reason.
+- **T-624 — CLOSED 2026-09-10**, as a decision rather than a repair. Every part an engineer could
+  act on landed.
+- **T-899 and T-1043 — CLOSED 2026-09-10**, merged and done, exactly as the memo recommended: one
+  new test file, no model change, nothing a user sees.
+- **T-1084 — CLOSED 2026-09-10**, the one line of copy. **T-752 — CLOSED 2026-09-11**, the sentence
+  moved beside its siblings. **T-1118 — CLOSED 2026-09-12**, the wording the owner chose.
+
+**What is still yours is T-1117, and only T-1117:** the five-minute experiment in the next section,
+split out of T-624 so it stayed addressed to you rather than sitting under an entry that had been
+re-verified four times without moving. It is still the only thing that would change anything, it
+still needs no engineer, and nothing has been measured for it since.
 
 ---
 
@@ -354,7 +378,13 @@ is a natural next feature.
 
 ## What each of these needs from you, in one line
 
-- **T-623** — say "stay parked" once, so it stops being re-verified. The sentence that was T-752's
-  and then **T-1118** is **answered and landed** — see the 2026-09-12 status update at the top.
-- **T-624** — run the five-minute experiment above and report which of the three sentences you saw.
-- **T-899 + T-1043** — say whether to merge them and schedule one session, or leave both open.
+Written 2026-09-06, when all three lines were live. Only the middle one still is — see the
+2026-10-20 status update at the top for why.
+
+- ~~**T-623** — say "stay parked" once, so it stops being re-verified.~~ **Done:** closed
+  2026-09-11 as a recorded decision to park. The sentence that was T-752's and then T-1118 is
+  answered and landed.
+- **T-624** — **still yours, now as T-1117.** Run the five-minute experiment above and report which
+  of the three sentences you saw.
+- ~~**T-899 + T-1043** — say whether to merge them and schedule one session, or leave both open.~~
+  **Done:** merged and closed 2026-09-10, one new test file.
