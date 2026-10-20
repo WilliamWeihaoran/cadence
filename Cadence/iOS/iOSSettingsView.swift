@@ -3,6 +3,7 @@ import SwiftData
 import SwiftUI
 
 struct iOSSettingsView: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.dismiss) private var dismiss
     @Environment(AISettingsManager.self) private var aiSettingsManager
     @Environment(iOSCalendarManager.self) private var calendarManager
@@ -92,12 +93,13 @@ struct iOSSettingsView: View {
 
     var body: some View {
         Group {
-            if horizontalSizeClass == .regular {
+            if CadenceSettingsTypographyLayout.usesRail(isRegularWidth: horizontalSizeClass == .regular, at: dynamicTypeSize) {
                 settingsRegularLayout
             } else {
                 settingsCompactLayout
             }
         }
+        .cadenceScaledTypography()
         .iOSHidesCompactNavigationBar()
         .background(Theme.bg.ignoresSafeArea())
         .sheet(item: $contextEditorMode) { mode in

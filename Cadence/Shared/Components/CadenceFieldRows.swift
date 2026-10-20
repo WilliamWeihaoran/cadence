@@ -242,6 +242,8 @@ struct CadenceRowDivider: View {
 /// radius 7 with 8pt of padding. A modifier is what lets the titled field and the bare field be one
 /// rectangle rather than two that agree by hand.
 struct CadenceSettingsWell: ViewModifier {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.cadenceTypographyScaling) private var scaling
     /// Whether the well supplies the 12pt of leading air itself.
     ///
     /// **`false` is for content that already has a text inset, not for a tighter well (T-442).**
@@ -257,7 +259,7 @@ struct CadenceSettingsWell: ViewModifier {
     func body(content: Content) -> some View {
         content
             .padding(.horizontal, insetsContent ? 12 : 0)
-            .frame(minHeight: CadenceSettingsRowMetrics.rowHeight)
+            .frame(minHeight: CadenceSettingsRowMetrics.rowHeight(at: dynamicTypeSize, scaling: scaling))
             .background(Theme.surfaceElevated)
             .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
             .overlay {
@@ -295,6 +297,8 @@ extension View {
 /// is 12pt, including the one twenty lines above it in its own sheet. A row with no verdict draws no
 /// glyph and the title takes the leading edge; nothing here fabricates one.
 struct CadenceSettingsNoticeRow<Trailing: View>: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.cadenceTypographyScaling) private var scaling
     /// `nil` on a row that states a setting rather than a verdict. See the type's doc.
     var systemImage: String? = nil
     var tint: Color = Theme.dim
@@ -303,28 +307,31 @@ struct CadenceSettingsNoticeRow<Trailing: View>: View {
     @ViewBuilder let trailing: () -> Trailing
 
     var body: some View {
-        HStack(spacing: 12) {
+        let layout = CadenceSettingsTypographyLayout.stacks(at: dynamicTypeSize, scaling: scaling)
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 12))
+            : AnyLayout(HStackLayout(spacing: 12))
+        layout {
             if let systemImage {
                 Image(systemName: systemImage)
-                    .font(.system(size: 14))
+                    .cadenceFont(.controlLabel, base: 14, weight: .regular)
                     .foregroundStyle(tint)
             }
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
-                    .font(.system(size: 13, weight: .semibold))
+                    .cadenceFont(.controlLabel, base: 13, weight: .semibold)
                     .foregroundStyle(Theme.text)
                 Text(detail)
-                    .font(.system(size: 12))
+                    .cadenceFont(.metadata, base: 12, weight: .regular)
                     .foregroundStyle(Theme.dim)
                     .fixedSize(horizontal: false, vertical: true)
             }
 
-            Spacer(minLength: 12)
+            if !CadenceSettingsTypographyLayout.stacks(at: dynamicTypeSize, scaling: scaling) { Spacer(minLength: 12) }
 
             trailing()
         }
-        .frame(minHeight: CadenceSettingsRowMetrics.rowHeight)
+        .frame(minHeight: CadenceSettingsRowMetrics.rowHeight(at: dynamicTypeSize, scaling: scaling))
     }
 }
 
@@ -373,10 +380,13 @@ struct CadenceFieldRow<Content: View>: View {
     @Environment(\.cadenceTypographyScaling) private var scaling
 
     var body: some View {
-        HStack(spacing: CadenceSettingsRowMetrics.valueSpacing) {
+        let layout = CadenceSettingsTypographyLayout.stacks(at: dynamicTypeSize, scaling: scaling)
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 12))
+            : AnyLayout(HStackLayout(spacing: CadenceSettingsRowMetrics.valueSpacing))
+        layout {
             CadenceInlineFieldLabel(label: label, systemImage: systemImage, color: color)
 
-            Spacer(minLength: 12)
+            if !CadenceSettingsTypographyLayout.stacks(at: dynamicTypeSize, scaling: scaling) { Spacer(minLength: 12) }
 
             content()
         }
@@ -408,7 +418,7 @@ struct CadenceSettingsField<Content: View>: View {
             SectionEyebrowLabel(text: title)
 
             content
-                .font(.system(size: 14, weight: .medium))
+                .cadenceFont(.fieldLabel, base: 14, weight: .medium)
                 .textFieldStyle(.plain)
                 .foregroundStyle(Theme.text)
                 .tint(Theme.blue)
@@ -431,25 +441,30 @@ struct CadenceSettingsField<Content: View>: View {
 /// The value is selectable because the things reported through it (a build number, a bundle
 /// identifier) exist to be copied into a bug report.
 struct CadenceSettingsInfoRow: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.cadenceTypographyScaling) private var scaling
     let title: String
     let value: String
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 16) {
+        let layout = CadenceSettingsTypographyLayout.stacks(at: dynamicTypeSize, scaling: scaling)
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 12))
+            : AnyLayout(HStackLayout(alignment: .firstTextBaseline, spacing: 16))
+        layout {
             // Label half of a label/value pair: `subdued`, not `dim` — `dim` is for
             // genuinely de-emphasized content, and these labels are ordinary reading text.
             Text(title)
-                .font(.system(size: 13, weight: .medium))
+                .cadenceFont(.controlLabel, base: 13, weight: .medium)
                 .foregroundStyle(Theme.subdued)
 
-            Spacer(minLength: 0)
+            if !CadenceSettingsTypographyLayout.stacks(at: dynamicTypeSize, scaling: scaling) { Spacer(minLength: 0) }
 
             Text(value)
-                .font(.system(size: 13, weight: .semibold))
+                .cadenceFont(.controlLabel, base: 13, weight: .semibold)
                 .foregroundStyle(Theme.text)
                 .multilineTextAlignment(.trailing)
                 .textSelection(.enabled)
         }
-        .frame(minHeight: CadenceSettingsRowMetrics.rowHeight)
+        .frame(minHeight: CadenceSettingsRowMetrics.rowHeight(at: dynamicTypeSize, scaling: scaling))
     }
 }

@@ -146,14 +146,12 @@ struct iOSCalendarMetricsTests {
     /// chip is behind `#if os(iOS)`. Read from its source so the two cannot drift.
     @Test func theBandChipHeightIsTheUntimedMiniChipsHeight() throws {
         let code = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile("Cadence/iOS/iOSCalendarMonthViews.swift"))
-        let untimed = Int(iOSCalendarTimelineMetrics.bandChipHeight)
-        #expect(
-            CadenceSourceScan.matchCount(
-                #"static func height\(hasTime: Bool\) -> CGFloat \{ hasTime \? \d+ : "# + "\(untimed)" + #" \}"#,
-                in: code
-            ) == 1,
-            "iOSCalendarMiniChip's untimed height is no longer \(untimed)pt"
-        )
+        let chip = try #require(CadenceSourceScan.declarationBody("struct iOSCalendarMiniChip: View", in: code))
+        #expect(chip.contains("iOSCalendarTypographyMetrics.chipHeight(hasTime: hasTime, at: size, scaling: scaling)"))
+        for size in DynamicTypeSize.allCases {
+            let untimed = iOSCalendarTypographyMetrics.chipHeight(hasTime: false, at: size, scaling: .fixed)
+            #expect(untimed == iOSCalendarTimelineMetrics.bandChipHeight)
+        }
     }
 
     /// **T-588 finished: there is no second set of hour figures to keep in step.**
@@ -205,7 +203,7 @@ struct iOSCalendarMetricsTests {
             try CadenceSourceScan.sourceFile("Cadence/iOS/iOSCalendarTimelineViews.swift")
         )
         #expect(grid.contains("struct iOSCalendarTimeRail: View"))
-        #expect(grid.contains("iOSCalendarTimelineMetrics.hourHeight"))
+        #expect(grid.contains("iOSCalendarTypographyMetrics.hourHeight(at: dynamicTypeSize, scaling: scaling)"))
         #expect(grid.contains("iOSCalendarTimelineMetrics.hourLabelSize"))
         #expect(grid.contains("iOSCalendarTimelineMetrics.hourLabelTrailingInset"))
     }

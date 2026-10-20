@@ -160,6 +160,33 @@ Cadence/macOS/Views/TimelineDayCanvasStateSupport.swift
 Cadence/macOS/Services/SchedulingService.swift
 Cadence/Shared/CadenceTaskFieldEditCommit.swift
 CadenceTests/CadenceCommentSymbolClaimTests.swift
+Cadence/Shared/CadenceSettingsPresentationSupport.swift
+Cadence/Shared/Components/CadenceAccentPalettePicker.swift
+Cadence/Shared/Components/CadenceFieldRows.swift
+Cadence/iOS/iOSArchiveImportSettingsSection.swift
+Cadence/iOS/iOSCalendarChromeViews.swift
+Cadence/iOS/iOSCalendarMetrics.swift
+Cadence/iOS/iOSCalendarMonthAgendaViews.swift
+Cadence/iOS/iOSCalendarQuickCreateSheet.swift
+Cadence/iOS/iOSCalendarSettingsSection.swift
+Cadence/iOS/iOSCalendarTimelineViews.swift
+Cadence/iOS/iOSDataExportSettingsSection.swift
+Cadence/iOS/iOSDataResetSettingsSection.swift
+Cadence/iOS/iOSDateJumpTitle.swift
+Cadence/iOS/iOSMarkdownReferenceSupport.swift
+Cadence/iOS/iOSNotificationsSettingsSection.swift
+Cadence/iOS/iOSRemindersSettingsSection.swift
+Cadence/iOS/iOSSettingsComponents.swift
+Cadence/iOS/iOSSettingsContextSection.swift
+Cadence/iOS/iOSSettingsOverviewSections.swift
+Cadence/iOS/iOSSettingsTagsSection.swift
+Cadence/iOS/iOSSettingsTemplateAndListSections.swift
+Cadence/iOS/iOSSettingsView.swift
+Cadence/iOS/iOSSidebarLayoutSettingsSection.swift
+Cadence/iOS/iOSStoreBackupSettingsSection.swift
+Cadence/iOS/iOSUnmanagedStoreSettingsSection.swift
+CadenceTests/CadenceRealTreeSweepManifest.txt
+CadenceTests/iOSCalendarMetricsTests.swift
 ```
 
 **Admission 2026-10-19 (coordinator), one line in `CadenceTests/CadenceMarkdownImageCommitSurfaceTests.swift`.**
@@ -3196,3 +3223,29 @@ is approved by an agent is not a grant; this one is the owner's.
 the Block UI and the archive unbundling already landed, so the remainder is the three source paths
 above plus the claims test. `TaskBundle` stays in `CadenceSchema` and stays a `@Model` — build 23
 shipped blocks and this project has no `SchemaMigrationPlan`.
+
+### 2026-10-20 — 27 paths granted RETROACTIVELY for [[T-1364]], and the order that went wrong
+
+**GRANTED on the owner's explicit decision, scoped to T-1364's text-scale role conversion:** the 25
+iOS/Shared settings and calendar sources `codex/text-scale-finish` converted, plus
+`CadenceTests/iOSCalendarMetricsTests.swift` and `CadenceTests/CadenceRealTreeSweepManifest.txt`.
+Count 113 → 140.
+
+**This grant is RETROACTIVE and that is the wrong order.** Codex wrote the 27 paths first and the
+grant followed, which is the sequence the fence exists to prevent. It is recorded here rather than
+smoothed over, because a lease that is widened to match whatever was already written is not a lease.
+The owner decided it knowing that; the coordinator did not decide it.
+
+**What made it safe to grant rather than redo, measured before asking:** none of the 27 is dirty in
+the shared checkout, and no unmerged `claude/*` branch touches any of them. The collision this would
+normally risk is not present. That is a fact about today, not a reason the order was fine.
+
+**`docs/TODO.md` was NOT granted and will not be.** The branch edited it directly, which
+`codex-land.sh` refuses (CODEX-LEDGER-TOUCHED), and the refusal is correct: eight unmerged branches
+hold an edit to that file right now, so it is the one path where two writers always collide. Codex's
+ledger edits are dropped at landing and the coordinator writes T-1364's line itself. The route for
+Codex is `docs/CODEX_LEDGER_INBOX.md`, which is always allowed and needs no grant.
+
+**For the next Codex request:** ask before writing, as `codex/block-removal-finish` did twice. That
+branch stopped at its boundary, reported, and waited — it cost two round trips and no collision. This
+one cost a retroactive grant.

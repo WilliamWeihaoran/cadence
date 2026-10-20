@@ -310,10 +310,8 @@ struct CadenceTypographyConversionSweepTests {
     /// detail sheet, its sections and its components.
     ///
     /// `CadenceFieldRows.swift` and `SectionEyebrowLabel.swift` are deliberately **not** here even
-    /// though both were edited: each holds types outside this workflow — settings rows, the
-    /// `Size.font` two unconverted macOS readers still call — and those keep their literals until
-    /// their own surface is converted. Listing them would make this sweep a lie in the other
-    /// direction.
+    /// though both were edited: each holds types outside this task workflow. Settings rows have their own
+    /// conversion sweep, while `Size.font` still serves two unconverted macOS readers.
     private static let workflow = [
         "Cadence/iOS/iOSCreateTaskSheet.swift",
         "Cadence/iOS/iOSCreateTaskSheetSupportViews.swift",
@@ -340,7 +338,7 @@ struct CadenceTypographyConversionSweepTests {
         // The reader, before an empty result is believed. `strippingComments` blanks comments and
         // keeps code; a reader swapped for `codeOnly` would blank nothing relevant here, but one
         // pointed at the wrong root returns empty strings and this sweep passes forever.
-        #expect(try read("Cadence/iOS/iOSSettingsComponents.swift").contains(".font(.system(size:"),
+        #expect(try read("Cadence/iOS/iOSNotesView.swift").contains(".font(.system(size:"),
                 "the sweep's reader no longer reaches unconverted source, so its needle cannot match")
 
         let hits = try instrument.sweep(
@@ -365,7 +363,7 @@ struct CadenceTypographyConversionSweepTests {
         }
 
         // The two shared types the workflow's field rows are made of, converted in place rather
-        // than forked — the rest of `CadenceFieldRows.swift` is settings and is a later ticket.
+        // than forked. Settings rows are covered by their own conversion sweep.
         let fieldRows = try read("Cadence/Shared/Components/CadenceFieldRows.swift")
         #expect(fieldRows.contains(".cadenceFont(.fieldLabel)"))
         #expect(fieldRows.contains("CadenceSettingsRowMetrics.rowHeight(at: dynamicTypeSize, scaling: scaling)"))
@@ -429,6 +427,15 @@ struct CadenceTypographyConversionSweepTests {
             "Cadence/Shared/Components/CadenceSectionCreationRow.swift",
             "Cadence/Shared/Components/CadenceTimeRoller.swift",
             "Cadence/Shared/Components/EstimatePickerControl.swift",
+            "Cadence/iOS/iOSCalendarView.swift",
+            "Cadence/iOS/iOSCalendarEventEditSheet.swift",
+            "Cadence/iOS/iOSCalendarQuickCreateSheet.swift",
+            "Cadence/iOS/iOSDateJumpTitle.swift",
+            "Cadence/iOS/iOSSettingsView.swift",
+            "Cadence/iOS/iOSSettingsContextSection.swift",
+            "Cadence/iOS/iOSArchiveImportSettingsSection.swift",
+            "Cadence/iOS/iOSDataResetSettingsSection.swift",
+            "Cadence/iOS/iOSListDeletionSupport.swift",
             "Cadence/iOS/iOSCreateTaskSheet.swift",
             "Cadence/iOS/iOSListDetailView.swift",
             "Cadence/iOS/iOSListViews.swift",

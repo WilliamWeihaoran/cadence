@@ -122,7 +122,7 @@ struct iOSSidebarLayoutSettingsSection: View {
             )
 
             Text(CadenceSidebarLayout.rowTitle(for: destination))
-                .font(.system(size: 15, weight: .semibold))
+                .cadenceFont(.rowTitle, base: 15, weight: .semibold)
                 .foregroundStyle(Theme.text)
 
             Spacer(minLength: 0)

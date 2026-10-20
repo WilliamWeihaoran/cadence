@@ -86,6 +86,7 @@ struct iOSContextEditorSheet: View {
                 .padding(.bottom, 28)
             }
             .scrollIndicators(.hidden)
+            .cadenceScaledTypography()
             .background(Theme.bg.ignoresSafeArea())
             .navigationTitle(isEditing ? "Edit Context" : "New Context")
             .navigationBarTitleDisplayMode(.inline)
@@ -190,6 +191,8 @@ struct iOSContextEditorSheet: View {
 }
 
 struct iOSSettingsContextRow: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.cadenceTypographyScaling) private var scaling
     let context: Context
 
     var body: some View {
@@ -197,14 +200,14 @@ struct iOSSettingsContextRow: View {
             iOSSettingsContextIcon(icon: context.icon, colorHex: context.colorHex)
 
             Text(CadenceContextPickerSupport.title(for: context))
-                .font(.system(size: 15, weight: .medium))
+                .cadenceFont(.rowTitle, base: 15, weight: .medium)
                 .foregroundStyle(Theme.text)
-                .lineLimit(1)
+                .lineLimit(CadenceSettingsTypographyLayout.stacks(at: dynamicTypeSize, scaling: scaling) ? nil : 1)
 
             Spacer(minLength: 8)
 
             Image(systemName: "chevron.right")
-                .font(.system(size: 12, weight: .semibold))
+                .cadenceFont(.rowTitle, base: 12, weight: .semibold)
                 .foregroundStyle(Theme.dim)
         }
         .padding(.vertical, 10)
@@ -214,6 +217,8 @@ struct iOSSettingsContextRow: View {
 }
 
 struct iOSSettingsArchivedContextRow: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.cadenceTypographyScaling) private var scaling
     let context: Context
     let restore: () -> Void
     /// An archived context is not on any other screen, so this row is the only place it can be
@@ -226,11 +231,11 @@ struct iOSSettingsArchivedContextRow: View {
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(CadenceContextPickerSupport.title(for: context))
-                    .font(.system(size: 15, weight: .medium))
+                    .cadenceFont(.rowTitle, base: 15, weight: .medium)
                     .foregroundStyle(Theme.muted)
-                    .lineLimit(1)
+                    .lineLimit(CadenceSettingsTypographyLayout.stacks(at: dynamicTypeSize, scaling: scaling) ? nil : 1)
                 Text("Archived")
-                    .font(.system(size: 11, weight: .semibold))
+                    .cadenceFont(.metadata, base: 11, weight: .semibold)
                     .foregroundStyle(Theme.amber)
             }
 
@@ -255,6 +260,8 @@ struct iOSSettingsArchivedContextRow: View {
 }
 
 struct iOSSettingsContextPreview: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.cadenceTypographyScaling) private var scaling
     let name: String
     let icon: String
     let colorHex: String
@@ -264,9 +271,9 @@ struct iOSSettingsContextPreview: View {
             iOSSettingsContextIcon(icon: icon, colorHex: colorHex)
 
             Text(name)
-                .font(.system(size: 15, weight: .medium))
+                .cadenceFont(.rowTitle, base: 15, weight: .medium)
                 .foregroundStyle(Theme.text)
-                .lineLimit(1)
+                .lineLimit(CadenceSettingsTypographyLayout.stacks(at: dynamicTypeSize, scaling: scaling) ? nil : 1)
 
             Spacer(minLength: 0)
         }
@@ -275,6 +282,8 @@ struct iOSSettingsContextPreview: View {
 }
 
 private struct iOSSettingsContextIcon: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.cadenceTypographyScaling) private var scaling
     let icon: String
     let colorHex: String
     var opacity: Double = 1
@@ -283,9 +292,9 @@ private struct iOSSettingsContextIcon: View {
         let tint = Color(hex: colorHex)
 
         Image(systemName: icon)
-            .font(.system(size: 15, weight: .semibold))
+            .cadenceFont(.rowTitle, base: 15, weight: .semibold)
             .foregroundStyle(tint.opacity(opacity))
-            .frame(width: iOSSettingsMetrics.glyphSlot, height: iOSSettingsMetrics.glyphSlot)
+            .frame(width: CadenceSettingsTypographyLayout.glyphFrame(iOSSettingsMetrics.glyphSlot, glyph: 15, role: .rowTitle, at: dynamicTypeSize, scaling: scaling), height: CadenceSettingsTypographyLayout.glyphFrame(iOSSettingsMetrics.glyphSlot, glyph: 15, role: .rowTitle, at: dynamicTypeSize, scaling: scaling))
             .background(tint.opacity(0.14 * opacity))
             .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
     }

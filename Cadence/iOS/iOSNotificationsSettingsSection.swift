@@ -40,10 +40,10 @@ struct iOSNotificationsSettingsSection: View {
 
                 VStack(alignment: .leading, spacing: 4) {
                     Text(CadenceNotificationSettingsCopy.remindersToggleTitle)
-                        .font(.system(size: 15, weight: .semibold))
+                        .cadenceFont(.rowTitle, base: 15, weight: .semibold)
                         .foregroundStyle(Theme.text)
                     Text(CadenceNotificationSettingsCopy.remindersToggleDetail)
-                        .font(.system(size: 12))
+                        .cadenceFont(.metadata, base: 12, weight: .regular)
                         .foregroundStyle(Theme.subdued)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -75,11 +75,11 @@ struct iOSNotificationsSettingsSection: View {
                             ? CadenceNotificationSettingsCopy.accessRequiredTitle
                             : CadenceNotificationSettingsCopy.connectOfferTitle
                     )
-                        .font(.system(size: 15, weight: .semibold))
+                        .cadenceFont(.rowTitle, base: 15, weight: .semibold)
                         .foregroundStyle(Theme.text)
 
                     Text(CadenceNotificationSettingsCopy.accessRequiredDetail)
-                        .font(.system(size: 12))
+                        .cadenceFont(.metadata, base: 12, weight: .regular)
                         .foregroundStyle(Theme.subdued)
                         .fixedSize(horizontal: false, vertical: true)
 

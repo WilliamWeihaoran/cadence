@@ -23,6 +23,8 @@ import SwiftUI
 /// readings reserve the same amount: the inspector used to need more only because it opened with a
 /// 63pt date header, and that header is gone.
 struct iOSCalendarMonthStack<Detail: View>: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.cadenceTypographyScaling) private var scaling
     /// The week row at the top of the grid. The grid scrolls through its rows continuously now, so
     /// this is a scroll position that reports itself back rather than a month the chevrons rebuilt.
     @Binding var topRowDate: Date
@@ -31,7 +33,7 @@ struct iOSCalendarMonthStack<Detail: View>: View {
     let eventsByDate: [String: [EKEvent]]
     @ViewBuilder let detail: () -> Detail
 
-    private var weekdayHeaderHeight: CGFloat { CadenceCalendarWeekdayHeaderMetrics.bandHeight }
+    private var weekdayHeaderHeight: CGFloat { CadenceCalendarWeekdayHeaderMetrics.bandHeight + iOSCalendarTypographyMetrics.lineGain(CadenceCalendarWeekdayHeaderMetrics.labelSize, at: dynamicTypeSize, scaling: scaling) }
     private var gridBottomPadding: CGFloat { CadenceCalendarMonthAgendaSupport.gridBottomPadding }
 
     var body: some View {
@@ -51,7 +53,7 @@ struct iOSCalendarMonthStack<Detail: View>: View {
                 iOSCalendarMonthCompactGrid(
                     topRowDate: $topRowDate,
                     selectedDate: $selectedDate,
-                    rowHeight: rowHeight,
+                    rowHeight: iOSCalendarTypographyMetrics.compactRowHeight(rowHeight, at: dynamicTypeSize, scaling: scaling),
                     weekdayHeaderHeight: weekdayHeaderHeight,
                     bottomPadding: gridBottomPadding,
                     monthTasksByDate: monthTasksByDate,
@@ -430,6 +432,8 @@ private struct iOSCalendarMonthCompactGrid: View {
 }
 
 private struct iOSCalendarMonthCompactDayCell: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.cadenceTypographyScaling) private var scaling
     let date: Date
     let displayMonth: Date
     let isSelected: Bool
@@ -481,15 +485,16 @@ private struct iOSCalendarMonthCompactDayCell: View {
     /// shrinks with the row below that. `gridRowHeight` only returns a sub-44 row when the pane
     /// cannot hold the grid and the agenda at once; a fixed 32pt badge plus its dot is 40pt of
     /// content, which would then overrun the row and let neighbouring weeks overlap.
+    private var baseBadgeSize: CGFloat { min(32, max(18, rowHeight - 12)) }
     private var badgeSize: CGFloat {
-        min(32, max(18, rowHeight - 12))
+        min(rowHeight - 12, 32 + iOSCalendarTypographyMetrics.lineGain(15, at: dynamicTypeSize, scaling: scaling))
     }
 
     var body: some View {
         Button(action: action) {
             VStack(spacing: 3) {
                 Text(DateFormatters.dayNumber.string(from: date))
-                    .font(.system(size: badgeSize >= 28 ? 15 : 12, weight: badge.isEmphasized ? .bold : .medium))
+                    .cadenceFont(.metadata, base: baseBadgeSize >= 28 ? 15 : 12, weight: badge.isEmphasized ? .bold : .medium)
                     .foregroundStyle(dateLabelColor)
                     .monospacedDigit()
                     .frame(width: badgeSize, height: badgeSize)

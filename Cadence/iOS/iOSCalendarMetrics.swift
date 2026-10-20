@@ -1,4 +1,5 @@
 import CoreGraphics
+import SwiftUI
 
 /// Every measurement the iOS calendar's three presentations are drawn with, and the short list of
 /// figures that legitimately vary with the width of the host.
@@ -534,5 +535,75 @@ nonisolated enum iOSCalendarTimelineBlockLayout {
         let slotWidth = max(0, slotColumnWidth - (columns > 1 ? columnSpacing : 0))
         let indent = CadenceCalendarOverlapLayout.cascadeIndent(slotWidth: slotWidth, depth: placement.cascadeDepth)
         return (kind.inset + CGFloat(placement.column) * slotColumnWidth + indent, max(0, slotWidth - indent))
+    }
+}
+
+/// Geometry for the converted calendar. Padding stays fixed; text line gains reserve space.
+nonisolated enum iOSCalendarTypographyMetrics {
+    static func lineGain(_ base: CGFloat, role: CadenceTypographyRole = .metadata,
+                         at size: DynamicTypeSize, scaling: CadenceTypographyScaling) -> CGFloat {
+        CadenceTypeScale.growth(role, base: base, at: size, scaling: scaling) * CadenceTypeScale.lineHeightRatio
+    }
+
+    static func chipHeight(hasTime: Bool, at size: DynamicTypeSize, scaling: CadenceTypographyScaling) -> CGFloat {
+        (hasTime ? 29 : iOSCalendarTimelineMetrics.bandChipHeight) + lineGain(10, at: size, scaling: scaling)
+            + (hasTime ? lineGain(8, at: size, scaling: scaling) : 0)
+    }
+
+    static func dayCircle(at size: DynamicTypeSize, scaling: CadenceTypographyScaling) -> CGFloat {
+        iOSCalendarTimelineMetrics.dayCircleSize + lineGain(iOSCalendarTimelineMetrics.dayNumberSize, at: size, scaling: scaling)
+    }
+
+    static func dateBlock(at size: DynamicTypeSize, scaling: CadenceTypographyScaling) -> CGFloat {
+        iOSCalendarTimelineMetrics.dateBlockHeight
+            + lineGain(iOSCalendarTimelineMetrics.weekdaySize, role: .sectionLabel, at: size, scaling: scaling)
+            + lineGain(iOSCalendarTimelineMetrics.dayNumberSize, at: size, scaling: scaling)
+    }
+
+    /// Preserve the base row budget, spending it on fewer readable rows as labels grow.
+    /// The priority helper carries every omitted item into the overflow count.
+    static func bandCapacity(isRegularWidth: Bool, at size: DynamicTypeSize, scaling: CadenceTypographyScaling) -> Int {
+        let base = CadenceCalendarAllDayBandPriority.capacity(isRegularWidth: isRegularWidth)
+        let multiplier = max(1, CadenceTypeScale.multiplier(.metadata, at: size, scaling: scaling))
+        return max(1, Int(CGFloat(base) / multiplier))
+    }
+
+    static func bandHeight(for splits: [CadenceCalendarMonthCellPriority.Split],
+                           at size: DynamicTypeSize, scaling: CadenceTypographyScaling) -> CGFloat {
+        let previews = splits.map { split in
+            let lines = split.visible + (split.hidden > 0 ? 1 : 0)
+            return CGFloat(split.visible) * chipHeight(hasTime: false, at: size, scaling: scaling)
+                + (split.hidden > 0 ? CadenceTypeScale.lineHeight(.metadata, base: iOSCalendarTimelineMetrics.overflowLabelSize, at: size, scaling: scaling) : 0)
+                + CGFloat(max(0, lines - 1)) * iOSCalendarTimelineMetrics.bandLineSpacing
+        }
+        return dateBlock(at: size, scaling: scaling)
+            + max(iOSCalendarTimelineMetrics.previewMinHeight, previews.max() ?? 0)
+            + iOSCalendarTimelineMetrics.previewInset
+    }
+
+    static func hourHeight(at size: DynamicTypeSize, scaling: CadenceTypographyScaling) -> CGFloat {
+        let scaled = iOSCalendarTimelineMetrics.hourHeight * CadenceTypeScale.multiplier(.metadata, at: size, scaling: scaling)
+        guard scaling == .enabled, size > .large else { return scaled }
+        // A quarter-hour gets one title line plus 2pt above/below and the 4pt inter-block gap.
+        // All minute-to-Y and drag math consumes this same hour height.
+        let title = CadenceTypeScale.lineHeight(.metadata, base: 11, at: size, scaling: scaling)
+        let completion = CadenceTypeScale.size(.metadata, base: 13, at: size, scaling: scaling) + 2
+        let content = max(title, completion)
+        return max(scaled, 4 * max(28, content + 8))
+    }
+
+    static func railWidth(_ base: CGFloat, at size: DynamicTypeSize, scaling: CadenceTypographyScaling) -> CGFloat {
+        base * max(1, CadenceTypeScale.multiplier(.metadata, at: size, scaling: scaling))
+    }
+
+    static func monthColumnWidth(at size: DynamicTypeSize, scaling: CadenceTypographyScaling) -> CGFloat {
+        guard scaling == .enabled, CadenceTypeScale.isAccessibilitySize(size) else { return 0 }
+        // Three weekday glyphs, a day badge and fixed side padding must fit in each column.
+        return max(44, CadenceTypeScale.lineHeight(.metadata, base: 15, at: size, scaling: scaling) * 2 + 14)
+    }
+
+    static func compactRowHeight(_ base: CGFloat, at size: DynamicTypeSize, scaling: CadenceTypographyScaling) -> CGFloat {
+        guard scaling == .enabled else { return base }
+        return max(base, 32 + lineGain(15, at: size, scaling: scaling) + 12)
     }
 }

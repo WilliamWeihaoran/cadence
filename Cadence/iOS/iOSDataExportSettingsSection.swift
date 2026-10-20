@@ -48,17 +48,17 @@ struct iOSDataExportSettingsSection: View {
 
                         VStack(alignment: .leading, spacing: 4) {
                             Text(CadenceDataExportPresentation.title)
-                                .font(.system(size: 15, weight: .semibold))
+                                .cadenceFont(.rowTitle, base: 15, weight: .semibold)
                                 .foregroundStyle(Theme.text)
 
                             Text(CadenceDataExportPresentation.description)
-                                .font(.system(size: 12))
+                                .cadenceFont(.metadata, base: 12, weight: .regular)
                                 .foregroundStyle(Theme.subdued)
                                 .fixedSize(horizontal: false, vertical: true)
 
                             if let statusMessage {
                                 Text(statusMessage)
-                                    .font(.system(size: 11))
+                                    .cadenceFont(.metadata, base: 11, weight: .regular)
                                     .foregroundStyle(Theme.muted)
                                     .fixedSize(horizontal: false, vertical: true)
                             }

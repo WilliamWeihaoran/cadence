@@ -11,6 +11,8 @@ import SwiftUI
 /// chevron presses and a full redraw apart, on the one surface where "what does the turn of the
 /// month look like" is the obvious question.
 struct iOSCalendarMonthGrid: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.cadenceTypographyScaling) private var scaling
     /// The week row at the top of the grid — read as "which month am I looking at", written to jump.
     @Binding var topRowDate: Date
     @Binding var selectedDate: Date
@@ -20,12 +22,12 @@ struct iOSCalendarMonthGrid: View {
     private let calendar = Calendar.current
     /// The band was 36 here and 22 in `iOSCalendarMonthStack`, for the same row of the same grid.
     /// One figure now; the reasoning for which of the two survived is on the constant.
-    private var weekdayHeaderHeight: CGFloat { CadenceCalendarWeekdayHeaderMetrics.bandHeight }
+    private var weekdayHeaderHeight: CGFloat { CadenceCalendarWeekdayHeaderMetrics.bandHeight + iOSCalendarTypographyMetrics.lineGain(CadenceCalendarWeekdayHeaderMetrics.labelSize, at: dynamicTypeSize, scaling: scaling) }
 
     var body: some View {
         GeometryReader { proxy in
             let rowHeight = max(
-                iOSCalendarMonthMetrics.minimumCellHeight,
+                iOSCalendarMonthMetrics.minimumCellHeight + 5 * iOSCalendarTypographyMetrics.lineGain(10, at: dynamicTypeSize, scaling: scaling) + iOSCalendarTypographyMetrics.lineGain(12, at: dynamicTypeSize, scaling: scaling),
                 (proxy.size.height - weekdayHeaderHeight) / CGFloat(CadenceCalendarMonthWindow.visibleRowCount)
             )
 
@@ -77,6 +79,8 @@ struct iOSCalendarMonthGrid: View {
 ///   "without end" true rather than merely large — but never *during* a scroll, unless the run is
 ///   about to be exhausted. See `CadenceCalendarMonthWindow.recenterTiming`, and `isScrolling` below.
 struct iOSCalendarMonthScrollingGrid<Cell: View>: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.cadenceTypographyScaling) private var scaling
     @Binding var topRowDate: Date
     let rowHeight: CGFloat
     let weekdayHeaderHeight: CGFloat
@@ -121,6 +125,15 @@ struct iOSCalendarMonthScrollingGrid<Cell: View>: View {
     }
 
     var body: some View {
+        GeometryReader { viewport in
+            ScrollView(.horizontal) {
+                grid
+                    .frame(width: max(viewport.size.width, 7 * iOSCalendarTypographyMetrics.monthColumnWidth(at: dynamicTypeSize, scaling: scaling)))
+            }
+        }
+    }
+
+    private var grid: some View {
         VStack(spacing: 0) {
             weekdayHeader
             // **Not built until the row height is real.** `iOSCalendarMonthStack` derives its row
@@ -157,7 +170,7 @@ struct iOSCalendarMonthScrollingGrid<Cell: View>: View {
         HStack(spacing: 0) {
             ForEach(CadenceScheduleSupport.weekdaySymbols(calendar: calendar), id: \.self) { symbol in
                 Text(symbol)
-                    .font(.system(size: CadenceCalendarWeekdayHeaderMetrics.labelSize, weight: .semibold))
+                    .cadenceFont(.metadata, base: CadenceCalendarWeekdayHeaderMetrics.labelSize, weight: .semibold)
                     .foregroundStyle(Theme.dim)
                     .frame(maxWidth: .infinity)
                     .frame(height: weekdayHeaderHeight)
@@ -295,6 +308,8 @@ struct iOSCalendarMonthScrollingGrid<Cell: View>: View {
 }
 
 private struct iOSCalendarMonthDayCell: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.cadenceTypographyScaling) private var scaling
     let date: Date
     let displayMonth: Date
     let isSelected: Bool
@@ -313,13 +328,13 @@ private struct iOSCalendarMonthDayCell: View {
 
     private var chipCapacity: Int {
         let heights = events.prefix(Self.maximumChipCount).map {
-            iOSCalendarMiniChip.height(hasTime: Self.timeLabel(for: $0, on: date) != nil)
-        } + tasks.prefix(Self.maximumChipCount).map { _ in iOSCalendarMiniChip.height(hasTime: false) }
+            iOSCalendarMiniChip.height(hasTime: Self.timeLabel(for: $0, on: date) != nil, at: dynamicTypeSize, scaling: scaling)
+        } + tasks.prefix(Self.maximumChipCount).map { _ in iOSCalendarMiniChip.height(hasTime: false, at: dynamicTypeSize, scaling: scaling) }
         var used: CGFloat = 0
         var count = 0
         for height in heights.prefix(Self.maximumChipCount) {
             let next = used + (count == 0 ? 0 : 3) + height
-            guard next <= max(0, minHeight - 50) else { break }
+            guard next <= max(0, minHeight - (50 + iOSCalendarTypographyMetrics.lineGain(12, at: dynamicTypeSize, scaling: scaling) + iOSCalendarTypographyMetrics.lineGain(9, at: dynamicTypeSize, scaling: scaling))) else { break }
             used = next
             count += 1
         }
@@ -401,9 +416,9 @@ private struct iOSCalendarMonthDayCell: View {
                 // another month's page and needs to say so. These rows are one continuous run.)
                 HStack(spacing: 6) {
                     Text(DateFormatters.dayNumber.string(from: date))
-                        .font(.system(size: 12, weight: dateLabelWeight))
+                        .cadenceFont(.metadata, base: 12, weight: dateLabelWeight)
                         .foregroundStyle(dateLabelColor)
-                        .frame(width: 25, height: 25)
+                        .frame(width: 25 + iOSCalendarTypographyMetrics.lineGain(12, at: dynamicTypeSize, scaling: scaling), height: 25 + iOSCalendarTypographyMetrics.lineGain(12, at: dynamicTypeSize, scaling: scaling))
                         .background(dateBadgeFill)
                         .clipShape(Circle())
                         .overlay {
@@ -422,11 +437,11 @@ private struct iOSCalendarMonthDayCell: View {
                     // announcement cannot state two numbers.
                     if itemCount > 0 {
                         Text("\(itemCount)")
-                            .font(.system(size: 9, weight: .bold))
+                            .cadenceFont(.metadata, base: 9, weight: .bold)
                             .foregroundStyle(Theme.dim)
                             .monospacedDigit()
                             .padding(.horizontal, 6)
-                            .frame(height: 18)
+                            .frame(height: 18 + iOSCalendarTypographyMetrics.lineGain(9, at: dynamicTypeSize, scaling: scaling))
                             .background(Theme.surfaceElevated.opacity(0.52))
                             .clipShape(Capsule())
                     }
@@ -453,7 +468,7 @@ private struct iOSCalendarMonthDayCell: View {
                     }
                     if overflow > 0 {
                         Text(CadenceTaskSurfaceOptions.moreLabel(hidden: overflow))
-                            .font(.system(size: 9, weight: .semibold))
+                            .cadenceFont(.metadata, base: 9, weight: .semibold)
                             .foregroundStyle(Theme.subdued)
                             .padding(.horizontal, 5)
                     }
@@ -565,13 +580,17 @@ private struct iOSCalendarMonthDayCell: View {
 /// It has to be: the plate is now that colour, so a list-coloured glyph on a list-coloured fill is
 /// invisible. A glyph owes the 3:1 non-text bar, which both tertiary tiers are solved to hold.
 struct iOSCalendarMiniChip: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.cadenceTypographyScaling) private var scaling
     let title: String
     let icon: String
     let color: Color
     var isEvent = false
     var timeLabel: String? = nil
 
-    static func height(hasTime: Bool) -> CGFloat { hasTime ? 29 : 17 }
+    static func height(hasTime: Bool, at size: DynamicTypeSize = .large, scaling: CadenceTypographyScaling = .fixed) -> CGFloat {
+        iOSCalendarTypographyMetrics.chipHeight(hasTime: hasTime, at: size, scaling: scaling)
+    }
     /// **"Not placed on the clock yet", which is a different axis from "event or task"** (T-3184's
     /// sibling, T-3185).
     ///
@@ -631,16 +650,16 @@ struct iOSCalendarMiniChip: View {
             titleRow
             if let timeLabel {
                 Text(timeLabel)
-                    .font(.system(size: 8, weight: .medium))
+                    .cadenceFont(.metadata, base: 8, weight: .medium)
                     .foregroundStyle(CadenceCalendarEventStyle.railSecondaryLabelColor(for: color))
                     .lineLimit(1)
-                    .minimumScaleFactor(0.8)
+                    .minimumScaleFactor(scaling == .enabled && dynamicTypeSize > .large ? 1 : 0.8)
                     .padding(.horizontal, -2)
             }
         }
         .padding(.horizontal, 5)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .frame(height: Self.height(hasTime: timeLabel != nil))
+        .frame(height: iOSCalendarTypographyMetrics.chipHeight(hasTime: timeLabel != nil, at: dynamicTypeSize, scaling: scaling))
         .background { shape.fill(plate) }
         .clipShape(shape)
         .overlay {
@@ -654,14 +673,14 @@ struct iOSCalendarMiniChip: View {
     private var titleRow: some View {
         HStack(spacing: 4) {
             Image(systemName: icon)
-                .font(.system(size: 8, weight: .semibold))
+                .cadenceFont(.metadata, base: 8, weight: .semibold)
                 .foregroundStyle(
                     isEvent
                         ? CadenceCalendarEventStyle.railTertiaryLabelColor(for: color)
                         : CadenceCalendarEventStyle.plateTertiaryLabelColor()
                 )
             Text(title)
-                .font(.system(size: 10, weight: .medium))
+                .cadenceFont(.metadata, base: 10, weight: .medium)
                 .foregroundStyle(
                     isEvent
                         ? CadenceCalendarEventStyle.railTitleColor(for: color)

@@ -202,7 +202,7 @@ struct iOSSettingsRail: View {
             // No standfirst under the title: a line reading "Preferences and workspace
             // controls" only restates the word above it.
             Text("Settings")
-                .font(.system(size: 24, weight: .bold))
+                .cadenceFont(.editorTitle, base: 24, weight: .bold)
                 .foregroundStyle(Theme.text)
                 .padding(.horizontal, iOSSettingsMetrics.rowHorizontalPadding)
 
@@ -253,6 +253,8 @@ private struct iOSSettingsRailGroup: View {
 }
 
 private struct iOSSettingsRailButton: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.cadenceTypographyScaling) private var scaling
     let category: iOSSettingsCategory
     let isSelected: Bool
     let action: () -> Void
@@ -264,14 +266,14 @@ private struct iOSSettingsRailButton: View {
                 // spends the accent on the list instead of on the selection — the same
                 // call macOS's rail makes.
                 Image(systemName: category.icon)
-                    .font(.system(size: 15, weight: .semibold))
+                    .cadenceFont(.rowTitle, base: 15, weight: .semibold)
                     .foregroundStyle(isSelected ? category.tint : Theme.dim)
                     .frame(width: 22)
 
                 Text(category.title)
-                    .font(.system(size: 15, weight: isSelected ? .semibold : .medium))
+                    .cadenceFont(.rowTitle, base: 15, weight: isSelected ? .semibold : .medium)
                     .foregroundStyle(isSelected ? Theme.text : Theme.muted)
-                    .lineLimit(1)
+                    .lineLimit(CadenceSettingsTypographyLayout.stacks(at: dynamicTypeSize, scaling: scaling) ? nil : 1)
                     .truncationMode(.tail)
 
                 Spacer(minLength: 8)
@@ -337,6 +339,8 @@ struct iOSSettingsCategoryList: View {
 }
 
 private struct iOSSettingsCategoryRow: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.cadenceTypographyScaling) private var scaling
     let category: iOSSettingsCategory
 
     var body: some View {
@@ -349,14 +353,14 @@ private struct iOSSettingsCategoryRow: View {
             )
 
             Text(category.title)
-                .font(.system(size: 15, weight: .medium))
+                .cadenceFont(.rowTitle, base: 15, weight: .medium)
                 .foregroundStyle(Theme.text)
-                .lineLimit(1)
+                .lineLimit(CadenceSettingsTypographyLayout.stacks(at: dynamicTypeSize, scaling: scaling) ? nil : 1)
 
             Spacer(minLength: 8)
 
             Image(systemName: "chevron.right")
-                .font(.system(size: 12, weight: .semibold))
+                .cadenceFont(.rowTitle, base: 12, weight: .semibold)
                 .foregroundStyle(Theme.dim)
         }
         .padding(.vertical, iOSSettingsMetrics.rowVerticalPadding)
@@ -380,6 +384,8 @@ private struct iOSSettingsCategoryRow: View {
 /// `checklist`, `doc.text`, `archivebox` and `tag`, none of which the fixed-`tray` spelling could
 /// have taken without growing exactly the parameter it lacked. *Extends [[T-548]]*.
 struct iOSSettingsEmptyInlineRow: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.cadenceTypographyScaling) private var scaling
     let systemImage: String
     let title: String
     let subtitle: String
@@ -387,19 +393,19 @@ struct iOSSettingsEmptyInlineRow: View {
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
             Image(systemName: systemImage)
-                .font(.system(size: 15, weight: .semibold))
+                .cadenceFont(.rowTitle, base: 15, weight: .semibold)
                 .foregroundStyle(Theme.dim)
-                .frame(width: iOSSettingsMetrics.glyphSlot, height: iOSSettingsMetrics.glyphSlot)
+                .frame(width: CadenceSettingsTypographyLayout.glyphFrame(iOSSettingsMetrics.glyphSlot, glyph: 15, role: .rowTitle, at: dynamicTypeSize, scaling: scaling), height: CadenceSettingsTypographyLayout.glyphFrame(iOSSettingsMetrics.glyphSlot, glyph: 15, role: .rowTitle, at: dynamicTypeSize, scaling: scaling))
                 .background(Theme.surfaceElevated)
                 .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(title)
-                    .font(.system(size: 14, weight: .semibold))
+                    .cadenceFont(.rowTitle, base: 14, weight: .semibold)
                     .foregroundStyle(Theme.text)
 
                 Text(subtitle)
-                    .font(.system(size: 12))
+                    .cadenceFont(.metadata, base: 12, weight: .regular)
                     .foregroundStyle(Theme.subdued)
                     .fixedSize(horizontal: false, vertical: true)
             }

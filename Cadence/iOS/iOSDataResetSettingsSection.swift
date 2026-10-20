@@ -41,7 +41,7 @@ struct iOSDataResetSettingsSection: View {
 
                         VStack(alignment: .leading, spacing: 4) {
                             Text("Delete Cadence Data")
-                                .font(.system(size: 15, weight: .semibold))
+                                .cadenceFont(.rowTitle, base: 15, weight: .semibold)
                                 .foregroundStyle(Theme.text)
 
                             // The enumeration used to end here, at five things, which a reader
@@ -50,13 +50,13 @@ struct iOSDataResetSettingsSection: View {
                             // second copy of macOS's, so the two cannot drift into promising
                             // different things about the same reset.
                             Text("Removes every task, list, note, tag, saved link, and retained legacy record Cadence holds in this store, along with local Cadence backups, pending restores, and the saved OpenAI key. \(CadenceUnmanagedStoreCopy.resetLeavesThem)")
-                                .font(.system(size: 12))
+                                .cadenceFont(.metadata, base: 12, weight: .regular)
                                 .foregroundStyle(Theme.subdued)
                                 .fixedSize(horizontal: false, vertical: true)
 
                             if let statusMessage {
                                 Text(statusMessage)
-                                    .font(.system(size: 11))
+                                    .cadenceFont(.metadata, base: 11, weight: .regular)
                                     .foregroundStyle(Theme.muted)
                                     .fixedSize(horizontal: false, vertical: true)
                             }
@@ -133,7 +133,7 @@ private struct iOSDataResetConfirmationSheet: View {
 
                                 VStack(alignment: .leading, spacing: 4) {
                                     Text("This cannot be undone")
-                                        .font(.system(size: 15, weight: .semibold))
+                                        .cadenceFont(.rowTitle, base: 15, weight: .semibold)
                                         .foregroundStyle(Theme.text)
 
                                     // Same correction as the card above, in the stronger place:
@@ -141,7 +141,7 @@ private struct iOSDataResetConfirmationSheet: View {
                                     // so it names the two kinds outright and then names the
                                     // section that gives their full paths (T-1841).
                                     Text("Cadence permanently deletes your tasks, lists, notes, tags, saved links, focus history, and retained legacy records from this store, plus local Cadence backups, any pending restore, and the saved OpenAI key. \(CadenceUnmanagedStoreCopy.resetGateLeavesThem)")
-                                        .font(.system(size: 12))
+                                        .cadenceFont(.metadata, base: 12, weight: .regular)
                                         .foregroundStyle(Theme.subdued)
                                         .fixedSize(horizontal: false, vertical: true)
                                 }
@@ -152,7 +152,7 @@ private struct iOSDataResetConfirmationSheet: View {
                             iOSRowDivider()
 
                             Text("Cadence syncs through your private iCloud database, so these deletions reach your other devices. Apple Calendar events that already exist in Calendar are managed by Calendar and are not deleted.")
-                                .font(.system(size: 12))
+                                .cadenceFont(.metadata, base: 12, weight: .regular)
                                 .foregroundStyle(Theme.dim)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
@@ -185,6 +185,7 @@ private struct iOSDataResetConfirmationSheet: View {
                 .padding(.bottom, 28)
             }
             .scrollIndicators(.hidden)
+            .cadenceScaledTypography()
             .background(Theme.bg.ignoresSafeArea())
             .navigationTitle("Delete Cadence Data")
             .navigationBarTitleDisplayMode(.inline)

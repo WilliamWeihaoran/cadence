@@ -80,6 +80,8 @@ enum iOSCalendarTimelineSpan: Equatable {
 /// only the chrome around the column — whether there is a horizontal scroller to page days with,
 /// and whether a day header band stands over it.
 struct iOSCalendarTimelineGrid: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.cadenceTypographyScaling) private var scaling
     /// The column at the leading edge — read as "which day am I looking at", written to jump.
     ///
     /// Both directions, like the Board's `scrolledDayIndex`: scrolling reports the leading day back
@@ -162,7 +164,7 @@ struct iOSCalendarTimelineGrid: View {
         case .singleDay: 1
         }
     }
-    private var baseHourHeight: CGFloat { iOSCalendarTimelineMetrics.hourHeight }
+    private var baseHourHeight: CGFloat { iOSCalendarTypographyMetrics.hourHeight(at: dynamicTypeSize, scaling: scaling) }
     private var effectiveZoom: Double { CadenceCalendarZoom.clamp(pinchZoom ?? zoom) }
     private var hourHeight: CGFloat {
         CadenceCalendarZoom.hourHeight(base: baseHourHeight, zoom: effectiveZoom)
@@ -187,11 +189,12 @@ struct iOSCalendarTimelineGrid: View {
         let splits = (0...visibleDayCount).map { offset in
             bandSplit(on: date(at: leadingIndex + offset))
         }
-        return iOSCalendarTimelineMetrics.dayHeaderHeight(for: splits)
+        return iOSCalendarTypographyMetrics.bandHeight(for: splits, at: dynamicTypeSize, scaling: scaling)
     }
-    /// The strip's chip-row budget for this width. See `CadenceCalendarAllDayBandPriority`.
+    /// The base strip budget is six/eight rows; enlarged labels spend it on fewer rows.
+    /// The same capacity reaches the height model and every rendered day header.
     private var bandCapacity: Int {
-        CadenceCalendarAllDayBandPriority.capacity(isRegularWidth: isRegularWidth)
+        iOSCalendarTypographyMetrics.bandCapacity(isRegularWidth: isRegularWidth, at: dynamicTypeSize, scaling: scaling)
     }
     private var timelineHeight: CGFloat {
         CGFloat(CadenceScheduleSupport.calendarHourCount) * hourHeight
@@ -226,13 +229,14 @@ struct iOSCalendarTimelineGrid: View {
             // the guarantee and put the last day or two behind a horizontal scroller. The count
             // divided into is the *visible* one now, which is what makes the width fixed and the
             // grid scrollable past it.
-            let railWidth = CadenceCalendarWeekGridLayout.timeRailWidth(isRegularWidth: isRegularWidth)
+            let railWidth = iOSCalendarTypographyMetrics.railWidth(CadenceCalendarWeekGridLayout.timeRailWidth(isRegularWidth: isRegularWidth), at: dynamicTypeSize, scaling: scaling)
             let availableWidth = max(geo.size.width - railWidth, 1)
-            let colWidth = CadenceCalendarWeekGridLayout.dayColumnWidth(
+            let fittedColumnWidth = CadenceCalendarWeekGridLayout.dayColumnWidth(
                 availableWidth: availableWidth,
                 dayCount: visibleDayCount,
                 isRegularWidth: isRegularWidth
             )
+            let colWidth = max(fittedColumnWidth, iOSCalendarTypographyMetrics.monthColumnWidth(at: dynamicTypeSize, scaling: scaling))
             let contentWidth = colWidth * CGFloat(CadenceCalendarTimelineWindow.renderDayCount)
             let canvasHeight = max(geo.size.height - dayHeaderHeight, 1)
 
@@ -779,6 +783,8 @@ struct iOSCalendarTimelineGrid: View {
 /// and the blue-on-blue "selected" tint sat a shade away from the "today" tint next to it, so the
 /// two were told apart mostly by knowing which was which.
 private struct iOSCalendarTimelineDayHeader: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.cadenceTypographyScaling) private var scaling
     let date: Date
     let allDayEvents: [EKEvent]
     let unscheduledTasks: [AppTask]
@@ -817,16 +823,16 @@ private struct iOSCalendarTimelineDayHeader: View {
                         )
                         .foregroundStyle(isToday ? Theme.blue : Theme.dim)
                     Text(DateFormatters.dayNumber.string(from: date))
-                        .font(.system(size: iOSCalendarTimelineMetrics.dayNumberSize, weight: isToday ? .bold : .regular))
+                        .cadenceFont(.metadata, base: iOSCalendarTimelineMetrics.dayNumberSize, weight: isToday ? .bold : .regular)
                         .foregroundStyle(isToday ? Theme.onColor(for: Theme.blue) : Theme.text)
                         .frame(
-                            width: iOSCalendarTimelineMetrics.dayCircleSize,
-                            height: iOSCalendarTimelineMetrics.dayCircleSize
+                            width: iOSCalendarTypographyMetrics.dayCircle(at: dynamicTypeSize, scaling: scaling),
+                            height: iOSCalendarTypographyMetrics.dayCircle(at: dynamicTypeSize, scaling: scaling)
                         )
                         .background(isToday ? Theme.blue : Color.clear)
                         .clipShape(Circle())
                 }
-                .frame(height: iOSCalendarTimelineMetrics.dateBlockHeight)
+                .frame(height: iOSCalendarTypographyMetrics.dateBlock(at: dynamicTypeSize, scaling: scaling))
 
                 VStack(alignment: .leading, spacing: iOSCalendarTimelineMetrics.bandLineSpacing) {
                     ForEach(allDayEvents.prefix(split.events), id: \.calendarItemIdentifier) { event in
@@ -853,7 +859,7 @@ private struct iOSCalendarTimelineDayHeader: View {
 
                     if split.hidden > 0 {
                         Text(CadenceTaskSurfaceOptions.moreLabel(hidden: split.hidden))
-                            .font(.system(size: iOSCalendarTimelineMetrics.overflowLabelSize, weight: .medium))
+                            .cadenceFont(.metadata, base: iOSCalendarTimelineMetrics.overflowLabelSize, weight: .medium)
                             .foregroundStyle(Theme.subdued)
                     }
                 }
@@ -916,7 +922,7 @@ private struct iOSCalendarTimeRail: View {
             VStack(spacing: 0) {
                 ForEach(CadenceScheduleSupport.calendarHours, id: \.self) { hour in
                     Text(TimeFormatters.timeString(from: hour * 60))
-                        .font(.system(size: iOSCalendarTimelineMetrics.hourLabelSize, weight: .medium))
+                        .cadenceFont(.metadata, base: iOSCalendarTimelineMetrics.hourLabelSize, weight: .medium)
                         .foregroundStyle(
                             Theme.dim.opacity(CadenceCalendarHourLadderMetrics.labelOpacity(hour: hour))
                         )
@@ -1024,10 +1030,6 @@ private struct iOSCalendarTimelineDayColumn: View {
     /// for which of fourteen columns holds the pending one.
     @State private var draft: CadenceScheduleDraft?
     @State private var isDraftEditorPresented = false
-    /// Why the editor is being presented, which the panel reads to decide whether its title takes
-    /// focus ([[T-3252]]). `.returnedAfterAdjustment` is written by exactly one site,
-    /// `draftAdjustmentObserver`; every other presentation writes `.opened` first.
-    @State private var draftEditorAppearance: CadenceSchedulePanelTitleFocus.Appearance = .opened
 
     /// The draft's minute range as the touch now on the block found it, or `nil` when no touch is
     /// on it — the one thing that tells an edge adjustment apart from a scroll that happened to
@@ -1178,7 +1180,6 @@ private struct iOSCalendarTimelineDayColumn: View {
                             // their editor back, which is why it re-opens rather than leaving a
                             // rectangle on the canvas that nothing can clear.
                             guard draft == nil else {
-                                draftEditorAppearance = .opened
                                 isDraftEditorPresented = true
                                 return
                             }
@@ -1243,7 +1244,6 @@ private struct iOSCalendarTimelineDayColumn: View {
             .onEnded { _ in
                 draftPressAnchor = nil
                 guard draft != nil else { return }
-                draftEditorAppearance = .opened
                 isDraftEditorPresented = true
             }
     }
@@ -1322,7 +1322,6 @@ private struct iOSCalendarTimelineDayColumn: View {
             dateKey: DateFormatters.dateKey(from: date),
             startMin: minute(for: yPosition)
         )
-        draftEditorAppearance = .opened
         if presentingEditor { isDraftEditorPresented = true }
     }
 
@@ -1346,8 +1345,7 @@ private struct iOSCalendarTimelineDayColumn: View {
                 iOSTimelineDraftPanelHost(
                     draft: draftBinding(fallingBackTo: current),
                     onCancel: finishDraftCreation,
-                    onCommitted: finishDraftCreation,
-                    titleFocusAppearance: draftEditorAppearance
+                    onCommitted: finishDraftCreation
                 )
                 // **The editor hangs off the block it is editing, and that block has handles.**
                 // `iOSTimelineDraftBlock` hangs a 32pt touch band off each end for exactly one
@@ -1412,9 +1410,6 @@ private struct iOSCalendarTimelineDayColumn: View {
                 draftRangeUnderTouch = nil
                 guard let before, let adjusted = draft else { return }
                 guard adjusted.startMin != before.start || adjusted.endMin != before.end else { return }
-                // The editor comes back WITHOUT re-focusing its title, so the keyboard stays down
-                // ([[T-3252]]): the touch was about the block's range, not its name.
-                draftEditorAppearance = .returnedAfterAdjustment
                 isDraftEditorPresented = true
             }
     }
@@ -1457,7 +1452,6 @@ private struct iOSCalendarTimelineDayColumn: View {
         // A gesture the system cancels never reaches `onEnded`, so the captured range is cleared
         // here as well: a stale one would be compared against the *next* touch's draft.
         draftRangeUnderTouch = nil
-        draftEditorAppearance = .opened
         isDraftEditorPresented = false
         draft = nil
     }
@@ -1691,6 +1685,8 @@ private struct iOSCalendarTimelineDayColumn: View {
 /// This block carries no interaction state, so every tier is read at rest. The Mac's copy passes
 /// hover and selection through to the same functions.
 private struct iOSCalendarEventBlock: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.cadenceTypographyScaling) private var scaling
     let event: EKEvent
     let startMin: Int
     let endMin: Int
@@ -1713,6 +1709,12 @@ private struct iOSCalendarEventBlock: View {
         RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous)
     }
 
+    private var titleLabel: some View {
+        Text(iOSCalendarEventSupport.title(for: event))
+            .cadenceFont(.metadata, base: 11, weight: .semibold)
+            .foregroundStyle(CadenceCalendarEventStyle.railTitleColor(for: calendarColor))
+    }
+
     var body: some View {
         HStack(alignment: .top, spacing: 0) {
             // The identity marker: a plain strip, shaped by the block's `.clipShape(blockShape)`
@@ -1729,24 +1731,27 @@ private struct iOSCalendarEventBlock: View {
 
             HStack(alignment: .top, spacing: 6) {
                 Image(systemName: "calendar")
-                    .font(.system(size: 10, weight: .semibold))
+                    .cadenceFont(.metadata, base: 10, weight: .semibold)
                     .foregroundStyle(CadenceCalendarEventStyle.railTertiaryLabelColor(for: calendarColor))
                     .padding(.top, 2)
 
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(iOSCalendarEventSupport.title(for: event))
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(CadenceCalendarEventStyle.railTitleColor(for: calendarColor))
-                        .lineLimit(2)
+                ViewThatFits(in: .vertical) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        titleLabel
+                            .lineLimit(2)
 
-                    Text(CadenceScheduleSupport.timeRangeLabel(startMinute: startMin, endMinute: endMin))
-                        .font(.system(size: 9, weight: .medium))
-                        .foregroundStyle(CadenceCalendarEventStyle.railSecondaryLabelColor(for: calendarColor))
+                        Text(CadenceScheduleSupport.timeRangeLabel(startMinute: startMin, endMinute: endMin))
+                            .cadenceFont(.metadata, base: 9, weight: .medium)
+                            .foregroundStyle(CadenceCalendarEventStyle.railSecondaryLabelColor(for: calendarColor))
+                            .lineLimit(1)
+                    }
+                    .fixedSize(horizontal: false, vertical: true)
+                    titleLabel
                         .lineLimit(1)
                 }
             }
             .padding(.horizontal, 7)
-            .padding(.vertical, 5)
+            .padding(.vertical, scaling == .enabled && dynamicTypeSize > .large ? 2 : 5)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
         .background(fill)
@@ -1760,7 +1765,8 @@ private struct iOSCalendarEventBlock: View {
                 lineWidth: 1
             )
         }
-        .accessibilityElement(children: .combine)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(iOSCalendarEventSupport.title(for: event) + ", " + CadenceScheduleSupport.timeRangeLabel(startMinute: startMin, endMinute: endMin))
     }
 }
 
@@ -1781,6 +1787,8 @@ private struct iOSCalendarEventBlock: View {
 /// shadowed card with a pill strip and no completion circle, so the same scheduled task changed
 /// species between two screens that both exist to show its schedule.
 struct iOSTimelineTaskBlock: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.cadenceTypographyScaling) private var scaling
     @Bindable var task: AppTask
     let startMin: Int
     let endMin: Int
@@ -1854,6 +1862,13 @@ struct iOSTimelineTaskBlock: View {
     /// the day column turns that into minutes (`CadenceTimelineBlockEdit.editedRange`), draws the
     /// preview, and on release commits once through `CadenceTimelineBlockEdit.commit` — whose
     /// refusal leaves the block at its stored minute with the failure named above the canvas.
+    private var titleLabel: some View {
+        Text(TaskTitleSupport.displayTitle(task.title, fallback: TaskTitleSupport.defaultCompactDisplayTitle))
+            .cadenceFont(.metadata, base: 11, weight: .semibold)
+            .foregroundStyle(task.isDone ? secondaryInk : primaryInk)
+            .strikethrough(task.isDone, color: secondaryInk)
+    }
+
     var body: some View {
         block
     }
@@ -1870,6 +1885,7 @@ struct iOSTimelineTaskBlock: View {
             .onTapGesture { handleTap() }
             .gesture(movePressGesture, isEnabled: editing != nil)
             .accessibilityElement(children: .combine)
+            .accessibilityLabel(TaskTitleSupport.displayTitle(task.title) + ", " + CadenceScheduleSupport.timeRangeLabel(startMinute: startMin, endMinute: endMin))
             .accessibilityAddTraits(.isButton)
             .accessibilityAction { openInspector() }
             .overlay(alignment: .top) { resizeHandle(.resizeStart) }
@@ -1965,27 +1981,29 @@ struct iOSTimelineTaskBlock: View {
 
     private var blockFace: some View {
         HStack(alignment: .top, spacing: 6) {
-            iOSTaskCompletionCircle(glyph: .resolve(task: task))
-                .frame(width: 11, height: 11)
+            iOSTaskCompletionCircle(glyph: .resolve(task: task), diameter: CadenceTypeScale.size(.metadata, base: 13, at: dynamicTypeSize, scaling: scaling))
+                .frame(width: CadenceTypeScale.size(.metadata, base: 11, at: dynamicTypeSize, scaling: scaling), height: CadenceTypeScale.size(.metadata, base: 11, at: dynamicTypeSize, scaling: scaling))
                 .padding(.top, 2)
 
-            VStack(alignment: .leading, spacing: 3) {
-                // A finished task drops one ink tier rather than going grey. `Theme.dim` was
-                // chosen for a near-black surface and this surface is no longer near-black —
-                // it reads about 2:1 on the plate. The strikethrough is what still says done.
-                Text(TaskTitleSupport.displayTitle(task.title, fallback: TaskTitleSupport.defaultCompactDisplayTitle))
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(task.isDone ? secondaryInk : primaryInk)
-                    .strikethrough(task.isDone, color: secondaryInk)
-                    .lineLimit(2)
-                Text(CadenceScheduleSupport.timeRangeLabel(startMinute: startMin, endMinute: endMin))
-                    .font(.system(size: 9, weight: .medium))
-                    .foregroundStyle(secondaryInk)
+            ViewThatFits(in: .vertical) {
+                VStack(alignment: .leading, spacing: 3) {
+                    // A finished task drops one ink tier rather than going grey. `Theme.dim` was
+                    // chosen for a near-black surface and this surface is no longer near-black —
+                    // it reads about 2:1 on the plate. The strikethrough is what still says done.
+                    titleLabel
+                        .lineLimit(2)
+                    Text(CadenceScheduleSupport.timeRangeLabel(startMinute: startMin, endMinute: endMin))
+                        .cadenceFont(.metadata, base: 9, weight: .medium)
+                        .foregroundStyle(secondaryInk)
+                        .lineLimit(1)
+                }
+                .fixedSize(horizontal: false, vertical: true)
+                titleLabel
                     .lineLimit(1)
             }
         }
         .padding(.horizontal, 7)
-        .padding(.vertical, 5)
+        .padding(.vertical, scaling == .enabled && dynamicTypeSize > .large ? 2 : 5)
         // Clears the trailing control when there is one, so a two-line title cannot run under it.
         .padding(.trailing, onClearTime == nil ? 0 : 26)
         .frame(maxWidth: .infinity, maxHeight: fillsAvailableHeight ? .infinity : nil, alignment: .topLeading)
@@ -2022,9 +2040,9 @@ struct iOSTimelineTaskBlock: View {
                 // neutral surface; `Theme.onColorBorder` is the well the `onColor` family already
                 // ships for a control standing on a coloured fill.
                 Image(systemName: "arrow.uturn.left.circle")
-                    .font(.system(size: 13, weight: .semibold))
+                    .cadenceFont(.controlLabel, base: 13, weight: .semibold)
                     .foregroundStyle(CadenceCalendarEventStyle.platePrimaryLabelColor)
-                    .frame(width: 22, height: 22)
+                    .frame(width: CadenceTypeScale.height(22, holding: .controlLabel, at: dynamicTypeSize, scaling: scaling), height: CadenceTypeScale.height(22, holding: .controlLabel, at: dynamicTypeSize, scaling: scaling))
                     .background(Theme.onColorBorder)
                     .clipShape(Circle())
                     .iOSExpandedHitArea(8)
