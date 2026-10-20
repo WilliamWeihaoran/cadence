@@ -1261,9 +1261,12 @@ struct CadenceTodayTimelinePaneTests {
 /// already names this gesture, so a press that has not travelled half a grid step leaves the
 /// default hour exactly as drawn.
 ///
-/// What is NOT pinned here, because it is not fixed: a draft block is still inert while its editor
-/// is up, so its edge handles remain unreachable. That is [[T-3240]], and its fix is a presentation
-/// decision in a file this ticket does not own.
+/// What is NOT pinned here, because it is not fixed: the editor is still absent for the length of
+/// an edge-handle drag and comes back with the keyboard when the finger lifts. That is [[T-3248]],
+/// and holding it open is a presentation decision rather than a flag — both `.popover` levers are
+/// measured dead ends ([[T-3240]], [[T-3246]]). The two halves that ARE fixed are pinned
+/// elsewhere: the handle receives its touch ([[T-3240]]) and the editor returns to the adjusted
+/// draft ([[T-3246]]), both in `CadenceScheduleDraftTests`.
 struct CadenceTimelineDraftPressGestureTests {
     private static let gridFile = "Cadence/iOS/iOSCalendarTimelineViews.swift"
 
@@ -1284,12 +1287,25 @@ struct CadenceTimelineDraftPressGestureTests {
             CadenceSourceScan.matchCount(#"beginDraft\(atY: drag\.startLocation\.y, presentingEditor: false\)"#, in: grid) == 1,
             "the press-drag opens its editor from inside the gesture again"
         )
-        // Three presentations and no fourth: `beginDraft`'s guarded one, the press's `onEnded`,
-        // and the tap that re-opens a draft an interrupted press left without an editor. An
-        // unguarded fourth is how this fired mid-gesture.
+        // Four presentations and no fifth, and **every one of them is guarded** — that, not the
+        // number, is what this pin is about. An UNGUARDED one is how this fired mid-gesture.
+        // `beginDraft`'s is behind `if presentingEditor`; the press's is in `onEnded`, after the
+        // finger is up; the tap's re-opens a draft an interrupted press left without an editor;
+        // and `draftAdjustmentObserver`'s ([[T-3246]]) is in `onEnded` too, behind a comparison
+        // that fires only when an edge actually moved — so a vertical scroll that started on the
+        // block raises nothing.
         #expect(
-            CadenceSourceScan.matchCount(#"isDraftEditorPresented = true"#, in: grid) == 3,
-            "the editor is presented from somewhere new, or no longer from all three"
+            CadenceSourceScan.matchCount(#"isDraftEditorPresented = true"#, in: grid) == 4,
+            "the editor is presented from somewhere new, or no longer from all four"
+        )
+        // The fourth one's guard, named rather than assumed: without it the observer re-raises the
+        // editor for any drag that ends on the block.
+        #expect(
+            CadenceSourceScan.matchCount(
+                #"guard adjusted\.startMin != before\.start \|\| adjusted\.endMin != before\.end else \{ return \}"#,
+                in: grid
+            ) == 1,
+            "the adjustment observer presents on any drag that ends on the block"
         )
     }
 
