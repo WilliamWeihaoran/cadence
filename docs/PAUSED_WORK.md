@@ -1,47 +1,41 @@
-# Paused work — 2026-08-28
+# Paused work — 2026-08-28 — **RETIRED, the pause ended**
 
-Paused at the user's request. Nothing is lost: every agent tree is on disk and the repo's
-working tree holds the staged-but-uncommitted batches. `main` is green at `859e270`.
+**Nothing here is waiting. Do not resume anything from this file.** It was the snapshot taken when
+the owner paused a ten-agent run on 2026-08-28, so that the trees on disk could be picked up again.
+They were: every batch it lists landed in the 2026-08-28/29 five-batch run, archived in
+`docs/TODO_DONE.md` under *"Closed 2026-08-28/29 — the five-batch run"*.
 
-## Repo state
+Checked 2026-10-20 before retiring it:
 
-- **`main` = `859e270`**, green (3106 tests, 274 suites, exit 0, 0 warnings).
-- **The working tree is clean.** Everything unlanded lives in the agent trees below, not in the
-  repo. An earlier attempt to stage the EventKit work aborted because a test run was live, so
-  nothing was left half-applied.
+- **All ten `/private/tmp/cadence-*` trees are gone.** There is nothing left to stage.
+- **Every ticket the ten trees held is closed** — T-321, T-333, T-338, T-341, T-342, T-343, T-344,
+  T-349, T-351, T-354, T-355, T-357, T-363, T-366, T-369, T-373, T-377, T-378, T-385, T-386, T-387,
+  T-389, T-390, T-392, T-393, T-394 — as are T-399 and T-400, the two ids it allocated and wrote
+  down. Read any of them with `./scripts/ledger-view.sh show T-NNNN`.
+- **`main` is nowhere near `859e270`** and the "next free id" below `401` is off by thousands.
 
-## Agent trees on disk — complete, awaiting staging
+Nothing links to this file; it is kept as the record of a pause that ended, not as a queue.
 
-| Tree | Tickets | State |
-|---|---|---|
-| `/private/tmp/cadence-status` | T-341, T-342, T-344, T-357 | Done. 8/8 mutations killed, 37/37 green. Residue filed as T-398 → **renumber to T-399** (collides with prefs). |
-| `/private/tmp/cadence-prefs` | T-392, T-393, T-394, T-351 | Done. 7/7 mutations killed, 36/36 green. Keeps **T-398**. |
-| `/private/tmp/cadence-eventkit` | T-389, T-390 | Done, 5/5 mutations killed, 32/32 green. **Not staged** — take its 8 source/test files, not `docs/TODO.md`. Stale-link residue still to file as **T-400**. |
-| `/private/tmp/cadence-search` | T-377, T-378 | All six mutations killed; was in final verification. Owns **T-395**, **T-396**. |
-| `/private/tmp/cadence-subtask` | T-387, T-338 | Green + failing-first + M1–M4 collected. M5/M6 supplementary, not run. |
-| `/private/tmp/cadence-caps` | T-363, T-385, T-386 | Green at 80 tests; mutations not run. |
-| `/private/tmp/cadence-visible` | T-343, T-349, T-397 | Code complete, both builds clean. Pipeline had not completed. |
-| `/private/tmp/cadence-commit` | T-321, T-366 | Code complete, both builds clean. Verification not run. |
-| `/private/tmp/cadence-order` | T-333, T-372a, T-373 | Queued on the lock; verification not run. |
-| `/private/tmp/cadence-widget` | T-354, T-369, T-355 | Mid-implementation. Least complete. |
+## The two things worth carrying out of it
 
-## Ticket ID allocation (uncommitted, so not visible in docs/TODO.md yet)
+Both are about how a many-agent run goes wrong. Only one of them is written anywhere an agent
+actually reads, so they are kept here rather than dropped:
 
-- **395, 396** — search agent
-- **397** — status/delete-visibility agent (`iOSTaskDetailSheet` residue)
-- **398** — prefs agent
-- **399** — status-lifecycle agent's kanban cancelled-card residue (renumber from its 398)
-- **400** — EventKit stale-link detection residue (not yet written)
+- **Two agents allocated the same ticket id.** This one *is* in `docs/SESSION_HANDOFF.md` §5, with
+  the sweep that catches it — across every local *and* remote ref, not just the filesystem. It is
+  restated here only so this file is not a dead end.
+- **An agent tree is a snapshot and HEAD moves.** Copying a tree wholesale reverts landed work; it
+  happened four times in one day. Take each agent's own files, or ask for a patch. The handoff
+  carries the neighbouring warning — that a sibling's report about a dirty file is a snapshot, not
+  a current fact — but **not this one**, which is why it is spelled out here.
 
-Next free: **401**.
+## The one thing in it that never landed
 
-## Hazards to remember when resuming
+The note it deferred was never written. It belongs in `Cadence/Shared/AGENTS.md`, beside the
+existing non-vacuity guidance, and it is this: **a non-vacuity anchor has to be a file where the
+needle can actually appear.** A type calls its own members *unqualified*, so anchoring a qualified
+needle inside the declaring type reads zero for a reason that is not absence — the scan is vacuous
+and green, which is the exact failure the anchor exists to prevent.
 
-- **Agent trees are snapshots and HEAD has moved.** Copying a tree wholesale reverts landed work —
-  this happened four times today. Take only each agent's own files, or ask for a patch.
-- **Two agents allocated the same ticket id twice.** With many agents filing against one
-  `docs/TODO.md`, assign id ranges up front.
-- **Not yet written down** (deferred because the context-budget test pins that file's length):
-  a non-vacuity anchor must be a file where the needle can actually appear. A type calls its own
-  members *unqualified*, so anchoring a qualified needle inside the declaring type reads zero for a
-  reason that is not absence. Belongs in `Cadence/Shared/AGENTS.md`.
+That file is another session's to edit, so this is recorded here rather than fixed, and a ticket
+carries it.
