@@ -4,45 +4,18 @@ This is the former long root `AGENTS.md`, preserved so no operational detail is 
 active `../AGENTS.md` stays compact. Do not load this whole file by default; search it for the
 specific runbook detail you need.
 
-# Cadence Agent Guide
+## Project Snapshot, and the runner refusals behind the build rules
 
-This file is the first stop for coding agents. `CLAUDE.md` is a compact Claude Code router, and
-`docs/CLAUDE_REFERENCE.md` preserves the longer product and feature history. This file is the
-compact working map.
+The live `../AGENTS.md` carries the snapshot, the build and test commands, the scoped-guide
+list, the directory map, the four non-negotiable patterns and the risk hotspots. This file
+carried a copy of all six until 2026-10-20; the copy was the version displaced in 2026-08-31
+and had drifted — stale file counts, a scoped-guide list one guide short, and a refactor
+section that said of itself that nothing routed to it. The copies are deleted rather than
+refreshed: a second spelling of an always-read guide is the thing that makes the guide stop
+being authoritative. What follows is what the guide never carried.
 
-## Project Snapshot
-
-Cadence is a native SwiftUI productivity app with a fully built macOS surface, shared SwiftData models, CloudKit sync, Apple Calendar/EventKit integration, and a large, actively-developed iOS/iPadOS surface (not a stub — see `Cadence/iOS/AGENTS.md`).
-
-Primary target:
-- `Cadence.xcodeproj`
-- scheme: `Cadence`
-- platform: macOS
-
-Useful build command (run from the repo root; the private `-derivedDataPath` is the
-non-negotiable below, not a suggestion):
-
-```sh
-/Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild \
-  -project Cadence.xcodeproj -scheme Cadence -destination 'platform=macOS' \
-  -derivedDataPath /tmp/cadence-build-$$ build
-```
-
-Tests **must** be scoped to `CadenceTests`:
-
-```sh
-/Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild test \
-  -project Cadence.xcodeproj -scheme Cadence -destination 'platform=macOS' \
-  -derivedDataPath /tmp/cadence-test-$$ -only-testing:CadenceTests
-```
-
-Both flags are repeated in `Cadence/AGENTS.md` and `Cadence/macOS/AGENTS.md`, which are the guides
-an agent actually reaches for. They printed the bare command for a long time while this file called
-the private path non-negotiable — a rule that lives only in the guide nobody is standing in is a
-rule that gets copied around.
-
-An unscoped `test` run also pulls in `CadenceUITests`, which cannot launch headless and aborts
-the whole run. The failure reads like a broken suite rather than a harness problem — do not
+An unscoped `test` run pulls in `CadenceUITests`, which cannot launch headless and aborts the
+whole run. The failure reads like a broken suite rather than a harness problem — do not
 conclude "tests can't run here" from it.
 
 ### The two runner refusals of T-2049, and why neither reads the way the ticket first wrote it
@@ -169,77 +142,20 @@ Two things the table does not cover: failures inside `CadenceUITests` mean the r
 evidence for each row is in `docs/TODO.md` under its id; the detail on T-236 and T-117 is in the
 bullets below. Do not re-derive either here.
 
-## Where Things Live
+## The Rationale Behind The Non-Negotiable Patterns
 
-- `Cadence/CadenceApp.swift` - app entry, model container, CloudKit setup, recovery.
-- `Cadence/Models/` - shared SwiftData models. Read this before changing persistence or relationships.
-- `Cadence/Services/` - 50 shared services (`ls Cadence/Services/*.swift | wc -l`): schema, migrations, notifications, widget support, the list/context delete cascades (`CadenceListDeleteHelpers.swift`), the 27 `Markdown*` parsing/mutation files (25 of them named `*Support.swift`; re-count when you add one), plus `AI/` and `MCPReadOnly/`. Note the markdown *logic* lives here, not in `macOS/Editor/`.
-- `Cadence/Shared/` - design tokens (`Theme.swift`), shared components, date/time utilities, hover styling, and cross-platform presentation/query support (`Cadence*Support.swift`).
-- `Cadence/macOS/` - main product surface. Most active work happens here.
-- `Cadence/macOS/Views/` - macOS feature screens and support views (168 `.swift` files at the time of writing; re-count with `ls Cadence/macOS/Views/*.swift | wc -l` rather than trusting this figure).
-- `Cadence/macOS/Services/` - macOS-only managers for focus, calendar, hotkeys, task creation, hover state, task deletion, scheduling, note export, Apple account. **Not** reminders, **not** the privacy data reset, and since `c84732e` **not the list/context delete cascades**: `RemindersManager`, `PrivacyDataResetService` and `ListDeleteHelpers` are all cross-platform and live in `Cadence/Services/` (`CadenceRemindersManager.swift`, `CadencePrivacyDataResetService.swift`, `CadenceListDeleteHelpers.swift`), each leaving a tombstone under its old unprefixed name. That is **three** tombstones, not the two this line used to imply, and there is no longer a fourth: the `CalendarVisibilityPreferences.swift` tombstone was deleted outright by `6f71a70` once no file of that base name existed anywhere to collide with. Details in `Cadence/macOS/Services/AGENTS.md`.
-- `Cadence/macOS/Editor/` - AppKit-backed markdown editor bridge (11 files since the T-105 split). High risk; preserve NSTextView behavior carefully.
-- `Cadence/iOS/` - large, real iOS/iPadOS surface covering Today, Calendar, Tasks, Focus, Goals, Habits, Notes, Lists, Search and Settings (98 `.swift` files at the time of writing; re-count with `ls Cadence/iOS/*.swift | wc -l` — it read 93, then 96 at the T-123 audit (`af03fb1`)). iPhone runs a four-tab bottom bar (`iOSCompactTabShell`); iPad keeps its sidebar. Do not assume feature parity with macOS. **Adding a task surface here: read "The Task Inspector Is Presented By A Host, Never By A Row" in `Cadence/iOS/AGENTS.md` first** — a row that owns a `.sheet` presenting the inspector is a shipped bug, four times over, not a style choice.
-- `CadenceWidgets/` - widget extension. Compiles a subset of app sources (models, `Theme.swift`, `Cadence*WidgetSupport.swift`) directly into the extension target.
-- `CadenceMCPServer/` and `plugins/cadence-mcp/` - MCP server/plugin surfaces. Separate integration boundaries with their own build and verification procedure — read `CadenceMCPServer/AGENTS.md` before changing shared models or services that they compile.
-- `CadenceTests/`, `CadenceUITests/` - test targets. `CadenceTests/` is a flat directory of 191 `.swift` files at the time of writing; **look for an existing file before adding one**, and re-count with `ls CadenceTests/*.swift | wc -l` instead of trusting this number. It is the figure the guides cite when they tell you to reuse a test file, so an undercount is what produces duplicate suites — it read "~140" through 158, 164, 167, 171, 177, 186 and now 191.
-- `docs/` - support, privacy, and App Review notes (the public site + submission material).
+`../AGENTS.md` states the patterns. These are the measurements and incidents behind the ones
+whose argument did not fit there. The subagent-facing half of this material — isolating a tree,
+the test-host lock, mutation runs, committing out of a shared checkout — is in
+`docs/SUBAGENT_RUNBOOK_REFERENCE.md` and is not repeated here.
 
-## Scoped Guides
+The four UI patterns themselves — no hardcoded colours, page headers that do not describe the
+page, one hover layer at one radius, one shared component over near-copies — are stated in
+`../AGENTS.md` and argued in `docs/SHARED_AGENTS_REFERENCE.md` ("Theme Is The Only Source Of
+Colour", "One Page Header Per Platform", "The Primary Task Row: What Is Shared, And What Is
+Earned"), which is the file closest to the components they govern. They were restated here in
+full until 2026-10-20, and the copy had already drifted on the page-header wrapper list.
 
-Read the nearest scoped `AGENTS.md` before editing under that tree:
-
-- `Cadence/AGENTS.md` - app-wide source rules.
-- `Cadence/Models/AGENTS.md` - SwiftData relationship and persistence rules.
-- `Cadence/Services/AGENTS.md` - service/migration boundaries.
-- `Cadence/Shared/AGENTS.md` - shared UI/utilities rules.
-- `Cadence/iOS/AGENTS.md` - iOS surface boundary (large, real UI — not a stub; parity with macOS is not guaranteed).
-- `Cadence/macOS/AGENTS.md` - macOS feature architecture.
-- `Cadence/macOS/Services/AGENTS.md` - macOS manager/service boundaries.
-- `Cadence/macOS/Editor/AGENTS.md` - AppKit-backed markdown editor cautions.
-- `Cadence/macOS/Views/AGENTS.md` - view splitting and current feature map.
-- `CadenceMCPServer/AGENTS.md` - **the** MCP boundary account: what the target compiles, why app→MCP coupling is silent, what the write path can do, and how to verify. The other guides point here.
-- `plugins/cadence-mcp/AGENTS.md` - the plugin wrapper and the smoke test that is the MCP router's only coverage.
-
-Do not add an agent guide to every folder by default. Add one when a subtree has unique rules, high churn, or a boundary that agents repeatedly misunderstand.
-
-## Non-Negotiable Patterns
-
-These four are restated by the user more often than anything else. They are enforced by the
-code, and every one of them has been violated by a shipped change at least once.
-
-- **No hardcoded colours.** Every colour comes from `Theme.*`, or from a user-owned
-  `colorHex` on a list/calendar/habit/tag/section. No `Color(hex:)` literals, no bare
-  `.white`/`.black`/`.gray` — `Theme` has named tokens for foreground-on-colour, scrims,
-  shadows and borders precisely so call sites stop inventing their own. This includes the
-  `CadenceWidgets` target, which has `Theme.swift` in its Sources phase so it can comply.
-  Since T-15 the **six accents are selectable** and the near-black neutrals are not: accents are
-  computed `static var`s over `CadenceAccentPaletteSelection`, neutrals stay `static let`. So a
-  colour read into a `static let` is now a bug when it is an accent — it freezes on first access —
-  and fine when it is a neutral. Full account in `Cadence/Shared/AGENTS.md`.
-- **Page headers do not describe the page you are already on.** A subtitle under "Notes"
-  saying "Write and organize your notes" is noise; the `subtitle` parameter is gone. Search
-  result rows, empty states, and picker rows *keep* their subtitles — those say something the
-  screen does not. There is now **one** header view per platform to enforce that in:
-  `DesktopPageHeader` and `iOSPageHeader`. This bullet used to name `CommitmentPageHeader` and
-  `CadenceSettingsHeader` beside `DesktopPageHeader`, which was accurate until `5aa11dc` and is
-  now misleading in the direction that costs: both are name-only wrappers, so a header change
-  landed three times was landed twice too often. See `Cadence/Shared/AGENTS.md` for the wrapper
-  list and for why `CadencePageHeaderSurface` has a third `.desktop` tier rather than reusing
-  `.regular`.
-- **One hover/selection layer at one radius.** Stacked hover backgrounds at mismatched radii
-  have shipped independently in the task inspector, group headers, tab bars, sidebar rows,
-  and the notes action menu. If a row already has a `rowBackground`, do not add a second
-  `.background()` on another layer.
-- **Prefer one shared component over near-copies.** The three kanban boards and the two
-  estimate pickers each drifted apart before being unified. `KanbanCard`,
-  `CadenceBoardColumnHeader` and `KanbanColumnScroll` are now shared by the list board, the
-  All Tasks board, and the Calendar Board — parameterize them, never fork them. **The header's
-  name is `CadenceBoardColumnHeader`**, and there is no `BoardColumnHeader`: three guides spelled
-  it that way in five places, which reads as a macOS type when it is a `Shared/Components/` one
-  that iOS's list kanban, Calendar Board and month agenda render too. `KanbanCard` and
-  `KanbanColumnScroll` really are macOS-only, so this bullet is a statement about the three *macOS*
-  boards plus a shared header, not a cross-platform trio.
 - **Build into a private `-derivedDataPath` whenever another build may be running.** The shared
   DerivedData is a single mutable directory: a clean build deletes `Build/Products/`, and anything
   launched from there dies in `libsecinit` before `main()` with an `EXC_BREAKPOINT` that looks like
@@ -380,24 +296,14 @@ code, and every one of them has been violated by a shipped change at least once.
   unique name is not isolation if the cleanup step can still reach a sibling. Cleanup is also not
   optional: the scratchpad reached **64 GB** in one session and filled the user's disk. Delete your
   directory when you are done, and only yours.
-- **Isolate the tree with `rsync`, not `git archive` — and restore HEAD by hand.** `git archive
-  --format=tar HEAD` over the whole tree runs at about **5 KB/s** on this machine (sampled every 10s:
-  1259520 → 1310720 → 1372160 → 1484800 → 1525760 → 1576960 bytes), i.e. ~25 minutes for a 15 MB
-  working tree. Worse, it produces a **0-byte file** for the first minutes, so two invocations were
-  killed at 2 and 3 minutes as apparent hangs — it looks like a broken repo and is not
-  (`git rev-parse HEAD` is 0.018s; `git archive HEAD -- AGENTS.md` for one file is instant). Suspected
-  but unconfirmed: a global `filter.lfs` with `required = true` while `git-lfs` is not installed
-  (`-c filter.lfs.process= -c filter.lfs.required=false` did not help; the repo has no
-  `.gitattributes`). See `docs/TODO.md` T-237.
-  The working recipe, and **step 2 is not optional** — skip it and you silently verify another
-  agent's in-flight code as if it were yours:
-  1. `rsync -a --exclude '.git' --exclude '.codex-build' --exclude '.DS_Store' --exclude 'default.profraw' <repo>/ <tree>/` — a couple of seconds.
-  2. Read `git status --porcelain`. For every path *another* agent modified or deleted, restore
-     HEAD's bytes into the copy with `git show HEAD:<path> > <tree>/<path>`; for every path they
-     added, `rm` it from the copy. Then check each one: `git show HEAD:<path> | shasum` must equal
-     `shasum < <tree>/<path>`. This is the part `git archive` gave for free.
-  3. `shasum` your own changed files into your scratchpad, so at report time you can prove what you
-     tested is still what is on disk.
+- **Isolating a tree is `./scripts/agent-scratch.sh new <id>`, and this bullet used to say the
+  opposite.** It carried a `rsync -a --exclude .git` recipe on T-237's claim that
+  `git archive HEAD` ran at ~5 KB/s here. T-237 was re-measured on 2026-08-30 at **0.06s** and
+  closed as not reproducible, and the `rsync` route is now the one with the measured failure:
+  it copies 8963 files / 464 MB including **any other agent's in-flight edits**, so the tree you
+  verify is not HEAD. The archive is 910 files / 14 MB and *is* HEAD. The recipe, the naming
+  rule and the `release` refusal that stops you deleting the only copy of unlanded work are in
+  `docs/SUBAGENT_RUNBOOK_REFERENCE.md`, "The opening rules, and the incidents behind them".
 - **Poll for your own background results; never wait for a notification.** Completion notifications
   are delivered to the **main session**, not to subagents — so a subagent that "waits for the
   notification" simply ends its turn, and the task stops there with its work half done. Two agents
@@ -496,71 +402,12 @@ code, and every one of them has been violated by a shipped change at least once.
   rather than the tooling's, and both are cheap to repeat: classifying files by a filename pattern
   (`*Tag*`) that neither affected file matched, and treating a subset test as durable while agents
   were still writing.
-- **iPhone and iPad are one style, not two.** They differ in *layout* — a tab bar against a
-  sidebar, one pane against two — and should not differ in how a row, a chip, a header or a
-  picker looks or behaves. So: a change asked for on one is a change to both unless it is
-  genuinely shape-specific, and the default implementation is one view parameterised by size
-  class rather than an `iPhoneFoo` beside an `iPadFoo`. When a request names only one of them,
-  say which of the two it is and act accordingly rather than silently doing half.
-
-- All persisted dates are `yyyy-MM-dd` strings unless an existing model says otherwise.
-- Use `DateFormatters` and `TimeFormatters`; do not create ad hoc `DateFormatter()` instances in views.
-- SwiftData/CloudKit to-many relationships must be optional arrays (`[Type]?`). Read optional relationships with `?? []`, and append by assigning a new array.
-- macOS is the primary, most fully-featured app surface; iOS is large and actively developed but not guaranteed to be at full feature parity.
 - Keep SwiftUI view roots thin. Prefer dedicated subview structs and support files over long computed `some View` fragments.
 - Preserve shared hover behavior. Do not turn task/event/bundle hover states gray; preserve original color and use brightness/lift style treatments from shared hover helpers.
 - Avoid broad refactors in markdown editor files unless you are intentionally working on editor behavior.
-- **Review the MCP boundary when model or shared-service code changes** — build
-  `CadenceMCPServer` on its own scheme into a private `-derivedDataPath`, grep the log, and change
-  response DTOs on purpose or not at all. This line used to read "do not touch MCP server/plugin
-  code unless the task explicitly asks for MCP work", which was wrong: that target compiles a
-  hand-picked subset of app source under different concurrency settings, so about half the commits
-  touching it are app-side model changes that had to reach in, and skipping it yields a broken
-  target or a silently stale response schema. Full account in `CadenceMCPServer/AGENTS.md`; do not
-  restate it elsewhere.
-- Do not revert unrelated user changes.
-
-## Risk Hotspots
-
-Use extra caution in these areas:
-
-- `Cadence/macOS/Editor/` - the AppKit/SwiftUI bridge: custom caret, drawing, slash commands, undo.
-  **Read `Cadence/macOS/Editor/AGENTS.md` first** — it carries the per-file roles, the concurrency
-  rules and the draw-order findings, and it is kept current. In short, T-105 split the 1,996-line
-  `MarkdownEditorInteractionSupport.swift` into six: it now holds only the `CadenceTextView`
-  subclass (843 lines), beside `MarkdownEditorLayoutManager` (`CadenceLayoutManager` and the six
-  colour-and-geometry decoration passes), `MarkdownEditorTextViewDecorations` (the two passes that
-  need view state), `MarkdownEditorDecorationGeometry` (the rect math — pure, and unit tested),
-  `MarkdownEditorCoordinator` (the `NSTextViewDelegate`) and `MarkdownEditorTextEditDiff`.
-  `MarkdownEditorSupport.swift` still holds styling, parsing and list rules.
-  **The Swift 6 blocker here is gone.** `CadenceLayoutManager` is `nonisolated` throughout,
-  `drawBackground(forGlyphRange:at:)` included; `Theme` and `MarkdownStylist`'s palette constants
-  are `nonisolated` too, because a nonisolated `static let` cannot initialise from a main-actor one.
-  A whole-module Swift 6 probe on the macOS app scheme went from exactly 1 error — that method — to
-  **0**. Keep it that way, and do not "fix" a future isolation error here with
-  `nonisolated(unsafe)`, `@preconcurrency import AppKit`, or by moving the view's hit-rect and hover
-  caches into a nonisolated holder: that last one compiles, changes no z-order, and removes the
-  diagnostic without removing the hazard. It is documented as rejected in the scoped guide.
-  **`SWIFT_VERSION = 5.0` is now an open question rather than a constraint.** Nothing in `Editor/`
-  blocks the flip; what remains is 10 Swift-6-mode *warnings* elsewhere in the app, unchanged by
-  T-105 and none of them in editor files. Clearing those is the work a flip now needs.
-- `Cadence/macOS/Views/Timeline*`, `SchedulePanel*`, `CalendarPage*`, `CalendarBoard*` - timeline coordinate math, drag/drop, EventKit, and schedule state.
-- `Cadence/macOS/Views/TasksPanel*`, `TasksListView.swift`, `ListDetail*`, `Inbox*`, `Kanban*` - shared task surface behavior, grouping, sorting, drag reorder, completion animations. `TasksListView` is the single All Tasks + Inbox list; `AllTasksListView.swift` and `InboxView.swift` were merged into it and are gone.
-- `Cadence/macOS/Services/CalendarManager.swift`, `SchedulingService.swift`, `TaskWorkflowService.swift`, deletion helpers - can affect SwiftData relationships and EventKit side effects.
-- `Cadence/Models/` and `Cadence/Services/CadenceSchema.swift` - schema changes require migration and CloudKit awareness.
-
-## Refactor Guidance
-
-Good refactor targets are files that combine orchestration, state, row rendering, popovers, and domain operations. Split by responsibility:
-
-- root view: state and orchestration
-- support view file: reusable UI sections and rows
-- state/support file: derived state, sorting, grouping, coordinate math
-- service: persistence mutations, deletion flows, EventKit interactions, migrations
-
-After structural refactors, run `git diff --check` and the macOS build command above.
-
-Keep SwiftUI roots thin: root view for state and orchestration, support views for rows and sections, support/state files for derived state and geometry, services for persistence and side effects. Keep edits scoped and run the relevant build/test command after structural changes. That sentence was the whole of `AGENTS.md`'s own "Refactor Guidance" section until T-1386 displaced it here to pay for the English-only rule; it was a shorter copy of the list above, so nothing routes to it separately.
+- **Review the MCP boundary when model or shared-service code changes.** The rule is in
+  `../AGENTS.md`; the account is `CadenceMCPServer/AGENTS.md` and `docs/MCP_AGENTS_REFERENCE.md`,
+  "Why the prohibition was wrong". It is not restated here, which is what that section asks.
 
 ## Why `parallelizable = "NO"` stays (moved out of AGENTS.md, 2026-08-31)
 

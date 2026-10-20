@@ -112,9 +112,11 @@ batches lost something to that. See "Committing out of a shared checkout" below.
   number is a ratchet at today's largest guide, not an allowance, and **rewrapping is not a repair**:
   it changes the line count without changing what anyone has to read. Move rationale to a linked
   long reference instead, the way T-434 and T-1208 already did.
-- **Do not `rg docs/TODO.md` for a ticket** — it prints whole multi-kilobyte entries out of a 1.4 MB
-  file. `./scripts/ledger-view.sh` lists every active entry with its status, location and next
-  action in ~90 lines; `./scripts/ledger-view.sh show T-1234` prints one exact block (T-1331).
+- **Do not `rg docs/TODO.md` for a ticket** — it prints whole multi-kilobyte entries out of a file
+  that is several megabytes and still growing (it was quoted here as 1.4 MB, and as 2.3 MB
+  elsewhere; it passed 3.8 MB on 2026-10-19, so do not write the number down again).
+  `./scripts/ledger-view.sh` lists every active entry with its status, location and next action in
+  ~90 lines; `./scripts/ledger-view.sh show T-1234` prints one exact block (T-1331).
 - **`pgrep -f 'foo/run-batch.sh'` does not match a script invoked as `./run-batch.sh`** — the process
   command line is `/bin/zsh ./run-batch.sh`. A liveness check written that way reports a healthy run as
   gone, which is how one agent came to launch a duplicate runner. Same family as the `pgrep -f
@@ -131,10 +133,6 @@ batches lost something to that. See "Committing out of a shared checkout" below.
   use `xcb.sh <id> raw test …`, which skips the lock and keeps the zero-test guard and the counters.
   Measured 2026-09-02: ten separate `xcb.sh test` calls starved for 21 minutes; restructured, the next
   batch acquired in 20 seconds.
-- **A `while read` loop must not bind a variable named `path`.** In zsh `path` is tied to `$PATH`, so
-  `while read -r id suite path desc` **empties `$PATH`** for the body. Every command then fails to
-  execute with an empty error message, which reads as a broken script rather than a broken shell. It
-  cost one agent a full twelve-mutation run.
 - **Killing a queued batch does not kill the `acquire` waiting for it.** `pkill -f 'run-batch-<tag>.sh'`
   matches the runner and **not** its `scripts/test-host-lock.sh acquire ...` child, which is a separate
   command line. The orphan keeps waiting, takes the lock minutes later with nobody left to run under
@@ -231,16 +229,11 @@ batches lost something to that. See "Committing out of a shared checkout" below.
   left to right and treat an interpolated literal as opaque, insides included.**
   `cadencePlainStringLiterals(in:)` in `CadenceTests/CadenceSharedConstantReuseSweepTests.swift`
   does it, and the naive regex is pinned as a killed mutation beside it.
-- **A trap inside a source-scan helper is a dead test host, not a test failure.** Recorded
-  2026-09-02 (T-555). A `Range` formed from two indices, a `chars[i + 1]`, a force-unwrap — any of
-  them in a helper that several tests call ends the process, and a crashed host emits **no**
-  `.swift:line:col: error:` lines and no `✘ Test` line, so the run reads as *nothing happened*.
-  Same family as the crashed-`swift-frontend` bullet above, one layer up. Two habits: prefer
-  `guard … else { continue }` over an assertion in anything that walks the tree, and give every new
-  reader one test that runs it over **every** Swift file in all three shipped targets rather than
-  only the roots it is used on — a file a sibling agent is mid-way through writing is inside the
-  wide set and not necessarily inside the narrow one, and that is exactly the corpus difference
-  that made one such crash unreproducible from the agent's own archive tree.
+- **A trap inside a source-scan helper is a dead test host, not a test failure** — see "A trap in
+  a source-scan helper is a dead test host, not a test failure" below, which is the full account.
+  The two habits it ends on: prefer `guard … else { continue }` over an assertion in anything that
+  walks the tree, and give every new reader one test that runs it over **every** Swift file in all
+  three shipped targets rather than only the roots it is used on.
 - **Never** launch or build the Cadence app, kill a process named `Cadence`, use a simulator, touch
   the real app-group store, or set `CADENCE_MCP_ENABLE_WRITES`.
 - **Delete your DerivedData when you finish** (~1.7 GB) and release the lock. The scratch TREE is a
@@ -341,6 +334,14 @@ spend time hunting for an arithmetic error before checking for this shape.
 
 **The workaround: never write a bare `literal * literal` inside `#expect`; bind one side to a
 typed constant first**, e.g. `let retired: CGFloat = 0.5` before `#expect(x == retired * 1.6)`.
+
+**T-194 measured the same defect from the layout side, and its table is the quickest way to
+recognise the shape.** Against this toolchain in an isolated package, with a `CGFloat` on the left:
+`== 528`, `== someCGFloatLet` and `== CGFloat(612 - 84)` all pass; `== 612 - 84` and
+`== 612.0 - 84.0` both fail; the identical arithmetic against a `Double` passes. Comparisons with
+`>`, `>=` and a bare literal are unaffected. `Cadence/Shared/AGENTS.md` and
+`docs/SHARED_AGENTS_REFERENCE.md` state the rule for layout tests and point here for the mechanism
+— Cadence's metrics are almost all `CGFloat`, so every layout test in the repo can reach it.
 
 **Measured 2026-09-03:** a repo-wide scan found zero live `#expect` conditions with this exact
 failing shape (untyped floating-literal `*` untyped floating-literal on one side, typed value on

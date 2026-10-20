@@ -6,7 +6,7 @@ specific host, shell, markdown, focus, or wind-down detail you need.
 
 # iOS Guide
 
-The iOS/iPadOS app is a large, actively-developed surface (98 `.swift` files at the time of writing, covering Today, Calendar, Tasks, Focus, Goals, Habits, Notes, Lists, Search, Settings) — not early/stubbed. Re-count with `ls Cadence/iOS/*.swift | wc -l` when you add one rather than trusting the figure. Do not assume macOS feature parity by default; check the actual view file.
+The iOS/iPadOS app is a large, actively-developed surface covering Today, Calendar, Tasks, Focus, Goals, Habits, Notes, Lists, Search and Settings — not early/stubbed. **Count it, do not read a count here**: `ls Cadence/iOS/*.swift | wc -l`. This line quoted 98 for long enough that the directory passed 109, which is the whole argument against writing the number down. Do not assume macOS feature parity by default; check the actual view file.
 
 ## Working Rules
 
@@ -151,10 +151,6 @@ Four things about the wiring that are easy to get wrong:
   identical mechanism, which is the same lesson the `CadenceTaskInspectorPresentation` →
   `CadenceDetailPanelPresentation` rename recorded — **a helper named for one subject is why the
   second one never got checked against it.**
-
-The `.dropDestination` is attached in an `if let` branch rather than always-on-returning-`false`,
-because `isTargeted` fires whether or not the closure accepts the drop — an always-attached version
-would highlight cards on surfaces that cannot bundle.
 
 ## Archiving *Or Completing* A List Is A Wind-Down, Not A Status Flip
 

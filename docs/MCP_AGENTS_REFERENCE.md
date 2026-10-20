@@ -8,16 +8,6 @@ the section you need at the point where it needs it.
 
 ## Why The Prohibition Was Wrong
 
-_The guide's own summary of this section, displaced here verbatim on 2026-09-26 (T-1391)
-when the guide ran out of headroom. The guide now states the replacement rule and links here._
-
-This file used to say *"do not edit it during normal app UI/model refactors unless the task
-explicitly asks for MCP work,"* and four other guides carried a variant. It was written by
-anticipation rather than by incident, and roughly half the commits touching these paths are not MCP
-work and *had* to reach in — so it cannot mean what it says. Obeying it produces either **a broken
-target** or **a silently stale response schema**, and the second is worse because nothing goes red.
-Both have happened; the commits are in the reference, under "Why the prohibition was wrong".
-
 `CadenceMCPServer/AGENTS.md` used to say: *"Do not edit it during normal app UI/model refactors
 unless the task explicitly asks for MCP work."* Four other guides carried a variant. That rule was
 wrong, and being wrong in five places is what made it ignorable.
@@ -274,10 +264,6 @@ the local types and in "Why Two Field Snapshots Stay Local To `CadenceWriteServi
 
 ## Why This Target's Swift 6 Isolation Is Load-Bearing
 
-_Displaced verbatim from `CadenceMCPServer/AGENTS.md` on 2026-09-26 (T-1391), which had no
-headroom left under its 199-line budget. The rule stays in the guide; the argument, the
-measurement and the enumeration are here._
-
 It is also the only target on `SWIFT_VERSION = 6.0` with `SWIFT_STRICT_CONCURRENCY = targeted` and
 **without** `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`. The app and the widgets default their
 value types to the main actor; this target does not, and it is on Swift 6, where the isolation
@@ -286,10 +272,6 @@ enum in `Models/` is load-bearing (see `Cadence/Models/AGENTS.md`) and the reaso
 compiles in a view is not evidence it compiles here.
 
 ## What The Write Path Does To The Real Store
-
-_Displaced verbatim from `CadenceMCPServer/AGENTS.md` on 2026-09-26 (T-1391), which had no
-headroom left under its 199-line budget. The rule stays in the guide; the argument, the
-measurement and the enumeration are here._
 
 - **The write path mutates the real store, from a second process, with no UI and no undo.**
   `CadenceModelContainerFactory.makeReadWriteContainer()` opens the app-group store
@@ -314,10 +296,6 @@ measurement and the enumeration are here._
 
 ## What Is And Is Not Executed Under This Target
 
-_Displaced verbatim from `CadenceMCPServer/AGENTS.md` on 2026-09-26 (T-1391), which had no
-headroom left under its 199-line budget. The rule stays in the guide; the argument, the
-measurement and the enumeration are here._
-
 - **Nothing under `CadenceMCPServer/` is unit-*executed*.** `CadenceTests` covers the app-side half
   (`CadenceReadServiceTests`, `CadenceWriteServiceTests`, `CadenceSearchMatcherTests`); the router,
   the tool definitions and the argument parsing are *run* only by
@@ -330,10 +308,6 @@ measurement and the enumeration are here._
 
 ## Why Verification Builds This Scheme And Not The App's
 
-_Displaced verbatim from `CadenceMCPServer/AGENTS.md` on 2026-09-26 (T-1391), which had no
-headroom left under its 199-line budget. The rule stays in the guide; the argument, the
-measurement and the enumeration are here._
-
 Build **this** scheme. The old advice here was "build the app target if shared model code changed",
 which is exactly backwards — the `Cadence` scheme staying green is the thing that hides the break.
 `CadenceTests/CadenceTargetSourceMembershipTests.swift` catches the commonest shape of it from
@@ -341,10 +315,6 @@ inside the app scheme (T-409) by reading this target's Sources phase, but it see
 functions or extension members: it narrows the window rather than closing it.
 
 ## Why The Reads Fetch What They Return
-
-_Displaced verbatim from `CadenceMCPServer/AGENTS.md` on 2026-09-26 (T-1391), which had no
-headroom left under its 199-line budget. The rule stays in the guide; the argument, the
-measurement and the enumeration are here._
 
 - **Reads go through `fetchAll` / `fetchFirst`, never a bare `FetchDescriptor`** (T-384). `limit`
   used to cap the response while every read fetched the whole table, filtered and sorted in memory,
@@ -358,10 +328,6 @@ measurement and the enumeration are here._
   still slice in memory; that is **settled, not deferred** (T-415, X-09) — see the reference.
 
 ## What The Create And Update Arms Cover
-
-_Displaced verbatim from `CadenceMCPServer/AGENTS.md` on 2026-09-26 (T-1391), which had no
-headroom left under its 199-line budget. The rule stays in the guide; the argument, the
-measurement and the enumeration are here._
 
 - **The write surface can mint, re-shape, rename and retire a context or a list — and cannot
   delete one** (T-799, T-1095, T-1120). The create arms exist because `create_task` took a
@@ -389,10 +355,6 @@ measurement and the enumeration are here._
 
 ## Why Eleven Shared Files Joined The Sources Phase
 
-_Displaced verbatim from `CadenceMCPServer/AGENTS.md` on 2026-09-26 (T-1391), which had no
-headroom left under its 199-line budget. The rule stays in the guide; the argument, the
-measurement and the enumeration are here._
-
 - **Eleven `Cadence/Shared/` files are in the Sources phase, and never for the obvious reason.**
   Three came with `update_container_columns` and not for the one T-1095 predicted — the merge's
   `base`/`edited`/`current` is *not* what earns them; `applySectionNameChanges` is (without it a
@@ -416,57 +378,36 @@ measurement and the enumeration are here._
   Full reasoning in T-1095's and T-1122's ledger entries. Adding a file here is still not casual: it is another
   path by which an app-side edit breaks a target no scheme builds.
 
-**The count has been nine, thirteen, ten and eleven, and the heading now tracks it.** `mcpfinish`
-re-measured on 2026-10-06 and found **thirteen**, not nine: the ninth above was the last one
-anybody had written down, and four more had arrived since. It kept the heading at *nine* because
-`CadenceTests/AgentContextBudgetTests.guideReferencePairings` pins this title as a string
-`CadenceMCPServer/AGENTS.md` must still quote, so renaming it is a three-file edit — guide,
-reference and test — that has to land in one commit or the test reddens. [[T-3010]] (`3be4b126`,
-agent `mcpsources`) made that edit, and the number it settled on is **ten**. [[T-3035]] (agent
-`elevenfiles`) made the same three-file edit a second time for **eleven**, and the lesson it adds is
-that the number must be RE-MEASURED rather than carried over from the prose being fixed: parse
+**The count is ELEVEN, and the number must be RE-MEASURED rather than carried over from the
+prose being fixed.** It has read nine, thirteen, ten and eleven. Measure it by parsing
 `CadenceMCPServer`'s own `PBXSourcesBuildPhase` out of `Cadence.xcodeproj/project.pbxproj` and
-resolve each `PBXBuildFile` to its group path. A naive grep of the whole file returns **30**,
-because it counts every target's membership.
+resolving each `PBXBuildFile` to its group path; a naive grep of the whole file returns **30**,
+because it counts every target's membership. Changing the number is a **three-file edit** that has
+to land in one commit — guide, this reference and `AgentContextBudgetTests.guideReferencePairings`,
+which pins this heading as a string `CadenceMCPServer/AGENTS.md` must still quote — or the pin
+reddens from whichever end was left behind. [[T-3010]] (`3be4b126`) and [[T-3035]] each paid it.
 
 **What [[T-3010]] removed, and why the removal is the lesson rather than the arithmetic.** Of the
 four files the tracking helpers brought, `CadenceOrderAllocation` earns its place independently of
-the arms it arrived with — `create_tag` and `create_container` both call `nextOrder`
-(`CadenceWriteService.swift:1368` and `:1429`) — and stays. The other three,
-`CadenceTrackingMutationSupport`, `GoalAssignmentRules` and `CadencePluralization`, had had **no
-caller anywhere in this target** since [[T-2077]] removed `create_goal` and `create_habit` at
-0.14.0, and were still being compiled into it. Each declares exactly one top-level `enum` and
-nothing else — no extension, no free function, no conformance — so a static member can only be
-reached through the type name; sweeping all 56 files of the phase for the three type names returned
-each file's own declaration and one doc comment, and a second sweep of the member names found no
-unqualified use. **Only the membership went**: the three `PBXBuildFile` entries and their Sources
-lines, with the `PBXFileReference` entries and group children kept, because all three still have
-app callers (`GoalAssignmentRules` has 68 references outside its own file). **The standing rule
-this leaves behind:** retiring a tool arm does not retire the files it dragged in, and nothing in
-this repository notices — no scheme builds this target, and dead weight here emits no diagnostic.
+the arms it arrived with — `create_tag` and `create_container` both call `nextOrder` — and stays.
+The other three, `CadenceTrackingMutationSupport`, `GoalAssignmentRules` and `CadencePluralization`,
+had had **no caller anywhere in this target** since [[T-2077]] removed `create_goal` and
+`create_habit` at 0.14.0, and were still being compiled into it. Each declares exactly one
+top-level `enum` and nothing else, so a static member can only be reached through the type name;
+sweeping all 56 files of the phase for the three type names returned each file's own declaration
+and one doc comment, and a second sweep of the member names found no unqualified use. **Only the
+membership went**: the three `PBXBuildFile` entries and their Sources lines, with the
+`PBXFileReference` entries and group children kept, because all three still have app callers
+(`GoalAssignmentRules` has 68 references outside its own file). **The standing rule this leaves
+behind:** retiring a tool arm does not retire the files it dragged in, and nothing in this
+repository notices — no scheme builds this target, and dead weight here emits no diagnostic.
 Sweep the phase when an arm is removed, not only when one is added.
 
-**The count is ELEVEN since [[T-1122]]'s eighth pass (2026-10-07), and the eleventh is the second
-file here that cost a SPLIT rather than a file.** `Cadence/Shared/CadenceTaskBundleMutationSupport.swift`
-joined with `create_task_bundle` and `add_task_to_bundle`. The heading above says *eleven* since
-[[T-3035]] paid the three-file edit `AgentContextBudgetTests.guideReferencePairings` makes it —
-guide, reference and test in one commit, or the pin reddens from whichever end was left behind. **What is worth carrying away is the shape of the split, which is not
-`CadenceListNoteFiling`'s.** That one moved a *type* out of a file full of SwiftUI views. This one
-could not: the five bundle members are `static` on `enum CadenceTaskMutationSupport`, whose name
-three source-text scans pin by spelling at their call sites —
-`CadenceCreateTaskCommitSurfaceTests` against `iOSCalendarQuickCreateSheet`, and both
-`CadenceBundleCreationParityTests` and `CadenceSaveCommitDisciplineTests` against
-`SchedulingService` — so moving them to a second type was a re-point worth three or four suites,
-and an `extension` in the new file would still have required the old one to declare the enum,
-which was the whole problem. **So the DECLARATION moved and the old file became the extension.**
-The new file declares the enum on `Foundation`/`SwiftData` alone and holds six members — the four
-clamps-and-constructor plus `assignTask(_:to:)`, the five-field membership rule — while
-`CadenceTaskMutationSupport.swift` keeps the other sixty-two and reaches `NotificationManager` and
-WidgetKit as it always did. Every call site and every pin stayed character-identical, and the
-whole type-reference closure of the new file — `AppTask`, `TaskBundle`,
-`CadencePendingChangePersistence`, `ModelContext` — was already in the phase, so nothing followed
-it in. The inverse direction was costed and **refused**: splitting
-`CadenceTaskReopenWidgetEffects.live` out instead would turn red
+**The eleventh cost a SPLIT rather than a file, and the shape is not `CadenceListNoteFiling`'s** —
+that one moved a *type* out of a file full of SwiftUI views, while this one moved the
+**declaration** and left the old file as an `extension`. The account is in "Why one kind had no
+constructor" above and is not repeated here. The inverse direction was costed and **refused**:
+splitting `CadenceTaskReopenWidgetEffects.live` out instead would turn red
 `CadenceTests/CadenceCodexWidgetReopenTests.swift`, which scans
 `Cadence/Shared/CadenceTaskMutationSupport.swift` **by path** for that body, and it was dearer
 besides — the whole 1,788-line file needs three more, one of which imports SwiftUI. Do not

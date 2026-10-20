@@ -25,7 +25,7 @@ The user does not write code. Claude handles all implementation. When something 
 
 ## Platform Strategy
 - **macOS**: purpose-built sidebar + multi-column layout (`macOS/`). Fully featured, the primary product surface.
-- **iOS + iPadOS**: large, actively-developed surface (`iOS/`, 98 files at the time of writing — `ls Cadence/iOS/*.swift | wc -l`), not a stub. `iOSRootView.swift` is an adaptive root shell — a full sidebar shell on iPad regular width, a **four-tab bottom bar** on compact width — routing to real implementations of Today, Calendar, Tasks/Inbox, Focus, Goals (top-level directions plus their nested milestones), Habits, Notes (own markdown editor stack), Lists, Search, and Settings. Not guaranteed full feature parity with macOS by design — see `Cadence/iOS/AGENTS.md` and "What's Built (iOS)" below.
+- **iOS + iPadOS**: large, actively-developed surface (`iOS/`; count it with `ls Cadence/iOS/*.swift | wc -l` rather than reading a figure here), not a stub. `iOSRootView.swift` is an adaptive root shell — a full sidebar shell on iPad regular width, a **four-tab bottom bar** on compact width — routing to real implementations of Today, Calendar, Tasks/Inbox, Focus, Goals (top-level directions plus their nested milestones), Habits, Notes (own markdown editor stack), Lists, Search, and Settings. Not guaranteed full feature parity with macOS by design — see `Cadence/iOS/AGENTS.md` and "What's Built (iOS)" below.
 - **watchOS**: not started
 - Use `#if os(macOS)` / `#if os(iOS)` for platform-specific branches
 
@@ -39,21 +39,23 @@ Cadence.xcodeproj       # single project; targets: Cadence, CadenceWidgets, Cade
 CadenceWidgets/         # widget extension — compiles Models/, Theme.swift, and Cadence*WidgetSupport.swift straight in
 CadenceMCPServer/       # native MCP server target (tool definitions, router, argument parsing)
 plugins/cadence-mcp/    # Codex MCP plugin wrapper + smoke-test scripts
-CadenceTests/           # unit tests (194 flat files at time of writing; re-count with
-                        #   `ls CadenceTests/*.swift | wc -l`). Always -only-testing:CadenceTests
+CadenceTests/           # unit tests, one flat directory. COUNT IT, never read a count here:
+                        #   `ls CadenceTests/*.swift | wc -l`. This said 194 while the
+                        #   directory held 442. Always -only-testing:CadenceTests
 CadenceUITests/         # UI tests; cannot launch headless — never let an unscoped test run pull these in
 docs/                   # privacy/support site + App Review + release-readiness notes
 ```
 
-App source. **This names families, not every file** — `macOS/Views/` alone is 168 `.swift` files at the time of writing (`ls Cadence/macOS/Views/*.swift | wc -l`; do not trust the figure).
+App source. **This names families, not every file**; `macOS/Views/` alone runs to many dozens (`ls Cadence/macOS/Views/*.swift | wc -l`).
+Every per-directory file count that used to stand in this block is deleted rather than refreshed: all seven had rotted, two of them by more than 2x, and a stale number here reads as a complete inventory and sends the next agent off to write a near-copy.
 Use the scoped `AGENTS.md` in each folder as the working map.
 
 ```
 Cadence/
 ├── CadenceApp.swift    # App entry, ModelContainer + CloudKit setup + error recovery
 ├── Models/             # 100% shared. See "Data Models" below and Models/AGENTS.md
-├── Services/           # 53 shared, cross-platform services
-│   │                   #   (`ls Cadence/Services/*.swift | wc -l` — 48 before T-187, 49 before T-215):
+├── Services/           # shared, cross-platform services
+│   │                   #   (`ls Cadence/Services/*.swift | wc -l`):
 │   │                   #   CadenceSchema / CadenceStoreSupport / PersistenceController (legacy shim)
 │   │                   #   NoteMigrationService, PursuitToGoalMigration, DataIntegrityRepairService
 │   │                   #   NotificationScheduling + NotificationManager (reconciliation, see "Notifications")
@@ -63,7 +65,7 @@ Cadence/
 │   │                   #     delete cascades, cross-platform since c84732e, ONE #if os(macOS) seam
 │   │                   #   Cadence*WidgetSupport, CadenceWidgetIntents, CadenceWidgetRefreshCenter, CadenceDeepLink
 │   │                   #   TagSupport, TaskCreationService, NoteReferenceSupport
-│   ├── Markdown*.swift          # 29 files (27 of them `*Support.swift`; re-count): ALL markdown
+│   ├── Markdown*.swift          # most of them `*Support.swift` (count both globs): ALL markdown
 │   │                            #   parsing/mutation logic lives HERE, not in macOS/Editor/
 │   ├── AI/             # AIActionService, AIProvider, AISettingsManager (optional, user OpenAI key)
 │   └── MCPReadOnly/    # CadenceRead/WriteService, DTOs, search matcher, audit log, container factory
@@ -99,7 +101,8 @@ Cadence/
 │   ├── CalendarVisibilityPreferences (in CadenceCalendarVisibilityPreferences.swift) and
 │   │                   # CalendarWorkHoursPreferences — both shared, NOT macOS-only. The file name
 │   │                   # carries the Cadence prefix; the type does not.
-│   └── Components/     # 25 files: CadenceAccentPalettePicker (the T-15 accent picker, plus
+│   └── Components/     # `ls Cadence/Shared/Components/*.swift | wc -l`. Named below, not
+│                       #   counted: CadenceAccentPalettePicker (the T-15 accent picker, plus
 │                       #   CadenceAccentPaletteRow / CadenceAccentSwatchStrip / the shared copy —
 │                       #   four types, one file, another File-Name-Is-Not-The-Type-Name case),
 │                       # CadenceBoardColumnHeader, CadenceBoardMetadataChip,
@@ -146,8 +149,8 @@ Cadence/
 │                       # it; a stale number reads as a complete inventory and sends the next agent
 │                       # off to write a near-copy. That is not hypothetical — T-173 had to delete
 │                       # a third hand-written copy of CompactTagStrip for exactly this reason.
-├── iOS/                # Large adaptive iOS/iPadOS surface (98 files at time of writing;
-│                    #   `ls Cadence/iOS/*.swift | wc -l`) — see "What's Built (iOS)"
+├── iOS/                # Large adaptive iOS/iPadOS surface
+│                    #   (`ls Cadence/iOS/*.swift | wc -l`) — see "What's Built (iOS)"
 │   ├── iOSRootView.swift        # Adaptive root shell: iPad sidebar / iPhone tab bar; deep links, widget refresh
 │   ├── iOSTaskInspectorHost.swift  # THE task inspector presenter, installed once in iOSRootView.
 │   │                   #   A row/card must never own a .sheet presenting iOSTaskDetailSheet —
@@ -165,7 +168,7 @@ Cadence/
 └── macOS/
     ├── macOSRootView.swift + Views/macOSRoot*   # Shell, command routing, overlays, lifecycle, state
     ├── CadenceCalendarPicker.swift
-    ├── Views/          # 168 files at time of writing (re-count), organized as feature root
+    ├── Views/          # `ls Cadence/macOS/Views/*.swift | wc -l`, organized as feature root
     │                   #   + support files. Families:
     │                   #   TodayView / TodaySupportViews / NotePanel
     │                   #   TasksPanel*        — Today + All Tasks list orchestration, rows, grouping, drop
@@ -188,7 +191,7 @@ Cadence/
     │                   # CreateTaskSheet(+SupportViews — holds TildeContainerPickerRow),
     │                   # EditListSheet (declares BOTH EditAreaSheet and EditProjectSheet;
     │                   # there is no file of either name), ListEditorSupportViews
-    ├── Editor/         # AppKit bridge ONLY (13 files: 11 after the T-105 split, +2 for T-221's
+    ├── Editor/         # AppKit bridge ONLY (11 after the T-105 split, plus T-221's
     │                   # rendered table — MarkdownTableCanvasDrawing / MarkdownTableInteractionSupport):
     │                   # MarkdownEditorView /
     │                   # Support / InteractionSupport / Coordinator / LayoutManager /
@@ -339,21 +342,13 @@ GoalListLink: id, createdAt → goal:Goal?, area:Area?, project:Project?
 > `toggleGoalListLink(_:on:)` in `Shared/GoalListLinkHelpers.swift`, which take a `GoalLinkTarget`
 > (`.area` / `.project`) so the model's exactly-one-of invariant is unspellable-wrong. Never write
 > `goal.listLinks` / `area.goalLinks` / `project.goalLinks` directly — the row would have no owner.
-> macOS spelled `insert(GoalListLink(...))` and `delete(link)` inline in **four** places until
-> `23eb847`; the constructor is now called from one. **Attach is idempotent, and has to be:**
-> **Attach is idempotent, and the reason is not the one this file used to give.** It said a second
-> link double-counts that list's tasks in the percentage. It cannot: `contributingTasks` ends in
-> `dedupe(...)`, which filters by task `id`. That false claim was written in four places and the test
-> named for it passed under a mutation removing the guard — the same unkillable shape as the `isDone`
-> guard on the goal Momentum count. What a duplicate really breaks is anything counting **links**:
-> `linkedListCount`, the "N lists" chip, the attribution line, two MCP DTOs, and a second identical
-> row in both inspectors, so unlinking once would leave one behind. Detach severs the link's own references
-> before deleting the row, because this codebase does not trust inverse back-population to have
-> happened by the time the resolver reads it on the next render. Read side (`contributionLabel`,
-> `contributionMetric`, `attributionLine`, `inheritedListNote`) is `GoalLinkPresentation` in the
-> same file. When grepping for stray constructors, use a **word boundary**:
-> `toggleGoalListLink(` contains `GoalListLink(`, and a substring scan accuses every
-> correctly-rewired call site.
+>
+> Why attach is idempotent, why detach deletes the row and edits nothing, and the word-boundary
+> grep trap (`toggleGoalListLink(` contains `GoalListLink(`) are argued once, in
+> `docs/SHARED_AGENTS_REFERENCE.md`, "One Write Path For `GoalListLink`", beside the helpers
+> themselves. This block carried a full third copy of that argument — and carried it
+> **half-spliced**, two readings of the idempotence reason run together with an orphan lead-in —
+> until 2026-10-20. `docs/MODELS_AGENTS_REFERENCE.md` holds the model-level half.
 
 Habit:     id, title, icon, colorHex, frequencyType("daily"|"daysOfWeek"|"timesPerWeek"|"monthly"),
            frequencyDaysRaw(JSON [Int]), targetCount, order, createdAt,
@@ -410,21 +405,15 @@ One fixed near-black **neutral ramp**, and **six selectable accents** (T-15). Th
 light variant** — the old seven-theme `ThemeManager` was removed and was not asked for back, and
 `Theme.preferredColorScheme` is always `.dark`.
 
-**The split is the decision, and it is what the ticket was narrowed to.** Everything from `bg`
-through the text ramp, the marker pen, the `onColor*` family, the overlays, the shadows and the
-radius scale is a `static let` with a fixed value that no selection can move, so the chrome on
-every screen cannot regress. `blue`, `red`, `green`, `amber`, `purple` and `teal` — with their
-`*Light` variants and their `*Hex` strings — are `static var`s resolving from
-`CadenceAccentPaletteSelection.shared`. Three sets ship: **Cadence** (the standard one, the values
-the app shipped with), **Ember** (warm) and **Glacier** (cool). Settings → **Appearance** on both
-platforms, one shared `CadenceAccentPalettePicker`; the selection persists in the app group so the
-widget process reads it too.
-
-**Never read an accent into a `static let`** — it freezes on first access and then draws whichever
-palette was active the first time that surface appeared. A stored *neutral* is fine.
-`CadenceAccentStorageSweepTests` sweeps the whole of `Cadence/` for both shapes with no allowlist.
-Details, including why `CadenceAccentPalette` lives inside `Theme.swift` rather than a file of its
-own, are in `Cadence/Shared/AGENTS.md`.
+**The split — neutrals stored, accents computed — is the decision, and the rule that falls out of
+it is that you must never read an accent into a `static let`.** Three palettes ship: **Cadence**
+(the values the app shipped with), **Ember** (warm) and **Glacier** (cool), chosen in Settings →
+**Appearance** through one shared `CadenceAccentPalettePicker`, persisted in the app group so the
+widget process follows. The argument, the three types, why they live inside `Theme.swift`, and
+what `CadenceAccentStorageSweepTests` sweeps for are in `Cadence/Shared/AGENTS.md` and
+`docs/SHARED_AGENTS_REFERENCE.md`, "The Neutrals Are Stored And The Accents Are Computed (T-15)".
+A second copy of all of it stood here until 2026-10-20. What this file keeps is the table of
+values, which is the thing a reader comes to a product reference for:
 
 ```swift
 // Neutral ramp (~4% saturation near-black, so accents carry the colour instead of the chrome)
@@ -510,14 +499,11 @@ Color(hex: "#4a9eff")  // initializer exists for USER colorHex values — not fo
   `DesktopPageHeader` and `iOSPageHeader` — and `PanelHeader`, `CommitmentPageHeader` and
   `CadenceSettingsHeader` are name-only wrappers over the first, not peers of it as this line
   used to imply. Account and metric ramp: `Cadence/Shared/AGENTS.md`.
-- **One hover/selection layer at one radius.** If a row already has a `rowBackground`, do not
-  add a second `.background()` on another layer at a different corner radius.
-- **Prefer one shared component over near-copies.** The three kanban boards and the two estimate
-  pickers each drifted apart before being unified.
-- **iPhone and iPad share one style.** They differ in *layout* — tab bar vs sidebar, one pane vs
-  two — and must not differ in how a row, chip, header or picker looks or behaves. A change
-  requested on one platform applies to both unless it is genuinely shape-specific, and the default
-  implementation is a single view parameterised by size class rather than a per-platform copy.
+
+The other three standing UI rules — one hover/selection layer at one radius, one shared component
+over near-copies, iPhone and iPad as one style — are stated in `../AGENTS.md` and argued in
+`docs/SHARED_AGENTS_REFERENCE.md`. They were restated here as well until 2026-10-20; the page-header
+bullet above stays because the tile deletion is a product decision rather than a component rule.
 
 ## Shared Utilities (Shared/DateFormatters.swift)
 ```swift
@@ -559,7 +545,7 @@ TimeFormatters.durationLabel(actual: Int, estimated: Int)  // "45/60m"
 ## Task lists: sort, group, and row UI
 **Enums**: `TaskSortField` (date, priority, **custom**) and `TaskSortDirection` live in `Models/TaskOrdering.swift`, next to the comparator, because `CadenceWidgets` and `CadenceMCPServer` compile `Models/` but not `Shared/` or `macOS/`. `TaskGroupingMode` (by date, by list, by priority, **none**) stays in `macOS/Views/TasksPanelSupport.swift` — grouping is a macOS list concern with no comparator behind it. **Custom** sort uses the shared tie-break (`task.order`, then `createdAt`, `title`, `id`). **None** grouping shows a single flat section.
 
-**One comparator: `TaskOrdering` (`Cadence/Models/TaskOrdering.swift`).** `nonisolated` throughout, because widget timeline providers run off the main actor. It owns `precedes(_:_:field:direction:)`, `completionPrecedes` (the completed/logbook ordering), `fallbackPrecedes` (the **total** tie-break: `order` → `createdAt` → `title` → `id`), and `noDateSortKey` — the one "sorts after every real date" sentinel. The tie-break must stay total: `order` is assigned per container, so cross-list surfaces routinely compare tasks with equal `order`, and a partial order there is an unstable sort that reshuffles rows between renders. `macOS/Views/TaskSortHelpers.swift` is now only the free-function spelling (`taskSortPrecedes`, `taskPriorityRank`) macOS call sites read better with.
+**One comparator: `TaskOrdering` (`Cadence/Models/TaskOrdering.swift`).** `nonisolated` throughout, because widget timeline providers run off the main actor. It owns `precedes(_:_:field:direction:)`, `completionPrecedes` (the completed/logbook ordering), `fallbackPrecedes` (the **total** tie-break: `order` → `createdAt` → `title` → `id`), and `noDateSortKey` — the one "sorts after every real date" sentinel. The tie-break must stay total: `order` is assigned per container, so cross-list surfaces routinely compare tasks with equal `order`, and a partial order there is an unstable sort that reshuffles rows between renders. `macOS/Views/TaskSortHelpers.swift` is **gone**, and this line described it as live for a long time after: T-639 deleted the file and its free-function spelling (`taskSortPrecedes`, `taskPriorityRank`) with it, having lost its last caller. Both names survive only in comments recording the deletion — `Cadence/macOS/Views/TasksPanel.swift:502` is one. Call `TaskOrdering` directly.
 
 iOS still has its own vocabulary — `CadenceTaskSortMode` + `CadenceTaskQuerySupport.sortTasks` in `Shared/` — with no sort **direction** (priority is always high-first) and a different case set (`.listOrder` / `.priority` / `.doDate` / `.dueDate` / `.newest`). That much is still unconsolidated.
 
@@ -775,7 +761,7 @@ Shared behavior for the popovers:
 - One live model: `Note`, with `NoteKind` = daily / weekly / permanent / list / meeting. The macOS Notes page has four tabs: **Daily**, **Weekly**, **Notepad** (permanent), **Event Notes** (`.meeting` — the case name is persisted in `Note.kindRaw`, so only the *label* was renamed).
 - `NoteMigrationService` folds the legacy `DailyNote` / `WeeklyNote` / `PermNote` / `Document` / `EventNote` rows into `Note`, recording provenance in `legacySourceKindRaw` / `legacySourceID`.
 - Notes carry `tags`, an `area`/`project`, and a `folderPath`.
-- **All markdown logic lives in `Cadence/Services/Markdown*Support.swift`** (29 files, well covered by `CadenceTests/`). `macOS/Editor/` is only the AppKit bridge — and since T-121 the *iOS* styler is only the UIKit one. `iOSMarkdownStyler` was one 1,067-line file that made its own decisions about heading-marker visibility, block extents, inline exclusions, hidden marker runs and table grouping; it is now four files of pure attribute-setting over `MarkdownStyleRanges`, `MarkdownInlineMarkerRanges`, `MarkdownTableParser.tableBlock` and `MarkdownStyleSignature`. See `Cadence/iOS/AGENTS.md` for the per-file split.
+- **All markdown logic lives in `Cadence/Services/Markdown*Support.swift`** (well covered by `CadenceTests/`; `docs/SERVICES_AGENTS_REFERENCE.md`, "The Markdown File Count, And Why It Is Re-Counted", is the one place that states a count and says why it is re-counted). `macOS/Editor/` is only the AppKit bridge — and since T-121 the *iOS* styler is only the UIKit one. `iOSMarkdownStyler` was one 1,067-line file that made its own decisions about heading-marker visibility, block extents, inline exclusions, hidden marker runs and table grouping; it is now four files of pure attribute-setting over `MarkdownStyleRanges`, `MarkdownInlineMarkerRanges`, `MarkdownTableParser.tableBlock` and `MarkdownStyleSignature`. See `Cadence/iOS/AGENTS.md` for the per-file split.
 - Notes support both Markdown export and rendered PDF export, **on both platforms** (T-194). The
   page box, the filename, the format list and the live task-title resolution are stated once in
   `Services/CadenceNoteExportSupport.swift` (`NoteExportFormat`, `NotePDFRenderOptions`,
@@ -862,8 +848,14 @@ plus `iOSSettingsTagsSection`). Shared logic is in `Cadence/Services/TagSupport.
 ## Task Bundles
 `TaskBundle` groups several tasks into a single timeline block (`dateKey`, `startMin`,
 `durationMinutes`). The `tasks` relationship uses a `.nullify` delete rule — deleting a bundle
-must not delete its tasks. Rendered by `TimelineBundleBlock*`; pickable in Focus on **both**
-platforms and assignable via `TaskBundlePickerSupportViews`.
+must not delete its tasks. It is pickable in Focus on **both** platforms and assignable via
+`TaskBundlePickerSupportViews`. **macOS no longer draws a block on the timeline**: [[T-3170]]
+deleted `TimelineBundleBlock` and `TimelineDayCanvasSupportLayers` now draws events below and
+task blocks above with nothing between them, `SchedulingActions.updateBundleTime` went with the
+resize handle that was its only caller, and `TimelineMetricsSupport` stopped producing
+`TimelineBundleLayout`s. iOS still renders one, as `iOSTimelineBundleBlock` in
+`iOSCalendarTimelineViews.swift`. This file named `TimelineBundleBlock*` as the renderer for
+both platforms until 2026-10-20.
 
 **Focusing a block is cross-platform since T-242, and the shared half is where the rules live.**
 `Shared/CadenceFocusBundleSupport.swift` owns `CadenceFocusPickItem` (the picker row model, ex
@@ -883,7 +875,8 @@ guesses where the minutes go (`CadenceFocusSubject`). The task-shaped `commitEla
 `import SwiftUI` for `@Observable`, zero `NS*`/AppKit symbols — but it is not what needed lifting:
 iOS's focus screen holds its stopwatch in the already-shared `CadenceFocusTimerState`, and
 `FocusManager`'s reason to exist is `wantsNavToFocus` plus the pointer-hover ▶ entry points
-(`TasksPanelComponents`, `TimelineBundleBlock`, `CalendarBoardItemSupportViews`), none of which iOS
+(`TasksPanelComponents` and `CalendarBoardItemSupportViews`; the third was `TimelineBundleBlock`,
+deleted by [[T-3170]]), none of which iOS
 has. Un-guarding it would give the phone a second timer authority with no reader, not a feature.
 
 **So the way *into* a session from elsewhere on iOS is a handed-over target, not a lifted
@@ -995,10 +988,14 @@ prose was not. Trust the test, not this file.
   `CadenceDataExportSurfaceTests` drives its coverage off the schema exactly as the reset's tests
   do, so an omission fails the suite. Both Settings > Data Safety screens call that one function and
   read their copy from `Shared/CadenceDataExportPresentation.swift`; neither re-spells the encoder.
-  **There is no import.** The archive decodes as a value and the round trip is pinned, but nothing
-  writes one back into a store — a restore into a CloudKit-synced container is not a local
-  operation. `docs/TODO.md` T-274 holds what an import must settle first; the card tells the user in
-  as many words that this is a copy to keep, not a restore point.
+  **Import shipped, and this line said "there is no import" long after it did** (T-274/T-1082).
+  `Cadence/Services/CadenceArchiveImportService.swift` has `importArchive` (decode and plan) and
+  `apply` (write), surfaced by `Shared/CadenceArchiveImportPresentation.swift`; the preview counts
+  the `linkedCalendarID`s it will restore verbatim (T-1084), and a pre-import backup is taken
+  (`CadencePreImportBackupTests`). `docs/SERVICES_AGENTS_REFERENCE.md`, "Data Export: The Archive
+  Timestamp, And Import", is the one account — it had the correct version while this file had the
+  stale one, which is the shape of drift this reference exists to avoid. The warning that outlived
+  the claim still holds: a restore into a CloudKit-synced container is not a local write.
 - `DataIntegrityRepairService` is the conservative, idempotent repair pass for stale relationships.
 - `docs/privacy.html` and `docs/app-review-notes.md` are the shipped privacy/App Review material.
 
@@ -1066,7 +1063,6 @@ The timeline/calendar stack is intentionally decomposed into a shell + support-f
 - `TimelineDayCanvas.swift` — main canvas state/orchestration: drag-to-create ghost, drop zone, selection/draft state
 - `TimelineTaskBlock.swift` — draggable task block, tap-to-select, detail popover, within-canvas drag
 - `TimelineEventBlock.swift` — read-only calendar event block
-- `TimelineBundleBlock.swift` — `TaskBundle` block (several tasks in one slot)
 - support files under `Views/` now carry overlay layers, shell composition, state helpers, and calendar viewport helpers
 - the Calendar **Board** presentation does not use `TimelineDayCanvas` at all — it is a column/card surface built on the shared kanban components
 
@@ -1143,7 +1139,7 @@ Scheduling actions are in `SchedulingService.swift` (`SchedulingActions.createTa
 - [x] Widget extensions (`CadenceWidgets` target): calendar/today/habit/milestone widgets with app-intent support and a refresh checkpoint (`CadenceWidgetRefreshCenter`) triggered on scenePhase changes — not documented further here yet; check `Cadence/Services/Cadence*WidgetSupport.swift` and `CadenceWidgets/` directly
 
 ## What's Built (iOS)
-`Cadence/iOS/` is a large, actively-developed surface (98 files at the time of writing — `ls Cadence/iOS/*.swift | wc -l`), not a stub. Adaptive root shell (`iOSRootView.swift`) — full sidebar shell on iPad regular width (`iPadMacStyleRootShell`), **four-tab bottom bar** on compact width (`iOSCompactRootShell`) — covering:
+`Cadence/iOS/` is a large, actively-developed surface (`ls Cadence/iOS/*.swift | wc -l`), not a stub. Adaptive root shell (`iOSRootView.swift`) — full sidebar shell on iPad regular width (`iPadMacStyleRootShell`), **four-tab bottom bar** on compact width (`iOSCompactRootShell`) — covering:
 - [x] **iPhone tab bar**: `[ Tasks ] [ Calendar ] ( + ) [ Notes ] [ More ]`. The centre `+` is **not a tab** — it presents task capture and never renders a selected state. Each tab owns its own type-erased `NavigationPath`, so switching tabs preserves position; the selected tab and Tasks segment persist across launches (`ios.compact.selectedTab`, `ios.compact.tasksSection`). Replaced `iOSCompactHomeView`, a grid of eight tiles that was standing in for navigation the app did not have.
 - [x] Tasks tab (`iOSTasksTabView`): date eyebrow + greeting, a **Today / All / Inbox** segmented switcher (the same control Calendar uses for Week/Month/Board), and a search shortcut
 - [x] Today (`iOSTodayView` + compact/schedule/support variants). The compact Today has **no capture bar of its own** — the tab bar's `+` is the capture affordance
