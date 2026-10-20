@@ -18,7 +18,8 @@ struct CadenceCodexCaptureSectionBatchTests {
         #expect(picker.contains("struct EstimatePickerPopoverContent: View"))
         #expect(picker.contains("Text(total > 0 ? CadenceTaskPresentationSupport.estimateLabel(minutes: total) : unsetValueLabel)"))
         let card = try read("Cadence/Shared/Components/CadenceScheduleCaptureCard.swift")
-        #expect(card.contains("EstimatePickerPopoverContent(value: Binding("))
+        #expect(card.contains("private var estimateBinding: Binding<Int>"))
+        #expect(card.contains("EstimatePickerPopoverContent(value: estimateBinding"))
         #expect(card.contains("unsetValueLabel: \"Clear estimate\""))
     }
 
@@ -62,7 +63,8 @@ struct CadenceCodexCaptureSectionBatchTests {
         #expect(fields.contains("for: draft.kind"))
         #expect(fields.contains("offersTaskRepeat: offersTaskRepeat"))
         #expect(fields.contains("offersEventRepeat: offersEventRepeat"))
-        #expect(card.contains("let chips = fields.filter(isSet)"))
+        #expect(card.contains("let dates = fields.filter { ($0 == .doDate || $0 == .dueDate) && isSet($0) }"))
+        #expect(card.contains("let rest = fields.filter(restCarriesChip)"))
         #expect(card.contains("ForEach(fields.filter { !isSet($0)"))
         #expect(card.contains(".popover(item: $activeField)"))
         // The switch is `CadenceScheduleKindSwitch`, shared with the standard panel, and not a
