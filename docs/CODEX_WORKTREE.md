@@ -156,9 +156,6 @@ CadenceTests/CadenceInlineTagCommitSurfaceTests.swift
 CadenceTests/CadenceChoicePickerDismissalTests.swift
 CadenceTests/CadenceContainerPickerConsolidationTests.swift
 CadenceTests/CadencePresentedTypographyBoundaryTests.swift
-CadenceTests/CadenceCaptureEditorTests.swift
-CadenceTests/iOSEditorSheetMetricsTests.swift
-CadenceUITests/CadenceCaptureEditorUITests.swift
 ```
 
 **Admission 2026-10-19 (coordinator), one line in `CadenceTests/CadenceMarkdownImageCommitSurfaceTests.swift`.**
@@ -3109,6 +3106,19 @@ the three paths were never added to the `lease` block, so `codex-land.sh review`
 prose is its reasoning; a grant that lives in one and not the other is the drift the block exists to
 prevent. All three are now in the block (111 patterns). **Retire them when T-3238 is CLOSED** — they
 were granted for this landing only.
+
+**RETIRED 2026-10-19 (agent `ledgerhygiene`), the condition above having been checked rather than
+assumed.** T-3238 is CLOSED: `docs/TODO.md` carries `- [T-3238] **CLOSED 2026-10-19 ...` and
+`db52ebbd` (*"T-3238 CLOSED: one task editor and one event editor, with dragcreate's hunks kept
+rather than merged away"*) is the commit that wrote that first line. All three paths this section
+granted are therefore removed from the fenced `lease` block, which drops from 111 patterns to 108:
+`CadenceTests/CadenceCaptureEditorTests.swift`, `CadenceTests/iOSEditorSheetMetricsTests.swift` and
+`CadenceUITests/CadenceCaptureEditorUITests.swift`. **All three now exist on `main`** -- the two
+"new file" grants are new files no longer, which is precisely why the grant was time-boxed: leaving
+them in the block would hand Codex standing write access to landed test files it does not own.
+**Nothing else was touched.** No other fence line was added or removed, no earlier grant was
+narrowed, and the prose above is left standing as the record of why the widening happened. Codex
+needs a fresh grant to write any of the three again.
 
 **The conflict resolved, for the record.** `git merge-tree main codex/unified-editors` conflicted in
 **two** files, not one. `CadenceTests/iOSEditorSheetMetricsTests.swift` conflicted exactly where the
