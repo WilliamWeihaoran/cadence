@@ -173,6 +173,13 @@ ahead of `main` and unlanded; its product change (`Cadence/iOS/iOSCalendarBoardV
 on `main`. Whoever lands it should expect a one-line conflict in this comment block and resolve it
 to 68, because its notice is a real added call site on top of this 67.
 
+**Freedom audit 2026-10-20 ([[T-3255]], agent `n5fence`, evidence only, fence NOT edited):
+[`docs/audits/2026-10-20/codex-fence-freedom.md`](audits/2026-10-20/codex-fence-freedom.md).**
+All 108 lines above are FREE at `72fd6d72`: no `codex/*` ref holds work on any of them that `main`
+lacks. It also refutes the T-3210 grant's "REAL unlanded work" at `iOSTaskRowActionViews.swift`
+405-414 (both branches' blobs once landed; the hunk is T-3196's removal) and the note above that
+`codex/ios-board-drop-refusal` is unlanded (landed `749d67ad`). Retiring lines is the owner's call.
+
 ### 2026-10-17 — WHY ALL SIX VERSIONS FAILED: each asked a cheaper question than the one being asked
 
 Agent `blocktail`'s synthesis, recorded because it explains every failure above with one sentence
