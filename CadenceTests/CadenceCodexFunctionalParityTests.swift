@@ -1,4 +1,5 @@
 import Foundation
+import SwiftData
 import Testing
 @testable import Cadence
 
@@ -219,5 +220,91 @@ struct CadenceCodexFunctionalParityTests {
         #expect(view.contains("if !applyRequestedSelection() { openNote(forWeekKey: DateFormatters.currentWeekKey()) }"))
         #expect(view.contains("if !applyRequestedSelection() { loadOrCreateNotepad() }"))
         #expect(view.components(separatedBy: "NotesView.RequestedSelection.apply(&requestedNoteID, selection: &selectedNoteID, notes: notes)").count - 1 == 3)
+    }
+
+    /// [[T-3221]] / [[T-1467]] (parity PA-02): a parent with children lists the SAME subtasks on
+    /// the iOS row, the macOS row and the macOS Kanban card. The fixture fixes the shared decision
+    /// (unfinished only, in `order`, capped, "+N" for the rest, nothing under a finished parent);
+    /// the scans pin that every surface asks that decision rather than re-deriving it, and that the
+    /// card draws the row's own list view instead of a third copy of it.
+    @MainActor @Test func aParentWithChildrenListsTheSameSubtasksOnBothRowsAndTheCard() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = container.mainContext
+        let parent = AppTask(title: "Parent")
+        context.insert(parent)
+        let limit = CadenceTaskPresentationSupport.rowSubtaskLimit
+        let total = limit + 3
+        let children = (0..<total).map { index in
+            let child = Subtask(title: "Step \(index + 1)")
+            child.order = total - index
+            context.insert(child)
+            child.parentTask = parent
+            return child
+        }
+        parent.subtasks = children
+        children[total - 1].isDone = true
+        try context.save()
+
+        let open = children.filter { !$0.isDone }.sorted { $0.order < $1.order }
+        let listed = CadenceTaskPresentationSupport.listedSubtasks(for: parent)
+        #expect(listed.map(\.title) == open.prefix(limit).map(\.title))
+        #expect(CadenceTaskPresentationSupport.unlistedSubtaskCount(for: parent) == open.count - limit)
+        parent.status = .done
+        #expect(CadenceTaskPresentationSupport.listedSubtasks(for: parent).isEmpty)
+        #expect(CadenceTaskPresentationSupport.unlistedSubtaskCount(for: parent) == nil)
+
+        let read = CadenceSourceScan.strippedSourceReader()
+        let iOSRow = try #require(CadenceSourceScan.declarationBody(
+            "private var subtaskRows: some View", in: try read("Cadence/iOS/iOSTaskViews.swift")))
+        let macRow = try #require(CadenceSourceScan.declarationBody(
+            "private var inlineDetail: some View", in: try read("Cadence/macOS/Views/TasksPanelComponents.swift")))
+        let card = try #require(CadenceSourceScan.declarationBody(
+            "private var subtaskRows: some View", in: try read("Cadence/macOS/Views/KanbanCardView.swift")))
+        for body in [iOSRow, macRow, card] {
+            #expect(body.contains("CadenceTaskPresentationSupport.listedSubtasks(for: task)"))
+            #expect(body.contains("CadenceTaskPresentationSupport.unlistedSubtaskCount(for: task)"))
+        }
+        for body in [macRow, card] {
+            #expect(body.contains("MacTaskSubtaskPreviewList("))
+            #expect(!body.contains("SubtaskRow(subtask:"), "a macOS surface spells its own subtask list")
+            #expect(!body.contains("moreLabel("), "a macOS surface spells its own overflow line")
+        }
+        #expect(card.contains("overflowFontSize: 11"))
+    }
+
+    /// [[T-3221]] / [[T-1467]] (parity PA-01): a task with notes shows the same excerpt on the iOS
+    /// row and the macOS row, and markup-only or blank notes draw nothing on either.
+    @Test func aTaskWithNotesPreviewsTheSameExcerptOnBothRows() throws {
+        let notes = "**Pick up** the dry cleaning before six"
+        let tiers = [CadenceTaskRowMetrics.desktop, .compactWidth, .regularWidth]
+        let excerpts = tiers.map {
+            CadenceTaskPresentationSupport.plainPreviewText(from: notes, limit: $0.notesPreviewLimit)
+        }
+        for excerpt in excerpts {
+            #expect(excerpt.contains("Pick up the dry cleaning"))
+            #expect(!excerpt.contains("**"))
+        }
+        #expect(Set(excerpts).count == 1, "one short note previews differently across tiers: \(excerpts)")
+        for empty in ["   \n  ", "---"] {
+            for tier in tiers {
+                #expect(CadenceTaskPresentationSupport.plainPreviewText(from: empty, limit: tier.notesPreviewLimit).isEmpty)
+            }
+        }
+
+        let read = CadenceSourceScan.strippedSourceReader()
+        let iOSSource = try read("Cadence/iOS/iOSTaskViews.swift")
+        let macSource = try read("Cadence/macOS/Views/TasksPanelComponents.swift")
+        let iOSLine = try #require(CadenceSourceScan.declarationBody("private var secondaryLine: String?", in: iOSSource))
+        let macLine = try #require(CadenceSourceScan.declarationBody("private var notesPreview: String?", in: macSource))
+        for body in [iOSLine, macLine] {
+            #expect(body.contains("CadenceTaskPresentationSupport.plainPreviewText("))
+            #expect(body.contains("from: task.notes,"))
+            #expect(body.contains("limit: metrics.notesPreviewLimit"))
+            #expect(body.contains("return preview.isEmpty ? nil : preview"))
+        }
+        #expect(iOSSource.contains("Text(secondaryLine)"))
+        let macDetail = try #require(CadenceSourceScan.declarationBody("private var inlineDetail: some View", in: macSource))
+        #expect(macDetail.contains("if let notesPreview {"))
+        #expect(macDetail.contains("Text(notesPreview)"))
     }
 }
