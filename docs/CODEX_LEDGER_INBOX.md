@@ -819,3 +819,6 @@ The pending host waiter was cancelled, the iPad waiter timed out without acquiri
 
   **Dead move slice / T-3214 resolved:** delete CalendarPageBoardDropSupport.move, SchedulingActions.dropBundle, CadenceTaskBundleSlotSnapshot and CadenceTaskFieldEditCommit.commitBlockMove. Retire three Block-only refusal/slot/store tests, remove only the Block arms from mixed tests, and preserve task refusal, sibling restoration, second-context and commit-count assertions. The TaskBundleTests grant is used only for the moved fixture/assertion and its adjacent comment; every subsequent calendar-link check is byte-identical. Keep the task snapshot’s membership/calendar fields.
   **Source attribution so far:** timeline `74a20503`, calendar `db047ee1`.
+
+  **Stale comment slice:** TaskCreationService’s failure title explains its own wording instead of citing the deleted Block title. Remove only that stale claim, 11 -> 10; the other existing T-3224 claims stay.
+  **Source attribution so far:** timeline `74a20503`, calendar `db047ee1`, move `d0d043c9`.
