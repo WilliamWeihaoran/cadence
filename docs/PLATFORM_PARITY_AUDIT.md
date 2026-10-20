@@ -27,7 +27,7 @@ Audit branch: `codex/platform-parity-audit`, created from fetched `origin/main` 
 1. **PA-13 — failed iOS board drops report success.** Persistence refusal must not leave a moved-looking card and pending fields. Mac already has a tested transactional pattern; extend the contract to the actual mobile path.
 2. **PA-26 — stale iOS state after external writes.** *(Landing correction: half of this is already fixed — see PA-26's LANDING NOTE. The notification arm landed in `7343bfe8`; only the UI-adoption arm survives, and it is the blocked [[T-1469]]. Read #2 as PA-14 in practice.)* A completed widget task that remains active in the app/reminder plan undermines trust across devices and entry points. Resolve the existing T-3109 ownership block rather than inventing a second refresh mechanism.
 3. **PA-14 — Mac board date moves skip immediate notification reconciliation.** Persistence success alone is insufficient when the reminder still describes the previous schedule. Prove the successful mutation and notification side effect as one contract.
-4. **PA-01 — Mac task rows omit note excerpts.** This is the owner-observed information gap and affects routine Today scanning. Preserve the notes glyph until the chosen replacement actually exposes the information. PA-02 is the closely related subtask follow-up.
+4. **PA-01 — Mac task rows omit note excerpts.** *(CLOSED by [[T-1467]] at `76edf23f`, with PA-02 — see PA-01's CLOSED note.)* This is the owner-observed information gap and affects routine Today scanning. Preserve the notes glyph until the chosen replacement actually exposes the information. PA-02 is the closely related subtask follow-up.
 5. **PA-19 — Mac search silently caps matches.** A search that appears complete but cannot reveal a matching item is more damaging than a different layout. Preserve bounded initial rendering while making the remainder reachable.
 
 PA-20 (list-document search) is already a blocked scope decision in T-3084. The two note-discovery gaps PA-15/16 also warrant tickets. Deliberate truncation/space choices stay in this inventory for owner review, without cosmetic ticket spam.
@@ -57,7 +57,7 @@ so those line numbers are the audit's own and were not re-derived.
 | PA-12 | Live. Its ticket is **T-1474**, re-allocated from the audit's T-1469. |
 | PA-13 | **Live, and still the strongest finding here.** One stale citation dropped; the rest re-pinned and sharpened. |
 | PA-26 | **Half repaired.** The notification half landed in `7343bfe8`; the UI-adoption half is [[T-1469]]. |
-| PA-01, PA-10, PA-14, PA-19, PA-23 | Live; cross-links and re-pins only. |
+| PA-01, PA-10, PA-14, PA-19, PA-23 | Live; cross-links and re-pins only. *(PA-01 and PA-02 have since CLOSED, by [[T-1467]] at `76edf23f` — see their CLOSED notes.)* |
 
 **ID RE-ALLOCATION: the audit's T-1469 for PA-12 is now [[T-1474]].** T-1469 was free at `8c6d218e`
 and was taken on main afterwards, by `8a597abf`, for the iOS fresh-context split out of [[T-3109]] —
@@ -85,6 +85,7 @@ The same task with nonempty notes shows a text excerpt on iOS. MacTaskRow shows 
 - **Test coverage:** CadenceTaskRowIndicatorTests covers the glyph, not excerpt parity. TodayScopeParityTests covers membership/order, not row content. CadenceCodexFunctionalParityTests should gain paired content assertions; none of the seven requested suites currently detects this omission.
 - **Confirm next:** Give one task a distinctive notes sentence and inspect its Today row on both platforms. Opening the inspector is the Mac workaround.
 - **LANDING NOTE (2026-10-16): the owner is already on this, in [[T-3196]] rather than a new ticket — but has NOT yet decided it.** T-3196's revision asks for the row's glyphs to move beneath a notes preview and asks whether the notes glyph can then go. Its own measurement reaches the same conclusion this finding did, independently: *"The macOS row draws NO notes text at all — a grep for `task.notes` in `TasksPanelComponents.swift` returns nothing — so on macOS the glyph is the only signal that a task has notes."* It then puts three options to the owner: drop the glyph on iOS only, drop it everywhere and let macOS lose the signal, **or give the macOS row a notes preview too so both can drop it**. T-3196 records the answer as *"Not decided; nothing should be built on the notes glyph until it is."* So the third option is the one that would close PA-01, but it is an option on the table, **not a ruling**. [[T-1467]] should cross-reference T-3196 and wait on it rather than re-opening the question; whoever implements T-3196 closes PA-01 as a side effect if the owner picks that branch. The glyph stays until the replacement is real either way.
+- **CLOSED (2026-10-18, [[T-1467]] at `76edf23f`; recorded here by [[T-3221]]).** The owner picked the third branch, and the macOS row now draws the notes excerpt — `MacTaskRow.notesPreview`, the same `CadenceTaskPresentationSupport.plainPreviewText` at `metrics.notesPreviewLimit` that iOS's `secondaryLine` reads. With the replacement real, [[T-3231]] (`c310883a`) took the notes glyph off both rows at once. The LANDING NOTE above is history. **Coverage now:** `MacTaskRowInlineDetailTests` measures the hosted macOS row, and `CadenceCodexFunctionalParityTests.aTaskWithNotesPreviewsTheSameExcerptOnBothRows` is the paired content assertion this finding asked for.
 
 #### PA-02 — Inline subtask names and completion controls are absent from Mac rows
 
@@ -97,6 +98,7 @@ iOS exposes listed subtasks and an overflow entry beneath an unsettled parent. M
 - **Intent evidence:** No comment or ticket examined establishes a decision to omit the inline Mac list.
 - **Test coverage:** CadenceSharedTaskRowJobsTests and indicator tests cover shared row vocabulary, not matched subtask visibility. CadenceCodexFunctionalParityTests should check a parent with children on both surfaces; current suites cannot catch the missing renderer.
 - **Confirm next:** Use an unsettled task with multiple named subtasks; compare row-level visibility and one-child completion without opening details.
+- **CLOSED (2026-10-18, [[T-1467]] at `76edf23f`; recorded here by [[T-3221]]).** The macOS row lists the open subtasks with their own checkboxes through `MacTaskSubtaskPreviewList`, asking the same `listedSubtasks(for:)` / `unlistedSubtaskCount(for:)` pair as iOS's `subtaskRows`, and the Kanban card now draws that same view rather than a copy of it. **Coverage now:** `MacTaskRowInlineDetailTests` (hosted row, including a checkbox press) and `CadenceCodexFunctionalParityTests.aParentWithChildrenListsTheSameSubtasksOnBothRowsAndTheCard`, the parent-with-children fixture this finding asked for.
 
 #### PA-03 — Mac titles stop at one line; iOS titles can reveal more
 
