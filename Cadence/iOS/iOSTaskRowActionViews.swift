@@ -508,7 +508,7 @@ struct iOSTaskRowContextMenu: View {
         moveToListMenu
 
         Button {
-            _ = try? CadenceTaskMutationSupport.duplicate(task, allTasks: allTasks, modelContext: modelContext)
+            Self.duplicate(task, allTasks: allTasks, modelContext: modelContext)
         } label: {
             Label("Duplicate", systemImage: "plus.square.on.square")
         }
@@ -573,7 +573,7 @@ struct iOSTaskRowContextMenu: View {
         Menu {
             ForEach(TaskRecurrenceRule.allCases, id: \.self) { recurrence in
                 Button {
-                    selectRecurrenceRule(recurrence)
+                    settleRecurrenceSelection(recurrence)
                 } label: {
                     Label(
                         recurrence.label,
@@ -657,7 +657,7 @@ struct iOSTaskRowContextMenu: View {
             Menu {
                 ForEach(names, id: \.self) { section in
                     Button {
-                        CadenceTaskMutationSupport.moveToSection(section, task: task, modelContext: modelContext)
+                        Self.moveSection(section, task: task, modelContext: modelContext)
                     } label: {
                         Label(section, systemImage: section.caseInsensitiveCompare(task.resolvedSectionName) == .orderedSame ? "checkmark.circle.fill" : "rectangle.split.3x1")
                     }
@@ -704,13 +704,83 @@ struct iOSTaskRowContextMenu: View {
         }
     }
 
+    // [[T-3210]] The four writing actions below are `static` so a test can invoke each one
+    // against an in-memory store and read the model back. A `Menu`'s items cannot be pressed from
+    // a unit test, and until [[T-3244]] made `CadenceTests` build and run for an iOS destination
+    // nothing inside this `#if os(iOS)` block was even in the module under test — which is why
+    // every pin on this menu until now was a source scan. They stay INSIDE this struct so the
+    // parity reader in `MacTaskRowContextMenuParityTests` still sees all fifteen shared calls in
+    // the menu's body, and each one keeps the exact write its call site had.
+    //
+    // `commit:` is threaded where the shared helper takes one. `moveToList` is the only one of
+    // the four a test can make refuse: `CadenceTaskMutationSupport.duplicate` and `.moveToSection`
+    // take no `commit:`, and `iOSTaskRecurrenceSelection.select` is declared outside this struct,
+    // so a refused Duplicate, Move Section or Repeat has nothing to inject. The Mac half had the
+    // same hole in the same two places.
+
+    /// iOS does not report a refused duplicate — `MacTaskRowMenuFailure` carries no iOS title for
+    /// it — so the swallow stays as it was. The save rule permits it because the shared helper
+    /// commits through `commitInsert`, and `CadenceSaveCommitDisciplineTests` reads this exact
+    /// `try?` as one of the two live rows that half of the rule has left.
+    static func duplicate(_ task: AppTask, allTasks: [AppTask], modelContext: ModelContext) {
+        _ = try? CadenceTaskMutationSupport.duplicate(task, allTasks: allTasks, modelContext: modelContext)
+    }
+
+    /// The shared helper's own `try? save()` is an in-place field edit the save rule permits, and
+    /// it reports nothing, so there is nothing here to refuse.
+    static func moveSection(_ section: String, task: AppTask, modelContext: ModelContext) {
+        CadenceTaskMutationSupport.moveToSection(section, task: task, modelContext: modelContext)
+    }
+
+    /// `false` is the refusal a closed menu cannot say itself; the row's alert says it. The row's
+    /// own section travels with the task, so a move out of a named section does not silently
+    /// normalise it to the list's first.
+    static func moveToList(
+        _ task: AppTask,
+        area: Area?,
+        project: Project?,
+        allTasks: [AppTask],
+        modelContext: ModelContext,
+        commit: (ModelContext) throws -> Void = { try $0.save() }
+    ) -> Bool {
+        guard CadenceTaskMutationSupport.moveToContainer(
+            task,
+            area: area,
+            project: project,
+            sectionName: task.resolvedSectionName,
+            allTasks: allTasks,
+            modelContext: modelContext,
+            commit: commit
+        ) else {
+            return false
+        }
+        return true
+    }
+
     /// **T-761(c).** Answers were already there to read — `iOSTaskRecurrenceSelection.select`
     /// has meant "did the rule land, or is a scope dialog about to ask" since T-656 — this just
-    /// stopped discarding the second one. `recurrenceFailed` only follows a genuine refusal:
-    /// `select` answers `true` for the series branch too, since the menu still has to close for
-    /// `iOSTaskRowRecurrenceScopeDialog` behind it to show.
-    private func selectRecurrenceRule(_ rule: TaskRecurrenceRule) {
-        let landed = iOSTaskRecurrenceSelection.select(
+    /// stopped discarding the second one. `true` covers the series branch too, since the menu
+    /// still has to close for `iOSTaskRowRecurrenceScopeDialog` behind it to show; only a genuine
+    /// refusal answers `false`.
+    static func selectRecurrenceRule(
+        _ rule: TaskRecurrenceRule,
+        for task: AppTask,
+        allTasks: [AppTask],
+        modelContext: ModelContext,
+        pendingRecurrenceRule: Binding<TaskRecurrenceRule?>
+    ) -> Bool {
+        iOSTaskRecurrenceSelection.select(
+            rule,
+            for: task,
+            allTasks: allTasks,
+            modelContext: modelContext,
+            pendingRecurrenceRule: pendingRecurrenceRule
+        )
+    }
+
+    /// The row's half of the answer above: `recurrenceFailed` only follows a genuine refusal.
+    private func settleRecurrenceSelection(_ rule: TaskRecurrenceRule) {
+        let landed = Self.selectRecurrenceRule(
             rule,
             for: task,
             allTasks: allTasks,
@@ -724,11 +794,10 @@ struct iOSTaskRowContextMenu: View {
     /// than a token, so they self-correct on the restore — what was missing is that the menu had
     /// already closed, leaving a tap on "Move to List" that did nothing and said nothing.
     private func moveToContainer(area: Area?, project: Project?) {
-        guard CadenceTaskMutationSupport.moveToContainer(
+        guard Self.moveToList(
             task,
             area: area,
             project: project,
-            sectionName: task.resolvedSectionName,
             allTasks: allTasks,
             modelContext: modelContext
         ) else {

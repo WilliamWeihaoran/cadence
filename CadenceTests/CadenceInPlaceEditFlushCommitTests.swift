@@ -465,7 +465,11 @@ struct CadenceInPlaceEditFlushCommitTests {
     @Test func theiOSRowsTwoMoveAffordancesEachReportArefusalOnWhicheverSurfaceOutlivesIt() throws {
         let actions = try CadenceCommitSurfaceScan.scanned("Cadence/iOS/iOSTaskRowActionViews.swift")
 
-        for name in ["move", "moveToContainer"] {
+        // [[T-3210]] The menu's guard moved one hop, into `moveToList` -- the `static` the menu's
+        // button now calls and `iOSTaskRowContextMenuEffectTests` invokes against a real store.
+        // Same needle, same claim, read from the declaration that now holds it; the instance
+        // `moveToContainer` below still owns the flag, which is the half this test is about.
+        for name in ["move", "moveToList"] {
             let body = try CadenceCommitSurfaceScan.declarationBody(named: name, in: actions)
             #expect(
                 body.contains("guard CadenceTaskMutationSupport.moveToContainer("),
@@ -528,14 +532,23 @@ struct CadenceInPlaceEditFlushCommitTests {
     @Test func theRowsRepeatSubmenuNamesArefusalTheSameWayTheMoveMenuDoes() throws {
         let actions = try CadenceCommitSurfaceScan.scanned("Cadence/iOS/iOSTaskRowActionViews.swift")
 
+        // [[T-3210]] `selectRecurrenceRule` is now the `static` the menu's button calls and
+        // `iOSTaskRowContextMenuEffectTests` invokes, so it holds the routing half; the flag is
+        // set by its row-side caller. Both needles are unchanged -- only the declaration each is
+        // read from moved, and the two together still span the whole hop from tap to alert.
         let selectRule = try CadenceCommitSurfaceScan.declarationBody(named: "selectRecurrenceRule", in: actions)
         #expect(
             selectRule.contains("iOSTaskRecurrenceSelection.select("),
             "selectRecurrenceRule no longer routes through the answering form"
         )
+        let settle = try CadenceCommitSurfaceScan.declarationBody(named: "settleRecurrenceSelection", in: actions)
         #expect(
-            selectRule.contains("recurrenceFailed = !landed"),
-            "selectRecurrenceRule discards the answer again"
+            settle.contains("Self.selectRecurrenceRule("),
+            "the menu's repeat submenu no longer routes through the invokable action"
+        )
+        #expect(
+            settle.contains("recurrenceFailed = !landed"),
+            "settleRecurrenceSelection discards the answer again"
         )
 
         #expect(actions.contains("struct iOSTaskRowRecurrenceFailureAlertModifier: ViewModifier {"))
