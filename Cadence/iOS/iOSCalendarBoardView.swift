@@ -257,6 +257,8 @@ private struct iOSBoardColumnPaging: ViewModifier {
 }
 
 private struct iOSCalendarBoardDayColumn: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.cadenceTypographyScaling) private var scaling
     let date: Date
     let dateKey: String
     let tasks: [AppTask]
@@ -394,13 +396,13 @@ private struct iOSCalendarBoardDayColumn: View {
                 } label: {
                     HStack(spacing: 8) {
                         Image(systemName: isCompletedCollapsed ? "chevron.right" : "chevron.down")
-                            .font(.system(size: 10, weight: .bold))
-                            .frame(width: 12)
+                            .cadenceFont(.metadata, base: 10, weight: .bold)
+                            .frame(width: CadenceTypeScale.height(12, holding: .metadata, textBase: 10, at: dynamicTypeSize, scaling: scaling))
                         Text("Completed")
-                            .font(.system(size: 12, weight: .semibold))
+                            .cadenceFont(.metadata, base: 12, weight: .semibold)
                         Spacer(minLength: 0)
                         Text("\(completedTasks.count)")
-                            .font(.system(size: 11, weight: .bold))
+                            .cadenceFont(.metadata, base: 11, weight: .bold)
                             .monospacedDigit()
                             .padding(.horizontal, 7)
                             .padding(.vertical, 3)
@@ -409,7 +411,7 @@ private struct iOSCalendarBoardDayColumn: View {
                     }
                     .foregroundStyle(Theme.dim)
                     .padding(.horizontal, 10)
-                    .frame(height: 44)
+                    .frame(minHeight: CadenceTypeScale.height(44, holding: .rowTitle, at: dynamicTypeSize, scaling: scaling))
                     .background(Theme.surfaceElevated.opacity(0.42))
                     .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
                     .contentShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))

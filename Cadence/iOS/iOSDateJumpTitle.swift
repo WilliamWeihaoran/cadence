@@ -29,6 +29,8 @@ import SwiftUI
 /// convert, and a header owning a formatter is worse than a call site owning a two-line `Binding`.
 /// `MonthCalendarPanel` speaks `Date` regardless.
 struct iOSDateJumpTitle: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.cadenceTypographyScaling) private var scaling
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
 
     /// What the surface is showing, in whatever unit that surface reads — a day for Notes and the
@@ -70,13 +72,13 @@ struct iOSDateJumpTitle: View {
         } label: {
             HStack(spacing: 4) {
                 Text(label)
-                    .font(.system(size: fontSize, weight: .bold))
+                    .cadenceFont(.editorTitle, base: fontSize, weight: .bold)
                     .foregroundStyle(isAtNow ? Theme.text : Theme.blue)
-                    .lineLimit(1)
-                    .minimumScaleFactor(metrics.minimumScaleFactor)
+                    .lineLimit(scaling == .enabled && CadenceTypeScale.isAccessibilitySize(dynamicTypeSize) ? nil : 1)
+                    .minimumScaleFactor(scaling == .enabled && dynamicTypeSize > .large ? 1 : metrics.minimumScaleFactor)
 
                 Image(systemName: "chevron.down")
-                    .font(.system(size: metrics.chevronSize, weight: .semibold))
+                    .cadenceFont(.editorTitle, base: metrics.chevronSize, weight: .semibold)
                     .foregroundStyle(isAtNow ? Theme.dim : Theme.blue)
             }
             // Deliberately **not** `.fixedSize()`: on Notes the tab strip holds the higher layout
@@ -185,7 +187,7 @@ private struct iOSDateJumpPopover: View {
                     isOpen = false
                 } label: {
                     Text(nowTitle)
-                        .font(.system(size: 12, weight: .semibold))
+                        .cadenceFont(.metadata, base: 12, weight: .semibold)
                         .foregroundStyle(Theme.blue)
                         .frame(maxWidth: .infinity, minHeight: 34)
                         .contentShape(Rectangle())
@@ -209,6 +211,7 @@ private struct iOSDateJumpPopover: View {
         }
         .frame(width: 280)
         .background(Theme.surfaceElevated)
+        .cadenceScaledTypography()
     }
 }
 #endif

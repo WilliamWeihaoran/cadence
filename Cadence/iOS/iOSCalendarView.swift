@@ -306,6 +306,7 @@ struct iOSCalendarView: View {
         // line alone the grid still stopped dead on midnight and the `+` sat over the trailing
         // column's last hour — the thing keeping the margin was supposed to avoid. The canvas states
         // the same clearance itself; see `iOSCalendarTimelineGrid.gridScroller`.
+        .cadenceScaledTypography()
         .iOSFloatingCreateTaskButton()
         .iOSHidesCompactNavigationBar()
         .onAppear(perform: restorePersistedCalendarDates)

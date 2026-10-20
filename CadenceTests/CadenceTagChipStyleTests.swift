@@ -467,8 +467,6 @@ struct CadenceTagChipScaleTests {
             "Cadence/Shared/Components/HabitProgressViews.swift",
             "Cadence/iOS/iOSAINoteActionsViews.swift",
             "Cadence/iOS/iOSArchiveImportSettingsSection.swift",
-            "Cadence/iOS/iOSCalendarEventEditSheet.swift",
-            "Cadence/iOS/iOSCalendarQuickCreateSheet.swift",
             "Cadence/iOS/iOSCalendarSettingsSection.swift",
             "Cadence/iOS/iOSDataExportSettingsSection.swift",
             "Cadence/iOS/iOSDataResetSettingsSection.swift",
@@ -511,6 +509,8 @@ struct CadenceTagChipScaleTests {
             "Cadence/iOS/iOSWindDownConfirmation.swift",
         ]
         let declaredControls: Set<String> = [
+            "Cadence/iOS/iOSCalendarEventEditSheet.swift",
+            "Cadence/iOS/iOSCalendarQuickCreateSheet.swift",
             "Cadence/iOS/iOSTaskDetailSheet.swift",
             "Cadence/iOS/iOSSearchView.swift",
         ]

@@ -110,6 +110,8 @@ struct iOSCalendarBoardEventItem: Identifiable {
 /// `CadenceCalendarEventStyle` opacity ladder, so an event and a task in one column read as two
 /// cards rather than two designs.
 struct iOSCalendarBoardEventCard: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.cadenceTypographyScaling) private var scaling
     let item: iOSCalendarBoardEventItem
 
     private var subtitle: String {
@@ -122,15 +124,15 @@ struct iOSCalendarBoardEventCard: View {
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
             Image(systemName: item.isAllDay ? "calendar" : "clock")
-                .font(.system(size: 13, weight: .semibold))
+                .cadenceFont(.rowTitle, base: 13, weight: .semibold)
                 .foregroundStyle(item.color)
                 .padding(.top, 1)
 
             VStack(alignment: .leading, spacing: 8) {
                 Text(item.title)
-                    .font(.system(size: 14, weight: .semibold))
+                    .cadenceFont(.rowTitle, base: 14, weight: .semibold)
                     .foregroundStyle(Theme.text)
-                    .lineLimit(2)
+                    .lineLimit(scaling == .enabled && CadenceTypeScale.isAccessibilitySize(dynamicTypeSize) ? nil : 2)
 
                 HStack(spacing: 6) {
                     CadenceBoardMetadataChip(
@@ -153,9 +155,9 @@ struct iOSCalendarBoardEventCard: View {
 
                 if !item.calendarTitle.isEmpty {
                     Text(item.calendarTitle)
-                        .font(.system(size: 11, weight: .medium))
+                        .cadenceFont(.metadata, base: 11, weight: .medium)
                         .foregroundStyle(Theme.subdued)
-                        .lineLimit(1)
+                        .lineLimit(scaling == .enabled && CadenceTypeScale.isAccessibilitySize(dynamicTypeSize) ? nil : 1)
                 }
             }
         }

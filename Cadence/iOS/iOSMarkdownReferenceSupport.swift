@@ -16,6 +16,7 @@ struct iOSMarkdownReferenceSheetModifier: ViewModifier {
                     referenceNotes: referenceNotes,
                     referenceTasks: referenceTasks
                 )
+                .cadenceFixedTypography()
             }
             .sheet(item: $selectedReferenceTask) { task in
                 iOSTaskInspectorSheet(task: task) { selectedReferenceTask = nil }

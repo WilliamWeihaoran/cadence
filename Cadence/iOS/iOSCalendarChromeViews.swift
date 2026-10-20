@@ -11,6 +11,8 @@ import SwiftUI
 ///
 /// One row rather than two near-copies, because the two surfaces open the same quick-create sheet.
 struct iOSCalendarAddItemRow: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.cadenceTypographyScaling) private var scaling
     var title = "Add task"
     var accessibilityLabel: String?
     let action: () -> Void
@@ -19,14 +21,14 @@ struct iOSCalendarAddItemRow: View {
         Button(action: action) {
             HStack(spacing: 8) {
                 Image(systemName: "plus")
-                    .font(.system(size: 13, weight: .semibold))
+                    .cadenceFont(.rowTitle, base: 13, weight: .semibold)
                 Text(title)
-                    .font(.system(size: 14, weight: .semibold))
+                    .cadenceFont(.rowTitle, base: 14, weight: .semibold)
                 Spacer(minLength: 0)
             }
             .foregroundStyle(Theme.dim)
             .padding(.horizontal, 12)
-            .frame(height: 44)
+            .frame(minHeight: CadenceTypeScale.height(44, holding: .rowTitle, at: dynamicTypeSize, scaling: scaling))
             .background(Theme.surfaceElevated.opacity(0.70))
             .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
             .contentShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))

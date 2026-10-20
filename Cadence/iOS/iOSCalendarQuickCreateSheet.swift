@@ -101,10 +101,11 @@ struct iOSCalendarQuickCreateSheet: View {
             .padding(12)
             .frame(maxWidth: .infinity)
         }
+        .cadenceScaledTypography()
         .scrollDismissesKeyboard(.never)
         .scrollIndicators(.hidden)
-        // No `.cadenceScaledTypography()` here: the capture card declares its own, and this file
-        // is classified as an undeclared control host by `CadenceTagChipStyleTests`.
+        // The sheet declares its scope independently of the capture card.
+        // The control-host inventory records this independent scope.
         .tint(Theme.blue)
         .preferredColorScheme(.dark)
         .presentationBackground(.clear)

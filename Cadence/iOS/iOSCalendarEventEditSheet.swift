@@ -146,6 +146,7 @@ struct iOSCalendarEventEditSheet: View {
             .padding(12)
             .frame(maxWidth: .infinity, alignment: .top)
         }
+        .cadenceScaledTypography()
         .scrollDismissesKeyboard(.never)
         .scrollIndicators(.hidden)
         .confirmationDialog("Delete Event?", isPresented: $confirmDelete, titleVisibility: .visible) {
@@ -182,6 +183,7 @@ struct iOSCalendarEventEditSheet: View {
         }
         .sheet(item: $presentedEventNote) { note in
             iOSEventNoteEditorSheet(note: note, eventTitle: draft.title, event: event)
+                .cadenceFixedTypography()
         }
         .presentationBackground(.clear)
         .presentationDragIndicator(.hidden)
@@ -248,11 +250,11 @@ struct iOSCalendarEventEditSheet: View {
 
                 VStack(alignment: .leading, spacing: 3) {
                     Text(linkedEventNote?.displayTitle ?? "No linked note yet")
-                        .font(.system(size: 14, weight: .semibold))
+                        .cadenceFont(.rowTitle, base: 14, weight: .semibold)
                         .foregroundStyle(linkedEventNote == nil ? Theme.dim : Theme.text)
                         .lineLimit(1)
                     Text(linkedEventNote == nil ? "Create a markdown note for this event." : "Open the note linked to this event.")
-                        .font(.system(size: 12))
+                        .cadenceFont(.metadata, base: 12, weight: .regular)
                         .foregroundStyle(Theme.subdued)
                         .lineLimit(2)
                 }
@@ -273,7 +275,7 @@ struct iOSCalendarEventEditSheet: View {
         iOSEditorSection(title: "Notes", style: .ruled) {
             VStack(alignment: .leading, spacing: 8) {
                 Text("Apple Calendar note")
-                    .font(.system(size: 12, weight: .semibold))
+                    .cadenceFont(.metadata, base: 12, weight: .semibold)
                     .foregroundStyle(Theme.subdued)
 
                 iOSMarkdownEditingSurface(
