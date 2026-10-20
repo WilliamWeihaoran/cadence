@@ -1133,8 +1133,12 @@ enum CadenceCommentSymbolClaim {
     /// `iOSTaskRowActionViews.swift`), and the rest describe a behaviour or a figure — a commit
     /// exemption, a sidebar width, a timeline row height — whose correct present-tense replacement
     /// needs the code read, not just a name swapped. [[T-3224]] owns them.
+    ///
+    /// **Ten, since [[T-3170]]'s `n5claims` pass.** The Codex agents holding
+    /// TaskCreationService.swift no longer differed from `main` on it, so its claim was rewritten to
+    /// give the reason directly instead of citing the removed Block title. T-3170 holds none of the
+    /// ten; all are [[T-3224]]'s.
     static let staleClaims: [String] = [
-        "Cadence/Services/TaskCreationService.swift `CadenceTaskMutationSupport.bundleCreateFailureAlertTitle`",
         "Cadence/Shared/CadenceTaskMutationSupport.swift `CadenceCalendarPlanningSupport.bundlesByDate`",
         "Cadence/Shared/CadenceTaskMutationSupport.swift `iOSTaskDetailSheet.applyDates`",
         "Cadence/iOS/iOSMarkdownTextView.swift `iOSMarkdownStylingSupport.applyTableBlock`",
@@ -1319,9 +1323,10 @@ enum CadenceCommentSymbolClaim {
         // 7 since T-3170's trio pass left seven product comments naming what it deleted -- see
         // `staleClaims`. The `staleclaims` pass fixed six, taking it to 1; the last is
         // TaskCreationService.swift's, held for a live Codex lease. 11 since [[T-3209]] made ten
-        // more visible that it could not fix in place -- see `staleClaims`. Fixing them brings
-        // this to 0.
-        #expect(stale.count == 11)
+        // more visible that it could not fix in place -- see `staleClaims`. 10 since T-3170's
+        // `n5claims` pass fixed TaskCreationService.swift's once its lease holders matched `main`.
+        // Fixing [[T-3224]]'s ten brings this to 0.
+        #expect(stale.count == 10)
     }
 
     /// The sweep. Exact set equality, both directions, over every Swift file in all five targets.
