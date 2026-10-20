@@ -47,19 +47,23 @@ loading broad histories.
 ## Verification Defaults
 
 - Formatting: `git diff --check`
-- macOS build: use the private `-derivedDataPath` command in `AGENTS.md`.
-- Unit tests: scope to `CadenceTests`; for macOS tests, use `scripts/test-host-lock.sh`.
+- Build and test: `scripts/xcb.sh <id> build|test`, never a bare `xcodebuild`. It supplies the
+  private `-derivedDataPath` and takes the test-host lock. Rules: `docs/AGENT_BRIEF.md`.
+- Unit tests: scope to `CadenceTests/<SuiteName>` — a SUITE, not a filename.
 - MCP changes: build the `CadenceMCPServer` scheme separately and grep the log for warnings.
 
-## The Ledger, Without Reading 1.4 MB
+## The Ledger, Without Reading It
 
-`docs/TODO.md` is authoritative and enormous. Do not `rg` it for a ticket id — that prints whole
-multi-kilobyte entries. Ask `scripts/ledger-view.sh` instead (T-1331), which derives everything it
-prints from the two ledgers at the moment you ask:
+`docs/TODO.md` is authoritative and enormous — a single entry reaches tens of kilobytes. Do not
+`rg` it for a ticket id; that prints whole entries. Ask `scripts/ledger-view.sh` instead (T-1331),
+which derives everything it prints from the two ledgers at the moment you ask:
 
-- `./scripts/ledger-view.sh` — every active entry with its status, source location, one-line next
-  action and, for a parked item, why it is parked (~90 lines).
-- `./scripts/ledger-view.sh show T-1325` — the exact entry block for one id, from both ledgers.
+- `./scripts/ledger-view.sh head T-1325` — **start here.** The entry's first line and state, with
+  the addenda counted rather than printed. On the largest ticket that is ~5k tokens, not ~20k.
+- `./scripts/ledger-view.sh show T-1325` — the whole entry block for one id, from both ledgers,
+  once you are working on it and need the history.
+- `./scripts/ledger-view.sh brief` — every active entry, one line each; with no subcommand at all,
+  the same list wrapped onto two lines per entry.
 - `./scripts/ledger-view.sh counts` — the census, beside the naive lexical count it corrects.
 
 Its closure reading is the narrow one `agent-commit.sh` already uses (a bold run opening the
