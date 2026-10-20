@@ -103,12 +103,49 @@
 # there is no way to click, this verifies a VIEW, not a flow. For anything needing interaction the
 # screen still has to be unlocked.
 
+#
+# A SEEDED, CAPTURABLE WINDOW IN ONE COMMAND (T-3247). `start` alone opens an EMPTY private store,
+# so a capture showed whatever an empty Today draws. Use instead:
+#
+#   ./scripts/run-macos-app.sh up <scenario|none> <id>   # Debug build into private DerivedData
+#                                                        # (xcb.sh), start, wait, print WINDOW=<n>
+#   ./scripts/run-macos-app.sh capture <id> <out.png>    # screencapture -x -o -l<n> of THAT pid
+#   ./scripts/run-macos-app.sh window <id> [secs]        # just the CGWindow number
+#   ./scripts/run-macos-app.sh stop <id>                 # quits ONLY the pid this id launched
+#   ./scripts/run-macos-app.sh selftest
+#
+# <scenario> is a `CadenceUITestScenarioSeed.Scenario` raw value, read from that file, never
+# retyped here (today-geometry, today-row-crush, popover-anchors, calendar-hues at T-3247). It
+# sets CADENCE_UI_TEST_MODE=1 + CADENCE_UI_TEST_SCENARIO, which seeds the stock three lists plus
+# the scenario into the private store, and (calendar-hues) serves the fixture events instead of
+# EventKit. Seeding is opt-in: `none`, or `start` without a 4th argument, launches as before.
+# Side effect of CADENCE_UI_TEST_MODE: the launch also claims its store dir with an `.owner` lock
+# and sweeps DEAD `CadenceUITests` siblings (`CadenceUITestStoreDirectory.claimAndSweep`); a store
+# with no `.owner` -- every unseeded agent run -- is never swept.
+# The app LANDS ON TODAY (`macOSRootView` selection is `@State ... = .today`); there is no page
+# selector, so a scenario seeded for another page is drawn only if Today shows it.
+# `start` refuses any bundle that is not `.../Build/Products/Debug/Cadence.app` (exit 5): never
+# the shipping configuration, never /Applications. `stop` kills the recorded pid only if `ps`
+# still names the binary `start` launched (exit 6 otherwise) -- it never matches by name.
+# `-ApplePersistenceIgnoreState YES` keeps the launch from restoring or rewriting the OWNER'S saved
+# window state, which lives in the same container (same bundle id).
+
 set -uo pipefail
 CMD="${1:-status}"
-ID="${3:-${2:-agent-$$}}"
-[[ "$CMD" == "start" ]] && ID="${3:-agent-$$}"
-RUNDIR="${TMPDIR:-/tmp}/CadenceAgentRuns"; mkdir -p "$RUNDIR"
+SELF="${0:A}"
+ROOT_DIR="${SELF:h:h}"
+SCENARIO=""
+case "$CMD" in
+  start) ID="${3:-agent-$$}"; SCENARIO="${4:-}" ;;
+  up)    SCENARIO="${2:-}"; ID="${3:-agent-$$}" ;;
+  *)     ID="${2:-agent-$$}" ;;
+esac
+[[ "$SCENARIO" == "none" ]] && SCENARIO=""
+RUNDIR="${CADENCE_LAUNCH_RUNDIR:-${TMPDIR:-/tmp}/CadenceAgentRuns}"; mkdir -p "$RUNDIR"
 PIDFILE="$RUNDIR/$ID.pid"
+BINFILE="$RUNDIR/$ID.bin"
+SCENARIO_SOURCE="$ROOT_DIR/Cadence/Services/CadenceUITestScenarioSeed.swift"
+TMP_BASE="${TMPDIR:-/private/tmp/}"; [[ "$TMP_BASE" != */ ]] && TMP_BASE="$TMP_BASE/"
 # Where the sandboxed app actually puts CADENCE_UI_TEST_STORE_ID -- see the header.
 APP_STORE_ROOT="$HOME/Library/Containers/com.haoranwei.Cadence/Data/tmp/CadenceUITestStores"
 # ...and where its PREFERENCES land, which is a different store and was not isolated at all
@@ -119,45 +156,189 @@ APP_PREFS_ROOT="$HOME/Library/Containers/com.haoranwei.Cadence/Data/Library/Pref
 SUITE_PREFIX="com.haoranwei.Cadence.agent."
 SUITE_PLIST="$APP_PREFS_ROOT/$SUITE_PREFIX$ID.plist"
 
+# T-1157, and it is checked before anything else because it is a property of the ARGUMENT.
+# The id becomes a preferences FILENAME, and `CadenceDefaults.suiteName(forAgentID:)` answers
+# nil for anything outside [A-Za-z0-9-_.] -- and nil means "use the shared domain". So an id
+# the app rejects does not fail the launch: it silently lands it on the signed-in person's own
+# plist with `-CadenceSuiteName` present and looking right. Refuse where it can be read.
+refuse_bad_id() {
+  if [[ -z "$ID" || -n "${ID//[A-Za-z0-9_.-]/}" ]]; then
+    print -r -- "REFUSING: id '$ID' cannot name a preferences suite (only A-Za-z0-9 - _ . )."
+    print -r -- "   An id the app rejects falls back to the shared defaults domain -- the user's"
+    print -r -- "   own com.haoranwei.Cadence.plist. Pass a plain agent id (T-1157)."
+    exit 4
+  fi
+}
+
+# The scenarios this tree's app can seed, read from the enum rather than retyped (T-3247).
+known_scenarios() {
+  [[ -r "$SCENARIO_SOURCE" ]] || return 1
+  grep -oE 'case [A-Za-z]+ = "[a-z0-9-]+"' "$SCENARIO_SOURCE" | sed -E 's/.*"(.*)"/\1/'
+}
+
+refuse_bad_scenario() {
+  [[ -z "$SCENARIO" ]] && return 0
+  local -a known; known=("${(@f)$(known_scenarios)}")
+  if (( ! ${known[(Ie)$SCENARIO]} )); then
+    print -r -- "REFUSING: unknown scenario '$SCENARIO'. Known (from ${SCENARIO_SOURCE:t}): ${known[*]:-<none read>} | none"
+    print -r -- "   The app would seed NOTHING for it and say so only in its log (T-3247)."
+    exit 2
+  fi
+}
+
+# Refuse to add a writer if the user's own copy is up. Their session wins.
+refuse_if_owner_running() {
+  if pgrep -f "/Applications/Cadence.app/Contents/MacOS/Cadence" >/dev/null 2>&1; then
+    print -r -- "REFUSING: the user's own Cadence is running. Do not add a second writer."
+    exit 3
+  fi
+}
+
+# The executable a live pid is running, by pid -- never by name (T-3247).
+pid_executable() { ps -o comm= -p "$1" 2>/dev/null | sed -e 's/^ *//' -e 's/ *$//' }
+
+# The tracked pid, but only while it is still the process `start` launched. Prints the pid;
+# returns 1 with no pidfile, 2 if it is gone, 6 if the pid now names some other executable.
+tracked_pid() {
+  local p want have
+  [[ -f "$PIDFILE" ]] || return 1
+  p=$(<"$PIDFILE")
+  kill -0 "$p" 2>/dev/null || return 2
+  have=$(pid_executable "$p")
+  if [[ -f "$BINFILE" ]]; then
+    want=$(<"$BINFILE")
+    [[ -n "$have" && "$have" == "$want" ]] || { print -r -- "$have"; return 6 }
+  else
+    # A pidfile from before T-3247 has no binfile: accept only a Debug-product Cadence.
+    [[ "$have" == */Build/Products/Debug/Cadence.app/Contents/MacOS/Cadence ]] || { print -r -- "$have"; return 6 }
+  fi
+  [[ "$have" != /Applications/* ]] || { print -r -- "$have"; return 6 }
+  print -r -- "$p"
+}
+
+# The CGWindow number of the largest ordinary window owned by pid $1, or nothing. Reads
+# `CGWindowListCopyWindowInfo` through JXA (no Accessibility, no Apple Events). Exit 6 when no
+# window on the system has a `kCGWindowName`, which is what missing Screen Recording looks like.
+window_for_pid() {
+  osascript -l JavaScript - "$1" <<'JXA'
+ObjC.import('CoreGraphics');
+function run(argv) {
+  var pid = parseInt(argv[0], 10), best = null, bestArea = 0, named = 0;
+  var list = ObjC.castRefToObject($.CGWindowListCopyWindowInfo($.kCGWindowListOptionAll | $.kCGWindowListExcludeDesktopElements, $.kCGNullWindowID));
+  for (var i = 0; i < list.count; i++) {
+    var w = list.objectAtIndex(i), nm = w.objectForKey('kCGWindowName');
+    if (nm && nm.js && nm.js.length) named++;
+    if (w.objectForKey('kCGWindowOwnerPID').intValue !== pid) continue;
+    if (w.objectForKey('kCGWindowLayer').intValue !== 0) continue;
+    var b = w.objectForKey('kCGWindowBounds'), wd = b.objectForKey('Width').doubleValue, ht = b.objectForKey('Height').doubleValue;
+    if (ht < 200 || wd < 200) continue;
+    if (wd * ht > bestArea) { bestArea = wd * ht; best = w.objectForKey('kCGWindowNumber').intValue; }
+  }
+  if (named === 0) return 'NO-SCREEN-RECORDING';
+  return best === null ? '' : String(best);
+}
+JXA
+}
+
+# Wait up to $1 seconds for the tracked pid's window; print its number.
+wait_window() {
+  local secs="${1:-60}" i p rc w
+  for (( i = 0; i < secs; i++ )); do
+    p=$(tracked_pid); rc=$?
+    if (( rc == 6 )); then print -r -- "REFUSING: pid in $PIDFILE now runs '$p', not what start launched." >&2; return 6; fi
+    (( rc )) && { print -r -- "no live tracked app for id=$ID (see $RUNDIR/$ID.log)" >&2; return 1 }
+    w=$(window_for_pid "$p")
+    if [[ "$w" == NO-SCREEN-RECORDING ]]; then
+      print -r -- "!! no window anywhere has kCGWindowName: this process lacks Screen Recording; screencapture -l would capture nothing useful." >&2
+      return 7
+    fi
+    [[ -n "$w" ]] && { print -r -- "$w"; return 0 }
+    sleep 1
+  done
+  print -r -- "!! no window for pid $p after ${secs}s (see $RUNDIR/$ID.log)" >&2
+  return 1
+}
+
 case "$CMD" in
   start)
     APP="${2:-}"
-    [[ -d "$APP" ]] || { print -r -- "usage: $0 start <path/to/Cadence.app> [id]"; exit 2 }
-    # T-1157, and it is checked before anything else because it is a property of the ARGUMENT.
-    # The id becomes a preferences FILENAME, and `CadenceDefaults.suiteName(forAgentID:)` answers
-    # nil for anything outside [A-Za-z0-9-_.] -- and nil means "use the shared domain". So an id
-    # the app rejects does not fail the launch: it silently lands it on the signed-in person's own
-    # plist with `-CadenceSuiteName` present and looking right. Refuse where it can be read.
-    if [[ -z "$ID" || -n "${ID//[A-Za-z0-9_.-]/}" ]]; then
-      print -r -- "REFUSING: id '$ID' cannot name a preferences suite (only A-Za-z0-9 - _ . )."
-      print -r -- "   An id the app rejects falls back to the shared defaults domain -- the user's"
-      print -r -- "   own com.haoranwei.Cadence.plist. Pass a plain agent id (T-1157)."
-      exit 4
+    [[ -d "$APP" ]] || { print -r -- "usage: $0 start <path/to/Debug/Cadence.app> [id] [scenario|none]"; exit 2 }
+    refuse_bad_id
+    # Never the shipping configuration (T-3247): only a Debug product, never /Applications.
+    APP="${APP:A}"
+    if [[ "$APP" != */Build/Products/Debug/Cadence.app || "$APP" == /Applications/* ]]; then
+      print -r -- "REFUSING: '$APP' is not a .../Build/Products/Debug/Cadence.app -- only a Debug build may be launched."
+      exit 5
     fi
-    # Refuse to add a writer if the user's own copy is up. Their session wins.
-    if pgrep -f "/Applications/Cadence.app/Contents/MacOS/Cadence" >/dev/null 2>&1; then
-      print -r -- "REFUSING: the user's own Cadence is running. Do not add a second writer."
-      exit 3
-    fi
-    CADENCE_LOCAL_STORE_ONLY=1 CADENCE_UI_TEST_STORE_ID="$ID" \
-      "$APP/Contents/MacOS/Cadence" -CadenceSuiteName "$ID" >"$RUNDIR/$ID.log" 2>&1 &
+    refuse_bad_scenario
+    refuse_if_owner_running
+    BIN="$APP/Contents/MacOS/Cadence"
+    # The seed half (T-3247) is its own word list, not more VAR= words on the launch line: the
+    # launch line is parsed by `CadenceEventKitLaunchGateTests`, which requires every CADENCE_
+    # variable ON it to disarm EventKit alone. The scenario does not, and is not meant to.
+    typeset -a seed_env; seed_env=()
+    [[ -n "$SCENARIO" ]] && seed_env=("CADENCE_UI_TEST_MODE=1" "CADENCE_UI_TEST_SCENARIO=$SCENARIO")
+    env "${seed_env[@]}" CADENCE_LOCAL_STORE_ONLY=1 CADENCE_UI_TEST_STORE_ID="$ID" \
+      "$BIN" -CadenceSuiteName "$ID" -ApplePersistenceIgnoreState YES >"$RUNDIR/$ID.log" 2>&1 &
     print -r -- "$!" > "$PIDFILE"
+    print -r -- "$BIN" > "$BINFILE"
     sleep 2
     if kill -0 "$(<$PIDFILE)" 2>/dev/null; then
-      print -r -- "started pid $(<$PIDFILE)  id=$ID  store=$APP_STORE_ROOT/$ID"
+      print -r -- "started pid $(<$PIDFILE)  id=$ID  store=$APP_STORE_ROOT/$ID  scenario=${SCENARIO:-none}"
       print -r -- "  defaults: $SUITE_PREFIX$ID   (-CadenceSuiteName, T-1157)"
       print -r -- "REMEMBER: $0 stop $ID   — in this same turn."
     else
       print -r -- "app exited immediately; see $RUNDIR/$ID.log"; tail -5 "$RUNDIR/$ID.log"; exit 1
     fi
     ;;
+  up)
+    refuse_bad_id
+    [[ -n "${2:-}" ]] || { print -r -- "usage: $0 up <scenario|none> <id>"; exit 2 }
+    refuse_bad_scenario
+    # Checked before the build too, so a refused launch does not first spend minutes compiling.
+    refuse_if_owner_running
+    # xcb.sh owns the private DerivedData (${TMP_BASE}cadence-dd-<id>) and every build guard.
+    "$ROOT_DIR/scripts/xcb.sh" "$ID" build -scheme Cadence -destination 'platform=macOS' -configuration Debug
+    brc=$?
+    (( brc )) && { print -r -- "!! build failed (xcb.sh exit $brc); nothing launched."; exit 1 }
+    APP="${TMP_BASE}cadence-dd-$ID/Build/Products/Debug/Cadence.app"
+    [[ -x "$APP/Contents/MacOS/Cadence" ]] || { print -r -- "!! no product at $APP"; exit 1 }
+    zsh "$SELF" start "$APP" "$ID" "${SCENARIO:-none}" || exit $?
+    WIN=$(wait_window 60); wrc=$?
+    if (( wrc )); then print -r -- "!! no capturable window (exit $wrc). Still run: $0 stop $ID"; exit $wrc; fi
+    print -r -- "WINDOW=$WIN"
+    print -r -- "  capture: $0 capture $ID <out.png>   (or: screencapture -x -o -l$WIN <out.png>)"
+    print -r -- "REMEMBER: $0 stop $ID   — in this same turn."
+    ;;
+  window)
+    wait_window "${3:-60}"; exit $?
+    ;;
+  capture)
+    OUT="${3:-}"
+    [[ -n "$OUT" ]] || { print -r -- "usage: $0 capture <id> <out.png>"; exit 2 }
+    WIN=$(wait_window 30) || exit $?
+    rm -f "$OUT"
+    screencapture -x -o -l"$WIN" "$OUT"
+    crc=$?
+    if (( crc )) || [[ ! -s "$OUT" ]]; then print -r -- "!! screencapture -l$WIN exited $crc; no image at $OUT"; exit 1; fi
+    print -r -- "captured window $WIN of pid $(<$PIDFILE) -> $OUT ($(sips -g pixelWidth -g pixelHeight "$OUT" 2>/dev/null | awk '/pixel/ {printf "%s ", $2}')px)"
+    ;;
   stop)
     if [[ -f "$PIDFILE" ]]; then
-      pid=$(<"$PIDFILE")
-      kill "$pid" 2>/dev/null && print -r -- "sent TERM to $pid"
-      sleep 2
-      kill -0 "$pid" 2>/dev/null && { kill -9 "$pid" 2>/dev/null; print -r -- "escalated to KILL (it hung — this is the documented failure)" }
-      rm -f "$PIDFILE"
+      pid=$(tracked_pid); trc=$?
+      if (( trc == 6 )); then
+        # The pid was recycled (or the file was edited): it is not ours. Kill nothing.
+        print -r -- "!! REFUSING to signal pid $(<$PIDFILE): it now runs '$pid', not $(cat "$BINFILE" 2>/dev/null || print -r -- 'a Debug Cadence.app'). Nothing killed."
+        rm -f "$PIDFILE" "$BINFILE"
+        exit 6
+      elif (( trc == 0 )); then
+        kill "$pid" 2>/dev/null && print -r -- "sent TERM to $pid"
+        sleep 2
+        kill -0 "$pid" 2>/dev/null && { kill -9 "$pid" 2>/dev/null; print -r -- "escalated to KILL (it hung — this is the documented failure)" }
+      else
+        print -r -- "pid $(<$PIDFILE) already gone"
+      fi
+      rm -f "$PIDFILE" "$BINFILE"
     else
       print -r -- "no pidfile for id=$ID"
     fi
@@ -224,5 +405,68 @@ case "$CMD" in
     print -r -- "debug-build processes: $(pgrep -f 'Build/Products/Debug/Cadence.app' 2>/dev/null | wc -l | tr -d ' ')"
     local -a st; st=("$APP_STORE_ROOT"/*(N/))
     print -r -- "private stores: ${#st}   ($APP_STORE_ROOT)"
+    ;;
+  selftest)
+    # T-3247. Every refusal above, induced for real against a throwaway run directory. Launches
+    # NO app: the "own" process is /bin/sleep under `exec -a <fake Debug binary>`, the stranger is
+    # a plain /bin/sleep, and both are started -- and reaped -- by this selftest alone.
+    ws=$(mktemp -d "${TMP_BASE}cadence-launch-selftest.XXXXXX") || exit 2
+    typeset -i passed=0 failed=0
+    check() {  # $1 name, $2 1|0, $3 detail
+      if [[ "$2" == 1 ]]; then passed+=1; print -r -- "PASS $1"; else failed+=1; print -r -- "FAIL $1: $3"; fi
+    }
+    st() { CADENCE_LAUNCH_RUNDIR="$ws/run" zsh "$SELF" "$@" 2>&1 }
+    dbg="$ws/fk/Build/Products/Debug/Cadence.app"; rel="$ws/fk/Build/Products/Release/Cadence.app"
+    mkdir -p "$dbg/Contents/MacOS" "$rel/Contents/MacOS" "$ws/run"
+    fakebin="$dbg/Contents/MacOS/Cadence"
+
+    out=$(st start "$dbg" 'a/b'); rc=$?
+    check bad-id $(( rc == 4 )) "exit $rc: $out"
+    out=$(st start "$rel" "st-rel-$$"); rc=$?
+    check shipping-config-refused $(( rc == 5 )) "exit $rc: $out"
+    out=$(st start /Applications/Cadence.app "st-apps-$$"); rc=$?
+    check applications-refused $(( rc == 5 || rc == 2 )) "exit $rc: $out"
+    out=$(st start "$dbg" "st-scn-$$" bogus-scenario); rc=$?
+    check unknown-scenario $(( rc == 2 )) "exit $rc: $out"
+    out=$(st up bogus-scenario "st-up-$$"); rc=$?
+    check unknown-scenario-before-build $(( rc == 2 )) "exit $rc: $out"
+    sc=("${(@f)$(known_scenarios)}")
+    check scenarios-read-from-source $(( ${sc[(Ie)today-geometry]} > 0 )) "read: ${sc[*]}"
+
+    /bin/sleep 60 & stranger=$!
+    print -r -- "$stranger" > "$ws/run/st-stranger.pid"; print -r -- "$fakebin" > "$ws/run/st-stranger.bin"
+    out=$(st stop st-stranger); rc=$?
+    check stop-spares-recycled-pid $(( rc == 6 )) "exit $rc: $out"
+    check stranger-still-alive $( kill -0 $stranger 2>/dev/null && print 1 || print 0 ) "pid $stranger died"
+    print -r -- "$stranger" > "$ws/run/st-legacy.pid"
+    out=$(st stop st-legacy); rc=$?
+    check stop-spares-stranger-without-binfile $(( rc == 6 )) "exit $rc: $out"
+    check stranger-alive-after-legacy $( kill -0 $stranger 2>/dev/null && print 1 || print 0 ) "pid $stranger died"
+    kill $stranger 2>/dev/null; wait $stranger 2>/dev/null
+
+    ( exec -a "$fakebin" /bin/sleep 60 ) & own=$!
+    sleep 0.3
+    print -r -- "$own" > "$ws/run/st-own.pid"; print -r -- "$fakebin" > "$ws/run/st-own.bin"
+    out=$(st window st-own 2); rc=$?
+    check window-times-out-without-a-window $(( rc == 1 || rc == 7 )) "exit $rc: $out"
+    [[ $rc == 7 ]] && print -r -- "   (note: this process lacks Screen Recording -- the live capture path cannot work here)"
+    out=$(st stop st-own); rc=$?
+    sleep 0.3
+    check stop-kills-its-own-pid $( kill -0 $own 2>/dev/null && print 0 || print 1 ) "pid $own survived: $out"
+    check stop-clears-pidfile $( [[ ! -e "$ws/run/st-own.pid" && ! -e "$ws/run/st-own.bin" ]] && print 1 || print 0 ) "$(ls "$ws/run")"
+    kill $own 2>/dev/null; wait $own 2>/dev/null
+
+    # The launch line is the one place the private store, the private defaults and the saved-state
+    # opt-out meet; losing any of them is the T-1157 / T-1448 shape again.
+    # Anchored on `env` at line start so this check's own needles below cannot satisfy it, and
+    # spelled STORE[_]ID because `CadenceEventKitLaunchGateTests` requires exactly ONE live line
+    # carrying that assignment.
+    ll=("${(@f)$(grep -E -A1 '^[[:space:]]*env .*CADENCE_UI_TEST_STORE[_]ID=' "$SELF")}")
+    check launch-line-isolated $( [[ "${ll[*]}" == *'CADENCE_LOCAL_STORE_ONLY=1'* && "${ll[*]}" == *'-CadenceSuiteName "$ID"'* && "${ll[*]}" == *'-ApplePersistenceIgnoreState YES'* ]] && print 1 || print 0 ) "${ll[*]}"
+
+    rm -rf "$ws"
+    print -r -- "selftest: $passed passed, $failed failed"
+    (( failed == 0 && passed > 0 ))
+    exit $?
     ;;
 esac

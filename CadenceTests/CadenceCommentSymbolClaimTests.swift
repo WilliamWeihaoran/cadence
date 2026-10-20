@@ -1955,9 +1955,6 @@ enum CadenceCrossLanguageCommentClaim {
     /// Claims that do not resolve and are not drift, each with its reason. Set equality both ways:
     /// a new unresolved claim fails, and so does an entry whose claim has gone.
     static let crossLanguageDeliberateAbsences = [
-        // "sets the store id and not `CADENCE_UI_TEST_MODE`": the absence is the claim.
-        "Cadence/Services/CadenceUITestStoreDirectory.swift `CADENCE_UI_TEST_MODE`",
-        "CadenceTests/CadenceUITestStoreDirectoryTests.swift `CADENCE_UI_TEST_MODE`",
         // "there is no `update_tag` arm": adding one makes this entry stale, which is the point.
         "CadenceTests/CadenceWriteServiceTests.swift `update_tag`",
     ]

@@ -268,12 +268,13 @@ enum CadenceUITestStoreDirectory {
         return path
     }
 
-    /// The id whose launch also claims and sweeps — **`CadenceUITests` only**.
+    /// The id whose launch also claims and sweeps — **`CadenceUITests`, and a SEEDED agent launch**.
     ///
-    /// The redirect is wider than the cleanup on purpose. `run-macos-app.sh` sets the store id and
-    /// not `CADENCE_UI_TEST_MODE`, and it has a cleanup of its own: its `stop` was rebuilt by
-    /// [[T-1066]] to report from the filesystem, and it exits 1 with `!! NOTHING REMOVED` when the
-    /// path is not there. A sweep that collected an agent's abandoned store behind its back would
+    /// The redirect is wider than the cleanup on purpose. `run-macos-app.sh` sets the store id, and
+    /// sets `CADENCE_UI_TEST_MODE` only for a seeded `up <scenario>` launch ([[T-3247]]), which
+    /// therefore claims and sweeps like a UI test. An unseeded launch does neither, and it has a
+    /// cleanup of its own: its `stop` was rebuilt by [[T-1066]] to report from the filesystem, and
+    /// it exits 1 with `!! NOTHING REMOVED` when the path is not there. A sweep that collected an agent's abandoned store behind its back would
     /// make that refusal fire over a directory something else had already cleaned — turning a guard
     /// that was just made honest into a false alarm. So this mechanism collects only what this
     /// mechanism made, and an agent-run app's directory is left to `stop`.
