@@ -312,13 +312,38 @@ nonisolated enum DateFormatters {
     static func relativeDate(from key: String, relativeTo referenceDate: Date = Date()) -> String {
         guard let date = ymd.date(from: key) else { return key }
         let diff = dayOffset(from: key, relativeTo: referenceDate) ?? Int.max
+        // The original window, unchanged: forward as far as a fortnight, backward without a limit.
+        guard diff <= 13 else { return shortDate.string(from: date) }
+        return relativeWords(dayOffset: diff)
+    }
+
+    /// `relativeDate(from:)` with a **symmetric cutoff**, for surfaces where the words stop being
+    /// the shorter way to say it.
+    ///
+    /// The unbounded backward arm above is right for a summary line that is *about* lateness —
+    /// `30 days ago` is the point there. It is wrong on a chip: a chip states a date, and once the
+    /// offset is big enough that the reader has to do the arithmetic themselves to know which day
+    /// it is, `Oct 19` is both shorter and the thing they wanted. `withinDays` is where that turns
+    /// over, and it is the caller's to choose because it depends on what the surface is for.
+    ///
+    /// Inside the window the words are the same ones, spelled in the same place, so the two forms
+    /// cannot drift into saying `Tomorrow` differently.
+    static func relativeDate(from key: String, relativeTo referenceDate: Date = Date(), withinDays: Int) -> String {
+        guard let date = ymd.date(from: key) else { return key }
+        guard let diff = dayOffset(from: key, relativeTo: referenceDate), abs(diff) <= withinDays else {
+            return shortDate.string(from: date)
+        }
+        return relativeWords(dayOffset: diff)
+    }
+
+    /// The words themselves, for a day offset a caller has already decided is inside its window.
+    private static func relativeWords(dayOffset diff: Int) -> String {
         switch diff {
-        case 0:          return "Today"
-        case 1:          return "Tomorrow"
-        case -1:         return "Yesterday"
-        case 2...13:     return "in \(diff) days"
-        case Int.min ..< -1: return "\(-diff) days ago"
-        default:         return shortDate.string(from: date)
+        case 0:     return "Today"
+        case 1:     return "Tomorrow"
+        case -1:    return "Yesterday"
+        case 2...:  return "in \(diff) days"
+        default:    return "\(-diff) days ago"
         }
     }
 

@@ -39,6 +39,19 @@ enum CadenceCaptureField: String, CaseIterable, Identifiable {
 
 /// The same ordered inventory drives icons and chips; setting one closes a gap, never reorders it.
 enum CadenceCaptureFieldInventory {
+    /// **The relative-date window, stated because the ticket left it to be chosen** ([[T-3237]]
+    /// item 3). Seven days each way, then an absolute `Oct 19`.
+    ///
+    /// A week is the span a person is already holding: inside it `in 4 days` and `Yesterday` are
+    /// read directly, and they are shorter than the date. Past it they stop being shorter in the
+    /// only sense that matters — `in 23 days` is arithmetic the reader has to undo before they know
+    /// which day it is, while `Nov 11` is the answer. Seven rather than fourteen because a chip is
+    /// glanced at rather than read, and because a week is a boundary the reader already has.
+    ///
+    /// Symmetric, unlike `DateFormatters.relativeDate(from:)`'s own unbounded backward arm: a do
+    /// date thirty days gone is a date, not a measure of how late it is.
+    static let relativeDateCutoffDays = 7
+
     static let taskIcons: [CadenceCaptureField] = [.doDate, .dueDate, .list, .tags]
     static let overflow: [CadenceCaptureField] = [.repeatRule, .priority, .estimate]
 
@@ -198,9 +211,17 @@ struct CadenceScheduleCaptureCard<NotesField: View>: View {
             if let eyebrow = titleStatus?.eyebrow {
                 Text(eyebrow).cadenceFont(.metadata).foregroundStyle(titleStatus?.eyebrowTint ?? Theme.dim)
             }
-            TextField(draft.kind.titlePlaceholder, text: $draft.title)
+            // **Wraps onto a second and third line rather than truncating** ([[T-3237]] item 1).
+            // `CadenceSchedulePanel.titleField` has read `axis: .vertical` + `lineLimit(1...3)`
+            // since it was built; this card was the near-copy that kept the single-line form, so a
+            // long title lost its tail at the one moment the reader is still composing it. Matching
+            // the panel rather than inventing a height keeps one title treatment across the two
+            // presentations, and keeps Return on `onSubmit` the way the panel documents at its own
+            // field: a vertical-axis field still submits, and the submit is deliberately unguarded.
+            TextField(draft.kind.titlePlaceholder, text: $draft.title, axis: .vertical)
                 .textFieldStyle(.plain)
                 .cadenceFont(.composerTitle)
+                .lineLimit(1...3)
                 .focused($titleIsFocused)
                 .submitLabel(.done)
                 .onSubmit(commit)
@@ -210,33 +231,24 @@ struct CadenceScheduleCaptureCard<NotesField: View>: View {
                 .disabled(isReadOnly)
             if !draft.subject.isEditing, let notesField { notesField }
             if notesField == nil || !draft.subject.isEditing {
+                // **The focus jump, fixed at its cause** ([[T-3237]] item 2). The limit used to
+                // read `notesIsFocused || !draft.notes.isEmpty ? 3...6 : 1...1`, so focusing an
+                // EMPTY field moved the lower bound from one line to three and the card grew by two
+                // lines with nothing typed into it; blurring moved it back and the card dropped.
+                // The lower bound was answering "is this field focused", which is not a question
+                // about how much text there is. A single `1...6` asks only the content: empty is one
+                // line whether focused or not, and the field grows a line at a time as it fills, so
+                // there is no transition left to jump on. Deliberately NOT a fixed height — that
+                // would hide the reflow behind reserved space rather than stop it.
                 TextField("Notes", text: $draft.notes, axis: .vertical)
                     .textFieldStyle(.plain)
                     .cadenceFont(.bodyText)
-                    .lineLimit(notesIsFocused || !draft.notes.isEmpty ? 3...6 : 1...1)
+                    .lineLimit(1...6)
                     .focused($notesIsFocused)
                     .disabled(isReadOnly)
             }
 
-            let chips = fields.filter(isSet)
-            if !chips.isEmpty {
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 130), alignment: .leading)], alignment: .leading, spacing: 6) {
-                    ForEach(chips) { field in
-                        Button { open(field) } label: {
-                            Label(chipTitle(field), systemImage: field.symbol)
-                                .cadenceFont(.metadata)
-                                .lineLimit(2)
-                                .frame(maxWidth: .infinity, minHeight: 36, alignment: .leading)
-                                .padding(.horizontal, 8)
-                                .background(Theme.surface)
-                                .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControlCompact))
-                        }
-                        .accessibilityLabel("\(field.title): \(chipTitle(field))")
-                        .accessibilityIdentifier("capture-chip-\(field.rawValue)")
-                        .disabled(isReadOnly)
-                    }
-                }
-            }
+            chipPlacement
             HStack(spacing: 0) {
                 if !isReadOnly, let delete = actions.delete {
                     Button("Delete", role: .destructive) { actionError = delete() }
@@ -335,6 +347,136 @@ struct CadenceScheduleCaptureCard<NotesField: View>: View {
         .onChange(of: draft.title) { _, _ in actionError = nil }
     }
 
+    // MARK: - Where the set fields sit
+
+    /// **Three bounded places rather than one row that grows** ([[T-3237]] item 4).
+    ///
+    /// The complaint was not that the chips were ugly: it was that setting a field pushed the card
+    /// around, because every set field joined one adaptive grid and that grid reflowed each time.
+    /// Splitting it by *what the chip is about* gives three places whose shape is known before you
+    /// fill anything in:
+    ///
+    /// 1. **The dates line.** Do and due, together, on their own line, as the owner asked —
+    ///    at most two chips and never more, with the priority mark parked at its trailing end.
+    /// 2. **The tags row.** Tags are off the chip row entirely. They are the one field whose count
+    ///    is unbounded, which is exactly what made the single row grow, and they read as
+    ///    identity rather than as schedule — so they get a row of their own and wrap inside it.
+    /// 3. **The rest.** List, repeat, calendar and location, which are at most four and each at
+    ///    most one.
+    ///
+    /// Each place draws nothing at all when it holds nothing, so an empty card is still an empty
+    /// card.
+    @ViewBuilder
+    private var chipPlacement: some View {
+        let dates = fields.filter { ($0 == .doDate || $0 == .dueDate) && isSet($0) }
+        let showsPriority = fields.contains(.priority) && isSet(.priority)
+        let rest = fields.filter(restCarriesChip)
+
+        if !dates.isEmpty || showsPriority {
+            HStack(alignment: .top, spacing: 6) {
+                ForEach(dates) { chip($0) }
+                Spacer(minLength: 0)
+                if showsPriority { priorityChip }
+            }
+        }
+        if fields.contains(.tags), isSet(.tags) { tagRow }
+        if !rest.isEmpty {
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 130), alignment: .leading)], alignment: .leading, spacing: 6) {
+                ForEach(rest) { chip($0) }
+            }
+        }
+    }
+
+    /// Which fields the third place draws, which is every set field the first two did not take.
+    ///
+    /// **The estimate is the one conditional.** It rides the do-date chip (`Oct 19 · 30m`), so
+    /// drawing it again here would state the duration twice. With no do date there is no chip for
+    /// it to ride, and a duration that vanished the moment you cleared the date would be the
+    /// appear-and-disappear behaviour the owner rejected — so it falls back to a chip of its own
+    /// exactly then, and tapping it still opens the same estimate picker.
+    private func restCarriesChip(_ field: CadenceCaptureField) -> Bool {
+        switch field {
+        case .doDate, .dueDate, .tags, .priority: return false
+        case .estimate: return isSet(.estimate) && !isSet(.doDate)
+        case .list, .repeatRule, .calendar, .location: return isSet(field)
+        }
+    }
+
+    private func chip(_ field: CadenceCaptureField) -> some View {
+        Button { open(field) } label: {
+            Label {
+                Text(chipTitle(field))
+            } icon: {
+                Image(systemName: chipSymbol(field)).foregroundStyle(chipTint(field))
+            }
+                .cadenceFont(.metadata)
+                .lineLimit(2)
+                .frame(maxWidth: .infinity, minHeight: 36, alignment: .leading)
+                .padding(.horizontal, 8)
+                .background(Theme.surface)
+                .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControlCompact))
+        }
+        .accessibilityLabel("\(field.title): \(chipTitle(field))")
+        .accessibilityIdentifier("capture-chip-\(field.rawValue)")
+        .disabled(isReadOnly)
+    }
+
+    /// **The bare tinted mark, no word** — the owner's answer to the open question, and already the
+    /// app's priority language: `TaskPriorityMarkControl` is the shared `!` / `!!` / `!!!` tile that
+    /// both inspectors and the schedule panel draw, tinted blue / amber / red by level. Reading it
+    /// rather than drawing a glyph here is the same choice T-1278 made when it refused a second
+    /// priority vocabulary. "Medium priority" in words is gone; the colour says it.
+    ///
+    /// The words survive where they are still needed: VoiceOver reads the label, which is the one
+    /// reader a tint says nothing to.
+    private var priorityChip: some View {
+        Button { open(.priority) } label: {
+            TaskPriorityMarkControl(priority: CadenceCaptureFieldInventory.priority(for: draft))
+        }
+        .accessibilityLabel("\(CadenceCaptureField.priority.title): \(CadenceCaptureFieldInventory.priority(for: draft).label)")
+        .accessibilityIdentifier("capture-chip-priority")
+        .disabled(isReadOnly)
+    }
+
+    /// Tags, in the place of their own the owner asked for.
+    ///
+    /// Drawn here rather than with `CadenceTagChip` because the card never holds `Tag` models: its
+    /// host hands it `CadenceSchedulePanelChoice` values, and inventing a `Tag` to satisfy a view
+    /// would be the larger near-copy. The construction is that chip's, though — the dot, the tint
+    /// and the border carry the colour and the label stays on a `Theme` token, so a tag reads the
+    /// same here as it does on a board card.
+    private var tagRow: some View {
+        let selected = options.tagChoices.filter { selectedTags.contains($0.id) }
+        return Button { open(.tags) } label: {
+            // 110, not the chip row's 130 and not something tighter: a tag name is shorter than a
+            // chip's sentence but longer than the glyph-sized column a small minimum produces, and
+            // at 72 the second column was narrow enough to truncate `leadership` to `leaders…`.
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 110), alignment: .leading)], alignment: .leading, spacing: 6) {
+                ForEach(selected) { tagPill($0) }
+            }
+        }
+        .accessibilityLabel("\(CadenceCaptureField.tags.title): \(chipTitle(.tags))")
+        .accessibilityIdentifier("capture-chip-tags")
+        .disabled(isReadOnly)
+    }
+
+    private func tagPill(_ choice: CadenceSchedulePanelChoice) -> some View {
+        HStack(spacing: 4) {
+            Circle().fill(choice.color).frame(width: 6, height: 6)
+            Text(choice.name).cadenceFont(.metadata).lineLimit(1)
+        }
+        // Hugs its name rather than filling the column, so a short tag is a short pill and the row
+        // reads as tags rather than as a table of equal cells.
+        .frame(minHeight: 28, alignment: .leading)
+        .padding(.horizontal, 8)
+        .background(choice.color.opacity(0.12))
+        .overlay(
+            RoundedRectangle(cornerRadius: Theme.radiusControlCompact)
+                .strokeBorder(choice.color.opacity(0.30), lineWidth: 1)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControlCompact))
+    }
+
     private var kindBinding: Binding<CadenceScheduleDraftKind> {
         Binding(get: { draft.kind }, set: { kind in
             kindMemory.select(kind, draft: &draft)
@@ -343,12 +485,70 @@ struct CadenceScheduleCaptureCard<NotesField: View>: View {
         })
     }
 
+    private var doDayText: String {
+        draft.startDateKey.isEmpty ? draft.doRowLabel
+            : DateFormatters.relativeDate(from: draft.startDateKey, withinDays: CadenceCaptureFieldInventory.relativeDateCutoffDays)
+    }
+
+    /// Whether the do date is today, which is the one day it gets its own glyph and hue.
+    private var doDateIsToday: Bool {
+        !draft.startDateKey.isEmpty && draft.startDateKey == DateFormatters.todayKey()
+    }
+
+    /// The glyph a chip draws, which is the field's own except on the day the do date is today.
+    ///
+    /// `CadenceBoardCardMetadata.doDateIcon` is read rather than respelled — `sun.max.fill` is the
+    /// do date's glyph everywhere in this app and this is not the place to type it a tenth time.
+    private func chipSymbol(_ field: CadenceCaptureField) -> String {
+        field == .doDate && draft.kind == .task && doDateIsToday
+            ? CadenceBoardCardMetadata.doDateIcon : field.symbol
+    }
+
+    /// **The glyph's colour, and only the glyph's** ([[T-3237]] item 3).
+    ///
+    /// Every hue here is one the app already owns: `Theme.red`, `Theme.amber`, the list's own
+    /// `colorHex` through its choice, and `Theme.priorityColor` for the marks. Nothing new is
+    /// invented, and a field with nothing to say in colour says it in `Theme.dim` rather than
+    /// borrowing a meaning from a neighbour.
+    ///
+    /// **The do date is red by default and amber only on today**, which is the owner's call and is
+    /// deliberately NOT `CadenceBoardCardMetadata`'s always-amber identity. The board card is a
+    /// readout of a saved task; this card is the thing you are composing, where the do date is the
+    /// commitment you are making and today is the one answer worth singling out.
+    private func chipTint(_ field: CadenceCaptureField) -> Color {
+        switch field {
+        case .doDate:
+            guard draft.kind == .task else { return Theme.dim }
+            return doDateIsToday ? Theme.amber : Theme.red
+        case .dueDate: return Theme.red
+        case .list: return listChoices.first { $0.id == draft.listToken }?.color ?? Theme.dim
+        case .priority: return Theme.priorityColor(CadenceCaptureFieldInventory.priority(for: draft))
+        case .tags, .repeatRule, .estimate, .calendar, .location: return Theme.dim
+        }
+    }
+
     private func chipTitle(_ field: CadenceCaptureField) -> String {
         switch field {
         case .doDate:
             if draft.kind == .event { return draft.scheduleLabel }
-            return draft.scheduledStartMin < 0 ? draft.doRowLabel : "\(draft.doRowLabel) · \(draft.doTimeLabel)"
-        case .dueDate: return "Due \(draft.dueRowLabel)"
+            // **The duration rides this chip** ([[T-3237]] item 4): `Oct 19 · 30m`. It belongs to
+            // the do date, it costs no row of its own, and one tap opens both.
+            //
+            // A timed task takes it through `doTimeLabel`, which has always appended the length
+            // after the clock time. An UNTIMED one has no such label, so the estimate is appended
+            // here — and only when it was set deliberately, since the draft carries a default
+            // estimate that nobody chose and an all-day task has no length to state.
+            guard draft.scheduledStartMin >= 0 else {
+                guard isSet(.estimate) else { return doDayText }
+                return "\(doDayText) · \(CadenceTaskPresentationSupport.estimateLabel(minutes: draft.estimateMinutes))"
+            }
+            return "\(doDayText) · \(draft.doTimeLabel)"
+        case .dueDate:
+            // No "Due" in front of it. The glyph beside it is the app's red due-date flag, and on
+            // a line that sits the two dates side by side a word on one chip and not the other
+            // reads as a difference between the fields rather than as a label.
+            return draft.dueDateKey.isEmpty ? draft.dueRowLabel
+                : DateFormatters.relativeDate(from: draft.dueDateKey, withinDays: CadenceCaptureFieldInventory.relativeDateCutoffDays)
         case .list:
             let list = listChoices.first { $0.id == draft.listToken }?.name ?? "Inbox"
             return draft.sectionName == TaskSectionDefaults.defaultName ? list : "\(list) · \(draft.sectionName)"
@@ -413,6 +613,16 @@ struct CadenceScheduleCaptureCard<NotesField: View>: View {
                 ))
                 if !draft.isAllDay {
                     CadenceTimeRoller(minutes: Binding(get: { draft.startMin }, set: { draft.moveStart(toMinute: $0) })) {}
+                }
+                if draft.kind == .task {
+                    // **Reachable from inside the card, not only from `...`** ([[T-3237]] item 4).
+                    // The chip states the date and the length together, so the editor the chip
+                    // opens has to offer both — otherwise the duration is readable where it is not
+                    // settable. `.estimate` stays in the overflow menu as well: that is the way in
+                    // for a task with no do date, whose chip does not exist yet.
+                    Divider()
+                    Text(CadenceCaptureField.estimate.title).cadenceFont(.controlLabel)
+                    EstimatePickerPopoverContent(value: estimateBinding, unsetValueLabel: "Clear estimate", onClose: {})
                 }
                 if draft.kind == .event {
                     Text("Ends").cadenceFont(.controlLabel)
@@ -484,16 +694,9 @@ struct CadenceScheduleCaptureCard<NotesField: View>: View {
                 isPresented: editorIsOpen
             )
         case .estimate:
-            EstimatePickerPopoverContent(value: Binding(
-                get: { draft.estimateMinutes },
-                set: { value in
-                    if value == 0 { CadenceCaptureFieldInventory.clear(.estimate, draft: &draft) }
-                    else {
-                        draft.setEstimate(value)
-                        draft.estimateIsExplicit = true
-                    }
-                }
-            ), unsetValueLabel: "Clear estimate", onClose: { activeField = nil })
+            EstimatePickerPopoverContent(
+                value: estimateBinding, unsetValueLabel: "Clear estimate", onClose: { activeField = nil }
+            )
         case .calendar:
             CadenceChoicePopoverList(
                 rows: calendarChoices.map {
@@ -564,6 +767,18 @@ struct CadenceScheduleCaptureCard<NotesField: View>: View {
                 draft.startDateKey = key
                 if draft.kind == .task { draft.endDateKey = key }
                 draft.keepEndAfterStart()
+            }
+        })
+    }
+
+    /// Spelled once, because the estimate is now editable from two places — its own popover and
+    /// the do-date editor the chip opens.
+    private var estimateBinding: Binding<Int> {
+        Binding(get: { draft.estimateMinutes }, set: { value in
+            if value == 0 { CadenceCaptureFieldInventory.clear(.estimate, draft: &draft) }
+            else {
+                draft.setEstimate(value)
+                draft.estimateIsExplicit = true
             }
         })
     }
