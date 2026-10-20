@@ -43,10 +43,8 @@ struct TimelineDayCanvas: View {
     @State private var dropPreviewTaskID: UUID? = nil
     @State private var dropPreviewStartMin: Int? = nil
     @State private var selectedTaskID: UUID? = nil
-    @State private var selectedBundleID: UUID? = nil
     @State private var selectedEventID: String? = nil
     @State private var activeDragTaskID: UUID? = nil
-    @State private var activeDragBundleID: UUID? = nil
     @State private var dragYOffset: CGFloat = 0
     @AppStorage(CalendarWorkHoursPreferences.startMinuteKey) private var workHoursStartMinute = CalendarWorkHoursPreferences.defaultStartMinute
     @AppStorage(CalendarWorkHoursPreferences.endMinuteKey) private var workHoursEndMinute = CalendarWorkHoursPreferences.defaultEndMinute
@@ -84,17 +82,7 @@ struct TimelineDayCanvas: View {
                 dropDelegate: TimelineDropDelegate(
                     metrics: metrics,
                     allTasks: allTasks,
-                    // [[T-3170]]: STARVED, not cut. `TimelineDropDelegate` lives in
-                    // `TimelineDropInteractionSupport.swift`, which is Codex-leased AND holds real
-                    // unlanded work on `codex/leased-followup-batch` (+13 -1, `0efe3ade` is not an
-                    // ancestor of main) — the one path in this pass where the staleness test
-                    // produced a genuine refusal rather than a false one. So the delegate keeps its
-                    // Block parameters and this canvas hands it nothing: no block list to find a
-                    // dragged id in, and a drop callback that cannot fire. The next agent granted
-                    // that file deletes the four parameters and these two literals together.
-                    allBundles: [],
                     onDropTaskAtMinute: onDropTaskAtMinute,
-                    onDropBundleAtMinute: { _, _ in },
                     onDropAllDayEventAtMinute: onDropAllDayEventAtMinute,
                     // [[T-3170]]: no task block draws a bundle shelf any more, so no region of
                     // the canvas defers a task drop to one — and the delegate's parameter for
@@ -103,9 +91,7 @@ struct TimelineDayCanvas: View {
                     previewTaskID: $dropPreviewTaskID,
                     previewStartMin: $dropPreviewStartMin,
                     activeDragTaskID: $activeDragTaskID,
-                    activeDragBundleID: $activeDragBundleID,
                     selectedTaskID: $selectedTaskID,
-                    selectedBundleID: $selectedBundleID,
                     dragYOffset: $dragYOffset
                 ),
                 onTap: resetCanvasSelection
@@ -195,8 +181,6 @@ struct TimelineDayCanvas: View {
             selectedTaskID: &selectedTaskID,
             selectedEventID: &selectedEventID,
             activeDragTaskID: &activeDragTaskID,
-            selectedBundleID: &selectedBundleID,
-            activeDragBundleID: &activeDragBundleID,
             draft: &draftSelection,
             showNewTaskPopover: &showNewTaskPopover
         )
@@ -205,14 +189,10 @@ struct TimelineDayCanvas: View {
     private func clearCreateGridSelection() {
         clearDraftCreation()
         selectedTaskID = nil
-        selectedBundleID = nil
         activeDragTaskID = nil
-        activeDragBundleID = nil
     }
 
     private func beginDraftSelection(startMin: Int, endMin: Int) {
-        selectedBundleID = nil
-        activeDragBundleID = nil
         TimelineDayCanvasStateSupport.beginDraftSelection(
             startMin: startMin,
             endMin: endMin,
@@ -234,7 +214,6 @@ struct TimelineDayCanvas: View {
     private func selectTaskBlock() {
         clearDraftCreation()
         selectedEventID = nil
-        selectedBundleID = nil
     }
 
     private func finishDraftCreation() {

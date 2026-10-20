@@ -87,8 +87,6 @@ enum TimelineDayCanvasStateSupport {
         selectedTaskID: inout UUID?,
         selectedEventID: inout String?,
         activeDragTaskID: inout UUID?,
-        selectedBundleID: inout UUID?,
-        activeDragBundleID: inout UUID?,
         draft: inout TimelineDraftSelection?,
         showNewTaskPopover: inout Bool
     ) {
@@ -99,8 +97,6 @@ enum TimelineDayCanvasStateSupport {
         )
         selectedTaskID = nil
         activeDragTaskID = nil
-        selectedBundleID = nil
-        activeDragBundleID = nil
     }
 }
 #endif
