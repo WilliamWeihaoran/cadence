@@ -402,6 +402,55 @@ struct CadenceTodayTimelineDraftCreationTests {
             "an unguarded setter over the draft is the resurrection path"
         )
     }
+
+    /// **[[T-3246]], the measured residual [[T-3240]] left.** The handle receives its gesture now,
+    /// but the same touch is still reported to the popover as an outside tap, so the editor went
+    /// down while the drag ran and the owner had to tap the block again to get it back.
+    ///
+    /// **Two ways of holding it open are measured dead ends, and the second is the new one.**
+    /// `interactiveDismissDisabled()` pushes the presentation out of its popover representation —
+    /// the panel renders clipped off the pane with Cancel and Add unreachable. *Refusing the
+    /// write* does nothing at all: with a `Binding` whose setter dropped **every** `false`, an
+    /// outside tap on the canvas still took the popover down (`Cadence-iPadPro11`, 2026-10-19).
+    /// SwiftUI dismisses first and tells the binding after. So the dismissal is left alone and the
+    /// editor is put back when the adjustment ends.
+    ///
+    /// **The range comparison is the load-bearing half, not the re-presentation.** "A drag on the
+    /// block ended" also describes a vertical scroll that started on the block, and raising a
+    /// popover on that is a worse defect than the one being fixed. Only a touch that moved an edge
+    /// gets the editor back. Both halves are pinned: a reader who keeps the gesture and drops the
+    /// comparison has swapped one bug for another.
+    ///
+    /// Source text for the same reason the two pins above are: the column is `#if os(iOS)`, and no
+    /// macOS test run can name its symbols. Measured on `Cadence-iPadPro11` — the editor returned
+    /// by itself reading `Estimate 1h 30m`, the adjusted range.
+    @Test("An adjusted draft gets its editor back without a second tap")
+    func anAdjustedDraftGetsItsEditorBackWithoutASecondTap() {
+        let timeline = timelineColumnCode()
+        #expect(timeline.contains(".simultaneousGesture(draftAdjustmentObserver)"))
+        #expect(timeline.contains("private var draftAdjustmentObserver: some Gesture"))
+        #expect(timeline.contains("@State private var draftRangeUnderTouch: (start: Int, end: Int)?"))
+
+        // The comparison, collapsed on whitespace so a reflow of the closure is not a failure.
+        // Without it the observer re-raises the editor for any drag that ends on the block, a
+        // vertical scroll of the timeline included.
+        let collapsed = timeline.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+        #expect(
+            collapsed.contains(
+                "guard adjusted.startMin != before.start || adjusted.endMin != before.end else { return }"
+            ),
+            "only a touch that moved an edge may put the editor back"
+        )
+
+        #expect(
+            !timeline.contains("interactiveDismissDisabled"),
+            "measured worse than the bug: the panel loses its popover representation"
+        )
+        #expect(
+            timeline.contains(".popover(isPresented: $isDraftEditorPresented"),
+            "the dismissal is left alone — a refusing binding was measured to do nothing"
+        )
+    }
 }
 
 /// The draft over an event that **already exists** — the model half of [[T-3171]]'s first

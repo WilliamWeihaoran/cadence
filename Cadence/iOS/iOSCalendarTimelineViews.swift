@@ -1025,6 +1025,11 @@ private struct iOSCalendarTimelineDayColumn: View {
     @State private var draft: CadenceScheduleDraft?
     @State private var isDraftEditorPresented = false
 
+    /// The draft's minute range as the touch now on the block found it, or `nil` when no touch is
+    /// on it — the one thing that tells an edge adjustment apart from a scroll that happened to
+    /// start on the block ([[T-3246]]). See `draftAdjustmentObserver`.
+    @State private var draftRangeUnderTouch: (start: Int, end: Int)?
+
     /// The draft's minute range **as the press left it**, held for as long as the press-drag that
     /// is sizing it is still down ([[T-3239]]).
     ///
@@ -1329,6 +1334,7 @@ private struct iOSCalendarTimelineDayColumn: View {
                 height: blockHeight(start: current.startMin, end: current.isAllDay ? current.startMin + 60 : current.endMin)
             )
             .offset(x: 9, y: yOffset(for: current.isAllDay ? CadenceScheduleSupport.calendarStartHour * 60 : current.startMin))
+            .simultaneousGesture(draftAdjustmentObserver)
             .popover(isPresented: $isDraftEditorPresented, arrowEdge: .trailing) {
                 iOSTimelineDraftPanelHost(
                     draft: draftBinding(fallingBackTo: current),
@@ -1343,19 +1349,63 @@ private struct iOSCalendarTimelineDayColumn: View {
                 // block down instead ([[T-3240]]). Enabling background interaction makes the
                 // presentation non-modal, so a touch aimed at the block reaches the block.
                 //
-                // **Measured, and it is only half of what one would want.** The touch now reaches
-                // the handle *and* is still reported as an outside-tap dismissal, so the editor
-                // closes while the adjustment runs — the block survives it, keeps its handles, and
-                // a tap on the block re-opens the editor, which is the behaviour this fix is for.
-                // `interactiveDismissDisabled()` would hold the editor open and was tried: it
-                // pushes the presentation out of its popover representation entirely, and the
-                // panel renders clipped off the right edge of the pane with Cancel and Add
-                // unreachable (measured on `Cadence-iPadPro11`, 2026-10-19). An editor that cannot
-                // be dismissed or committed is a worse bug than the one being fixed, so the
-                // dismissal stays and the teardown is what moved.
+                // **The touch reaches the handle and is still an outside-tap dismissal, and
+                // this presentation cannot be talked out of that** ([[T-3246]]). Two ways of
+                // holding it open were tried on `Cadence-iPadPro11` and both are recorded here so
+                // neither is tried a third time:
+                //
+                //   * `interactiveDismissDisabled()` pushes the presentation out of its popover
+                //     representation entirely — the panel renders clipped off the right edge of
+                //     the pane with Cancel and Add unreachable (2026-10-19). An editor that can be
+                //     neither dismissed nor committed is worse than the bug.
+                //   * **Refusing the write** — a `Binding` whose setter drops `false` — does
+                //     nothing at all. Measured with the setter refusing *every* dismissal, not
+                //     just the adjusting one: an outside tap on the canvas still took the popover
+                //     down (2026-10-19). SwiftUI dismisses the presentation and then tells the
+                //     binding; the binding is a notification on the way out, not the decision.
+                //
+                // So the dismissal is left alone and `draftAdjustmentObserver` puts the editor
+                // back when the adjustment ends. Holding it open *through* the drag is a different
+                // presentation, not another flag or another binding on this one.
                 .presentationBackgroundInteraction(.enabled)
             }
         }
+    }
+
+    /// Puts the editor back on the draft the touch just adjusted ([[T-3246]]).
+    ///
+    /// **It watches; it never moves anything.** `iOSTimelineDraftBlock.edgeHandle` owns the
+    /// adjustment and keeps every callback it had — this is `.simultaneousGesture`, so it
+    /// recognises *alongside* that drag rather than instead of it, and the only state it writes is
+    /// the range it found and the presentation it restores.
+    ///
+    /// **Why restoring, and not holding open.** The popover goes down on the touch that starts the
+    /// drag, and the two ways of stopping that are both measured dead ends — see the note at the
+    /// presentation. What is left is the owner-visible half of the defect: the editor was gone when
+    /// the finger lifted, and getting it back meant a second tap. It comes back by itself now, on
+    /// the block at its adjusted range.
+    ///
+    /// **Why the range comparison, and not simply "a drag on the block ended".** A vertical scroll
+    /// of the timeline can start on the block, and a drag of the block's body is not an adjustment
+    /// either; raising the editor for those would be a popover the user never asked for, on a
+    /// gesture aimed at something else. Only a touch that actually moved an edge gets the editor
+    /// back, and the range under the finger when it went down is how that is known.
+    ///
+    /// `minimumDistance: 1` matches `edgeDrag`'s, so a tap is not a one-pixel adjustment; a tap on
+    /// the canvas already re-opens the editor through `createSurface`, which is the door taps use.
+    private var draftAdjustmentObserver: some Gesture {
+        DragGesture(minimumDistance: 1)
+            .onChanged { _ in
+                guard draftRangeUnderTouch == nil else { return }
+                draftRangeUnderTouch = draft.map { ($0.startMin, $0.endMin) }
+            }
+            .onEnded { _ in
+                let before = draftRangeUnderTouch
+                draftRangeUnderTouch = nil
+                guard let before, let adjusted = draft else { return }
+                guard adjusted.startMin != before.start || adjusted.endMin != before.end else { return }
+                isDraftEditorPresented = true
+            }
     }
 
     /// The draft as the non-optional binding both the block and the editor take, with the drawn
@@ -1393,6 +1443,9 @@ private struct iOSCalendarTimelineDayColumn: View {
     /// commit, the cancel and nowhere else makes the teardown a decision rather than a side effect,
     /// and leaves the block adjustable while its editor is up.
     private func finishDraftCreation() {
+        // A gesture the system cancels never reaches `onEnded`, so the captured range is cleared
+        // here as well: a stale one would be compared against the *next* touch's draft.
+        draftRangeUnderTouch = nil
         isDraftEditorPresented = false
         draft = nil
     }
