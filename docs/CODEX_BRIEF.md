@@ -1,22 +1,35 @@
 # Codex working brief — Cadence
 
-You and Claude Code are both working on this repo. The split that keeps you out of each other's way:
+**Scope note, 2026-10-20: this file is the *audit and reporting* brief, not the working protocol.**
+It was written when Codex read and Claude wrote, and that is no longer the arrangement. Codex now
+writes code, in its own worktree, on a `codex/<topic>` branch, within a lease — and the coordinator
+lands it. The authority on how that works is **`docs/CODEX_WORKTREE.md`**, which is machine-read:
+`./scripts/codex-land.sh lease` parses its fenced ```lease``` block and nothing else. Read that file
+before writing anything; the three rules below are restated here only because getting them wrong is
+expensive, and they are not a substitute for it.
 
-**You read. Claude writes.**
-
-That is not a hierarchy, it is a conflict-avoidance rule. Claude runs 3–6 subagents that hold
-scratch copies of the tree and serialize on a single macOS test host behind a lock. Anything you
-edit, commit, or build collides with that.
+What survives unchanged is everything from "Work, in priority order" down. The audits, the report
+format and the `enum:` protocol are the reason this file exists, and none of them depends on who
+holds the pen.
 
 ## Hard rules
 
-- **Never edit a file.** No patches applied, no fixes, no "small cleanups".
-- **Never commit or push.**
+- **Write only inside the lease, and only in your own worktree.** The lease in
+  `docs/CODEX_WORKTREE.md` is the whole permission: a grant is **sub-file scoped unless it says
+  otherwise**, so being inside a granted file is not being inside the grant. Never write a path
+  another writer holds.
+- **Never touch `docs/TODO.md` or `docs/TODO_DONE.md`.** Append ticket entries to
+  `docs/CODEX_LEDGER_INBOX.md` instead — append-only, newest last. The coordinator folds them in
+  when it lands the branch. This is why you commit with plain `git commit` and not with
+  `scripts/agent-commit.sh`.
 - **Never run `xcodebuild`.** There is one macOS test host, it is lock-protected, and a second one
-  corrupts the shared app-group container.
-- **Never launch the app or a simulator.** The user runs their own Cadence from `/Applications`.
+  corrupts the shared app-group container. The coordinator runs the tests before landing.
+- **Never launch the app or a simulator.** The owner runs their own Cadence from `/Applications`.
 - Swift probes (`swift -e '...'`) are fine and encouraged — they are what makes a finding checkable.
 - Read-only shell (`rg`, `grep`, `git show`, `git log`) is fine.
+
+Claude's agents hold scratch copies of the tree and serialize on that one test host behind a lock,
+which is the whole reason for the separate worktree: disjoint filesystems cannot interleave.
 
 Everything you produce goes to the user as text. Claude verifies it before acting on it. Roughly
 1 in 10 claims has needed correction, so expect to be checked — that is the process working, not
@@ -48,9 +61,12 @@ test counts are plausible, and that nothing landed half-applied. Read `git show 
 
 This is cheap for you and expensive for Claude to catch on itself.
 
-### 2. Triage `docs/TODO.md` — 92 open, growing faster than it shrinks
+### 2. Triage `docs/TODO.md` — more findings have never been the constraint
 
-Roughly 35 tickets were filed on 2026-08-27 and ~7 closed. More findings are not the constraint
+*(The counts in this section are from 2026-08: 92 open, ~35 filed on 2026-08-27 against ~7 closed.
+They are kept because they are what the argument was made on. For the current numbers run
+`./scripts/ledger-view.sh brief` — 129 active entries of 1236 on 2026-10-20 — and never read
+`docs/TODO.md` whole; it is 3.8 MB.)* More findings are not the constraint
 right now. Produce:
 
 - **Duplicates and overlaps** to merge, with which ticket should absorb which.
@@ -60,12 +76,18 @@ right now. Produce:
   needs to know what actually blocks it. Separate *data loss* from *wrong behaviour* from *polish*.
 - Anything filed as a bug that is really a decision.
 
-### 3. Write up the pending decision tickets
+### 3. Write up the pending decision tickets — **done; the shape is still the point**
 
-Four are explicitly marked (search `DECI` in `docs/TODO.md`), plus T-367, T-378 and T-390 are
+Four were explicitly marked (search `DECI` in the ledger), plus T-367, T-378 and T-390 were
 decisions wearing bug clothes. For each: the options, what each costs, what existing code already
-assumes, and a recommendation. No code. These are blocked on the user, not on Claude — your write-up
-is what unblocks them.
+assumes, and a recommendation. No code. These are blocked on the owner, not on Claude — the
+write-up is what unblocks them.
+
+**That batch was written and the owner answered it.** The two memos are
+`docs/DECISIONS_PENDING.md` and `docs/DECISIONS_CALENDAR_LINKS_AND_LIST_DELETION.md`; between them
+exactly two questions are still open (T-481 and T-1117), the rest are closed. Read either as the
+worked example of the format before writing the next one — in particular, both record where the
+recommendation was *not* taken, which is the part that makes them worth re-reading.
 
 ### 4. Further audits — only on uncovered ground
 
@@ -135,9 +157,9 @@ scarcest input in the project — and writing them up longhand is the expensive 
   should be tighter" is a preference, and the fix must not be spelled as a number by anyone but the
   user — twice this session an agent correctly refused to re-derive a spacing value because it would
   have silently retracked text nobody had looked at.
-- **Check `docs/TODO.md` first** and write "extends T-NNN" rather than re-filing. Roughly 40 tickets
-  are open and ~270 archived; `docs/TODO_DONE.md` is near-complete above T-200 and near-empty below
-  it, so a miss there is not evidence a ticket is new.
+- **Check the ledger first** — `./scripts/ledger-view.sh brief`, never `docs/TODO.md` whole — and
+  write "extends T-NNN" rather than re-filing. `docs/TODO_DONE.md` is near-complete above T-200 and
+  near-empty below it, so a miss there is not evidence a ticket is new.
 - **Does an iOS twin exist?** If the same surface exists on both platforms, say whether they agree.
   Cross-platform copy and layout drift is the single most common defect shape here.
 
@@ -157,8 +179,8 @@ Claude, whose scarce resource is context, not reading ability. Measured 2026-08-
 agent cost 101k–173k tokens. Four screens ran ~19,000 lines. Every one of those you absorb is budget
 Claude spends fixing instead of looking.
 
-**This task is READ-ONLY. Edit nothing — no source, no `docs/TODO.md`, no `docs/TODO_DONE.md`.** The
-user withdrew repo-write access deliberately. Enumeration does not need it.
+**This task is READ-ONLY. Edit nothing — no source, no `docs/TODO.md`, no `docs/TODO_DONE.md`.**
+Enumeration does not need write access, and the lease is for implementation work, not for looking.
 
 ### Scope the screen first, and say what you scoped
 
@@ -193,9 +215,9 @@ the user's call.
 
 ### Deduplicate before reporting
 
-Read `docs/TODO.md` first. Write "extends T-NNN" rather than re-filing. ~40 tickets are open and ~270
-archived. `docs/TODO_DONE.md` is near-complete above T-200 and near-empty below it, so finding nothing
-there is **not** evidence a ticket is new.
+Check the ledger first — `./scripts/ledger-view.sh brief` and `show T-NNNN`, never `docs/TODO.md`
+whole. Write "extends T-NNN" rather than re-filing. `docs/TODO_DONE.md` is near-complete above T-200
+and near-empty below it, so finding nothing there is **not** evidence a ticket is new.
 
 ### Calibration
 
