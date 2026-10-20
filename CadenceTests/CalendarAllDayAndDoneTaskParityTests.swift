@@ -225,6 +225,36 @@ private final class FixedEventDaySource: CalendarEventDaySource {
         #expect(CadenceSourceScan.matchCount(#"prefix\(\d+\)"#, in: header) == 0)
     }
 
+    /// The Mac band (`CalDayHeaderView.allDayBannerContent`) orders its chips by the same shared
+    /// rule as iOS — events first — at an unbounded capacity, because its fixed-height band scrolls
+    /// and so hides nothing. It used to hand-roll tasks first. T-1474, macOS half.
+    @Test func theMacDayHeaderBandOrdersItsChipsByTheSharedRule() throws {
+        let raw = try CadenceSourceScan.sourceFile("Cadence/macOS/Views/CalendarPageMonthSupportViews.swift")
+        let code = CadenceSourceScan.codeOnly(raw)
+        #expect(code != raw)
+        #expect(code.count == raw.count)
+
+        let header = try #require(CadenceSourceScan.declarationBody("struct CalDayHeaderView", in: code))
+        #expect(
+            CadenceSourceScan.matchCount(
+                #"CadenceCalendarAllDayBandPriority\.split\(\s*allDayEvents: allDayEventItems\.count,\s*unscheduledTasks: unscheduledTasks\.count,\s*capacity: Self\.bandCapacity"#,
+                in: header
+            ) == 1,
+            "the Mac band no longer asks the shared all-day rule"
+        )
+        #expect(CadenceSourceScan.matchCount(#"static let bandCapacity = Int\.max\b"#, in: header) == 1,
+                "the Mac band's scrolling strip gained a cap")
+        let events = try #require(header.range(of: "ForEach(allDayEventItems.prefix(split.events))"))
+        let tasks = try #require(header.range(of: "ForEach(unscheduledTasks.prefix(split.tasks))"))
+        #expect(events.lowerBound < tasks.lowerBound, "the Mac band stacks its tasks above its all-day events")
+        // No second, unsplit pass over either list.
+        #expect(CadenceSourceScan.matchCount(#"ForEach\(unscheduledTasks\)"#, in: header) == 0)
+        #expect(CadenceSourceScan.matchCount(#"ForEach\(allDayEventItems\)"#, in: header) == 0)
+        // The band keeps its fixed scrolling frame: the order changed, not the geometry.
+        #expect(CadenceSourceScan.matchCount(#"\.frame\(height: calAllDayBannerHeight"#, in: header) == 1)
+        #expect(CadenceSourceScan.matchCount(#"ScrollView\(\.vertical"#, in: header) == 1)
+    }
+
     // MARK: - T-1474, the span rule
 
     /// **A timed event is never promoted to the strip, however long it runs.** The fixture runs

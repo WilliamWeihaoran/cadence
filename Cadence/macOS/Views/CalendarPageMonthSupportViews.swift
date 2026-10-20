@@ -475,6 +475,20 @@ struct CalDayHeaderView: View {
         allDayEvents.map { CalendarAllDayEventItem(event: $0) }
     }
 
+    /// The band's row budget. The Mac band is a fixed `calAllDayBannerHeight` frame around a
+    /// vertical `ScrollView`, so every chip stays reachable and nothing is capped: `.max` asks the
+    /// shared rule for its order (events first) without rationing anything. T-1474.
+    private static let bandCapacity = Int.max
+
+    /// Who goes first in the band, by the same `CadenceCalendarAllDayBandPriority` iOS uses.
+    private var split: CadenceCalendarMonthCellPriority.Split {
+        CadenceCalendarAllDayBandPriority.split(
+            allDayEvents: allDayEventItems.count,
+            unscheduledTasks: unscheduledTasks.count,
+            capacity: Self.bandCapacity
+        )
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             VStack(spacing: CadenceCalendarWeekdayHeaderMetrics.labelSpacing) {
@@ -515,11 +529,11 @@ struct CalDayHeaderView: View {
     private var allDayBannerContent: some View {
         ScrollView(.vertical, showsIndicators: false) {
             VStack(alignment: .leading, spacing: 2) {
-                ForEach(unscheduledTasks) { task in
-                    AllDayTaskChip(task: task, dayKey: DateFormatters.dateKey(from: date), todayKey: todayKey)
-                }
-                ForEach(allDayEventItems) { item in
+                ForEach(allDayEventItems.prefix(split.events)) { item in
                     AllDayEventChip(event: item.event)
+                }
+                ForEach(unscheduledTasks.prefix(split.tasks)) { task in
+                    AllDayTaskChip(task: task, dayKey: DateFormatters.dateKey(from: date), todayKey: todayKey)
                 }
             }
             .padding(.horizontal, 4)
