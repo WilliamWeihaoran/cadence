@@ -21,13 +21,14 @@ Nothing links to this file; it is kept as the record of a pause that ended, not 
 Both are about how a many-agent run goes wrong. Only one of them is written anywhere an agent
 actually reads, so they are kept here rather than dropped:
 
-- **Two agents allocated the same ticket id.** This one *is* in `docs/SESSION_HANDOFF.md` §5, with
-  the sweep that catches it — across every local *and* remote ref, not just the filesystem. It is
-  restated here only so this file is not a dead end.
+- **Two agents allocated the same ticket id.** This one *is* carried where agents read it:
+  `docs/AGENT_BRIEF.md`, under *Committing*, with the sweep that catches it — across every local
+  *and* remote ref, not just the filesystem, because an entry committed to a branch will not show
+  in a file read. Restated here only so this file is not a dead end.
 - **An agent tree is a snapshot and HEAD moves.** Copying a tree wholesale reverts landed work; it
-  happened four times in one day. Take each agent's own files, or ask for a patch. The handoff
-  carries the neighbouring warning — that a sibling's report about a dirty file is a snapshot, not
-  a current fact — but **not this one**, which is why it is spelled out here.
+  happened four times in one day. Take each agent's own files, or ask for a patch. The general
+  rules carry the neighbouring warning — that a sibling's report about a dirty file is a snapshot,
+  not a current fact — but **not this one**, which is why it is spelled out here.
 
 ## The one thing in it that never landed
 
