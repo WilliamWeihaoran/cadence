@@ -44,15 +44,20 @@ enum MarkdownTaskEmbedDrawing {
         let rect: NSRect
     }
 
+    /// How far in from each edge of the text container the card is drawn. Read by
+    /// `MarkdownInlineTaskPanelLayout`, so the panel that opens under the card is the width of the
+    /// card rather than of a second, nearly identical rule ([[T-3243]]).
+    static let cardHorizontalInset: CGFloat = 8
+
     static func cardRect(
         forLineRect lineRect: NSRect,
         textContainerWidth: CGFloat,
         task: MarkdownTaskEmbedRenderInfo
     ) -> NSRect {
-        let maxWidth = max(160, textContainerWidth - 16)
+        let maxWidth = max(160, textContainerWidth - cardHorizontalInset * 2)
         let width = min(maxWidth, preferredCardWidth(for: task, maxWidth: maxWidth))
         return NSRect(
-            x: lineRect.minX + 8,
+            x: lineRect.minX + cardHorizontalInset,
             y: lineRect.minY + 6,
             width: width,
             height: task.cardHeight

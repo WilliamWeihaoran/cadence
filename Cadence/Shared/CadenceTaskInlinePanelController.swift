@@ -44,6 +44,36 @@ enum CadenceTaskInlinePanelReservation {
         )
     }
 
+    /// **How far the note has to scroll to put a focused panel field, and the panel's Save and
+    /// Cancel under it, clear of the keyboard** ([[T-3243]]).
+    ///
+    /// The panel is a subview of the note's text view, which SwiftUI's keyboard avoidance does not
+    /// reach: focusing the panel's title or notes field raises the keyboard straight over the
+    /// panel's action row, and nothing scrolls it clear. The caller hands in the rects it measured
+    /// and applies the returned delta to its own scroll offset, so the decision is one rule that a
+    /// test can drive rather than UIKit geometry read off a screenshot.
+    ///
+    /// Everything is in one coordinate space, y growing downward, and `visibleRect` is what is
+    /// left of the note once the keyboard has taken its bite. The focused field wins when both
+    /// cannot fit: a user typing must see what they are typing, even if Save stays hidden.
+    /// Positive scrolls the note down (content up); zero means it already reads.
+    static func keyboardRevealOffset(
+        focusedRect: CGRect,
+        panelFrame: CGRect,
+        visibleRect: CGRect
+    ) -> CGFloat {
+        guard visibleRect.height > 0 else { return 0 }
+        // The field was scrolled off the top: bring it back before worrying about the buttons.
+        if focusedRect.minY < visibleRect.minY { return focusedRect.minY - visibleRect.minY }
+        let withActions = focusedRect.union(
+            CGRect(x: panelFrame.minX, y: panelFrame.maxY, width: max(0, panelFrame.width), height: 0)
+        )
+        let target = withActions.height <= visibleRect.height ? withActions : focusedRect
+        guard target.maxY > visibleRect.maxY else { return 0 }
+        // Never take the focused field off the top to make room for the rest of the panel.
+        return min(target.maxY - visibleRect.maxY, focusedRect.minY - visibleRect.minY)
+    }
+
     /// **Keeps a centred canvas where it was.** TextKit 1 counts `paragraphSpacing` inside the line
     /// fragment rect, and the iOS editor centres a block canvas in that rect
     /// (`iOSMarkdownBlockCanvas.blockRect`). Growing the spacing by `reservedSpacing` therefore

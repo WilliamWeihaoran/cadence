@@ -31,31 +31,37 @@ import SwiftUI
 ///    line from the note closes it.
 /// 3. iPhone is the other half and is not here; see the ticket.
 enum MarkdownInlineTaskPanelLayout {
-    /// The space between the card and the panel, and between the panel and the next line.
-    static let gap: CGFloat = 8
-    /// Widest the panel gets in a wide note. A note column can be very wide; a form stretched to
-    /// it reads worse than one at a form's width.
-    static let maxWidth: CGFloat = 460
-    static let minWidth: CGFloat = 160
+    /// The note's **content** width — the width the card is allowed, which the panel matches.
+    ///
+    /// This is the one part of the rule that is genuinely each platform's. iOS hands the shared
+    /// rule `UITextView.markdownContentWidth`, already net of the text container's insets and
+    /// line-fragment padding; an `NSTextContainer`'s width is not, and the card inside it is drawn
+    /// `cardHorizontalInset` in on each side. Taking those off here is what makes the panel the
+    /// width of the card it hangs under, which is [[T-3243]]'s answer to "which of the two is
+    /// right".
+    static func contentWidth(textContainerWidth: CGFloat) -> CGFloat {
+        textContainerWidth - MarkdownTaskEmbedDrawing.cardHorizontalInset * 2
+    }
 
     /// What the embed's paragraph adds below itself while the panel is open: the panel and a gap
     /// on either side of it, so the next line starts clear of the panel's bottom edge.
     static func reservedSpacing(panelHeight: CGFloat) -> CGFloat {
-        max(0, panelHeight) + gap * 2
+        CadenceTaskInlinePanelReservation.reservedSpacing(panelHeight: panelHeight)
     }
 
     /// Where the panel is drawn: under the card, on the card's left edge.
     static func panelFrame(cardRect: NSRect, textContainerWidth: CGFloat, height: CGFloat) -> NSRect {
-        NSRect(
-            x: cardRect.minX,
-            y: cardRect.maxY + gap,
-            width: panelWidth(textContainerWidth: textContainerWidth),
-            height: max(0, height)
+        CadenceTaskInlinePanelReservation.panelFrame(
+            cardRect: cardRect,
+            contentWidth: contentWidth(textContainerWidth: textContainerWidth),
+            height: height
         )
     }
 
     static func panelWidth(textContainerWidth: CGFloat) -> CGFloat {
-        min(maxWidth, max(minWidth, textContainerWidth - 16))
+        CadenceTaskInlinePanelReservation.panelWidth(
+            contentWidth: contentWidth(textContainerWidth: textContainerWidth)
+        )
     }
 }
 

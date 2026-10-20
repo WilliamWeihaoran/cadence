@@ -316,5 +316,190 @@ struct CadenceTaskInlinePanelControllerTests {
         #expect(surface.contains("iOSTaskInspectorSheet(task: task)"))
         #expect(surface.contains("selectedEmbeddedTask = task"))
     }
+    // MARK: - [[T-3243]]: the keyboard, Escape, and the rule that was spelled twice
+
+    /// **The panel's Save and Cancel, under the keyboard** ([[T-3243]] (1)).
+    ///
+    /// Reproduced on `Cadence-iPadPro11` before this existed: focusing the panel's title field
+    /// raised the keyboard over the panel's action row, and the note did not move. The panel is a
+    /// subview of the note's `UITextView`, which SwiftUI's keyboard avoidance does not reach.
+    ///
+    /// Everything below is in the note's content coordinates, y growing downward, and
+    /// `visibleRect` is what the keyboard has left of the note.
+    @Test func theNoteScrollsTheFocusedPanelFieldAndItsActionsClearOfTheKeyboard() {
+        // The bug itself: the field reads, the actions 100pt below the keyboard's top do not.
+        #expect(
+            CadenceTaskInlinePanelReservation.keyboardRevealOffset(
+                focusedRect: CGRect(x: 0, y: 100, width: 300, height: 30),
+                panelFrame: CGRect(x: 0, y: 60, width: 300, height: 340),
+                visibleRect: CGRect(x: 0, y: 0, width: 300, height: 300)
+            ) == 100
+        )
+        // The field itself under the keyboard: it comes up with the actions.
+        #expect(
+            CadenceTaskInlinePanelReservation.keyboardRevealOffset(
+                focusedRect: CGRect(x: 0, y: 350, width: 300, height: 30),
+                panelFrame: CGRect(x: 0, y: 60, width: 300, height: 340),
+                visibleRect: CGRect(x: 0, y: 0, width: 300, height: 300)
+            ) == 100
+        )
+    }
+
+    /// The field wins when the panel is too tall for both to fit: someone typing has to see what
+    /// they are typing, even at the price of Save staying hidden.
+    @Test func aPanelTooTallForTheRemainingSpaceKeepsTheFocusedFieldRatherThanItsActions() {
+        // Field at the top, actions 1000pt down: scrolling to the actions would take the field
+        // off the top, so nothing moves.
+        #expect(
+            CadenceTaskInlinePanelReservation.keyboardRevealOffset(
+                focusedRect: CGRect(x: 0, y: 10, width: 300, height: 30),
+                panelFrame: CGRect(x: 0, y: 0, width: 300, height: 1000),
+                visibleRect: CGRect(x: 0, y: 0, width: 300, height: 300)
+            ) == 0
+        )
+        // Field just below the keyboard's top, actions far below: the field alone comes up.
+        #expect(
+            CadenceTaskInlinePanelReservation.keyboardRevealOffset(
+                focusedRect: CGRect(x: 0, y: 290, width: 300, height: 30),
+                panelFrame: CGRect(x: 0, y: 0, width: 300, height: 900),
+                visibleRect: CGRect(x: 0, y: 0, width: 300, height: 300)
+            ) == 20
+        )
+    }
+
+    @Test func aPanelFieldAlreadyAboveTheKeyboardDoesNotMoveTheNote() {
+        #expect(
+            CadenceTaskInlinePanelReservation.keyboardRevealOffset(
+                focusedRect: CGRect(x: 0, y: 50, width: 300, height: 30),
+                panelFrame: CGRect(x: 0, y: 40, width: 300, height: 160),
+                visibleRect: CGRect(x: 0, y: 0, width: 300, height: 300)
+            ) == 0
+        )
+        // A keyboard that has taken the whole note leaves nothing to reveal into.
+        #expect(
+            CadenceTaskInlinePanelReservation.keyboardRevealOffset(
+                focusedRect: CGRect(x: 0, y: 50, width: 300, height: 30),
+                panelFrame: CGRect(x: 0, y: 40, width: 300, height: 160),
+                visibleRect: CGRect(x: 0, y: 0, width: 300, height: 0)
+            ) == 0
+        )
+    }
+
+    /// Scrolled the other way: a field above the top of what is left comes back down, and that
+    /// beats the actions below it.
+    @Test func aPanelFieldScrolledOffTheTopComesBackBeforeTheActionsDo() {
+        #expect(
+            CadenceTaskInlinePanelReservation.keyboardRevealOffset(
+                focusedRect: CGRect(x: 0, y: -40, width: 300, height: 30),
+                panelFrame: CGRect(x: 0, y: -60, width: 300, height: 500),
+                visibleRect: CGRect(x: 0, y: 0, width: 300, height: 300)
+            ) == -40
+        )
+    }
+
+    /// **[[T-3243]] (3): one rule, spelled once.** The Mac enum kept its own `gap`, `maxWidth`,
+    /// `minWidth`, `reservedSpacing`, `panelWidth` and `panelFrame` after the shared reservation
+    /// grew the same six.
+    ///
+    /// Which of the two widths was right is settled here: the Mac's `-16`. iOS hands the shared
+    /// rule a width already net of its insets; AppKit's text container width is not, and the card
+    /// is drawn `MarkdownTaskEmbedDrawing.cardHorizontalInset` in on each side, so taking those
+    /// off is what makes the panel the width of the card it hangs under.
+    @Test func theMacPanelLayoutIsTheSharedRuleAtTheCardsOwnWidth() throws {
+        #expect(MarkdownTaskEmbedDrawing.cardHorizontalInset == 8)
+        #expect(MarkdownInlineTaskPanelLayout.contentWidth(textContainerWidth: 300) == 284)
+        #expect(MarkdownInlineTaskPanelLayout.panelWidth(textContainerWidth: 300) == 284)
+        // Capped and floored by the shared rule, not by a second copy of it.
+        #expect(MarkdownInlineTaskPanelLayout.panelWidth(textContainerWidth: 1200) == 460)
+        #expect(MarkdownInlineTaskPanelLayout.panelWidth(textContainerWidth: 100) == 160)
+        #expect(MarkdownInlineTaskPanelLayout.reservedSpacing(panelHeight: 250) == 266)
+        #expect(
+            MarkdownInlineTaskPanelLayout.panelFrame(
+                cardRect: NSRect(x: 8, y: 40, width: 200, height: 80),
+                textContainerWidth: 300,
+                height: 250
+            ) == NSRect(x: 8, y: 128, width: 284, height: 250)
+        )
+        // Never wider than the card above it is allowed to be, which is the point of the 16.
+        let widestCard = MarkdownTaskEmbedDrawing.cardRect(
+            forLineRect: NSRect(x: 0, y: 0, width: 300, height: 100),
+            textContainerWidth: 300,
+            task: Self.embedInfo(id: Self.embedID).task
+        )
+        #expect(MarkdownInlineTaskPanelLayout.panelWidth(textContainerWidth: 300) >= widestCard.width)
+
+        let mac = CadenceSourceScan.codeOnly(
+            try CadenceSourceScan.sourceFile("Cadence/macOS/Editor/MarkdownInlineTaskPanelSupport.swift")
+        )
+        let layout = try #require(CadenceSourceScan.declarationBody("enum MarkdownInlineTaskPanelLayout", in: mac))
+        // The second copy is gone, not merely unused.
+        #expect(!layout.contains("static let gap"))
+        #expect(!layout.contains("static let maxWidth"))
+        #expect(!layout.contains("static let minWidth"))
+        #expect(layout.contains("CadenceTaskInlinePanelReservation.reservedSpacing("))
+        #expect(layout.contains("CadenceTaskInlinePanelReservation.panelFrame("))
+        #expect(layout.contains("CadenceTaskInlinePanelReservation.panelWidth("))
+    }
+
+    /// **[[T-3243]] (2): Escape, from the panel and from the note text** — the Mac rule, which iOS
+    /// had on neither side. Scanned for the reason named at the top of this file, and because a
+    /// hardware-key press is not something this repo's simulator tooling can inject.
+    @Test func escapeCancelsTheInlinePanelFromInsideItAndFromTheNoteText() throws {
+        let support = CadenceSourceScan.codeOnly(
+            try CadenceSourceScan.sourceFile("Cadence/iOS/iOSMarkdownInlineTaskPanelSupport.swift")
+        )
+        let host = try #require(
+            CadenceSourceScan.declarationBody("final class iOSMarkdownInlineTaskPanelHost", in: support)
+        )
+        #expect(host.contains("UIKeyCommand.inputEscape"))
+        #expect(host.contains("onCancelKey?()"))
+
+        let present = try #require(CadenceSourceScan.functionBody(named: "presentInlineTaskPanel", in: support))
+        #expect(present.contains("host.onCancelKey = close"))
+        #expect(present.contains("markdownTextView.inlineTaskPanelCancelHandler = close"))
+        // Closing takes the key away again, so Escape is offered only while there is a panel.
+        let made = try #require(CadenceSourceScan.functionBody(named: "makeInlineTaskPanelController", in: support))
+        #expect(made.contains("inlineTaskPanelCancelHandler = nil"))
+
+        let textView = CadenceSourceScan.codeOnly(
+            try CadenceSourceScan.sourceFile("Cadence/iOS/iOSMarkdownTextView.swift")
+        )
+        let offered = try #require(
+            CadenceSourceScan.declarationBody("private var inlineTaskPanelKeyCommands: [UIKeyCommand]", in: textView)
+        )
+        #expect(offered.contains("UIKeyCommand.inputEscape"))
+        #expect(offered.contains("inlineTaskPanelCancelHandler != nil"))
+        let keyCommands = try #require(
+            CadenceSourceScan.declarationBody("override var keyCommands: [UIKeyCommand]?", in: textView)
+        )
+        #expect(keyCommands.contains("inlineTaskPanelKeyCommands"))
+    }
+
+    /// The UIKit half of the keyboard fix: the host measures, the shared rule decides, the note
+    /// scrolls. Without the last of those the first two are a calculation nobody acts on.
+    @Test func theIOSHostScrollsTheNoteWithTheSharedKeyboardRule() throws {
+        let support = CadenceSourceScan.codeOnly(
+            try CadenceSourceScan.sourceFile("Cadence/iOS/iOSMarkdownInlineTaskPanelSupport.swift")
+        )
+        let reveal = try #require(
+            CadenceSourceScan.functionBody(named: "revealFocusedFieldAboveKeyboard", in: support)
+        )
+        #expect(reveal.contains("CadenceTaskInlinePanelReservation.keyboardRevealOffset("))
+        #expect(reveal.contains("textView.setContentOffset("))
+        // Moving between two of the panel's own fields raises no new keyboard, so the keyboard
+        // frame notifications alone would miss the second one.
+        #expect(support.contains("UIResponder.keyboardWillChangeFrameNotification"))
+        #expect(support.contains("UITextField.textDidBeginEditingNotification"))
+        #expect(support.contains("UITextView.textDidBeginEditingNotification"))
+
+        // The bottom inset the reveal adds has to come back off, or a closed panel leaves the
+        // note scrollable past its own end for the rest of the session.
+        let release = try #require(CadenceSourceScan.functionBody(named: "releaseKeyboardInset", in: support))
+        #expect(release.contains("applyKeyboardInset(0, to: textView)"))
+        let made = try #require(CadenceSourceScan.functionBody(named: "makeInlineTaskPanelController", in: support))
+        #expect(made.contains("host.releaseKeyboardInset()"))
+        #expect(try #require(CadenceSourceScan.functionBody(named: "keyboardWillHide", in: support))
+            .contains("releaseKeyboardInset()"))
+    }
 }
 #endif

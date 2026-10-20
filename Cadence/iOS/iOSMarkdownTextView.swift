@@ -72,7 +72,18 @@ final class iOSMarkdownTextView: UITextView {
             // `apply(_:)`, so there is nothing in the shared table to read. Sentence case by hand.
             command("\t", [], "Indent list", #selector(indentListCommand)),
             command("\t", [.shift], "Outdent list", #selector(outdentListCommand))
-        ] + (super.keyCommands ?? [])
+        ]
+            + inlineTaskPanelKeyCommands
+            + (super.keyCommands ?? [])
+    }
+
+    private var inlineTaskPanelKeyCommands: [UIKeyCommand] {
+        guard inlineTaskPanelCancelHandler != nil, inlineTaskPanelView != nil else { return [] }
+        return [UIKeyCommand(input: UIKeyCommand.inputEscape, modifierFlags: [], action: #selector(cancelInlineTaskPanel))]
+    }
+
+    @objc private func cancelInlineTaskPanel() {
+        inlineTaskPanelCancelHandler?()
     }
 
     private func command(
@@ -179,6 +190,15 @@ final class iOSMarkdownTextView: UITextView {
     /// The inline task panel's hosted view while one is open ([[T-1481]]); set by
     /// `iOSMarkdownInlineTaskPanelSupport`, and gone with the view.
     weak var inlineTaskPanelView: UIView?
+
+    /// **Escape, with the caret back in the note text and a panel still open** ([[T-3243]]).
+    ///
+    /// The Mac cancels the inline task panel on Escape from either side — the panel's own focus
+    /// (`onExitCommand`) or the note text (`CadenceTextView.cancelInlineTaskPanel`). iOS had
+    /// neither. The panel's side is `iOSMarkdownInlineTaskPanelHost`; this is the note's. Set
+    /// alongside `inlineTaskPanelView` when a panel opens, and cleared when it closes, so Escape
+    /// is offered only while there is something for it to cancel.
+    var inlineTaskPanelCancelHandler: (() -> Void)?
 
     /// **A touch on the inline task panel belongs to the panel.** Every recognizer attached to the
     /// text view — its own selection and caret taps, and the coordinator's reference, block and

@@ -69,11 +69,169 @@ struct iOSMarkdownInlineTaskPanelFrame: View {
     }
 }
 
-typealias iOSMarkdownInlineTaskPanelHost = UIHostingController<iOSMarkdownInlineTaskPanelFrame>
+/// **The panel's hosting controller, and the two things a view hung inside a `UITextView` does
+/// not get for free** ([[T-3243]]).
+///
+/// *Escape.* The Mac panel cancels on `onExitCommand`; a `UIHostingController` has no equivalent
+/// until someone gives it one. It sits in the responder chain above every control the panel draws
+/// (a view's next responder is its own view controller), so one `UIKeyCommand` here answers
+/// Escape from anywhere inside the panel. Escape with the caret back in the note text is the text
+/// view's own (`iOSMarkdownTextView.inlineTaskPanelCancelHandler`) — the Mac rule is that the key
+/// works from either side.
+///
+/// *Keyboard avoidance.* SwiftUI's reaches the note's editor, never a subview of its `UITextView`,
+/// so focusing the panel's title or notes field raised the keyboard straight over Save and Cancel
+/// with nothing scrolling them clear. Observed on `Cadence-iPadPro11` before this. The geometry is
+/// `CadenceTaskInlinePanelReservation.keyboardRevealOffset`; what is left here is reading UIKit's
+/// rects and moving the note.
+final class iOSMarkdownInlineTaskPanelHost: UIHostingController<iOSMarkdownInlineTaskPanelFrame> {
+    /// Escape, pressed with focus inside the panel. Set by the editor to the panel's close.
+    var onCancelKey: (() -> Void)?
+
+    /// The note the panel hangs in — the scroll view the keyboard fix drives, and the one the
+    /// controller's detach reaches back through to drop its Escape handler.
+    weak var noteTextView: UITextView?
+
+    /// The keyboard's frame in screen coordinates, `nil` once it has gone. Read from the
+    /// notification rather than `keyboardLayoutGuide`, because the guide tracks a view's own
+    /// layout and this view is positioned by frame inside a scroll view's content.
+    private var keyboardFrameInScreen: CGRect?
+
+    /// The bottom inset this host added to the note for the keyboard, so it can take exactly that
+    /// much off again.
+    private var addedBottomInset: CGFloat = 0
+
+    override var keyCommands: [UIKeyCommand]? {
+        [UIKeyCommand(input: UIKeyCommand.inputEscape, modifierFlags: [], action: #selector(cancelFromKeyCommand))]
+            + (super.keyCommands ?? [])
+    }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        let center = NotificationCenter.default
+        center.addObserver(
+            self,
+            selector: #selector(keyboardFrameWillChange(_:)),
+            name: UIResponder.keyboardWillChangeFrameNotification,
+            object: nil
+        )
+        center.addObserver(
+            self,
+            selector: #selector(keyboardWillHide),
+            name: UIResponder.keyboardWillHideNotification,
+            object: nil
+        )
+        // A move between two of the panel's own fields raises no new keyboard, and the second
+        // field can be the one under it.
+        center.addObserver(
+            self,
+            selector: #selector(editingDidBegin),
+            name: UITextField.textDidBeginEditingNotification,
+            object: nil
+        )
+        center.addObserver(
+            self,
+            selector: #selector(editingDidBegin),
+            name: UITextView.textDidBeginEditingNotification,
+            object: nil
+        )
+    }
+
+    @objc private func cancelFromKeyCommand() {
+        onCancelKey?()
+    }
+
+    @objc private func keyboardFrameWillChange(_ notification: Notification) {
+        keyboardFrameInScreen = (notification.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? NSValue)?.cgRectValue
+        scheduleKeyboardReveal()
+    }
+
+    @objc private func keyboardWillHide() {
+        keyboardFrameInScreen = nil
+        releaseKeyboardInset()
+    }
+
+    @objc private func editingDidBegin() {
+        scheduleKeyboardReveal()
+    }
+
+    /// Next runloop: the notification arrives before the field is first responder and before the
+    /// panel has laid out around it, and both are what the reveal measures.
+    private func scheduleKeyboardReveal() {
+        DispatchQueue.main.async { [weak self] in
+            self?.revealFocusedFieldAboveKeyboard()
+        }
+    }
+
+    private func revealFocusedFieldAboveKeyboard() {
+        guard let textView = noteTextView,
+              view.superview === textView,
+              !view.isHidden,
+              textView.window != nil else { return }
+        guard let focused = Self.firstResponder(in: view) else {
+            // The caret went back to the note text, which scrolls itself.
+            releaseKeyboardInset()
+            return
+        }
+
+        // What the keyboard is sitting on, in the note's own coordinates. `from: nil` is the text
+        // view's window, which is the space the notification's rect is in.
+        let keyboardTop = keyboardFrameInScreen.map { textView.convert($0, from: nil).minY }
+        applyKeyboardInset(max(0, textView.bounds.maxY - (keyboardTop ?? textView.bounds.maxY)), to: textView)
+
+        let inset = textView.adjustedContentInset
+        let visible = textView.bounds.inset(
+            by: UIEdgeInsets(top: inset.top, left: 0, bottom: inset.bottom, right: 0)
+        )
+        let delta = CadenceTaskInlinePanelReservation.keyboardRevealOffset(
+            focusedRect: textView.convert(focused.bounds, from: focused),
+            panelFrame: view.frame,
+            visibleRect: visible
+        )
+        guard abs(delta) > 0.5 else { return }
+        let lowest = max(-inset.top, textView.contentSize.height + inset.bottom - textView.bounds.height)
+        let offset = min(max(textView.contentOffset.y + delta, -inset.top), lowest)
+        guard abs(offset - textView.contentOffset.y) > 0.5 else { return }
+        textView.setContentOffset(CGPoint(x: textView.contentOffset.x, y: offset), animated: true)
+    }
+
+    /// **Why the note is given a bottom inset and not just a bigger offset.** The keyboard takes
+    /// visible height without adding content, so a panel near the end of a note has nowhere to
+    /// scroll to: the offset the reveal wants is past the end, and the note springs back. The
+    /// inset is the keyboard's overlap, added here and taken off again by `releaseKeyboardInset`,
+    /// so every one of these is reversed.
+    private func applyKeyboardInset(_ wanted: CGFloat, to textView: UITextView) {
+        let change = wanted - addedBottomInset
+        guard abs(change) > 0.5 else { return }
+        textView.contentInset.bottom += change
+        textView.verticalScrollIndicatorInsets.bottom += change
+        addedBottomInset = wanted
+    }
+
+    /// Gives back whatever `applyKeyboardInset` took. Safe to call when it took nothing, and
+    /// called on the way out as well as when the keyboard goes, so the note is never left inset.
+    func releaseKeyboardInset() {
+        guard let textView = noteTextView else {
+            addedBottomInset = 0
+            return
+        }
+        applyKeyboardInset(0, to: textView)
+    }
+
+    private static func firstResponder(in view: UIView) -> UIView? {
+        if view.isFirstResponder { return view }
+        for subview in view.subviews {
+            if let found = firstResponder(in: subview) { return found }
+        }
+        return nil
+    }
+}
 
 extension iOSMarkdownEditor.Coordinator {
     static func makeInlineTaskPanelController() -> CadenceTaskInlinePanelController<iOSMarkdownInlineTaskPanelHost> {
         CadenceTaskInlinePanelController { host in
+            host.releaseKeyboardInset()
+            (host.noteTextView as? iOSMarkdownTextView)?.inlineTaskPanelCancelHandler = nil
             host.view.removeFromSuperview()
         }
     }
@@ -86,10 +244,11 @@ extension iOSMarkdownEditor.Coordinator {
         makeContent: iOSMarkdownInlineTaskPanelContent
     ) -> Bool {
         if inlineTaskPanel.openTaskID == taskID { return true }
-        guard let content = makeContent(taskID, { [weak self, weak textView] in
+        let close: () -> Void = { [weak self, weak textView] in
             guard let self, let textView else { return }
             self.closeInlineTaskPanel(in: textView)
-        }) else { return false }
+        }
+        guard let content = makeContent(taskID, close) else { return false }
 
         let width = CadenceTaskInlinePanelReservation.panelWidth(contentWidth: textView.markdownContentWidth)
         inlineTaskPanel.present(taskID: taskID) {
@@ -107,12 +266,18 @@ extension iOSMarkdownEditor.Coordinator {
                     }
                 )
             )
+            host.noteTextView = textView
+            host.onCancelKey = close
             host.view.backgroundColor = .clear
             host.view.accessibilityIdentifier = iOSMarkdownInlineTaskPanel.accessibilityIdentifier
             let height = iOSMarkdownInlineTaskPanelFrame.idealHeight(of: content, width: width)
             host.view.frame = CGRect(x: 0, y: 0, width: width, height: height)
             textView.addSubview(host.view)
-            (textView as? iOSMarkdownTextView)?.inlineTaskPanelView = host.view
+            if let markdownTextView = textView as? iOSMarkdownTextView {
+                markdownTextView.inlineTaskPanelView = host.view
+                // Escape from the note text, once there is a panel for it to cancel.
+                markdownTextView.inlineTaskPanelCancelHandler = close
+            }
             return (host, height)
         }
         restyleForInlineTaskPanel(textView)
