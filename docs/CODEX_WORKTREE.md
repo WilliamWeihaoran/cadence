@@ -3106,6 +3106,17 @@ is disjoint from 456–744, which is what makes this grant safe to give while th
 out. Do not touch 405–414, `iOSTaskRowSubtaskRow`, `iOSTaskRowRepeatChip` or the estimate-chip
 typography; a change there collides with one or both branches.
 
+**SPENT 2026-10-20 (agent `n1menu`), and this is the record of what it was spent on.** [[T-3210]]'s
+iOS half landed. Every hunk sits at **511-731** on `main`'s side -- inside 456-744, inside
+`struct iOSTaskRowContextMenu`, and disjoint from 405-414. Re-checked at commit time with
+`git diff main:<path> <branch>:<path>`, never a three-dot diff: `codex/archive-typography-20261002`
+is still 132/4 and `codex/tracking-ui-retirement` still 45/4, each a single hunk headed `@@ -405,10`,
+so **both branches' only hunk on `main`'s side is still 405-414** and this change does not move a
+line either of them touches. `iOSTaskRowSubtaskRow`, `iOSTaskRowRepeatChip` and the estimate-chip
+typography were not touched. **Nothing was added to or removed from the fenced `lease` block** -- this
+section admits a LOCAL agent, which is prose-side by the rule above it, so there was no fence line
+to retire. The file remains Codex's: a later agent needs a new grant, and this one is used up.
+
 ### 2026-10-19 — lease widened for `codex/unified-editors` ([[T-3238]]), three test paths, one of them contested
 
 `codex-land.sh review` refused with `CODEX-LEASE-VIOLATION` on three paths. Decided path by path
