@@ -14,6 +14,15 @@ holds the pen.
 
 ## Hard rules
 
+- **ASK BEFORE WRITING OUTSIDE THE LEASE. Never write first and request the grant afterwards.**
+  Check the path against `./scripts/codex-land.sh lease` with Python `fnmatch` before you edit it.
+  If it is outside, STOP, say which paths you need and why, and wait. This is first because it is
+  the cheapest rule to follow and the most expensive to break, measured on 2026-10-20: one Codex
+  branch stopped at its boundary twice and asked -- two round trips, grants approved in seconds,
+  no collision. Another wrote 27 ungranted paths first, and untangling it took a retroactive grant,
+  three `codex-land.sh` refusals, a hand-written ledger line, and a near-miss where the obvious file
+  list would have reverted a sibling's in-flight work. Both produced good code. Only one was cheap
+  to accept, and a grant that follows the writing is not a grant.
 - **Write only inside the lease, and only in your own worktree.** The lease in
   `docs/CODEX_WORKTREE.md` is the whole permission: a grant is **sub-file scoped unless it says
   otherwise**, so being inside a granted file is not being inside the grant. Never write a path
