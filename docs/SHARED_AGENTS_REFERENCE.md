@@ -87,29 +87,25 @@ swatch or copy.
 
 ## `#expect`: Never Put Arithmetic Opposite a `CGFloat`
 
-`#expect(someCGFloat == 612 - 84)` **fails when the value is right.** `#expect` captures each
-operand of a binary expression separately, and an unannotated arithmetic expression beside a
-`CGFloat` is inferred as `Double` in that capture, so the macro compares a `CGFloat` box against a
-`Double` box and reports `(options.contentWidth → 528.0) == (612 - 84 → 528)`. Plain Swift
-evaluates the same expression to `true`.
-
-Measured against this toolchain in an isolated package (T-194): `== 528`, `== someCGFloatLet` and
-`== CGFloat(612 - 84)` all pass; `== 612 - 84` and `== 612.0 - 84.0` both fail; the identical
-arithmetic against a `Double` passes. So it is `CGFloat` **beside an arithmetic operand**, nothing
-about the numbers.
-
-Bind the arithmetic to a typed `let` first:
+`#expect(someCGFloat == 612 - 84)` **fails when the value is right**, and prints both sides as
+`528`. Bind the arithmetic to a typed `let` first:
 
 ```swift
 let expectedContentWidth: CGFloat = 612 - 84
 #expect(options.contentWidth == expectedContentWidth)
 ```
 
-This matters more than a spelling nit, because the failure mode is the *inverse* of the usual one:
-the assertion is red whatever the code does, so it has **zero** discriminating power and cannot be
+**Why this is in the Shared guide at all:** Cadence's metrics are almost all `CGFloat`, so every
+layout test in the repo can reach it, and the failure mode is the *inverse* of the usual one — the
+assertion is red whatever the code does, so it has zero discriminating power and cannot be
 mutation-killed. It shipped on the T-194 branch as the one failing test in that ticket's suite and
-read as an unimplemented feature. Cadence's metrics are almost all `CGFloat`, so this is reachable
-from every layout test in the repo. Comparisons with `>`, `>=` and a bare literal are unaffected.
+read as an unimplemented feature.
+
+**The mechanism, the measurements and the exact shapes that do and do not trigger it are written
+once**, in `docs/SUBAGENT_RUNBOOK_REFERENCE.md`, "`#expect(x == literal * literal)` can fail
+against a value that is actually equal". Both files carried a full account of the same
+`__checkBinaryOperation` defect under two ticket numbers (T-194 here, T-739 there) until
+2026-10-20; this one is the pointer now.
 
 ## Source-Scanning Tests: The Two Ways They Go Wrong
 
@@ -214,21 +210,27 @@ inventory any more; the old long inventory is preserved in `docs/CLAUDE_REFERENC
 
 Three reasons the helpers exist rather than the four inline spellings macOS had before `23eb847`:
 
-- **`attachList` is idempotent, and has to be.** `GoalContributionResolver` walks `listLinks`, so a
-  **Attach is idempotent for a reason this guide previously got wrong.** It is not that a
-  duplicate double-counts the percentage — `contributingTasks` dedupes by task `id`, so it
-  cannot. A duplicate breaks the things that count *links*: `linkedListCount`, the "N lists"
-  chip, the attribution line, two MCP DTOs, and a duplicate row in both inspectors. The old
-  claim's test passed under a mutation removing the guard.
-  is not a symptom anyone reports.
+- **`attachList` is idempotent, and the reason is not the one this guide used to give.** It is
+  not that a duplicate double-counts the list's tasks in the goal's percentage — it cannot,
+  because `contributingTasks` ends in a dedupe by task `id`. What a duplicate breaks is
+  everything that counts *links*: `linkedListCount`, the "N lists" chip, the attribution line,
+  two MCP DTOs, and a second identical row in both inspectors, so unlinking once would leave one
+  behind. The false claim stood in four places and the test named for it **passed under a
+  mutation removing the guard** — which is how it survived. (The lines above this one were a
+  half-spliced merge of the two readings, repaired 2026-10-20; the orphan tail read
+  "is not a symptom anyone reports.")
 - **`GoalLinkTarget` makes the model's invariant unspellable-wrong.** A `GoalListLink` points at
   exactly one of an area or a project; an enum with `.area` / `.project` cases cannot express both
   or neither, which a two-optional-parameters initialiser can.
-- **Detach severs the link's own references before deleting the row**, matching
-  `TrackingDeleteHelpers`: this codebase does not trust inverse back-population to have happened by
-  the time anything reads it, and `Goal.listLinks` / `Area.goalLinks` / `Project.goalLinks` are read
-  by the resolver on the very next render. Nothing on the other end is orphaned — the goal, the list
-  and its tasks all outlive the link.
+- **Detach deletes the row and edits nothing, and this bullet said the opposite until
+  2026-10-20.** It used to read *"severs the link's own references before deleting the row"*, on
+  the argument that this codebase does not trust inverse back-population. [[T-1321]] removed the
+  nulling: `GoalListLinkHelpers.links(of:)` and both of `GoalContributionResolver`'s raw walks
+  now filter `isDeleted`, so a deleted-but-unprocessed link is already out of every reading, and
+  a pre-commit edit is the thing Xcode 26's `rollback()` undoes late. Three readers, one
+  question. Nothing on the other end is orphaned either way — the goal, the list and its tasks
+  all outlive the link. `aDeletedLinkIsNotAnAttachedListInEitherReading` and
+  `aDeletedLinkIsNotCountedByTheProgressBarEither` exercise both filters directly.
 
 `GoalLinkPresentation` in the same file owns the read side (`contributionLabel`,
 `contributionMetric`, `attributionLine`, `inheritedListNote`), and the two lengths are deliberate:
