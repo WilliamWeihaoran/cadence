@@ -2,15 +2,28 @@
 
 ## Status — read this before anything else
 
-**This is a source of findings, not a tracker. `docs/TODO.md` is the authoritative task list.**
-A finding here becomes work only when someone files it as a `T-` ticket; nothing is tracked as
-open or closed in this file, and its checkboxes mean nothing.
+**This is a frozen audit snapshot, not a tracker and not a worklist.** `docs/TODO.md` is the
+authoritative task list. A finding here becomes work only when someone files it as a `T-` ticket;
+nothing is tracked as open or closed in this file, and its checkboxes mean nothing.
 
-**It is stale, and how stale is the point.** The audit was taken at `249b475` — two weeks and
-several hundred commits ago. The header used to say "nothing here has been fixed"; that has not
-been true for a while. Spot-checked 2026-08-27: at least P4-17 (an unpinned formatter locale),
-P5-09 (`normalizedSectionName` trimming in one copy only) and several Phase 4 findings have been
-overtaken by later work.
+**Frozen deliberately, and pinned.** The findings cite the symbols and file names that existed at
+`249b475`. Rewriting them to match today's tree would make the snapshot describe a tree it was not
+taken from, so it is not done — and the repository enforces that: the doc sweep in
+`TodayAndInboxNamingTests.noAgentFacingDocSpellsARetiredIPadName` allowlists this file by name, and
+asserts the allowlist still earns its place. **Do not "update" a finding here.** Correct the ticket
+it became, or file a new one.
+
+**It is stale, and how stale is the point.** The audit was taken on 2026-08 at `249b475`; by
+2026-10-20 that is roughly two months and some thousands of commits back. The header originally
+said "nothing here has been fixed", which stopped being true within days. Spot-checked twice:
+
+- 2026-08-27 — at least P4-17 (an unpinned formatter locale) and P5-09 (`normalizedSectionName`
+  trimming in one copy only) had already been overtaken.
+- 2026-10-20 — P4-01 and P4-02 are **gone from the tree entirely**: `taskPriorityRank` survives
+  only in a test comment saying it used to exist, and `classifyTasksByDate` has no occurrences at
+  all. P5-05's six spellings of minutes→"1h 30m" now have a shared home in
+  `DateFormatters.durationLabel`. **No systematic re-verification was done**, and nobody should
+  infer from those three that the rest have landed, or that they have not.
 
 So: **verify the finding itself before acting on it, not just its line number.** The instruction
 below to grep the symbol rather than trust the line is still right — it simply does not go far
@@ -18,8 +31,9 @@ enough. A finding that is already fixed reads exactly like one that is not.
 
 ## How to use this file
 
-This is a standing worklist produced by a read-only audit of Cadence, taken around commit
-`249b475`. It assumes you have no context beyond the repo itself.
+This was a standing worklist, produced by a read-only audit of Cadence taken around commit
+`249b475`. It assumed you had no context beyond the repo itself. Read it now as a record of what
+one careful pass over this codebase found, and of the shapes it found them in — not as a queue.
 
 Three sections:
 
