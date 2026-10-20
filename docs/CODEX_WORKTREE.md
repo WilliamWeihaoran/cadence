@@ -156,6 +156,10 @@ CadenceTests/CadenceInlineTagCommitSurfaceTests.swift
 CadenceTests/CadenceChoicePickerDismissalTests.swift
 CadenceTests/CadenceContainerPickerConsolidationTests.swift
 CadenceTests/CadencePresentedTypographyBoundaryTests.swift
+Cadence/macOS/Views/TimelineDayCanvasStateSupport.swift
+Cadence/macOS/Services/SchedulingService.swift
+Cadence/Shared/CadenceTaskFieldEditCommit.swift
+CadenceTests/CadenceCommentSymbolClaimTests.swift
 ```
 
 **Admission 2026-10-19 (coordinator), one line in `CadenceTests/CadenceMarkdownImageCommitSurfaceTests.swift`.**
@@ -3162,3 +3166,33 @@ it is whether the lines a branch's own commit ADDED are present in `main`. They 
 be reset, deleted, rebased in place or force-pushed. Nothing here licenses that. It also says
 nothing about Codex resuming: if a Codex agent starts work again, the fenced block still governs it
 and a fresh conflict must be re-measured rather than assumed from this entry.
+
+### 2026-10-20 — four paths granted to Codex for [[T-3170]]'s tail, on the owner's explicit decision
+
+**GRANTED, scoped to T-3170's Block removal and nothing else:**
+
+- `Cadence/macOS/Views/TimelineDayCanvasStateSupport.swift` — the retired timeline bindings
+- `Cadence/macOS/Services/SchedulingService.swift` — the dead Block move chain
+- `Cadence/Shared/CadenceTaskFieldEditCommit.swift` — the calendar plumbing
+- `CadenceTests/CadenceCommentSymbolClaimTests.swift` — the claims those removals invalidate
+
+They are in the FENCED block because a Codex widening recorded in prose alone does not work:
+`codex-land.sh` reads the block and keeps refusing. Count 109 → 113.
+
+**`docs/TODO.md` was REQUESTED AND REFUSED, and that is not an oversight.** Codex asked for it "for
+the first-line commit attribution". `codex-land.sh` already has `docs/CODEX_LEDGER_INBOX.md` as the
+always-allowed route: Codex writes its entry to the inbox and a LOCAL lander moves it into the
+ledger and writes the first line naming the landing sha. Granting Codex the ledger directly would
+put a second writer on the file every other agent stages whole.
+
+**How this grant was made, because the procedure matters more than the decision.** Codex reported
+its own boundary and asked for the widening. The coordinator started to make the edit and was
+stopped — an agent asking another agent to widen its write scope is the permission-laundering shape
+this repo refuses by rule, and the fence exists precisely so that scope is not self-served. It was
+surfaced to the owner, who granted it explicitly. A grant that originates in an agent's request and
+is approved by an agent is not a grant; this one is the owner's.
+
+**Scope reminder for whoever lands it:** this does not widen T-3170 itself. Codex's own audit found
+the Block UI and the archive unbundling already landed, so the remainder is the three source paths
+above plus the claims test. `TaskBundle` stays in `CadenceSchema` and stays a `@Model` — build 23
+shipped blocks and this project has no `SchemaMigrationPlan`.
