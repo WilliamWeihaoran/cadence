@@ -3131,3 +3131,34 @@ inlined the identical tag predicate while adding `offersTaskRepeat:` / `offersEv
 Resolved as `fields(for:offersTaskRepeat:offersEventRepeat:).filter { isOffered($0, by: options) }`,
 which keeps both behaviours and keeps `isOffered` a live call rather than a helper only its own unit
 test reaches.
+
+### 2026-10-20 — EVERY fenced path released to LOCAL agents, on the owner's decision and [[T-3257]]'s evidence
+
+**The owner's instruction, given 2026-10-19: Codex is finished; release the fenced paths.** This
+entry is that release. A local agent may now write ANY path the fenced block matches, without
+asking for a per-path grant. **The fenced block itself is deliberately UNTOUCHED** — it is the
+machine-read half and it governs what CODEX may write, not what a local agent may. Emptying it
+would not release anything: `scripts/codex-land.sh:62` refuses on an empty lease, because "an empty
+lease reads exactly like a lease that allows everything; it allows nothing."
+
+**The evidence, and the correction it carries.** [[T-3257]] (agent `n6fence`, read-only audit at
+`88fd2e80`) found all 137 paths the 104 distinct patterns match free of unlanded Codex work. The
+coordinator spot-checked its hardest case — `Cadence/iOS/iOSTaskRowActionViews.swift`, the one path
+this document had explicitly flagged as still held — and T-3257 is right:
+
+- `codex/archive-typography-20261002` (`a8a7d23a`) adds **7** lines to that file; **all 7 are in
+  `main`**.
+- `codex/tracking-ui-retirement` (`2532828b`) adds **0** — it is removal-only.
+
+**The 2026-10-19 `iOSTaskRowActionViews.swift` grant section above says those two branches "hold
+REAL unlanded work" and cites "differs by 132/4" and "45/4". Those numbers are DIFF SIZES, not
+unlanded work.** A branch cut weeks ago differs from `main` in both directions, and the larger side
+is usually `main`'s own later work reflected back. Reading a blob difference as pending work is the
+same family of error as the three-dot diff this document already warns about six times — it answers
+"how far apart are these?" when the question is "does `main` lack anything?". The test that answers
+it is whether the lines a branch's own commit ADDED are present in `main`. They are.
+
+**What this does NOT change.** The branches still exist and are still local-only, so they must never
+be reset, deleted, rebased in place or force-pushed. Nothing here licenses that. It also says
+nothing about Codex resuming: if a Codex agent starts work again, the fenced block still governs it
+and a fresh conflict must be re-measured rather than assumed from this entry.
