@@ -230,8 +230,9 @@ full until 2026-10-20, and the copy had already drifted on the page-header wrapp
   either "T-117 CONFIRMED: blocked in NSFileCoordinator" or the top frames of whatever else it is
   stuck in. The deadlock cannot be prevented from outside the process; it can only be named, and
   naming it is the difference between a two-minute wait and twenty minutes of debugging Swift.
-- **Never create a simulator device; launch the macOS app only through the wrapper.** Two recurring
-  leaks the user has had to clear by hand.
+- **The simulator and macOS-app rules are in `docs/AGENT_BRIEF.md`, under Safety. What is here is
+  the two leaks that produced them**, both of which the user had to clear by hand, and the
+  measurements are the part a rule cannot carry.
   *Simulators:* agents kept running `simctl create` and naming devices after themselves
   (`Cadence-T195-Agent`, `…-iPad`, …). A created device **persists in the pool with all its data**
   after `simctl shutdown`, so shutting it down is not cleanup — the Devices directory went 3.8 GB →
@@ -380,8 +381,10 @@ full until 2026-10-20, and the copy had already drifted on the page-header wrapp
   **One genuine constraint remains:** posting `CGEvent`s drives the user's *physical* cursor, so a
   scripted macOS drag fights them for the pointer and can drop something somewhere unintended. Safe
   only when the machine is known idle; screenshots and reads are safe any time.
-- **Verify and commit with nothing live in the tree.** When agents share a working tree, what you
-  commit must be the bytes you tested — and the two ways of losing that are independent:
+- **Verify and commit with nothing live in the tree.** `docs/AGENT_BRIEF.md` has the commit rules
+  and `docs/SUBAGENT_RUNBOOK_REFERENCE.md` has what `agent-commit.sh` does about each measured
+  failure. This bullet is the half neither carries: what you commit must be the bytes you *tested*,
+  and the two ways of losing that are independent of the index:
   - *The file list.* `git add <paths>` adds your paths **to whatever is already staged**, so another
     agent's `git mv` or `git rm` sitting in the index rides along. `c9d2d78` swept in a staged
     deletion of two view files whose callers were not yet committed, so **HEAD did not build for
