@@ -218,10 +218,19 @@ struct CadenceScheduleCaptureCard<NotesField: View>: View {
                 .disabled(isReadOnly)
             if !draft.subject.isEditing, let notesField { notesField }
             if notesField == nil || !draft.subject.isEditing {
+                // **The focus jump, fixed at its cause** ([[T-3237]] item 2). The limit used to
+                // read `notesIsFocused || !draft.notes.isEmpty ? 3...6 : 1...1`, so focusing an
+                // EMPTY field moved the lower bound from one line to three and the card grew by two
+                // lines with nothing typed into it; blurring moved it back and the card dropped.
+                // The lower bound was answering "is this field focused", which is not a question
+                // about how much text there is. A single `1...6` asks only the content: empty is one
+                // line whether focused or not, and the field grows a line at a time as it fills, so
+                // there is no transition left to jump on. Deliberately NOT a fixed height — that
+                // would hide the reflow behind reserved space rather than stop it.
                 TextField("Notes", text: $draft.notes, axis: .vertical)
                     .textFieldStyle(.plain)
                     .cadenceFont(.bodyText)
-                    .lineLimit(notesIsFocused || !draft.notes.isEmpty ? 3...6 : 1...1)
+                    .lineLimit(1...6)
                     .focused($notesIsFocused)
                     .disabled(isReadOnly)
             }
