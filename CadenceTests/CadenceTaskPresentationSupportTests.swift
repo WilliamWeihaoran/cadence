@@ -308,3 +308,59 @@ struct CadenceTaskRowMetricsTests {
         }
     }
 }
+
+/// [[T-3222]]: a task row's notes excerpt was `prefix(notesPreviewLimit)` — cut mid-word, with no
+/// ellipsis, and short enough to fit the line, so SwiftUI's own tail truncation never fired and
+/// a 90-character note read "...ask about the lease ren" in a row with room for all of it.
+@MainActor
+struct CadenceTaskRowNotesExcerptTests {
+    /// 90 characters, and the cut the bug made lands inside "renewal".
+    private static let note = "Call the landlord on Thursday morning and ask about the lease renewal before the deadline."
+
+    @Test func theNinetyCharacterNoteIsShownWholeOnEveryRowTier() {
+        #expect(Self.note.count == 90, "non-vacuity: the fixture is the ticket's note")
+        for metrics in [CadenceTaskRowMetrics.compactWidth, .regularWidth, .desktop] {
+            #expect(
+                CadenceTaskPresentationSupport.plainPreviewText(from: Self.note, limit: metrics.notesPreviewLimit)
+                    == Self.note,
+                "the row hands its `Text` the whole note and lets the line truncate itself"
+            )
+        }
+    }
+
+    @Test func aNoteLongerThanTheBoundIsCutOnAWordAndSaysSo() {
+        let preview = CadenceTaskPresentationSupport.plainPreviewText(from: Self.note, limit: 64)
+
+        #expect(preview == "Call the landlord on Thursday morning and ask about the lease\u{2026}")
+        #expect(!preview.contains("ren\u{2026}"))
+        #expect(preview.count <= 65)
+    }
+
+    @Test func aCutLandingExactlyBeforeASpaceKeepsTheWholeLastWord() {
+        // Index 61 (zero-based) is the space after "lease", so the cut is already on a boundary.
+        #expect(
+            CadenceTaskPresentationSupport.plainPreviewText(from: Self.note, limit: 61)
+                == "Call the landlord on Thursday morning and ask about the lease\u{2026}"
+        )
+    }
+
+    @Test func aRunWithNoSpaceToBreakOnIsCutHardAndStillMarked() {
+        let url = "https://example.com/" + String(repeating: "a", count: 80)
+        let preview = CadenceTaskPresentationSupport.plainPreviewText(from: url, limit: 40)
+
+        #expect(preview == String(url.prefix(40)) + "\u{2026}")
+    }
+
+    @Test func noLimitAndANoteWithinTheLimitAreReturnedWholeWithNoEllipsis() {
+        #expect(CadenceTaskPresentationSupport.plainPreviewText(from: Self.note) == Self.note)
+        #expect(CadenceTaskPresentationSupport.plainPreviewText(from: Self.note, limit: 90) == Self.note)
+    }
+
+    /// Search keeps its own, bare cut — `CadenceNoteRowExcerptTests` pins that half.
+    @Test func theSearchReaderIsNotTheRowReader() {
+        #expect(
+            CadenceMarkdownPresentationSupport.plainPreviewText(from: Self.note, limit: 64)
+                == "Call the landlord on Thursday morning and ask about the lease re"
+        )
+    }
+}
