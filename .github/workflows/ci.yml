@@ -171,6 +171,58 @@ jobs:
       - uses: actions/checkout@v4
       - name: Assert toolchain
         run: ./.github/scripts/assert-toolchain.sh
+
+      # -----------------------------------------------------------------------
+      # T-3288, and the two steps below are repeated in `macos-tests` and
+      # `ios-build`; this is the one place the reasoning is written down.
+      #
+      # Before this, `grep -c 'actions/cache' ci.yml` was 0: each of the three
+      # jobs that build re-cloned all seven packages `Package.resolved` pins
+      # (`swift-nio`, `swift-collections`, `swift-atomics`, `swift-log`,
+      # `swift-system`, `swift-sdk`, `eventsource` -- 129 MB of checkouts and
+      # bare repositories, measured locally 2026-10-21) from GitHub every run.
+      # The other two macOS jobs, `guard-script-selftests` and
+      # `push-attribution`, build NOTHING -- they run shell scripts, have no
+      # Xcode step and no DerivedData -- so there is nothing here for them to
+      # cache. Three jobs resolve, not five.
+      #
+      # WHAT THIS CACHES AND WHAT IT DOES NOT, stated rather than left to be
+      # discovered: the key is `Package.resolved` itself and the cached path is
+      # `SourcePackages` -- the CLONES AND CHECKOUTS, not compiled objects. The
+      # seven packages are still COMPILED from source on every run. Caching the
+      # compile would mean caching `Build/` out of a DerivedData whose sources
+      # `actions/checkout` re-stamps with fresh mtimes every run, which is how a
+      # cache turns into a silent wrong green -- this repository's favourite
+      # failure shape. Keyed on the pin file, a restore cannot go stale: a pin
+      # that moves changes the key.
+      #
+      # THE RESOLVE IS ITS OWN STEP BECAUSE THAT IS THE INSTRUMENT. T-3288 says
+      # not to quote a saving before measuring one, and inside `xcb.sh` the
+      # resolve is invisible: xcodebuild's output goes to the xcb log, which is
+      # uploaded only on failure, so no GREEN run has ever shown what the resolve
+      # cost. Hoisting it here prints the number into the run log on every run,
+      # hit or miss, which is the before and the after in one instrument. It is
+      # not extra work -- it is the resolve the Build step below would do anyway,
+      # moved to where it can be seen. It must stay AFTER `Assert toolchain`,
+      # which is what selects the Xcode this resolve runs under.
+      # -----------------------------------------------------------------------
+      - name: Restore resolved SPM dependencies (T-3288)
+        id: spm-cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/dd-mcp/SourcePackages
+          key: spm-mcp-${{ runner.os }}-${{ hashFiles('Cadence.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
+          # A moved pin restores the nearest older tree and lets SPM update only
+          # what changed, rather than paying a full cold clone for one bump.
+          restore-keys: |
+            spm-mcp-${{ runner.os }}-
+      - name: Resolve package dependencies (timed -- T-3288)
+        run: |
+          echo "spm cache: hit=${{ steps.spm-cache.outputs.cache-hit }} key=${{ steps.spm-cache.outputs.cache-matched-key }}"
+          start=$SECONDS
+          xcodebuild -project Cadence.xcodeproj -resolvePackageDependencies \
+            -derivedDataPath "$RUNNER_TEMP/dd-mcp"
+          echo "SPM-RESOLVE-SECONDS=mcp=$(( SECONDS - start ))"
       - name: Build
         run: |
           # scripts/xcb.sh writes its log to "${TMPDIR}cadence-xcb-<id>.log". Pin TMPDIR here (NOT
@@ -214,6 +266,27 @@ jobs:
       - uses: actions/checkout@v4
       - name: Assert toolchain
         run: ./.github/scripts/assert-toolchain.sh
+
+      # T-3288: see the comment on these two steps in `mcp-server` above for what
+      # is cached (the SPM checkouts, not the compile) and why the resolve is a
+      # step of its own. Must stay after `Assert toolchain`.
+      - name: Restore resolved SPM dependencies (T-3288)
+        id: spm-cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/dd-tests/SourcePackages
+          key: spm-tests-${{ runner.os }}-${{ hashFiles('Cadence.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
+          # A moved pin restores the nearest older tree and lets SPM update only
+          # what changed, rather than paying a full cold clone for one bump.
+          restore-keys: |
+            spm-tests-${{ runner.os }}-
+      - name: Resolve package dependencies (timed -- T-3288)
+        run: |
+          echo "spm cache: hit=${{ steps.spm-cache.outputs.cache-hit }} key=${{ steps.spm-cache.outputs.cache-matched-key }}"
+          start=$SECONDS
+          xcodebuild -project Cadence.xcodeproj -resolvePackageDependencies \
+            -derivedDataPath "$RUNNER_TEMP/dd-tests"
+          echo "SPM-RESOLVE-SECONDS=tests=$(( SECONDS - start ))"
       - name: Test
         run: |
           export TMPDIR="$RUNNER_TEMP/"
@@ -338,6 +411,27 @@ jobs:
       - uses: actions/checkout@v4
       - name: Assert toolchain
         run: ./.github/scripts/assert-toolchain.sh
+
+      # T-3288: see the comment on these two steps in `mcp-server` above for what
+      # is cached (the SPM checkouts, not the compile) and why the resolve is a
+      # step of its own. Must stay after `Assert toolchain`.
+      - name: Restore resolved SPM dependencies (T-3288)
+        id: spm-cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/dd-ios/SourcePackages
+          key: spm-ios-${{ runner.os }}-${{ hashFiles('Cadence.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
+          # A moved pin restores the nearest older tree and lets SPM update only
+          # what changed, rather than paying a full cold clone for one bump.
+          restore-keys: |
+            spm-ios-${{ runner.os }}-
+      - name: Resolve package dependencies (timed -- T-3288)
+        run: |
+          echo "spm cache: hit=${{ steps.spm-cache.outputs.cache-hit }} key=${{ steps.spm-cache.outputs.cache-matched-key }}"
+          start=$SECONDS
+          xcodebuild -project Cadence.xcodeproj -resolvePackageDependencies \
+            -derivedDataPath "$RUNNER_TEMP/dd-ios"
+          echo "SPM-RESOLVE-SECONDS=ios=$(( SECONDS - start ))"
       - name: Build
         run: |
           export TMPDIR="$RUNNER_TEMP/"
