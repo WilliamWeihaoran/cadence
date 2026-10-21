@@ -264,4 +264,33 @@ struct NotificationTapRoutingTests {
             "handleDeepLinkRoute still reads the route directly, which re-navigates on every re-appearance (T-3049)"
         )
     }
+
+    /// The iOS half of the same wiring. `Cadence/iOS/` is inside `#if os(iOS)` and this target
+    /// builds for macOS, so the root cannot be driven here and this is a source scan by necessity;
+    /// the exactly-once decision itself is `takeUnappliedRoute()`, exercised above. The seeding
+    /// assertion is the reader check and also holds [[T-2074]]'s call in place: routing must not
+    /// replace it.
+    @Test func theIOSRootReadsAStandingDeepLinkRouteWhenItAppears() throws {
+        let source = try CadenceCommitSurfaceScan.scanned("Cadence/iOS/iOSRootView.swift")
+        let onAppear = try cadenceFunctionBody(".onAppear", in: source)
+
+        #expect(
+            onAppear.contains("CadenceUITestSupport.prepareAppState(modelContext: modelContext)"),
+            "the reader did not return iOSRootView's seeding .onAppear block, or the T-2074 seeding left it"
+        )
+        #expect(
+            onAppear.contains("handleDeepLinkRoute()"),
+            "iOSRootView's .onAppear no longer applies a route that was standing before it rendered, so a cold-launch widget tap goes nowhere (T-3049)"
+        )
+
+        let handler = try cadenceFunctionBody("func handleDeepLinkRoute()", in: source)
+        #expect(
+            handler.contains("deepLinkManager.takeUnappliedRoute()"),
+            "iOSRootView.handleDeepLinkRoute no longer claims the route, so .onAppear and .onChange both apply it (T-3049)"
+        )
+        #expect(
+            !handler.contains("deepLinkManager.route?.deepLink"),
+            "iOSRootView.handleDeepLinkRoute still reads the route directly, which double-navigates a cold-launch tap (T-3049)"
+        )
+    }
 }

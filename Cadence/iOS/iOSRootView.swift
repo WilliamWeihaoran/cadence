@@ -147,6 +147,11 @@ struct iOSRootView: View {
         // would leave an iPad launch unseeded, which is the same defect one level down.
         .onAppear {
             CadenceUITestSupport.prepareAppState(modelContext: modelContext)
+            // T-3049: the `.onChange` below never sees a route that was already standing when this
+            // view first rendered, which is the shape of a widget or reminder tap that cold-launches
+            // the app. After the seeding, so a seeded launch routes against the seeded state.
+            // `takeUnappliedRoute()` is what keeps the pair exactly-once.
+            handleDeepLinkRoute()
         }
         .onChange(of: deepLinkManager.route?.token) { _, _ in
             handleDeepLinkRoute()
@@ -262,7 +267,9 @@ private extension iOSRootView {
     /// tests) is where that answer lives, so a widget tap cannot land on the wrong tab without a
     /// test failing.
     func handleDeepLinkRoute() {
-        guard let deepLink = deepLinkManager.route?.deepLink else { return }
+        // `takeUnappliedRoute()`, not `route?.deepLink`: this is reached from `.onAppear` as well
+        // as from `.onChange`, and exactly one of them should win for any one route (T-3049).
+        guard let deepLink = deepLinkManager.takeUnappliedRoute() else { return }
         // Not `deepLink.featureDestination`: a `.task` link has to be resolved against the store
         // first, because Today's scope is narrower than "any task" and the id it arms has no owner
         // outside a rendered row. `CadenceDeepLinkResolutionSupport` holds that decision, in
