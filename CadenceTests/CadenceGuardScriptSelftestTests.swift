@@ -299,6 +299,51 @@ struct CadenceGuardScriptSelftestTests {
         "LEDGER-LAG-VACUOUS",
     ]
 
+    /// Every finding and refusal `scripts/ledger-blocker-check.sh` makes (T-3321). It is
+    /// `ledger-lag-check.sh`'s question asked of the ENTRY rather than of the commit: that script
+    /// asks whether a commit that landed code closed anything, and this one asks whether an entry
+    /// that says it is waiting is still waiting for something that exists.
+    ///
+    /// **The four arms are named individually because each is a separate reading of a separate
+    /// piece of evidence**, and a floor like "at least one arm fires" would pass a check that had
+    /// lost three of them. `BLOCKER-LEASE-RELEASED` is the one that measured 13 of the 13 findings
+    /// on this ledger: `docs/CODEX_WORKTREE.md`'s fenced block governs **Codex**, its 2026-10-20
+    /// prose entry released every fenced path to **local agents**, and the block was deliberately
+    /// left non-empty because `codex-land.sh:62` refuses an empty lease. So reading the fence alone
+    /// gives exactly the wrong answer, and the arm's whole correctness is that it reads the
+    /// RELEASE and matches paths with Python `fnmatch`. `BLOCKER-BRANCH-GONE`, `BLOCKER-PATH-CLEAN`
+    /// and `BLOCKER-TICKET-CLOSED` are the three `docs/AGENT_BRIEF.md` already tells every agent to
+    /// check by hand — *"confirm the branch exists and the file is still dirty before believing
+    /// it"* — and nothing ran them.
+    ///
+    /// `LEDGER-BLOCKER-EXPIRED` is a **NOTICE** and `BLOCKER-STALE` is the `--strict` refusal
+    /// beside it, and both are pinned so the choice between them stays a deliberate one. The
+    /// default reports because a finding here is AMBIENT: it is not caused by the commit under
+    /// test, so a refusal would be red for every agent until somebody repaired a ticket they do
+    /// not own — and the repair is editing a sentence, which no code gate should be able to demand.
+    /// `LEDGER-CLOSURE-UNLANDED` in the sibling script is a notice for the same reason.
+    ///
+    /// `BLOCKER-CHECK-VACUOUS` is the [[T-1282]] / [[T-1291]] shape again, with a floor the other
+    /// guards do not have: **clauses SCANNED**. A renamed ledger trips the entry floor and a
+    /// shallow checkout trips the active floor, but a clause pattern that quietly stopped matching
+    /// trips neither — it reads a healthy ledger and finds nothing, which is indistinguishable from
+    /// a clean one. `BLOCKER-FENCE-EMPTY` is `codex-land.sh:62`'s argument restated where it bites
+    /// differently: an empty lease handed to this arm does not allow everything, it makes every
+    /// fenced path read as unfenced and prints the wrong reason for every finding.
+    static let blockerGuardChecks = [
+        "BLOCKER-LEASE-RELEASED",
+        "BLOCKER-BRANCH-GONE",
+        "BLOCKER-PATH-CLEAN",
+        "BLOCKER-TICKET-CLOSED",
+        "LEDGER-BLOCKER-EXPIRED",
+        "BLOCKER-STALE",
+        "BLOCKER-CHECK-VACUOUS",
+        "BLOCKER-FENCE-UNREADABLE",
+        "BLOCKER-FENCE-EMPTY",
+        "BLOCKER-NOT-REPO-ROOT",
+        "BLOCKER-UNKNOWN-OPTION",
+    ]
+
     /// Every refusal `scripts/ledger-view.sh` makes (T-1331, registered under T-1343). The view is
     /// derived rather than maintained, which is what makes `LEDGER-VIEW-VACUOUS` the load-bearing
     /// one: a renamed ledger, an empty file or a `cd` into the wrong tree all produce a run that
@@ -974,6 +1019,35 @@ struct CadenceGuardScriptSelftestTests {
     /// writes its fixtures with `printf` — luck, not design, which is why the shebang is the rule.
     /// The script also pins `TMPPREFIX` into `$TMPDIR` itself now, so the next caller to hand it to
     /// zsh gets fixtures rather than silence.
+    /// T-3321. `#!/bin/sh`, so `/bin/sh` — the shell its shebang names, and not a style point:
+    /// this script carries its reading inside a command substitution, and the one thing it may not
+    /// contain is a literal backtick, which is why its regexes compose `chr(96)` exactly as
+    /// `ledger-lag-check.sh` composes `sprintf("%c", 96)`. Fixtures are a throwaway git repository
+    /// under `$TMPDIR` written with `printf`, so this says nothing about — and does nothing to —
+    /// the real `docs/TODO.md` a sibling may be editing. Under two seconds, no build.
+    ///
+    /// **Half of its selftest is ABSENCES, and that is the half that decides whether anyone still
+    /// has this check switched on in a week.** A guard over ledger prose written by many hands
+    /// over months is worth having only while it stays quiet on the controls, so mode 5 pins every
+    /// way a blocker clause is legitimately not a finding — a CLOSED entry, a clause demoted under
+    /// `**Earlier:**`, a clause that retires its own blocker in the same sentence, an entry that
+    /// cites the release beside the clause and one that cites it out of reach of the clause window
+    /// ([[T-3296]]'s shape), and an entry under `## Done` — with a live finding in the same ledger
+    /// so the mode cannot pass by finding nothing at all.
+    ///
+    /// **Mode 6 is the pair that must DISABLE rather than guess**, and each would otherwise answer
+    /// a cheaper question than the one being asked — the failure `docs/CODEX_WORKTREE.md` tabulates
+    /// six times over. If the release prose is ever withdrawn, every lease claim becomes true again
+    /// and the arm must go quiet *and say so*; and in a GitHub Actions checkout `git status` is
+    /// empty for EVERY path, so the dirty arm would flag every "X is dirty under agent Y" clause at
+    /// once. Both skips are printed with their denominators, because a check that goes silent is
+    /// indistinguishable from a clean ledger.
+    @Test func theLedgerBlockerGuardsOwnChecksStillFire() throws {
+        let run = try CadenceSelftestRun.of("scripts/ledger-blocker-check.sh", interpreter: "/bin/sh")
+        let complaints = run.complaints(requiring: Self.blockerGuardChecks)
+        #expect(complaints.isEmpty, "./scripts/ledger-blocker-check.sh selftest: \(complaints.joined(separator: "; "))\n[\(CadenceSelftestRun.probe())]\n\(run.output)")
+    }
+
     @Test func theLedgerViewsOwnGuardsStillFire() throws {
         let run = try CadenceSelftestRun.of("scripts/ledger-view.sh", interpreter: "/bin/sh")
         let complaints = run.complaints(requiring: Self.ledgerViewRefusals)
@@ -1415,6 +1489,7 @@ struct CadenceGuardScriptSelftestTests {
             ("scripts/agent-scratch.sh", Self.scratchGuardRefusals),
             ("scripts/worktree-drift.sh", Self.worktreeDriftRefusals),
             ("scripts/ledger-lag-check.sh", Self.ledgerLagRefusals),
+            ("scripts/ledger-blocker-check.sh", Self.blockerGuardChecks),
             ("scripts/ledger-view.sh", Self.ledgerViewRefusals),
             ("scripts/xcb.sh", Self.buildRunnerRefusals),
             (".githooks/pre-commit", Self.preCommitHookRefusals),
@@ -3033,6 +3108,7 @@ struct CadenceGuardScriptSelftestTests {
             "scripts/simulator-claim.sh",
             "scripts/worktree-drift.sh",
             "scripts/ledger-lag-check.sh",
+            "scripts/ledger-blocker-check.sh",
             "scripts/codex-inbox.sh",
             "scripts/codex-land.sh",
             "scripts/xcb.sh",
