@@ -265,11 +265,10 @@ struct CadenceDeferredReminderCancellationTests {
         #expect(raw.count > 400, "the cascade file read as \(raw.count) characters")
         let stripped = CadenceSourceScan.strippingComments(raw)
         #expect(stripped != raw, "the comment stripper removed nothing")
-
-        #expect(
-            stripped.contains("NotificationManager.deferReminderCancellation(habitIDs: habits.map(\\.id))"),
-            "the context cascade no longer defers its habit reminders"
-        )
+        // [[T-3260]]: that the context cascade DOES defer its habits' reminders is behaviour, held by
+        // `pendingHabitIDs == [fixture.habit.id]` above and `releasedHabitIDs` in the committed
+        // twin; only the two negatives below, which no run can see, are a source rule.
+        #expect(stripped.contains("func deleteContext("), "non-vacuity: the cascade moved out of this file")
         #expect(
             CadenceSourceScan.matchCount(#"NotificationManager\.shared\.cancel\("#, in: stripped) == 0,
             "a cascade cancels a reminder directly again, above a commit it does not make"

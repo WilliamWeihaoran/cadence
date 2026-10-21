@@ -158,8 +158,8 @@ struct CadenceNoteFolderMoveCommitTests {
     /// The importer files restored notes through the non-committing door and saves **once for the
     /// archive**, in `apply`. Behaviourally this shows the import lands and leaves nothing pending;
     /// that the archive's own rows go in one commit rather than one per note is
-    /// `theImporterHoldsNoPerNoteSaveInsideTheArchiveWrite` below, because a count of `save()`
-    /// calls is not something a value can be asked for.
+    /// `anImportCommitsTheWholeArchiveOnceAndOnlyThenRunsTheFold` below, which counts the commits
+    /// with `ModelContext.didSave`.
     @Test func animportedArchiveIsFiledThroughTheNonCommittingDoorAndStillLands() throws {
         let source = ModelContext(try CadenceTestStore.container())
         for (index, raw) in ["/Planning//Research/", "Admin", "  /  "].enumerated() {
@@ -248,22 +248,119 @@ struct CadenceNoteFolderMoveCommitTests {
     /// kept T-1093 out of T-1071: the fix could not be "make the write commit", because one of its
     /// callers must not.
     ///
-    /// **This is not an atomicity claim, and its old name said it was** ([[T-1111]]). It counts
-    /// `save()` calls in one file, so it cannot see `NoteMigrationService`'s own `context.save()`
-    /// in the legacy-note fold that `apply` runs *after* this commit. What it guarantees is the
-    /// narrower thing it can actually see: no per-note save inside the write loop. The importer is
-    /// two commits, and `CadenceArchiveImportSurfaceTests` covers what happens when the second one
-    /// fails.
-    @Test func theImporterHoldsNoPerNoteSaveInsideTheArchiveWrite() throws {
-        let importer = CadenceSourceScan.strippingComments(
-            try CadenceSourceScan.sourceFile("Cadence/Services/CadenceArchiveImportService.swift")
+    /// **This is not an atomicity claim** ([[T-1111]]): the importer is two commits, the archive's
+    /// and then `NoteMigrationService`'s own in the legacy-note fold. What it holds is that the
+    /// first is ONE -- no per-note save inside the write loop -- and that the fold runs after it,
+    /// over a store that already holds the archive. [[T-3260]]: this used to be a count of
+    /// `modelContext.save()` spellings in the importer's source, which could not see a save spelled
+    /// any other way; `ModelContext.didSave` counts the commits themselves.
+    @Test func anImportCommitsTheWholeArchiveOnceAndOnlyThenRunsTheFold() throws {
+        let archive = try Self.makeFolderedArchive(withLegacyDailyNote: true)
+        #expect(archive.notes.count == 3, "non-vacuity: a per-note save needs more than one note")
+        #expect(archive.legacyDailyNotes.count == 1)
+
+        let container = try CadenceTestStore.container()
+        let destination = ModelContext(container)
+        let saves = SaveCounter(observing: destination)
+        var savesWhenTheFoldRan: Int?
+        var notesOnDiskWhenTheFoldRan: Int?
+
+        let outcome = try CadenceArchiveImportService.apply(
+            archive,
+            in: destination,
+            foldingLegacyNotes: { context in
+                savesWhenTheFoldRan = saves.value
+                notesOnDiskWhenTheFoldRan = try ModelContext(container).fetchCount(FetchDescriptor<Note>())
+                return try CadenceArchiveImportService.foldLegacyNotes(in: context)
+            }
         )
-        #expect(CadenceSourceScan.matchCount(#"modelContext\.save\(\)"#, in: importer) == 1)
-        // And it is the one `apply` rolls back around, not a stray save inside the row loop.
-        #expect(importer.contains("try modelContext.save()"))
-        #expect(importer.contains("modelContext.rollback()"))
-        // The second write is real and is delegated, not spelled out here — which is precisely why
-        // the count above cannot stand for the whole document.
-        #expect(importer.contains("NoteMigrationService.migrateIfNeeded("))
+
+        #expect(savesWhenTheFoldRan == 1, "the archive's rows did not go in exactly one commit")
+        #expect(notesOnDiskWhenTheFoldRan == 3, "the fold ran before the archive's commit landed")
+        // The fold is the real migration and it is the second write, committed on its own.
+        #expect(outcome.notesFoldedFromLegacyRows == 1)
+        #expect(outcome.legacyNoteFoldFailure == nil)
+        #expect(saves.value == 2, "the fold's write was not committed as one second save")
+        #expect(!destination.hasChanges, "the import left rows pending")
+        #expect(try ModelContext(container).fetchCount(FetchDescriptor<Note>()) == 4)
+    }
+
+    /// The default argument is the real fold, so `apply` with no seam folds the legacy row too --
+    /// without this, the test above is compatible with a default that folds nothing.
+    @Test func anImportWithTheDefaultFoldFoldsTheArchivesLegacyNotes() throws {
+        let archive = try Self.makeFolderedArchive(withLegacyDailyNote: true)
+        let container = try CadenceTestStore.container()
+        let destination = ModelContext(container)
+
+        let outcome = try CadenceArchiveImportService.apply(archive, in: destination)
+
+        #expect(outcome.notesFoldedFromLegacyRows == 1)
+        let daily = try ModelContext(container).fetch(FetchDescriptor<Note>()).filter { $0.kind == .daily }
+        #expect(daily.map(\.content) == ["Notes from that day"])
+    }
+
+    /// A fold that wrote before it failed leaves nothing pending in the importing context, and the
+    /// rollback that discards it does not reach back past the archive's own commit.
+    @Test func aFailedFoldRollsBackOnlyItsOwnWrite() throws {
+        let archive = try Self.makeFolderedArchive(withLegacyDailyNote: false)
+        let container = try CadenceTestStore.container()
+        let destination = ModelContext(container)
+
+        let outcome = try CadenceArchiveImportService.apply(
+            archive,
+            in: destination,
+            foldingLegacyNotes: { context in
+                context.insert(Note(kind: .permanent, title: "half-folded", content: ""))
+                throw CommitRefused()
+            }
+        )
+
+        #expect(outcome.legacyNoteFoldFailure != nil)
+        #expect(!destination.hasChanges, "the failed fold's insert was left pending in the context")
+        let stored = try ModelContext(container).fetch(FetchDescriptor<Note>())
+        #expect(stored.count == 3, "the archive's commit was rolled back, or the fold's insert survived")
+        #expect(!stored.contains { $0.title == "half-folded" })
+    }
+
+    /// Three notes filed under raw folder paths, optionally beside one pre-migration daily note.
+    private static func makeFolderedArchive(withLegacyDailyNote: Bool) throws -> CadenceArchive {
+        let source = ModelContext(try CadenceTestStore.container())
+        for (index, raw) in ["/Planning//Research/", "Admin", "  /  "].enumerated() {
+            let note = Note(kind: .list, title: "Note \(index)", content: "# Note\n\n")
+            note.folderPath = raw
+            source.insert(note)
+        }
+        if withLegacyDailyNote {
+            let legacy = DailyNote(date: "2026-02-02")
+            legacy.content = "Notes from that day"
+            source.insert(legacy)
+        }
+        try source.save()
+        return try CadenceDataExportService.makeArchive(in: source)
+    }
+}
+
+/// Counts `ModelContext.didSave` for one context: the commits themselves, whatever they are spelled.
+/// A locked reference box, because the observer block is `@Sendable` and the fold seam's closure and
+/// the test body must read the same count.
+private final class SaveCounter: @unchecked Sendable {
+    private let lock = NSLock()
+    private var count = 0
+    private var token: (any NSObjectProtocol)?
+
+    var value: Int { lock.withLock { count } }
+
+    init(observing context: ModelContext) {
+        token = NotificationCenter.default.addObserver(
+            forName: ModelContext.didSave,
+            object: context,
+            queue: nil
+        ) { [weak self] _ in
+            self?.lock.withLock { self?.count += 1 }
+        }
+    }
+
+    deinit {
+        if let token { NotificationCenter.default.removeObserver(token) }
     }
 }
