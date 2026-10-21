@@ -504,11 +504,31 @@ struct CadenceNoteFolderSurfaceTests {
             "ListNoteFolderGroup", "ListNoteFolderGroupView"
         ]
 
+        // **One alternation, compiled once** ([[T-3285]]). This was a fresh `NSRegularExpression` and
+        // a whole-file scan per (file, name) -- 10 names over ~630 files, **16.8 s** of this suite's
+        // time, for a sweep that is almost always empty. Longest name first so the alternation
+        // settles on the longest match at a position without leaning on `\b` backtracking, which
+        // is what `CadenceNoteFolderGroup` inside `CadenceNoteFolderGrouping` would otherwise need.
+        //
+        // **The assertion is deliberately still per (path, name)**: every match is mapped back to
+        // the name it captured, so a planted declaration still names itself in the failure message
+        // rather than reporting "something in this file". Measured identical to the loop it
+        // replaces on every file in `Cadence/`.
+        let declaredNames = try NSRegularExpression(
+            pattern: "(?:struct|class|enum|typealias)\\s+("
+                + declarations.sorted { $0.count > $1.count }.joined(separator: "|") + ")\\b"
+        )
+
         for path in try folderSwiftFiles(under: "Cadence") where !allowed.contains(path) {
             let code = try folderStrippingComments(folderSource(path))
+            let text = code as NSString
+            var declares: Set<String> = []
+            for match in declaredNames.matches(in: code, range: NSRange(location: 0, length: text.length)) {
+                declares.insert(text.substring(with: match.range(at: 1)))
+            }
             for name in declarations {
                 #expect(
-                    code.range(of: "(struct|class|enum|typealias)\\s+\(name)\\b", options: .regularExpression) == nil,
+                    declares.contains(name) == false,
                     "\(path) declares \(name)"
                 )
             }
