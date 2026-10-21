@@ -4,9 +4,10 @@ import Testing
 
 /// **T-352: the macOS root selection is deliberately not restored at launch.**
 ///
-/// Every launch opens on Today. `macOSRootView.selection` is plain `@State` seeded to `.today`,
-/// and nothing anywhere reads a stored value back into it — no `SceneStorage`, no `AppStorage`,
-/// no restore path. That is the decided contract, not an oversight.
+/// Every launch opens on Today. `macOSRootView.selection` is plain `@State` seeded to `.today`
+/// (through `SidebarItem.launchSelection()`, which only a UI-test launch naming a page can move,
+/// [[T-3200]]), and nothing anywhere reads a stored value back into it — no `SceneStorage`, no
+/// `AppStorage`, no restore path. That is the decided contract, not an oversight.
 ///
 /// The defect this suite closes was a *comment*, not a mechanism.
 /// `TasksPageView.requestedScope` documented itself as non-`nil` for "an `.inbox` selection
@@ -38,7 +39,7 @@ struct CadenceRootSelectionLaunchContractTests {
         return Array(zip(wrappers, names)).map { (wrapper: $0.0, name: $0.1) }
     }
 
-    @Test func theMacRootSelectionIsPlainStateSeededToToday() throws {
+    @MainActor @Test func theMacRootSelectionIsPlainStateSeededToToday() throws {
         let raw = try CadenceSourceScan.sourceFile(Self.rootPath)
         let source = CadenceSourceScan.strippingComments(raw)
 
@@ -47,10 +48,22 @@ struct CadenceRootSelectionLaunchContractTests {
         #expect(source.count == raw.count, "the stripper shortened the source instead of blanking it")
         #expect(source.contains("struct macOSRootView: View"), "\(Self.rootPath) is not where the scan thinks it is")
 
+        // T-3200 seeds the selection through `SidebarItem.launchSelection()`, which answers
+        // `.today` for every launch that names no UI-test page, so a shipping launch still opens on
+        // Today. Both halves are pinned: the declaration goes through the selector, and the
+        // selector's no-page answer is Today (T-3267).
         #expect(
-            source.contains("@State private var selection: SidebarItem? = .today"),
-            "the root selection is no longer plain @State seeded to .today"
+            source.contains("@State private var selection: SidebarItem? = SidebarItem.launchSelection()"),
+            "the root selection is no longer plain @State seeded through the launch selector"
         )
+        #if os(macOS)
+        #expect(SidebarItem.launchSelection(in: [:]) == .today, "a launch naming no page no longer opens on Today")
+        #expect(
+            SidebarItem.launchSelection(in: [CadenceEventKitLaunchGate.uiTestModeVariable: "1"]) == .today,
+            "a UI-test launch naming no page no longer opens on Today"
+        )
+        #expect(SidebarItem.launchSelection() == .today, "this host's own launch no longer opens on Today")
+        #endif
 
         let found = selectionPropertyWrappers(in: source)
         #expect(found.contains { $0.name == "selection" }, "the scan matched no `selection` declaration at all")
