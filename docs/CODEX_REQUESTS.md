@@ -4307,7 +4307,7 @@ The shape, so you know what you are reading toward:
 - **Commit with plain `git commit`.** Do *not* run `scripts/agent-commit.sh`: it enforces ledger
   discipline that requires editing `docs/TODO.md`, which is the one file guaranteed to collide.
 - **Never touch `docs/TODO.md` or `docs/TODO_DONE.md`.** Append your ticket entries to
-  `docs/CODEX_LEDGER_INBOX.md` instead, newest last. Your reserved id range is **T-1440..T-1469**.
+  `docs/CODEX_LEDGER_INBOX.md` instead, newest last. Your reserved id range is **T-4100..T-4129** (reissued 2026-10-21; the older T-1440..T-1469 and T-1450..T-1479 blocks are both EXHAUSTED -- `docs/CODEX_LEDGER_INBOX.md` is authoritative for this and R66's earlier copy of it was stale).
 - **Stay inside the lease** — the fenced ```lease block in `docs/CODEX_WORKTREE.md`. Anything
   outside it is a path another writer may hold, and that collision does not announce itself.
 - The coordinator reviews with `./scripts/codex-land.sh review codex/<topic>` and lands your work
