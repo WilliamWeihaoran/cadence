@@ -1634,6 +1634,11 @@ struct CadenceGuardScriptSelftestTests {
     /// window is now trapped, and the next run recognises the leftover and repairs it in place —
     /// a reading, not a refusal, so it is pinned here, and mode 9 of the selftest induces it by
     /// SIGKILLing a run the instant its swap lands.
+    ///
+    /// `T-3280` is the `=` form's re-sync of a path NEW to HEAD: it used to be skipped because no
+    /// worktree copy existed, so `c708df70` left three committed test files showing as ` D`. It is
+    /// now written, and a path the replaced revision had is named as a deletion instead -- both
+    /// notes, neither a refusal, induced by mode 4j.
     @Test func theCommitHelpersReadingsThatAreNotRefusalsAreStillInducedByItsSelftest() throws {
         let source = try String(
             contentsOf: CadenceSelftestRun.repositoryRoot().appendingPathComponent("scripts/agent-commit.sh"),
@@ -1645,7 +1650,7 @@ struct CadenceGuardScriptSelftestTests {
         }
         let body = String(source[source.startIndex..<split.lowerBound])
         let selftest = String(source[split.lowerBound...])
-        for reading in ["LEDGER-CLOSURE-LAGGED", "ledger_rewrites_only_new_entries", "T-1305", "INTERRUPTED-REPAIR"] {
+        for reading in ["LEDGER-CLOSURE-LAGGED", "ledger_rewrites_only_new_entries", "T-1305", "INTERRUPTED-REPAIR", "T-3280"] {
             #expect(body.contains(reading), "scripts/agent-commit.sh no longer makes the reading \(reading)")
             #expect(selftest.contains(reading), "scripts/agent-commit.sh's selftest no longer induces \(reading)")
         }

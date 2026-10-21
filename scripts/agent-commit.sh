@@ -2868,16 +2868,30 @@ $(print -rl -- "${stale[@]}" | sed 's/^/    /')
     #     revision this commit replaced, so it holds nobody's edits. Any other copy is left exactly
     #     alone and said out loud with the one-line cure, because a worktree still holding a
     #     sibling's hunks is the case the `=` form exists for and overwriting it is the bug.
-    local -a resynced left_behind
-    resynced=(); left_behind=()
+    local -a resynced left_behind created missing
+    resynced=(); left_behind=(); created=(); missing=()
     local wt_previous
     # Declared out here, not in the loop: a bare `local` reached twice is what
     # `noZshScriptReachesABareLocalDeclarationTwice` refuses.
-    local resync_tmp resync_mode
+    local resync_tmp resync_mode resync_wrote
     for name in "${names[@]}"; do
         [[ -n "${source_of[$name]}" ]] || continue      # the bare form staged the worktree copy
-        [[ -f "$name" ]] || continue
         [[ -n "${staged_content[$name]+x}" ]] || continue
+        # T-3280. A path absent on disk used to be skipped here silently, so a path NEW to HEAD
+        # landed in the commit and never reached the checkout: `c708df70` left three test files
+        # showing as ` D` to every sibling, one `git add -A` away from a committed deletion. The
+        # rule is T-1209's own, through the helper the signal trap already uses: write it only when
+        # the revision replaced did not have it either, so the absence is nobody's deletion.
+        if [[ ! -e "$name" ]]; then
+            resync_wrote=$(resync_landed_worktree "$newsha" "$name" "$headsha")
+            if [[ -n "$resync_wrote" ]]; then
+                created+=("$name")
+            elif [[ -n "$(tree_entry "$headsha" "$name")" ]]; then
+                missing+=("$name")
+            fi
+            continue
+        fi
+        [[ -f "$name" ]] || continue
         cmp -s -- "$name" "${staged_content[$name]}" && continue   # already what this commit landed
         wt_previous="$scratch/$(ledger_key "$name").wtprevious"
         git cat-file -p "$headsha:$name" > "$wt_previous" 2>/dev/null || : > "$wt_previous"
@@ -2906,6 +2920,15 @@ $(print -rl -- "${stale[@]}" | sed 's/^/    /')
     if (( ${#resynced} )); then
         say "note: re-synced the worktree copy of ${(j:, :)resynced} to what this commit landed (T-1209)."
         say "      It was byte-identical to the revision replaced, so no in-flight edit could be lost."
+    fi
+    if (( ${#created} )); then
+        say "note: wrote ${(j:, :)created} into the worktree: new to HEAD and absent on disk (T-3280)."
+        say "      The revision replaced had no such path, so no in-flight edit or deletion could be lost."
+    fi
+    if (( ${#missing} )); then
+        say "note: ${(j:, :)missing} is MISSING from the worktree and was left alone: the revision this" >&2
+        say "      commit replaced had it, so its absence is somebody's deletion. Restore it with" >&2
+        say "      \`git show HEAD:<path> > <path>\` if that deletion is not wanted (T-3280)." >&2
     fi
     if (( ${#left_behind} )); then
         say "note: the worktree copy of ${(j:, :)left_behind} is BEHIND this commit and was left alone:" >&2
@@ -4244,6 +4267,25 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
         $( [[ $( cd "$ws" && cat TODO.md ) == *"in-flight line"* ]] && print 1 || print 0 )
     check "and the agent is told to read HEAD rather than the file on disk" \
         $( [[ "$out" == *"git show HEAD:<path> > <path>"* ]] && print 1 || print 0 ) "$out"
+    # T-3280: a path NEW to HEAD and absent on disk was skipped silently, so the commit held it and
+    # the checkout showed it as ` D` -- `c708df70` left three test files that way.
+    ( cd "$ws" && print -r -- "a file this commit creates" > ../"${ws:t}.newpath" ) >/dev/null 2>&1
+    out=$( cd "$ws" && zsh "$here" j3 -m "$M" sub/created.txt=../"${ws:t}.newpath" 2>&1 ); rc=$?
+    check "an = commit of a path new to HEAD commits (T-3280)" $(( rc == 0 )) "exit $rc: $out"
+    check "and the new path is written into the worktree, not left as a deletion" \
+        $( [[ -f "$ws/sub/created.txt" && $( cd "$ws" && cat sub/created.txt ) == $( cd "$ws" && git show HEAD:sub/created.txt ) \
+              && -z $( cd "$ws" && git status --porcelain -- sub/created.txt ) ]] && print 1 || print 0 ) \
+        "$( cd "$ws" && git status --porcelain -- sub 2>&1 )"
+    check "and it says so" $( [[ "$out" == *"wrote sub/created.txt into the worktree"* ]] && print 1 || print 0 ) "$out"
+    # The guard's other half: a path HEAD~1 HAD and the disk lacks is somebody's deletion. Not written.
+    ( cd "$ws" && rm -f sub/created.txt
+      print -r -- "a second revision of it" > ../"${ws:t}.newpath" ) >/dev/null 2>&1
+    out=$( cd "$ws" && zsh "$here" j4 -m "$M" --removes 1 sub/created.txt=../"${ws:t}.newpath" 2>&1 ); rc=$?
+    check "an = commit over a path deleted on disk still commits" $(( rc == 0 )) "exit $rc: $out"
+    check "and the deletion on disk is left alone, and named" \
+        $( [[ ! -e "$ws/sub/created.txt" && "$out" == *"sub/created.txt is MISSING from the worktree"* ]] && print 1 || print 0 ) "$out"
+    ( cd "$ws" && git show HEAD:sub/created.txt > sub/created.txt ) >/dev/null 2>&1
+    rm -f "${ws}.newpath"
     rm -f "$CADENCE_DECLINED_LEDGER"/*.declined(N)
     say ""
     say " mode 4k (MESSAGE-FILE-SHARED) -- T-1222: a -F message file must name the agent using it"
