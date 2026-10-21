@@ -1179,7 +1179,18 @@ enum CadenceCommentSymbolClaim {
     static let rootNonSymbols = [
         "Cadence/Shared/CadenceColorPalette.swift `dollarsign.circle.fill`",
         "Cadence/iOS/iOSTrackingEditorComponents.swift `brain.head.profile`",
-        "Cadence/macOS/Sheets/ListEditorSupportViews.swift `arrow.up.bin`",
+        // ListEditorSupportViews.swift's arrow.up.bin line came OFF this list on 2026-10-21, and
+        // the span is written here WITHOUT backticks on purpose so this note does not become a
+        // claim of its own. Nothing about the comment changed: it is still at
+        // ListEditorSupportViews.swift:558 and the name is still not a Swift symbol. The TREE
+        // changed. T-3253 (cdd5ec21) added addCursorRect(bounds, cursor: .arrow) to
+        // Cadence/macOS/Editor/MarkdownInlineTaskPanelSupport.swift:93 -- measured as the one and
+        // only bare arrow token in code across Cadence/, CadenceTests/ and CadenceWidgets/, every
+        // other one sitting inside an SF Symbol string literal that partition keeps out of the
+        // code region. So codeIdentifiers vouches for the root and the verdict is .uncheckable
+        // rather than .rootUnresolvable. The line went because found == rootLedger requires this
+        // ledger to mirror what the detector finds, NOT because the claim became true; delete
+        // that cursor call and the span returns as unlisted. See [[T-3271]] for what that costs.
         "CadenceTests/CadenceCommentSymbolClaimTests.swift `MCPClient.__init__`",
         "CadenceTests/CadenceMCPWriteFenceTests.swift `MCPClient.__init__`",
         "CadenceTests/CadenceMCPWriteFenceTests.swift `tempfile.TemporaryDirectory`",
@@ -1209,8 +1220,13 @@ enum CadenceCommentSymbolClaim {
         // pointed at — QuickCreateChoiceSupportViews.swift, and with it the SF Symbol name its
         // doc comment spelled — so the second group is 6. (Named without backticks here on
         // purpose: this file is swept too, and prose about the ledger must not add rows to it.)
+        // **A second non-symbol left on 2026-10-21** ([[T-3270]]), so the group is 5. Nothing
+        // about that claim changed: T-3253 put a bare arrow token into code for the first
+        // time, the root verdict answers uncheckable rather than unresolvable while it is
+        // there, and the ledger has to mirror what the detector finds. The note beside the
+        // removed line in the group itself carries the measurement.
         #expect(Self.rootTombstones.count == 11)
-        #expect(Self.rootNonSymbols.count == 6)
+        #expect(Self.rootNonSymbols.count == 5)
         #expect(Self.rootStaleClaims.count == 1)
     }
 

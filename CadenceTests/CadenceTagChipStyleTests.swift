@@ -361,7 +361,9 @@ struct CadenceTagChipScaleTests {
                     "Cadence/macOS/Views/NoteActionReviewSheets.swift",
                     "Cadence/macOS/Views/NotesView.swift",
                     "Cadence/macOS/Views/TasksListView.swift",
-                    "Cadence/macOS/Views/TasksPanel.swift",
+                    // T-3197 took `TasksPanel` off this list: Today's "Nothing planned" box is
+                    // gone on the Mac too, so the panel names `EmptyStateView` in a doc comment
+                    // and nowhere the reader can see.
                 ], []
             ),
             (

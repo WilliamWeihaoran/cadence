@@ -95,17 +95,24 @@ struct CadenceCalendarOverlapLayoutTests {
         )
         #expect(phone.count > 20_000, "non-vacuity: read \(phone.count) characters of the iOS grid")
         #expect(phone.contains("VStack(alignment: .leading, spacing: 3)"))
-        #expect(phone.contains(".padding(.vertical, 5)"))
+        // T-1364 made this padding type-aware. The 5 is still the figure the mirrored
+        // constants above are solved for -- it is what the block pads at the sizes
+        // `iOSEventHeaderHeight` describes -- so the whole conditional is pinned rather
+        // than the bare literal, which would also match the 2pt branch.
+        #expect(phone.contains(".padding(.vertical, scaling == .enabled && dynamicTypeSize > .large ? 2 : 5)"))
 
         // T-3193: the title's line limit, read off the title row of EACH iOS timed block — the
         // first `.lineLimit(` after the 11pt semibold title font — rather than anywhere in the file.
+        // T-1364 moved that font onto `cadenceFont(.metadata, base: 11,…)` and lifted the row
+        // into each block's own `titleLabel`; the base size is still 11 and the first limit
+        // after it is still the title's, so the anchor moved and the rule did not.
         for declaration in ["private struct iOSCalendarEventBlock: View", "struct iOSTimelineTaskBlock: View"] {
             let body = try #require(
                 CadenceSourceScan.declarationBody(declaration, in: phone),
                 "\(declaration) was not found in the iOS grid"
             )
             let titleFont = try #require(
-                body.range(of: ".font(.system(size: 11, weight: .semibold))"),
+                body.range(of: ".cadenceFont(.metadata, base: 11, weight: .semibold)"),
                 "\(declaration) no longer draws an 11pt semibold title"
             )
             let limit = try #require(

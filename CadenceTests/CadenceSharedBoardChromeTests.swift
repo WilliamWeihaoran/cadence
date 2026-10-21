@@ -858,11 +858,13 @@ struct CadenceCalendarWeekdayHeaderConvergenceTests {
             "Cadence/macOS/Views/CalendarPageMonthSupportViews.swift": 6,
             "Cadence/iOS/iOSCalendarTimelineViews.swift": 1,
             "Cadence/iOS/iOSCalendarMetrics.swift": 4,
-            // Two: the label's size, and — since T-595 — the height of the band it sits in.
-            "Cadence/iOS/iOSCalendarMonthViews.swift": 2,
+            // Three: the label's size, the height of the band it sits in (T-595), and — since
+            // T-1364 — the line gain that band height adds for the label's own size.
+            "Cadence/iOS/iOSCalendarMonthViews.swift": 3,
             // The sibling container that framed the same row at 22 while the grid above framed it
-            // at 36. It reads the band now, which is why it is in this table at all.
-            "Cadence/iOS/iOSCalendarMonthAgendaViews.swift": 1
+            // at 36. It reads the band now, which is why it is in this table at all. Two since
+            // T-1364: the band height and the line gain taken on the same label size.
+            "Cadence/iOS/iOSCalendarMonthAgendaViews.swift": 2
         ]
 
         for (path, count) in expected {

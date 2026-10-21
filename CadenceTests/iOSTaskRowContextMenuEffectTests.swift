@@ -87,7 +87,7 @@ struct iOSTaskRowContextMenuEffectTests {
     /// `iOSTaskRowContextMenu.duplicate` swallows the refusal (`_ = try?`), which the save rule
     /// permits because the shared helper commits through `commitInsert` — so "it committed" is a
     /// statement about the store, and only a second context can make it.
-    @Test func duplicateCommitsACopyOfTheRowsTaskInItsOwnList() throws {
+    @Test func duplicateCommitsACopyOfTheRowsTaskInItsOwnListOnIOS() throws {
         let f = try makeFixture()
 
         iOSTaskRowContextMenu.duplicate(f.subject, allTasks: f.allTasks, modelContext: f.context)
@@ -106,7 +106,7 @@ struct iOSTaskRowContextMenuEffectTests {
 
     // MARK: - Move to List
 
-    @Test func moveToListCommitsTheRowsTaskIntoTheChosenListKeepingItsSection() throws {
+    @Test func moveToListCommitsTheRowsTaskIntoTheChosenListKeepingItsSectionOnIOS() throws {
         let f = try makeFixture()
         var commits = 0
 
@@ -131,7 +131,7 @@ struct iOSTaskRowContextMenuEffectTests {
         #expect(sibling.area?.id == f.area.id && sibling.project == nil, "the sibling did not move")
     }
 
-    @Test func moveToInboxClearsBothContainers() throws {
+    @Test func moveToInboxClearsBothContainersOnIOS() throws {
         let f = try makeFixture()
 
         let landed = iOSTaskRowContextMenu.moveToList(
@@ -151,7 +151,7 @@ struct iOSTaskRowContextMenuEffectTests {
     /// The refusal the row's `moveFailed` alert exists for: `false`, and the task back where it
     /// was. This is the one of the four a test can make refuse — the other three shared helpers
     /// take no `commit:` to inject.
-    @Test func aRefusedMoveToListIsReportedAndUndone() throws {
+    @Test func aRefusedMoveToListIsReportedAndUndoneOnIOS() throws {
         let f = try makeFixture()
 
         let landed = iOSTaskRowContextMenu.moveToList(
@@ -170,7 +170,7 @@ struct iOSTaskRowContextMenuEffectTests {
 
     // MARK: - Move Section
 
-    @Test func moveSectionCommitsTheRowsTaskIntoTheChosenSectionOfItsOwnList() throws {
+    @Test func moveSectionCommitsTheRowsTaskIntoTheChosenSectionOfItsOwnListOnIOS() throws {
         let f = try makeFixture()
 
         iOSTaskRowContextMenu.moveSection("Now", task: f.subject, modelContext: f.context)
@@ -187,7 +187,7 @@ struct iOSTaskRowContextMenuEffectTests {
     /// (`availableSectionNames` appends it), so choosing it must leave the task there. The
     /// container helper normalises to a section the list HAS — "Now" — which is how a reroute of
     /// Move Section onto it shows: on a task whose list is unchanged it is otherwise identical.
-    @Test func moveSectionKeepsASectionTheListNoLongerNames() throws {
+    @Test func moveSectionKeepsASectionTheListNoLongerNamesOnIOS() throws {
         let f = try makeFixture()
         f.subject.sectionName = "Retired"
         try f.context.save()
@@ -199,7 +199,7 @@ struct iOSTaskRowContextMenuEffectTests {
 
     // MARK: - Repeat
 
-    @Test func repeatOnAOneOffTaskCommitsTheRuleOnTheRowsTask() throws {
+    @Test func repeatOnAOneOffTaskCommitsTheRuleOnTheRowsTaskOnIOS() throws {
         let f = try makeFixture()
         var parked: TaskRecurrenceRule?
 
@@ -246,7 +246,7 @@ struct iOSTaskRowContextMenuEffectTests {
         #expect(f.context.hasChanges == false, "the series branch wrote to the store")
     }
 
-    @Test func choosingTheRuleAlreadySetWritesNothing() throws {
+    @Test func choosingTheRuleAlreadySetWritesNothingOnIOS() throws {
         let f = try makeFixture()
         var parked: TaskRecurrenceRule?
 
@@ -294,7 +294,7 @@ struct iOSTaskRowContextMenuRoutingTests {
 
     /// Each submenu is read separately, so a swap between two of them goes red here even though
     /// both names still appear somewhere in the file.
-    @Test func eachSubmenuRoutesToItsOwnAction() throws {
+    @Test func eachSubmenuRoutesToItsOwnActionOnIOS() throws {
         let menu = try menu()
         let routes = ["Self.duplicate(", "moveToContainer(area:", "Self.moveSection(", "settleRecurrenceSelection("]
         func calls(in declaration: String) throws -> [String: Int] {

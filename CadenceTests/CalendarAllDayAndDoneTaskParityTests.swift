@@ -203,9 +203,27 @@ private final class FixedEventDaySource: CalendarEventDaySource {
             ) == 1,
             "the grid no longer hands the header the day's all-day events, its capacity and the shared band height"
         )
+        // T-1364 put the shared rule behind `iOSCalendarTypographyMetrics.bandCapacity`, which
+        // spends the same per-width budget on fewer rows as the labels grow. The grid reads the
+        // wrapper and the wrapper is still required to derive from the shared rule, so the
+        // invariant is checked across both halves rather than relaxed to whichever one is left.
         #expect(
-            CadenceSourceScan.matchCount(#"CadenceCalendarAllDayBandPriority\.capacity\(isRegularWidth: isRegularWidth\)"#, in: code) == 1,
-            "the strip's capacity is no longer the shared per-width rule"
+            CadenceSourceScan.matchCount(
+                #"iOSCalendarTypographyMetrics\.bandCapacity\(isRegularWidth: isRegularWidth, at: dynamicTypeSize, scaling: scaling\)"#,
+                in: code
+            ) == 1,
+            "the strip's capacity is no longer read through the shared per-width rule's wrapper"
+        )
+        let metrics = CadenceSourceScan.codeOnly(
+            try CadenceSourceScan.sourceFile("Cadence/iOS/iOSCalendarMetrics.swift")
+        )
+        let capacityBody = try #require(
+            CadenceSourceScan.functionBody(named: "bandCapacity", in: metrics),
+            "iOSCalendarTypographyMetrics.bandCapacity was not found"
+        )
+        #expect(
+            capacityBody.contains("CadenceCalendarAllDayBandPriority.capacity(isRegularWidth: isRegularWidth)"),
+            "the strip's capacity is no longer derived from the shared per-width rule"
         )
 
         let header = try #require(
