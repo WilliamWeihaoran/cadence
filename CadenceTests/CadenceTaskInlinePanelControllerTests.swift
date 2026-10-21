@@ -13,7 +13,8 @@ import AppKit
 /// (`CadenceTaskInlinePanelReservation`, `CadenceTaskInlinePanelController`) and measured here on
 /// a real TextKit 1 stack — `NSLayoutManager` is what the iOS editor builds too
 /// (`iOSMarkdownTextView.init`) — over a storage spelled the way `applyTaskEmbedBlock` spells an
-/// embed. The hosting itself is UIKit and is pinned by the scans at the bottom.
+/// embed. The hosting itself is UIKit: the editor's wiring is driven on iOS by
+/// `iOSMarkdownInlineTaskPanelEffectTests`, and what is left is pinned by the scans at the bottom.
 @MainActor
 struct CadenceTaskInlinePanelControllerTests {
     nonisolated private static let embedID = UUID(uuidString: "11111111-2222-3333-4444-555555555555")!
@@ -249,19 +250,9 @@ struct CadenceTaskInlinePanelControllerTests {
 
     // MARK: - The iOS wiring, scanned (it is `#if os(iOS)`)
 
-    @Test func theIOSEditorReservesAfterEveryStylingPassAndRoutesTheCardTap() throws {
-        let editor = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile("Cadence/iOS/iOSMarkdownEditor.swift"))
-        let style = try #require(CadenceSourceScan.functionBody(named: "applyMarkdownStyle", in: editor))
-        let landed = try #require(style.range(of: "storage.setAttributedString(styled)"))
-        let reserved = try #require(style.range(of: "applyInlineTaskPanelReservation(to: storage)"))
-        #expect(landed.upperBound <= reserved.lowerBound)
-        #expect(style.contains("positionInlineTaskPanel(in: textView)"))
-
-        let hit = try #require(CadenceSourceScan.functionBody(named: "handleTaskEmbedHit", in: editor))
-        let inline = try #require(hit.range(of: "presentInlineTaskPanel(taskID: hit.task.id"))
-        let sheet = try #require(hit.range(of: "parent.onOpenEmbeddedTask?(hit.task.id)"))
-        #expect(inline.upperBound <= sheet.lowerBound, "the inline panel is tried first, the inspector is the fallback")
-    }
+    // The editor's own wiring -- the reservation landing after the styled string, the panel laid
+    // back over it on every restyle, a card tap trying the inline panel before the inspector -- is
+    // held by effect on an iOS destination in `iOSMarkdownInlineTaskPanelEffectTests` ([[T-3260]]).
 
     @Test func theIOSHostRemovesItsViewAndKeepsTheCardCentred() throws {
         let raw = try CadenceSourceScan.sourceFile("Cadence/iOS/iOSMarkdownInlineTaskPanelSupport.swift")
