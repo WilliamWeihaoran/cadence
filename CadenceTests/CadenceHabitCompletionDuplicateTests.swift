@@ -365,15 +365,87 @@ struct CadenceHabitCompletionDuplicateTests {
             CadenceSourceScan.matchCount(#"HabitCompletion\([^)]*habit:"#, in: importer) == 0,
             "the importer now sets the habit at construction instead of in the wiring pass"
         )
-        #expect(
-            importer.contains("model.habit = record.habitID.flatMap { destination.habits[$0] }"),
-            "the importer stopped wiring the habit, so its rows belong to nobody"
-        )
+        // [[T-3260]]: the third importer pin -- that the wiring pass assigns `model.habit` -- was
+        // a quotation of the line, and is now held by running an import:
+        // `anImportedCheckInHangsOffItsOwnHabitAndKeepsItsIdentity` below. The two kept above are
+        // the exemption's SHAPE (which constructor text the one permitted writer may contain), the
+        // claim this scan exists to make, and no import can observe it.
 
         #expect(
             constructing.isEmpty,
             "a shipped file constructs a HabitCompletion: \(constructing.sorted())"
         )
+    }
+
+    /// **An imported check-in hangs off its own habit, and keeps the id and `createdAt` it was
+    /// archived with** ([[T-3260]]).
+    ///
+    /// This replaces a source pin that quoted the importer's wiring line. The importer is the one
+    /// permitted constructor of a `HabitCompletion` (the exemption above), and it builds the row
+    /// with `date:` alone, so the habit arrives only in the second pass. A pass that skipped the
+    /// assignment, or resolved the wrong habit, leaves rows that belong to nobody -- and an orphan
+    /// row is invisible to `completionCountsByDate()`, so the restored history reads as empty.
+    ///
+    /// The fixture discriminates: two habits, so a wiring to the wrong one is red; a duplicated
+    /// habit-day on one of them, so the read path's collapse is held through an import; and the
+    /// second habit already exists on the destination under a different title, so the merge must
+    /// hang the check-in off the destination's own row rather than a copy. Read back from a SECOND
+    /// context: the store, not the importing context, is what a relaunch sees.
+    @Test func anImportedCheckInHangsOffItsOwnHabitAndKeepsItsIdentity() throws {
+        let source = ModelContext(try CadenceModelContainerFactory.makeInMemoryContainer())
+        let stretch = Habit(title: "Stretch")
+        let read = Habit(title: "Read")
+        read.targetCount = 2
+        source.insert(stretch)
+        source.insert(read)
+        let early = Date(timeIntervalSince1970: 1_770_000_000)
+        let late = early.addingTimeInterval(3_600)
+        let first = Self.syncedRow(stretch, on: "2026-03-09", createdAt: early, context: source)
+        let duplicate = Self.syncedRow(stretch, on: "2026-03-09", createdAt: late, context: source)
+        let reading = Self.syncedRow(read, on: "2026-03-10", count: 2, createdAt: late, context: source)
+        try source.save()
+
+        let archive = try CadenceDataExportService.makeArchive(in: source)
+        // Non-vacuity: the archive carries three check-ins, each naming its habit, so an orphan on
+        // the way out cannot pass for one the importer failed to wire.
+        #expect(archive.habitCompletions.count == 3)
+        #expect(archive.habitCompletions.allSatisfy { $0.habitID != nil })
+
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let destination = ModelContext(container)
+        let existing = Habit(title: "Read (this device)")
+        existing.id = read.id
+        destination.insert(existing)
+        try destination.save()
+
+        try CadenceArchiveImportService.apply(archive, in: destination)
+
+        let store = ModelContext(container)
+        let habits = try store.fetch(FetchDescriptor<Habit>())
+        #expect(habits.count == 2, "the merge duplicated a habit the destination already held")
+        let rows = Dictionary(
+            uniqueKeysWithValues: try store.fetch(FetchDescriptor<HabitCompletion>()).map { ($0.id, $0) }
+        )
+        #expect(rows.count == 3, "the import did not land every archived check-in")
+
+        let restoredFirst = try #require(rows[first.id], "the first check-in lost its archived id")
+        let restoredDuplicate = try #require(rows[duplicate.id], "the duplicate lost its archived id")
+        let restoredReading = try #require(rows[reading.id], "the reading check-in lost its archived id")
+        #expect(restoredFirst.habit?.id == stretch.id, "the first check-in belongs to no habit, or the wrong one")
+        #expect(restoredDuplicate.habit?.id == stretch.id, "the duplicate belongs to no habit, or the wrong one")
+        #expect(restoredReading.habit?.id == read.id, "the reading check-in belongs to no habit, or the wrong one")
+        #expect(
+            restoredReading.habit?.title == "Read (this device)",
+            "the check-in hangs off a copy of the habit rather than the destination's own row"
+        )
+        #expect(restoredFirst.createdAt == early && restoredDuplicate.createdAt == late)
+
+        // The read path the user sees: every row reached its habit, and the duplicated day still
+        // reports as one check-in.
+        let restoredStretch = try #require(habits.first { $0.id == stretch.id })
+        let restoredRead = try #require(habits.first { $0.id == read.id })
+        #expect(restoredStretch.completionCountsByDate() == ["2026-03-09": 1])
+        #expect(restoredRead.completionCountsByDate() == ["2026-03-10": 2])
     }
 
     /// The needle matches the constructor it hunts and misses the names it sits beside — otherwise
