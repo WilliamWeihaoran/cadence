@@ -221,6 +221,68 @@ struct MarkdownInlineTaskPanelTests {
         #expect(host.superview == nil)
     }
 
+    // MARK: - The pointer over the panel ([[T-3253]] (b))
+
+    @Test func thePointerOverThePanelIsThePanelsAndNowhereElse() throws {
+        let textView = makeTextView()
+        open(textView)
+        let geometry = try #require(textView.inlineTaskPanelGeometry())
+
+        #expect(textView.inlineTaskPanelOwnsPointer(at: NSPoint(x: geometry.panel.midX, y: geometry.panel.midY)))
+        #expect(!textView.inlineTaskPanelOwnsPointer(at: NSPoint(x: geometry.card.midX, y: geometry.card.midY)))
+        let below = try lineTop(of: "Prose below", in: textView)
+        #expect(!textView.inlineTaskPanelOwnsPointer(at: NSPoint(x: geometry.panel.midX, y: below + 4)))
+        #expect(textView.inlineTaskPanel?.host is MarkdownInlineTaskPanelHostingView)
+
+        textView.closeInlineTaskPanel()
+        #expect(!textView.inlineTaskPanelOwnsPointer(at: NSPoint(x: geometry.panel.midX, y: geometry.panel.midY)))
+    }
+
+    /// The bug itself: leaving a hovered card for the panel used to set the I-beam (the embed
+    /// hover's own "back to text" branch) and then hand the move to `NSTextView`, which sets it
+    /// again. Over the panel the move drops the hover and sets nothing.
+    @Test func movingFromACardOntoThePanelDropsTheHoverWithoutSettingTheIBeam() throws {
+        let textView = makeTextView()
+        let window = NSWindow(
+            contentRect: textView.frame,
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: true
+        )
+        window.isReleasedWhenClosed = false
+        window.contentView = textView
+        defer { window.contentView = nil }
+        open(textView)
+        let geometry = try #require(textView.inlineTaskPanelGeometry())
+
+        var unhovered: [UUID] = []
+        textView.onHoverEmbeddedMarkdownTask = { id, isHovered in
+            if !isHovered { unhovered.append(id) }
+        }
+        textView.hoveredMarkdownTaskEmbed = MarkdownTaskEmbedHover(id: Self.embedID, target: .card)
+        NSCursor.pointingHand.set()
+
+        let inWindow = textView.convert(NSPoint(x: geometry.panel.midX, y: geometry.panel.midY), to: nil)
+        let move = try #require(NSEvent.mouseEvent(
+            with: .mouseMoved,
+            location: inWindow,
+            modifierFlags: [],
+            timestamp: 0,
+            windowNumber: window.windowNumber,
+            context: nil,
+            eventNumber: 0,
+            clickCount: 0,
+            pressure: 0
+        ))
+        try #require(textView.inlineTaskPanelOwnsPointer(at: textView.convert(move.locationInWindow, from: nil)))
+
+        textView.mouseMoved(with: move)
+
+        #expect(textView.hoveredMarkdownTaskEmbed == nil)
+        #expect(unhovered == [Self.embedID])
+        #expect(NSCursor.current !== NSCursor.iBeam)
+    }
+
     // MARK: - Routing
 
     @Test func everyFieldChipButStatusOpensThePanel() {

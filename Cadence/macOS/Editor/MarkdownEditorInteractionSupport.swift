@@ -240,8 +240,20 @@ final class CadenceTextView: NSTextView, NSTextFieldDelegate {
     }
 
     override func mouseMoved(with event: NSEvent) {
-        updateHoveredTaskEmbed(at: convert(event.locationInWindow, from: nil))
+        let point = convert(event.locationInWindow, from: nil)
+        // Over the inline task panel the pointer is the panel's ([[T-3253]] (b)): neither the
+        // embed hover below nor `NSTextView`'s own `mouseMoved` may set the I-beam there.
+        if inlineTaskPanelOwnsPointer(at: point) {
+            releaseHoveredTaskEmbedToInlineTaskPanel()
+            return
+        }
+        updateHoveredTaskEmbed(at: point)
         super.mouseMoved(with: event)
+    }
+
+    override func cursorUpdate(with event: NSEvent) {
+        if inlineTaskPanelOwnsPointer(at: convert(event.locationInWindow, from: nil)) { return }
+        super.cursorUpdate(with: event)
     }
 
     override func mouseExited(with event: NSEvent) {
@@ -717,6 +729,15 @@ final class CadenceTextView: NSTextView, NSTextFieldDelegate {
         } else {
             NSCursor.iBeam.set()
         }
+        needsDisplay = true
+    }
+
+    /// The pointer left the card for the inline panel: drop the hover without setting the I-beam,
+    /// which `clearHoveredTaskEmbed` does for the note's text.
+    private func releaseHoveredTaskEmbedToInlineTaskPanel() {
+        guard let hoveredMarkdownTaskEmbed else { return }
+        onHoverEmbeddedMarkdownTask?(hoveredMarkdownTaskEmbed.id, false)
+        self.hoveredMarkdownTaskEmbed = nil
         needsDisplay = true
     }
 
