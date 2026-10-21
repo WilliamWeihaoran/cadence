@@ -195,6 +195,13 @@ CadenceTests/DataIntegrityRepairServiceTests.swift
 CadenceTests/CadenceNoteFolderMoveCommitTests.swift
 CadenceTests/CadenceEventKitLaunchGateTests.swift
 CadenceTests/CadenceCaptureEditorTests.swift
+Cadence/Shared/Components/CadenceTodayOverdueSummaryCards.swift
+Cadence/Shared/CadenceTodayOverdueSummarySupport.swift
+Cadence/iOS/iOSTodayTaskSections.swift
+Cadence/iOS/iOSTodayView.swift
+CadenceTests/CadenceTodaySectionMetricsTests.swift
+CadenceTests/CadenceTodayOverdueSummarySurfaceTests.swift
+CadenceTests/CadenceTaskInspectorHostTests.swift
 ```
 
 **Admission 2026-10-19 (coordinator), one line in `CadenceTests/CadenceMarkdownImageCommitSurfaceTests.swift`.**
@@ -3363,3 +3370,41 @@ readers to disagree about the size of this block — see the entry above where C
 coordinator 141 and the truth was 142. The four duplicate globs listed there are still duplicated.
 Deduplicating a machine-read allowlist is a deliberate edit and still wants doing on purpose, but
 the recurring miscount is the argument for it, not a reason to keep rounding.
+
+### 2026-10-21 — seven paths granted to Codex for [[T-3078]], with [[T-3044]] and [[T-3250]](c) already fenced
+
+**GRANTED, scoped to T-3078's deletion of the callerless past-due plumbing:**
+
+- `Cadence/Shared/Components/CadenceTodayOverdueSummaryCards.swift` — the three card views.
+- `Cadence/Shared/CadenceTodayOverdueSummarySupport.swift` — trimmed to the two summary structs
+  and `CadenceListOpenRequest`.
+- `Cadence/iOS/iOSTodayTaskSections.swift`, `Cadence/iOS/iOSTodayView.swift` — `pendingListOpen`
+  and its `.sheet(item:)`.
+- `CadenceTests/CadenceTodaySectionMetricsTests.swift`,
+  `CadenceTests/CadenceTodayOverdueSummarySurfaceTests.swift`,
+  `CadenceTests/CadenceTaskInspectorHostTests.swift` — the guards that must be INVERTED, not
+  merely deleted.
+
+**Why this one is properly Codex's rather than a local agent's.** T-3078's remainder has been
+blocked since 2026-10-08 by two tests that are themselves inside `CadenceTests/CadenceCodex*.swift`:
+`CadenceCodexPageCompletionTypographyTests:97-98` requires `.sheet(item: $pendingListOpen)` to
+present `iOSTodayOverdueListSheet(request: request)`, and `CadenceCodexTaskSummaryTypographyTests:19`
+calls `CadenceOverdueSummaryMetrics.iconSide` by symbol, so deleting the type is a compile break.
+Both are already fenced. The blocker and the fix live on the same side of the lease.
+
+**`Cadence/Services/PersistenceController.swift` is WITHHELD again**, as in the 2026-10-21 T-3260
+grant. T-3044's gate change (`storeFileIsNonEmpty`, `:2386-2394`) lives there, and that file owns
+the store-backup boundary. Codex re-seeds the FIXTURES only; the one comparison that consumes a real
+header belongs to whoever owns that boundary.
+
+**A stale path corrected before it was granted, and a general warning with it.** T-3078's entry
+names `Cadence/Shared/CadenceTodayOverdueSummaryCards.swift`; the file is at
+`Cadence/Shared/Components/CadenceTodayOverdueSummaryCards.swift`. The entry is from 2026-10-08 and
+more of it will have drifted. This is the same failure the T-3260 grant just produced from the other
+direction: that brief was written off a triage whose items (2), (3) and (4) had ALREADY been
+converted on main (`0ecf9ad1`, `96648a60`, `671ac2b5`, `25716535`), and Codex correctly converted
+nothing under [[T-4100]]. **A ticket's line numbers are a hypothesis about the tree, not a worklist.**
+Both briefs now say so in as many words.
+
+**Checked before granting:** no worktree holds any of the seven paths modified, and none matched the
+fence already.
