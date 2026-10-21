@@ -143,8 +143,8 @@ nonisolated extension DataIntegrityRepairReport {
 /// `nil` means "this process has no task-deletion core", which is the MCP tool's true answer, not
 /// a silent skip: `CadenceMCPStorePreparation.prepare` says so at its call. The app supplies
 /// `CadenceForkedOccurrenceRemover.removeAndCancelReminders`, and
-/// `DataIntegrityRepairServiceTests.theAppStartupRepairSuppliesTheForkedOccurrenceRemover` pins
-/// that it does — the one thing a default of `nil` cannot enforce on its own.
+/// `DataIntegrityRepairServiceTests.theAppStartupMaintenanceCollapsesAForkedSeries` holds by
+/// effect that it does — the one thing a default of `nil` cannot enforce on its own.
 ///
 /// Same shape and same reason as `CadenceListTaskSweep`: a piece of a cascade that cannot be
 /// spelled where the cascade lives, named at file scope so nobody has to write the function type

@@ -481,8 +481,8 @@ struct PersistenceController {
         // `DataIntegrityRepairService` cannot spell: it is in `CadenceMCPServer`'s explicit source
         // list and the task-deletion core is not. Omitting it here would leave forked recurring
         // occurrences uncollapsed on the one launch that matters, silently, so
-        // `DataIntegrityRepairServiceTests.theAppStartupRepairSuppliesTheForkedOccurrenceRemover`
-        // pins that this argument is present.
+        // `DataIntegrityRepairServiceTests.theAppStartupMaintenanceCollapsesAForkedSeries` runs
+        // this function over a forked store and reds if the collapse does not happen.
         let repairReport = recorder.measure(.integrityRepair) {
             DataIntegrityRepairService.repairAndRecordFailure(
                 in: context,

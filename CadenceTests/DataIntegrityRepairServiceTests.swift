@@ -1332,31 +1332,55 @@ struct DataIntegrityRepairServiceTests {
         #expect(collapsed.duplicateRecurrenceOccurrencesRemoved == 1)
     }
 
-    /// **The app's startup repair must supply the remover, and only a scan can say so.**
+    /// **The app's startup maintenance collapses a forked series — held by effect, not by text.**
     ///
     /// The seam defaults to `nil` so the twenty-odd existing callers did not have to change, which
     /// means the one call site where forgetting it costs the user anything —
     /// `PersistenceController.performStartupMaintenance`, the launch that actually runs against
     /// their store — is protected by nothing the type system can see. Dropping the argument there
-    /// compiles, every other test stays green, and forked occurrences quietly stop being collapsed
-    /// on every device forever.
+    /// compiles, and forked occurrences quietly stop being collapsed on every device forever.
     ///
-    /// Asserted against the stripped source so a commented-out call cannot satisfy it, and paired
-    /// with a negative: the MCP-side maintenance must *not* name the remover, because that file is
-    /// in `CadenceMCPServer`'s Sources phase and this one is not — which is the whole reason the
-    /// seam exists. `CadenceTargetSourceMembershipTests` enforces that boundary in general; this
-    /// names the specific pair so a future edit that "fixes" the asymmetry has to read why.
-    @Test func theAppStartupRepairSuppliesTheForkedOccurrenceRemover() throws {
-        let startup = CadenceSourceScan.strippingComments(
-            try CadenceSourceScan.sourceFile("Cadence/Services/PersistenceController.swift")
-        )
-        #expect(startup.contains("removingForkedOccurrences: CadenceForkedOccurrenceRemover.removeAndCancelReminders"))
-        // Non-vacuity for the read itself: an empty or wrong file would satisfy every `!contains`.
-        #expect(startup.contains("DataIntegrityRepairService.repairAndRecordFailure"))
+    /// This used to be a source pin on the argument's spelling ([[T-3260]]). It is now the launch
+    /// itself, run over a store holding the fork: a launch that omits the remover, or hands in one
+    /// that removes nothing, leaves three rows where this requires two, and the read is from a
+    /// second context so a collapse that was never committed does not count.
+    /// `aRepairWithNoRemoverLeavesTheForkExactlyAsItFoundIt` is the other half — without a remover
+    /// the same fixture is left whole — so this cannot pass on a fixture that was never a fork.
+    @Test func theAppStartupMaintenanceCollapsesAForkedSeries() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let modelContext = ModelContext(container)
 
+        let fork = try forkedSeries(in: modelContext)
+        try modelContext.save()
+        // Non-vacuity: the store really holds the fork before launch.
+        #expect(try ModelContext(container).fetch(FetchDescriptor<AppTask>()).count == 3)
+
+        try withTemporaryDefaults("CadenceTests.startupForkCollapse") { defaults in
+            PersistenceController.performStartupMaintenance(in: modelContext, defaults: defaults)
+        }
+
+        let reopened = ModelContext(container)
+        let remaining = try reopened.fetch(FetchDescriptor<AppTask>())
+        let remainingIDs = Set(remaining.map(\.id))
+        #expect(remaining.count == 2, "the launch left the forked successor in the store")
+        #expect(remainingIDs.contains(fork.lowerID), "the launch kept the wrong copy")
+        #expect(!remainingIDs.contains(fork.higherID))
+        let origin = try #require(remaining.first { $0.id == fork.origin.id })
+        #expect(origin.recurrenceSpawnedTaskID == fork.lowerID, "the series no longer walks to the survivor")
+    }
+
+    /// **The MCP-side maintenance must *not* name the remover** — the half of the old pin that is
+    /// about which text exists where, so it stays a scan.
+    ///
+    /// That file is in `CadenceMCPServer`'s Sources phase and the remover is not — which is the
+    /// whole reason the seam exists. `CadenceTargetSourceMembershipTests` enforces that boundary
+    /// in general; this names the specific pair so a future edit that "fixes" the asymmetry has to
+    /// read why. Asserted against the stripped source so a comment explaining the absence is fine.
+    @Test func theMCPMaintenanceDoesNotNameTheForkedOccurrenceRemover() throws {
         let mcp = CadenceSourceScan.strippingComments(
             try CadenceSourceScan.sourceFile("Cadence/Services/MCPReadOnly/CadenceModelContainerFactory.swift")
         )
+        // Non-vacuity for the read itself: an empty or wrong file would satisfy the `!contains`.
         #expect(mcp.contains("DataIntegrityRepairService.repairAndRecordFailure"))
         #expect(
             !mcp.contains("CadenceForkedOccurrenceRemover"),
