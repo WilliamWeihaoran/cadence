@@ -188,6 +188,8 @@ Cadence/iOS/iOSUnmanagedStoreSettingsSection.swift
 CadenceTests/CadenceRealTreeSweepManifest.txt
 CadenceTests/iOSCalendarMetricsTests.swift
 CadenceTests/TaskBundleTests.swift
+CadenceTests/CadencePendingChangePersistenceTests.swift
+CadenceTests/MarkdownImageDropAffordanceTests.swift
 ```
 
 **Admission 2026-10-19 (coordinator), one line in `CadenceTests/CadenceMarkdownImageCommitSurfaceTests.swift`.**
@@ -3277,3 +3279,35 @@ all and four are already inside Codex's lease, so this is the last one in the wa
 stopped at its boundary twice and reported rather than editing. Compare the 2026-10-20 T-1364 entry
 above, where 27 paths were written first and granted afterwards. Same protocol, opposite order, and
 the difference is entirely in what it cost to approve.
+
+### 2026-10-21 — two conversion test paths granted to Codex for [[T-3260]], after a re-check that cut the ask from 13 to 2
+
+**GRANTED, scoped to T-3260's source-pin conversion and nothing else:**
+
+- `CadenceTests/CadencePendingChangePersistenceTests.swift` — replacing the two saved-link
+  delegation pins with failure-path tests.
+- `CadenceTests/MarkdownImageDropAffordanceTests.swift` — the five drag-routing pins, keeping any
+  with no meaningful behavioural replacement.
+
+**The re-check is why this entry is short, and it is the point.** Codex first reported **13** paths
+outside the fence. Its worktree was **97 commits behind main**, still on `codex/block-removal-finish`
+— so `T-3260` did not exist in its ledger at all, and its lease reading came from a
+`docs/CODEX_WORKTREE.md` that predated three widenings. It was asked to sync and re-check rather
+than being granted the 13, and the list collapsed to **2**: the completed conversion batches and the
+structural pins needed nothing, and `Cadence/Shared/CadenceSavedLinkPersistence.swift` was already
+fenced. Eleven paths were never needed. **A stale worktree does not merely delay a Codex agent; it
+makes every lease verdict it reports unreliable in the direction of asking for too much.**
+
+**Codex was right about the thing that mattered and stopped twice before writing.** "Not in the
+fence" means it may not write, and it reported that rather than editing — the third time this branch
+has done so. Compare the 2026-10-20 T-1364 entry, where 27 paths were written first and granted
+afterwards.
+
+**A counting defect this exposed, recorded rather than fixed here.** Codex reported 140 patterns and
+the coordinator 141; both were wrong. `codex-land.sh lease` emits **142 pattern lines of which 138
+are distinct** — `Cadence/iOS/iOSCalendarManager.swift`, `Cadence/iOS/iOSMarkdownEditor.swift`,
+`Cadence/macOS/Views/CalendarPageMonthSupportViews.swift` and
+`CadenceUITests/CadenceCapturePaletteUITests.swift` each appear twice. Harmless to matching, since a
+duplicate glob matches the same paths, but it means no two readers agree on the fence's size.
+Deduplicating is a deliberate edit to a machine-read allowlist and is left for someone to do on
+purpose.
