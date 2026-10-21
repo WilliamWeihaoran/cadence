@@ -64,7 +64,6 @@ struct SchedulePanel: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(CalendarManager.self) private var calendarManager
     @Environment(TodayTimelineFocusManager.self) private var todayTimelineFocusManager
-    @Environment(TaskCreationManager.self) private var taskCreationManager
     var presentation: SchedulePanelPresentation = .standard
     var useStandardHeaderHeight = false
     @Query private var allTasks: [AppTask]
@@ -85,6 +84,10 @@ struct SchedulePanel: View {
     /// because this panel draws exactly one day.
     @State private var eventCache = CalendarEventDayCache()
     @State private var isFocusHighlighted = false
+    /// The refusal this timeline can produce: a drag-created task the store would not take
+    /// ([[T-655]], [[T-3171]]). Its sibling on the Calendar page's `CalDayColumn` is the same flag
+    /// drawn the same way, for the reason stated beside that alert.
+    @State private var taskCreateFailed = false
     @State private var exportDocument: PlainTextExportDocument?
     @State private var isExportingTimeline = false
 
@@ -144,23 +147,17 @@ struct SchedulePanel: View {
                             scheduledTasks: scheduledTasks,
                             todayKey: todayKey,
                             externalEventItems: externalEventItems,
-                            // **T-1433.** `doDateKey` was pinned to `todayKey` because the
-                            // popover could not offer a date. It offers one now, and the seed
-                            // takes it: a slot dragged on this timeline and then moved to
-                            // tomorrow in the inspector must open the panel on tomorrow.
-                            onCreateTask: { draft in
-                                taskCreationManager.present(
-                                    title: draft.title,
-                                    notes: draft.notes,
-                                    doDateKey: draft.dateKey,
-                                    scheduledStartMin: draft.startMin,
-                                    estimatedMinutes: max(5, draft.endMin - draft.startMin),
-                                    priority: draft.priority,
-                                    container: draft.container,
-                                    sectionName: draft.sectionName,
-                                    subtaskTitles: draft.subtaskTitles
-                                )
-                            },
+                            // **[[T-3171]]: this composes in place, it does not open a second
+                            // surface.** It used to call `taskCreationManager.present(…)`, which
+                            // raises `CreateTaskPanelSurface` — the old create-task sheet — over
+                            // the window with the draft as its seed, so pressing Add in the shared
+                            // panel re-asked for everything the user had just typed and stored
+                            // nothing until they confirmed a second time. `draft.dateKey` is still
+                            // honoured (T-1433 gave the popover a date field, and
+                            // `QuickCreateChoicePopover.hostWritesDraftDay` is true for this host
+                            // because of this line), it is now the day the task is written on
+                            // rather than the day a second sheet opens on.
+                            onCreateTask: createTask,
                             onDropTaskAtMinute: { task, startMin in
                                 SchedulingActions.dropTask(task, to: todayKey, startMin: startMin)
                             },
@@ -226,6 +223,14 @@ struct SchedulePanel: View {
                 .padding(.vertical, 6)
         }
         .calendarWriteFailureAlert()
+        // An alert rather than an inline notice, for the reason `CalDayColumn`'s says: the draft
+        // popover the user typed into has already dismissed itself by the time the store answers,
+        // so there is nothing left on screen to write under.
+        .alert(TaskCreationService.createFailureAlertTitle, isPresented: $taskCreateFailed) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(TaskCreationService.saveFailureNotice)
+        }
         .cadenceTracksDayChanges($observedDay)
         .onChange(of: calendarManager.storeVersion) {
             SchedulePanelDataSupport.syncLinkedTasks(
@@ -240,6 +245,23 @@ struct SchedulePanel: View {
     private var headerHeight: CGFloat? {
         if presentation == .compact { return 58 }
         return useStandardHeaderHeight ? todayPanelHeaderHeight : nil
+    }
+
+    /// **The drag-created task is committed here, and a refusal is named here** ([[T-3171]]).
+    ///
+    /// See `SchedulePanelDataSupport.insertDragCreatedTask` for why this host writes the draft's
+    /// own day and for what it replaced.
+    private func createTask(_ draft: QuickCreateTaskDraft) {
+        do {
+            try SchedulePanelDataSupport.insertDragCreatedTask(
+                draft,
+                areas: areas,
+                projects: projects,
+                in: modelContext
+            )
+        } catch {
+            taskCreateFailed = true
+        }
     }
 
     private func focusTimeline(using proxy: ScrollViewProxy) {
