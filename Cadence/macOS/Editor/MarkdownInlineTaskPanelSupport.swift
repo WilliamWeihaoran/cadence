@@ -80,14 +80,29 @@ enum MarkdownInlineTaskPanelRouting {
     }
 }
 
+/// **The panel's host, which owns the pointer over itself** ([[T-3253]] (b)).
+///
+/// The host is a subview of the note's `NSTextView`, whose cursor rect covers the whole visible
+/// text and says I-beam. A plain `NSHostingView` registers no cursor rect of its own, so over the
+/// panel's labels, rows and buttons that I-beam won and the panel read as editable text. This one
+/// registers the arrow over its bounds; a text field inside the panel still registers its own
+/// I-beam above it. `CadenceTextView.mouseMoved` and `cursorUpdate` stand back over this frame
+/// for the same reason — see `inlineTaskPanelOwnsPointer(at:)`.
+final class MarkdownInlineTaskPanelHostingView: NSHostingView<MarkdownInlineTaskPanelFrame> {
+    override func resetCursorRects() {
+        addCursorRect(bounds, cursor: .arrow)
+        super.resetCursorRects()
+    }
+}
+
 /// The open panel's record on the text view.
 @MainActor
 final class MarkdownInlineTaskPanelState {
     let taskID: UUID
-    let host: NSHostingView<MarkdownInlineTaskPanelFrame>
+    let host: MarkdownInlineTaskPanelHostingView
     var height: CGFloat
 
-    init(taskID: UUID, host: NSHostingView<MarkdownInlineTaskPanelFrame>, height: CGFloat) {
+    init(taskID: UUID, host: MarkdownInlineTaskPanelHostingView, height: CGFloat) {
         self.taskID = taskID
         self.host = host
         self.height = height
@@ -158,7 +173,7 @@ extension CadenceTextView {
             textContainerWidth: textContainer?.containerSize.width ?? bounds.width
         )
         let content = makeContent { [weak self] in self?.closeInlineTaskPanel() }
-        let host = NSHostingView(
+        let host = MarkdownInlineTaskPanelHostingView(
             rootView: MarkdownInlineTaskPanelFrame(
                 width: width,
                 content: content,
@@ -241,6 +256,13 @@ extension CadenceTextView {
             host.frame = frame
         }
         host.isHidden = false
+    }
+
+    /// Whether the pointer at `point` (view coordinates) is over the open panel, which then draws
+    /// its own pointer instead of the note's I-beam ([[T-3253]] (b)).
+    func inlineTaskPanelOwnsPointer(at point: NSPoint) -> Bool {
+        guard let host = inlineTaskPanel?.host, !host.isHidden else { return false }
+        return host.frame.contains(point)
     }
 
     /// The card's rect and the panel's, in view coordinates — what the tests and the reveal read.
