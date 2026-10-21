@@ -3354,3 +3354,12 @@ T-3246) — the pre-filed-stub shape, not a block. The one differing file,
 form: all **4** lines the branch's own commits add are present in main, so the blob differs only
 because main moved ahead. T-3170's seventeenth pass already says as much in the ledger.
 
+
+**Count correction, same day.** `44e84dbe`'s commit message says this grant took the fence "143 ->
+148 patterns". Both numbers are off by one: it went **142 -> 147 pattern lines, 138 -> 143
+distinct**. The coordinator's regex caught a trailing element after the last glob. Codex read the
+live lease on the next pass, reported 147, and was right. That is now the THIRD consecutive pair of
+readers to disagree about the size of this block — see the entry above where Codex said 140 and the
+coordinator 141 and the truth was 142. The four duplicate globs listed there are still duplicated.
+Deduplicating a machine-read allowlist is a deliberate edit and still wants doing on purpose, but
+the recurring miscount is the argument for it, not a reason to keep rounding.

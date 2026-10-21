@@ -299,7 +299,7 @@ struct CadenceGuardScriptSelftestTests {
         "LEDGER-LAG-VACUOUS",
     ]
 
-    /// Every finding and refusal `scripts/ledger-blocker-check.sh` makes (T-3310). It is
+    /// Every finding and refusal `scripts/ledger-blocker-check.sh` makes (T-3321). It is
     /// `ledger-lag-check.sh`'s question asked of the ENTRY rather than of the commit: that script
     /// asks whether a commit that landed code closed anything, and this one asks whether an entry
     /// that says it is waiting is still waiting for something that exists.
@@ -1019,7 +1019,7 @@ struct CadenceGuardScriptSelftestTests {
     /// writes its fixtures with `printf` — luck, not design, which is why the shebang is the rule.
     /// The script also pins `TMPPREFIX` into `$TMPDIR` itself now, so the next caller to hand it to
     /// zsh gets fixtures rather than silence.
-    /// T-3310. `#!/bin/sh`, so `/bin/sh` — the shell its shebang names, and not a style point:
+    /// T-3321. `#!/bin/sh`, so `/bin/sh` — the shell its shebang names, and not a style point:
     /// this script carries its reading inside a command substitution, and the one thing it may not
     /// contain is a literal backtick, which is why its regexes compose `chr(96)` exactly as
     /// `ledger-lag-check.sh` composes `sprintf("%c", 96)`. Fixtures are a throwaway git repository

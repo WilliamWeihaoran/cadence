@@ -394,6 +394,12 @@ struct MobileTaskSortStabilityTests {
     /// recomposes `sortTasks` from `sortKeyOrder` plus `fallbackPrecedes` over every mode and pair,
     /// for the tie-break (that suite is `#if os(macOS)`; `sortTasksIsTheModeKeyWithTheSharedFallbackOnATie`
     /// holds the same on both legs, T-3278) — so what remains is only what behaviour cannot see.
+    // T-3260 retention review: the two case-presence checks bound the negative scan to the
+    // actual switch; a behavioural test cannot prove which declaration a source scan read.
+    // The three negative field/comparison checks enforce non-duplication: equivalent inline
+    // implementations would pass the behavioural key tests above, so those cannot replace them.
+    // The final negative switch check enforces one implementation; equal answers cannot prove
+    // that a second, currently equivalent mode switch does not exist.
     @Test
     func theDoDateAndPriorityBranchesDelegateRatherThanRestate() throws {
         let source = CadenceSourceScan.strippingComments(

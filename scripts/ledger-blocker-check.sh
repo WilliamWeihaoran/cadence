@@ -1,5 +1,5 @@
 #!/bin/sh
-# Ask whether a ledger entry's STATED BLOCKER is still true (T-3310).
+# Ask whether a ledger entry's STATED BLOCKER is still true (T-3321).
 #
 #   ./scripts/ledger-blocker-check.sh [<rev>]    # default: the working tree's ledger; exit 0
 #   ./scripts/ledger-blocker-check.sh --strict   # same reading, exit 3 on a finding
