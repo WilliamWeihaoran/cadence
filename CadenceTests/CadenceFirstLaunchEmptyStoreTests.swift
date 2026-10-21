@@ -47,17 +47,21 @@ struct CadenceFirstLaunchEmptyStoreTests {
 
     // MARK: - The sequence
 
-    /// **What a launch runs, and in what order.** Now that every test below *calls* startup
-    /// maintenance, nothing here has to pin a replay against it — so this asks the one thing
-    /// calling it cannot: that the five passes are in this ORDER, the repair after the migrations
-    /// so it sees the migrated shape, and that two facts a passing empty-store run is blind to are
-    /// still true of the body.
+    /// **Which passes a launch runs.** Now that every test below *calls* startup maintenance,
+    /// nothing here has to pin a replay against it — so this asks what an empty-store run is blind
+    /// to: that the pass list below names every pass the body runs, and that two facts a passing
+    /// empty-store run cannot see are still true of the body.
+    ///
+    /// **The ORDER is not read here any more ([[T-3260]]).** It was a needle walk over the body;
+    /// `aLaunchRunsItsPassesInOrderAndTheTagSyncSeesTheMigratedNotes` below now holds it by running
+    /// a launch over a seeded store and reading the stages a recorder saw, plus one dependency the
+    /// order exists for (the tag sync sees the notes the migration just made).
     ///
     /// Comments are blanked before reading, so the prose describing a pass cannot stand in for the
     /// call. That earns its keep twice since T-528: the body carries a long comment naming
     /// `TagSupport.seedDefaultTags` to explain why it is gone, and the absence check below would
     /// match that prose and fail on a correct file if it read the raw source.
-    @Test func theLaunchRunsItsFivePassesInThisOrderAndSeedsNothing() throws {
+    @Test func theLaunchNamesEveryPassItRunsAndSeedsNothing() throws {
         let source = CadenceSourceScan.strippingComments(
             try CadenceSourceScan.sourceFile("Cadence/Services/PersistenceController.swift")
         )
@@ -82,25 +86,16 @@ struct CadenceFirstLaunchEmptyStoreTests {
             // that. A behavioural test of a helper is not a test that anything calls it.
             "CadenceFocusLedger.reconcile",
         ]
-        var cursor = body.startIndex
-        for needle in expectedOrder {
-            let found = try #require(
-                body.range(of: needle, range: cursor..<body.endIndex),
-                "startup maintenance no longer calls \(needle) here, or calls it out of order"
-            )
-            cursor = found.upperBound
-        }
-
-        // Non-vacuity for the ordering itself: a body that contained the needles in any order
-        // would pass a set-membership check, so prove the reader can see order by looking for one
-        // that is genuinely later than where the walk finished.
-        #expect(body.range(of: "PursuitToGoalMigration.runIfNeeded", range: cursor..<body.endIndex) == nil)
+        // [[T-3260]] retired the needle walk that read `expectedOrder` in sequence out of the body,
+        // and its non-vacuity read. The order is held by effect in
+        // `aLaunchRunsItsPassesInOrderAndTheTagSyncSeesTheMigratedNotes`; the list stays, in launch
+        // order for the reader, because the check below still needs it.
 
         // T-1140. `expectedOrder` is still a list, and a list of passes is the thing that goes
         // stale here — the focus reconcile was missing from the one in
         // `noStartupPassReportsAChangeOnAFirstLaunch` for exactly that reason. It cannot go stale
         // quietly now: the passes are derived from the body, and every one of them has to be named
-        // above. This asks nothing about order, which is what the walk above is for.
+        // above. This asks nothing about order.
         let derived = try Self.passesTheLaunchRuns()
         #expect(
             derived.count >= 5,
@@ -162,6 +157,58 @@ struct CadenceFirstLaunchEmptyStoreTests {
         #expect(
             !launchCall.contains("defaults:"),
             "the launch path names a defaults suite of its own: \(launchCall)"
+        )
+    }
+
+    /// **The order a launch runs its passes in, held by running one ([[T-3260]]).** This replaced a
+    /// needle walk over `performStartupMaintenance`'s body. A recorder sees each stage as it closes,
+    /// so the stages it holds are the order the launch actually ran them in, and the one save comes
+    /// after every pass. The seeded store makes the order matter as well as be visible: a legacy
+    /// `DailyNote` whose frontmatter names a tag the store already holds. The note migration makes
+    /// the `Note`; the tag sync, which runs after it, links that note to its tag. If the tag sync
+    /// ran first it would find no notes at all, and the migrated note would be saved untagged.
+    @Test func aLaunchRunsItsPassesInOrderAndTheTagSyncSeesTheMigratedNotes() throws {
+        let container = try CadenceTestStore.container()
+        let seed = ModelContext(container)
+        let legacy = DailyNote(date: "2026-10-21")
+        legacy.content = "---\ntags: [\"review\"]\n---\n\nBody"
+        seed.insert(legacy)
+        seed.insert(Cadence.Tag(name: "review", slug: "review"))
+        try seed.save()
+        // Non-vacuity: before the launch there is no `Note` for the tag sync to see.
+        #expect(try ModelContext(container).fetch(FetchDescriptor<Note>()).isEmpty)
+
+        try withTemporaryDefaults("CadenceTests.firstLaunchOrder") { defaults in
+            CadenceStartupCostLedger.setEnabled(true, defaults: defaults)
+            let recorder = try #require(CadenceStartupCostLedger.begin(defaults: defaults))
+            PersistenceController.performStartupMaintenance(
+                in: ModelContext(container),
+                defaults: defaults,
+                recorder: recorder
+            )
+            let report = try #require(recorder.commit(), "a launch that ran its passes left no report")
+
+            #expect(
+                report.stages.map(\.stage) == [
+                    .pursuitMigration, .bundleRetirement, .noteMigration, .tagSync, .integrityRepair,
+                    .focusReconciliation, .maintenanceSave,
+                ],
+                "the launch ran its stages as \(report.stages.map(\.stage.rawValue))"
+            )
+            #expect(report.stage(.noteMigration)?.outcome == .changed)
+            #expect(report.stage(.noteMigration)?.count == 1)
+            #expect(report.stage(.tagSync)?.outcome == .changed)
+            #expect(report.stage(.maintenanceSave)?.outcome == .completed)
+        }
+
+        // Read back from a second context, so this is what the launch saved and not what it holds.
+        let notes = try ModelContext(container).fetch(FetchDescriptor<Note>())
+        #expect(notes.count == 1, "the launch migrated \(notes.count) notes")
+        let migrated = try #require(notes.first)
+        #expect(migrated.legacySourceID == legacy.id.uuidString)
+        #expect(
+            (migrated.tags ?? []).map(\.slug) == ["review"],
+            "the migrated note was saved with tags \((migrated.tags ?? []).map(\.slug)), so the tag sync did not see it"
         )
     }
 
