@@ -345,7 +345,8 @@ struct MobileTaskSortStabilityTests {
     /// `theDoDateAndPriorityModesAnswerTaskOrderingsOwnKeyOnEveryPair` for the delegation, and
     /// `CadenceReorderOffScreenNoticeTests.theModeKeyRecomposesIntoItsComparatorExactly`, which
     /// recomposes `sortTasks` from `sortKeyOrder` plus `fallbackPrecedes` over every mode and pair,
-    /// for the tie-break — so what remains is only what behaviour cannot see.
+    /// for the tie-break (that suite is `#if os(macOS)`, so the tie-break is held on the macOS leg
+    /// only) — so what remains is only what behaviour cannot see.
     @Test
     func theDoDateAndPriorityBranchesDelegateRatherThanRestate() throws {
         let source = CadenceSourceScan.strippingComments(
