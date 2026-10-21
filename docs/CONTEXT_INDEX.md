@@ -56,6 +56,9 @@ loading broad histories.
   private `-derivedDataPath` and takes the test-host lock. Rules: `docs/AGENT_BRIEF.md`.
 - Unit tests: scope to `CadenceTests/<SuiteName>` — a SUITE, not a filename.
 - MCP changes: build the `CadenceMCPServer` scheme separately and grep the log for warnings.
+- CI red where local was green, or anything about to be pushed to `main`: `docs/CI_PARITY.md` —
+  the measured differences (Xcode 26.0.1/UTC/3 cores there, 27.1 here), the pre-push checks that
+  cover the jobs no local run makes, and what cannot be checked on this Mac at all.
 
 ## The Ledger, Without Reading It
 

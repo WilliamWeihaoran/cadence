@@ -38,7 +38,10 @@ Read [AGENTS.md](../AGENTS.md) for the directory map and the non-negotiable UI p
 - **Assert a COUNT or a RELATION, never a duration or a pinned point figure** — CI pins Xcode 26.0.1
   and this Mac runs 27; pinning either has reddened the other (T-1279, T-1296).
 - **CI is the real gate.** `gh run list --workflow=CI --limit 3` — the "CI" workflow, not
-  "Docs budget". Local green is necessary, not sufficient.
+  "Docs budget". Local green is necessary, not sufficient, and
+  [docs/CI_PARITY.md](CI_PARITY.md) says *why*: what differs between CI and this Mac, which
+  divergences you can check here and how, and which you cannot check at all. Read it before
+  pushing `main` or triaging a red run that was green locally.
 
 ## Mutation testing
 
