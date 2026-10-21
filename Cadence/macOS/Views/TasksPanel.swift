@@ -394,7 +394,6 @@ struct TasksPanel: View {
         }
     }
 
-    @ViewBuilder
     // [[T-3197]] removed TasksPanel.emptyStateSection — Today's "Nothing planned" / "Add a task
     // with +, or schedule one from Inbox." box, an `EmptyStateView` with a `checkmark.circle` tile
     // drawn under the rows whenever `derived.isEmptyState`. The owner asked for the box off:
