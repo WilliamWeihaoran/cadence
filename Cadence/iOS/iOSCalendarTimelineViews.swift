@@ -1030,6 +1030,10 @@ private struct iOSCalendarTimelineDayColumn: View {
     /// for which of fourteen columns holds the pending one.
     @State private var draft: CadenceScheduleDraft?
     @State private var isDraftEditorPresented = false
+    /// Why the editor is being presented, which the panel reads to decide whether its title takes
+    /// focus ([[T-3252]]). `.returnedAfterAdjustment` is written by exactly one site,
+    /// `draftAdjustmentObserver`; every other presentation writes `.opened` first.
+    @State private var draftEditorAppearance: CadenceSchedulePanelTitleFocus.Appearance = .opened
 
     /// The draft's minute range as the touch now on the block found it, or `nil` when no touch is
     /// on it — the one thing that tells an edge adjustment apart from a scroll that happened to
@@ -1180,6 +1184,7 @@ private struct iOSCalendarTimelineDayColumn: View {
                             // their editor back, which is why it re-opens rather than leaving a
                             // rectangle on the canvas that nothing can clear.
                             guard draft == nil else {
+                                draftEditorAppearance = .opened
                                 isDraftEditorPresented = true
                                 return
                             }
@@ -1244,6 +1249,7 @@ private struct iOSCalendarTimelineDayColumn: View {
             .onEnded { _ in
                 draftPressAnchor = nil
                 guard draft != nil else { return }
+                draftEditorAppearance = .opened
                 isDraftEditorPresented = true
             }
     }
@@ -1322,6 +1328,7 @@ private struct iOSCalendarTimelineDayColumn: View {
             dateKey: DateFormatters.dateKey(from: date),
             startMin: minute(for: yPosition)
         )
+        draftEditorAppearance = .opened
         if presentingEditor { isDraftEditorPresented = true }
     }
 
@@ -1345,7 +1352,8 @@ private struct iOSCalendarTimelineDayColumn: View {
                 iOSTimelineDraftPanelHost(
                     draft: draftBinding(fallingBackTo: current),
                     onCancel: finishDraftCreation,
-                    onCommitted: finishDraftCreation
+                    onCommitted: finishDraftCreation,
+                    titleFocusAppearance: draftEditorAppearance
                 )
                 // **The editor hangs off the block it is editing, and that block has handles.**
                 // `iOSTimelineDraftBlock` hangs a 32pt touch band off each end for exactly one
@@ -1410,6 +1418,9 @@ private struct iOSCalendarTimelineDayColumn: View {
                 draftRangeUnderTouch = nil
                 guard let before, let adjusted = draft else { return }
                 guard adjusted.startMin != before.start || adjusted.endMin != before.end else { return }
+                // The editor comes back WITHOUT re-focusing its title, so the keyboard stays down
+                // ([[T-3252]]): the touch was about the block's range, not its name.
+                draftEditorAppearance = .returnedAfterAdjustment
                 isDraftEditorPresented = true
             }
     }
@@ -1452,6 +1463,7 @@ private struct iOSCalendarTimelineDayColumn: View {
         // A gesture the system cancels never reaches `onEnded`, so the captured range is cleared
         // here as well: a stale one would be compared against the *next* touch's draft.
         draftRangeUnderTouch = nil
+        draftEditorAppearance = .opened
         isDraftEditorPresented = false
         draft = nil
     }
