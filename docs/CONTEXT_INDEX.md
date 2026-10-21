@@ -34,6 +34,11 @@ loading broad histories.
   the one named section of `docs/SUBAGENT_RUNBOOK_REFERENCE.md` its routing table sends you to.
 - Product/feature history:
   Search `docs/CLAUDE_REFERENCE.md` by section name.
+- A September 2026 audit, or whether one is still load-bearing:
+  `docs/audits/README.md` — one row per report, with its headline finding, whether anything still
+  cites it, and who. Audits are dated record and are never edited; read the index before the
+  report, and never open `docs/audits/2026-09-25/queue-inventory.json` (1.2 MB) or
+  `docs/audits/2026-09-20/request-queue/source-candidates.tsv` (968 KB) whole.
 
 ## Common Searches
 
