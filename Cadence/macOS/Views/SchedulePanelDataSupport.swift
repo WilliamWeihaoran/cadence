@@ -49,6 +49,47 @@ enum SchedulePanelDataSupport {
         )
     }
 
+    /// **The Today timeline's drag-create writes its task here, in place** ([[T-3171]]).
+    ///
+    /// It used to hand the draft to `TaskCreationManager.present`, which raises
+    /// `CreateTaskPanelSurface` over the whole window — so a user who dragged a slot, typed a title
+    /// into the shared schedule panel and pressed Add was shown the old create-task sheet **a second
+    /// time**, pre-filled with what they had just typed, with nothing created until they confirmed
+    /// again. That is the owner's own report ("still using the old task and event creation sheet")
+    /// surviving on the one macOS page the seventh adoption slice did not convert: the Calendar
+    /// page's `CalDayColumn` has composed in place since [[T-655]], and this is the same write.
+    ///
+    /// **The draft's own day, not the panel's `todayKey`.** T-1433 gave the popover editable date
+    /// and time fields, and `QuickCreateChoicePopover.hostWritesDraftDay` tells the panel this host
+    /// honours them — so a slot dragged on this timeline and then moved to tomorrow must land on
+    /// tomorrow rather than being silently filed under today. The Calendar page's column answers
+    /// that question the other way, which is why it passes `usesTaskPanelForTaskCreation: false`.
+    ///
+    /// Throws what `TaskCreationService` throws, so the host can name a refused write (T-655)
+    /// rather than closing the popover over a task that was never stored.
+    @discardableResult
+    static func insertDragCreatedTask(
+        _ draft: QuickCreateTaskDraft,
+        areas: [Area],
+        projects: [Project],
+        in modelContext: ModelContext
+    ) throws -> AppTask? {
+        try SchedulingActions.insertTask(
+            title: draft.title,
+            dateKey: draft.dateKey,
+            startMin: draft.startMin,
+            endMin: draft.endMin,
+            containerSelection: draft.container,
+            sectionName: draft.sectionName,
+            priority: draft.priority,
+            notes: draft.notes,
+            subtaskTitles: draft.subtaskTitles,
+            areas: areas,
+            projects: projects,
+            in: modelContext
+        )
+    }
+
     static func restoreScroll(
         proxy: ScrollViewProxy,
         rememberedScrollHour: Int,

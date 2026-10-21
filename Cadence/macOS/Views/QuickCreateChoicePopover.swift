@@ -12,11 +12,13 @@ import SwiftData
 /// on a closure three hosts pass through is how call sites start transposing them.
 ///
 /// **It is the shape of the two hosts' write closures, not of the form** ([[T-3171]], the seventh
-/// adoption slice). The form is `CadenceSchedulePanel` now; this is what survives the handoff into
-/// `SchedulingActions.insertTask` on the Calendar page and into `TaskCreationManager.present` on
-/// the Today timeline. Both call sites are fixed — one of them is in a Codex-leased file — so a
-/// field the panel offers that has no member here has nowhere to go, and the popover refuses such
-/// a draft out loud rather than dropping it (T-470). See `QuickCreateChoicePopover.hostLimitNotice`.
+/// adoption slice). The form is `CadenceSchedulePanel` now; this is what both hosts carry into
+/// `SchedulingActions.insertTask` — the Calendar page's day column directly, the Today timeline
+/// through `SchedulePanelDataSupport.insertDragCreatedTask` since the eighth slice took that
+/// host's `TaskCreationManager.present` handoff out. Both call sites are fixed — one of them is in
+/// a Codex-leased file — so a field the panel offers that has no member here has nowhere to go,
+/// and the popover refuses such a draft out loud rather than dropping it (T-470). See
+/// `QuickCreateChoicePopover.hostLimitNotice`.
 struct QuickCreateTaskDraft {
     var title: String
     /// `yyyy-MM-dd`, the repo's persisted form.
@@ -31,9 +33,9 @@ struct QuickCreateTaskDraft {
     /// kept rather than removed: `CadenceScheduleDraft` has no subtasks, so adopting the shared
     /// panel dropped the old Task tab's subtask composer, and the Calendar page's leased host still
     /// declares a `subtaskTitles:` argument this value has to fill. Nothing else writes it — the
-    /// composer a drag-created task's subtasks were typed into is gone, and the full create sheet
-    /// the Today timeline hands off to has its own. Retiring the member means editing
-    /// `CalendarPageMonthSupportViews.swift`, which is on the Codex lease.
+    /// composer a drag-created task's subtasks were typed into is gone, and the eighth slice
+    /// removed the full create sheet the Today timeline used to hand off to. Retiring the member
+    /// means editing `CalendarPageMonthSupportViews.swift`, which is on the Codex lease.
     var subtaskTitles: [String]
 }
 
@@ -124,15 +126,21 @@ struct QuickCreateChoicePopover: View {
     ///
     /// Host-owned, like `CalendarEventEditPopover`'s: the host is the frame that dismisses this
     /// popover, so it is the only frame that can decide to keep the draft on screen instead. The
-    /// Task arm deliberately keeps its alerts — its hosts hand the draft to a separate panel or
-    /// sheet, so by the time the store answers there is nothing left here.
+    /// Task arm deliberately keeps its alerts — both hosts now commit the draft themselves
+    /// ([[T-3171]]'s eighth slice) and this popover has already dismissed itself by the time the
+    /// store answers, so there is nothing left here to write a notice under.
     @Binding var createFailureNotice: String?
-    /// Whether the host hands the draft on to the task panel (the Today timeline) or creates in
-    /// place (the Calendar page's day column). **Kept** although both arms now draw one form:
-    /// `CalendarPageMonthSupportViews.swift` passes `false` and is Codex-leased, and it is also the
-    /// one fact that says whether the host honours the draft's own **day** — the panel-handoff host
-    /// forwards `draft.dateKey` to `TaskCreationManager.present`, the day column overwrites it with
-    /// its column's.
+    /// Whether the host honours the draft's own **day** (the Today timeline) or supplies its own
+    /// (the Calendar page's day column).
+    ///
+    /// **The name is now a misnomer and is kept for one reason: both of its call sites are
+    /// Codex-leased.** It was named for a handoff that no longer exists — [[T-3171]]'s eighth slice
+    /// took `TaskCreationManager.present` out of `SchedulePanel`, so neither host hands a drag to a
+    /// task panel any more and both commit through `SchedulingActions.insertTask`. What the flag
+    /// still decides is the day: `true` means the host writes `draft.dateKey`, `false` means it
+    /// overwrites that with its column's. Renaming it means editing `TimelineDayCanvas.swift` and
+    /// `CalendarPageMonthSupportViews.swift`, both leased; see this file's `hostWritesDraftDay`,
+    /// which is the name the rule is actually read under.
     let usesTaskPanelForTaskCreation: Bool
 
     @Environment(CalendarManager.self) private var calendarManager
@@ -249,10 +257,10 @@ struct QuickCreateChoicePopover: View {
 
     /// Whether the host stores the day the panel's grid names, or supplies its own.
     ///
-    /// Only the Today timeline's task handoff does: it forwards `draft.dateKey` into
-    /// `TaskCreationManager.present`. The Calendar page's day column overwrites it with its own
-    /// column's, and **both** hosts give `createStandaloneEvent` their own date, so no event
-    /// created here can name another day.
+    /// Only the Today timeline does: it forwards `draft.dateKey` into the task it writes
+    /// (`SchedulePanelDataSupport.insertDragCreatedTask`). The Calendar page's day column
+    /// overwrites it with its own column's, and **both** hosts give `createStandaloneEvent` their
+    /// own date, so no event created here can name another day.
     private var hostWritesDraftDay: Bool {
         draft.kind == .task && usesTaskPanelForTaskCreation
     }
