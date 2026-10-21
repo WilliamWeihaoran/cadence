@@ -15,8 +15,27 @@ enum SidebarItem: Hashable {
     case settings
 }
 
+extension SidebarItem {
+    /// The root page a launch opens on: Today, unless a UI-test launch named another with
+    /// `CADENCE_UI_TEST_PAGE` ([[T-3200]]). Outside UI-test mode the variable is ignored, so a
+    /// shipping launch always lands on Today exactly as before.
+    static func launchSelection(
+        in environment: [String: String] = ProcessInfo.processInfo.environment
+    ) -> SidebarItem {
+        switch CadenceUITestLaunchPage.requested(in: environment) {
+        case .none, .today: return .today
+        case .allTasks: return .allTasks
+        case .inbox: return .inbox
+        case .notes: return .notes
+        case .calendar: return .calendar
+        case .focus: return .focus
+        case .settings: return .settings
+        }
+    }
+}
+
 struct macOSRootView: View {
-    @State private var selection: SidebarItem? = .today
+    @State private var selection: SidebarItem? = SidebarItem.launchSelection()
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
     @Environment(\.scenePhase) private var scenePhase
     @Environment(CadenceDeepLinkManager.self) private var deepLinkManager

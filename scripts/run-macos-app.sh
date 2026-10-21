@@ -122,8 +122,11 @@
 # Side effect of CADENCE_UI_TEST_MODE: the launch also claims its store dir with an `.owner` lock
 # and sweeps DEAD `CadenceUITests` siblings (`CadenceUITestStoreDirectory.claimAndSweep`); a store
 # with no `.owner` -- every unseeded agent run -- is never swept.
-# The app LANDS ON TODAY (`macOSRootView` selection is `@State ... = .today`); there is no page
-# selector, so a scenario seeded for another page is drawn only if Today shows it.
+# THE PAGE (T-3200). The app lands on Today unless a 3rd `up` / 5th `start` argument names a
+# `CadenceUITestLaunchPage` raw value (read from that file, never retyped here: today, all-tasks,
+# inbox, notes, calendar, focus, settings at T-3200), which sets CADENCE_UI_TEST_PAGE and -- because
+# the app ignores it outside UI-test mode -- CADENCE_UI_TEST_MODE=1 even with scenario `none`:
+#   ./scripts/run-macos-app.sh up calendar-hues <id> calendar
 # `start` refuses any bundle that is not `.../Build/Products/Debug/Cadence.app` (exit 5): never
 # the shipping configuration, never /Applications. `stop` kills the recorded pid only if `ps`
 # still names the binary `start` launched (exit 6 otherwise) -- it never matches by name.
@@ -135,9 +138,10 @@ CMD="${1:-status}"
 SELF="${0:A}"
 ROOT_DIR="${SELF:h:h}"
 SCENARIO=""
+PAGE=""
 case "$CMD" in
-  start) ID="${3:-agent-$$}"; SCENARIO="${4:-}" ;;
-  up)    SCENARIO="${2:-}"; ID="${3:-agent-$$}" ;;
+  start) ID="${3:-agent-$$}"; SCENARIO="${4:-}"; PAGE="${5:-}" ;;
+  up)    SCENARIO="${2:-}"; ID="${3:-agent-$$}"; PAGE="${4:-}" ;;
   *)     ID="${2:-agent-$$}" ;;
 esac
 [[ "$SCENARIO" == "none" ]] && SCENARIO=""
@@ -145,6 +149,7 @@ RUNDIR="${CADENCE_LAUNCH_RUNDIR:-${TMPDIR:-/tmp}/CadenceAgentRuns}"; mkdir -p "$
 PIDFILE="$RUNDIR/$ID.pid"
 BINFILE="$RUNDIR/$ID.bin"
 SCENARIO_SOURCE="$ROOT_DIR/Cadence/Services/CadenceUITestScenarioSeed.swift"
+PAGE_SOURCE="$ROOT_DIR/Cadence/Services/CadenceUITestLaunchPage.swift"
 TMP_BASE="${TMPDIR:-/private/tmp/}"; [[ "$TMP_BASE" != */ ]] && TMP_BASE="$TMP_BASE/"
 # Where the sandboxed app actually puts CADENCE_UI_TEST_STORE_ID -- see the header.
 APP_STORE_ROOT="$HOME/Library/Containers/com.haoranwei.Cadence/Data/tmp/CadenceUITestStores"
@@ -182,6 +187,22 @@ refuse_bad_scenario() {
   if (( ! ${known[(Ie)$SCENARIO]} )); then
     print -r -- "REFUSING: unknown scenario '$SCENARIO'. Known (from ${SCENARIO_SOURCE:t}): ${known[*]:-<none read>} | none"
     print -r -- "   The app would seed NOTHING for it and say so only in its log (T-3247)."
+    exit 2
+  fi
+}
+
+# The pages this tree's app can open on, read from the enum rather than retyped (T-3200).
+known_pages() {
+  [[ -r "$PAGE_SOURCE" ]] || return 1
+  grep -oE 'case [A-Za-z]+ = "[a-z0-9-]+"' "$PAGE_SOURCE" | sed -E 's/.*"(.*)"/\1/'
+}
+
+refuse_bad_page() {
+  [[ -z "$PAGE" ]] && return 0
+  local -a known; known=("${(@f)$(known_pages)}")
+  if (( ! ${known[(Ie)$PAGE]} )); then
+    print -r -- "REFUSING: unknown page '$PAGE'. Known (from ${PAGE_SOURCE:t}): ${known[*]:-<none read>}"
+    print -r -- "   The app would ignore it and open on Today, and the capture would show the wrong page (T-3200)."
     exit 2
   fi
 }
@@ -262,7 +283,7 @@ wait_window() {
 case "$CMD" in
   start)
     APP="${2:-}"
-    [[ -d "$APP" ]] || { print -r -- "usage: $0 start <path/to/Debug/Cadence.app> [id] [scenario|none]"; exit 2 }
+    [[ -d "$APP" ]] || { print -r -- "usage: $0 start <path/to/Debug/Cadence.app> [id] [scenario|none] [page]"; exit 2 }
     refuse_bad_id
     # Never the shipping configuration (T-3247): only a Debug product, never /Applications.
     APP="${APP:A}"
@@ -271,6 +292,7 @@ case "$CMD" in
       exit 5
     fi
     refuse_bad_scenario
+    refuse_bad_page
     refuse_if_owner_running
     BIN="$APP/Contents/MacOS/Cadence"
     # The seed half (T-3247) is its own word list, not more VAR= words on the launch line: the
@@ -278,13 +300,18 @@ case "$CMD" in
     # variable ON it to disarm EventKit alone. The scenario does not, and is not meant to.
     typeset -a seed_env; seed_env=()
     [[ -n "$SCENARIO" ]] && seed_env=("CADENCE_UI_TEST_MODE=1" "CADENCE_UI_TEST_SCENARIO=$SCENARIO")
+    # The page (T-3200) is read only in UI-test mode, so it brings the mode with it.
+    if [[ -n "$PAGE" ]]; then
+      (( ${seed_env[(Ie)CADENCE_UI_TEST_MODE=1]} )) || seed_env+=("CADENCE_UI_TEST_MODE=1")
+      seed_env+=("CADENCE_UI_TEST_PAGE=$PAGE")
+    fi
     env "${seed_env[@]}" CADENCE_LOCAL_STORE_ONLY=1 CADENCE_UI_TEST_STORE_ID="$ID" \
       "$BIN" -CadenceSuiteName "$ID" -ApplePersistenceIgnoreState YES >"$RUNDIR/$ID.log" 2>&1 &
     print -r -- "$!" > "$PIDFILE"
     print -r -- "$BIN" > "$BINFILE"
     sleep 2
     if kill -0 "$(<$PIDFILE)" 2>/dev/null; then
-      print -r -- "started pid $(<$PIDFILE)  id=$ID  store=$APP_STORE_ROOT/$ID  scenario=${SCENARIO:-none}"
+      print -r -- "started pid $(<$PIDFILE)  id=$ID  store=$APP_STORE_ROOT/$ID  scenario=${SCENARIO:-none}  page=${PAGE:-today (default)}"
       print -r -- "  defaults: $SUITE_PREFIX$ID   (-CadenceSuiteName, T-1157)"
       print -r -- "REMEMBER: $0 stop $ID   — in this same turn."
     else
@@ -293,8 +320,9 @@ case "$CMD" in
     ;;
   up)
     refuse_bad_id
-    [[ -n "${2:-}" ]] || { print -r -- "usage: $0 up <scenario|none> <id>"; exit 2 }
+    [[ -n "${2:-}" ]] || { print -r -- "usage: $0 up <scenario|none> <id> [page]"; exit 2 }
     refuse_bad_scenario
+    refuse_bad_page
     # Checked before the build too, so a refused launch does not first spend minutes compiling.
     refuse_if_owner_running
     # xcb.sh owns the private DerivedData (${TMP_BASE}cadence-dd-<id>) and every build guard.
@@ -303,7 +331,7 @@ case "$CMD" in
     (( brc )) && { print -r -- "!! build failed (xcb.sh exit $brc); nothing launched."; exit 1 }
     APP="${TMP_BASE}cadence-dd-$ID/Build/Products/Debug/Cadence.app"
     [[ -x "$APP/Contents/MacOS/Cadence" ]] || { print -r -- "!! no product at $APP"; exit 1 }
-    zsh "$SELF" start "$APP" "$ID" "${SCENARIO:-none}" || exit $?
+    zsh "$SELF" start "$APP" "$ID" "${SCENARIO:-none}" $PAGE || exit $?
     WIN=$(wait_window 60); wrc=$?
     if (( wrc )); then print -r -- "!! no capturable window (exit $wrc). Still run: $0 stop $ID"; exit $wrc; fi
     print -r -- "WINDOW=$WIN"
@@ -430,6 +458,12 @@ case "$CMD" in
     check unknown-scenario $(( rc == 2 )) "exit $rc: $out"
     out=$(st up bogus-scenario "st-up-$$"); rc=$?
     check unknown-scenario-before-build $(( rc == 2 )) "exit $rc: $out"
+    out=$(st start "$dbg" "st-pg-$$" none bogus-page); rc=$?
+    check unknown-page $(( rc == 2 )) "exit $rc: $out"
+    out=$(st up none "st-uppg-$$" bogus-page); rc=$?
+    check unknown-page-before-build $(( rc == 2 )) "exit $rc: $out"
+    pg=("${(@f)$(known_pages)}")
+    check pages-read-from-source $(( ${pg[(Ie)calendar]} > 0 && ${pg[(Ie)today]} > 0 )) "read: ${pg[*]}"
     sc=("${(@f)$(known_scenarios)}")
     check scenarios-read-from-source $(( ${sc[(Ie)today-geometry]} > 0 )) "read: ${sc[*]}"
 
