@@ -3422,6 +3422,14 @@ enum CadenceSaveCommitRule {
     /// Once, because the index is a fixed point over every file: recomputing the regex work each
     /// round would run it six times over the whole tree.
     fileprivate static func parsedDeclarations(in source: String) -> [ParsedDeclaration] {
+        parsedCache.value(for: source, derive: parsedDeclarationsUncached)
+    }
+
+    /// [[T-3261]]: every test that builds an index re-parsed the whole app; see
+    /// `CadenceSourceDerivationCache` for the measurement and why the key is the text.
+    private static let parsedCache = CadenceSourceDerivationCache<[ParsedDeclaration]>()
+
+    private static func parsedDeclarationsUncached(in source: String) -> [ParsedDeclaration] {
         let extents = declarationExtents(in: source)
         let found = extents.map { (name: $0.name, signature: $0.signature, body: $0.body) }
         let nested = extents.map { inner in

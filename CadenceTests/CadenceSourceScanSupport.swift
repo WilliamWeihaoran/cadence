@@ -111,6 +111,12 @@ enum CadenceSourceScan {
     /// preserved here and nothing may start relying on them. Character offsets and the character
     /// count are.
     static func strippingComments(_ source: String) -> String {
+        strippedCache.value(for: source, derive: strippingCommentsUncached)
+    }
+
+    private static let strippedCache = CadenceSourceDerivationCache<String>()
+
+    private static func strippingCommentsUncached(_ source: String) -> String {
         var result = source
         for regex in compiledPatterns {
             let matches = regex.matches(in: result, range: NSRange(result.startIndex..., in: result))
@@ -752,6 +758,12 @@ extension CadenceSourceScan {
     /// `theMaskerStillCannotSeeARegexLiteralAndSaysSoWhenAskedWhy`, and when either does land,
     /// `cadenceFileScopeReason` is what turns the silent misread into a located one.
     static func codeOnly(_ source: String) -> String {
+        codeOnlyCache.value(for: source, derive: codeOnlyUncached)
+    }
+
+    private static let codeOnlyCache = CadenceSourceDerivationCache<String>()
+
+    private static func codeOnlyUncached(_ source: String) -> String {
         let characters = Array(source)
         let count = characters.count
         // A mark rather than an in-place overwrite, so the blanking *decision* (which Character
@@ -1016,6 +1028,46 @@ enum CadenceCommitSurfaceScan {
         let stripped = CadenceSourceScan.strippingComments(raw)
         #expect(stripped.count == raw.count, "\(path): the stripper changed the length")
         return stripped
+    }
+}
+
+/// A process-lifetime memo of one **pure** derivation from source text — `codeOnly`,
+/// `strippingComments`, and the two suite-local readers built the same way
+/// (`CadenceCommentSymbolClaim.partition`, `CadenceSaveCommitRule.parsedDeclarations`).
+///
+/// **[[T-3261]], measured in-process rather than guessed.** Instrumenting the scan helpers inside
+/// the test host over `CadenceSaveCommitDisciplineTests`, `CadenceCommentSymbolClaimTests` and
+/// `CadenceCrossLanguageCommentClaimTests` (65 tests, 264 s wall, 528 s summed test time) counted
+/// **13,916** `codeOnly` calls at 6.2 ms (86 s), **14,509** `partition` calls at 7.3 ms (106 s)
+/// and **12,052** `parsedDeclarations` calls at 3.3 ms (40 s) — the same ~1,100 files re-derived
+/// once per test. The raw reads were **21,462** calls costing **1.2 s** in all, and the walks
+/// under 1 s, so neither is cached. With this in place the same three suites derive each text
+/// once — **1,290 / 1,139 / 687** misses against **12,626 / 13,370 / 11,365** hits, a hit costing
+/// under 0.1 ms — and the run went from 264 s to 53 s wall over the same 65 tests.
+///
+/// **The key is the source TEXT, not the path, and that is the behavioural guarantee.** Every
+/// caller still reads the file from disk through `sourceFile`, so a file edited mid-tree — or
+/// mid-run — arrives as different text and is a miss; a path-keyed cache would hand back the old
+/// reading. A hit costs one hash of the text and one comparison, against a lexer pass over
+/// `Array(source)`.
+///
+/// Only a function of its input alone may go through this: anything reading a clock, the disk or
+/// a global would be answered from whichever call came first. Two threads missing on one key both
+/// derive it and the second write wins, which is harmless because they derive the same value.
+final class CadenceSourceDerivationCache<Value>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var entries: [String: Value] = [:]
+
+    func value(for source: String, derive: (String) -> Value) -> Value {
+        lock.lock()
+        let hit = entries[source]
+        lock.unlock()
+        if let hit { return hit }
+        let derived = derive(source)
+        lock.lock()
+        entries[source] = derived
+        lock.unlock()
+        return derived
     }
 }
 

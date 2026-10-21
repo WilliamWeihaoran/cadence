@@ -103,6 +103,13 @@ enum CadenceCommentSymbolClaim {
     /// literals, and `strippingComments` blanks only comments — neither hands back the prose, and a
     /// detector that reads prose out of raw source would count its own fixtures as findings.
     static func partition(_ source: String) -> (code: String, strings: String, comments: String) {
+        partitionCache.value(for: source, derive: partitionUncached)
+    }
+
+    /// [[T-3261]]: each sweep re-partitioned the whole corpus; see `CadenceSourceDerivationCache`.
+    private static let partitionCache = CadenceSourceDerivationCache<(code: String, strings: String, comments: String)>()
+
+    private static func partitionUncached(_ source: String) -> (code: String, strings: String, comments: String) {
         let characters = Array(source)
         let count = characters.count
         var kind = [Region](repeating: .code, count: count)
