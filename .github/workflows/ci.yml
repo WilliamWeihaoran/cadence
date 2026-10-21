@@ -220,7 +220,13 @@ jobs:
         run: |
           echo "spm cache: hit=${{ steps.spm-cache.outputs.cache-hit }} key=${{ steps.spm-cache.outputs.cache-matched-key }}"
           start=$SECONDS
+          # `-scheme` is REQUIRED here, and not as decoration: CI's Xcode 26.0.1 refuses
+          # `-derivedDataPath` without one -- "The flag -scheme, -testProductsPath, or
+          # -xctestrun is required when specifying -derivedDataPath" (exit 64), measured
+          # in run 39660248658. The resolve itself is project-wide; the scheme only
+          # satisfies that check, so it is this job's own scheme.
           xcodebuild -project Cadence.xcodeproj -resolvePackageDependencies \
+            -scheme CadenceMCPServer \
             -derivedDataPath "$RUNNER_TEMP/dd-mcp"
           echo "SPM-RESOLVE-SECONDS=mcp=$(( SECONDS - start ))"
       - name: Build
@@ -284,7 +290,13 @@ jobs:
         run: |
           echo "spm cache: hit=${{ steps.spm-cache.outputs.cache-hit }} key=${{ steps.spm-cache.outputs.cache-matched-key }}"
           start=$SECONDS
+          # `-scheme` is REQUIRED here, and not as decoration: CI's Xcode 26.0.1 refuses
+          # `-derivedDataPath` without one -- "The flag -scheme, -testProductsPath, or
+          # -xctestrun is required when specifying -derivedDataPath" (exit 64), measured
+          # in run 39660248658. The resolve itself is project-wide; the scheme only
+          # satisfies that check, so it is this job's own scheme.
           xcodebuild -project Cadence.xcodeproj -resolvePackageDependencies \
+            -scheme Cadence \
             -derivedDataPath "$RUNNER_TEMP/dd-tests"
           echo "SPM-RESOLVE-SECONDS=tests=$(( SECONDS - start ))"
       - name: Test
@@ -429,7 +441,13 @@ jobs:
         run: |
           echo "spm cache: hit=${{ steps.spm-cache.outputs.cache-hit }} key=${{ steps.spm-cache.outputs.cache-matched-key }}"
           start=$SECONDS
+          # `-scheme` is REQUIRED here, and not as decoration: CI's Xcode 26.0.1 refuses
+          # `-derivedDataPath` without one -- "The flag -scheme, -testProductsPath, or
+          # -xctestrun is required when specifying -derivedDataPath" (exit 64), measured
+          # in run 39660248658. The resolve itself is project-wide; the scheme only
+          # satisfies that check, so it is this job's own scheme.
           xcodebuild -project Cadence.xcodeproj -resolvePackageDependencies \
+            -scheme Cadence \
             -derivedDataPath "$RUNNER_TEMP/dd-ios"
           echo "SPM-RESOLVE-SECONDS=ios=$(( SECONDS - start ))"
       - name: Build
