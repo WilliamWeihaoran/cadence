@@ -190,6 +190,53 @@ struct MobileTaskSortStabilityTests {
         #expect(Set(byDoDate).count == tasks.count)
     }
 
+    // MARK: - T-3278: `sortTasks` is the mode key plus the shared tie-break, on every leg
+
+    /// **`sortTasks` breaks a mode tie with `TaskOrdering.fallbackPrecedes` and nothing else
+    /// (T-3278).** `CadenceReorderOffScreenNoticeTests.theModeKeyRecomposesIntoItsComparatorExactly`
+    /// holds this too, but that suite is `#if os(macOS)`, so on an iOS destination nothing proved it.
+    /// This suite carries no platform gate: it recomposes `sortTasks` from `sortKeyOrder` over every
+    /// mode and every ordered pair, with and without section names, on both legs.
+    @Test
+    func sortTasksIsTheModeKeyWithTheSharedFallbackOnATie() throws {
+        let container = try makeContainer()
+        let context = ModelContext(container)
+        let tasks = comparatorProbeTasks(in: context)
+        for (index, task) in tasks.enumerated() {
+            task.sectionName = index.isMultiple(of: 2) ? "Doing" : "Backlog"
+            task.dueDate = index.isMultiple(of: 3) ? "" : "2026-05-1\(index % 3)"
+        }
+        var ties = 0
+        var ordered = 0
+
+        for mode in CadenceTaskSortMode.allCases {
+            for names in [nil, ["Backlog", "Doing"]] as [[String]?] {
+                for lhs in tasks {
+                    for rhs in tasks {
+                        let key = CadenceTaskQuerySupport.sortKeyOrder(lhs, rhs, sortMode: mode, sectionNames: names)
+                        let expected: Bool
+                        switch key {
+                        case .before: expected = true
+                        case .after: expected = false
+                        case .tie:
+                            expected = TaskOrdering.fallbackPrecedes(lhs, rhs)
+                            if lhs !== rhs { ties += 1 }
+                        }
+                        if key != .tie { ordered += 1 }
+                        #expect(
+                            CadenceTaskQuerySupport.sortTasks(lhs, rhs, sortMode: mode, sectionNames: names) == expected,
+                            "\(mode) broke \(lhs.title) vs \(rhs.title) some other way"
+                        )
+                    }
+                }
+            }
+        }
+
+        // Non-vacuity: off-diagonal ties are reached, including pairs that share `order`, so the
+        // tie-break's own later keys are exercised rather than only its first one.
+        #expect(ties > 0 && ordered > 0, "\(ties) off-diagonal ties, \(ordered) ordered pairs")
+    }
+
     // MARK: - T-3260: what `sortKeyOrder` answers, held by effect rather than by its text
 
     /// **The delegation, as an answer rather than a spelling (T-3260).** This used to be read off
@@ -345,8 +392,8 @@ struct MobileTaskSortStabilityTests {
     /// `theDoDateAndPriorityModesAnswerTaskOrderingsOwnKeyOnEveryPair` for the delegation, and
     /// `CadenceReorderOffScreenNoticeTests.theModeKeyRecomposesIntoItsComparatorExactly`, which
     /// recomposes `sortTasks` from `sortKeyOrder` plus `fallbackPrecedes` over every mode and pair,
-    /// for the tie-break (that suite is `#if os(macOS)`, so the tie-break is held on the macOS leg
-    /// only) — so what remains is only what behaviour cannot see.
+    /// for the tie-break (that suite is `#if os(macOS)`; `sortTasksIsTheModeKeyWithTheSharedFallbackOnATie`
+    /// holds the same on both legs, T-3278) — so what remains is only what behaviour cannot see.
     @Test
     func theDoDateAndPriorityBranchesDelegateRatherThanRestate() throws {
         let source = CadenceSourceScan.strippingComments(
