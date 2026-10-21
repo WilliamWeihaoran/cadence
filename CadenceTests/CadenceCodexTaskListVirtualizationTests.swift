@@ -49,12 +49,9 @@ struct CadenceCodexTaskListVirtualizationTests {
         for (grouping, count) in [(TaskGroupingMode.none, 200), (.byDate, 1_000), (.byPriority, 200), (.byList, 200)] {
             let container = try CadenceModelContainerFactory.makeInMemoryContainer()
             let context = container.mainContext
-            // T-3279: CI's host trapped inside SwiftData on an autosave timer's notification,
-            // delivered to a `@Query` observer while this loop builds and drops one container per
-            // grouping. The seed is saved explicitly below, so nothing here needs autosave — the
-            // eager control already runs with it off — and the container is held past teardown.
+            // T-3279: the seed is saved explicitly below, so nothing here needs autosave.
             context.autosaveEnabled = false
-            defer { withExtendedLifetime(container) {} }
+            Self.retainForProcessLifetime(container)
             for index in 0..<count {
                 let task = AppTask(title: "Virtualization probe \(index)")
                 task.order = index
@@ -91,6 +88,24 @@ struct CadenceCodexTaskListVirtualizationTests {
             #expect(mounted < 100, "\(grouping.rawValue): mounted \(mounted) native task rows for \(count) tasks")
             #expect(mounted < count / 2, "an eager group may not pass as a lazy page")
         }
+    }
+
+    /// **Every container a hosted `TasksListView` read stays alive until the process exits
+    /// ([[T-3279]]).**
+    ///
+    /// CI's host trapped twice in the `By List` round (runs `39567665677`, `39624503495`) inside
+    /// `ModelContext.container`'s getter — its body is byte-for-byte the one that loads the
+    /// context's weak container and executes `brk #1` when it is nil — called from `@Query`'s
+    /// observer of SwiftData's models-changed notification. A `@Query` observer outlives the
+    /// window it was drawn in: traced locally in a bare `@Query` probe, every earlier round's
+    /// observer still answers the current round's notification and asks its own dead round's
+    /// context for its container.
+    /// Holding a container to the end of its iteration (or of the test) is therefore not enough,
+    /// and turning autosave off did not stop the post. They are small in-memory stores.
+    private static var retainedContainers: [ModelContainer] = []
+
+    private static func retainForProcessLifetime(_ container: ModelContainer) {
+        retainedContainers.append(container)
     }
 
     /// **The negative control the re-key needs — and that the overlay probe never had.**
