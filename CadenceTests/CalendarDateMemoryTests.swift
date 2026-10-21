@@ -216,6 +216,7 @@ struct CalendarRestoredPositionTests {
             storedSelection: selection,
             storedAnchor: anchor,
             deepLinkDateKey: link,
+            opensMonthGrid: false,
             calendar: calendar
         )
     }
@@ -365,6 +366,90 @@ struct CalendarRestoredPositionTests {
                                              in: "applyCalendarDeepLinkDate()") == 1)
         #expect(CadenceSourceScan.matchCount(#"applyCalendarDeepLinkDate\(\)"#,
                                              in: "perform: applyCalendarDeepLinkDate") == 0)
+    }
+}
+
+/// **T-3310.** A `cadence://calendar` link arriving while Month is showing opened the grid on the
+/// linked day's own WEEK, so on 21 October the header read "Nov 2026" and the agenda "Nothing this
+/// month". Month's anchor is a week row, and a link has to land on the first row of its month.
+@Suite("Calendar linked month anchor")
+struct CalendarLinkedMonthAnchorTests {
+
+    private let calendar = Calendar.current
+
+    private func day(_ key: String) throws -> Date {
+        calendar.startOfDay(for: try #require(DateFormatters.date(from: key, in: calendar)))
+    }
+
+    private func month(of date: Date) -> DateComponents {
+        calendar.dateComponents([.year, .month], from: date)
+    }
+
+    private func restored(
+        selection: String? = nil,
+        anchor: String? = nil,
+        link: String? = nil,
+        opensMonthGrid: Bool
+    ) throws -> CadenceCalendarRestoredPosition {
+        CadenceCalendarDateMemory.restoredPosition(
+            fallback: try day("2026-10-21"),
+            storedSelection: selection,
+            storedAnchor: anchor,
+            deepLinkDateKey: link,
+            opensMonthGrid: opensMonthGrid,
+            calendar: calendar
+        )
+    }
+
+    /// The seen case, every day late enough in a month to have shown the next month's name.
+    @Test func amonthGridLinkedToALateDayReadsAsThatDaysMonth() throws {
+        for key in ["2026-10-21", "2026-10-31", "2026-08-29", "2026-02-27", "2026-12-31"] {
+            let linked = try day(key)
+            let anchor = CadenceCalendarDateMemory.anchor(leadingWith: linked, opensMonthGrid: true, calendar: calendar)
+            let shown = CadenceCalendarMonthWindow.displayedMonth(topRowStart: anchor, calendar: calendar)
+            #expect(month(of: shown) == month(of: linked), "\(key) opened Month on \(DateFormatters.dateKey(from: shown))")
+            #expect(anchor == CadenceCalendarMonthWindow.topRow(forMonthContaining: linked, calendar: calendar))
+        }
+    }
+
+    /// The cold path carries the same rule, and keeps the linked day selected.
+    @Test func thecoldPathAnchorsAMonthGridLinkOnItsMonthsTopRow() throws {
+        let position = try restored(selection: "2026-03-06", anchor: "2026-03-02", link: "2026-10-21", opensMonthGrid: true)
+        #expect(position.selectedDate == (try day("2026-10-21")))
+        #expect(position.anchorDate == CadenceCalendarMonthWindow.topRow(forMonthContaining: try day("2026-10-21"), calendar: calendar))
+        #expect(position.anchorDate != position.selectedDate, "Month led with the linked day's week")
+    }
+
+    /// Week and Day are unchanged: the link's day leads the grid, as T-369 left it.
+    @Test func atimedGridLinkStillLeadsWithTheDayItself() throws {
+        let linked = try day("2026-10-21")
+        #expect(CadenceCalendarDateMemory.anchor(leadingWith: linked, opensMonthGrid: false, calendar: calendar) == linked)
+        let position = try restored(link: "2026-10-21", opensMonthGrid: false)
+        #expect(position.anchorDate == linked)
+    }
+
+    /// A remembered anchor is already a scroll position, in whatever unit it was written, and is
+    /// restored as it was; only an anchor made from a day is moved to the month's top row.
+    @Test func arememberedMonthAnchorIsRestoredAndADayDerivedOneIsAligned() throws {
+        let stored = try restored(selection: "2026-10-21", anchor: "2026-10-11", opensMonthGrid: true)
+        #expect(stored.anchorDate == (try day("2026-10-11")))
+        let fresh = try restored(opensMonthGrid: true)
+        #expect(month(of: CadenceCalendarMonthWindow.displayedMonth(topRowStart: fresh.anchorDate, calendar: calendar))
+                == month(of: try day("2026-10-21")))
+    }
+
+    /// Both iOS call sites tell the shared rule which grid is showing. A scan, because the page is
+    /// behind `#if os(iOS)` and this target builds for macOS.
+    @Test func bothIOSPathsPassTheMonthGridThrough() throws {
+        let page = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/iOS/iOSCalendarView.swift")
+        )
+        let apply = try #require(CadenceSourceScan.functionBody(named: "applyCalendarDeepLinkDate", in: page))
+        #expect(apply.contains("CadenceCalendarDateMemory.anchor(leadingWith: day, opensMonthGrid: isMonthTimeline"))
+        #expect(CadenceSourceScan.matchCount(#"anchorDate = day\b"#, in: apply) == 0, "the warm path leads Month with the day")
+        let restore = try #require(CadenceSourceScan.functionBody(named: "restorePersistedCalendarDates", in: page))
+        #expect(restore.contains("opensMonthGrid: isMonthTimeline"))
+        #expect(CadenceSourceScan.matchCount(#"anchorDate = day\b"#, in: "anchorDate = day\n") == 1)
     }
 }
 

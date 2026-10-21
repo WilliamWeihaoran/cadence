@@ -536,6 +536,7 @@ struct iOSCalendarView: View {
             storedSelection: dateMemory.storedSelectionKey,
             storedAnchor: dateMemory.storedAnchorKey,
             deepLinkDateKey: standingCalendarDeepLinkDateKey,
+            opensMonthGrid: isMonthTimeline,
             calendar: calendar
         )
         selectedDate = restored.selectedDate
@@ -563,7 +564,8 @@ struct iOSCalendarView: View {
         ) else { return }
 
         selectedDate = day
-        anchorDate = day
+        // T-3310: Month leads with the top row of the day's month, not with the day's own week.
+        anchorDate = CadenceCalendarDateMemory.anchor(leadingWith: day, opensMonthGrid: isMonthTimeline, calendar: calendar)
     }
 
     private func rememberCalendarPosition() {

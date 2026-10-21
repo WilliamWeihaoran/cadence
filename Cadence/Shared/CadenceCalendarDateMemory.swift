@@ -114,23 +114,44 @@ struct CadenceCalendarDateMemory {
     /// pure: garbage in either key, or in the link, falls back exactly the way `date(fromStored:)`
     /// says it does rather than landing on a day the caller invented.
     ///
+    /// **T-3310.** An anchor taken from a *day* — the link's, the fallback, or a selection with no
+    /// anchor stored beside it — is read in the unit of the grid it leads. A remembered anchor is
+    /// already a scroll position and is restored as it was.
+    ///
     /// - Parameter fallback: The page's own default when nothing is remembered — today.
+    /// - Parameter opensMonthGrid: Whether the page is showing Month on the timeline presentation.
     static func restoredPosition(
         fallback: Date,
         storedSelection: String?,
         storedAnchor: String?,
         deepLinkDateKey: String?,
+        opensMonthGrid: Bool,
         calendar: Calendar = .current
     ) -> CadenceCalendarRestoredPosition {
         if let linked = date(fromStored: deepLinkDateKey, calendar: calendar) {
-            return CadenceCalendarRestoredPosition(selectedDate: linked, anchorDate: linked)
+            return CadenceCalendarRestoredPosition(
+                selectedDate: linked,
+                anchorDate: anchor(leadingWith: linked, opensMonthGrid: opensMonthGrid, calendar: calendar)
+            )
         }
         let selection = date(fromStored: storedSelection, calendar: calendar)
             ?? calendar.startOfDay(for: fallback)
         return CadenceCalendarRestoredPosition(
             selectedDate: selection,
-            anchorDate: date(fromStored: storedAnchor, calendar: calendar) ?? selection
+            anchorDate: date(fromStored: storedAnchor, calendar: calendar)
+                ?? anchor(leadingWith: selection, opensMonthGrid: opensMonthGrid, calendar: calendar)
         )
+    }
+
+    /// **T-3310.** The anchor that leads the grid with `day`. Month's anchor is a week ROW — the
+    /// top of the six on screen — and the header reads the middle of the window, so leading Month
+    /// with the day itself put that day's week at the top and, after about the 14th, named the next
+    /// month over a grid of this one. Month therefore opens on the first row of `day`'s month, the
+    /// same anchor `setViewMode` gives it. Every other surface leads with the day as it always has.
+    static func anchor(leadingWith day: Date, opensMonthGrid: Bool, calendar: Calendar = .current) -> Date {
+        let day = calendar.startOfDay(for: day)
+        guard opensMonthGrid else { return day }
+        return CadenceCalendarMonthWindow.topRow(forMonthContaining: day, calendar: calendar)
     }
 
     // MARK: Reading and writing
