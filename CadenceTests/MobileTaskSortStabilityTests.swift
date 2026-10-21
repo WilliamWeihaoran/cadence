@@ -190,17 +190,162 @@ struct MobileTaskSortStabilityTests {
         #expect(Set(byDoDate).count == tasks.count)
     }
 
-    /// The equivalence above is what makes it safe to delete the copy; this is what keeps it
-    /// deleted. A restated branch that happens to still agree would pass the pair sweep forever
-    /// — the point of T-669 is that the ordering is spelled once.
+    // MARK: - T-3260: what `sortKeyOrder` answers, held by effect rather than by its text
+
+    /// **The delegation, as an answer rather than a spelling (T-3260).** This used to be read off
+    /// `sortKeyOrder`'s body: two `contains` needles requiring the `.doDate` and `.priority` arms
+    /// to spell `TaskOrdering.sortKeyOrder(…)` with the right field and direction. That pin passed
+    /// on any body holding those two strings and failed on any reflow of them.
     ///
-    /// **The switch this reads moved down one frame (T-1077).** `sortTasks` is now the tie-break
-    /// half alone — one `case .tie:` calling `TaskOrdering.fallbackPrecedes` — and the five mode
-    /// branches live in `sortKeyOrder`, which answers `.tie` where each of them used to call the
-    /// fallback for itself. So this reads that declaration, and the two delegations it pins are
-    /// `TaskOrdering.sortKeyOrder` rather than `TaskOrdering.precedes`. Same property, same two
-    /// modes, one frame down; the negative assertions are unchanged and are what actually keeps
-    /// the restatement out.
+    /// The pair sweep above cannot replace it, because it compares the *composed* comparator — and
+    /// a restated arm that broke every tie with its own `order` comparison instead of answering
+    /// `.tie` would agree with `TaskOrdering.precedes` on every pair while lying to
+    /// `CadenceReorderVisibility` about which drops land where they were dropped. So this compares
+    /// the KEY, `.tie` included, over every ordered pair of the same probe set.
+    @Test
+    func theDoDateAndPriorityModesAnswerTaskOrderingsOwnKeyOnEveryPair() throws {
+        let container = try makeContainer()
+        let context = ModelContext(container)
+        let tasks = comparatorProbeTasks(in: context)
+        var ties = 0
+        var ordered = 0
+
+        for lhs in tasks {
+            for rhs in tasks {
+                let doDate = CadenceTaskQuerySupport.sortKeyOrder(lhs, rhs, sortMode: .doDate)
+                let priority = CadenceTaskQuerySupport.sortKeyOrder(lhs, rhs, sortMode: .priority)
+                #expect(
+                    doDate == TaskOrdering.sortKeyOrder(lhs, rhs, field: .date, direction: .ascending),
+                    "doDate's key disagreed on \(lhs.title) vs \(rhs.title)"
+                )
+                #expect(
+                    priority == TaskOrdering.sortKeyOrder(lhs, rhs, field: .priority, direction: .descending),
+                    "priority's key disagreed on \(lhs.title) vs \(rhs.title)"
+                )
+                for key in [doDate, priority] {
+                    if key == .tie { ties += 1 } else { ordered += 1 }
+                }
+            }
+        }
+
+        // Non-vacuity: the probe set reaches both answers, so `.tie` is compared and not assumed.
+        #expect(ties > tasks.count * 2, "only the diagonal tied: \(ties) ties")
+        #expect(ordered > 0)
+    }
+
+    /// **`.listOrder` sorts by the list, and by nothing the other modes read (T-3260).** Replaces
+    /// the negative needles that required no `scheduledStartMin` and no priority comparison inside
+    /// the mode switch, in the one place where they were a statement about the ORDER a list comes
+    /// back in: without section names every pair is a tie — so `sortTasks` hands it to the shared
+    /// `order`-first fallback — and with them the only thing that separates two rows is which
+    /// column they sit in, ranked case-insensitively, unlisted last.
+    @Test
+    func listOrderIsATieOnEverythingButTheColumn() throws {
+        let container = try makeContainer()
+        let context = ModelContext(container)
+        let tasks = comparatorProbeTasks(in: context)
+
+        for lhs in tasks {
+            for rhs in tasks {
+                #expect(
+                    CadenceTaskQuerySupport.sortKeyOrder(lhs, rhs, sortMode: .listOrder) == .tie,
+                    "listOrder separated \(lhs.title) from \(rhs.title) on something other than the list"
+                )
+            }
+        }
+        #expect(sorted(tasks, mode: .listOrder) == tasks.sorted(by: TaskOrdering.fallbackPrecedes).map(\.title))
+
+        // Same day and priority everywhere, so the column is the only key left to read.
+        let names = ["Doing", "Backlog"]
+        let doing = AppTask(title: "Doing row")
+        doing.sectionName = "doing"
+        doing.order = 9
+        let backlog = AppTask(title: "Backlog row")
+        backlog.sectionName = "Backlog"
+        backlog.order = 0
+        let unlisted = AppTask(title: "Unlisted row")
+        unlisted.sectionName = "Shipped"
+        unlisted.order = 0
+        let backlogTwin = AppTask(title: "Backlog twin")
+        backlogTwin.sectionName = "Backlog"
+        backlogTwin.priority = .high
+        backlogTwin.order = 5
+        for task in [doing, backlog, unlisted, backlogTwin] { context.insert(task) }
+
+        let key = { (lhs: AppTask, rhs: AppTask) in
+            CadenceTaskQuerySupport.sortKeyOrder(lhs, rhs, sortMode: .listOrder, sectionNames: names)
+        }
+        #expect(key(doing, backlog) == .before, "the first column, matched ignoring case, leads")
+        #expect(key(backlog, doing) == .after)
+        #expect(key(backlog, unlisted) == .before, "a column the list does not name sorts last")
+        #expect(key(unlisted, doing) == .after)
+        #expect(key(backlog, backlogTwin) == .tie, "one column is one tie, whatever the priority")
+
+        let arranged = [unlisted, backlogTwin, backlog, doing]
+            .sorted { CadenceTaskQuerySupport.sortTasks($0, $1, sortMode: .listOrder, sectionNames: names) }
+            .map(\.title)
+        #expect(arranged == ["Doing row", "Backlog row", "Backlog twin", "Unlisted row"])
+    }
+
+    /// **`.dueDate` and `.newest` read their own key and nothing else (T-3260).** The other half of
+    /// what the negative needles stood for: no arm of the switch reaches a start minute or a
+    /// priority it was not asked about. Each pair below differs on every key EXCEPT the mode's,
+    /// so an arm that consulted a second key would separate it.
+    @Test
+    func dueDateAndNewestReadOnlyTheirOwnKey() throws {
+        let container = try makeContainer()
+        let context = ModelContext(container)
+        let base = Date(timeIntervalSince1970: 1_700_000_000)
+
+        func task(_ title: String, due: String, created: TimeInterval, start: Int, priority: TaskPriority, order: Int) -> AppTask {
+            let task = AppTask(title: title)
+            task.dueDate = due
+            task.createdAt = base.addingTimeInterval(created)
+            task.scheduledDate = "2026-05-11"
+            task.scheduledStartMin = start
+            task.priority = priority
+            task.order = order
+            context.insert(task)
+            return task
+        }
+
+        let early = task("Due early", due: "2026-05-10", created: 0, start: 600, priority: .low, order: 3)
+        let earlyTwin = task("Due early twin", due: "2026-05-10", created: 0, start: 540, priority: .high, order: 1)
+        let late = task("Due late", due: "2026-05-20", created: 60, start: -1, priority: .none, order: 0)
+        let undue = task("No due date", due: "", created: 120, start: 540, priority: .high, order: 2)
+
+        let due = { (lhs: AppTask, rhs: AppTask) in
+            CadenceTaskQuerySupport.sortKeyOrder(lhs, rhs, sortMode: .dueDate)
+        }
+        #expect(due(early, late) == .before)
+        #expect(due(late, early) == .after)
+        #expect(due(late, undue) == .before, "a dated task leads an undated one")
+        #expect(due(undue, early) == .after)
+        #expect(due(early, earlyTwin) == .tie, "same due day: start minute and priority are not this mode's")
+        #expect(due(earlyTwin, early) == .tie)
+
+        let newest = { (lhs: AppTask, rhs: AppTask) in
+            CadenceTaskQuerySupport.sortKeyOrder(lhs, rhs, sortMode: .newest)
+        }
+        #expect(newest(undue, late) == .before, "the later creation leads")
+        #expect(newest(early, late) == .after)
+        #expect(newest(early, earlyTwin) == .tie, "same creation instant: nothing else is this mode's")
+
+        let all = [undue, late, earlyTwin, early]
+        #expect(sorted(all, mode: .dueDate) == ["Due early twin", "Due early", "Due late", "No due date"])
+        #expect(sorted(all, mode: .newest) == ["No due date", "Due late", "Due early twin", "Due early"])
+    }
+
+    /// **What is left here is the structural half, and it stays a source scan on purpose.** T-669's
+    /// rule is that the ordering is spelled ONCE: a restated arm that happened to agree would pass
+    /// every behavioural test in this file forever, which is the case a text rule exists for.
+    ///
+    /// **T-3260 moved the behavioural needles out.** This used to also require the two delegating
+    /// calls and the `sortTasks` tie-break by text. Those are now held by effect —
+    /// `theDoDateAndPriorityModesAnswerTaskOrderingsOwnKeyOnEveryPair` for the delegation, and
+    /// `CadenceReorderOffScreenNoticeTests.theModeKeyRecomposesIntoItsComparatorExactly`, which
+    /// recomposes `sortTasks` from `sortKeyOrder` plus `fallbackPrecedes` over every mode and pair,
+    /// for the tie-break — so what remains is only what behaviour cannot see.
     @Test
     func theDoDateAndPriorityBranchesDelegateRatherThanRestate() throws {
         let source = CadenceSourceScan.strippingComments(
@@ -208,12 +353,10 @@ struct MobileTaskSortStabilityTests {
         )
         let body = try #require(CadenceSourceScan.functionBody(named: "sortKeyOrder", in: source))
 
-        // Non-vacuity: this is the real switch, not a truncated read of it.
+        // Non-vacuity: this is the real switch, not a truncated read of it, so the negatives below
+        // are read over all five arms.
         #expect(body.contains("case .listOrder:"))
         #expect(body.contains("case .newest:"))
-
-        #expect(body.contains("TaskOrdering.sortKeyOrder(lhs, rhs, field: .date, direction: .ascending)"))
-        #expect(body.contains("TaskOrdering.sortKeyOrder(lhs, rhs, field: .priority, direction: .descending)"))
 
         // The restatement is gone rather than merely joined: no branch here reads a start minute
         // or spells a priority comparison of its own.
@@ -221,11 +364,8 @@ struct MobileTaskSortStabilityTests {
         #expect(!body.contains("priorityRank("))
         #expect(!body.contains(".priority !="))
 
-        // And the frame it moved out of really is the tie-break half now, so the delegation above
-        // is what production sorts through rather than a second unused spelling.
+        // And the mode switch is not spelled a second time in the frame it moved out of.
         let sortTasks = try #require(CadenceSourceScan.functionBody(named: "sortTasks", in: source))
-        #expect(sortTasks.contains("sortKeyOrder(lhs, rhs, sortMode: sortMode, sectionNames: sectionNames)"))
-        #expect(sortTasks.contains("case .tie: return TaskOrdering.fallbackPrecedes(lhs, rhs)"))
         #expect(!sortTasks.contains("case .listOrder:"), "the mode switch is spelled twice")
     }
 }
