@@ -351,6 +351,28 @@ struct CadenceTaskRowNotesExcerptTests {
         #expect(preview == String(url.prefix(40)) + "\u{2026}")
     }
 
+    /// The only space is in the front half, so backing off to it would shrink a 40-character
+    /// excerpt to "See…". The `limit / 2` floor cuts the run hard instead; the URL fixture above
+    /// has no space at all and cannot see that floor (agent `k1ios`, mutation-tested).
+    @Test func aSpaceInTheFrontHalfDoesNotShrinkTheExcerptToAStub() {
+        let text = "See https://example.com/" + String(repeating: "a", count: 60)
+        let preview = CadenceTaskPresentationSupport.plainPreviewText(from: text, limit: 40)
+
+        #expect(preview == String(text.prefix(40)) + "\u{2026}")
+        #expect(preview != "See\u{2026}")
+    }
+
+    /// A word-boundary cut that lands after a comma drops the comma, so the excerpt does not
+    /// read "boxes,…" (agent `k1ios`, mutation-tested).
+    @Test func aCutAfterACommaDropsTheCommaBeforeTheEllipsis() {
+        let preview = CadenceTaskPresentationSupport.plainPreviewText(
+            from: "Pack the boxes, label them, and call the movers",
+            limit: 18
+        )
+
+        #expect(preview == "Pack the boxes\u{2026}")
+    }
+
     @Test func noLimitAndANoteWithinTheLimitAreReturnedWholeWithNoEllipsis() {
         #expect(CadenceTaskPresentationSupport.plainPreviewText(from: Self.note) == Self.note)
         #expect(CadenceTaskPresentationSupport.plainPreviewText(from: Self.note, limit: 90) == Self.note)

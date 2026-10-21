@@ -478,20 +478,41 @@ struct MarkdownImageDropAffordanceTests {
         #expect(textView.draggingUpdated(info) == textView.draggingEntered(info))
     }
 
-    /// The wire, so neither override can quietly stop reading the rule the other one reads.
-    ///
-    /// Both of the above drive real methods; this is what stops a future edit satisfying them by
-    /// making `draggingUpdated` call `draggingEntered` — which would answer `super.draggingEntered`
-    /// on the fall-through, and so move the caret as though the pointer had just arrived on every
-    /// mouse movement of every text drag.
-    @Test func bothDragOverridesReadTheSameRuleAndFallThroughToTheirOwnSuper() throws {
+    /// Both real drag callbacks must follow the current host policy, including when it changes
+    /// on an existing editor. A constant copy answer and a cached policy both break this test.
+    @Test func bothDragCallbacksFollowImagePolicyChangesOnTheSameEditor() {
+        let (window, textView) = makeWindowedTextViewAppKitHasRegisteredFor(allowsImages: true)
+        defer { window.contentView = nil }
+        let board = draggedBitmap("policy.changes.\(UUID().uuidString)")
+        defer { board.releaseGlobally() }
+        let info = MarkdownDropInfo(pasteboard: board, window: window)
+
+        for allowsImages in [true, false, true] {
+            textView.allowsMarkdownImageInsertion = allowsImages
+            let entered = textView.draggingEntered(info)
+            let updated = textView.draggingUpdated(info)
+            if allowsImages {
+                #expect(entered == .copy, "entry lost the accepting host's image affordance")
+                #expect(updated == .copy, "movement lost the accepting host's image affordance")
+            } else {
+                // As in the existing refusing-bitmap test, assert only the unsafe direction:
+                // no copy badge over a host that cannot insert this bitmap.
+                #expect(!entered.contains(.copy), "entry ignored the host's image refusal")
+                #expect(!updated.contains(.copy), "movement ignored the host's image refusal")
+            }
+        }
+    }
+
+    /// Keep the three fallback-routing pins: the synthetic drag's returned operations cannot
+    /// distinguish AppKit's entry method from its movement method. Replacing them would need an
+    /// observation of the framework's insertion caret or an interception of the superclass call;
+    /// no such seam exists here. The shared-rule needles are retired onto the callback tests.
+    @Test func theDragOverridesFallThroughToTheirOwnSuper() throws {
         let source = CadenceSourceScan.codeOnly(
             try CadenceSourceScan.sourceFile("Cadence/macOS/Editor/MarkdownEditorInteractionSupport.swift")
         )
         let entered = try #require(CadenceSourceScan.functionBody(named: "draggingEntered", in: source))
         let updated = try #require(CadenceSourceScan.functionBody(named: "draggingUpdated", in: source))
-        #expect(entered.contains("markdownImageDropOperation(for: sender.draggingPasteboard)"))
-        #expect(updated.contains("markdownImageDropOperation(for: sender.draggingPasteboard)"))
         #expect(entered.contains("super.draggingEntered(sender)"))
         #expect(updated.contains("super.draggingUpdated(sender)"))
         #expect(updated.contains("super.draggingEntered") == false)

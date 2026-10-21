@@ -38,17 +38,27 @@ enum CadenceSavedLinkPersistence {
 
     /// Commits a link the caller has just built and configured. Inserting and committing are one
     /// step so that no caller can do the first and forget the second.
-    static func insert(_ link: SavedLink, in modelContext: ModelContext) throws {
+    /// The default commit saves normally; injecting a refusal lets tests exercise the undo.
+    static func insert(
+        _ link: SavedLink,
+        in modelContext: ModelContext,
+        commit: (ModelContext) throws -> Void = { try $0.save() }
+    ) throws {
         modelContext.insert(link)
-        try CadencePendingChangePersistence.commitInsert(of: link, in: modelContext)
+        try CadencePendingChangePersistence.commitInsert(of: link, in: modelContext, commit: commit)
     }
 
     /// Deletes a link and commits it. A failed commit rolls the delete back, because the
     /// alternative — leaving the deletion pending and unreported — is the bug this file is here
     /// to remove.
-    static func delete(_ link: SavedLink, in modelContext: ModelContext) throws {
+    /// The default commit saves normally; injecting a refusal lets tests exercise the rollback.
+    static func delete(
+        _ link: SavedLink,
+        in modelContext: ModelContext,
+        commit: (ModelContext) throws -> Void = { try $0.save() }
+    ) throws {
         modelContext.delete(link)
-        try CadencePendingChangePersistence.commitDelete(in: modelContext)
+        try CadencePendingChangePersistence.commitDelete(in: modelContext, commit: commit)
     }
 }
 

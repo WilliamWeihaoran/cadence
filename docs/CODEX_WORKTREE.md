@@ -188,6 +188,13 @@ Cadence/iOS/iOSUnmanagedStoreSettingsSection.swift
 CadenceTests/CadenceRealTreeSweepManifest.txt
 CadenceTests/iOSCalendarMetricsTests.swift
 CadenceTests/TaskBundleTests.swift
+CadenceTests/CadencePendingChangePersistenceTests.swift
+CadenceTests/MarkdownImageDropAffordanceTests.swift
+CadenceTests/MobileTaskSortStabilityTests.swift
+CadenceTests/DataIntegrityRepairServiceTests.swift
+CadenceTests/CadenceNoteFolderMoveCommitTests.swift
+CadenceTests/CadenceEventKitLaunchGateTests.swift
+CadenceTests/CadenceCaptureEditorTests.swift
 ```
 
 **Admission 2026-10-19 (coordinator), one line in `CadenceTests/CadenceMarkdownImageCommitSurfaceTests.swift`.**
@@ -3277,3 +3284,73 @@ all and four are already inside Codex's lease, so this is the last one in the wa
 stopped at its boundary twice and reported rather than editing. Compare the 2026-10-20 T-1364 entry
 above, where 27 paths were written first and granted afterwards. Same protocol, opposite order, and
 the difference is entirely in what it cost to approve.
+
+### 2026-10-21 — two conversion test paths granted to Codex for [[T-3260]], after a re-check that cut the ask from 13 to 2
+
+**GRANTED, scoped to T-3260's source-pin conversion and nothing else:**
+
+- `CadenceTests/CadencePendingChangePersistenceTests.swift` — replacing the two saved-link
+  delegation pins with failure-path tests.
+- `CadenceTests/MarkdownImageDropAffordanceTests.swift` — the five drag-routing pins, keeping any
+  with no meaningful behavioural replacement.
+
+**The re-check is why this entry is short, and it is the point.** Codex first reported **13** paths
+outside the fence. Its worktree was **97 commits behind main**, still on `codex/block-removal-finish`
+— so `T-3260` did not exist in its ledger at all, and its lease reading came from a
+`docs/CODEX_WORKTREE.md` that predated three widenings. It was asked to sync and re-check rather
+than being granted the 13, and the list collapsed to **2**: the completed conversion batches and the
+structural pins needed nothing, and `Cadence/Shared/CadenceSavedLinkPersistence.swift` was already
+fenced. Eleven paths were never needed. **A stale worktree does not merely delay a Codex agent; it
+makes every lease verdict it reports unreliable in the direction of asking for too much.**
+
+**Codex was right about the thing that mattered and stopped twice before writing.** "Not in the
+fence" means it may not write, and it reported that rather than editing — the third time this branch
+has done so. Compare the 2026-10-20 T-1364 entry, where 27 paths were written first and granted
+afterwards.
+
+**A counting defect this exposed, recorded rather than fixed here.** Codex reported 140 patterns and
+the coordinator 141; both were wrong. `codex-land.sh lease` emits **142 pattern lines of which 138
+are distinct** — `Cadence/iOS/iOSCalendarManager.swift`, `Cadence/iOS/iOSMarkdownEditor.swift`,
+`Cadence/macOS/Views/CalendarPageMonthSupportViews.swift` and
+`CadenceUITests/CadenceCapturePaletteUITests.swift` each appear twice. Harmless to matching, since a
+duplicate glob matches the same paths, but it means no two readers agree on the fence's size.
+Deduplicating is a deliberate edit to a machine-read allowlist and is left for someone to do on
+purpose.
+
+### 2026-10-21 — five conversion test paths granted to Codex for [[T-3260]]'s remaining clusters, and the one deliberately WITHHELD
+
+**GRANTED, scoped to T-3260's source-pin conversion and nothing else:**
+
+- `CadenceTests/MobileTaskSortStabilityTests.swift` — item (2), 6 pins.
+- `CadenceTests/DataIntegrityRepairServiceTests.swift` — item (3), 2 pins.
+- `CadenceTests/CadenceNoteFolderMoveCommitTests.swift` — item (4), 3 pins. Its product path,
+  `Cadence/Services/CadenceArchiveImportService.swift`, was already fenced.
+- `CadenceTests/CadenceEventKitLaunchGateTests.swift` — item (7), 8 pins, the second-largest
+  convertible cluster.
+- `CadenceTests/CadenceCaptureEditorTests.swift` — item (8).
+
+**WITHHELD, and this is the part worth reading.** Item (1),
+`CadenceTests/CadenceTaskInlinePanelControllerTests.swift`, was in the obvious batch and is NOT
+granted: `.claude/worktrees/agent-ae999887112dc6790` holds it modified and uncommitted, alongside
+`Cadence/Shared/CadenceTaskInlinePanelController.swift`, on a branch whose last commit is T-3076.
+Its mtime is 2026-10-20 09:41, so it may well be abandoned — but "probably dead" is not a lease
+verdict, and `agent-commit.sh` stages WHOLE FILES, which is the exact shape that reddened CI on
+`d65d294` ([[T-1385]]). The path stays with local agents until that worktree is resolved. A stale
+worktree is cheap to re-grant later and expensive to collide with now.
+
+**Two PRODUCT paths are also withheld on purpose**, `Cadence/Shared/CadenceTaskQuerySupport.swift`
+(item 2) and `Cadence/Services/PersistenceController.swift` (item 3). The brief tells Codex to
+convert tests only and to STOP and file an inbox request if a product seam turns out to be needed.
+This is not caution for its own sake: item (5) was parked for two passes on "needs a save-counting
+seam" and item (4) on the same words, and in BOTH cases the seam already existed and no product
+change was required. The default assumption for this ticket is that the seam is already there.
+`PersistenceController.swift` additionally owns the store-backup boundary, which is not a file to
+open for a test conversion.
+
+**`codex/block-removal-finish` is SPENT and needs no landing.** `codex-land.sh review` reported 19
+of 20 files already in main and refused on four CODEX-INBOX-ID-CLASHes (T-1364, T-3170, T-3214,
+T-3246) — the pre-filed-stub shape, not a block. The one differing file,
+`CadenceTests/CadenceCommentSymbolClaimTests.swift`, was checked by the staleness test in its final
+form: all **4** lines the branch's own commits add are present in main, so the blob differs only
+because main moved ahead. T-3170's seventeenth pass already says as much in the ledger.
+

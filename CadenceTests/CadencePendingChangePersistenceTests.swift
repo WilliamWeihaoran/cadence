@@ -195,9 +195,7 @@ struct CadencePendingChangePersistenceTests {
 
     // MARK: - The two callers that were written first
 
-    /// `CadenceSavedLinkPersistence` now delegates both directions, and still behaves as T-327
-    /// pinned it. Its own suite covers the success paths; this is the failure path it had no seam
-    /// to reach.
+    /// The default commit still saves in both directions; the refusal cases below use the seam.
     @Test func theSavedLinkHelperStillUndoesBothDirections() throws {
         let container = try CadenceModelContainerFactory.makeInMemoryContainer()
         let modelContext = ModelContext(container)
@@ -210,13 +208,79 @@ struct CadencePendingChangePersistenceTests {
         #expect(try ModelContext(container).fetch(FetchDescriptor<SavedLink>()).isEmpty)
     }
 
+    /// A refused link insert removes only that link, preserves unrelated pending work, and
+    /// cannot be resurrected by a later save of that work.
+    @Test func aRefusedSavedLinkInsertIsUndoneWithoutDiscardingAnotherEdit() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        context.autosaveEnabled = false
+        let kept = SavedLink(title: "Original", url: "https://example.com/kept")
+        try CadenceSavedLinkPersistence.insert(kept, in: context)
+        kept.title = "Pending rename"
+        let rejected = SavedLink(title: "Rejected", url: "https://example.com/rejected")
+        let rejectedID = rejected.id
+        var attempts = 0
+
+        #expect(throws: CommitRefused.self) {
+            try CadenceSavedLinkPersistence.insert(rejected, in: context, commit: { committing in
+                attempts += 1
+                #expect(committing === context)
+                #expect(committing.insertedModelsArray.contains { ($0 as? SavedLink)?.id == rejectedID })
+                #expect(try ModelContext(container).fetch(FetchDescriptor<SavedLink>()).map(\.title) == ["Original"])
+                throw CommitRefused()
+            })
+        }
+
+        #expect(attempts == 1)
+        #expect(kept.title == "Pending rename", "undo discarded an unrelated pending edit")
+        let visible = try context.fetch(FetchDescriptor<SavedLink>())
+        #expect(visible.map(\.id) == [kept.id], "the refused insert is still visible")
+        #expect(visible.first?.title == "Pending rename")
+        #expect(try ModelContext(container).fetch(FetchDescriptor<SavedLink>()).map(\.title) == ["Original"])
+
+        try context.save()
+        let stored = try ModelContext(container).fetch(FetchDescriptor<SavedLink>())
+        #expect(stored.map(\.id) == [kept.id], "a later save resurrected the refused link")
+        #expect(stored.first?.title == "Pending rename")
+        #expect(!context.hasChanges)
+    }
+
+    /// A refused link delete restores the visible row before throwing, with no pending deletion
+    /// for a later save to commit.
+    @Test func aRefusedSavedLinkDeleteRestoresTheRowAndCannotLeakIntoALaterSave() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        context.autosaveEnabled = false
+        let link = SavedLink(title: "Keep me", url: "https://example.com/kept")
+        try CadenceSavedLinkPersistence.insert(link, in: context)
+        let linkID = link.id
+        var attempts = 0
+
+        #expect(throws: CommitRefused.self) {
+            try CadenceSavedLinkPersistence.delete(link, in: context, commit: { committing in
+                attempts += 1
+                #expect(committing === context)
+                #expect(committing.deletedModelsArray.contains { ($0 as? SavedLink)?.id == linkID })
+                #expect(try ModelContext(container).fetch(FetchDescriptor<SavedLink>()).map(\.id) == [linkID])
+                throw CommitRefused()
+            })
+        }
+
+        #expect(attempts == 1)
+        #expect(!context.hasChanges, "the refused delete was left pending")
+        let visible = try context.fetch(FetchDescriptor<SavedLink>())
+        #expect(visible.map(\.id) == [linkID], "the refused delete still hides the link")
+        #expect(visible.first?.title == "Keep me")
+        #expect(try ModelContext(container).fetch(FetchDescriptor<SavedLink>()).map(\.id) == [linkID])
+        try context.save()
+        #expect(try ModelContext(container).fetch(FetchDescriptor<SavedLink>()).map(\.id) == [linkID])
+    }
+
     /// The helper is stated once and the two earlier copies are gone from the files that had them.
-    @Test func theTwoOriginalCopiesNowDelegate() throws {
+    @Test func theSavedLinkHelperDoesNotRestateSaveOrUndo() throws {
         let saved = try CadenceSourceScan.strippingComments(
             CadenceSourceScan.sourceFile("Cadence/Shared/CadenceSavedLinkPersistence.swift")
         )
-        #expect(saved.contains("CadencePendingChangePersistence.commitInsert("))
-        #expect(saved.contains("CadencePendingChangePersistence.commitDelete("))
         #expect(
             CadenceSourceScan.matchCount(#"modelContext\.rollback\(\)"#, in: saved) == 0,
             "the link helper still spells its own undo"
