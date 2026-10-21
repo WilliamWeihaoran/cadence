@@ -173,12 +173,27 @@ struct CadenceMCPWriteFenceTests {
     /// be unique, and an agent worktree at `.claude/worktrees/<name>/` makes every script in this
     /// list exist twice. Nothing then resolves, and a sweep that resolves nothing reports its whole
     /// ledger as stale rather than reporting nothing.
+    ///
+    /// **T-3330, and it is [[T-3241]]'s defect reached by the other door.** `isNestedCheckout`
+    /// recognises a copy by the `.git` entry inside it, and `scripts/agent-scratch.sh` builds a
+    /// detached tree of HEAD at `scratchpad/<id>/tree/` that has NO `.git` — so the prune does not
+    /// see it, every script exists twice, and `resolve` goes nil for all of them. Two other callers
+    /// of `repositoryPaths` already pass `pruningAtRoot: ["scratchpad"]` ([[T-3180]]); this one did
+    /// not, which is the fourth copy of a prune list that T-3241's own note above warns about.
+    ///
+    /// Measured 2026-10-21 rather than argued, on a probe `scratchpad/<id>/tree/scripts` copy in an
+    /// otherwise clean worktree: without the prune the sweep failed with exactly **2 unlisted**
+    /// (`ledger_closed_ids`, `live_test_hosts` — both DECLARED, in `agent-commit.sh:703` and
+    /// `test-host-lock.sh:223`, by scripts whose basename had just gone ambiguous) and **6 stale**;
+    /// with it, green. The same two unlisted names were reported as a red caused by an unrelated
+    /// commit, which is what this shape costs a reader: the scratch tree is UNTRACKED, so
+    /// `git status` shows nothing and the failure names files the commit never touched.
     static func repositoryScriptPaths() throws -> [String] {
         let root = CadenceSourceScan.repositoryRoot()
         let scriptExtensions: Set<String> = ["sh", "bash", "zsh", "py", "rb", "pl", "js", "mjs", "command"]
 
         var paths: [String] = []
-        for relative in CadenceSourceScan.repositoryPaths(under: root) {
+        for relative in CadenceSourceScan.repositoryPaths(under: root, pruningAtRoot: ["scratchpad"]) {
             let url = root.appendingPathComponent(relative)
             let ext = url.pathExtension.lowercased()
             if scriptExtensions.contains(ext) {
