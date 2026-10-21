@@ -49,6 +49,12 @@ struct CadenceCodexTaskListVirtualizationTests {
         for (grouping, count) in [(TaskGroupingMode.none, 200), (.byDate, 1_000), (.byPriority, 200), (.byList, 200)] {
             let container = try CadenceModelContainerFactory.makeInMemoryContainer()
             let context = container.mainContext
+            // T-3279: CI's host trapped inside SwiftData on an autosave timer's notification,
+            // delivered to a `@Query` observer while this loop builds and drops one container per
+            // grouping. The seed is saved explicitly below, so nothing here needs autosave — the
+            // eager control already runs with it off — and the container is held past teardown.
+            context.autosaveEnabled = false
+            defer { withExtendedLifetime(container) {} }
             for index in 0..<count {
                 let task = AppTask(title: "Virtualization probe \(index)")
                 task.order = index
