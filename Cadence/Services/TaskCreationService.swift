@@ -111,8 +111,7 @@ struct TaskCreationService {
     /// it — the calendar day column's drag-to-create, whose draft popover has already dismissed by
     /// the time the store answers ([[T-655]]).
     ///
-    /// Beside the sentence rather than at the call site for the reason
-    /// `CadenceTaskMutationSupport.bundleCreateFailureAlertTitle` gives: the title and the body are
+    /// Beside the sentence rather than at the call site because the title and the body are
     /// one message, and two surfaces naming the same failure differently is what holding both here
     /// prevents. "Create" rather than "Save" because this family is a creation — there is nothing
     /// the user could fear losing, which is what the edit and delete families' second sentences

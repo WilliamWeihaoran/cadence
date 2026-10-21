@@ -1131,8 +1131,8 @@ enum CadenceCommentSymbolClaim {
     /// **One, since the `staleclaims` pass.** Six were rewritten in one change: where the
     /// substance was still live the sentence was reworded to the past tense or to a symbol that
     /// exists (the retirement pass's `-1` members, the enum split's spelling pin), and where it was
-    /// gone the claim was deleted. The one left is TaskCreationService.swift's, held because that
-    /// file is leased to a live Codex agent; it comes off when that comment is fixed.
+    /// gone the claim was deleted. T-3170's final pass fixes the remaining TaskCreationService
+    /// comment under the Codex grant, so none of those seven remain.
     ///
     /// **Eleven, since [[T-3209]].** Widening the root to lowercase, and checking a
     /// `<FileBaseName>.<symbol>` root against its file instead of dropping it, surfaced fourteen
@@ -1143,7 +1143,6 @@ enum CadenceCommentSymbolClaim {
     /// exemption, a sidebar width, a timeline row height — whose correct present-tense replacement
     /// needs the code read, not just a name swapped. [[T-3224]] owns them.
     static let staleClaims: [String] = [
-        "Cadence/Services/TaskCreationService.swift `CadenceTaskMutationSupport.bundleCreateFailureAlertTitle`",
         "Cadence/Shared/CadenceTaskMutationSupport.swift `CadenceCalendarPlanningSupport.bundlesByDate`",
         "Cadence/Shared/CadenceTaskMutationSupport.swift `iOSTaskDetailSheet.applyDates`",
         "Cadence/iOS/iOSMarkdownTextView.swift `iOSMarkdownStylingSupport.applyTableBlock`",
@@ -1353,8 +1352,8 @@ enum CadenceCommentSymbolClaim {
         // `staleClaims`. The `staleclaims` pass fixed six, taking it to 1; the last is
         // TaskCreationService.swift's, held for a live Codex lease. 11 since [[T-3209]] made ten
         // more visible that it could not fix in place -- see `staleClaims`. Fixing them brings
-        // this to 0.
-        #expect(stale.count == 11)
+        // this to 0. T-3170 now fixes the TaskCreationService comment, taking 11 to 10.
+        #expect(stale.count == 10)
     }
 
     /// The sweep. Exact set equality, both directions, over every Swift file in all five targets.
