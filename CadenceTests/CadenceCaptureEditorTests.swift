@@ -52,6 +52,21 @@ struct CadenceCaptureEditorTests {
         #expect(draft.estimateMinutes == CadenceTaskComposerSupport.defaultEstimatedMinutes)
     }
 
+    // T-3260 retention review: a path reference is not itself a convertible behaviour pin.
+    // - The source-size check below guards against a wrong/truncated input to the wiring scans;
+    //   running a capture helper cannot validate which file those scans read.
+    // - Presentation/background/dismissal/navigation checks hold private SwiftUI host composition;
+    //   constructing a draft cannot observe the presented sheet or its dismissal interaction.
+    // - Status/delete/notes checks hold private host callbacks and bindings; the public field
+    //   inventory tests above cannot prove that the hosts connect them to the card.
+    // - Forwarding, title styling, notes-slot, time/due-date and repeat checks hold private view
+    //   composition; testing the called helpers alone would still pass if the call were removed.
+    // - Commit/read-only/title-notice checks hold private view actions and their ordering; there
+    //   is no callable action seam here, and inspecting a constructed View is not a UI flow.
+    // - Font, line limits, tints, glyphs, priority and chip placement are rendering constraints;
+    //   the date-label test below holds the reachable formatter but cannot prove the card uses it.
+    // - Source-parser and regex controls stay because they validate the retained scans rather
+    //   than a product behaviour. No replacement is claimed without a rendering/action seam.
     private func source(_ path: String) throws -> String {
         let raw = try CadenceSourceScan.sourceFile(path)
         #expect(raw.count > 1_000)

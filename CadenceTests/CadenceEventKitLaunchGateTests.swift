@@ -12,8 +12,8 @@ import EventKit
 /// or request authorization, never observe the store, and refuse every write. These tests pin the
 /// predicate against literal environments AND against the variables the two launchers really set
 /// (read from their source, so a launcher that stops setting them goes red here), drive a disarmed
-/// `CalendarManager` through every door, and scan `iOSCalendarManager`, which a macOS test build
-/// does not compile.
+/// `CalendarManager` through every door, and scan the iOS wiring where there is no isolated
+/// manager seam (even though CadenceTests now also compiles for iOS).
 ///
 /// Safety of the tests themselves: no test here calls `shared`, reads TCC, prompts, or reaches
 /// `defaultWritableCalendar`. Writes are driven only with `EKEvent`s built from a foreign throwaway
@@ -179,11 +179,25 @@ struct CadenceEventKitLaunchGateTests {
     }
     #endif
 
-    // MARK: - 3. iOSCalendarManager, by source
+    // MARK: - 3. Calendar manager wiring retained by source
 
-    /// `Cadence/iOS/` is behind `#if os(iOS)` and is not compiled into this target, so the iOS half
-    /// is pinned by reading it: every door is gated, and the request/refresh gates come BEFORE the
-    /// first TCC read in their bodies.
+    // T-3260 retention review:
+    // - The launcher parsing and UI-launch inventory above hold actual launcher wiring; calling
+    //   isDisarmed with restated dictionaries cannot prove what those launchers configure.
+    // - iOSCalendarManager has only a private, process-bound initializer, with a real EKEventStore
+    //   and no injected authorization reader; even an iOS unit target cannot isolate it safely.
+    // - Its process-gate initializer pin holds production wiring; testing the pure predicate
+    //   cannot prove that the manager reads it.
+    // - Both exact write-guard counts hold coverage of all four sinks; calling the singleton
+    //   after removing a guard could reach the real store and is not a safe negative control.
+    // - The observer and full-access pins stay because both methods are private and neither
+    //   authorization nor observer state has an isolated iOS test seam.
+    // - Each request/refresh ordering pin stays because removing the gate may read real TCC or
+    //   prompt; an eventual-result assertion would not prove that no TCC read preceded it.
+    // - The raw/stripped length and difference checks validate those source reads, not app
+    //   behaviour, and are retained as non-vacuity controls for the structural assertions.
+    /// iOS compiles in the iOS test target now (T-3244), but compilation is not an isolation seam.
+    /// The access/refresh gates must precede the first TCC read on either platform.
     @Test func theIOSCalendarManagerIsGatedAtEveryDoor() throws {
         let raw = try CadenceSourceScan.sourceFile("Cadence/iOS/iOSCalendarManager.swift")
         let code = CadenceSourceScan.strippingComments(raw)
@@ -212,8 +226,10 @@ struct CadenceEventKitLaunchGateTests {
         }
     }
 
-    /// The same ordering on the desktop manager, for the one door a test cannot safely drive by
-    /// mutation: removing `requestAccess`'s guard would ask the host's real TCC, and may prompt.
+    /// Retain both desktop ordering pins: removing the request guard can prompt, and removing
+    /// the refresh guard reads real TCC even if the final authorization result looks correct.
+    /// Retain the production-initializer pin too: the injected initializer exercised above
+    /// cannot prove how the shipping initializer obtains its process gate.
     @Test func theDesktopCalendarManagerAsksNoTCCQuestionBeforeItsDisarmGuard() throws {
         let raw = try CadenceSourceScan.sourceFile("Cadence/macOS/Services/CalendarManager.swift")
         let code = CadenceSourceScan.strippingComments(raw)
