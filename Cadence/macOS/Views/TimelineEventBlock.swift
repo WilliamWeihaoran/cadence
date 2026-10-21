@@ -406,7 +406,19 @@ struct TimelineEventBlock: View {
                                 isActive: isHovered
                             )
                         )
-                        .lineLimit(TimelineEventBlockRows.titleLineLimit)
+                        // T-3315: a word too wide for the column ends the title in an ellipsis
+                        // on one line rather than breaking between characters.
+                        .lineLimit(
+                            TimelineEventBlockRows.titleLineLimit(
+                                for: item.title,
+                                availableWidth: TimelineEventBlockRows.titleWidth(
+                                    blockWidth: frame.width,
+                                    horizontalPadding: style.horizontalPadding,
+                                    isRecurring: item.isRecurringSeriesMember
+                                )
+                            )
+                        )
+                        .truncationMode(.tail)
                     // The recurrence glyph stays with the event. T-3160 moved paint, not
                     // affordances — this marker and the task's completion circle are what still
                     // say which species a block is where the two treatments come closest.

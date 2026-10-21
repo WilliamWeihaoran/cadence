@@ -494,9 +494,58 @@ struct CadenceCalendarOverlapLayoutTests {
         #expect(mac.count > 2_000, "non-vacuity: read \(mac.count) characters of the Mac event block")
         #expect(mac.contains("if TimelineEventBlockRows.showsCalendarRow("))
         #expect(mac.contains("coveredFromMinute: layout.coveredFromMinute"))
-        #expect(mac.contains(".lineLimit(TimelineEventBlockRows.titleLineLimit)"))
+        #expect(mac.contains(".lineLimit(\n                            TimelineEventBlockRows.titleLineLimit(\n                                for: item.title,"))
         #expect(mac.contains(".font(.system(size: TimelineEventBlockRows.calendarRowFontSize))"))
         #expect(!mac.contains("frame.height >= 54"), "a second, ungated copy of the row's height floor")
+    }
+
+    // MARK: - T-3315: a title word too wide for its column truncates, never breaks mid-word
+
+    /// A title whose widest word overruns the line gets one tail-truncated line; one whose every
+    /// word fits keeps the two-line wrap. The boundary is the widest word's own measured width, so
+    /// the assertion is a relation to AppKit's metrics rather than a pinned point figure.
+    @Test func aTitleWordWiderThanItsLineTruncatesInsteadOfBreakingMidWord() {
+        let front = TimelineEventBlockRows.widestTitleWordWidth("Front event A")
+        #expect(front > 0, "non-vacuity: the title's words measured as nothing")
+        let perWord = ["Front", "event", "A"].map { TimelineEventBlockRows.widestTitleWordWidth($0) }
+        #expect(front == perWord.max(), "the title was not measured word by word")
+        #expect(TimelineEventBlockRows.titleLineLimit(for: "Front event A", availableWidth: front - 1) == 1,
+                "a word one point too wide for its line was left to break between characters")
+        #expect(TimelineEventBlockRows.titleLineLimit(for: "Front event A", availableWidth: front) == TimelineEventBlockRows.titleLineLimit,
+                "a title whose every word fits lost its second line")
+        #expect(TimelineEventBlockRows.titleLineLimit(for: "", availableWidth: 0) == TimelineEventBlockRows.titleLineLimit)
+
+        // The captured geometry: T-3315's cascaded front block at the launcher's default window.
+        let narrow = TimelineEventBlockRows.titleWidth(blockWidth: 55, horizontalPadding: 6, isRecurring: false)
+        #expect(TimelineEventBlockRows.titleLineLimit(for: "Front event A", availableWidth: narrow) == 1)
+    }
+
+    /// The title's width is the block less everything else on the title row, and a series member's
+    /// recurrence glyph takes its share.
+    @Test func theTitleIsMeasuredAgainstTheWidthLeftBesideItsGlyphs() throws {
+        let plain = TimelineEventBlockRows.titleWidth(blockWidth: 120, horizontalPadding: 6, isRecurring: false)
+        let recurring = TimelineEventBlockRows.titleWidth(blockWidth: 120, horizontalPadding: 6, isRecurring: true)
+        #expect(TimelineEventBlockRows.titleIconWidth > 0)
+        #expect(TimelineEventBlockRows.recurrenceGlyphWidth > 0)
+        #expect(120 - plain == CadenceCalendarEventStyle.railWidth + 12 + TimelineEventBlockRows.titleIconWidth + TimelineEventBlockRows.titleRowSpacing)
+        #expect(plain - recurring == TimelineEventBlockRows.titleRowSpacing + TimelineEventBlockRows.recurrenceGlyphWidth)
+        #expect(TimelineEventBlockRows.titleWidth(blockWidth: 0, horizontalPadding: 6, isRecurring: true) == 0)
+
+        // The mirrored glyphs and spacing are the ones the title row draws.
+        let mac = CadenceSourceScan.codeOnly(
+            try CadenceSourceScan.sourceFile("Cadence/macOS/Views/TimelineEventBlock.swift")
+        )
+        #expect(mac.count > 2_000, "non-vacuity: read \(mac.count) characters of the Mac event block")
+        #expect(TimelineEventBlockRows.titleIconSymbolName == "calendar")
+        #expect(TimelineEventBlockRows.recurrenceGlyphSymbolName == "repeat")
+        // String literals are blanked by `codeOnly`, so the glyph names are read off the raw file.
+        let raw = try CadenceSourceScan.sourceFile("Cadence/macOS/Views/TimelineEventBlock.swift")
+        #expect(raw.contains("HStack(alignment: .firstTextBaseline, spacing: 4) {\n                    Image(systemName: \"calendar\")\n                        .font(.system(size: 9, weight: .semibold))"))
+        #expect(raw.contains("Image(systemName: \"repeat\")\n                            .font(.system(size: 8, weight: .bold))"))
+        #expect(TimelineEventBlockRows.titleRowSpacing == 4)
+        #expect(TimelineEventBlockRows.titleIconFontSize == 9)
+        #expect(TimelineEventBlockRows.recurrenceGlyphFontSize == 8)
+        #expect(mac.contains("horizontalPadding: style.horizontalPadding,\n                                    isRecurring: item.isRecurringSeriesMember"))
     }
 
     #endif

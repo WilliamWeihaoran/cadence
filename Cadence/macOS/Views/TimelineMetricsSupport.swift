@@ -1,4 +1,5 @@
 #if os(macOS)
+import AppKit
 import SwiftUI
 
 struct TimelineBlockLayout {
@@ -55,6 +56,60 @@ enum TimelineEventBlockRows {
                 * CGFloat(titleLineLimit)
             + spacing
             + CadenceCalendarOverlapLayout.lineHeight(forSystemFontSize: calendarRowFontSize)
+    }
+
+    // MARK: T-3315: a title word wider than its column truncates instead of breaking mid-word
+
+    /// The title row's leading glyph, its trailing recurrence glyph, and the row's spacing, as
+    /// `TimelineEventBlock.eventBlockBody` draws them. Mirrored here so the width the title is
+    /// given can be known before the view is built, the same way the row heights above are.
+    static let titleIconSymbolName = "calendar"
+    static let titleIconFontSize: CGFloat = 9
+    static let recurrenceGlyphSymbolName = "repeat"
+    static let recurrenceGlyphFontSize: CGFloat = 8
+    static let titleRowSpacing: CGFloat = 4
+
+    private static func symbolWidth(_ name: String, pointSize: CGFloat, weight: NSFont.Weight) -> CGFloat {
+        let configuration = NSImage.SymbolConfiguration(pointSize: pointSize, weight: weight)
+        let image = NSImage(systemSymbolName: name, accessibilityDescription: nil)?
+            .withSymbolConfiguration(configuration)
+        // A missing symbol must not widen the title past its column, so the fallback is generous.
+        return ceil(image?.size.width ?? pointSize * 1.5)
+    }
+
+    static let titleIconWidth = symbolWidth(titleIconSymbolName, pointSize: titleIconFontSize, weight: .semibold)
+    static let recurrenceGlyphWidth = symbolWidth(recurrenceGlyphSymbolName, pointSize: recurrenceGlyphFontSize, weight: .bold)
+
+    /// The width the title `Text` is laid out in: the block, less the rail, the horizontal padding,
+    /// the calendar glyph and — on a series member — the recurrence glyph, with the row's spacing
+    /// between each.
+    static func titleWidth(blockWidth: CGFloat, horizontalPadding: CGFloat, isRecurring: Bool) -> CGFloat {
+        let recurrence = isRecurring ? titleRowSpacing + recurrenceGlyphWidth : 0
+        return max(
+            0,
+            blockWidth - CadenceCalendarEventStyle.railWidth - horizontalPadding * 2
+                - titleIconWidth - titleRowSpacing - recurrence
+        )
+    }
+
+    /// The widest single word of `title` at the title's own font, 11pt semibold.
+    static func widestTitleWordWidth(_ title: String) -> CGFloat {
+        let font = NSFont.systemFont(ofSize: CadenceCalendarOverlapLayout.eventTitleFontSize, weight: .semibold)
+        return title.split(whereSeparator: \.isWhitespace)
+            .map { ceil((String($0) as NSString).size(withAttributes: [.font: font]).width) }
+            .max() ?? 0
+    }
+
+    /// The title's `.lineLimit` for a block whose title is laid out in `availableWidth`.
+    ///
+    /// Two lines wrap on word boundaries only while every word fits the line. A word wider than
+    /// the line makes the text system break it between characters — "Fron" / "t e…", "Covere" —
+    /// which T-3315 caught on a cascaded front block 55pt wide. Apple Calendar never splits a word
+    /// there; it ends the title in an ellipsis. So a title holding a word that cannot fit gets ONE
+    /// line, tail-truncated, and every other title keeps `titleLineLimit`. That is never more lines
+    /// than `calendarRowWorstCaseBottom` assumes, so T-3166's covered-row rule is unaffected.
+    static func titleLineLimit(for title: String, availableWidth: CGFloat) -> Int {
+        widestTitleWordWidth(title) > availableWidth ? 1 : titleLineLimit
     }
 
     /// The block's height not covered by a later cascading block, or `nil` when none covers it.

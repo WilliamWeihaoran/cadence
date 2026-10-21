@@ -366,7 +366,9 @@ struct CadenceTimelineBlockTreatmentTests {
         // The recurrence marker, the two resize handles, the move drag, the tap, the popover and
         // the recurrence-scope dialog: every one of them is what tells an event from a task once
         // the two plates are closest, and none of them is paint.
-        #expect(CadenceSourceScan.matchCount(#"isRecurringSeriesMember"#, in: macEvent) == 2)
+        // Three since T-3315: the glyph's `if`, its other use, and the title-width rule, which
+        // leaves the glyph's width beside a series member's title.
+        #expect(CadenceSourceScan.matchCount(#"isRecurringSeriesMember"#, in: macEvent) == 3)
         #expect(CadenceSourceScan.matchCount(#"Image\(systemName: "repeat"\)"#, in: macEvent) == 1)
         #expect(CadenceSourceScan.matchCount(#"resizeHandle\(edge: \."#, in: macEvent) == 2)
         #expect(CadenceSourceScan.matchCount(#"\.popover\("#, in: macEvent) == 1)
