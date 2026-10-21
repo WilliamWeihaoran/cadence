@@ -224,6 +224,11 @@ struct CadenceNoteFolderMoveCommitTests {
     /// was precisely four surfaces holding a helper that looked like it filed a note and did not.
     /// The count is exact rather than "at least one": a second call site is a second surface that
     /// has quietly re-acquired the bug.
+    // T-3260 retention review: exact caller inventory stays structural because running the
+    // importer cannot establish the absence of a bypass on every other surface.
+    // The declaration check establishes that the inventory read the intended helper; executing
+    // that helper would not establish which spelling the source inventory searched for.
+    // Archive commit count/order is already behavioural below, including a real legacy fold.
     @Test func noNoteFolderMoveSkipsTheCommitOutsideTheImporter() throws {
         let needle = "CadenceListNoteFiling.fileWithoutCommitting("
         var callSites: [String: Int] = [:]

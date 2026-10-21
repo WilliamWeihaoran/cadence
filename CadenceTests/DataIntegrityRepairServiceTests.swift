@@ -1376,6 +1376,10 @@ struct DataIntegrityRepairServiceTests {
     /// whole reason the seam exists. `CadenceTargetSourceMembershipTests` enforces that boundary
     /// in general; this names the specific pair so a future edit that "fixes" the asymmetry has to
     /// read why. Asserted against the stripped source so a comment explaining the absence is fine.
+    // T-3260 retention review: the positive repair-call check makes the negative source read
+    // non-vacuous; executing the app target cannot prove the MCP target's symbol boundary.
+    // The negative remover check is a target-membership constraint, not a repair outcome;
+    // the startup outcome is already exercised above without editing PersistenceController.
     @Test func theMCPMaintenanceDoesNotNameTheForkedOccurrenceRemover() throws {
         let mcp = CadenceSourceScan.strippingComments(
             try CadenceSourceScan.sourceFile("Cadence/Services/MCPReadOnly/CadenceModelContainerFactory.swift")
