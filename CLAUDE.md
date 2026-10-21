@@ -50,3 +50,4 @@ Additional archived agent references:
 - `docs/AGENTS_REFERENCE.md` - detailed root runbook and red-run history.
 - `docs/SHARED_AGENTS_REFERENCE.md` - detailed Shared guide.
 - `docs/IOS_AGENTS_REFERENCE.md` - detailed iOS guide.
+- `docs/audits/README.md` - index of the 47 dated audit files; says which are still cited.
