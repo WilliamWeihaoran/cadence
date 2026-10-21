@@ -13,7 +13,6 @@ struct CalendarPageView: View {
     // it needs to fill a day it has not seen.
     @Environment(CalendarManager.self) private var calendarManager
     @Query private var allTasks: [AppTask]
-    @Query private var allBundles: [TaskBundle]
     @Query(sort: \Area.order) private var areas: [Area]
     @Query(sort: \Project.order) private var projects: [Project]
 
@@ -65,9 +64,6 @@ struct CalendarPageView: View {
     private var tasksByDate: [String: [AppTask]] {
         CalendarPageDataSupport.tasksByScheduledDate(allTasks)
     }
-    private var bundlesByDate: [String: [TaskBundle]] {
-        CalendarPageDataSupport.bundlesByDate(allBundles)
-    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -99,7 +95,6 @@ struct CalendarPageView: View {
                     todayKey: observedDay.todayKey,
                     allTasks: allTasks,
                     tasksByDate: tasksByDateForMonth,
-                    bundlesByDate: bundlesByDate,
                     eventCache: calendarEventDayCache,
                     visibleMonthIdx: $visibleMonthIdx,
                     displayedMonth: $monthDisplayedMonth,
@@ -115,11 +110,9 @@ struct CalendarPageView: View {
                         zoomLevel: $zoomLevel,
                         bufferStart: bufferStart,
                         allTasks: allTasks,
-                        allBundles: allBundles,
                         areas: areas,
                         projects: projects,
                         tasksByDate: tasksByDate,
-                        bundlesByDate: bundlesByDate,
                         unscheduledTasksByDate: unscheduledTasksByDate,
                         todayDayIdx: todayDayIdx,
                         scrollToTodayTrigger: $scrollToTodayTrigger,
@@ -309,8 +302,8 @@ struct CalendarPageView: View {
     /// draws none — the figure `CalendarPageStateSupport.restoredTimelineHour` opens the canvas on
     /// (T-1271).
     ///
-    /// Read from the same three sources `CalDayColumn` draws: this page's `tasksByDate` and
-    /// `bundlesByDate`, and the event cache's timed segments **clipped to that day**, so an event
+    /// Read from the same sources `CalDayColumn` draws: this page's `tasksByDate` and the
+    /// event cache's timed segments **clipped to that day**, so an event
     /// running through midnight contributes the 00:00 its block starts at there. One day, not the
     /// visible span, because the restore also scrolls horizontally to that day and it is the one
     /// the user will be looking at.
@@ -323,7 +316,6 @@ struct CalendarPageView: View {
         ).map(\.startMin)
         return CadenceScheduleSupport.earliestTimedStartMinute(
             (tasksByDate[key] ?? []).map(\.scheduledStartMin)
-                + (bundlesByDate[key] ?? []).map(\.startMin)
                 + eventMinutes
         )
     }

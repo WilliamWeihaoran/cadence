@@ -79,19 +79,6 @@ enum SchedulingActions {
         if task.estimatedMinutes <= 0 { task.estimatedMinutes = AppTask.defaultTimelineDurationMinutes }
     }
 
-    static func dropBundle(_ bundle: TaskBundle, to dateKey: String, startMin: Int) {
-        let duration = max(bundle.durationMinutes, minimumBundleDuration)
-        let clampedStart = TimelineDayRange.clampStart(startMin, duration: duration)
-        bundle.dateKey = dateKey
-        bundle.startMin = clampedStart
-        bundle.durationMinutes = min(duration, dayEndMin - clampedStart)
-        for task in memberTasks(in: bundle) {
-            task.scheduledDate = dateKey
-            task.scheduledStartMin = -1
-            task.calendarEventID = ""
-        }
-    }
-
     // `addTask(_:to:)` was declared here -- the Mac's "drop a task onto an existing block".
     // [[T-3170]] deleted the canvas arm that could express that drop, so it has no caller.
 

@@ -409,11 +409,8 @@ struct CadenceEditorSaveCommitSurfaceTests {
     /// of the block it was still drawn in. `CalendarBoardUnscheduleCommitTests` holds the
     /// behavioural half for the pair, including the block's other members.
     ///
-    /// `calendarEventID` joined one ticket later ([[T-1980]]), when the same board's day column
-    /// became the first caller to write it: `SchedulingActions.dropBundle` clears every member's
-    /// calendar link as part of moving a block, so a refused move that restored only the two
-    /// schedule fields left the members silently unlinked. `CalendarBoardDayDropCommitTests` holds
-    /// the behavioural half for it.
+    /// `calendarEventID` joined one ticket later ([[T-1980]]) for the retired Block move. It remains legacy task data, so a refused
+    /// edit must restore it along with the schedule fields.
     ///
     /// `notes` and the three `recurrenceEnd*` fields joined with [[T-3171]], making twenty-three:
     /// the iOS task editor became the shared schedule panel and saves the note in the same commit,
@@ -441,10 +438,7 @@ struct CadenceEditorSaveCommitSurfaceTests {
             .filter { $0 != "taskID" }
         #expect(captured.sorted() == Self.snapshottedTaskFields, "the snapshot captures \(captured.sorted())")
 
-        // Read by its **full prefix**, not by the bare name: [[T-1980]] added
-        // `CadenceTaskBundleSlotSnapshot` to this file, which has a `restore(to bundle:)` of its
-        // own, and `functionBody(named: "restore")` would silently start reading whichever came
-        // first in the file.
+        // Read the task declaration by its full prefix so another restore cannot shadow it.
         let restoreBody = try #require(
             CadenceSourceScan.declarationBody("func restore(to task: AppTask)", in: source)
         )

@@ -268,40 +268,6 @@ enum CalendarPageBoardDropSupport {
         return .applied
     }
 
-    /// A **day column's** drop of a whole block ([[T-1980]]), the third of this board's drops and
-    /// the only one whose subject is not a task.
-    ///
-    /// `SchedulingActions.dropBundle` writes the block's own `dateKey`/`startMin`/`durationMinutes`
-    /// and then every member's `scheduledDate`, `scheduledStartMin` and `calendarEventID`. So the
-    /// undo is `CadenceTaskFieldEditCommit.commitBlockMove`: the slot through
-    /// `CadenceTaskBundleSlotSnapshot`, the members through the same `CadenceTaskFieldSnapshot`
-    /// every other commit on this board uses — which is why `calendarEventID` joined that set in
-    /// this change rather than being snapshotted a second way here.
-    ///
-    /// **An empty `dateKey` answers `.resolvedNothing`** rather than committing: it is the same
-    /// "this board cannot place that" the rail drop guards for, and `dropAction(for: .day(""))` is
-    /// already `nil` — asked here so a block move and a card move refuse the same input.
-    static func move(
-        _ bundle: TaskBundle,
-        to dateKey: String,
-        modelContext: ModelContext,
-        commit: (ModelContext) throws -> Void = { try $0.save() }
-    ) -> TasksPanelDropOutcome {
-        guard CalendarBoardPlannerSupport.dropAction(for: .day(dateKey)) != nil else {
-            return .resolvedNothing
-        }
-
-        let members = (bundle.tasks ?? []).filter { $0.bundle?.id == bundle.id }
-        let landed = CadenceTaskFieldEditCommit.commitBlockMove(
-            bundle,
-            members: members,
-            in: modelContext,
-            commit: commit
-        ) {
-            SchedulingActions.dropBundle(bundle, to: dateKey, startMin: bundle.startMin)
-        }
-        return landed ? .applied : .refused
-    }
 }
 
 /// The Calendar Board: day columns that scroll horizontally, flanked by two pinned rails.
