@@ -48,6 +48,10 @@ loading broad histories.
 - Date formatter sweep: `rg -n "DateFormatter\\(|dateFormat\\s*=" Cadence`
 - Page-header usage: `rg -n "DesktopPageHeader\\(|iOSPageHeader\\(" Cadence`
 - MCP boundary hits: `rg -n "CadenceMCP|CadenceReadService|CadenceWriteService|calendarEventID"`
+- Whether an unmerged local branch still holds work, or whether one is safe to lose:
+  `docs/BRANCH_AUDIT.md` — a verdict per branch (SPENT / LIVE / SUPERSEDED) with the evidence, and
+  the test that answers it. "Commits ahead of `main`" does not mean unlanded work here: landing
+  rebuilds the hunks rather than merging, so a landed branch stays ahead forever.
 
 ## Verification Defaults
 
