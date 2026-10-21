@@ -636,7 +636,18 @@ struct TargetSourceGraph {
     /// contents of `\(...)` interpolations, which *are* real references. Raw-string delimiters are
     /// counted, because `#"...\"..."#` has no escapes and a stripper that assumed otherwise would
     /// desynchronise and swallow the code after it — a guard that reads less than it claims to.
+    ///
+    /// Memoized on the text ([[T-3261]]): every graph re-stripped all ~550 `Cadence/` files, and
+    /// six tests here plus `CadenceDefaultsRoutingSweepTests` and
+    /// `CadenceSharedConstantReuseSweepTests` each build one. A pure function of its input, so it
+    /// goes through `CadenceSourceDerivationCache` like `codeOnly`.
     static func stripped(_ source: String) -> String {
+        strippedCache.value(for: source, derive: strippedUncached)
+    }
+
+    private static let strippedCache = CadenceSourceDerivationCache<String>()
+
+    private static func strippedUncached(_ source: String) -> String {
         let characters = Array(source)
         var output = ""
         var index = 0

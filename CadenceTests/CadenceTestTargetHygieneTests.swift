@@ -1658,6 +1658,22 @@ struct CadenceTopLevelTypeExtent: Equatable {
 /// test appended past a closing brace belongs to the file scope the compiler sees, not to the suite
 /// the author meant (T-465).
 func cadenceTopLevelTypeExtents(inCodeOnly code: String) -> [CadenceTopLevelTypeExtent] {
+    CadenceTestDeclarationDerivations.extents.value(for: code, derive: cadenceTopLevelTypeExtentsUncached(inCodeOnly:))
+}
+
+/// The two whole-target parses above and below, memoized on the TEXT ([[T-3261]]), the same way
+/// and for the same reason as `codeOnly`: both are functions of their input alone, and the test
+/// target re-derived every test file's reading once per test that asked. Measured in-process over
+/// `CadenceTestTargetHygieneTests` + `CadenceTimeZoneIndependenceTests`: **5,788** extent parses
+/// and **3,158** declaration parses of ~450 files. `cadenceTestDeclarations(in:file:)` caches only
+/// the `(name, suite)` pairs, which read nothing but the source, and attaches `file` afterwards, so
+/// the same text read under two paths still answers with its own path.
+enum CadenceTestDeclarationDerivations {
+    static let extents = CadenceSourceDerivationCache<[CadenceTopLevelTypeExtent]>()
+    static let declarations = CadenceSourceDerivationCache<[(name: String, suite: String)]>()
+}
+
+private func cadenceTopLevelTypeExtentsUncached(inCodeOnly code: String) -> [CadenceTopLevelTypeExtent] {
     let nsCode = code as NSString
 
     // Brace depth per UTF-16 offset, so only *top-level* type declarations count. A nested
@@ -1716,6 +1732,12 @@ func cadenceTopLevelTypeExtents(inCodeOnly code: String) -> [CadenceTopLevelType
 /// comment can present itself as a declaration; both passes keep the source's length, so the
 /// offsets below still point at the code they came from.
 func cadenceTestDeclarations(in source: String, file: String) -> [CadenceTestDeclaration] {
+    CadenceTestDeclarationDerivations.declarations
+        .value(for: source, derive: cadenceTestDeclarationNames(in:))
+        .map { CadenceTestDeclaration(name: $0.name, suite: $0.suite, file: file) }
+}
+
+private func cadenceTestDeclarationNames(in source: String) -> [(name: String, suite: String)] {
     let code = CadenceSourceScan.codeOnly(source)
     let nsCode = code as NSString
     let types = cadenceTopLevelTypeExtents(inCodeOnly: code)
@@ -1729,11 +1751,7 @@ func cadenceTestDeclarations(in source: String, file: String) -> [CadenceTestDec
             let start = match.range.location
             let suite = types.last { $0.open < start && start < $0.close }?.name
                 ?? CadenceTestDeclaration.fileScope
-            return CadenceTestDeclaration(
-                name: nsCode.substring(with: match.range(at: 1)),
-                suite: suite,
-                file: file
-            )
+            return (name: nsCode.substring(with: match.range(at: 1)), suite: suite)
         }
 }
 
