@@ -1,6 +1,6 @@
 # Local branch audit — what every unmerged branch still holds
 
-Agent `branchaudit`, 2026-10-21, read-only, filed as [[T-3271]]. Measured at `main` `611f263f`
+Agent `branchaudit`, 2026-10-21, read-only, filed as [[T-3274]]. Measured at `main` `611f263f`
 (`e66916cd` plus this audit's own stub). **Nothing on any branch was touched**: no checkout, no
 reset, no rebase, no merge, no delete. This file recommends; the owner decides.
 
