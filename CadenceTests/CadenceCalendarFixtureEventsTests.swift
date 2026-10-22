@@ -290,4 +290,79 @@ struct CadenceCalendarFixtureEventsTests {
             "unexpected reach of the calendar fixture harness: \(referencing.sorted())"
         )
     }
+
+    // MARK: - T-4220: a fixture minute-of-day is wall-clock time on a transition day
+
+    private static func newYork() throws -> Calendar {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try #require(TimeZone(identifier: "America/New_York"))
+        return calendar
+    }
+
+    private static func day(_ year: Int, _ month: Int, _ day: Int, in calendar: Calendar) throws -> Date {
+        try #require(calendar.date(from: DateComponents(year: year, month: month, day: day)))
+    }
+
+    private static func wallMinute(_ date: Date, in calendar: Calendar) -> Int {
+        let parts = calendar.dateComponents([.hour, .minute], from: date)
+        return (parts.hour ?? 0) * 60 + (parts.minute ?? 0)
+    }
+
+    /// **[[T-4220]].** The four-day fixture used to ADD its minutes to midnight, so on the 25-hour
+    /// 2026-11-01 its 07:30 start drew at 06:30, and on the 23-hour 2026-03-08 at 08:30. Both ends
+    /// are pinned on both transition days: the start by anchoring on the transition day, the end by
+    /// anchoring three days before it. An ordinary day is the control — both spellings agree there,
+    /// which is why the bug never showed outside two days a year.
+    @Test func theMultiDayFixtureLandsOnItsWallClockTimesOnBothTransitionDays() throws {
+        let calendar = try Self.newYork()
+        let spec = CadenceCalendarFixtureEvents.Fixture.multiDay
+        #expect(spec.startMinute == 7 * 60 + 30 && spec.endMinute == 16 * 60 + 15 && spec.endDayOffset == 3)
+
+        for (year, month, dayOfMonth) in [(2026, 11, 1), (2026, 3, 8), (2026, 10, 14)] {
+            let transition = try Self.day(year, month, dayOfMonth, in: calendar)
+
+            let fromTransition = spec.interval(anchoredOn: transition, calendar: calendar)
+            #expect(Self.wallMinute(fromTransition.start, in: calendar) == spec.startMinute,
+                    "start on \(year)-\(month)-\(dayOfMonth) is not 07:30 on the wall")
+            #expect(calendar.isDate(fromTransition.start, inSameDayAs: transition))
+
+            let anchor = try #require(calendar.date(byAdding: .day, value: -spec.endDayOffset, to: transition))
+            let endingOnTransition = spec.interval(anchoredOn: anchor, calendar: calendar)
+            #expect(Self.wallMinute(endingOnTransition.end, in: calendar) == spec.endMinute,
+                    "end on \(year)-\(month)-\(dayOfMonth) is not 16:15 on the wall")
+            #expect(calendar.isDate(endingOnTransition.end, inSameDayAs: transition))
+        }
+
+        // Non-vacuity: the two days really are 25 and 23 hours long in this calendar, so the old
+        // spelling would have been an hour out on each.
+        for (year, month, dayOfMonth, hours) in [(2026, 11, 1, 25.0), (2026, 3, 8, 23.0)] {
+            let start = try Self.day(year, month, dayOfMonth, in: calendar)
+            let next = try #require(calendar.date(byAdding: .day, value: 1, to: start))
+            #expect(next.timeIntervalSince(start) == hours * 3600)
+        }
+    }
+
+    /// The single-day fixture builder and the board's injected event hold their `EKEvent` once per
+    /// launch, so they cannot be re-driven on a chosen day from here; their two starts are pinned
+    /// by shape instead. Each must SET its minute through the shared helper and add none to a
+    /// midnight, and each end stays a duration of real time after the start.
+    @Test func everyFixtureStartIsSetOnTheWallClockAndEveryEndStaysADuration() throws {
+        let addedMinute = #"byAdding:\s*\.minute"#
+        let setStart = #"CadenceCalendarEventTiming\.startDate\("#
+        let durationEnd = #"\.endDate = start\.addingTimeInterval\("#
+        for (path, starts, durationEnds) in [
+            ("Cadence/Services/CadenceCalendarFixtureEvents.swift", 3, 1),
+            ("Cadence/macOS/Views/CalendarPageBoardSupportViews.swift", 1, 1),
+        ] {
+            let code = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile(path))
+            #expect(CadenceSourceScan.matchLines(addedMinute, in: code).isEmpty,
+                    "\(path) adds a minute-of-day to a midnight again")
+            #expect(CadenceSourceScan.matchCount(setStart, in: code) == starts, "\(path)")
+            #expect(CadenceSourceScan.matchCount(durationEnd, in: code) == durationEnds, "\(path)")
+        }
+        // Non-vacuity: the scan sees the spelling it hunts, including the multi-line form the board
+        // used, and misses the day step it must leave alone.
+        #expect(CadenceSourceScan.matchCount(addedMinute, in: "calendar.date(\n    byAdding: .minute,\n") == 1)
+        #expect(CadenceSourceScan.matchCount(addedMinute, in: "calendar.date(byAdding: .day, value: 1") == 0)
+    }
 }

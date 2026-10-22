@@ -129,10 +129,11 @@ enum CalendarBoardUITestEventSupport {
         created.calendar = calendarForEvent
         created.title = CadenceUITestScenarioSeed.Fixture.boardEventTitle
         let dayStart = calendar.startOfDay(for: date)
-        let start = calendar.date(
-            byAdding: .minute,
-            value: CadenceUITestScenarioSeed.Fixture.boardEventStartMinute,
-            to: dayStart
+        // Set on the wall clock, not added to midnight ([[T-4220]]); the end stays a duration.
+        let start = CadenceCalendarEventTiming.startDate(
+            day: dayStart,
+            startMin: CadenceUITestScenarioSeed.Fixture.boardEventStartMinute,
+            calendar: calendar
         ) ?? dayStart
         created.startDate = start
         created.endDate = start.addingTimeInterval(

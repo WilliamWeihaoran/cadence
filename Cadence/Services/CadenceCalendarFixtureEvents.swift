@@ -183,9 +183,15 @@ enum CadenceCalendarFixtureEvents {
         /// `EKEventStore` of any kind.
         func interval(anchoredOn firstDay: Date, calendar: Calendar = .current) -> DateInterval {
             let dayStart = calendar.startOfDay(for: firstDay)
-            let start = calendar.date(byAdding: .minute, value: startMinute, to: dayStart) ?? dayStart
+            // Minutes of day are SET on the wall clock, never added to midnight ([[T-4220]]): on a
+            // 23- or 25-hour day an added 450 minutes is 08:30 or 06:30, not 07:30.
+            let start = CadenceCalendarEventTiming.startDate(
+                day: dayStart, startMin: startMinute, calendar: calendar
+            ) ?? dayStart
             let lastDay = calendar.date(byAdding: .day, value: endDayOffset, to: dayStart) ?? dayStart
-            let end = calendar.date(byAdding: .minute, value: endMinute, to: lastDay) ?? lastDay
+            let end = CadenceCalendarEventTiming.startDate(
+                day: lastDay, startMin: endMinute, calendar: calendar
+            ) ?? lastDay
             return DateInterval(start: start, end: max(start, end))
         }
     }
@@ -254,7 +260,10 @@ enum CadenceCalendarFixtureEvents {
         event.title = spec.title
         let dayStart = calendar.startOfDay(for: date)
         if let startMinute = spec.startMinute {
-            let start = calendar.date(byAdding: .minute, value: startMinute, to: dayStart) ?? dayStart
+            // Set on the wall clock, not added to midnight ([[T-4220]]); the end stays a duration.
+            let start = CadenceCalendarEventTiming.startDate(
+                day: dayStart, startMin: startMinute, calendar: calendar
+            ) ?? dayStart
             event.startDate = start
             event.endDate = start.addingTimeInterval(TimeInterval(spec.durationMinutes * 60))
             event.isAllDay = false
