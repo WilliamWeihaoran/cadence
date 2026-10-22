@@ -153,8 +153,8 @@ struct CadenceTodaySectionMetricsTests {
     ///
     /// `Cadence/iOS/` is inside `#if os(iOS)` and invisible to this macOS-built target, so this
     /// reads the source text. Comments are blanked first, and the read is narrowed to `groupStack`
-    /// by brace matching rather than run over the whole file — `iOSTodayOverdueListSheet` and the
-    /// empty-state branch further down both pad legitimately, and a file-wide needle would be
+    /// by brace matching rather than run over the whole file — the empty-state branch further
+    /// down pads legitimately, and a file-wide needle would be
     /// answering a different question.
     @Test func theGroupStackTakesNoInsetOfItsOwn() throws {
         let source = CadenceSourceScan.strippingComments(

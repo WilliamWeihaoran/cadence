@@ -651,7 +651,6 @@ struct CadenceSectionEyebrowConvergenceTests {
             "Cadence/macOS/Views/SettingsTemplatesSection.swift": 0,
             // `TaskBundlePickerSupportViews.swift` held one until [[T-3170]]'s trio pass deleted it.
             "Cadence/Shared/CadenceSettingsSharedViews.swift": 1,
-            "Cadence/Shared/Components/CadenceTodayOverdueSummaryCards.swift": 1,
             "Cadence/macOS/Views/CommitmentSharedViews.swift": 1,
             "Cadence/Shared/Components/HabitProgressViews.swift": 1,
             "Cadence/iOS/iOSFeatureDetailViews.swift": 1,
@@ -663,22 +662,11 @@ struct CadenceSectionEyebrowConvergenceTests {
         ])
     }
 
-    /// The one measurement the conversion changed rather than preserved: the overdue summary
-    /// heading drew label *and* count at 11pt, the app's only eyebrow at that size. Both are 10
-    /// now, and the count reads the shared constant rather than a second literal — the rule the
-    /// board column header and the task group heading already state.
+    /// The remaining count beside an eyebrow is the board column's. T-2056 removed the task
+    /// group count and T-3078 removed the callerless overdue summary heading altogether.
     @Test func theCountBesideAnEyebrowIsTheEyebrowsOwnSize() throws {
         #expect(SectionEyebrowLabel.fontSize == 10)
-        // The task group heading used to be the third reader of this rule. T-2056 removed its
-        // count capsule on both platforms at the owner's request, so the two counts left beside an
-        // eyebrow are the board column's and the overdue summary heading's below.
         #expect(CadenceBoardColumnHeaderMetrics.countSize == SectionEyebrowLabel.fontSize)
-
-        let card = try strippingComments(sourceFile("Cadence/Shared/Components/CadenceTodayOverdueSummaryCards.swift"))
-        #expect(card.contains("struct CadenceTodayOverdueSummaryHeading"), "non-vacuity: still the heading's file")
-        #expect(card.contains(".cadenceFont(.sectionLabel, base: SectionEyebrowLabel.fontSize, weight: .semibold)"))
-        // The file keeps a plain 11pt body line; what may not come back is an 11pt *eyebrow*.
-        #expect(!card.contains("size: 11, weight: .semibold"), "the 11pt eyebrow tier is back")
     }
 }
 

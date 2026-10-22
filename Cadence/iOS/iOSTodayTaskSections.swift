@@ -38,9 +38,7 @@ extension iOSTodayRolloverNotice {
 // itself — and only the last says it where you can act on it. The cards also navigated *away* from
 // the day, which is the opposite of what a triage page is for.
 //
-// The shared derivation, `CadenceTodayOverdueSummarySupport`, is gone too (T-3078).
-// `CadenceTodayOverdueSummaryCards` and `iOSTodayOverdueListSheet` below are not: they have no
-// caller, but two tests under the Codex lease pin them, so they wait on that lease.
+// T-3078 also removed the callerless shared cards, request types and list-sheet presenter.
 
 /// Today's list of counted task groups — **the** one, for both hosts.
 ///
@@ -277,67 +275,6 @@ extension View {
     /// taken back, and "which region a drop lands in" is not a thing they may answer differently.
     func iOSTodayTaskRegionDropTarget() -> some View {
         iOSNewTaskDropRegion(.todayDate(.plannedToday))
-    }
-}
-
-/// The list a past-due summary card opens, as Today presents it.
-///
-/// **Nothing opens it any more**, because nothing draws a past-due card (see the top of this
-/// file). It is kept rather than deleted for one reason, recorded here so the next reader does not
-/// have to re-derive it: `CadenceCodexPageCompletionTypographyTests` pins both this type and
-/// `iOSTodayView`'s `.sheet(item: $pendingListOpen)`, and that file is held by another writer, so
-/// this change cannot update it. Deleting this struct, the `@State` and the presenter is a
-/// three-line follow-up once that lease lifts — T-3076's entry names it as the only dead plumbing
-/// this change left behind.
-///
-/// It is `iOSListDetailView` and nothing else — the same page the Lists tab pushes, at the page the
-/// request names, with the named column scrolled into view. Wrapping it rather than writing a
-/// reduced "here are the overdue cards" panel is the point: the reason to tap the card is to *work
-/// on* the column, and a read-only excerpt would send you to the Lists tab to do anything about it.
-///
-/// **It carries its own task-inspector host.** The root's host is already presenting this sheet, and
-/// a host that is presenting cannot present again — a task row inside here would be a dead tap
-/// without a nearer owner. `iOSTaskInspectorHost` records that the environment resolves to the
-/// innermost host for exactly this case.
-struct iOSTodayOverdueListSheet: View {
-    let request: CadenceListOpenRequest
-    @Query(sort: \Area.order) private var areas: [Area]
-    @Query(sort: \Project.order) private var projects: [Project]
-
-    var body: some View {
-        content
-            .iOSTaskInspectorHost()
-    }
-
-    /// A list can be deleted or archived on another device between the card being drawn and the
-    /// card being tapped, so the miss is a real state and not a defensive `else` — the same one
-    /// `iOSRootView` and `iOSSearchView` already answer with this view.
-    @ViewBuilder
-    private var content: some View {
-        switch request.target {
-        case .area(let id):
-            if let area = areas.first(where: { $0.id == id }) {
-                iOSListDetailView(
-                    area: area,
-                    initialPage: request.page,
-                    highlightedSectionName: request.sectionName,
-                    isPresentedModally: true
-                )
-            } else {
-                iOSMissingListView()
-            }
-        case .project(let id):
-            if let project = projects.first(where: { $0.id == id }) {
-                iOSListDetailView(
-                    project: project,
-                    initialPage: request.page,
-                    highlightedSectionName: request.sectionName,
-                    isPresentedModally: true
-                )
-            } else {
-                iOSMissingListView()
-            }
-        }
     }
 }
 

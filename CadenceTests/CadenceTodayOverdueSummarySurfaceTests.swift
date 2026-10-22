@@ -22,21 +22,6 @@ import Testing
 @Suite("Today past-due summaries")
 struct CadenceTodayOverdueSummarySurfaceTests {
 
-    // MARK: - What is left of the request
-
-    /// `.sheet(item:)` needs an id, and it is derived from the request's own members rather than a
-    /// fresh token: two taps on the same card are the same presentation, not two.
-    @Test func aRequestsIdentityIsItsMembersAndNotAToken() {
-        let target = CadenceListOpenRequest.Target.area(UUID())
-        let first = CadenceListOpenRequest(target: target, page: .kanban, sectionName: "Repairs")
-        let second = CadenceListOpenRequest(target: target, page: .kanban, sectionName: "Repairs")
-        let other = CadenceListOpenRequest(target: target, page: .kanban, sectionName: "Someday")
-
-        #expect(first.id == second.id)
-        #expect(first.id != other.id)
-        #expect(first == second)
-    }
-
     /// **The Mac no longer draws them at all** — see
     /// `theMacTodayHasNoPastDueCardsLeftToGuardAgainst`, which is where that absence is pinned. What
     /// survives here is the other half of T-195's claim: the cards macOS *did* draw were the shared
@@ -101,11 +86,6 @@ struct CadenceTodayOverdueSummarySurfaceTests {
     /// iOS must not have grown a second copy of the Mac's router. The clause about where a tapped
     /// card *landed* is gone with the cards; this half is about a type `Cadence/iOS/` may never
     /// reach, and is untouched by that.
-    ///
-    /// `iOSTodayOverdueListSheet` and `iOSTodayView`'s `.sheet(item: $pendingListOpen)` **survive
-    /// with nothing to open them**, which is deliberate and recorded in both files: a test file
-    /// this change may not write pins their shape. The presenter being unreachable is the ledger's
-    /// follow-up, not a second router.
     @Test func noIOSSurfaceReachesForTheMacOnlyNavigationManager() throws {
         var scanned = 0
         for path in try swiftFiles(under: "Cadence/iOS") {
@@ -121,16 +101,20 @@ struct CadenceTodayOverdueSummarySurfaceTests {
     /// run of cards differently; with no run of cards on either platform there is no owner left,
     /// so the claim is inverted rather than dropped — no product file spells either one.
     @Test func neitherPlatformRespellsTheHeadings() throws {
-        let literals = ["\"Past Due Lists\"", "\"Past Due Sections\""]
-        var scanned = 0
-        for path in try swiftFiles(under: "Cadence") {
-            let source = try strippingComments(sourceFile(path))
-            scanned += 1
-            for literal in literals {
-                #expect(!source.contains(literal), "\(path) spells \(literal)")
-            }
+        let headings = try CadenceScanInstrument(
+            "retired past-due heading literals",
+            fires: "Text(\"Past Due Lists\")",
+            andNotOn: "// Text(\"Past Due Lists\")\nText(\"Today\")"
+        ) { source in
+            let text = CadenceSourceScan.strippingComments(source)
+            return ["\"Past Due Lists\"", "\"Past Due Sections\""].contains { text.contains($0) }
         }
-        #expect(scanned > 300, "only \(scanned) files scanned — the enumerator read nothing")
+        #expect(headings.fires(on: "Text(\"Past Due Sections\")"))
+        let hits = try headings.sweep(
+            try CadenceSourceScan.swiftFiles(under: "Cadence"), atLeast: 300,
+            including: "Cadence/iOS/iOSTodayTaskSections.swift", read: CadenceSourceScan.sourceFile
+        )
+        #expect(hits.isEmpty, "retired past-due headings are spelled again: \(hits)")
     }
 
     /// The comment stripper is load-bearing above — several of these files explain the feature in
@@ -183,37 +167,32 @@ struct CadenceTodayOverdueSummarySurfaceTests {
         #expect(derivedState.contains("struct TasksPanelDerivedState"), "non-vacuity: wrong file read")
         #expect(!derivedState.contains("OverdueSummary"))
 
-        // **T-3078 inverted the half of this it could.** It used to pin the shared components as
-        // *present*, so that the follow-up would have to come back here. The derivation and the
-        // Mac's two hops are deleted now and pinned as absent across the whole product tree:
-        var declaring: [String] = []
-        var scanned = 0
-        for path in try swiftFiles(under: "Cadence") {
-            let source = try strippingComments(sourceFile(path))
-            scanned += 1
-            for gone in [
-                "enum CadenceTodayOverdueSummarySupport",
-                "func openOverdueListSummary(",
-                "func openOverdueSectionSummary(",
-                "var listTarget: CadenceListOpenRequest.Target?",
-            ] where source.contains(gone) {
-                declaring.append("\(path): \(gone)")
-            }
+        // Invert the old PRESENT pins across every product file, including new files. A comment
+        // or string naming a retired symbol cannot satisfy this structural detector.
+        let retiredNames = [
+            "CadenceTodayOverdueSummarySupport", "openOverdueListSummary", "openOverdueSectionSummary",
+            "CadenceTodayOverdueListCard", "CadenceTodayOverdueSectionCard", "CadenceTodayOverdueSummaryHeading",
+            "CadenceOverdueSummaryCard", "CadenceOverdueSummaryHoverTracking", "CadenceOverdueSummaryIconTile",
+            "CadenceOverdueSummaryMetrics", "CadenceOverdueSummaryCaption",
+            "CadenceTodayOverdueListSummary", "CadenceTodayOverdueSectionSummary",
+            "CadenceListOpenRequest", "iOSTodayOverdueListSheet", "pendingListOpen",
+        ]
+        let pattern = #"\b(?:"# + retiredNames.joined(separator: "|") + #")\b"#
+        let retired = try CadenceScanInstrument(
+            "retired Today past-due plumbing",
+            fires: "struct CadenceTodayOverdueListCard: View {}",
+            andNotOn: "// CadenceTodayOverdueListCard\nlet title = \"pendingListOpen\""
+        ) { source in
+            CadenceSourceScan.matchCount(pattern, in: CadenceSourceScan.codeOnly(source)) > 0
         }
-        #expect(scanned > 300, "only \(scanned) files scanned — the enumerator read nothing")
-        #expect(declaring.isEmpty, "deleted past-due plumbing is declared again: \(declaring)")
-
-        // The three card views, and iOS's `iOSTodayOverdueListSheet` with `iOSTodayView`'s
-        // `pendingListOpen` presenter, are still declared with no caller. That is T-3078's open
-        // remainder, not an oversight: `CadenceCodexTaskSummaryTypographyTests` and
-        // `CadenceCodexPageCompletionTypographyTests` pin them and are under the Codex lease. Still
-        // pinned as *present*, so whoever deletes them has to come back here and invert this too.
-        let cards = try strippingComments(
-            sourceFile("Cadence/Shared/Components/CadenceTodayOverdueSummaryCards.swift")
+        for name in retiredNames {
+            #expect(retired.fires(on: "struct \(name) {}"), "detector missed \(name)")
+        }
+        let hits = try retired.sweep(
+            try CadenceSourceScan.swiftFiles(under: "Cadence"), atLeast: 300,
+            including: "Cadence/iOS/iOSTodayView.swift", read: CadenceSourceScan.sourceFile
         )
-        #expect(cards.contains("struct CadenceTodayOverdueListCard: View"))
-        #expect(cards.contains("struct CadenceTodayOverdueSectionCard: View"))
-        #expect(cards.contains("struct CadenceTodayOverdueSummaryHeading: View"))
+        #expect(hits.isEmpty, "deleted past-due plumbing is declared or referenced again: \(hits)")
 
         // What is gone is the drawing, on the one iOS file that did it.
         let iOSSections = try strippingComments(sourceFile("Cadence/iOS/iOSTodayTaskSections.swift"))

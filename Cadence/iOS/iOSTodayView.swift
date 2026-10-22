@@ -30,13 +30,6 @@ struct iOSTodayView: View {
     /// Written by the rollover banner's confirm, and — in DEBUG — by the sample-data seeder. It was
     /// inside the `#if DEBUG` below when the seeder was its only writer.
     @Environment(\.modelContext) private var modelContext
-    /// **Nothing writes this any more, and that is not an oversight.** It was set by a tap on a
-    /// past-due summary card; those cards are gone (see `iOSTodayTaskSections`). The sheet it
-    /// presents is kept, with `iOSTodayOverdueListSheet` itself, because a test file this change
-    /// may not write still pins both — `CadenceCodexPageCompletionTypographyTests`, which reads
-    /// this `body` for the presenter's position in the modifier chain. Deleting the three of them
-    /// is a one-line follow-up the moment that lease lifts; T-3076's ledger entry says so.
-    @State private var pendingListOpen: CadenceListOpenRequest?
     #if DEBUG
     @State private var sampleDataStatus: String?
     #endif
@@ -205,12 +198,6 @@ struct iOSTodayView: View {
         // "THURSDAY, AUGUST 13 / Today", the iPad one with `iPadTodayTaskHeader` — so a large nav
         // title said "Today" a second time, 60pt above the first.
         .iOSHidesCompactNavigationBar()
-        // Presented by the **page**, not by a card — and there is no card to present it any more.
-        // See `pendingListOpen` above for why the presenter outlived its only trigger.
-        .sheet(item: $pendingListOpen) { request in
-            iOSTodayOverdueListSheet(request: request)
-                .cadenceFixedTypography()
-        }
         .cadenceTracksDayChanges($observedDay)
     }
 
