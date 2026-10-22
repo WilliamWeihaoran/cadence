@@ -1608,6 +1608,157 @@ struct CadenceArchiveImportSurfaceTests {
         #expect(plan.differingMatchedCountsByEntityName["Project"] == 0)
     }
 
+    /// What a daily-note template body looks like after a reset: not empty, so `mergeNoteFields`
+    /// would glue the archive's body under a `---` rather than take it.
+    private static let dailyTemplateBody = "# 2026-02-03\n\n## Priorities\n\n- \n"
+
+    /// **Reset, then import, and the day the user already opened is one note, not a glued pair**
+    /// ([[T-3146]]).
+    ///
+    /// The app mints today's daily note from its template the moment the day is opened, so a
+    /// reset-then-import run reaches the importer with a dated note the archive also carries under
+    /// a different id. Matched on the id alone, both rows landed and
+    /// `DataIntegrityRepairService.mergeNoteFields` joined the two bodies with `\n\n---\n\n` at the
+    /// next launch — the template stapled above the restored day. Matched on the canonical key,
+    /// there is no pair: each mode does to the row what it does to any matched row.
+    @Test func aTemplateDailyNoteAndTheArchivesNoteForThatDayAreOneNoteNotAGluedPair() throws {
+        let source = ModelContext(try CadenceTestStore.container())
+        let archived = Note(kind: .daily, title: "2026-02-03", dateKey: "2026-02-03")
+        archived.content = "Shipped the restore path and went for a walk."
+        source.insert(archived)
+        try source.save()
+        let archive = try CadenceDataExportService.makeArchive(in: source)
+        let archivedBody = archived.content
+
+        for mode in CadenceArchiveImportMode.allCases {
+            let container = try CadenceTestStore.container()
+            let destination = ModelContext(container)
+            let template = Note(kind: .daily, title: "2026-02-03", dateKey: "2026-02-03")
+            template.content = Self.dailyTemplateBody
+            destination.insert(template)
+            try destination.save()
+            let templateID = template.id
+            #expect(templateID != archived.id, "the fixture must collide on the day, not on the id")
+
+            let plan = try CadenceArchiveImportService.plan(archive, mode: mode, in: destination)
+            #expect(plan.insertCountsByEntityName["Note"] == 0, "the preview still calls it an insert")
+            #expect(plan.matchedCountsByEntityName["Note"] == 1)
+
+            try CadenceArchiveImportService.apply(archive, mode: mode, in: destination)
+            let report = try DataIntegrityRepairService.repairIfNeeded(
+                in: destination, source: "T-3146-canonical-key-test"
+            )
+            #expect(report.duplicateNotesMerged == 0, "the import left a pair for the repair to glue")
+
+            let notes = try ModelContext(container).fetch(FetchDescriptor<Note>())
+            #expect(notes.count == 1, "the import inserted a second note for the same day")
+            let kept = try #require(notes.first)
+            #expect(kept.id == templateID, "the destination's own row did not survive")
+            #expect(!kept.content.contains("\n---\n"), "the two bodies were glued together")
+            switch mode {
+            case .mergeKeepingExistingRows:
+                #expect(kept.content == Self.dailyTemplateBody, "merge did not leave the matched row alone")
+            case .restoreOverwritingExistingRows:
+                #expect(kept.content == archivedBody, "overwrite did not write the archive's body")
+            }
+        }
+    }
+
+    /// A reference the archive wrote to its own copy of that day follows the note to the row that
+    /// survived ([[T-3146]]). The merge this matching replaces re-pointed those references
+    /// (`DataIntegrityRepairService.redirectNoteReferences`); with no merge left to do it, the
+    /// import does, over the two markdown fields that pass covers.
+    @Test func aReferenceToAnArchivedDailyNoteFollowsItToTheRowAlreadyHere() throws {
+        let source = ModelContext(try CadenceTestStore.container())
+        let archived = Note(kind: .daily, title: "2026-02-03", dateKey: "2026-02-03")
+        archived.content = "The day itself."
+        source.insert(archived)
+        let pointer = Note(kind: .list, title: "Weekly review")
+        pointer.content = "See [[note:\(archived.id.uuidString)|2026-02-03]] for the details."
+        source.insert(pointer)
+        let task = AppTask(title: "Write it up")
+        task.notes = "Source: [[note:\(archived.id.uuidString)|2026-02-03]]"
+        source.insert(task)
+        try source.save()
+        let archive = try CadenceDataExportService.makeArchive(in: source)
+        let archivedID = archived.id
+
+        let container = try CadenceTestStore.container()
+        let destination = ModelContext(container)
+        let template = Note(kind: .daily, title: "2026-02-03", dateKey: "2026-02-03")
+        template.content = Self.dailyTemplateBody
+        destination.insert(template)
+        try destination.save()
+        let templateID = template.id
+
+        // Overwrite, so the day's row ends holding the archive's own copy and the second plan
+        // below is comparing an applied import rather than a merge that deliberately kept the
+        // template body.
+        try CadenceArchiveImportService.apply(
+            archive, mode: .restoreOverwritingExistingRows, in: destination
+        )
+
+        let read = ModelContext(container)
+        let storedPointer = try #require(
+            try read.fetch(FetchDescriptor<Note>()).first { $0.kind == .list }
+        )
+        let storedTask = try #require(try Self.one(AppTask.self, in: read))
+        #expect(storedPointer.content.contains(templateID.uuidString), "the note reference went dead")
+        #expect(!storedPointer.content.contains(archivedID.uuidString))
+        #expect(storedTask.notes.contains(templateID.uuidString), "the task reference went dead")
+        #expect(!storedTask.notes.contains(archivedID.uuidString))
+
+        // And the preview compares what the write stores, so re-running the import is still a
+        // no-op: the re-pointed references and the destination's own note id are both replayed
+        // onto the archive's record before it is compared.
+        let again = try CadenceArchiveImportService.plan(
+            archive, mode: .restoreOverwritingExistingRows, in: destination
+        )
+        #expect(again.differingMatchedCountsByEntityName["Note"] == 0)
+        #expect(again.differingMatchedCountsByEntityName["AppTask"] == 0)
+        #expect(again.matchedCountsByEntityName["Note"] == 2, "the day's row is matched, not inserted again")
+    }
+
+    /// The limits the matching keeps, which are the tag alias's limits: a dateless daily note has
+    /// no shared identity to collide on, a list note is identified by its UUID and never matched
+    /// this way, and a destination row the archive also carries **by id** is left to its own record.
+    @Test func onlyADatedDailyNoteIsMatchedOnItsDayAndOnlyOnce() throws {
+        let source = ModelContext(try CadenceTestStore.container())
+        let dateless = Note(kind: .daily, title: "No day")
+        source.insert(dateless)
+        let list = Note(kind: .list, title: "Groceries")
+        source.insert(list)
+        let secondForTheDay = Note(kind: .daily, title: "2026-02-03", dateKey: "2026-02-03")
+        secondForTheDay.content = "Second copy in the file itself."
+        source.insert(secondForTheDay)
+        let firstForTheDay = Note(kind: .daily, title: "2026-02-03", dateKey: "2026-02-03")
+        firstForTheDay.content = "First copy in the file itself."
+        source.insert(firstForTheDay)
+        try source.save()
+        let archive = try CadenceDataExportService.makeArchive(in: source)
+
+        let container = try CadenceTestStore.container()
+        let destination = ModelContext(container)
+        let template = Note(kind: .daily, title: "2026-02-03", dateKey: "2026-02-03")
+        template.content = Self.dailyTemplateBody
+        destination.insert(template)
+        let localDateless = Note(kind: .daily, title: "Also no day")
+        destination.insert(localDateless)
+        let localList = Note(kind: .list, title: "Reading")
+        destination.insert(localList)
+        try destination.save()
+
+        let plan = try CadenceArchiveImportService.plan(archive, in: destination)
+        // Four archive notes: two for the day, of which exactly one takes the local row.
+        #expect(plan.matchedCountsByEntityName["Note"] == 1, "more than one record claimed the same row")
+        #expect(plan.insertCountsByEntityName["Note"] == 3)
+
+        try CadenceArchiveImportService.apply(archive, in: destination)
+        let notes = try ModelContext(container).fetch(FetchDescriptor<Note>())
+        #expect(notes.count == 6, "a dateless or list note was matched on something it has no key for")
+        #expect(notes.filter { $0.kind == .daily && $0.dateKey == "2026-02-03" }.count == 2)
+    }
+
     /// The legacy fold after the commit fills an empty dated note from its legacy row. That note
     /// is still the archive's: overwriting would empty it and the fold would fill it again. A later
     /// edit to the filled body is a real difference, and counts.
@@ -1886,15 +2037,16 @@ struct CadenceArchiveImportSurfaceTests {
         #expect(look.calendarPresentationRaw.isEmpty)
     }
 
-    /// **The focus counter with no session rows behind it, and the sentence that has to admit it.**
+    /// **A focus counter with no session rows behind it is never lowered by an import** ([[T-3145]]).
     ///
-    /// [[T-1114]] decided overwrite takes the archive's scalar and the ledger raise then covers the
-    /// sessions only this device holds. A counter with no rows at all — minutes banked before the
-    /// ledger existed — has nothing to be raised back to, so it ends at the archive's figure, and
-    /// that stays the decided behaviour. What this pins is that the overwrite copy now says so,
-    /// that merge (which never touches a matched counter) neither does it nor says it, and that
-    /// the two facts move together.
-    @Test func aCounterWithNoSessionRowsTakesTheArchivesFigureOnOverwriteAndTheCopySaysSo() throws {
+    /// `reconcileFocusCounters` raises a counter back to the sum of its `FocusSessionLog` rows.
+    /// Minutes banked before that ledger existed have no rows, so overwrite writing the archive's
+    /// scalar over them lowered the number permanently and no later launch could put it back.
+    /// [[T-1114]] called that overwrite doing what it says and [[T-3116]] part (4) answered it with
+    /// a caveat in the copy; the owner reversed the behaviour instead on 2026-10-22. Both modes now
+    /// end at the higher of the two figures, and the overwrite sentence no longer carries an
+    /// exception, because there is none left.
+    @Test func anImportNeverLowersAFocusCounterThatHasNoSessionRowsBehindIt() throws {
         let source = ModelContext(try CadenceTestStore.container())
         let task = AppTask(title: "Old habit")
         task.actualMinutes = 10
@@ -1918,17 +2070,71 @@ struct CadenceArchiveImportSurfaceTests {
         }
 
         #expect(minutesAfter[.mergeKeepingExistingRows] == 100)
-        #expect(minutesAfter[.restoreOverwritingExistingRows] == 10)
+        #expect(minutesAfter[.restoreOverwritingExistingRows] == 100, "overwrite lowered the counter again")
 
-        let caveat = CadenceArchiveImportPresentation.focusMinutesWithoutSessionsNote
-        #expect(
-            CadenceArchiveImportPresentation.modeExplanation(.restoreOverwritingExistingRows).contains(caveat),
-            "overwrite lowers a counter with no sessions behind it and its copy does not say so"
+        // The other direction, which is the whole reason the archive's figure is read at all: a
+        // destination that banked fewer minutes than the archive still takes the archive's.
+        let container = try CadenceTestStore.container()
+        let destination = ModelContext(container)
+        let behind = AppTask(title: "Old habit")
+        behind.id = task.id
+        behind.actualMinutes = 4
+        destination.insert(behind)
+        try destination.save()
+        try CadenceArchiveImportService.apply(
+            archive, mode: .restoreOverwritingExistingRows, in: destination
         )
         #expect(
-            !CadenceArchiveImportPresentation.modeExplanation(.mergeKeepingExistingRows).contains(caveat),
-            "merge never touches a matched counter and must not claim it does"
+            try #require(try Self.one(AppTask.self, in: ModelContext(container))).actualMinutes == 10,
+            "overwrite stopped raising a counter the archive is ahead of"
         )
+
+        // And the copy says one thing about focus time in both modes, with no exception appended.
+        for mode in CadenceArchiveImportMode.allCases {
+            #expect(
+                CadenceArchiveImportPresentation.modeExplanation(mode)
+                    .contains(CadenceArchiveImportPresentation.focusMinutesNote)
+            )
+        }
+        #expect(
+            !CadenceArchiveImportPresentation.modeExplanation(.restoreOverwritingExistingRows)
+                .lowercased().contains("no session records"),
+            "the removed caveat is back without the behaviour it warned about"
+        )
+    }
+
+    /// The area and project counters [[T-3145]] covers beside `actualMinutes` — the same rule, and
+    /// the one that would be missed if only the task table were changed.
+    @Test func neitherContainerCounterIsLoweredByAnOverwriteEither() throws {
+        let source = ModelContext(try CadenceTestStore.container())
+        let area = Area(name: "Health")
+        area.loggedMinutes = 10
+        let project = Project(name: "Rebuild")
+        project.loggedMinutes = 10
+        source.insert(area)
+        source.insert(project)
+        try source.save()
+        let archive = try CadenceDataExportService.makeArchive(in: source)
+
+        let container = try CadenceTestStore.container()
+        let destination = ModelContext(container)
+        let localArea = Area(name: "Health")
+        localArea.id = area.id
+        localArea.loggedMinutes = 100
+        let localProject = Project(name: "Rebuild")
+        localProject.id = project.id
+        localProject.loggedMinutes = 100
+        destination.insert(localArea)
+        destination.insert(localProject)
+        try destination.save()
+
+        try CadenceArchiveImportService.apply(
+            archive, mode: .restoreOverwritingExistingRows, in: destination
+        )
+
+        let read = ModelContext(container)
+        #expect(try #require(try Self.one(Area.self, in: read)).loggedMinutes == 100)
+        #expect(try #require(try Self.one(Project.self, in: read)).loggedMinutes == 100)
     }
 
     /// One look row under the same id in both stores, disagreeing on both pair maps. The

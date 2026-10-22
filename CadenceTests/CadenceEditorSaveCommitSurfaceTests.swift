@@ -1217,6 +1217,53 @@ struct CadenceEditorSaveCommitSurfaceTests {
         )
     }
 
+    /// **The iOS context editor refuses a name the startup merge would fuse, before it inserts**
+    /// ([[T-3125]]).
+    ///
+    /// `DataIntegrityRepairService` groups active contexts by trimmed, lower-cased name and merges
+    /// every group of more than one, with no undo; this sheet and MCP `create_context` were the two
+    /// writers that could create the pair. The owner decided on 2026-10-22 to guard creation rather
+    /// than narrow that merge — `mergeContext` is the only entry point to `mergeArea` and
+    /// `mergeProject`, so narrowing would disable those too.
+    ///
+    /// Read from the source because the sheet is `#if os(iOS)` and this suite runs on macOS. What
+    /// the scan has to see is the **order**: the guard is only a guard if it returns before the
+    /// insert, and it has to ask `DataIntegrityRepairService` for the key rather than lowercase a
+    /// name of its own, because a guard looser than the merge still creates the pair. The decision
+    /// itself — which names clash — is held behaviourally by
+    /// `CadenceWriteServiceTests.aSecondContextWithANameTheMergeWouldFuseIsRefused` over the same
+    /// shared function.
+    @Test func theiOSContextEditorRefusesADuplicateNameBeforeInserting() throws {
+        let source = try scanned("Cadence/iOS/iOSSettingsContextSection.swift")
+        let body = try #require(saveBody(of: source), "save() was not found in the context editor")
+
+        let guardIndex = try #require(
+            body.range(of: "activeContextCarryingTheTypedName"),
+            "save() does not consult the duplicate-name rule at all"
+        )
+        let insertIndex = try #require(
+            body.range(of: "modelContext.insert("),
+            "save() no longer inserts, so this scan is reading the wrong body"
+        )
+        #expect(guardIndex.lowerBound < insertIndex.lowerBound, "the guard runs after the insert")
+        #expect(body.contains("duplicateNameNotice"), "the refusal leaves the editor with nothing to show")
+
+        // The rule comes from the service that owns the merge, not from a second lowercasing here.
+        #expect(source.contains("DataIntegrityRepairService.activeContextSharingName"))
+        #expect(
+            CadenceSourceScan.matchCount(#"\.lowercased\(\)"#, in: source) == 0,
+            "the editor spells a name rule of its own, which can be looser than the merge"
+        )
+    }
+
+    /// `save()`'s body, from its declaration to the closing brace at the same indentation.
+    private func saveBody(of source: String) -> String? {
+        guard let start = source.range(of: "private func save() {") else { return nil }
+        let rest = source[start.upperBound...]
+        guard let end = rest.range(of: "\n    }") else { return nil }
+        return String(rest[..<end.lowerBound])
+    }
+
     /// Non-vacuity for every scan above: the reader really opened these files and really read
     /// code, and the two `== 0` needles match the spelling they hunt.
     @Test func thesourceScanActuallyReadsTheseEditors() throws {

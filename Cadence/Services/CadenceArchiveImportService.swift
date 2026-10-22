@@ -498,14 +498,29 @@ nonisolated enum CadenceArchiveImportService {
             inserts["Tag", default: 0] -= aliasedTags.count
             matches["Tag", default: 0] += aliasedTags.count
         }
-        func tagsAliased(_ record: CadenceArchiveTask) -> CadenceArchiveTask {
+        // [[T-3146]]: and a daily note matched by its date key, for the same reason.
+        let aliasedDailyNotes = dailyNoteAliases(archive, against: destination)
+        var presentNotes = destination.notes
+        if !aliasedDailyNotes.isEmpty {
+            inserts["Note", default: 0] -= aliasedDailyNotes.count
+            matches["Note", default: 0] += aliasedDailyNotes.count
+            // So `differingCounts` below compares each aliased record against the row it will
+            // actually be written onto rather than skipping it for having no row under its id.
+            for (recordID, note) in aliasedDailyNotes { presentNotes[recordID] = note }
+        }
+        // Both normalizations `write` applies, replayed here so the preview compares what the
+        // write will store: an aliased tag id, and an aliased daily note's references ([[T-3146]]).
+        let noteReferenceRedirects = aliasedNoteReferenceRedirects(aliasedDailyNotes)
+        func asWritten(_ record: CadenceArchiveTask) -> CadenceArchiveTask {
             var record = record
             record.tagIDs = aliasedTagIDs(record.tagIDs, aliasedTags)
+            record.notes = redirectingNoteReferences(in: record.notes, noteReferenceRedirects)
             return record
         }
-        func tagsAliased(_ record: CadenceArchiveNote) -> CadenceArchiveNote {
+        func asWritten(_ record: CadenceArchiveNote) -> CadenceArchiveNote {
             var record = record
             record.tagIDs = aliasedTagIDs(record.tagIDs, aliasedTags)
+            record.content = redirectingNoteReferences(in: record.content, noteReferenceRedirects)
             return record
         }
 
@@ -523,14 +538,14 @@ nonisolated enum CadenceArchiveImportService {
         }
         let differingCounts: [String: Int] = [
             "AppTask": differing(archive.tasks, destination.tasks) { record, present in
-                matchedTaskDiffers(tagsAliased(record), from: present)
+                matchedTaskDiffers(asWritten(record), from: present)
             },
             "Area": differing(archive.areas, destination.areas, matchedAreaDiffers),
             "Project": differing(archive.projects, destination.projects, matchedProjectDiffers),
             "Subtask": differing(archive.subtasks, destination.subtasks, matchedSubtaskDiffers),
-            "Note": differing(archive.notes, destination.notes) { record, present in
+            "Note": differing(archive.notes, presentNotes) { record, present in
                 matchedNoteDiffers(
-                    tagsAliased(record),
+                    asWritten(record),
                     from: present,
                     foldedFrom: legacyFoldSource(of: present, in: archive, against: destination)
                 )
@@ -725,6 +740,12 @@ nonisolated enum CadenceArchiveImportService {
     ///   row and the archive's copy is exactly such a placeholder, the same edit is applied to the
     ///   archive's copy before comparing. Overwriting would put the empty body back and the fold
     ///   would fill it again, so that is not a difference either mode resolves.
+    ///
+    /// And the `id` is not compared ([[T-3146]]). A daily note matched by its date key keeps the
+    /// **destination's** id, exactly as an aliased tag does, so the two ids differ by construction
+    /// and comparing them would report every aliased note as differing for ever — including on the
+    /// second run of an import that has already been applied. For a note matched by its id the two
+    /// are equal anyway, so nothing else changes.
     nonisolated static func matchedNoteDiffers(
         _ record: CadenceArchiveNote,
         from present: Note,
@@ -732,6 +753,7 @@ nonisolated enum CadenceArchiveImportService {
     ) -> Bool {
         var incoming = record
         var current = CadenceArchiveNote(present)
+        incoming.id = current.id
         incoming.folderPath = CadenceNoteFolderPath.normalized(record.folderPath)
         if let legacy,
            record.kindRaw == NoteKind.daily.rawValue || record.kindRaw == NoteKind.weekly.rawValue,
@@ -824,6 +846,124 @@ nonisolated enum CadenceArchiveImportService {
         return aliases
     }
 
+    // MARK: - Daily notes that are already here under another id
+
+    /// Each archive **daily** note that is logically a note the destination already holds for the
+    /// same day, mapped to that destination row ([[T-3146]]).
+    ///
+    /// **Why a daily note, like a tag, is matched on more than its id.** A daily note's identity is
+    /// its day, not its UUID: `Note.canonicalKey` says so, `DataIntegrityRepairService`'s
+    /// `repairDuplicateNotes` groups on it, and the app mints at most one daily note per date key.
+    /// The import was the writer that could produce a second one — the file's own documented
+    /// restore route is reset, then import, and the app makes today's daily note from the template
+    /// the moment the user opens the day in between. The archive's note for that date then arrived
+    /// under its own id, and the next launch's repair glued the two bodies together with
+    /// `mergeNoteFields`' `\n\n---\n\n` rule, because the template body is not empty. What the
+    /// user saw was their restored day with the template stapled above it.
+    ///
+    /// **Matched, not merged afterwards**, for the reasons `tagAliases` gives: an import deletes
+    /// nothing, and matching lets each mode keep its own meaning — merge leaves the note already
+    /// here exactly as it is, overwrite replaces its fields with the archive's copy, and neither
+    /// deletes or re-ids anything. Re-running the import finds the same match.
+    ///
+    /// **Daily notes only.** The owner's decision of 2026-10-22 names daily notes, and that is what
+    /// this does. Weekly and meeting notes have the same shared-key shape and are untouched here;
+    /// [[T-4720]] carries that.
+    ///
+    /// **What merge mode now does with the archive's copy**, which the glue used to hide: nothing.
+    /// A matched row is a row merge leaves exactly as it is, so the body the archive carries for
+    /// that day is not imported, where before it arrived stapled under a `---`. That is merge
+    /// doing what its own sentence says and what it does for every other matched row, the preview
+    /// counts the note as already here rather than as an insert, and overwrite is the mode that
+    /// takes the archive's copy. [[T-4721]] records it as a consequence the owner has not ruled on.
+    ///
+    /// The three limits are the tag ones, and for the same reasons: a row the archive also carries
+    /// by id is never aliased onto (its own record is about to match it), no two archive records
+    /// share one destination row, and a note with no date key has no shared identity to collide on
+    /// so it is skipped outright. Among several candidates the lowest `order`, then the oldest,
+    /// then the smallest id wins, so the preview and the write name the same pairs.
+    private nonisolated static func dailyNoteAliases(
+        _ archive: CadenceArchive,
+        against destination: DestinationIndex
+    ) -> [UUID: Note] {
+        // Asked of `Note.canonicalKey` rather than spelled `"daily:\(dateKey)"` here, so the one
+        // rule that decides whether two notes are the same note cannot drift into two. The `id`
+        // argument is the per-note fallback that only a *dateless* daily note reaches, and
+        // `dayKey`'s own guard rejects those before asking — one placeholder serves every call.
+        let keyPlaceholder = UUID()
+        func dayKey(kindRaw: String, dateKey: String) -> String? {
+            guard NoteKind(rawValue: kindRaw) == .daily,
+                  !dateKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            else { return nil }
+            return Note.canonicalKey(kind: .daily, dateKey: dateKey, id: keyPlaceholder)
+        }
+        let archiveIDs = Set(archive.notes.map(\.id))
+        var candidates: [String: Note] = [:]
+        for note in destination.notes.values where !archiveIDs.contains(note.id) {
+            guard let slot = dayKey(kindRaw: note.kindRaw, dateKey: note.dateKey) else { continue }
+            if let current = candidates[slot], !Self.notePrecedes(note, current) { continue }
+            candidates[slot] = note
+        }
+        guard !candidates.isEmpty else { return [:] }
+        var claimed: Set<UUID> = []
+        var aliases: [UUID: Note] = [:]
+        let unmatched = archive.notes
+            .filter { destination.notes[$0.id] == nil }
+            .sorted(by: Self.archiveNotePrecedes)
+        for record in unmatched {
+            guard let slot = dayKey(kindRaw: record.kindRaw, dateKey: record.dateKey),
+                  let target = candidates[slot],
+                  claimed.insert(target.id).inserted
+            else { continue }
+            aliases[record.id] = target
+        }
+        return aliases
+    }
+
+    /// `[[note:<archive id>|…]]` -> `[[note:<destination id>|…]]` for every daily note this import
+    /// matched under another id ([[T-3146]]).
+    ///
+    /// An aliased note keeps the destination's id, so a reference the archive wrote to its own copy
+    /// names a row this store will never hold, and an id-named reference resolves to its row or to
+    /// **nothing** (`NoteReferenceTarget`) — it would simply go dead. Before this matching existed
+    /// the archive's note was inserted under its own id and the next launch's repair merged the
+    /// pair and re-pointed the references (`DataIntegrityRepairService.redirectNoteReferences`,
+    /// [[T-3115]] part 3); matching removes that merge, so the import has to do the re-pointing the
+    /// merge used to do.
+    ///
+    /// **Scope is the repair's own scope**: `Note.content` and `AppTask.notes`, the two markdown
+    /// fields `redirectNoteReferences` rewrites. The legacy tables are not re-pointed there and are
+    /// not re-pointed here.
+    private nonisolated static func aliasedNoteReferenceRedirects(_ aliases: [UUID: Note]) -> [UUID: UUID] {
+        var redirects: [UUID: UUID] = [:]
+        for (recordID, note) in aliases where recordID != note.id {
+            redirects[recordID] = note.id
+        }
+        return redirects
+    }
+
+    /// `NoteReferenceParser.redirectingNoteReferences` with the count dropped — the importer
+    /// reports rows, not references, and the helper already short-circuits an empty map.
+    private nonisolated static func redirectingNoteReferences(
+        in content: String,
+        _ redirects: [UUID: UUID]
+    ) -> String {
+        NoteReferenceParser.redirectingNoteReferences(in: content, redirects: redirects).content
+    }
+
+    /// `archiveTagPrecedes` for note records.
+    private nonisolated static func archiveNotePrecedes(_ lhs: CadenceArchiveNote, _ rhs: CadenceArchiveNote) -> Bool {
+        if lhs.order != rhs.order { return lhs.order < rhs.order }
+        if lhs.createdAt != rhs.createdAt { return lhs.createdAt < rhs.createdAt }
+        return lhs.id.uuidString < rhs.id.uuidString
+    }
+
+    private nonisolated static func notePrecedes(_ lhs: Note, _ rhs: Note) -> Bool {
+        if lhs.order != rhs.order { return lhs.order < rhs.order }
+        if lhs.createdAt != rhs.createdAt { return lhs.createdAt < rhs.createdAt }
+        return lhs.id.uuidString < rhs.id.uuidString
+    }
+
     /// `tagPrecedes` for archive records, so which of two same-slug records takes the row already
     /// here does not depend on the order the file happens to list them in.
     private nonisolated static func archiveTagPrecedes(_ lhs: CadenceArchiveTag, _ rhs: CadenceArchiveTag) -> Bool {
@@ -864,6 +1004,11 @@ nonisolated enum CadenceArchiveImportService {
         in modelContext: ModelContext
     ) -> WiringWorklist {
         var worklist = WiringWorklist()
+        // Computed before anything is inserted, for the reason `aliasedTags` is: the preview and
+        // the write must name the same pairs ([[T-3146]]). It is read first because the task table
+        // below already needs `noteReferenceRedirects`.
+        let aliasedDailyNotes = dailyNoteAliases(archive, against: destination)
+        let noteReferenceRedirects = aliasedNoteReferenceRedirects(aliasedDailyNotes)
 
         _ = upsert(
             archive.contexts, into: &destination.contexts,
@@ -892,7 +1037,7 @@ nonisolated enum CadenceArchiveImportService {
                 model.icon = record.icon
                 model.order = record.order
                 model.linkedCalendarID = record.linkedCalendarID
-                model.loggedMinutes = record.loggedMinutes
+                model.loggedMinutes = raisedFocusCounter(alreadyHere: model.loggedMinutes, inArchive: record.loggedMinutes)
                 model.hideDueDateIfEmpty = record.hideDueDateIfEmpty
                 model.hideSectionDueDateIfEmpty = record.hideSectionDueDateIfEmpty
                 model.sectionNamesRaw = record.sectionNamesRaw
@@ -914,7 +1059,7 @@ nonisolated enum CadenceArchiveImportService {
                 model.dueDate = record.dueDate
                 model.order = record.order
                 model.linkedCalendarID = record.linkedCalendarID
-                model.loggedMinutes = record.loggedMinutes
+                model.loggedMinutes = raisedFocusCounter(alreadyHere: model.loggedMinutes, inArchive: record.loggedMinutes)
                 model.hideDueDateIfEmpty = record.hideDueDateIfEmpty
                 model.hideSectionDueDateIfEmpty = record.hideSectionDueDateIfEmpty
                 model.sectionNamesRaw = record.sectionNamesRaw
@@ -1032,14 +1177,14 @@ nonisolated enum CadenceArchiveImportService {
             fields: { record, model in
                 model.id = record.id
                 model.title = record.title
-                model.notes = record.notes
+                model.notes = redirectingNoteReferences(in: record.notes, noteReferenceRedirects)
                 model.priorityRaw = record.priorityRaw
                 model.statusRaw = record.statusRaw
                 model.dueDate = record.dueDate
                 model.scheduledDate = record.scheduledDate
                 model.scheduledStartMin = record.scheduledStartMin
                 model.estimatedMinutes = record.estimatedMinutes
-                model.actualMinutes = record.actualMinutes
+                model.actualMinutes = raisedFocusCounter(alreadyHere: model.actualMinutes, inArchive: record.actualMinutes)
                 model.calendarEventID = record.calendarEventID
                 model.recurrenceRaw = record.recurrenceRaw
                 model.recurrenceSeriesIDRaw = record.recurrenceSeriesIDRaw
@@ -1090,43 +1235,63 @@ nonisolated enum CadenceArchiveImportService {
             }
         )
 
+        func copyNoteFields(_ record: CadenceArchiveNote, onto model: Note) {
+            model.kindRaw = record.kindRaw
+            model.title = record.title
+            model.content = redirectingNoteReferences(in: record.content, noteReferenceRedirects)
+            model.order = record.order
+            model.createdAt = record.createdAt
+            model.updatedAt = record.updatedAt
+            model.dateKey = record.dateKey
+            model.weekKey = record.weekKey
+            model.calendarEventID = record.calendarEventID
+            model.calendarID = record.calendarID
+            model.eventDateKey = record.eventDateKey
+            model.eventStartMin = record.eventStartMin
+            model.eventEndMin = record.eventEndMin
+            model.legacySourceKindRaw = record.legacySourceKindRaw
+            model.legacySourceID = record.legacySourceID
+            // Through the shared filing helper, not `model.folderPath = record.folderPath`.
+            // The folder convention is a convention over a `String`, and it survives only
+            // because exactly one normalizer writes it (`CadenceNoteFolderSupport.swift`) —
+            // an archive is the one source of paths that has not already been through it.
+            // Idempotent on anything Cadence wrote, so a real round trip is unchanged; a
+            // hand-edited `"/Planning/"` is filed under `Planning` rather than becoming a
+            // third group no surface can merge with the other two.
+            //
+            // The non-committing door, and the only caller of it (T-1093). Every interactive
+            // filing goes through `CadenceListNoteFiling.move(_:toFolder:in:commit:)`, which
+            // commits; an import commits once for the whole archive, in `apply` below, so a
+            // per-note `save()` here would be hundreds of commits and a half-written store on
+            // the first refusal.
+            CadenceListNoteFiling.fileWithoutCommitting(model, toFolder: record.folderPath)
+        }
         worklist.notes = upsert(
-            archive.notes, into: &destination.notes,
+            archive.notes.filter { aliasedDailyNotes[$0.id] == nil }, into: &destination.notes,
             mode: mode, tally: &tally, in: modelContext,
             make: { _ in Note(kind: .list) },
             fields: { record, model in
                 model.id = record.id
-                model.kindRaw = record.kindRaw
-                model.title = record.title
-                model.content = record.content
-                model.order = record.order
-                model.createdAt = record.createdAt
-                model.updatedAt = record.updatedAt
-                model.dateKey = record.dateKey
-                model.weekKey = record.weekKey
-                model.calendarEventID = record.calendarEventID
-                model.calendarID = record.calendarID
-                model.eventDateKey = record.eventDateKey
-                model.eventStartMin = record.eventStartMin
-                model.eventEndMin = record.eventEndMin
-                model.legacySourceKindRaw = record.legacySourceKindRaw
-                model.legacySourceID = record.legacySourceID
-                // Through the shared filing helper, not `model.folderPath = record.folderPath`.
-                // The folder convention is a convention over a `String`, and it survives only
-                // because exactly one normalizer writes it (`CadenceNoteFolderSupport.swift`) —
-                // an archive is the one source of paths that has not already been through it.
-                // Idempotent on anything Cadence wrote, so a real round trip is unchanged; a
-                // hand-edited `"/Planning/"` is filed under `Planning` rather than becoming a
-                // third group no surface can merge with the other two.
-                //
-                // The non-committing door, and the only caller of it (T-1093). Every interactive
-                // filing goes through `CadenceListNoteFiling.move(_:toFolder:in:commit:)`, which
-                // commits; an import commits once for the whole archive, in `apply` below, so a
-                // per-note `save()` here would be hundreds of commits and a half-written store on
-                // the first refusal.
-                CadenceListNoteFiling.fileWithoutCommitting(model, toFolder: record.folderPath)
+                copyNoteFields(record, onto: model)
             }
         )
+        // [[T-3146]]: an archive daily note for a day this store already has a daily note for is
+        // that note, not a second one beside it. Same shape as the tag alias above — the
+        // destination's id is kept, each mode then does what it does to any matched row, and
+        // overwrite's pair joins the wiring worklist so the archive's area, project and tags land
+        // on the row that survived.
+        for record in archive.notes {
+            guard let existing = aliasedDailyNotes[record.id] else { continue }
+            switch mode {
+            case .mergeKeepingExistingRows:
+                tally.skipped += 1
+            case .restoreOverwritingExistingRows:
+                copyNoteFields(record, onto: existing)
+                tally.overwritten += 1
+                worklist.notes.append((record, existing))
+            }
+            destination.notes[record.id] = existing
+        }
 
         // No wiring pass: the layout references nothing but destination raw values, which are
         // strings this build either recognises or drops when it reads them.
@@ -1445,9 +1610,33 @@ nonisolated enum CadenceArchiveImportService {
     /// Only raising is what makes this safe in **both** modes. Overwrite mode writes the archive's
     /// scalar over the destination's, and that scalar can be older than sessions this device
     /// logged since; the raise puts those minutes back rather than letting the archive's number
-    /// stand against the store's own rows.
+    /// stand against the store's own rows. It cannot put back minutes that have no rows at all,
+    /// which is why `raisedFocusCounter` below has to run first.
     private nonisolated static func reconcileFocusCounters(using destination: DestinationIndex) {
         CadenceFocusLedger.reconcile(rows: Array(destination.focusSessions.values))
+    }
+
+    /// What a matched row's focus counter becomes: **the higher of the two, never the archive's
+    /// alone** ([[T-3145]]).
+    ///
+    /// `reconcileFocusCounters` above raises a counter back to the sum of the `FocusSessionLog`
+    /// rows behind it. A counter with **no** rows behind it — minutes banked before the ledger
+    /// existed — has nothing to be raised back to, so overwrite writing the archive's scalar over
+    /// it lowered it permanently and the next launch could not put it back. [[T-1114]] recorded
+    /// that as overwrite doing what it says; the owner reversed that on 2026-10-22, and this is
+    /// the reversal.
+    ///
+    /// **It invents no data.** Every app write to these three counters only ever raises them
+    /// (`CadenceFocusLedger`), and `DataIntegrityRepairService` already folds two copies of a
+    /// container together with `max` — so `max` is the rule the rest of the store already keeps,
+    /// and the number that survives is one of the two numbers that were really there.
+    ///
+    /// Called from inside each `fields` closure, so `alreadyHere` is the destination's **pre-import**
+    /// value: `upsert` hands a matched row to `fields` before anything on it is written, and a row
+    /// it just inserted holds the model default of `0`, for which this returns the archive's figure
+    /// unchanged. Merge mode never reaches it for a matched row at all — it skips those.
+    private nonisolated static func raisedFocusCounter(alreadyHere: Int, inArchive: Int) -> Int {
+        max(alreadyHere, inArchive)
     }
 
     /// One table. Returns the rows pass two still has to wire — always the ones just inserted, and

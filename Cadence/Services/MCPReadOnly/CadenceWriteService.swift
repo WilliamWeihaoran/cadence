@@ -43,6 +43,11 @@ nonisolated enum CadenceWriteError: Error, LocalizedError, Sendable {
     /// default and the refusal names the row and the opt-in that takes it, the same shape
     /// `bulk_cancel_tasks`' `dryRun` gives a caller with no confirmation sheet ([[T-1365]]).
     case tagArchived(name: String, slug: String, id: String)
+    /// An **active** `Context` already carries this name, up to trimming and case ([[T-3125]]).
+    /// Named so a headless caller can file onto the list it already has rather than minting a
+    /// second one the next launch would fuse into it. Archived contexts do not clash: the merge
+    /// that makes this a refusal groups active rows only.
+    case contextAlreadyExists(name: String, id: String)
 
     var errorDescription: String? {
         switch self {
@@ -52,6 +57,12 @@ nonisolated enum CadenceWriteError: Error, LocalizedError, Sendable {
             return "Note content must not be empty."
         case .emptyName:
             return "Name must not be empty."
+        case .contextAlreadyExists(let name, let id):
+            return """
+                A context named \(name) already exists (id \(id)). Two active contexts with the \
+                same name are merged into one at the next launch, so this one was not created. \
+                Use that context, or pick a different name.
+                """
         case .invalidColorHex(let value):
             return "Invalid colorHex: \(value). Expected a six-digit hex colour such as #4a9eff."
         case .emptySectionName:
@@ -709,6 +720,16 @@ final class CadenceWriteService {
         let name = try normalizedRequiredText(options.name, emptyError: CadenceWriteError.emptyName)
         let colorHex = try normalizedOptionalColorHex(options.colorHex)
         let icon = CadenceMCPServiceSupport.normalizedOptionalText(options.icon)
+
+        // [[T-3125]]: refused rather than inserted. `DataIntegrityRepairService` groups active
+        // contexts by `normalizedContextName` and fuses every group of more than one, with no
+        // undo — and this arm was one of the two writers that could create the pair. The owner
+        // decided on 2026-10-22 to guard creation rather than narrow that merge, which is also
+        // the only entry point to `mergeArea` and `mergeProject`. The key comes from the repair
+        // service itself, so the guard and the merge cannot drift into two different rules.
+        if let clash = DataIntegrityRepairService.activeContextSharingName(name, among: try fetchContexts()) {
+            throw CadenceWriteError.contextAlreadyExists(name: clash.name, id: clash.id.uuidString)
+        }
 
         let created = Context(name: name)
         if let colorHex { created.colorHex = colorHex }

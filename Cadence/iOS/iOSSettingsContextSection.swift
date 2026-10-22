@@ -144,6 +144,10 @@ struct iOSContextEditorSheet: View {
     /// edit puts back the three fields it wrote. Neither rolls the context back, because this
     /// context is the whole app's.
     private func save() {
+        if case .new = mode, let clash = activeContextCarryingTheTypedName {
+            saveFailureNotice = Self.duplicateNameNotice(clash.name)
+            return
+        }
         do {
             switch mode {
             case .new:
@@ -170,6 +174,35 @@ struct iOSContextEditorSheet: View {
         }
         saveFailureNotice = nil
         dismiss()
+    }
+
+    /// The active list this creation would be fused with at the next launch, if there is one
+    /// ([[T-3125]]).
+    ///
+    /// `DataIntegrityRepairService` groups active contexts by
+    /// `normalizedContextName` and merges every group of more than one — deterministically since
+    /// [[T-3101]], but still irreversibly: the separation the user made by naming two lists the
+    /// same is gone with no undo. The owner's decision of 2026-10-22 is to refuse the second one
+    /// here rather than to narrow that merge, which `mergeArea` and `mergeProject` are reached
+    /// through.
+    ///
+    /// **The rule lives beside the merge**, in `DataIntegrityRepairService.activeContextSharingName`,
+    /// so a guard here that allowed a name that merge would still fuse cannot exist — MCP
+    /// `create_context` reads the same function. Editing is deliberately not guarded: the decision
+    /// names creation, and a rename into a clash is [[T-4722]].
+    private var activeContextCarryingTheTypedName: Context? {
+        DataIntegrityRepairService.activeContextSharingName(trimmedName, among: contexts)
+    }
+
+    /// Names the list that is in the way, because the clash is on the *normalized* name and the
+    /// two spellings can differ — "Work" and "work " read as unrelated until the sentence says
+    /// which row it means.
+    static func duplicateNameNotice(_ existingName: String) -> String {
+        """
+        A list named "\(existingName)" already exists. Two lists with the same name are merged \
+        into one the next time Cadence opens, so this one was not created. Pick a different name, \
+        or edit the list you already have.
+        """
     }
 
     private var normalizedIcon: String {

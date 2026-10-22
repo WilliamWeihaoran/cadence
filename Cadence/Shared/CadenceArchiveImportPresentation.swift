@@ -103,24 +103,19 @@ nonisolated enum CadenceArchiveImportPresentation {
     /// One constant rather than a clause in each branch: this is one fact about the store, and a
     /// consequence spelled twice is one that comes to mean two things — the reason `modeRows`
     /// reads `modeExplanation` rather than restating it.
+    ///
+    /// **This sentence is true of every counter again** ([[T-3145]]). [[T-3116]] part (4) added a
+    /// second, overwrite-only constant — `focusMinutesWithoutSessionsNote` — because it was not:
+    /// `focusMinutesNote` reads as "focus time never goes down", and that is only true of minutes
+    /// with `FocusSessionLog` rows behind them, and minutes banked before that ledger existed had
+    /// none to be raised back to. That reading was right; the owner answered it on 2026-10-22 by
+    /// changing the behaviour rather than the copy. The importer now takes `max(the counter
+    /// already here, the archive's)` for all three cached counters, so nothing an import does
+    /// lowers logged focus time and there is no exception left to spell out. The removed constant
+    /// is not to come back without the behaviour coming back with it.
     static let focusMinutesNote = """
         Logged focus time is a total of the individual focus sessions, so it rises to include \
         every session either copy has.
-        """
-
-    /// The one place overwrite's focus-time sentence would still over-promise, said only by the
-    /// mode it is true of ([[T-3116]] part (4)).
-    ///
-    /// `focusMinutesNote` reads as "focus time never goes down", and that is only true of minutes
-    /// that have session records behind them. A counter with **no** `FocusSessionLog` rows — time
-    /// banked before the ledger existed — has nothing for `reconcileFocusCounters` to raise it
-    /// back to, so overwrite writes the archive's figure over it and that figure stands, lower or
-    /// not. [[T-1114]] decided that is overwrite doing what it says, and the importer keeps that
-    /// decision; what was wrong was the copy promising otherwise. Merge never touches a matched
-    /// row's counter, so merge does not say this.
-    static let focusMinutesWithoutSessionsNote = """
-        Focus time that has no session records behind it, such as time logged by older versions \
-        of Cadence, takes the archive's figure instead.
         """
 
     static func modeExplanation(_ mode: CadenceArchiveImportMode) -> String {
@@ -136,7 +131,7 @@ nonisolated enum CadenceArchiveImportPresentation {
                 Records the archive has and this device does not are added, and records you \
                 already have are replaced by the archive's copy — changes made to them since the \
                 archive was written are lost. Records the archive never had are still kept. \
-                \(focusMinutesNote) \(focusMinutesWithoutSessionsNote)
+                \(focusMinutesNote)
                 """
         }
     }

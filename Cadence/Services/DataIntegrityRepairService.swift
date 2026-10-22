@@ -1063,7 +1063,46 @@ nonisolated enum DataIntegrityRepairService {
     }
 
     private static func normalizedName(_ context: Context) -> String {
-        context.name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        normalizedContextName(context.name)
+    }
+
+    /// **The key two active contexts are fused on**, exposed so the two surfaces that create a
+    /// context can refuse the name this pass would later fuse ([[T-3125]]).
+    ///
+    /// The owner's decision of 2026-10-22 is to refuse a duplicate name at creation rather than to
+    /// narrow this merge — narrowing it would take `mergeArea` and `mergeProject` with it, since
+    /// `mergeContext` is their only entry point. A guard that spells its own rule would be a second
+    /// definition of "the same name", and the guard and the merge disagreeing is the one way this
+    /// fix can fail: a name the guard allows and this pass fuses loses the separation with no undo.
+    /// So both read this.
+    ///
+    /// `isArchived` is **not** folded in here. `repair` groups `activeContexts` and each caller
+    /// filters its own rows, because an archived context is not in any picker and is not the
+    /// duplicate the user sees.
+    static func normalizedContextName(_ name: String) -> String {
+        name.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    }
+
+    /// The **active** context `name` would be fused with, or `nil` when creating it is safe
+    /// ([[T-3125]]).
+    ///
+    /// One function rather than a guard on each creating surface. There are two — the iOS context
+    /// editor and MCP `create_context` — and the failure mode a second copy of this rule brings is
+    /// specific: a surface whose guard is *looser* than the merge still creates the pair, and the
+    /// separation is then lost at the next launch with no undo. The surfaces decide what to say
+    /// about the answer; what counts as the same name is decided here, beside the merge that acts
+    /// on it.
+    ///
+    /// An **empty** name is never a clash. `repair` filters `normalizedName($0).isEmpty` out of its
+    /// grouping, so unnamed contexts are not fused with each other, and both surfaces refuse an
+    /// empty name on their own terms before reaching this.
+    ///
+    /// Archived rows are skipped, matching `activeContexts`: an archived context is in no picker,
+    /// is not the duplicate the user sees, and is not what the merge groups.
+    static func activeContextSharingName(_ name: String, among contexts: [Context]) -> Context? {
+        let normalized = normalizedContextName(name)
+        guard !normalized.isEmpty else { return nil }
+        return contexts.first { !$0.isArchived && normalizedContextName($0.name) == normalized }
     }
 
     /// Carries across what can be carried of the copy this merge is about to delete.

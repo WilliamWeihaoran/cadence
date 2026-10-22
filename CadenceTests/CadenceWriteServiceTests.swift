@@ -795,6 +795,70 @@ struct CadenceWriteServiceTests {
         #expect(plain.context.icon == Context(name: "probe").icon)
     }
 
+    /// **A second active context with the same name is refused rather than inserted** ([[T-3125]]).
+    ///
+    /// `DataIntegrityRepairService` groups active contexts by trimmed, lower-cased name and fuses
+    /// every group of more than one, irreversibly. This arm was one of the two writers that could
+    /// create the pair. The owner decided on 2026-10-22 to guard creation rather than narrow that
+    /// merge — narrowing it would disable the area and project merges with it, since `mergeContext`
+    /// is their only entry point.
+    ///
+    /// The clash is on the **merge's** key, not on the literal string, which is why the second
+    /// request here differs in case and whitespace and is still refused; and the refusal names the
+    /// row, because a headless caller has to be able to file onto the context it already has.
+    @Test func aSecondContextWithANameTheMergeWouldFuseIsRefused() throws {
+        let fixture = try Fixture()
+
+        let first = try fixture.writeService.createContext(options: .init(name: "Side projects"))
+
+        let error = #expect(throws: CadenceWriteError.self) {
+            try fixture.writeService.createContext(options: .init(name: "  SIDE Projects "))
+        }
+        let described = try #require(error?.errorDescription)
+        #expect(described.contains("Side projects"), "the refusal does not name the list in the way")
+        #expect(described.contains(first.context.id), "the refusal does not name the row to use instead")
+
+        // Refused, not refused-after-inserting: the store still holds exactly the one row, so the
+        // next launch's repair has no group to fuse.
+        let stored = try fixture.modelContext.fetch(FetchDescriptor<Context>())
+        #expect(stored.filter { DataIntegrityRepairService.normalizedContextName($0.name) == "side projects" }.count == 1)
+
+        // A different name is still accepted, so the guard is a duplicate check and not a ban.
+        _ = try fixture.writeService.createContext(options: .init(name: "Side projects (home)"))
+        #expect(try fixture.modelContext.fetch(FetchDescriptor<Context>()).count == 3)
+    }
+
+    /// The limits of that refusal, each one a case where fusing is not what would happen:
+    /// an **archived** row is not in the merge's grouping and does not block the name, and the
+    /// rule is `DataIntegrityRepairService`'s own so the guard cannot be looser than the merge.
+    @Test func anArchivedContextDoesNotBlockTheNameAndTheGuardReadsTheMergesOwnKey() throws {
+        let fixture = try Fixture()
+
+        let retired = try fixture.writeService.createContext(options: .init(name: "Retired"))
+        _ = try fixture.writeService.updateContext(options: .init(
+            contextId: retired.context.id,
+            isArchived: true
+        ))
+
+        let reused = try fixture.writeService.createContext(options: .init(name: "retired"))
+        #expect(reused.context.name == "retired")
+
+        // An unnamed active row, which `repair` filters out of its own grouping before it groups —
+        // so two of them are not fused and an empty name must not be answered as a clash either.
+        // Inserted directly because neither creating surface will accept the name.
+        fixture.modelContext.insert(Context(name: "   "))
+        try fixture.modelContext.save()
+
+        // The one rule, asked directly: the archived row is not an answer, the active one is, and
+        // an empty name never clashes.
+        let rows = try fixture.modelContext.fetch(FetchDescriptor<Context>())
+        #expect(DataIntegrityRepairService.activeContextSharingName("  RETIRED  ", among: rows)?.id
+            == UUID(uuidString: reused.context.id))
+        #expect(DataIntegrityRepairService.activeContextSharingName("   ", among: rows) == nil)
+        #expect(DataIntegrityRepairService.activeContextSharingName("", among: rows) == nil)
+        #expect(DataIntegrityRepairService.activeContextSharingName("Nothing like it", among: rows) == nil)
+    }
+
     /// `CadenceMCPOrdering.precedes` breaks an `order` tie on the *name*, so a new row left at the
     /// model default of 0 interleaves alphabetically with everything already at 0 instead of
     /// landing at the end. Areas and projects share one sequence per context, and `nil == nil` is
@@ -1320,7 +1384,9 @@ struct CadenceWriteServiceTests {
 
     @Test func aContextUpdateRefusesABlankNameAndARequestThatAsksForNothing() throws {
         let fixture = try Fixture()
-        let created = try fixture.writeService.createContext(options: .init(name: "Work"))
+        // Not "Work": the fixture already holds that name, and since [[T-3125]] a second active
+        // context carrying it is refused at creation. The name is incidental to this test.
+        let created = try fixture.writeService.createContext(options: .init(name: "Errands"))
 
         #expect(throws: CadenceWriteError.self) {
             try fixture.writeService.updateContext(options: .init(contextId: created.context.id, name: "   "))
@@ -1335,7 +1401,7 @@ struct CadenceWriteServiceTests {
             ))
         }
 
-        #expect(try fixture.readService.contextSummary(contextID: created.context.id).context.name == "Work")
+        #expect(try fixture.readService.contextSummary(contextID: created.context.id).context.name == "Errands")
     }
 
     @Test func aListIsRenamedRefiledAndArchivedWithoutDisturbingItsColumns() throws {
@@ -1492,7 +1558,9 @@ struct CadenceWriteServiceTests {
 
     @Test func aRefusedContextUpdatePutsTheNameAndTheArchiveFlagBack() throws {
         let fixture = try Fixture()
-        let created = try fixture.writeService.createContext(options: .init(name: "Work"))
+        // Renamed off the fixture's own "Work" for [[T-3125]]'s duplicate-name refusal; see
+        // `aContextUpdateRefusesABlankNameAndARequestThatAsksForNothing`.
+        let created = try fixture.writeService.createContext(options: .init(name: "Errands"))
 
         let refusing = CadenceWriteService(
             context: fixture.modelContext,
@@ -1508,7 +1576,7 @@ struct CadenceWriteServiceTests {
         }
 
         let after = try fixture.readService.contextSummary(contextID: created.context.id)
-        #expect(after.context.name == "Work")
+        #expect(after.context.name == "Errands")
         #expect(!after.context.isArchived)
     }
 
