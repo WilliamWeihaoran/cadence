@@ -2220,8 +2220,8 @@ runstate_exit_for() {  # $1 = verdict
 # script failed with ETIMEDOUT after ~2.5 minutes -- and the retry sat 30 minutes reading
 # `QUEUED … test host: free` with `queue: empty` and its own log ending at
 # `other xcodebuild processes: 0`, i.e. before `worktree vs HEAD` had printed. Neither was the lock.
-# This checkout lives inside iCloud Drive (`~/Desktop` is a File Provider domain), so every exec
-# and read of it can stall on the filesystem. The verdict above told that agent "Do not start a
+# The checkout then lived in iCloud Drive (`~/Desktop` is a File Provider domain), so every exec
+# and read could stall - T-3245 moved it out. The verdict above told that agent "Do not start a
 # second run. Elapsed time says nothing about it" -- the right advice for a queue and the wrong one
 # for a stall -- so this says which it is, and names what the run is executing right now.
 runstate_lock_line() {  # $1 = id, $2 = the run's pid (optional)
