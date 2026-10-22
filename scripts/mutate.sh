@@ -88,6 +88,9 @@
 #   --scheme NAME    default: Cadence
 #   --destination D  default: platform=macOS
 #   --keep-tree      do not delete the scratch tree on the way out
+#   --check          stop after the preflight (T-3198): needle counts, a `CadenceTests/`-prefixed or
+#                    unknown `suite:`, a `tests:` name its suite does not declare. No lease, no
+#                    build. A real run asks the same questions first and refuses on them too.
 #
 # THE PLAN FILE
 #
@@ -952,6 +955,90 @@ def load_suite_labels(tree):
     return labels
 
 
+def load_suite_index(tree):
+    """Suite -> the set of `@Test` function names it declares (T-3198), from the tree's OWN
+    `scripts/test-suite-index.sh` default listing (`Suite/name  (file)`).
+
+    `None`, not `{}`, when the script is missing, fails, or lists nothing: the preflight then SKIPS
+    its suite and test checks and says so, rather than refusing every suite as unknown over an
+    index it could not read (`wait-mutate.sh selftest`'s stub tree ships one that exits 1).
+    """
+    script = os.path.join(tree, "scripts", "test-suite-index.sh")
+    if not os.path.exists(script):
+        return None
+    finished = subprocess.run(["/bin/zsh", script], cwd=tree, capture_output=True, text=True)
+    if finished.returncode != 0:
+        return None
+    index = {}
+    for line in finished.stdout.split("\n"):
+        found = re.match(r"([A-Za-z0-9_]+)/([A-Za-z0-9_]+)\s", line)
+        if found:
+            index.setdefault(found.group(1), set()).add(found.group(2))
+    return index or None
+
+
+def preflight(mutations, texts, suite_index):
+    """The refusals that need no build, asked BEFORE the lease and the baseline (T-3198).
+
+    Every one of these used to surface late: a needle matching 2 of 3 sites was only refused at
+    apply time, after the baseline queue; `suite: CadenceTests/X` (the runner prepends the prefix
+    itself) died inside `shutil.copyfile` during the baseline; and a `tests:` name scoped to the
+    wrong suite of a multi-suite file came back as a baseline TEST-ABSENT that was misread as the
+    runner failing to see a display-named test (T-3341 -- it does see them, via T-786's label
+    map). Pure: `texts` maps a repository-relative file to its baseline text, and `suite_index` is
+    `load_suite_index`'s answer (None = unavailable, so the suite and tests: checks are skipped).
+
+    Returns `(ident, reason, detail)` for every problem, in plan order. Empty means go.
+    """
+    problems = []
+    for mutation in mutations:
+        suite = mutation.suite
+        if suite and "/" in suite:
+            problems.append((mutation.ident, "SUITE-PREFIXED",
+                             "suite: %r -- it takes a BARE suite name; the runner prepends "
+                             "`CadenceTests/` itself, so this would run `CadenceTests/%s`"
+                             % (suite, suite)))
+        elif suite and suite_index is not None and suite not in suite_index:
+            problems.append((mutation.ident, "UNKNOWN-SUITE",
+                             "suite: %s is not a suite `scripts/test-suite-index.sh` knows -- a "
+                             "misspelling, or a file name rather than the struct in it" % suite))
+        elif suite_index is not None:
+            declared = suite_index[suite] if suite else set().union(*suite_index.values())
+            for test in mutation.tests:
+                if test in declared:
+                    continue
+                homes = sorted(name for name, tests in suite_index.items() if test in tests)
+                problems.append((mutation.ident, "TEST-NOT-IN-SUITE",
+                                 "tests: %s is not declared in %s; %s" % (
+                                     test, suite or "the target",
+                                     ("it is declared in %s -- scope the mutation there"
+                                      % ", ".join(homes)) if homes else
+                                     "no suite declares it (a typo? `tests:` takes the BARE "
+                                     "function name, never its display name or `()`)")))
+        # The needle counts, simulated hunk by hunk exactly as `apply_mutation` applies them,
+        # against the bytes this run will mutate. Every mutation starts from the baseline.
+        working = {}
+        for hunk in mutation.hunks:
+            if hunk.file not in working:
+                working[hunk.file] = texts.get(hunk.file)
+            text = working[hunk.file]
+            if text is None:
+                continue   # a missing file is run_plan's own `plan error`, not this check
+            found = occurrence_lines(text, hunk.old)
+            if not found:
+                problems.append((mutation.ident, "NEEDLE-ABSENT",
+                                 "the `old` text occurs 0 times in %s" % hunk.file))
+            elif len(found) != hunk.count:
+                problems.append((mutation.ident, "NEEDLE-AMBIGUOUS",
+                                 "the `old` text occurs %d times in %s (lines %s), and the plan "
+                                 "says %d -- check its leading whitespace against every site"
+                                 % (len(found), hunk.file, ", ".join(str(n) for n in found),
+                                    hunk.count)))
+            else:
+                working[hunk.file] = text.replace(hunk.old, hunk.new)
+    return problems
+
+
 # --- the exit sentinel (T-3182) ----------------------------------------------
 
 def scratch_for(ident):
@@ -1084,7 +1171,7 @@ class Runner:
 
 def main():
     if not ARGV or ARGV[0] in ("-h", "--help"):
-        say("usage: ./scripts/mutate.sh <id> <plan-file> [--tree DIR] [--in-place] [--no-lock]")
+        say("usage: ./scripts/mutate.sh <id> <plan-file> [--tree DIR] [--in-place] [--no-lock] [--check]")
         say("       ./scripts/mutate.sh selftest")
         return 2
     if ARGV[0] == "selftest":
@@ -1098,7 +1185,8 @@ def main():
 def run_plan():
     ident, plan_path = ARGV[0], ARGV[1]
     options = {"tree": None, "in_place": False, "lock": True, "build": True,
-               "scheme": "Cadence", "destination": "platform=macOS", "keep_tree": False}
+               "scheme": "Cadence", "destination": "platform=macOS", "keep_tree": False,
+               "check": False}
     rest = ARGV[2:]
     while rest:
         flag = rest.pop(0)
@@ -1116,6 +1204,8 @@ def run_plan():
             options["destination"] = rest.pop(0)
         elif flag == "--keep-tree":
             options["keep_tree"] = True
+        elif flag == "--check":
+            options["check"] = True
         else:
             say("unknown option %r" % flag)
             return 2
@@ -1221,6 +1311,30 @@ def run_plan():
                 backup = os.path.join(backup_dir, name.replace("/", "__"))
                 shutil.copyfile(path, backup)
                 runner.backups[path] = backup
+
+    # T-3198: everything that can be refused without a build is refused here, before the lease
+    # and the baseline. Nothing has been edited yet, so the pid marker goes with a refusal.
+    suite_index = load_suite_index(tree)
+    texts = {os.path.relpath(path, tree): data.decode("utf-8", errors="replace")
+             for path, data in runner.baselines.items()}
+    problems = preflight(mutations, texts, suite_index)
+    say("-- preflight: %d mutation(s), %s --" % (
+        len(mutations), "%d suite(s) indexed" % len(suite_index) if suite_index is not None
+        else "NO suite index, so the suite and tests: checks are skipped"))
+    if problems or options["check"]:
+        for owner, reason, detail in problems:
+            say("   %s  %s: %s" % (owner, reason, detail))
+        try:
+            os.remove(os.path.join(runner.scratch, "runner.pid"))
+        except OSError:
+            pass
+        if problems:
+            say("!! REFUSING (preflight): %d problem(s) above, found before any lease or baseline."
+                % len(problems))
+            return 2
+        say("--check: the plan passes every check that needs no build; nothing was run.")
+        return 0
+    say("   ok")
 
     for sig in CLEANUP_SIGNALS:
         signal.signal(sig, runner.on_signal)
@@ -1748,6 +1862,58 @@ def selftest():
                                      "someOtherFunction": "a completely different label"})
         check("two functions with two DIFFERENT labels do not collide",
               no_collision.verdict == SURVIVED, no_collision.reason)
+
+        say("")
+        say(" T-3198 -- the preflight refuses before any lease or baseline")
+        PF_INDEX = {"SuiteA": {"theFirstOne", "theSecondOne"}, "SuiteB": {"theThirdOne"}}
+        PF_TEXTS = {"Cadence/A.swift": "    let x = 1\n    let x = 1\nlet x = 1\n"}
+
+        def pf(plan, index=PF_INDEX):
+            return [(owner, reason) for owner, reason, _ in preflight(parse_plan(plan), PF_TEXTS, index)]
+
+        def pf_plan(suite, tests="", old="let x = 1", count=None):
+            return ("mutation: P\nfile: Cadence/A.swift\nsuite: %s\n%s%s--- old\n%s\n--- new\n"
+                    "let x = 2\n--- end\n" % (suite, "tests: %s\n" % tests if tests else "",
+                                               "count: %d\n" % count if count else "", old))
+
+        check("a clean plan passes the preflight", pf(pf_plan("SuiteA", "theFirstOne", count=3)) == [],
+              pf(pf_plan("SuiteA", "theFirstOne", count=3)))
+        # The ticket's own case (1): the needle written with leading whitespace matches 2 of the 3
+        # sites, and the plan says 3. Refused now, not after the baseline queue.
+        check("a needle matching fewer sites than declared is NEEDLE-AMBIGUOUS up front",
+              pf(pf_plan("SuiteA", old="    let x = 1", count=3)) == [("P", "NEEDLE-AMBIGUOUS")],
+              pf(pf_plan("SuiteA", old="    let x = 1", count=3)))
+        check("a needle matching nothing is NEEDLE-ABSENT up front",
+              pf(pf_plan("SuiteA", old="let y = 1")) == [("P", "NEEDLE-ABSENT")],
+              pf(pf_plan("SuiteA", old="let y = 1")))
+        # Case (2): the double prefix that died in shutil.copyfile during the baseline.
+        check("a CadenceTests/-prefixed suite is SUITE-PREFIXED",
+              pf(pf_plan("CadenceTests/SuiteA", count=3)) == [("P", "SUITE-PREFIXED")],
+              pf(pf_plan("CadenceTests/SuiteA", count=3)))
+        check("a suite nobody declares is UNKNOWN-SUITE",
+              pf(pf_plan("SuiteZ", count=3)) == [("P", "UNKNOWN-SUITE")], pf(pf_plan("SuiteZ", count=3)))
+        # T-3341's real shape: a test named against the wrong suite of a multi-suite file. The
+        # refusal names the suite that DOES declare it, which is the line that was missing.
+        wrong_home = preflight(parse_plan(pf_plan("SuiteA", "theThirdOne", count=3)), PF_TEXTS, PF_INDEX)
+        check("a test its suite does not declare is TEST-NOT-IN-SUITE",
+              [(o, r) for o, r, _ in wrong_home] == [("P", "TEST-NOT-IN-SUITE")], wrong_home)
+        check("and the refusal names the suite that does declare it",
+              bool(wrong_home) and "declared in SuiteB" in wrong_home[0][2], wrong_home)
+        check("a test with a trailing () is refused, not guessed at",
+              pf(pf_plan("SuiteA", "theFirstOne()", count=3)) == [("P", "TEST-NOT-IN-SUITE")],
+              pf(pf_plan("SuiteA", "theFirstOne()", count=3)))
+        check("with no suite index, the suite and tests: checks are skipped, not failed",
+              pf(pf_plan("SuiteZ", "nobody", count=3), index=None) == [],
+              pf(pf_plan("SuiteZ", "nobody", count=3), index=None))
+        check("with no suite index, the needle check still runs",
+              pf(pf_plan("SuiteZ", old="let y = 1"), index=None) == [("P", "NEEDLE-ABSENT")],
+              pf(pf_plan("SuiteZ", old="let y = 1"), index=None))
+        # Two hunks on one file are simulated in order, as apply_mutation applies them: the second
+        # hunk's needle exists only after the first has been applied.
+        chained = ("mutation: C\nfile: Cadence/A.swift\nsuite: SuiteA\ncount: 3\n--- old\nlet x = 1\n"
+                   "--- new\nlet x = 2\n--- end\ncount: 3\n--- old\nlet x = 2\n--- new\nlet x = 3\n--- end\n")
+        check("hunks on one file are checked in order, against the text the earlier ones leave",
+              pf(chained) == [], pf(chained))
 
         say("")
         say(" a run scoped to somebody else's suite is not evidence about yours")

@@ -814,6 +814,11 @@ extension CadenceSourceScan {
     /// Source with string literals **and** comments blanked to spaces of equal length, newlines
     /// kept — the form every structural scan over Swift text should be reading.
     ///
+    /// **So a needle that is itself the content of a literal cannot be found here** — an `icon:`
+    /// SF Symbol name, a copy string, a key: the scan reads blanks and fails, or a negative
+    /// assertion passes vacuously. Search `strippingComments(_:)` for those; it keeps literals.
+    /// That trap bit twice before it was written here ([[T-3198]]).
+    ///
     /// Blanking literals is not decoration. Any test that scans for a declaration shape has to
     /// spell that shape in a literal — `"@Test func "`, `"func select("` — and a scan that does not
     /// mask literals counts its own fixtures as code. `CadenceTestTargetHygieneTests` scans the

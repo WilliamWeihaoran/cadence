@@ -61,6 +61,10 @@ struct CadenceGuardScriptSelftestTests {
         "INCONCLUSIVE",
         "STRANDED",
         "BASELINE-NOT-GREEN",
+        // T-3198: the preflight's own refusals, asked before any lease or baseline.
+        "SUITE-PREFIXED",
+        "UNKNOWN-SUITE",
+        "TEST-NOT-IN-SUITE",
     ]
 
     /// Every refusal `scripts/agent-commit.sh` makes. `SHARED-INDEX-DIRTY` is the post-commit repair
