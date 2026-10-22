@@ -8,16 +8,15 @@ import Testing
 @MainActor
 struct CadenceTodayTwoPaneFloorTests {
     /// A pane is the window less the shell sidebar when it is out, **0 when the user folds it**,
-    /// which hands the detail the whole window. The 188pt spelled below is the iOS sidebar's width
-    /// when this was written; the shell's width is now `CadenceRootShellLayout.expandedWidth`, 264,
-    /// in `Cadence/Shared/`, so the sidebar-out figures that follow are the 188 ones ([[T-4466]]).
-    /// Every verdict below holds at 264 as well: 570 and 946 land on the same sides of the floor.
+    /// which hands the detail the whole window. The sidebar is read from
+    /// `CadenceRootShellLayout.expandedWidth` (264, in `Cadence/Shared/`) rather than restated: this
+    /// file used to spell 188, the iOS sidebar's width when it was written, and went on asserting
+    /// 188-derived panes for months after the shell widened ([[T-4466]]).
     ///
     /// The target iPad is an 11" Pro: 834pt of window in portrait, 1210 in landscape. So the four
-    /// panes Today is actually handed on it are **646 / 1022** with the sidebar out and
-    /// **834 / 1210** with it folded. Every width below is one of those four, or a boundary of the
-    /// function itself.
-    private static let sidebarWidth: CGFloat = 188
+    /// panes Today is handed on it are **570 / 946** with the sidebar out and **834 / 1210** with it
+    /// folded. Every width below is one of those four, or a boundary of the function itself.
+    private static let sidebarWidth: CGFloat = CadenceRootShellLayout.expandedWidth
     private static func pane(window: CGFloat) -> CGFloat { window - sidebarWidth }
 
     private func layout(paneWidth: CGFloat) -> CadenceTodayLayout {
@@ -33,8 +32,8 @@ struct CadenceTodayTwoPaneFloorTests {
 
     @Test
     func anElevenInchIPadInPortraitGetsOneColumnRatherThanTwoStarvedOnes() {
-        // 834pt window − 188pt sidebar. Two panes here meant a 325pt task column, too narrow for
-        // its own header: the date wrapped to "SUND AY, …".
+        // 834pt window less the sidebar, 570pt. Two panes at the old 646 meant a 325pt task
+        // column, too narrow for its own header: the date wrapped to "SUND AY, …".
         #expect(layout(paneWidth: Self.pane(window: 834)) == .compact)
     }
 
@@ -85,8 +84,8 @@ struct CadenceTodayLayoutModeRemovalTests {
     }
 
     @Test func aWidthWideEnoughForThreeColumnsStillLandsOnTwoPanes() {
-        // 1022pt was `threePaneMinimumWidth`, and an 11" Pro in landscape with the sidebar out
-        // measures 1022pt of pane exactly — so the deleted layout was reachable on the target
+        // 1022pt was `threePaneMinimumWidth`, and an 11" Pro in landscape with the then-188pt
+        // sidebar out measured 1022pt of pane exactly — so the deleted layout was reachable on the target
         // device, not theoretical. 1210 is the same iPad with the sidebar folded: the widest pane
         // anything produces, and it resolves to the same two panes.
         #expect(CadenceTodayLayoutSupport.layout(isRegularWidth: true, paneWidth: 1_022) == .twoPane)
@@ -114,9 +113,9 @@ struct CadenceTodayLayoutModeRemovalTests {
 /// `inspectorPaneFloor` was **not** raised to fit two notes columns instead.
 @MainActor
 struct CadenceTodayInspectorNotesWidthTests {
-    /// The shell sidebar, spelled out for the reason `CadenceTodayTwoPaneFloorTests` gives: the
-    /// metrics live under `Cadence/iOS/`, inside `#if os(iOS)`.
-    private static let sidebarWidth: CGFloat = 188
+    /// The shell sidebar, read from `CadenceRootShellLayout` for the reason
+    /// `CadenceTodayTwoPaneFloorTests` gives ([[T-4466]]).
+    private static let sidebarWidth: CGFloat = CadenceRootShellLayout.expandedWidth
 
     /// What the inspector is actually handed at a given pane width — the pane, less the task column,
     /// less the divider. The same subtraction `iOSTodayView.twoPaneTodayLayout` performs by putting
@@ -128,7 +127,8 @@ struct CadenceTodayInspectorNotesWidthTests {
     }
 
     @Test func theReportedFortyPointEditorIsExactlyWhatTheArithmeticProduces() {
-        // iPad Air 13" (M4) in portrait with the shell sidebar out: 1024 − 188 = 836pt of pane.
+        // iPad Air 13" (M4) in portrait with the shell sidebar out, as reported when the sidebar
+        // was 188pt: 1024 − 188 = 836pt of pane. A literal, because it is the report's width.
         #expect(inspectorWidth(paneWidth: 836) == CadenceTodayLayoutSupport.inspectorPaneMinWidth)
         #expect(
             inspectorWidth(paneWidth: 836)
