@@ -74,6 +74,27 @@
 # not avoided. If it ever needs trimming again, `mcp-server` is the one job to keep no matter what:
 # it is the one gate that catches something the local loop structurally cannot.
 
+# RUNNER IMAGE: PINNED, AND THE PIN IS LOAD-BEARING (T-3273, 2026-10-22).
+#
+# Every macOS job below says `runs-on: macos-26`, not `macos-latest`. `.github/scripts/assert-
+# toolchain.sh` hard-fails on any Xcode major but 26 (this project's deployment targets are macOS
+# 26.1 / iOS 26.2), so the day GitHub moves the `macos-latest` label to a macOS 27 image, the three
+# jobs that run that script die at step 2 and CI reports red for a reason that is not in this
+# repository. Measured off run 39431586913 (green, 2026-10-21): `macos-latest` then resolved to
+# image `macos-26-arm64` / `20261013.0424.1`, which ships Xcode_26.0.1 .. Xcode_26.6. `macos-26` is
+# the label that names that image explicitly.
+#
+# The alternative -- widening assert-toolchain.sh to accept a range of Xcode majors -- was
+# REJECTED on purpose: it keeps CI green by letting it test on a toolchain nobody validated, which
+# is the exact failure that check exists to prevent. T-3215 is 27 consecutive red pushes from a
+# local/CI toolchain gap, and that is the bill.
+#
+# THE FAILURE MODE OF PINNING IS DRIFTING ONTO AN UNSUPPORTED IMAGE LATER. GitHub deprecates and
+# then removes runner images; a pin that nobody bumps eventually fails to schedule, or warns for
+# months before it does. Bumping this label is a DELIBERATE ACT with a commit behind it: raise the
+# new image's Xcode against REQUIRED_MAJOR in .github/scripts/assert-toolchain.sh FIRST, and move
+# both together. Do not "fix" a scheduling failure here by reaching back for `macos-latest`.
+
 name: CI
 
 on:
@@ -167,7 +188,7 @@ jobs:
   # ---------------------------------------------------------------------------
   mcp-server:
     name: Build CadenceMCPServer (macOS)
-    runs-on: macos-latest
+    runs-on: macos-26  # T-3273: pinned, not `macos-latest`; see the RUNNER IMAGE note above.
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
@@ -275,7 +296,7 @@ jobs:
   # ---------------------------------------------------------------------------
   macos-tests:
     name: CadenceTests (macOS)
-    runs-on: macos-latest
+    runs-on: macos-26  # T-3273: pinned, not `macos-latest`; see the RUNNER IMAGE note above.
     timeout-minutes: 75
     # T-1956: `xcb.sh` follows a green macOS build/test with an iOS Simulator build of the same tree.
     # Here that would compile iOS a second time beside the `ios-build` job, so this job opts out --
@@ -436,7 +457,7 @@ jobs:
   # ---------------------------------------------------------------------------
   ios-build:
     name: Build iOS surface
-    runs-on: macos-latest
+    runs-on: macos-26  # T-3273: pinned, not `macos-latest`; see the RUNNER IMAGE note above.
     timeout-minutes: 40
     if: >-
       github.event_name == 'workflow_dispatch' && inputs.run_ios
@@ -532,7 +553,7 @@ jobs:
   # ---------------------------------------------------------------------------
   guard-script-selftests:
     name: Unsandboxed guard-script selftests
-    runs-on: macos-latest
+    runs-on: macos-26  # T-3273: pinned, not `macos-latest`; see the RUNNER IMAGE note above.
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
@@ -580,7 +601,7 @@ jobs:
   # ---------------------------------------------------------------------------
   push-attribution:
     name: Every code commit in this push has a run of its own (notice)
-    runs-on: macos-latest
+    runs-on: macos-26  # T-3273: pinned, not `macos-latest`; see the RUNNER IMAGE note above.
     timeout-minutes: 10
     if: github.event_name == 'push'
     steps:

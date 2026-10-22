@@ -37,9 +37,58 @@ enum CadenceSourceScan {
             .deletingLastPathComponent()
     }
 
+    /// One file's text, read from disk **once per process** ([[T-3242]]).
+    ///
+    /// **Why the read is cached and the derivation cache was not enough.** [[T-3261]] memoised the
+    /// expensive pure derivations (`strippingComments`, `codeOnly`, the two suite-local parsers)
+    /// and measured the reads while it was there: **21,462** `sourceFile` calls costing 1.2 s in
+    /// all, which is why it left them alone. 1.2 s is the number on a warm page cache with the
+    /// machine idle. [[T-3242]] is the same reads on a machine that is not: a sweep test failed
+    /// after **267.688 s** with `NSPOSIXErrorDomain Code=60 "Operation timed out"` on one
+    /// `Cadence/Shared/` file, while six xcb legs contended for the disk and `bird`/`fileproviderd`
+    /// worked an iCloud-backed tree. A plain `python3` walk reading the same 631 files took
+    /// **2m14.9s at 0% CPU** — pure I/O wait — while a single `wc -c` on the file that timed out
+    /// took 0.002 s. It is the *sustained* re-reading that stalls, and the same ~1,100 files were
+    /// being re-read once per test.
+    ///
+    /// So the cost this removes is not 1.2 s of CPU. It is 20,000 opportunities to be the read that
+    /// blocks. The owner's decision (2026-10-22) was to make the sweeps read less rather than cap
+    /// how many of them run.
+    ///
+    /// **Path-keyed, which `CadenceSourceDerivationCache` deliberately is not.** That cache keys on
+    /// the source TEXT precisely so a file edited mid-run arrives as different text and misses.
+    /// This one hands back the first reading of a path for the life of the process, so it is only
+    /// correct while nothing edits this checkout during a run — which is the standing rule already
+    /// (`xcb.sh` reports `tree changed during this run` and treats the result as untrustworthy),
+    /// and no test in this target writes under `repositoryRoot()`. A test that needs to read a file
+    /// it just wrote builds its tree under `temporaryDirectory` and reads it with `String(contentsOf:)`,
+    /// not through here.
     static func sourceFile(_ relativePath: String) throws -> String {
-        try String(contentsOf: repositoryRoot().appendingPathComponent(relativePath), encoding: .utf8)
+        try cachedSourceText(for: relativePath) { path in
+            try String(contentsOf: repositoryRoot().appendingPathComponent(path), encoding: .utf8)
+        }
     }
+
+    /// The memo itself, with the read injected.
+    ///
+    /// `read` is a parameter so that *"a path read once is not read again"* can be asserted
+    /// directly, by a caller that counts its own reads on a key no real file uses. Observing it
+    /// through the census counters instead would mean asserting a delta while every other suite in
+    /// this target reads files on other threads.
+    static func cachedSourceText(
+        for path: String,
+        read: (String) throws -> String
+    ) rethrows -> String {
+        armIOCensusReporting()
+        ioCensus.countSourceFileCall()
+        if let hit = sourceFileCache.text(for: path) { return hit }
+        ioCensus.countSourceFileRead()
+        let text = try read(path)
+        sourceFileCache.store(text, for: path)
+        return text
+    }
+
+    private static let sourceFileCache = CadenceSourcePathCache<String>()
 
     /// The two comment shapes, compiled once. Order matters and is the old loop's order: line
     /// comments first, so a `/*` written inside a `//` line is already blank when the block pass
@@ -344,7 +393,32 @@ enum CadenceSourceScan {
     /// Enumerated by `enumerator(atPath:)` for the reason `swiftFiles` gives above, and the
     /// directory test is `enumerator.fileAttributes`, which the enumerator already holds, rather
     /// than a second `fileExists` stat per entry.
+    /// Walked **once per subtree per process** ([[T-3242]]) — see `sourceFile` for the whole
+    /// argument. A directory enumeration is the other half of what a sweep does to the disk, and
+    /// the scoped subtrees are small and asked for over and over: `swiftFiles(under: "Cadence")` is
+    /// the denominator of dozens of censuses.
     static func files(under relativeDirectory: String) throws -> [String] {
+        try cachedSubtreeWalk(for: relativeDirectory) { try walkFiles(under: $0) }
+    }
+
+    /// `files(under:)`'s memo, with the walk injected for the same reason `cachedSourceText` takes
+    /// its read.
+    static func cachedSubtreeWalk(
+        for relativeDirectory: String,
+        walk: (String) throws -> [String]
+    ) rethrows -> [String] {
+        armIOCensusReporting()
+        ioCensus.countWalkCall()
+        if let hit = subtreeWalkCache.text(for: relativeDirectory) { return hit }
+        ioCensus.countWalk()
+        let walked = try walk(relativeDirectory)
+        subtreeWalkCache.store(walked, for: relativeDirectory)
+        return walked
+    }
+
+    private static let subtreeWalkCache = CadenceSourcePathCache<[String]>()
+
+    private static func walkFiles(under relativeDirectory: String) throws -> [String] {
         let directory = repositoryRoot().appendingPathComponent(relativeDirectory)
         guard let enumerator = FileManager.default.enumerator(atPath: directory.path) else { return [] }
         var paths: [String] = []
@@ -415,6 +489,33 @@ enum CadenceSourceScan {
         under root: URL = repositoryRoot(),
         pruningDirectoriesNamed extraNames: Set<String> = [],
         pruningAtRoot rootOnly: Set<String> = ["scratchpad"]
+    ) -> [String] {
+        // [[T-3242]]: walked once per (root, prune list) per process — but only for THIS checkout.
+        // The other callers hand it a fixture tree they built under `temporaryDirectory` moments
+        // earlier (`CadenceTestTargetHygieneTests`, `CadenceSourceScanReaderTests`), and several of
+        // them walk the same root twice with a file added in between, which is the whole of what
+        // they assert. Caching those would answer the second walk from the first and make the
+        // reader tests pass without reading anything. The repository root is the one root nothing
+        // in this target writes to.
+        guard root.standardizedFileURL == repositoryRoot().standardizedFileURL else {
+            return walkRepositoryPaths(under: root, pruningDirectoriesNamed: extraNames, pruningAtRoot: rootOnly)
+        }
+        let key = "\(root.standardizedFileURL.path)|\(extraNames.sorted().joined(separator: ","))|\(rootOnly.sorted().joined(separator: ","))"
+        armIOCensusReporting()
+        ioCensus.countWalkCall()
+        if let hit = treeWalkCache.text(for: key) { return hit }
+        ioCensus.countWalk()
+        let walked = walkRepositoryPaths(under: root, pruningDirectoriesNamed: extraNames, pruningAtRoot: rootOnly)
+        treeWalkCache.store(walked, for: key)
+        return walked
+    }
+
+    private static let treeWalkCache = CadenceSourcePathCache<[String]>()
+
+    private static func walkRepositoryPaths(
+        under root: URL,
+        pruningDirectoriesNamed extraNames: Set<String>,
+        pruningAtRoot rootOnly: Set<String>
     ) -> [String] {
         guard let walker = FileManager.default.enumerator(atPath: root.path) else { return [] }
         var paths: [String] = []
@@ -1085,6 +1186,86 @@ final class CadenceSourceDerivationCache<Value>: @unchecked Sendable {
         lock.unlock()
         return derived
     }
+}
+
+/// A process-lifetime memo keyed by a **path**, for the two things a sweep does to the disk:
+/// reading a file and walking a directory ([[T-3242]]).
+///
+/// Deliberately a separate type from `CadenceSourceDerivationCache`, whose doc comment argues at
+/// length that keying on the source TEXT is its behavioural guarantee. Both statements are true of
+/// their own cache and they are not the same statement: a derivation keyed by text re-derives when
+/// a file changes, while a read keyed by path cannot notice a change at all. What makes the second
+/// one safe here is a property of the target rather than of the cache — nothing in `CadenceTests`
+/// writes under `repositoryRoot()`, and a run during which the checkout changes is already reported
+/// as untrustworthy by `xcb.sh` rather than merely tolerated.
+final class CadenceSourcePathCache<Value>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var entries: [String: Value] = [:]
+
+    func text(for path: String) -> Value? {
+        lock.lock()
+        defer { lock.unlock() }
+        return entries[path]
+    }
+
+    func store(_ value: Value, for path: String) {
+        lock.lock()
+        entries[path] = value
+        lock.unlock()
+    }
+}
+
+/// How much of a run's source I/O the caches above absorbed.
+///
+/// **The before/after is one run, not two.** `calls` is what the old code would have done to the
+/// disk — every `sourceFile` call was a read and every `files(under:)` call a walk — and `reads` is
+/// what this run actually did. Comparing them needs no second build, no stopwatch and no quiet
+/// machine, which matters because [[T-3242]]'s failure only appears on a loud one and a duration
+/// measured here would be a figure about this Mac's afternoon rather than about the change.
+///
+/// **Printed at process exit by every run, not gated on an environment variable.** The first
+/// version of this was gated on `CADENCE_SCAN_IO_CENSUS=1` and printed nothing at all, because
+/// `xcodebuild` does not hand the test host an arbitrary variable from the invoking shell — so the
+/// one measurement [[T-3242]] asked for was the one thing the instrument could not deliver. One
+/// line per test-host run is negligible, and a run that states its own I/O ratio is how this would
+/// have been visible before it cost 267 s.
+final class CadenceSourceScanIOCensus: @unchecked Sendable {
+    private let lock = NSLock()
+    private var sourceFileCalls = 0
+    private var sourceFileReads = 0
+    private var walkCalls = 0
+    private var walks = 0
+
+    func countSourceFileCall() { lock.lock(); sourceFileCalls += 1; lock.unlock() }
+    func countSourceFileRead() { lock.lock(); sourceFileReads += 1; lock.unlock() }
+    func countWalkCall() { lock.lock(); walkCalls += 1; lock.unlock() }
+    func countWalk() { lock.lock(); walks += 1; lock.unlock() }
+
+    var counts: (sourceFileCalls: Int, sourceFileReads: Int, walkCalls: Int, walks: Int) {
+        lock.lock()
+        defer { lock.unlock() }
+        return (sourceFileCalls, sourceFileReads, walkCalls, walks)
+    }
+
+    var summary: String {
+        let c = counts
+        return """
+            SCAN-IO-CENSUS reads=\(c.sourceFileReads)/\(c.sourceFileCalls) \
+            walks=\(c.walks)/\(c.walkCalls)
+            """
+    }
+}
+
+extension CadenceSourceScan {
+    static let ioCensus = CadenceSourceScanIOCensus()
+
+    /// One `atexit` for the whole process, armed on the first scan-helper call. `atexit` rather
+    /// than a test, because no test runs last and a point-in-time reading is not the run's figure.
+    private static let ioCensusReporting: Void = {
+        atexit { print(CadenceSourceScan.ioCensus.summary) }
+    }()
+
+    static func armIOCensusReporting() { _ = ioCensusReporting }
 }
 
 /// One declaration's body, or a throw: `CadenceSourceScan.declarationBody` plus the two guards a

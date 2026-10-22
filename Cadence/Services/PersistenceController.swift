@@ -12,7 +12,49 @@ struct PersistenceController {
     /// Structured rather than a bare `String` since T-153: two of the things that can be recorded
     /// here leave the store with `cloudKitDatabase: .none`, and the rest do not touch sync at all.
     /// Every surface that showed this used to have to guess which from the prose.
-    private(set) static var startupIssue: CadenceStartupIssue?
+    private(set) static var recordedStartupIssue: CadenceStartupIssue?
+
+    /// Why `CADENCE_RESET_STORE` did not run, when it was set and refused ([[T-3021]]).
+    ///
+    /// **A second slot, and the reason it is not the first one.** The refusal is decided in
+    /// `resetStoreDirectoryIfRequested()`, which runs before any container is opened, so writing it
+    /// into `recordedStartupIssue` would put it where every later writer overwrites it
+    /// unconditionally — and the launch that overwrites it is exactly the launch this ticket is
+    /// about. An unredirected launch that sets the variable is, in practice, Xcode's Run button,
+    /// and a development-signed debug build always records `.developmentBuild` from
+    /// `makeContainer()` a few statements later. One slot means the refusal would have been
+    /// invisible in the only case that motivated showing it.
+    private(set) static var refusedStoreResetMessage: String?
+
+    /// What the banner and the sync pane are told about this launch.
+    ///
+    /// **Both halves, never one of them.** When something else claimed the slot, that issue keeps
+    /// its `kind` — every other reader keys off `disablesCloudSync` and
+    /// `theOpenStoreIsNotTheUsersData`, and demoting a store-level failure to a refused reset would
+    /// trade a real silence for a worse one — and the refusal rides in the same paragraph, so the
+    /// person who set the variable is told on the launch they set it on.
+    static var startupIssue: CadenceStartupIssue? {
+        resolvedStartupIssue(recorded: recordedStartupIssue, refusedStoreReset: refusedStoreResetMessage)
+    }
+
+    /// The decision above, as a function of its two inputs.
+    ///
+    /// Split out because neither slot can be written from a test — both are `private(set)` and
+    /// both are filled by `init()` off process-wide environment variables, exactly as
+    /// `exportArchiveForDataSafety` takes its `startupIssue` rather than reading it.
+    static func resolvedStartupIssue(
+        recorded: CadenceStartupIssue?,
+        refusedStoreReset: String?
+    ) -> CadenceStartupIssue? {
+        guard let refusedStoreReset else { return recorded }
+        guard let recorded else {
+            return CadenceStartupIssue(kind: .storeResetRefused, message: refusedStoreReset)
+        }
+        return CadenceStartupIssue(
+            kind: recorded.kind,
+            message: "\(recorded.message) \(refusedStoreReset)"
+        )
+    }
 
     /// Set only when `container` is `nil` — the CloudKit store, the on-disk recovery store, and a
     /// fully in-memory container all failed to open. See `makeRecoveryContainer`'s final catch.
@@ -159,7 +201,7 @@ struct PersistenceController {
             let c = try PersistenceController.makeContainer()
             recorder.finished(.containerOpen, .completed)
             container = c
-            // `Self.startupIssue == nil` is [[T-3013]]: there is exactly one slot, and
+            // `Self.recordedStartupIssue == nil` is [[T-3013]]: there is exactly one slot, and
             // `makeContainer()` may already have filled it with the reason this launch is not
             // syncing at all. A restore that did not run is the smaller news — the store it would
             // have replaced is intact and open — and overwriting the sync message with it would
@@ -170,12 +212,12 @@ struct PersistenceController {
             // `preflightStartupIssue`, which argues it. The order of this condition is unchanged in
             // effect and deliberate in form: whatever `makeContainer()` recorded about sync wins
             // first, and only then does the preflight get to speak.
-            if Self.startupIssue == nil,
+            if Self.recordedStartupIssue == nil,
                let preflightIssue = Self.preflightStartupIssue(
                    failedRestore: failedRestore,
                    failedStartupBackup: failedStartupBackup
                ) {
-                Self.startupIssue = preflightIssue
+                Self.recordedStartupIssue = preflightIssue
             }
             let startupContext = ModelContext(c)
             Self.performStartupMaintenance(in: startupContext, recorder: recorder)
@@ -521,7 +563,7 @@ struct PersistenceController {
             return .refused(instrumentReason(for: failure))
         }
         if let saveFailure {
-            startupIssue = CadenceStartupIssue(
+            recordedStartupIssue = CadenceStartupIssue(
                 kind: .maintenanceSaveFailed,
                 message: "Cadence could not save startup maintenance changes: \(storeFailureReason(saveFailure))"
             )
@@ -556,7 +598,7 @@ struct PersistenceController {
             // Say so. A store that silently stopped syncing is the bug [[T-2053]] spent a week
             // tracing; a store that stopped syncing and *told you why* is a development build
             // behaving correctly, and the user can only tell those apart if this line runs.
-            startupIssue = CadenceStartupIssue(
+            recordedStartupIssue = CadenceStartupIssue(
                 kind: .developmentBuild,
                 message: CadenceSigningEnvironment.localStoreOnlyMessage
             )
@@ -579,7 +621,7 @@ struct PersistenceController {
     }
 
     private static func makeRecoveryContainer(issue: String) -> ModelContainer? {
-        startupIssue = CadenceStartupIssue(kind: .recoveryStore, message: issue)
+        recordedStartupIssue = CadenceStartupIssue(kind: .recoveryStore, message: issue)
         do {
             let recoveryDirectoryURL = try recoveryStoreDirectoryURL()
             try FileManager.default.createDirectory(at: recoveryDirectoryURL, withIntermediateDirectories: true)
@@ -591,7 +633,7 @@ struct PersistenceController {
             )
             return try ModelContainer(for: schema, configurations: [recoveryConfig])
         } catch {
-            startupIssue = CadenceStartupIssue(
+            recordedStartupIssue = CadenceStartupIssue(
                 kind: .inMemoryStore,
                 message: "\(issue) Recovery store creation also failed, so Cadence opened a temporary in-memory store: \(storeFailureReason(error))"
             )
@@ -1043,6 +1085,15 @@ struct PersistenceController {
             (T-3014).
             """
         )
+        // [[T-3021]]: and on screen as well, because the log above is the whole record today and
+        // nobody reads it in the Xcode-debug-scheme case [[T-3014]] was written for. Non-blocking
+        // by construction — it is a `startupIssue`, the launch continues, and the store opens
+        // exactly as it would have.
+        refusedStoreResetMessage = """
+            CADENCE_RESET_STORE was set, and Cadence refused to act on it: this launch is not \
+            redirected to a throwaway store directory, so the reset would have deleted your own \
+            store, its Recovery store and every local backup.
+            """
     }
 
     /// Lock this launch's store directory and remove the ones no live process owns.

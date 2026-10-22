@@ -61,6 +61,21 @@ enum CadenceStartupIssueKind: String, Equatable, CaseIterable {
     /// holds the reasoning for the refusal itself.
     case developmentBuild
 
+    /// A launch asked for `CADENCE_RESET_STORE` and the reset was **refused** ([[T-3021]]).
+    ///
+    /// Nothing failed and nothing was deleted — which is the whole point, and why it is its own
+    /// case rather than a flavour of any failure above. [[T-3014]] made the reset refuse itself on
+    /// an unredirected launch, because the directory it would remove is the signed-in person's own
+    /// store, its Recovery store and every local backup. The refusal was logged and nothing else:
+    /// in the Xcode-debug-scheme case the guard was written for, nobody reads that log, so the
+    /// person who ticked the variable expecting a clean slate saw their full store with no
+    /// explanation and no way to tell a refusal from a reset that silently did nothing.
+    ///
+    /// The cost was weighed and accepted: this puts a user-visible surface on a developer-only
+    /// variable. It can only appear on a launch that sets `CADENCE_RESET_STORE`, which no shipped
+    /// launch does.
+    case storeResetRefused
+
     /// Whether the store Cadence actually opened has no CloudKit database behind it.
     ///
     /// This is the whole point of the type: a maintenance save failure is a real problem worth a
@@ -68,7 +83,9 @@ enum CadenceStartupIssueKind: String, Equatable, CaseIterable {
     var disablesCloudSync: Bool {
         switch self {
         case .recoveryStore, .inMemoryStore, .developmentBuild: return true
-        case .maintenanceSaveFailed, .restoreFailed, .restoreIncomplete, .backupFailed: return false
+        case .maintenanceSaveFailed, .restoreFailed, .restoreIncomplete, .backupFailed,
+             .storeResetRefused:
+            return false
         }
     }
 
@@ -92,7 +109,7 @@ enum CadenceStartupIssueKind: String, Equatable, CaseIterable {
         switch self {
         case .recoveryStore, .inMemoryStore: return true
         case .maintenanceSaveFailed, .restoreFailed, .restoreIncomplete, .backupFailed,
-             .developmentBuild:
+             .developmentBuild, .storeResetRefused:
             return false
         }
     }
@@ -123,6 +140,7 @@ extension CadenceStartupIssue {
         case .restoreIncomplete: return "Restore Left Files Aside"
         case .backupFailed: return "Backup Was Not Saved"
         case .developmentBuild: return "Development Build — iCloud Sync Is Off"
+        case .storeResetRefused: return "Store Was Not Reset"
         }
     }
 
@@ -149,6 +167,11 @@ extension CadenceStartupIssue {
             // because both causes this was measured for — a near-full disk, and one old backup
             // folder that will not delete — are things the user can look at and clear.
             return "\(message) Your data is intact, open and still syncing — Cadence saves its backups beside the store and never touches the store to do it. What you have lost is this launch's copy, so check free disk space and whether an older backup folder is locked, then take a backup from Settings → Data Safety. Earlier backups are untouched."
+        case .storeResetRefused:
+            // Says what was asked, what happened instead, and the one thing that would have made
+            // it work -- the variable's own precondition. Without the last sentence the banner
+            // reports a refusal and leaves the reader exactly as stuck as the silence did.
+            return "\(message) Nothing was deleted and nothing was changed: the store you are looking at is your own, intact, in its usual place. CADENCE_RESET_STORE only applies to a launch redirected to a throwaway store directory, so set CADENCE_UI_TEST_STORE_ID as well if you wanted a clean slate."
         case .developmentBuild:
             return "\(message) Your data is intact and exactly where it always is; nothing was deleted and no recovery store was opened. A development build signs into iCloud's Development environment, and letting it sync would mark your real records as already uploaded so they never reach your other devices. Changes made here stay on this device. Quit and use the installed Cadence to sync."
         }
@@ -163,6 +186,7 @@ extension CadenceStartupIssue {
         case .restoreIncomplete: return "externaldrive.trianglebadge.exclamationmark"
         case .backupFailed: return "externaldrive.badge.xmark"
         case .developmentBuild: return "hammer.fill"
+        case .storeResetRefused: return "trash.slash"
         }
     }
 

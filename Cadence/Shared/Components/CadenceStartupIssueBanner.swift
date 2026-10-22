@@ -52,6 +52,7 @@ struct CadenceStartupIssueBannerModel: Equatable {
         case .restoreIncomplete: return "Restore Left Files Aside"
         case .backupFailed: return "Backup Not Saved"
         case .developmentBuild: return "Development Build"
+        case .storeResetRefused: return "Store Not Reset"
         }
     }
 
