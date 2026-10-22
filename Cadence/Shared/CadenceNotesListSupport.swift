@@ -164,8 +164,12 @@ nonisolated struct CadenceNotesListMetrics: Equatable, Sendable {
     /// one-column fallback *is* the phone's form, so "at least as wide as the editor already runs at
     /// as a whole screen" is the other defensible reading — 375pt, the narrowest screen the app
     /// ships on (iPhone SE 3rd gen / 13 mini; a 26.2 deployment target drops everything narrower),
-    /// which would put the floor at 656. That is 10pt over an 11" iPad's portrait Notes pane
-    /// (834 − 188 = 646), where the editor would have had 365 — tight, not broken. A floor's job is
+    /// which would put the floor at 656. No full-screen target pane is under that: an 11" iPad in
+    /// portrait is a drawer shell with all 834pt of pane, and a 13" docks its sidebar, keeping 760.
+    /// So the choice binds only resized windows, and it would also have moved the shell's dock
+    /// threshold, `CadenceRootShellLayout.expandedMinWindowWidth`, which is 264 + this floor's sum.
+    /// (This used to cite an 834 − 188 = 646 portrait pane no current shell produces, [[T-4490]].)
+    /// A floor's job is
     /// to name the width below which two columns is *worse* than one, not the width above which it
     /// is ideal, so the lower anchor wins and the only hosts whose layout changes are the ones that
     /// were unreadable.

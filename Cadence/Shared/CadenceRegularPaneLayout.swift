@@ -96,10 +96,10 @@ import CoreGraphics
 /// Every split feature surface on iPad — Goals, Habits, Focus, Lists — declared its own geometry,
 /// and three of the four declared a `minWidth`/`idealWidth` with **no maximum**. An `HStack` given
 /// two flexible children splits the difference, so on a 13" iPad in portrait (844pt of pane after
-/// the 188pt sidebar) the Goals list column took 422pt to draw one-line rows while the detail beside
-/// it wrapped "Ship Cadence on iPad" onto two lines. The list column is a chooser; the detail is the
-/// thing being read. The proportion should reflect that at every width, and the maximum is what
-/// makes it.
+/// the then-188pt sidebar; 760 after today's docked 264, [[T-4490]]) the Goals list column took
+/// 422pt to draw one-line rows while the detail beside it wrapped "Ship Cadence on iPad" onto two
+/// lines. The list column is a chooser; the detail is the thing being read. The proportion should
+/// reflect that at every width, and the maximum is what makes it.
 ///
 /// The rule is the one `CadenceTodayLayoutSupport` settled on: a floor is a preference, and what is
 /// actually available is the guarantee. `listPaneWidth(forPaneWidth:)` therefore ends by clamping to
@@ -141,11 +141,11 @@ enum CadenceRegularSplitLayout {
     /// side the split exists to serve. That is the same sentence as "two starved panes are worse
     /// than one whole one", said in terms this file already has.
     ///
-    /// It lands where the ticket said it had to: the 11" iPad Pro in portrait with the shell
-    /// sidebar out is 646pt of pane and becomes one column, on the same device and orientation
-    /// where `CadenceTodayLayoutSupport` gives Today one column (761) and
-    /// `CadenceCalendarPaneLayout` drops the day inspector (681). With the sidebar folded it is
-    /// 834 and splits, at a 333.6pt chooser — the proportion, not the floor. `listPaneWidth` is
+    /// It was cut for an 11" iPad Pro in portrait with a then-188pt sidebar out: 646pt of pane, one
+    /// column. That shape no longer exists. 834 is under the shell's 865pt dock threshold, so the
+    /// sidebar is a drawer and the pane is all 834, which splits at a 333.6pt chooser — the
+    /// proportion, not the floor — as Today's two panes (761) do too. A 13" in portrait docks and
+    /// keeps 760, which also splits ([[T-4490]]). `listPaneWidth` is
     /// unchanged and still answers for every width; this only decides whether anything asks it.
     static var twoPaneMinimumWidth: CGFloat {
         listPaneMinWidth / listPaneFraction
@@ -457,11 +457,11 @@ nonisolated enum CadenceSettingsCardLayout: Equatable, Sendable {
 /// less the 248pt settings rail, its 1pt divider, `settingsDetailScroll`'s 28pt horizontal padding
 /// on each side, `iOSSettingsCard`'s 16pt inset on each side, then the chooser, the divider and two
 /// 16pt gaps — `paneWidth − 630`. Measured with an `NSHostingView` reproduction of that exact
-/// modifier chain, the editor came out at **16.0pt on an iPad Pro 11" in portrait with the shell
-/// sidebar out** (646pt of pane — the primary target device in its default configuration, no
-/// multitasking), 0.0 at 570, 146 at 776, 204 at 834, 392 at 1022 and 580 at 1210. macOS's chain is
-/// `paneWidth − 596` and its ordinary minimum pane — a 960pt window less the stored 264pt sidebar —
-/// leaves the editor 100pt.
+/// modifier chain, the editor came out at **16.0pt on an iPad Pro 11" in portrait with the
+/// then-188pt shell sidebar out** (646pt of pane — the primary target device in what was then its
+/// default configuration, no multitasking), 0.0 at 570, 146 at 776, 204 at 834, 392 at 1022 and
+/// 580 at 1210. macOS's chain is `paneWidth − 596` and its ordinary minimum pane — a 960pt window
+/// less the stored 264pt sidebar — leaves the editor 100pt.
 ///
 /// **The fallback is one column, not a dropped chooser**, and the two precedents in this file are
 /// what decide it. `CadenceCalendarPaneLayout` drops its inspector because the inspector *restates*
@@ -502,11 +502,11 @@ nonisolated enum CadenceSettingsTemplatesCardLayout {
     /// question, already answered at 320. Spelled as a reference so the three cannot drift.
     ///
     /// The corroboration is that the choice does not have to be exactly right to be right *here*.
-    /// No plausible floor keeps the target iPad's portrait pane in two columns — even a 100pt
-    /// editor would need 730pt of pane against the 646 it has — so the only band where the number
-    /// changes an outcome is 776…950 of pane, and 834 (the same iPad with the shell sidebar folded)
-    /// is the case that decides it: 204pt of markdown well beside a 260pt chooser is the "worse
-    /// than one column" this floor exists to name.
+    /// No plausible floor keeps a 646pt pane in two columns — even a 100pt editor would need 730 —
+    /// so the only band where the number changes an outcome is 776…950 of pane, and 834 is the
+    /// case that decides it. That is now the 11" iPad's portrait pane outright, sidebar out or
+    /// folded, since 834 is under the shell's dock threshold ([[T-4490]]): 204pt of markdown well
+    /// beside a 260pt chooser is the "worse than one column" this floor exists to name.
     static var minimumEditorWidth: CGFloat { CadenceNotesListMetrics.minimumEditorWidth }
 
     static func chooserWidth(isDesktop: Bool) -> CGFloat {

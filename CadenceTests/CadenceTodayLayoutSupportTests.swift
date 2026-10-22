@@ -7,17 +7,19 @@ import Testing
 /// returned `.twoPane` for every regular-width device, however little room there was.
 @MainActor
 struct CadenceTodayTwoPaneFloorTests {
-    /// A pane is the window less the shell sidebar when it is out, **0 when the user folds it**,
-    /// which hands the detail the whole window. The sidebar is read from
-    /// `CadenceRootShellLayout.expandedWidth` (264, in `Cadence/Shared/`) rather than restated: this
-    /// file used to spell 188, the iOS sidebar's width when it was written, and went on asserting
-    /// 188-derived panes for months after the shell widened ([[T-4466]]).
+    /// A pane is what `CadenceRootShellLayout.detailWidth(windowWidth:isCollapsed:)` hands the
+    /// detail — the same function the iPad shell sizes it with — never a subtraction restated here.
+    /// This file used to spell 188, then `window - expandedWidth`, and both asserted panes no
+    /// device produces: the shell docks its 264pt sidebar only at `expandedMinWindowWidth` (865),
+    /// so under that the sidebar is a drawer and the detail keeps the whole window ([[T-4466]], [[T-4490]]).
     ///
-    /// The target iPad is an 11" Pro: 834pt of window in portrait, 1210 in landscape. So the four
-    /// panes Today is handed on it are **570 / 946** with the sidebar out and **834 / 1210** with it
-    /// folded. Every width below is one of those four, or a boundary of the function itself.
-    private static let sidebarWidth: CGFloat = CadenceRootShellLayout.expandedWidth
-    private static func pane(window: CGFloat) -> CGFloat { window - sidebarWidth }
+    /// The target iPads, full screen: an 11" Pro is 834pt of window in portrait (a drawer shell, so
+    /// **834** of pane, sidebar "out" or folded alike) and 1210 in landscape (**946** docked, 1210
+    /// folded); a 13" is 1024 in portrait (**760** docked, 1024 folded). Every width below is one
+    /// of those, or a boundary of the function itself.
+    private static func pane(window: CGFloat, folded: Bool = false) -> CGFloat {
+        CadenceRootShellLayout.detailWidth(windowWidth: window, isCollapsed: folded)
+    }
 
     private func layout(paneWidth: CGFloat) -> CadenceTodayLayout {
         CadenceTodayLayoutSupport.layout(isRegularWidth: true, paneWidth: paneWidth)
@@ -31,18 +33,24 @@ struct CadenceTodayTwoPaneFloorTests {
     }
 
     @Test
-    func anElevenInchIPadInPortraitGetsOneColumnRatherThanTwoStarvedOnes() {
-        // 834pt window less the sidebar, 570pt. Two panes at the old 646 meant a 325pt task
-        // column, too narrow for its own header: the date wrapped to "SUND AY, …".
-        #expect(layout(paneWidth: Self.pane(window: 834)) == .compact)
+    func anElevenInchIPadInPortraitGetsTwoPanesBecauseItsSidebarIsADrawer() {
+        // 834 is under the 865pt dock threshold, so the sidebar never takes width from the detail
+        // and Today gets the whole window, past the 761 floor. Folding changes nothing at this width.
+        #expect(!CadenceRootShellLayout.usesExpandedSidebar(windowWidth: 834))
+        #expect(Self.pane(window: 834) == 834)
+        #expect(layout(paneWidth: Self.pane(window: 834)) == .twoPane)
+        #expect(layout(paneWidth: Self.pane(window: 834, folded: true)) == .twoPane)
     }
 
     @Test
-    func theSameIPadInPortraitWithTheSidebarFoldedGetsTwoPanes() {
-        // Folding the sidebar gives Today the whole 834pt window, past the 761 floor — so the one
-        // device swaps layouts on a control the user drives, which is why the floor has to be
-        // derived rather than assumed from hardware.
-        #expect(layout(paneWidth: 834) == .twoPane)
+    func aThirteenInchIPadInPortraitSwapsLayoutsOnTheSidebarFold() {
+        // The one full-screen target where the fold decides: 1024 docks the sidebar and leaves 760,
+        // a point under the floor, so Today is one column; folding hands back all 1024 and two
+        // panes. The device swaps layouts on a control the user drives, which is why the floor has
+        // to be derived rather than assumed from hardware.
+        #expect(Self.pane(window: 1_024) == 760)
+        #expect(layout(paneWidth: Self.pane(window: 1_024)) == .compact)
+        #expect(layout(paneWidth: Self.pane(window: 1_024, folded: true)) == .twoPane)
     }
 
     @Test
@@ -58,7 +66,7 @@ struct CadenceTodayTwoPaneFloorTests {
         // The 11" Pro in landscape, sidebar out and folded — the two widest shapes the app is built
         // for. These used to be the widths that unlocked a third column.
         #expect(layout(paneWidth: Self.pane(window: 1_210)) == .twoPane)
-        #expect(layout(paneWidth: 1_210) == .twoPane)
+        #expect(layout(paneWidth: Self.pane(window: 1_210, folded: true)) == .twoPane)
     }
 }
 
@@ -113,10 +121,6 @@ struct CadenceTodayLayoutModeRemovalTests {
 /// `inspectorPaneFloor` was **not** raised to fit two notes columns instead.
 @MainActor
 struct CadenceTodayInspectorNotesWidthTests {
-    /// The shell sidebar, read from `CadenceRootShellLayout` for the reason
-    /// `CadenceTodayTwoPaneFloorTests` gives ([[T-4466]]).
-    private static let sidebarWidth: CGFloat = CadenceRootShellLayout.expandedWidth
-
     /// What the inspector is actually handed at a given pane width — the pane, less the task column,
     /// less the divider. The same subtraction `iOSTodayView.twoPaneTodayLayout` performs by putting
     /// a fixed-width column and a flexible one in an `HStack`.
@@ -143,7 +147,12 @@ struct CadenceTodayInspectorNotesWidthTests {
     @Test func everyInspectorWidthTheTargetIPadsProduceFallsBackToOneNotesColumn() {
         // 11" Pro portrait/landscape, then 13" Air portrait/landscape.
         for window in [CGFloat(834), 1_210, 1_024, 1_366] {
-            for pane in [window - Self.sidebarWidth, window]
+            // The pane the shell hands the detail, docked and folded, for the reason
+            // `CadenceTodayTwoPaneFloorTests` gives ([[T-4490]]).
+            let panes = [false, true].map {
+                CadenceRootShellLayout.detailWidth(windowWidth: window, isCollapsed: $0)
+            }
+            for pane in panes
             where CadenceTodayLayoutSupport.supportsTwoPane(paneWidth: pane) {
                 let inspector = inspectorWidth(paneWidth: pane)
                 #expect(

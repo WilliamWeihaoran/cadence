@@ -76,12 +76,12 @@ nonisolated enum CadenceTodayLayoutSupport {
 
     /// The inspector's floor at a given pane width.
     ///
-    /// **Both branches are live**, and the shell's fold is what makes the narrow one so. With the
-    /// sidebar out, the target iPad is 646pt of pane in portrait — one column, so this is never
-    /// asked — and 1022 in landscape, which takes the wide floor. But a folded sidebar hands the
-    /// detail the whole window: **834pt in portrait**, over `twoPaneMinimumWidth` and under 900.
-    /// That is the narrow branch, on the target device, full screen, with no multitasking at all.
-    /// A folded 2/3 Split View (~795pt) lands in the same band.
+    /// **Both branches are live.** An 11" target iPad in portrait is under the shell's 865pt dock
+    /// threshold, so its sidebar is a drawer and the detail keeps the whole window: **834pt**,
+    /// over `twoPaneMinimumWidth` and under 900 — the narrow branch, full screen, no multitasking,
+    /// sidebar out or folded. In landscape it docks and leaves 946 (1210 folded), which takes the
+    /// wide floor ([[T-4490]]). A 2/3 Split View (~795pt, also a drawer shell) lands in the same
+    /// band.
     static func inspectorPaneFloor(forPaneWidth paneWidth: CGFloat) -> CGFloat {
         paneWidth < inspectorWidePaneThreshold ? inspectorPaneMinWidth : inspectorPaneWideMinWidth
     }
@@ -95,7 +95,7 @@ nonisolated enum CadenceTodayLayoutSupport {
     /// was the binding clamp the row asked for `task + 1 + floor == pane + 1`, and an `HStack` does
     /// not shrink a fixed `.frame(width:)` — the shell hard-sizes the pane and `.clipped()`s it, so
     /// the point came off the trailing edge. Two bands did it: **[761, 841)**, reachable on a
-    /// full-screen portrait iPad with the sidebar folded (834), and **[900, 928)**, which only a
+    /// full-screen 11" portrait iPad (834, a drawer shell), and **[900, 928)**, which only a
     /// resized window reaches. Subtracting the divider closes both, and at exactly
     /// `twoPaneMinimumWidth` the task column now lands on `taskPaneMinWidth` to the point.
     ///

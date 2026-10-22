@@ -94,8 +94,11 @@ enum CadenceNotesTabVocabulary: String, CaseIterable, Identifiable {
     /// strip is not. So the dated case degrades as designed; the Notepad case is the one that would
     /// push the row, and it is the one this number is cut from.
     ///
-    /// **Both sides of this are live hosts.** The iPad's Notes pane is 646pt at its narrowest
-    /// (an 11" iPad in portrait, 834pt less the 188pt shell sidebar) and clears it; Today's Notes
+    /// **Both sides of this are live hosts.** On a full-screen target iPad the Notes pane is 760pt
+    /// at its narrowest (a 13" in portrait, 1024 less the docked 264pt sidebar; an 11" in portrait
+    /// is a drawer shell and keeps all 834) and clears it. A resized window with the sidebar docked
+    /// goes down to 601 (`CadenceRootShellLayout.expandedMinWindowWidth` − 264) and falls under it,
+    /// which is the short-label strip working as designed ([[T-4490]]). Today's Notes
     /// inspector is 320pt at its floor — regular width, and the whole reason this is a width and
     /// not a size class. At 320 the full-label strip alone overruns the row by ~15pt, which is the
     /// pushed row this threshold exists to refuse.
