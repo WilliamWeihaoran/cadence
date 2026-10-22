@@ -174,8 +174,9 @@ enum CadenceRegularSplitLayout {
 /// Those are the panes this was cut against, not today's. Read from
 /// `CadenceRootShellLayout.detailWidth`, an 11" Pro is 834 in portrait (under the 865pt dock
 /// threshold, so the sidebar is a drawer) and 946 / 1210 in landscape docked / folded, and a 13" is
-/// 760 / 1024 in portrait docked / folded. Only 1210 reaches the 1183pt Week split below; every
-/// other one gives Week the whole pane ([[T-4516]]).
+/// 760 / 1024 in portrait and 1102 / 1366 in landscape, docked / folded. Only the two folded
+/// landscape panes, 1210 and 1366, reach the 1183pt Week split below; every other one gives Week
+/// the whole pane ([[T-4516]]).
 ///
 /// The inversion is the one the rest of this file already made: **seven columns on screen is the
 /// guarantee and 112pt is the wish.** A pane that cannot pay for seven full-width columns gets
@@ -338,8 +339,9 @@ enum CadenceCalendarPaneLayout {
     /// the `max(...)` floor in `regularInspectorWidth(for:)`; it is a gate now instead of a promise.
     static let inspectorMinWidth: CGFloat = 340
     /// There is no maximum. `min(…, 430)` used to close this expression, and it needed 1434pt of
-    /// pane to bind — 430 is 30% of 1433 — where the widest pane a target device produces is 1210:
-    /// an 11" Pro in landscape with the shell sidebar folded. What actually bounds the inspector at
+    /// pane to bind — 430 is 30% of 1433 — where the widest pane a target device produces is 1366:
+    /// a 13" in landscape with the shell sidebar folded (`CadenceRootShellLayout.detailWidth`; an
+    /// 11" Pro there is 1210), and 30% of 1366 is about 410. What actually bounds the inspector at
     /// every reachable width is the second clamp in `inspectorWidth`, which is what the calendar
     /// beside it needs.
     static let inspectorFraction: CGFloat = 0.30
