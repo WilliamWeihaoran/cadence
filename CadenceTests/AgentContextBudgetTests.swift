@@ -154,6 +154,36 @@ struct AgentContextBudgetTests {
         )
     }
 
+    /// [[T-3215]]'s process half. CI on `main` was red for 27 consecutive pushes while every local
+    /// run read green, because agents and heartbeats took `XCODEBUILD_EXIT=0` as the gate and
+    /// never read `gh run list`. The fix is a rule, and a rule nobody pins can be trimmed out of
+    /// the brief by the next budget pass without a test noticing. So the brief must still say CI
+    /// is the gate, name the command and the workflow it means, and route to the parity notes;
+    /// and the workflow it names must still be the one called `CI`, not `Docs budget`.
+    @Test func theBriefStillSaysCIIsTheRealGateAndRoutesToTheParityNotes() throws {
+        let brief = flattenedWhitespace(try repositoryFile("docs/AGENT_BRIEF.md"))
+        for phrase in [
+            "**CI is the real gate.**",
+            "`gh run list --workflow=CI --limit 3`",
+            "Local green is necessary, not sufficient",
+            "[docs/CI_PARITY.md](CI_PARITY.md)",
+        ] {
+            #expect(brief.contains(phrase), "docs/AGENT_BRIEF.md no longer states: \(phrase)")
+        }
+
+        let parity = try repositoryFile("docs/CI_PARITY.md")
+        #expect(
+            parity.hasPrefix("# CI parity"),
+            "the brief routes to docs/CI_PARITY.md, which no longer opens as the parity notes"
+        )
+
+        let workflow = try repositoryFile(".github/workflows/ci.yml")
+        #expect(
+            workflow.split(separator: "\n").contains("name: CI"),
+            "the workflow the brief's `--workflow=CI` names is no longer called CI"
+        )
+    }
+
     @Test func longClaudeReferenceRemainsExplicitlyArchived() throws {
         let reference = try repositoryFile("docs/CLAUDE_REFERENCE.md")
 
