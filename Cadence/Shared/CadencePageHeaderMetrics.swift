@@ -233,8 +233,10 @@ nonisolated struct CadencePageHeaderEyebrowLadder: Equatable, Sendable {
 /// **The budget is not the column, which is the finding this type exists to record (T-1702).** An
 /// `iOSPageHeader` at `role: .pane` is one `HStack` — title column, `Spacer(minLength: 8)`, count
 /// capsule, then the trailing control at `.layoutPriority(1)` — so the eyebrow receives what is
-/// left *after two chips have taken their intrinsic width*, not the pane and not the column. On the
-/// 834pt folded-sidebar iPad the column is 513pt and the eyebrow line gets roughly 160 of it. Any
+/// left *after two chips have taken their intrinsic width*, not the pane and not the column. On an
+/// 834pt pane — an 11" iPad in portrait, sidebar out or folded, since 834 is under the shell's dock
+/// threshold and keeps the whole window ([[T-4500]]) — the column is 513pt and the eyebrow line
+/// gets roughly 160 of it. Any
 /// rule keyed on the pane width is therefore keyed on the wrong number, which is why this lives
 /// beside the header's own metrics rather than in `CadenceTodayLayoutSupport`, and why it is not on
 /// `CadenceRegularPaneLayout`'s register: it takes no width at all.

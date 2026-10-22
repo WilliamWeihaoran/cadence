@@ -6,8 +6,11 @@ import Testing
 /// T-248 / T-249: Settings → Templates split its card unconditionally — iOS on
 /// `horizontalSizeClass == .regular` alone, macOS on nothing at all — with a fixed chooser column
 /// beside a `maxWidth: .infinity` editor and no floor under what was left. On the primary target
-/// device in its default configuration (iPad Pro 11", portrait, shell sidebar out, no multitasking)
-/// the editor was drawn **16pt wide**.
+/// device in what was then its default configuration (iPad Pro 11", portrait, the then-188pt shell
+/// sidebar docked, no multitasking — a 646pt pane) the editor was drawn **16pt wide**. No current
+/// shell produces that pane: 834 is under the 865pt dock threshold, so the portrait pane is all 834
+/// ([[T-4500]]). The device panes are asserted through `CadenceRootShellLayout.detailWidth` in
+/// `theTargetIPadSplitsOnlyInLandscapeWithTheSidebarFolded`; the measured set stays as measured.
 ///
 /// The values below are the same arithmetic an `NSHostingView` reproduction of the shipped modifier
 /// chain measured: 0.0 at a 570pt pane, 16.0 at 646, 146.0 at 776, 204.0 at 834, 392.0 at 1022 and
@@ -118,11 +121,10 @@ struct CadenceSettingsTemplatesCardLayoutTests {
 
     /// Every pane width the ticket measured, on iOS, with the form each now resolves to.
     ///
-    /// 646 is the iPad Pro 11" in portrait with the shell sidebar out — the default configuration of
-    /// the primary target — and it is the case that shipped a 16pt editor. 834 is the same device in
-    /// portrait with the sidebar folded; 1022 is landscape with it out, which is where two columns
-    /// start being worth having.
-    @Test func theTargetIPadSplitsInLandscapeAndNotInPortrait() {
+    /// Measured history, and kept as such: 646 was the iPad Pro 11" in portrait with the then-188pt
+    /// sidebar docked and is the case that shipped a 16pt editor; 834 was the same device folded and
+    /// 1022 landscape docked. Which panes the device produces *today* is the next test's question.
+    @Test func everyMeasuredPaneResolvesToTheFormItsEditorWidthEarns() {
         let cases: [(pane: CGFloat, editorBefore: CGFloat, layout: CadenceSettingsCardLayout)] = [
             (570, 0, .oneColumn),
             (646, 16, .oneColumn),
@@ -147,6 +149,36 @@ struct CadenceSettingsTemplatesCardLayoutTests {
                     isRegularWidth: true, hostWidth: content, isDesktop: false
                 ) == row.layout,
                 "a \(row.pane)pt pane resolves to the wrong form"
+            )
+        }
+    }
+
+    /// The target device's real panes, read from the shell rather than restated ([[T-4500]]).
+    ///
+    /// An 11" iPad Pro in portrait is a drawer shell, so the pane is 834 sidebar out or folded, and
+    /// the card is one column (a 204pt editor). In landscape the sidebar docks and leaves **946** —
+    /// four points under the 950 at which the card splits, a 316pt editor — so it is one column
+    /// there too. Only landscape with the sidebar folded (1210) splits. The ticket's "splits in
+    /// landscape" held for the 188pt sidebar's 1022 and does not hold for 946; whether it should is
+    /// an owner question filed as [[T-4515]], and this asserts what ships until that is answered.
+    @Test func theTargetIPadSplitsOnlyInLandscapeWithTheSidebarFolded() {
+        let cases: [(window: CGFloat, folded: Bool, pane: CGFloat, layout: CadenceSettingsCardLayout)] = [
+            (834, false, 834, .oneColumn),
+            (834, true, 834, .oneColumn),
+            (1_210, false, 946, .oneColumn),
+            (1_210, true, 1_210, .twoColumn),
+        ]
+
+        for row in cases {
+            let pane = CadenceRootShellLayout.detailWidth(windowWidth: row.window, isCollapsed: row.folded)
+            #expect(pane == row.pane, "window \(row.window) folded \(row.folded) gave pane \(pane)")
+            #expect(
+                CadenceSettingsTemplatesCardLayout.layout(
+                    isRegularWidth: true,
+                    hostWidth: Self.iOSCardContentWidth(paneWidth: pane),
+                    isDesktop: false
+                ) == row.layout,
+                "window \(row.window) folded \(row.folded) (pane \(pane)) resolves to the wrong form"
             )
         }
     }

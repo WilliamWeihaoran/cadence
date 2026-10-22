@@ -476,8 +476,11 @@ nonisolated enum CadenceSettingsCardLayout: Equatable, Sendable {
 /// two is chrome owned by the settings shell, and re-stating the shell's rail width and paddings
 /// here would be a second copy of them that nothing would keep in step. The pane translation, for
 /// the record and for the device the ticket was filed from: on iOS the card's content is
-/// `paneWidth − 249 − 56 − 32`, so `twoColumnMinimumWidth` of 613 is reached at **950pt of pane**,
-/// which an 11" iPad Pro sees in landscape (1022) and not in portrait (646).
+/// `paneWidth − 249 − 56 − 32`, so `twoColumnMinimumWidth` of 613 is reached at **950pt of pane**.
+/// That was written when an 11" iPad Pro's panes were 1022 in landscape and 646 in portrait. Read
+/// from `CadenceRootShellLayout.detailWidth` they are 946 docked / 1210 folded in landscape and 834
+/// in portrait, so today only folded landscape reaches it — docked landscape misses by 4pt
+/// ([[T-4500]], owner question [[T-4515]]).
 nonisolated enum CadenceSettingsTemplatesCardLayout {
     /// macOS's chooser column, as `SettingsTemplatesSection` already had it.
     static let desktopChooserWidth: CGFloat = 230
@@ -506,7 +509,10 @@ nonisolated enum CadenceSettingsTemplatesCardLayout {
     /// so the only band where the number changes an outcome is 776…950 of pane, and 834 is the
     /// case that decides it. That is now the 11" iPad's portrait pane outright, sidebar out or
     /// folded, since 834 is under the shell's dock threshold ([[T-4490]]): 204pt of markdown well
-    /// beside a 260pt chooser is the "worse than one column" this floor exists to name.
+    /// beside a 260pt chooser is the "worse than one column" this floor exists to name. The same
+    /// band now also holds that iPad's docked landscape pane, 946, where a 316pt editor is four
+    /// points under the floor — the one real pane where this number alone decides, and not the
+    /// clear-cut case 834 is ([[T-4515]]).
     static var minimumEditorWidth: CGFloat { CadenceNotesListMetrics.minimumEditorWidth }
 
     static func chooserWidth(isDesktop: Bool) -> CGFloat {

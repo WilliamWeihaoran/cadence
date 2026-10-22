@@ -3,13 +3,22 @@ import CoreGraphics
 import Foundation
 @testable import Cadence
 
-/// A pane is the window less the shell sidebar — 188pt when it is out, 0 when the user folds it.
-/// On the target iPad that is 646 / 1022 with the sidebar out (834 and 1210 of window) and 834 /
-/// 1210 with it folded; a 2/3 Split View adds 737 and 795. 632 is the 820pt threshold, the
-/// narrowest pane the labelled column can leave.
+/// A device's pane is what `CadenceRootShellLayout.detailWidth(windowWidth:isCollapsed:)` hands
+/// the detail, read through `devicePane` rather than subtracted here ([[T-4500]], as [[T-4490]] did
+/// for Today). The shell docks its 264pt sidebar only from `expandedMinWindowWidth` (865), so an 11"
+/// iPad Pro is **834** of pane in portrait, sidebar out or folded (a drawer shell), and **946** /
+/// 1210 in landscape docked / folded; a 13" is 760 / 1024 in portrait. 646 and 1022 are the panes
+/// this file was written against, when the sidebar was 188 and always docked: no current device
+/// produces them, and the tests that still use them say so and pin arithmetic, not a device. A 2/3
+/// Split View adds 737 and 795; 632 is the 820pt threshold, the narrowest pane the labelled column
+/// can leave.
 struct CadenceRegularSplitLayoutTests {
     private func listPane(_ paneWidth: CGFloat) -> CGFloat {
         CadenceRegularSplitLayout.listPaneWidth(forPaneWidth: paneWidth)
+    }
+
+    private static func devicePane(window: CGFloat, folded: Bool = false) -> CGFloat {
+        CadenceRootShellLayout.detailWidth(windowWidth: window, isCollapsed: folded)
     }
 
     @Test
@@ -29,8 +38,10 @@ struct CadenceRegularSplitLayoutTests {
         #expect(listPane(834) < 417)
     }
 
-    /// Reachable, unlike the caps this file's siblings shed: 380 binds from 950pt of pane up, and
-    /// the target iPad is 1022 in landscape with the sidebar out.
+    /// Reachable, unlike the caps this file's siblings shed: 380 binds from 950pt of pane up. The
+    /// 11" iPad in landscape reaches it only with the sidebar folded (1210); docked it is 946 and
+    /// the chooser gets the proportion, 378.4. 1022 is the old docked-landscape pane, kept as a
+    /// width past the cap.
     @Test
     func theChooserNeverExceedsItsMaximumHoweverWideThePaneGets() {
         #expect(listPane(1022) == CadenceRegularSplitLayout.listPaneMaxWidth)
@@ -75,23 +86,45 @@ struct CadenceRegularSplitLayoutTests {
         #expect(!CadenceRegularSplitLayout.supportsTwoPanes(paneWidth: 749))
     }
 
-    /// The ticket's device, and the point of the change: at 646 of pane — an 11" iPad Pro in
-    /// portrait with the shell sidebar out, the primary target in its default configuration — the
-    /// split used to hand a 300pt chooser to a 345pt detail on the same screen where Today is one
-    /// column and Calendar has dropped its inspector. Three registered rules now answer alike.
+    /// The ticket's device, re-premised ([[T-4500]]). T-252 was cut at 646pt of pane — an 11" iPad
+    /// Pro in portrait with the then-188pt sidebar docked — where the split handed a 300pt chooser
+    /// to a 345pt detail on the same screen where Today was one column and Calendar had dropped its
+    /// inspector. That pane no longer exists: 834 is under the dock threshold, so the portrait pane
+    /// is all 834 whether the sidebar is out or folded, and there the three registered rules still
+    /// answer alike — all three split. 646 is kept below as the measured history it is: the gate
+    /// still refuses it, and Today and Calendar still agree.
     @Test
-    func theTargetIPadsPortraitPaneIsOneColumnLikeTodayAndCalendar() {
+    func theTargetIPadsPortraitPaneSplitsLikeTodayAndCalendar() {
+        #expect(!CadenceRootShellLayout.usesExpandedSidebar(windowWidth: 834))
+        for folded in [false, true] {
+            let pane = Self.devicePane(window: 834, folded: folded)
+            #expect(pane == 834, "the 11\" portrait pane is \(pane), folded: \(folded)")
+            #expect(CadenceRegularSplitLayout.supportsTwoPanes(paneWidth: pane))
+            #expect(CadenceTodayLayoutSupport.layout(isRegularWidth: true, paneWidth: pane) == .twoPane)
+            #expect(CadenceCalendarPaneLayout.showsInspector(paneWidth: pane))
+        }
+
+        // History: the T-252 pane, which no current shell produces.
         #expect(!CadenceRegularSplitLayout.supportsTwoPanes(paneWidth: 646))
         #expect(CadenceTodayLayoutSupport.layout(isRegularWidth: true, paneWidth: 646) == .compact)
         #expect(!CadenceCalendarPaneLayout.showsInspector(paneWidth: 646))
     }
 
-    /// And it still splits everywhere the proportion is affordable, so the fallback is a floor
-    /// rather than a retreat: the sidebar folded in portrait (834), landscape with it out (1022)
-    /// and landscape folded (1210).
+    /// And it still splits on every full-screen target pane, so the fallback is a floor rather than
+    /// a retreat: the 11" in portrait (834, a drawer shell), in landscape docked (946) and folded
+    /// (1210), and the 13" in portrait docked (760, which Today's 761 floor misses by a point,
+    /// [[T-4501]]) and folded (1024).
     @Test
     func everyPaneThatCanAffordTheProportionStillSplits() {
-        for paneWidth in [CGFloat(834), 1022, 1210] {
+        let panes = [
+            Self.devicePane(window: 834),
+            Self.devicePane(window: 1_210),
+            Self.devicePane(window: 1_210, folded: true),
+            Self.devicePane(window: 1_024),
+            Self.devicePane(window: 1_024, folded: true),
+        ]
+        #expect(panes == [834, 946, 1_210, 760, 1_024])
+        for paneWidth in panes {
             #expect(
                 CadenceRegularSplitLayout.supportsTwoPanes(paneWidth: paneWidth),
                 "pane \(paneWidth) stopped splitting"
