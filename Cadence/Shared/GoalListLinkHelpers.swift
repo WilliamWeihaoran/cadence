@@ -120,21 +120,19 @@ enum GoalLinkPresentation {
     /// **total** — `listLinks` is a SwiftData to-many with no defined order, so title alone leaves
     /// two lists of the same name swapping places between renders.
     /// **`isDeleted` is filtered for the same reason the target-less rows are, and it is the half
-    /// that does not depend on a toolchain** ([[T-1306]]). A refused `attachList` has already had
-    /// `commitInsert` call `delete(link)` by the time it rethrows, so between the refusal and the
-    /// next processed pending change `goal.listLinks` holds a row the store will never have.
-    /// Measured on this Mac (Xcode 27, 2026-09-20): `count == 1`, `isDeleted == true`, and both
-    /// inspectors drew it. `attachList` now processes its restore, which empties the array here —
-    /// but *that* is framework timing of exactly the kind [[T-1296]] says not to depend on, and
-    /// this filter is the reading that is right whether or not the array has caught up.
+    /// that does not depend on a toolchain** ([[T-1306]]). A refused attach — when the retired
+    /// `attachList` still existed — had already had `commitInsert` call `delete(link)` by the time
+    /// it rethrew, so between the refusal and the next processed pending change `goal.listLinks`
+    /// held a row the store would never have. Measured on this Mac (Xcode 27, 2026-09-20):
+    /// `count == 1`, `isDeleted == true`, and both inspectors drew it. Nothing writes a link now
+    /// ([[T-2079]]), but a deleted-and-unprocessed row is still a state this reading must answer
+    /// correctly, and this filter is right whether or not the array has caught up ([[T-1296]]).
     ///
-    /// **The two readers that never come through here now ask the same question themselves**
+    /// **The one reader that never comes through here asks the same question itself**
     /// ([[T-1321]]). `GoalContributionResolver` walks `goal.listLinks` raw, once for the counted
-    /// tasks and once for the "N lists" chip, so until it filtered `isDeleted` only the processed
-    /// restore could keep a refused attach out of the goal's *progress bar* — which is why this was
-    /// filed as a second line of defence rather than the fix. It is now the same reading in three
-    /// places, and `detachGoalListLink` relies on it: that is what let the detach stop nulling the
-    /// link's references before deleting it. `aDeletedLinkIsNotAnAttachedListInEitherReading` and
+    /// tasks and once for the "N lists" chip, and filters `isDeleted` the same way, so a deleted
+    /// link is kept out of the goal's *progress bar* as well as out of this list.
+    /// `aDeletedLinkIsNotAnAttachedListInEitherReading` and
     /// `aDeletedLinkIsNotCountedByTheProgressBarEither` exercise both filters against a
     /// deleted-and-unprocessed link directly, so neither is a guard no mutation can reach.
     static func links(of goal: Goal) -> [GoalListLink] {
@@ -150,13 +148,13 @@ enum GoalLinkPresentation {
 
     /// The link on `goal` pointing at `target`, if it already exists.
     ///
-    /// **A pending-*deleted* link is not an existing one, and that is not only cosmetic**
-    /// ([[T-1306]]). This is read twice: by `isAttached` below, which is the checkmark both attach
-    /// sheets draw, and by `attachList`'s idempotence guard. Measured on Xcode 27 before the fix,
-    /// a second `attachList` straight after a refused one returned the refused link — `isDeleted`
-    /// set — from that guard, committed nothing, and left the store with **no** row while
-    /// `toggleGoalListLink` answered `true`. So the guard has to ask whether the link is still
-    /// going to exist, not merely whether an object is still in the array.
+    /// **A pending-*deleted* link is not an existing one** ([[T-1306]]). This was read by the two
+    /// attach sheets' checkmark (through `isAttached`) and by the retired `attachList`'s
+    /// idempotence guard, both removed by [[T-2079]]. Measured on Xcode 27 before the fix, a second
+    /// attach straight after a refused one returned the refused link — `isDeleted` set — from that
+    /// guard, committed nothing, and left the store with **no** row while the toggle answered
+    /// `true`. So the question is whether the link is still going to exist, not merely whether an
+    /// object is still in the array.
     static func existingLink(for target: GoalLinkTarget, on goal: Goal) -> GoalListLink? {
         (goal.listLinks ?? []).first { !$0.isDeleted && target.isPointedAt(by: $0) }
     }
@@ -194,52 +192,6 @@ enum GoalLinkPresentation {
     static func contributionMetric(taskCount: Int) -> String {
         taskCount == 1 ? "1 task" : "\(taskCount) tasks"
     }
-
-    /// What a refused attach or detach says, on both platforms ([[T-1301]]).
-    ///
-    /// **One sentence for both directions**, for the reason
-    /// the retired `goalSaveFailureNotice` gives about create-versus-edit: the
-    /// control is one toggle and nobody experiences attaching and detaching as two operations. The
-    /// "Nothing was changed." is earned either way — `attachList` un-inserts the row *and* puts
-    /// `goal.listLinks` back, `detachGoalListLink` rolls the delete back — so the checkmark the
-    /// user is still looking at already agrees with the store by the time this is drawn.
-    ///
-    /// **That last clause was written before it was true, and [[T-1306]] is what made it true.**
-    /// Putting `goal.listLinks` back is a pending change like any other: until [[T-1306]] the
-    /// restore was assigned and never processed, so the array kept the pending-deleted row and both
-    /// sheets stayed ticked under this sentence. `attachList` processes it now, and
-    /// `existingLink(for:on:)` above skips a deleted link besides, so the claim holds on either of
-    /// the two toolchains this repository builds on ([[T-1296]]).
-    static let changeFailureNotice = "Couldn't change this goal's lists. Nothing was changed."
-
-    /// The alert title over `changeFailureNotice`, on both platforms ([[T-1301]]).
-    ///
-    /// An alert rather than a `CadenceInlineFailureNotice` on all four surfaces, which is the
-    /// minority choice in this repo and is the one the control's shape forces: attaching and
-    /// detaching are both a *row* in a list rebuilt from `goal.listLinks`, so the row a sentence
-    /// would be written under is the row that disappears — or, on the attach sheet, the row whose
-    /// checkmark is the thing being corrected. The argument
-    /// `CalendarPageMonthSupportViews` records for its two refusals is the same one: nothing stable
-    /// is left on screen to write under. Beside the sentence, for the reason
-    /// `CadenceTaskMutationSupport.deleteFailureAlertTitle` gives.
-    static let changeFailureAlertTitle = "Couldn't Change Lists"
-
-    /// What a refused **initial** attach said, on the macOS new-goal sheet ([[T-1302]]).
-    /// **Callerless since [[T-2079]] deleted that sheet**; whether to delete it is [[T-4465]].
-    ///
-    /// A different sentence from `changeFailureNotice` because it is a different event, and both
-    /// of the sentences this repo already had would have been false there. "Nothing was changed."
-    /// denied the goal, which the sheet's own save had committed a few lines earlier and which the
-    /// store held; the retired `goalSaveFailureNotice` denied it the other way
-    /// round and would have sent the user back to press Create for a goal that already existed —
-    /// the second-goal hazard, arriving as a sentence rather than as code. So this states both
-    /// halves in the order they happened and then the two ways out: the sheet's button, which read
-    /// **Retry** once a goal was held, and the goal's own Attach List.
-    ///
-    /// It is a *list* sentence and lives here rather than beside the goal notices, because the half
-    /// that failed was the link, not the goal.
-    static let initialAttachFailureNotice =
-        "Goal saved, but couldn't attach the list. Try again, or attach it from the goal."
 
     /// What an empty Linked Lists section says. One string, both platforms — it has to state the
     /// *other* way work reaches a goal, or the section reads as the only one.
