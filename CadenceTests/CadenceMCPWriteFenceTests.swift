@@ -174,9 +174,9 @@ struct CadenceMCPWriteFenceTests {
     /// list exist twice. Nothing then resolves, and a sweep that resolves nothing reports its whole
     /// ledger as stale rather than reporting nothing.
     ///
-    /// **T-3330, and it is [[T-3241]]'s defect reached by the other door.** `isNestedCheckout`
-    /// recognises a copy by the `.git` entry inside it, and `scripts/agent-scratch.sh` builds a
-    /// detached tree of HEAD at `scratchpad/<id>/tree/` that has NO `.git` — so the prune does not
+    /// **T-3330, and it is [[T-3241]]'s defect reached by the other door.** `isForeignTree`
+    /// recognised a copy only by the `.git` entry inside it until [[T-3333]], and
+    /// `scripts/agent-scratch.sh` builds a detached tree of HEAD at `scratchpad/<id>/tree/` that has NO `.git` — so the prune does not
     /// see it, every script exists twice, and `resolve` goes nil for all of them. Two other callers
     /// of `repositoryPaths` already pass `pruningAtRoot: ["scratchpad"]` ([[T-3180]]); this one did
     /// not, which is the fourth copy of a prune list that T-3241's own note above warns about.

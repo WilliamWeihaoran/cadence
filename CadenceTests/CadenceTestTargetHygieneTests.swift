@@ -120,6 +120,10 @@ struct CadenceSourceScanReaderTests {
     /// that merely CONTAINS one is not pruned, and the test is the `.git` ENTRY rather than the
     /// name `worktrees` — a submodule or a stray clone is the same defect under another path, and
     /// a worktree spells `.git` as a file where a clone spells it as a directory.
+    ///
+    /// **[[T-3333]]: a `.cadence-scratch` stamp is the same signal.** `scripts/agent-scratch.sh new`
+    /// mints a detached `git archive` tree with no `.git` and writes that stamp into it wherever
+    /// `--at` puts it, so the fixture's minted tree sits under an arbitrary path, not `scratchpad/`.
     @Test func theWholeTreeWalkStopsAtANestedCheckout() throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("nested-checkout-\(UUID().uuidString)", isDirectory: true)
@@ -130,6 +134,8 @@ struct CadenceSourceScanReaderTests {
             ".claude/worktrees/other/AGENTS.md",
             ".claude/worktrees/other/docs/guide.md",
             "vendor/clone/AGENTS.md",
+            "elsewhere/minted/AGENTS.md",
+            "elsewhere/minted/.cadence-scratch/base",
             ".build/vendored/AGENTS.md",
         ] {
             let file = root.appendingPathComponent(path)
@@ -145,10 +151,53 @@ struct CadenceSourceScanReaderTests {
         let paths = CadenceSourceScan.repositoryPaths(under: root).sorted()
 
         #expect(paths == ["AGENTS.md", "docs/guide.md"], "the walk returned \(paths)")
-        #expect(CadenceSourceScan.isNestedCheckout(".claude/worktrees/other", under: root))
-        #expect(CadenceSourceScan.isNestedCheckout("vendor/clone", under: root))
-        #expect(!CadenceSourceScan.isNestedCheckout(".claude/worktrees", under: root))
-        #expect(!CadenceSourceScan.isNestedCheckout("docs", under: root))
+        #expect(CadenceSourceScan.isForeignTree(".claude/worktrees/other", under: root))
+        #expect(CadenceSourceScan.isForeignTree("vendor/clone", under: root))
+        #expect(CadenceSourceScan.isForeignTree("elsewhere/minted", under: root))
+        #expect(!CadenceSourceScan.isForeignTree("elsewhere", under: root))
+        #expect(!CadenceSourceScan.isForeignTree(".claude/worktrees", under: root))
+        #expect(!CadenceSourceScan.isForeignTree("docs", under: root))
+    }
+
+    /// **[[T-3333]]: the whole-tree walk prunes the ROOT `scratchpad/` by default, and only the
+    /// root one.** `TodayAndInboxNamingTests.docWalkSkipsTheRootScratchpadOnly` ([[T-3180]]) moved
+    /// one layer down, to where the default now lives. A `cp -R` copy or an agent's loose notes
+    /// carry no stamp for `isForeignTree` to see, so this prune is what covers them.
+    ///
+    /// The opt-out is asserted too, and it is the ONE call site
+    /// `everyWholeTreeWalkOverThisCheckoutPrunesTheRootScratchpad` excuses: a future test whose job
+    /// is to police `scratchpad/` must pass `pruningAtRoot: []`, or it reads an empty answer and
+    /// passes vacuously. Seeing the scratch files here also proves the fixture is non-vacuous.
+    @Test func theWholeTreeWalkPrunesTheRootScratchpadByDefault() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("scratch-default-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        for path in [
+            "docs/guide.md",
+            "scratchpad/agent/notes.md",
+            "scratchpad/agent/tree/AGENTS.md",
+            "Cadence/scratchpad/nested.md",
+        ] {
+            let file = root.appendingPathComponent(path)
+            try FileManager.default.createDirectory(
+                at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try Data("# fixture\n".utf8).write(to: file)
+        }
+
+        let defaulted = CadenceSourceScan.repositoryPaths(under: root).sorted()
+        #expect(
+            defaulted == ["Cadence/scratchpad/nested.md", "docs/guide.md"],
+            "the default walk returned \(defaulted)"
+        )
+
+        let optedOut = CadenceSourceScan.repositoryPaths(under: root, pruningAtRoot: []).sorted()
+        #expect(
+            optedOut == [
+                "Cadence/scratchpad/nested.md", "docs/guide.md",
+                "scratchpad/agent/notes.md", "scratchpad/agent/tree/AGENTS.md",
+            ],
+            "the opted-out walk returned \(optedOut)"
+        )
     }
 
     /// **T-644.** The exact shape that broke it: a `commit:` parameter defaulted to a closure. The
@@ -359,23 +408,26 @@ struct CadenceTestTargetHygieneTests {
     /// of six call sites in all. Three rounds of the same point fix is what says the rule belongs
     /// here instead of in a seventh doc comment.
     ///
-    /// **It is a different hole from the one `isNestedCheckout` closes, which is why the prune is
-    /// still needed at all.** That predicate recognises a copy by the `.git` entry inside it;
-    /// `scripts/agent-scratch.sh --at scratchpad/<id>/tree` extracts a DETACHED `git archive` of
-    /// HEAD, which has no `.git` and is therefore invisible to it. The copy is untracked, so
-    /// `git status` stays silent while every walk sees two of everything.
+    /// **[[T-3333]] made the prune the DEFAULT**, so the census now asks the inverse question: no
+    /// call site OPTS OUT — passes `pruningAtRoot:` without `"scratchpad"` — except the one canary
+    /// that pins the opt-out itself. Callers that still spell the prune explicitly are harmless.
     ///
-    /// The one exemption walks a FIXTURE tree under `temporaryDirectory` rather than this
-    /// checkout, so it has no `scratchpad/` to prune and pruning one would weaken what it pins.
-    /// It is named with its reason and the census is floored in both directions: an allowlist
-    /// that silently grew, or a walk that found no call sites at all, would be this same defect
-    /// one layer up.
+    /// **It is a different hole from the one `isForeignTree` closes, which is why the prune is
+    /// still needed at all.** That predicate recognises a copy by a `.git` entry or the
+    /// `.cadence-scratch` stamp `scripts/agent-scratch.sh` writes into a DETACHED `git archive` of
+    /// HEAD; a `cp -R` copy or an agent's loose notes carry neither and are invisible to it. Such
+    /// a copy is untracked, so `git status` stays silent while every walk sees two of everything.
+    ///
+    /// The one exemption, `theWholeTreeWalkPrunesTheRootScratchpadByDefault`, walks a FIXTURE
+    /// tree under `temporaryDirectory` and opts out on purpose, to prove the opt-out works. The
+    /// census is floored in both directions: an allowlist that silently grew, or a walk that found
+    /// no call sites at all, would be this same defect one layer up.
     ///
     /// This file's own needle is spelled in two pieces, so the scan does not count the literal
     /// below as a seventh call site.
     @Test func everyWholeTreeWalkOverThisCheckoutPrunesTheRootScratchpad() throws {
         let needle = "CadenceSourceScan." + "repositoryPaths("
-        let exempt = "theWholeTreeWalkStopsAtANestedCheckout"
+        let exempt = "theWholeTreeWalkPrunesTheRootScratchpadByDefault"
 
         var sites: [String] = []
         var exempted: [String] = []
@@ -403,11 +455,14 @@ struct CadenceTestTargetHygieneTests {
                     .components(separatedBy: "\n").count
                 let site = "\(path):\(line)"
                 sites.append(site)
-                guard !CadenceSourceScan
+                guard arguments.contains("pruningAtRoot:"), !arguments.contains("\"scratchpad\"") else {
+                    continue
+                }
+                if CadenceSourceScan
                     .enclosingDeclarationPath(ofLine: line - 1, in: lines)
-                    .contains(exempt)
-                else { exempted.append(site); continue }
-                if !(arguments.contains("pruningAtRoot:") && arguments.contains("\"scratchpad\"")) {
+                    .contains(exempt) {
+                    exempted.append(site)
+                } else {
                     unpruned.append(site)
                 }
             }
@@ -420,14 +475,14 @@ struct CadenceTestTargetHygieneTests {
         #expect(sites.count >= 6, "found only \(sites.count) whole-tree walk call sites: \(sites)")
         #expect(
             exempted.count == 1,
-            "\(exempted.count) call sites are excused as fixture walks rather than 1: \(exempted)"
+            "\(exempted.count) call sites are excused as the opt-out canary rather than 1: \(exempted)"
         )
         #expect(
             unpruned.isEmpty,
             """
-            these walk this checkout without pruning the root scratchpad/, so an agent's scratch \
-            tree (scripts/agent-scratch.sh --at scratchpad/<id>/tree, a detached copy of HEAD with \
-            no .git for isNestedCheckout to see) is indexed as a second copy of the repository: \
+            these opt out of the default root scratchpad/ prune, so an agent's scratch tree or a \
+            cp -R copy of HEAD under scratchpad/ (no .git and possibly no .cadence-scratch stamp \
+            for isForeignTree to see) is indexed as a second copy of the repository: \
             \(unpruned.joined(separator: ", "))
             """
         )

@@ -582,9 +582,9 @@ private func expectSizeBudget(_ relativePath: String, lines lineLimit: Int, byte
 ///
 /// **[[T-3332]]: `pruningAtRoot: ["scratchpad"]` as well, because a worktree is not the only copy.**
 /// `scripts/agent-scratch.sh` mints a DETACHED tree of HEAD at `scratchpad/<id>/tree/`, and that
-/// tree has no `.git` entry — so `isNestedCheckout` cannot see it and the nested-checkout prune
-/// above does not fire. Every scoped guide then exists twice, and the routing sweep asks the root
-/// guide why it does not route to `scratchpad/<id>/tree/Cadence/Models/AGENTS.md`. This walk breaks
+/// tree has no `.git` entry — so the `.git` half of `isForeignTree` cannot see it (its
+/// `.cadence-scratch` half does, since [[T-3333]], but a `cp -R` copy carries no stamp). Every
+/// scoped guide then exists twice, and the routing sweep asks the root guide why it does not route to `scratchpad/<id>/tree/Cadence/Models/AGENTS.md`. This walk breaks
 /// on a BYTE-IDENTICAL copy: it asserts membership of the path set, so the copy's contents are
 /// irrelevant and nothing has to be edited for it to fire. [[T-3330]] is the same hole in
 /// `CadenceMCPWriteFenceTests`.

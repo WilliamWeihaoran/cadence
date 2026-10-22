@@ -1364,7 +1364,7 @@ struct CadenceBuildInvocationHygieneTests {
     ///
     /// **[[T-3332]]: `pruningAtRoot: ["scratchpad"]` as well.** A worktree is not the only second
     /// copy — `scripts/agent-scratch.sh` mints a DETACHED tree of HEAD at `scratchpad/<id>/tree/`
-    /// with no `.git` entry, which `isNestedCheckout` cannot recognise, and an agent's loose notes
+    /// with no `.git` entry, which the `.git` half of `isForeignTree` cannot recognise, and an agent's loose notes
     /// sit under `scratchpad/<id>/` without any tree at all. Both are `.md` and `.sh` this sweep
     /// reads. Unlike the guide and fence walks, this one is CONTENT-dependent rather than
     /// structural: it asserts `offenders.isEmpty` over full relative paths and holds no

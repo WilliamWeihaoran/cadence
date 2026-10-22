@@ -273,7 +273,7 @@ struct CadenceAgentDefaultsIsolationTests {
         // `CadenceUITests/CadenceUITestEnvironment.swift` — and the census below asserts
         // `swiftWrites.count == 1`. That is a count over a UNIQUE expected path, so this walk
         // breaks on a byte-identical copy with nothing edited. The tree has no `.git` entry, so
-        // the `isNestedCheckout` prune that covers `.claude/worktrees/` ([[T-3241]]) cannot see it
+        // the `.git` half of the `isForeignTree` prune that covers `.claude/worktrees/` ([[T-3241]]) cannot see it
         // either; hidden entries are already skipped here, which is why the worktrees never
         // reached this walk and the scratch trees do. [[T-3330]], [[T-3180]].
         let prose: Set<String> = ["docs", "design", "scratchpad"]

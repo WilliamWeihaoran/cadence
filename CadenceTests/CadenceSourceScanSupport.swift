@@ -364,15 +364,24 @@ enum CadenceSourceScan {
         "node_modules", "Pods", ".swiftpm", "__pycache__", ".venv",
     ]
 
-    /// Is the directory at `relativePath` a checkout of its OWN rather than part of this one?
+    /// Is the directory at `relativePath` a copy of this repository that is NOT this checkout — a
+    /// checkout of its own, or a detached scratch tree?
     ///
-    /// **The test is a `.git` entry inside it**, which holds for a git worktree (where `.git` is a
-    /// file, not a directory), a submodule and a stray clone alike. Spelling `.claude/worktrees/`
-    /// here instead would cover today's instance and miss the next one.
-    static func isNestedCheckout(_ relativePath: String, under root: URL = repositoryRoot()) -> Bool {
-        FileManager.default.fileExists(
-            atPath: root.appendingPathComponent(relativePath).appendingPathComponent(".git").path
-        )
+    /// **The test is a property of the directory, never its location.** A `.git` entry inside it
+    /// holds for a git worktree (where `.git` is a file, not a directory), a submodule and a stray
+    /// clone alike. A `.cadence-scratch` entry is the stamp `scripts/agent-scratch.sh new` writes
+    /// into every detached `git archive` tree it mints, wherever `--at` puts it — and such a tree
+    /// has no `.git`, so before [[T-3333]] this predicate (then named isNestedCheckout) could not see
+    /// it. Spelling `.claude/worktrees/` or `scratchpad/*/tree` here instead would cover today's
+    /// instance and miss the next one ([[T-3241]]).
+    ///
+    /// A `cp -R` copy carries neither entry and is NOT recognised; the root `scratchpad/` prune
+    /// that `repositoryPaths` applies by default is what covers that, and loose agent notes.
+    static func isForeignTree(_ relativePath: String, under root: URL = repositoryRoot()) -> Bool {
+        let directory = root.appendingPathComponent(relativePath)
+        return [".git", ".cadence-scratch"].contains {
+            FileManager.default.fileExists(atPath: directory.appendingPathComponent($0).path)
+        }
     }
 
     /// Every file under `root`, repository-relative, with build output and **nested checkouts**
@@ -395,10 +404,17 @@ enum CadenceSourceScan {
     ///
     /// `pruningAtRoot` is for a directory that is only skipped at the top level — the repository's
     /// own `scratchpad/`, where a nested one is still swept ([[T-3180]]).
+    ///
+    /// **[[T-3333]]: it DEFAULTS to `["scratchpad"]`.** Three rounds of callers forgot to pass it
+    /// ([[T-3180]], [[T-3330]], [[T-3332]]); a default is obeyed by not typing. A caller whose job
+    /// is to police `scratchpad/` itself must pass `pruningAtRoot: []` — otherwise it reads an
+    /// empty answer and passes vacuously. The canary is
+    /// `CadenceSourceScanReaderTests.theWholeTreeWalkPrunesTheRootScratchpadByDefault`, and
+    /// `everyWholeTreeWalkOverThisCheckoutPrunesTheRootScratchpad` refuses an opt-out outside it.
     static func repositoryPaths(
         under root: URL = repositoryRoot(),
         pruningDirectoriesNamed extraNames: Set<String> = [],
-        pruningAtRoot rootOnly: Set<String> = []
+        pruningAtRoot rootOnly: Set<String> = ["scratchpad"]
     ) -> [String] {
         guard let walker = FileManager.default.enumerator(atPath: root.path) else { return [] }
         var paths: [String] = []
@@ -409,7 +425,7 @@ enum CadenceSourceScan {
             }
             let leaf = (name as NSString).lastPathComponent
             if prunedDirectoryNames.contains(leaf) || extraNames.contains(leaf)
-                || rootOnly.contains(name) || isNestedCheckout(name, under: root) {
+                || rootOnly.contains(name) || isForeignTree(name, under: root) {
                 walker.skipDescendants()
             }
         }
