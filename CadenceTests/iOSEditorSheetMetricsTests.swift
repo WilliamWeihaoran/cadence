@@ -323,14 +323,17 @@ struct iOSEditorSheetMetricsTests {
     /// there. The cause is not about those three: a plain `.sheet` on iPad is a form sheet, a form
     /// sheet is ~577pt wide however wide the host is, and UIKit hands anything that narrow a
     /// **compact** horizontal size class. So the arm is unreachable for every surface presented that
-    /// way — which, at the time of writing, is **all seventeen files below**: the task inspector,
-    /// both calendar sheets, both tracking editors, both AI review sheets, the shared note-editor
-    /// header and the three editors T-731 named. Not three surfaces, all of them.
+    /// way — which is **every surface the chain below presents**, bar the two capture editors item 1
+    /// names. Not three surfaces, all of them.
     ///
     /// Two things would wake it up, and this test watches for exactly those two:
     ///
-    /// 1. **`.presentationSizing` or `.presentationDetents`.** Neither appears anywhere under
-    ///    `Cadence/`, which is what makes "a plain `.sheet`" true rather than assumed.
+    /// 1. **`.presentationSizing` or `.presentationDetents`.** `.presentationSizing` appears nowhere
+    ///    in this chain. `.presentationDetents` does appear elsewhere under `Cadence/` (the Markdown
+    ///    editing surface, the `iOSCreateTaskSheet` capture card), but in this chain only on the two
+    ///    capture editors, `iOSTaskDetailSheet` and `iOSCalendarEventEditSheet`, one fixed
+    ///    `.height(cardHeight)` detent each — the count the loop pins. Every other file in the chain
+    ///    asks for none, which is what makes "a plain `.sheet`" true rather than assumed for them.
     /// 2. **A `.fullScreenCover`.** A cover on iPad *is* regular width. There are two in this chain,
     ///    both named below, and both present `iOSNoteEditorCover` — the one note editor that reads
     ///    no size class and none of this enum's ramps.
