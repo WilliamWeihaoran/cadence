@@ -5,10 +5,6 @@ import SwiftData
 // MARK: - Shared scheduling mutations
 
 enum SchedulingActions {
-    private static let dayStartMin = TimelineDayRange.startMin
-    private static let dayEndMin = TimelineDayRange.endMin
-    private static let minimumBundleDuration = TimelineDayRange.minimumDuration
-
     /// Creates a scheduled task in a list or section from a drag on a calendar day column, and
     /// **commits it** ([[T-655]]).
     ///
@@ -132,13 +128,6 @@ enum SchedulingActions {
     // unbundle(_:in:commit:) was declared here, with deleteBundle(_:in:commit:), which only
     // forwarded to it. [[T-3170]] removed both once no production path called either.
 
-    private static func ensureTask(_ task: AppTask, isLinkedIn bundle: TaskBundle) {
-        let existing = bundle.tasks ?? []
-        if !existing.contains(where: { $0.id == task.id }) {
-            bundle.tasks = existing + [task]
-        }
-    }
-
     static func normalizeBundleOrder(_ bundle: TaskBundle) {
         let ordered = orderedMemberTasks(in: bundle)
         for (offset, task) in ordered.enumerated() {
@@ -167,14 +156,6 @@ enum SchedulingActions {
             }
             return $0.createdAt < $1.createdAt
         }
-    }
-
-    private static func clampedRange(startMin: Int, endMin: Int) -> (start: Int, duration: Int) {
-        let orderedStart = min(startMin, endMin)
-        let orderedEnd = max(startMin, endMin)
-        let start = clampedStartMin(orderedStart)
-        let end = min(max(start + minimumBundleDuration, orderedEnd), dayEndMin)
-        return (start, max(minimumBundleDuration, end - start))
     }
 }
 

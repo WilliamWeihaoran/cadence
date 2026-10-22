@@ -322,8 +322,9 @@ struct TimelineMetricsTests {
         SchedulingActions.dropTask(task, to: "2026-06-02", startMin: 1_600)
 
         #expect(task.scheduledDate == "2026-06-02")
-        // dayEndMin (1_440) - minimumBundleDuration (5). The exact value, not a range: a range
-        // wide enough to hold the input is not an assertion about clamping.
+        // TimelineDayRange.endMin (1_440) - TimelineDayRange.minimumDuration (5). The exact
+        // value, not a range: a range wide enough to hold the input is not an assertion about
+        // clamping.
         #expect(task.scheduledStartMin == 1_435)
 
         // The floor is the same clamp read from the other end.

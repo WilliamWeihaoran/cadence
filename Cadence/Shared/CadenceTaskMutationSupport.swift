@@ -1192,6 +1192,11 @@ extension CadenceTaskMutationSupport {
     /// the rollback rather than after it; `CadenceDeleteSurvivorSnapshot` carries why that order is
     /// the fix and not a detail.
     ///
+    /// **No production caller since [[T-3170]]; kept on purpose ([[T-4520]]).** The sheet named
+    /// above is gone. This stays because `TaskBundleRetirement.runIfNeeded` and `.retire` are
+    /// documented against it as their reference — same five survivor writes, same restore-inside-
+    /// `commitDelete` wiring — and its tests are what pin that shared shape.
+    ///
     /// - Parameter commit: See `CadencePendingChangePersistence.commitDelete(in:commit:)`.
     static func deleteBundle(
         _ bundle: TaskBundle,
