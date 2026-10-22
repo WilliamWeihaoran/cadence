@@ -176,6 +176,7 @@ struct CadenceTodayOverdueSummarySurfaceTests {
             "CadenceOverdueSummaryMetrics", "CadenceOverdueSummaryCaption",
             "CadenceTodayOverdueListSummary", "CadenceTodayOverdueSectionSummary",
             "CadenceListOpenRequest", "iOSTodayOverdueListSheet", "pendingListOpen",
+            "CadenceOverdueSummaryLine", "CadenceOverdueSummaryPresentation",
         ]
         let pattern = #"\b(?:"# + retiredNames.joined(separator: "|") + #")\b"#
         let retired = try CadenceScanInstrument(

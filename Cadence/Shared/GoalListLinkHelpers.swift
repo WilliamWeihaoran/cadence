@@ -57,10 +57,17 @@ enum GoalLinkTarget: Identifiable {
         }
     }
 
-    /// `"3 active tasks"`, in the app's existing spelling rather than a fifth hand-written one —
-    /// `AttachWorkSheet` interpolated `"\(count) active tasks"` and so said "1 active tasks".
+    /// `"3 active tasks"` / `"1 active task"` — `AttachWorkSheet` interpolated
+    /// `"\(count) active tasks"` and so said "1 active tasks".
     var openTaskLabel: String {
-        CadenceOverdueSummaryPresentation.activeTaskDetail(count: openTaskCount)
+        Self.openTaskLabel(count: openTaskCount)
+    }
+
+    /// The count-only half of `openTaskLabel`, so the singular rule is testable without a model.
+    /// It lived beside Today's past-due summary line until that line lost its last caller and was
+    /// deleted ([[T-3335]]); this type is now its only reader.
+    static func openTaskLabel(count: Int) -> String {
+        "\(count) active task\(count == 1 ? "" : "s")"
     }
 
     /// A display name that never comes back empty — an untitled list would otherwise render as a

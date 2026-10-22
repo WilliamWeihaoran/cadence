@@ -456,6 +456,9 @@ struct CadenceGoalListLinkSurfaceTests {
 
         // "1 active task", not the "\(count) active tasks" the attach sheet used to interpolate.
         #expect(GoalLinkTarget.area(area).openTaskLabel == "1 active task")
+        #expect(GoalLinkTarget.openTaskLabel(count: 1) == "1 active task")
+        #expect(GoalLinkTarget.openTaskLabel(count: 0) == "0 active tasks")
+        #expect(GoalLinkTarget.openTaskLabel(count: 12) == "12 active tasks")
     }
 
     // MARK: - Both platforms reach the one path
