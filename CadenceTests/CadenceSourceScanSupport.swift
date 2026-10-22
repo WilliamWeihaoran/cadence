@@ -255,7 +255,21 @@ enum CadenceSourceScan {
     /// (`"static func handleCommandKeyEvent"`). A prefix whose parentheses are already closed
     /// resumes at its own end, which is what keeps `".onChange(of: scenePhase)"` reading the
     /// closure that follows it rather than something inside it.
+    ///
+    /// **T-4800: comments are blanked here, before the prefix is searched for.** Every caller
+    /// wants the prefix matched against *code*, and 323 of the 411 call sites were passing raw
+    /// source — so a doc comment that merely mentioned a declaration won the search and the body
+    /// read was whatever block followed the prose. That is not hypothetical: [[T-3371]] reddened
+    /// `main` when [[T-3021]] added a comment saying "filled by `init()` off …" above
+    /// `PersistenceController.init`, and the scan read a two-line `guard` as the initialiser. Four
+    /// sibling scans had each fixed it locally; doing it once here is what retires the class.
+    ///
+    /// Safe to apply unconditionally because `strippingComments` blanks to **spaces of equal
+    /// width** — so it is idempotent over the 88 sites that already stripped, and every character
+    /// offset, line number and line count a caller may take from the result still refers to the
+    /// same place in the file.
     static func declarationBody(_ declaration: String, in source: String) -> String? {
+        let source = strippingComments(source)
         guard let declared = source.range(of: declaration) else { return nil }
 
         // The prefix's own parentheses, so an argument list it cut through is finished rather than
