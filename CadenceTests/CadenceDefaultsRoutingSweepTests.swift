@@ -103,7 +103,11 @@ struct CadenceDefaultsRoutingSweepTests {
         "Cadence/Services/CadenceWidgetRefreshCenter.swift":
             "CadenceWidgets compiles it; the reload throttle and completion overrides are app-group state",
         "Cadence/Services/CadenceTodayWidgetSupport.swift":
-            "CadenceWidgets compiles it; T-1366's generation ledger is app-group state the widget process writes and the app reads"
+            """
+            CadenceWidgets compiles it; T-1366's generation ledger is app-group state the widget \
+            process writes and no app surface reads — T-1494 decided against a shipping reader, so \
+            the app only ever clears it on privacy reset
+            """
     ]
 
     /// Every spelling of "some store other than the one this app resolves preferences against".
