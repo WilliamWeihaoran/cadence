@@ -779,4 +779,70 @@ struct CadenceCalendarEventTimingTests {
         let opening = try #require(CadenceSourceScan.functionBody(named: "defaultStartMinute", in: quick))
         #expect(CadenceSourceScan.matchCount("CadenceCalendarEventTiming\\.settingStartMinute\\(", in: opening) == 1)
     }
+
+    #if os(macOS)
+    // MARK: - T-3051 half (2): the macOS retime path
+
+    /// `CalendarEventItem.eventDateRangeForEditedSegment` — the range all three macOS `updateEvent`
+    /// call sites write (drag, resize, popover) — added `startMin` elapsed minutes to the day's
+    /// midnight, so a 09:00 retime on 2026-03-08 wrote 10:00 and on 2026-11-01 wrote 08:00. It also
+    /// parsed the day key with a bare `DateFormatters.date(from:)`, in the host zone, while setting the
+    /// clock in the passed calendar. Both are pinned through the pure `segmentRange` the method now
+    /// delegates to; no `EKEvent` or `EKEventStore` is constructed.
+    @Test func aRetimedMacEventSegmentStartsAtTheWallClockMinuteOnBothTransitionDaysAndAnOrdinaryOne() throws {
+        let calendar = try newYork()
+
+        for dateKey in Self.everyDay {
+            let base = try midnight(dateKey, calendar)
+            for (startMin, hour) in [(540, 9), (1020, 17)] {
+                let range = try #require(
+                    CalendarEventItem.segmentRange(dateKey: dateKey, startMin: startMin, durationMinutes: 60, calendar: calendar),
+                    "\(hour):00 on \(dateKey) must resolve"
+                )
+                let start = calendar.dateComponents([.hour, .minute], from: range.start)
+                #expect(start.hour == hour, "a \(hour):00 retime on \(dateKey) wrote hour \(start.hour ?? -1)")
+                #expect(start.minute == 0, "a \(hour):00 retime on \(dateKey) wrote minute \(start.minute ?? -1)")
+                // The key is read in the passed calendar's zone, not the host's `TZ=UTC`: parsed in
+                // UTC, 2026-03-08 is 19:00 EST on the 7th, and the clock lands on the wrong day.
+                #expect(calendar.isDate(range.start, inSameDayAs: base), "the \(hour):00 retime on \(dateKey) left its own day")
+                // The end is a duration: one hour of real time after a correct start.
+                #expect(range.end.timeIntervalSince(range.start) == 3600, "the retimed end on \(dateKey) is not 60 minutes after its start")
+                #expect(calendar.component(.hour, from: range.end) == hour + 1)
+            }
+        }
+    }
+
+    @Test func aRetimedMacEventSegmentRefusesAMinuteThatNamesNoTimeAndKeepsTheFiveMinuteFloor() throws {
+        let calendar = try newYork()
+
+        for dateKey in Self.everyDay {
+            #expect(CalendarEventItem.segmentRange(dateKey: dateKey, startMin: 1440, durationMinutes: 30, calendar: calendar) == nil)
+            #expect(CalendarEventItem.segmentRange(dateKey: dateKey, startMin: -1, durationMinutes: 30, calendar: calendar) == nil)
+            let floored = try #require(
+                CalendarEventItem.segmentRange(dateKey: dateKey, startMin: 540, durationMinutes: 0, calendar: calendar)
+            )
+            #expect(floored.end.timeIntervalSince(floored.start) == 300)
+        }
+        #expect(CalendarEventItem.segmentRange(dateKey: "not-a-key", startMin: 540, durationMinutes: 30, calendar: calendar) == nil)
+    }
+
+    @Test func theMacRetimePathSetsTheClockThroughTheSharedHelper() throws {
+        let source = try CadenceCommitSurfaceScan.scanned("Cadence/macOS/Views/CalendarEventPresentationSupport.swift")
+        let edited = try #require(CadenceSourceScan.functionBody(named: "eventDateRangeForEditedSegment", in: source))
+        #expect(CadenceSourceScan.matchCount("Self\\.segmentRange\\(", in: edited) == 1)
+        let range = try #require(CadenceSourceScan.functionBody(named: "segmentRange", in: source))
+        #expect(CadenceSourceScan.matchCount("CadenceCalendarEventTiming\\.startDate\\(dateKey:", in: range) == 1)
+        #expect(
+            CadenceSourceScan.matchLines("byAdding:\\s*\\.minute,\\s*value:\\s*(edited)?[sS]tartMin", in: source).isEmpty,
+            "CalendarEventPresentationSupport adds a minute-of-day to midnight again"
+        )
+        // Scoped to the retime path: `editItem` further down also parses a key bare, but it hands
+        // the day to `clippedTo:` with `.current` on both sides, so it sets no clock in another zone.
+        #expect(
+            CadenceSourceScan.matchLines("DateFormatters\\.date\\(from:\\s*dateKey\\)", in: edited + range).isEmpty,
+            "the macOS retime path parses its day key in the host zone again"
+        )
+        #expect(CadenceSourceScan.matchCount("DateFormatters\\.date\\(from:\\s*dateKey\\)", in: "DateFormatters.date(from: dateKey)") == 1)
+    }
+    #endif
 }
