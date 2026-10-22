@@ -371,10 +371,12 @@ extension CadenceTaskMutationSupport {
         try? modelContext.save()
     }
 
-    /// **T-497.** This ended `try? modelContext.save()`, and the one surface that reaches it —
-    /// `iOSTaskDetailSheet.applyDates` — is called from a Done button that then dismisses. So the
-    /// sheet's own commit was honest while the frame under it still swallowed, which is the chain
-    /// half 2 follows. It flushes and answers instead: the fields are the user's own in-place edit,
+    /// **T-497.** This ended `try? modelContext.save()`, and the one surface that reached it — the
+    /// iOS task detail sheet's dates, applied from a Done button that then dismissed — had an
+    /// honest commit of its own while the frame under it still swallowed, which is the chain half 2
+    /// follows. That sheet now saves one drafted edit through `CadenceTaskEditDraftCommit.save`
+    /// instead, so no product surface calls this or its `CadenceTaskDateEditing` wrapper any more
+    /// ([[T-4467]]). It flushes and answers rather than swallowing: the fields are the user's own edit,
     /// so nothing is restored (see `CadenceInPlaceEditFlush`), and the caller decides what a `false`
     /// means for its screen.
     @discardableResult
@@ -1028,9 +1030,9 @@ extension CadenceTaskMutationSupport {
         task.subtasks = []
     }
 
-    /// Disposes of any bundle the delete just emptied. Without this an empty `TaskBundle` survives
-    /// and `CadenceCalendarPlanningSupport.bundlesByDate` — which does not filter empty bundles —
-    /// keeps rendering a block for it on the timeline indefinitely.
+    /// Disposes of any bundle the delete just emptied. Nothing draws a block any more ([[T-3170]]),
+    /// so an empty `TaskBundle` is no longer visible on the timeline; without this it would still
+    /// survive in the store as an orphan row with no members.
     @discardableResult
     static func deleteEmptyBundles(_ bundles: [TaskBundle], modelContext: ModelContext) -> Set<UUID> {
         var deletedIDs = Set<UUID>()

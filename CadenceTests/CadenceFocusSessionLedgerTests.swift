@@ -375,8 +375,9 @@ struct CadenceFocusSessionLedgerTests {
         #expect(task.actualMinutes == 10)
     }
 
-    /// **The block door's own version of the test above (T-654).** `distributeMinutes` is what
-    /// `CadenceFocusBundleSupport.endSession` and `iOSFocusView.logBundleSession` share, and it
+    /// **The multi-task door's own version of the test above (T-654).** `distributeMinutes` is what
+    /// every committing focus door now reaches — `CadenceFocusSupport.logElapsedSeconds(_:across:in:commit:)`,
+    /// `commitElapsed` and `endSession` alike, on both platforms — and it
     /// snapshots every credited member before writing — a refusal has to put every one of them
     /// back, not just the first. Proved across a **second** `ModelContext` over the same container,
     /// not just the one that ran the refused commit: reading the same context back only shows

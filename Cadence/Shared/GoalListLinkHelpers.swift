@@ -224,19 +224,20 @@ enum GoalLinkPresentation {
     /// `CadenceTaskMutationSupport.deleteFailureAlertTitle` gives.
     static let changeFailureAlertTitle = "Couldn't Change Lists"
 
-    /// What a refused **initial** attach says, on the macOS new-goal sheet ([[T-1302]]).
+    /// What a refused **initial** attach said, on the macOS new-goal sheet ([[T-1302]]).
+    /// **Callerless since [[T-2079]] deleted that sheet**; whether to delete it is [[T-4465]].
     ///
     /// A different sentence from `changeFailureNotice` because it is a different event, and both
-    /// of the sentences this repo already had would have been false here. "Nothing was changed."
-    /// denies the goal, which `CreateGoalSheet.save()` committed a few lines earlier and which the
-    /// store holds; the retired `goalSaveFailureNotice` denies it the other way
-    /// round and would send the user back to press Create for a goal that already exists — the
-    /// second-goal hazard, arriving as a sentence rather than as code. So this states both halves
-    /// in the order they happened and then the two ways out: the button beside it, which reads
-    /// **Retry** once a goal is held, and the goal's own Attach List.
+    /// of the sentences this repo already had would have been false there. "Nothing was changed."
+    /// denied the goal, which the sheet's own save had committed a few lines earlier and which the
+    /// store held; the retired `goalSaveFailureNotice` denied it the other way
+    /// round and would have sent the user back to press Create for a goal that already existed —
+    /// the second-goal hazard, arriving as a sentence rather than as code. So this states both
+    /// halves in the order they happened and then the two ways out: the sheet's button, which read
+    /// **Retry** once a goal was held, and the goal's own Attach List.
     ///
     /// It is a *list* sentence and lives here rather than beside the goal notices, because the half
-    /// that failed is the link: the one refusal it reports comes out of `attachList` above.
+    /// that failed was the link, not the goal.
     static let initialAttachFailureNotice =
         "Goal saved, but couldn't attach the list. Try again, or attach it from the goal."
 

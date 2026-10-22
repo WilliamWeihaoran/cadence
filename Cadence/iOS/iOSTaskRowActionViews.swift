@@ -459,8 +459,10 @@ struct iOSTaskRowContextMenu: View {
     /// presentation state, so there is no flag here to bind to.
     let openDetail: () -> Void
     @Binding var showDeleteConfirmation: Bool
-    /// See `iOSTaskRowContainerChip.moveFailed`. A `Menu` closes itself on the tap exactly as the
-    /// popover does, so this refusal has no surface of its own either (T-702).
+    /// The row's move-failure alert (T-702). The list chip's popover writes its own refusal under
+    /// its rows since [[T-727]] (see `iOSTaskRowContainerPickerContent.move(area:project:)`), but a
+    /// `Menu` closes itself on the tap and cannot be told not to, so this refusal has no surface of
+    /// its own.
     @Binding var moveFailed: Bool
     /// **T-761(c).** Same shape as `moveFailed`, one submenu over: `selectRecurrenceRule` below
     /// discarded `iOSTaskRecurrenceSelection.select`'s answer, so a refused rule was silent here

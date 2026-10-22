@@ -7,10 +7,11 @@ import Testing
 /// returned `.twoPane` for every regular-width device, however little room there was.
 @MainActor
 struct CadenceTodayTwoPaneFloorTests {
-    /// A pane is the window less the shell sidebar — 188pt (`iOSSidebarMetrics.expandedWidth`) when
-    /// it is out, **0 when the user folds it**, which hands the detail the whole window. Spelled
-    /// out here rather than imported because the sidebar metrics live under `Cadence/iOS/`, inside
-    /// `#if os(iOS)`.
+    /// A pane is the window less the shell sidebar when it is out, **0 when the user folds it**,
+    /// which hands the detail the whole window. The 188pt spelled below is the iOS sidebar's width
+    /// when this was written; the shell's width is now `CadenceRootShellLayout.expandedWidth`, 264,
+    /// in `Cadence/Shared/`, so the sidebar-out figures that follow are the 188 ones ([[T-4466]]).
+    /// Every verdict below holds at 264 as well: 570 and 946 land on the same sides of the floor.
     ///
     /// The target iPad is an 11" Pro: 834pt of window in portrait, 1210 in landscape. So the four
     /// panes Today is actually handed on it are **646 / 1022** with the sidebar out and

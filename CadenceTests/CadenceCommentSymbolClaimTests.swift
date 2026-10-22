@@ -1141,19 +1141,14 @@ enum CadenceCommentSymbolClaim {
     /// not be: two sit in Codex-leased files (`CadenceTaskMutationSupport.swift`,
     /// `iOSTaskRowActionViews.swift`), and the rest describe a behaviour or a figure — a commit
     /// exemption, a sidebar width, a timeline row height — whose correct present-tense replacement
-    /// needs the code read, not just a name swapped. [[T-3224]] owns them.
-    static let staleClaims: [String] = [
-        "Cadence/Shared/CadenceTaskMutationSupport.swift `CadenceCalendarPlanningSupport.bundlesByDate`",
-        "Cadence/Shared/CadenceTaskMutationSupport.swift `iOSTaskDetailSheet.applyDates`",
-        "Cadence/iOS/iOSMarkdownTextView.swift `iOSMarkdownStylingSupport.applyTableBlock`",
-        "Cadence/iOS/iOSTaskRowActionViews.swift `iOSTaskRowContainerChip.moveFailed`",
-        "CadenceTests/CadenceFocusSessionLedgerTests.swift `iOSFocusView.logBundleSession`",
-        "CadenceTests/CadenceSaveCommitDisciplineTests.swift `iOSCalendarBoardView.move`",
-        "CadenceTests/CadenceTagAndNoteCommitSurfaceTests.swift `iOSTaskDetailSheet.finishEditingAndDismiss`",
-        "CadenceTests/CadenceTodayLayoutSupportTests.swift `iOSSidebarMetrics.expandedWidth`",
-        "CadenceTests/CalendarTimelineGridTests.swift `iOSTodayView.iOSFloatingCreateTaskButton`",
-        "CadenceTests/iOSCalendarMetricsTests.swift `iOSSchedulePanel.rowHeight`",
-    ]
+    /// needs the code read, not just a name swapped. [[T-3224]] owned them.
+    ///
+    /// **None, since [[T-3224]].** All ten were read against the code and rewritten in one
+    /// change: four repointed to the symbol that now does the job, six reworded because the
+    /// behaviour they described had moved (the Block removal, the drafted detail sheet, the
+    /// shared shell width, Today drawing the Calendar's own column). The list stays, empty, so the
+    /// next held claim has a home and a count to move.
+    static let staleClaims: [String] = []
 
     static var ledger: [String] { (deliberateTombstones + staleClaims).sorted() }
 
@@ -1202,12 +1197,11 @@ enum CadenceCommentSymbolClaim {
         "CadenceTests/CadenceMCPWriteFenceTests.swift `tempfile.TemporaryDirectory`",
     ]
 
-    /// Present-tense claims rooted on a type that no longer exists. `CreateGoalSheet` was deleted
-    /// by [[T-2079]], and the constant whose doc names it may have gone dead with it — whether to
-    /// reword the doc or delete the constant is [[T-3224]]'s call, not a rename.
-    static let rootStaleClaims = [
-        "Cadence/Shared/GoalListLinkHelpers.swift `CreateGoalSheet.save()`",
-    ]
+    /// Present-tense claims rooted on a type that no longer exists. Empty since [[T-3224]]: the
+    /// one line it held named the new-goal sheet [[T-2079]] deleted, and the constant whose doc
+    /// named it did go dead with it. The doc now says so in the past tense, and deleting the
+    /// constant is [[T-4465]]'s, not a comment fix.
+    static let rootStaleClaims: [String] = []
 
     static var rootLedger: [String] { (rootTombstones + rootNonSymbols + rootStaleClaims).sorted() }
 
@@ -1233,7 +1227,7 @@ enum CadenceCommentSymbolClaim {
         // removed line in the group itself carries the measurement.
         #expect(Self.rootTombstones.count == 11)
         #expect(Self.rootNonSymbols.count == 5)
-        #expect(Self.rootStaleClaims.count == 1)
+        #expect(Self.rootStaleClaims.count == 0)
     }
 
     /// The unqualified half's ledger — [[T-718]].
@@ -1352,8 +1346,9 @@ enum CadenceCommentSymbolClaim {
         // `staleClaims`. The `staleclaims` pass fixed six, taking it to 1; the last is
         // TaskCreationService.swift's, held for a live Codex lease. 11 since [[T-3209]] made ten
         // more visible that it could not fix in place -- see `staleClaims`. Fixing them brings
-        // this to 0. T-3170 now fixes the TaskCreationService comment, taking 11 to 10.
-        #expect(stale.count == 10)
+        // this to 0. T-3170 now fixes the TaskCreationService comment, taking 11 to 10, and
+        // [[T-3224]] fixed the other ten, taking it to 0.
+        #expect(stale.count == 0)
     }
 
     /// The sweep. Exact set equality, both directions, over every Swift file in all five targets.

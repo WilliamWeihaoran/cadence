@@ -1164,8 +1164,8 @@ struct CadenceTodayTimelinePaneTests {
             CadenceSourceScan.declarationBody("private struct iOSCalendarTimelineDayColumn: View", in: grid)
         )
 
-        // (1) The hold-and-drag creation panel. The `+` is the page's
-        // (`iOSTodayView.iOSFloatingCreateTaskButton`); what the pane has to supply is the landing
+        // (1) The hold-and-drag creation panel. The `+` is the page's (`iOSTodayView` installs
+        // `.iOSFloatingCreateTaskButton()`); what the pane has to supply is the landing
         // place, and that is on the column both spans build.
         #expect(column.contains(".iOSNewTaskDropTarget("))
         #expect(column.contains("CadenceCaptureDropSlotRule("))

@@ -59,8 +59,8 @@ struct iOSCalendarMetricsTests {
     /// Today's timeline (`iOSSchedulePanel`) and the Calendar's day columns draw the same
     /// `iOSTimelineTaskBlock`. The grid's hour was `regular ? 64 : 58` against Today's flat 58, so
     /// the same scheduled task occupied a different number of points on the two timed surfaces of a
-    /// single iPad. This is the number that made them agree; `iOSSchedulePanel.rowHeight` is the
-    /// other half and cannot be read from here.
+    /// single iPad. This is the number that made them agree, and it is now the only one: Today's
+    /// pane draws the Calendar's own day column, so there is no second hour height to read.
     @Test func anHourIsOneHeightOnEveryTimedSurface() {
         #expect(iOSCalendarTimelineMetrics.hourHeight == 58)
     }

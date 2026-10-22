@@ -3236,8 +3236,9 @@ enum CadenceSaveCommitRule {
     /// that declares the callee, so an instance method swallowing in another file is invisible
     /// here — deliberately, see `SwallowingIndex`. And `try?` on a *throwing* helper is not a
     /// swallow this can see, because `swallowedSave` keys on the commit surface rather than on
-    /// `try?` itself; `iOSCalendarBoardView.move` is that shape and is allowed to be, since a drag
-    /// reports nothing.
+    /// `try?` itself. The iOS Calendar Board's drop was the example of that shape once; it now
+    /// answers through `CadenceTaskDateEditing.moveTaskToDate` and reports a refusal in
+    /// `iOSCalendarBoardView.schedule(_:on:)`, so it is no longer one.
     static func indirectReportOffenders(in source: String, swallowing index: SwallowingIndex) -> [String] {
         let parsed = parsedDeclarations(in: source)
         let reached = localSwallowingNames(in: parsed, index: index)

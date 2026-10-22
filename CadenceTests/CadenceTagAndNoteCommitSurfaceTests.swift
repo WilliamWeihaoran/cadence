@@ -28,10 +28,11 @@ import Testing
 /// **T-652 added the third member of that set.** `TagPickerPopoverViews.restore` — the picker's
 /// own list, not its sheet — was missed by T-497 and by the sweep, for the reason its test records.
 ///
-/// **Tier 3 is deliberately still exempt.** `iOSSearchSupportViews` and
-/// `iOSTaskDetailSheet.finishEditingAndDismiss` are "flush an in-place edit, then close" over a
-/// field the user still has focus in, and what *undo* means there is a product decision, not a
-/// mechanical one. The three Tier 2 editors are not that case: their fields are drafts held in
+/// **Tier 3 is deliberately still exempt.** `iOSSearchSupportViews` is "flush an in-place edit,
+/// then close" over a field the user still has focus in, and what *undo* means there is a product
+/// decision, not a mechanical one. The iOS task detail sheet was the other member of the tier and
+/// has left it: it now drafts every field and commits once, through
+/// `iOSTaskDetailSheet.applySave(scope:)`, restoring the record on a refusal. The three Tier 2 editors are not that case: their fields are drafts held in
 /// `@State`, so restoring the model does not fight a caret.
 ///
 /// **Why the file is split the way it is.** Only `CadenceListNoteFiling.createNote` is a static

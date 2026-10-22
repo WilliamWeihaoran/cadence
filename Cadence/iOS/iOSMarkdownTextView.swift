@@ -21,7 +21,8 @@ final class iOSMarkdownTextView: UITextView {
     /// `NSTextAttachment` only where the text actually contains the attachment character U+FFFC.
     /// Every rendered block in this editor works the other way round: it hangs an attachment on the
     /// block's *first existing character* and hides the rest of the run
-    /// (`iOSMarkdownStylingSupport.applyTableBlock` and its five siblings). Under TextKit 2 none of
+    /// (`iOSMarkdownStyler.applyLiveTableBlocks` and its siblings in
+    /// `iOSMarkdownStylingBlockSupport.swift`). Under TextKit 2 none of
     /// those images drew. Tables, fenced code blocks and dividers all rendered as a tall empty gap
     /// with one stray `|`, backtick or hyphen where the block should have been — the paragraph
     /// style reserved the canvas's height, and nothing was ever painted into it.
