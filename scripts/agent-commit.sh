@@ -2975,9 +2975,26 @@ cmd_selftest() {
 
     say "== agent-commit.sh selftest =="
     local here="$SCRIPT_PATH"
-    local ws; ws=$(mktemp -d "${TMP_BASE}cadence-agent-commit-selftest-XXXXXX")
-    export CADENCE_DECLINED_LEDGER="$ws/ledger"
     local out rc prehead
+    # T-3287. The modes run as SEGMENTS, concurrently, each over its OWN fixture repository and its
+    # own declined-hunk ledger under $runs/<segment>; one chain of ~180 gate runs was ~100 s of CPU-bound
+    # wall. Inside a segment the modes still run in written order over one shared, order-dependent
+    # fixture, as the whole selftest used to. A boundary sits only where the modes after it read
+    # nothing the modes before it left behind, and that was MEASURED, not assumed: with every gate
+    # run's exit status and output logged (shas, dates and paths normalised), all 183 matched the
+    # single chain's, except mode 3d's torn-read record, whose line order is the race it exists for.
+    # Started alone on a fresh fixture, modes 2, 3c, 4b, 4b4, 4d, 4d2, 4d3, 4f, 4h, 4n and 4m each
+    # printed something different, so each stays in its predecessor's segment; 9 differed only for
+    # want of mode 5's $ws/zdot and now makes it. A NEW mode goes in the segment of the mode it
+    # follows unless it is proven independent the same way. Each segment's output is printed in the
+    # old order; one that does not reach its end writes no tally and is a failure by name below, so
+    # a crashed or truncated segment cannot read as "fewer checks, all passed".
+    local runs; runs=$(mktemp -d "${TMP_BASE}cadence-agent-commit-selftest-XXXXXX")
+    local ws
+    selftest_fixture() {  # $1 = the directory to build the fixture repository in
+        ws=$1
+        mkdir -p "$ws" || return 1
+        export CADENCE_DECLINED_LEDGER="$ws/ledger"
 
     (
         cd "$ws" || exit 1
@@ -3000,9 +3017,22 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
         rm -rf "$ws" "$ws.fixture.log"; return 1
     }
     rm -f "$ws.fixture.log"
+        return 0
+    }
+    selftest_segment_open() {  # $1 = segment name; runs inside the segment's own subshell
+        performed=(); failures=()
+        selftest_fixture "$runs/$1" || exit 2
+    }
+    selftest_segment_close() {  # $1 = segment name
+        print -r -- "${#performed} ${#failures}" > "$runs/$1.tally"
+        print -rl -- "${failures[@]}" > "$runs/$1.failed"
+    }
+    local -a segments; segments=()
 
     local M=$'msg\n\nCo-Authored-By: Claude Opus 5 <noreply@anthropic.com>'
 
+    segments+=(s1)
+    ( selftest_segment_open s1
     say ""
     say " mode 1 (FOREIGN-STAGED) -- a sibling's staged hunk must not be sweepable into your commit"
     ( cd "$ws" && print -r -- "sibling edit" >> theirs.txt && git add theirs.txt ) >/dev/null 2>&1
@@ -3087,6 +3117,9 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
     check "and nothing was recorded as declined" \
         $( [[ "$out" != *"were declined"* && -z $(print -rl -- "$CADENCE_DECLINED_LEDGER"/*.declined(N)) ]] && print 1 || print 0 ) "$out"
 
+    selftest_segment_close s1 ) > "$runs/s1.log" 2>&1 &
+    segments+=(s2)
+    ( selftest_segment_open s2
     say ""
     say " mode 3d (T-1305) -- a sibling rewriting the file mid-scan must not manufacture a hunk"
     # The reproduction, shrunk: a long file, a writer alternating between two versions of it with a
@@ -3138,6 +3171,9 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
     check "the record clears again, so the modes below start clean" \
         $( [[ -z $(print -rl -- "$CADENCE_DECLINED_LEDGER"/*.declined(N)) ]] && print 1 || print 0 ) "$out"
 
+    selftest_segment_close s2 ) > "$runs/s2.log" 2>&1 &
+    segments+=(s3)
+    ( selftest_segment_open s3
     say ""
     say " mode 3b -- --accept-declined clears a record deliberately, and only then"
     ( cd "$ws"
@@ -3171,6 +3207,9 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
     out=$( cd "$ws" && zsh "$here" c1 -m "$M" --removes 1 shared.txt=cut.txt 2>&1 ); rc=$?
     check "the exact count lets it through" $(( rc == 0 )) "exit $rc: $out"
 
+    selftest_segment_close s3 ) > "$runs/s3.log" 2>&1 &
+    segments+=(s4)
+    ( selftest_segment_open s4
     say ""
     say " mode 4b1 (REMOVES-HEAD-LINES) -- T-1316: a duplicate line and a blank line are deletions too"
     # The count above used to be SET MEMBERSHIP -- `grep -F -x -v -f <new> <old> | grep -c .`, which
@@ -3313,6 +3352,9 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
            && print 1 || print 0 ) "HEAD $prehead -> $( cd "$ws" && git rev-parse HEAD )"
     ( cd "$ws" && rm -rf lonely && git checkout -q HEAD -- code.txt 2>/dev/null; git reset -q ) >/dev/null 2>&1
 
+    selftest_segment_close s4 ) > "$runs/s4.log" 2>&1 &
+    segments+=(s5)
+    ( selftest_segment_open s5
     say ""
     say " mode 4b3 (REBUILD-BEHIND-HEAD) -- the = reconstruction must be asked where IT was built"
     # T-992. The `=` form is what the refusal in 4b2 TELLS the agent to reach for, so a rebuild on
@@ -3490,6 +3532,9 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
               && $( cd "$ws" && git show HEAD:t1246b/TODO.md ) == *"sibling's landed line"* ]] \
            && print 1 || print 0 ) "HEAD $prehead -> $( cd "$ws" && git rev-parse HEAD )"
 
+    selftest_segment_close s5 ) > "$runs/s5.log" 2>&1 &
+    segments+=(s6)
+    ( selftest_segment_open s6
     say ""
     say " mode 4c (LEDGER-IDS-LOST) -- a ledger entry HEAD has cannot vanish inside a line count"
     rm -f "$CADENCE_DECLINED_LEDGER"/*.declined(N)
@@ -3801,6 +3846,9 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
         $( [[ $rc == 0 ]] && print 1 || print 0 ) "exit $rc: $out"
     rm -f "$CADENCE_DECLINED_LEDGER"/*.declined(N)
 
+    selftest_segment_close s6 ) > "$runs/s6.log" 2>&1 &
+    segments+=(s7)
+    ( selftest_segment_open s7
     say ""
     say " mode 4e (LEDGER-CLOSURE-BURIED / LEDGER-ID-UNFILED) -- T-1106: a closure the anchor cannot"
     say "          see, and an id the allocator never heard of"
@@ -4183,6 +4231,9 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
     check "an ordinary later edit to a ledger that ALREADY carries that unresolved link needs no flag" \
         $( [[ $rc == 0 && "$out" != *LEDGER-LINK-UNFILED* ]] && print 1 || print 0 ) "exit $rc: $out"
 
+    selftest_segment_close s7 ) > "$runs/s7.log" 2>&1 &
+    segments+=(s8)
+    ( selftest_segment_open s8
     say ""
     say " mode 4i (LEDGER-UNFILED-UNTRACED) -- T-1207: the escape must write the record, not replace it"
     # `--unfiled-ids` refuses nothing and authorises a message, and until 2026-09-13 it left no
@@ -4354,6 +4405,9 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
     out=$( cd "$ws" && zsh "$here" sync -F sync.txt mine.txt 2>&1 ); rc=$?
     check "and the id standing at the start of the name commits too" $(( rc == 0 )) "exit $rc: $out"
 
+    selftest_segment_close s8 ) > "$runs/s8.log" 2>&1 &
+    segments+=(s9)
+    ( selftest_segment_open s9
     say ""
     say " mode 4l (LEDGER-CLOSURE-LAGGED) -- T-1300: landing code under an id the ledger still calls open"
     # The warning `scripts/ledger-lag-check.sh` makes in CI, made here instead -- before the push,
@@ -4592,6 +4646,9 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
     check "a commit that stages no ledger is not asked the question" \
         $( [[ $rc == 0 && "$out" != *LEDGER-HUNK-UNCLAIMED* ]] && print 1 || print 0 ) "exit $rc: $out"
 
+    selftest_segment_close s9 ) > "$runs/s9.log" 2>&1 &
+    segments+=(s10)
+    ( selftest_segment_open s10
     say ""
     say " mode 4 (NO-PATHS / UNKNOWN-PATH / NOTHING-TO-COMMIT / NO-COAUTHOR-TRAILER / NOT-REPO-ROOT)"
     say "         -- the shapes that commit nothing must not read as a commit"
@@ -4806,6 +4863,9 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
         $( [[ $rc == 3 && "$out" == *DECLINED-HUNK-LOST*"mode7 in-flight line"* ]] && print 1 || print 0 ) "exit $rc: $out"
     rm -f "$CADENCE_DECLINED_LEDGER"/*.declined(N)
 
+    selftest_segment_close s10 ) > "$runs/s10.log" 2>&1 &
+    segments+=(s11)
+    ( selftest_segment_open s11
     say ""
     say " mode 8 (SWEEP-MANIFEST-MISSING) -- a test that walks the product tree must arrive with its"
     say "         manifest entry, at the commit, not 22 minutes later in someone else's suite run"
@@ -4936,12 +4996,16 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>" )
     check "a precheck that exits neither 0 nor 4 is refused, not read as a pass" \
         $( [[ $rc == 3 && "$out" == *SWEEP-CHECK-FAILED* ]] && print 1 || print 0 ) "exit $rc: $out"
 
+    selftest_segment_close s11 ) > "$runs/s11.log" 2>&1 &
+    segments+=(s12)
+    ( selftest_segment_open s12
     say ""
     say " mode 9 (INTERRUPTED-REPAIR) -- a run stopped between its swap and its shared-index repair"
     say "         must not leave the next agent a FOREIGN-STAGED revert of work already in HEAD"
     # T-3007, measured 2026-10-06 on `f58c3b2c`: killed mid-commit, 587 deletions left staged and a
     # new file missing from the checkout. Stopped at the one instant that matters with the same
     # in-process `git` interception as mode 5: let the swap land, then signal this very process.
+    mkdir -p "$ws/zdot"   # mode 5 made this when the two shared a fixture; mode 9 opens its own segment
     print -rl -- \
         'git() {' \
         '  command git "$@"; local _rc=$?' \
@@ -5077,7 +5141,22 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>" ) >/dev/null 2>&1
     out=$(zsh "${here:h}/real-tree-sweep-manifest.sh" selftest-chain precheck-selftest 2>&1); rc=$?
     check "the precheck's own selftest passes (chained)" $(( rc == 0 )) "exit $rc: $out"
 
-    rm -rf "$ws"
+    selftest_segment_close s12 ) > "$runs/s12.log" 2>&1 &
+    wait
+    performed=(); failures=()
+    local seg segtally
+    for seg in $segments; do
+        [[ -f "$runs/$seg.log" ]] && cat -- "$runs/$seg.log"
+        if [[ ! -s "$runs/$seg.tally" ]]; then
+            say "  FAIL  segment $seg did not finish, so its checks are not counted as run"
+            failures+=("segment $seg did not finish"); performed+=("segment $seg")
+            continue
+        fi
+        segtally=( $(<"$runs/$seg.tally") )
+        repeat $segtally[1] performed+=("$seg")
+        failures+=( ${(f)"$(<"$runs/$seg.failed")"} )
+    done
+    rm -rf "$runs"
     say ""
     # A tally derived from the checks that actually ran. A selftest gutted to `return 0` still exits
     # 0; it cannot print a non-zero passed count (T-719).
