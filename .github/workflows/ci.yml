@@ -175,7 +175,7 @@ jobs:
         run: ./.github/scripts/assert-toolchain.sh
 
       # -----------------------------------------------------------------------
-      # T-3288, and the two steps below are repeated in `macos-tests` and
+      # T-3288, and the three steps below are repeated in `macos-tests` and
       # `ios-build`; this is the one place the reasoning is written down.
       #
       # Before this, `grep -c 'actions/cache' ci.yml` was 0: each of the three
@@ -207,10 +207,19 @@ jobs:
       # not extra work -- it is the resolve the Build step below would do anyway,
       # moved to where it can be seen. It must stay AFTER `Assert toolchain`,
       # which is what selects the Xcode this resolve runs under.
+      #
+      # RESTORE AND SAVE ARE SPLIT (T-4472) because the combined `actions/cache@v4`
+      # exposes ONE output, `cache-hit`: it keeps the matched and primary keys in
+      # post-step state, so `outputs.cache-matched-key` read empty on every run.
+      # `actions/cache/restore@v4` outputs `cache-matched-key` (the key restored,
+      # primary or a restore-keys prefix match) and `cache-primary-key`, so the
+      # echo prints the restored key, else the primary one on a miss. The save
+      # step mirrors the combined action's own rule -- skip on an exact hit -- and
+      # runs right after the resolve, so a later red build no longer forfeits it.
       # -----------------------------------------------------------------------
       - name: Restore resolved SPM dependencies (T-3288)
         id: spm-cache
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: ${{ runner.temp }}/dd-mcp/SourcePackages
           key: spm-mcp-${{ runner.os }}-${{ hashFiles('Cadence.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
@@ -220,7 +229,7 @@ jobs:
             spm-mcp-${{ runner.os }}-
       - name: Resolve package dependencies (timed -- T-3288)
         run: |
-          echo "spm cache: hit=${{ steps.spm-cache.outputs.cache-hit }} key=${{ steps.spm-cache.outputs.cache-matched-key }}"
+          echo "spm cache: hit=${{ steps.spm-cache.outputs.cache-hit }} key=${{ steps.spm-cache.outputs.cache-matched-key || steps.spm-cache.outputs.cache-primary-key }}"
           start=$SECONDS
           # `-scheme` is REQUIRED here, and not as decoration: CI's Xcode 26.0.1 refuses
           # `-derivedDataPath` without one -- "The flag -scheme, -testProductsPath, or
@@ -231,6 +240,12 @@ jobs:
             -scheme CadenceMCPServer \
             -derivedDataPath "$RUNNER_TEMP/dd-mcp"
           echo "SPM-RESOLVE-SECONDS=mcp=$(( SECONDS - start ))"
+      - name: Save resolved SPM dependencies (T-3288, T-4472)
+        if: steps.spm-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ runner.temp }}/dd-mcp/SourcePackages
+          key: ${{ steps.spm-cache.outputs.cache-primary-key }}
       - name: Build
         run: |
           # scripts/xcb.sh writes its log to "${TMPDIR}cadence-xcb-<id>.log". Pin TMPDIR here (NOT
@@ -280,7 +295,7 @@ jobs:
       # step of its own. Must stay after `Assert toolchain`.
       - name: Restore resolved SPM dependencies (T-3288)
         id: spm-cache
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: ${{ runner.temp }}/dd-tests/SourcePackages
           key: spm-tests-${{ runner.os }}-${{ hashFiles('Cadence.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
@@ -290,7 +305,7 @@ jobs:
             spm-tests-${{ runner.os }}-
       - name: Resolve package dependencies (timed -- T-3288)
         run: |
-          echo "spm cache: hit=${{ steps.spm-cache.outputs.cache-hit }} key=${{ steps.spm-cache.outputs.cache-matched-key }}"
+          echo "spm cache: hit=${{ steps.spm-cache.outputs.cache-hit }} key=${{ steps.spm-cache.outputs.cache-matched-key || steps.spm-cache.outputs.cache-primary-key }}"
           start=$SECONDS
           # `-scheme` is REQUIRED here, and not as decoration: CI's Xcode 26.0.1 refuses
           # `-derivedDataPath` without one -- "The flag -scheme, -testProductsPath, or
@@ -301,6 +316,12 @@ jobs:
             -scheme Cadence \
             -derivedDataPath "$RUNNER_TEMP/dd-tests"
           echo "SPM-RESOLVE-SECONDS=tests=$(( SECONDS - start ))"
+      - name: Save resolved SPM dependencies (T-3288, T-4472)
+        if: steps.spm-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ runner.temp }}/dd-tests/SourcePackages
+          key: ${{ steps.spm-cache.outputs.cache-primary-key }}
       - name: Test
         run: |
           export TMPDIR="$RUNNER_TEMP/"
@@ -431,7 +452,7 @@ jobs:
       # step of its own. Must stay after `Assert toolchain`.
       - name: Restore resolved SPM dependencies (T-3288)
         id: spm-cache
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: ${{ runner.temp }}/dd-ios/SourcePackages
           key: spm-ios-${{ runner.os }}-${{ hashFiles('Cadence.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
@@ -441,7 +462,7 @@ jobs:
             spm-ios-${{ runner.os }}-
       - name: Resolve package dependencies (timed -- T-3288)
         run: |
-          echo "spm cache: hit=${{ steps.spm-cache.outputs.cache-hit }} key=${{ steps.spm-cache.outputs.cache-matched-key }}"
+          echo "spm cache: hit=${{ steps.spm-cache.outputs.cache-hit }} key=${{ steps.spm-cache.outputs.cache-matched-key || steps.spm-cache.outputs.cache-primary-key }}"
           start=$SECONDS
           # `-scheme` is REQUIRED here, and not as decoration: CI's Xcode 26.0.1 refuses
           # `-derivedDataPath` without one -- "The flag -scheme, -testProductsPath, or
@@ -452,6 +473,12 @@ jobs:
             -scheme Cadence \
             -derivedDataPath "$RUNNER_TEMP/dd-ios"
           echo "SPM-RESOLVE-SECONDS=ios=$(( SECONDS - start ))"
+      - name: Save resolved SPM dependencies (T-3288, T-4472)
+        if: steps.spm-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ runner.temp }}/dd-ios/SourcePackages
+          key: ${{ steps.spm-cache.outputs.cache-primary-key }}
       - name: Build
         run: |
           export TMPDIR="$RUNNER_TEMP/"
