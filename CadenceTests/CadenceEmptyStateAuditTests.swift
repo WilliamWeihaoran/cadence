@@ -375,9 +375,10 @@ enum CadenceEmptyStateAudit {
     /// a component named outside the family a red test rather than an invisible one.
     ///
     /// **`…Row` is subtracted as a rule, not as an allowlist.** A row is a list *item*: its title
-    /// and subtitle describe something that is there, not the absence of everything. Nine views
-    /// have this exact shape and are rows (`iOSListPickerRow`, `AttachListCandidateRow`,
-    /// `ListLifecycleRow`, …). The one row that really is an empty state —
+    /// and subtitle describe something that is there, not the absence of everything. Eight views
+    /// have this exact shape and are rows (`iOSListPickerRow`, `NoteActionPickerRow`,
+    /// `ListLifecycleRow`, …; `AttachListCandidateRow` was a ninth until [[T-4510]] deleted it
+    /// with the attach sheets it served). The one row that really is an empty state —
     /// `iOSSettingsEmptyInlineRow` — is carried by the *name* derivation, which is the point of
     /// running two. It used to be two rows; T-600(a) deleted `iOSSettingsEmptyRow`, which was the
     /// same component with the glyph hardcoded to `tray` and a title a point smaller.
@@ -527,7 +528,7 @@ struct CadenceEmptyStateAuditTests {
         )
 
         // The `…Row` subtraction is doing work rather than being decorative, and everything it
-        // drops really is a row: nine views have this shape and describe an item that is there.
+        // drops really is a row: eight views have this shape and describe an item that is there.
         let droppedRows = declarations.filter { declaration in
             guard declaration.conformances.contains("View"), declaration.name.hasSuffix("Row") else {
                 return false

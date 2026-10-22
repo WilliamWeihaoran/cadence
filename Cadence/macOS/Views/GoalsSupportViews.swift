@@ -462,44 +462,6 @@ struct GoalTaskContributorRow: View {
     }
 }
 
-struct AttachListCandidateRow: View {
-    let icon: String
-    let title: String
-    let subtitle: String
-    let color: Color
-    let isAttached: Bool
-    let onToggle: () -> Void
-
-    var body: some View {
-        Button(action: onToggle) {
-            HStack(spacing: 10) {
-                Image(systemName: icon)
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(color)
-                    .frame(width: 28, height: 28)
-                    .background(color.opacity(0.12))
-                    .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControlCompact))
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(title)
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(Theme.text)
-                    Text(subtitle)
-                        .font(.system(size: 10))
-                        .foregroundStyle(Theme.dim)
-                }
-                Spacer()
-                Label(isAttached ? "Attached" : "Attach", systemImage: isAttached ? "checkmark.circle.fill" : "plus.circle")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(isAttached ? Theme.green : Theme.blue)
-            }
-            .padding(11)
-            .background(isAttached ? Theme.green.opacity(0.1) : Theme.surfaceElevated.opacity(0.58))
-            .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
-        }
-        .buttonStyle(.cadencePlain)
-    }
-}
-
 struct GoalStatusBadge: View {
     let status: GoalStatus
 
