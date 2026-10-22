@@ -521,23 +521,15 @@ case "$CMD" in
     # asserted in a comment. Everything happens in a throwaway lock directory: the
     # real lock is in use by sibling agents whenever this is worth running.
     [[ -n "${CADENCE_LOCK_SELFTEST_TARGET:-}" ]] && SELF="${CADENCE_LOCK_SELFTEST_TARGET:A}"
-    root=$(mktemp -d "${TMPDIR:-/tmp}/cadence-lock-selftest.XXXXXX") || exit 2
+    zmodload zsh/system 2>/dev/null   # $sysparams[pid], for kill_fake (T-3287)
+    base=$(mktemp -d "${TMPDIR:-/tmp}/cadence-lock-selftest.XXXXXX") || exit 2
     # CADENCE_LOCK_DIR steers this script; TMPDIR steers any *other* build of it
-    # (an older copy, for the failing-first comparison) to the same throwaway path.
-    export CADENCE_LOCK_TESTING=1 TMPDIR="$root/" CADENCE_LOCK_DIR="$root/cadence-macos-test-host.lock"
-    export CADENCE_LOCK_POLL=1 CADENCE_LOCK_LEASE=4 CADENCE_LOCK_TICKET_STALE=10
-    # $LOCK and $QUEUE were computed at the top of this file, BEFORE the exports above existed --
-    # so THIS process's own `queue_names` was reading `${TMPDIR}cadence-macos-test-host.lock.queue`,
-    # the REAL lock's queue, while every child it spawns reads the throwaway one. Harmless-looking
-    # and not harmless: the real queue is empty on an idle box, so an assertion of the form "the
-    # queue drained" passed by reading a directory this selftest never writes to. Mode 4's
-    # `qn == 0` half was exactly that; mode 6b asserts the opposite polarity -- "the queue did NOT
-    # drain" -- which is the one that cannot pass by accident, and it is how this surfaced. Point
-    # them at the sandbox before any mode runs.
-    LOCK="$CADENCE_LOCK_DIR"; QUEUE="${LOCK}.queue"
+    # (an older copy, for the failing-first comparison) to the same throwaway path. Both are set
+    # per TRIAL by `trial_env` below, never once for the whole run (T-3287).
+    export CADENCE_LOCK_TESTING=1 CADENCE_LOCK_POLL=1 CADENCE_LOCK_LEASE=4 CADENCE_LOCK_TICKET_STALE=10
     TICKET_STALE=$CADENCE_LOCK_TICKET_STALE; POLL=$CADENCE_LOCK_POLL
     print -r -- "selftest: target $SELF"
-    print -r -- "selftest: lock $CADENCE_LOCK_DIR"
+    print -r -- "selftest: trials under $base, one lock directory each"
     fails=0
     kids=()
     # Kill only what this selftest started, by pid. NOT `pkill -f
@@ -552,6 +544,24 @@ case "$CMD" in
       wait 2>/dev/null
     }
 
+    # T-3287: EVERY TRIAL GETS ITS OWN ROOT, LOCK, QUEUE, PROCESS TABLE AND PROBE, so the trials can
+    # run at the same time. They were always independent -- each one ends by deleting its lock and
+    # queue -- but they shared ONE lock directory and ONE fake process table, which is the only
+    # reason they had to take turns, and the run was a sum of sleeps (lease waits, `acquire`
+    # timeouts) rather than of work: 46 s from a shell, 11 of 11 PASS. Sharing the table would not
+    # merely be untidy now: a pattern is a regex, `$root/fakehost` matches `$root/fakehost2`, and
+    # `reclaim` would see 5b's live host and correctly refuse. Nothing about the lock's own timing
+    # changes -- POLL, LEASE and TICKET_STALE are the values above, in every trial.
+    #
+    # $LOCK and $QUEUE were computed at the top of this file, BEFORE any of this existed -- so a
+    # process's own `queue_names` would read `${TMPDIR}cadence-macos-test-host.lock.queue`, the
+    # REAL lock's queue, while every child it spawns reads the throwaway one. Harmless-looking and
+    # not harmless: the real queue is empty on an idle box, so an assertion of the form "the queue
+    # drained" passed by reading a directory this selftest never writes to. Mode 4's `qn == 0` half
+    # was exactly that; mode 6b asserts the opposite polarity -- "the queue did NOT drain" -- which
+    # is the one that cannot pass by accident, and it is how this surfaced. So `trial_env` points
+    # them at the trial's sandbox before its trial runs.
+    #
     # A FAKE `pgrep -f`, AND A FAKE PROCESS TABLE FOR IT TO READ (T-1381). Modes 2, 5 and 5b all
     # need `live_test_hosts` to give a TRUSTWORTHY answer about a fake host -- one that is running,
     # or one that is not -- and the real `pgrep` cannot give one inside the App-Sandboxed
@@ -569,8 +579,12 @@ case "$CMD" in
     #
     # Liveness in the stub is `kill -0`, deliberately: it is a signal to a process this selftest
     # started, not a read of the process list, and it works in the sandbox where the list does not.
-    mkdir -p "$root/proctable"
-    print -r -- '#!/bin/zsh
+    trial_env() {   # $1 = the trial's own root directory
+      root="$1"
+      mkdir -p "$root/proctable" "$root/orderlogs" || return 1
+      export TMPDIR="$root/" CADENCE_LOCK_DIR="$root/cadence-macos-test-host.lock"
+      LOCK="$CADENCE_LOCK_DIR"; QUEUE="${LOCK}.queue"
+      print -r -- '#!/bin/zsh
 # Stand-in for `pgrep -f <pattern>`, answering from the sibling proctable directory: one file per
 # fake process, named by its pid, holding the command line that pid would show. Reproduces pgreps
 # OWN two-signal contract, because live_test_hosts reads both: exit 0 with one pid per line when
@@ -588,14 +602,26 @@ for entry in $table/*(N.); do
   found=1
 done
 (( found )) && exit 0
-exit 1' > "$root/fakepgrep"; chmod +x "$root/fakepgrep"
-    # `-f`, and it is not decoration: the stub writes to stdout and the lock parses every line of
-    # it, so one `print` from somebody's ~/.zshrc would arrive as a non-pid line and be read as
-    # "cannot tell". Same flag `CadenceGuardScriptSelftestTests` runs these selftests under.
-    FAKE_PGREP="/bin/zsh -f $root/fakepgrep"
+exit 1' > "$root/fakepgrep" && chmod +x "$root/fakepgrep" || return 1
+      # `-f`, and it is not decoration: the stub writes to stdout and the lock parses every line of
+      # it, so one `print` from somebody's ~/.zshrc would arrive as a non-pid line and be read as
+      # "cannot tell". Same flag `CadenceGuardScriptSelftestTests` runs these selftests under.
+      FAKE_PGREP="/bin/zsh -f $root/fakepgrep"
+      wlogs="$root/orderlogs"; order="$root/order"; : > "$order"
+    }
     fake_proc_add() { print -r -- "$2" > "$root/proctable/$1" }
     fake_proc_del() { rm -f "$root/proctable/$1" 2>/dev/null }
 
+    waiter() {
+      # `; :` keeps zsh from exec'ing the acquire in place of the subshell, so the
+      # waiter is a grandchild with a parent to be cleaned up through.
+      ( "$SELF" acquire 90 "$1" >"$wlogs/$1" 2>&1 \
+        && print -r -- "$1" >> "$order" \
+        && "$SELF" release "$1" >/dev/null 2>&1; : ) &
+      kids+=($!)
+    }
+
+    trial_ordering() {
     # 1. ORDERING, posed as the failure that was actually measured: "a short run
     #    that arrives at the right instant beats a long one that has been waiting
     #    an hour". w1..w3 queue behind a held lock; w4 arrives at the moment of
@@ -641,17 +667,9 @@ exit 1' > "$root/fakepgrep"; chmod +x "$root/fakepgrep"
     # and the property would go back to proving nothing about a slow handoff).
     export CADENCE_LOCK_PGREP="$root/orderhost"
     export CADENCE_LOCK_PGREP_CMD="$FAKE_PGREP"
-    print -r -- 'sleep 90' > "$root/orderhost"; zsh "$root/orderhost" & ohost=$!
+    print -r -- 'exec sleep 90' > "$root/orderhost"; zsh "$root/orderhost" & ohost=$!
     fake_proc_add $ohost "zsh $root/orderhost"
     wlogs="$root/orderlogs"; mkdir -p "$wlogs"
-    waiter() {
-      # `; :` keeps zsh from exec'ing the acquire in place of the subshell, so the
-      # waiter is a grandchild with a parent to be cleaned up through.
-      ( "$SELF" acquire 90 "$1" >"$wlogs/$1" 2>&1 \
-        && print -r -- "$1" >> "$order" \
-        && "$SELF" release "$1" >/dev/null 2>&1; : ) &
-      kids+=($!)
-    }
     "$SELF" acquire 30 holder >/dev/null || { print -r -- "selftest: could not take the lock"; exit 2; }
     order="$root/order"; : > "$order"
     for w in w1 w2 w3; do waiter "$w"; sleep 1.2; done
@@ -675,26 +693,23 @@ exit 1' > "$root/fakepgrep"; chmod +x "$root/fakepgrep"
     fake_proc_del $ohost
     unset CADENCE_LOCK_PGREP CADENCE_LOCK_PGREP_CMD
     cleanup_kids; rm -rf "$CADENCE_LOCK_DIR" "$CADENCE_LOCK_DIR.queue"
+    }
 
-    # The two properties below are statements about THIS implementation -- one of
-    # them needs a probe only this copy can be told to use -- so a foreign target
-    # (the failing-first comparison against an older copy) stops here rather than
-    # reporting a fixture gap as that copy's bug.
-    if [[ -n "${CADENCE_LOCK_SELFTEST_TARGET:-}" ]]; then
-      cleanup_kids; pkill -f "$root" 2>/dev/null; rm -rf "$root"
-      print -r -- "selftest: foreign target, ordering only; $fails failure(s)"
-      exit $(( fails > 0 ))
-    fi
-
+    trial_noreclaim() {
     # 2. A DEAD OWNER PID IS NOT A STALE LOCK. The conjunction -- expired lease AND
     #    zero live test hosts -- is what stops a second host starting against the
     #    same app-group container while a nohup'd run outlives its shell.
     export CADENCE_LOCK_PGREP="$root/fakehost"
     export CADENCE_LOCK_PGREP_CMD="$FAKE_PGREP"
     # A stand-in for a real `xcodebuild test`, matched through CADENCE_LOCK_PGREP.
-    # It sleeps in a child, so killing it later means killing that child too --
-    # a `kill $host` alone leaves the sleep holding this selftest's stdout open.
-    print -r -- 'sleep 90' > "$root/fakehost"; zsh "$root/fakehost" & host=$!
+    # It used to sleep in a child, so killing it meant killing that child too -- a `kill $host`
+    # alone leaves the sleep holding this selftest's stdout open -- and the `pkill -P $host` that
+    # did that is blind inside the App-Sandboxed host (T-3287), where every fake host's `sleep 90`
+    # outlived its trial. The fake hosts `exec` their sleep now, so the pid IS the sleep and the
+    # `kill` reaps it anywhere; the `pkill -P` lines stay as the harmless belt they now are. The
+    # fake process table records the command line by hand, so what `CADENCE_LOCK_PGREP` matches
+    # is unchanged.
+    print -r -- 'exec sleep 90' > "$root/fakehost"; zsh "$root/fakehost" & host=$!
     fake_proc_add $host "zsh $root/fakehost"
     ( "$SELF" acquire 10 ghost >/dev/null; : )  # subshell exits: owner pid is now dead
     sleep 6                                     # lease (4s) has expired
@@ -713,7 +728,9 @@ exit 1' > "$root/fakepgrep"; chmod +x "$root/fakepgrep"
     else print -r -- "FAIL reclaim: '$out'"; (( fails++ )); fi
     unset CADENCE_LOCK_PGREP CADENCE_LOCK_PGREP_CMD
     cleanup_kids; rm -rf "$CADENCE_LOCK_DIR" "$CADENCE_LOCK_DIR.queue"
+    }
 
+    trial_killedwaiter() {
     # 3. A KILLED WAITER DOES NOT BLOCK THE QUEUE. SIGKILL, so no trap can help:
     #    the ticket has to be pruned by the next waiter that looks.
     #
@@ -754,7 +771,9 @@ exit 1' > "$root/fakepgrep"; chmod +x "$root/fakepgrep"
     export CADENCE_LOCK_LEASE=$saved_lease CADENCE_LOCK_TICKET_STALE=$saved_stale
 
     cleanup_kids; rm -rf "$CADENCE_LOCK_DIR" "$CADENCE_LOCK_DIR.queue"
+    }
 
+    trial_deadparent() {
     # 4. AN ORPHANED WAITER DECLINES RATHER THAN TAKING THE LOCK (T-748). The
     #    orphan has to be a REAL orphan, not merely a killed process: a wrapper is
     #    spawned as the acquire's actual parent, and only the WRAPPER is killed --
@@ -791,7 +810,9 @@ exit 1' > "$root/fakepgrep"; chmod +x "$root/fakepgrep"
       print -r -- "FAIL dead-parent-recovers: queue stuck behind the declined orphan; rc=$rc out='$out'"; (( fails++ ))
     fi
     cleanup_kids; rm -rf "$CADENCE_LOCK_DIR" "$CADENCE_LOCK_DIR.queue"
+    }
 
+    trial_deadowner() {
     # 5. A DEAD LOCK OWNER RECLAIMS WITHOUT WAITING OUT THE LEASE (T-956). Property
     #    2 already proves a dead owner pid does not bypass a live test host; this
     #    proves the other half -- with no live host, a dead owner must not have to
@@ -830,13 +851,18 @@ exit 1' > "$root/fakepgrep"; chmod +x "$root/fakepgrep"
     fi
     unset CADENCE_LOCK_PGREP CADENCE_LOCK_PGREP_CMD
     cleanup_kids; rm -rf "$CADENCE_LOCK_DIR" "$CADENCE_LOCK_DIR.queue"
+    }
 
+    trial_defers() {
     # 5b. ...but a dead owner still defers to a live test host even with the lease
     #     bumped: the fix is "dead owner pid shortcuts the LEASE wait", not "dead
     #     owner pid always wins" -- that second reading would restart T-236.
+    # Run on its own since T-3287, so it bumps the lease itself rather than inheriting mode 5's.
+    saved_lease=$CADENCE_LOCK_LEASE
+    export CADENCE_LOCK_LEASE=300
     export CADENCE_LOCK_PGREP="$root/fakehost2"
     export CADENCE_LOCK_PGREP_CMD="$FAKE_PGREP"
-    print -r -- 'sleep 90' > "$root/fakehost2"; zsh "$root/fakehost2" & host2=$!
+    print -r -- 'exec sleep 90' > "$root/fakehost2"; zsh "$root/fakehost2" & host2=$!
     fake_proc_add $host2 "zsh $root/fakehost2"
     ( "$SELF" acquire 10 deadowner3 >/dev/null 2>&1; : )
     sleep 1
@@ -856,7 +882,9 @@ exit 1' > "$root/fakepgrep"; chmod +x "$root/fakepgrep"
     unset CADENCE_LOCK_PGREP CADENCE_LOCK_PGREP_CMD
     export CADENCE_LOCK_LEASE=$saved_lease
     cleanup_kids; rm -rf "$CADENCE_LOCK_DIR" "$CADENCE_LOCK_DIR.queue"
+    }
 
+    trial_cannottell() {
     # 6. A PROBE THAT CANNOT ANSWER MUST REFUSE, NOT REPORT ZERO (T-1152). Properties 2 and 5b
     #    prove the lock defers to a live host it can SEE. This is the case underneath both of
     #    them: a `pgrep` that runs, cannot read the process list, says so on stderr and exits 3 --
@@ -871,7 +899,7 @@ exit 1' > "$root/fakepgrep"; chmod +x "$root/fakepgrep"
 print -u2 -- "pgrep: Cannot get process list"
 exit 3' > "$root/blindpgrep"; chmod +x "$root/blindpgrep"
     export CADENCE_LOCK_PGREP="$root/fakehost3"
-    print -r -- 'sleep 90' > "$root/fakehost3"; zsh "$root/fakehost3" & host3=$!
+    print -r -- 'exec sleep 90' > "$root/fakehost3"; zsh "$root/fakehost3" & host3=$!
     ( "$SELF" acquire 10 blindowner >/dev/null 2>&1; : )   # subshell exits: owner pid dies
     sleep 6                                                # lease (4s) expired
     blind_pid=$(cat "$CADENCE_LOCK_DIR/pid" 2>/dev/null)
@@ -905,7 +933,9 @@ exit 3' > "$root/blindpgrep"; chmod +x "$root/blindpgrep"
     pkill -P $host3 2>/dev/null; kill $host3 2>/dev/null; wait $host3 2>/dev/null
     unset CADENCE_LOCK_PGREP
     cleanup_kids; rm -rf "$CADENCE_LOCK_DIR" "$CADENCE_LOCK_DIR.queue"
+    }
 
+    trial_keepsqueue() {
     # 6b. ...and the same distinction one level down, in the QUEUE. `waiter_alive`'s second half
     #     is `ps -o command=`, `ps` is setuid root, and the sandboxed host is refused it at
     #     `posix_spawn` -- so it used to read an empty command line and call EVERY waiter dead.
@@ -940,7 +970,9 @@ exit 0' > "$root/blindps"; chmod +x "$root/blindps"
     fi
     "$SELF" release holder4 >/dev/null
     cleanup_kids; rm -rf "$CADENCE_LOCK_DIR" "$CADENCE_LOCK_DIR.queue"
+    }
 
+    trial_calibration() {
     # 7. THE PATTERN ITSELF, WHICH NOTHING ABOVE TOUCHES (T-1162). Every property so far replaces
     #    HOST_PATTERN wholesale through CADENCE_LOCK_PGREP, so all ten prove the plumbing and none
     #    of them has ever read the constant -- which is how ten green properties sat on top of a
@@ -976,13 +1008,26 @@ exit 0' > "$root/blindps"; chmod +x "$root/blindps"
     #    A `pgrep` that cannot read the process list at all (exit >= 2: the App-Sandboxed host,
     #    where this property is tolerated) ends the wait at once, because that condition never
     #    clears. The `sleep` lives past the ceiling so a slow spawn cannot outlive its own fixture,
-    #    and `kill_fake` reaps it (`pkill -P $$ -x sleep`: this shell's own direct `sleep` child,
-    #    which no other mode has running here); its fds go to /dev/null so a lingering one could
-    #    never hold the caller's stdout or stderr open.
+    #    and `kill_fake` reaps it BY PID; its fds go to /dev/null so a lingering one could never
+    #    hold the caller's stdout or stderr open.
+    #
+    #    T-3287: BY PID, BECAUSE `pkill` IS AS BLIND IN THE SANDBOX AS `pgrep`. The reap used to be
+    #    `pkill -P $$ -x sleep`, which reads the process list -- so inside the App-Sandboxed
+    #    CadenceTests host it reaped nothing, all five `sleep 90`s survived their fixtures, and the
+    #    `wait` in the final `cleanup_kids` sat out the first of them: measured 2026-10-22, the
+    #    selftest's last PASS line at 48 s and its exit at 137 s, and the same 90 s reproduced from a
+    #    shell by putting a `pgrep`/`pkill` that exit 3 first on PATH (51 s -> 141 s). Nothing was
+    #    being tested in those 90 s. The sleeping subshell writes its own pid before it `exec`s
+    #    (`$sysparams[pid]`, the real pid even in a subshell, where `$$` is this shell's), and
+    #    `spawn_fake` waits for that file -- a condition, never a fixed sleep (T-3097) -- so
+    #    `kill_fake` has a pid to `kill` on every host, the sandbox included.
     fakepid=0
     spawn_fake() {
       local seen rc
-      ( exec sleep 90 </dev/null 2>/dev/null ) | ( exec -a "$*" /bin/cat ) > /dev/null & fakepid=$!
+      rm -f "$root/fakesleep.pid"
+      ( print -r -- "$sysparams[pid]" > "$root/fakesleep.pid"; exec sleep 90 </dev/null 2>/dev/null ) \
+        | ( exec -a "$*" /bin/cat ) > /dev/null & fakepid=$!
+      for _ in {1..1200}; do [[ -s "$root/fakesleep.pid" ]] && break; sleep 0.05; done
       for _ in {1..120}; do
         seen=$(pgrep -f "$root" 2>/dev/null); rc=$?
         (( rc >= 2 )) && break
@@ -990,7 +1035,11 @@ exit 0' > "$root/blindps"; chmod +x "$root/blindps"
         sleep 0.5
       done
     }
-    kill_fake()  { kill $fakepid 2>/dev/null; wait $fakepid 2>/dev/null; pkill -P $$ -x sleep 2>/dev/null }
+    kill_fake()  {
+      kill $fakepid 2>/dev/null
+      [[ -s "$root/fakesleep.pid" ]] && kill "$(<"$root/fakesleep.pid")" 2>/dev/null
+      wait $fakepid 2>/dev/null
+    }
     count_with() { pgrep -f "$1" 2>/dev/null | grep -c '^[0-9]' }
     typeset -a probs; probs=()
     #    (a) THE T-1162 CASE: how xcb.sh really launches a test run, action LAST behind
@@ -1036,8 +1085,66 @@ exit 0' > "$root/blindps"; chmod +x "$root/blindps"
     else
       print -r -- "FAIL host-pattern-calibration: ${(j:; :)probs}"; (( fails++ ))
     fi
+    }
 
-    cleanup_kids; pkill -f "$root" 2>/dev/null; rm -rf "$root"
+    # --- running the trials (T-3287) -------------------------------------------------------------
+    # Each trial runs in its own subshell under its own root (`trial_env`), writes its lines to its
+    # own file and leaves its failure count beside it; the files are printed in the fixed order
+    # below once every trial is done, so the output reads as it always did. A trial that never
+    # wrote its count did not finish -- a fixture that would not set up (`exit 2` inside it) or a
+    # crash -- and that is the run's exit 2, never a pass.
+    typeset -a trials trial_pids
+    trials=(); trial_pids=()
+    run_trial() {   # $1 = trial name
+      ( trial_env "$base/$1" || { print -r -- "selftest: could not set up trial $1"; exit 2 }
+        fails=0; kids=()
+        t0=$EPOCHREALTIME
+        "trial_$1"
+        cleanup_kids
+        printf 'selftest: trial %s finished in %.1fs\n' "$1" $(( EPOCHREALTIME - t0 ))
+        print -r -- "$fails" > "$base/$1.fails" ) > "$base/$1.out" 2>&1 < /dev/null &
+      trials+=("$1"); trial_pids+=($!)
+    }
+    report_trials() {
+      local -i i
+      for (( i = 1; i <= ${#trials}; i++ )); do
+        wait "${trial_pids[i]}" 2>/dev/null
+        cat "$base/${trials[i]}.out" 2>/dev/null
+        if [[ -s "$base/${trials[i]}.fails" ]]; then
+          (( fails += $(<"$base/${trials[i]}.fails") ))
+        else
+          print -r -- "selftest: trial ${trials[i]} did not finish (no failure count written)"
+          unfinished+=("${trials[i]}")
+        fi
+      done
+    }
+    typeset -a unfinished; unfinished=()
+    started=$EPOCHREALTIME
+
+    # The two properties beyond ordering are statements about THIS implementation -- one of
+    # them needs a probe only this copy can be told to use -- so a foreign target
+    # (the failing-first comparison against an older copy) runs ordering alone rather than
+    # reporting a fixture gap as that copy's bug.
+    if [[ -n "${CADENCE_LOCK_SELFTEST_TARGET:-}" ]]; then
+      run_trial ordering
+      report_trials
+      pkill -f "$base" 2>/dev/null; rm -rf "$base"
+      (( ${#unfinished} )) && exit 2
+      print -r -- "selftest: foreign target, ordering only; $fails failure(s)"
+      exit $(( fails > 0 ))
+    fi
+
+    for t in ordering noreclaim killedwaiter deadparent deadowner defers cannottell keepsqueue calibration; do
+      run_trial "$t"
+    done
+    report_trials
+
+    cleanup_kids; pkill -f "$base" 2>/dev/null; rm -rf "$base"
+    printf 'selftest: %d trials, concurrently, in %.1fs\n' ${#trials} $(( EPOCHREALTIME - started ))
+    if (( ${#unfinished} )); then
+      print -r -- "selftest: ${#unfinished} trial(s) did not finish: ${unfinished[*]}"
+      exit 2
+    fi
     print -r -- "selftest: $fails failure(s)"
     exit $(( fails > 0 ))
     ;;
