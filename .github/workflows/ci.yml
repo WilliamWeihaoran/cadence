@@ -158,6 +158,8 @@ jobs:
           fetch-depth: 0
       - name: Check the ledger against the commits that landed
         run: ./scripts/ledger-lag-check.sh
+      - name: Check whether the ledger's stated blockers are still true
+        run: ./scripts/ledger-blocker-check.sh
 
   # ---------------------------------------------------------------------------
   # The gate the local loop structurally cannot provide. Cheapest job here; if
