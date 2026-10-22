@@ -281,6 +281,11 @@ struct CalendarPageBoardView: View {
     private static let columnSpacing = CadenceCalendarBoardLayout.dayColumnSpacing
     private static let horizontalPadding = CadenceCalendarBoardLayout.dayColumnHorizontalPadding
 
+    /// The calendar page's observed day ([[T-3140]]), the key the month grid and the timeline
+    /// viewport already take. The board read `DateFormatters.todayKey()` itself, in its rails and
+    /// in each column's "today" accent, and nothing re-ran those reads at midnight, so a board
+    /// left open overnight kept yesterday's Today rail and its amber column.
+    let todayKey: String
     let anchorDate: Date
     @Binding var selectedDate: Date
     let allTasks: [AppTask]
@@ -329,7 +334,7 @@ struct CalendarPageBoardView: View {
     }
 
     private var railTasks: [CalendarBoardRail: [AppTask]] {
-        CalendarBoardPlannerSupport.railTasks(from: allTasks, todayKey: DateFormatters.todayKey())
+        CalendarBoardPlannerSupport.railTasks(from: allTasks, todayKey: todayKey)
     }
 
     var body: some View {
@@ -435,6 +440,7 @@ struct CalendarPageBoardView: View {
                             dayIndex: dayIndex,
                             date: date,
                             dateKey: dateKey,
+                            todayKey: todayKey,
                             tasks: tasksByDate[dateKey] ?? [],
                             events: calendarDisplayItems(for: date),
                             allTasks: allTasks,
@@ -461,6 +467,17 @@ struct CalendarPageBoardView: View {
             .onAppear {
                 resetWindowAndScroll(proxy, to: anchorDate, animated: false)
             }
+            .onChange(of: todayKey) { _, newTodayKey in
+                // The window is floored at today, so the day that just ended is still column 0
+                // and its cards are now also in the Overdue rail. Re-floor, keeping the selection
+                // (`resetWindowAndScroll` clamps it to the new today if it was the old one).
+                guard Self.windowNeedsRefloor(
+                    windowStart: windowStartDate,
+                    todayKey: newTodayKey,
+                    calendar: calendar
+                ) else { return }
+                resetWindowAndScroll(proxy, to: selectedDate, animated: false)
+            }
             .onChange(of: anchorDate) { _, newDate in
                 if isEchoingSelectedDate {
                     isEchoingSelectedDate = false
@@ -469,6 +486,14 @@ struct CalendarPageBoardView: View {
                 resetWindowAndScroll(proxy, to: newDate, animated: true)
             }
         }
+    }
+
+    /// Whether a window laid out on an earlier day now starts before `todayKey`'s day — the
+    /// board's floor — and so still renders a past column ([[T-3140]]). `nil` (not laid out yet)
+    /// and an unparseable key answer `false`: the next layout floors itself.
+    static func windowNeedsRefloor(windowStart: Date?, todayKey: String, calendar: Calendar) -> Bool {
+        guard let windowStart, let today = DateFormatters.date(from: todayKey, in: calendar) else { return false }
+        return calendar.startOfDay(for: windowStart) < calendar.startOfDay(for: today)
     }
 
     private func visibleDayIndex(for offsetX: CGFloat) -> Int {

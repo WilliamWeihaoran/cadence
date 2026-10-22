@@ -34,7 +34,7 @@ struct CadenceCodexKanbanRenderingTests {
                 onReorderBefore: { _ in false }
             ))),
             ("day", AnyView(CalendarBoardDayColumn(
-                dayIndex: 0, date: day, dateKey: "2026-10-06", tasks: tasks,
+                dayIndex: 0, date: day, dateKey: "2026-10-06", todayKey: "2026-10-06", tasks: tasks,
                 events: [], allTasks: tasks, areas: [], projects: [],
                 add: .compose(.day(dateKey: "2026-10-06", startMin: 540)),
                 onDropTaskOnDay: { _ in false }

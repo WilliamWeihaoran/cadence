@@ -83,6 +83,7 @@ struct CalendarPageView: View {
 
             if presentation == .board {
                 CalendarPageBoardView(
+                    todayKey: observedDay.todayKey,
                     anchorDate: selectedBoardDate,
                     selectedDate: $selectedBoardDate,
                     allTasks: allTasks,

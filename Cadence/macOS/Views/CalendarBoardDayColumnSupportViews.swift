@@ -5,6 +5,9 @@ struct CalendarBoardDayColumn: View {
     let dayIndex: Int
     let date: Date
     let dateKey: String
+    /// The page's observed day, handed down by `CalendarPageBoardView` ([[T-3140]]); read in
+    /// place of the clock so the amber "today" accent moves at midnight.
+    let todayKey: String
     let tasks: [AppTask]
     let events: [CalendarBoardEventDisplayItem]
     let allTasks: [AppTask]
@@ -39,7 +42,7 @@ struct CalendarBoardDayColumn: View {
     }
 
     private var isToday: Bool {
-        dateKey == DateFormatters.todayKey()
+        dateKey == todayKey
     }
 
     /// Split on `isFinishedTask`, not on `isDone`. A cancelled task is finished, and `!$0.isDone`
