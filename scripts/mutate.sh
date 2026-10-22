@@ -1668,6 +1668,21 @@ def selftest():
                             ["theFullLabelIsUnchanged"], DISPLAY_LABELS)
         check("with the label map, the same log is a real SURVIVED",
               seen.verdict == SURVIVED, seen.reason)
+        # T-3341: the label map widens what counts as "ran" without making it a guess. A
+        # display-named test that is mapped but did NOT run (the shape agent `partialcal` hit: the
+        # test lived in another suite of the same file) still refuses, and so does a label that is
+        # only a PREFIX of one that ran -- the closing quote is part of the needle.
+        absent_mapped = classify_run(0, named_pass_log, "HabitFrequencyLabelTests",
+                                     ["someOtherFunction"],
+                                     dict(DISPLAY_LABELS, someOtherFunction="a label that never ran"))
+        check("with the label map, a mapped display-named test that did not run is still TEST-ABSENT",
+              absent_mapped.verdict == "INVALID" and absent_mapped.reason == "TEST-ABSENT",
+              absent_mapped.reason)
+        prefix_label = classify_run(0, named_pass_log, "HabitFrequencyLabelTests", ["theShortOne"],
+                                    {"theShortOne": "the full label"})
+        check("a display label that is only a prefix of one that ran is still TEST-ABSENT",
+              prefix_label.verdict == "INVALID" and prefix_label.reason == "TEST-ABSENT",
+              prefix_label.reason)
 
         named_fail_log = ('◇ Test "%s" started.\n'
                           '✘ Test "%s" recorded an issue at Foo.swift:12:5\n'
