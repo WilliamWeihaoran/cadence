@@ -230,7 +230,7 @@ struct CadenceAgentDefaultsIsolationTests {
     /// Why the pairing is the only thing holding the line.
     /// `PersistenceController.shouldUseLocalStoreOnly` is
     /// `isRunningTests || CADENCE_LOCAL_STORE_ONLY == "1" || CADENCE_UI_TEST_MODE == "1"`
-    /// (`Cadence/Services/PersistenceController.swift:709-712`) — **`CADENCE_UI_TEST_STORE_ID` is
+    /// (in `Cadence/Services/PersistenceController.swift`) — **`CADENCE_UI_TEST_STORE_ID` is
     /// not in it.** A launch that redirects the store and forgets the flag therefore has
     /// `makeContainer()` take the `.private("iCloud.com.haoranwei.Cadence")` branch over the
     /// redirected URL `resolvedStoreURL()` just returned: the fresh throwaway store imports the

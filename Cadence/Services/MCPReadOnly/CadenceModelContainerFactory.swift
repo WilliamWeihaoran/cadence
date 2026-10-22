@@ -24,8 +24,8 @@ import SwiftData
 /// one, and they open it with `cloudKitDatabase: .none`.** `makeReadOnlyContainer()` and
 /// `makeReadWriteContainer()` both resolve `CadenceStoreSupport.primaryStoreURL()` — the same file
 /// the running app has open with `.private("iCloud.com.haoranwei.Cadence")`
-/// (`PersistenceController.swift:384`) — so the read-write one is a single store open under two
-/// different configurations. What follows from that is not a sync *delay*: a container with
+/// (in `PersistenceController.makeContainer()`) — so the read-write one is one store open under
+/// two different configurations. What follows from that is not a sync *delay*: a container with
 /// mirroring off does not maintain the mirroring metadata the app's own container exports from, so
 /// a write that lands through this door may never reach the owner's other devices and may not
 /// register there as a change at all. `CADENCE_MCP_ENABLE_WRITES` gates the write container and
