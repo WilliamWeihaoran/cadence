@@ -29,9 +29,14 @@ struct CadenceStoreRestoreTests {
     /// A store directory shaped like the real one: the store file, a `-wal` sidecar, and the
     /// `.default_SUPPORT` *directory*, which is what makes the size check in `verifyStagedRestore`
     /// exercise its directory branch rather than only the file branch.
+    ///
+    /// The store file is a real SQLite database (the restore gate refuses anything else, T-3044
+    /// (c)), and the tests that back it up use `.startup`: a running-app reason reads the database
+    /// through `VACUUM INTO` and drops the `-wal`, and the staged `-wal` is where most of these
+    /// tests inject their failure.
     private func seedStoreItems(in directory: URL, marker: String) throws {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        try Data(marker.utf8).write(to: directory.appendingPathComponent("default.store"))
+        try CadenceSQLiteMarkerStoreFixture.write(marker, to: directory.appendingPathComponent("default.store"))
         try Data("\(marker)-wal".utf8).write(to: directory.appendingPathComponent("default.store-wal"))
         let supportURL = directory.appendingPathComponent(".default_SUPPORT", isDirectory: true)
         try FileManager.default.createDirectory(at: supportURL, withIntermediateDirectories: true)
@@ -45,10 +50,7 @@ struct CadenceStoreRestoreTests {
     }
 
     private func marker(in directory: URL) -> String? {
-        guard let data = try? Data(contentsOf: directory.appendingPathComponent("default.store")) else {
-            return nil
-        }
-        return String(data: data, encoding: .utf8)
+        CadenceSQLiteMarkerStoreFixture.marker(at: directory.appendingPathComponent("default.store"))
     }
 
     private func storeItemNames(in directory: URL) -> Set<String> {
@@ -94,7 +96,7 @@ struct CadenceStoreRestoreTests {
 
             try seedStoreItems(in: storeDirectory, marker: "the-backup")
             let backupURL = try #require(try StoreBackupManager.createBackupIfStoreExists(
-                reason: .manual,
+                reason: .startup,
                 storeDirectoryURL: storeDirectory
             ))
 
@@ -131,7 +133,7 @@ struct CadenceStoreRestoreTests {
 
             try seedStoreItems(in: storeDirectory, marker: "the-backup")
             let backupURL = try #require(try StoreBackupManager.createBackupIfStoreExists(
-                reason: .manual,
+                reason: .startup,
                 storeDirectoryURL: storeDirectory
             ))
 
@@ -168,7 +170,7 @@ struct CadenceStoreRestoreTests {
 
             try seedStoreItems(in: storeDirectory, marker: "the-backup")
             let backupURL = try #require(try StoreBackupManager.createBackupIfStoreExists(
-                reason: .manual,
+                reason: .startup,
                 storeDirectoryURL: storeDirectory
             ))
             // Damage the backup the way a half-written or partly deleted folder is damaged: the
@@ -254,7 +256,7 @@ struct CadenceStoreRestoreTests {
 
             try seedStoreItems(in: storeDirectory, marker: "the-backup")
             let backupURL = try #require(try StoreBackupManager.createBackupIfStoreExists(
-                reason: .manual,
+                reason: .startup,
                 storeDirectoryURL: storeDirectory
             ))
 
@@ -287,7 +289,7 @@ struct CadenceStoreRestoreTests {
             )
             let retainedStore = retained.appendingPathComponent("default.store")
             #expect(FileManager.default.fileExists(atPath: retainedStore.path))
-            #expect(String(data: try Data(contentsOf: retainedStore), encoding: .utf8) == "what-is-live")
+            #expect(CadenceSQLiteMarkerStoreFixture.marker(at: retainedStore) == "what-is-live")
 
             // Everything the rollback *could* put back is back, and nothing of the restore is
             // installed over it.
@@ -312,7 +314,7 @@ struct CadenceStoreRestoreTests {
 
             try seedStoreItems(in: storeDirectory, marker: "the-backup")
             let backupURL = try #require(try StoreBackupManager.createBackupIfStoreExists(
-                reason: .manual,
+                reason: .startup,
                 storeDirectoryURL: storeDirectory
             ))
             try removeStoreItems(in: storeDirectory)
@@ -358,7 +360,7 @@ struct CadenceStoreRestoreTests {
 
             try seedStoreItems(in: storeDirectory, marker: "the-backup")
             let backupURL = try #require(try StoreBackupManager.createBackupIfStoreExists(
-                reason: .manual,
+                reason: .startup,
                 storeDirectoryURL: storeDirectory
             ))
             try removeStoreItems(in: storeDirectory)
@@ -397,7 +399,7 @@ struct CadenceStoreRestoreTests {
 
             try seedStoreItems(in: storeDirectory, marker: "the-backup")
             let backupURL = try #require(try StoreBackupManager.createBackupIfStoreExists(
-                reason: .manual,
+                reason: .startup,
                 storeDirectoryURL: storeDirectory
             ))
             try removeStoreItems(in: storeDirectory)
@@ -457,7 +459,7 @@ struct CadenceStoreRestoreTests {
 
             try seedStoreItems(in: storeDirectory, marker: "the-backup")
             let backupURL = try #require(try StoreBackupManager.createBackupIfStoreExists(
-                reason: .manual,
+                reason: .startup,
                 storeDirectoryURL: storeDirectory
             ))
 
@@ -504,7 +506,7 @@ struct CadenceStoreRestoreTests {
 
             try seedStoreItems(in: storeDirectory, marker: "what-is-live")
             let backupURL = try #require(try StoreBackupManager.createBackupIfStoreExists(
-                reason: .manual,
+                reason: .startup,
                 storeDirectoryURL: storeDirectory
             ))
             try StoreBackupManager.scheduleRestore(from: backupURL, defaults: defaults, storeDirectoryURL: storeDirectory)
@@ -531,7 +533,7 @@ struct CadenceStoreRestoreTests {
 
             try seedStoreItems(in: storeDirectory, marker: "what-is-live")
             let backupURL = try #require(try StoreBackupManager.createBackupIfStoreExists(
-                reason: .manual,
+                reason: .startup,
                 storeDirectoryURL: storeDirectory
             ))
             try StoreBackupManager.scheduleRestore(from: backupURL, defaults: defaults, storeDirectoryURL: storeDirectory)
@@ -563,7 +565,7 @@ struct CadenceStoreRestoreTests {
 
             try seedStoreItems(in: storeDirectory, marker: "the-backup")
             let backupURL = try #require(try StoreBackupManager.createBackupIfStoreExists(
-                reason: .manual,
+                reason: .startup,
                 storeDirectoryURL: storeDirectory
             ))
 

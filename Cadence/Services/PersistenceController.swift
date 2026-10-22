@@ -1682,8 +1682,8 @@ enum StoreBackupManager {
         "\(CadenceStoreSupport.storeFilename)-shm",
     ]
 
-    /// Whether the file opens with SQLite's 16-byte magic string. Decides only *how* a backup reads
-    /// the file; it is not the restore validity gate T-3044 (c) still wants.
+    /// Whether the file opens with SQLite's 16-byte magic string. Decides *how* a backup reads the
+    /// file, and is half of the restore validity gate `storeFileIsNonEmpty` (T-3044 (c)).
     static func storeFileHasSQLiteHeader(at url: URL) -> Bool {
         guard let handle = try? FileHandle(forReadingFrom: url) else { return false }
         defer { try? handle.close() }
@@ -2128,8 +2128,8 @@ enum StoreBackupManager {
         guard isBackupDirectory(backupURL) else {
             throw CocoaError(.fileReadInvalidFileName)
         }
-        // T-3044 (c): a backup whose store file is empty is refused here, before it can become an
-        // instruction the next launch acts on.
+        // T-3044 (c): a backup whose store file is empty or is not SQLite is refused here, before it
+        // can become an instruction the next launch acts on.
         guard storeFileIsNonEmpty(at: backupURL.appendingPathComponent(CadenceStoreSupport.storeFilename)) else {
             throw CocoaError(.fileReadCorruptFile)
         }
@@ -2304,8 +2304,8 @@ enum StoreBackupManager {
             throw CocoaError(.fileReadCorruptFile)
         }
         // T-3044 (c): the size comparison below proves the copy matches the backup, which a
-        // zero-byte backup passes. Checked on the STAGED copy, because that is the file about to
-        // replace the live store.
+        // zero-byte or non-SQLite backup passes. Checked on the STAGED copy, because that is the
+        // file about to replace the live store.
         guard storeFileIsNonEmpty(
             at: stagingURL.appendingPathComponent(CadenceStoreSupport.storeFilename),
             fileManager: fileManager
@@ -2598,14 +2598,13 @@ enum StoreBackupManager {
 
     /// A cheap validity gate for a store file a restore is about to use (T-3044 (c)).
     ///
-    /// It refuses a missing file, a directory, and a **zero-byte** file. `verifyStagedRestore`'s
-    /// size comparison proves the staged copy matches the backup, and an empty `default.store`
-    /// matches an empty backup exactly — so without this an empty file is swapped over a good
-    /// store. It never opens the database and is not an integrity check.
-    ///
-    /// The SQLite-header half of T-3044 (c) is deliberately not here yet: the leased
-    /// `CadenceCodexBackupAuditTests` fixtures restore plain-text `default.store` files, so a
-    /// header check turns three of them red until Codex re-seeds them.
+    /// It refuses a missing file, a directory, a **zero-byte** file, and a non-empty file that does
+    /// not open with SQLite's 16-byte magic string. `verifyStagedRestore`'s size comparison proves
+    /// the staged copy matches the backup, and an empty or non-database `default.store` matches its
+    /// backup exactly — so without this it is swapped over a good store. Every store SQLite has
+    /// written a page to carries the header on page 1, WAL mode included (the WAL holds later
+    /// pages, never page 1 of a fresh file), so this refuses nothing a real backup can hold. It
+    /// reads 16 bytes, never opens the database, and is not an integrity check.
     static func storeFileIsNonEmpty(at url: URL, fileManager: FileManager = .default) -> Bool {
         var isDirectory: ObjCBool = false
         guard fileManager.fileExists(atPath: url.path, isDirectory: &isDirectory),
@@ -2613,7 +2612,7 @@ enum StoreBackupManager {
               let size = (try? fileManager.attributesOfItem(atPath: url.path))?[.size] as? NSNumber else {
             return false
         }
-        return size.int64Value > 0
+        return size.int64Value > 0 && storeFileHasSQLiteHeader(at: url)
     }
 
     private static func manifest(at url: URL, fileManager: FileManager = .default) -> StoreBackupManifest? {

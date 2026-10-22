@@ -27,15 +27,13 @@ struct CadenceStoreBackupControlsTests {
         for item in CadenceStoreSupport.storeItemURLs(in: directory) {
             try FileManager.default.removeItem(at: item)
         }
-        try Data(marker.utf8).write(to: directory.appendingPathComponent(CadenceStoreSupport.storeFilename))
+        // A real SQLite database: the restore gate refuses any other store file (T-3044 (c)).
+        try CadenceSQLiteMarkerStoreFixture.write(marker, to: directory.appendingPathComponent(CadenceStoreSupport.storeFilename))
         try Data("\(marker)-wal".utf8).write(to: directory.appendingPathComponent("default.store-wal"))
     }
 
     private func marker(in directory: URL) -> String? {
-        guard let data = try? Data(contentsOf: directory.appendingPathComponent(CadenceStoreSupport.storeFilename)) else {
-            return nil
-        }
-        return String(data: data, encoding: .utf8)
+        CadenceSQLiteMarkerStoreFixture.marker(at: directory.appendingPathComponent(CadenceStoreSupport.storeFilename))
     }
 
     private func isInside(_ url: URL, _ root: URL) -> Bool {

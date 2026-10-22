@@ -11,7 +11,8 @@ import Testing
 ///
 /// **T-3044 (c).** Restore validity was never checked: `isBackupDirectory` is existence only and
 /// `verifyStagedRestore` compares sizes, which a zero-byte `default.store` passes. The gate landed
-/// here refuses an empty store file; the SQLite-header half is still open (see the gate's comment).
+/// here refuses an empty store file and a non-empty one without SQLite's header, so every fixture's
+/// store file is a real database (`CadenceSQLiteMarkerStoreFixture`).
 @MainActor
 struct CadenceRestoreSafetyGateTests {
     // MARK: - Fixtures
@@ -23,14 +24,18 @@ struct CadenceRestoreSafetyGateTests {
         return url
     }
 
+    /// A real SQLite store file plus a `.default_SUPPORT` directory. The `.manual` backups these
+    /// tests take read the database through `VACUUM INTO` and copy no `-wal`, so the support
+    /// directory is the manifest component `failARestore` can take away.
     private func seedStore(in root: URL, marker: String) throws {
-        try Data(marker.utf8).write(to: root.appendingPathComponent("default.store"))
-        try Data("\(marker)-wal".utf8).write(to: root.appendingPathComponent("default.store-wal"))
+        try CadenceSQLiteMarkerStoreFixture.write(marker, to: root.appendingPathComponent("default.store"))
+        let support = root.appendingPathComponent(".default_SUPPORT", isDirectory: true)
+        try FileManager.default.createDirectory(at: support, withIntermediateDirectories: true)
+        try Data("\(marker)-support".utf8).write(to: support.appendingPathComponent("support.bin"))
     }
 
     private func marker(in root: URL) -> String? {
-        guard let data = try? Data(contentsOf: root.appendingPathComponent("default.store")) else { return nil }
-        return String(data: data, encoding: .utf8)
+        CadenceSQLiteMarkerStoreFixture.marker(at: root.appendingPathComponent("default.store"))
     }
 
     private func relabel(_ backup: URL, as reason: StoreBackupReason, createdAt: Date) throws {
@@ -61,10 +66,10 @@ struct CadenceRestoreSafetyGateTests {
     }
 
     /// Schedule a restore from `backup`, then make it fail in staged verification for a reason
-    /// that has nothing to do with the validity gate — the manifest claims a sidecar that is gone.
+    /// that has nothing to do with the validity gate — the manifest claims a component that is gone.
     private func failARestore(from backup: URL, in root: URL, defaults: UserDefaults) throws {
         try StoreBackupManager.scheduleRestore(from: backup, defaults: defaults, storeDirectoryURL: root)
-        try FileManager.default.removeItem(at: backup.appendingPathComponent("default.store-wal"))
+        try FileManager.default.removeItem(at: backup.appendingPathComponent(".default_SUPPORT"))
         #expect(throws: (any Error).self) {
             try StoreBackupManager.performPendingRestoreIfNeeded(storeDirectoryURL: root, defaults: defaults)
         }
@@ -249,7 +254,7 @@ struct CadenceRestoreSafetyGateTests {
 
     // MARK: - T-3044 (c): the validity gate
 
-    @Test func aRealSwiftDataStorePassesTheGateAndAnEmptyOrMissingFileDoesNot() throws {
+    @Test func aRealSwiftDataStorePassesTheGateAndAnEmptyMissingOrNonSQLiteFileDoesNot() throws {
         let root = try makeStoreDirectory()
         defer { try? FileManager.default.removeItem(at: root) }
 
@@ -264,9 +269,13 @@ struct CadenceRestoreSafetyGateTests {
         try context.save()
         #expect(StoreBackupManager.storeFileIsNonEmpty(at: realStore))
 
+        // Non-empty is not enough: a file that does not open with SQLite's header is refused too.
         let oneByte = root.appendingPathComponent("one-byte.store")
         try Data([0x53]).write(to: oneByte)
-        #expect(StoreBackupManager.storeFileIsNonEmpty(at: oneByte))
+        #expect(!StoreBackupManager.storeFileIsNonEmpty(at: oneByte))
+        let notADatabase = root.appendingPathComponent("not-a-database.store")
+        try Data("this is not a database, it is a sentence".utf8).write(to: notADatabase)
+        #expect(!StoreBackupManager.storeFileIsNonEmpty(at: notADatabase))
 
         let empty = root.appendingPathComponent("empty.store")
         try Data().write(to: empty)
@@ -320,6 +329,60 @@ struct CadenceRestoreSafetyGateTests {
             let record = try #require(StoreBackupManager.lastFailedRestore(defaults: defaults))
             #expect(record.retainedOriginalsPath == nil)
             // Refused before the pre-restore safety backup, so no backup was added either.
+            #expect(StoreBackupManager.listBackups(storeDirectoryURL: root).count == backupsBefore)
+        }
+    }
+
+    /// T-3044 (c), the header half: a backup whose store file is non-empty but is not SQLite is
+    /// refused at scheduling, before the pending key or the marker beside the store is written.
+    @Test func schedulingARestoreRefusesAStoreFileThatIsNotSQLite() throws {
+        try withTemporaryDefaults("CadenceTests.restoreSafetyGate") { defaults in
+            let root = try makeStoreDirectory()
+            defer { try? FileManager.default.removeItem(at: root) }
+            try seedStore(in: root, marker: "the-backup")
+            let backup = try #require(try StoreBackupManager.createBackupIfStoreExists(
+                reason: .manual,
+                storeDirectoryURL: root
+            ))
+            let backupStore = backup.appendingPathComponent("default.store")
+            try Data("this is not a database, it is a sentence".utf8).write(to: backupStore)
+            #expect(try Data(contentsOf: backupStore).count > 16, "non-vacuity: the refused file is not empty")
+
+            #expect(throws: CocoaError(.fileReadCorruptFile)) {
+                try StoreBackupManager.scheduleRestore(from: backup, defaults: defaults, storeDirectoryURL: root)
+            }
+            #expect(StoreBackupManager.pendingRestoreURL(defaults: defaults) == nil)
+            #expect(!CadenceStoreSupport.restoreIsPending(inStoreDirectory: root))
+        }
+    }
+
+    /// The backup was a real database when the restore was scheduled and was overwritten with
+    /// same-length non-SQLite bytes before the launch applied it — the size comparison passes, so
+    /// only the staged header check keeps it off the live store.
+    @Test func stagedVerificationRefusesAStoreFileThatIsNotSQLiteBeforeAnythingLiveIsTouched() throws {
+        try withTemporaryDefaults("CadenceTests.restoreSafetyGate") { defaults in
+            let root = try makeStoreDirectory()
+            defer { try? FileManager.default.removeItem(at: root) }
+            try seedStore(in: root, marker: "the-backup")
+            let backup = try #require(try StoreBackupManager.createBackupIfStoreExists(
+                reason: .manual,
+                storeDirectoryURL: root
+            ))
+            try seedStore(in: root, marker: "what-is-live")
+            try StoreBackupManager.scheduleRestore(from: backup, defaults: defaults, storeDirectoryURL: root)
+            let backupStore = backup.appendingPathComponent("default.store")
+            let size = try Data(contentsOf: backupStore).count
+            try Data(repeating: 0x2A, count: size).write(to: backupStore)
+            let backupsBefore = StoreBackupManager.listBackups(storeDirectoryURL: root).count
+
+            #expect(throws: CocoaError(.fileReadCorruptFile)) {
+                try StoreBackupManager.performPendingRestoreIfNeeded(storeDirectoryURL: root, defaults: defaults)
+            }
+
+            #expect(marker(in: root) == "what-is-live")
+            #expect(StoreBackupManager.pendingRestoreURL(defaults: defaults) == nil)
+            let record = try #require(StoreBackupManager.lastFailedRestore(defaults: defaults))
+            #expect(record.retainedOriginalsPath == nil)
             #expect(StoreBackupManager.listBackups(storeDirectoryURL: root).count == backupsBefore)
         }
     }
