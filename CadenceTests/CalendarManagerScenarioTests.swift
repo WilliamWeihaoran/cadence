@@ -504,46 +504,85 @@ struct CalendarManagerScenarioTests {
 
     // MARK: - 6c. T-537: the evidence question is asked before every task is fetched
 
+    /// A lookup that records, each time it is asked whether a miss can be trusted, whether the
+    /// watched row was already registered in the context at that moment. A class, so the
+    /// store-level overload's copy of it and this test's are the same object.
+    private final class FetchWitnessingLookup: CalendarEventLookup {
+        let isTrusted: Bool
+        let watched: ModelContext
+        let watchedTask: PersistentIdentifier
+        /// One entry per time the guard was asked: whether the fetch had already happened then.
+        private(set) var fetchedWhenAsked: [Bool] = []
+
+        init(isTrusted: Bool, watched: ModelContext, watchedTask: PersistentIdentifier) {
+            self.isTrusted = isTrusted
+            self.watched = watched
+            self.watchedTask = watchedTask
+        }
+
+        var isAuthorized: Bool {
+            let registered: AppTask? = watched.registeredModel(for: watchedTask)
+            fetchedWhenAsked.append(registered != nil)
+            return isTrusted
+        }
+
+        var hasLoadedCalendars: Bool { isTrusted }
+
+        func event(withIdentifier identifier: String) -> EKEvent? { nil }
+    }
+
     /// **T-537.** The store-level overload built a full `FetchDescriptor<AppTask>` and only then
     /// reached `canTrustLookupMisses`, inside the array overload below it. That runs on **every**
     /// `EKEventStoreChanged` — a notification EventKit posts while an account reloads, not only when
     /// the user changed something — so the launch state T-529 exists to make inert (authorized, no
     /// calendars produced yet) still paid a whole-store fetch in order to decide to do nothing.
     ///
-    /// It is an ordering fact inside a static function with no seam: the fetch is
-    /// `modelContext.fetch`, which no fake can count. So it is pinned as source order, scoped to
-    /// that overload's own body rather than to the file — the array overload above it is a
-    /// different function and already guards in the right place. What must **not** change is the
-    /// neighbouring behaviour: guarding earlier may not clear a link that survived before, nor
-    /// spare one that did not, and those tests are the ones that say so.
+    /// **Held by effect since [[T-3260]]; it used to be a source-order pin.** The fetch is not
+    /// countable, but it is visible: a fetch registers the rows it returns in the context that ran
+    /// it while the fetched array is alive, and a context that has fetched nothing has registered
+    /// nothing. So the row is seeded through a *second* context, the call is made on a fresh one,
+    /// and the lookup reads `registeredModel(for:)` every time the guard asks it. The untrusted
+    /// call must be asked exactly once, with nothing registered yet. The trusted control is asked
+    /// twice — by the store-level guard before the fetch and by the array overload's guard after
+    /// it — and must see the row only the second time, which is what makes "nothing registered"
+    /// mean "not fetched yet" rather than "this probe cannot see a fetch". (A read after the call
+    /// returns cannot serve as the control: measured, the context no longer holds a fetched row
+    /// with nothing pending once the array is released.) What must **not** change is the neighbouring
+    /// behaviour: guarding earlier may not clear a link that survived before, nor spare one that
+    /// did not, and the tests above are the ones that say so.
     @Test func clearMissingEventLinksAnswersTheEvidenceQuestionBeforeItFetchesEveryTask() throws {
-        let raw = try CadenceSourceScan.sourceFile("Cadence/macOS/Views/CalendarLinkedTaskSupport.swift")
-        let source = CadenceSourceScan.strippingComments(raw)
-        // Non-vacuity: the file really was read, and the stripper really did blank something.
-        #expect(source.contains("enum CalendarLinkedTaskSupport"))
-        #expect(source != raw)
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let seeding = ModelContext(container)
+        let task = AppTask(title: "Linked before the store loaded")
+        task.calendarEventID = "not-loaded-yet-id"
+        seeding.insert(task)
+        try seeding.save()
+        let taskID = task.persistentModelID
 
-        // The store-level overload is the *last* `clearMissingEventLinks` in the file.
-        let tail = try #require(
-            source.range(of: "func clearMissingEventLinks(", options: .backwards),
-            "the overload this test is about is not declared here any more"
+        // The store has not answered: the guard must be asked, and refuse, before any fetch.
+        let untrustedContext = ModelContext(container)
+        let untrustedProbe: AppTask? = untrustedContext.registeredModel(for: taskID)
+        #expect(untrustedProbe == nil, "non-vacuity: the fresh context already held the row")
+        let untrusted = FetchWitnessingLookup(isTrusted: false, watched: untrustedContext, watchedTask: taskID)
+        CalendarLinkedTaskSupport.clearMissingEventLinks(modelContext: untrustedContext, calendarManager: untrusted)
+
+        #expect(
+            untrusted.fetchedWhenAsked == [false],
+            "the store-level overload fetches every task before asking whether a miss means anything (asked: \(untrusted.fetchedWhenAsked))"
         )
-        let body = try #require(
-            CadenceSourceScan.functionBody(
-                named: "clearMissingEventLinks",
-                in: String(source[tail.lowerBound...])
-            ),
-            "the store-level overload's braces do not balance"
+
+        // The control: a trusted store is asked before the fetch and again after it, and the
+        // probe sees the fetch the second time.
+        let trustedContext = ModelContext(container)
+        let trusted = FetchWitnessingLookup(isTrusted: true, watched: trustedContext, watchedTask: taskID)
+        CalendarLinkedTaskSupport.clearMissingEventLinks(modelContext: trustedContext, calendarManager: trusted)
+
+        #expect(
+            trusted.fetchedWhenAsked == [false, true],
+            "the probe cannot see a fetch, so the untrusted half proves nothing (asked: \(trusted.fetchedWhenAsked))"
         )
-        let evidenceGuard = try #require(
-            body.range(of: "guard canTrustLookupMisses("),
-            "the store-level overload fetches every task before asking whether a miss means anything"
-        )
-        let fetch = try #require(
-            body.range(of: "FetchDescriptor<AppTask>"),
-            "the overload no longer fetches, so this test is pinning nothing"
-        )
-        #expect(evidenceGuard.upperBound < fetch.lowerBound)
+        let reread = try ModelContext(container).fetch(FetchDescriptor<AppTask>())
+        #expect(reread.map(\.calendarEventID) == [""], "the trusted store did not clear the dead link")
     }
 }
 #endif

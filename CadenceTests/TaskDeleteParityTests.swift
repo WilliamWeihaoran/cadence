@@ -272,46 +272,34 @@ struct TaskDeleteParityTests {
         #expect(try ModelContext(container).fetch(FetchDescriptor<Subtask>()).isEmpty)
     }
 
-    /// Where the commit goes, and what a refused one skips.
+    /// What a refused commit skips: the reminder cancellation.
     ///
-    /// Two things this target cannot reach behaviourally. The commit is one line inside a function
-    /// whose other twenty `try? modelContext.save()` neighbours are not this ticket's, so the
-    /// needle is scoped by the gate it sits in rather than counted file-wide. The notification
-    /// cancellation reaches a real `UNUserNotificationCenter`, so its *position* is what can be
-    /// pinned: it follows the commit, and the failure branch returns before reaching it — a delete
-    /// that promises it removed nothing must not have cancelled the reminder either.
+    /// **[[T-3260]] retired the commit half of this test; only the cancellation half is still a
+    /// source rule, and this is why.** The commit used to be pinned here too, as one regex for the
+    /// whole `commitDelete { commitEdit(…, undo: survivors.restore) }` spine plus a negative for
+    /// T-365's swallowed `try? modelContext.save()`. Both are behaviour, and are held by effect:
+    /// `arefusedTaskDeleteKeepsTheTaskAndReportsFailure` above drives a refused `commit:` and reads
+    /// `false`, a clean context and every row back, which a delete that bypasses `commitDelete`'s
+    /// rollback or swallows the refusal cannot produce. The survivor undo's nesting is the one part
+    /// behaviour cannot see on Xcode 27, and `CadenceDeleteSurvivorRestoreTests` already pins it
+    /// by name for this function and its two siblings, so a third copy here bought nothing.
     ///
-    /// **[[T-1348]] split it in two, and the needle now reads both halves.** The committing half
-    /// is unchanged. The deferring half used to run the *same* unconditional cancellation, above a
-    /// commit this function does not make and its caller may still be refused, so the needle below
-    /// rejects any spelling that cancels outright on the deferred path. The behaviour that pins is
-    /// in `CadenceDeferredReminderCancellationTests`; this is the ordering it cannot see.
-    ///
-    /// **[[T-1336]] widened the commit needle by one nesting level, and not by accident.** The
-    /// spine is still `commitDelete`, and the failure branch still returns `false` without reaching
-    /// the cancellation — neither clause moved. What changed is what `commitDelete` is handed as
-    /// its `commit:`: a `commitEdit` carrying the undo for the rows this delete edits and does
-    /// *not* remove, so the restore lands before the rollback rather than after it. The order is
-    /// the fix, so the needle reads it rather than only the outer call;
-    /// `CadenceDeleteSurvivorRestoreTests` argues why, and holds the same rule for the other two
-    /// helpers.
-    @Test func theSharedDeleteCommitsThroughThePendingChangeSpineAndCancelsOnlyOnSuccess() throws {
+    /// The cancellation is different. On the committing path it goes through
+    /// `NotificationManager.cancelReminders`, whose `shared` manager is inert under
+    /// `isTestEnvironment` and takes no injected centre, so no run in this target can see whether
+    /// it ran. Its *position* is therefore what is pinned: it follows the commit, and the failure
+    /// branch returns before reaching it — a delete that promises it removed nothing must not have
+    /// cancelled the reminder either. **[[T-1348]] split it in two**, and the needle reads both
+    /// halves: the deferring half hands its ids to the enclosing cascade instead of cancelling
+    /// outright. That the deferred half defers, and that the committing half queues nothing, is
+    /// behaviour in `CadenceDeferredReminderCancellationTests`; this is the ordering it cannot see.
+    @Test func theSharedDeleteCancelsRemindersOnlyBelowItsOwnCommit() throws {
         let raw = try CadenceSourceScan.sourceFile("Cadence/Shared/CadenceTaskMutationSupport.swift")
         #expect(raw.count > 400, "the delete core read as \(raw.count) characters")
         let core = CadenceSourceScan.strippingComments(raw)
         #expect(core != raw, "the comment stripper removed nothing")
         #expect(core.count == raw.count, "the stripper changed the length")
         #expect(core.contains("static func deleteTasks("), "the shared task-deletion core moved")
-
-        let spineCommit = #"if commitsImmediately \{\s*do \{\s*try CadencePendingChangePersistence\.commitDelete\(\s*in: modelContext,\s*commit: \{\s*try CadencePendingChangePersistence\.commitEdit\(in: \$0, commit: commit, undo: survivors\.restore\)\s*\}\s*\)\s*\} catch \{\s*return false"#
-        #expect(
-            CadenceSourceScan.matchCount(spineCommit, in: core) == 1,
-            "the ordinary delete no longer commits through the spine that rolls back"
-        )
-        #expect(
-            CadenceSourceScan.matchCount(#"try\? modelContext\.save\(\)\s*\}\s*NotificationManager"#, in: core) == 0,
-            "the swallowed save T-365 removed is back"
-        )
 
         let cancelsAfterTheCommit = #"catch \{\s*return false\s*\}\s*\}\s*if commitsImmediately \{\s*NotificationManager\.cancelReminders\(taskIDs: Array\(taskIDs\)\)\s*\} else \{\s*NotificationManager\.deferReminderCancellation\(taskIDs: Array\(taskIDs\)\)\s*\}\s*return true"#
         #expect(
@@ -323,28 +311,7 @@ struct TaskDeleteParityTests {
             "the delete core cancels a reminder directly again, outside the two gated spellings"
         )
 
-        // Both needles against the spellings they must and must not accept.
-        #expect(
-            CadenceSourceScan.matchCount(
-                spineCommit,
-                in: "if commitsImmediately {\n            do {\n                try CadencePendingChangePersistence.commitDelete(\n                    in: modelContext,\n                    commit: {\n                        try CadencePendingChangePersistence.commitEdit(in: $0, commit: commit, undo: survivors.restore)\n                    }\n                )\n            } catch {\n                return false\n            }\n        }"
-            ) == 1,
-            "the commit needle does not match the spelling it is hunting"
-        )
-        #expect(
-            CadenceSourceScan.matchCount(
-                spineCommit,
-                in: "if commitsImmediately {\n            try? modelContext.save()\n        }"
-            ) == 0,
-            "the commit needle accepts the swallowed save"
-        )
-        #expect(
-            CadenceSourceScan.matchCount(
-                spineCommit,
-                in: "if commitsImmediately {\n            do {\n                try CadencePendingChangePersistence.commitDelete(in: modelContext, commit: commit)\n            } catch {\n                return false\n            }\n        }"
-            ) == 0,
-            "the commit needle still accepts the T-1336 spelling that commits without the survivor undo"
-        )
+        // The needle against the spellings it must and must not accept.
         #expect(
             CadenceSourceScan.matchCount(
                 cancelsAfterTheCommit,
