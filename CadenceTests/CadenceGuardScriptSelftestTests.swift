@@ -3208,6 +3208,12 @@ struct CadenceGuardScriptSelftestTests {
             ("the same name in two different functions", "f() {\n  local x\n}\ng() {\n  local x\n}\n", false),
             ("a bare local after the loop that used the name has closed", "f() {\n  for i in 1 2; do\n    : $i\n  done\n  local x\n}\n", false),
             ("`local` inside a comment or a string", "f() {\n  # local x\n  say \"local x\"\n  local x\n}\n", false),
+            // T-4386: an operand of an arithmetic or command substitution in a value is not a
+            // declaration, so naming an already-declared variable there is not a redeclaration...
+            ("an arithmetic operand naming a declared variable", "f() {\n  local fixture_at=1\n  local stale_now=$(( fixture_at + 26 * 3600 ))\n}\n", false),
+            ("a command substitution argument naming a declared variable", "f() {\n  local b=1\n  local a=$(print b c)\n}\n", false),
+            // ...but a substitution the token closes does not end the reading of the line.
+            ("a bare name after a closed arithmetic value, declared again", "f() {\n  local a=$((1+2)) b\n  local b\n}\n", true),
         ]
         let dir = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("cadence-local-scan-\(UUID().uuidString)")
@@ -3746,6 +3752,15 @@ struct CadenceShellLocalScan {
             let doubles = rest.filter { $0 == "\"" }.count
             let singles = rest.filter { $0 == "'" }.count
             if !doubles.isMultiple(of: 2) || !singles.isMultiple(of: 2) { break }
+            // T-4386, the same rule for a bracket. `local stale_now=$(( fixture_at + 26 * 3600 ))`
+            // splits into `stale_now=$((`, `fixture_at`, `+`, … and read `fixture_at` as a bare
+            // declaration, so a function that really declared that name was reported as
+            // redeclaring it on a line that declares nothing. A `$((`, `$(` or `(` the token does
+            // not close means the value runs on past this space; a balanced one, as in
+            // `local a=$((1+2)) b`, leaves the next token a real name.
+            let opens = rest.filter { $0 == "(" }.count
+            let closes = rest.filter { $0 == ")" }.count
+            if opens != closes { break }
         }
         return names.isEmpty ? nil : (hasFlag, names)
     }
