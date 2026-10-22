@@ -119,10 +119,13 @@ struct CadenceCalendarOverlapLayoutTests {
                 body.range(of: ".lineLimit(", range: titleFont.upperBound..<body.endIndex),
                 "\(declaration)'s title has no line limit"
             )
+            // T-3323: the limit is now the block's `titleLineLimit`, which is the shared title-fit
+            // rule with the threshold's own line count as its wrap limit — 1 or that, never more.
             let argument = body[limit.upperBound...].prefix { $0 != ")" }
+            #expect(argument == "titleLineLimit", "\(declaration)'s title is limited by \(argument), not the title-fit rule")
             #expect(
-                Int(argument) == CadenceCalendarOverlapLayout.iOSEventTitleLineLimit,
-                "\(declaration)'s title is limited to \(argument) lines; the cascade threshold assumes \(CadenceCalendarOverlapLayout.iOSEventTitleLineLimit)"
+                body.contains("wrapLimit: CadenceCalendarOverlapLayout.iOSEventTitleLineLimit"),
+                "\(declaration)'s title wraps to a line count the cascade threshold does not assume"
             )
         }
     }
@@ -546,6 +549,80 @@ struct CadenceCalendarOverlapLayoutTests {
         #expect(TimelineEventBlockRows.titleIconFontSize == 9)
         #expect(TimelineEventBlockRows.recurrenceGlyphFontSize == 8)
         #expect(mac.contains("horizontalPadding: style.horizontalPadding,\n                                    isRecurring: item.isRecurringSeriesMember"))
+    }
+
+    // MARK: - T-3323: the iOS timed blocks share the Mac's title-fit rule
+
+    /// One implementation, both platforms: the Mac names are views of the Shared rule, and the
+    /// rule's boundary is the widest word's own measured width at whatever size the title draws.
+    @Test func theTitleFitRuleIsSharedAndTruncatesAWordWiderThanItsLine() {
+        let title = "Front event A"
+        #expect(TimelineEventBlockRows.widestTitleWordWidth(title)
+                == CadenceCalendarBlockTitleFit.widestWordWidth(title, fontSize: CadenceCalendarOverlapLayout.eventTitleFontSize))
+        // The Dynamic Type sizes an iOS title draws at, through the same scale the block reads.
+        for size in [DynamicTypeSize.large, .xxxLarge] {
+            let font = CadenceTypeScale.size(.metadata, base: CadenceCalendarBlockTitleFit.iOSTitleBaseSize, at: size, scaling: .enabled)
+            let widest = CadenceCalendarBlockTitleFit.widestWordWidth(title, fontSize: font)
+            #expect(widest > 0, "non-vacuity: the title's words measured as nothing at \(font)pt")
+            #expect(CadenceCalendarBlockTitleFit.titleLineLimit(for: title, fontSize: font, availableWidth: widest - 1, wrapLimit: 2) == 1,
+                    "a word one point too wide for its line was left to break between characters at \(font)pt")
+            #expect(CadenceCalendarBlockTitleFit.titleLineLimit(for: title, fontSize: font, availableWidth: widest, wrapLimit: 2) == 2,
+                    "a title whose every word fits lost its second line at \(font)pt")
+        }
+        #expect(CadenceTypeScale.size(.metadata, base: 11, at: .xxxLarge, scaling: .enabled) > 11,
+                "non-vacuity: the larger text size did not grow the title")
+        #expect(CadenceCalendarBlockTitleFit.titleLineLimit(for: "", fontSize: 11, availableWidth: 0, wrapLimit: 2) == 2)
+    }
+
+    /// The width each iOS block leaves its title, and the glyph and padding literals it is
+    /// mirrored from.
+    @Test func theIOSTitleIsMeasuredAgainstTheWidthLeftBesideItsGlyph() throws {
+        let fit = CadenceCalendarBlockTitleFit.self
+        let glyph = fit.symbolWidth(fit.iOSEventGlyphSymbolName, pointSize: fit.iOSEventGlyphBaseSize)
+        #expect(glyph > 0)
+        #expect(100 - fit.iOSEventTitleWidth(blockWidth: 100, glyphWidth: glyph)
+                == CadenceCalendarEventStyle.railWidth + 14 + glyph + 6)
+        #expect(100 - fit.iOSTaskTitleWidth(blockWidth: 100, circleFrameWidth: 11, hasClearTimeControl: false) == CGFloat(14 + 11 + 6))
+        #expect(fit.iOSTaskTitleWidth(blockWidth: 100, circleFrameWidth: 11, hasClearTimeControl: false)
+                - fit.iOSTaskTitleWidth(blockWidth: 100, circleFrameWidth: 11, hasClearTimeControl: true) == CGFloat(26))
+        #expect(fit.iOSEventTitleWidth(blockWidth: 0, glyphWidth: glyph) == 0)
+        #expect(fit.iOSTaskTitleWidth(blockWidth: 0, circleFrameWidth: 11, hasClearTimeControl: true) == 0)
+
+        // A cascaded block 60pt wide — the narrow case an iPad week column or a cascade produces —
+        // cannot hold "Front" beside its glyph, so both blocks give it one truncated line.
+        let event = fit.iOSEventTitleWidth(blockWidth: 60, glyphWidth: glyph)
+        let task = fit.iOSTaskTitleWidth(blockWidth: 60, circleFrameWidth: 11, hasClearTimeControl: false)
+        #expect(fit.titleLineLimit(for: "Front event A", fontSize: 11, availableWidth: event, wrapLimit: 2) == 1)
+        #expect(fit.titleLineLimit(for: "Front event A", fontSize: 11, availableWidth: task, wrapLimit: 2) == 1)
+        // A full-width phone day column keeps the wrap.
+        #expect(fit.titleLineLimit(for: "Lunch with Sam", fontSize: 11, availableWidth: fit.iOSEventTitleWidth(blockWidth: 300, glyphWidth: glyph), wrapLimit: 2) == 2)
+
+        let phone = CadenceSourceScan.codeOnly(
+            try CadenceSourceScan.sourceFile("Cadence/iOS/iOSCalendarTimelineViews.swift")
+        )
+        #expect(phone.count > 20_000, "non-vacuity: read \(phone.count) characters of the iOS grid")
+        #expect(fit.iOSHorizontalPadding == 7)
+        #expect(fit.iOSLeadingGlyphSpacing == 6)
+        #expect(fit.iOSEventGlyphBaseSize == 10)
+        #expect(fit.iOSTaskCircleFrameBaseSize == 11)
+        #expect(fit.iOSClearTimeTrailingInset == 26)
+        #expect(fit.iOSEventGlyphSymbolName == "calendar")
+        let raw = try CadenceSourceScan.sourceFile("Cadence/iOS/iOSCalendarTimelineViews.swift")
+        #expect(raw.contains("HStack(alignment: .top, spacing: 6) {\n                Image(systemName: \"calendar\")\n                    .cadenceFont(.metadata, base: 10, weight: .semibold)"))
+        #expect(phone.contains(".frame(width: CadenceTypeScale.size(.metadata, base: 11, at: dynamicTypeSize, scaling: scaling), height:"))
+        #expect(phone.contains(".padding(.trailing, onClearTime == nil ? 0 : 26)"))
+        #expect(CadenceSourceScan.matchCount(#"\.padding\(\.horizontal, 7\)"#, in: phone) >= 2)
+        for declaration in ["private struct iOSCalendarEventBlock: View", "struct iOSTimelineTaskBlock: View"] {
+            let body = try #require(CadenceSourceScan.declarationBody(declaration, in: phone), "\(declaration) was not found")
+            #expect(body.contains(".lineLimit(titleLineLimit)\n                            .truncationMode(.tail)")
+                    || body.contains(".lineLimit(titleLineLimit)\n                        .truncationMode(.tail)"),
+                    "\(declaration)'s two-line title is not tail-truncated by the title-fit rule")
+            #expect(body.contains("availableWidth: CadenceCalendarBlockTitleFit.iOS"), "\(declaration) does not measure its own title row")
+        }
+        #expect(phone.contains("hasClearTimeControl: onClearTime != nil"),
+                "the task block measures its title as if the trailing control were never there")
+        #expect(phone.contains("endMin: range.end, blockWidth: slot.width)"), "the event block is not handed its column width")
+        #expect(phone.contains("endMin: range.end,\n                    blockWidth: slot.width,"), "the task block is not handed its column width")
     }
 
     #endif

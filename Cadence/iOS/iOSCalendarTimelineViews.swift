@@ -1085,7 +1085,7 @@ private struct iOSCalendarTimelineDayColumn: View {
                 let drawn = CadenceScheduleSupport.timelineVisibleRange(start: range.start, end: range.end)
                 let key = BlockKey.event(event.calendarItemIdentifier)
                 let slot = horizontalFrame(placements[.event(event.calendarItemIdentifier)], kind: .event)
-                iOSCalendarEventBlock(event: event, startMin: range.start, endMin: range.end)
+                iOSCalendarEventBlock(event: event, startMin: range.start, endMin: range.end, blockWidth: slot.width)
                     .frame(width: slot.width, height: blockHeight(start: drawn.start, end: drawn.end))
                     .offset(x: slot.x, y: yOffset(for: drawn.start))
                     .zIndex(solved.zIndexes[key] ?? 1)
@@ -1103,6 +1103,7 @@ private struct iOSCalendarTimelineDayColumn: View {
                     task: task,
                     startMin: range.start,
                     endMin: range.end,
+                    blockWidth: slot.width,
                     onClearTime: onClearTime.map { clear in { clear(task) } },
                     editing: blockEditing(for: task, stored: stored, drawnHeight: height)
                 )
@@ -1702,6 +1703,9 @@ private struct iOSCalendarEventBlock: View {
     let event: EKEvent
     let startMin: Int
     let endMin: Int
+    /// The width the day column gives the block, so the title can be measured before it is drawn
+    /// (T-3323).
+    let blockWidth: CGFloat
 
     private var calendarColor: Color {
         iOSCalendarEventSupport.color(for: event.calendar)
@@ -1727,6 +1731,23 @@ private struct iOSCalendarEventBlock: View {
             .foregroundStyle(CadenceCalendarEventStyle.railTitleColor(for: calendarColor))
     }
 
+    /// T-3323: a word too wide for the title's line ends the title in an ellipsis on one line
+    /// rather than breaking between characters. Measured at the size the title actually draws.
+    private var titleLineLimit: Int {
+        CadenceCalendarBlockTitleFit.titleLineLimit(
+            for: iOSCalendarEventSupport.title(for: event),
+            fontSize: CadenceTypeScale.size(.metadata, base: CadenceCalendarBlockTitleFit.iOSTitleBaseSize, at: dynamicTypeSize, scaling: scaling),
+            availableWidth: CadenceCalendarBlockTitleFit.iOSEventTitleWidth(
+                blockWidth: blockWidth,
+                glyphWidth: CadenceCalendarBlockTitleFit.symbolWidth(
+                    CadenceCalendarBlockTitleFit.iOSEventGlyphSymbolName,
+                    pointSize: CadenceTypeScale.size(.metadata, base: CadenceCalendarBlockTitleFit.iOSEventGlyphBaseSize, at: dynamicTypeSize, scaling: scaling)
+                )
+            ),
+            wrapLimit: CadenceCalendarOverlapLayout.iOSEventTitleLineLimit
+        )
+    }
+
     var body: some View {
         HStack(alignment: .top, spacing: 0) {
             // The identity marker: a plain strip, shaped by the block's `.clipShape(blockShape)`
@@ -1750,7 +1771,8 @@ private struct iOSCalendarEventBlock: View {
                 ViewThatFits(in: .vertical) {
                     VStack(alignment: .leading, spacing: 3) {
                         titleLabel
-                            .lineLimit(2)
+                            .lineLimit(titleLineLimit)
+                            .truncationMode(.tail)
 
                         Text(CadenceScheduleSupport.timeRangeLabel(startMinute: startMin, endMinute: endMin))
                             .cadenceFont(.metadata, base: 9, weight: .medium)
@@ -1804,6 +1826,9 @@ struct iOSTimelineTaskBlock: View {
     @Bindable var task: AppTask
     let startMin: Int
     let endMin: Int
+    /// The width the day column gives the block, so the title can be measured before it is drawn
+    /// (T-3323).
+    let blockWidth: CGFloat
     /// The Calendar grid positions every block and hands it an exact height, so the block must fill
     /// what it is given. Today's pane stacks blocks inside an hour row that sizes to its content,
     /// where an infinite max height lets one block swallow the row.
@@ -1855,6 +1880,11 @@ struct iOSTimelineTaskBlock: View {
         CadenceCalendarEventStyle.plateSecondaryLabelColor(isSelected: isLifted)
     }
 
+    /// The compact display title, read once so the label and the title-fit rule measure one string.
+    private var displayTitle: String {
+        TaskTitleSupport.displayTitle(task.title, fallback: TaskTitleSupport.defaultCompactDisplayTitle)
+    }
+
     /// **What the block answers to ([[T-1475]]).** It used to carry an explicit no-drag contract —
     /// [[T-3170]] took away its only drag, the drop-a-block-on-a-block gesture that formed a Block,
     /// and that gesture stays gone: there is no drag payload and no drop destination here, and
@@ -1875,10 +1905,26 @@ struct iOSTimelineTaskBlock: View {
     /// preview, and on release commits once through `CadenceTimelineBlockEdit.commit` — whose
     /// refusal leaves the block at its stored minute with the failure named above the canvas.
     private var titleLabel: some View {
-        Text(TaskTitleSupport.displayTitle(task.title, fallback: TaskTitleSupport.defaultCompactDisplayTitle))
+        Text(displayTitle)
             .cadenceFont(.metadata, base: 11, weight: .semibold)
             .foregroundStyle(task.isDone ? secondaryInk : primaryInk)
             .strikethrough(task.isDone, color: secondaryInk)
+    }
+
+    /// T-3323: a word too wide for the title's line ends the title in an ellipsis on one line
+    /// rather than breaking between characters. Measured at the size the title actually draws,
+    /// beside the circle's frame and clear of the trailing control when there is one.
+    private var titleLineLimit: Int {
+        CadenceCalendarBlockTitleFit.titleLineLimit(
+            for: displayTitle,
+            fontSize: CadenceTypeScale.size(.metadata, base: CadenceCalendarBlockTitleFit.iOSTitleBaseSize, at: dynamicTypeSize, scaling: scaling),
+            availableWidth: CadenceCalendarBlockTitleFit.iOSTaskTitleWidth(
+                blockWidth: blockWidth,
+                circleFrameWidth: CadenceTypeScale.size(.metadata, base: CadenceCalendarBlockTitleFit.iOSTaskCircleFrameBaseSize, at: dynamicTypeSize, scaling: scaling),
+                hasClearTimeControl: onClearTime != nil
+            ),
+            wrapLimit: CadenceCalendarOverlapLayout.iOSEventTitleLineLimit
+        )
     }
 
     var body: some View {
@@ -2003,7 +2049,8 @@ struct iOSTimelineTaskBlock: View {
                     // chosen for a near-black surface and this surface is no longer near-black —
                     // it reads about 2:1 on the plate. The strikethrough is what still says done.
                     titleLabel
-                        .lineLimit(2)
+                        .lineLimit(titleLineLimit)
+                        .truncationMode(.tail)
                     Text(CadenceScheduleSupport.timeRangeLabel(startMinute: startMin, endMinute: endMin))
                         .cadenceFont(.metadata, base: 9, weight: .medium)
                         .foregroundStyle(secondaryInk)
