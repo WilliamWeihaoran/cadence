@@ -149,7 +149,7 @@ struct MacTaskRowInlineDetailTests {
     private func hostedRow(_ task: AppTask, container: ModelContainer) -> NSHostingView<some View> {
         let host = NSHostingView(rootView: MacTaskRow(task: task)
             .frame(width: width)
-            .modelContainer(container)
+            .retainingModelContainerForProcessLifetime(container)
             .environment(CadenceDeepLinkManager.shared)
             .environment(DeleteConfirmationManager.shared)
             .environment(HoveredTaskManager.shared)

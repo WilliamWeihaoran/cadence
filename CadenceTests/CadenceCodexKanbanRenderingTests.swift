@@ -233,7 +233,7 @@ struct CadenceCodexKanbanRenderingTests {
         afterMount: ((NSView) async throws -> Void)? = nil
     ) async throws -> Int {
         let host = NSHostingView(rootView: view
-            .modelContainer(container)
+            .retainingModelContainerForProcessLifetime(container)
             .environment(RemindersManager.shared)
             .environment(CadenceDeepLinkManager.shared)
             .environment(DeleteConfirmationManager.shared)
