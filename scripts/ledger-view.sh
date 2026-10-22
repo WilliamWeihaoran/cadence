@@ -1,5 +1,5 @@
 #!/bin/sh
-# A generated compact view of the ledger, so nobody reads 1.4 MB to find the open work (T-1331).
+# A generated compact view of the ledger, so nobody reads the whole file to find the open work (T-1331).
 #
 #   ./scripts/ledger-view.sh                # active entries, with next action and park reason
 #   ./scripts/ledger-view.sh brief          # active entries, one line each
@@ -11,7 +11,7 @@
 #
 # WHY THIS EXISTS
 #
-# `docs/TODO.md` is the authoritative ledger and it is ~11,800 lines / ~1.4 MB. Every agent and
+# `docs/TODO.md` is the authoritative ledger and it is multi-megabyte and growing. Every agent and
 # every coordinator pass pays for it: `rg -n 'T-13'` prints entire multi-kilobyte ticket lines, and
 # the workaround everyone independently reinvents -- `rg -n -o '^- \[T-[0-9]+\].{0,180}'` -- truncates
 # mid-sentence and cannot tell an open entry from a closed one.

@@ -154,8 +154,9 @@ enum CadenceUITestScenarioSeed {
 
         /// Read from the event fixture rather than respelled. The task **opens** the band and the
         /// deep red event starts `cascadeOffsetMinutes` into it, so the two overlap — which is what
-        /// puts an event plate beside a task plate in one frame — and they cascade rather than
-        /// splitting, which is what agent `compactcascade` found this fixture could not show.
+        /// puts an event plate beside a task plate in one frame. They are laid out as a SPLIT, not
+        /// a cascade: the offset is under `cascadeGapMinutes` on iOS and the Mac never cascades a
+        /// task ([[T-3220]]; the fixture's own note says why).
         ///
         /// A `static let` over the other constant, **not** a computed `var` over it: `Fixture` is
         /// one of the six nested helper types `CadenceSaveCommitDisciplineTests`'

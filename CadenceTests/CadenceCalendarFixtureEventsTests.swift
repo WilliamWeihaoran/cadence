@@ -152,14 +152,15 @@ struct CadenceCalendarFixtureEventsTests {
         }
     }
 
-    /// **The comparison the fixture exists to make, and the cascade it has to be able to show.**
+    /// **The comparison the fixture exists to make: an event plate and a task plate side by side.**
     ///
     /// Two claims, and they pull in opposite directions, which is why both are asserted here. The
     /// task and the deep red event must OVERLAP, or there is no frame holding an event plate beside
     /// a task plate and [[T-3168]]'s claim cannot be looked at. And they must not start on the SAME
-    /// minute: `CadenceCalendarOverlapLayout` splits same-start blocks and cascades offset ones, so
-    /// an equal-start fixture has no cascade to photograph — the gap agent `compactcascade` hit
-    /// when it tried to use this harness and built its own instead.
+    /// minute, the gap agent `compactcascade` hit. A different start is NECESSARY for a cascade
+    /// but not sufficient: `CadenceCalendarOverlapLayout` cascades only at a start gap of at least
+    /// `cascadeGapMinutes` (~47 min on iOS at rest) and the Mac never cascades a task, so this
+    /// 15-minute fixture photographs a SPLIT ([[T-3220]]). Nothing here asserts a cascade.
     ///
     /// Read through the derived constants rather than against a respelled 540 and 555, so moving
     /// the band moves every part of this together.
@@ -177,7 +178,7 @@ struct CadenceCalendarFixtureEventsTests {
 
         #expect(taskStart == band, "the task opens the band")
         #expect(eventStart == band + offset)
-        // A cascade, not a split: different starts.
+        // Different starts (necessary for a cascade, not sufficient; see the note above).
         #expect(offset > 0, "a same-start fixture draws a split and has no cascade to photograph")
         // ...and genuinely overlapping, which is what puts both plates in one frame.
         #expect(eventStart < taskEnd, "the event starts after the task has ended; nothing overlaps")

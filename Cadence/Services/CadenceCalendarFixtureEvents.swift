@@ -97,9 +97,16 @@ enum CadenceCalendarFixtureEvents {
     /// The overlap is what puts an event plate and a task plate side by side in one frame, which
     /// is the only way [[T-3168]]'s claim — that an event now reads quieter *than a task* — can be
     /// checked at all. The offset is the half agent `compactcascade` found missing: two blocks
-    /// that start on the same minute are laid out as a plain split, so there was **no cascade to
-    /// photograph** and the harness could not answer a layout question. Fifteen minutes is enough
-    /// for `CadenceCalendarOverlapLayout` to cascade them while both plates stay fully visible.
+    /// that start on the same minute can only ever be a plain split.
+    ///
+    /// **Fifteen minutes does NOT make them cascade: the scenario photographs a SPLIT**
+    /// ([[T-3220]]). `CadenceCalendarOverlapLayout.canStack` needs a start gap of at least
+    /// `cascadeGapMinutes`, which is the block header's height in minutes: about 47 on iOS at
+    /// rest, far above 15. And the Mac never cascades a task at all, because it passes
+    /// `mayCascade` for events alone. So on both platforms the two plates sit in equal columns,
+    /// side by side, which is all [[T-3168]]'s colour comparison needs. A fixture that must show
+    /// a cascade has to derive its offset from `cascadeGapMinutes` at the zoom being photographed,
+    /// as the layout tests do. The constant keeps its historical name.
     enum Fixture {
         static let deepRed = Hue(red: 0x3D, green: 0x00, blue: 0x00)
         static let pureBlue = Hue(red: 0x00, green: 0x00, blue: 0xFF)
@@ -110,9 +117,10 @@ enum CadenceCalendarFixtureEvents {
         /// `cascadeOffsetMinutes` after it. See the note above.
         static let bandStartMinute = 9 * 60
 
-        /// How far the deep red event starts after the task it overlaps. Named rather than folded
-        /// into the spec below because the seed reads it too: "the task starts first, by this
-        /// much" is one fact and must not be spelled in two places.
+        /// How far the deep red event starts after the task it overlaps: too little to cascade on
+        /// either platform (see the note above; the name predates that finding). Named rather than
+        /// folded into the spec below because the seed reads it too: "the task starts first, by
+        /// this much" is one fact and must not be spelled in two places.
         static let cascadeOffsetMinutes = 15
 
         static let timed: [Spec] = [
@@ -158,8 +166,8 @@ enum CadenceCalendarFixtureEvents {
         /// It is a fixture so that a later reader who sees a four-day block and believes it a bug
         /// has a pinned example to read first (`CalendarAllDayAndDoneTaskParityTests`). It is
         /// deliberately NOT served by the `calendar-hues` doors below: that scenario answers today
-        /// alone, and its 09:00 cascade is the thing it photographs, which a 07:30 block over the
-        /// whole column would change.
+        /// alone, and its 09:00 task-and-event overlap is the thing it photographs, which a 07:30
+        /// block over the whole column would change.
         static let multiDay = MultiDaySpec(
             title: "Four-day timed event",
             startMinute: 7 * 60 + 30,
