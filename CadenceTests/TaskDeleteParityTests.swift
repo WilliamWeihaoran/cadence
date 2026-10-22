@@ -21,8 +21,7 @@ struct TaskDeleteParityTests {
     // MARK: - Bundles
 
     /// Deleting the last member of a bundle must dispose of the bundle.
-    /// `CadenceScheduleSupport.bundlesByDate` does not filter empty bundles, so a survivor
-    /// renders an empty block on the Mac timeline indefinitely.
+    /// Otherwise an empty block outlives its last task in the store.
     @Test func deletingTheLastTaskInABundleDisposesOfTheBundle() throws {
         let modelContext = try makeContext()
 

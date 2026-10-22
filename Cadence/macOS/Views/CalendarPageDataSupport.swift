@@ -22,10 +22,6 @@ enum CalendarPageDataSupport {
         CadenceScheduleSupport.monthTasksByDate(tasks)
     }
 
-    static func bundlesByDate(_ bundles: [TaskBundle]) -> [String: [TaskBundle]] {
-        CadenceScheduleSupport.bundlesByDate(bundles, includeCompleted: false)
-    }
-
     static func handleViewModeChange(
         oldMode: CadenceCalendarViewMode,
         newMode: CadenceCalendarViewMode,

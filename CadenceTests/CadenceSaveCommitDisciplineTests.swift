@@ -2199,8 +2199,9 @@ enum CadenceSaveCommitRule {
     /// measured rather than tidy.** A helper handed a `ModelContext` is one link in the chain the
     /// existence index propagates along, so "does this frame commit?" has to have the same reach as
     /// "does this frame leave something pending" — otherwise [[T-628]]'s own fix reads as an
-    /// offence for ever, because `SchedulingActions.completeBundle` commits through
-    /// `CadenceTaskMutationSupport.deleteBundle` in another file.
+    /// offence for ever, because SchedulingActions.completeBundle committed through
+    /// `CadenceTaskMutationSupport.deleteBundle` in another file (the wrapper itself went with
+    /// [[T-3170]]'s Block removal; the shape it proved is still the one the index must read).
     ///
     /// A `var body`, or anything else that reached for an ambient context, keeps the same-file
     /// reading. It calls dozens of things and a great many of them commit *something* somewhere;
@@ -2249,7 +2250,8 @@ enum CadenceSaveCommitRule {
     /// Half 1 read both from the start; half 3 read only `insert(` for its first two tickets, so
     /// "delete and never commit at all" was covered by nothing at all: half 1 sees the delete but
     /// needs a `try?` that is not there, half 3 sees the missing commit but only for inserts.
-    /// `SchedulingService.completeBundle` sat in exactly that hole ([[T-628]]).
+    /// SchedulingService.swift's completeBundle sat in exactly that hole ([[T-628]]) until
+    /// [[T-3170]] deleted it.
     ///
     /// **It names the receiver, so `self` — spelled by leaving it off — is not one of them**
     /// ([[T-1301]]). Inside `extension ModelContext` the store *is* `self`, and this app writes
@@ -2540,7 +2542,7 @@ enum CadenceSaveCommitRule {
         fileprivate var typesByName: [String: Set<String>] = [:]
         /// The other half: every declaration in the app that **reaches a commit**, resolved the
         /// same way. Half 3 read this same question one file at a time, and after T-628 that was
-        /// not enough — the fix routes `SchedulingActions.completeBundle` through
+        /// not enough — the fix routed SchedulingActions.completeBundle (since deleted) through
         /// `CadenceTaskMutationSupport.deleteBundle`, whose `commitDelete` is in another file, so a
         /// same-file-only reading would have called the fixed code an offender for ever.
         fileprivate var committersByName: [String: Set<String>] = [:]

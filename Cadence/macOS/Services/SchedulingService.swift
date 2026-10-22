@@ -122,51 +122,15 @@ enum SchedulingActions {
         CadenceTaskMutationSupport.rollOverTaskToToday(task, todayKey: todayKey, modelContext: context)
     }
 
-    /// Completes every open member and ends the block.
-    ///
-    /// **Throws when the commit is refused (T-628).** It used to end `context.delete(bundle)` with
-    /// no save at all — and the members it had just marked done spawn recurrence successors, so a
-    /// single tap on Complete left an insert *and* a delete pending in the app's one
-    /// `ModelContext`, to be taken by the next unrelated `save()` or discarded by the next
-    /// unrelated `rollback()`. The hosts then closed their popover over it.
-    ///
-    /// The detach-and-delete half is `CadenceTaskMutationSupport.deleteBundle` rather than a
-    /// fourth copy of the member loop: that is T-322's fix, iOS already routes "Delete Block"
-    /// through it, and its `commitDelete` rolls back — which is what lets the popover say nothing
-    /// was changed and be telling the truth about the successors too.
-    /// - Parameter commit: See `CadencePendingChangePersistence.commitDelete(in:commit:)`. It is a
-    ///   parameter for the reason that helper's own doc gives: a `save()` that throws cannot be
-    ///   provoked out of an in-memory container, and an undo path no test can reach is an undo path
-    ///   no test can prove.
-    static func completeBundle(
-        _ bundle: TaskBundle,
-        in context: ModelContext,
-        commit: (ModelContext) throws -> Void = { try $0.save() }
-    ) throws {
-        for task in memberTasks(in: bundle) where !task.isDone && !task.isCancelled {
-            TaskWorkflowService.markDone(task, in: context)
-        }
-        try CadenceTaskMutationSupport.deleteBundle(bundle, modelContext: context, commit: commit)
-    }
+    // completeBundle(_:in:commit:) was declared here -- "Complete Block" on the Mac. Its last
+    // caller went with the Block UI ([[T-3170]]); only `TaskBundleTests` still reached it. The
+    // shared detach-and-delete it forwarded to is `CadenceTaskMutationSupport.deleteBundle`.
 
     // `updateBundleTime(_:startMin:endMin:)` was declared here -- the block's resize handle.
     // Its only caller was `TimelineBundleBlock`, deleted by [[T-3170]]'s trio pass.
 
-    /// Detaches every member and ends the block, leaving the tasks on the block's day.
-    ///
-    /// The body was a private `detachBundleMembers` and a bare `context.delete` — the same five
-    /// field writes `CadenceTaskMutationSupport.deleteBundle` already ran, and the same missing
-    /// commit `completeBundle` had (T-628). Two loops agreeing by inspection is what T-295 was
-    /// about; one loop cannot disagree.
-    ///
-    /// - Parameter commit: See `completeBundle(_:in:commit:)`.
-    static func unbundle(
-        _ bundle: TaskBundle,
-        in context: ModelContext,
-        commit: (ModelContext) throws -> Void = { try $0.save() }
-    ) throws {
-        try CadenceTaskMutationSupport.deleteBundle(bundle, modelContext: context, commit: commit)
-    }
+    // unbundle(_:in:commit:) was declared here, with deleteBundle(_:in:commit:), which only
+    // forwarded to it. [[T-3170]] removed both once no production path called either.
 
     private static func ensureTask(_ task: AppTask, isLinkedIn bundle: TaskBundle) {
         let existing = bundle.tasks ?? []
@@ -181,14 +145,6 @@ enum SchedulingActions {
             task.bundleOrder = offset
         }
         bundle.tasks = ordered
-    }
-
-    static func deleteBundle(
-        _ bundle: TaskBundle,
-        in context: ModelContext,
-        commit: (ModelContext) throws -> Void = { try $0.save() }
-    ) throws {
-        try unbundle(bundle, in: context, commit: commit)
     }
 
     /// Detach any legacy calendar-event reference from a task without deleting the calendar event.

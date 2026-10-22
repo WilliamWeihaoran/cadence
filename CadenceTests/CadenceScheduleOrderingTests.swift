@@ -213,36 +213,9 @@ struct CadenceScheduleOrderingTests {
         }
     }
 
-    @Test
-    func bundlesGroupedByDateSortTheSameFromEveryInputPermutation() throws {
-        let context = ModelContext(try makeContainer())
-        let bundles = tiedBundles(in: context)
-
-        let results = permutations(bundles).map { input in
-            (CadenceScheduleSupport.bundlesByDate(input, includeCompleted: true)[otherDayKey] ?? [])
-                .map(\.displayTitle)
-        }
-
-        for (index, result) in results.enumerated() {
-            #expect(result == ["Morning triage", "Tomorrow prep"], "permutation \(index) produced \(result)")
-        }
-    }
-
-    /// The direct day lookup and the grouped lookup are one rule, spelled once.
-    @Test
-    func theDayLookupAndTheGroupedLookupAgreeOnBundleOrder() throws {
-        let context = ModelContext(try makeContainer())
-        let bundles = tiedBundles(in: context)
-
-        for key in [dayKey, otherDayKey] {
-            let direct = CadenceScheduleSupport.bundles(on: key, from: bundles, includeCompleted: true).map(\.id)
-            let grouped = CadenceScheduleSupport
-                .items(on: key, in: CadenceScheduleSupport.bundlesByDate(bundles, includeCompleted: true))
-                .map(\.id)
-            #expect(!direct.isEmpty)
-            #expect(direct == grouped, "the two lookups disagreed on \(key)")
-        }
-    }
+    // bundlesGroupedByDateSortTheSameFromEveryInputPermutation and
+    // theDayLookupAndTheGroupedLookupAgreeOnBundleOrder were declared here. Both pinned the grouped
+    // bundle lookup, deleted by [[T-3170]] once the Mac calendar page stopped drawing Blocks.
 
     @Test
     func bundlesTiedOnDayStartAndTitleStillOrderTheSameWay() throws {

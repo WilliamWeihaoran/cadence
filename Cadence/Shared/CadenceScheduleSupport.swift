@@ -441,13 +441,8 @@ enum CadenceScheduleSupport {
         return result.mapValues { CadenceTaskQuerySupport.sortedTasks($0, sortMode: .priority) }
     }
 
-    static func bundlesByDate(_ bundles: [TaskBundle], includeCompleted: Bool) -> [String: [TaskBundle]] {
-        var result: [String: [TaskBundle]] = [:]
-        for bundle in bundles where includeCompleted || !bundle.isCompleted {
-            result[bundle.dateKey, default: []].append(bundle)
-        }
-        return result.mapValues { $0.sorted(by: bundlePrecedes) }
-    }
+    // bundlesByDate(_:includeCompleted:) was declared here. Its one production caller was the Mac
+    // calendar page's Block lane, which [[T-3170]] removed; the day lookup below survives it.
 
     static func items<T>(on dateKey: String, in itemsByDate: [String: [T]]) -> [T] {
         itemsByDate[dateKey] ?? []

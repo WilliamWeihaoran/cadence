@@ -6,75 +6,11 @@ import Testing
 #if os(macOS)
 @MainActor
 struct TaskBundleTests {
-    /// A commit that always refuses, the way every other save-commit suite here spells it.
-    private struct CommitRefused: Error {}
-
-    /// **T-628: the three ways a block ends now have a commit boundary.**
-    ///
-    /// `completeBundle` used to mark every open member done — which spawns a recurrence successor —
-    /// detach them all, and `context.delete(bundle)`, with no save anywhere. Both hosts then closed
-    /// their popover, which is the only signal either gesture gives. So the insert and the delete
-    /// sat pending in the app's one `ModelContext` for the next unrelated `save()` to take or the
-    /// next unrelated `rollback()` to throw away, and the user was told it worked either way.
-    ///
-    /// The commit is `CadenceTaskMutationSupport.deleteBundle`'s — T-322's fix, which iOS already
-    /// used — so the refusal rolls back and the sentence the popover shows is earned: the block is
-    /// still there, its members are still in it, and the successor was never created.
-    @Test func aRefusedBundleCompletionLeavesTheBlockItsMembersAndTheSuccessorAlone() throws {
-        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
-        let context = ModelContext(container)
-        let member = AppTask(title: "Repeats daily")
-        member.recurrenceRule = .daily
-        member.scheduledDate = "2026-05-01"
-        let bundle = TaskBundle(title: "Morning block", dateKey: "2026-05-01", startMin: 600, durationMinutes: 30)
-        context.insert(member)
-        context.insert(bundle)
-        CadenceTestBundleFixture.place(member, in: bundle)
-        try context.save()
-
-        #expect(throws: (any Error).self) {
-            try SchedulingActions.completeBundle(bundle, in: context) { _ in
-                throw CommitRefused()
-            }
-        }
-
-        // Read through a **second context on the same container**, which is the only reading that
-        // answers the question the notice makes a promise about: what the store holds. A live
-        // object still answers the value it was assigned until something refreshes it, and
-        // `rollback()` un-deletes unconditionally but does not visibly undo a field edit — both
-        // halves of that are measured in `CadencePendingChangePersistence.commitEdit`'s note.
-        let stored = ModelContext(container)
-        let bundles = try stored.fetch(FetchDescriptor<TaskBundle>())
-        #expect(bundles.count == 1, "the block is still in the store")
-        #expect(bundles.first?.sortedTasks.count == 1, "and still holds its member")
-        let tasks = try stored.fetch(FetchDescriptor<AppTask>())
-        #expect(tasks.count == 1, "no successor was written")
-        #expect(tasks.first?.isDone == false, "and the member was not completed")
-    }
-
-    /// The same boundary on `unbundle`, which `deleteBundle` forwards to — the other two of the
-    /// three end actions (T-628).
-    @Test func aRefusedUnbundleLeavesTheBlockAndItsMembersAlone() throws {
-        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
-        let context = ModelContext(container)
-        let member = AppTask(title: "Stays put")
-        let bundle = TaskBundle(title: "Morning block", dateKey: "2026-05-01", startMin: 600, durationMinutes: 30)
-        context.insert(member)
-        context.insert(bundle)
-        CadenceTestBundleFixture.place(member, in: bundle)
-        try context.save()
-
-        #expect(throws: (any Error).self) {
-            try SchedulingActions.unbundle(bundle, in: context) { _ in
-                throw CommitRefused()
-            }
-        }
-
-        let stored = ModelContext(container)
-        let bundles = try stored.fetch(FetchDescriptor<TaskBundle>())
-        #expect(bundles.count == 1)
-        #expect(bundles.first?.sortedTasks.count == 1)
-    }
+    // The T-628 refusal pair, aRefusedBundleCompletionLeavesTheBlockItsMembersAndTheSuccessorAlone
+    // and aRefusedUnbundleLeavesTheBlockAndItsMembersAlone, was declared here. Both drove the
+    // Mac's caller-less block wrappers, which [[T-3170]] deleted. The commit boundary they reached
+    // is the shared CadenceTaskMutationSupport.deleteBundle's, still pinned directly by
+    // CadenceTrackingEditorSaveCommitTests and CadenceDeleteSurvivorRestoreTests.
 
     // `addingTaskToBundleUsesBundleDateWithoutTaskTime` and
     // `reassigningTaskBetweenBundlesRemovesOldMembership` were declared here. Both exercised
@@ -99,61 +35,10 @@ struct TaskBundleTests {
         #expect(task.scheduledStartMin == 720)
     }
 
-    @Test func deletingBundleKeepsTasksOnBundleDate() throws {
-        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
-        let context = ModelContext(container)
-        let task = AppTask(title: "Keep me")
-        let bundle = TaskBundle(title: "Delete me", dateKey: "2026-05-01", startMin: 600, durationMinutes: 30)
-        context.insert(task)
-        context.insert(bundle)
-        CadenceTestBundleFixture.place(task, in: bundle)
-
-        try SchedulingActions.deleteBundle(bundle, in: context)
-
-        #expect(task.bundle == nil)
-        #expect(task.scheduledDate == "2026-05-01")
-        #expect(task.scheduledStartMin == -1)
-    }
-
-    @Test func deletingBundleAlsoDetachesCancelledHiddenMembers() throws {
-        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
-        let context = ModelContext(container)
-        let task = AppTask(title: "Hidden member")
-        task.status = .cancelled
-        let bundle = TaskBundle(title: "Delete me", dateKey: "2026-05-01", startMin: 600, durationMinutes: 30)
-        context.insert(task)
-        context.insert(bundle)
-        CadenceTestBundleFixture.place(task, in: bundle)
-
-        try SchedulingActions.deleteBundle(bundle, in: context)
-
-        #expect(task.bundle == nil)
-        #expect(task.scheduledDate == "2026-05-01")
-        #expect(task.scheduledStartMin == -1)
-    }
-
-    @Test func completingBundleMarksMemberTasksDoneAndRemovesBundle() throws {
-        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
-        let context = ModelContext(container)
-        let first = AppTask(title: "First")
-        let second = AppTask(title: "Second")
-        let bundle = TaskBundle(title: "Finish me", dateKey: "2026-05-01", startMin: 600, durationMinutes: 30)
-        [first, second].forEach(context.insert)
-        context.insert(bundle)
-        [first, second].forEach { CadenceTestBundleFixture.place($0, in: bundle) }
-
-        try SchedulingActions.completeBundle(bundle, in: context)
-
-        #expect(first.isDone)
-        #expect(second.isDone)
-        #expect(first.completedAt != nil)
-        #expect(second.completedAt != nil)
-        #expect(first.bundle == nil)
-        #expect(second.bundle == nil)
-        #expect(first.scheduledDate == "2026-05-01")
-        #expect(first.scheduledStartMin == -1)
-        #expect(try context.fetch(FetchDescriptor<TaskBundle>()).isEmpty)
-    }
+    // deletingBundleKeepsTasksOnBundleDate, deletingBundleAlsoDetachesCancelledHiddenMembers and
+    // completingBundleMarksMemberTasksDoneAndRemovesBundle were declared here. They pinned the
+    // Mac's delete and complete wrappers, which [[T-3170]] deleted with no production caller left.
+    // The detach itself is pinned on the shared mutation by CadenceBundleInspectorHostTests.
 
     @Test func rollingOverLastActiveBundledTaskDetachesItAndRemovesOldBundle() throws {
         let container = try CadenceModelContainerFactory.makeInMemoryContainer()
@@ -230,40 +115,8 @@ struct TaskBundleTests {
     // here. It pinned CadenceTaskMutationSupport.insertBundle(from:adding:), which [[T-3170]]
     // deleted once no surface could form a block any more.
 
-    @Test func unbundlingKeepsTasksOnBundleDateAndPreservesListMetadata() throws {
-        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
-        let context = ModelContext(container)
-        let area = Area(name: "General", colorHex: "#8b5cf6", icon: "globe")
-        let tag = Tag(name: "enhancement", colorHex: "#22c55e")
-        let task = AppTask(title: "Keep metadata")
-        task.area = area
-        task.sectionName = "Backlog"
-        task.dueDate = "2026-05-10"
-        task.notes = "Original notes"
-        task.tags = [tag]
-        task.order = 42
-        task.priority = .high
-        let bundle = TaskBundle(title: "Batch", dateKey: "2026-05-01", startMin: 600, durationMinutes: 30)
-        context.insert(area)
-        context.insert(tag)
-        context.insert(task)
-        context.insert(bundle)
-        CadenceTestBundleFixture.place(task, in: bundle)
-
-        try SchedulingActions.unbundle(bundle, in: context)
-
-        #expect(task.bundle == nil)
-        #expect(task.scheduledDate == "2026-05-01")
-        #expect(task.scheduledStartMin == -1)
-        #expect(task.area?.id == area.id)
-        #expect(task.sectionName == "Backlog")
-        #expect(task.dueDate == "2026-05-10")
-        #expect(task.notes == "Original notes")
-        #expect(task.tags?.map(\.id) == [tag.id])
-        #expect(task.order == 42)
-        #expect(task.priority == .high)
-        #expect(try context.fetch(FetchDescriptor<TaskBundle>()).isEmpty)
-    }
+    // unbundlingKeepsTasksOnBundleDateAndPreservesListMetadata was declared here. It pinned the
+    // Mac's unbundle wrapper, which [[T-3170]] deleted with no production caller left.
 
     // `bundleTimesAreClampedInsideOneDay` was declared here, last re-pointed at
     // SchedulingActions.updateBundleTime -- the block's resize handle. [[T-3170]]'s trio pass
@@ -331,16 +184,8 @@ struct TaskBundleTests {
         SchedulingActions.removeFromCalendar(detached)
         #expect(detached.calendarEventID.isEmpty)
 
-        // T-3170 retired the Block move. The legacy unbundle check below still starts from
-        // a fixture because no production entry point forms a Block.
-        let bundle = TaskBundle(title: "Sweep", dateKey: "2026-05-01", startMin: 600, durationMinutes: 60)
-        context.insert(bundle)
-
-        let unbundled = stale("Unbundled")
-        CadenceTestBundleFixture.place(unbundled, in: bundle)
-        unbundled.calendarEventID = "legacy-event-id"
-        try SchedulingActions.unbundle(bundle, in: context)
-        #expect(unbundled.calendarEventID.isEmpty)
+        // The unbundle step went with the Mac's unbundle wrapper ([[T-3170]]); the shared delete's
+        // clearing of a legacy identifier is pinned by CadenceBundleInspectorHostTests.
 
         // Duplicating must not hand a second task the same event identifier.
         let source = stale("Original")
