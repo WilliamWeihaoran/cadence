@@ -317,6 +317,38 @@ nonisolated enum MarkdownTaskEmbedParser {
         return result == markdown ? nil : result
     }
 
+    /// `reconcilingReferenceTitles`, carrying a selection across the rewrite, or nil when nothing
+    /// changed.
+    ///
+    /// For a host that holds the text and the selection as two separate values — iOS's SwiftUI
+    /// draft. Rewriting only the text leaves the old offset pointing into the new string, and after
+    /// a rename that lengthens a title a caret that sat just past `]]` lands *inside* the run, which
+    /// `MarkdownReferenceCompletionSupport.context` reads as a `[[task:` being typed: the completion
+    /// strip opened for one pass over the raw reference with "No matching tasks" (T-3249 item 1).
+    ///
+    /// Each end moves to wherever the text before it ends up. A title rewrite is confined to one
+    /// complete run, so reconciling the prefix alone answers exactly, however many runs precede it.
+    /// An end strictly inside a run stays put; the editor never parks a caret there, because the
+    /// run is hidden under its card.
+    nonisolated static func reconcilingReferenceTitles(
+        in markdown: String,
+        selection: NSRange,
+        titles: [UUID: String],
+        fallback: String
+    ) -> (text: String, selection: NSRange)? {
+        guard let text = reconcilingReferenceTitles(in: markdown, titles: titles, fallback: fallback) else {
+            return nil
+        }
+        let nsMarkdown = markdown as NSString
+        func moved(_ offset: Int) -> Int {
+            let prefix = nsMarkdown.substring(to: min(max(offset, 0), nsMarkdown.length))
+            let reconciled = reconcilingReferenceTitles(in: prefix, titles: titles, fallback: fallback) ?? prefix
+            return (reconciled as NSString).length
+        }
+        let start = moved(selection.location)
+        return (text, NSRange(location: start, length: max(0, moved(NSMaxRange(selection)) - start)))
+    }
+
     nonisolated static func referenceTitleRange(in markdown: String, lineStart: Int = 0) -> NSRange? {
         guard let regex = referenceTitleRangeRegex else {
             return nil

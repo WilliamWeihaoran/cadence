@@ -682,10 +682,14 @@ struct iOSMarkdownEditingSurface: View {
     private func reconcileEmbeddedTaskReferenceTitles() {
         guard let reconciled = MarkdownTaskEmbedParser.reconcilingReferenceTitles(
             in: draftText,
+            selection: selectedRange,
             titles: taskEmbedInfos.mapValues(\.title),
             fallback: MarkdownTaskEmbedRenderInfo.untitledTaskTitle
         ) else { return }
-        updateDraft(reconciled)
+        // The selection moves with the text in the same pass. Left at its old offset, a lengthened
+        // title puts the caret inside the rewritten run and the `[[` strip opens over it (T-3249).
+        updateDraft(reconciled.text)
+        selectedRange = reconciled.selection
         commitDraftImmediately()
     }
 
