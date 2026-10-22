@@ -176,3 +176,11 @@ jobs:
           fetch-depth: 0
       - name: Check the ledger against the commits that landed
         run: ./scripts/ledger-lag-check.sh
+      # T-4480. `agent-commit.sh` refuses an illegal lead token only in the ledger a commit STAGES;
+      # this catches one that reaches main any other way. It runs here, not in ci.yml, because
+      # ci.yml `paths-ignore`s the docs-only pushes ledger edits land in. This runner's awk is
+      # mawk and `ledger-view.sh` was written against macOS awk, so the script names the awk,
+      # calibrates it on a legal and a one-illegal-token fixture, and refuses unless the lint read
+      # as many entries as `grep -c` counts -- parity is shown on every run, not assumed.
+      - name: Every active ledger entry carries a legal lead token
+        run: sh ./.github/scripts/ledger-lint.sh
