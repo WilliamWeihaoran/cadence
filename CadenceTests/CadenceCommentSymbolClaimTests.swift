@@ -252,6 +252,15 @@ enum CadenceCommentSymbolClaim {
         "\\b(?:func|var|let|case|typealias|struct|class|enum|actor)\\s+`?([A-Za-z_][A-Za-z0-9_]*)`?"
     static let identifierPattern = "\\b([A-Za-z_][A-Za-z0-9_]*)\\b"
 
+    /// An **implicit member expression**: a leading-dot name written where an argument, a value
+    /// or an element starts — after `:`, `(`, `,`, `=` or `[` — so the type it belongs to is the
+    /// contextual one, never spelled. `cursor: .arrow` is the measured case ([[T-3271]]). Such a
+    /// spelling names a case or a static member, and a member is not a root: it cannot vouch for
+    /// the root of an SF Symbol path that happens to start with the same word. Anything else
+    /// before the dot (an explicit receiver, a chain continued on the next line, a `return`) is left alone,
+    /// so the narrowing only ever moves a verdict the way the ticket asked.
+    static let implicitMemberPattern = "[:(,=\\[]\\s*\\.([A-Za-z_][A-Za-z0-9_]*)\\b"
+
     /// The content of every single-line literal in a `strings` half. Interpolations are kept as
     /// written, so a literal holding one never equals a backticked span — which is the safe way
     /// round: it can only leave a span to be judged, never excuse one.
@@ -322,6 +331,18 @@ enum CadenceCommentSymbolClaim {
         /// a type that was renamed or deleted is not. The same trade `calledNames(inCode:)` makes,
         /// for the same reason — it dissolves the SDK allowlist instead of maintaining one.
         var codeIdentifiers: Set<String> = []
+        /// How many times the code spells each identifier, and how many of those are implicit
+        /// member expressions (`implicitMemberPattern`). A name whose every spelling is one of
+        /// the latter is an enum case or static member only, and `vouchesForRoot` refuses it
+        /// ([[T-3271]]). Counts, not sets, so merging a fixture's index into the tree's stays exact.
+        var identifierCounts: [String: Int] = [:]
+        var implicitMemberCounts: [String: Int] = [:]
+
+        /// Whether the code spells `name` at least once as something other than an implicit
+        /// member: what the root verdict asks of a root the tree does not declare.
+        func vouchesForRoot(_ name: String) -> Bool {
+            (identifierCounts[name] ?? 0) > (implicitMemberCounts[name] ?? 0)
+        }
         /// Every single-line string literal's content, whole. A backticked `tray.fill` or
         /// `com.haoranwei.Cadence` is a *value* the tree spells in a literal, not a symbol claim,
         /// and this is what tells the root verdict so without a list of SF Symbols ([[T-3209]]).
@@ -359,6 +380,10 @@ enum CadenceCommentSymbolClaim {
                 let code = file.code
                 for capture in CadenceSourceScan.captures(identifierPattern, in: code) {
                     index.codeIdentifiers.insert(capture.text)
+                    index.identifierCounts[capture.text, default: 0] += 1
+                }
+                for capture in CadenceSourceScan.captures(implicitMemberPattern, in: code) {
+                    index.implicitMemberCounts[capture.text, default: 0] += 1
                 }
                 for capture in CadenceSourceScan.captures("\\btypealias\\s+([A-Za-z_][A-Za-z0-9_]*)", in: code) {
                     index.typeAliases.insert(capture.text)
@@ -418,6 +443,8 @@ enum CadenceCommentSymbolClaim {
                 merged.publicNominalTypesByFileBaseName[base, default: []].formUnion(nominals)
             }
             merged.codeIdentifiers.formUnion(other.codeIdentifiers)
+            merged.identifierCounts.merge(other.identifierCounts, uniquingKeysWith: +)
+            merged.implicitMemberCounts.merge(other.implicitMemberCounts, uniquingKeysWith: +)
             merged.literals.formUnion(other.literals)
             merged.typeAliases.formUnion(other.typeAliases)
             return merged
@@ -492,7 +519,8 @@ enum CadenceCommentSymbolClaim {
     /// - `memberMissing`: the root is a declared type **or a file base name with a file behind
     ///   it**, and the member is declared on neither. The offender the ledger has always held.
     /// - `rootUnresolvable`: the root is not a declared type, not a file base name, not spelled
-    ///   anywhere in the tree's code (where every framework type this app uses is spelled), not a
+    ///   anywhere in the tree's code (where every framework type this app uses is spelled) other
+    ///   than as an implicit member expression ([[T-3271]]), not a
     ///   framework type in `frameworkRootsNamedButNeverSpelled`, and the span is a pure symbol
     ///   path rather than a literal value the tree spells. **Nothing at the other end of it.**
     /// - `uncheckable`: everything else — a typealias, or a framework or value root whose members
@@ -548,7 +576,7 @@ enum CadenceCommentSymbolClaim {
             guard !synthesizedMembers.contains(claim.member) else { return .resolves }
             return names.contains(claim.member) ? .resolves : .memberMissing
         }
-        if world.codeIdentifiers.contains(claim.type) { return .uncheckable }
+        if world.vouchesForRoot(claim.type) { return .uncheckable }
         if frameworkRootsNamedButNeverSpelled.contains(claim.type) { return .uncheckable }
         guard claim.span.range(of: symbolPathSpelling, options: .regularExpression) != nil else {
             return .uncheckable
@@ -1180,18 +1208,11 @@ enum CadenceCommentSymbolClaim {
     static let rootNonSymbols = [
         "Cadence/Shared/CadenceColorPalette.swift `dollarsign.circle.fill`",
         "Cadence/iOS/iOSTrackingEditorComponents.swift `brain.head.profile`",
-        // ListEditorSupportViews.swift's arrow.up.bin line came OFF this list on 2026-10-21, and
-        // the span is written here WITHOUT backticks on purpose so this note does not become a
-        // claim of its own. Nothing about the comment changed: it is still at
-        // ListEditorSupportViews.swift:558 and the name is still not a Swift symbol. The TREE
-        // changed. T-3253 (cdd5ec21) added addCursorRect(bounds, cursor: .arrow) to
-        // Cadence/macOS/Editor/MarkdownInlineTaskPanelSupport.swift:93 -- measured as the one and
-        // only bare arrow token in code across Cadence/, CadenceTests/ and CadenceWidgets/, every
-        // other one sitting inside an SF Symbol string literal that partition keeps out of the
-        // code region. So codeIdentifiers vouches for the root and the verdict is .uncheckable
-        // rather than .rootUnresolvable. The line went because found == rootLedger requires this
-        // ledger to mirror what the detector finds, NOT because the claim became true; delete
-        // that cursor call and the span returns as unlisted. See [[T-3271]] for what that costs.
+        // Off this list 2026-10-21 ([[T-3270]]) and back on 2026-10-22 ([[T-3271]]). T-3253's
+        // cursor call in MarkdownInlineTaskPanelSupport.swift spells the word as an implicit
+        // member, the only bare spelling in code, and that used to vouch for the root; an implicit
+        // member no longer does. A local or parameter named arrow would still excuse it.
+        "Cadence/macOS/Sheets/ListEditorSupportViews.swift `arrow.up.bin`",
         "CadenceTests/CadenceCommentSymbolClaimTests.swift `MCPClient.__init__`",
         "CadenceTests/CadenceMCPWriteFenceTests.swift `MCPClient.__init__`",
         "CadenceTests/CadenceMCPWriteFenceTests.swift `tempfile.TemporaryDirectory`",
@@ -1223,10 +1244,11 @@ enum CadenceCommentSymbolClaim {
         // **A second non-symbol left on 2026-10-21** ([[T-3270]]), so the group is 5. Nothing
         // about that claim changed: T-3253 put a bare arrow token into code for the first
         // time, the root verdict answers uncheckable rather than unresolvable while it is
-        // there, and the ledger has to mirror what the detector finds. The note beside the
-        // removed line in the group itself carries the measurement.
+        // there, and the ledger has to mirror what the detector finds. **It came back on
+        // 2026-10-22** ([[T-3271]]): an implicit member expression no longer vouches for a root,
+        // so the group is 6 again.
         #expect(Self.rootTombstones.count == 11)
-        #expect(Self.rootNonSymbols.count == 5)
+        #expect(Self.rootNonSymbols.count == 6)
         #expect(Self.rootStaleClaims.count == 0)
     }
 
@@ -1579,6 +1601,26 @@ enum CadenceCommentSymbolClaim {
         #expect(CadenceCommentSymbolClaim.verdicts(in: "/// `self.order`", against: index).map(\.verdict) == [.uncheckable])
         #expect(CadenceCommentSymbolClaim.verdicts(in: "/// `tray.fill`", against: index).map(\.verdict) == [.uncheckable])
 
+        // [[T-3271]]: a name the code spells only as an implicit member expression is an enum case
+        // or static member, and cannot vouch for a root. One case, the cursor's arrow, used to
+        // retire the verdict over every SF Symbol name starting with that word. Fixtures, so the
+        // claim does not hang on what the tree happens to spell today.
+        let span = "/// `arrow.up.bin`"
+        let implicitOnly = CadenceCommentSymbolClaim.SymbolIndex.build(
+            from: [(path: "", code: "addCursorRect(bounds, cursor: .arrow)\nlet all: [Cursor] = [.arrow, .plus]\n")]
+        )
+        #expect(implicitOnly.codeIdentifiers.contains("arrow"), "the fixture must still spell the word")
+        #expect(implicitOnly.implicitMemberCounts["arrow"] == 2)
+        #expect(
+            CadenceCommentSymbolClaim.verdicts(in: span, against: implicitOnly).map(\.verdict) == [.rootUnresolvable],
+            "an enum case vouches for a root again: T-3271 has reopened"
+        )
+        // Any other spelling still vouches, so a value root or an explicit member path stays excused.
+        for code in ["let arrow = 1\n", "let y = scroll.arrow\n", "f(cursor: .arrow)\nlet arrow = 1\n"] {
+            let world = CadenceCommentSymbolClaim.SymbolIndex.build(from: [(path: "", code: code)])
+            #expect(CadenceCommentSymbolClaim.verdicts(in: span, against: world).map(\.verdict) == [.uncheckable], "\(code)")
+        }
+
         // The live witnesses that proved it: `iOSCalendarBoardView` is a FILE base name whose file
         // declares `iOSCalendarBoardPlanner` and no type of its own name. Its claims are now read
         // against the file — `schedule` is declared there, `formBundle` (gone with [[T-3170]]) is not.
@@ -1614,7 +1656,7 @@ enum CadenceCommentSymbolClaim {
         #expect(index.codeIdentifiers.count >= 10_000)
         for root in CadenceCommentSymbolClaim.frameworkRootsNamedButNeverSpelled.sorted() {
             #expect(!index.nominalTypes.contains(root), "\(root) is declared in this tree; it is not a framework root")
-            #expect(!index.codeIdentifiers.contains(root), "\(root) is spelled in code now; drop it from the allowlist")
+            #expect(!index.vouchesForRoot(root), "\(root) is spelled in code now; drop it from the allowlist")
         }
         #expect(CadenceCommentSymbolClaim.frameworkRootsNamedButNeverSpelled.count <= 12,
                 "past roughly a dozen, T-999's trade has changed: reconsider the allowlist")
