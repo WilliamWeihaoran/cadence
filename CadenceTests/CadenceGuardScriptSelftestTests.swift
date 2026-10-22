@@ -889,6 +889,18 @@ struct CadenceGuardScriptSelftestTests {
         #expect(complaints.isEmpty, "./scripts/mutate.sh selftest: \(complaints.joined(separator: "; "))\n[\(CadenceSelftestRun.probe())]\n\(run.output)")
     }
 
+    /// T-3190. `wait-mutate.sh` is how an agent reads back a backgrounded `mutate.sh` run's exit
+    /// status, so a selftest nobody runs is a helper that could start answering a stale sentinel
+    /// unnoticed. Its selftest drives real `mutate.sh` runs against a throwaway `--tree` whose
+    /// `xcb.sh` is a stub, under a throwaway scratch root — no lock, no xcodebuild, nothing in this
+    /// checkout — and ends the stubs it orphans. About six seconds: it waits out real timeouts.
+    /// The two needles are the verdicts the helper prints when no sentinel can answer.
+    @Test func theMutationWaitHelpersOwnChecksStillFire() throws {
+        let run = try CadenceSelftestRun.of("scripts/wait-mutate.sh")
+        let complaints = run.complaints(requiring: ["WAIT-MUTATE-NO-SENTINEL", "WAIT-MUTATE-TIMEOUT"])
+        #expect(complaints.isEmpty, "./scripts/wait-mutate.sh selftest: \(complaints.joined(separator: "; "))\n[\(CadenceSelftestRun.probe())]\n\(run.output)")
+    }
+
     @Test func theCommitHelpersOwnGuardsStillFire() throws {
         let run = try CadenceSelftestRun.of("scripts/agent-commit.sh")
         let complaints = run.complaints(requiring: Self.commitHelperRefusals)
@@ -3123,6 +3135,7 @@ struct CadenceGuardScriptSelftestTests {
             "scripts/ledger-view.sh",
             "scripts/prune-shared-derived-data.sh",
             "scripts/real-tree-sweep-manifest.sh",
+            "scripts/wait-mutate.sh",
         ] {
             let path = CadenceSelftestRun.repositoryRoot().appendingPathComponent(script).path
             #expect(FileManager.default.isExecutableFile(atPath: path), "\(script) is missing or not executable")

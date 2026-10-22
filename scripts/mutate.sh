@@ -877,7 +877,11 @@ def run_suite(tree, ident, mutation, scheme, destination, log_dir, tag):
     in a tree whose entire purpose is to be wrong.
     """
     xcb = os.path.join(tree, "scripts", "xcb.sh")
-    command = [xcb, ident, "raw", "test", "-scheme", scheme, "-destination", destination]
+    # `/bin/zsh <script>`, the shebang's own interpreter, rather than exec'ing the file (T-3190):
+    # the App-Sandboxed test host refuses to exec a file it wrote itself ("Operation not
+    # permitted"), which is exactly what `wait-mutate.sh selftest`'s stub tree is, while reading
+    # one as an interpreter's argument is allowed -- the shape `CadenceSelftestRun` already uses.
+    command = ["/bin/zsh", xcb, ident, "raw", "test", "-scheme", scheme, "-destination", destination]
     if mutation.suite:
         command += ["-only-testing:CadenceTests/%s" % mutation.suite]
     environment = dict(os.environ, CADENCE_ALLOW_WARNINGS="1")
