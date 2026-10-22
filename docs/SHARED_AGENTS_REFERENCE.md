@@ -203,14 +203,16 @@ inventory any more; the old long inventory is preserved in `docs/CLAUDE_REFERENC
 
 ## One Write Path For `GoalListLink`
 
-**Attaching or detaching a linked list goes through `ModelContext.attachList(_:to:)`,
-`detachGoalListLink(_:)` or `toggleGoalListLink(_:on:)` (`GoalListLinkHelpers.swift`). Never
-`insert(GoalListLink(...))` or `delete(link)` at a call site, and never write `goal.listLinks` or
-`area.goalLinks` directly** — the link row would have no owner.
+**Nothing in the app attaches or detaches a linked list any more.** [[T-2079]] retired
+`ModelContext.attachList(_:to:)`, `detachGoalListLink(_:)` and `toggleGoalListLink(_:on:)`; the
+archive importer is the one constructor, pinned by `nothingUnderCadenceConstructsAGoalListLink`.
+**Never `insert(GoalListLink(...))` or `delete(link)` at a call site, and never write
+`goal.listLinks` or `area.goalLinks` directly** — the link row would have no owner.
 
-Three reasons the helpers exist rather than the four inline spellings macOS had before `23eb847`:
+Three reasons the helpers existed rather than the four inline spellings macOS had before
+`23eb847`, kept because the readers still depend on them:
 
-- **`attachList` is idempotent, and the reason is not the one this guide used to give.** It is
+- **`attachList` was idempotent, and the reason is not the one this guide used to give.** It is
   not that a duplicate double-counts the list's tasks in the goal's percentage — it cannot,
   because `contributingTasks` ends in a dedupe by task `id`. What a duplicate breaks is
   everything that counts *links*: `linkedListCount`, the "N lists" chip, the attribution line,
@@ -229,7 +231,7 @@ Three reasons the helpers exist rather than the four inline spellings macOS had 
   now filter `isDeleted`, so a deleted-but-unprocessed link is already out of every reading, and
   a pre-commit edit is the thing Xcode 26's `rollback()` undoes late. Three readers, one
   question. Nothing on the other end is orphaned either way — the goal, the list and its tasks
-  all outlive the link. `aDeletedLinkIsNotAnAttachedListInEitherReading` and
+  all outlive the link. `aDeletedLinkIsNotALinkedList` and
   `aDeletedLinkIsNotCountedByTheProgressBarEither` exercise both filters directly.
 
 `GoalLinkPresentation` in the same file owns the read side (`contributionLabel`,

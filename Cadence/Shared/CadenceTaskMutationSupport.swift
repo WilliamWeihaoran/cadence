@@ -305,8 +305,8 @@ extension CadenceTaskMutationSupport {
         }
     }
 
-    /// **T-761.** Answers whether the minute landed, same as the sibling `setPlanningDates` beside
-    /// it: an in-place field write on a task the store already holds, flushed through
+    /// **T-761.** Answers whether the minute landed: an in-place field write on a task the store
+    /// already holds, flushed through
     /// `CadenceInPlaceEditFlush` rather than left to a bare `try?`. The iOS detail sheet's time
     /// picker used to write through this via a plain `Binding<Int>` setter and close over whatever
     /// the swallowed save did.
@@ -369,31 +369,6 @@ extension CadenceTaskMutationSupport {
     static func clearDueDate(_ task: AppTask, modelContext: ModelContext) {
         task.dueDate = ""
         try? modelContext.save()
-    }
-
-    /// **T-497.** This ended `try? modelContext.save()`, and the one surface that reached it — the
-    /// iOS task detail sheet's dates, applied from a Done button that then dismissed — had an
-    /// honest commit of its own while the frame under it still swallowed, which is the chain half 2
-    /// follows. That sheet now saves one drafted edit through `CadenceTaskEditDraftCommit.save`
-    /// instead, so no product surface calls this or its `CadenceTaskDateEditing` wrapper any more
-    /// ([[T-4467]]). It flushes and answers rather than swallowing: the fields are the user's own edit,
-    /// so nothing is restored (see `CadenceInPlaceEditFlush`), and the caller decides what a `false`
-    /// means for its screen.
-    @discardableResult
-    static func setPlanningDates(
-        scheduledDate: String?,
-        dueDate: String?,
-        for task: AppTask,
-        modelContext: ModelContext,
-        commit: (ModelContext) throws -> Void = { try $0.save() }
-    ) -> Bool {
-        let scheduleKey = scheduledDate ?? ""
-        task.scheduledDate = scheduleKey
-        if scheduleKey.isEmpty {
-            task.scheduledStartMin = -1
-        }
-        task.dueDate = dueDate ?? ""
-        return CadenceInPlaceEditFlush.flush(in: modelContext, commit: commit)
     }
 
     static func moveToSection(_ sectionName: String, task: AppTask, modelContext: ModelContext) {

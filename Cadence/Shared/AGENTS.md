@@ -85,9 +85,10 @@ Detailed examples are in `../../docs/SHARED_AGENTS_REFERENCE.md`.
 
 ## Known Shared Invariants
 
-- `GoalListLink` writes go through `ModelContext.attachList(_:to:)`,
-  `detachGoalListLink(_:)`, or `toggleGoalListLink(_:on:)`. Never insert/delete links directly at a
-  call site, and never write `goal.listLinks`, `area.goalLinks`, or `project.goalLinks` directly.
+- Nothing in the app writes a `GoalListLink` any more ([[T-2079]] retired `attachList`,
+  `detachGoalListLink` and `toggleGoalListLink`); the archive importer is the one constructor. Never
+  insert/delete links at a call site, or write `goal.listLinks` / `area.goalLinks` /
+  `project.goalLinks` directly.
 - `GoalLinkTarget` expresses exactly one of area/project. Keep that invariant unspellable-wrong.
 - `CadenceTaskQuerySupport.isFinishedTask(_:)` / `finishedTasks(from:)` is the completed/logbook
   predicate: done or cancelled. Active lists keep their own `!isDone && !isCancelled`.

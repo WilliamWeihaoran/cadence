@@ -104,14 +104,12 @@ struct CadenceTaskDateEditingSurfaceTests {
             ("dueNextWeek", { CadenceTaskDateEditing.dueNextWeek($0, in: $1, reconciler: $2) },
              { $0.dueDate != "2026-03-02" && !$0.dueDate.isEmpty }),
             ("clearDueDate", { CadenceTaskDateEditing.clearDueDate($0, in: $1, reconciler: $2) },
-             { $0.dueDate.isEmpty }),
-            ("setPlanningDates", { CadenceTaskDateEditing.setPlanningDates(scheduledDate: "2026-08-08", dueDate: "2026-08-09", for: $0, in: $1, reconciler: $2) },
-             { $0.scheduledDate == "2026-08-08" && $0.dueDate == "2026-08-09" })
+             { $0.dueDate.isEmpty })
         ]
 
         // Non-vacuity: the table is the wrapper's whole surface, so an entry point deleted from it
         // cannot quietly stop being covered.
-        #expect(cases.count == 15, "the entry-point table has \(cases.count) cases")
+        #expect(cases.count == 14, "the entry-point table has \(cases.count) cases")
 
         for testCase in cases {
             let modelContext = try context()
@@ -161,7 +159,7 @@ struct CadenceTaskDateEditingSurfaceTests {
 
     /// **T-761.** `setScheduledTime`/`clearScheduledTime` answer `false` on a refused commit and
     /// leave the field written — the in-place contract `CadenceInPlaceEditFlush` gives every other
-    /// caller of it, `setPlanningDates` included. Behavioural, not just source shape: a `commit:`
+    /// caller of it. Behavioural, not just source shape: a `commit:`
     /// override is the only way to provoke the throw out of an in-memory container, and this is
     /// what `iOSTaskDetailSheetSections`' time picker reads to decide whether it may close.
     @Test func aRefusedTimeWriteAnswersFalseAndLeavesTheMinuteWhereItWasSet() throws {
@@ -240,7 +238,7 @@ struct CadenceTaskDateEditingSurfaceTests {
     /// The pure mutation layer, called directly. Correct for a service; wrong for a user surface,
     /// because it saves and stops.
     private static let unwrappedMutation =
-        #"CadenceTaskMutationSupport\.(?:setScheduledDate|setDueDate|setScheduledTime|clearScheduledDate|clearScheduledTime|clearDueDate|scheduleToday|scheduleTomorrow|scheduleNextWeek|dueToday|dueTomorrow|dueNextWeek|moveTaskToDate|setPlanningDates)\b"#
+        #"CadenceTaskMutationSupport\.(?:setScheduledDate|setDueDate|setScheduledTime|clearScheduledDate|clearScheduledTime|clearDueDate|scheduleToday|scheduleTomorrow|scheduleNextWeek|dueToday|dueTomorrow|dueNextWeek|moveTaskToDate)\b"#
 
     /// **The one sanctioned set of raw date writes outside the mutation layer ([[T-3171]]).**
     /// `CadenceTaskDateEditing`'s wrappers each commit on their own, so a save that writes the do
@@ -297,7 +295,7 @@ struct CadenceTaskDateEditingSurfaceTests {
     }
 
     /// Every entry point on the wrapper ends in the one private reconcile. Stated as a relation
-    /// rather than two magic numbers, so adding a sixteenth edit is only green if it reconciles.
+    /// rather than two magic numbers, so adding a fifteenth edit is only green if it reconciles.
     @Test func everyWrapperEntryPointEndsInTheOneReconcile() throws {
         let raw = try CadenceSourceScan.sourceFile("Cadence/Shared/CadenceTaskDateEditing.swift")
         #expect(raw.count > 400, "CadenceTaskDateEditing.swift read as \(raw.count) characters")
@@ -307,7 +305,7 @@ struct CadenceTaskDateEditingSurfaceTests {
 
         let entryPoints = CadenceSourceScan.matchCount(#"static func "#, in: stripped)
         let reconciles = CadenceSourceScan.matchCount(#"reconcile\(context, reconciler\)"#, in: stripped)
-        #expect(entryPoints >= 16, "the wrapper declares only \(entryPoints) functions")
+        #expect(entryPoints >= 15, "the wrapper declares only \(entryPoints) functions")
         #expect(
             reconciles == entryPoints - 1,
             "\(entryPoints) functions but \(reconciles) reconcile calls — an entry point skips it"

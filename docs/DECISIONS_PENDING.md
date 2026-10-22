@@ -212,8 +212,9 @@ model out from under a live caret, deleting what the user typed in order to tell
 saved. Landed in `ab9e513` across all four sites — `iOSSearchSupportViews`,
 `iOSTaskDetailSheet.finishEditingAndDismiss` and `iOSMarkdownReferenceSupport` through the new
 `CadenceInPlaceEditFlush`, which commits and answers and touches nothing else (and which
-`CadenceTaskDateEditing.setPlanningDates` now uses too, because removing the sheet's literal `try?`
-exposed a swallow one frame below it); and
+`CadenceTaskDateEditing.setPlanningDates` used too, because removing the sheet's literal `try?`
+exposed a swallow one frame below it — deleted by [[T-4467]] once the sheet's draft save left it
+caller-less); and
 `KanbanCardMetaSupportViews.select`, which was never blocked and keeps the ordinary
 `commitEdit(in:undo:)` repair because its popover holds no draft. Pinned by
 `CadenceInPlaceEditFlushCommitTests`. See [[T-497]] in `docs/TODO.md` for the closure.

@@ -65,11 +65,10 @@ readings: `../../docs/MODELS_AGENTS_REFERENCE.md`, "Why a new model type needs a
 - `TaskBundle` - several tasks grouped into one timeline block (declared in `AppTask.swift`). `tasks` uses a `.nullify` delete rule; verify bundle/task deletion order carefully.
 - `Tag` - cross-cutting label, many-to-many with both `AppTask` and `Note`.
 - `Goal`, `GoalListLink`, `Habit`, `HabitCompletion` - long-running progress and recurring behavior. `Goal` nests via `parentGoal`/`subGoals`: a top-level goal is a direction (usually `kind == .ongoing`), its sub-goals read as milestones.
-  **`GoalListLink` has one write path** — `ModelContext.attachList` / `detachGoalListLink` /
-  `toggleGoalListLink` in `Shared/GoalListLinkHelpers.swift`, never a hand-rolled
-  `insert(GoalListLink(...))`. Attach is idempotent, and **detach deletes the row and edits
-  nothing** — a pre-commit edit is what Xcode 26's `rollback()` undoes late, so readers filter
-  `isDeleted` ([[T-1321]]). What a duplicate link does and does *not* break:
+  **`GoalListLink` has no write path in the app** — [[T-2079]] retired `attachList` /
+  `detachGoalListLink` / `toggleGoalListLink`; only the archive importer constructs one, never a
+  hand-rolled `insert(GoalListLink(...))`. Readers still filter `isDeleted`: a pre-commit edit is
+  what Xcode 26's `rollback()` undoes late ([[T-1321]]). What a duplicate link does and does *not* break:
   `../../docs/MODELS_AGENTS_REFERENCE.md`, "The one write path for a goal list link"; the
   substring-grep trap is in `Cadence/Shared/AGENTS.md`.
 - `Note` - the single live note model (see below).

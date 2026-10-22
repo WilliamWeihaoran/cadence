@@ -80,13 +80,6 @@ enum GoalLinkTarget: Identifiable {
         case .project: return CadenceTitleNormalization.defaultProjectName
         }
     }
-
-    func isPointedAt(by link: GoalListLink) -> Bool {
-        switch self {
-        case .area(let area): return link.pointsTo(area: area)
-        case .project(let project): return link.pointsTo(project: project)
-        }
-    }
 }
 
 /// One context's worth of attachable lists — areas first, then projects, matching the order the
@@ -132,7 +125,7 @@ enum GoalLinkPresentation {
     /// ([[T-1321]]). `GoalContributionResolver` walks `goal.listLinks` raw, once for the counted
     /// tasks and once for the "N lists" chip, and filters `isDeleted` the same way, so a deleted
     /// link is kept out of the goal's *progress bar* as well as out of this list.
-    /// `aDeletedLinkIsNotAnAttachedListInEitherReading` and
+    /// `aDeletedLinkIsNotALinkedList` and
     /// `aDeletedLinkIsNotCountedByTheProgressBarEither` exercise both filters against a
     /// deleted-and-unprocessed link directly, so neither is a guard no mutation can reach.
     static func links(of goal: Goal) -> [GoalListLink] {
@@ -144,23 +137,6 @@ enum GoalLinkPresentation {
                 if lhs.createdAt != rhs.createdAt { return lhs.createdAt < rhs.createdAt }
                 return lhs.id.uuidString < rhs.id.uuidString
             }
-    }
-
-    /// The link on `goal` pointing at `target`, if it already exists.
-    ///
-    /// **A pending-*deleted* link is not an existing one** ([[T-1306]]). This was read by the two
-    /// attach sheets' checkmark (through `isAttached`) and by the retired `attachList`'s
-    /// idempotence guard, both removed by [[T-2079]]. Measured on Xcode 27 before the fix, a second
-    /// attach straight after a refused one returned the refused link — `isDeleted` set — from that
-    /// guard, committed nothing, and left the store with **no** row while the toggle answered
-    /// `true`. So the question is whether the link is still going to exist, not merely whether an
-    /// object is still in the array.
-    static func existingLink(for target: GoalLinkTarget, on goal: Goal) -> GoalListLink? {
-        (goal.listLinks ?? []).first { !$0.isDeleted && target.isPointedAt(by: $0) }
-    }
-
-    static func isAttached(_ target: GoalLinkTarget, to goal: Goal) -> Bool {
-        existingLink(for: target, on: goal) != nil
     }
 
     /// How many of a linked list's tasks the goal actually counts. Cancelled tasks are excluded

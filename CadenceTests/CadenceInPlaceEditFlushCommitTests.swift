@@ -183,47 +183,6 @@ struct CadenceInPlaceEditFlushCommitTests {
         #expect(stored?.order == 3)
     }
 
-    // MARK: - Behavioural: the task sheet's date write
-
-    /// **Behavioural.** The wrapper the task sheet writes its dates through answers, and it answers
-    /// the *flush* way rather than the undo way: a refused write leaves both fields exactly as the
-    /// user set them, because the pickers above them are still on screen holding those values.
-    ///
-    /// This is the frame under `finishEditingAndDismiss`. Before T-497 it ended
-    /// `try? modelContext.save()`, so the sheet could commit honestly and still be closing over a
-    /// swallow one frame down — which is the chain half 2 of the `try? save()` rule follows.
-    @Test func therefusedPlanningDateWriteAnswersFalseAndKeepsTheDatesTheUserPicked() throws {
-        let modelContainer = try container()
-        let modelContext = ModelContext(modelContainer)
-        let task = AppTask(title: "Ship")
-        modelContext.insert(task)
-        try modelContext.save()
-
-        #expect(
-            !CadenceTaskDateEditing.setPlanningDates(
-                scheduledDate: "2026-09-02",
-                dueDate: "2026-09-03",
-                for: task,
-                in: modelContext,
-                commit: { _ in throw CommitRefused() }
-            )
-        )
-        #expect(task.scheduledDate == "2026-09-02", "the refused write took the day the user picked")
-        #expect(task.dueDate == "2026-09-03")
-
-        #expect(
-            CadenceTaskDateEditing.setPlanningDates(
-                scheduledDate: "2026-09-02",
-                dueDate: "2026-09-03",
-                for: task,
-                in: modelContext
-            )
-        )
-        let stored = try ModelContext(modelContainer).fetch(FetchDescriptor<AppTask>())
-        #expect(stored.map(\.scheduledDate) == ["2026-09-02"])
-        #expect(stored.map(\.dueDate) == ["2026-09-03"])
-    }
-
     // MARK: - Source shape: the four surfaces
 
     /// **Source shape.** The three "flush, then close" surfaces reach the shared flush, name the
@@ -295,19 +254,6 @@ struct CadenceInPlaceEditFlushCommitTests {
         #expect(!sheet.contains("CadenceInPlaceEditFlush"), "the task sheet flushes in place again")
         let save = try CadenceCommitSurfaceScan.declarationBody(named: "applySave", in: sheet)
         #expect(save.contains("guard CadenceTaskEditDraftCommit.save("), "the task sheet's Save is not one guarded commit")
-        // The planning-date wrapper the sheet used to close over still answers rather than
-        // swallowing; other callers reach it.
-        for (path, name) in [
-            ("Cadence/Shared/CadenceTaskDateEditing.swift", "setPlanningDates"),
-            ("Cadence/Shared/CadenceTaskMutationSupport.swift", "setPlanningDates")
-        ] {
-            let source = try CadenceCommitSurfaceScan.scanned(path)
-            let body = try CadenceCommitSurfaceScan.declarationBody(named: name, in: source)
-            #expect(
-                CadenceSourceScan.matchCount(#"try\?"#, in: body) == 0,
-                "\(path).\(name) still swallows the commit the sheet closes over"
-            )
-        }
 
         // The two note editors flush from a helper, so the `dismiss()` that used to be the claim
         // lives one frame up in `body` and has to guard on the answer. `iOSTaskDetailSheet` flushes

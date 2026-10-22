@@ -34,12 +34,4 @@ import Foundation
     var tasks: [AppTask] {
         area?.tasks ?? project?.tasks ?? []
     }
-
-    func pointsTo(area candidate: Area) -> Bool {
-        area?.id == candidate.id
-    }
-
-    func pointsTo(project candidate: Project) -> Bool {
-        project?.id == candidate.id
-    }
 }

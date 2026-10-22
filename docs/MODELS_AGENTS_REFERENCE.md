@@ -55,10 +55,11 @@ it, and T-1290 is why.
 
 ## The One Write Path For A Goal List Link
 
-  **`GoalListLink` has one write path** — `ModelContext.attachList` / `detachGoalListLink` /
-  `toggleGoalListLink` in `Shared/GoalListLinkHelpers.swift`, never a hand-rolled
-  `insert(GoalListLink(...))`. Attach is idempotent; detach deletes the row and edits nothing
-  ([[T-1321]] — readers filter `isDeleted`). **Why each of those is true**, and the substring-grep
+  **`GoalListLink` has no write path in the app any more** — [[T-2079]] retired
+  `ModelContext.attachList` / `detachGoalListLink` / `toggleGoalListLink`, and the archive importer
+  is the one constructor (`nothingUnderCadenceConstructsAGoalListLink`). Attach was idempotent;
+  detach deleted the row and edited nothing ([[T-1321]] — readers still filter `isDeleted`).
+  **Why each of those was true**, and the substring-grep
   trap that accuses every correctly-rewired call site, are argued once in
   `Cadence/Shared/AGENTS.md` and `docs/SHARED_AGENTS_REFERENCE.md`, "One Write Path For
   `GoalListLink`", beside the helpers. The model-level half is the part that belongs here: the

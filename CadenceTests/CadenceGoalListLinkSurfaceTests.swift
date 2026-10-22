@@ -144,44 +144,28 @@ struct CadenceGoalListLinkSurfaceTests {
     // `nothingUnderCadenceConstructsAGoalListLink` below, which is strictly stronger: not
     // "only the shared helper may", but "no shipped file may".
 
-    // MARK: - A refused attach, and what the two sheets say about it ([[T-1306]])
-
-    /// A commit that refuses. `ModelContext.save()` cannot be made to throw out of an in-memory
-    /// container, which is why both mutations take their commit as a parameter at all.
-    private struct CommitRefused: Error {}
-
-    private static func refuse(_ modelContext: ModelContext) throws { throw CommitRefused() }
+    // MARK: - A deleted link, and what the readers say about it ([[T-1306]])
 
     /// The `isDeleted` skip on its own, against the state it exists for — and **toolchain-free by
     /// construction** ([[T-1306]], [[T-1296]]).
     ///
-    /// The two readings above are made right twice over: `attachList` processes its restore, and
-    /// `links(of:)` / `existingLink(for:on:)` skip a deleted link besides. That is deliberate
-    /// belt-and-braces — the Xcode 26 reading of whether `processPendingChanges()` materialises the
-    /// restored array could not be taken, because this Mac has Xcode 27.0 and no second toolchain —
-    /// and it would otherwise be a guard no mutation can kill, which this repository has been
-    /// bitten by twice on this very file. So it is exercised here directly rather than through the
-    /// refusal: a link deleted and **not** processed is the state the skip answers for, and if a
-    /// toolchain clears the array at the delete instead, every assertion below still holds.
-    @Test func aDeletedLinkIsNotAnAttachedListInEitherReading() throws {
+    /// This used to be asserted twice over: the retired `attachList` processed its restore, and
+    /// `links(of:)` skipped a deleted link besides. The writers left with [[T-2079]], and the
+    /// attach sheets' `isAttached` reading and its `existingLink` guard left with [[T-4495]], so
+    /// `links(of:)` is the one inspector reading left. It is exercised directly rather than
+    /// through a refusal: a link deleted and **not** processed is the state the skip answers for,
+    /// and if a toolchain clears the array at the delete instead, the assertion below still holds.
+    @Test func aDeletedLinkIsNotALinkedList() throws {
         let store = try makeStore()
         let link = link(.area(store.area), to: store.goal, in: store.modelContext)
         try store.modelContext.save()
-        #expect(GoalLinkPresentation.isAttached(.area(store.area), to: store.goal))
+        #expect(GoalLinkPresentation.links(of: store.goal).count == 1, "the saved link is not drawn at all")
 
         store.modelContext.delete(link)
 
         #expect(
             GoalLinkPresentation.links(of: store.goal).isEmpty,
             "a row the store is about to drop is still drawn as a linked list"
-        )
-        #expect(
-            GoalLinkPresentation.isAttached(.area(store.area), to: store.goal) == false,
-            "a row the store is about to drop still ticks the list on both attach sheets"
-        )
-        #expect(
-            GoalLinkPresentation.existingLink(for: .area(store.area), on: store.goal) == nil,
-            "attachList's idempotence guard would hand this link back and attach nothing"
         )
     }
 

@@ -385,7 +385,7 @@ struct CadenceScheduleDraft: Equatable {
 
     /// What `AppTask.scheduledStartMin` is written with. See the type note on all-day tasks.
     var scheduledStartMin: Int {
-        // A time on no day is not a slot — `CadenceTaskMutationSupport.setPlanningDates` drops
+        // A time on no day is not a slot — `CadenceTaskMutationSupport.clearScheduledDate` drops
         // the minute whenever the day is cleared, and the draft says the same thing.
         isAllDay || startDateKey.isEmpty ? -1 : startMin
     }

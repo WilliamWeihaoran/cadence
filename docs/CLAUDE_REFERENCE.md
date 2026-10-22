@@ -73,8 +73,8 @@ Cadence/
 │   ├── Theme.swift     # The ONLY source of colour. See "Design System" below
 │   ├── DateFormatters.swift, CadenceHoverStyles.swift, CadenceCardStyle.swift, CadenceDueUrgency.swift
 │   ├── TaskDragPayload.swift  # the drag/drop wire format for tasks and bundles, both platforms
-│   ├── GoalListLinkHelpers.swift  # THE write path for GoalListLink (attachList / detachGoalListLink
-│   │                   #   / toggleGoalListLink) + GoalLinkTarget + GoalLinkPresentation
+│   ├── GoalListLinkHelpers.swift  # GoalLinkTarget + GoalLinkPresentation (the read side; the
+│   │                   #   attachList / detachGoalListLink / toggleGoalListLink writers left, T-2079)
 │   ├── CadenceDetailPanelPresentation.swift    # when a host keeps or drops the model it is
 │   │                   #   showing — read by BOTH the task inspector and the bundle panel hosts
 │   │                   #   (was CadenceTaskInspectorPresentation until T-217 shared it)
@@ -337,13 +337,14 @@ Subtask:   id, title, isDone, order, createdAt → parentTask:AppTask?
 GoalListLink: id, createdAt → goal:Goal?, area:Area?, project:Project?
            (links a goal to a whole list; computed title/icon/colorHex/context/tasks proxy the target)
 
-> **`GoalListLink` has exactly one write path**, and it is not `insert`. Attach and detach go
-> through `ModelContext.attachList(_:to:)`, `detachGoalListLink(_:)` and
-> `toggleGoalListLink(_:on:)` in `Shared/GoalListLinkHelpers.swift`, which take a `GoalLinkTarget`
-> (`.area` / `.project`) so the model's exactly-one-of invariant is unspellable-wrong. Never write
+> **`GoalListLink` has no write path in the app any more**, and it was never `insert`. Attach and
+> detach went through `ModelContext.attachList(_:to:)`, `detachGoalListLink(_:)` and
+> `toggleGoalListLink(_:on:)` until [[T-2079]] retired them; the archive importer is the one
+> constructor left. `GoalLinkTarget` (`.area` / `.project`) keeps the exactly-one-of invariant
+> unspellable-wrong. Never write
 > `goal.listLinks` / `area.goalLinks` / `project.goalLinks` directly — the row would have no owner.
 >
-> Why attach is idempotent, why detach deletes the row and edits nothing, and the word-boundary
+> Why attach was idempotent, why detach deleted the row and edited nothing, and the word-boundary
 > grep trap (`toggleGoalListLink(` contains `GoalListLink(`) are argued once, in
 > `docs/SHARED_AGENTS_REFERENCE.md`, "One Write Path For `GoalListLink`", beside the helpers
 > themselves. This block carried a full third copy of that argument — and carried it

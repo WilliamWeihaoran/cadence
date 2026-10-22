@@ -8,9 +8,9 @@ import SwiftData
 /// pending. `NotificationManager.reconcile` is what retires it, and until this existed the only
 /// things that ran it were the two root views' `scenePhase` observers — so the reminder fired at the
 /// old time unless the user happened to background the app first. The create sheets on both
-/// platforms and `iOSTaskDetailSheet.applyDates()` already reconciled immediately; this is that
-/// practice given one owner instead of being re-typed at each surface. Same shape as
-/// [[T-343]] (status edits, still open) and the same latency class as [[T-306]] / [[T-312]].
+/// platforms and the since-retired `iOSTaskDetailSheet.applyDates()` already reconciled
+/// immediately; this is that practice given one owner instead of being re-typed at each surface.
+/// Same shape as [[T-343]] (status edits, still open) and the same latency class as [[T-306]] / [[T-312]].
 ///
 /// **Why the reconcile is not in `CadenceTaskMutationSupport`.** Its **date-edit primitives** are
 /// a pure mutation layer: they write model fields and save, and none of them reaches outside
@@ -134,8 +134,7 @@ enum CadenceTaskDateEditing {
     // MARK: - Do time
 
     /// **T-761.** Answers whether the minute landed — see `CadenceTaskMutationSupport.setScheduledTime`.
-    /// The reconcile still runs unconditionally: the field already changed in the context either way,
-    /// same as `setPlanningDates` below.
+    /// The reconcile still runs unconditionally: the field already changed in the context either way.
     @discardableResult
     static func setScheduledTime(
         _ startMin: Int,
@@ -223,32 +222,6 @@ enum CadenceTaskDateEditing {
     ) {
         CadenceTaskMutationSupport.clearDueDate(task, modelContext: context)
         reconcile(context, reconciler)
-    }
-
-    // MARK: - Both at once
-
-    /// The one wrapper that answers, because the one surface that calls it closes afterwards
-    /// (T-497). `false` means the store refused; the fields still hold what the user picked and the
-    /// context still holds them pending, so the caller must not report success. The reconcile runs
-    /// either way — it reads the store, and the store is where it was.
-    @discardableResult
-    static func setPlanningDates(
-        scheduledDate: String?,
-        dueDate: String?,
-        for task: AppTask,
-        in context: ModelContext,
-        reconciler: CadenceWindDownReconciler? = nil,
-        commit: (ModelContext) throws -> Void = { try $0.save() }
-    ) -> Bool {
-        let landed = CadenceTaskMutationSupport.setPlanningDates(
-            scheduledDate: scheduledDate,
-            dueDate: dueDate,
-            for: task,
-            modelContext: context,
-            commit: commit
-        )
-        reconcile(context, reconciler)
-        return landed
     }
 
     // MARK: - The one reconcile
