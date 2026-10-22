@@ -155,6 +155,46 @@ struct CadenceCaptureKindMemory {
     }
 }
 
+extension CadenceScheduleDraft {
+    /// What choosing an Ends mode in the capture card stores, before the user touches its picker.
+    ///
+    /// T-3233: `.onDate` used to seed the draft's own START day, which is a series that ends the
+    /// day it begins -- and since T-3229 an event's end is written to EventKit as
+    /// `EKRecurrenceEnd(end:)`, so a weekly event switched to *On Date* and committed untouched was
+    /// a one-occurrence series in Apple Calendar. Every other Ends control seeds
+    /// `CadenceTaskRecurrenceEndPresentation.defaultEndDateKey()` (one month ahead); this one now
+    /// does too. It is anchored on the later of today and the draft's start, because a capture
+    /// draft can start months out, and a month-from-today end before a future start would be a
+    /// series with no occurrences at all. A key the user already chose is kept.
+    mutating func seedSeriesEnd(
+        for mode: TaskRecurrenceEndMode,
+        reference: Date = Date(),
+        calendar: Calendar = .current
+    ) {
+        switch mode {
+        case .onDate where seriesEndDateKey.isEmpty:
+            let today = calendar.startOfDay(for: reference)
+            let start = DateFormatters.date(from: startDateKey, in: calendar).map { calendar.startOfDay(for: $0) }
+            let anchor = max(today, start ?? today)
+            seriesEndDateKey = CadenceTaskRecurrenceEndPresentation.defaultEndDateKey(from: anchor, calendar: calendar)
+        case .afterCount:
+            seriesEndCount = max(1, seriesEndCount)
+        default:
+            break
+        }
+    }
+
+    /// The capture card's repeat chip. T-3233's secondary: a count of one read "1 times".
+    var captureRepeatSummary: String {
+        switch seriesEndMode {
+        case .never: return repeatRule.label
+        case .onDate: return "\(repeatRule.label) until \(DateFormatters.shortDateString(from: seriesEndDateKey))"
+        case .afterCount:
+            return "\(repeatRule.label) · \(seriesEndCount) \(seriesEndCount == 1 ? "time" : "times")"
+        }
+    }
+}
+
 /// A presentation of CadenceSchedulePanel. Pickers edit its value; only its host can commit.
 struct CadenceScheduleCaptureCard<NotesField: View>: View {
     @Binding var draft: CadenceScheduleDraft
@@ -555,11 +595,7 @@ struct CadenceScheduleCaptureCard<NotesField: View>: View {
         case .tags:
             return options.tagChoices.filter { selectedTags.contains($0.id) }.map(\.name).joined(separator: ", ")
         case .repeatRule:
-            switch draft.seriesEndMode {
-            case .never: return draft.repeatRule.label
-            case .onDate: return "\(draft.repeatRule.label) until \(DateFormatters.shortDateString(from: draft.seriesEndDateKey))"
-            case .afterCount: return "\(draft.repeatRule.label) · \(draft.seriesEndCount) times"
-            }
+            return draft.captureRepeatSummary
         case .priority: return "\(CadenceCaptureFieldInventory.priority(for: draft).label) priority"
         case .estimate: return "\(draft.estimateMinutes) min"
         case .calendar: return calendarChoices.first { $0.id == draft.calendarID }?.name ?? "Calendar"
@@ -739,10 +775,7 @@ struct CadenceScheduleCaptureCard<NotesField: View>: View {
             }
         }
         .onChange(of: draft.seriesEndMode) { _, mode in
-            if mode == .onDate, draft.seriesEndDateKey.isEmpty {
-                draft.seriesEndDateKey = draft.startDateKey.isEmpty ? DateFormatters.todayKey() : draft.startDateKey
-            }
-            if mode == .afterCount { draft.seriesEndCount = max(1, draft.seriesEndCount) }
+            draft.seedSeriesEnd(for: mode)
         }
     }
 
