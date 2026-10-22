@@ -852,15 +852,21 @@ struct CadenceAgentDefaultsIsolationTests {
     /// to `performPendingRestoreIfNeeded` and `createBackupIfStoreExists` — a restore and a ~16 MB
     /// copy, both against the signed-in person's store, on a launch that had opened a private one.
     @Test func theStartupPreflightBacksUpTheStoreThisLaunchOpened() throws {
-        let source = try CadenceSourceScan.sourceFile("Cadence/Services/PersistenceController.swift")
-        let body = CadenceSourceScan.strippingComments(try #require(
+        // Comments are stripped **before** the anchor is searched, as the three sibling `init()`
+        // scans do. Stripping after let T-3021's doc comment ("filled by `init()` off ...") win
+        // the search, and the body read was a two-line `guard` block that holds none of the four
+        // things asserted below.
+        let source = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/Services/PersistenceController.swift")
+        )
+        let body = try #require(
             // `"init()"`, not `"init() {"`. `declarationBody` resumes at the end of a prefix whose
             // parentheses are already closed and then takes the **next** `{` — so the longer
             // spelling hands back the body of the first nested block (`if Self.isRunningTests {`
             // since T-3014), a few lines that contain none of the four things asserted below.
             CadenceSourceScan.declarationBody("init()", in: source),
             "PersistenceController.init did not read as itself"
-        ))
+        )
         #expect(
             body.contains("CadenceUITestStoreDirectory.privateStoreDirectory()"),
             "the startup preflight never asks which store this launch opens"
