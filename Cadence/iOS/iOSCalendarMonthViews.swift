@@ -579,6 +579,11 @@ private struct iOSCalendarMonthDayCell: View {
 /// The icon is each family's *tertiary* tier in both branches rather than the object's own colour.
 /// It has to be: the plate is now that colour, so a list-coloured glyph on a list-coloured fill is
 /// invisible. A glyph owes the 3:1 non-text bar, which both tertiary tiers are solved to hold.
+///
+/// **Which ROW the icon sits on is `CadenceCalendarChipGlyphRow`'s decision, not this view's**
+/// ([[T-3311]]). A chip that draws a time line puts the glyph there and gives the title row the
+/// whole cell — in the iPad month grid's ~115pt cell that is the difference between "Dee…" and a
+/// readable title. A one-line chip has nowhere to move it to and keeps it where it was.
 struct iOSCalendarMiniChip: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.cadenceTypographyScaling) private var scaling
@@ -645,16 +650,43 @@ struct iOSCalendarMiniChip: View {
         isEvent ? CadenceCalendarEventStyle.railColor(for: color) : color
     }
 
+    /// Where this chip's glyph goes, and therefore which row is left to the title alone
+    /// ([[T-3311]]). The rule is `CadenceCalendarChipGlyphRow`'s, not this view's — see it for why
+    /// the glyph moved and what it was moved over.
+    private var glyphRow: CadenceCalendarChipGlyphRow {
+        CadenceCalendarChipGlyphRow.forChip(hasTimeLine: timeLabel != nil)
+    }
+
+    /// 4pt, and the same number on whichever row carries the glyph, so moving it between the two
+    /// cannot also move how far the row's text starts from its icon.
+    private static let glyphSpacing: CGFloat = 4
+
+    private var glyph: some View {
+        Image(systemName: icon)
+            .cadenceFont(.metadata, base: 8, weight: .semibold)
+            .foregroundStyle(
+                isEvent
+                    ? CadenceCalendarEventStyle.railTertiaryLabelColor(for: color)
+                    : CadenceCalendarEventStyle.plateTertiaryLabelColor()
+            )
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 1) {
             titleRow
             if let timeLabel {
-                Text(timeLabel)
-                    .cadenceFont(.metadata, base: 8, weight: .medium)
-                    .foregroundStyle(CadenceCalendarEventStyle.railSecondaryLabelColor(for: color))
-                    .lineLimit(1)
-                    .minimumScaleFactor(scaling == .enabled && dynamicTypeSize > .large ? 1 : 0.8)
-                    .padding(.horizontal, -2)
+                HStack(spacing: Self.glyphSpacing) {
+                    if glyphRow == .time { glyph }
+                    Text(timeLabel)
+                        .cadenceFont(.metadata, base: 8, weight: .medium)
+                        .foregroundStyle(CadenceCalendarEventStyle.railSecondaryLabelColor(for: color))
+                        .lineLimit(1)
+                        .minimumScaleFactor(scaling == .enabled && dynamicTypeSize > .large ? 1 : 0.8)
+                        // The clock keeps the 2pt of optical overhang it has always had; the glyph
+                        // beside it does not, so the two rows' leading edges still line up.
+                        .padding(.leading, glyphRow == .time ? 0 : -2)
+                        .padding(.trailing, -2)
+                }
             }
         }
         .padding(.horizontal, 5)
@@ -671,14 +703,8 @@ struct iOSCalendarMiniChip: View {
     }
 
     private var titleRow: some View {
-        HStack(spacing: 4) {
-            Image(systemName: icon)
-                .cadenceFont(.metadata, base: 8, weight: .semibold)
-                .foregroundStyle(
-                    isEvent
-                        ? CadenceCalendarEventStyle.railTertiaryLabelColor(for: color)
-                        : CadenceCalendarEventStyle.plateTertiaryLabelColor()
-                )
+        HStack(spacing: Self.glyphSpacing) {
+            if glyphRow == .title { glyph }
             Text(title)
                 .cadenceFont(.metadata, base: 10, weight: .medium)
                 .foregroundStyle(

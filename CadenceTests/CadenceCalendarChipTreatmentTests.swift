@@ -61,6 +61,58 @@ struct CadenceCalendarChipTreatmentTests {
         #expect(source.contains("iOSCalendarMiniChip.height(hasTime:"))
     }
 
+    // MARK: - T-3311: which row the glyph sits on
+
+    /// **[[T-3311]], the owner's decision of 2026-10-22: the calendar glyph moves onto the chip's
+    /// TIME LINE and the title row gets the cell.**
+    ///
+    /// Seen on screen on `Cadence-iPadPro11` in portrait: in the month grid beside the agenda
+    /// column a cell is about 115pt wide, and an event chip spent it on a leading
+    /// `calendar.badge.clock`, 4pt of gap and 10pt of padding before the title started — so the
+    /// title kept three or four letters ("Dee…", "Pure…", "Pale…") while the task chip below it,
+    /// whose glyph is a narrow `circle.fill`, kept five or six. The ticket offered three fixes and
+    /// the owner took this one: the glyph's information is kept, in the row that was carrying
+    /// nothing but a short time range, and the title row is left to the title.
+    ///
+    /// **The rule is asserted where it lives and the view is asserted to read it.** The decision
+    /// is `CadenceCalendarChipGlyphRow`, in Shared, so it can be measured from this leg at all —
+    /// `iOSCalendarMiniChip` is inside `#if os(iOS)`. A function nothing calls would pass the
+    /// first half of this test forever, so the second half reads the chip and requires both rows
+    /// to be gated on it.
+    @Test func theMonthChipsGlyphMovesToItsTimeLineAndLeavesTheTitleTheCell() throws {
+        #expect(CadenceCalendarChipGlyphRow.forChip(hasTimeLine: true) == .time)
+        #expect(
+            CadenceCalendarChipGlyphRow.forChip(hasTimeLine: false) == .title,
+            "a chip with no time line has nowhere to move its glyph to and must keep it on the title row"
+        )
+        #expect(
+            CadenceCalendarChipGlyphRow.allCases.count == 2,
+            "a third row appeared: \(CadenceCalendarChipGlyphRow.allCases)"
+        )
+
+        let source = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile(Self.iOSChips))
+        let chip = try #require(CadenceSourceScan.declarationBody("struct iOSCalendarMiniChip: View", in: source))
+        #expect(chip.count > 400, "non-vacuity: the chip read back \(chip.count) characters")
+        #expect(
+            chip.contains("CadenceCalendarChipGlyphRow.forChip(hasTimeLine: timeLabel != nil)"),
+            "the chip no longer asks the shared rule where its glyph goes"
+        )
+        let title = try #require(CadenceSourceScan.declarationBody("private var titleRow: some View", in: chip))
+        #expect(
+            title.contains("if glyphRow == .title"),
+            "the title row draws its glyph unconditionally again, which is the defect T-3311 is"
+        )
+        #expect(
+            !title.contains("Image(systemName: icon)"),
+            "the title row builds a second glyph of its own, so moving the shared one moves nothing"
+        )
+        let dense = chip.filter { !$0.isWhitespace }
+        #expect(
+            dense.contains("ifglyphRow==.time{glyph}"),
+            "the time line no longer carries the glyph the title row gave up"
+        )
+    }
+
     // MARK: - What the two treatments do at chip size
 
     /// The swap is only visible if the two chip plates stay apart, so this measures the gap rather
@@ -72,17 +124,29 @@ struct CadenceCalendarChipTreatmentTests {
     /// `railFillLuminance` — which is the measurement `CadenceContrastFloorTests` already makes and
     /// which cannot see this.
     ///
-    /// **One hue falls short of the 15-or-so L\* the rest hold, and it is named rather than
-    /// averaged away.** A primary `#0000ff` cannot reach the plate treatment's *active* target of
-    /// Y = 0.124: at 0.9 of its saturation and full brightness it tops out at Y = 0.0815, so the
-    /// bisection returns brightness 1 and the active plate is the same colour as the rest plate.
-    /// The gap to the rail plate narrows from 16.9 L\* to 9.3 there. That is still nine times the
-    /// just-noticeable step, so the two treatments remain plainly different — but it is a property
-    /// of the plate solve that predates this ticket, and a second hue joining it should be read as
-    /// news.
+    /// **The 9 L\* floor is the guarantee; the 15 L\* reading is now the exception.** It used to be
+    /// the other way round, and [[T-3295]] is why: the rail plate's luminance follows the hue
+    /// inside a band since the owner's decision of 2026-10-22, so a **light** calendar's event
+    /// plate is lifted toward the task plate on purpose and the gap narrows for every pale hue.
+    /// Twelve of the fourteen pairs now sit between 9 and 15 L\*, which is the band working rather
+    /// than a regression — enumerating them would be a list of the whole sweep.
+    ///
+    /// So the two readings are split and each is asserted for what it is:
+    ///
+    /// - **The floor, unchanged and still the thing that matters.** No pair may close to 9 L\*,
+    ///   and the tightest is still `#0000ff (active: true)` for a reason that predates both
+    ///   tickets: a primary blue cannot reach the plate treatment's active target of Y = 0.124 —
+    ///   at 0.9 of its saturation and full brightness it tops out at Y 0.0815, so the bisection
+    ///   returns brightness 1 and the active plate is the same colour as the rest plate. It is
+    ///   also the hue that sits on the *bottom* of T-3295's band, so it is the one pair the band
+    ///   did not move at all.
+    /// - **Which pairs still hold a full 15 L\*.** A one-entry set, and news in both directions:
+    ///   it empties if `railPlateHueLightnessSpan` is widened further, and it refills if the band
+    ///   is removed.
     @Test func theEventChipPlateIsTheDarkerOfTheTwoAtEveryHue() {
         var measured = 0
-        var narrow: [String] = []
+        var wide: [String] = []
+        var tightest = (label: "", gap: Double.greatestFiniteMagnitude)
         for hex in Self.hues {
             let swatch = Color(hex: hex)
             for active in [false, true] {
@@ -95,7 +159,8 @@ struct CadenceCalendarChipTreatmentTests {
                 )
 
                 let gap = t3160LStar(plate) - t3160LStar(rail)
-                if gap <= 15 { narrow.append("\(hex) (active: \(active))") }
+                if gap > 15 { wide.append("\(hex) (active: \(active))") }
+                if gap < tightest.gap { tightest = ("\(hex) (active: \(active))", gap) }
                 #expect(
                     gap > 9,
                     "\(hex) (active: \(active)): the two chip plates are \(t3160Rounded(gap)) L* apart, which is a state-step not a treatment"
@@ -104,8 +169,12 @@ struct CadenceCalendarChipTreatmentTests {
         }
         #expect(measured == 14, "non-vacuity: seven hues in two states, \(measured) measured")
         #expect(
-            narrow == ["#0000ff (active: false)", "#0000ff (active: true)"],
-            "the set of hues whose plate cannot reach its own target changed: \(narrow)"
+            tightest.label == "#0000ff (active: true)",
+            "the tightest pair is now \(tightest.label) at \(t3160Rounded(tightest.gap)) L* — the hue the two treatments are closest on moved"
+        )
+        #expect(
+            wide == ["#3d0000 (active: false)"],
+            "the set of hues whose two chip plates still hold a full 15 L* apart changed: \(wide)"
         )
     }
 

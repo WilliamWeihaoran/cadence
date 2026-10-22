@@ -918,10 +918,14 @@ struct CadenceContrastFloorTests {
             CadenceCalendarEventStyle.plateLuminance(isActive: true),
             CadenceCalendarEventStyle.plateLuminance(isSelected: true),
         ]
+        // The ANCHOR ladder — the band's floor, which is what the three states are a ladder of.
+        // Since [[T-3295]] the delivered plate also moves with the hue; that axis is
+        // `aPaleCalendarsPlateIsLighterThanASaturatedOnesAndTheDarkestKeepsItsAnchor`'s, and this
+        // one still has to hold independently or the states stop being separable at any hue.
         let railLadder = [
-            CadenceCalendarEventStyle.railFillLuminance(),
-            CadenceCalendarEventStyle.railFillLuminance(isActive: true),
-            CadenceCalendarEventStyle.railFillLuminance(isSelected: true),
+            CadenceCalendarEventStyle.railFillAnchorLuminance(),
+            CadenceCalendarEventStyle.railFillAnchorLuminance(isActive: true),
+            CadenceCalendarEventStyle.railFillAnchorLuminance(isSelected: true),
         ]
 
         for (name, ladder) in [("plate", plateLadder), ("rail", railLadder)] {
@@ -989,6 +993,152 @@ struct CadenceContrastFloorTests {
         }
     }
 
+    // MARK: - T-3295: the plate's luminance follows the hue
+
+    /// **[[T-3295]], the owner's decision of 2026-10-22: Apple does not equalise plate luminance
+    /// and neither does Cadence any more.**
+    ///
+    /// This is the second of the two differences [[T-3168]] read off the owner's Apple Calendar
+    /// screenshot; the first — rail and title are one colour over a near-neutral body — closed
+    /// with T-3168. Measured on device at HEAD before this change, `#0000ff`'s plate was
+    /// (47, 47, 67) and `#ede7d3`'s (50, 48, 44): **a 2% luminance difference between a primary
+    /// blue and a pale olive**, because `railFillAnchorLuminance` handed every hue the same Y.
+    ///
+    /// Four claims, and the last two are the cost of the first two stated rather than left to be
+    /// discovered:
+    ///
+    /// 1. **The owner's own pair is visibly apart.** `#ede7d3`'s rest plate is more than 4 L\*
+    ///    lighter than `#0000ff`'s — four times the ~1 L\* just-noticeable step, so the band is
+    ///    seen and not merely computed. This is the measurement T-3295 said should be made before
+    ///    option (b) was built, and it is the one that says the band is not too narrow to see.
+    /// 2. **It is ordered by how light the hue is**, over the whole sweep and at every state, so
+    ///    this is a property of the treatment and not two colours that happen to differ.
+    /// 3. **The band's floor is exactly today's number.** The darkest hue the gamut holds is
+    ///    solved to `railFillAnchorLuminance` to the bisection's precision — nothing got darker,
+    ///    which is why no existing tier can have been pushed down by this change.
+    /// 4. **The band's top stays inside the separation the two treatments owe each other.** The
+    ///    lightest plate reachable is still more than 9 L\* below the plate treatment's own fill
+    ///    at the same state, which is the bound `railPlateHueLightnessSpan` is derived from.
+    @Test func aPaleCalendarsPlateIsLighterThanASaturatedOnesAndTheDarkestKeepsItsAnchor() {
+        // Claim 1 — the owner's pair, at the state they were photographed in.
+        let pale = t853LStar(t853Luminance(CadenceCalendarEventStyle.railFill(for: Color(hex: "#ede7d3"))))
+        let saturated = t853LStar(t853Luminance(CadenceCalendarEventStyle.railFill(for: Color(hex: "#0000ff"))))
+        #expect(
+            pale - saturated > 4,
+            "the pale calendar's plate is \(t853Rounded(pale - saturated)) L* above the primary blue's — back to one weight for every hue, which is T-3295"
+        )
+
+        // Claim 2 — ordered by hue lightness, over the sweep plus the pale control, at every state.
+        var measured = 0
+        for (selected, active) in [(false, false), (false, true), (true, false)] {
+            let ranked = (t853CalendarHues + ["#ede7d3"])
+                .map { hex -> (hex: String, light: Double, plate: Double) in
+                    let swatch = Color(hex: hex)
+                    return (
+                        hex,
+                        CadenceCalendarEventStyle.hueLightness(for: swatch),
+                        t853Luminance(
+                            CadenceCalendarEventStyle.railFill(for: swatch, isSelected: selected, isActive: active)
+                        )
+                    )
+                }
+                .sorted { $0.light < $1.light }
+            for (lower, higher) in zip(ranked, ranked.dropFirst()) {
+                measured += 1
+                #expect(
+                    higher.plate >= lower.plate - 0.0015,
+                    "\(higher.hex) is a lighter hue than \(lower.hex) but its plate came back darker (\(t853Rounded(higher.plate)) against \(t853Rounded(lower.plate)))"
+                )
+            }
+        }
+        #expect(measured == 21, "non-vacuity: eight colours ranked in three states; \(measured) pairs compared")
+
+        // Claim 3 — the floor is today's number, and `#0000ff` is the hue that sits on it.
+        #expect(
+            CadenceCalendarEventStyle.hueLightness(for: Color(hex: "#0000ff")) == 0,
+            "the primary blue is no longer the bottom of the band, so the floor claim below is measuring the wrong hue"
+        )
+        for (selected, active) in [(false, false), (false, true), (true, false)] {
+            let anchor = CadenceCalendarEventStyle.railFillAnchorLuminance(isSelected: selected, isActive: active)
+            let delivered = t853Luminance(
+                CadenceCalendarEventStyle.railFill(for: Color(hex: "#0000ff"), isSelected: selected, isActive: active)
+            )
+            #expect(
+                abs(delivered - anchor) < 0.0015,
+                "the darkest hue's plate came back at Y = \(t853Rounded(delivered)) rather than its \(anchor) anchor — the band stopped being one-sided and something got DARKER than it was before T-3295"
+            )
+        }
+
+        // Claim 4 — the top of the band keeps the two treatments apart. A zero-saturation calendar
+        // is the top (`hueLightness` 1), and `isActive` is the state where the plate treatment is
+        // closest, so this pair is the binding one.
+        for (selected, active) in [(false, false), (false, true), (true, false)] {
+            let top = Color(hex: "#ffffff")
+            #expect(CadenceCalendarEventStyle.hueLightness(for: top) == 1, "non-vacuity: #ffffff is not at the top of the band")
+            let rail = t853LStar(t853Luminance(
+                CadenceCalendarEventStyle.railFill(for: top, isSelected: selected, isActive: active)
+            ))
+            let plate = t853LStar(t853Luminance(
+                CadenceCalendarEventStyle.plateFill(for: top, isSelected: selected, isActive: active)
+            ))
+            #expect(
+                plate - rail > 9,
+                "the lightest event plate reachable is \(t853Rounded(plate - rail)) L* under the task plate of the same state — railPlateHueLightnessSpan has passed the bound it is derived from"
+            )
+        }
+    }
+
+    /// `hueLightness` is the band's only input, so the two ends it normalises against are
+    /// measured rather than asserted from the doc comment.
+    ///
+    /// `hueLightnessFloorLuminance` claims to be the darkest a hue can be at full brightness —
+    /// sRGB's primary blue at Y = 0.0722. That is arithmetic (the HSB cube's `brightness: 1` face
+    /// always holds one channel at 1.0, and blue is the lowest-weighted), but arithmetic stated in
+    /// a doc comment is exactly what this suite does not take on trust, so the hue circle is
+    /// swept. If the floor were set above the true minimum, every hue under it would clamp to 0
+    /// and the band would be flat across the deep end without anything else noticing.
+    @Test func theHueLightnessFractionSpansTheWholeGamutAndIsOrdered() {
+        var darkest = 1.0
+        var measured = 0
+        for step in 0..<360 {
+            for saturation in [0.25, 0.5, 0.75, 1.0] {
+                measured += 1
+                darkest = min(
+                    darkest,
+                    CadenceCalendarEventStyle.relativeLuminance(
+                        hue: Double(step) / 360,
+                        saturation: saturation,
+                        brightness: 1
+                    )
+                )
+            }
+        }
+        #expect(measured == 1440, "non-vacuity: \(measured) hue/saturation pairs swept")
+        #expect(
+            darkest >= CadenceCalendarEventStyle.hueLightnessFloorLuminance - 0.0005,
+            "a full-brightness hue reaches Y = \(t853Rounded(darkest)), under the \(CadenceCalendarEventStyle.hueLightnessFloorLuminance) floor the band normalises against — every hue below it is clamped flat"
+        )
+        #expect(
+            darkest < CadenceCalendarEventStyle.hueLightnessFloorLuminance + 0.002,
+            "the floor sits \(t853Rounded(CadenceCalendarEventStyle.hueLightnessFloorLuminance - darkest)) under the darkest hue the gamut holds, so the bottom of the band is unreachable"
+        )
+
+        // Both ends are reached, and the middle is ordered the way the eye reads it.
+        #expect(CadenceCalendarEventStyle.hueLightness(for: Color(hex: "#0000ff")) == 0)
+        #expect(CadenceCalendarEventStyle.hueLightness(for: Color(hex: "#ffffff")) == 1)
+        let pale = CadenceCalendarEventStyle.hueLightness(for: Color(hex: "#ede7d3"))
+        let mid = CadenceCalendarEventStyle.hueLightness(for: Color(hex: "#4a9eff"))
+        let deep = CadenceCalendarEventStyle.hueLightness(for: Color(hex: "#3d0000"))
+        #expect(pale > mid)
+        #expect(mid > deep)
+        #expect(deep > 0)
+
+        // A black calendar has no hue to be light or dark, and `brightness: 1` reads it as white —
+        // which is the same answer `railColor` already gives it. Stated so the corner is a
+        // decision rather than a surprise.
+        #expect(CadenceCalendarEventStyle.hueLightness(for: Color(hex: "#000000")) == 1)
+    }
+
     /// **The guarantee that makes the ceiling free.** T-3168's whole argument is that a chroma
     /// ceiling applied *at constant luminance* costs no contrast, because every ratio in
     /// `CadenceCalendarEventStyle` is `(L1 + 0.05) / (L2 + 0.05)` over two luminances and nothing
@@ -1007,8 +1157,8 @@ struct CadenceContrastFloorTests {
             for (selected, active) in [(false, false), (false, true), (true, false)] {
                 measured += 1
                 let plate = CadenceCalendarEventStyle.railFill(for: swatch, isSelected: selected, isActive: active)
-                let ceiling = CadenceCalendarEventStyle.railPlateChromaCeiling(isSelected: selected, isActive: active)
-                let declared = CadenceCalendarEventStyle.railFillLuminance(isSelected: selected, isActive: active)
+                let ceiling = CadenceCalendarEventStyle.railPlateChromaCeiling(for: swatch, isSelected: selected, isActive: active)
+                let declared = CadenceCalendarEventStyle.railFillLuminance(for: swatch, isSelected: selected, isActive: active)
 
                 #expect(
                     t853Chroma(plate) <= ceiling + 0.002,
@@ -1024,19 +1174,24 @@ struct CadenceContrastFloorTests {
 
         // The ceiling is derived from the ladder rather than typed beside it, so it cannot be left
         // behind when the ladder moves.
+        let derivationSwatch = Color(hex: "#4a9eff")
         for (selected, active) in [(false, false), (false, true), (true, false)] {
             let expected = CadenceCalendarEventStyle.railPlateChromaRatio
                 * CadenceOKLab.neutralLightness(
-                    relativeLuminance: CadenceCalendarEventStyle.railFillLuminance(isSelected: selected, isActive: active)
+                    relativeLuminance: CadenceCalendarEventStyle.railFillLuminance(
+                        for: derivationSwatch,
+                        isSelected: selected,
+                        isActive: active
+                    )
                 )
             #expect(
-                abs(CadenceCalendarEventStyle.railPlateChromaCeiling(isSelected: selected, isActive: active) - expected) < 1e-9,
+                abs(CadenceCalendarEventStyle.railPlateChromaCeiling(for: derivationSwatch, isSelected: selected, isActive: active) - expected) < 1e-9,
                 "the chroma ceiling stopped being derived from railFillLuminance"
             )
         }
         #expect(
-            CadenceCalendarEventStyle.railPlateChromaCeiling()
-                < CadenceCalendarEventStyle.railPlateChromaCeiling(isActive: true),
+            CadenceCalendarEventStyle.railPlateChromaCeiling(for: derivationSwatch)
+                < CadenceCalendarEventStyle.railPlateChromaCeiling(for: derivationSwatch, isActive: true),
             "the ceiling no longer rises with the plate it belongs to"
         )
     }
@@ -1093,11 +1248,17 @@ struct CadenceContrastFloorTests {
             .map { t853Chroma(CadenceCalendarEventStyle.railFill(for: Color(hex: $0))) }
             .min() ?? 0
         #expect(leastColourfulAccentPlate > 0, "non-vacuity: no accent plate was measured")
-        let anchor = CadenceOKLab.neutralLightness(
-            relativeLuminance: CadenceCalendarEventStyle.railFillLuminance()
-        )
+        // Each accent is divided by ITS OWN anchor, not by one shared number: since [[T-3295]]
+        // the ceiling hangs off the plate that calendar actually gets, so a bound built on a
+        // single anchor would be measuring a plate no accent is drawn on.
         let bound = offered
-            .map { t853UncappedRailPlateChroma(Color(hex: $0)) / anchor }
+            .map { hex -> Double in
+                let swatch = Color(hex: hex)
+                let anchor = CadenceOKLab.neutralLightness(
+                    relativeLuminance: CadenceCalendarEventStyle.railFillLuminance(for: swatch)
+                )
+                return t853UncappedRailPlateChroma(swatch) / anchor
+            }
             .min() ?? 0
         #expect(
             CadenceCalendarEventStyle.railPlateChromaRatio < bound,
@@ -1161,7 +1322,7 @@ struct CadenceContrastFloorTests {
 
                 // Claim 2. The reference is a literal mid blue rather than `Theme.blueHex` because
                 // the accent palette is selectable and this bound must not move with it.
-                let loudestPossible = CadenceCalendarEventStyle.railPlateChromaCeiling(isSelected: selected, isActive: active)
+                let loudestPossible = CadenceCalendarEventStyle.railPlateChromaCeiling(for: swatch, isSelected: selected, isActive: active)
                 let ordinaryTask = t853Chroma(
                     CadenceCalendarEventStyle.plateFill(for: ordinary, isSelected: selected, isActive: active)
                 )
@@ -1305,7 +1466,7 @@ private func t853UncappedRailPlateChroma(_ color: Color) -> Double {
     srgb.getHue(&hue, saturation: &saturation, brightness: &brightness, alpha: &alpha)
 
     let scaled = Double(saturation) * CadenceCalendarEventStyle.railPlateSaturationScale
-    let target = CadenceCalendarEventStyle.railFillLuminance()
+    let target = CadenceCalendarEventStyle.railFillLuminance(for: color)
     var low = 0.0
     var high = 1.0
     for _ in 0..<20 {

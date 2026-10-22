@@ -144,3 +144,41 @@ nonisolated enum CadenceCalendarAllDayBandPriority {
         )
     }
 }
+
+/// Which of a two-line calendar chip's rows carries the leading glyph ([[T-3295]]'s sibling,
+/// [[T-3311]] — the owner's decision of 2026-10-22).
+///
+/// **The defect.** In the iPad month grid beside the agenda column a cell is about 115pt wide. An
+/// EVENT chip spent that width on a leading `calendar.badge.clock`, 4pt of gap, 10pt of horizontal
+/// padding and then the title, and what was left held three or four letters — "Dee…", "Pure…",
+/// "Pale…" — while the TASK chip in the row below it, whose glyph is a narrow `circle.fill`, kept
+/// five or six. Not a paint fault: the colours were measured right in [[T-3160]]. The glyph was
+/// simply the widest thing on the row that was not the title.
+///
+/// **The decision, and the two it was taken over.** The glyph **moves onto the chip's time line**,
+/// which an event chip already draws below the title and which carries nothing but a short
+/// `9:30` — so the information is kept, in a row that had the room, and the title gets the whole
+/// cell. The alternatives the ticket offered were to *drop* the glyph under some cell width, which
+/// loses the one mark saying all-day from timed, and to widen the portrait grid, which pays for a
+/// chip out of the agenda column beside it. Neither was taken.
+///
+/// **A chip with no time line keeps its glyph on the title row**, because there is no other row to
+/// move it to. That is the task chip in the same grid, and it is why this is stated as a function
+/// of "is there a time line" rather than of "is this an event": an all-day event in the iOS
+/// timeline strip draws no time either, and it keeps its `calendar` on the title row for the same
+/// reason a task does.
+///
+/// Lives here rather than beside the view so the rule is reachable from a test on either platform
+/// — `iOSCalendarMiniChip` is inside `#if os(iOS)` and the suites that could witness it run on the
+/// macOS leg.
+nonisolated enum CadenceCalendarChipGlyphRow: String, Equatable, Sendable, CaseIterable {
+    /// Beside the title, which is where every chip drew it before [[T-3311]].
+    case title
+    /// Beside the time range, leaving the title row to the title alone.
+    case time
+
+    /// Where a chip puts its glyph, given whether it is drawing a time line at all.
+    static func forChip(hasTimeLine: Bool) -> CadenceCalendarChipGlyphRow {
+        hasTimeLine ? .time : .title
+    }
+}

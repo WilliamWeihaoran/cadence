@@ -221,7 +221,14 @@ enum CadenceCalendarEventStyle {
     /// there chroma is the *only* thing separating it from black, so none of it is given away.
     static let railPlateSaturationScale: Double = 1.00
 
-    /// Relative luminance (WCAG Y) the rail treatment's tinted plate is solved to, per state.
+    /// **The floor of the plate's luminance band, per state** — the luminance the darkest hue the
+    /// gamut holds is solved to, and the anchor every lighter hue is lifted from.
+    ///
+    /// It returned the plate's luminance outright until [[T-3295]], where the owner ruled that
+    /// Apple's relative hue brightness should survive into the body. `railFillLuminance(for:)` is
+    /// the plate now; this is where its band starts. Renamed rather than overloaded on purpose: a
+    /// call site that still wants one number for every calendar is the defect T-3295 is about, and
+    /// it should not compile by accident.
     ///
     /// Much darker than `plateLuminance`, and that is the whole point: a title drawn **in the hue**
     /// has a far tighter budget than `Theme.onColor` did, and every point of plate luminance is
@@ -233,10 +240,124 @@ enum CadenceCalendarEventStyle {
     /// and 2.08:1 selected — deliberately quiet, because here the rail is what announces the block
     /// and the plate only has to say where it ends. `isActive` is hover on macOS, press/selection
     /// on iOS.
-    static func railFillLuminance(isSelected: Bool = false, isActive: Bool = false) -> Double {
+    static func railFillAnchorLuminance(isSelected: Bool = false, isActive: Bool = false) -> Double {
         if isSelected { return 0.060 }
         if isActive { return 0.044 }
         return 0.030
+    }
+
+    /// Relative luminance of the **darkest colour a hue can be at full brightness** — sRGB's
+    /// primary blue, `0.2126·0 + 0.7152·0 + 0.0722·1`.
+    ///
+    /// This is the bottom of "how light is this hue", and it is arithmetic rather than a
+    /// measurement: at `brightness: 1` the HSB cube's faces always hold at least one channel at
+    /// 1.0, so the least luminous point reachable is the one where that channel is the
+    /// lowest-weighted — blue. Pinned by `theHueLightnessFractionSpansTheWholeGamutAndIsOrdered`,
+    /// which sweeps the hue circle rather than trusting the derivation.
+    static let hueLightnessFloorLuminance: Double = 0.0722
+
+    /// **How light this calendar's hue is, on 0…1**, in perceptual lightness rather than in raw
+    /// luminance ([[T-3295]]).
+    ///
+    /// Measured on the hue at **full brightness and its own saturation** — the colour the account
+    /// picked, with the only axis that is not identity (brightness) opened all the way. A pale
+    /// `#ede7d3` reads 0.967, a mid `#4a9eff` 0.472, a primary `#0000ff` exactly 0.
+    ///
+    /// **Not measured on `railColor`, deliberately.** The rail has already been through
+    /// `railChromaCeiling`, which lifts a deep hue's luminance on the way to taking its chroma —
+    /// `#0000ff`'s rail sits at Y 0.225, not 0.072. Reading the plate's lightness off the rail
+    /// would therefore feed one bound into another and compress the very spread this exists to
+    /// restore: measured there the blue and the olive differ by 0.61 to 0.98 instead of 0 to 0.97.
+    ///
+    /// The ends are the gamut's, not the palette's: `hueLightnessFloorLuminance` at the bottom and
+    /// white at the top, so adding a palette cannot move where an existing calendar sits in the
+    /// band.
+    static func hueLightness(for calendarColor: Color) -> Double {
+        let source = hsb(of: calendarColor)
+        let lightness = CadenceOKLab.neutralLightness(
+            relativeLuminance: relativeLuminance(hue: source.hue, saturation: source.saturation, brightness: 1)
+        )
+        let floor = CadenceOKLab.neutralLightness(relativeLuminance: hueLightnessFloorLuminance)
+        return min(max((lightness - floor) / (1 - floor), 0), 1)
+    }
+
+    /// How far above its own anchor the plate's **perceptual lightness** may be lifted by a light
+    /// hue, as a fraction of that anchor ([[T-3295]], the owner's decision of 2026-10-22).
+    ///
+    /// ## What this is for: Apple does not equalise plate luminance and Cadence did
+    ///
+    /// [[T-3168]] read two measurable differences off the owner's Apple Calendar screenshot. The
+    /// first — rail and title are one colour, the body is a near-neutral wash — is closed. This is
+    /// the second, and it was deliberately left for the owner because it spends a guarantee:
+    /// `railFillAnchorLuminance` returns one number for every hue, which is exactly what makes
+    /// every tier solvable to a fixed ratio and exactly what flattens a yellow and a blue to the
+    /// same weight. Measured on device at HEAD before this change, the `Pure blue` plate was
+    /// (47, 47, 67) at Y 0.0304 and the `Pale` plate (50, 48, 44) at Y 0.0297 — **a 2% difference
+    /// between `#0000ff` and `#ede7d3`**. In Apple's picture the yellow plates are visibly lighter
+    /// than the blue one.
+    ///
+    /// ## The ratios are not spent, because every tier is re-solved per hue
+    ///
+    /// The fixed-ratio guarantee survives the band in full, and that is the one thing that had to
+    /// be checked before building it. Every tier in this file is
+    /// `(ratio * (plate + 0.05)) - 0.05` over **the plate it is actually drawn on** — so a plate
+    /// that moves takes its own three tiers with it, and `railTitleContrastTarget` 5.1,
+    /// `railSecondaryContrastTarget` 4.6 and `railTertiaryContrastTarget` 3.2 are still met to the
+    /// digit at every hue. What the band spends is not contrast, it is *headroom*: a pale
+    /// calendar's title is solved higher than it used to be (Y 0.511 → 0.664 at the selected stop
+    /// for `#ede7d3`), and a hue whose plate reached the band's top would need a title at Y 0.734,
+    /// still well inside white. `everyRailTreatmentTierLandsOnItsDeclaredRatioAgainstItsOwnPlate`
+    /// measures all 63 against the delivered plate and is the assertion that says so.
+    ///
+    /// ## The band is **one-sided and lifts only**, which is the half of option (b) worth having
+    ///
+    /// The darkest hue the gamut holds gets today's plate **exactly** — `#0000ff` stays at
+    /// 0.030 / 0.044 / 0.060 — and everything lighter is lifted from there. A two-sided band
+    /// centred on today's numbers would push a deep hue's plate *down* toward `Theme.bg` (Y
+    /// 0.0028), and a plate that vanishes into the canvas is the same defect at the other end as
+    /// the pale event that nearly vanished in [[T-3168]]'s photograph. Lifting only also means no
+    /// existing plate gets darker and no existing tier gets dimmer, so nothing this file already
+    /// guaranteed can regress downward.
+    ///
+    /// ## Why 0.15, with both ends of the window measured
+    ///
+    /// **From above, and this end is an existing guarantee rather than a judgement.** The two chip
+    /// plates must stay more than **9 L\*** apart at every hue — that is
+    /// `theEventChipPlateIsTheDarkerOfTheTwoAtEveryHue`, and it is what keeps a task chip and an
+    /// event chip reading as two treatments. The binding hue is a zero-saturation calendar at the
+    /// *active* state, where the plate treatment sits at L\* 41.9: the rail plate may not pass
+    /// L\* 32.9, i.e. Y 0.0747, i.e. a span of **0.193**. A tighter reading of the same guarantee
+    /// — keep 12 L\* rather than 9 — puts it at **0.1506**.
+    ///
+    /// **From below — the band has to be visible, which is the question [[T-3295]] left open.**
+    /// The owner's own comparison is `#0000ff` against `#ede7d3`. At this span their rest plates
+    /// are **(48, 48, 69) against (60, 58, 54)** — 5.3 L\*, five times the ~1 L\* just-noticeable
+    /// step, so the band is seen and not merely computed. At 0.05 it is 1.8 L\*, which is the
+    /// "too narrow to see" outcome T-3295 warned the measurement might find.
+    ///
+    /// The window is therefore **[~0.08, 0.193]** and 0.15 is the tighter of the two upper
+    /// readings — the largest value that still keeps a full 12 L\* between the two treatments,
+    /// with the remaining 0.043 left as margin for a `colorHex` already rounded to 8 bits.
+    static let railPlateHueLightnessSpan: Double = 0.15
+
+    /// Relative luminance the rail treatment's tinted plate is solved to **for this calendar**
+    /// ([[T-3295]]).
+    ///
+    /// `railFillAnchorLuminance` is the floor of a band `railPlateHueLightnessSpan` wide, walked
+    /// in OKLab lightness by `hueLightness(for:)`: a primary blue sits on the floor and a pale
+    /// olive near the top. Lightness rather than luminance is the axis because the band has to be
+    /// perceptually even — 0.030 → 0.045 and 0.060 → 0.090 are the same *step* to the eye and
+    /// nothing like the same difference in Y.
+    static func railFillLuminance(
+        for calendarColor: Color,
+        isSelected: Bool = false,
+        isActive: Bool = false
+    ) -> Double {
+        let anchor = CadenceOKLab.neutralLightness(
+            relativeLuminance: railFillAnchorLuminance(isSelected: isSelected, isActive: isActive)
+        )
+        let lightness = anchor * (1 + (railPlateHueLightnessSpan * hueLightness(for: calendarColor)))
+        return lightness * lightness * lightness
     }
 
     /// Contrast ratio the rail treatment's **title** is solved to against its own plate.
@@ -272,7 +393,8 @@ enum CadenceCalendarEventStyle {
     ///
     /// Stated as a ratio rather than as three chroma numbers so it cannot drift from the ladder it
     /// belongs to: `railPlateChromaCeiling` multiplies this by `CadenceOKLab.neutralLightness` of
-    /// the plate's luminance, so moving `railFillLuminance` moves the ceiling with it — the same
+    /// that calendar's own plate luminance, so moving `railFillLuminance` — by state or, since
+    /// [[T-3295]], by hue — moves the ceiling with it, the same
     /// discipline `railLabelColor` already uses to derive each label tier from its own plate.
     ///
     /// ## It was 0.25, and 0.25 was answering a different question ([[T-3168]])
@@ -386,7 +508,7 @@ enum CadenceCalendarEventStyle {
     ///
     /// **And it costs no contrast at all, structurally rather than by measurement.** Nothing in
     /// the tier ladder reads `railColor`: `railFill` solves from the calendar colour and each
-    /// `railLabelColor` solves against `railFillLuminance`. All 63 tier ratios are therefore
+    /// `railLabelColor` solves against the same `railFillLuminance`. All 63 tier ratios are therefore
     /// bit-identical across this change — 0 of 63 moved, not 45 of 63 by 1.2e-05 as the previous
     /// lever's bisection noise did — and the plates still land on Y 0.030 / 0.044 / 0.060 exactly.
     ///
@@ -404,10 +526,24 @@ enum CadenceCalendarEventStyle {
     /// `theRailIsHeldToItsChromaCeilingAndStillClearsTheNonTextFloor`.
     static let railChromaCeiling: Double = 0.206
 
-    /// The rail plate's chroma ceiling at a given state, derived from that state's own luminance.
-    static func railPlateChromaCeiling(isSelected: Bool = false, isActive: Bool = false) -> Double {
+    /// The rail plate's chroma ceiling for this calendar at a given state, derived from that
+    /// plate's own luminance.
+    ///
+    /// Takes the calendar colour since [[T-3295]], because the plate's luminance does: the ratio
+    /// hangs off `CadenceOKLab.neutralLightness` of the plate it bounds, so a hue whose plate is
+    /// lifted up the band carries its ceiling up with it and the "near-neutral wash" property
+    /// stays a property of the *treatment* rather than becoming stricter on pale calendars.
+    static func railPlateChromaCeiling(
+        for calendarColor: Color,
+        isSelected: Bool = false,
+        isActive: Bool = false
+    ) -> Double {
         railPlateChromaRatio * CadenceOKLab.neutralLightness(
-            relativeLuminance: railFillLuminance(isSelected: isSelected, isActive: isActive)
+            relativeLuminance: railFillLuminance(
+                for: calendarColor,
+                isSelected: isSelected,
+                isActive: isActive
+            )
         )
     }
 
@@ -508,8 +644,8 @@ enum CadenceCalendarEventStyle {
     static func railFill(for calendarColor: Color, isSelected: Bool = false, isActive: Bool = false) -> Color {
         cappedFill(
             for: calendarColor,
-            luminance: railFillLuminance(isSelected: isSelected, isActive: isActive),
-            chromaCeiling: railPlateChromaCeiling(isSelected: isSelected, isActive: isActive)
+            luminance: railFillLuminance(for: calendarColor, isSelected: isSelected, isActive: isActive),
+            chromaCeiling: railPlateChromaCeiling(for: calendarColor, isSelected: isSelected, isActive: isActive)
         )
     }
 
@@ -517,8 +653,8 @@ enum CadenceCalendarEventStyle {
     static func railChipFill(for calendarColor: Color, isActive: Bool = false) -> Color {
         cappedFill(
             for: calendarColor,
-            luminance: railFillLuminance(isActive: isActive),
-            chromaCeiling: railPlateChromaCeiling(isActive: isActive)
+            luminance: railFillLuminance(for: calendarColor, isActive: isActive),
+            chromaCeiling: railPlateChromaCeiling(for: calendarColor, isActive: isActive)
         )
     }
 
@@ -527,8 +663,10 @@ enum CadenceCalendarEventStyle {
     ///
     /// The target luminance is *derived* from the plate rather than tabulated —
     /// `ratio * (plate + 0.05) - 0.05` is the WCAG definition rearranged — so moving
-    /// `railFillLuminance` moves this with it and the pair cannot drift apart. At the three plate
-    /// stops the title lands at Y = 0.358 / 0.429 / 0.511.
+    /// `railFillLuminance` moves this with it and the pair cannot drift apart. **Since [[T-3295]]
+    /// the plate moves with the hue as well as with the state**, and this moves with it for free:
+    /// at the band's floor the title lands at Y = 0.358 / 0.429 / 0.511 as it always did, and a
+    /// pale `#ede7d3` — near the band's top — at 0.467 / 0.556 / 0.664.
     static func railTitleColor(for calendarColor: Color, isSelected: Bool = false, isActive: Bool = false) -> Color {
         railLabelColor(
             for: calendarColor,
@@ -582,7 +720,7 @@ enum CadenceCalendarEventStyle {
         isSelected: Bool,
         isActive: Bool
     ) -> Color {
-        let plate = railFillLuminance(isSelected: isSelected, isActive: isActive)
+        let plate = railFillLuminance(for: calendarColor, isSelected: isSelected, isActive: isActive)
         return solvedTint(
             for: calendarColor,
             saturationScale: 1.0,
