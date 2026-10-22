@@ -7,6 +7,7 @@
 #   ./scripts/ledger-view.sh counts         # the census, beside the naive lexical count it corrects
 #   ./scripts/ledger-view.sh show T-1325    # the exact entry block(s) for one id, from both ledgers
 #   ./scripts/ledger-view.sh head T-1325    # the same entry's FIRST LINE only, with the addenda counted
+#   ./scripts/ledger-view.sh lint           # list every illegal lead token and exit 6 if any (T-4300)
 #   ./scripts/ledger-view.sh selftest       # prove every refusal and every hard reading still fires
 #
 # WHY THIS EXISTS
@@ -229,6 +230,25 @@ function status_of(i,   first, sect) {
 }
 function active(s) { return (s == "OPEN" || s == "PARTIAL" || s == "PARKED") }
 
+# T-4300. `status_of` falls back to OPEN for a lead token it does not know, so `**CONFIRMED` read as
+# OPEN for fifteen days ([[T-2053]]) and nothing said so. This NAMES such a token; it never changes
+# the reading -- a reader that refused one malformed entry would stop agents reading the rest, so the
+# refusal lives in the `lint` mode beside the reader, not inside it. Only the open ledger's active
+# sections (under `## Done` / `## Cancelled` the section decides), only a first `**` run right after
+# the id, and only a token that LOOKS like a state: two leading capitals. A headline (`**The ...`,
+# `**A ...`) is the ledger's own convention and is not flagged. CANCELLED is accepted because the
+# T-2040 reading above honours it on a first line.
+function illegal_lead(i,   s, tok) {
+    if (e_file[i] != todo_label || e_sec[i] ~ /^(Done|Cancelled)/) return ""
+    s = e_first[i]
+    if (!sub(/^- \[T-[0-9]+\] \*\*/, "", s)) return ""
+    if (!match(s, /^[A-Za-z0-9-]+/)) return ""
+    tok = substr(s, 1, RLENGTH)
+    if (tok !~ /^[A-Z][A-Z]/) return ""
+    if (tok ~ /^(CLOSED|PARTIAL|OPEN|PARKED|CANCELLED)$/) return ""
+    return tok
+}
+
 # Read from the WHOLE block, not from the first line: this ledger wraps at ~100 columns and a
 # finding's bold run routinely runs onto the second and third line, so a first-line-only reading
 # ends the headline mid-clause on exactly the entries whose first line is shortest.
@@ -276,6 +296,22 @@ END {
     for (i = 1; i <= n; i++) {
         st[i] = status_of(i)
         if (active(st[i])) id_open[e_id[i]] = 1; else id_closed[e_id[i]] = 1
+        bad[i] = illegal_lead(i); if (bad[i] != "") n_bad++
+    }
+    n_bad += 0
+
+    # T-4300: list every illegal lead token and refuse, so a gate or an agent can ask directly.
+    if (mode == "lint") {
+        for (i = 1; i <= n; i++) if (bad[i] != "")
+            printf "%-8s %-9s %-20s lead token %s is none of CLOSED/PARTIAL/OPEN/PARKED\n",
+                e_id[i], st[i], e_file[i] ":" e_line[i], bad[i]
+        if (n_bad > 0) {
+            printf "REFUSED (LEDGER-VIEW-ILLEGAL-LEAD): %d active-section entr%s of %d carry an illegal lead token; each is read by the status shown, which for an unknown token is the OPEN fallback.\n",
+                n_bad, (n_bad == 1 ? "y" : "ies"), n > "/dev/stderr"
+            exit 6
+        }
+        printf "ledger-view lint: 0 illegal lead tokens over %d entries.\n", n
+        exit 0
     }
 
     # `head` exists because an entry is unbounded: addenda accrete for the life of a ticket and
@@ -346,6 +382,7 @@ END {
         printf "  ACTIVE: %d entries, %d ids\n", act_entries, act_ids
         printf "  naive lexical reading (token anywhere on the first line, before ## Done): %d entries, %d closed, %d open\n",
             naive_total, naive_closed, naive_total - naive_closed
+        printf "  illegal lead tokens: %d%s\n", n_bad, (n_bad ? " -- ledger-view.sh lint lists them (T-4300)" : "")
         exit 0
     }
 
@@ -368,6 +405,9 @@ END {
     }
     printf "\nledger-view: %d %s entr%s of %d read from %s and %s.\n",
         shown, (mode == "all" ? "listed" : "active"), (shown == 1 ? "y" : "ies"), n, todo_label, done_label
+    if (n_bad > 0)
+        printf "ledger-view: WARNING %d entr%s carry an illegal lead token and may be read as the wrong state -- ledger-view.sh lint (T-4300).\n",
+            n_bad, (n_bad == 1 ? "y" : "ies") > "/dev/stderr"
     exit 0
 }
 AWK
@@ -401,15 +441,15 @@ main() {
     mode=${1:-open}
     case "$mode" in
         selftest) cmd_selftest; exit $? ;;
-        -h|--help) sed -n '2,9p' "$SELF_PATH"; exit 0 ;;
+        -h|--help) sed -n '2,10p' "$SELF_PATH"; exit 0 ;;
         show|head)
             case "${2:-}" in
                 T-[0-9]*) run_view "$mode" "$2" ;;
                 *) refuse LEDGER-VIEW-BAD-ID "$mode takes one exact ticket id, spelled T-<number>; got '${2:-}'." 2 ;;
             esac
             ;;
-        open|brief|all|counts) run_view "$mode" ;;
-        *) refuse LEDGER-VIEW-UNKNOWN-MODE "'$mode' is not a mode; use open, brief, all, counts, show <id>, head <id> or selftest." 2 ;;
+        open|brief|all|counts|lint) run_view "$mode" ;;
+        *) refuse LEDGER-VIEW-UNKNOWN-MODE "'$mode' is not a mode; use open, brief, all, counts, lint, show <id>, head <id> or selftest." 2 ;;
     esac
 }
 
@@ -689,6 +729,41 @@ FIXTURE
     out=$(CADENCE_LEDGER_VIEW_DONE="$ws/no-such-archive.md" sh "$SELF_PATH" brief 2>&1); rc=$?
     check "$rc" 0 "$out" "a MISSING archive does not shift the open ledger's reading ([[T-1317]])" "T-11     OPEN"
     checkno "$rc" 0 "$out" "and does not make the open ledger read as the archive" "T-12     "
+
+    # --- mode 6: the lead-token lint (T-4300) -----------------------------
+    echo; echo " mode 6 (lint; LEDGER-VIEW-ILLEGAL-LEAD) -- a lead token that looks like a state and is not one"
+    out=$(run lint); rc=$?
+    check "$rc" 0 "$out" "the main fixture's headlines, quotes and first-line CANCELLED are all legal" \
+        "0 illegal lead tokens"
+    cat > "$ws/lint.md" <<'FIXTURE'
+# Ledger
+
+## Open — decided, not started
+
+- [T-50] **CONFIRMED 2026-10-01 (agent `fixture`) -- the T-2053 shape, a PARTIAL read as OPEN.**
+- [T-51] **DECIDE: a question written as a lead token.**
+- [T-52] **CLOSED-as-REFUTED 2026-10-01 -- a closure with a suffix glued on.**
+- [T-53] **The headline convention, which is not a state.**
+- [T-54] **OPEN 2026-10-01 -- legal.**
+- [T-55] **PARTIAL 2026-10-01 -- legal.**
+- [T-56] **PARKED 2026-10-01 -- legal.**
+- [T-57] **CLOSED 2026-10-01 -- legal.**
+
+## Done
+
+- [T-58] **LANDED 2026-10-01 -- the section decides, so the token is not this check's business.**
+FIXTURE
+    out=$(CADENCE_LEDGER_VIEW_TODO="$ws/lint.md" sh "$SELF_PATH" lint 2>&1); rc=$?
+    check "$rc" 6 "$out" "every illegal lead token in an active section is listed and refused" \
+        LEDGER-VIEW-ILLEGAL-LEAD "3 active-section entries" "T-50     OPEN" "lead token CONFIRMED" \
+        "lead token DECIDE" "lead token CLOSED-as-REFUTED"
+    checkno "$rc" 6 "$out" "legal tokens, a headline and a Done-section token are not flagged" \
+        "T-53 " "T-54 " "T-55 " "T-56 " "T-57 " "T-58 "
+    out=$(CADENCE_LEDGER_VIEW_TODO="$ws/lint.md" sh "$SELF_PATH" counts 2>&1); rc=$?
+    check "$rc" 0 "$out" "counts reports the illegal-token tally" "illegal lead tokens: 3"
+    out=$(CADENCE_LEDGER_VIEW_TODO="$ws/lint.md" sh "$SELF_PATH" brief 2>&1); rc=$?
+    check "$rc" 0 "$out" "brief still READS such an entry and warns, rather than refusing the whole ledger" \
+        "T-50     OPEN" "T-54     OPEN" "WARNING 3 entries carry an illegal lead token"
 
     echo
     # The vocabulary `CadenceGuardScriptSelftestTests` reads. A tally is what a selftest gutted to
