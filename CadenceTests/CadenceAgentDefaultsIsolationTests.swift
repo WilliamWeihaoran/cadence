@@ -266,7 +266,17 @@ struct CadenceAgentDefaultsIsolationTests {
         // anyone remembering to add it. `docs/` and `design/` are prose and assets rather than
         // anything that launches an app — and `docs/TODO.md` alone is 2.3 MB. Hidden entries are
         // skipped because `.git` is, so the two that do hold runnable code are named back in.
-        let prose: Set<String> = ["docs", "design"]
+        //
+        // **[[T-3332]]: `scratchpad` is skipped with them, and not because it is prose.** It is the
+        // repository's own agent scratch area: `scripts/agent-scratch.sh` mints a DETACHED copy of
+        // HEAD at `scratchpad/<id>/tree/`, which carries a second
+        // `CadenceUITests/CadenceUITestEnvironment.swift` — and the census below asserts
+        // `swiftWrites.count == 1`. That is a count over a UNIQUE expected path, so this walk
+        // breaks on a byte-identical copy with nothing edited. The tree has no `.git` entry, so
+        // the `isNestedCheckout` prune that covers `.claude/worktrees/` ([[T-3241]]) cannot see it
+        // either; hidden entries are already skipped here, which is why the worktrees never
+        // reached this walk and the scratch trees do. [[T-3330]], [[T-3180]].
+        let prose: Set<String> = ["docs", "design", "scratchpad"]
         var roots = try manager.contentsOfDirectory(atPath: root.path)
             .filter { !$0.hasPrefix(".") && !prose.contains($0) }
         roots.append(contentsOf: [".github", ".githooks"])

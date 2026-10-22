@@ -579,8 +579,17 @@ private func expectSizeBudget(_ relativePath: String, lines lineLimit: Int, byte
 /// and an agent worktree at `.claude/worktrees/<name>/` carries a complete set of this repo's
 /// guides: the routing sweep below then failed with 12 issues, one per guide, asking the root
 /// guide why it does not route to another checkout's copy of itself.
+///
+/// **[[T-3332]]: `pruningAtRoot: ["scratchpad"]` as well, because a worktree is not the only copy.**
+/// `scripts/agent-scratch.sh` mints a DETACHED tree of HEAD at `scratchpad/<id>/tree/`, and that
+/// tree has no `.git` entry — so `isNestedCheckout` cannot see it and the nested-checkout prune
+/// above does not fire. Every scoped guide then exists twice, and the routing sweep asks the root
+/// guide why it does not route to `scratchpad/<id>/tree/Cadence/Models/AGENTS.md`. This walk breaks
+/// on a BYTE-IDENTICAL copy: it asserts membership of the path set, so the copy's contents are
+/// irrelevant and nothing has to be edited for it to fire. [[T-3330]] is the same hole in
+/// `CadenceMCPWriteFenceTests`.
 private func agentGuidePaths() throws -> [String] {
-    CadenceSourceScan.repositoryPaths(under: repositoryRoot())
+    CadenceSourceScan.repositoryPaths(under: repositoryRoot(), pruningAtRoot: ["scratchpad"])
         .filter { $0 == "AGENTS.md" || $0.hasSuffix("/AGENTS.md") }
         .sorted()
 }

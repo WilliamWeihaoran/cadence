@@ -348,6 +348,91 @@ struct CadenceTestTargetHygieneTests {
         )
     }
 
+    /// **[[T-3332]]: every whole-tree walk over THIS checkout prunes the root `scratchpad/`.**
+    ///
+    /// [[T-3241]] turned four hand-written prune lists into one argument and warned, in as many
+    /// words, that *"four copies of a prune list is exactly how one omission reaches four
+    /// suites"*. The copies went away and the omission simply moved: it is now whether a caller
+    /// remembers to pass `pruningAtRoot: ["scratchpad"]`. [[T-3180]] passed it on two callers,
+    /// [[T-3330]] on a third — after a sibling spent a session blaming an innocent commit for a
+    /// failure a stale scratch tree had caused — and this ticket found two more without it, out
+    /// of six call sites in all. Three rounds of the same point fix is what says the rule belongs
+    /// here instead of in a seventh doc comment.
+    ///
+    /// **It is a different hole from the one `isNestedCheckout` closes, which is why the prune is
+    /// still needed at all.** That predicate recognises a copy by the `.git` entry inside it;
+    /// `scripts/agent-scratch.sh --at scratchpad/<id>/tree` extracts a DETACHED `git archive` of
+    /// HEAD, which has no `.git` and is therefore invisible to it. The copy is untracked, so
+    /// `git status` stays silent while every walk sees two of everything.
+    ///
+    /// The one exemption walks a FIXTURE tree under `temporaryDirectory` rather than this
+    /// checkout, so it has no `scratchpad/` to prune and pruning one would weaken what it pins.
+    /// It is named with its reason and the census is floored in both directions: an allowlist
+    /// that silently grew, or a walk that found no call sites at all, would be this same defect
+    /// one layer up.
+    ///
+    /// This file's own needle is spelled in two pieces, so the scan does not count the literal
+    /// below as a seventh call site.
+    @Test func everyWholeTreeWalkOverThisCheckoutPrunesTheRootScratchpad() throws {
+        let needle = "CadenceSourceScan." + "repositoryPaths("
+        let exempt = "theWholeTreeWalkStopsAtANestedCheckout"
+
+        var sites: [String] = []
+        var exempted: [String] = []
+        var unpruned: [String] = []
+        for path in cadenceRepoSwiftFiles(under: "CadenceTests") {
+            // Comments blanked: the doc comments above these walks name the call by hand, and a
+            // census that counted prose would read six call sites as fifteen.
+            let code = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(path))
+            guard code.contains(needle) else { continue }
+            let lines = code.components(separatedBy: "\n")
+            var cursor = code.startIndex
+            while let found = code.range(of: needle, range: cursor..<code.endIndex) {
+                cursor = found.upperBound
+                // The argument list, by balancing from the `(` the needle ends on. A caller may
+                // spell it across several lines, and `pruningAtRoot:` is usually the last one.
+                var depth = 1
+                var index = found.upperBound
+                while index < code.endIndex, depth > 0 {
+                    if code[index] == "(" { depth += 1 }
+                    if code[index] == ")" { depth -= 1 }
+                    index = code.index(after: index)
+                }
+                let arguments = String(code[found.upperBound..<index])
+                let line = String(code[code.startIndex..<found.lowerBound])
+                    .components(separatedBy: "\n").count
+                let site = "\(path):\(line)"
+                sites.append(site)
+                guard !CadenceSourceScan
+                    .enclosingDeclarationPath(ofLine: line - 1, in: lines)
+                    .contains(exempt)
+                else { exempted.append(site); continue }
+                if !(arguments.contains("pruningAtRoot:") && arguments.contains("\"scratchpad\"")) {
+                    unpruned.append(site)
+                }
+            }
+        }
+
+        // Non-vacuity in both directions: the walk reached the call sites, and the exemption is
+        // still the ONE fixture walk rather than however many have accumulated since. Counting the
+        // exemptions is the assertion that matters here; `sites.count - unpruned.count` would have
+        // been a second spelling of `unpruned.isEmpty` below and would have said nothing new.
+        #expect(sites.count >= 6, "found only \(sites.count) whole-tree walk call sites: \(sites)")
+        #expect(
+            exempted.count == 1,
+            "\(exempted.count) call sites are excused as fixture walks rather than 1: \(exempted)"
+        )
+        #expect(
+            unpruned.isEmpty,
+            """
+            these walk this checkout without pruning the root scratchpad/, so an agent's scratch \
+            tree (scripts/agent-scratch.sh --at scratchpad/<id>/tree, a detached copy of HEAD with \
+            no .git for isNestedCheckout to see) is indexed as a second copy of the repository: \
+            \(unpruned.joined(separator: ", "))
+            """
+        )
+    }
+
     /// **T-463.** A `.swift` path that is a *directory* has to be reported, not skipped.
     ///
     /// `CadenceTests/CadenceCalendarLinkHealthTests.swift` was a directory containing a file of the

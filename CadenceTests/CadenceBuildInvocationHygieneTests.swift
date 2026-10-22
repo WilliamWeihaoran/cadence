@@ -1361,8 +1361,19 @@ struct CadenceBuildInvocationHygieneTests {
     /// copy of every runbook and every script this sweep reads, so an offending command there
     /// would be reported against a path this checkout cannot fix, and a corrected one would be
     /// reported until that session committed.
+    ///
+    /// **[[T-3332]]: `pruningAtRoot: ["scratchpad"]` as well.** A worktree is not the only second
+    /// copy — `scripts/agent-scratch.sh` mints a DETACHED tree of HEAD at `scratchpad/<id>/tree/`
+    /// with no `.git` entry, which `isNestedCheckout` cannot recognise, and an agent's loose notes
+    /// sit under `scratchpad/<id>/` without any tree at all. Both are `.md` and `.sh` this sweep
+    /// reads. Unlike the guide and fence walks, this one is CONTENT-dependent rather than
+    /// structural: it asserts `offenders.isEmpty` over full relative paths and holds no
+    /// by-basename index, so a byte-identical copy of HEAD stays green and only an EDITED copy
+    /// reddens it — which is exactly what a scratch tree is for (mutation testing, a draft
+    /// runbook), and the offender it then names is a path this checkout cannot fix. [[T-3180]] is
+    /// the same `scratchpad/` prune on the misfiled-docs walk.
     static func scannedPaths() -> [String] {
-        CadenceSourceScan.repositoryPaths()
+        CadenceSourceScan.repositoryPaths(pruningAtRoot: ["scratchpad"])
             .filter { !$0.contains("/SourcePackages/") }
             .filter {
                 $0.hasSuffix(".md") || $0.hasSuffix(".sh") || $0.hasSuffix(".yml") || $0.hasSuffix(".yaml")
