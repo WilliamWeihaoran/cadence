@@ -3,7 +3,8 @@
 # This is a separate workflow, not a job in ci.yml, for one reason: ci.yml `paths-ignore`s docs/**
 # and **/AGENTS.md, because 106 of the last 120 commits here touch nothing else and macOS runner
 # minutes are the expensive resource. That exclusion leaves the guides' own budget unchecked on
-# exactly the pushes most likely to break it. This workflow fires on the complement.
+# exactly the pushes most likely to break it. This workflow fires on that excluded set, plus the
+# ledger-lint step's own three inputs (T-3385), which ci.yml does NOT exclude.
 #
 # `AgentContextBudgetTests` remains the authority; it caps every AGENTS.md in the tree and also
 # checks routing and required links, which this does not. What this adds is the FAST red: the test
@@ -20,12 +21,22 @@ on:
       - '**/AGENTS.md'
       - 'CLAUDE.md'
       - 'README.md'
+      # T-3385: the ledger-lint step's own inputs. Not in ci.yml's `paths-ignore` -- a push
+      # touching only these still runs CI as well; see the ledger-lag comment below.
+      - 'scripts/ledger-view.sh'
+      - '.github/scripts/ledger-lint.sh'
+      - '.github/workflows/docs.yml'
   pull_request:
     paths:
       - 'docs/**'
       - '**/AGENTS.md'
       - 'CLAUDE.md'
       - 'README.md'
+      # T-3385: the ledger-lint step's own inputs. Not in ci.yml's `paths-ignore` -- a push
+      # touching only these still runs CI as well; see the ledger-lag comment below.
+      - 'scripts/ledger-view.sh'
+      - '.github/scripts/ledger-lint.sh'
+      - '.github/workflows/docs.yml'
   workflow_dispatch:
 
 # Superseded pushes are cancelled on a pull request and NOT on `main` (T-1393). The comment here
@@ -137,10 +148,11 @@ jobs:
   # still sitting in the open sections. Three were on 2026-09-19, one of them
   # telling its next reader not to do work that had already shipped.
   #
-  # This job and its twin in ci.yml run the same script. The two path filters are
-  # set-complements as WRITTEN -- ci.yml `paths-ignore`s exactly what docs.yml
-  # `paths` -- so between them the check runs on every push, which is the property
-  # that matters. What does NOT follow, and what this comment claimed until
+  # This job and its twin in ci.yml run the same script. ci.yml `paths-ignore`s a
+  # SUBSET of what docs.yml `paths` lists -- docs.yml adds the ledger-lint step's
+  # three inputs ([[T-3385]]), which ci.yml still builds on -- so the filters are no
+  # longer set-complements, but every push still fires at least one of them, and
+  # between them the check runs on every push, which is the property that matters. What does NOT follow, and what this comment claimed until
   # [[T-1315]], is that exactly one of them runs: GitHub fires `paths` when ANY
   # changed file matches and skips `paths-ignore` only when ALL of them do, so a
   # push touching `docs/TODO.md` and a `.swift` file satisfies both filters. That

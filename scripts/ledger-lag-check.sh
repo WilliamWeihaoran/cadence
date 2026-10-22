@@ -37,9 +37,9 @@
 # it is exempt" reading cannot see it -- measured, that reading catches two of the three).
 #
 # WHAT "LANDS CODE" MEANS, and it is borrowed rather than invented: any path outside `docs/**`,
-# `**/AGENTS.md`, `CLAUDE.md` and `README.md`. That is exactly `ci.yml`'s `paths-ignore` and
-# exactly `docs.yml`'s `paths`, so a ledger-only or guide-only commit -- a filing, a correction, a
-# reword -- is out of scope by the same definition the two workflows already use to split the work
+# `**/AGENTS.md`, `CLAUDE.md` and `README.md`. That is exactly `ci.yml`'s `paths-ignore` (and
+# `docs.yml`'s `paths` less the ledger-lint inputs T-3385 added), so a ledger-only or guide-only
+# commit -- a filing, a correction, a reword -- is out of scope by the same definition the two workflows already use to split the work
 # between them. Merge commits name no files under `--name-only` and are skipped for the same reason.
 #
 # WHAT "CLOSED" MEANS is `ledger_closed_ids`' reading from `agent-commit.sh`, deliberately not a

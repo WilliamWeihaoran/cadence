@@ -142,7 +142,8 @@ on:
 # Batching pushes reinstates T-1362's blind window (a red sat at HEAD for four commits). Grouping
 # per-sha instead runs every superseded revision and delivers the TIP's verdict last, which is the
 # only verdict anybody acts on. Separating the docs jobs is already done and buys nothing here:
-# `paths-ignore` above is docs.yml's `paths`, so a docs-only push never starts this workflow -- and
+# `paths-ignore` above is a subset of docs.yml's `paths` (T-3385 added the ledger-lint inputs there
+# only), so a docs-only push never starts this workflow -- and
 # an agent commit lands code and `docs/TODO.md` together anyway. The remedy still worth having is
 # outside the workflow: the heartbeat should NOTICE a cancelled run, which today is indistinguish-
 # able from a commit that was never pushed.
@@ -153,8 +154,8 @@ concurrency:
 jobs:
   # ---------------------------------------------------------------------------
   # T-1298, and the twin of docs.yml's job of the same name -- the same script.
-  # This workflow's `paths-ignore` is exactly docs.yml's `paths`, so between them
-  # the check runs on every push. It is NOT one run per push ([[T-1315]]): a push
+  # This workflow's `paths-ignore` is docs.yml's `paths` minus the ledger-lint
+  # step's three inputs ([[T-3385]]), so between them the check runs on every push. It is NOT one run per push ([[T-1315]]): a push
   # touching a doc and a `.swift` file satisfies `paths` (any file matches) and
   # survives `paths-ignore` (not all do), so both fire and this check runs twice.
   # That overlap is accepted rather than fixed -- see the twin's comment in
