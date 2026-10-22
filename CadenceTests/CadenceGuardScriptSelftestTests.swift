@@ -357,11 +357,14 @@ struct CadenceGuardScriptSelftestTests {
     /// script must sit BELOW the selftest it dispatches to, so the source-level reading counted
     /// them as named-by-the-selftest-only. The dispatch is a shell `main` function defined above the marker now,
     /// called from the file's last line — the refusals did not move, the code that makes them did.
+    ///
+    /// `LEDGER-VIEW-ILLEGAL-LEAD` is [[T-4300]]'s lint refusal, listed here by [[T-4471]].
     static let ledgerViewRefusals = [
         "LEDGER-VIEW-VACUOUS",
         "LEDGER-VIEW-NO-SUCH-ID",
         "LEDGER-VIEW-BAD-ID",
         "LEDGER-VIEW-UNKNOWN-MODE",
+        "LEDGER-VIEW-ILLEGAL-LEAD",
     ]
 
     /// Every check `scripts/codex-inbox.sh`'s selftest names (T-1334). This one is not a list of

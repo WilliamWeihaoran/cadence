@@ -294,6 +294,63 @@ struct CadenceSearchCandidateSupportTests {
         #expect(!result.subtitle.contains("Active"))
     }
 
+    /// [[T-4455]]: the area and project subtitles spelled the open count by hand, so a list with
+    /// one open task read "1 active tasks". A finished task sits beside each open one so the count
+    /// is the open count, not the task count; the two-task area proves the plural still pluralises.
+    @Test func aListWithOneOpenTaskSaysTaskInTheSingular() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let modelContext = ModelContext(container)
+
+        let home = Context(name: "Home")
+        let singleArea = Area(name: "Solo Errands", context: home)
+        let pluralArea = Area(name: "Twin Errands", context: home)
+        let singleProject = Project(name: "Solo Launch", context: home)
+
+        let areaOpen = AppTask(title: "Water the plants")
+        areaOpen.area = singleArea
+        let areaDone = AppTask(title: "Buy soil")
+        areaDone.status = .done
+        areaDone.area = singleArea
+        let pluralFirst = AppTask(title: "First twin")
+        pluralFirst.area = pluralArea
+        let pluralSecond = AppTask(title: "Second twin")
+        pluralSecond.area = pluralArea
+        let projectOpen = AppTask(title: "Write the brief")
+        projectOpen.project = singleProject
+        let projectDone = AppTask(title: "Book the room")
+        projectDone.status = .done
+        projectDone.project = singleProject
+
+        modelContext.insert(home)
+        for list in [singleArea, pluralArea] { modelContext.insert(list) }
+        modelContext.insert(singleProject)
+        for task in [areaOpen, areaDone, pluralFirst, pluralSecond, projectOpen, projectDone] {
+            modelContext.insert(task)
+        }
+        try modelContext.save()
+
+        let areaRow = try #require(
+            GlobalSearchIndexSupport.areaResults(areas: [singleArea, pluralArea], query: "solo").first
+        )
+        let pluralRow = try #require(
+            GlobalSearchIndexSupport.areaResults(areas: [singleArea, pluralArea], query: "twin").first
+        )
+        let projectRow = try #require(
+            GlobalSearchIndexSupport.projectResults(projects: [singleProject], query: "solo").first
+        )
+
+        // Non-vacuity: each query found the list it names.
+        #expect(areaRow.title == "Solo Errands")
+        #expect(pluralRow.title == "Twin Errands")
+        #expect(projectRow.title == "Solo Launch")
+
+        #expect(areaRow.subtitle.contains("• 1 active task •"))
+        #expect(!areaRow.subtitle.contains("active tasks"))
+        #expect(projectRow.subtitle.contains("• 1 active task •"))
+        #expect(!projectRow.subtitle.contains("active tasks"))
+        #expect(pluralRow.subtitle.contains("• 2 active tasks •"))
+    }
+
     // MARK: - The iOS half, read as source
 
     @Test func theIOSSearchSurfaceRoutesTaskCandidatesThroughTheSharedHelper() throws {

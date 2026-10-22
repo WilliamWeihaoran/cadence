@@ -154,6 +154,8 @@ enum GlobalSearchIndexSupport {
     /// decision — the T-378 rule is recorded there. The subtitle below is this surface's own row
     /// rendering, built from the shared lifecycle fact rather than from a second
     /// `isArchived ? … : isDone ? …` chain, which labelled a *cancelled* project "Active".
+    /// The open count reads through `GoalLinkTarget.openTaskLabel(count:)`, so one open task says
+    /// "1 active task" rather than the hand-spelled "1 active tasks" ([[T-4455]]).
     static func areaResults(areas: [Area], query: String) -> [GlobalSearchResult] {
         let preparedQuery = CadenceSearchMatcher.PreparedQuery(query)
         return rankedResults(areas.compactMap { area in
@@ -164,7 +166,7 @@ enum GlobalSearchIndexSupport {
                 id: CadenceSearchIdentity.area(area.id),
                 category: .areas,
                 title: area.name,
-                subtitle: "\(contextName) • \(CadenceTaskQuerySupport.openTaskCount(for: area)) active tasks • \(CadenceListSearchSupport.lifecycle(of: area).statusLabel)",
+                subtitle: "\(contextName) • \(GoalLinkTarget.openTaskLabel(count: CadenceTaskQuerySupport.openTaskCount(for: area))) • \(CadenceListSearchSupport.lifecycle(of: area).statusLabel)",
                 icon: area.icon,
                 tintHex: area.colorHex,
                 destination: .area(area.id)
@@ -184,7 +186,7 @@ enum GlobalSearchIndexSupport {
                 id: CadenceSearchIdentity.project(project.id),
                 category: .projects,
                 title: project.name,
-                subtitle: "\(summary) • \(CadenceTaskQuerySupport.openTaskCount(for: project)) active tasks • \(CadenceListSearchSupport.lifecycle(of: project).statusLabel)",
+                subtitle: "\(summary) • \(GoalLinkTarget.openTaskLabel(count: CadenceTaskQuerySupport.openTaskCount(for: project))) • \(CadenceListSearchSupport.lifecycle(of: project).statusLabel)",
                 icon: project.icon,
                 tintHex: project.colorHex,
                 destination: .project(project.id)
