@@ -15,8 +15,11 @@ struct CadenceTodayTwoPaneFloorTests {
     ///
     /// The target iPads, full screen: an 11" Pro is 834pt of window in portrait (a drawer shell, so
     /// **834** of pane, sidebar "out" or folded alike) and 1210 in landscape (**946** docked, 1210
-    /// folded); a 13" is 1024 in portrait (**760** docked, 1024 folded). Every width below is one
-    /// of those, or a boundary of the function itself.
+    /// folded); the 13" this suite has always meant is the **iPad Air 13"**, 1024 in portrait
+    /// (**760** docked, 1024 folded). The iPad Pro 13" (M4 and later) is 1032 x 1376pt, a different
+    /// panel: its portrait docked pane is 768, past the floor, so it does NOT swap on the fold, and
+    /// it has its own test below rather than a place in the Air's ([[T-4850]]). Every width below is
+    /// one of those, or a boundary of the function itself.
     private static func pane(window: CGFloat, folded: Bool = false) -> CGFloat {
         CadenceRootShellLayout.detailWidth(windowWidth: window, isCollapsed: folded)
     }
@@ -44,6 +47,7 @@ struct CadenceTodayTwoPaneFloorTests {
 
     @Test
     func aThirteenInchIPadInPortraitSwapsLayoutsOnTheSidebarFold() {
+        // The iPad Air 13" only — the Pro 13" is the next test, and does not swap.
         // The one full-screen target where the fold decides: 1024 docks the sidebar and leaves 760,
         // a point under the floor, so Today is one column; folding hands back all 1024 and two
         // panes. The device swaps layouts on a control the user drives, which is why the floor has
@@ -51,6 +55,22 @@ struct CadenceTodayTwoPaneFloorTests {
         #expect(Self.pane(window: 1_024) == 760)
         #expect(layout(paneWidth: Self.pane(window: 1_024)) == .compact)
         #expect(layout(paneWidth: Self.pane(window: 1_024, folded: true)) == .twoPane)
+    }
+
+    /// The iPad Pro 13" (1032 x 1376pt) is eight points wider in portrait than the Air, and those
+    /// eight carry its docked pane across the floor the Air misses by one: Today is two-pane on it
+    /// docked and folded alike, in both orientations. Stated as relations to the floor and to the
+    /// Air's pane, not as the shell's arithmetic restated ([[T-4850]]).
+    @Test
+    func aThirteenInchIPadProGetsTwoPanesWhetherOrNotTheSidebarIsFolded() {
+        let floor = CadenceTodayLayoutSupport.twoPaneMinimumWidth
+        #expect(CadenceRootShellLayout.usesExpandedSidebar(windowWidth: 1_032))
+        #expect(Self.pane(window: 1_024) < floor)
+        #expect(Self.pane(window: 1_032) >= floor)
+        for window in [CGFloat(1_032), 1_376] {
+            #expect(layout(paneWidth: Self.pane(window: window)) == .twoPane, "docked \(window)")
+            #expect(layout(paneWidth: Self.pane(window: window, folded: true)) == .twoPane, "folded \(window)")
+        }
     }
 
     @Test

@@ -7,8 +7,11 @@ import CoreGraphics
 /// was no way to ask for the one you were not given. These pin the split that replaced that — the
 /// toggle picks the content, the width picks only where it is drawn.
 ///
-/// Pane widths are the window width less the 188pt shell sidebar:
-/// 646 (11" portrait), 844 (13" portrait), 1022 (11" landscape), 1188 (13" landscape).
+/// Pane widths are the window width less the 188pt shell sidebar — history: the sidebar is 264 now
+/// and docks only from 865, so no current shell hands out any of these:
+/// 646 (11" Pro portrait), 844 (13" portrait), 1022 (11" Pro landscape), 1188 (13" landscape).
+/// The two 13" figures are **iPad Pro 13"** arithmetic (1032 / 1376 less 188), not the iPad Air 13"
+/// (1024 x 1366) the live pane suites model ([[T-4850]]).
 struct CalendarMonthDetailTests {
 
     // MARK: - The stored choice

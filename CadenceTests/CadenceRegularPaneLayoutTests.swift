@@ -7,7 +7,9 @@ import Foundation
 /// the detail, read through `devicePane` rather than subtracted here ([[T-4500]], as [[T-4490]] did
 /// for Today). The shell docks its 264pt sidebar only from `expandedMinWindowWidth` (865), so an 11"
 /// iPad Pro is **834** of pane in portrait, sidebar out or folded (a drawer shell), and **946** /
-/// 1210 in landscape docked / folded; a 13" is 760 / 1024 in portrait. 646 and 1022 are the panes
+/// 1210 in landscape docked / folded; a 13" — the iPad Air 13", 1024 x 1366pt — is 760 / 1024 in
+/// portrait. The iPad Pro 13" (1032 x 1376pt) is not one of the pinned five; its panes are swept as
+/// `TargetIPadPane.largePro` ([[T-4850]]). 646 and 1022 are the panes
 /// this file was written against, when the sidebar was 188 and always docked: no current device
 /// produces them, and the tests that still use them say so and pin arithmetic, not a device. A 2/3
 /// Split View adds 737 and 795; 632 is the 820pt threshold, the narrowest pane the labelled column
@@ -131,6 +133,15 @@ struct CadenceRegularSplitLayoutTests {
             )
             #expect(listPane(paneWidth) >= CadenceRegularSplitLayout.listPaneMinWidth)
         }
+        // The iPad Pro 13" (1032 x 1376pt), unpinned: every one of its four panes is wider than the
+        // Air 13"'s narrowest above, so it splits too ([[T-4850]]).
+        for window in [CGFloat(1_032), 1_376] {
+            for folded in [false, true] {
+                let pane = Self.devicePane(window: window, folded: folded)
+                #expect(pane > Self.devicePane(window: 1_024), "Pro 13\" pane \(pane) at or under the Air's")
+                #expect(CadenceRegularSplitLayout.supportsTwoPanes(paneWidth: pane), "Pro 13\" pane \(pane) stopped splitting")
+            }
+        }
     }
 
     /// Above the gate the half-pane clamp never binds — the chooser gets the width it asked for,
@@ -165,7 +176,11 @@ struct CadenceRegularSplitLayoutTests {
 /// `CadenceRootShellLayout.detailWidth(windowWidth:isCollapsed:)` exactly as `devicePane` does for
 /// the split suite above, so the Calendar suites below cannot drift from the shell. An 11" Pro is
 /// 834 in portrait (under the 865 dock threshold, so sidebar out and folded alike) and 946 / 1210 in
-/// landscape docked / folded; a 13" is 760 / 1024 in portrait docked / folded.
+/// landscape docked / folded; a 13" is 760 / 1024 in portrait docked / folded. **That 13" is the
+/// iPad Air 13" (1024 x 1366pt)**, the one target the sidebar fold swaps layouts on. The iPad Pro 13"
+/// (1032 x 1376pt) is a separate panel the pinned five never modelled ([[T-4850]]); it is `largePro`,
+/// kept out of `all` so the five stay the figures every suite below reasons in by name, and swept by
+/// the suites whose claim is "at every real pane" rather than "at this device".
 private enum TargetIPadPane {
     static let portrait = CadenceRootShellLayout.detailWidth(windowWidth: 834)
     static let landscapeDocked = CadenceRootShellLayout.detailWidth(windowWidth: 1_210)
@@ -175,6 +190,14 @@ private enum TargetIPadPane {
 
     /// Every full-screen pane above, in the order `CadenceRegularSplitLayoutTests` pins them.
     static let all: [CGFloat] = [portrait, landscapeDocked, landscapeFolded, largePortraitDocked, largePortraitFolded]
+
+    /// The iPad Pro 13"'s four full-screen panes: portrait docked / folded, landscape docked / folded.
+    static let largePro: [CGFloat] = [
+        CadenceRootShellLayout.detailWidth(windowWidth: 1_032),
+        CadenceRootShellLayout.detailWidth(windowWidth: 1_032, isCollapsed: true),
+        CadenceRootShellLayout.detailWidth(windowWidth: 1_376),
+        CadenceRootShellLayout.detailWidth(windowWidth: 1_376, isCollapsed: true),
+    ]
 }
 
 struct CadenceCalendarPaneLayoutTests {
@@ -183,6 +206,18 @@ struct CadenceCalendarPaneLayoutTests {
     @Test
     func theTargetIPadPanesAreTheOnesTheShellHandsOut() {
         #expect(TargetIPadPane.all == [834, 946, 1_210, 760, 1_024])
+    }
+
+    /// The Pro 13" is four distinct panes, every one wider than the Air 13"'s in the same posture and
+    /// none narrower than the narrowest pinned pane — so a sweep over `all + largePro` adds cases
+    /// rather than restating them ([[T-4850]]).
+    @Test
+    func theIPadPro13PanesAreDistinctAndNoneIsTheNarrowest() {
+        #expect(Set(TargetIPadPane.largePro).count == 4)
+        #expect(Set(TargetIPadPane.largePro).isDisjoint(with: TargetIPadPane.all))
+        #expect(TargetIPadPane.largePro[0] > TargetIPadPane.largePortraitDocked)
+        #expect(TargetIPadPane.largePro[1] > TargetIPadPane.largePortraitFolded)
+        #expect(TargetIPadPane.largePro.allSatisfy { $0 > TargetIPadPane.all.min()! })
     }
 
     @Test
@@ -215,7 +250,7 @@ struct CadenceCalendarPaneLayoutTests {
     func aPaneUnderTheSplitFloorGivesTheWholeThingToTheCalendar() {
         #expect(!CadenceCalendarPaneLayout.showsInspector(paneWidth: 646))
         #expect(TargetIPadPane.all.min() == TargetIPadPane.largePortraitDocked)
-        for paneWidth in TargetIPadPane.all {
+        for paneWidth in TargetIPadPane.all + TargetIPadPane.largePro {
             #expect(CadenceCalendarPaneLayout.showsInspector(paneWidth: paneWidth), "pane \(paneWidth) lost its inspector")
         }
     }
@@ -234,7 +269,7 @@ struct CadenceCalendarPaneLayoutTests {
     @Test
     func theInspectorIsNeverWiderThanTheCalendarBesideIt() {
         // The 681 floor, the two 2/3 Split View panes, and every full-screen target pane.
-        for paneWidth in [CGFloat(681), 737, 795] + TargetIPadPane.all {
+        for paneWidth in [CGFloat(681), 737, 795] + TargetIPadPane.all + TargetIPadPane.largePro {
             let inspector = CadenceCalendarPaneLayout.inspectorWidth(forPaneWidth: paneWidth)
             let calendar = paneWidth - CadenceCalendarPaneLayout.paneDividerWidth - inspector
             #expect(inspector <= calendar, "inspector \(inspector) beat calendar \(calendar) at pane \(paneWidth)")
@@ -243,11 +278,12 @@ struct CadenceCalendarPaneLayoutTests {
 
     /// Replaces an assertion that pinned a 430pt ceiling at a 2000pt pane. That cap needed 1434pt
     /// to bind and the widest pane a target device produces is 1210 — an 11" Pro in landscape with
-    /// the shell sidebar folded — so the fraction, floored at `inspectorMinWidth`, is what decides
+    /// the shell sidebar folded; the unpinned Pro 13" folded in landscape is 1376, still short of
+    /// it — so the fraction, floored at `inspectorMinWidth`, is what decides
     /// the inspector at every width that exists. If a ceiling comes back, this fails.
     @Test
     func theInspectorIsItsFractionAtEveryReachablePaneWidth() {
-        for paneWidth in TargetIPadPane.all {
+        for paneWidth in TargetIPadPane.all + TargetIPadPane.largePro {
             #expect(
                 CadenceCalendarPaneLayout.inspectorWidth(forPaneWidth: paneWidth)
                     == max(
@@ -273,6 +309,7 @@ struct CadenceCalendarDayInspectorGateTests {
     /// panes; the shell has not produced either since the sidebar became 264 and docks only from
     /// 865 ([[T-4516]]).
     private static let paneWidths: [CGFloat] = [0, 681, 737, 795, 1182, 1183] + TargetIPadPane.all
+        + TargetIPadPane.largePro
 
     @Test
     func theBoardNeverSplits() {
@@ -370,7 +407,8 @@ struct CadenceCalendarWeekGridLayoutTests {
     /// (737). It used to open with 646 and 1022 as the 11" full screen with the sidebar out; the
     /// shell has produced neither since it docks its 264pt sidebar only from 865 ([[T-4516]]). The
     /// phone is covered separately below — it has one column and scrolls.
-    private static let realPaneWidths: [CGFloat] = [737] + TargetIPadPane.all
+    /// The iPad Pro 13"'s four panes are swept too (`largePro`, [[T-4850]]).
+    private static let realPaneWidths: [CGFloat] = [737] + TargetIPadPane.all + TargetIPadPane.largePro
 
     /// What Week claims before an inspector may take anything: seven full-size columns and the rail.
     private static let claim = CadenceCalendarWeekGridLayout.fullSizeWidth(isRegularWidth: true)
