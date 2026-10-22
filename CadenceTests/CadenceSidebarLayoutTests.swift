@@ -465,8 +465,9 @@ struct SidebarStaticDestinationBridgeTests {
     /// bar, we're still showing 'lists' on the bottom with a green icon. remove that"*.
     ///
     /// **The second request could not be honoured on its own, and this test is why.**
-    /// `iOSListsView` is the only surface that draws `iOSListCreateButtonsRow`, which is the only
-    /// way to make an Area or a Project; the sidebar's context menu edits an existing list,
+    /// `iOSListCreateButtonsRow` was then the only way to make an Area or a Project, and it is
+    /// drawn only by `iOSListsView` and `iOSListsRegularPane`, the two layouts of the Lists page;
+    /// the sidebar's context menu edits an existing list,
     /// Settings → Lists only reopens and deletes ones that already exist, and T-2054's
     /// `+`-dragged-onto-a-group needs a group that already exists and is not an affordance a fresh
     /// install can see. So the row was the only door, and deleting it alone is T-1113's shape on
@@ -624,7 +625,8 @@ struct SidebarStaticDestinationBridgeTests {
         // And the surface it opens is still the one that actually creates a list, which is the
         // claim the whole ticket rests on: `iOSListEditorSheet` is where `.newArea` / `.newProject`
         // are committed, and its first control is the Area/Project segment, so one + reaches both
-        // and this column does not need the Lists page's two buttons to say it twice.
+        // and this column needs no second control to say the type twice — the same argument
+        // T-2054 then finished on the Lists page, whose row is one "New List" door now.
         let editor = CadenceSourceScan.codeOnly(try cadenceTestSource("Cadence/iOS/iOSListEditorViews.swift"))
         #expect(editor.contains("struct iOSListEditorSheet: View"), "non-vacuity: wrong file read")
         #expect(editor.contains("selection: $createsProject"),

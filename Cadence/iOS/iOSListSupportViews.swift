@@ -150,44 +150,39 @@ struct iOSListsPageHeader: View {
     }
 }
 
-/// Shared "New Area / New Project" action row for the Lists page. Used by both the
-/// compact and regular layouts so list creation doesn't rely on a native nav-bar
-/// toolbar menu (which disappears once the plain nav bar is hidden in favor of
-/// `iOSListsPageHeader`).
+/// The Lists page's create door. Used by both the compact and regular layouts so list creation
+/// doesn't rely on a native nav-bar toolbar menu (which disappears once the plain nav bar is
+/// hidden in favor of `iOSListsPageHeader`).
 ///
-/// These were two full-width `.borderedProminent` slabs, one blue and one green — the loudest
-/// thing on a page whose subject is the user's own list colours. They are the same neutral chip
-/// the task view-options bar uses now; the type still carries its colour, on the glyph only.
+/// **One button, not two (T-2054).** It was "New Area" beside "New Project" — the same question
+/// asked twice before the sheet that owns it has opened. `iOSListEditorSheet`'s first control when
+/// `!isEditing` is its Area/Project segment, exactly as macOS's `CreateListSheet` has had one all
+/// along, so `.newArea` here is the editor's *entry* mode and not a decision: one door reaches
+/// both types. That is what retires `iOSListEditorMode.newProject`'s last tap call site — this
+/// row was the only thing in the app that set it from a tap, which is why the type could never be
+/// chosen anywhere but here.
+///
+/// The copy and the glyph are the ones already in use for a type-neutral list door: "New List" is
+/// the sheet's own `navigationTitle`, and `plus.circle` is what `SidebarAddFirstListButton` and
+/// the iPad column's `addFirstListButton` draw. The tint is `Theme.blue` because that is the
+/// Lists page's own accent — a list's colour is the user's, and it arrives with the list.
+///
+/// Before that it was two full-width `.borderedProminent` slabs, one blue and one green — the
+/// loudest thing on a page whose subject is the user's own list colours; it is the same neutral
+/// chip the task view-options bar uses now.
 struct iOSListCreateButtonsRow: View {
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-    @Environment(\.cadenceTypographyScaling) private var scaling
     @Binding var editorMode: iOSListEditorMode?
 
     var body: some View {
-        let stacks = iOSTaskPageTypographyMetrics.stacksControls(at: dynamicTypeSize, scaling: scaling)
-        let layout = stacks ? AnyLayout(VStackLayout(alignment: .leading, spacing: 8)) : AnyLayout(HStackLayout(spacing: 8))
-        layout {
-            iOSActionButton(
-                title: "New Area",
-                systemImage: "folder.badge.plus",
-                role: .secondary,
-                size: .compact,
-                tint: Theme.blue,
-                fullWidth: true
-            ) {
-                editorMode = .newArea
-            }
-
-            iOSActionButton(
-                title: "New Project",
-                systemImage: "checklist",
-                role: .secondary,
-                size: .compact,
-                tint: Theme.green,
-                fullWidth: true
-            ) {
-                editorMode = .newProject
-            }
+        iOSActionButton(
+            title: "New List",
+            systemImage: "plus.circle",
+            role: .secondary,
+            size: .compact,
+            tint: Theme.blue,
+            fullWidth: true
+        ) {
+            editorMode = .newArea
         }
     }
 }

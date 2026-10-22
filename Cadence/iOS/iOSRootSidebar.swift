@@ -482,7 +482,9 @@ struct iOSSidebar: View {
             // The tap half of T-2054's drag, and since T-3073 the column's only create door.
             // `.newArea` is the editor's *entry* mode, not a decision: the first control in the
             // sheet is its Area/Project segment, so one `+` reaches both — which is why this
-            // column does not need the Lists page's two buttons to say the same thing twice.
+            // column needs no second control to say the type twice. T-2054 finished the same
+            // argument on the Lists page: `iOSListCreateButtonsRow` is one "New List" door now,
+            // on this same entry mode, so the two surfaces spell list creation the same way.
             onCreateList: { contextID in
                 onCreateList(
                     iOSSidebarListEditorRequest(
