@@ -169,27 +169,51 @@ struct iOSCalendarTimelineGrid: View {
     private var hourHeight: CGFloat {
         CadenceCalendarZoom.hourHeight(base: baseHourHeight, zoom: effectiveZoom)
     }
-    /// Zero on a single-day grid, and the rail reads the same number, so the two cannot disagree
-    /// about where hour zero starts.
+    /// The rail reads the same number, so the two cannot disagree about where hour zero starts.
     ///
-    /// **A band there would be the page's own title said twice.** The header names a weekday and a
-    /// day number and lists the day's unscheduled tasks; Today's pane stands beside a task column
+    /// **On a single-day grid it is the ALL-DAY STRIP's height and usually zero** ([[T-3163]]).
+    /// Most of the header would be the page's own title said twice: it names a weekday and a day
+    /// number and lists the day's unscheduled tasks, and Today's pane stands beside a task column
     /// headed `iPadTodayTaskHeader` — the same date, and those same untimed tasks listed in full —
     /// so it would restate both in 76pt of a pane that is 320pt wide. That is the page-header rule
     /// (`AGENTS.md`, "Non-Negotiable Patterns"), and it is also what T-1273 removed the pane's
     /// "Ready to Schedule" stack for, on exactly the argument that the column across the divider is
-    /// already showing them.
+    /// already showing them. **But an all-day EVENT is in none of that**: the column across the
+    /// divider does not list it, `iOSCalendarTimelineDayColumn.timedEvents` drops it, and so for as
+    /// long as this answered a flat 0 a holiday, a trip or an offsite was on no part of the Today
+    /// pane at all. `allDayStripHeight` pays for the chips and nothing else — no date block, no
+    /// `previewMinHeight` floor — so a day with none still costs 0 and the ladder does not move.
     ///
     /// **On a scrolling grid it is as tall as the busiest day in view needs (T-1474)**, up to the
     /// strip's capacity — 6 chip rows at compact width, 8 at regular — plus the "+N more" line. One
     /// height for the whole pinned row, so every column's strip starts and ends on the same line.
     /// The columns read are the visible ones plus the one a horizontal scroll half-reveals.
     private var dayHeaderHeight: CGFloat {
-        guard !isSingleDay else { return 0 }
+        guard !isSingleDay else {
+            return iOSCalendarTypographyMetrics.allDayStripHeight(
+                for: singleDaySplit,
+                at: dynamicTypeSize,
+                scaling: scaling
+            )
+        }
         let splits = (0...visibleDayCount).map { offset in
             bandSplit(on: date(at: leadingIndex + offset))
         }
         return iOSCalendarTypographyMetrics.bandHeight(for: splits, at: dynamicTypeSize, scaling: scaling)
+    }
+
+    /// **What a single-day pane's strip shows: the day's all-day EVENTS and nothing else**
+    /// ([[T-3163]]). `unscheduledTasks: 0` is the rule, not a reading of the caller's dictionary —
+    /// the doc on `dayHeaderHeight` is why, and it survives: an untimed task on Today is already
+    /// listed in full by the task column across the divider, so repeating it here would be the
+    /// page header said twice. An all-day EVENT is not in that column and was on no iOS surface at
+    /// all, which is the half of [[T-3163]] this closes.
+    private var singleDaySplit: CadenceCalendarMonthCellPriority.Split {
+        CadenceCalendarAllDayBandPriority.split(
+            allDayEvents: allDayEvents(on: leadingDate).count,
+            unscheduledTasks: 0,
+            capacity: bandCapacity
+        )
     }
     /// The base strip budget is six/eight rows; enlarged labels spend it on fewer rows.
     /// The same capacity reaches the height model and every rendered day header.
@@ -369,21 +393,36 @@ struct iOSCalendarTimelineGrid: View {
     /// `iOSFloatingCreateTaskLayer` makes for the same corner `+` — reaches this scroll view
     /// directly, and restating it would inset the canvas by the button's footprint twice.
     private func singleDayCanvas(colWidth: CGFloat, canvasHeight: CGFloat) -> some View {
-        ScrollView(.vertical) {
-            dayColumn(for: leadingDate, colWidth: colWidth)
-        }
-        .frame(height: canvasHeight)
-        .scrollIndicators(.hidden)
-        .scrollPosition($verticalScrollPosition)
-        .onScrollGeometryChange(for: CGFloat.self) { geometry in
-            geometry.contentOffset.y
-        } action: { _, offset in
-            scrollState.verticalOffset = offset
-        }
-        .onScrollGeometryChange(for: CGFloat.self) { geometry in
-            geometry.contentSize.height
-        } action: { _, contentHeight in
-            placeInitialScroll(contentHeight: contentHeight)
+        VStack(spacing: 0) {
+            // **The day's all-day events, or nothing at all** ([[T-3163]]). `dayHeaderHeight` is
+            // `allDayStripHeight`, which answers 0 for a day with none, so on an ordinary day this
+            // branch is not taken and the canvas is the full viewport it has always been. The rail
+            // beside it reserves the same number, so the strip never pushes the blocks off the
+            // hour labels.
+            if dayHeaderHeight > 0 {
+                iOSCalendarTimelineAllDayStrip(
+                    allDayEvents: allDayEvents(on: leadingDate),
+                    split: singleDaySplit,
+                    height: dayHeaderHeight
+                )
+            }
+
+            ScrollView(.vertical) {
+                dayColumn(for: leadingDate, colWidth: colWidth)
+            }
+            .frame(height: canvasHeight)
+            .scrollIndicators(.hidden)
+            .scrollPosition($verticalScrollPosition)
+            .onScrollGeometryChange(for: CGFloat.self) { geometry in
+                geometry.contentOffset.y
+            } action: { _, offset in
+                scrollState.verticalOffset = offset
+            }
+            .onScrollGeometryChange(for: CGFloat.self) { geometry in
+                geometry.contentSize.height
+            } action: { _, contentHeight in
+                placeInitialScroll(contentHeight: contentHeight)
+            }
         }
     }
 
@@ -834,35 +873,11 @@ private struct iOSCalendarTimelineDayHeader: View {
                 }
                 .frame(height: iOSCalendarTypographyMetrics.dateBlock(at: dynamicTypeSize, scaling: scaling))
 
-                VStack(alignment: .leading, spacing: iOSCalendarTimelineMetrics.bandLineSpacing) {
-                    ForEach(allDayEvents.prefix(split.events), id: \.calendarItemIdentifier) { event in
-                        iOSCalendarMiniChip(
-                            title: iOSCalendarEventSupport.title(for: event),
-                            icon: "calendar",
-                            color: iOSCalendarEventSupport.color(for: event.calendar),
-                            isEvent: true
-                        )
-                    }
-
-                    // **An unscheduled task is not an all-day commitment, and now says so**
-                    // (T-3185): a dashed glyph and a dashed rim, two channels, neither of them the
-                    // rail that already means "event". `iOSCalendarMiniChip.isUnscheduled` carries
-                    // the reasoning and the 17pt measurement the rail fails at.
-                    ForEach(unscheduledTasks.prefix(split.tasks)) { task in
-                        iOSCalendarMiniChip(
-                            title: TaskTitleSupport.displayTitle(task.title, fallback: TaskTitleSupport.defaultCompactDisplayTitle),
-                            icon: "circle.dashed",
-                            color: Color(hex: task.containerColor),
-                            isUnscheduled: true
-                        )
-                    }
-
-                    if split.hidden > 0 {
-                        Text(CadenceTaskSurfaceOptions.moreLabel(hidden: split.hidden))
-                            .cadenceFont(.metadata, base: iOSCalendarTimelineMetrics.overflowLabelSize, weight: .medium)
-                            .foregroundStyle(Theme.subdued)
-                    }
-                }
+                iOSCalendarAllDayBandChips(
+                    allDayEvents: allDayEvents,
+                    unscheduledTasks: unscheduledTasks,
+                    split: split
+                )
                 .frame(
                     maxWidth: .infinity,
                     minHeight: iOSCalendarTimelineMetrics.previewMinHeight,
@@ -909,6 +924,102 @@ private struct iOSCalendarTimelineDayHeader: View {
 /// The `.offset(y:)` is driven by `iOSCalendarTimelineScrollState`, which only this view reads —
 /// so a vertical scroll redraws the rail and nothing else. See the note on `iOSCalendarTimelineGrid`
 /// for why one of the two pinned things has to be a follower and why it is this one.
+/// **The chip stack a day's all-day strip draws, in one construction** ([[T-3163]]): the day's
+/// all-day events first, then its unscheduled tasks, then the "+N more" line, at the split the
+/// caller was given.
+///
+/// Two callers — the scrolling grid's pinned `iOSCalendarTimelineDayHeader` and the single-day
+/// pane's `iOSCalendarTimelineAllDayStrip`. It is one view rather than two spellings for the
+/// reason `dayColumn` above gives about itself: a second spelling of the day column is exactly how
+/// Today came to have a timeline that drew neither events nor a drop target, and a second spelling
+/// of this stack would be the same mistake on the strip — the two surfaces would drift on the
+/// ordering, the glyphs or the overflow line.
+///
+/// It draws no frame, no inset and no background. Those differ between the two callers (the header
+/// pays its inset once because the date block above it carries the top one; the strip pays it on
+/// both edges), and a view that owned them could not be shared.
+private struct iOSCalendarAllDayBandChips: View {
+    let allDayEvents: [EKEvent]
+    let unscheduledTasks: [AppTask]
+    let split: CadenceCalendarMonthCellPriority.Split
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: iOSCalendarTimelineMetrics.bandLineSpacing) {
+            ForEach(allDayEvents.prefix(split.events), id: \.calendarItemIdentifier) { event in
+                iOSCalendarMiniChip(
+                    title: iOSCalendarEventSupport.title(for: event),
+                    icon: "calendar",
+                    color: iOSCalendarEventSupport.color(for: event.calendar),
+                    isEvent: true
+                )
+            }
+
+            // **An unscheduled task is not an all-day commitment, and now says so**
+            // (T-3185): a dashed glyph and a dashed rim, two channels, neither of them the
+            // rail that already means "event". `iOSCalendarMiniChip.isUnscheduled` carries
+            // the reasoning and the 17pt measurement the rail fails at.
+            ForEach(unscheduledTasks.prefix(split.tasks)) { task in
+                iOSCalendarMiniChip(
+                    title: TaskTitleSupport.displayTitle(task.title, fallback: TaskTitleSupport.defaultCompactDisplayTitle),
+                    icon: "circle.dashed",
+                    color: Color(hex: task.containerColor),
+                    isUnscheduled: true
+                )
+            }
+
+            if split.hidden > 0 {
+                Text(CadenceTaskSurfaceOptions.moreLabel(hidden: split.hidden))
+                    .cadenceFont(.metadata, base: iOSCalendarTimelineMetrics.overflowLabelSize, weight: .medium)
+                    .foregroundStyle(Theme.subdued)
+            }
+        }
+    }
+}
+
+/// **A single-day pane's all-day strip** ([[T-3163]]).
+///
+/// The scrolling grid draws its all-day events in the pinned day header. A single-day grid builds
+/// no header — the date is the page's own title and its untimed tasks are listed in full by the
+/// column across the divider — so until this existed a holiday, a trip or an offsite was drawn on
+/// **no** part of the iOS Today pane: not in the column, because `timedEvents` drops an all-day
+/// event, and not above it, because there was nothing above it. The user's day said the day was
+/// free.
+///
+/// So the strip is the header's band with the half that would repeat the page taken out: no
+/// weekday, no day number, no unscheduled tasks, and no `previewMinHeight` floor, which is what
+/// lets a day with nothing all-day on it cost **zero** points and leave the hour ladder exactly
+/// where it has always started. It is not a `Button`: the scrolling header's tap sets the
+/// calendar's selected day, and a single-day pane has one day and no selection to move.
+private struct iOSCalendarTimelineAllDayStrip: View {
+    let allDayEvents: [EKEvent]
+    let split: CadenceCalendarMonthCellPriority.Split
+    /// The height the grid reserved for it — `iOSCalendarTypographyMetrics.allDayStripHeight`,
+    /// the same number the time rail's spacer reads, so the strip and the ladder cannot disagree
+    /// about where hour zero is.
+    let height: CGFloat
+
+    var body: some View {
+        iOSCalendarAllDayBandChips(
+            allDayEvents: allDayEvents,
+            unscheduledTasks: [],
+            split: split
+        )
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .padding(iOSCalendarTimelineMetrics.previewInset)
+        .frame(height: height, alignment: .top)
+        .background(Theme.surface)
+        .overlay(alignment: .bottom) {
+            Rectangle()
+                .fill(Theme.borderSubtle.opacity(iOSCalendarHairlineMetrics.pinnedEdgeOpacity))
+                .frame(height: iOSCalendarHairlineMetrics.width)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(
+            CadenceCalendarDayAccessibility.allDayStripLabel(allDayEventCount: allDayEvents.count)
+        )
+    }
+}
+
 private struct iOSCalendarTimeRail: View {
     let hourHeight: CGFloat
     let headerHeight: CGFloat

@@ -413,13 +413,18 @@ struct iOSCalendarMetricsTests {
             try CadenceSourceScan.sourceFile("Cadence/iOS/iOSCalendarTimelineViews.swift")
         )
         #expect(timeline.contains("private struct iOSCalendarTimeRail: View"))
-        // Three: the band's trailing and bottom edges, and the rail's trailing edge.
+        // Four: the band's trailing and bottom edges, the rail's trailing edge, and — since
+        // [[T-3163]] gave the single-day pane an all-day strip — that strip's bottom edge. The
+        // strip is the same chrome in the same place as the band's bottom line (the canvas scrolls
+        // under it, at the top-left corner the rail closes), so it is counted here rather than
+        // exempted: a strip that drew its own weight would put the corner back.
         #expect(
             CadenceSourceScan.matchCount(
                 "iOSCalendarHairlineMetrics\\.pinnedEdgeOpacity",
                 in: timeline
-            ) == 3
+            ) == 4
         )
+        #expect(timeline.contains("private struct iOSCalendarTimelineAllDayStrip: View"))
         #expect(!timeline.contains("borderSubtle.opacity(0.75)"))
         #expect(!timeline.contains("borderSubtle.opacity(0.65)"))
     }

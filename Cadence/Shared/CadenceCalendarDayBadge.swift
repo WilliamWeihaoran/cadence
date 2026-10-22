@@ -169,6 +169,15 @@ nonisolated enum CadenceCalendarDayAccessibility {
         return parts.joined(separator: ", ")
     }
 
+    /// **A single-day pane's all-day strip** ([[T-3163]]). It names no date, because a pane that
+    /// shows one day has already said which day it is, and no unscheduled count, because the strip
+    /// carries all-day events and nothing else. The count is spelled the same way
+    /// `timelineDayLabel` spells it, so the week header and the Today strip cannot drift into two
+    /// ways of announcing the same two holidays.
+    static func allDayStripLabel(allDayEventCount: Int) -> String {
+        "\(allDayEventCount) all-day event\(allDayEventCount == 1 ? "" : "s")"
+    }
+
     /// One wording for an empty day, so the three cells cannot drift into three ways of saying
     /// nothing. `countedDayLabel(itemCount: 0)` and `markedDayLabel(hasItems: false)` are the same
     /// sentence by construction.

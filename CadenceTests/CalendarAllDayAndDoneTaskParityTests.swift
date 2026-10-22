@@ -2,6 +2,7 @@
 import EventKit
 import Foundation
 import SwiftData
+import SwiftUI
 import Testing
 @testable import Cadence
 
@@ -230,12 +231,21 @@ private final class FixedEventDaySource: CalendarEventDaySource {
             CadenceSourceScan.declarationBody("private struct iOSCalendarTimelineDayHeader", in: code)
         )
         #expect(CadenceSourceScan.matchCount(#"CadenceCalendarAllDayBandPriority\.split\(\s*allDayEvents: allDayEvents\.count,\s*unscheduledTasks: unscheduledTasks\.count,\s*capacity: capacity"#, in: header) == 1)
-        let events = try #require(header.range(of: "ForEach(allDayEvents.prefix(split.events)"))
-        let tasks = try #require(header.range(of: "ForEach(unscheduledTasks.prefix(split.tasks))"))
+        // The chips themselves moved into `iOSCalendarAllDayBandChips` when the single-day pane
+        // gained a strip of its own (T-3163, the Today half) — ONE construction with two callers,
+        // so this reads the stack the header hands its split to rather than relaxing to whichever
+        // half stayed behind. The header still has to be the thing that hands it over.
+        #expect(CadenceSourceScan.matchCount(#"iOSCalendarAllDayBandChips\(\s*allDayEvents: allDayEvents,\s*unscheduledTasks: unscheduledTasks,\s*split: split"#, in: header) == 1,
+                "the week header no longer hands the shared chip stack its day's items and split")
+        let chips = try #require(
+            CadenceSourceScan.declarationBody("private struct iOSCalendarAllDayBandChips", in: code)
+        )
+        let events = try #require(chips.range(of: "ForEach(allDayEvents.prefix(split.events)"))
+        let tasks = try #require(chips.range(of: "ForEach(unscheduledTasks.prefix(split.tasks))"))
         #expect(events.lowerBound < tasks.lowerBound, "the band stacks its tasks above its all-day events")
-        #expect(CadenceSourceScan.matchCount(#"isEvent: true"#, in: header) == 1,
+        #expect(CadenceSourceScan.matchCount(#"isEvent: true"#, in: chips) == 1,
                 "the band's all-day chip does not wear the event (rail) treatment")
-        #expect(CadenceSourceScan.matchCount(#"split\.hidden"#, in: header) >= 1)
+        #expect(CadenceSourceScan.matchCount(#"split\.hidden"#, in: chips) >= 1)
         // The band is the grid's one height, not the old fixed figure.
         #expect(CadenceSourceScan.matchCount(#"\.frame\(height: bandHeight"#, in: header) == 1)
         #expect(CadenceSourceScan.matchCount(#"iOSCalendarTimelineMetrics\.dayHeaderHeight\b(?!\()"#, in: header) == 0)
@@ -364,5 +374,134 @@ private final class FixedEventDaySource: CalendarEventDaySource {
             #expect(ios == mac, "\(path) draws \(ios.sorted()) where macOS draws \(mac.sorted())")
         }
     }
+
+    // MARK: - The single-day pane's all-day strip (T-3163, the Today half)
+
+    /// **The strip costs nothing on a day with nothing all-day on it, and grows with the chips it
+    /// draws.** That zero is the whole reason `allDayStripHeight` is a second function rather than
+    /// a flag on `bandHeight`: the week grid's figure always pays for a date block and a
+    /// `previewMinHeight` floor, because every column of a week has a weekday and a day number over
+    /// it, and charging a Today pane 105pt for a day with no holiday would push its hour ladder
+    /// down for nothing.
+    @Test func aSingleDayStripCostsNothingUntilThereIsAnAllDayEventAndThenGrowsWithThem() {
+        typealias Band = CadenceCalendarAllDayBandPriority
+        let metrics = iOSCalendarTypographyMetrics.self
+
+        let empty = Band.split(allDayEvents: 0, unscheduledTasks: 0, capacity: 6)
+        #expect(empty.visible == 0 && empty.hidden == 0, "non-vacuity: the empty split really is empty")
+        #expect(metrics.allDayStripHeight(for: empty, at: .large, scaling: .enabled) == 0,
+                "a day with nothing all-day on it must not move the hour ladder")
+
+        // Strictly monotonic over the rows it can actually draw, so a second holiday is never
+        // drawn into the first one's space.
+        var previous: CGFloat = 0
+        for count in 1...6 {
+            let split = Band.split(allDayEvents: count, unscheduledTasks: 0, capacity: 6)
+            #expect(split.events == count, "non-vacuity: the split really drew \(count) rows")
+            let height = metrics.allDayStripHeight(for: split, at: .large, scaling: .enabled)
+            #expect(height > previous, "\(count) all-day events did not buy more strip than \(count - 1)")
+            previous = height
+        }
+
+        // The "+N more" line is a row too: at capacity, one more event buys the overflow line.
+        let full = Band.split(allDayEvents: 6, unscheduledTasks: 0, capacity: 6)
+        let over = Band.split(allDayEvents: 7, unscheduledTasks: 0, capacity: 6)
+        #expect(full.hidden == 0 && over.hidden == 1, "non-vacuity: the capacity really overflowed")
+        // A whole LINE taller, not just one more inter-line gap: the "+N more" sentence has to
+        // have been paid for, or it is drawn in the strip's padding.
+        let overflowGain = metrics.allDayStripHeight(for: over, at: .large, scaling: .enabled)
+            - metrics.allDayStripHeight(for: full, at: .large, scaling: .enabled)
+        #expect(overflowGain > iOSCalendarTimelineMetrics.bandLineSpacing,
+                "the hidden count is announced in a line the strip bought only the spacing for")
+
+        // The relation that says the two figures are not the same figure: for every split, the
+        // week header's band is the taller one, because it carries a date block this strip does
+        // not draw. A strip that quietly started answering `bandHeight` would fail here.
+        for count in 0...8 {
+            let split = Band.split(allDayEvents: count, unscheduledTasks: 2, capacity: 6)
+            #expect(metrics.allDayStripHeight(for: split, at: .large, scaling: .enabled)
+                    < metrics.bandHeight(for: [split], at: .large, scaling: .enabled),
+                    "the single-day strip is no longer cheaper than a week column's header at \(count)")
+        }
+    }
+
+    /// The strip announces the events it drew and nothing else. No date — a pane showing one day
+    /// has already said which day — and no unscheduled count, because the strip carries all-day
+    /// events only. The count phrase is the one `timelineDayLabel` uses, so the week header and the
+    /// Today strip cannot drift into two ways of announcing the same two holidays.
+    @Test func theSingleDayStripAnnouncesItsAllDayEventsAndNoDate() {
+        typealias Say = CadenceCalendarDayAccessibility
+        #expect(Say.allDayStripLabel(allDayEventCount: 1) == "1 all-day event")
+        #expect(Say.allDayStripLabel(allDayEventCount: 2) == "2 all-day events")
+        #expect(Say.allDayStripLabel(allDayEventCount: 0) == "0 all-day events")
+
+        let week = Say.timelineDayLabel(date: Date(), allDayEventCount: 2, unscheduledCount: 3)
+        #expect(week.contains(Say.allDayStripLabel(allDayEventCount: 2)),
+                "the week header and the Today strip count all-day events in two different sentences")
+        #expect(!Say.allDayStripLabel(allDayEventCount: 2).contains("unscheduled"))
+    }
+
+    /// **The single-day grid draws that strip, above the hour ladder, from the same chip stack the
+    /// week header uses.** `Cadence/iOS/` is behind `#if os(iOS)`, so this wiring can only be read
+    /// as text; the arithmetic it reaches is pinned behaviourally above.
+    ///
+    /// Until this landed, `dayHeaderHeight` answered a flat `0` on a single-day grid and
+    /// `singleDayCanvas` was a scroll view and nothing else, so an all-day event was on no part of
+    /// the iOS Today pane: the column drops it (`timedEvents` filters `!isAllDay`) and there was
+    /// nothing above the column to carry it.
+    @Test func theSingleDayTimelineDrawsItsAllDayEventsAboveTheHourLadder() throws {
+        let raw = try CadenceSourceScan.sourceFile("Cadence/iOS/iOSCalendarTimelineViews.swift")
+        let code = CadenceSourceScan.codeOnly(raw)
+        #expect(code != raw)
+        #expect(code.count == raw.count)
+
+        let height = try #require(
+            CadenceSourceScan.declarationBody("private var dayHeaderHeight: CGFloat", in: code),
+            "iOSCalendarTimelineGrid.dayHeaderHeight was not found"
+        )
+        #expect(
+            CadenceSourceScan.matchCount(
+                #"allDayStripHeight\(\s*for: singleDaySplit"#, in: height
+            ) == 1,
+            "the single-day branch no longer sizes itself from the all-day strip"
+        )
+        #expect(CadenceSourceScan.matchCount(#"guard !isSingleDay else \{ return 0 \}"#, in: height) == 0,
+                "the single-day grid is back to reserving no strip at all")
+
+        // The rule, not a reading of the caller's dictionary: the strip carries events only.
+        let split = try #require(
+            CadenceSourceScan.declarationBody("private var singleDaySplit:", in: code),
+            "iOSCalendarTimelineGrid.singleDaySplit was not found"
+        )
+        #expect(split.contains("allDayEvents: allDayEvents(on: leadingDate).count"))
+        #expect(CadenceSourceScan.matchCount(#"unscheduledTasks: 0"#, in: split) == 1,
+                "the single-day strip has started repeating the task column's untimed tasks")
+
+        let canvas = try #require(
+            CadenceSourceScan.functionBody(named: "singleDayCanvas", in: code),
+            "iOSCalendarTimelineGrid.singleDayCanvas was not found"
+        )
+        let guardIndex = try #require(canvas.range(of: "if dayHeaderHeight > 0 {"))
+        let stripIndex = try #require(canvas.range(of: "iOSCalendarTimelineAllDayStrip("))
+        let columnIndex = try #require(canvas.range(of: "dayColumn(for: leadingDate"))
+        #expect(guardIndex.lowerBound < stripIndex.lowerBound,
+                "the strip is drawn on a day that reserved no height for it")
+        #expect(stripIndex.lowerBound < columnIndex.lowerBound,
+                "the all-day strip is drawn below the hour ladder rather than above it")
+
+        // One construction, two callers — the lesson `dayColumn` records about itself.
+        #expect(CadenceSourceScan.matchCount(#"iOSCalendarAllDayBandChips\("#, in: code) == 2,
+                "the band's chip stack is no longer one declaration with two callers")
+        #expect(CadenceSourceScan.matchCount(#"private struct iOSCalendarAllDayBandChips"#, in: code) == 1)
+        let strip = try #require(
+            CadenceSourceScan.declarationBody("private struct iOSCalendarTimelineAllDayStrip", in: code)
+        )
+        #expect(CadenceSourceScan.matchCount(#"unscheduledTasks: \[\]"#, in: strip) == 1)
+        #expect(CadenceSourceScan.matchCount(#"CadenceCalendarDayAccessibility\.allDayStripLabel"#, in: strip) == 1,
+                "the strip announces itself with some other sentence")
+        // No date block on this one: that is the page's own title.
+        #expect(CadenceSourceScan.matchCount(#"DateFormatters\.day"#, in: strip) == 0)
+    }
+
 }
 #endif

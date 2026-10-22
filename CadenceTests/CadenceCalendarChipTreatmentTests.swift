@@ -539,11 +539,25 @@ struct CadenceCalendarChipTreatmentTests {
         // comments, and the glyph this ticket turns on is a literal. Asked of `codeOnly` the
         // assertions below read an empty chip and fail on a change that landed correctly.
         let source = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(Self.iOSTimeline))
+        // The chip stack moved OUT of `iOSCalendarTimelineDayHeader` when the Today pane got an
+        // all-day strip of its own ([[T-3163]]): it is one `iOSCalendarAllDayBandChips` with two
+        // callers now, so this reads the stack rather than the header that hands it a split.
+        // Re-pointed, not relaxed — every assertion below is the one it always was, and the
+        // header is still required to be the thing that hands the stack its two lists.
         let header = try #require(
+            CadenceSourceScan.declarationBody("private struct iOSCalendarAllDayBandChips: View", in: source),
+            "iOSCalendarAllDayBandChips is gone from \(Self.iOSTimeline)"
+        )
+        #expect(header.count > 400, "non-vacuity: the band's chip stack read back \(header.count) characters")
+        let dayHeader = try #require(
             CadenceSourceScan.declarationBody("private struct iOSCalendarTimelineDayHeader: View", in: source),
             "iOSCalendarTimelineDayHeader is gone from \(Self.iOSTimeline)"
         )
-        #expect(header.count > 400, "non-vacuity: the day header read back \(header.count) characters")
+        #expect(
+            dayHeader.filter { !$0.isWhitespace }
+                .contains("iOSCalendarAllDayBandChips(allDayEvents:allDayEvents,unscheduledTasks:unscheduledTasks,split:split)"),
+            "the week header no longer hands the shared chip stack its day's two lists"
+        )
 
         let dense = header.filter { !$0.isWhitespace }
         // Channel one: the glyph. `circle.dashed` is the app's existing word for a thing with

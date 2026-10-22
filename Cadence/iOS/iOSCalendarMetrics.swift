@@ -581,6 +581,28 @@ nonisolated enum iOSCalendarTypographyMetrics {
             + iOSCalendarTimelineMetrics.previewInset
     }
 
+    /// **The strip's height on a grid that draws no date block** — the single-day pane's band
+    /// ([[T-3163]]).
+    ///
+    /// `bandHeight(for:at:scaling:)` above is the scrolling grid's figure and it always pays for a
+    /// `dateBlock` and a `previewMinHeight` floor, because every column of a week has a weekday and
+    /// a day number over it and the pinned row has to be one height. A single-day pane has neither:
+    /// the date is the page's own title, and a day with nothing all-day on it must come back
+    /// **zero** so the hour ladder starts exactly where it always did. That is why this is a second
+    /// function rather than a flag on the first — the floor is the thing that cannot be shared.
+    ///
+    /// The strip's own inset is paid on both edges here; the day header pays it once because the
+    /// date block above it carries the top one.
+    static func allDayStripHeight(for split: CadenceCalendarMonthCellPriority.Split,
+                                  at size: DynamicTypeSize, scaling: CadenceTypographyScaling) -> CGFloat {
+        let lines = split.visible + (split.hidden > 0 ? 1 : 0)
+        guard lines > 0 else { return 0 }
+        let content = CGFloat(split.visible) * chipHeight(hasTime: false, at: size, scaling: scaling)
+            + (split.hidden > 0 ? CadenceTypeScale.lineHeight(.metadata, base: iOSCalendarTimelineMetrics.overflowLabelSize, at: size, scaling: scaling) : 0)
+            + CGFloat(max(0, lines - 1)) * iOSCalendarTimelineMetrics.bandLineSpacing
+        return content + iOSCalendarTimelineMetrics.previewInset * 2
+    }
+
     static func hourHeight(at size: DynamicTypeSize, scaling: CadenceTypographyScaling) -> CGFloat {
         let scaled = iOSCalendarTimelineMetrics.hourHeight * CadenceTypeScale.multiplier(.metadata, at: size, scaling: scaling)
         guard scaling == .enabled, size > .large else { return scaled }

@@ -90,7 +90,22 @@ struct CadenceBuildInvocationHygieneTests {
         let allAreBuildActions = rootGuide.allSatisfy(\.isBuildAction)
         let allNameTheFlag = rootGuide.allSatisfy(\.namesDerivedDataPath)
         let oneIsTheScopedTestRun = rootGuide.contains { $0.command.contains("-only-testing:CadenceTests") }
-        #expect(rootGuide.count == 2, "root guide should document exactly a build and a test")
+        // **No longer a COUNT of this guide's fences** ([[T-3258]] (a)). The pin read
+        // `rootGuide.count == 2`, and that made the one document every agent reads at startup
+        // *required* to carry exactly two BARE `xcodebuild` commands — the form
+        // `docs/AGENT_BRIEF.md` forbids in the same breath, and the reason the fences could not
+        // simply be reworded away.
+        //
+        // What the pin was load-bearing FOR is narrower than a count, and it is kept whole. The
+        // failure it exists against is a parser that only understands one-liners: it would read
+        // this guide's correct, backslash-continued commands as the flagless fragment
+        // `/…/xcodebuild \`, `rootGuide` would come back EMPTY or full of fragments, every
+        // `allSatisfy` below would pass vacuously, and the two sweeps above would be clean over
+        // nothing. Non-emptiness is what makes those three checks bite — a fragment has no action
+        // and no flag, so `allAreBuildActions` and `allNameTheFlag` catch it the moment there is
+        // anything to catch. The guide may now document one invocation, or four, or route them
+        // through `xcb.sh`, without a test change.
+        #expect(!rootGuide.isEmpty, "the parser read no invocation at all out of the root guide")
         #expect(allAreBuildActions)
         #expect(allNameTheFlag)
         #expect(oneIsTheScopedTestRun)

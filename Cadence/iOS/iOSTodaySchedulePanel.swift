@@ -101,7 +101,13 @@ struct iOSSchedulePanel: View {
                 selectedDate: .constant(today),
                 span: .singleDay,
                 scheduledTasksByDate: scheduledTasksByDate,
-                // The day header is the only thing that draws these and a single-day grid has none.
+                // **Empty on purpose, and it stays empty now that the single-day grid draws a
+                // strip** ([[T-3163]]). The strip carries all-day EVENTS and nothing else: an
+                // untimed task is already listed in full by the task column across the divider, so
+                // repeating it above the hours would be the page header said twice. The grid
+                // enforces that itself — `singleDaySplit` passes `unscheduledTasks: 0` rather than
+                // reading this dictionary — so this argument is what the *scrolling* grid's header
+                // would draw, and there is no scrolling grid here.
                 unscheduledTasksByDate: [:],
                 eventsByDate: [todayKey: todayEvents],
                 zoom: $zoomLevel,

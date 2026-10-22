@@ -318,6 +318,73 @@ struct CadenceTodayTimelineDraftCreationTests {
         #expect(panel.contains("CadenceTimeRoller"))
     }
 
+    /// **The panel's Save gate, and until now nothing in the repository held it** ([[T-3169]]).
+    ///
+    /// Measured, not assumed. With `isCommitEnabled` forced to `false` — the Save/Add button dead
+    /// on every draft the shared panel has ever shown, on every surface that hosts it — a FULL
+    /// `-only-testing:CadenceTests` run of **6307 tests passed with 0 failures**, and the log
+    /// records `Compiling CadenceSchedulePanel.swift`, so the dead gate really was in the binary
+    /// under test. The panel's own headline claim, *"Do after Due WARNS and never blocks: Save
+    /// stays enabled"*, was argued in prose and held by nothing.
+    ///
+    /// Two halves, because the gate itself is a `private var` on a `View` and `Cadence/Shared/`'s
+    /// views cannot be instantiated from this target. **Behavioural:** being late is a property of
+    /// the DRAFT and is independent of whether the draft can be committed, which is the content of
+    /// "warn, never block" — a late draft with a title reports both, and an untitled late draft
+    /// still warns. **Source:** the gate is the title AND the host's gate and nothing else, and
+    /// both of the button's readings of it are still there. A third term in that `&&` is exactly
+    /// how "warn, never block" becomes "block".
+    @Test("Save is gated by the title and the host, and a warning never disables it")
+    func theSaveGateIsTheTitleAndTheHostAndNothingElse() throws {
+        var late = CadenceScheduleDraft(dateKey: "2026-10-19", startMin: 16 * 60, kind: .task)
+        late.dueDateKey = "2026-10-16"
+        late.title = "File the return"
+        #expect(late.doAfterDueNotice != nil, "non-vacuity: this draft really is late")
+        #expect(late.hasCommittableTitle, "a late draft stopped being committable")
+
+        var untitled = late
+        untitled.title = "   "
+        #expect(!untitled.hasCommittableTitle)
+        #expect(untitled.doAfterDueNotice != nil, "the notice is about the dates, not about the title")
+
+        let panel = source("Cadence/Shared/Components/CadenceSchedulePanel.swift")
+        #expect(!panel.isEmpty)
+        let gate = try #require(
+            CadenceSourceScan.declarationBody("private var isCommitEnabled: Bool", in: panel),
+            "CadenceSchedulePanel.isCommitEnabled is gone"
+        )
+        #expect(
+            gate.filter { !$0.isWhitespace } == "draft.hasCommittableTitle&&canCommit",
+            "the Save gate is no longer the title and the host's gate alone: \(gate)"
+        )
+
+        // The button reads it twice — once for its tint, once for `.disabled` — and a tint that
+        // said "enabled" over a disabled button is the half of this that the user would see.
+        let footer = try #require(
+            CadenceSourceScan.declarationBody("private var footer: some View", in: panel)
+        )
+        #expect(CadenceSourceScan.matchCount("isCommitEnabled", in: footer) == 2)
+        #expect(footer.contains(".disabled(!isCommitEnabled)"), "the Save button no longer disables itself")
+        #expect(footer.contains("isCommitEnabled ? Theme.blue : Theme.blue.opacity(0.4)"),
+                "the Save button's tint no longer follows the gate it is disabled by")
+
+        // The refusal path, in order: a read-only record writes nothing, an empty title is told
+        // so rather than silently ignored, and only then does the host's write run.
+        let commit = try #require(CadenceSourceScan.functionBody(named: "commit", in: panel))
+        let readOnly = try #require(commit.range(of: "guard !isReadOnly else { return }"))
+        let title = try #require(commit.range(of: #"actionError = "Add a title first.""#))
+        let write = try #require(commit.range(of: "actionError = actions.commit()"))
+        #expect(readOnly.lowerBound < title.lowerBound)
+        #expect(title.lowerBound < write.lowerBound)
+
+        // The List row's answer for a token no choice resolves. "Inbox" is where such a task
+        // actually lands, so the row is not guessing.
+        let listTitle = try #require(
+            CadenceSourceScan.declarationBody("private var listTitle: String", in: panel)
+        )
+        #expect(listTitle.contains(#"?? "Inbox""#), "the List row's fallback left the panel")
+    }
+
     /// Delete is the one control that separates creating from editing.
     @Test("Delete is present only when a record exists")
     func deleteIsPresentOnlyWhenARecordExists() {
