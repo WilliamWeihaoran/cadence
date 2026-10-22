@@ -377,7 +377,7 @@ struct NotePanel: View {
     private func editEmbeddedTask(id: UUID, field: MarkdownTaskEmbedField) {
         guard let task = embeddedTask(id: id) else { return }
         if MarkdownInlineTaskPanelRouting.opensPanel(for: field), let activeTextView {
-            activeTextView.presentInlineTaskPanel(for: task, in: modelContext, onSaved: refreshEmbeddedTask)
+            activeTextView.presentInlineTaskPanel(for: task, field: field, in: modelContext, onSaved: refreshEmbeddedTask)
             return
         }
         embeddedTaskEditRequest = TaskEmbedFieldEditRequest(taskID: id, field: field)

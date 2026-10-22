@@ -135,6 +135,18 @@ struct CadenceSchedulePanel<NotesField: View>: View {
         return panel
     }
 
+    /// Opens the panel with `row` already expanded ([[T-3253]] (a)): a click on a task card's Due
+    /// chip should land on the Due grid, not on a panel with every row closed. `nil` opens every
+    /// row closed, as before. Seeds the `@State` itself rather than toggling it in `onAppear`, so
+    /// the height a host measures before the panel is laid out already includes the open row.
+    func expanding(_ row: CadenceSchedulePanelRow?) -> Self {
+        var panel = self
+        let expansion = CadenceSchedulePanelRow.initialExpansion(row)
+        panel._isDoExpanded = State(initialValue: expansion.isDoExpanded)
+        panel._isDueExpanded = State(initialValue: expansion.isDueExpanded)
+        return panel
+    }
+
     @State private var isDoExpanded = false
     @State private var isDueExpanded = false
     @State private var isDoTimeExpanded = false
@@ -985,6 +997,26 @@ enum CadenceSchedulePanelTitleFocus {
     static func takesFocusOnAppear(_ appearance: Appearance, isEditing: Bool) -> Bool {
         guard !isEditing else { return false }
         return appearance == .opened
+    }
+}
+
+/// A row of the panel that a host can ask to open expanded. Only Do and Due expand at all: List,
+/// Section and Repeat open popovers, and Priority and Estimate are inline controls.
+enum CadenceSchedulePanelRow: Equatable {
+    case doDate
+    case dueDate
+
+    struct Expansion: Equatable {
+        var isDoExpanded = false
+        var isDueExpanded = false
+    }
+
+    static func initialExpansion(_ row: CadenceSchedulePanelRow?) -> Expansion {
+        switch row {
+        case .doDate: Expansion(isDoExpanded: true)
+        case .dueDate: Expansion(isDueExpanded: true)
+        case nil: Expansion()
+        }
     }
 }
 

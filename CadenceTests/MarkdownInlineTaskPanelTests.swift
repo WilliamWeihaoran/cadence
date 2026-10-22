@@ -1,4 +1,5 @@
 import Foundation
+import SwiftData
 import SwiftUI
 import Testing
 #if os(macOS)
@@ -306,7 +307,48 @@ struct MarkdownInlineTaskPanelTests {
             let body = try #require(CadenceSourceScan.functionBody(named: "editEmbeddedTask", in: source), "\(path)")
             #expect(body.contains("MarkdownInlineTaskPanelRouting.opensPanel(for: field)"), "\(path)")
             #expect(body.contains(".presentInlineTaskPanel(for:"), "\(path)")
+            // The clicked chip travels with the request, so its row can open expanded (T-3253 (a)).
+            #expect(body.contains("field: field, in: modelContext"), "\(path)")
         }
+    }
+
+    // MARK: - The clicked chip's row opens expanded ([[T-3253]] (a))
+
+    @Test func theClickedChipNamesTheRowThatOpensExpanded() {
+        #expect(MarkdownInlineTaskPanelRouting.expandedRow(for: .scheduledDate) == .doDate)
+        #expect(MarkdownInlineTaskPanelRouting.expandedRow(for: .dueDate) == .dueDate)
+        let closed: [MarkdownTaskEmbedField] = [.status, .title, .priority, .container, .section, .estimate, .recurrence]
+        for field in closed {
+            #expect(MarkdownInlineTaskPanelRouting.expandedRow(for: field) == nil, "\(field) should open no row")
+        }
+    }
+
+    /// Through the real path a chip click takes: the text view opens the real shared panel over a
+    /// real task, and the height it reserves is what the panel measured on opening. A Due click
+    /// opens the date grid, so it is TALLER than a Priority click, which opens nothing; a Do click
+    /// opens the grid plus the time and repeat rows, so it is taller still. Relations, not figures.
+    @Test func aDueOrDoClickOpensThePanelWithThatRowAlreadyExpanded() throws {
+        let container = try CadenceTestStore.container()
+        let context = ModelContext(container)
+        let task = AppTask(title: "Write the release notes")
+        // The embed the note holds; a panel for a task the note does not embed closes at once.
+        task.id = Self.embedID
+        context.insert(task)
+        try context.save()
+
+        func openedHeight(_ field: MarkdownTaskEmbedField) throws -> CGFloat {
+            let textView = makeTextView()
+            textView.presentInlineTaskPanel(for: task, field: field, in: context, onSaved: { _ in })
+            return try #require(textView.inlineTaskPanel?.height)
+        }
+
+        let closed = try openedHeight(.priority)
+        let due = try openedHeight(.dueDate)
+        let doDate = try openedHeight(.scheduledDate)
+        #expect(closed > 0)
+        #expect(due > closed, "a Due click should open the Due grid (\(due) vs \(closed))")
+        #expect(doDate > due, "a Do click should open the Do grid and its rows (\(doDate) vs \(due))")
+        #expect(try openedHeight(.estimate) == closed)
     }
 }
 #endif
@@ -333,5 +375,13 @@ struct CadenceTaskInlinePanelSeriesScopeTests {
         #expect(member.isRecurrenceSeriesMember)
         #expect(CadenceTaskInlinePanel.asksSeriesScope(draft: memberMoved, opened: memberOpened, task: member))
         #expect(!CadenceTaskInlinePanel.asksSeriesScope(draft: memberOpened, opened: memberOpened, task: member))
+    }
+
+    /// The panel's half of [[T-3253]] (a): which of its rows a named opening row expands. `nil` —
+    /// the iOS card tap, which has no chip — opens every row closed, as it always has.
+    @Test func anOpeningRowExpandsThatRowAndNoOther() {
+        #expect(CadenceSchedulePanelRow.initialExpansion(nil) == .init(isDoExpanded: false, isDueExpanded: false))
+        #expect(CadenceSchedulePanelRow.initialExpansion(.doDate) == .init(isDoExpanded: true, isDueExpanded: false))
+        #expect(CadenceSchedulePanelRow.initialExpansion(.dueDate) == .init(isDoExpanded: false, isDueExpanded: true))
     }
 }

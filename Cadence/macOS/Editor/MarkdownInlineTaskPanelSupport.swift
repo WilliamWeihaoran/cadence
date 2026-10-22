@@ -78,6 +78,16 @@ enum MarkdownInlineTaskPanelRouting {
             return true
         }
     }
+
+    /// The panel row a chip opens expanded ([[T-3253]] (a)): the Do chip opens Do, the Due chip
+    /// opens Due. Every other chip's field is a popover or an inline control, so it opens none.
+    static func expandedRow(for field: MarkdownTaskEmbedField) -> CadenceSchedulePanelRow? {
+        switch field {
+        case .scheduledDate: .doDate
+        case .dueDate: .dueDate
+        case .status, .title, .priority, .container, .section, .estimate, .recurrence: nil
+        }
+    }
 }
 
 /// **The panel's host, which owns the pointer over itself** ([[T-3253]] (b)).
@@ -147,14 +157,17 @@ extension CadenceTextView {
     }
 
     /// Opens the shared task panel under this task's card. See the type note above.
+    /// `field` is the chip that was clicked; its row opens expanded.
     func presentInlineTaskPanel(
         for task: AppTask,
+        field: MarkdownTaskEmbedField,
         in modelContext: ModelContext,
         onSaved: @escaping (AppTask) -> Void
     ) {
+        let openingRow = MarkdownInlineTaskPanelRouting.expandedRow(for: field)
         presentInlineTaskPanel(taskID: task.id) { close in
             AnyView(
-                CadenceTaskInlinePanel(task: task, onClose: close, onSaved: onSaved)
+                CadenceTaskInlinePanel(task: task, openingRow: openingRow, onClose: close, onSaved: onSaved)
                     .cadenceCard(cornerRadius: Theme.radiusPanel)
                     .modelContext(modelContext)
             )

@@ -36,6 +36,9 @@ struct CadenceTaskInlinePanel: View {
     let onClose: () -> Void
     /// Called once a Save has landed, before `onClose`, so the host can repaint the embed's card.
     var onSaved: (AppTask) -> Void = { _ in }
+    /// The row the chip that opened the panel names, opened expanded ([[T-3253]] (a)). `nil` for a
+    /// host with no chip to read — the iOS card tap — which keeps every row closed.
+    var openingRow: CadenceSchedulePanelRow?
 
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \Area.order) private var areas: [Area]
@@ -49,8 +52,14 @@ struct CadenceTaskInlinePanel: View {
     /// moved, the one edit that asks how far it reaches.
     private let openedDraft: CadenceScheduleDraft
 
-    init(task: AppTask, onClose: @escaping () -> Void, onSaved: @escaping (AppTask) -> Void = { _ in }) {
+    init(
+        task: AppTask,
+        openingRow: CadenceSchedulePanelRow? = nil,
+        onClose: @escaping () -> Void,
+        onSaved: @escaping (AppTask) -> Void = { _ in }
+    ) {
         _task = Bindable(wrappedValue: task)
+        self.openingRow = openingRow
         self.onClose = onClose
         self.onSaved = onSaved
         let opened = CadenceScheduleDraft(editing: task)
@@ -90,6 +99,7 @@ struct CadenceTaskInlinePanel: View {
         ) {
             CadenceSchedulePanelNotesRow(notes: $draft.notes)
         }
+        .expanding(openingRow)
         .confirmationDialog(
             CadenceRecurrenceScopeCopy.taskScopeTitle,
             isPresented: $isAskingRecurrenceScope,
