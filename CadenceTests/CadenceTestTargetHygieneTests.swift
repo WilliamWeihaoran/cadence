@@ -1061,6 +1061,23 @@ struct CadenceTestTargetHygieneTests {
         )
     }
 
+    /// **[[T-3290]].** A pattern the rule cannot compile is a recorded failure, not an empty
+    /// offender list. The fallback used to be `return []`, which every caller reads as "clean", so a
+    /// typo in any of the rule's four patterns turned the sweep above green for good. The good
+    /// pattern beside it proves the same call still answers normally, so this cannot pass by the
+    /// helper recording on every input.
+    @Test func aMalformedSuiteRulePatternIsReportedNotTreatedAsClean() {
+        withKnownIssue("an uncompilable pattern must be recorded") {
+            _ = TemporaryDefaultsSuiteRule.captures(#"suiteName:\s*([^,)\n]*"#, in: "UserDefaults(suiteName: x)")
+        } matching: { issue in
+            issue.comments.contains { $0.rawValue.contains("does not compile") }
+        }
+        #expect(
+            TemporaryDefaultsSuiteRule.captures(#"suiteName:\s*([^,)\n]*)"#, in: "UserDefaults(suiteName: x)")
+                == [["x"]]
+        )
+    }
+
     /// The rule's near misses, and the one that matters most: **the trait is attributed per suite.**
     ///
     /// A file-level spelling would have been shorter and is wrong for the same reason T-465's

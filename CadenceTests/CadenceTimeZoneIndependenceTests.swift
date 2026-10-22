@@ -712,26 +712,35 @@ struct CadenceTimeZoneIndependenceTests {
     /// than from a second brace matcher written here: `codeOnly` blanks literals, so a fixture that
     /// *quotes* `Calendar.current` — this file has several — is not counted as one, and the shared
     /// matcher already balances a signature's own parentheses before it looks for the body.
+    ///
+    /// **[[T-3286]]: the bodies are derived once per file TEXT, not once per detector.** Two tests
+    /// each ran this walk with a different detector, and each walk brace-matched every `@Test` in
+    /// the target again — measured in-host, 12,680 `declarationBody` calls over 6,340 distinct
+    /// (declaration, source) pairs, so every key was derived exactly twice. The table below is
+    /// keyed on the raw text the way `codeOnly`'s memo is ([[T-3261]]), so an edited file is still
+    /// a miss, and the second walk only runs its detector.
     private func sweptTests(matching detect: (String) -> Bool) throws -> [SweptTest] {
         var found: [SweptTest] = []
-        var sources: [String: String] = [:]
-
-        for declaration in try cadenceTestDeclarations() {
-            let source: String
-            if let cached = sources[declaration.file] {
-                source = cached
-            } else {
-                source = CadenceSourceScan.codeOnly(try cadenceTestSource(declaration.file))
-                sources[declaration.file] = source
-            }
-            guard let body = CadenceSourceScan.functionBody(named: declaration.name, in: source) else {
-                continue
-            }
-            if detect(body) {
-                found.append(SweptTest(file: declaration.file, name: declaration.name))
+        for file in try cadenceTestFiles() {
+            let bodies = Self.testBodies.value(for: try cadenceTestSource(file), derive: Self.testBodiesUncached)
+            for entry in bodies {
+                if let body = entry.body, detect(body) {
+                    found.append(SweptTest(file: file, name: entry.name))
+                }
             }
         }
         return found
+    }
+
+    /// Each `@Test` declared in a file, in declaration order, with its own body read from the
+    /// file's `codeOnly` text — `nil` where the braces never balance, which the walk skips.
+    private static let testBodies = CadenceSourceDerivationCache<[(name: String, body: String?)]>()
+
+    private static func testBodiesUncached(_ source: String) -> [(name: String, body: String?)] {
+        let code = CadenceSourceScan.codeOnly(source)
+        return cadenceTestDeclarations(in: source, file: "").map { declaration in
+            (name: declaration.name, body: CadenceSourceScan.functionBody(named: declaration.name, in: code))
+        }
     }
 
     /// The text of one `<Action …>…</Action>` block, or `nil` when either delimiter is absent.

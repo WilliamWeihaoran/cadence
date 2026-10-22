@@ -475,15 +475,38 @@ nonisolated enum TemporaryDefaultsSuiteRule {
     }
 
     /// Functions declared in this file whose body opens a suite.
+    ///
+    /// **[[T-3286]]: a file that never spells `suiteName:` has no sink, so its functions are not
+    /// brace-matched at all.** A body is a substring of `text`, so it cannot contain what `text`
+    /// does not — the answer is unchanged. Measured in-host, the sweep's 8,410 `declarationBody`
+    /// calls covered 8,320 distinct pairs, so a cache would have saved almost nothing; skipping
+    /// the files that cannot hold a sink is what removes them.
     static func suiteNameSinks(in text: String) -> [String] {
-        captures(#"func\s+(\w+)\s*\("#, in: text)
+        guard text.contains("suiteName:") else { return [] }
+        return captures(#"func\s+(\w+)\s*\("#, in: text)
             .compactMap(\.first)
             .filter { CadenceSourceScan.functionBody(named: $0, in: text)?.contains("suiteName:") == true }
     }
 
-    /// The capture groups of every match, or `[]` when the pattern does not compile.
-    private static func captures(_ pattern: String, in text: String) -> [[String]] {
-        guard let regex = try? NSRegularExpression(pattern: pattern) else { return [] }
+    /// The capture groups of every match.
+    ///
+    /// **[[T-3290]]: a pattern that does not compile is RECORDED AS AN ISSUE, not answered with
+    /// `[]`.** Every caller reads `[]` as "no offenders", so the old silent fallback turned a typo
+    /// in any of the four patterns into a sweep that passes forever — the stranded-plist leak
+    /// [[T-516]] exists to catch would come back with nothing red. It still returns `[]` after
+    /// recording, because a detector closure handed to `CadenceScanInstrument` cannot throw; the
+    /// recorded issue is what fails the test. `aMalformedSuiteRulePatternIsReportedNotTreatedAsClean`
+    /// pins it.
+    static func captures(_ pattern: String, in text: String) -> [[String]] {
+        let regex: NSRegularExpression
+        do {
+            regex = try NSRegularExpression(pattern: pattern)
+        } catch {
+            Issue.record(
+                "TemporaryDefaultsSuiteRule pattern does not compile, so it would match nothing: \(pattern) (\(error))"
+            )
+            return []
+        }
         let value = text as NSString
         return regex.matches(in: text, range: NSRange(location: 0, length: value.length)).map { match in
             (1..<match.numberOfRanges).map { group in
