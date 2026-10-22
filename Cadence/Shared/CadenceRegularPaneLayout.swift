@@ -113,9 +113,9 @@ enum CadenceRegularSplitLayout {
     /// Goals, Habits and Focus did not, which is what let them take half of a 13" pane.
     static let listPaneMaxWidth: CGFloat = 380
     /// The share of the pane the list column asks for between those two bounds. Chosen so that a
-    /// 13" iPad in portrait lands on 338 — within a couple of points of the 340 `idealWidth`
-    /// `iOSListsView` had already settled on by hand, so the one surface that was **not** broken
-    /// keeps the proportion it had.
+    /// 13" iPad in portrait, then an 844pt pane, landed on 338 — within a couple of points of the
+    /// 340 `idealWidth` `iOSListsView` had already settled on by hand, so the one surface that was
+    /// **not** broken kept the proportion it had. Its pane is 760 docked today, which lands on 304.
     static let listPaneFraction: CGFloat = 0.40
     static let paneDividerWidth: CGFloat = 1
 
@@ -163,22 +163,29 @@ enum CadenceRegularSplitLayout {
 /// `max(dates.count <= 7 ? available / count : 126, isRegular ? 112 : 104)` — a floor treated as a
 /// guarantee, the same shape as the two bugs below, and the one that survived them. That `max`
 /// means the grid needs `58 + 7 × 112 = 842pt` before a week fits without a horizontal scroller,
-/// and no iPad pane is that wide once the day inspector has taken its 340: an 11" Pro in landscape
-/// is 1022 and keeps 682, a 13" in portrait is 844 and keeps 503. So Week ran behind a scroller
-/// showing roughly six of seven days on the primary target and four and a half on a 13" — the
-/// seventh day off the right edge of the one view whose entire subject is the week. It starved
-/// *below* the split too: an 11" in portrait gives the grid its whole 632pt pane and 632 is still
-/// short of 842, so removing the inspector there had taken it from two visible days to five, not
-/// to seven.
+/// and no iPad pane of the time was that wide once the day inspector had taken its 340: with the
+/// then-188pt shell sidebar out, an 11" Pro in landscape was 1022 and kept 682, and a 13" in
+/// portrait was 844 and kept 503. So Week ran behind a scroller showing roughly six of seven days
+/// on the primary target and four and a half on a 13" — the seventh day off the right edge of the
+/// one view whose entire subject is the week. It starved *below* the split too: an 11" in portrait
+/// then gave the grid its whole 632pt pane and 632 is still short of 842, so removing the inspector
+/// there had taken it from two visible days to five, not to seven.
+///
+/// Those are the panes this was cut against, not today's. Read from
+/// `CadenceRootShellLayout.detailWidth`, an 11" Pro is 834 in portrait (under the 865pt dock
+/// threshold, so the sidebar is a drawer) and 946 / 1210 in landscape docked / folded, and a 13" is
+/// 760 / 1024 in portrait docked / folded. Only 1210 reaches the 1183pt Week split below; every
+/// other one gives Week the whole pane ([[T-4516]]).
 ///
 /// The inversion is the one the rest of this file already made: **seven columns on screen is the
 /// guarantee and 112pt is the wish.** A pane that cannot pay for seven full-width columns gets
 /// seven narrower ones rather than five and a scrollbar, down to `minimumDayColumnWidth`.
 ///
-/// Compression alone was not enough, though, and the reason is worth keeping: at a 13" iPad's
-/// 844pt pane the inspector's 340 leaves 445, which divides into seven columns of 63.6 — over the
-/// touch floor, so it *fits*, and every block in it reads `[S…` over `3…`. Seven columns that say
-/// nothing are not a week either. So `fullSizeWidth` is what
+/// Compression alone was not enough, though, and the reason is worth keeping: at the 844pt pane a
+/// 13" iPad then had, the inspector's 340 leaves 445, which divides into seven columns of 63.6 —
+/// over the touch floor, so it *fits*, and every block in it reads `[S…` over `3…`. Seven columns
+/// that say nothing are not a week either. (Today's docked 760 would leave 361, seven of 51.6, under
+/// even the floor; the gate below gives that pane to the week instead.) So `fullSizeWidth` is what
 /// `CadenceCalendarPaneLayout.showsInspector(paneWidth:calendarMinimumWidth:)` gates on: the
 /// inspector may only have space the week does not need to draw itself at full size. Compression is
 /// for panes that are simply small, where the alternative is not a narrower inspector but a missing
@@ -207,7 +214,9 @@ enum CadenceCalendarWeekGridLayout {
     /// that the block drawn inside it stays tappable, and that block is inset by
     /// `blockHorizontalInset` on both sides. Below this a column stops being *usable* rather than
     /// merely tight, so there is nothing left to buy by compressing further and the grid scrolls
-    /// instead. The narrowest iPad pane, 632pt of 11" portrait, lands at 82 — comfortably clear.
+    /// instead. The narrowest iPad pane when this was cut, 632pt of 11" portrait with the then-188pt
+    /// sidebar out, landed at 82 — comfortably clear. Today the narrowest full-screen pane is a 13"
+    /// in portrait with the sidebar docked, 760, at 100; a 737pt Split View lands at 97.
     static var minimumDayColumnWidth: CGFloat {
         minimumTouchTarget + blockHorizontalInset * 2
     }
@@ -223,8 +232,8 @@ enum CadenceCalendarWeekGridLayout {
     /// This is what the grid claims before an inspector may take anything, so it is the number that
     /// decides where Week splits: 842 + 340 + 1 = 1183pt of pane. On the target iPad in landscape
     /// that is reached with the shell sidebar **folded** (1210pt of pane — seven 112.6pt columns
-    /// *and* an inspector) and not with it out (1022pt, which gives the week the whole pane at
-    /// 137.7pt a column). Either way the week is legible, which is the trade this makes and the
+    /// *and* an inspector) and not with it docked (946pt, which gives the week the whole pane at
+    /// 126.9pt a column; it was 1022 and 137.7 under the then-188pt sidebar). Either way the week is legible, which is the trade this makes and the
     /// reason the gate is stated as "the inspector may only have space the week does not need".
     static func fullSizeWidth(isRegularWidth: Bool) -> CGFloat {
         timeRailWidth(isRegularWidth: isRegularWidth)
@@ -314,7 +323,8 @@ enum CadenceCalendarWeekGridLayout {
 /// `iOSCalendarView.regularInspectorWidth(for:)` was `min(max(width * 0.30, 340), 430)` — a floor
 /// treated as a guarantee, and the same mistake `CadenceTodayLayoutSupport.taskPaneWidth` (then
 /// spelled on `iOSTodayView`) was carrying.
-/// On an 11" iPad in portrait the pane is 632pt: 30% of it is 190, the `max` raised that to 340, and
+/// On an 11" iPad in portrait the pane was then 632pt (the then-188pt shell sidebar out; today the
+/// sidebar is a drawer there and the pane is 834): 30% of it is 190, the `max` raised that to 340, and
 /// the inspector took **54% of the pane** away from the surface it annotates. What was left ran the
 /// week grid at its 112pt minimum column width behind a horizontal scroller, so a week view showed
 /// two of its seven days.
@@ -335,9 +345,12 @@ enum CadenceCalendarPaneLayout {
     static let inspectorFraction: CGFloat = 0.30
     static let paneDividerWidth: CGFloat = 1
 
-    /// 681pt of pane, for a calendar that states no minimum of its own. A 13" iPad in portrait
-    /// (844pt) keeps the inspector at exactly the width it had before; an 11" in portrait (632pt)
-    /// gives the whole pane to the calendar.
+    /// 681pt of pane, for a calendar that states no minimum of its own. Every full-screen target
+    /// pane clears it: read from `CadenceRootShellLayout.detailWidth`, the narrowest is a 13" iPad
+    /// in portrait with the sidebar docked (760) and an 11" in portrait is 834, so both keep the
+    /// inspector; only a pane under 681, such as a narrow Split View, gives the calendar the whole
+    /// pane ([[T-4516]]). When this was cut, under the then-188pt sidebar, those panes were 844 (kept
+    /// the inspector) and 632 (gave it up).
     static var splitMinimumWidth: CGFloat {
         inspectorMinWidth * 2 + paneDividerWidth
     }

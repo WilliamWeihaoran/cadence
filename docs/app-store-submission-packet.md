@@ -5,20 +5,20 @@ measured rather than re-read is named in "Checked against the tree" at the foot 
 
 This is the repo-tracked source for App Store Connect submission fields and review preparation. Keep it aligned with `docs/apple-release-readiness.md`, `docs/privacy.html`, `docs/support.html`, and `docs/app-review-notes.md`.
 
-**Build state at the last check.** `MARKETING_VERSION = 1.0`, `CURRENT_PROJECT_VERSION = 23`
-(bumped and archived locally under T-3228; push, CI and upload are the owner's). **Build 23 ships
-with no iCloud entitlement on the widget extension** — the owner decided to add one (T-3152), and it
-was measured to turn every signed local build red because the `com.haoranwei.Cadence.CadenceWidgets`
-App ID has no iCloud capability. That is an owner step in the developer portal, and until it is
-taken the entitlement must stay out of the committed tree: do not re-add it to
-`CadenceWidgets/CadenceWidgets.entitlements` to make the capability list below look complete.
-**As of 2026-10-20 that step appears to have been taken and there are UNCOMMITTED entitlement
-edits in the shared checkout that do not match what T-3152 decided** — an empty
-`icloud-container-identifiers` array rather than the named container, plus both push spellings,
-which `AppStoreReviewReadinessTests.widgetEntitlementsIncludeSandbox` asserts are absent. Read
-T-3152's 2026-10-20 addendum before archiving; do not cut a build from a tree in that state. The consequence to know at review time is only
-sync latency — a widget write reaches another device when the app next runs an export pass — and
-nothing about it is user-facing or reviewable.
+**Build state at the last check (2026-10-22, read from the tree).** `MARKETING_VERSION = 1.0`
+and `CURRENT_PROJECT_VERSION = 24` on all eight configurations of the shipping targets
+(`961971ec`, Build 24, shipped 2026-10-21 on macOS and iOS; `CadenceMCPServer` keeps its own
+`CURRENT_PROJECT_VERSION = 1` and is not archived). **The widget extension now carries the app's
+iCloud container** (T-3152, `fde4dffc`, after the owner added the iCloud capability to the
+`com.haoranwei.Cadence.CadenceWidgets` App ID): `plutil -p CadenceWidgets/CadenceWidgets.entitlements`
+lists `icloud-container-identifiers` = `iCloud.com.haoranwei.Cadence`, `icloud-services` =
+`CloudKit`, the app sandbox and the `group.com.haoranwei.Cadence` app group, and no push key in
+either spelling, which `AppStoreReviewReadinessTests.widgetEntitlementsIncludeSandbox` asserts. The
+file is committed and clean; the 2026-10-20 uncommitted edits are gone. Do not add Push
+Notifications to the widget target: Xcode writes both push spellings into the one shared file when
+it does. The consequence to know at review time is only sync latency — the extension's containers
+still do not mirror (T-3227), so a widget write reaches another device when the app next runs an
+export pass — and nothing about it is user-facing or reviewable.
 
 ## App Store Connect Fields
 
@@ -29,7 +29,7 @@ nothing about it is user-facing or reviewable.
 - Platforms: macOS
 - Minimum OS: macOS 26.1
 - Version: `1.0`
-- Build: current project build number — `CURRENT_PROJECT_VERSION`, 23 at the last check.
+- Build: current project build number — `CURRENT_PROJECT_VERSION`, 24 at the last check (2026-10-22).
 - Copyright: `© 2026 Haoran Wei` — **confirmed by the user 2026-09-05 as their legal name.** They
   also hold a Chinese name; it is deliberately **not** included, because this field names the legal
   entity that owns the app and a name absent from the Apple Developer Program account is a
@@ -152,7 +152,7 @@ Metadata must avoid claims that are not true for the build:
 
 - Run the verification commands in `docs/apple-release-readiness.md`.
 - Confirm support/privacy URLs are publicly reachable.
-- Confirm App Store Connect capabilities match entitlements: iCloud/CloudKit, Sign in with Apple, App Groups, Calendar, widgets, and remote notification capability for CloudKit sync. **The widget extension is the one deliberate gap** — it carries App Group and sandbox entitlements and no iCloud container, per the T-3152 note at the top of this file. Match the capability list to the entitlements files as they are; do not change the entitlements to match the list.
+- Confirm App Store Connect capabilities match entitlements: iCloud/CloudKit, Sign in with Apple, App Groups, Calendar, widgets, and remote notification capability for CloudKit sync. The widget extension carries App Group, sandbox and the app's iCloud/CloudKit container and no push entitlement, per the T-3152 note at the top of this file. Match the capability list to the entitlements files as they are; do not change the entitlements to match the list.
 - Confirm the submitted archive uses distribution signing and does not contain debug-only test frameworks.
 - Confirm `CadenceMCPServer` and `plugins/cadence-mcp` are not embedded in the app archive.
 
@@ -160,13 +160,14 @@ Metadata must avoid claims that are not true for the build:
 
 Re-checked 2026-10-20 by reading the project and the entitlements, not by re-reading this file:
 
-- `MACOSX_DEPLOYMENT_TARGET = 26.1`, `MARKETING_VERSION = 1.0`, `CURRENT_PROJECT_VERSION = 23`.
+- `MACOSX_DEPLOYMENT_TARGET = 26.1`, `MARKETING_VERSION = 1.0`, `CURRENT_PROJECT_VERSION = 24`
+  (re-read 2026-10-22).
 - `INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO` on both app configurations.
 - `Cadence/PrivacyInfo.xcprivacy` declares `NSPrivacyCollectedDataTypeOtherUserContent` and no
   other collected type, which is what the "Privacy Details" section above claims it does.
-- `CadenceWidgets/CadenceWidgets.entitlements`, **as committed**, carries no
-  `icloud-container-identifiers`. The working tree is a different matter — see the T-3152 note at
-  the top.
+- `CadenceWidgets/CadenceWidgets.entitlements` (re-read with `plutil -p` 2026-10-22, committed
+  and clean) carries `iCloud.com.haoranwei.Cadence` with CloudKit, sandbox and the app group, and
+  no push key — see the T-3152 note at the top.
 - The four companion documents this file points at all exist: `docs/apple-release-readiness.md`,
   `docs/privacy.html`, `docs/support.html`, `docs/app-review-notes.md`.
 
