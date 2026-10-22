@@ -35,11 +35,14 @@ struct GlobalSearchSectionsList: View {
                                 // `nil` at zero, so "0 more results" cannot be drawn.
                                 if let hidden = section.hidden,
                                    let label = CadenceSearchResultCap.continuationLabel(hidden: hidden) {
+                                    let continuationID = GlobalSearchKeyboardRow.continuationID(forSection: section.id)
                                     GlobalSearchMoreResultsRow(
                                         continuation: GlobalSearchResultContinuation(
                                             label: label,
                                             reveal: { onReveal(section.id) }
-                                        )
+                                        ),
+                                        isHighlighted: highlightedResultID == continuationID,
+                                        onHover: { onHover(continuationID) }
                                     )
                                 }
                             }

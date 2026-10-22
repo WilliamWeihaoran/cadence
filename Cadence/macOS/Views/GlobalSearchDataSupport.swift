@@ -76,13 +76,5 @@ enum GlobalSearchDataSupport {
     static func eventResults(from events: [EKEvent], query: String) -> [GlobalSearchResult] {
         GlobalSearchIndexSupport.eventResults(from: events, query: query)
     }
-
-    static func syncedHighlightID(current: String?, availableResults: [GlobalSearchResult]) -> String? {
-        guard !availableResults.isEmpty else { return nil }
-        if let current, availableResults.contains(where: { $0.id == current }) {
-            return current
-        }
-        return availableResults.first?.id
-    }
 }
 #endif

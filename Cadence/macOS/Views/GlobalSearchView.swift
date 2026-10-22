@@ -75,14 +75,14 @@ struct GlobalSearchOverlay: View {
     /// **The sections as drawn** — capped, minus whatever the reader has expanded, each carrying
     /// the count of what it is still holding back.
     ///
-    /// This is the one the overlay passes down and the one `flattenedResults` reads, so the rows,
+    /// This is the one the overlay passes down and the one `keyboardRows` reads, so the rows,
     /// the continuation sentence and the arrow keys cannot describe three different searches.
     private var sections: [GlobalSearchVisibleSection] {
         GlobalSearchDataSupport.visibleSections(from: indexedSections, expandedCategories: expandedCategories)
     }
 
-    private var flattenedResults: [GlobalSearchResult] {
-        GlobalSearchOverlayStateSupport.flattenedResults(from: sections)
+    private var keyboardRows: [GlobalSearchKeyboardRow] {
+        GlobalSearchOverlayStateSupport.keyboardRows(from: sections)
     }
 
     var body: some View {
@@ -104,7 +104,7 @@ struct GlobalSearchOverlay: View {
                     query: query,
                     highlightedResultID: $highlightedResultID,
                     onSelect: onSelect,
-                    onReveal: { expandedCategories.insert($0) }
+                    onReveal: revealSection
                 )
             }
             .onAppear {
@@ -136,7 +136,7 @@ struct GlobalSearchOverlay: View {
                 highlightedResultID = GlobalSearchOverlayStateSupport.moveHighlight(
                     direction: direction,
                     currentID: highlightedResultID,
-                    results: flattenedResults
+                    rows: keyboardRows
                 )
             }
         }
@@ -155,10 +155,27 @@ struct GlobalSearchOverlay: View {
     }
 
     private func syncHighlightToAvailableResults() {
-        highlightedResultID = GlobalSearchDataSupport.syncedHighlightID(
+        highlightedResultID = GlobalSearchOverlayStateSupport.syncedHighlightID(
             current: highlightedResultID,
-            availableResults: flattenedResults
+            rows: keyboardRows
         )
+    }
+
+    /// Reveals one section in place — from a click on its continuation row or Return on it — and
+    /// moves the highlight to the first newly revealed result, the row that now sits where the
+    /// continuation row was (T-4320).
+    private func revealSection(_ sectionID: String) {
+        let before = sections
+        expandedCategories.insert(sectionID)
+        if let target = GlobalSearchOverlayStateSupport.firstRevealedResultID(
+            sectionID: sectionID,
+            before: before,
+            after: sections
+        ) {
+            highlightedResultID = target
+        } else {
+            syncHighlightToAvailableResults()
+        }
     }
 
     private func scheduleQueryCommit(_ value: String) {
@@ -185,8 +202,9 @@ struct GlobalSearchOverlay: View {
     private func submitHighlightedResult() {
         GlobalSearchInteractionSupport.submitHighlightedResult(
             highlightedResultID: highlightedResultID,
-            flattenedResults: flattenedResults,
-            onSelect: onSelect
+            rows: keyboardRows,
+            onSelect: onSelect,
+            onReveal: revealSection
         )
     }
 }

@@ -391,13 +391,14 @@ struct GlobalSearchHeader: View {
 /// 12/8 padding and radius-12 shape — so it sits in the column rather than interrupting it, and
 /// takes no tint of its own, because it is not a result and must not read as one.
 ///
-/// **It is not keyboard-reachable, deliberately for now.** `onMoveCommand` and Return are typed to
-/// `GlobalSearchResult` and route into the palette's navigation callback; a synthetic result that
-/// expands instead of navigating would have to be special-cased in both, and that is a larger
-/// change to the palette's keyboard contract than this ticket decided. Recorded in the ledger
-/// rather than left unsaid.
+/// **It is keyboard-reachable** (T-4320): `GlobalSearchOverlayStateSupport.keyboardRows` puts it on
+/// the arrow-key path after its section's last result, it draws the highlight when it holds it,
+/// and Return on it reveals rather than selects. The highlight is neutral (`Theme.dim`) for the
+/// same reason the row takes no tint.
 struct GlobalSearchMoreResultsRow: View {
     let continuation: GlobalSearchResultContinuation
+    let isHighlighted: Bool
+    let onHover: () -> Void
 
     var body: some View {
         Button(action: continuation.reveal) {
@@ -417,10 +418,19 @@ struct GlobalSearchMoreResultsRow: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
             .frame(maxWidth: .infinity, alignment: .leading)
+            .background(isHighlighted ? Theme.dim.opacity(0.09) : Color.clear)
+            .overlay {
+                RoundedRectangle(cornerRadius: 12)
+                    .strokeBorder(isHighlighted ? Theme.dim.opacity(0.18) : Color.clear, lineWidth: 1)
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 12))
             .contentShape(RoundedRectangle(cornerRadius: 12))
         }
         .buttonStyle(.cadencePlain)
         .padding(.horizontal, 6)
+        .onHover { hovering in
+            if hovering { onHover() }
+        }
         .accessibilityLabel(continuation.label)
     }
 }

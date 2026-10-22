@@ -31,13 +31,21 @@ enum GlobalSearchInteractionSupport {
         setFocused(true)
     }
 
+    /// Return on the highlighted row (T-4320): a result is selected, a continuation row reveals its
+    /// section in place and selects nothing.
     static func submitHighlightedResult(
         highlightedResultID: String?,
-        flattenedResults: [GlobalSearchResult],
-        onSelect: (GlobalSearchResult) -> Void
+        rows: [GlobalSearchKeyboardRow],
+        onSelect: (GlobalSearchResult) -> Void,
+        onReveal: (String) -> Void
     ) {
-        guard let highlighted = flattenedResults.first(where: { $0.id == highlightedResultID }) else { return }
-        onSelect(highlighted)
+        guard let highlighted = rows.first(where: { $0.id == highlightedResultID }) else { return }
+        switch highlighted {
+        case .result(let result):
+            onSelect(result)
+        case .moreResults(let sectionID):
+            onReveal(sectionID)
+        }
     }
 }
 #endif

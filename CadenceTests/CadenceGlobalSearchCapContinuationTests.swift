@@ -171,33 +171,127 @@ struct CadenceGlobalSearchCapContinuationTests {
         #expect(CadenceSearchResultCap.continuationLabel(hidden: 0) == nil)
     }
 
-    /// **The keyboard must walk the rows that are on screen.** `flattenedResults` drives the arrow
-    /// keys, the highlight sync and Return; if it flattened the uncapped section, Down-arrow would
-    /// move the highlight onto a row the list is not drawing and Return would open something
-    /// invisible — a worse bug than the one being fixed.
+    /// **The keyboard must walk the rows that are on screen, continuation rows included**
+    /// (T-1473, T-4320). `keyboardRows` drives the arrow keys, the highlight sync and Return; if it
+    /// flattened the uncapped section, Down-arrow would move the highlight onto a row the list is
+    /// not drawing. And if it left the "N more results" row out — as it did until T-4320 — the
+    /// reveal was mouse-only: Down from the last visible result stayed on it.
     @Test func arrowKeyOrderCoversExactlyTheVisibleRowsAndGrowsWhenASectionIsRevealed() throws {
         let built = sections(tasks: roadmapTasks(count: 20, completedCount: 0), notes: roadmapNotes(count: 18), query: "roadmap", includesCompleted: false)
+        let collapsedSections = GlobalSearchDataSupport.visibleSections(from: built, expandedCategories: [])
+        let expandedSections = GlobalSearchDataSupport.visibleSections(from: built, expandedCategories: [GlobalSearchCategory.notes.rawValue])
 
-        let collapsed = GlobalSearchOverlayStateSupport.flattenedResults(
-            from: GlobalSearchDataSupport.visibleSections(from: built, expandedCategories: [])
-        )
-        let expanded = GlobalSearchOverlayStateSupport.flattenedResults(
-            from: GlobalSearchDataSupport.visibleSections(from: built, expandedCategories: [GlobalSearchCategory.notes.rawValue])
-        )
+        let collapsed = GlobalSearchOverlayStateSupport.keyboardRows(from: collapsedSections)
+        let expanded = GlobalSearchOverlayStateSupport.keyboardRows(from: expandedSections)
 
-        #expect(!collapsed.isEmpty)
-        #expect(expanded.count > collapsed.count)
-        // Every flattened row is one the collapsed/expanded sections actually list.
-        let visibleIDs = Set(
-            GlobalSearchDataSupport.visibleSections(from: built, expandedCategories: []).flatMap(\.results).map(\.id)
+        // The exact order: each section's visible results, then its continuation row if capped.
+        let expectedOrder = collapsedSections.flatMap { section -> [String] in
+            section.results.map(\.id)
+                + (section.hidden == nil ? [] : [GlobalSearchKeyboardRow.continuationID(forSection: section.id)])
+        }
+        #expect(collapsed.map(\.id) == expectedOrder)
+        // Two capped sections (Tasks 14 of 20, Notes 12 of 18), so exactly two continuation stops.
+        #expect(collapsed.filter { if case .moreResults = $0 { true } else { false } }.count == 2)
+
+        // The results on the path are exactly the drawn ones, never a withheld one.
+        let visibleIDs = Set(collapsedSections.flatMap(\.results).map(\.id))
+        let pathResultIDs = collapsed.compactMap { row -> String? in
+            if case .result(let result) = row { result.id } else { nil }
+        }
+        #expect(Set(pathResultIDs) == visibleIDs)
+        #expect(pathResultIDs.count == visibleIDs.count)
+
+        // Revealing Notes adds its six rows and removes its continuation stop: +6 - 1.
+        #expect(expanded.count == collapsed.count + 5)
+        let notesContinuation = GlobalSearchKeyboardRow.continuationID(forSection: GlobalSearchCategory.notes.rawValue)
+        #expect(!expanded.contains { $0.id == notesContinuation })
+
+        // Down from the last visible Tasks result lands on the Tasks continuation row, and Up from
+        // there returns to that same result.
+        let tasksSection = try #require(collapsedSections.first { $0.category == .tasks })
+        let lastTask = try #require(tasksSection.results.last)
+        let tasksContinuation = GlobalSearchKeyboardRow.continuationID(forSection: tasksSection.id)
+        #expect(
+            GlobalSearchOverlayStateSupport.moveHighlight(direction: .down, currentID: lastTask.id, rows: collapsed) == tasksContinuation
         )
-        #expect(Set(collapsed.map(\.id)) == visibleIDs)
-        // And moving down from the last visible row stays on it rather than walking into a
-        // withheld one.
+        #expect(
+            GlobalSearchOverlayStateSupport.moveHighlight(direction: .up, currentID: tasksContinuation, rows: collapsed) == lastTask.id
+        )
+        // A highlight resting on a continuation row survives a re-sync rather than snapping to the top.
+        #expect(GlobalSearchOverlayStateSupport.syncedHighlightID(current: tasksContinuation, rows: collapsed) == tasksContinuation)
+        // And the end of the path still stops rather than wrapping or walking off it.
         let last = try #require(collapsed.last)
         #expect(
-            GlobalSearchOverlayStateSupport.moveHighlight(direction: .down, currentID: last.id, results: collapsed) == last.id
+            GlobalSearchOverlayStateSupport.moveHighlight(direction: .down, currentID: last.id, rows: collapsed) == last.id
         )
+    }
+
+    /// **Return on the continuation row reveals and selects nothing** (T-4320); Return on a result
+    /// still selects it and reveals nothing.
+    @Test func returnOnTheContinuationRowRevealsTheSectionAndDoesNotSelect() throws {
+        let built = sections(tasks: roadmapTasks(count: 20, completedCount: 0), notes: [], query: "roadmap", includesCompleted: false)
+        let rows = GlobalSearchOverlayStateSupport.keyboardRows(
+            from: GlobalSearchDataSupport.visibleSections(from: built, expandedCategories: [])
+        )
+        let tasksID = GlobalSearchCategory.tasks.rawValue
+
+        var selected: [String] = []
+        var revealed: [String] = []
+        GlobalSearchInteractionSupport.submitHighlightedResult(
+            highlightedResultID: GlobalSearchKeyboardRow.continuationID(forSection: tasksID),
+            rows: rows,
+            onSelect: { selected.append($0.id) },
+            onReveal: { revealed.append($0) }
+        )
+        #expect(revealed == [tasksID])
+        #expect(selected.isEmpty)
+
+        let firstResult = try #require(rows.first)
+        selected.removeAll()
+        revealed.removeAll()
+        GlobalSearchInteractionSupport.submitHighlightedResult(
+            highlightedResultID: firstResult.id,
+            rows: rows,
+            onSelect: { selected.append($0.id) },
+            onReveal: { revealed.append($0) }
+        )
+        #expect(selected == [firstResult.id])
+        #expect(revealed.isEmpty)
+    }
+
+    /// After a reveal the highlight lands on the first newly revealed result — the fifteenth task,
+    /// which now sits where the continuation row was.
+    @Test func revealingASectionHighlightsItsFirstNewlyRevealedResult() throws {
+        let built = sections(tasks: roadmapTasks(count: 20, completedCount: 0), notes: [], query: "roadmap", includesCompleted: false)
+        let tasksID = GlobalSearchCategory.tasks.rawValue
+        let before = GlobalSearchDataSupport.visibleSections(from: built, expandedCategories: [])
+        let after = GlobalSearchDataSupport.visibleSections(from: built, expandedCategories: [tasksID])
+        let fullTasks = try section(.tasks, in: built)
+
+        let target = GlobalSearchOverlayStateSupport.firstRevealedResultID(sectionID: tasksID, before: before, after: after)
+        #expect(target == fullTasks.results[14].id)
+        // An uncapped section reveals nothing, so there is nowhere new to land.
+        #expect(GlobalSearchOverlayStateSupport.firstRevealedResultID(sectionID: tasksID, before: after, after: after) == nil)
+    }
+
+    /// **The row the keyboard is on has to look like it** (T-4320). A view the suite does not host
+    /// cannot be asked what it drew, so this pins the wiring: the list hands the continuation row
+    /// the highlight under the same id `keyboardRows` uses, hover moves the highlight there just as
+    /// it does for a result, and the row's body actually branches on the flag.
+    @Test func theContinuationRowDrawsTheKeyboardHighlightAndTakesHover() throws {
+        let list = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile("Cadence/macOS/Views/GlobalSearchOverlayShellViews.swift"))
+        #expect(list.contains("let continuationID = GlobalSearchKeyboardRow.continuationID(forSection: section.id)"))
+        #expect(list.contains("isHighlighted: highlightedResultID == continuationID"))
+        #expect(list.contains("onHover: { onHover(continuationID) }"))
+
+        let views = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile("Cadence/macOS/Views/GlobalSearchSupportViews.swift"))
+        let row = try #require(
+            CadenceSourceScan.declarationBody("struct GlobalSearchMoreResultsRow", in: views),
+            "could not read GlobalSearchMoreResultsRow"
+        )
+        #expect(row.contains("let isHighlighted: Bool"))
+        #expect(CadenceSourceScan.matchCount("isHighlighted \\?", in: row) == 2)
+        #expect(row.contains("if hovering { onHover() }"))
     }
 
     // MARK: - Where the numbers live
