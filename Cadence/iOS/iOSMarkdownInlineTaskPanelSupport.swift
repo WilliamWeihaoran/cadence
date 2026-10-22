@@ -299,6 +299,10 @@ extension iOSMarkdownEditor.Coordinator {
     /// Called from `applyMarkdownStyle` straight after the styled string lands: reserves the open
     /// panel's room in the embed's paragraph and keeps the card centred where it was.
     func applyInlineTaskPanelReservation(to storage: NSTextStorage) {
+        // The one place the host hears about the panel: every way it opens or goes ends in a
+        // styling pass (present and close both restyle), and this is also where a panel whose
+        // embed has left the note is closed. A second report at present/close would be dead.
+        defer { reportInlineTaskPanelPresence() }
         guard let taskID = inlineTaskPanel.openTaskID,
               let spacing = inlineTaskPanel.applyReservation(to: storage),
               let location = CadenceTaskInlinePanelReservation.embedLocation(for: taskID, in: storage),
@@ -336,6 +340,19 @@ extension iOSMarkdownEditor.Coordinator {
             host.view.frame = frame
         }
         host.view.isHidden = false
+    }
+
+    /// Tells the host when the note goes from no panel to one or back ([[T-3249]] item 3) — what
+    /// lets a page's floating `+` stand aside while the panel's Save and Cancel are on screen.
+    ///
+    /// Async because the reservation runs inside `applyMarkdownStyle`, which `updateUIView` calls:
+    /// a host writing its `@State` from there would be modifying state during a view update.
+    func reportInlineTaskPanelPresence() {
+        let isOpen = inlineTaskPanel.openTaskID != nil
+        guard isOpen != reportedInlineTaskPanelPresence else { return }
+        reportedInlineTaskPanelPresence = isOpen
+        guard let report = parent.onInlineTaskPanelPresenceChange else { return }
+        DispatchQueue.main.async { report(isOpen) }
     }
 
     // MARK: - Private

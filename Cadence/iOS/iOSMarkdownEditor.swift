@@ -26,6 +26,10 @@ struct iOSMarkdownEditor: UIViewRepresentable {
     /// card, instead of calling `onOpenEmbeddedTask` ([[T-1481]]). `nil` from the factory (the task
     /// is gone) falls back to `onOpenEmbeddedTask`. See `iOSMarkdownInlineTaskPanelSupport`.
     var inlineTaskPanelContent: iOSMarkdownInlineTaskPanelContent?
+    /// Told whenever an inline task panel opens in this note or the last one goes, by whatever
+    /// route — the panel's own Cancel/Save, a tap on another card, or the embed leaving the note
+    /// ([[T-3249]] item 3). Delivered on the next main-queue turn, never inside a layout pass.
+    var onInlineTaskPanelPresenceChange: ((Bool) -> Void)?
     var onOpenReference: ((MarkdownReferenceDisplayTarget) -> Void)?
     var onCreatePastedImages: (([UIImage]) -> [MarkdownImageAsset])?
     var onResizeImage: ((UUID, CGFloat) -> Void)?
@@ -51,6 +55,7 @@ struct iOSMarkdownEditor: UIViewRepresentable {
         onCreateEmbeddedTask: ((String) -> String?)? = nil,
         onOpenEmbeddedTask: ((UUID) -> Void)? = nil,
         inlineTaskPanelContent: iOSMarkdownInlineTaskPanelContent? = nil,
+        onInlineTaskPanelPresenceChange: ((Bool) -> Void)? = nil,
         onOpenReference: ((MarkdownReferenceDisplayTarget) -> Void)? = nil,
         onCreatePastedImages: (([UIImage]) -> [MarkdownImageAsset])? = nil,
         onResizeImage: ((UUID, CGFloat) -> Void)? = nil,
@@ -68,6 +73,7 @@ struct iOSMarkdownEditor: UIViewRepresentable {
         self.onCreateEmbeddedTask = onCreateEmbeddedTask
         self.onOpenEmbeddedTask = onOpenEmbeddedTask
         self.inlineTaskPanelContent = inlineTaskPanelContent
+        self.onInlineTaskPanelPresenceChange = onInlineTaskPanelPresenceChange
         self.onOpenReference = onOpenReference
         self.onCreatePastedImages = onCreatePastedImages
         self.onResizeImage = onResizeImage
@@ -288,6 +294,8 @@ struct iOSMarkdownEditor: UIViewRepresentable {
         /// The task panel open inside this note, if any ([[T-1481]]); see
         /// `iOSMarkdownInlineTaskPanelSupport`.
         let inlineTaskPanel = Coordinator.makeInlineTaskPanelController()
+        /// What `onInlineTaskPanelPresenceChange` was last told, so it hears changes only.
+        var reportedInlineTaskPanelPresence = false
 
         init(parent: iOSMarkdownEditor) {
             self.parent = parent
@@ -1022,6 +1030,12 @@ struct iOSMarkdownEditor: UIViewRepresentable {
             in textView: UITextView
         ) -> (task: MarkdownTaskEmbedRenderInfo, target: iOSMarkdownTaskEmbedHitTarget)? {
             guard textView.bounds.contains(point), textView.textStorage.length > 0 else { return nil }
+            // The open panel is a subview of this text view, so its touches reach this view's
+            // recognizers too. A touch on the panel is the panel's — never a second card tap, which
+            // the wider card target below would otherwise claim along the panel's top edge.
+            if let panel = inlineTaskPanel.host?.view, !panel.isHidden, panel.frame.contains(point) {
+                return nil
+            }
 
             let textContainer = textView.textContainer
             let layoutManager = textView.layoutManager
@@ -1050,7 +1064,7 @@ struct iOSMarkdownEditor: UIViewRepresentable {
                     leadingInset: canvas.leadingInset,
                     yOffset: canvas.yOffset
                 )
-                guard cardRect.insetBy(dx: -4, dy: -4).contains(textPoint) else { return }
+                guard Self.cardTouchRect(card: cardRect, lineFragment: fragment).contains(textPoint) else { return }
 
                 let localPoint = CGPoint(x: textPoint.x - cardRect.minX, y: textPoint.y - cardRect.minY)
                 let target = iOSMarkdownTaskEmbedLayoutInfo(task: embed.task).hitTarget(
@@ -1061,6 +1075,28 @@ struct iOSMarkdownEditor: UIViewRepresentable {
                 stop.pointee = true
             }
             return result
+        }
+
+        /// How far past the card's drawn edge a touch still counts as the card: half the 44pt HIG
+        /// minimum, so a fingertip centred that far off the edge still overlaps it.
+        nonisolated static let cardTouchSlop: CGFloat = 22
+
+        /// **The area a touch opens the card from** ([[T-3249]] item 2), in the coordinates `card`
+        /// and `lineFragment` share.
+        ///
+        /// It used to be the card padded by 4pt, so a tap a few points off the card fell through
+        /// to the text view and dropped a caret on the embed's hidden markdown instead of opening
+        /// the panel. Sideways it is padded by `cardTouchSlop`: nothing else shares the embed's
+        /// line. Vertically it is padded by the same slop **but clipped to the embed's own line
+        /// fragment** — the band whose taps would otherwise land a caret on the embed line anyway,
+        /// and which ends exactly where the text line above or below begins. So the wider target
+        /// cannot take a tap meant for an adjacent line, however tall the slop. The card itself is
+        /// always inside, even when a `yOffset` nudges it past its fragment.
+        nonisolated static func cardTouchRect(card: CGRect, lineFragment: CGRect) -> CGRect {
+            let padded = card.insetBy(dx: -cardTouchSlop, dy: -cardTouchSlop)
+            let minY = max(padded.minY, min(card.minY, lineFragment.minY))
+            let maxY = min(padded.maxY, max(card.maxY, lineFragment.maxY))
+            return CGRect(x: padded.minX, y: minY, width: padded.width, height: maxY - minY)
         }
 
         private func checklistLineIndex(

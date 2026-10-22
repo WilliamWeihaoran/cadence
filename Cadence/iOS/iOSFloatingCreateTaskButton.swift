@@ -74,6 +74,13 @@ struct iOSCircularAddButton: View {
 /// creating, while dropping onto a list is — so the parameter is gone rather than defaulted, and
 /// the two placements now differ only in size and position.
 ///
+/// **It yields to an inline task panel** ([[T-3249]] item 3). A panel opened under a note's task
+/// card scrolls its Save and Cancel clear of the keyboard, and SwiftUI's keyboard avoidance lifts
+/// this button to just above the keyboard — the same strip — where it covered most of Save. So
+/// while any note editor inside the page reports an open panel (`iOSInlineTaskPanelPresenceKey`)
+/// the button is not drawn; the panel is a focused edit with its own commit, and the `+` comes
+/// back the moment it closes. The scroll clearance stays, so nothing reflows as it goes.
+///
 /// **Nothing hides under it.** `contentMargins(.bottom:for: .scrollContent)` insets the scrollable
 /// content of the page's scroll views by the button's whole footprint, so the last row can always be
 /// brought out from under it. It is done here, once, rather than as per-screen bottom padding —
@@ -86,6 +93,8 @@ private struct iOSFloatingCreateTaskLayer: ViewModifier {
     /// may open a composer — which is what the old `CadenceTaskDropCoordinator` routing existed to
     /// arrange, and what separate state gives for free.
     @State private var interaction = iOSCaptureInteraction(placement: .bottomTrailing)
+    /// Whether a note editor inside this page has an inline task panel open.
+    @State private var inlineTaskPanelIsOpen = false
 
     private var isRegularWidth: Bool {
         horizontalSizeClass == .regular
@@ -94,8 +103,14 @@ private struct iOSFloatingCreateTaskLayer: ViewModifier {
     func body(content: Content) -> some View {
         content
             .contentMargins(.bottom, isRegularWidth ? iOSCircularAddButton.scrollClearance : 0, for: .scrollContent)
+            .onPreferenceChange(iOSInlineTaskPanelPresenceKey.self) { [isOpen = $inlineTaskPanelIsOpen] open in
+                isOpen.wrappedValue = open
+            }
             .overlay(alignment: .bottomTrailing) {
-                if isRegularWidth {
+                if iOSFloatingCreateTaskVisibility.showsButton(
+                    isRegularWidth: isRegularWidth,
+                    inlineTaskPanelIsOpen: inlineTaskPanelIsOpen
+                ) {
                     iOSCaptureRadialMenuButton(
                         diameter: iOSCircularAddButton.floatingDiameter,
                         interaction: interaction
@@ -110,6 +125,24 @@ private struct iOSFloatingCreateTaskLayer: ViewModifier {
             .iOSCaptureHost(interaction, onCreated: onCreated)
             // The page declares inside this wrapper; the capture palette and its presenters do not.
             .cadenceFixedTypography()
+    }
+}
+
+/// Whether the page's corner `+` is drawn. See `iOSFloatingCreateTaskLayer` for both reasons.
+enum iOSFloatingCreateTaskVisibility {
+    static func showsButton(isRegularWidth: Bool, inlineTaskPanelIsOpen: Bool) -> Bool {
+        isRegularWidth && !inlineTaskPanelIsOpen
+    }
+}
+
+/// `true` while any note editor below has an inline task panel open ([[T-3249]] item 3). Written by
+/// `iOSMarkdownEditingSurface`, read by `iOSFloatingCreateTaskLayer`. Two editors on one page —
+/// Today's notes rail beside a list — combine by OR: either panel's Save is enough to yield for.
+struct iOSInlineTaskPanelPresenceKey: PreferenceKey {
+    static let defaultValue = false
+
+    static func reduce(value: inout Bool, nextValue: () -> Bool) {
+        value = value || nextValue()
     }
 }
 

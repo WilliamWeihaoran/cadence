@@ -62,6 +62,9 @@ struct iOSMarkdownEditingSurface: View {
     @State private var unlinkedMentions: [Note] = []
     @State private var showsOutline = false
     @State private var showsUnlinkedMentions = false
+    /// Whether an inline task panel is open in this note, as the editor last reported it. Raised
+    /// to the page as `iOSInlineTaskPanelPresenceKey` so its floating `+` yields ([[T-3249]]).
+    @State private var isInlineTaskPanelOpen = false
     @State private var isImagePickerPresented = false
     @State private var selectedImageItems: [PhotosPickerItem] = []
     /// Set when an image insertion loses pictures — because the store refused the commit (T-629),
@@ -265,6 +268,7 @@ struct iOSMarkdownEditingSurface: View {
                         openEmbeddedTask(id: taskID)
                     },
                     inlineTaskPanelContent: inlineTaskPanelContent,
+                    onInlineTaskPanelPresenceChange: { isInlineTaskPanelOpen = $0 },
                     onOpenReference: onOpenReference,
                     onCreatePastedImages: createPastedImageAssets,
                     onResizeImage: resizeImageAsset,
@@ -275,6 +279,7 @@ struct iOSMarkdownEditingSurface: View {
             }
         }
         .background(Theme.surface)
+        .preference(key: iOSInlineTaskPanelPresenceKey.self, value: isInlineTaskPanelOpen)
     }
 
     // Resolve on opening, against the live draft. This avoids scanning all note titles on every

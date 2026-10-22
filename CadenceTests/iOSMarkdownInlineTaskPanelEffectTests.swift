@@ -48,6 +48,10 @@ struct iOSMarkdownInlineTaskPanelEffectTests {
     private final class Requests {
         var panels: [UUID] = []
         var sheets: [UUID] = []
+        /// Every value the editor wrote to its `isFocused` binding — a card hit writes `false`.
+        var focusWrites: [Bool] = []
+        /// What `onInlineTaskPanelPresenceChange` was told, in order ([[T-3249]] item 3).
+        var presence: [Bool] = []
     }
 
     private struct Fixture {
@@ -84,13 +88,14 @@ struct iOSMarkdownInlineTaskPanelEffectTests {
         let requests = Requests()
         let editor = iOSMarkdownEditor(
             text: .constant(Self.markdown),
-            isFocused: .constant(false),
+            isFocused: Binding(get: { false }, set: { requests.focusWrites.append($0) }),
             taskEmbeds: [Self.embedID: Self.renderInfo()],
             onOpenEmbeddedTask: { requests.sheets.append($0) },
             inlineTaskPanelContent: { taskID, _ in
                 requests.panels.append(taskID)
                 return givesPanel ? AnyView(Text("Panel").frame(height: 120)) : nil
-            }
+            },
+            onInlineTaskPanelPresenceChange: { requests.presence.append($0) }
         )
         let coordinator = iOSMarkdownEditor.Coordinator(parent: editor)
         let textView = iOSMarkdownTextView()
@@ -232,6 +237,138 @@ struct iOSMarkdownInlineTaskPanelEffectTests {
         #expect(fixture.requests.sheets == [Self.embedID])
         #expect(fixture.coordinator.inlineTaskPanel.openTaskID == nil)
         #expect(!fixture.textView.subviews.contains { $0.accessibilityIdentifier == iOSMarkdownInlineTaskPanel.accessibilityIdentifier })
+    }
+
+    // MARK: - [[T-3249]] item 2: the card's touch target
+
+    /// The embed's own line fragment in text-view coordinates — the band a tap would otherwise
+    /// drop a caret on the embed line from.
+    private func embedFragment(in textView: UITextView) throws -> CGRect {
+        let location = try embedLocation(in: textView)
+        let layoutManager = textView.layoutManager
+        layoutManager.ensureLayout(for: textView.textContainer)
+        let glyph = layoutManager.glyphIndexForCharacter(at: location)
+        return layoutManager.lineFragmentRect(forGlyphAt: glyph, effectiveRange: nil)
+            .offsetBy(dx: textView.textContainerInset.left, dy: textView.textContainerInset.top)
+    }
+
+    /// A tap beside the card, further off than the old 4pt pad but within a fingertip, opens it.
+    @Test func aTapBesideTheCardWithinAFingertipOpensThePanel() throws {
+        let fixture = makeFixture()
+        let card = try cardRect(in: fixture.textView)
+        let point = CGPoint(x: card.maxX + 15, y: card.midY)
+        #expect(fixture.textView.bounds.contains(point), "non-vacuity: the probe is inside the note")
+
+        tap(point, on: fixture)
+
+        #expect(fixture.requests.panels == [Self.embedID])
+        #expect(fixture.coordinator.inlineTaskPanel.openTaskID == Self.embedID)
+    }
+
+    /// A tap below the card but still on the embed's own line opens it rather than placing a caret.
+    @Test func aTapBelowTheCardOnItsOwnLineOpensThePanel() throws {
+        let fixture = makeFixture()
+        let card = try cardRect(in: fixture.textView)
+        let fragment = try embedFragment(in: fixture.textView)
+        let point = CGPoint(x: card.midX, y: fragment.maxY - 1)
+        #expect(point.y - card.maxY > 4, "non-vacuity: the probe is past the old 4pt pad")
+
+        tap(point, on: fixture)
+
+        #expect(fixture.requests.panels == [Self.embedID])
+    }
+
+    /// The wider target ends where the next line begins: a tap there belongs to that line.
+    @Test func aTapOnTheLineBelowTheEmbedNeverOpensThePanel() throws {
+        let fixture = makeFixture()
+        let card = try cardRect(in: fixture.textView)
+        let fragment = try embedFragment(in: fixture.textView)
+        let point = CGPoint(x: card.midX, y: fragment.maxY + 2)
+        #expect(
+            point.y < card.maxY + iOSMarkdownEditor.Coordinator.cardTouchSlop,
+            "non-vacuity: an unclipped slop would reach the probe"
+        )
+
+        tap(point, on: fixture)
+
+        #expect(fixture.requests.panels.isEmpty)
+        #expect(fixture.requests.sheets.isEmpty)
+        #expect(fixture.coordinator.inlineTaskPanel.openTaskID == nil)
+    }
+
+    /// A touch on the open panel is the panel's, even inside the card's widened target.
+    @Test func aTapOnTheOpenPanelIsNeverASecondCardTap() throws {
+        let fixture = makeFixture()
+        tap(try cardBodyPoint(in: fixture.textView), on: fixture)
+        let host = try #require(fixture.coordinator.inlineTaskPanel.host)
+        let card = try cardRect(in: fixture.textView)
+        let point = CGPoint(x: card.midX, y: host.view.frame.minY + 2)
+        #expect(
+            point.y < card.maxY + iOSMarkdownEditor.Coordinator.cardTouchSlop,
+            "non-vacuity: the probe is inside the card's widened target"
+        )
+        fixture.requests.focusWrites.removeAll()
+
+        tap(point, on: fixture)
+
+        #expect(fixture.requests.focusWrites.isEmpty, "the card hit path ran for a touch on the panel")
+        #expect(fixture.coordinator.inlineTaskPanel.openTaskID == Self.embedID)
+    }
+
+    // MARK: - [[T-3249]] item 3: the page's `+` yields to an open panel
+
+    private func drainMainQueue() async {
+        await withCheckedContinuation { continuation in
+            DispatchQueue.main.async { continuation.resume() }
+        }
+    }
+
+    @Test func theHostHearsThePanelOpenAndClose() async throws {
+        let fixture = makeFixture()
+
+        tap(try cardBodyPoint(in: fixture.textView), on: fixture)
+        await drainMainQueue()
+        #expect(fixture.requests.presence == [true])
+
+        fixture.coordinator.applyMarkdownStyle(to: fixture.textView, text: Self.markdown)
+        await drainMainQueue()
+        #expect(fixture.requests.presence == [true], "a restyle with the panel still open reports nothing")
+
+        fixture.coordinator.closeInlineTaskPanel(in: fixture.textView)
+        await drainMainQueue()
+        #expect(fixture.requests.presence == [true, false])
+    }
+
+    @Test func theHostHearsThePanelGoWhenItsEmbedLeavesTheNote() async throws {
+        let fixture = makeFixture()
+        tap(try cardBodyPoint(in: fixture.textView), on: fixture)
+        await drainMainQueue()
+        #expect(fixture.requests.presence == [true])
+
+        let without = "Prose above the embed.\n\nProse below the embed."
+        fixture.textView.text = without
+        fixture.coordinator.applyMarkdownStyle(to: fixture.textView, text: without)
+        await drainMainQueue()
+
+        #expect(fixture.coordinator.inlineTaskPanel.openTaskID == nil, "non-vacuity: the panel closed")
+        #expect(fixture.requests.presence == [true, false])
+    }
+
+    @Test func theFloatingButtonStandsAsideOnlyWhileAPanelIsOpen() {
+        #expect(iOSFloatingCreateTaskVisibility.showsButton(isRegularWidth: true, inlineTaskPanelIsOpen: false))
+        #expect(!iOSFloatingCreateTaskVisibility.showsButton(isRegularWidth: true, inlineTaskPanelIsOpen: true))
+        #expect(!iOSFloatingCreateTaskVisibility.showsButton(isRegularWidth: false, inlineTaskPanelIsOpen: false))
+    }
+
+    @Test func eitherOfTwoEditorsOnAPageIsEnoughToYieldFor() {
+        for (first, second) in [(true, false), (false, true), (true, true)] {
+            var value = first
+            iOSInlineTaskPanelPresenceKey.reduce(value: &value) { second }
+            #expect(value)
+        }
+        var none = iOSInlineTaskPanelPresenceKey.defaultValue
+        iOSInlineTaskPanelPresenceKey.reduce(value: &none) { false }
+        #expect(!none)
     }
 }
 #endif
