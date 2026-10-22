@@ -3,6 +3,7 @@
 #
 #   ./scripts/group-defaults-probe.sh sample [<record-file>]   # exit 0 read, 3 absent, 2 refused
 #   ./scripts/group-defaults-probe.sh compare <before> <after> # exit 0 UNMOVED, 1 MOVED,
+#                                                             # 5 UNSETTLED (a writer was alive),
 #                                                             #   4 RE-ENCODED, 3 NO-SAMPLE
 #   ./scripts/group-defaults-probe.sh selftest
 #
@@ -139,6 +140,24 @@ gdp_owner_app() {
   print -r -- "absent"
 }
 
+# THE OWNER'S BUILD IS NOT THE ONLY WRITER, AND READING ONLY IT IS WHAT MADE THIS TOOL LIE (T-4620).
+# An agent's launched Debug build writes this same suite: `CadenceWidgetRefreshCenter.sharedDefaults`
+# resolves `UserDefaults(suiteName:)` on the app group unconditionally
+# (`Cadence/Services/CadenceWidgetRefreshCenter.swift:141-149`), which is the whole premise of
+# T-1176. This pattern is the suffix the installed and the Debug spellings share, so it finds
+# `/Applications/Cadence.app/...` and `.../Build/Products/Debug/Cadence.app/...` alike.
+# Three answers again, for the reason §8 gives: a denied process list is not "nothing is running".
+GDP_WRITER_PATTERN="Cadence.app/Contents/MacOS/Cadence"
+
+gdp_writers() {
+  local out rc
+  out="$("${GDP_PGREP_CMD[@]}" -f "$GDP_WRITER_PATTERN" 2>/dev/null)"; rc=$?
+  if (( rc >= 2 )); then print -r -- "unknown"; return 0; fi
+  if (( rc == 0 )) && print -r -- "$out" | grep -q '^[0-9]'; then print -r -- "running"; return 0; fi
+  if (( rc == 0 )); then print -r -- "unknown"; return 0; fi
+  print -r -- "absent"
+}
+
 # One key's value, by exact prefix match against `plutil -p`'s rendering. A dictionary or array
 # opens with `{` or `[` and continues over lines this does not read: for those two keys the question
 # T-1176 asks is whether a launch CREATES them, and the file sha256 already answers "did anything at
@@ -183,12 +202,13 @@ gdp_refuse_write_target() {  # $1 = record path
 }
 
 group_defaults_sample() {  # $1 = record path or empty
-  local record="$1" plist owner lines value key
+  local record="$1" plist owner writers lines value key
   plist="$(gdp_plist)"
   if [[ -n "$record" ]]; then gdp_refuse_write_target "$record" || return 2; fi
 
   owner="$(gdp_owner_app)"
-  lines=("# cadence group-defaults sample (T-1176)" "path=$plist" "owner-app=$owner")
+  writers="$(gdp_writers)"
+  lines=("# cadence group-defaults sample (T-1176)" "path=$plist" "owner-app=$owner" "writers=$writers")
 
   if [[ ! -r "$plist" ]]; then
     lines+=("state=absent")
@@ -221,7 +241,7 @@ gdp_key_value() {  # $1 = record, $2 = key
 }
 
 group_defaults_compare() {  # $1 = before record, $2 = after record
-  local before="$1" after="$2" f key b a moved=0 keys_moved=0
+  local before="$1" after="$2" f key b a w moved=0 keys_moved=0 unsettled=0
   for f in "$before" "$after"; do
     if [[ ! -r "$f" ]]; then
       say "  group-defaults: NO-SAMPLE -- '$f' is not readable; nothing was compared."
@@ -250,6 +270,13 @@ group_defaults_compare() {  # $1 = before record, $2 = after record
 
   [[ "$(gdp_field "$before" sha256)" != "$(gdp_field "$after" sha256)" ]] && moved=1
 
+  # A reading taken while anything that writes this suite was alive -- or while the process list
+  # was denied, or from a record written before this field existed -- cannot support UNMOVED.
+  for f in "$before" "$after"; do
+    w="$(gdp_field "$f" writers)"
+    [[ "$w" == "absent" ]] || unsettled=1
+  done
+
   if (( moved && keys_moved )); then
     say "  group-defaults: MOVED -- the file differs and at least one of the four keys moved with it."
   elif (( moved )); then
@@ -261,6 +288,20 @@ group_defaults_compare() {  # $1 = before record, $2 = after record
     say "              feels like it, and a rewrite can permute the bytes without touching a value,"
     say "              so a sha256 difference on its own does NOT mean a launch wrote these keys --"
     say "              which is the one sentence T-1176 is trying to be able to say."
+  elif (( unsettled )); then
+    say "  group-defaults: UNSETTLED -- byte-identical between the two readings, and that is NOT"
+    say "              an all-clear, because a process that writes this suite was alive (or could"
+    say "              not be ruled out) when one of them was taken."
+    say "              MEASURED 2026-10-22, and it is why this verdict exists: sample reads the"
+    say "              plist off disk with plutil, but cfprefsd holds the authoritative copy and"
+    say "              flushes it lazily. A launched build was HIDDEN at 12:11:15, which wrote"
+    say "              cadence.widgets.lastReloadAt; a sample 5s later still read the OLD value and"
+    say "              compare answered UNMOVED. At 60s it read the new one. Three readings that"
+    say "              morning said UNMOVED over a key that had already moved."
+    say "              To get an UNMOVED you can rely on: stop every Cadence process, THEN wait for"
+    say "              the flush, THEN take the after-sample. UNMOVED now requires writers=absent"
+    say "              on both records. 'defaults read $GDP_GROUP_ID' is NOT a way round this -- it"
+    say "              answers \"Domain ... not found\" for a group-container suite."
   else
     say "  group-defaults: UNMOVED -- byte-identical between the two readings."
   fi
@@ -272,9 +313,15 @@ group_defaults_compare() {  # $1 = before record, $2 = after record
       running) say "              ATTRIBUTION WITHHELD: the owner's own Cadence was RUNNING at ${f:t}. T-1176 asks what an AGENT LAUNCH writes, and this reading cannot say." ;;
       unknown) say "              ATTRIBUTION WITHHELD: whether the owner's Cadence was running could not be read at ${f:t} (the process list was denied), which is not the same as 'it was not'." ;;
     esac
+    case "$(gdp_field "$f" writers)" in
+      running) say "              WRITER ALIVE at ${f:t}: a Cadence build was running, so a write of its own may not have reached the file yet." ;;
+      unknown) say "              WRITER UNKNOWN at ${f:t}: the process list was denied, so a live writer could not be ruled out." ;;
+      "")      say "              WRITER NOT RECORDED at ${f:t}: this record predates the writers= field and cannot support an UNMOVED." ;;
+    esac
   done
   (( moved && keys_moved )) && return 1
   (( moved )) && return 4
+  (( unsettled )) && return 5
   return 0
 }
 
@@ -474,7 +521,73 @@ exit 3' > "$ws/pgrep-blind"; chmod +x "$ws/pgrep-blind"
   check "a pgrep that answers and finds nothing -> owner-app=absent" \
     $( [[ "$out" == *"owner-app=absent"* ]] && print 1 || print 0 ) "$out"
 
-  say "-- 9. no probe left a shell error in its report"
+  # T-4620. The verdict this tool exists to hand over is UNMOVED, and before this section it
+  # could be produced by a write that had happened seconds earlier: `sample` reads the file with
+  # `plutil` while cfprefsd still holds the authoritative copy. Measured 2026-10-22 against the
+  # owner's real suite -- a hide at 12:11:15 wrote `cadence.widgets.lastReloadAt`, a sample 5s
+  # later read the OLD value and `compare` said UNMOVED; at 60s it read the new one. So the
+  # byte-identical case now splits on whether a writer could be ruled out, and BOTH directions are
+  # pinned here: a control that still answers UNMOVED, or this section would pass on a tool that
+  # answered UNSETTLED for everything.
+  say "-- 9. a byte-identical reading taken while a writer was alive is UNSETTLED, not UNMOVED"
+  FAKE_PGREP="/bin/zsh -f $ws/pgrep-absent"
+  write_plist "$ws/fixtures/settled.plist" "1791260184.86859" ""
+  probe "$ws/fixtures/settled.plist" sample "$ws/records/settled-before.rec"
+  probe "$ws/fixtures/settled.plist" sample "$ws/records/settled-after.rec"
+  probe NONE compare "$ws/records/settled-before.rec" "$ws/records/settled-after.rec"
+  check "two readings with writers=absent over one file -> UNMOVED (exit 0)" \
+    $( (( rc == 0 )) && [[ "$out" == *"group-defaults: UNMOVED"* ]] && print 1 || print 0 ) "exit $rc: $out"
+
+  # The same two records, with only the after-record's writers= flipped to the reading a live
+  # agent build gives. Nothing about the FILE changed, which is the point: the bytes are not what
+  # makes this reading untrustworthy.
+  cp "$ws/records/settled-after.rec" "$ws/records/live-after.rec"
+  sed -i '' 's/^writers=absent$/writers=running/' "$ws/records/live-after.rec"
+  probe NONE compare "$ws/records/settled-before.rec" "$ws/records/live-after.rec"
+  check "the same pair with writers=running on one side -> UNSETTLED (exit 5), never UNMOVED" \
+    $( (( rc == 5 )) && [[ "$out" == *"group-defaults: UNSETTLED"* && "$out" != *"group-defaults: UNMOVED"* ]] \
+       && print 1 || print 0 ) "exit $rc: $out"
+
+  # A denied process list is not "no writer", for the same reason section 8 gives for owner-app.
+  cp "$ws/records/settled-after.rec" "$ws/records/blind-after.rec"
+  sed -i '' 's/^writers=absent$/writers=unknown/' "$ws/records/blind-after.rec"
+  probe NONE compare "$ws/records/settled-before.rec" "$ws/records/blind-after.rec"
+  check "writers=unknown is treated as a possible writer -> UNSETTLED (exit 5)" \
+    $( (( rc == 5 )) && [[ "$out" == *"group-defaults: UNSETTLED"* ]] && print 1 || print 0 ) "exit $rc: $out"
+
+  # A record written before this field existed cannot support an all-clear either.
+  cp "$ws/records/settled-after.rec" "$ws/records/old-after.rec"
+  sed -i '' '/^writers=/d' "$ws/records/old-after.rec"
+  probe NONE compare "$ws/records/settled-before.rec" "$ws/records/old-after.rec"
+  check "a record with no writers= line at all -> UNSETTLED (exit 5)" \
+    $( (( rc == 5 )) && [[ "$out" == *"group-defaults: UNSETTLED"* ]] && print 1 || print 0 ) "exit $rc: $out"
+
+  # THE CONTROL THAT MATTERS: a live writer must not downgrade a POSITIVE reading. UNSETTLED
+  # replaces the all-clear only. A key that demonstrably moved is still MOVED, writer or no writer.
+  write_plist "$ws/fixtures/settled-moved.plist" "1792685475.870857" ""
+  probe "$ws/fixtures/settled-moved.plist" sample "$ws/records/moved-after.rec"
+  sed -i '' 's/^writers=absent$/writers=running/' "$ws/records/moved-after.rec"
+  probe NONE compare "$ws/records/settled-before.rec" "$ws/records/moved-after.rec"
+  check "a writer alive does NOT turn a real key move into UNSETTLED -> still MOVED (exit 1)" \
+    $( (( rc == 1 )) && [[ "$out" == *"group-defaults: MOVED"* ]] && print 1 || print 0 ) "exit $rc: $out"
+
+  # And the detector itself, in the same three-way shape section 8 holds owner-app to. Without
+  # these, `compare`'s split above is pinned while the field it splits on is not, and a writers=
+  # that always answered `absent` would pass everything above it.
+  FAKE_PGREP="/bin/zsh -f $ws/pgrep-running"
+  probe "$ws/fixtures/settled.plist" sample "$ws/records/w-running.rec"
+  check "a pgrep that finds a Cadence build -> writers=running" \
+    $( [[ "$out" == *"writers=running"* ]] && print 1 || print 0 ) "$out"
+  FAKE_PGREP="/bin/zsh -f $ws/pgrep-blind"
+  probe "$ws/fixtures/settled.plist" sample "$ws/records/w-blind.rec"
+  check "a pgrep DENIED the process list -> writers=unknown, never writers=absent" \
+    $( [[ "$out" == *"writers=unknown"* && "$out" != *"writers=absent"* ]] && print 1 || print 0 ) "$out"
+  FAKE_PGREP="/bin/zsh -f $ws/pgrep-absent"
+  probe "$ws/fixtures/settled.plist" sample "$ws/records/w-absent.rec"
+  check "a pgrep that answers and finds nothing -> writers=absent" \
+    $( [[ "$out" == *"writers=absent"* ]] && print 1 || print 0 ) "$out"
+
+  say "-- 10. no probe left a shell error in its report"
   check "no probe printed a set -u failure, a bad substitution or a missing command" \
     $( [[ "$out" != *"parameter not set"* && "$out" != *"bad substitution"* \
           && "$out" != *"command not found"* ]] && print 1 || print 0 ) "$out"

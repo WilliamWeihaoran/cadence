@@ -881,6 +881,13 @@ struct CadenceGuardScriptSelftestTests {
         "FLOAT32-TRUNCATION",
         "owner-app=unknown",
         "CREATED",
+        // T-4620. UNMOVED is the verdict the owner's one window is spent to obtain, and it was
+        // obtainable from a write that had landed seconds earlier: the probe reads the plist off
+        // disk while cfprefsd still holds the authoritative copy and flushes it lazily. §9 splits
+        // the byte-identical case on whether a writer could be ruled out. Both strings are
+        // required so that deleting either arm of that split reddens here.
+        "group-defaults: UNSETTLED",
+        "writers=running",
     ]
 
     @Test func theMutationRunnersOwnGuardsStillFire() throws {
@@ -986,6 +993,19 @@ struct CadenceGuardScriptSelftestTests {
     /// something. So §6 now requires a record in the container's `Library` to be refused *and* one
     /// in the same container's `tmp` to be written: a guard that refuses everything protects
     /// nothing, and only the second half tells the two apart.
+    ///
+    /// **§9 is the cfprefsd FLUSH LAG, and it was measured by this tool lying (T-4620).** `sample`
+    /// reads the file with `plutil`; cfprefsd holds the authoritative copy and writes it out when
+    /// it likes. On 2026-10-22, in the owner's window, a launched Debug build was hidden at
+    /// 12:11:15 and wrote `cadence.widgets.lastReloadAt` — a sample five seconds later still read
+    /// the pre-hide value and `compare` answered `UNMOVED`, the all-clear; at sixty seconds it read
+    /// the new one. Three readings that morning said `UNMOVED` over a key that had already moved.
+    /// So a byte-identical pair is now `UNSETTLED` (exit 5) unless *both* records carry
+    /// `writers=absent`, where the writer pattern finds an agent's Debug build as well as the
+    /// owner's installed one — `CadenceWidgetRefreshCenter.sharedDefaults` resolves the app group
+    /// unconditionally, so both write this suite. The last check of §9 is the control and is the
+    /// one that matters: a live writer must **not** downgrade a reading where a key demonstrably
+    /// moved, or the split would have bought safety by making the tool useless.
     ///
     /// `owner-app=unknown` is pinned beside the verdicts for the T-1152 reason: inside this host
     /// `pgrep` runs but is denied the process list and exits 3, and reading that as "the owner's app
