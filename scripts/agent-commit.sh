@@ -2225,6 +2225,36 @@ $(print -rl -- "${stale[@]}" | sed 's/^/    /')
         fi
     fi
 
+    # 3a3a. T-4480. `ledger-view.sh lint` names an illegal lead token -- `**CONFIRMED`, `**DECIDE:`,
+    #       `**CLOSED-as-REFUTED` -- which every reader falls back to reading as OPEN (T-2053 read a
+    #       PARTIAL as OPEN for fifteen days that way, T-4300). It was a mode nothing ran, so a new
+    #       one was refused nowhere. Asked here of the STAGED blob of `docs/TODO.md` -- the committed
+    #       bytes, not the worktree a sibling may be mid-edit on -- and only when this commit stages
+    #       that path, so a commit not touching the ledger is never refused for one already in it.
+    #       Whole-file, like 3a3 above, and enforceable at zero: the ledger read 0 over 1325
+    #       entries when this was wired. `ledger-view.sh` is the ONE reading (no copy here to drift);
+    #       the archive is /dev/null because lint judges only the open ledger's active sections, and
+    #       the entry floor is 1 because vacuity is LEDGER-IDS-LOST's question, not this one's. Any
+    #       exit but 0 or 6 is the check failing to run, and a crash read as "fine" is decoration.
+    #       (`./docs/TODO.md` needs no match of its own: `git update-index` refuses to stage it.)
+    local lint_name=docs/TODO.md lint_script="${SCRIPT_PATH:h}/ledger-view.sh" lint_out lint_rc
+    if [[ -n "${staged_content[$lint_name]+x}" ]]; then
+        [[ -f "$lint_script" ]] || { rm -rf "$scratch"; refuse LEDGER-LINT-FAILED "$lint_script is not there, so the staged docs/TODO.md cannot be linted for illegal lead tokens. Restore the script." }
+        lint_out=$(CADENCE_LEDGER_VIEW_TODO="${staged_content[$lint_name]}" CADENCE_LEDGER_VIEW_DONE=/dev/null \
+            CADENCE_LEDGER_VIEW_MIN_ENTRIES=1 sh "$lint_script" lint 2>&1); lint_rc=$?
+        if (( lint_rc == 6 )); then
+            rm -rf "$scratch"
+            refuse LEDGER-ILLEGAL-LEAD "the docs/TODO.md this commit stages carries an illegal lead token:
+$(print -r -- "$lint_out" | grep -v '^REFUSED' | sed "s|${staged_content[$lint_name]}|docs/TODO.md|; s/^/    /")
+  The lead token is the first word after \`**\`, and only CLOSED, PARTIAL, OPEN and PARKED are
+  states; anything else reads as OPEN everywhere. Rewrite each one. Nothing was committed."
+        elif (( lint_rc != 0 )); then
+            rm -rf "$scratch"
+            refuse LEDGER-LINT-FAILED "\`ledger-view.sh lint\` over the staged docs/TODO.md exited $lint_rc and said: ${lint_out:-(nothing)}
+  Nothing was committed, because the question of whether its lead tokens are legal went unanswered."
+        fi
+    fi
+
     # 3a3b. T-1142, and the half 3a3 cannot reach. That guard asks whether the closure was written
     #       where every instrument looks; this asks whether writing it REPLACED the draft it was
     #       meant to replace. An appended closure leaves the entry asserting its own body twice --
@@ -5142,6 +5172,40 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>" ) >/dev/null 2>&1
     check "the precheck's own selftest passes (chained)" $(( rc == 0 )) "exit $rc: $out"
 
     selftest_segment_close s12 ) > "$runs/s12.log" 2>&1 &
+
+    # s13 builds its own docs/TODO.md on a fresh fixture and reads nothing any other segment leaves.
+    segments+=(s13)
+    ( selftest_segment_open s13
+    say ""
+    say " mode 11 (LEDGER-ILLEGAL-LEAD) -- the STAGED docs/TODO.md must carry only legal lead tokens (T-4480)"
+    local legal_ledger=$'# Ledger\n\n## Open\n\n- [T-201] **OPEN 2026-10-22 -- legal.**\n- [T-202] **PARTIAL 2026-10-22 -- legal.**\n- [T-203] **The headline convention, which is not a state.**\n\n## Done\n\n- [T-204] **LANDED 2026-10-22 -- the section decides.**'
+    mkdir -p "$ws/docs"
+    print -r -- "$legal_ledger" > "$ws/docs/TODO.md"
+    out=$( cd "$ws" && zsh "$here" t11a -m "$M" docs/TODO.md 2>&1 ); rc=$?
+    check "a docs/TODO.md with legal lead tokens commits" $(( rc == 0 )) "exit $rc: $out"
+    print -r -- "${legal_ledger/\*\*PARTIAL/**CONFIRMED}" > "$ws/docs/TODO.md"
+    prehead=$( cd "$ws" && git rev-parse HEAD )
+    out=$( cd "$ws" && zsh "$here" t11b -m "$M" --removes 1 docs/TODO.md 2>&1 ); rc=$?
+    # `--removes 1` answers REMOVES-HEAD-LINES for the rewritten line, so this lint is the only refusal left.
+    check "an illegal lead token in the staged docs/TODO.md is refused" $(( rc == 3 )) "exit $rc: $out"
+    check "and the entry and token are named" \
+        $( [[ "$out" == *LEDGER-ILLEGAL-LEAD*T-202*"lead token CONFIRMED"* ]] && print 1 || print 0 ) "$out"
+    check "nothing was committed" $( [[ $( cd "$ws" && git rev-parse HEAD ) == "$prehead" ]] && print 1 || print 0 )
+    # The worktree still holds the illegal token. A commit that does not stage the ledger is not its
+    # business, and a commit staging a LEGAL blob through `=` is judged by that blob, not the worktree.
+    ( cd "$ws" && print -r -- "line two" >> mine.txt )
+    out=$( cd "$ws" && zsh "$here" t11d -m "$M" mine.txt 2>&1 ); rc=$?
+    check "a commit not staging docs/TODO.md is not linted" $(( rc == 0 )) "exit $rc: $out"
+    print -r -- "${legal_ledger}"$'\n'"- [T-205] **OPEN 2026-10-22 -- legal, from a content file.**" > "$ws/legal.blob"
+    out=$( cd "$ws" && zsh "$here" t11e -m "$M" docs/TODO.md="$ws/legal.blob" 2>&1 ); rc=$?
+    check "the lint reads the staged blob, not the illegal worktree copy" $(( rc == 0 )) "exit $rc: $out"
+    print -r -- "${"$(<"$ws/legal.blob")"/\*\*OPEN/**DECIDE:}" > "$ws/illegal.blob"
+    # t11e declined the worktree's illegal line, which is mode 3's business; clear it deliberately.
+    ( cd "$ws" && zsh "$here" accept docs/TODO.md && cp legal.blob docs/TODO.md ) >/dev/null 2>&1
+    out=$( cd "$ws" && zsh "$here" t11f -m "$M" --removes 1 docs/TODO.md="$ws/illegal.blob" 2>&1 ); rc=$?
+    check "an illegal staged blob is refused over a legal worktree copy" \
+        $( (( rc == 3 )) && [[ "$out" == *LEDGER-ILLEGAL-LEAD*T-201*"lead token DECIDE"* ]] && print 1 || print 0 ) "exit $rc: $out"
+    selftest_segment_close s13 ) > "$runs/s13.log" 2>&1 &
     wait
     performed=(); failures=()
     local seg segtally

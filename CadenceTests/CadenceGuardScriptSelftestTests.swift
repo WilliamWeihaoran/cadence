@@ -247,6 +247,10 @@ struct CadenceGuardScriptSelftestTests {
         // working gate from one jammed shut.
         "SWIFT-PARSE-FAILED",
         "SWIFT-PARSE-UNAVAILABLE",
+        // T-4480: `ledger-view.sh lint` asked of the STAGED docs/TODO.md. It was a mode no gate
+        // ran, so an illegal lead token -- read as OPEN everywhere -- was refused nowhere. Naming it
+        // here means deleting mode 11 goes red rather than quietly un-wiring the gate.
+        "LEDGER-ILLEGAL-LEAD",
     ]
 
     /// Every refusal `scripts/agent-scratch.sh` makes (T-1094). The ticket was filed over work that
