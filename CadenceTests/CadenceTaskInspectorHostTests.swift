@@ -300,23 +300,9 @@ struct CadenceTaskInspectorHostTests {
         )
     }
 
-    /// One host above both shells, plus one **inside** the one sheet that presents a whole page.
-    ///
-    /// This test read "exactly one" and said a second application "would mean two hosts racing to
-    /// present, which on iOS means the inner one silently does nothing". The second half is
-    /// backwards, and `iOSTaskInspectorHost`'s own documentation has always said so: the
-    /// environment resolves to the **innermost** host, and it is the *outer* one that does nothing
-    /// — it is already presenting the sheet, so a request from inside cannot open anything. That
-    /// is the same fact the five-presenter test above records when it says three of the four
-    /// exceptions "present from inside a sheet, where a host above the sheet is the wrong owner".
-    ///
-    /// So the exception is stated positively rather than the assertion loosened: still an exact
-    /// set, so a third application anywhere is still a failure. `iOSTodayOverdueListSheet` (T-195,
-    /// second half) presents `iOSListDetailView` — a whole page of task rows, every one of which
-    /// asks the environment for the inspector — from Today's past-due summary cards. A nested host
-    /// is what those rows reach; without it every one of them is a dead tap, which is the defect
-    /// class this whole suite exists to catch. It costs the five-presenter count nothing: the host
-    /// is the presenter, so `iOSTaskDetailSheet(` still appears in exactly five files.
+    /// One host above both shells. T-3078 removed the callerless past-due list sheet and its
+    /// nested host. Keep this manifest-listed test name so its whole-product inventory remains
+    /// registered; the exact surviving set rejects a revived sheet host or another stray owner.
     @Test func theHostIsInstalledAboveBothShellsAndInsideTheOneSheetThatCarriesAPage() throws {
         var applications: [String: Int] = [:]
         for path in try swiftFiles(under: "Cadence") {
@@ -330,9 +316,7 @@ struct CadenceTaskInspectorHostTests {
         #expect(
             applications == [
                 "Cadence/iOS/iOSTaskInspectorHost.swift": 1,
-                "Cadence/iOS/iOSRootView.swift": 1,
-                // The nearer owner, inside a sheet the root host cannot present through.
-                "Cadence/iOS/iOSTodayTaskSections.swift": 1
+                "Cadence/iOS/iOSRootView.swift": 1
             ],
             "iOSTaskInspectorHost applications changed: \(applications)"
         )
@@ -408,23 +392,12 @@ struct CadenceTaskInspectorHostTests {
         }
     }
 
-    /// The nested host, likewise placed rather than counted. `iOSTodayTaskSections.swift` declares
-    /// several views; the one that must carry it is the sheet presenting a whole page of task rows,
-    /// and it must carry it on the view it actually renders. A `.iOSTaskInspectorHost()` that
-    /// drifted onto a neighbouring view — or onto another member of this very struct — leaves the
-    /// file count at one and every row inside the sheet a dead tap again.
-    ///
-    /// Scoping to the struct alone was measurably not enough: the first draft of this test sliced
-    /// `struct iOSTodayOverdueListSheet: View` and survived a mutation that moved the modifier onto
-    /// a second computed property in the same struct. `var body` is the scope that means what the
-    /// sentence above says.
-    @Test func theNestedHostSitsOnTheSheetThatCarriesAWholePageOfRows() throws {
-        let sections = try strippingComments(sourceFile("Cadence/iOS/iOSTodayTaskSections.swift"))
-        let sheet = try cadenceFunctionBody("struct iOSTodayOverdueListSheet: View", in: sections)
-        let body = try cadenceFunctionBody("var body: some View", in: sheet)
-
-        #expect(body.contains(".iOSTaskInspectorHost()"))
-        #expect(sheet.contains("iOSListDetailView("))
+    /// The retired sheet cannot reintroduce a nested inspector owner on Today's task groups.
+    @Test func theRetiredTodayListSheetHasNoNestedTaskInspectorHost() throws {
+        let sections = CadenceSourceScan.codeOnly(try sourceFile("Cadence/iOS/iOSTodayTaskSections.swift"))
+        #expect(sections.contains("struct iOSTodayTaskSections: View"))
+        #expect(!sections.contains("iOSTodayOverdueListSheet"))
+        #expect(!sections.contains(".iOSTaskInspectorHost()"))
     }
 
     /// The host reads the shared decision rather than re-deciding, and it reads it about the two

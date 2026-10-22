@@ -22,15 +22,19 @@ Audit branch: `codex/platform-parity-audit`, created from fetched `origin/main` 
 | BLOCKED | 2 |
 | UNKNOWN | 14 |
 
-**Five findings to address first, in order:**
+**Priority status — checked against the ledger on 21 October 2026:**
 
-1. **PA-13 — failed iOS board drops report success.** Persistence refusal must not leave a moved-looking card and pending fields. Mac already has a tested transactional pattern; extend the contract to the actual mobile path.
-2. **PA-26 — stale iOS state after external writes.** *(Landing correction: half of this is already fixed — see PA-26's LANDING NOTE. The notification arm landed in `7343bfe8`; only the UI-adoption arm survives, and it is the blocked [[T-1469]]. Read #2 as PA-14 in practice.)* A completed widget task that remains active in the app/reminder plan undermines trust across devices and entry points. Resolve the existing T-3109 ownership block rather than inventing a second refresh mechanism.
-3. **PA-14 — Mac board date moves skip immediate notification reconciliation.** Persistence success alone is insufficient when the reminder still describes the previous schedule. Prove the successful mutation and notification side effect as one contract.
-4. **PA-01 — Mac task rows omit note excerpts.** *(CLOSED by [[T-1467]] at `76edf23f`, with PA-02 — see PA-01's CLOSED note.)* This is the owner-observed information gap and affects routine Today scanning. Preserve the notes glyph until the chosen replacement actually exposes the information. PA-02 is the closely related subtask follow-up.
-5. **PA-19 — Mac search silently caps matches.** A search that appears complete but cannot reveal a matching item is more damaging than a different layout. Preserve bounded initial rendering while making the remainder reachable.
+The original five-item priority list is historical. Four findings are closed; PA-26 still has an open UI-adoption arm:
 
-PA-20 (list-document search) is already a blocked scope decision in T-3084. The two note-discovery gaps PA-15/16 also warrant tickets. Deliberate truncation/space choices stay in this inventory for owner review, without cosmetic ticket spam.
+| Finding | Current disposition |
+|---|---|
+| PA-13 — failed iOS board drops report success | CLOSED, [[T-1470]], implemented at `405806ff`. |
+| PA-26 — stale iOS state after external writes | **OPEN, [[T-1469]].** Notification reconciliation landed in `7343bfe8`; adopting a fresh UI context still requires a state-preserving design that keeps retained models and active work valid. |
+| PA-14 — Mac board date moves skip immediate notification reconciliation | CLOSED, [[T-1478]]. Immediate reconciliation is counted and mutation-proven; device delivery was not measured. |
+| PA-01 — Mac task rows omit note excerpts | CLOSED with PA-02, [[T-1467]], at `76edf23f`. |
+| PA-19 — Mac search silently caps matches | CLOSED, [[T-1473]], landed at `1eed824f`. [[T-3089]] remains PARTIAL, but its Mac continuation code is present; [[T-3297]] independently confirms this specific remainder is implemented. |
+
+PA-26 remains the open work from this list. The broader inventory below records the original audit and its dated landing corrections, rather than a fresh ranking of every remaining finding. PA-20 (list-document search) remains an owner scope decision under [[T-3084]]; this summary does not resolve it. The claim in [[T-3250]] / [[T-3297]] that all five priorities are discharged conflicts with T-1469's OPEN first line and is not adopted here.
 
 **Evidence level:** code paths and comments were inspected; no new runtime failures were induced. “Tests cover” below means the inspected assertion contract exists, not that this audit ran it. Failure consequences and device behavior are explicitly identified as inferred where relevant. Reported absences name the specific host where a counterpart would belong. Search used raw source for symbols, literals and comments; no literal-absence claim uses `CadenceSourceScan.codeOnly`.
 

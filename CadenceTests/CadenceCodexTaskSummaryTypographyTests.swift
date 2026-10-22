@@ -16,7 +16,6 @@ struct CadenceCodexTaskSummaryTypographyTests {
             #expect(CadenceEmptyStateMetrics.iconSide(at: size, scaling: .fixed) == 72)
             #expect(CadenceTodayRolloverMetrics.iconSide(at: size, scaling: .fixed) == 22)
             #expect(CadenceTodayRolloverMetrics.dotSide(at: size, scaling: .fixed) == 6)
-            #expect(CadenceOverdueSummaryMetrics.iconSide(at: size, scaling: .fixed) == 30)
             for (role, base) in fonts {
                 #expect(CadenceTypeScale.size(role, base: base, at: size, scaling: .fixed) == base)
             }
@@ -27,15 +26,12 @@ struct CadenceCodexTaskSummaryTypographyTests {
         for size in DynamicTypeSize.allCases {
             let emptyLine = CadenceTypeScale.lineHeight(.bodyText, base: 26, at: size, scaling: .enabled)
             let rolloverLine: CGFloat = CadenceTypeScale.lineHeight(.controlLabel, base: 14, at: size, scaling: .enabled) + 4
-            let overdueLine = CadenceTypeScale.lineHeight(.controlLabel, at: size, scaling: .enabled)
             #expect(CadenceEmptyStateMetrics.iconSide(at: size, scaling: .enabled) >= emptyLine)
             #expect(CadenceTodayRolloverMetrics.iconSide(at: size, scaling: .enabled) >= rolloverLine)
-            #expect(CadenceOverdueSummaryMetrics.iconSide(at: size, scaling: .enabled) >= overdueLine)
             let title = CadenceTypeScale.size(.metadata, at: size, scaling: .enabled)
             #expect(CadenceTodayRolloverMetrics.dotSide(at: size, scaling: .enabled) == title / 2)
         }
         #expect(CadenceEmptyStateMetrics.iconSide(at: .accessibility5, scaling: .enabled) > 72)
-        #expect(CadenceOverdueSummaryMetrics.iconSide(at: .accessibility5, scaling: .enabled) > 30)
         // The old plate plus font growth alone is still too short for the glyph's line box.
         let additiveOnly = CadenceTypeScale.height(22, holding: .controlLabel, textBase: 14, at: .accessibility5, scaling: .enabled)
         let line = CadenceTypeScale.lineHeight(.controlLabel, base: 14, at: .accessibility5, scaling: .enabled)
@@ -43,33 +39,12 @@ struct CadenceCodexTaskSummaryTypographyTests {
         #expect(CadenceTodayRolloverMetrics.iconSide(at: .accessibility5, scaling: .enabled) > additiveOnly)
     }
 
-    @Test func codexWrappingOverdueCaptionsPreserveWordsAndTintOnlyTheDate() {
-        let details: [(String?, String?)] = [(nil, nil), ("", ""), ("A long project name", nil), (nil, "3 open"), ("Project", "3 open")]
-        for (leading, trailing) in details {
-            for late in [false, true] {
-                let line = CadenceOverdueSummaryLine(leadingDetail: leading, dateText: "3 days ago", trailingDetail: trailing, isLate: late)
-                let caption = CadenceOverdueSummaryCaption.attributedCaption(line)
-                #expect(String(caption.characters) == line.plainText)
-                var redFragments: [String] = []
-                for run in caption.runs {
-                    if run.foregroundColor == Theme.red {
-                        redFragments.append(String(caption[run.range].characters))
-                    } else {
-                        #expect(run.foregroundColor == Theme.dim)
-                    }
-                }
-                #expect(redFragments == (late ? [line.dateText] : []))
-            }
-        }
-    }
-
     @Test func codexNewlyLeasedComponentsUseTheirScaleAndKeepWrappingUncapped() throws {
         let read = CadenceSourceScan.strippedSourceReader()
         let empty = try read("Cadence/Shared/Components/EmptyStateView.swift")
         let group = try read("Cadence/Shared/Components/CadenceTaskGroupHeading.swift")
         let rollover = try read("Cadence/Shared/Components/CadenceTodayRolloverBanner.swift")
-        let overdue = try read("Cadence/Shared/Components/CadenceTodayOverdueSummaryCards.swift")
-        for source in [empty, group, rollover, overdue] {
+        for source in [empty, group, rollover] {
             #expect(source.contains("@Environment(\\.cadenceTypographyScaling)"))
             #expect(!source.contains(".font(.system(size:"))
             #expect(!source.contains(".cadenceScaledTypography()"))
@@ -84,7 +59,7 @@ struct CadenceCodexTaskSummaryTypographyTests {
         // every negative check above, and what replaces the positive one for it is the
         // `SectionEyebrowLabel` read below — strictly stronger, because it names the component the
         // type comes from rather than that some scaled call exists somewhere in the file.
-        for source in [empty, rollover, overdue] {
+        for source in [empty, rollover] {
             #expect(source.contains(".cadenceFont("))
         }
         #expect(empty.contains("CadenceEmptyStateMetrics.iconSide(at: dynamicTypeSize, scaling: scaling)"))
@@ -104,11 +79,7 @@ struct CadenceCodexTaskSummaryTypographyTests {
         #expect(rollover.contains("Text(failureNotice)"))
         #expect(rollover.contains(".fixedSize(horizontal: !wraps, vertical: true)"))
         #expect(rollover.contains(".frame(maxWidth: .infinity, alignment: .leading)"))
-        #expect(overdue.contains("Text(Self.attributedCaption(line))"))
-        #expect(overdue.contains("CadenceOverdueSummaryMetrics.iconSide(at: dynamicTypeSize, scaling: scaling)"))
-        #expect(overdue.contains("? AnyLayout(VStackLayout(alignment: .leading, spacing: 12))"))
-        #expect(overdue.contains(".cadenceFont(.sectionLabel, base: SectionEyebrowLabel.fontSize, weight: .semibold)"))
-        for source in [group, rollover, overdue] {
+        for source in [group, rollover] {
             #expect(source.contains("scaling == .enabled && CadenceTypeScale.isAccessibilitySize(dynamicTypeSize)"))
             #expect(source.contains(".lineLimit(wraps ? nil : 1)"))
         }

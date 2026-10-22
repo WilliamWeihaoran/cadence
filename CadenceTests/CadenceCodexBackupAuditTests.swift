@@ -1,4 +1,5 @@
 import Foundation
+import SQLite3
 import Testing
 @testable import Cadence
 
@@ -50,14 +51,15 @@ struct CadenceCodexBackupAuditTests {
         try withTemporaryDefaults("CadenceTests.codexBackupAudit") { defaults in
             let root = try temporaryStore()
             defer { try? FileManager.default.removeItem(at: root) }
-            try seedStore(in: root, marker: "incomplete-backup")
+            try seedStore(in: root, marker: "incomplete-backup", withSidecars: true)
             let backup = try #require(try StoreBackupManager.createBackupIfStoreExists(
-                reason: .manual,
-                storeDirectoryURL: root
+                reason: .startup,
+                storeDirectoryURL: root,
+                defaults: defaults
             ))
             try FileManager.default.removeItem(at: backup.appendingPathComponent("default.store-wal"))
             try Data(manifest.utf8).write(to: backup.appendingPathComponent("manifest.json"))
-            try seedStore(in: root, marker: "good-live-store")
+            try seedStore(in: root, marker: "good-live-store", withSidecars: true)
 
             do {
                 try StoreBackupManager.scheduleRestore(from: backup, defaults: defaults, storeDirectoryURL: root)
@@ -83,12 +85,13 @@ struct CadenceCodexBackupAuditTests {
         try withTemporaryDefaults("CadenceTests.codexBackupAudit") { defaults in
             let root = try temporaryStore()
             defer { try? FileManager.default.removeItem(at: root) }
-            try seedStore(in: root, marker: "valid-backup")
+            try seedStore(in: root, marker: "valid-backup", withSidecars: true)
             let backup = try #require(try StoreBackupManager.createBackupIfStoreExists(
-                reason: .manual,
-                storeDirectoryURL: root
+                reason: .startup,
+                storeDirectoryURL: root,
+                defaults: defaults
             ))
-            try seedStore(in: root, marker: "live")
+            try seedStore(in: root, marker: "live", withSidecars: true)
             try StoreBackupManager.scheduleRestore(from: backup, defaults: defaults, storeDirectoryURL: root)
             try StoreBackupManager.performPendingRestoreIfNeeded(storeDirectoryURL: root, defaults: defaults)
 
@@ -136,16 +139,58 @@ struct CadenceCodexBackupAuditTests {
         return root
     }
 
-    private func seedStore(in root: URL, marker: String) throws {
-        try Data(marker.utf8).write(to: root.appendingPathComponent("default.store"))
-        try Data("\(marker)-wal".utf8).write(to: root.appendingPathComponent("default.store-wal"))
+    /// Real, closed SQLite databases let manual backups exercise VACUUM INTO. Only the two
+    /// cold-start component tests add synthetic sidecars; .startup copies those bytes verbatim.
+    private func seedStore(in root: URL, marker: String, withSidecars: Bool = false) throws {
+        let store = root.appendingPathComponent("default.store")
+        // These are this fixture's own files, never an app-owned store or retained backup.
+        for name in ["default.store", "default.store-wal", "default.store-shm"] {
+            let url = root.appendingPathComponent(name)
+            if FileManager.default.fileExists(atPath: url.path) {
+                try FileManager.default.removeItem(at: url)
+            }
+        }
+        do {
+            var database: OpaquePointer?
+            defer { sqlite3_close(database) }
+            try #require(sqlite3_open(store.path, &database) == SQLITE_OK)
+            try #require(sqlite3_exec(database, "CREATE TABLE fixture_marker (value TEXT NOT NULL)", nil, nil, nil) == SQLITE_OK)
+            var statement: OpaquePointer?
+            try #require(sqlite3_prepare_v2(database, "INSERT INTO fixture_marker VALUES (?1)", -1, &statement, nil) == SQLITE_OK)
+            defer { sqlite3_finalize(statement) }
+            let transient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
+            try #require(sqlite3_bind_text(statement, 1, marker, -1, transient) == SQLITE_OK)
+            try #require(sqlite3_step(statement) == SQLITE_DONE)
+        }
+        #expect(try Data(contentsOf: store).prefix(16) == Data("SQLite format 3\0".utf8))
+        if withSidecars {
+            try Data("\(marker)-wal".utf8).write(to: root.appendingPathComponent("default.store-wal"))
+        }
         let assets = root.appendingPathComponent(".default_SUPPORT", isDirectory: true)
         try FileManager.default.createDirectory(at: assets, withIntermediateDirectories: true)
         try Data("\(marker)-asset".utf8).write(to: assets.appendingPathComponent("asset.bin"))
     }
 
     private func marker(in root: URL, name: String = "default.store") throws -> String {
-        String(decoding: try Data(contentsOf: root.appendingPathComponent(name)), as: UTF8.self)
+        let url = root.appendingPathComponent(name)
+        guard name == "default.store" else {
+            return String(decoding: try Data(contentsOf: url), as: UTF8.self)
+        }
+        // The fixture is fully committed in the main file. Ignore its synthetic cold-copy WAL
+        // when reading the marker; this is not a claim that those sidecar bytes form a valid WAL.
+        var components = try #require(URLComponents(url: url, resolvingAgainstBaseURL: false))
+        components.scheme = "file"
+        components.queryItems = [URLQueryItem(name: "immutable", value: "1")]
+        let uri = try #require(components.string)
+        var database: OpaquePointer?
+        defer { sqlite3_close(database) }
+        try #require(sqlite3_open_v2(uri, &database, SQLITE_OPEN_READONLY | SQLITE_OPEN_URI, nil) == SQLITE_OK)
+        var statement: OpaquePointer?
+        try #require(sqlite3_prepare_v2(database, "SELECT value FROM fixture_marker", -1, &statement, nil) == SQLITE_OK)
+        defer { sqlite3_finalize(statement) }
+        try #require(sqlite3_step(statement) == SQLITE_ROW)
+        let text = try #require(sqlite3_column_text(statement, 0))
+        return String(cString: text)
     }
 
     private func labelAsPreRestore(_ backup: URL, createdAt: Date) throws {

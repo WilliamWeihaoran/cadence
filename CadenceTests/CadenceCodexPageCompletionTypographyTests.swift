@@ -94,9 +94,8 @@ struct CadenceCodexPageCompletionTypographyTests {
             if path == "iOSTodayView.swift" {
                 let capture = try #require(body.range(of: ".iOSFloatingCreateTaskButton()"))
                 #expect(root.lowerBound < capture.lowerBound)
-                let sheet = try #require(CadenceSourceScan.declarationBody(".sheet(item: $pendingListOpen)", in: body))
-                #expect(sheet.contains("iOSTodayOverdueListSheet(request: request)"))
-                #expect(sheet.contains(".cadenceFixedTypography()"))
+                #expect(!body.contains("pendingListOpen"))
+                #expect(!body.contains("iOSTodayOverdueListSheet"))
             }
         }
         for path in ["iOSInboxView.swift", "iOSTaskCollectionViews.swift"] {
