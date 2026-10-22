@@ -16,18 +16,30 @@ struct CalendarPageToolbar: View {
 
     var body: some View {
         HStack(spacing: 12) {
+            // T-3269: at a ~960pt window the controls to the right squeezed this group until
+            // "Calendar" drew as `Cal`/`end`/`ar` and the month as `Octobe`/`r 2026`. Same rule
+            // as `DesktopPageHeader`: one line each, the title never gives way (it is one fixed
+            // word), the period label is the half that truncates, and the group is laid out
+            // before the controls rather than sharing the width with them equally.
             HStack(spacing: 6) {
                 Text("Calendar")
                     .font(.system(size: CadenceDesktopMetrics.pageTitleSize, weight: .bold))
                     .foregroundStyle(Theme.text)
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
                 Text("·")
                     .font(.system(size: 16))
                     .foregroundStyle(Theme.dim.opacity(0.5))
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
                 Text(calendarTitleLabel)
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(Theme.muted)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
                     .animation(.none, value: calendarTitleLabel)
             }
+            .layoutPriority(1)
             Spacer()
 
             if presentation == .timeline && viewMode != .month {
