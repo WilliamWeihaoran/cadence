@@ -916,7 +916,10 @@ def load_test_labels(tree):
     script = os.path.join(tree, "scripts", "test-suite-index.sh")
     if not os.path.exists(script):
         return {}
-    finished = subprocess.run([script, "--test-labels"], cwd=tree, capture_output=True, text=True)
+    # `/bin/zsh <script>` rather than exec'ing it, for `run_suite`'s reason (T-3190): the sandboxed
+    # test host cannot exec a file it wrote, and `wait-mutate.sh selftest`'s stub tree ships one
+    # (T-3191).
+    finished = subprocess.run(["/bin/zsh", script, "--test-labels"], cwd=tree, capture_output=True, text=True)
     if finished.returncode != 0:
         return {}
     labels = {}
@@ -937,7 +940,7 @@ def load_suite_labels(tree):
     script = os.path.join(tree, "scripts", "test-suite-index.sh")
     if not os.path.exists(script):
         return {}
-    finished = subprocess.run([script, "--labels"], cwd=tree, capture_output=True, text=True)
+    finished = subprocess.run(["/bin/zsh", script, "--labels"], cwd=tree, capture_output=True, text=True)
     if finished.returncode != 0:
         return {}
     labels = {}

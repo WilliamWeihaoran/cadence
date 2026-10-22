@@ -35,13 +35,17 @@ an archive of HEAD and build that.
 Seven agents have now stalled this way, several while explaining that they were being considerate of
 a sibling's in-flight work. Waiting politely and dying are the same thing here.
 
-    for i in $(seq 1 30); do pgrep -f '<runner>' >/dev/null || break; /bin/sleep 20; done; cat <log>
+    <runner> > <log> 2>&1 & pid=$!
+    for i in $(seq 1 30); do kill -0 $pid 2>/dev/null || break; /bin/sleep 20; done; cat <log>
 
-with the Bash `timeout` raised (up to 600000 ms). Batch your runs — failing-first, green and mutations
-in one script — rather than one call per step.
+with the Bash `timeout` raised (up to 600000 ms). Wait on the **pid**, never `pgrep -f '<runner>'`:
+macOS `pgrep` skips only its own ancestors, so it matches every *other* shell whose command line
+names the pattern (a second watcher, a sibling's) and burns the full ten minutes (T-3191). Started
+in an earlier call? Save `$!` to a file then and read it back. Batch your runs — failing-first,
+green and mutations in one script — rather than one call per step.
 
-For `mutate.sh`, use `./scripts/wait-mutate.sh <id> [timeout] [pid]` instead of that loop: a `pgrep -f` naming the
-runner matches its own watcher and never reads as gone (T-3182).
+For `mutate.sh`, use `./scripts/wait-mutate.sh <id> [timeout] [pid]` instead of that loop: it reads
+the runner's exit sentinel, so it also tells a SIGKILL from a finish (T-3182).
 
 ## Verifying
 

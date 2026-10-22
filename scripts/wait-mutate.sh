@@ -159,6 +159,17 @@ print -r -- "Suite WmSuite started."
 print -r -- "✔ Test wmCase() passed after 0.001 seconds."
 exit 0' > "$ws/tree/scripts/xcb.sh"
   chmod 755 "$ws/tree/scripts/xcb.sh"
+  # T-3191. The tree's own test-suite-index.sh is the first thing `mutate.sh` runs from the tree,
+  # and it runs BEFORE `Runner.on_signal` is installed -- the window where only `with_exit_sentinel`'s
+  # provisional handler stands between SIGTERM and a silent death. With WM_STUB_EARLY set it blocks
+  # there; otherwise it fails, which `load_test_labels` reads as "no labels", as if it were absent.
+  print -r -- '#!/bin/zsh
+if [[ -n "${WM_STUB_EARLY:-}" ]]; then
+  print $$ >> "${0:A:h}/early.pids"
+  exec /bin/sleep 60
+fi
+exit 1' > "$ws/tree/scripts/test-suite-index.sh"
+  chmod 755 "$ws/tree/scripts/test-suite-index.sh"
   print -r -- $'mutation: m1\nfile: dummy.txt\nsuite: WmSuite\nexpect: survived\n--- old\nhello\n--- new\ngoodbye\n--- end' > "$ws/ok.plan"
   print -r -- $'mutation: m1\nfile: no-such-file.txt\n--- old\nhello\n--- new\ngoodbye\n--- end' > "$ws/bad.plan"
   scratch="$ws/scratch/cadence-mut-wmself"
@@ -205,6 +216,23 @@ exit 0' > "$ws/tree/scripts/xcb.sh"
   check "a run ended by SIGTERM writes exit status 143, and the helper exits with it" \
     $(( code == 143 )) "helper exit $code: $(<"$ws/wait-term.log")"
 
+  # 4b. SIGTERM in the EARLY window (T-3191): before `Runner.on_signal` exists, so only the
+  # provisional handler in `with_exit_sentinel` can turn it into a recorded 143. Case 4 cannot see
+  # that handler -- by its SIGTERM `on_signal` has replaced it.
+  WM_STUB_EARLY=1 /bin/zsh "$mutate" wmself "$ws/ok.plan" --tree "$ws/tree" --no-lock > "$ws/early.log" 2>&1 &
+  runner=$!
+  i=0
+  while (( i < 100 )) && [[ ! -s "$ws/tree/scripts/early.pids" ]]; do /bin/sleep 0.1; i+=1; done
+  kill -TERM "$runner" 2>/dev/null
+  "$SCRIPT_PATH" wmself 15 "$runner" > "$ws/wait-early.log" 2>&1
+  code=$?
+  wait "$runner" 2>/dev/null
+  check "a SIGTERM before on_signal is installed (blocked in the tree's test-suite-index.sh) still writes 143" \
+    $(( code == 143 )) "helper exit $code: $(<"$ws/wait-early.log")"
+  [[ -s "$ws/tree/scripts/early.pids" && "$(<"$ws/early.log")" != *"test labels:"* ]]
+  check "...and it landed in that window: the runner never got past loading the test labels" \
+    $(( $? == 0 )) "early.pids: $(<"$ws/tree/scripts/early.pids" 2>/dev/null); log: $(tail -3 "$ws/early.log")"
+
   # 5. SIGKILL cannot be trapped: with the pid, the helper says so instead of waiting out its timeout.
   WM_STUB_BLOCK=1 /bin/zsh "$mutate" wmself "$ws/ok.plan" --tree "$ws/tree" --no-lock > "$ws/kill.log" 2>&1 &
   runner=$!
@@ -234,11 +262,13 @@ exit 0' > "$ws/tree/scripts/xcb.sh"
   check "a non-numeric timeout is refused (64)" $(( $? == 64 )) "accepted"
 
   # Leave nothing behind: the stubs a signalled runner orphaned, then the workspace.
-  if [[ -f "$ws/tree/scripts/stub.pids" ]]; then
-    for stubpid in ${(f)"$(<"$ws/tree/scripts/stub.pids")"}; do
+  local pidfile
+  for pidfile in "$ws/tree/scripts/stub.pids" "$ws/tree/scripts/early.pids"; do
+    [[ -f "$pidfile" ]] || continue
+    for stubpid in ${(f)"$(<"$pidfile")"}; do
       kill -TERM "$stubpid" 2>/dev/null
     done
-  fi
+  done
   rm -rf "$ws"
 
   print -r -- ""
