@@ -78,14 +78,40 @@ struct CalendarEventItem: Identifiable {
         self.ekEvent = event
     }
 
+    /// The instants a retimed segment on `dateKey` spans: its start is the wall-clock
+    /// `startMin` **set** on that day, and its end is `durationMinutes` (at least five) of real
+    /// time after that start ([[T-3051]]).
+    ///
+    /// Pure, so it is testable without an `EKEvent`. The start used to be
+    /// `date(byAdding: .minute, value: startMin, to: midnight)` — elapsed minutes, which lands an
+    /// hour out on a 23- or 25-hour day — and the key was parsed by a bare
+    /// `DateFormatters.date(from:)` in the host zone while the clock was set in `calendar`. Both
+    /// halves now go through `CadenceCalendarEventTiming.startDate(dateKey:startMin:calendar:)`,
+    /// which parses the key and sets the clock in the one calendar. The end stays a duration on
+    /// purpose: a 60-minute meeting is 60 minutes long on a transition day too.
+    static func segmentRange(
+        dateKey: String,
+        startMin: Int,
+        durationMinutes: Int,
+        calendar: Calendar = .current
+    ) -> (start: Date, end: Date)? {
+        guard let start = CadenceCalendarEventTiming.startDate(dateKey: dateKey, startMin: startMin, calendar: calendar),
+              let end = calendar.date(byAdding: .minute, value: max(5, durationMinutes), to: start)
+        else { return nil }
+        return (start, end)
+    }
+
     func eventDateRangeForEditedSegment(
         startMin editedStartMin: Int,
         durationMinutes editedDurationMinutes: Int,
         calendar: Calendar = .current
     ) -> (start: Date, end: Date)? {
-        guard let segmentDay = DateFormatters.date(from: dateKey) else { return nil }
-        let segmentStart = calendar.date(byAdding: .minute, value: editedStartMin, to: segmentDay) ?? segmentDay
-        let segmentEnd = calendar.date(byAdding: .minute, value: max(5, editedDurationMinutes), to: segmentStart) ?? segmentStart
+        guard let (segmentStart, segmentEnd) = Self.segmentRange(
+            dateKey: dateKey,
+            startMin: editedStartMin,
+            durationMinutes: editedDurationMinutes,
+            calendar: calendar
+        ) else { return nil }
 
         guard isMultiDayTimedEvent else {
             return segmentEnd > segmentStart ? (segmentStart, segmentEnd) : nil
