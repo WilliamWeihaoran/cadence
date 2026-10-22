@@ -202,6 +202,7 @@ Cadence/iOS/iOSTodayView.swift
 CadenceTests/CadenceTodaySectionMetricsTests.swift
 CadenceTests/CadenceTodayOverdueSummarySurfaceTests.swift
 CadenceTests/CadenceTaskInspectorHostTests.swift
+CadenceTests/CadenceSharedBoardChromeTests.swift
 ```
 
 **Admission 2026-10-19 (coordinator), one line in `CadenceTests/CadenceMarkdownImageCommitSurfaceTests.swift`.**
@@ -3408,3 +3409,28 @@ Both briefs now say so in as many words.
 
 **Checked before granting:** no worktree holds any of the seven paths modified, and none matched the
 fence already.
+
+### 2026-10-22 — `CadenceSharedBoardChromeTests.swift` granted for [[T-3078]], on the owner's approval, AFTER the edit
+
+**GRANTED:** `CadenceTests/CadenceSharedBoardChromeTests.swift`, scoped to T-3078's deletion.
+
+**The order was wrong and that is recorded rather than smoothed over.** Codex edited this path before
+it was fenced; `codex-land.sh review` refused with CODEX-LEASE-VIOLATION, which is the protocol
+working. The owner confirms they approved the request when Codex made it, so this is a grant that
+trailed its own approval, not an unapproved write — the same shape as the 2026-10-20 T-1364 entry,
+and better than it, because Codex reported the path in its own hand-off instead of leaving the gate
+to find it.
+
+**The edit was FORCED, which is why it is granted rather than reverted.**
+`CadenceSectionEyebrowConvergenceTests.theCountBesideAnEyebrowIsTheEyebrowsOwnSize` read
+`Cadence/Shared/Components/CadenceTodayOverdueSummaryCards.swift` by name and asserted on
+`CadenceTodayOverdueSummaryHeading`. T-3078 DELETES that file, so the assertion could not survive the
+ticket: leaving the path alone would have left a test naming a file that no longer exists. The diff
+drops the file's row from the eyebrow census and rewrites the comment to say the board column's count
+is the last reader of that rule.
+
+**What this says about scoping a deletion ticket.** A grant list built from "which files declare the
+thing being deleted" is not the same as "which files NAME it". The second set is larger and only a
+source scan finds it — which is the same lesson [[T-3332]] landed from the other direction hours
+earlier. A future deletion brief should run the name sweep BEFORE the grant list is written, not
+after the refusal.
