@@ -211,6 +211,8 @@ Cadence/macOS/Views/TaskInspectorFieldSupportViews.swift
 Cadence/macOS/Views/TaskInspectorStatusActionsRow.swift
 Cadence/macOS/Views/TaskInspectorWorkflowSupportViews.swift
 CadenceTests/CadenceQuickCreateTaskInspectorTests.swift
+Cadence/macOS/Views/SchedulePanelComponents.swift
+Cadence/macOS/Views/SchedulePanelPopoverSupportViews.swift
 ```
 
 **Admission 2026-10-19 (coordinator), one line in `CadenceTests/CadenceMarkdownImageCommitSurfaceTests.swift`.**
