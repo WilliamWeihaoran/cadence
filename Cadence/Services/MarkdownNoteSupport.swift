@@ -114,6 +114,27 @@ nonisolated enum NoteTemplateLibrary {
         return rawOverrides(from: overrides)
     }
 
+    /// **T-5172.** Writes a body edit to the template the editor was showing — `id`, captured when
+    /// the editor was built — not to whichever template is selected when the write lands. A body
+    /// surface commits late (its debounce, its focus-loss flush), so by then a chip tap may have
+    /// moved the selection and reloaded the title/description drafts for the new template. The
+    /// drafts belong to `selectedID` only; any other template keeps its stored title and
+    /// description, so a late write can neither land on the wrong template nor rename the right one.
+    static func setBody(
+        _ body: String,
+        for id: String,
+        selectedID: String?,
+        titleDraft: String,
+        subtitleDraft: String,
+        in raw: String
+    ) -> String {
+        if id == selectedID {
+            return setOverride(for: id, title: titleDraft, subtitle: subtitleDraft, body: body, in: raw)
+        }
+        guard let stored = editableTemplates(overridesRaw: raw).first(where: { $0.id == id }) else { return raw }
+        return setOverride(for: id, title: stored.title, subtitle: stored.subtitle, body: body, in: raw)
+    }
+
     /// The template an override actually produces. `merged(_:with:)` and `setOverride` both go
     /// through this, so "what the user sees" and "does this count as customized" cannot drift.
     static func resolved(_ template: NoteTemplate, with override: NoteTemplateOverride) -> NoteTemplate {

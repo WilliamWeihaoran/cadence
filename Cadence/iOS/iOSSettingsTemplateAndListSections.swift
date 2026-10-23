@@ -184,10 +184,15 @@ struct iOSTemplatesSettingsSection: View {
                         TextField("Short sidebar description", text: subtitleBinding)
                     }
 
+                    // **T-5172.** Keyed by template so a chip tap builds a fresh surface instead of
+                    // carrying the outgoing template's `draftText` across; the binding captures the
+                    // id too, because the outgoing surface's late commit still runs after the
+                    // selection has moved.
                     iOSTemplateBodyEditor(
                         isFocused: $bodyEditorFocused,
                         text: bodyBinding(for: selectedTemplate)
                     )
+                    .id(selectedTemplate.id)
                 }
                 .disabled(storedOverridesAreUnreadable)
 
@@ -234,10 +239,24 @@ struct iOSTemplatesSettingsSection: View {
     }
 
     /// The body is not trimmed on the way in, so it round-trips unchanged and needs no draft.
+    ///
+    /// **T-5172.** Both sides read and write `template.id`, captured here, never `selectedTemplate`:
+    /// the surface's debounced and focus-loss commits arrive after a chip tap has moved the
+    /// selection, and resolving at call time stored one template's body as another's.
     private func bodyBinding(for template: NoteTemplate) -> Binding<String> {
-        Binding(
-            get: { selectedTemplate?.body ?? template.body },
-            set: { updateSelectedTemplate(body: $0) }
+        let templateID = template.id
+        return Binding(
+            get: { templates.first { $0.id == templateID }?.body ?? template.body },
+            set: { newBody in
+                templateOverridesRaw = NoteTemplateLibrary.setBody(
+                    newBody,
+                    for: templateID,
+                    selectedID: selectedTemplate?.id,
+                    titleDraft: titleDraft,
+                    subtitleDraft: subtitleDraft,
+                    in: templateOverridesRaw
+                )
+            }
         )
     }
 

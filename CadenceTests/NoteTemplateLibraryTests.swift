@@ -259,4 +259,55 @@ struct NoteTemplateLibraryTests {
             #expect(source.contains(".disabled(storedOverridesAreUnreadable)"), "\(path)")
         }
     }
+
+    /// **T-5172.** A late body write from template A's editor, landing after a chip tap selected B
+    /// and reloaded B's drafts, must store A's body on A — with A's own title — and leave B alone.
+    @Test func aLateBodyWriteLandsOnTheTemplateItWasTypedInto() {
+        let raw = NoteTemplateLibrary.setOverride(
+            for: "project-brief", title: "My Brief", subtitle: "", body: "# Brief", in: ""
+        )
+        let checklistBefore = NoteTemplateLibrary.editableTemplates(overridesRaw: raw).first { $0.id == "checklist" }
+
+        let written = NoteTemplateLibrary.setBody(
+            "# Brief typed",
+            for: "project-brief",
+            selectedID: "checklist",
+            titleDraft: checklistBefore?.title ?? "",
+            subtitleDraft: checklistBefore?.subtitle ?? "",
+            in: raw
+        )
+
+        let templates = NoteTemplateLibrary.editableTemplates(overridesRaw: written)
+        let brief = templates.first { $0.id == "project-brief" }
+        #expect(brief?.body == "# Brief typed")
+        #expect(brief?.title == "My Brief")
+        #expect(templates.first { $0.id == "checklist" } == checklistBefore)
+        #expect(NoteTemplateLibrary.overrides(from: written)["checklist"] == nil)
+    }
+
+    /// The selected template's own write still takes the drafts — the title being typed is not lost.
+    @Test func aBodyWriteOnTheSelectedTemplateKeepsItsDrafts() {
+        let written = NoteTemplateLibrary.setBody(
+            "# Body", for: "checklist", selectedID: "checklist",
+            titleDraft: "Typed Title", subtitleDraft: "Typed scope", in: ""
+        )
+        let checklist = NoteTemplateLibrary.editableTemplates(overridesRaw: written).first { $0.id == "checklist" }
+        #expect(checklist?.title == "Typed Title")
+        #expect(checklist?.subtitle == "Typed scope")
+        #expect(checklist?.body == "# Body")
+    }
+
+    /// Source pin: the iOS body editor is keyed by template and its binding captures the id. Keying
+    /// alone leaves the outgoing surface's focus-loss commit writing through the new selection.
+    @Test func theIOSBodyEditorIsKeyedAndItsBindingCapturesTheTemplate() throws {
+        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+        let source = try String(
+            contentsOf: root.appendingPathComponent("Cadence/iOS/iOSSettingsTemplateAndListSections.swift"),
+            encoding: .utf8
+        )
+        #expect(source.contains(".id(selectedTemplate.id)"))
+        #expect(source.contains("let templateID = template.id"))
+        #expect(source.contains("for: templateID,"))
+        #expect(!source.contains("set: { updateSelectedTemplate(body: $0) }"))
+    }
 }
