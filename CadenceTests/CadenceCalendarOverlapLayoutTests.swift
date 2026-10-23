@@ -1,9 +1,9 @@
 import Foundation
 import Testing
+import SwiftUI
 #if os(macOS)
 import AppKit
 import EventKit
-import SwiftUI
 #endif
 @testable import Cadence
 
@@ -645,6 +645,7 @@ struct CadenceCalendarOverlapLayoutTests {
         let placements = IOSLayout.placements(
             for: blocks,
             hourHeight: iosHourHeight,
+            headerHeight: CadenceCalendarOverlapLayout.iOSEventHeaderHeight,
             isCompactWidth: isCompactWidth
         )
         var ranges: [String: (placement: CadenceCalendarOverlapPlacement, minX: CGFloat, maxX: CGFloat)] = [:]
@@ -754,7 +755,7 @@ struct CadenceCalendarOverlapLayoutTests {
             let blocks = day.enumerated().map { index, entry in
                 IOSLayout.Block(key: "\(dayIndex)-\(index)-\(entry.0)", kind: entry.1, startMin: entry.2, endMin: entry.3)
             }
-            let placements = IOSLayout.placements(for: blocks, hourHeight: Self.iosHourHeight, isCompactWidth: true)
+            let placements = IOSLayout.placements(for: blocks, hourHeight: Self.iosHourHeight, headerHeight: CadenceCalendarOverlapLayout.iOSEventHeaderHeight, isCompactWidth: true)
             productionCascaded += placements.values.filter { $0.cascadeDepth > 0 }.count
         }
         #expect(productionCascaded == 3, "the day column's own solver call cascades \(productionCascaded) of the week's blocks")
@@ -913,6 +914,18 @@ struct CadenceCalendarOverlapLayoutTests {
             CadenceSourceScan.matchCount(#"iOSCalendarTimelineBlockLayout\.placements\(for:"#, in: column) == 1,
             "the day column does not solve its blocks in exactly one pass"
         )
+        // T-3265: the header handed in is the type-aware one, from the column's own environment.
+        #expect(
+            CadenceSourceScan.matchCount(
+                #"iOSCalendarTypographyMetrics\.eventHeaderHeight\(at: dynamicTypeSize, scaling: scaling\)"#,
+                in: column
+            ) == 1,
+            "the day column does not derive its cascade header at the reader's text size"
+        )
+        #expect(
+            CadenceSourceScan.matchCount(#"iOSEventHeaderHeight"#, in: column) == 0,
+            "the day column hands the solver the default-size header"
+        )
         for kind in ["task", "event"] {
             #expect(
                 CadenceSourceScan.matchCount(#"key: \.\#(kind)\("#, in: column) == 1,
@@ -928,6 +941,77 @@ struct CadenceCalendarOverlapLayoutTests {
             CadenceSourceScan.matchCount(#"\.frame\(width: colWidth - [0-9]+, height:"#, in: column) == 0,
             "a timed block is still drawn at a hand-written full column width"
         )
+    }
+
+    // MARK: - T-3265: the cascade header scales with the hour it is divided into
+
+    /// **At the default size, and with scaling off, the type-aware header IS the static one.**
+    /// Nothing about the resting threshold (47 minutes) moves.
+    @Test func theTypeAwareIOSHeaderIsTheStaticHeaderWhereTextDoesNotGrow() {
+        let rest = iOSCalendarTypographyMetrics.eventHeaderHeight(at: .large, scaling: .enabled)
+        #expect(rest == CadenceCalendarOverlapLayout.iOSEventHeaderHeight)
+        var checked = 0
+        for size in DynamicTypeSize.allCases {
+            #expect(
+                iOSCalendarTypographyMetrics.eventHeaderHeight(at: size, scaling: .fixed)
+                    == CadenceCalendarOverlapLayout.iOSEventHeaderHeight,
+                "scaling off still moved the header at \(size)"
+            )
+            checked += 1
+        }
+        #expect(checked == DynamicTypeSize.allCases.count && checked > 5, "non-vacuity: swept \(checked) sizes")
+    }
+
+    /// **Above the default size the header grows by the block's own text growth, less the padding
+    /// the block gives back** — two title lines and one time row of `lineGain`, minus the 5 → 2pt
+    /// padding drop — and it never shrinks as the size climbs.
+    @Test func theTypeAwareIOSHeaderGrowsWithTheBlocksOwnRowsAboveTheDefaultSize() {
+        let larger = DynamicTypeSize.allCases.filter { $0 > .large }
+        #expect(larger.count > 3, "non-vacuity: only \(larger.count) sizes above .large")
+        var previous = iOSCalendarTypographyMetrics.eventHeaderHeight(at: .large, scaling: .enabled)
+        var grewPastStatic = 0
+        for size in larger {
+            let header = iOSCalendarTypographyMetrics.eventHeaderHeight(at: size, scaling: .enabled)
+            let rowGrowth = 2 * iOSCalendarTypographyMetrics.lineGain(CadenceCalendarOverlapLayout.eventTitleFontSize, at: size, scaling: .enabled)
+                + iOSCalendarTypographyMetrics.lineGain(CadenceCalendarOverlapLayout.eventTimeFontSize, at: size, scaling: .enabled)
+            let paddingDrop = CadenceCalendarOverlapLayout.iOSEventVerticalPadding - 2
+            #expect(
+                abs(header - (CadenceCalendarOverlapLayout.iOSEventHeaderHeight + rowGrowth - paddingDrop)) < 0.001,
+                "the header at \(size) is not the static header plus the rows' growth less the padding drop"
+            )
+            #expect(header >= previous, "the header shrank stepping up to \(size)")
+            if header > CadenceCalendarOverlapLayout.iOSEventHeaderHeight { grewPastStatic += 1 }
+            previous = header
+        }
+        #expect(grewPastStatic > 0, "non-vacuity: no larger size grew the header past the static one")
+    }
+
+    /// **The production solver cascades at the type-aware threshold, not the mixed one.** At every
+    /// larger size where the two thresholds disagree, a pair started exactly the type-aware gap
+    /// apart cascades and a pair one minute closer does not.
+    @Test func theIOSCascadeUsesTheTypeAwareThresholdAtLargerSizes() {
+        var disagreeing = 0
+        for size in DynamicTypeSize.allCases where size > .large {
+            let hour = iOSCalendarTypographyMetrics.hourHeight(at: size, scaling: .enabled)
+            let header = iOSCalendarTypographyMetrics.eventHeaderHeight(at: size, scaling: .enabled)
+            let consistent = CadenceCalendarOverlapLayout.cascadeGapMinutes(headerHeight: header, hourHeight: hour)
+            let mixed = CadenceCalendarOverlapLayout.cascadeGapMinutes(
+                headerHeight: CadenceCalendarOverlapLayout.iOSEventHeaderHeight, hourHeight: hour
+            )
+            guard consistent != mixed else { continue }
+            disagreeing += 1
+            func cascades(gap: Int) -> Bool {
+                let blocks = [
+                    IOSLayout.Block(key: "a", kind: .event, startMin: 600, endMin: 900),
+                    IOSLayout.Block(key: "b", kind: .event, startMin: 600 + gap, endMin: 900)
+                ]
+                let placed = IOSLayout.placements(for: blocks, hourHeight: hour, headerHeight: header, isCompactWidth: true)
+                return (placed["b"]?.cascadeDepth ?? 0) > 0
+            }
+            #expect(cascades(gap: consistent), "at \(size) a pair \(consistent) minutes apart did not cascade")
+            #expect(!cascades(gap: consistent - 1), "at \(size) a pair \(consistent - 1) minutes apart cascaded")
+        }
+        #expect(disagreeing > 0, "non-vacuity: the static and type-aware thresholds agree at every larger size")
     }
 
     // MARK: - T-3184: a compact column cascades every kind, and never buries what it cascades over

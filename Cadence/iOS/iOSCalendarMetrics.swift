@@ -452,9 +452,15 @@ nonisolated enum iOSCalendarTimelineBlockLayout {
     /// `computeUnifiedLayouts` requires its threshold: a silently-absent width is indistinguishable
     /// from "regular", which is the branch that does not cascade, which is the bug T-3184 exists
     /// to fix. See `Kind.mayCascade(isCompactWidth:)`.
+    ///
+    /// `headerHeight` is **required** too, and for the same reason (T-3265): the column's
+    /// `hourHeight` is type-aware, so the header it is divided into must be as well —
+    /// `iOSCalendarTypographyMetrics.eventHeaderHeight(at:scaling:)`. Handing in the static
+    /// `CadenceCalendarOverlapLayout.iOSEventHeaderHeight` here is only right at the default size.
     static func placements<Key: Hashable>(
         for blocks: [Block<Key>],
         hourHeight: CGFloat,
+        headerHeight: CGFloat,
         isCompactWidth: Bool
     ) -> [Key: CadenceCalendarOverlapPlacement] {
         let slots = blocks.map { block in
@@ -467,7 +473,7 @@ nonisolated enum iOSCalendarTimelineBlockLayout {
         let solved = CadenceCalendarOverlapLayout.solve(
             slots: slots,
             cascadeGapMinutes: CadenceCalendarOverlapLayout.cascadeGapMinutes(
-                headerHeight: CadenceCalendarOverlapLayout.iOSEventHeaderHeight,
+                headerHeight: headerHeight,
                 hourHeight: hourHeight
             )
         )
@@ -601,6 +607,25 @@ nonisolated enum iOSCalendarTypographyMetrics {
             + (split.hidden > 0 ? CadenceTypeScale.lineHeight(.metadata, base: iOSCalendarTimelineMetrics.overflowLabelSize, at: size, scaling: scaling) : 0)
             + CGFloat(max(0, lines - 1)) * iOSCalendarTimelineMetrics.bandLineSpacing
         return content + iOSCalendarTimelineMetrics.previewInset * 2
+    }
+
+    /// **The timed block's header at the reader's text size** — the figure the cascade threshold
+    /// divides by the type-aware `hourHeight(at:scaling:)` below (T-3265).
+    ///
+    /// `CadenceCalendarOverlapLayout.iOSEventHeaderHeight` is the default-size derivation (5pt
+    /// padding, two 11pt title lines, 3pt spacing, a 9pt time row). The block grows its two text
+    /// rows with `cadenceFont(.metadata, …)` and drops its vertical padding to 2pt above `.large`
+    /// (`iOSCalendarEventBlock` / `iOSTimelineTaskBlock`), so the header here takes the same
+    /// `lineGain` every other row in this file takes and the same padding the block draws. At the
+    /// default size the gains are zero and the padding is the static one, so it is the static
+    /// figure exactly.
+    static func eventHeaderHeight(at size: DynamicTypeSize, scaling: CadenceTypographyScaling) -> CGFloat {
+        let padding: CGFloat = scaling == .enabled && size > .large ? 2 : CadenceCalendarOverlapLayout.iOSEventVerticalPadding
+        let titleLines = CGFloat(CadenceCalendarOverlapLayout.iOSEventTitleLineLimit)
+        return CadenceCalendarOverlapLayout.iOSEventHeaderHeight
+            - CadenceCalendarOverlapLayout.iOSEventVerticalPadding + padding
+            + titleLines * lineGain(CadenceCalendarOverlapLayout.eventTitleFontSize, at: size, scaling: scaling)
+            + lineGain(CadenceCalendarOverlapLayout.eventTimeFontSize, at: size, scaling: scaling)
     }
 
     static func hourHeight(at size: DynamicTypeSize, scaling: CadenceTypographyScaling) -> CGFloat {

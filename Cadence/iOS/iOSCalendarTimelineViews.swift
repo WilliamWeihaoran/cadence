@@ -1123,6 +1123,8 @@ private struct iOSCalendarTimelineDayColumn: View {
     let editingTaskID: PersistentIdentifier?
     let onSelectForEditing: (PersistentIdentifier?) -> Void
     let onCommitEdit: (AppTask, CadenceTimelineBlockEdit.Kind, (start: Int, end: Int)) -> Void
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.cadenceTypographyScaling) private var scaling
 
     /// The minute range the block under the finger is drawn at **while** it is moved or resized
     /// ([[T-1475]]). Nothing is written to the task until the finger lifts: the preview lives
@@ -1755,10 +1757,12 @@ private struct iOSCalendarTimelineDayColumn: View {
                 endMin: range.end
             ))
         }
+        // T-3265: the header at the reader's text size, against the type-aware `hourHeight`.
+        let headerHeight = iOSCalendarTypographyMetrics.eventHeaderHeight(at: dynamicTypeSize, scaling: scaling)
         // One line, deliberately: `CadenceCalendarOverlapLayoutTests` pins this call by the
         // spelling `placements(for:`, so wrapping the first argument onto its own line silently
         // takes the pin off the thing it guards.
-        let columned = iOSCalendarTimelineBlockLayout.placements(for: blocks, hourHeight: hourHeight, isCompactWidth: isCompactWidth)
+        let columned = iOSCalendarTimelineBlockLayout.placements(for: blocks, hourHeight: hourHeight, headerHeight: headerHeight, isCompactWidth: isCompactWidth)
         return (columned, iOSCalendarTimelineBlockLayout.zIndexes(for: blocks))
     }
 
