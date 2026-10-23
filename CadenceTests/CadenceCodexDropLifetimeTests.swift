@@ -1,7 +1,6 @@
 // T-3244: compiled for macOS only. This suite reaches macOS-only app code, and `CadenceTests` also
 // builds for an iOS destination. The gate is here, in the file, so the reason is visible where it
-// applies. The file is ALSO still listed under `EXCLUDED_SOURCE_FILE_NAMES[sdk=iphone*]` on both
-// `CadenceTests` configurations; that entry is now redundant and goes with the next pbxproj edit.
+// applies.
 #if os(macOS)
 import CoreGraphics
 import Foundation
