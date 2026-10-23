@@ -713,7 +713,7 @@ struct CalDayColumn: View {
                 )
             },
             onDropTaskAtMinute: { task, startMin in
-                SchedulingActions.dropTask(task, to: dateKey, startMin: startMin)
+                SchedulingActions.commitDropTask(task, to: dateKey, startMin: startMin, in: modelContext)
             },
             externalEvents: externalEventItems,
             onCreateEvent: { title, startMin, endMin, calendarID, notes in

@@ -75,6 +75,41 @@ enum SchedulingActions {
         if task.estimatedMinutes <= 0 { task.estimatedMinutes = AppTask.defaultTimelineDurationMinutes }
     }
 
+    /// A task dropped on a minute of the timeline — Today's schedule panel and the Calendar page's
+    /// day column — **committed** ([[T-4970]]).
+    ///
+    /// Both hosts used to call `dropTask` and stop, so the new slot sat pending in the app's single
+    /// `ModelContext` until an unrelated save committed it or an unrelated `rollback()` discarded
+    /// it — the [[T-4911]] / [[T-503]] shape, beside the Calendar board's drop, which has gone
+    /// through `CadenceTaskFieldEditCommit` since PA-13. Same transaction as the board's: the
+    /// block's other members are snapshotted with the dragged task, because the detach renumbers
+    /// them, and a taken drop reconciles reminders once, after the commit.
+    @discardableResult
+    static func commitDropTask(
+        _ task: AppTask,
+        to dateKey: String,
+        startMin: Int,
+        in modelContext: ModelContext,
+        reconciler: CadenceWindDownReconciler? = nil,
+        commit: (ModelContext) throws -> Void = { try $0.save() }
+    ) -> Bool {
+        let blockSiblings = (task.bundle?.tasks ?? []).filter {
+            $0.id != task.id && $0.bundle?.id == task.bundle?.id
+        }
+        let landed = CadenceTaskFieldEditCommit.commit(
+            task,
+            alsoRestoring: blockSiblings,
+            in: modelContext,
+            reconciler: reconciler,
+            commit: commit
+        ) {
+            dropTask(task, to: dateKey, startMin: startMin)
+        }
+        guard landed else { return false }
+        (reconciler ?? .default).run(in: modelContext)
+        return true
+    }
+
     // `addTask(_:to:)` was declared here -- the Mac's "drop a task onto an existing block".
     // [[T-3170]] deleted the canvas arm that could express that drop, so it has no caller.
 

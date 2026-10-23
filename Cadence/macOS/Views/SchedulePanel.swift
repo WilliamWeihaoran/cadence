@@ -159,7 +159,7 @@ struct SchedulePanel: View {
                             // rather than the day a second sheet opens on.
                             onCreateTask: createTask,
                             onDropTaskAtMinute: { task, startMin in
-                                SchedulingActions.dropTask(task, to: todayKey, startMin: startMin)
+                                SchedulingActions.commitDropTask(task, to: todayKey, startMin: startMin, in: modelContext)
                             },
                             onCreateEvent: { title, startMin, endMin, calendarID, notes in
                                 calendarManager.createStandaloneEvent(title: title, startMin: startMin, durationMinutes: endMin - startMin, calendarID: calendarID, date: Date(), notes: notes)

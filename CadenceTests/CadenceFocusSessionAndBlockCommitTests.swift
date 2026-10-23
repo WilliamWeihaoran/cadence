@@ -194,7 +194,7 @@ struct CadenceFocusSessionAndBlockCommitTests {
         #expect(CadenceSourceScan.matchCount(#"SchedulingActions\.(dropBundle|addTask)\("#, in: panel) == 0)
         // Non-vacuity: the right file, and the task arm beside the removed block arm is untouched.
         #expect(panel.contains("struct SchedulePanel: View"))
-        #expect(panel.contains("SchedulingActions.dropTask(task, to: todayKey, startMin: startMin)"))
+        #expect(panel.contains("SchedulingActions.commitDropTask(task, to: todayKey, startMin: startMin, in: modelContext)"))
 
         let viewport = try CadenceCommitSurfaceScan.scanned(Self.viewportPath)
 

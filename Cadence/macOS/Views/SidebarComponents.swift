@@ -119,6 +119,9 @@ struct ContextSection: View {
     /// Set when the store refused a list drag (T-868). The rows are already back in their old
     /// order by then, so the column and this sentence agree.
     @State private var reorderFailureNotice: String? = nil
+    /// Set when the store refused a project due date picked from the row's flag ([[T-4970]]). The
+    /// project already holds its old date again by then, so the badge and this sentence agree.
+    @State private var dueDateFailureNotice: String? = nil
 
     private var hasLists: Bool { !entries.isEmpty }
 
@@ -154,6 +157,11 @@ struct ContextSection: View {
 
             if let reorderFailureNotice {
                 CadenceInlineFailureNotice(text: reorderFailureNotice)
+                    .padding(.horizontal, SidebarMetrics.listRowHorizontalPadding)
+            }
+
+            if let dueDateFailureNotice {
+                CadenceInlineFailureNotice(text: dueDateFailureNotice)
                     .padding(.horizontal, SidebarMetrics.listRowHorizontalPadding)
             }
 
@@ -226,6 +234,35 @@ struct ContextSection: View {
         reorderFailureNotice = reordered ? nil : CadenceOrderCommit.failureNotice
     }
 
+    /// The row's due-date flag picks or clears the project's date ([[T-4970]]).
+    ///
+    /// It used to be `project.dueDate = newKey` and nothing else, so the date sat pending in the
+    /// app's single `ModelContext` until an unrelated save committed it or an unrelated
+    /// `rollback()` discarded it — the [[T-4911]] / [[T-503]] shape. A refusal puts the old date
+    /// back and says so under the section header, beside the reorder notice.
+    private func setDueDate(_ newKey: String, on project: Project) {
+        do {
+            try Self.commitDueDate(newKey, on: project, in: modelContext)
+        } catch {
+            dueDateFailureNotice = CadencePendingChangePersistence.editFailureNotice
+            return
+        }
+        dueDateFailureNotice = nil
+    }
+
+    static func commitDueDate(
+        _ dueDateKey: String,
+        on project: Project,
+        in modelContext: ModelContext,
+        commit: (ModelContext) throws -> Void = { try $0.save() }
+    ) throws {
+        let previousDueDate = project.dueDate
+        project.dueDate = dueDateKey
+        try CadencePendingChangePersistence.commitEdit(in: modelContext, commit: commit) {
+            project.dueDate = previousDueDate
+        }
+    }
+
     private func areaRow(_ area: Area, target: SidebarListDragItem) -> some View {
         SidebarListRow(
             item: .area(area.id),
@@ -266,7 +303,7 @@ struct ContextSection: View {
             ),
             dueDateKey: project.dueDate,
             onSetDueDate: { newKey in
-                project.dueDate = newKey
+                setDueDate(newKey, on: project)
             },
             selection: $selection,
             onEdit: { projectForEdit = project }

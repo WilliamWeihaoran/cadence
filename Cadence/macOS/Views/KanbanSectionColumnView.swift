@@ -441,20 +441,36 @@ struct ListSectionKanbanColumn: View {
                 get: { headerDueDate },
                 set: { newDate in
                     headerDueDate = newDate
-                    updateSection { config in
-                        config.dueDate = DateFormatters.dateKey(from: newDate)
-                    }
+                    setHeaderDueDate(DateFormatters.dateKey(from: newDate))
                 }
             ),
             viewMonth: $headerDueDateViewMonth,
             isPresented: $showHeaderDueDatePicker,
             onClear: {
-                updateSection { config in
-                    config.dueDate = ""
-                }
+                setHeaderDueDate("")
                 showHeaderDueDatePicker = false
             }
         )
+    }
+
+    /// The header popover's pick and Clear, committed ([[T-4970]]). A refusal leaves the column on
+    /// its old date and hands `saveFailureNotice` to the header through `columnFailureNotice` —
+    /// the editor is closed here, so the header is the surface that is on screen.
+    private func setHeaderDueDate(_ dueDateKey: String) {
+        do {
+            try KanbanSectionStateSupport.commitSectionDueDate(
+                dueDateKey,
+                sectionID: section.id,
+                area: area,
+                project: project,
+                in: modelContext
+            )
+        } catch {
+            headerDueDate = DateFormatters.date(from: section.dueDate) ?? Date()
+            saveFailureNotice = CadencePendingChangePersistence.editFailureNotice
+            return
+        }
+        saveFailureNotice = nil
     }
 
     @ViewBuilder

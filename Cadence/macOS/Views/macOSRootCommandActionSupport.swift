@@ -11,6 +11,25 @@ enum RootCommandActionSupport {
         }
     }
 
+    /// Cmd+P over a hovered row: cycle the task's priority, and commit it ([[T-4970]]).
+    ///
+    /// The key handler used to write `task.priority = task.priority.nextCycled` and return, so the
+    /// new flag sat pending in the app's single `ModelContext` until an unrelated save committed
+    /// it or an unrelated `rollback()` discarded it — the [[T-4911]] / [[T-503]] shape. It goes
+    /// through `CadenceTaskFieldEditCommit` now, whose snapshot undo puts the priority back on a
+    /// refusal without rolling back anyone else's pending work. A keystroke has no surface to
+    /// draw a notice on; the row's flag reverting is what the user sees.
+    @discardableResult
+    static func cyclePriority(
+        of task: AppTask,
+        in modelContext: ModelContext,
+        commit: (ModelContext) throws -> Void = { try $0.save() }
+    ) -> Bool {
+        CadenceTaskFieldEditCommit.commit(task, in: modelContext, commit: commit) {
+            task.priority = task.priority.nextCycled
+        }
+    }
+
     /// `T` / `D` over a hovered row. Both halves go through `CadenceTaskDateEditing`, so the
     /// keystroke that moves a task off today also retires today's reminder for it (T-362) — a
     /// keyboard toggle is exactly the case where nothing else is about to touch `scenePhase`.

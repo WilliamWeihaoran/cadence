@@ -503,7 +503,10 @@ struct CadenceMarkdownImageCommitSurfaceTests {
         // [[T-4722]] makes it 68, and bare: the Mac context row's rename refusal names a name the
         // startup merge would fuse, above the row's Save -- the retry is the same Save, and the
         // next rename that lands clears it.
-        #expect(total == 68, "the inline notice has \(total) call sites, not the 68 this test was written over")
+        // [[T-4970]] makes it 69, and bare: the Mac sidebar's project due-date flag commits now,
+        // and a refused date is named under the section header beside the reorder notice -- the
+        // retry is the same flag, and the next date that lands clears it.
+        #expect(total == 69, "the inline notice has \(total) call sites, not the 69 this test was written over")
         #expect(withDismissal == 7, "\(withDismissal) call sites offer a dismissal, not 7")
 
         // And each of the six is named, so one swapping places with another is still a failure.

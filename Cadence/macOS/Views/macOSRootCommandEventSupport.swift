@@ -141,7 +141,7 @@ enum RootCommandEventSupport {
         case 35:
             guard let task = context.hoveredTaskManager.hoveredTask,
                   !event.modifierFlags.contains(.shift) else { return event }
-            task.priority = task.priority.nextCycled
+            RootCommandActionSupport.cyclePriority(of: task, in: context.modelContext)
             return nil
         case 36, 76:
             guard !context.taskCreationManager.isPresented else { return nil }

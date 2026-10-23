@@ -20,6 +20,9 @@ struct TimelineTaskBlock: View {
     let onSelect: () -> Void
 
     @State private var resizeSession: TimelineResizeSession? = nil
+    /// The task as the current resize drag found it — the undo `commitResize` restores when the
+    /// store refuses the new length ([[T-4970]]).
+    @State private var resizeOrigin: CadenceTaskFieldSnapshot? = nil
     @State private var isHovered = false
 
     private var timeRangeLabel: String {
@@ -197,6 +200,9 @@ struct TimelineTaskBlock: View {
     }
 
     private func beginResizeIfNeeded(edge: TimelineResizeEdge, localY: CGFloat) {
+        if resizeSession == nil {
+            resizeOrigin = CadenceTaskFieldSnapshot(task)
+        }
         TimelineTaskBlockInteractionSupport.beginResize(
             task: task,
             selectedTaskID: $selectedTaskID,
@@ -221,6 +227,10 @@ struct TimelineTaskBlock: View {
     }
 
     private func endResize() {
+        if let resizeOrigin {
+            TimelineTaskBlockInteractionSupport.commitResize(task, restoring: resizeOrigin, in: modelContext)
+        }
+        resizeOrigin = nil
         TimelineTaskBlockStateSupport.endResize(resizeSession: &resizeSession)
     }
 }

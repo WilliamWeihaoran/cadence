@@ -1175,10 +1175,11 @@ struct CadenceKanbanColumnLifecycleSurfaceTests {
         )
         #expect(matches(#"failureNotice: columnFailureNotice"#, in: column) == 1)
         #expect(
-            matches(#"saveFailureNotice = CadencePendingChangePersistence\.editFailureNotice"#, in: column) == 4,
+            matches(#"saveFailureNotice = CadencePendingChangePersistence\.editFailureNotice"#, in: column) == 5,
             """
-            the column's refusals are set somewhere other than the four commits that can be \
-            refused: saveSection, toggleSectionArchive, clearSectionDueDate and deleteSection
+            the column's refusals are set somewhere other than the five commits that can be \
+            refused: saveSection, toggleSectionArchive, clearSectionDueDate, deleteSection and \
+            the header date popover's setHeaderDueDate ([[T-4970]])
             """
         )
 

@@ -1,5 +1,6 @@
 #if os(macOS)
 import SwiftUI
+import SwiftData
 
 /// The macOS column's section writes. Every one of them goes through
 /// `CadenceSectionConfigMerge` rather than reading the whole array, changing one entry and writing
@@ -14,6 +15,37 @@ enum KanbanSectionStateSupport {
     ) {
         CadenceSectionConfigMerge.container(area: area, project: project)?
             .updateSectionConfig(uuid: sectionID, mutate: mutate)
+    }
+
+    /// The column header's due-date popover, committed ([[T-4970]]).
+    ///
+    /// The header's picker and its Clear used to call `updateSection` and stop, so the date rode
+    /// the container's `sectionConfigsRaw` as a pending change until an unrelated save committed
+    /// it or an unrelated `rollback()` discarded it — the [[T-4911]] / [[T-503]] shape, one popover
+    /// over from the editor's own `clearSectionDueDate`, which T-645 already committed. The undo is
+    /// the container's `CadenceListEditSnapshot`, never a `rollback()` of the app's one context.
+    static func commitSectionDueDate(
+        _ dueDateKey: String,
+        sectionID: UUID,
+        area: Area?,
+        project: Project?,
+        in modelContext: ModelContext,
+        commit: (ModelContext) throws -> Void = { try $0.save() }
+    ) throws {
+        let undo: CadenceListEditSnapshot?
+        if let area {
+            undo = CadenceListEditSnapshot(area)
+        } else if let project {
+            undo = CadenceListEditSnapshot(project)
+        } else {
+            undo = nil
+        }
+        updateSection(sectionID: sectionID, area: area, project: project) { config in
+            config.dueDate = dueDateKey
+        }
+        try CadencePendingChangePersistence.commitEdit(in: modelContext, commit: commit) {
+            undo?.restore()
+        }
     }
 
     /// The cards `moveTasks(universeTasks:area:project:from:to:)` will re-point.

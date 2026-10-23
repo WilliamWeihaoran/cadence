@@ -803,6 +803,299 @@ struct CadenceEditorSaveCommitSurfaceTests {
         let stored = try #require(try ModelContext(modelContainer).fetch(FetchDescriptor<Context>()).first)
         #expect([stored.name, stored.colorHex, stored.icon] == ["Work", "#111111", "briefcase"])
     }
+
+    // MARK: - [[T-4970]]: six macOS writers that changed a model and committed nothing
+
+    /// A saved row plus an unrelated saved `Area` that is then edited and left pending, so each
+    /// refused case below can prove its undo is a snapshot, not a `rollback()` of the app's one
+    /// context.
+    private func pendingBystander(in modelContext: ModelContext) throws -> Area {
+        let bystander = Area(name: "Home")
+        modelContext.insert(bystander)
+        try modelContext.save()
+        bystander.name = "Home, being typed"
+        return bystander
+    }
+
+    /// **Behavioural.** Cmd+P's priority cycle is in the store, read through a second context.
+    @Test func acommittedHoveredPriorityCycleIsInTheStore() throws {
+        let modelContainer = try container()
+        let modelContext = ModelContext(modelContainer)
+        let task = AppTask(title: "Ship")
+        task.priority = .none
+        modelContext.insert(task)
+        try modelContext.save()
+        let expected = TaskPriority.none.nextCycled
+        #expect(expected != .none, "the cycle moved nothing, so this test could not see a lost write")
+
+        #expect(RootCommandActionSupport.cyclePriority(of: task, in: modelContext))
+
+        #expect(!modelContext.hasChanges, "the cycled priority is still pending")
+        let stored = try ModelContext(modelContainer).fetch(FetchDescriptor<AppTask>())
+        #expect(stored.map(\.priority) == [expected])
+    }
+
+    /// **Behavioural.** A refused cycle answers `false` with the old priority on the live task.
+    @Test func arefusedHoveredPriorityCyclePutsThePriorityBack() throws {
+        let modelContainer = try container()
+        let modelContext = ModelContext(modelContainer)
+        let task = AppTask(title: "Ship")
+        task.priority = .none
+        modelContext.insert(task)
+        let bystander = try pendingBystander(in: modelContext)
+
+        #expect(!RootCommandActionSupport.cyclePriority(
+            of: task, in: modelContext, commit: { _ in throw CommitRefused() }
+        ))
+
+        #expect(task.priority == .none, "the refused cycle left the new priority on the row")
+        #expect(bystander.name == "Home, being typed", "the refused cycle discarded unrelated pending work")
+        try modelContext.save()
+        #expect(try ModelContext(modelContainer).fetch(FetchDescriptor<AppTask>()).map(\.priority) == [.none])
+    }
+
+    /// **Behavioural.** The sidebar row's due-date flag commits the project's date.
+    @Test func acommittedSidebarProjectDueDateIsInTheStore() throws {
+        let modelContainer = try container()
+        let modelContext = ModelContext(modelContainer)
+        let project = Project(name: "Launch")
+        project.dueDate = "2026-11-01"
+        modelContext.insert(project)
+        try modelContext.save()
+
+        try ContextSection.commitDueDate("2026-12-24", on: project, in: modelContext)
+
+        #expect(!modelContext.hasChanges, "the due date is still pending")
+        #expect(try ModelContext(modelContainer).fetch(FetchDescriptor<Project>()).map(\.dueDate) == ["2026-12-24"])
+    }
+
+    /// **Behavioural.** A refused due date rethrows with the old date back on the project.
+    @Test func arefusedSidebarProjectDueDatePutsTheOldDateBack() throws {
+        let modelContainer = try container()
+        let modelContext = ModelContext(modelContainer)
+        let project = Project(name: "Launch")
+        project.dueDate = "2026-11-01"
+        modelContext.insert(project)
+        let bystander = try pendingBystander(in: modelContext)
+
+        #expect(throws: CommitRefused.self) {
+            try ContextSection.commitDueDate(
+                "", on: project, in: modelContext, commit: { _ in throw CommitRefused() }
+            )
+        }
+
+        #expect(project.dueDate == "2026-11-01", "the refused clear left the project with no date")
+        #expect(bystander.name == "Home, being typed", "the refused date discarded unrelated pending work")
+        try modelContext.save()
+        #expect(try ModelContext(modelContainer).fetch(FetchDescriptor<Project>()).map(\.dueDate) == ["2026-11-01"])
+    }
+
+    private func areaWithDoingColumn(in modelContext: ModelContext) throws -> (Area, UUID) {
+        let area = Area(name: "Work")
+        var doing = TaskSectionConfig(name: "Doing")
+        doing.dueDate = "2026-11-01"
+        area.sectionConfigs = [TaskSectionConfig(name: TaskSectionDefaults.defaultName), doing]
+        modelContext.insert(area)
+        try modelContext.save()
+        return (area, doing.id)
+    }
+
+    private func storedDoingDueDate(in modelContainer: ModelContainer) throws -> String? {
+        let areas = try ModelContext(modelContainer).fetch(FetchDescriptor<Area>(
+            predicate: #Predicate { $0.name == "Work" }
+        ))
+        return areas.first?.sectionConfigs.first { $0.name == "Doing" }?.dueDate
+    }
+
+    /// **Behavioural.** The Kanban column header's date popover commits the column's date.
+    @Test func acommittedKanbanHeaderDueDateIsInTheStore() throws {
+        let modelContainer = try container()
+        let modelContext = ModelContext(modelContainer)
+        let (area, doingID) = try areaWithDoingColumn(in: modelContext)
+
+        try KanbanSectionStateSupport.commitSectionDueDate(
+            "2026-12-24", sectionID: doingID, area: area, project: nil, in: modelContext
+        )
+
+        #expect(!modelContext.hasChanges, "the column's due date is still pending")
+        #expect(try storedDoingDueDate(in: modelContainer) == "2026-12-24")
+    }
+
+    /// **Behavioural.** A refused header date rethrows with the column's old date back.
+    @Test func arefusedKanbanHeaderDueDatePutsTheOldDateBack() throws {
+        let modelContainer = try container()
+        let modelContext = ModelContext(modelContainer)
+        let (area, doingID) = try areaWithDoingColumn(in: modelContext)
+        let bystander = try pendingBystander(in: modelContext)
+
+        #expect(throws: CommitRefused.self) {
+            try KanbanSectionStateSupport.commitSectionDueDate(
+                "", sectionID: doingID, area: area, project: nil,
+                in: modelContext, commit: { _ in throw CommitRefused() }
+            )
+        }
+
+        #expect(area.sectionConfigs.first { $0.id == doingID }?.dueDate == "2026-11-01",
+                "the refused clear left the column with no date")
+        #expect(bystander.name == "Home, being typed", "the refused date discarded unrelated pending work")
+        try modelContext.save()
+        #expect(try storedDoingDueDate(in: modelContainer) == "2026-11-01")
+    }
+
+    /// **Behavioural.** The macOS subtask circle's tick is in the store.
+    @Test func acommittedSubtaskRowTickIsInTheStore() throws {
+        let modelContainer = try container()
+        let modelContext = ModelContext(modelContainer)
+        let subtask = Subtask(title: "Book flight")
+        modelContext.insert(subtask)
+        try modelContext.save()
+
+        #expect(SubtaskRow.toggleCompletion(of: subtask, in: modelContext))
+
+        #expect(!modelContext.hasChanges, "the tick is still pending")
+        #expect(try ModelContext(modelContainer).fetch(FetchDescriptor<Subtask>()).map(\.isDone) == [true])
+    }
+
+    /// **Behavioural.** A refused tick answers `false` with the circle un-ticked again.
+    @Test func arefusedSubtaskRowTickPutsTheCircleBack() throws {
+        let modelContainer = try container()
+        let modelContext = ModelContext(modelContainer)
+        let subtask = Subtask(title: "Book flight")
+        modelContext.insert(subtask)
+        let bystander = try pendingBystander(in: modelContext)
+
+        #expect(!SubtaskRow.toggleCompletion(
+            of: subtask, in: modelContext, commit: { _ in throw CommitRefused() }
+        ))
+
+        #expect(!subtask.isDone, "the refused tick left the subtask done")
+        #expect(bystander.name == "Home, being typed", "the refused tick discarded unrelated pending work")
+        try modelContext.save()
+        #expect(try ModelContext(modelContainer).fetch(FetchDescriptor<Subtask>()).map(\.isDone) == [false])
+    }
+
+    /// **Behavioural.** A task dropped on a timeline minute is in the store at its new slot.
+    @Test func acommittedTimelineMinuteDropIsInTheStore() throws {
+        let modelContainer = try container()
+        let modelContext = ModelContext(modelContainer)
+        let task = AppTask(title: "Write report")
+        task.scheduledDate = "2026-06-01"
+        task.scheduledStartMin = 540
+        task.estimatedMinutes = 45
+        modelContext.insert(task)
+        try modelContext.save()
+
+        #expect(SchedulingActions.commitDropTask(task, to: "2026-06-03", startMin: 780, in: modelContext))
+
+        #expect(!modelContext.hasChanges, "the dropped slot is still pending")
+        let stored = try #require(try ModelContext(modelContainer).fetch(FetchDescriptor<AppTask>()).first)
+        #expect([stored.scheduledDate, "\(stored.scheduledStartMin)"] == ["2026-06-03", "780"])
+    }
+
+    /// **Behavioural.** A refused drop answers `false` with the task back in its old slot.
+    @Test func arefusedTimelineMinuteDropPutsTheSlotBack() throws {
+        let modelContainer = try container()
+        let modelContext = ModelContext(modelContainer)
+        let task = AppTask(title: "Write report")
+        task.scheduledDate = "2026-06-01"
+        task.scheduledStartMin = 540
+        task.estimatedMinutes = 45
+        modelContext.insert(task)
+        let bystander = try pendingBystander(in: modelContext)
+
+        #expect(!SchedulingActions.commitDropTask(
+            task, to: "2026-06-03", startMin: 780, in: modelContext, commit: { _ in throw CommitRefused() }
+        ))
+
+        #expect(task.scheduledDate == "2026-06-01", "the refused drop left the task on the new day")
+        #expect(task.scheduledStartMin == 540, "the refused drop left the task at the new minute")
+        #expect(bystander.name == "Home, being typed", "the refused drop discarded unrelated pending work")
+        try modelContext.save()
+        let stored = try #require(try ModelContext(modelContainer).fetch(FetchDescriptor<AppTask>()).first)
+        #expect([stored.scheduledDate, "\(stored.scheduledStartMin)"] == ["2026-06-01", "540"])
+    }
+
+    /// **Behavioural.** The end of a timeline resize drag commits the length the drag left.
+    @Test func acommittedTimelineResizeIsInTheStore() throws {
+        let modelContainer = try container()
+        let modelContext = ModelContext(modelContainer)
+        let task = AppTask(title: "Deep work")
+        task.scheduledDate = "2026-06-01"
+        task.scheduledStartMin = 540
+        task.estimatedMinutes = 30
+        modelContext.insert(task)
+        try modelContext.save()
+
+        let origin = CadenceTaskFieldSnapshot(task)
+        task.estimatedMinutes = 90 // what `updateResize` left on the last frame
+        #expect(TimelineTaskBlockInteractionSupport.commitResize(task, restoring: origin, in: modelContext))
+
+        #expect(!modelContext.hasChanges, "the resized length is still pending")
+        #expect(try ModelContext(modelContainer).fetch(FetchDescriptor<AppTask>()).map(\.estimatedMinutes) == [90])
+    }
+
+    /// **Behavioural.** A refused resize answers `false` with the block back where the drag began.
+    @Test func arefusedTimelineResizePutsTheBlockBack() throws {
+        let modelContainer = try container()
+        let modelContext = ModelContext(modelContainer)
+        let task = AppTask(title: "Deep work")
+        task.scheduledDate = "2026-06-01"
+        task.scheduledStartMin = 540
+        task.estimatedMinutes = 30
+        modelContext.insert(task)
+        let bystander = try pendingBystander(in: modelContext)
+
+        let origin = CadenceTaskFieldSnapshot(task)
+        task.scheduledStartMin = 600
+        task.estimatedMinutes = 90
+        #expect(!TimelineTaskBlockInteractionSupport.commitResize(
+            task, restoring: origin, in: modelContext, commit: { _ in throw CommitRefused() }
+        ))
+
+        #expect(task.scheduledStartMin == 540, "the refused resize left the new start on the block")
+        #expect(task.estimatedMinutes == 30, "the refused resize left the new length on the block")
+        #expect(bystander.name == "Home, being typed", "the refused resize discarded unrelated pending work")
+        try modelContext.save()
+        let stored = try #require(try ModelContext(modelContainer).fetch(FetchDescriptor<AppTask>()).first)
+        #expect(stored.scheduledStartMin == 540)
+        #expect(stored.estimatedMinutes == 30)
+    }
+
+    /// **Source half.** The four call sites with no notice surface of their own reach the
+    /// committing helpers above, and none keeps the bare write it replaced. `saveSurfaces` holds
+    /// the other two, which do draw a notice.
+    @Test func theT4970CallSitesReachTheirCommittingHelpers() throws {
+        let events = try scanned("Cadence/macOS/Views/macOSRootCommandEventSupport.swift")
+        #expect(events.contains("RootCommandActionSupport.cyclePriority(of: task, in: context.modelContext)"))
+        #expect(CadenceSourceScan.matchCount(#"task\.priority = task\.priority\.nextCycled"#, in: events) == 0)
+
+        let subtaskRow = try scanned("Cadence/macOS/Views/TasksPanelSupportViews.swift")
+        #expect(subtaskRow.contains("Button { Self.toggleCompletion(of: subtask, in: modelContext) }"))
+        #expect(CadenceSourceScan.matchCount(#"\{\s*subtask\.isDone\.toggle\(\)\s*\}"#, in: subtaskRow) == 0)
+
+        for path in ["Cadence/macOS/Views/SchedulePanel.swift", "Cadence/macOS/Views/CalendarPageMonthSupportViews.swift"] {
+            let host = try scanned(path)
+            #expect(CadenceSourceScan.matchCount(#"SchedulingActions\.commitDropTask\(task, to: \w+, startMin: startMin, in: modelContext\)"#, in: host) == 1, "\(path)")
+            #expect(CadenceSourceScan.matchCount(#"SchedulingActions\.dropTask\("#, in: host) == 0, "\(path)")
+        }
+
+        let sidebar = try scanned("Cadence/macOS/Views/SidebarComponents.swift")
+        #expect(sidebar.contains("setDueDate(newKey, on: project)"))
+        #expect(CadenceSourceScan.matchCount(#"project\.dueDate = newKey"#, in: sidebar) == 0)
+
+        let column = try scanned("Cadence/macOS/Views/KanbanSectionColumnView.swift")
+        let headerPopover = try #require(
+            CadenceSourceScan.declarationBody("private var sectionDueDatePickerPopover: some View", in: column)
+        )
+        #expect(CadenceSourceScan.matchCount(#"setHeaderDueDate\("#, in: headerPopover) == 2)
+        #expect(CadenceSourceScan.matchCount(#"updateSection\b"#, in: headerPopover) == 0)
+
+        let block = try scanned("Cadence/macOS/Views/TimelineTaskBlock.swift")
+        let endResize = try #require(CadenceSourceScan.functionBody(named: "endResize", in: block))
+        #expect(endResize.contains("TimelineTaskBlockInteractionSupport.commitResize(task, restoring: resizeOrigin, in: modelContext)"))
+        let begin = try #require(CadenceSourceScan.functionBody(named: "beginResizeIfNeeded", in: block))
+        #expect(begin.contains("resizeOrigin = CadenceTaskFieldSnapshot(task)"))
+    }
     #endif
 
     // MARK: - The surfaces
@@ -852,6 +1145,19 @@ struct CadenceEditorSaveCommitSurfaceTests {
                 path: "Cadence/macOS/Views/SettingsSupportViews.swift",
                 function: "saveEdit",
                 successSpellings: ["isEditing = false"]
+            ),
+            // [[T-4970]]: the sidebar row's project due-date flag, and the Kanban column header's
+            // date popover. Clearing the notice is the report — the badge already shows the date —
+            // so it may only happen once the commit has returned.
+            SaveSurface(
+                path: "Cadence/macOS/Views/SidebarComponents.swift",
+                function: "setDueDate",
+                successSpellings: ["dueDateFailureNotice = nil"]
+            ),
+            SaveSurface(
+                path: "Cadence/macOS/Views/KanbanSectionColumnView.swift",
+                function: "setHeaderDueDate",
+                successSpellings: ["saveFailureNotice = nil"]
             ),
 
             // T-634: the task-detail subtask field, on both platforms. Clearing the draft is the
@@ -922,7 +1228,7 @@ struct CadenceEditorSaveCommitSurfaceTests {
     /// Position alone is not control flow, so each branch has to `return` as well — otherwise the
     /// notice is set and the next statements dismiss over it anyway.
     @Test func everyEditorCommitsBeforeItReportsSuccess() throws {
-        let failureBranch = #"(saveFailureNotice|subtaskFailureNotice|renameFailureNotice|failureNotice) = (CadencePendingChangePersistence\.editFailureNotice|CadenceTaskFieldEditCommit\.saveFailureNotice|CadenceTaskInspectorSupport\.subtask(Add|Delete)FailureNotice)\s*return"#
+        let failureBranch = #"(saveFailureNotice|subtaskFailureNotice|renameFailureNotice|dueDateFailureNotice|failureNotice) = (CadencePendingChangePersistence\.editFailureNotice|CadenceTaskFieldEditCommit\.saveFailureNotice|CadenceTaskInspectorSupport\.subtask(Add|Delete)FailureNotice)\s*return"#
 
         for surface in saveSurfaces {
             let raw = try CadenceSourceScan.sourceFile(surface.path)

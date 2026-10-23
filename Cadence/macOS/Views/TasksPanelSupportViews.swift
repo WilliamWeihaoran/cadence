@@ -106,6 +106,7 @@ struct SubtaskRow: View {
     @Bindable var subtask: Subtask
     var showDelete: Bool = false
     var onDelete: (() -> Void)? = nil
+    @Environment(\.modelContext) private var modelContext
 
     // T-673: the same normalisation the visible title below already reads, shared so the
     // completion circle and the delete glyph announce the same subject the row displays.
@@ -122,7 +123,7 @@ struct SubtaskRow: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            Button { subtask.isDone.toggle() } label: {
+            Button { Self.toggleCompletion(of: subtask, in: modelContext) } label: {
                 Image(systemName: subtask.isDone ? "checkmark.circle.fill" : "circle")
                     .font(.system(size: 14))
                     .foregroundStyle(subtask.isDone ? Theme.green : Theme.dim.opacity(0.6))
@@ -151,6 +152,23 @@ struct SubtaskRow: View {
             }
         }
         .padding(.vertical, 3)
+    }
+
+    /// The circle's tick, committed ([[T-4970]]).
+    ///
+    /// It was `subtask.isDone.toggle()` and nothing else — under a task row, on a Kanban card and
+    /// in the inspector — so the tick sat pending in the app's single `ModelContext` until an
+    /// unrelated save committed it or an unrelated `rollback()` discarded it: the [[T-4911]] /
+    /// [[T-503]] shape. It goes through the embedded card's `toggleSubtask`, which already owns
+    /// this exact write with its one-field undo; a refusal un-ticks the circle, which is what the
+    /// user sees, since the row has no notice surface of its own.
+    @discardableResult
+    static func toggleCompletion(
+        of subtask: Subtask,
+        in modelContext: ModelContext,
+        commit: (ModelContext) throws -> Void = { try $0.save() }
+    ) -> Bool {
+        CadenceNoteTaskEmbedEditing.toggleSubtask(subtask, in: modelContext, commit: commit)
     }
 }
 

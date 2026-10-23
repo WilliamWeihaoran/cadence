@@ -113,5 +113,35 @@ enum TimelineTaskBlockInteractionSupport {
         task.scheduledStartMin = range.start
         task.estimatedMinutes = max(5, range.end - range.start)
     }
+
+    /// The end of a resize drag, **committed** ([[T-4970]]).
+    ///
+    /// `updateResize` writes `scheduledStartMin` and `estimatedMinutes` on every frame of the drag,
+    /// which is what makes the block follow the pointer, and the drag used to end by clearing its
+    /// session and nothing else — so the new length sat pending in the app's single `ModelContext`
+    /// until an unrelated save committed it or an unrelated `rollback()` discarded it: the
+    /// [[T-4911]] / [[T-503]] shape. `origin` is the task as the drag found it, so a refusal puts
+    /// the block back where it started rather than rolling back anyone else's pending work, and
+    /// reminders are reconciled once after either answer, since the slot is what they describe.
+    @discardableResult
+    static func commitResize(
+        _ task: AppTask,
+        restoring origin: CadenceTaskFieldSnapshot,
+        in modelContext: ModelContext,
+        reconciler: CadenceWindDownReconciler? = nil,
+        commit: (ModelContext) throws -> Void = { try $0.save() }
+    ) -> Bool {
+        let landed: Bool
+        do {
+            try CadencePendingChangePersistence.commitEdit(in: modelContext, commit: commit) {
+                origin.restore(to: task)
+            }
+            landed = true
+        } catch {
+            landed = false
+        }
+        (reconciler ?? .default).run(in: modelContext)
+        return landed
+    }
 }
 #endif
