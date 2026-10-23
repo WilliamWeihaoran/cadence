@@ -94,6 +94,11 @@ struct iOSCalendarTimelineGrid: View {
     let scheduledTasksByDate: [String: [AppTask]]
     let unscheduledTasksByDate: [String: [AppTask]]
     let eventsByDate: [String: [EKEvent]]
+    /// The host's observed day ([[T-5010]]). Every "is this column today" question below compares
+    /// against it instead of asking the clock: this grid's other inputs are the same on both sides
+    /// of midnight, so a clock read in a body here kept yesterday's header, wash and now-line until
+    /// something unrelated redrew the page.
+    let todayKey: String
     /// A multiplier on the base hour height, 1…3. Written once per pinch, not per frame — see
     /// `pinchZoom`.
     @Binding var zoom: Double
@@ -325,6 +330,7 @@ struct iOSCalendarTimelineGrid: View {
             date: date,
             tasks: CadenceScheduleSupport.items(on: key, in: scheduledTasksByDate),
             events: CadenceScheduleSupport.items(on: key, in: eventsByDate),
+            todayKey: todayKey,
             colWidth: colWidth,
             hourHeight: hourHeight,
             isCompactWidth: !isRegularWidth,
@@ -441,6 +447,7 @@ struct iOSCalendarTimelineGrid: View {
                         let date = date(at: index)
                         iOSCalendarTimelineDayHeader(
                             date: date,
+                            todayKey: todayKey,
                             allDayEvents: allDayEvents(on: date),
                             unscheduledTasks: items(unscheduledTasksByDate, on: date),
                             capacity: bandCapacity,
@@ -763,7 +770,7 @@ struct iOSCalendarTimelineGrid: View {
             firstTimedMinute: CadenceScheduleSupport.earliestTimedStartMinute(
                 timedStartMinutes(on: visibleDates)
             ),
-            showsToday: visibleDates.contains { calendar.isDateInToday($0) },
+            showsToday: visibleDates.contains { DateFormatters.dateKey(from: $0) == todayKey },
             workHoursStartMinute: workHoursStartMinute,
             calendar: calendar
         )
@@ -825,6 +832,8 @@ private struct iOSCalendarTimelineDayHeader: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.cadenceTypographyScaling) private var scaling
     let date: Date
+    /// The grid's observed day ([[T-5010]]).
+    let todayKey: String
     let allDayEvents: [EKEvent]
     let unscheduledTasks: [AppTask]
     /// The strip's chip-row budget at this width (`CadenceCalendarAllDayBandPriority.capacity`).
@@ -843,7 +852,7 @@ private struct iOSCalendarTimelineDayHeader: View {
     }
 
     private let calendar = Calendar.current
-    private var isToday: Bool { calendar.isDateInToday(date) }
+    private var isToday: Bool { DateFormatters.dateKey(from: date) == todayKey }
 
     var body: some View {
         Button(action: action) {
@@ -1099,6 +1108,9 @@ private struct iOSCalendarTimelineDayColumn: View {
     let date: Date
     let tasks: [AppTask]
     let events: [EKEvent]
+    /// The grid's observed day ([[T-5010]]): the drop gate, the now-line gate and the today wash
+    /// all compare against it, so they move at midnight with the day rather than with a redraw.
+    let todayKey: String
     let colWidth: CGFloat
     let hourHeight: CGFloat
     /// **What "compact" means on this grid: the horizontal size class, nothing measured** (T-3184).
@@ -1591,9 +1603,11 @@ private struct iOSCalendarTimelineDayColumn: View {
     /// over nothing, which is the one thing the group-header rule says a container may never be.
     /// The grid can be scrolled to any week, so this is a reachable state and not a defensive
     /// branch. An empty key registers no target at all — see `iOSNewTaskDropTargetModifier`.
+    private var isToday: Bool { DateFormatters.dateKey(from: date) == todayKey }
+
     private var dropKey: String {
         let key = DateFormatters.dateKey(from: date)
-        guard key >= DateFormatters.todayKey() else { return "" }
+        guard key >= todayKey else { return "" }
         return CadenceTaskDropSupport.dropKey(forGroup: .timelineDay(dateKey: key)) ?? ""
     }
 
@@ -1609,14 +1623,15 @@ private struct iOSCalendarTimelineDayColumn: View {
     /// would decline to draw on any other day anyway — `isVisible` asks the same question — but the
     /// gate is here as well because this grid windows a scrolling range of days, so without it
     /// every column on screen would run a `TimelineView(.periodic)` schedule to draw nothing. The
-    /// predicate is a *day* boundary rather than an hour, so the once-a-day staleness it can carry
-    /// is the midnight rollover, which this surface already redraws for `dayWash` on the same test.
+    /// predicate is a *day* boundary rather than an hour, and it reads the grid's observed day
+    /// ([[T-5010]]) rather than the clock, so at midnight the new day's column builds the rule and
+    /// yesterday's drops it — the redraw the old comment here claimed and nothing provided.
     ///
     /// No dot: the Mac's Calendar page has none either, and one dot per visible column would be a
     /// row of them across a week.
     @ViewBuilder
     private var nowLine: some View {
-        if Calendar.current.isDateInToday(date) {
+        if isToday {
             CadenceTimelineNowLine(
                 day: date,
                 totalWidth: colWidth,
@@ -1643,7 +1658,7 @@ private struct iOSCalendarTimelineDayColumn: View {
     /// one. `workHoursBand` below has always opted out for the same reason.
     @ViewBuilder
     private var dayWash: some View {
-        if Calendar.current.isDateInToday(date) {
+        if isToday {
             Rectangle()
                 .fill(Theme.blue.opacity(0.025))
                 .frame(width: colWidth, height: timelineHeight)

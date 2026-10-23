@@ -8,6 +8,8 @@ struct iOSCalendarBoardPlanner: View {
     @Binding var selectedDate: Date
     let allTasks: [AppTask]
     let eventsByDate: [String: [EKEvent]]
+    /// The page's observed day ([[T-5010]]), handed to each column's today accent.
+    let todayKey: String
     let onAddItem: (String) -> Void
 
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
@@ -116,6 +118,7 @@ struct iOSCalendarBoardPlanner: View {
                     iOSCalendarBoardDayColumn(
                         date: date,
                         dateKey: dateKey,
+                        todayKey: todayKey,
                         tasks: boardTasksByDate[dateKey] ?? [],
                         events: eventsByDate[dateKey] ?? [],
                         allTasks: allTasks,
@@ -261,6 +264,9 @@ private struct iOSCalendarBoardDayColumn: View {
     @Environment(\.cadenceTypographyScaling) private var scaling
     let date: Date
     let dateKey: String
+    /// The board's observed day ([[T-5010]]): the amber header and lane compare against it, so the
+    /// accent moves to the new day's column at midnight instead of waiting for a redraw.
+    let todayKey: String
     let tasks: [AppTask]
     let events: [EKEvent]
     let allTasks: [AppTask]
@@ -274,7 +280,7 @@ private struct iOSCalendarBoardDayColumn: View {
     @State private var isCompletedCollapsed = true
 
     private var isToday: Bool {
-        dateKey == DateFormatters.todayKey()
+        dateKey == todayKey
     }
 
     /// Split on `isFinishedTask`, not on `isDone`. A cancelled task is finished, and `!$0.isDone`

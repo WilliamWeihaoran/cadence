@@ -199,7 +199,7 @@ private final class FixedEventDaySource: CalendarEventDaySource {
 
         #expect(
             CadenceSourceScan.matchCount(
-                #"iOSCalendarTimelineDayHeader\(\s*date: date,\s*allDayEvents: allDayEvents\(on: date\),\s*unscheduledTasks: items\(unscheduledTasksByDate, on: date\),\s*capacity: bandCapacity,\s*bandHeight: dayHeaderHeight"#,
+                #"iOSCalendarTimelineDayHeader\(\s*date: date,\s*todayKey: todayKey,\s*allDayEvents: allDayEvents\(on: date\),\s*unscheduledTasks: items\(unscheduledTasksByDate, on: date\),\s*capacity: bandCapacity,\s*bandHeight: dayHeaderHeight"#,
                 in: code
             ) == 1,
             "the grid no longer hands the header the day's all-day events, its capacity and the shared band height"

@@ -39,6 +39,10 @@ struct iOSCalendarView: View {
     /// Holds the pending position write. `@State` so it survives a body pass, a plain class so
     /// scheduling a write is not itself a reason to re-render this page.
     @State private var positionWriter = CadenceCalendarDateMemoryWriter()
+    /// The day every presentation below marks as today ([[T-5010]], the iOS half of [[T-3140]]).
+    /// The grids' other inputs are the same on both sides of midnight, so without a day in them an
+    /// iPad left on Calendar overnight kept yesterday's header, wash, now-line and amber column.
+    @State private var observedDay = CadenceObservedDay()
 
     private let calendar = Calendar.current
     /// Where the calendar left off. Read once on appear; written once the scroll settles rather
@@ -342,6 +346,7 @@ struct iOSCalendarView: View {
         .sheet(item: $quickCreateSeed) { seed in
             iOSCalendarQuickCreateSheet(dateKey: seed.dateKey, initialStartMinute: seed.startMinute)
         }
+        .cadenceTracksDayChanges($observedDay)
     }
 
     @ViewBuilder
@@ -352,6 +357,7 @@ struct iOSCalendarView: View {
                 selectedDate: $selectedDate,
                 allTasks: allTasks,
                 eventsByDate: visibleEventsByDate,
+                todayKey: observedDay.todayKey,
                 onAddItem: openQuickCreate
             )
         } else {
@@ -362,6 +368,7 @@ struct iOSCalendarView: View {
                 scheduledTasksByDate: scheduledTasksByDate,
                 unscheduledTasksByDate: unscheduledTasksByDate,
                 eventsByDate: visibleEventsByDate,
+                todayKey: observedDay.todayKey,
                 zoom: $zoomLevel,
                 onCreateAt: openQuickCreate
             )
@@ -383,7 +390,8 @@ struct iOSCalendarView: View {
                     topRowDate: $anchorDate,
                     selectedDate: $selectedDate,
                     monthTasksByDate: monthTasksByDate,
-                    eventsByDate: visibleEventsByDate
+                    eventsByDate: visibleEventsByDate,
+                    todayKey: observedDay.todayKey
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
 
@@ -399,7 +407,8 @@ struct iOSCalendarView: View {
                 topRowDate: $anchorDate,
                 selectedDate: $selectedDate,
                 monthTasksByDate: monthTasksByDate,
-                eventsByDate: visibleEventsByDate
+                eventsByDate: visibleEventsByDate,
+                todayKey: observedDay.todayKey
             ) {
                 monthDetailPane
             }
@@ -414,7 +423,8 @@ struct iOSCalendarView: View {
                 monthDate: displayedMonth,
                 selectedDate: $selectedDate,
                 monthTasksByDate: monthTasksByDate,
-                eventsByDate: visibleEventsByDate
+                eventsByDate: visibleEventsByDate,
+                todayKey: observedDay.todayKey
             )
         case .day:
             dayInspector

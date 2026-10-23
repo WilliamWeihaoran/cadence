@@ -27,6 +27,8 @@ struct CadenceDayChangeAdoptionTests {
         ("Cadence/macOS/Views/SidebarSupportViews.swift", "struct SidebarListRow: View"),
         ("Cadence/iOS/iOSRootSidebar.swift", "struct iOSSidebar: View"),
         ("Cadence/iOS/iOSTasksTabView.swift", "struct iOSTasksTabView: View"),
+        // T-5010: the iOS Calendar, which hands its key to the timeline, month, agenda and board.
+        ("Cadence/iOS/iOSCalendarView.swift", "struct iOSCalendarView: View"),
     ]
 
     private static let install = ".cadenceTracksDayChanges($observedDay)"

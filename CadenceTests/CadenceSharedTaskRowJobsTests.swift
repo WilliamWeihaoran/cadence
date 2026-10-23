@@ -313,12 +313,15 @@ struct CadenceSharedTaskRowJobsTests {
             of: "todayKey",
             at: [
                 "Cadence/iOS/iOSCalendarInspectorView.swift": 0,
-                "Cadence/iOS/iOSCalendarMonthAgendaViews.swift": 0,
             ]
         )
         #expect(inspector.contains("DateFormatters.dateKey(from: date)"))
 
         let agenda = try strippingComments(sourceFile("Cadence/iOS/iOSCalendarMonthAgendaViews.swift"))
+        // The agenda does hold the page's observed `todayKey` since [[T-5010]], for its today mark
+        // only. It must never be the key a row suppresses its pill against, and never the clock's.
+        #expect(!agenda.contains("dayAlreadyStatedBySurface: todayKey"))
+        #expect(!agenda.contains("todayKey()"))
         #expect(agenda.contains("agendaRow(item, dayKey: section.key)"),
                 "the month agenda's row no longer reads the day from the section that heads it")
     }

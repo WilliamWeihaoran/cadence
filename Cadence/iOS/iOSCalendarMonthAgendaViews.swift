@@ -31,6 +31,8 @@ struct iOSCalendarMonthStack<Detail: View>: View {
     @Binding var selectedDate: Date
     let monthTasksByDate: [String: [AppTask]]
     let eventsByDate: [String: [EKEvent]]
+    /// The page's observed day ([[T-5010]]), handed to the compact grid's today mark.
+    let todayKey: String
     @ViewBuilder let detail: () -> Detail
 
     private var weekdayHeaderHeight: CGFloat { CadenceCalendarWeekdayHeaderMetrics.bandHeight + iOSCalendarTypographyMetrics.lineGain(CadenceCalendarWeekdayHeaderMetrics.labelSize, at: dynamicTypeSize, scaling: scaling) }
@@ -57,7 +59,8 @@ struct iOSCalendarMonthStack<Detail: View>: View {
                     weekdayHeaderHeight: weekdayHeaderHeight,
                     bottomPadding: gridBottomPadding,
                     monthTasksByDate: monthTasksByDate,
-                    eventsByDate: eventsByDate
+                    eventsByDate: eventsByDate,
+                    todayKey: todayKey
                 )
                 // Explicit, because the grid is a scroll view now and a scroll view left flexible
                 // takes the whole stack. This is the same total the fixed grid used to occupy —
@@ -100,6 +103,8 @@ struct iOSCalendarMonthAgendaList: View {
     @Binding var selectedDate: Date
     let monthTasksByDate: [String: [AppTask]]
     let eventsByDate: [String: [EKEvent]]
+    /// The page's observed day ([[T-5010]]) — the today section's amber header compares against it.
+    let todayKey: String
 
     /// The agenda section at the top of the scroll view — both the position the agenda is *set* to
     /// when a grid day is tapped and the one it reports back as it is scrolled. `scrollPosition(id:)`
@@ -125,12 +130,14 @@ struct iOSCalendarMonthAgendaList: View {
         monthDate: Date,
         selectedDate: Binding<Date>,
         monthTasksByDate: [String: [AppTask]],
-        eventsByDate: [String: [EKEvent]]
+        eventsByDate: [String: [EKEvent]],
+        todayKey: String
     ) {
         self.monthDate = monthDate
         self._selectedDate = selectedDate
         self.monthTasksByDate = monthTasksByDate
         self.eventsByDate = eventsByDate
+        self.todayKey = todayKey
         self._scrolledDayKey = State(
             initialValue: CadenceCalendarMonthAgendaSupport.initialScrollTarget(
                 forSelectedDay: DateFormatters.dateKey(from: selectedDate.wrappedValue),
@@ -262,7 +269,7 @@ struct iOSCalendarMonthAgendaList: View {
     }
 
     private func daySection(_ section: iOSCalendarAgendaDaySection) -> some View {
-        let isToday = calendar.isDateInToday(section.date)
+        let isToday = section.key == todayKey
         let isSelected = calendar.isDate(section.date, inSameDayAs: selectedDate)
 
         return VStack(alignment: .leading, spacing: 10) {
@@ -401,6 +408,7 @@ private struct iOSCalendarMonthCompactGrid: View {
     let bottomPadding: CGFloat
     let monthTasksByDate: [String: [AppTask]]
     let eventsByDate: [String: [EKEvent]]
+    let todayKey: String
 
     private let calendar = Calendar.current
 
@@ -415,6 +423,7 @@ private struct iOSCalendarMonthCompactGrid: View {
                 displayMonth: displayMonth,
                 isSelected: calendar.isDate(date, inSameDayAs: selectedDate),
                 hasItems: hasItems(on: DateFormatters.dateKey(from: date)),
+                todayKey: todayKey,
                 rowHeight: rowHeight
             ) {
                 selectedDate = date
@@ -438,11 +447,13 @@ private struct iOSCalendarMonthCompactDayCell: View {
     let displayMonth: Date
     let isSelected: Bool
     let hasItems: Bool
+    /// The grid's observed day ([[T-5010]]).
+    let todayKey: String
     let rowHeight: CGFloat
     let action: () -> Void
 
     private let calendar = Calendar.current
-    private var isToday: Bool { calendar.isDateInToday(date) }
+    private var isToday: Bool { DateFormatters.dateKey(from: date) == todayKey }
     private var isCurrentMonth: Bool { calendar.isDate(date, equalTo: displayMonth, toGranularity: .month) }
 
     /// The same treatment the full-size cell and every date picker in the app use — see

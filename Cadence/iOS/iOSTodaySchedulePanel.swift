@@ -110,6 +110,7 @@ struct iOSSchedulePanel: View {
                 // would draw, and there is no scrolling grid here.
                 unscheduledTasksByDate: [:],
                 eventsByDate: [todayKey: todayEvents],
+                todayKey: todayKey,
                 zoom: $zoomLevel,
                 // **Unused on this pane now, and deliberately still passed** ([[T-3169]]).
                 // `drawsDraftBlocks` makes the column open a draft instead of calling this, but the

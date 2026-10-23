@@ -18,6 +18,8 @@ struct iOSCalendarMonthGrid: View {
     @Binding var selectedDate: Date
     let monthTasksByDate: [String: [AppTask]]
     let eventsByDate: [String: [EKEvent]]
+    /// The page's observed day ([[T-5010]]), handed to every cell's today mark.
+    let todayKey: String
 
     private let calendar = Calendar.current
     /// The band was 36 here and 22 in `iOSCalendarMonthStack`, for the same row of the same grid.
@@ -43,6 +45,7 @@ struct iOSCalendarMonthGrid: View {
                     isSelected: calendar.isDate(date, inSameDayAs: selectedDate),
                     tasks: CadenceScheduleSupport.items(on: key, in: monthTasksByDate),
                     events: CadenceScheduleSupport.items(on: key, in: eventsByDate),
+                    todayKey: todayKey,
                     minHeight: rowHeight
                 ) {
                     selectedDate = date
@@ -315,11 +318,13 @@ private struct iOSCalendarMonthDayCell: View {
     let isSelected: Bool
     let tasks: [AppTask]
     let events: [EKEvent]
+    /// The grid's observed day ([[T-5010]]) — the cell's today badge and wash compare against it.
+    let todayKey: String
     let minHeight: CGFloat
     let action: () -> Void
 
     private let calendar = Calendar.current
-    private var isToday: Bool { calendar.isDateInToday(date) }
+    private var isToday: Bool { DateFormatters.dateKey(from: date) == todayKey }
     private var isCurrentMonth: Bool { calendar.isDate(date, equalTo: displayMonth, toGranularity: .month) }
     /// The scrolling grid fixes each week to `minHeight`. Timed event chips now use a second
     /// line so a clock never steals the title's width; reserve the day header and overflow line
