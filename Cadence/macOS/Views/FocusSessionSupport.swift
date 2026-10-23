@@ -29,6 +29,22 @@ enum FocusSessionSupport {
         return (total / 60, total % 60)
     }
 
+    /// **T-5304.** The hour/minute pair the "Log session" popover logs, read from what its fields
+    /// show *now*.
+    ///
+    /// The fields were `TextField(value:format: .number)`, which write their `Int` only on commit
+    /// (Return or the field ending editing). Clicking the borderless Log button ends neither, so a
+    /// typed "40" was on screen while the button logged the pre-filled 25 — and its own label kept
+    /// saying "Log 25m". The popover now holds the text and parses it here at the moment it is
+    /// read. Unparseable text is 0, and both halves are clamped at 0: a negative hours value used
+    /// to reach `CadenceFocusLedger.bank` and subtract time.
+    static func logFieldValues(hoursText: String, minutesText: String) -> (hours: Int, minutes: Int) {
+        func parse(_ text: String) -> Int {
+            max(0, Int(text.trimmingCharacters(in: .whitespaces)) ?? 0)
+        }
+        return (parse(hoursText), parse(minutesText))
+    }
+
     /// **Throws and takes `commit:` now (T-654).** It used to bank through
     /// `CadenceFocusLedger.bank` — a pending insert since T-621 — and, when `complete` was ticked,
     /// finish the task through `TaskWorkflowService.markDone` directly: neither ever reached a
@@ -45,6 +61,7 @@ enum FocusSessionSupport {
         task: AppTask,
         modelContext: ModelContext,
         focusManager: FocusManager,
+        nextReadyTask: () -> AppTask?,
         commit: (ModelContext) throws -> Void = { try $0.save() }
     ) throws {
         let totalMinutes = hours * 60 + minutes
@@ -61,6 +78,13 @@ enum FocusSessionSupport {
         } catch {
             banked.restore(in: modelContext)
             throw error
+        }
+        // T-5303: a completed task is not a session any more. Leaving it as `activeSession` kept
+        // the page on the finished task, so the next ▶ timed it and the next log credited it.
+        // Mirror iOS `iOSFocusView.complete(_:)`: adopt the next ready task, else end the session.
+        // Read only after the settle, so the finished task is no longer ready.
+        if complete, focusManager.activeTask?.id == task.id {
+            focusManager.activeTask = nextReadyTask()
         }
         focusManager.reset()
     }

@@ -155,7 +155,8 @@ struct FocusView: View {
                                 complete: complete,
                                 task: task,
                                 modelContext: modelContext,
-                                focusManager: focusManager
+                                focusManager: focusManager,
+                                nextReadyTask: { readyTasks.first { $0.id != task.id } }
                             )
                         }
                         // T-566: dismissing over a refused commit reports a save that did not

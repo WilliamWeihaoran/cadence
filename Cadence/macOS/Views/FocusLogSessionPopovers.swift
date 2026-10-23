@@ -6,8 +6,10 @@ struct LogSessionPopover: View {
     let onLog: (Int, Int, Bool) -> Void
     let onDiscard: () -> Void
 
-    @State private var logHours: Int
-    @State private var logMinutes: Int
+    /// Text, not `Int` (T-5304): a `TextField(value:format:)` writes its value only on commit, so
+    /// clicking Log after typing read the pre-filled figure. Parsed on every read instead.
+    @State private var logHoursText: String
+    @State private var logMinutesText: String
     @State private var markComplete: Bool = false
 
     init(task: AppTask, elapsedSeconds: Int, onLog: @escaping (Int, Int, Bool) -> Void, onDiscard: @escaping () -> Void) {
@@ -15,8 +17,14 @@ struct LogSessionPopover: View {
         self.onLog = onLog
         self.onDiscard = onDiscard
         let seed = FocusSessionSupport.logFieldSeed(elapsedSeconds: elapsedSeconds)
-        _logHours = State(initialValue: seed.hours)
-        _logMinutes = State(initialValue: seed.minutes)
+        _logHoursText = State(initialValue: String(seed.hours))
+        _logMinutesText = State(initialValue: String(seed.minutes))
+    }
+
+    private var logHours: Int { logValues.hours }
+    private var logMinutes: Int { logValues.minutes }
+    private var logValues: (hours: Int, minutes: Int) {
+        FocusSessionSupport.logFieldValues(hoursText: logHoursText, minutesText: logMinutesText)
     }
 
     private var totalMinutes: Int { logHours * 60 + logMinutes }
@@ -49,8 +57,8 @@ struct LogSessionPopover: View {
                         .font(.system(size: 11, weight: .medium))
                         .foregroundStyle(Theme.dim)
                     HStack(spacing: 10) {
-                        timeField(label: "h", value: $logHours)
-                        timeField(label: "min", value: $logMinutes)
+                        timeField(label: "h", text: $logHoursText)
+                        timeField(label: "min", text: $logMinutesText)
                         Spacer()
                     }
                 }
@@ -85,7 +93,7 @@ struct LogSessionPopover: View {
                 Spacer()
 
                 Button {
-                    onLog(logHours, max(0, logMinutes), markComplete)
+                    onLog(logHours, logMinutes, markComplete)
                 } label: {
                     Text(totalMinutes > 0 ? "Log \(formatTotal())" : "Log")
                         .font(.system(size: 12, weight: .semibold))
@@ -105,9 +113,9 @@ struct LogSessionPopover: View {
     }
 
     @ViewBuilder
-    private func timeField(label: String, value: Binding<Int>) -> some View {
+    private func timeField(label: String, text: Binding<String>) -> some View {
         HStack(spacing: 4) {
-            TextField("0", value: value, format: .number)
+            TextField("0", text: text)
                 .textFieldStyle(.plain)
                 .font(.system(size: 14, weight: .medium))
                 .foregroundStyle(Theme.text)

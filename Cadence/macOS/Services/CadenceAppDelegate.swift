@@ -16,6 +16,8 @@ final class CadenceAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        // T-5305: the focus stopwatch is memory-only; bank it before it is gone.
+        FocusManager.shared.bankBeforeTermination()
         GlobalHotKeyManager.shared.unregister()
     }
 

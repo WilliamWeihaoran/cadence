@@ -1,6 +1,7 @@
 #if os(macOS)
 import AppKit
 import Foundation
+import OSLog
 import SwiftData
 import SwiftUI
 
@@ -171,6 +172,26 @@ final class FocusManager {
         reset()
     }
 
+    /// **T-5305.** Bank the running (or paused) session before the app quits.
+    ///
+    /// The stopwatch lives only in memory, so a Cmd+Q — or an update restart after a sleep, which
+    /// pauses the clock but keeps its reading — used to drop every minute not yet banked. Quitting
+    /// is leaving the session, so it banks the way `endSession` does, into the context the active
+    /// task lives in (`macOSRootDataRefreshSupport.adoptReplacementContext` keeps that the live
+    /// one). There is no screen left to name a refusal on, so it is logged; the refused bank has
+    /// already been undone by `commitElapsed`. Whether to *warn* before quitting is an owner
+    /// decision and is not made here.
+    func bankBeforeTermination(commit: (ModelContext) throws -> Void = { try $0.save() }) {
+        guard let modelContext = activeTask?.modelContext else { return }
+        do {
+            try commitElapsed(in: modelContext, commit: commit)
+        } catch {
+            Self.logger.error("Focus session could not be banked on quit: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    @ObservationIgnored private static let logger = Logger(subsystem: "com.haoranwei.Cadence", category: "FocusManager")
+
     func reset() {
         timerState.reset()
         resumesOnWake = false
@@ -210,8 +231,9 @@ final class FocusManager {
     /// a `Timer` does not fire while the machine is asleep, and preserving that is not a new rule:
     /// it is the behaviour the fix would otherwise have quietly changed.
     ///
-    /// Sleeping banks what the session has earned and stops it; waking starts it again, and only
-    /// if sleep is what stopped it.
+    /// Sleeping **pauses** the session — it banks nothing, the reading is kept in memory — and
+    /// waking starts it again, only if sleep is what stopped it. (This said "banks" until T-5305;
+    /// it never did. A quit after a sleep is covered by `bankBeforeTermination`.)
     func startObservingSystemSleep() {
         guard sleepObserver == nil else { return }
         let center = NSWorkspace.shared.notificationCenter

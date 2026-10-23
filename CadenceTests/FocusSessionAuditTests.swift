@@ -1,4 +1,5 @@
 #if os(macOS)
+import AppKit
 import Foundation
 import SwiftData
 import Testing
@@ -312,6 +313,158 @@ struct FocusManagerClockOwnershipTests {
 
         #expect(manager.isRunning == false)
         #expect(manager.elapsed == 60)
+    }
+}
+
+/// **T-5303, T-5304, T-5305.** The Log Session popover's numbers, what it leaves the session
+/// pointing at after "Mark task as complete", and the minutes a quit used to throw away.
+@Suite(.serialized)
+@MainActor
+struct FocusLogSessionAndQuitTests {
+
+    private func resetManager() {
+        let manager = FocusManager.shared
+        manager.activeSession = nil
+        manager.reset()
+        manager.wantsNavToFocus = false
+        manager.clock = { Date() }
+    }
+
+    private func installedClock() -> FocusManagerTestClock {
+        let clock = FocusManagerTestClock()
+        FocusManager.shared.clock = { clock.now }
+        return clock
+    }
+
+    private func makeTasks(_ titles: [String]) throws -> ([AppTask], Project, ModelContext) {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let project = Project(name: "Ledger")
+        context.insert(project)
+        let tasks = titles.map { title -> AppTask in
+            let task = AppTask(title: title)
+            task.project = project
+            context.insert(task)
+            return task
+        }
+        try context.save()
+        return (tasks, project, context)
+    }
+
+    /// T-5303: completing through Log Session moves the session on, as iOS does, instead of
+    /// leaving the finished task as the thing the next ▶ times.
+    @Test func loggingWithMarkCompleteAdoptsTheNextReadyTask() throws {
+        resetManager()
+        defer { resetManager() }
+        let (tasks, _, context) = try makeTasks(["Reconcile invoices", "File receipts"])
+        let (done, next) = (tasks[0], tasks[1])
+        let manager = FocusManager.shared
+        let clock = installedClock()
+        try manager.startFocus(task: done, in: context)
+        clock.advance(25 * 60)
+        manager.isRunning = false
+
+        try FocusSessionSupport.logSession(
+            hours: 0, minutes: 25, complete: true, task: done,
+            modelContext: context, focusManager: manager,
+            nextReadyTask: { next }
+        )
+
+        #expect(done.isDone)
+        #expect(done.actualMinutes == 25)
+        #expect(manager.activeTask?.id == next.id)
+        #expect(manager.elapsed == 0)
+        #expect(manager.isRunning == false)
+    }
+
+    /// With nothing left to adopt, the session ends rather than staying on the finished task.
+    @Test func loggingWithMarkCompleteAndNothingReadyEndsTheSession() throws {
+        resetManager()
+        defer { resetManager() }
+        let (tasks, _, context) = try makeTasks(["Reconcile invoices"])
+        let manager = FocusManager.shared
+        try manager.startFocus(task: tasks[0], in: context)
+
+        try FocusSessionSupport.logSession(
+            hours: 0, minutes: 10, complete: true, task: tasks[0],
+            modelContext: context, focusManager: manager,
+            nextReadyTask: { nil }
+        )
+
+        #expect(tasks[0].isDone)
+        #expect(manager.activeSession == nil)
+    }
+
+    /// Logging without completing keeps the session on the same task (it is still being worked).
+    @Test func loggingWithoutCompletingKeepsTheSession() throws {
+        resetManager()
+        defer { resetManager() }
+        let (tasks, _, context) = try makeTasks(["Reconcile invoices", "File receipts"])
+        let manager = FocusManager.shared
+        try manager.startFocus(task: tasks[0], in: context)
+
+        try FocusSessionSupport.logSession(
+            hours: 0, minutes: 10, complete: false, task: tasks[0],
+            modelContext: context, focusManager: manager,
+            nextReadyTask: { tasks[1] }
+        )
+
+        #expect(tasks[0].isDone == false)
+        #expect(manager.activeTask?.id == tasks[0].id)
+    }
+
+    /// T-5304: what the fields show is what is logged, with no Return needed, and neither half
+    /// can go below zero.
+    @Test func logFieldValuesReadTheTypedTextAndClampAtZero() {
+        func values(_ h: String, _ m: String) -> [Int] {
+            let v = FocusSessionSupport.logFieldValues(hoursText: h, minutesText: m)
+            return [v.hours, v.minutes]
+        }
+        #expect(values("0", "40") == [0, 40])
+        #expect(values(" 1 ", "5") == [1, 5])
+        #expect(values("-2", "30") == [0, 30])
+        #expect(values("1", "-5") == [1, 0])
+        #expect(values("", "abc") == [0, 0])
+    }
+
+    /// T-5305: quitting banks the session against the task and its list.
+    @Test func quittingBanksTheRunningSession() throws {
+        resetManager()
+        defer { resetManager() }
+        let (tasks, project, context) = try makeTasks(["Reconcile invoices"])
+        let manager = FocusManager.shared
+        let clock = installedClock()
+        try manager.startFocus(task: tasks[0], in: context)
+        clock.advance(40 * 60)
+
+        // Through the real quit hook, so a delegate that stops calling the bank fails here too.
+        CadenceAppDelegate().applicationWillTerminate(
+            Notification(name: NSApplication.willTerminateNotification)
+        )
+
+        #expect(tasks[0].actualMinutes == 40)
+        #expect(project.loggedMinutes == 40)
+        #expect(manager.elapsed == 0)
+        #expect(context.hasChanges == false)
+    }
+
+    /// Sleep pauses without banking; a quit after it (an update restart) still banks the minutes
+    /// worked before the lid closed, and none of the hours asleep.
+    @Test func quittingAfterASleepBanksWhatWasWorkedBeforeIt() throws {
+        resetManager()
+        defer { resetManager() }
+        let (tasks, _, context) = try makeTasks(["Reconcile invoices"])
+        let manager = FocusManager.shared
+        let clock = installedClock()
+        try manager.startFocus(task: tasks[0], in: context)
+        clock.advance(10 * 60)
+        manager.handleSystemWillSleep()
+        #expect(tasks[0].actualMinutes == 0)
+        clock.advance(8 * 60 * 60)
+
+        manager.bankBeforeTermination()
+
+        #expect(tasks[0].actualMinutes == 10)
     }
 }
 
