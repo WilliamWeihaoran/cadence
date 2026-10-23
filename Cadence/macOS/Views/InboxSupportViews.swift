@@ -61,7 +61,7 @@ struct InboxAppleRemindersSectionView: View {
                 if isLoading && reminders.isEmpty {
                     HStack(spacing: 8) {
                         ProgressView().controlSize(.small)
-                        Text("Loading reminders...")
+                        Text("Loading reminders…")
                             .font(.system(size: 12))
                             .foregroundStyle(Theme.dim)
                     }

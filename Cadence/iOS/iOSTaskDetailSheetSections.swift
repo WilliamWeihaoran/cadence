@@ -340,7 +340,7 @@ struct iOSTaskNotesSection: View {
             iOSMarkdownEditingSurface(
                 text: notesText,
                 isFocused: isFocused,
-                placeholder: "Add notes...",
+                placeholder: "Add notes…",
                 referenceNotes: referenceNotes,
                 referenceTasks: referenceTasks,
                 onOpenReference: onOpenReference

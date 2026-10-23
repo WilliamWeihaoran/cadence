@@ -67,7 +67,7 @@ struct SettingsAccountSection: View {
                                 .background(Theme.red.opacity(0.12))
                                 .clipShape(RoundedRectangle(cornerRadius: 8))
 
-                                Button("Delete Account...") {
+                                Button("Delete Account…") {
                                     onDeleteAccount()
                                 }
                                 .buttonStyle(.cadencePlain)
@@ -85,7 +85,7 @@ struct SettingsAccountSection: View {
                                 HStack(spacing: 7) {
                                     Image(systemName: "apple.logo")
                                         .font(.system(size: 12, weight: .semibold))
-                                    Text(appleAccountManager.isAuthorizing ? "Signing In..." : "Sign in with Apple")
+                                    Text(appleAccountManager.isAuthorizing ? "Signing In…" : "Sign in with Apple")
                                         .font(.system(size: 12, weight: .semibold))
                                 }
                                 // Plain `Theme.onColor`, not `onColor(for:)`: Sign in with Apple is
@@ -244,7 +244,7 @@ struct SettingsAISection: View {
                         .opacity(isAPIKeyDraftEmpty ? 0.52 : 1)
                         .disabled(isAPIKeyDraftEmpty)
 
-                        Button(aiSettingsManager.isTestingConnection ? "Testing..." : CadenceAISettingsCopy.testConnectionAction) {
+                        Button(aiSettingsManager.isTestingConnection ? CadenceAISettingsCopy.testingConnectionStatus : CadenceAISettingsCopy.testConnectionAction) {
                             Task { await aiSettingsManager.testConnection() }
                         }
                         .buttonStyle(.cadencePlain)

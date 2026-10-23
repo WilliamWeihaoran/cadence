@@ -76,6 +76,14 @@ struct CadenceSettingsSectionCopyTests {
         ("CadenceAISettingsCopy.deleteAPIKeyAction", "Delete API Key"),
     ]
 
+    /// **T-5000.** The Test Connection button's in-flight title: macOS typed "Testing..." and iOS
+    /// "Testing", so neither surface agreed with the other or with the house ellipsis. Kept out of
+    /// `aiPairs` only because it is under the 12-character floor of the harvest that list also
+    /// feeds; the both-surfaces claim is the same one.
+    private static let aiInFlightPairs: [(expression: String, literal: String)] = [
+        ("CadenceAISettingsCopy.testingConnectionStatus", "Testing…"),
+    ]
+
     private static let tagSurfaces = [
         "Cadence/macOS/Views/SettingsTagsSection.swift",
         "Cadence/iOS/iOSSettingsTagsSection.swift",
@@ -241,6 +249,7 @@ struct CadenceSettingsSectionCopyTests {
             (Self.tagSurfaces, Self.tagPairs),
             (Self.templateSurfaces, Self.templatePairs),
             (Self.aiSurfaces, Self.aiPairs),
+            (Self.aiSurfaces, Self.aiInFlightPairs),
         ] {
             for path in surfaces {
                 let code = try Self.strippedSource(at: path)
@@ -1052,6 +1061,7 @@ struct CadenceSettingsSectionCopyTests {
         #expect(CadenceAISettingsCopy.saveAPIKeyAction == "Save API Key")
         #expect(CadenceAISettingsCopy.testConnectionAction == "Test Connection")
         #expect(CadenceAISettingsCopy.deleteAPIKeyAction == "Delete API Key")
+        #expect(CadenceAISettingsCopy.testingConnectionStatus == "Testing…")
 
         #expect(CadenceNotificationSettingsCopy.remindersToggleTitle == "Enable reminders")
         #expect(

@@ -281,7 +281,7 @@ struct iOSCalendarEventEditSheet: View {
                 iOSMarkdownEditingSurface(
                     text: $draft.notes,
                     isFocused: $notesEditorFocused,
-                    placeholder: "Add markdown notes...",
+                    placeholder: "Add markdown notes…",
                     referenceNotes: allNotes,
                     referenceTasks: allTasks,
                     onOpenReference: openMarkdownReference,

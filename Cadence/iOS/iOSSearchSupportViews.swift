@@ -410,7 +410,7 @@ struct iOSNoteDetailSheet: View {
                         set: { updateContent($0) }
                     ),
                     isFocused: $isEditorFocused,
-                    placeholder: "Start writing...",
+                    placeholder: "Start writing…",
                     referenceNotes: allNotes,
                     referenceTasks: allTasks,
                     editingNote: note,

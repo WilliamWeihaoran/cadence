@@ -186,12 +186,13 @@ nonisolated enum CadenceAISettingsCopy {
     ///   Both now say "API Key", so the pair reads as one object with two verbs.
     /// - **Test names what is tested.** "Test" alone is a verb with no object on a card that holds
     ///   a key, a model id and a network call.
-    ///
-    /// The in-flight label is deliberately *not* here: macOS says "Testing..." and iOS "Testing",
-    /// which is a third divergence T-599 did not name and is under the sweep's 12-character floor.
+    /// - **The in-flight label is one string too.** macOS said "Testing..." and iOS "Testing" — a
+    ///   third divergence T-599 did not name, under the sweep's 12-character floor — until T-5000
+    ///   moved it here with the house ellipsis.
     static let saveAPIKeyAction = "Save API Key"
     static let testConnectionAction = "Test Connection"
     static let deleteAPIKeyAction = "Delete API Key"
+    static let testingConnectionStatus = "Testing…"
 }
 
 /// Settings → Notifications, which is one row in two states on both surfaces.

@@ -240,7 +240,7 @@ struct NoteFolderMoveMenu: View {
             ForEach(folderNames, id: \.self) { name in
                 Button(name) { move(name) }
             }
-            Button("New Folder...") { newFolder() }
+            Button("New Folder…") { newFolder() }
         }
     }
 }

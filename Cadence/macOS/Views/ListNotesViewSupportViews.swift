@@ -15,7 +15,7 @@ struct ListNotesHeaderView: View {
             Spacer()
             Menu {
                 Button("New Note", action: onNewNote)
-                Button("New Note in Folder...", action: onNewNoteInFolder)
+                Button("New Note in Folder…", action: onNewNoteInFolder)
             } label: {
                 Image(systemName: "plus")
                     .font(.system(size: 12, weight: .semibold))

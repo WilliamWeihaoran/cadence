@@ -475,7 +475,7 @@ struct iOSAISettingsSection: View {
                             )
 
                             iOSActionButton(
-                                title: aiSettingsManager.isTestingConnection ? "Testing" : CadenceAISettingsCopy.testConnectionAction,
+                                title: aiSettingsManager.isTestingConnection ? CadenceAISettingsCopy.testingConnectionStatus : CadenceAISettingsCopy.testConnectionAction,
                                 systemImage: "network",
                                 role: .secondary,
                                 size: .compact,
@@ -650,7 +650,7 @@ private struct iOSTemplateBodyEditor: View {
             iOSMarkdownEditingSurface(
                 text: $text,
                 isFocused: $isFocused,
-                placeholder: "Write the reusable note template...",
+                placeholder: "Write the reusable note template…",
                 allowsEmbeddedTaskCreation: false,
                 // **T-421.** This body is a `UserDefaults` string under
                 // `NoteTemplateLibrary.storageKey`, not a row in the store, so an image pasted here

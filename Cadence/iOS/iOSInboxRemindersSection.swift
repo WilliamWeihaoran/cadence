@@ -66,7 +66,7 @@ struct iOSInboxRemindersSection: View {
             HStack(spacing: 10) {
                 ProgressView()
                     .controlSize(.small)
-                Text("Loading reminders...")
+                Text("Loading reminders…")
                     .cadenceFont(.fieldLabel, weight: .regular)
                     .foregroundStyle(Theme.dim)
                 Spacer(minLength: 0)

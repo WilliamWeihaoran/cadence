@@ -483,7 +483,7 @@ struct AppStoreReviewReadinessTests {
             encoding: .utf8
         )
 
-        #expect(accountSettings.contains("Delete Account..."))
+        #expect(accountSettings.contains("Delete Account…"))
         #expect(dataSafetySettings.contains("Delete Account & Data"))
         #expect(deletionBody.contains("PrivacyDataResetService.deleteCadenceDataAndLocalArtifacts"))
         #expect(resetService.contains("StoreBackupManager.deleteAllBackups"))

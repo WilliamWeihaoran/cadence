@@ -269,6 +269,46 @@ struct CadenceRetiredCopyTests {
         #expect(tombstone.contains("No tasks yet"), "non-vacuity: the tombstone is gone")
         #expect(instrument.fires(on: tombstone) == false, "the sweep counts tombstone comments as offences")
     }
+
+    /// **T-5000: three full stops are retired as an ellipsis, everywhere at once.**
+    ///
+    /// The house ellipsis is the single character "…" — "Add notes…" in the Mac inspector, "Search…",
+    /// "Choose Archive…" — and nineteen literals still typed "..." instead, most of them the
+    /// phone's twin of a Mac string that already had it right: "Add notes..." on iOS beside the
+    /// inspector's "Add notes…", "Start writing..." in six editors, "Loading reminders..." in four.
+    /// A per-phrase entry in `cadenceRetiredCopy` would have caught the nineteen and none of the
+    /// next one, so this is a shape rather than a phrase.
+    ///
+    /// The shape is a literal whose last word runs straight into the dots and the closing quote,
+    /// which is what a title, placeholder or in-flight label looks like and what nothing else in
+    /// the tree does. Range notation inside a sentence ("Expected 0...1439.") is code talking to an
+    /// agent, not an ellipsis, and the API-key format hint "sk-..." ends in a hyphen; neither is
+    /// matched, deliberately.
+    @Test func noLiteralTypesThreeFullStopsForTheHouseEllipsis() throws {
+        let instrument = try asciiEllipsisInstrument()
+        let read = retiredCopyStrippedSourceReader()
+
+        var offenders: [String] = []
+        for (directory, witness, floor) in [
+            ("Cadence", "Cadence/iOS/iOSNotesView.swift", 300),
+            ("CadenceWidgets", "CadenceWidgets/TodayTasksWidgetView.swift", 3),
+        ] {
+            offenders += try instrument.sweep(
+                try retiredCopySwiftFiles(under: directory),
+                atLeast: floor,
+                including: witness,
+                read: read
+            )
+        }
+
+        #expect(
+            offenders.isEmpty,
+            """
+            \(offenders) type "..." where the app writes "…" (T-5000). Use the single ellipsis \
+            character; it is what every other title, placeholder and in-flight label already says.
+            """
+        )
+    }
 }
 
 // MARK: - Fixtures
@@ -314,4 +354,31 @@ private func retiredCopyStrippedSourceReader() -> (String) throws -> String {
 /// `/private/tmp` on an isolated build tree) that `FileManager` resolves and the literal does not.
 private func retiredCopySwiftFiles(under relativeDirectory: String) throws -> [String] {
     try CadenceSourceScan.swiftFiles(under: relativeDirectory)
+}
+
+/// The detector for T-5000's sweep. The witnesses are the same placeholder twice, once with three
+/// full stops and once with the ellipsis, plus a tombstone, because a comment quoting the retired
+/// spelling is exactly what this file says is memory rather than an offence.
+private func asciiEllipsisInstrument() throws -> CadenceScanInstrument {
+    try CadenceScanInstrument(
+        "ASCII three-dot ellipsis in a literal",
+        fires: """
+        struct Screen {
+            let placeholder = "Start writing..."
+        }
+        """,
+        andNotOn: """
+        struct Screen {
+            // It used to read "Start writing..."; see T-5000.
+            let placeholder = "Start writing…"
+            let range = "Expected 0...1439."
+            let hint = "sk-..."
+        }
+        """,
+        by: { asciiEllipsisLiteralCount(in: CadenceSourceScan.strippingComments($0)) > 0 }
+    )
+}
+
+private func asciiEllipsisLiteralCount(in code: String) -> Int {
+    CadenceSourceScan.matchCount(#""[^"\n]*[A-Za-z]\.\.\.""#, in: code)
 }

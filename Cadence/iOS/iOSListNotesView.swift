@@ -160,7 +160,7 @@ struct iOSListNotesView: View {
             Button("New Note") {
                 addNote()
             }
-            Button("New Note in Folder...") {
+            Button("New Note in Folder…") {
                 folderRequest = iOSNoteFolderRequest(mode: .newNote)
             }
         } label: {
@@ -267,7 +267,7 @@ struct iOSListNotesView: View {
                     set: { CadenceCoreNoteSupport.update(note, content: $0, in: modelContext) }
                 ),
                 isFocused: $isEditorFocused,
-                placeholder: "Start writing...",
+                placeholder: "Start writing…",
                 referenceNotes: allNotes,
                 referenceTasks: allTasks,
                 editingNote: note,

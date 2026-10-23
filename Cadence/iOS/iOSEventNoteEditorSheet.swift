@@ -110,7 +110,7 @@ struct iOSEventNoteEditorSheet: View {
         iOSMarkdownEditingSurface(
             text: $note.content,
             isFocused: $isEditorFocused,
-            placeholder: "Start writing...",
+            placeholder: "Start writing…",
             referenceNotes: allNotes,
             referenceTasks: allTasks,
             editingNote: note,

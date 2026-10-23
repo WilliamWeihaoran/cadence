@@ -137,7 +137,7 @@ struct iOSLinkedNoteEditorSheet: View {
             iOSMarkdownEditingSurface(
                 text: $note.content,
                 isFocused: $isEditorFocused,
-                placeholder: "Start writing...",
+                placeholder: "Start writing…",
                 referenceNotes: referenceNotes,
                 referenceTasks: referenceTasks,
                 editingNote: note,

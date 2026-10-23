@@ -448,7 +448,7 @@ struct iOSNotesView: View {
                     set: { update(note, content: $0) }
                 ),
                 isFocused: $isEditorFocused,
-                placeholder: "Start writing...",
+                placeholder: "Start writing…",
                 referenceNotes: allNotes,
                 referenceTasks: allTasks,
                 editingNote: note,
@@ -778,7 +778,7 @@ struct iOSNoteEditorCover: View {
                     set: { CadenceCoreNoteSupport.update(note, content: $0, in: modelContext) }
                 ),
                 isFocused: $isEditorFocused,
-                placeholder: "Start writing...",
+                placeholder: "Start writing…",
                 referenceNotes: allNotes,
                 referenceTasks: allTasks,
                 editingNote: note,

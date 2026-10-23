@@ -66,7 +66,7 @@ struct SettingsRemindersSection: View {
         if remindersManager.isLoading && remindersManager.reminders.isEmpty {
             summaryRow {
                 ProgressView().controlSize(.small)
-                Text("Loading reminders...")
+                Text("Loading reminders…")
                     .font(.system(size: 13))
                     .foregroundStyle(Theme.dim)
                 Spacer()
