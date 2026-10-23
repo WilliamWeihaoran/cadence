@@ -227,12 +227,14 @@ struct KanbanCompletedTasksToggle: View {
 /// card on both boards.
 struct KanbanDraggableCard: View {
     let task: AppTask
+    /// Forwarded to `KanbanCard.todayKey`.
+    let todayKey: String
     var showsDropIndicator: Bool = false
     var onDropTargetedChanged: (Bool) -> Void = { _ in }
     let onDropBefore: ([String]) -> Bool
 
     var body: some View {
-        KanbanCard(task: task)
+        KanbanCard(task: task, todayKey: todayKey)
             .overlay(alignment: .top) {
                 if showsDropIndicator {
                     Rectangle()

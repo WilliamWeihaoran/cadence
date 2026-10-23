@@ -68,8 +68,12 @@ struct TasksListView: View {
     /// the two sentences make opposite claims about the store, and the pair is mutually exclusive
     /// by construction — a refused drop moved nothing, so it can never also be off screen.
     @State private var reorderOffScreenNotice: String?
+    /// The day this page buckets and flags against ([[T-5012]]). Overdue / Due Today / Do Today,
+    /// the red overdue flags and every row's lateness read the clock in a body whose inputs do not
+    /// change at midnight. One observer for the page; the sections hand the key to their rows.
+    @State private var observedDay = CadenceObservedDay()
 
-    private var todayKey: String { DateFormatters.todayKey() }
+    private var todayKey: String { observedDay.todayKey }
 
     /// What this page offers, asked of the surface rather than decided here (T-290). `scope.surface`
     /// is the desktop twin of `CadenceTaskCollection.surface`, which iOS's one page for both scopes
@@ -265,6 +269,7 @@ struct TasksListView: View {
         let visibleCompletedTasks = isCompletedCollapsed ? [] : completedTasks(in: universe)
         let coordinator = dropCoordinator(in: universe)
         let showsEmptyState = isEmptyPage(activeTasks: visibleTasks, completedCount: completedCount)
+        let todayKey = self.todayKey
 
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 0) {
@@ -284,6 +289,7 @@ struct TasksListView: View {
                         showsContainer: options.showsContainerChip,
                         isCollapsed: collapsedSectionIDs.contains(section.id),
                         overdueCount: overdueCount(in: section.tasks),
+                        todayKey: todayKey,
                         contexts: contexts,
                         areas: areas,
                         projects: projects,
@@ -326,6 +332,7 @@ struct TasksListView: View {
                         tasks: visibleCompletedTasks,
                         showsContainer: options.showsContainerChip,
                         isCollapsed: isCompletedCollapsed,
+                        todayKey: todayKey,
                         contexts: contexts,
                         areas: areas,
                         projects: projects,
@@ -341,6 +348,7 @@ struct TasksListView: View {
             .padding(.bottom, 16)
         }
         .cadenceSoftPageBounce()
+        .cadenceTracksDayChanges($observedDay)
         .background(
             Color.clear.contentShape(Rectangle()).onTapGesture { clearAppEditingFocus() }
         )
@@ -510,6 +518,8 @@ private struct TasksListSectionView: View {
     let showsContainer: Bool
     let isCollapsed: Bool
     let overdueCount: Int?
+    /// `TasksListView`'s observed day, for the rows' lateness ([[T-5012]]).
+    let todayKey: String
     let contexts: [Context]
     let areas: [Area]
     let projects: [Project]
@@ -562,6 +572,7 @@ private struct TasksListSectionView: View {
                         task: task,
                         style: section.listGroup == nil ? .standard : .todayGrouped,
                         showsContainer: showsContainer && section.listGroup == nil,
+                        todayKey: todayKey,
                         contexts: contexts,
                         areas: areas,
                         projects: projects,
@@ -579,6 +590,8 @@ private struct TasksListCompletedSectionView: View {
     let tasks: [AppTask]
     let showsContainer: Bool
     let isCollapsed: Bool
+    /// See `TasksListSectionView.todayKey`.
+    let todayKey: String
     let contexts: [Context]
     let areas: [Area]
     let projects: [Project]
@@ -602,6 +615,7 @@ private struct TasksListCompletedSectionView: View {
                         task: task,
                         style: .standard,
                         showsContainer: showsContainer,
+                        todayKey: todayKey,
                         contexts: contexts,
                         areas: areas,
                         projects: projects

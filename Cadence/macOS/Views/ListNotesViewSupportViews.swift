@@ -164,12 +164,14 @@ struct ListEventNoteSectionRows: View {
 
 struct ListTaskNoteSectionRows: View {
     let tasks: [AppTask]
+    /// `ListNotesView`'s observed day ([[T-5012]]).
+    let todayKey: String
     let selectedTaskID: UUID?
     let onSelect: (AppTask) -> Void
 
     var body: some View {
         ForEach(tasks) { task in
-            TaskNoteListRow(task: task, isSelected: selectedTaskID == task.id)
+            TaskNoteListRow(task: task, isSelected: selectedTaskID == task.id, todayKey: todayKey)
                 .onTapGesture {
                     onSelect(task)
                 }

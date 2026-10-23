@@ -23,6 +23,11 @@ struct ListTasksView: View {
     /// Set when a row drop **landed** and the tab's active sort does not show it where it was
     /// dropped (T-1077). See `TasksListView` for why it is a second flag and not a second value.
     @State private var reorderOffScreenNotice: String? = nil
+    /// The day this tab groups and flags against ([[T-5012]]). The date buckets, the red overdue
+    /// flags and every row's lateness were clock reads in a body whose inputs do not change at
+    /// midnight, so a list left open overnight kept yesterday's Overdue / Due Today split. One
+    /// observer here, for the page; the rows are handed the key.
+    @State private var observedDay = CadenceObservedDay()
 
     private var activeTasks: [AppTask] {
         let sorted = CadenceTaskQuerySupport.openTasks(from: tasks).taskSorted(by: sortField, direction: sortDirection)
@@ -42,7 +47,7 @@ struct ListTasksView: View {
         CadenceTaskSurfaceOptions.options(for: .listDetail)
     }
     private var sectionNames: [String] { area?.sectionNames ?? project?.sectionNames ?? [TaskSectionDefaults.defaultName] }
-    private var todayKey: String { DateFormatters.todayKey() }
+    private var todayKey: String { observedDay.todayKey }
 
     private var groupedActiveTasks: [ListTasksGroup] {
         if let frozenGroupedTasks = resolveFrozenTaskGroups(frozenGroupedTasks, from: tasks) {
@@ -69,7 +74,10 @@ struct ListTasksView: View {
     }
 
     var body: some View {
-        List {
+        // Read once, in `body` itself, so the observed day is a dependency of this pass and not
+        // only of the `ForEach` closures below, which SwiftUI may run outside it.
+        let todayKey = self.todayKey
+        return List {
             if let reorderFailureNotice {
                 CadenceInlineFailureNotice(text: reorderFailureNotice)
                     .padding(.horizontal, TaskListDisplayMetrics.headerHorizontalInset)
@@ -105,6 +113,7 @@ struct ListTasksView: View {
                     group: group,
                     isCollapsed: collapsedGroupIDs.contains(group.id),
                     overdueCount: overdueCount(in: group.tasks),
+                    todayKey: todayKey,
                     dragOverTaskID: $dragOverTaskID,
                     onToggle: { toggleGroup(group.id) },
                     onReorderTask: reorderTask
@@ -115,6 +124,7 @@ struct ListTasksView: View {
                 ListTasksCompletedSectionView(
                     tasks: doneTasks,
                     isCollapsed: isCompletedCollapsed,
+                    todayKey: todayKey,
                     onToggle: { isCompletedCollapsed.toggle() }
                 )
             }
@@ -131,6 +141,7 @@ struct ListTasksView: View {
             Color.clear.frame(height: 72)
         }
         .cadenceSoftPageBounce()
+        .cadenceTracksDayChanges($observedDay)
         .animation(.easeOut(duration: 0.26), value: activeTasks.map(\.id))
         .floatingNewTaskButton {
             taskCreationManager.present(

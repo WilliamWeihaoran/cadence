@@ -62,8 +62,9 @@ struct TaskOverdueSupportTests {
         let overdue = task(due: DateFormatters.dateKey(from: Date(timeIntervalSinceNow: -86_400)))
         let done = task(due: DateFormatters.dateKey(from: Date(timeIntervalSinceNow: -86_400)), status: .done)
 
-        #expect(KanbanCardComputedSupport.isOverdue(task: overdue))
-        #expect(KanbanCardComputedSupport.isOverdue(task: done) == false)
+        let todayKey = DateFormatters.todayKey()
+        #expect(KanbanCardComputedSupport.isOverdue(task: overdue, todayKey: todayKey))
+        #expect(KanbanCardComputedSupport.isOverdue(task: done, todayKey: todayKey) == false)
         #expect(overdue.isOverdue(todayKey: DateFormatters.todayKey()))
     }
     #endif

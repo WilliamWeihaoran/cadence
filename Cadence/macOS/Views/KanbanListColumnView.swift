@@ -11,6 +11,8 @@ struct TaskListKanbanColumn: View {
     let title: String
     let color: Color
     let tasks: [AppTask]
+    /// `TaskListsKanbanView`'s observed day, for the cards' do and due chips ([[T-5012]]).
+    let todayKey: String
     let universeTasks: [AppTask]
     /// The rows the renumber a card drop makes is allowed to span — the store's tasks, not the
     /// board's (T-1175). `universeTasks` answers a different question, "is this a card this board
@@ -132,6 +134,7 @@ struct TaskListKanbanColumn: View {
         ForEach(tasks) { task in
             KanbanDraggableCard(
                 task: task,
+                todayKey: todayKey,
                 showsDropIndicator: dragOverTaskID == task.id,
                 onDropTargetedChanged: { isOver in
                     if isOver { dragOverTaskID = task.id }

@@ -134,7 +134,13 @@ struct iOSNotesView: View {
     ///
     /// The fold state next to it *is* persisted, and the difference is the point: a collapsed month
     /// cannot mislead you about which note you are writing in. See `CadenceNotesFoldState`.
-    @State private var selectedDayKey = DateFormatters.todayKey()
+    /// The day the page opened on, and then the user's to move — a selection, not "today", so it
+    /// is deliberately not the observed day below and does not jump at midnight under the user.
+    @State private var selectedDayKey = DateFormatters.dateKey(from: Date())
+    /// The day the Today and Week tabs pin as current ([[T-5012]]). `listedNotes` handed the clock
+    /// to `NotesListVisibility` in a body whose inputs do not change at midnight, so an iPad left
+    /// on Notes overnight kept yesterday pinned and gave today no row. One observer for the page.
+    @State private var observedDay = CadenceObservedDay()
 
     /// The width this view has actually been handed, which is **not** what the size class says
     /// about it. Zero until the first measurement lands — see `CadenceNotesListMetrics.layout`.
@@ -203,6 +209,7 @@ struct iOSNotesView: View {
         }
         .background(Theme.surface.ignoresSafeArea())
         .iOSHidesCompactNavigationBar()
+        .cadenceTracksDayChanges($observedDay)
         .onAppear {
             loadCoreNotes()
             selectDefaultNote()
@@ -502,11 +509,16 @@ struct iOSNotesView: View {
     /// the Mac list exactly the same notes — including the pinned current day and week, which are
     /// listed even when blank because they are the way in to writing today.
     private var listedNotes: [Note] {
+        // Read before the switch, so every tab's pass depends on the observed day.
+        let todayKey = observedDay.todayKey
         switch activeTab {
         case .today:
-            return NotesListVisibility.dailyNotes(notesForActiveTab, todayKey: DateFormatters.todayKey())
+            return NotesListVisibility.dailyNotes(notesForActiveTab, todayKey: todayKey)
         case .week:
-            return NotesListVisibility.weeklyNotes(notesForActiveTab, currentWeekKey: DateFormatters.currentWeekKey())
+            return NotesListVisibility.weeklyNotes(
+                notesForActiveTab,
+                currentWeekKey: DateFormatters.weekKey(from: DateFormatters.date(from: todayKey) ?? Date())
+            )
         case .notepad, .events:
             // Both are unfiltered by design — see `NotesListVisibility.notepadNotes` and
             // `.meetingNotes`.

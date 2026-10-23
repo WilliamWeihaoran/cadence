@@ -29,6 +29,10 @@ struct ListNotesView: View {
     @State private var isListNotesCollapsed = false
     @State private var isEventNotesCollapsed = false
     @State private var isTaskNotesCollapsed = false
+    /// The day the Task Notes rows' due label and overdue tint are read against ([[T-5012]]).
+    /// The rows read the clock in a body whose inputs do not change at midnight, so "Due today"
+    /// stayed "Due today" the morning after. One observer for the page.
+    @State private var observedDay = CadenceObservedDay()
     /// T-497: the one thing `addNote` can fail at, said where the new row would have appeared.
     @State private var createFailureNotice: String?
     /// T-1093: a refused folder move, said in the column. Its own notice rather than
@@ -183,6 +187,7 @@ struct ListNotesView: View {
             }
         }
         .background(Theme.bg)
+        .cadenceTracksDayChanges($observedDay)
         .onAppear {
             backfillMeetingNoteMetadata()
             applyRequestedEventNoteSelection()
@@ -292,6 +297,8 @@ struct ListNotesView: View {
     @ViewBuilder
     private var taskNoteSection: some View {
         if !filteredTaskNotes.isEmpty {
+            // Read here, in this page's body pass, not inside the section's content closure.
+            let todayKey = observedDay.todayKey
             CollapsibleNoteSection(
                 title: "Task Notes",
                 count: filteredTaskNotes.count,
@@ -299,6 +306,7 @@ struct ListNotesView: View {
             ) {
                 ListTaskNoteSectionRows(
                     tasks: filteredTaskNotes,
+                    todayKey: todayKey,
                     selectedTaskID: selectedTaskNoteID,
                     onSelect: { select(.task($0.id)) }
                 )
@@ -489,7 +497,7 @@ struct ListNotesView: View {
 
     private func isPastEventNote(_ note: Note) -> Bool {
         guard !note.eventDateKey.isEmpty else { return false }
-        let todayKey = DateFormatters.todayKey()
+        let todayKey = observedDay.todayKey
         if note.eventDateKey < todayKey { return true }
         guard note.eventDateKey == todayKey else { return false }
 

@@ -115,6 +115,8 @@ enum GoalMissionGrouping {
 struct GoalMissionGroupView: View {
     let group: GoalMissionGroup
     let selectedGoalID: UUID?
+    /// `GoalsView`'s observed day ([[T-5012]]).
+    let todayKey: String
     let onSelect: (Goal) -> Void
 
     var body: some View {
@@ -144,6 +146,7 @@ struct GoalMissionGroupView: View {
                             GoalMissionCard(
                                 goal: goal,
                                 isSelected: selectedGoalID == goal.id,
+                                todayKey: todayKey,
                                 onSelect: { onSelect(goal) }
                             )
                         }
@@ -232,6 +235,9 @@ struct GoalDirectionHeaderCard: View {
 struct GoalMissionCard: View {
     let goal: Goal
     let isSelected: Bool
+    /// `GoalsView`'s observed day ([[T-5012]]) — an input that changes at midnight, so this card's
+    /// body re-runs then and its clock-read `daysSummary` / `isOverdue` are re-asked too.
+    let todayKey: String
     let onSelect: () -> Void
 
     private var summary: GoalContributionSummary {
@@ -287,7 +293,7 @@ struct GoalMissionCard: View {
                             .foregroundStyle(Theme.text)
                             .lineLimit(1)
                         Spacer(minLength: 0)
-                        GoalDueDateLabel(dueDateKey: summary.nextActionDueDate ?? "")
+                        GoalDueDateLabel(dueDateKey: summary.nextActionDueDate ?? "", todayKey: todayKey)
                     }
                     .padding(.top, 1)
                 }
@@ -401,12 +407,15 @@ struct GoalLinkedListRow: View {
 /// `fixedSize` keeps the date from being truncated by whatever text shares its row.
 private struct GoalDueDateLabel: View {
     let dueDateKey: String
+    /// The host page's observed day ([[T-5012]]). The flag's red was `key < todayKey()`, a clock
+    /// read in a body whose inputs do not change at midnight.
+    let todayKey: String
     var fontSize: CGFloat = 11
 
     var body: some View {
         let key = dueDateKey.trimmingCharacters(in: .whitespacesAndNewlines)
         if !key.isEmpty {
-            let isOverdue = key < DateFormatters.todayKey()
+            let isOverdue = key < todayKey
             HStack(spacing: 3) {
                 Image(systemName: "flag.fill")
                     .font(.system(size: fontSize - 2, weight: .semibold))
@@ -422,6 +431,8 @@ private struct GoalDueDateLabel: View {
 
 struct GoalTaskContributorRow: View {
     let task: AppTask
+    /// The host's observed day, for the due flag ([[T-5012]]).
+    let todayKey: String
     let onDetach: (() -> Void)?
 
     var body: some View {
@@ -439,7 +450,7 @@ struct GoalTaskContributorRow: View {
                         .font(.system(size: 10))
                         .foregroundStyle(Theme.dim)
                         .lineLimit(1)
-                    GoalDueDateLabel(dueDateKey: task.dueDate, fontSize: 10)
+                    GoalDueDateLabel(dueDateKey: task.dueDate, todayKey: todayKey, fontSize: 10)
                 }
             }
             Spacer()

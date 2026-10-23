@@ -32,6 +32,17 @@ struct CadenceDayChangeAdoptionTests {
         ("Cadence/iOS/iOSFeatureViews.swift", "struct iOSHabitsView: View"),
         // T-5010: the iOS Calendar, which hands its key to the timeline, month, agenda and board.
         ("Cadence/iOS/iOSCalendarView.swift", "struct iOSCalendarView: View"),
+        // T-5012 (b)-(d): the list pages, both kanban boards, Goals and Notes — one observer per
+        // page host, handing its key to every row and card (`CadenceListPagesObservedDayTests`).
+        ("Cadence/macOS/Views/ListDetailComponents.swift", "struct ListTasksView: View"),
+        ("Cadence/macOS/Views/TasksListView.swift", "struct TasksListView: View"),
+        ("Cadence/macOS/Views/KanbanSupportViews.swift", "struct TaskListsKanbanView: View"),
+        ("Cadence/macOS/Views/KanbanListSectionSupportViews.swift", "struct ListSectionsKanbanView: View"),
+        ("Cadence/macOS/Views/ListNotesView.swift", "struct ListNotesView: View"),
+        ("Cadence/macOS/Views/GoalsView.swift", "struct GoalsView: View"),
+        ("Cadence/macOS/Views/NotesView.swift", "private struct DailyNotesPage: View"),
+        ("Cadence/macOS/Views/NotesView.swift", "private struct WeeklyNotesPage: View"),
+        ("Cadence/iOS/iOSNotesView.swift", "struct iOSNotesView: View"),
     ]
 
     private static let install = ".cadenceTracksDayChanges($observedDay)"

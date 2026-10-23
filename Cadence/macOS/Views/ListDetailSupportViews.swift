@@ -17,6 +17,8 @@ struct ListTasksGroupSectionView: View {
     let group: ListTasksGroup
     let isCollapsed: Bool
     let overdueCount: Int?
+    /// `ListTasksView`'s observed day, for the rows' lateness ([[T-5012]]).
+    let todayKey: String
     @Binding var dragOverTaskID: UUID?
     let onToggle: () -> Void
     /// Answers whether the new order is in the store (T-869). `Void` until then, over a renumber
@@ -44,6 +46,7 @@ struct ListTasksGroupSectionView: View {
                         task: task,
                         // A list's own Tasks tab: every row would name the page you are on.
                         showsContainer: CadenceTaskSurfaceOptions.showsContainerChip(on: .listDetail),
+                        todayKey: todayKey,
                         dragOverTaskID: $dragOverTaskID,
                         taskDragPayload: { TaskDragPayload.string(for: $0.id) },
                         onDropOnTaskPayload: { payload, targetTask in
@@ -61,6 +64,8 @@ struct ListTasksGroupSectionView: View {
 struct ListTasksCompletedSectionView: View {
     let tasks: [AppTask]
     let isCollapsed: Bool
+    /// See `ListTasksGroupSectionView.todayKey`.
+    let todayKey: String
     let onToggle: () -> Void
 
     var body: some View {
@@ -81,7 +86,8 @@ struct ListTasksCompletedSectionView: View {
                 ForEach(tasks) { task in
                     TaskListDisplayRow(
                         task: task,
-                        showsContainer: CadenceTaskSurfaceOptions.showsContainerChip(on: .listDetail)
+                        showsContainer: CadenceTaskSurfaceOptions.showsContainerChip(on: .listDetail),
+                        todayKey: todayKey
                     )
                 }
             }
@@ -224,6 +230,8 @@ struct TaskListDisplayRow: View {
     var showsContainer: Bool = true
     /// Forwarded to `MacTaskRow.dayAlreadyStatedBySurface`. See there.
     var dayAlreadyStatedBySurface: String? = nil
+    /// Forwarded to `MacTaskRow.todayKey`: the host's observed day ([[T-5012]]).
+    let todayKey: String
     var contexts: [Context] = []
     var areas: [Area] = []
     var projects: [Project] = []
@@ -236,6 +244,7 @@ struct TaskListDisplayRow: View {
             style: style,
             showsContainer: showsContainer,
             dayAlreadyStatedBySurface: dayAlreadyStatedBySurface,
+            todayKey: todayKey,
             contexts: contexts,
             areas: areas,
             projects: projects
@@ -273,6 +282,8 @@ struct TaskListInteractiveRow: View {
     var showsContainer: Bool = true
     /// See `MacTaskRow.dayAlreadyStatedBySurface`.
     var dayAlreadyStatedBySurface: String? = nil
+    /// See `MacTaskRow.todayKey`.
+    let todayKey: String
     var contexts: [Context] = []
     var areas: [Area] = []
     var projects: [Project] = []
@@ -288,6 +299,7 @@ struct TaskListInteractiveRow: View {
             style: style,
             showsContainer: showsContainer,
             dayAlreadyStatedBySurface: dayAlreadyStatedBySurface,
+            todayKey: todayKey,
             contexts: contexts,
             areas: areas,
             projects: projects,

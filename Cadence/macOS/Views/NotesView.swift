@@ -101,6 +101,10 @@ private struct DailyNotesPage: View {
     @Query(sort: \AppTask.order) private var allTasks: [AppTask]
     @Environment(\.modelContext) private var modelContext
     @State private var selectedNoteID: UUID?
+    /// The day the list pins as today ([[T-5012]]). `NotesListVisibility.dailyNotes` keeps the
+    /// current day listed even when blank; it was handed the clock in a body whose inputs do not
+    /// change at midnight, so the morning after, yesterday stayed pinned and today had no row.
+    @State private var observedDay = CadenceObservedDay()
 
     /// Every daily note, in date order. Selection and the editor's reference set resolve against
     /// this, not against `listedNotes` — a day you jumped to from the header picker but have not
@@ -112,7 +116,7 @@ private struct DailyNotesPage: View {
     }
 
     private var listedNotes: [Note] {
-        NotesListVisibility.dailyNotes(notes, todayKey: DateFormatters.todayKey())
+        NotesListVisibility.dailyNotes(notes, todayKey: observedDay.todayKey)
     }
 
     private var selectedNote: Note? {
@@ -167,8 +171,9 @@ private struct DailyNotesPage: View {
                 NotesEditorPlaceholder(title: CadenceEmptyStateCopy.selectNoteTitle)
             }
         }
+        .cadenceTracksDayChanges($observedDay)
         .onAppear {
-            if !applyRequestedSelection() { openNote(forDateKey: DateFormatters.todayKey()) }
+            if !applyRequestedSelection() { openNote(forDateKey: observedDay.todayKey) }
         }
         .onChange(of: requestedNoteID) { _, _ in
             applyRequestedSelection()
@@ -208,6 +213,10 @@ private struct WeeklyNotesPage: View {
     @Query(sort: \AppTask.order) private var allTasks: [AppTask]
     @Environment(\.modelContext) private var modelContext
     @State private var selectedNoteID: UUID?
+    /// The day the current week is derived from — `DailyNotesPage.observedDay`'s reason, for the
+    /// pinned current week ([[T-5012]]). A week turns over at a day change, so the day observer
+    /// is the week observer too.
+    @State private var observedDay = CadenceObservedDay()
 
     private var notes: [Note] {
         allNotes
@@ -216,7 +225,11 @@ private struct WeeklyNotesPage: View {
     }
 
     private var listedNotes: [Note] {
-        NotesListVisibility.weeklyNotes(notes, currentWeekKey: DateFormatters.currentWeekKey())
+        NotesListVisibility.weeklyNotes(notes, currentWeekKey: currentWeekKey)
+    }
+
+    private var currentWeekKey: String {
+        DateFormatters.weekKey(from: DateFormatters.date(from: observedDay.todayKey) ?? Date())
     }
 
     private var selectedNote: Note? {
@@ -273,8 +286,9 @@ private struct WeeklyNotesPage: View {
                 NotesEditorPlaceholder(title: CadenceEmptyStateCopy.selectWeekTitle)
             }
         }
+        .cadenceTracksDayChanges($observedDay)
         .onAppear {
-            if !applyRequestedSelection() { openNote(forWeekKey: DateFormatters.currentWeekKey()) }
+            if !applyRequestedSelection() { openNote(forWeekKey: currentWeekKey) }
         }
         .onChange(of: requestedNoteID) { _, _ in
             applyRequestedSelection()

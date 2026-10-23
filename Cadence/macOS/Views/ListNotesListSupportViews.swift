@@ -103,6 +103,9 @@ struct NoteFolderSheet: View {
 struct TaskNoteListRow: View {
     @Bindable var task: AppTask
     let isSelected: Bool
+    /// The host page's observed day ([[T-5012]]): the due label and the red tint below were clock
+    /// reads in a body whose inputs do not change at midnight.
+    let todayKey: String
 
     private var title: String {
         TaskTitleSupport.displayTitle(task.title)
@@ -115,11 +118,11 @@ struct TaskNoteListRow: View {
     }
 
     private var dueLabel: String? {
-        CadenceFocusSupport.dueLabel(forDueDateKey: task.dueDate, todayKey: DateFormatters.todayKey())
+        CadenceFocusSupport.dueLabel(forDueDateKey: task.dueDate, todayKey: todayKey)
     }
 
     private var isOverdue: Bool {
-        task.isOverdue(todayKey: DateFormatters.todayKey())
+        task.isOverdue(todayKey: todayKey)
     }
 
     var body: some View {

@@ -12,6 +12,8 @@ import SwiftData
 struct ListSectionKanbanColumn: View {
     let section: TaskSectionConfig
     let tasks: [AppTask]
+    /// `ListSectionsKanbanView`'s observed day, for the cards' do and due chips ([[T-5012]]).
+    let todayKey: String
     let universeTasks: [AppTask]
     /// The rows the renumber a card drop makes is allowed to span (T-1175). A section column is one
     /// section of a list, and `order` is a **list's** arrangement, so the other sections' cards are
@@ -286,6 +288,7 @@ struct ListSectionKanbanColumn: View {
         ForEach(tasks) { task in
             KanbanDraggableCard(
                 task: task,
+                todayKey: todayKey,
                 showsDropIndicator: dragOverTaskID == task.id,
                 onDropTargetedChanged: { isOver in
                     if isOver { dragOverTaskID = task.id }
@@ -323,7 +326,7 @@ struct ListSectionKanbanColumn: View {
     private func completedTaskCards(tasks: [AppTask]) -> some View {
         VStack(spacing: 6) {
             ForEach(tasks) { task in
-                KanbanDraggableCard(task: task) { items in
+                KanbanDraggableCard(task: task, todayKey: todayKey) { items in
                     handleTaskDrop(items: items, before: task)
                 }
             }

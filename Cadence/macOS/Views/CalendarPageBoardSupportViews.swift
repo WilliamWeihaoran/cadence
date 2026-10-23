@@ -412,6 +412,7 @@ struct CalendarPageBoardView: View {
         CalendarBoardRailColumn(
             rail: rail,
             tasks: tasks,
+            todayKey: todayKey,
             add: addBehavior(for: .rail(rail)),
             form: form(for: rail, boardForm: boardForm),
             // `nil` where the pane can pay for both rails: there is nothing to toggle, so there is

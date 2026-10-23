@@ -9,6 +9,8 @@ import SwiftUI
 /// The inspector keeps everything it *draws*.
 struct GoalInspectorView: View {
     let goal: Goal
+    /// `GoalsView`'s observed day, for the contributing rows' due flags ([[T-5012]]).
+    let todayKey: String
 
     private var summary: GoalContributionSummary {
         GoalContributionResolver.summary(for: goal)
@@ -147,7 +149,7 @@ struct GoalInspectorView: View {
                 GoalSectionHeading(title: "Contributing Work", count: contributingTasks.count)
                 VStack(spacing: 8) {
                     ForEach(contributingTasks.prefix(8)) { task in
-                        GoalTaskContributorRow(task: task, onDetach: nil)
+                        GoalTaskContributorRow(task: task, todayKey: todayKey, onDetach: nil)
                     }
                 }
             }
@@ -185,6 +187,8 @@ struct GoalInspectorView: View {
 /// day it was written and stop following its part the next day.
 struct GoalInspectorSheet: View {
     let goal: Goal
+    /// See `GoalInspectorView.todayKey`.
+    let todayKey: String
 
     @Environment(\.dismiss) private var dismiss
 
@@ -201,7 +205,7 @@ struct GoalInspectorSheet: View {
             .padding(.horizontal, 20)
             .padding(.top, 16)
 
-            GoalInspectorView(goal: goal)
+            GoalInspectorView(goal: goal, todayKey: todayKey)
         }
         .frame(width: CadenceDesktopSplitLayout.goalInspectorPaneMinWidth, height: 660)
         .background(Theme.surface)

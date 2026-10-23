@@ -18,6 +18,10 @@ struct GoalsView: View {
     /// Set when `detachGoalListLink` was refused ([[T-1301]]). `GoalLinkPresentation`'s own doc
     /// records why this family reports in an alert rather than under the row.
     @State private var statusFilter: GoalStatusFilter = .active
+    /// The day the cards' and the inspector's due flags measure against ([[T-5012]]). They read
+    /// the clock in bodies whose inputs do not change at midnight, so a goal's next action due
+    /// today stayed grey the morning it went late. One observer for the page.
+    @State private var observedDay = CadenceObservedDay()
 
     private var trimmedQuery: String {
         searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
@@ -105,15 +109,18 @@ struct GoalsView: View {
         // box that means a full `GoalContributionResolver.summary` walk per goal. Build the
         // grouping once per pass and hand it to the body-time readers.
         let groups = goalGroups
+        // Read in this body pass: everything below it is built inside a `GeometryReader`.
+        let todayKey = observedDay.todayKey
 
-        return content(groups: groups)
+        return content(groups: groups, todayKey: todayKey)
             .background(Theme.bg)
+            .cadenceTracksDayChanges($observedDay)
             // **Three sheets left with [[T-2079]]**: New Goal, Edit Goal and Attach Work. Each
             // presented a pure write surface — `CreateGoalSheet` and `AttachWorkSheet`, both
             // deleted. The goal detail sheet that remains is the inspector, which reads.
             .sheet(isPresented: $showGoalDetail) {
                 if let goal = selectedGoal {
-                    GoalInspectorSheet(goal: goal)
+                    GoalInspectorSheet(goal: goal, todayKey: todayKey)
                 }
             }
             .onAppear {
@@ -146,7 +153,7 @@ struct GoalsView: View {
     /// `GoalInspectorView`, so opening the inspector is a superset of what the double-click did,
     /// not a trade; Attach List and `GoalLinkedListRow`'s per-list detach come with it.
     @ViewBuilder
-    private func content(groups: [GoalMissionGroup]) -> some View {
+    private func content(groups: [GoalMissionGroup], todayKey: String) -> some View {
         if goalsViewMode == .timeline {
             GoalTimelineView(
                 groups: groups,
@@ -159,7 +166,7 @@ struct GoalsView: View {
                 hasAnyGoal: !allGoals.isEmpty
             )
         } else {
-            missionContent(groups: groups)
+            missionContent(groups: groups, todayKey: todayKey)
         }
     }
 
@@ -173,7 +180,7 @@ struct GoalsView: View {
     /// beside it a card selects and the column re-subjects itself, and without one the card opens
     /// `GoalInspectorSheet`. One gate, read once, answering both — a second `goalsShowsInspector`
     /// call for the sheet would be a second place for the two answers to disagree.
-    private func missionContent(groups: [GoalMissionGroup]) -> some View {
+    private func missionContent(groups: [GoalMissionGroup], todayKey: String) -> some View {
         GeometryReader { proxy in
             let showsInspector = CadenceDesktopSplitLayout.goalsShowsInspector(
                 paneWidth: proxy.size.width
@@ -183,14 +190,14 @@ struct GoalsView: View {
                 VStack(spacing: 0) {
                     header
                     Divider().background(Theme.borderSubtle)
-                    goalList(groups: groups, showsInspector: showsInspector)
+                    goalList(groups: groups, showsInspector: showsInspector, todayKey: todayKey)
                 }
                 .frame(minWidth: CadenceDesktopSplitLayout.goalListPaneMinWidth, idealWidth: 760)
                 .background(Theme.bg)
 
                 if showsInspector {
                     if let goal = selectedGoal {
-                        GoalInspectorView(goal: goal)
+                        GoalInspectorView(goal: goal, todayKey: todayKey)
                         .frame(
                             minWidth: CadenceDesktopSplitLayout.goalInspectorPaneMinWidth,
                             idealWidth: 400
@@ -248,7 +255,7 @@ struct GoalsView: View {
         )
     }
 
-    private func goalList(groups: [GoalMissionGroup], showsInspector: Bool) -> some View {
+    private func goalList(groups: [GoalMissionGroup], showsInspector: Bool, todayKey: String) -> some View {
         Group {
             if groups.isEmpty {
                 EmptyStateView(
@@ -269,6 +276,7 @@ struct GoalsView: View {
                             GoalMissionGroupView(
                                 group: group,
                                 selectedGoalID: selectedGoalID,
+                                todayKey: todayKey,
                                 onSelect: { select($0, showsInspector: showsInspector) }
                             )
                         }

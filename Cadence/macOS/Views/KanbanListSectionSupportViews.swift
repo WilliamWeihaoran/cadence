@@ -23,6 +23,10 @@ struct ListSectionsKanbanView: View {
     /// lie about a column that was never added — and because a stale one of either would otherwise
     /// be cleared by the other's success. Both reach the board through `boardFailureNotice`.
     @State private var addFailureNotice: String?
+    /// The day every card's do and due chips measure against ([[T-5012]]). The cards read the clock
+    /// in a body whose inputs do not change at midnight, so a board left open overnight kept
+    /// yesterday's red and amber. One observer for the board; the columns hand the key down.
+    @State private var observedDay = CadenceObservedDay()
 
     @Environment(\.modelContext) private var modelContext
 
@@ -56,6 +60,7 @@ struct ListSectionsKanbanView: View {
         // its own filter over the board's whole task list from inside the `ForEach` content
         // closure — O(columns x tasks) over an eager `HStack` — and now indexes one grouping pass.
         let columns = sectionConfigs
+        let todayKey = observedDay.todayKey
         let cardsBySectionName = Self.columnCards(
             from: tasks,
             sections: columns,
@@ -80,6 +85,7 @@ struct ListSectionsKanbanView: View {
                                 ListSectionKanbanColumn(
                                     section: section,
                                     tasks: sectionTasks,
+                                    todayKey: todayKey,
                                     universeTasks: universeTasks ?? tasks,
                                     // The same array as above, answering a different question: the
                                     // board's whole list, which is the sequence a card drop in any
@@ -128,6 +134,7 @@ struct ListSectionsKanbanView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .clipped()
+        .cadenceTracksDayChanges($observedDay)
     }
 
     private func applyHighlightIfNeeded(with proxy: ScrollViewProxy) {

@@ -27,6 +27,11 @@ struct MacTaskRow: View {
     /// have hidden it. See `CadenceBoardCardMetadata.repeatsSurfaceDay`, which argues the same point
     /// for the boards.
     var dayAlreadyStatedBySurface: String? = nil
+    /// The day this row measures lateness against — the page host's observed day ([[T-5012]]).
+    /// No default: a row that read the clock itself kept yesterday's red and amber after
+    /// midnight, because nothing else this row is handed changes at midnight. The host installs
+    /// `.cadenceTracksDayChanges` once and passes `observedDay.todayKey` down.
+    let todayKey: String
     var contexts: [Context] = []
     var areas: [Area] = []
     var projects: [Project] = []
@@ -621,15 +626,15 @@ struct MacTaskRow: View {
     // These three were byte-identical re-implementations of the kanban card's copies, which is how
     // the row and the card were free to answer "is this overdue" differently. One definition each.
     private var isOverdue: Bool {
-        KanbanCardComputedSupport.isOverdue(task: task)
+        KanbanCardComputedSupport.isOverdue(task: task, todayKey: todayKey)
     }
 
     private var isOverdo: Bool {
-        KanbanCardComputedSupport.isOverdo(task: task)
+        KanbanCardComputedSupport.isOverdo(task: task, todayKey: todayKey)
     }
 
     private var isDoToday: Bool {
-        KanbanCardComputedSupport.isDoToday(task: task)
+        KanbanCardComputedSupport.isDoToday(task: task, todayKey: todayKey)
     }
 
     /// **The surface decides, and the row does not (T-290).** This read

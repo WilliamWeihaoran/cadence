@@ -117,7 +117,7 @@ struct CadenceCodexTaskListVirtualizationTests {
         let host = NSHostingView(rootView:
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
-                    ForEach(seeded) { TaskListDisplayRow(task: $0) }
+                    ForEach(seeded) { TaskListDisplayRow(task: $0, todayKey: DateFormatters.todayKey()) }
                 }
             }
                 .retainingModelContainerForProcessLifetime(container)

@@ -24,11 +24,11 @@ struct CadenceCodexKanbanRenderingTests {
         let section = TaskSectionConfig(name: TaskSectionDefaults.defaultName)
         let columns: [(String, AnyView)] = [
             ("list", AnyView(TaskListKanbanColumn(
-                title: "Inbox", color: Theme.dim, tasks: tasks, universeTasks: tasks, spanTasks: tasks,
+                title: "Inbox", color: Theme.dim, tasks: tasks, todayKey: DateFormatters.todayKey(), universeTasks: tasks, spanTasks: tasks,
                 sortField: .custom, sortDirection: .ascending, container: .inbox, onAssignTask: { _ in }
             ))),
             ("section", AnyView(ListSectionKanbanColumn(
-                section: section, tasks: tasks, universeTasks: tasks, spanTasks: tasks,
+                section: section, tasks: tasks, todayKey: DateFormatters.todayKey(), universeTasks: tasks, spanTasks: tasks,
                 sortField: .custom, sortDirection: .ascending,
                 isBeingDragged: false, isAnotherSectionBeingDragged: false, isHighlighted: false,
                 onReorderBefore: { _ in false }
@@ -40,7 +40,7 @@ struct CadenceCodexKanbanRenderingTests {
                 onDropTaskOnDay: { _ in false }
             ))),
             ("rail", AnyView(CalendarBoardRailColumn(
-                rail: .unscheduled, tasks: tasks, add: .presentSheet {}, onDrop: { _ in false }
+                rail: .unscheduled, tasks: tasks, todayKey: DateFormatters.todayKey(), add: .presentSheet {}, onDrop: { _ in false }
             )))
         ]
         for (name, column) in columns {
@@ -171,7 +171,7 @@ struct CadenceCodexKanbanRenderingTests {
         }
         try context.save()
         let column = TaskListKanbanColumn(
-            title: "Inbox", color: Theme.dim, tasks: tasks, universeTasks: tasks, spanTasks: tasks,
+            title: "Inbox", color: Theme.dim, tasks: tasks, todayKey: DateFormatters.todayKey(), universeTasks: tasks, spanTasks: tasks,
             sortField: .custom, sortDirection: .ascending, container: .inbox, onAssignTask: { _ in }
         )
         let mounted = try await mountedCards(in: column, container: container, width: 260) { host in
@@ -204,7 +204,7 @@ struct CadenceCodexKanbanRenderingTests {
             manager.clear()
             let visibility = CodexKanbanVisibility()
             let column = TaskListKanbanColumn(
-                title: "Inbox", color: Theme.dim, tasks: [task], universeTasks: [task], spanTasks: [task],
+                title: "Inbox", color: Theme.dim, tasks: [task], todayKey: DateFormatters.todayKey(), universeTasks: [task], spanTasks: [task],
                 sortField: .custom, sortDirection: .ascending, container: .inbox, onAssignTask: { _ in }
             )
             let root = CodexKanbanVisibilityHost(visibility: visibility) { column }

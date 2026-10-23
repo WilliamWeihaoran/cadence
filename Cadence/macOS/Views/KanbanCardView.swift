@@ -19,6 +19,10 @@ struct KanbanCard: View {
     /// The day this card's surface has already stated, if it states one. See
     /// `CadenceBoardCardMetadata.repeatsSurfaceDay`.
     var dayAlreadyStatedBySurface: String? = nil
+    /// The day the do and due chips measure lateness against — the board host's observed day
+    /// ([[T-5012]]). No default: the chips defaulted to the clock, read in a body whose inputs do
+    /// not change at midnight, so a board left open overnight kept yesterday's red and amber.
+    let todayKey: String
 
     @Environment(\.modelContext) private var modelContext
     @Environment(DeleteConfirmationManager.self) private var deleteConfirmationManager
@@ -223,7 +227,8 @@ struct KanbanCard: View {
         let chips = CadenceBoardCardMetadata.chips(
             for: task,
             showsContainer: showsContainerChip,
-            dayAlreadyStatedBySurface: dayAlreadyStatedBySurface
+            dayAlreadyStatedBySurface: dayAlreadyStatedBySurface,
+            todayKey: todayKey
         )
 
         var dateRow: [KanbanMetaItem] = chips

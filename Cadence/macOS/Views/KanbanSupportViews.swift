@@ -11,6 +11,9 @@ struct TaskListsKanbanView: View {
     var scope: CadenceTasksPageScope = .all
     var sortField: TaskSortField = .date
     var sortDirection: TaskSortDirection = .ascending
+    /// The day every card's do and due chips measure against ([[T-5012]]). See
+    /// `ListSectionsKanbanView.observedDay`; this is the All Tasks board's one observer.
+    @State private var observedDay = CadenceObservedDay()
 
     /// Kanban mode has no grouping picker — the board is always one column per list.
     var body: some View {
@@ -21,10 +24,11 @@ struct TaskListsKanbanView: View {
         // plus one more per list, and adding a list added one. `TaskSurfaceUniversePassCensusTests`
         // counts the two positions separately, which is the only way that slope is visible at all.
         let activeTasks = KanbanBoardSupport.activeTasks(from: allTasks)
-        return taskListColumnsBoard(activeTasks: activeTasks)
+        return taskListColumnsBoard(activeTasks: activeTasks, todayKey: observedDay.todayKey)
+            .cadenceTracksDayChanges($observedDay)
     }
 
-    private func taskListColumnsBoard(activeTasks: [AppTask]) -> some View {
+    private func taskListColumnsBoard(activeTasks: [AppTask], todayKey: String) -> some View {
         ScrollView(.horizontal, showsIndicators: false) {
             LazyHStack(alignment: .top, spacing: 12) {
                 ForEach(listColumns(activeTasks: activeTasks)) { column in
@@ -32,6 +36,7 @@ struct TaskListsKanbanView: View {
                         title: column.title,
                         color: column.color,
                         tasks: column.tasks,
+                        todayKey: todayKey,
                         universeTasks: activeTasks,
                         spanTasks: allTasks,
                         sortField: sortField,
