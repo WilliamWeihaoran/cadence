@@ -311,6 +311,11 @@ struct SidebarListRow: View {
     @State private var showDueDatePicker = false
     @State private var dueDatePickerDate = Date()
     @State private var dueDateViewMonth = Date()
+    /// The day the due-date flag is coloured against ([[T-5011]]). The row observes it itself
+    /// rather than being handed it: its host, `ContextSection`, has no day of its own, and a list's
+    /// due date is the same on both sides of midnight, so a clock read here kept a list due
+    /// yesterday dim until something else redrew the column.
+    @State private var observedDay = CadenceObservedDay()
 
     private var hoverID: String {
         "sidebar-\(kind.label)-\(label)"
@@ -367,6 +372,7 @@ struct SidebarListRow: View {
         }
         .animation(.easeOut(duration: 0.12), value: isHovered)
         .animation(.easeOut(duration: 0.12), value: isSelected)
+        .cadenceTracksDayChanges($observedDay)
     }
 
     private var backgroundFill: Color {
@@ -396,7 +402,10 @@ struct SidebarListRow: View {
                     .foregroundStyle(Theme.red)
                 Text(DateFormatters.relativeDate(from: key))
                     .font(.system(size: SidebarMetrics.listDueDateFontSize, weight: .semibold))
-                    .foregroundStyle(key < DateFormatters.todayKey() ? Theme.red : Theme.dim)
+                    .foregroundStyle(
+                        CadenceSidebarLayout.listDueDateIsPast(key, todayKey: observedDay.todayKey)
+                            ? Theme.red : Theme.dim
+                    )
                     .lineLimit(1)
             }
             .fixedSize()

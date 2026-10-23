@@ -21,6 +21,12 @@ struct CadenceDayChangeAdoptionTests {
         ("Cadence/macOS/Views/TasksPanelSupportViews.swift", "struct TasksPanelHeader<Trailing: View>: View"),
         ("Cadence/iOS/iOSTodaySchedulePanel.swift", "struct iOSSchedulePanel: View"),
         ("Cadence/macOS/Views/CalendarPageView.swift", "struct CalendarPageView: View"),
+        // T-5011: the always-visible sidebars' Today badge, and the macOS list rows' due flag
+        // (their host `ContextSection` holds no day, so each row observes its own).
+        ("Cadence/macOS/Views/SidebarView.swift", "struct SidebarView: View"),
+        ("Cadence/macOS/Views/SidebarSupportViews.swift", "struct SidebarListRow: View"),
+        ("Cadence/iOS/iOSRootSidebar.swift", "struct iOSSidebar: View"),
+        ("Cadence/iOS/iOSTasksTabView.swift", "struct iOSTasksTabView: View"),
     ]
 
     private static let install = ".cadenceTracksDayChanges($observedDay)"

@@ -240,6 +240,10 @@ struct iOSSidebar: View {
     /// No device-local fallback is read here, unlike `SidebarView`: the preference it falls back to
     /// was only ever written by macOS's Settings screen, so on iOS it is empty by definition.
     @Query private var sidebarLayoutPreferences: [SidebarLayoutPreference]
+    /// The day the Today badge and the list rows' due-date flags are read against ([[T-5011]]).
+    /// This column is beside every iPad page and its inputs are the same on both sides of
+    /// midnight, so without it the badge kept yesterday's overdue count while Today showed today's.
+    @State private var observedDay = CadenceObservedDay()
 
     private var tintOverrides: [CadenceFeatureDestination: String] {
         CadenceSidebarTint.overrides(from: sidebarTabColorsRaw)
@@ -270,7 +274,7 @@ struct iOSSidebar: View {
         CadenceSidebarCountInputs(
             todayOverdueCount: CadenceSidebarLayout.overdueTaskCount(
                 from: allTasks,
-                todayKey: DateFormatters.todayKey()
+                todayKey: observedDay.todayKey
             ),
             openTaskCount: CadenceTaskQuerySupport.openTaskCount(
                 from: allTasks.filter(\.isInActiveContainer)
@@ -374,6 +378,7 @@ struct iOSSidebar: View {
         // in Settings, or a sync brings a layout hiding it from another device.
         .onChange(of: visibleRows) { _, _ in moveSelectionOffAHiddenRow() }
         .onAppear { moveSelectionOffAHiddenRow() }
+        .cadenceTracksDayChanges($observedDay)
     }
 
     /// Settings and Focus, one row, pushed to opposite ends.
@@ -473,6 +478,7 @@ struct iOSSidebar: View {
         iOSSidebarListsRegion(
             sections: listSections,
             style: style,
+            todayKey: observedDay.todayKey,
             isSelected: { selection == $0.selectionItem },
             onSelect: { selection = $0.selectionItem },
             onEdit: { item in
@@ -533,6 +539,9 @@ struct iOSSidebar: View {
 struct iOSSidebarListsRegion: View {
     let sections: [CadenceSidebarLists.Section]
     let style: iOSSidebarStyle
+    /// The host's observed day ([[T-5011]]), handed to each row's due-date flag. A value rather
+    /// than a clock read, so the region re-runs when the day turns even though its lists did not.
+    let todayKey: String
     let isSelected: (CadenceSidebarLists.Item) -> Bool
     let onSelect: (CadenceSidebarLists.Item) -> Void
     let onEdit: (CadenceSidebarLists.Item) -> Void
@@ -643,6 +652,7 @@ struct iOSSidebarListsRegion: View {
                     item: item,
                     isSelected: isSelected(item),
                     style: style,
+                    todayKey: todayKey,
                     onSelect: { onSelect(item) },
                     onEdit: { onEdit(item) }
                 )
@@ -1137,6 +1147,8 @@ struct iOSSidebarListRow: View {
     let item: CadenceSidebarLists.Item
     let isSelected: Bool
     let style: iOSSidebarStyle
+    /// The day the due-date flag is coloured against — the host's observed day ([[T-5011]]).
+    let todayKey: String
     let onSelect: () -> Void
     let onEdit: () -> Void
 
@@ -1210,7 +1222,9 @@ struct iOSSidebarListRow: View {
                 .foregroundStyle(Theme.red)
             Text(DateFormatters.relativeDate(from: key))
                 .font(.system(size: iOSSidebarMetrics.listDueDateFontSize, weight: .semibold))
-                .foregroundStyle(key < DateFormatters.todayKey() ? Theme.red : Theme.dim)
+                .foregroundStyle(
+                    CadenceSidebarLayout.listDueDateIsPast(key, todayKey: todayKey) ? Theme.red : Theme.dim
+                )
                 .lineLimit(1)
         }
         .fixedSize()

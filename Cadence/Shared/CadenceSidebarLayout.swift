@@ -306,6 +306,16 @@ extension CadenceSidebarLayout {
         badge(openTaskCount, singular: "open task", plural: "open tasks")
     }
 
+    /// Whether a list row's due-date flag reads as late — its day is strictly before `todayKey`.
+    ///
+    /// The key is the host's *observed* day ([[T-5011]]), never a clock read in the row's body: a
+    /// row body re-runs only when its inputs change, and a list's due date is the same on both
+    /// sides of midnight, so a clock read there kept yesterday's colour until something else
+    /// redrew the column. Shared by the macOS and iPad rows so the two cannot disagree.
+    static func listDueDateIsPast(_ dueDateKey: String, todayKey: String) -> Bool {
+        dueDateKey < todayKey
+    }
+
     /// Open work whose deadline has already passed.
     ///
     /// `AppTask.isOverdue(todayKey:)` is the repo's one overdue predicate and answers the `isDone`

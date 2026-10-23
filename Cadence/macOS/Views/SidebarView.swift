@@ -39,6 +39,10 @@ struct SidebarView: View {
     @Environment(GlobalSearchManager.self) private var globalSearchManager
 
     @State private var newListTarget: SidebarNewListTarget? = nil
+    /// The day the Today badge counts against ([[T-5011]]). This column is on screen beside every
+    /// page, and its inputs are the same on both sides of midnight, so without it the badge kept
+    /// yesterday's overdue count while the Today page beside it showed today's.
+    @State private var observedDay = CadenceObservedDay()
 
     /// Built once per render and handed to both groups. Each tally is one pass over the task
     /// list; this used to build two `CadenceFeatureBadgeSupport.Snapshot`s — three passes each —
@@ -50,7 +54,7 @@ struct SidebarView: View {
         CadenceSidebarCountInputs(
             todayOverdueCount: CadenceSidebarLayout.overdueTaskCount(
                 from: allTasks,
-                todayKey: DateFormatters.todayKey()
+                todayKey: observedDay.todayKey
             ),
             openTaskCount: CadenceTaskQuerySupport.openTaskCount(
                 from: allTasks.filter(\.isInActiveContainer)
@@ -100,6 +104,7 @@ struct SidebarView: View {
         // here, or a sync brings a layout hiding it from another device.
         .onChange(of: visibleRows) { _, _ in moveSelectionOffAHiddenRow() }
         .onAppear { moveSelectionOffAHiddenRow() }
+        .cadenceTracksDayChanges($observedDay)
     }
 
     // MARK: - Nav groups

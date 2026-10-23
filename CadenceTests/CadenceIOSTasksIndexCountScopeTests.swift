@@ -40,7 +40,7 @@ struct CadenceIOSTasksIndexCountScopeTests {
         // It draws the rows through the child, compared by `==` rather than field by field.
         #expect(
             CadenceSourceScan.matchCount(
-                #"iOSTasksIndexDestinationRows\(style: style, onOpen: open\)\s*\.equatable\(\)"#,
+                #"iOSTasksIndexDestinationRows\(style: style, todayKey: todayKey, onOpen: open\)\s*\.equatable\(\)"#,
                 in: tab
             ) == 1
         )

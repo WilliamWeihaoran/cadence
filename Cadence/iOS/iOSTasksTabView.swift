@@ -48,6 +48,11 @@ struct iOSTasksTabView: View {
     /// value: this index draws `iOSSidebarListsRegion` too, so its `+` seeds a context the same
     /// way or it seeds nothing.
     @State private var editorRequest: iOSSidebarListEditorRequest?
+    /// The day this index is drawn for ([[T-5011]]): the Today row's overdue count, the list rows'
+    /// due-date flags and the header's date all read it. Every one of them has inputs that are the
+    /// same on both sides of midnight, and the count sits behind `.equatable()` besides, so without
+    /// a day in their inputs a phone left on this tab kept yesterday's count and date.
+    @State private var observedDay = CadenceObservedDay()
 
     /// The column vocabulary, which since T-3079 is the only one `iOSSidebarStyle` has.
     private let style: iOSSidebarStyle = .expanded
@@ -57,7 +62,7 @@ struct iOSTasksTabView: View {
             // Argument label rather than a trailing closure, deliberately. This body's first
             // drawing is pinned by name, and the guard that pins it looks for the call's opening
             // parenthesis — a trailing closure leaves none to find, which is how it went red.
-            iOSTasksTabHeader(onSearch: {
+            iOSTasksTabHeader(todayKey: observedDay.todayKey, onSearch: {
                 path.append(CadenceFeatureDestination.search)
             })
 
@@ -85,6 +90,7 @@ struct iOSTasksTabView: View {
         .navigationDestination(for: iOSListRoute.self) { route in
             listDetail(for: route)
         }
+        .cadenceTracksDayChanges($observedDay)
     }
 
     // MARK: - The index
@@ -97,13 +103,15 @@ struct iOSTasksTabView: View {
     /// the screen. Pinning them also means the three task surfaces never scroll away, which on a
     /// phone is worth more than one continuous scroll.
     private var index: some View {
-        VStack(alignment: .leading, spacing: 0) {
+        let todayKey = observedDay.todayKey
+
+        return VStack(alignment: .leading, spacing: 0) {
             // `.equatable()` is what makes the move pay: the row block's only input that SwiftUI
             // cannot compare is `onOpen`, a fresh closure on every pass of this body, and a child
             // handed one re-runs with its parent. Its `==` ignores the closure, so a pass here
             // leaves the whole-store count alone; the block still re-runs when its own `@Query` or
-            // preference changes.
-            iOSTasksIndexDestinationRows(style: style, onOpen: open)
+            // preference changes — or when the day turns, which is why `todayKey` is in its `==`.
+            iOSTasksIndexDestinationRows(style: style, todayKey: todayKey, onOpen: open)
                 .equatable()
 
             iOSSidebarRailDivider()
@@ -112,6 +120,7 @@ struct iOSTasksTabView: View {
             iOSSidebarListsRegion(
                 sections: listSections,
                 style: style,
+                todayKey: todayKey,
                 // Same reason as above: a pushed list is not a selection.
                 isSelected: { _ in false },
                 onSelect: { path.append(route(for: $0)) },
@@ -208,6 +217,9 @@ struct iOSTasksTabView: View {
 /// closure kept from an earlier pass reaches the same storage as a fresh one.
 private struct iOSTasksIndexDestinationRows: View, Equatable {
     let style: iOSSidebarStyle
+    /// The tab's observed day ([[T-5011]]). Compared in `==`: it is the one input that changes at
+    /// midnight, and leaving it out kept yesterday's overdue count until a task was edited.
+    let todayKey: String
     let onOpen: (CadenceFeatureDestination) -> Void
 
     @Query private var allTasks: [AppTask]
@@ -219,7 +231,7 @@ private struct iOSTasksIndexDestinationRows: View, Equatable {
     @AppStorage(CadencePreferenceKeys.sidebarTabColors) private var sidebarTabColorsRaw = CadencePreferenceKeys.emptySidebarPreference
 
     static func == (lhs: Self, rhs: Self) -> Bool {
-        lhs.style == rhs.style
+        lhs.style == rhs.style && lhs.todayKey == rhs.todayKey
     }
 
     var body: some View {
@@ -262,7 +274,7 @@ private struct iOSTasksIndexDestinationRows: View, Equatable {
         CadenceSidebarCountInputs(
             todayOverdueCount: CadenceSidebarLayout.overdueTaskCount(
                 from: allTasks,
-                todayKey: DateFormatters.todayKey()
+                todayKey: todayKey
             ),
             openTaskCount: CadenceTaskQuerySupport.openTaskCount(
                 from: allTasks.filter(\.isInActiveContainer)
@@ -293,11 +305,15 @@ private struct iOSTasksIndexDestinationRows: View, Equatable {
 /// **It carries one row now, not two.** The segmented switcher that used to sit under the header
 /// went with T-2072; its three slices are rows in the index.
 private struct iOSTasksTabHeader: View {
+    /// The tab's observed day, so the date eyebrow turns at midnight ([[T-5011]]). The greeting
+    /// below still reads the clock: it is hour-based, so a day key cannot keep it fresh, and
+    /// whether to refresh it on a coarse timer or drop it is the owner's call (filed on T-5011).
+    let todayKey: String
     let onSearch: () -> Void
 
     var body: some View {
         iOSPageHeader(
-            eyebrow: CadenceCompactShellSupport.dateEyebrow(for: Date()),
+            eyebrow: CadenceCompactShellSupport.dateEyebrow(for: DateFormatters.date(from: todayKey) ?? Date()),
             title: CadenceCompactShellSupport.greeting(for: Date())
         ) {
             iOSIconButton(
