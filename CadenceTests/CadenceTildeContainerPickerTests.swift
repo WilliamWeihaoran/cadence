@@ -486,6 +486,23 @@ struct CadenceTildeContainerPickerTests {
             #expect(!body.contains("caseInsensitiveCompare"))
         }
     }
+
+    /// **T-5160.** The title field's hidden Cmd+Shift+= / Cmd+Shift+- buttons are installed only
+    /// where the host hands it a date to nudge. The inline composer and the schedule panel pass no
+    /// `onDateNudge`, and the buttons used to sit there anyway, catching the chord as a no-op.
+    @Test func theTitleFieldInstallsItsDateNudgeChordOnlyWhenTheHostCanNudge() throws {
+        let raw = try cadenceTestSource(Self.titleFieldPath)
+        let code = CadenceSourceScan.codeOnly(raw)
+        let body = try #require(code.range(of: "var body: some View {"))
+        let declaration = try #require(code.range(of: "private var hiddenShortcutButtons: some View {", range: body.upperBound..<code.endIndex))
+        let tail = String(code[body.upperBound..<declaration.lowerBound])
+        let gate = try #require(tail.range(of: "if onDateNudge != nil {"), "the chord is installed unconditionally")
+        let install = try #require(tail.range(of: "hiddenShortcutButtons"))
+        #expect(gate.upperBound <= install.lowerBound)
+        // Exactly one install, and it is the gated one.
+        #expect(CadenceSourceScan.matchCount("\\bhiddenShortcutButtons\\b", in: tail) == 1)
+        #expect(raw.contains(".keyboardShortcut(\"=\", modifiers: [.command, .shift])"), "non-vacuity: the chord moved")
+    }
 }
 
 #endif

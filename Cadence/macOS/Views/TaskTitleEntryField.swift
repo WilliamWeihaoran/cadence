@@ -81,7 +81,12 @@ struct TaskTitleEntryField: View {
 
     var body: some View {
         ZStack(alignment: .leading) {
-            hiddenShortcutButtons
+            // **T-5160.** Only where the host has a date to nudge. The inline composer and the
+            // schedule panel's title pass no `onDateNudge`, and the buttons used to be installed
+            // there anyway: they caught the chord and did nothing.
+            if onDateNudge != nil {
+                hiddenShortcutButtons
+            }
 
             TextField(placeholder, text: $title, axis: .vertical)
                 .textFieldStyle(.plain)
