@@ -1099,10 +1099,21 @@ nonisolated enum DataIntegrityRepairService {
     ///
     /// Archived rows are skipped, matching `activeContexts`: an archived context is in no picker,
     /// is not the duplicate the user sees, and is not what the merge groups.
-    static func activeContextSharingName(_ name: String, among contexts: [Context]) -> Context? {
+    ///
+    /// `excluding` is the row being **renamed** ([[T-4722]]): a rename writes the name onto a row
+    /// that already exists, so that row is not a second copy of itself. Without it, fixing the
+    /// case of a list's own name ("work" to "Work") would be refused as a clash with itself.
+    static func activeContextSharingName(
+        _ name: String,
+        among contexts: [Context],
+        excluding renamed: Context? = nil
+    ) -> Context? {
         let normalized = normalizedContextName(name)
         guard !normalized.isEmpty else { return nil }
-        return contexts.first { !$0.isArchived && normalizedContextName($0.name) == normalized }
+        let renamedID = renamed?.persistentModelID
+        return contexts.first {
+            !$0.isArchived && $0.persistentModelID != renamedID && normalizedContextName($0.name) == normalized
+        }
     }
 
     /// Carries across what can be carried of the copy this merge is about to delete.

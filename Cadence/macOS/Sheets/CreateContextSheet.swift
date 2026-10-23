@@ -44,9 +44,19 @@ struct CreateContextSheet: View {
     /// Closing the sheet is this screen's only report of success, so it happens on the committed
     /// path alone; a refused insert is un-inserted by `commitInsert` and the sheet stays open on
     /// the draft with the failure named beneath it.
+    ///
+    /// [[T-3125]], reached late ([[T-4722]]): the owner's decision refuses a second active context
+    /// carrying a name the next launch's repair would fuse, and this sheet was a third creating
+    /// surface that decision's two guards missed. The refusal comes before the insert and reads
+    /// the merge's own rule.
     private func create() {
+        let normalizedName = CadenceTitleNormalization.normalized(name)
+        if let clash = DataIntegrityRepairService.activeContextSharingName(normalizedName, among: contexts) {
+            createFailureNotice = Self.duplicateNameNotice(clash.name)
+            return
+        }
         let ctx = Context(
-            name: CadenceTitleNormalization.normalized(name),
+            name: normalizedName,
             colorHex: selectedColor,
             icon: selectedIcon
         )
@@ -60,6 +70,14 @@ struct CreateContextSheet: View {
         }
         createFailureNotice = nil
         dismiss()
+    }
+
+    static func duplicateNameNotice(_ existingName: String) -> String {
+        """
+        A context named "\(existingName)" already exists. Two contexts with the same name are \
+        merged into one the next time Cadence opens, so this one was not created. Pick a different \
+        name, or edit the context you already have.
+        """
     }
 }
 

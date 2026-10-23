@@ -1256,6 +1256,62 @@ struct CadenceEditorSaveCommitSurfaceTests {
         )
     }
 
+    /// **Every rename surface refuses a name the startup merge would fuse, before it writes**
+    /// ([[T-4722]]), and the macOS create sheet — a creating surface [[T-3125]]'s two guards
+    /// missed — refuses before it inserts.
+    ///
+    /// Read from source: the iOS sheet is `#if os(iOS)` and both macOS editors are views with no
+    /// seam a test can drive. What each scan has to see is the **order** (the guard is only a
+    /// guard if it runs before the write) and that the rename asks with `excluding:` the row being
+    /// renamed, without which a change of case is refused as a clash with itself. Which names
+    /// clash is held behaviourally by
+    /// `CadenceWriteServiceTests.renamingAContextIntoANameTheMergeWouldFuseIsRefused` over the
+    /// same shared function.
+    @Test func everyContextRenameAndTheMacCreateSheetRefuseADuplicateNameBeforeWriting() throws {
+        let iOS = try scanned("Cadence/iOS/iOSSettingsContextSection.swift")
+        let iOSSave = try #require(saveBody(of: iOS), "save() was not found in the context editor")
+        let iOSGuard = try #require(iOSSave.range(of: "if let clash = activeContextCarryingTheTypedName {"),
+                                    "save() no longer asks the rule unconditionally")
+        let iOSRename = try #require(iOSSave.range(of: "context.name = trimmedName"),
+                                     "save() no longer renames, so this scan is reading the wrong body")
+        #expect(iOSGuard.lowerBound < iOSRename.lowerBound, "the iOS rename guard runs after the rename")
+        #expect(iOSSave.contains("duplicateRenameNotice"), "the iOS rename refusal shows nothing")
+        #expect(iOS.contains("activeContextSharingName(trimmedName, among: contexts, excluding: context)"),
+                "the iOS edit arm does not exclude the row it is renaming")
+
+        let macRow = try scanned("Cadence/macOS/Views/SettingsSupportViews.swift")
+        let rowSave = try #require(body(of: "private func saveEdit() {", in: macRow), "saveEdit() was not found")
+        let rowGuard = try #require(rowSave.range(of: "DataIntegrityRepairService.activeContextSharingName("),
+                                    "the macOS rename does not consult the duplicate-name rule")
+        let rowRename = try #require(rowSave.range(of: "context.name = trimmed"),
+                                     "saveEdit() no longer renames, so this scan is reading the wrong body")
+        #expect(rowGuard.lowerBound < rowRename.lowerBound, "the macOS rename guard runs after the rename")
+        #expect(rowSave.contains("excluding: context"), "the macOS rename does not exclude its own row")
+        #expect(rowSave.contains("return"), "the macOS rename guard does not stop the write")
+
+        let macCreate = try scanned("Cadence/macOS/Sheets/CreateContextSheet.swift")
+        let create = try #require(body(of: "private func create() {", in: macCreate), "create() was not found")
+        let createGuard = try #require(create.range(of: "DataIntegrityRepairService.activeContextSharingName("),
+                                       "the macOS create sheet does not consult the duplicate-name rule")
+        let insert = try #require(create.range(of: "modelContext.insert("),
+                                  "create() no longer inserts, so this scan is reading the wrong body")
+        #expect(createGuard.lowerBound < insert.lowerBound, "the macOS create guard runs after the insert")
+        #expect(create.contains("duplicateNameNotice"), "the macOS create refusal shows nothing")
+
+        for (path, source) in [("iOS", iOS), ("macOS row", macRow), ("macOS create", macCreate)] {
+            #expect(CadenceSourceScan.matchCount(#"\.lowercased\(\)"#, in: source) == 0,
+                    "\(path) spells a name rule of its own, which can be looser than the merge")
+        }
+    }
+
+    /// A function body from its declaration line to the closing brace at four-space indentation.
+    private func body(of declaration: String, in source: String) -> String? {
+        guard let start = source.range(of: declaration) else { return nil }
+        let rest = source[start.upperBound...]
+        guard let end = rest.range(of: "\n    }") else { return nil }
+        return String(rest[..<end.lowerBound])
+    }
+
     /// `save()`'s body, from its declaration to the closing brace at the same indentation.
     private func saveBody(of source: String) -> String? {
         guard let start = source.range(of: "private func save() {") else { return nil }

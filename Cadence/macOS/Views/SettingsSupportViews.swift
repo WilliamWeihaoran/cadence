@@ -39,6 +39,9 @@ struct ContextSettingsRow: View {
     let onDropDraggedContext: (UUID) -> Void
     let onArchive: () -> Void
     let onDelete: () -> Void
+    /// Every context the rename is checked against ([[T-4722]]). Passed in rather than queried per
+    /// row: the section already holds the list, and one `@Query` per row would be one per context.
+    let contexts: [Context]
 
     @State private var isHovered = false
     @State private var isDropTarget = false
@@ -46,6 +49,7 @@ struct ContextSettingsRow: View {
     @State private var editName = ""
     @State private var editColor = ""
     @State private var editIcon = ""
+    @State private var renameFailureNotice: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -114,6 +118,10 @@ struct ContextSettingsRow: View {
                     SectionEyebrowLabel(text: "Icon")
                     IconGrid(selected: $editIcon)
 
+                    if let renameFailureNotice {
+                        CadenceInlineFailureNotice(text: renameFailureNotice)
+                    }
+
                     HStack {
                         Spacer()
                         CadenceActionButton(
@@ -175,16 +183,34 @@ struct ContextSettingsRow: View {
         editName = context.name
         editColor = context.colorHex
         editIcon = context.icon
+        renameFailureNotice = nil
         withAnimation(.easeInOut(duration: 0.15)) { isEditing = true }
     }
 
+    /// [[T-4722]]: a rename into a name another active context carries is refused before anything
+    /// is written, for the reason `CreateContextSheet.create` refuses the same name at creation —
+    /// the next launch's `DataIntegrityRepairService` fuses the pair with no undo. The rule is the
+    /// merge's own, and this row is excluded so a change of case is not a clash with itself.
     private func saveEdit() {
         let trimmed = CadenceTitleNormalization.normalized(editName)
         guard !trimmed.isEmpty else { return }
+        if trimmed != context.name,
+           let clash = DataIntegrityRepairService.activeContextSharingName(trimmed, among: contexts, excluding: context) {
+            renameFailureNotice = Self.duplicateRenameNotice(clash.name)
+            return
+        }
+        renameFailureNotice = nil
         context.name = trimmed
         context.colorHex = editColor
         context.icon = editIcon
         withAnimation(.easeInOut(duration: 0.15)) { isEditing = false }
+    }
+
+    static func duplicateRenameNotice(_ existingName: String) -> String {
+        """
+        A context named "\(existingName)" already exists. Two contexts with the same name are \
+        merged into one the next time Cadence opens, so this one was not renamed. Pick a different name.
+        """
     }
 }
 

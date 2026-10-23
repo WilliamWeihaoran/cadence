@@ -48,6 +48,10 @@ nonisolated enum CadenceWriteError: Error, LocalizedError, Sendable {
     /// second one the next launch would fuse into it. Archived contexts do not clash: the merge
     /// that makes this a refusal groups active rows only.
     case contextAlreadyExists(name: String, id: String)
+    /// A **rename** into a name another active `Context` carries ([[T-4722]]) — the same pair
+    /// `contextAlreadyExists` refuses at creation, reached through `update_context` instead. A
+    /// case of its own because "this one was not created" is false of a row that exists.
+    case contextRenameClashes(name: String, id: String)
 
     var errorDescription: String? {
         switch self {
@@ -62,6 +66,12 @@ nonisolated enum CadenceWriteError: Error, LocalizedError, Sendable {
                 A context named \(name) already exists (id \(id)). Two active contexts with the \
                 same name are merged into one at the next launch, so this one was not created. \
                 Use that context, or pick a different name.
+                """
+        case .contextRenameClashes(let name, let id):
+            return """
+                A context named \(name) already exists (id \(id)). Two active contexts with the \
+                same name are merged into one at the next launch, so this context was not renamed. \
+                Pick a different name.
                 """
         case .invalidColorHex(let value):
             return "Invalid colorHex: \(value). Expected a six-digit hex colour such as #4a9eff."
@@ -762,6 +772,18 @@ final class CadenceWriteService {
             || options.order != nil
         else {
             throw CadenceWriteError.noChanges
+        }
+
+        // [[T-4722]]: a rename into a name another active context carries makes the same pair
+        // `create_context` refuses, and the next launch's repair fuses it with no undo. Asked only
+        // when this request writes a *changed* name and leaves the row active — a recolour of a
+        // row that already shares its name is not refused, and an archived row is not in the merge's
+        // grouping. The row itself is excluded so a change of case or spacing is not a clash.
+        if let name, name != target.name, !(options.isArchived ?? target.isArchived),
+           let clash = DataIntegrityRepairService.activeContextSharingName(
+               name, among: try fetchContexts(), excluding: target
+           ) {
+            throw CadenceWriteError.contextRenameClashes(name: clash.name, id: clash.id.uuidString)
         }
 
         // Validated, and the whole new numbering computed, before anything is written — the shape

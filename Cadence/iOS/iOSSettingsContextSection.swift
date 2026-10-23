@@ -144,8 +144,11 @@ struct iOSContextEditorSheet: View {
     /// edit puts back the three fields it wrote. Neither rolls the context back, because this
     /// context is the whole app's.
     private func save() {
-        if case .new = mode, let clash = activeContextCarryingTheTypedName {
-            saveFailureNotice = Self.duplicateNameNotice(clash.name)
+        if let clash = activeContextCarryingTheTypedName {
+            switch mode {
+            case .new: saveFailureNotice = Self.duplicateNameNotice(clash.name)
+            case .edit: saveFailureNotice = Self.duplicateRenameNotice(clash.name)
+            }
             return
         }
         do {
@@ -176,8 +179,8 @@ struct iOSContextEditorSheet: View {
         dismiss()
     }
 
-    /// The active list this creation would be fused with at the next launch, if there is one
-    /// ([[T-3125]]).
+    /// The active list this creation or rename would be fused with at the next launch, if there
+    /// is one ([[T-3125]], [[T-4722]]).
     ///
     /// `DataIntegrityRepairService` groups active contexts by
     /// `normalizedContextName` and merges every group of more than one — deterministically since
@@ -188,10 +191,18 @@ struct iOSContextEditorSheet: View {
     ///
     /// **The rule lives beside the merge**, in `DataIntegrityRepairService.activeContextSharingName`,
     /// so a guard here that allowed a name that merge would still fuse cannot exist — MCP
-    /// `create_context` reads the same function. Editing is deliberately not guarded: the decision
-    /// names creation, and a rename into a clash is [[T-4722]].
+    /// `create_context` and `update_context` read the same function. An edit excludes the row
+    /// being edited, so saving a list under its own name, or a change of case, is not a clash.
     private var activeContextCarryingTheTypedName: Context? {
-        DataIntegrityRepairService.activeContextSharingName(trimmedName, among: contexts)
+        switch mode {
+        case .new:
+            DataIntegrityRepairService.activeContextSharingName(trimmedName, among: contexts)
+        case .edit(let context):
+            // An archived row is not in the merge's grouping, so renaming one makes no pair; and
+            // an unchanged name writes nothing new, so a recolour is never refused.
+            context.isArchived || trimmedName == context.name ? nil
+                : DataIntegrityRepairService.activeContextSharingName(trimmedName, among: contexts, excluding: context)
+        }
     }
 
     /// Names the list that is in the way, because the clash is on the *normalized* name and the
@@ -202,6 +213,15 @@ struct iOSContextEditorSheet: View {
         A list named "\(existingName)" already exists. Two lists with the same name are merged \
         into one the next time Cadence opens, so this one was not created. Pick a different name, \
         or edit the list you already have.
+        """
+    }
+
+    /// The rename refusal's sentence: the same clash as `duplicateNameNotice`, but the list
+    /// exists, so what did not happen is the rename.
+    static func duplicateRenameNotice(_ existingName: String) -> String {
+        """
+        A list named "\(existingName)" already exists. Two lists with the same name are merged \
+        into one the next time Cadence opens, so this list was not renamed. Pick a different name.
         """
     }
 

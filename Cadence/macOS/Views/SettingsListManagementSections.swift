@@ -609,7 +609,8 @@ struct SettingsContextsSection: View {
                                     // dropping C onto A moved A and left C where it was.
                                     onDropDraggedContext: { draggedID in onMoveContext(draggedID, context.id) },
                                     onArchive: { onArchiveContext(context) },
-                                    onDelete: { onDeleteContext(context) }
+                                    onDelete: { onDeleteContext(context) },
+                                    contexts: activeContexts
                                 )
                                 CadenceRowDivider(leadingInset: 42)
                             }

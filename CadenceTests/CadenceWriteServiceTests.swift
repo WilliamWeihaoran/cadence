@@ -859,6 +859,67 @@ struct CadenceWriteServiceTests {
         #expect(DataIntegrityRepairService.activeContextSharingName("Nothing like it", among: rows) == nil)
     }
 
+    /// **A rename into a name another active context carries is refused before anything is
+    /// written** ([[T-4722]]) — the same pair [[T-3125]] refuses at creation, reached through
+    /// `update_context`. Each limit below is a case where no pair would result: the row's own name
+    /// in another case, a rename that archives the row in the same request, a rename of an archived
+    /// row, and a recolour that passes the unchanged name of a row already sharing it.
+    @Test func renamingAContextIntoANameTheMergeWouldFuseIsRefused() throws {
+        let fixture = try Fixture()
+        let first = try fixture.writeService.createContext(options: .init(name: "Side projects"))
+        let second = try fixture.writeService.createContext(options: .init(name: "Errands"))
+
+        let error = #expect(throws: CadenceWriteError.self) {
+            try fixture.writeService.updateContext(options: .init(
+                contextId: second.context.id,
+                name: "  SIDE Projects ",
+                colorHex: "#ff0000"
+            ))
+        }
+        let described = try #require(error?.errorDescription)
+        #expect(described.contains("Side projects"), "the refusal does not name the list in the way")
+        #expect(described.contains(first.context.id), "the refusal does not name the row in the way")
+        #expect(described.contains("not renamed"), "the refusal describes a creation, not a rename")
+
+        // Refused before the write: neither field of the refused request landed.
+        let after = try fixture.readService.contextSummary(contextID: second.context.id).context
+        #expect(after.name == "Errands")
+        #expect(after.colorHex != "#ff0000")
+
+        // Its own name in another case is not a clash with itself.
+        let recased = try fixture.writeService.updateContext(options: .init(contextId: second.context.id, name: "ERRANDS"))
+        #expect(recased.context.name == "ERRANDS")
+
+        // Renamed and archived in one request: the row leaves the merge's grouping, so no pair.
+        let archived = try fixture.writeService.updateContext(options: .init(
+            contextId: second.context.id,
+            name: "side projects",
+            isArchived: true
+        ))
+        #expect(archived.context.name == "side projects")
+        #expect(archived.context.isArchived)
+
+        // A pair that already exists (sync can make one) is not made worse by a recolour that
+        // passes the unchanged name, so that is not refused either.
+        let twin = Context(name: "Twin")
+        let twinCopy = Context(name: "twin")
+        fixture.modelContext.insert(twin)
+        fixture.modelContext.insert(twinCopy)
+        try fixture.modelContext.save()
+        let recoloured = try fixture.writeService.updateContext(options: .init(
+            contextId: twin.id.uuidString,
+            name: "Twin",
+            colorHex: "#00ff00"
+        ))
+        #expect(recoloured.context.colorHex == "#00ff00")
+
+        // The rule asked directly: `excluding` drops exactly the renamed row and no other.
+        let rows = try fixture.modelContext.fetch(FetchDescriptor<Context>())
+        #expect(DataIntegrityRepairService.activeContextSharingName("TWIN", among: rows, excluding: twin)?.id == twinCopy.id)
+        let firstRow = try #require(rows.first { $0.id.uuidString == first.context.id })
+        #expect(DataIntegrityRepairService.activeContextSharingName("side projects", among: rows, excluding: firstRow) == nil)
+    }
+
     /// `CadenceMCPOrdering.precedes` breaks an `order` tie on the *name*, so a new row left at the
     /// model default of 0 interleaves alphabetically with everything already at 0 instead of
     /// landing at the end. Areas and projects share one sequence per context, and `nil == nil` is
