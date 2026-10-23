@@ -46,6 +46,9 @@ struct CalendarTimelineDayScroller: View {
     let scrollToTodayTrigger: Bool
 
     private let cal = Calendar.current
+    /// One block drag for every day column ([[T-5350]]): a drag from Monday onto Tuesday is ended
+    /// by Tuesday's drop for Monday too, and Tuesday places the block by Monday's grab.
+    @State private var taskDragSession = TimelineTaskDragSession()
 
     var body: some View {
         ScrollViewReader { hProxy in
@@ -71,6 +74,7 @@ struct CalendarTimelineDayScroller: View {
                     }
                 }
                 .scrollTargetLayout()
+                .environment(\.timelineTaskDragSession, taskDragSession)
                 .frame(width: totalDaysWidth, alignment: .leading)
             }
             .frame(width: timelineViewportWidth, alignment: .leading)

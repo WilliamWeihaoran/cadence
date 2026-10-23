@@ -5,7 +5,9 @@ struct TimelineCreateGridLayer: View {
     let metrics: TimelineMetrics
     let blockedFrames: [TimelineBlockFrame]
     let showHalfHourMarks: Bool
-    @Binding var activeDragTaskID: UUID?
+    /// True while a block drag that began on this canvas is live ([[T-5350]]: the page's shared
+    /// session, scoped to this canvas's own blocks).
+    let refusesDraftCreation: Bool
     let onTapBackground: () -> Void
     let onDragChanged: (Int, Int) -> Void
     let onDragEnded: (Int, Int) -> Void
@@ -43,7 +45,7 @@ struct TimelineCreateGridLayer: View {
     }
 
     private func shouldHandle(startLocation: CGPoint) -> Bool {
-        guard activeDragTaskID == nil else { return false }
+        guard !refusesDraftCreation else { return false }
         return !TimelineMetricsSupport.isInsideBlockedBlock(point: startLocation, blockedFrames: blockedFrames)
     }
 }

@@ -44,8 +44,13 @@ struct TimelineDayCanvas: View {
     @State private var dropPreviewStartMin: Int? = nil
     @State private var selectedTaskID: UUID? = nil
     @State private var selectedEventID: String? = nil
-    @State private var activeDragTaskID: UUID? = nil
-    @State private var dragYOffset: CGFloat = 0
+    /// The page's shared block-drag session when the host supplies one, else this canvas's own
+    /// ([[T-5350]]). `activeDragTaskID` is that session's id, so every layer below reads one value.
+    @Environment(\.timelineTaskDragSession) private var sharedDragSession
+    @State private var ownDragSession = TimelineTaskDragSession()
+    private var dragSession: TimelineTaskDragSession { sharedDragSession ?? ownDragSession }
+    private var activeDragTaskID: UUID? { dragSession.taskID }
+    private var activeDragTaskIDBinding: Binding<UUID?> { dragSession.taskIDBinding }
     @AppStorage(CalendarWorkHoursPreferences.startMinuteKey) private var workHoursStartMinute = CalendarWorkHoursPreferences.defaultStartMinute
     @AppStorage(CalendarWorkHoursPreferences.endMinuteKey) private var workHoursEndMinute = CalendarWorkHoursPreferences.defaultEndMinute
     @Environment(\.modelContext) private var modelContext
@@ -90,9 +95,8 @@ struct TimelineDayCanvas: View {
                     isTargeted: $isDropTargeted,
                     previewTaskID: $dropPreviewTaskID,
                     previewStartMin: $dropPreviewStartMin,
-                    activeDragTaskID: $activeDragTaskID,
-                    selectedTaskID: $selectedTaskID,
-                    dragYOffset: $dragYOffset
+                    dragSession: dragSession,
+                    selectedTaskID: $selectedTaskID
                 ),
                 onTap: resetCanvasSelection
             )
@@ -110,7 +114,7 @@ struct TimelineDayCanvas: View {
                 metrics: metrics,
                 blockedFrames: blockedFrames(layouts: layouts, eventLayouts: eventLayouts),
                 showHalfHourMarks: showHalfHourMarks,
-                activeDragTaskID: $activeDragTaskID,
+                refusesDraftCreation: dragSession.isDragging(anyOf: tasks.map(\.id)),
                 onTapBackground: clearCreateGridSelection,
                 onDragChanged: beginDraftSelection,
                 onDragEnded: commitDraftSelection
@@ -153,7 +157,7 @@ struct TimelineDayCanvas: View {
                 style: style,
                 selectedTaskID: $selectedTaskID,
                 selectedEventID: $selectedEventID,
-                activeDragTaskID: $activeDragTaskID,
+                activeDragTaskID: activeDragTaskIDBinding,
                 onTaskSelected: selectTaskBlock
             )
 
@@ -177,19 +181,21 @@ struct TimelineDayCanvas: View {
     }
 
     private func resetCanvasSelection() {
+        var dragTaskID = activeDragTaskID
         TimelineDayCanvasStateSupport.resetCanvasSelection(
             selectedTaskID: &selectedTaskID,
             selectedEventID: &selectedEventID,
-            activeDragTaskID: &activeDragTaskID,
+            activeDragTaskID: &dragTaskID,
             draft: &draftSelection,
             showNewTaskPopover: &showNewTaskPopover
         )
+        if dragTaskID == nil { dragSession.end() }
     }
 
     private func clearCreateGridSelection() {
         clearDraftCreation()
         selectedTaskID = nil
-        activeDragTaskID = nil
+        dragSession.end()
     }
 
     private func beginDraftSelection(startMin: Int, endMin: Int) {

@@ -16,7 +16,9 @@ struct CadenceCodexTimelineBlockRemovalTests {
         #expect(drop.contains("CalendarEventDragPayload.allDayEventPayload(from: payloadString)"))
         #expect(drop.contains("onDropTaskAtMinute(task, startMin)"))
         #expect(drop.contains("onDropAllDayEventAtMinute?(eventPayload, startMin)"))
-        #expect(drop.contains("dragYOffset = info.location.y - taskTopY"))
+        // [[T-5350]]: the grab offset moved into the page-wide drag session, fixed at the source.
+        #expect(drop.contains("dragSession.enteredOffset("))
+        #expect(drop.contains("let offset = pointerY - metrics.yOffset(for: taskStartMin)"))
     }
 
     @Test func clearingRetiredTimelineSelectionStillClearsTasksEventsAndDrafts() {
