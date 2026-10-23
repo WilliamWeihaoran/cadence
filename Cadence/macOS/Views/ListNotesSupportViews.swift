@@ -115,7 +115,8 @@ struct TaskNoteEditorPane: View {
                     linkedNotes: derivedState.linkedNotes,
                     linkedTasks: derivedState.linkedTasks,
                     backlinks: [],
-                    onOpenNote: onOpenNote
+                    onOpenNote: onOpenNote,
+                    onOpenTask: { linkedTaskForPopover = $0 }
                 )
             }
             MarkdownEditor(

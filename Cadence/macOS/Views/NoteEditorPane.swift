@@ -267,7 +267,8 @@ struct NoteEditorPane: View {
                     linkedNotes: derivedState.linkedNotes,
                     linkedTasks: derivedState.linkedTasks,
                     backlinks: derivedState.backlinks,
-                    onOpenNote: onOpenNote
+                    onOpenNote: onOpenNote,
+                    onOpenTask: { linkedTaskForPopover = $0 }
                 )
                 .zIndex(10)
             }

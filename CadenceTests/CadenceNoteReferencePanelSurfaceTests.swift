@@ -631,6 +631,59 @@ struct CadenceNoteReferencePanelSurfaceTests {
         #expect(editor.contains("NoteReferencePanelSupport.contents("))
     }
 
+    /// **[[T-5152]] — every chip in macOS's strip acts.** The Linked Notes and Backlinks chips were
+    /// each a `Button` while the Task References chip between them was a bare `ReferenceChip`, so
+    /// one click navigated and the identical chip beside it did nothing. iOS's task pill already
+    /// opened the task. The strip now takes `onOpenTask`, and both hosts route it into the
+    /// `linkedTaskForPopover` their `[[task:…]]` links already raise — one popover, not a second.
+    @Test func theMacTaskReferenceChipOpensTheTaskLikeItsNeighbours() throws {
+        let strip = try #require(CadenceSourceScan.declarationBody(
+            "struct NoteReferenceStrip: View",
+            in: sourceFile("Cadence/macOS/Views/NoteReferenceSupportViews.swift")))
+        #expect(strip.components(separatedBy: "ReferenceChip(").count - 1 == 3, "the scan stopped seeing the three chips")
+        #expect(strip.components(separatedBy: "Button {").count - 1 == 3, "a chip draws without an action")
+        #expect(strip.contains("let onOpenTask: (AppTask) -> Void"))
+        let taskSection = try #require(strip.components(separatedBy: "NoteReferencePanelSection.taskReferences.label").last)
+        let taskChip = try #require(taskSection.components(separatedBy: "NoteReferencePanelSection.backlinks.label").first)
+        #expect(taskChip.contains("onOpenTask(task)"))
+
+        for host in ["Cadence/macOS/Views/NoteEditorPane.swift", "Cadence/macOS/Views/ListNotesSupportViews.swift"] {
+            let code = try strippingComments(sourceFile(host))
+            #expect(code.components(separatedBy: "NoteReferenceStrip(").count - 1 == 1, "\(host)")
+            #expect(code.contains("onOpenTask: { linkedTaskForPopover = $0 }"), "\(host)")
+            #expect(code.contains(".popover(item: $linkedTaskForPopover)"), "\(host)")
+        }
+    }
+
+    /// **[[T-5151]] (a) — every macOS `NoteEditorPane` is handed the store's notes and tasks.** The
+    /// pane defaults `relatedNotes`/`relatedTasks` to `[]`, and the calendar meeting-note sheet
+    /// took the defaults, so the same meeting note that resolved `[[` links and `[[task:…]]`
+    /// embeds on the Notes page resolved nothing in the sheet. A relation, not a count: any pane
+    /// added later without the two arguments fails here by name. `onOpenNote:` is deliberately
+    /// not required — where a link opened inside a modal goes is (b), the owner's call.
+    @Test func everyMacNoteEditorPaneIsHandedTheNotesAndTasksItResolvesAgainst() throws {
+        var panes: [(path: String, arguments: String)] = []
+        for path in try swiftFiles(under: "Cadence/macOS") {
+            let code = CadenceSourceScan.codeOnly(try sourceFile(path))
+            var searchStart = code.startIndex
+            while let hit = code.range(of: "NoteEditorPane(", range: searchStart..<code.endIndex) {
+                let before = hit.lowerBound == code.startIndex ? " " : code[code.index(before: hit.lowerBound)]
+                if !(before.isLetter || before.isNumber || before == "_"),
+                   let arguments = CadenceSourceScan.matchedBody(
+                       after: code.index(before: hit.upperBound), in: code, open: "(", close: ")") {
+                    panes.append((path, arguments))
+                }
+                searchStart = hit.upperBound
+            }
+        }
+        #expect(panes.count >= 7, "the scan stopped finding the macOS note panes")
+        #expect(panes.contains { $0.path.hasSuffix("EventNoteSupportViews.swift") })
+        for pane in panes {
+            #expect(pane.arguments.contains("relatedNotes:"), "\(pane.path) builds a NoteEditorPane with no notes")
+            #expect(pane.arguments.contains("relatedTasks:"), "\(pane.path) builds a NoteEditorPane with no tasks")
+        }
+    }
+
     // MARK: - The scan itself
 
     /// The counts above are only worth anything if the scan actually reads files, and a scan that

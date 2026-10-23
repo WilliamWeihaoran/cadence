@@ -13,6 +13,10 @@ struct NoteReferenceStrip: View {
     let linkedTasks: [AppTask]
     let backlinks: [Note]
     let onOpenNote: (Note) -> Void
+    /// [[T-5152]]: a task chip opens the task, as iOS's task pill does and as the note and backlink
+    /// chips beside it open their note. Not defaulted, so a host cannot draw the chip inert again;
+    /// both hosts hand it to the `TaskDetailPopover` their `[[task:…]]` links already raise.
+    let onOpenTask: (AppTask) -> Void
 
     private var todayKey: String { DateFormatters.todayKey() }
 
@@ -41,13 +45,18 @@ struct NoteReferenceStrip: View {
                 if !linkedTasks.isEmpty {
                     ReferenceSection(label: NoteReferencePanelSection.taskReferences.label) {
                         ForEach(linkedTasks, id: \.id) { task in
-                            ReferenceChip(
-                                icon: NoteReferencePanelSection.taskReferences.systemImage,
-                                title: TaskTitleSupport.displayTitle(task.title),
-                                tint: Theme.green,
-                                dueLabel: CadenceFocusSupport.dueLabel(forDueDateKey: task.dueDate, todayKey: todayKey),
-                                isOverdue: task.isOverdue(todayKey: todayKey)
-                            )
+                            Button {
+                                onOpenTask(task)
+                            } label: {
+                                ReferenceChip(
+                                    icon: NoteReferencePanelSection.taskReferences.systemImage,
+                                    title: TaskTitleSupport.displayTitle(task.title),
+                                    tint: Theme.green,
+                                    dueLabel: CadenceFocusSupport.dueLabel(forDueDateKey: task.dueDate, todayKey: todayKey),
+                                    isOverdue: task.isOverdue(todayKey: todayKey)
+                                )
+                            }
+                            .buttonStyle(.cadencePlain)
                         }
                     }
                 }
