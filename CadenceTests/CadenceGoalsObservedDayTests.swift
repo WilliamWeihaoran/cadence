@@ -6,7 +6,8 @@ import SwiftData
 import Testing
 @testable import Cadence
 
-/// **[[T-5050]] — the iOS goal detail reads an observed day, not the clock.**
+/// **[[T-5050]] — the iOS goal detail reads an observed day, not the clock.** Also [[T-5080]], the
+/// macOS timeline's today line, at the end.
 ///
 /// `iOSGoalDetail.nextActionLine` computed `DateFormatters.todayKey()` in `body` for the "Next"
 /// line's due label and overdue tint, and its summary's overdue / done-recently counts read
@@ -93,6 +94,44 @@ struct CadenceGoalsObservedDayTests {
         #expect(line.contains("CadenceFocusSupport.dueLabel(forDueDateKey: $0, todayKey: todayKey)"))
         #expect(line.contains("CadenceFocusSupport.isOverdue(dueDateKey: $0, todayKey: todayKey)"))
         #expect(!line.contains("let todayKey"))
+    }
+
+    // MARK: - [[T-5080]] the macOS timeline's today line
+
+    /// The red line sat at `startOfDay(Date())`, and nothing it reads changes at midnight. It is now
+    /// placed from the observed key, so turning the key moves it exactly one day to the right.
+    @Test func theTimelineTodayLineMovesOneDayWhenTheObservedDayTurns() throws {
+        let rangeStart = try #require(DateFormatters.date(from: "2026-10-01"))
+        let dayWidth: CGFloat = 18
+        let before = try #require(
+            GoalTimelineTodayLine.xPosition(todayKey: "2026-10-22", rangeStart: rangeStart, dayWidth: dayWidth)
+        )
+        let after = try #require(
+            GoalTimelineTodayLine.xPosition(todayKey: "2026-10-23", rangeStart: rangeStart, dayWidth: dayWidth)
+        )
+        #expect(before == 21 * dayWidth)
+        #expect(after - before == dayWidth)
+        #expect(GoalTimelineTodayLine.xPosition(todayKey: "not a day", rangeStart: rangeStart, dayWidth: dayWidth) == nil)
+    }
+
+    @Test func theTimelineTodayLineIsHandedTheGoalsPageKeyAndReadsNoClock() throws {
+        let support = try Self.code("Cadence/macOS/Views/GoalTimelineSupportViews.swift")
+        let line = try #require(CadenceSourceScan.declarationBody("struct GoalTimelineTodayLine: View", in: support))
+        #expect(line.contains("let todayKey: String"))
+        #expect(!line.contains("Date()"))
+        let header = try #require(CadenceSourceScan.declarationBody("struct GoalTimelineMonthHeader: View", in: support))
+        #expect(header.contains("let todayKey: String"))
+        #expect(header.contains("todayKey: todayKey,"))
+
+        let timeline = try Self.code("Cadence/macOS/Views/GoalTimelineView.swift")
+        let view = try #require(CadenceSourceScan.declarationBody("struct GoalTimelineView: View", in: timeline))
+        #expect(view.contains("let todayKey: String"))
+        #expect(!view.contains("DateFormatters.todayKey()"))
+        // The month header and the body each draw one line; both carry the handed key.
+        #expect(view.components(separatedBy: "todayKey: todayKey,").count - 1 == 2)
+
+        let page = try Self.code("Cadence/macOS/Views/GoalsView.swift")
+        #expect(CadenceSourceScan.matchCount(#"hasAnyGoal: !allGoals\.isEmpty,\s*todayKey: todayKey\s*\)"#, in: page) == 1)
     }
 }
 #endif

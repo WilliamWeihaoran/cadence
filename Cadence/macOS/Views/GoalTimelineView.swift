@@ -65,6 +65,9 @@ struct GoalTimelineView: View {
     /// roadmap and a roadmap whose every goal the status filter is hiding are the same value.
     /// `GoalsView` holds `allGoals` and is the only thing that can tell them apart.
     let hasAnyGoal: Bool
+    /// The page's observed day (T-5080), from `GoalsView`'s one observer. Only the today line reads
+    /// it; `referenceDate` is the user's scroll anchor and stays a selection.
+    let todayKey: String
 
     @State private var referenceDate = Date()
     @State private var showsFilter = false
@@ -154,6 +157,7 @@ struct GoalTimelineView: View {
                         ScrollView(.horizontal, showsIndicators: true) {
                             VStack(spacing: 0) {
                                 GoalTimelineMonthHeader(
+                                    todayKey: todayKey,
                                     rangeStart: rangeStart,
                                     rangeEnd: rangeEnd,
                                     dayWidth: scale.dayWidth,
@@ -322,6 +326,7 @@ struct GoalTimelineView: View {
             }
 
             GoalTimelineTodayLine(
+                todayKey: todayKey,
                 rangeStart: rangeStart,
                 dayWidth: scale.dayWidth,
                 width: timelineWidth,

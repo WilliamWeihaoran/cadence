@@ -163,7 +163,8 @@ struct GoalsView: View {
                 searchText: $searchText,
                 statusFilter: $statusFilter,
                 onOpenGoal: { select($0, showsInspector: false) },
-                hasAnyGoal: !allGoals.isEmpty
+                hasAnyGoal: !allGoals.isEmpty,
+                todayKey: todayKey
             )
         } else {
             missionContent(groups: groups, todayKey: todayKey)

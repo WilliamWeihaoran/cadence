@@ -42,6 +42,7 @@ struct GoalTimelineRowLayout: Identifiable {
 }
 
 struct GoalTimelineMonthHeader: View {
+    let todayKey: String
     let rangeStart: Date
     let rangeEnd: Date
     let dayWidth: CGFloat
@@ -74,6 +75,7 @@ struct GoalTimelineMonthHeader: View {
             }
 
             GoalTimelineTodayLine(
+                todayKey: todayKey,
                 rangeStart: rangeStart,
                 dayWidth: dayWidth,
                 width: width,
@@ -116,26 +118,42 @@ struct GoalTimelineGrid: View {
     }
 }
 
+/// The red today line. T-5080: it is positioned from the page's observed `todayKey`, never the
+/// clock — `rangeStart`, `dayWidth` and the size do not change at midnight, so a `Date()` read
+/// here left a timeline open overnight drawing the line on yesterday.
 struct GoalTimelineTodayLine: View {
+    let todayKey: String
     let rangeStart: Date
     let dayWidth: CGFloat
     let width: CGFloat
     let height: CGFloat
 
-    private var x: CGFloat {
-        GoalTimelineDateMath.xPosition(
-            for: Calendar.current.startOfDay(for: Date()),
+    /// Where the line sits for `todayKey`, or `nil` when the key does not parse (the line hides).
+    static func xPosition(
+        todayKey: String,
+        rangeStart: Date,
+        dayWidth: CGFloat,
+        calendar: Calendar = .current
+    ) -> CGFloat? {
+        guard let today = DateFormatters.date(from: todayKey) else { return nil }
+        return GoalTimelineDateMath.xPosition(
+            for: calendar.startOfDay(for: today),
             rangeStart: rangeStart,
-            dayWidth: dayWidth
+            dayWidth: dayWidth,
+            calendar: calendar
         )
+    }
+
+    private var x: CGFloat? {
+        Self.xPosition(todayKey: todayKey, rangeStart: rangeStart, dayWidth: dayWidth)
     }
 
     var body: some View {
         Rectangle()
             .fill(Theme.red)
             .frame(width: 1.5, height: height)
-            .offset(x: x)
-            .opacity(x >= 0 && x <= width ? 1 : 0)
+            .offset(x: x ?? 0)
+            .opacity(x.map { $0 >= 0 && $0 <= width } == true ? 1 : 0)
     }
 }
 
