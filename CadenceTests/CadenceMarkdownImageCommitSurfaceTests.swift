@@ -429,6 +429,7 @@ struct CadenceMarkdownImageCommitSurfaceTests {
                 "Cadence/Shared/Components/CadenceTaskSettleFailureNotice.swift",
                 "Cadence/iOS/iOSMarkdownEditingSurface.swift",
                 "Cadence/macOS/Editor/MarkdownEditorView.swift",
+                "Cadence/macOS/Views/FocusNotesPanel.swift",
                 "Cadence/macOS/Views/ListNotesSupportViews.swift",
                 "Cadence/macOS/Views/NoteEditorPane.swift",
                 "Cadence/macOS/Views/NotePanel.swift",
@@ -437,7 +438,7 @@ struct CadenceMarkdownImageCommitSurfaceTests {
             "a dismissal appeared on a notice a later attempt does clear, or left one that it does not"
         )
 
-        // Seven files, eight notices: the iOS surface carries both of its own.
+        // Eight files, nine notices: the iOS surface carries both of its own.
         var withDismissal = 0
         var total = 0
         for path in paths {
@@ -513,10 +514,13 @@ struct CadenceMarkdownImageCommitSurfaceTests {
         // [[T-5014]] makes it 71, and the eighth dismissable one: the Mac inspector's notes box
         // names a refused embedded-task write under its editor, as `NotePanel` does -- the next
         // thing the user does is type, and typing never reaches the write that set it.
-        #expect(total == 71, "the inline notice has \(total) call sites, not the 71 this test was written over")
-        #expect(withDismissal == 8, "\(withDismissal) call sites offer a dismissal, not 8")
+        // [[T-5060]] (c) makes it 72, and the ninth dismissable one: macOS `FocusNotesPanel` now
+        // resolves task embeds and names a refused embedded-task write under its editor, for the
+        // inspector notes box's reason -- typing never reaches the write that set it.
+        #expect(total == 72, "the inline notice has \(total) call sites, not the 72 this test was written over")
+        #expect(withDismissal == 9, "\(withDismissal) call sites offer a dismissal, not 9")
 
-        // And each of the eight is named, so one swapping places with another is still a failure.
+        // And each of the nine is named, so one swapping places with another is still a failure.
         for (path, notices) in [
             ("Cadence/Shared/Components/CadenceTaskSettleFailureNotice.swift",
              ["CadenceInlineFailureNotice(text: CadencePendingChangePersistence.editFailureNotice) {"]),
@@ -528,7 +532,8 @@ struct CadenceMarkdownImageCommitSurfaceTests {
             ("Cadence/macOS/Views/NotePanel.swift", ["CadenceInlineFailureNotice(text: embeddedTaskFailureNotice) { self.embeddedTaskFailureNotice = nil }"]),
             ("Cadence/macOS/Views/NoteEditorPane.swift", ["CadenceInlineFailureNotice(text: embeddedTaskFailureNotice) { self.embeddedTaskFailureNotice = nil }"]),
             ("Cadence/macOS/Views/ListNotesSupportViews.swift", ["CadenceInlineFailureNotice(text: embeddedTaskFailureNotice) { self.embeddedTaskFailureNotice = nil }"]),
-            ("Cadence/macOS/Views/TaskInspectorContentSupportViews.swift", ["CadenceInlineFailureNotice(text: embeddedTaskFailureNotice) { self.embeddedTaskFailureNotice = nil }"])
+            ("Cadence/macOS/Views/TaskInspectorContentSupportViews.swift", ["CadenceInlineFailureNotice(text: embeddedTaskFailureNotice) { self.embeddedTaskFailureNotice = nil }"]),
+            ("Cadence/macOS/Views/FocusNotesPanel.swift", ["CadenceInlineFailureNotice(text: embeddedTaskFailureNotice) { self.embeddedTaskFailureNotice = nil }"])
         ] {
             let source = try CadenceSourceScan.sourceFile(path)
             for notice in notices {
