@@ -11,6 +11,13 @@ struct iOSGoalsView: View {
     @Query(sort: \Goal.order) private var goals: [Goal]
     @State private var selectedID: UUID?
 
+    /// The page's one day observer ([[T-5050]]), as on Habits ([[T-5012]]): the detail's "Next"
+    /// due label, its overdue tint and the overdue / done-recently chips read this key, so a goal
+    /// left open across midnight rolls over with the day. One per page, never per row ([[T-3124]]).
+    @State private var observedDay = CadenceObservedDay()
+
+    private var todayKey: String { observedDay.todayKey }
+
     private var activeGoals: [Goal] {
         GoalAssignmentRules.activeGoals(from: goals)
     }
@@ -39,6 +46,9 @@ struct iOSGoalsView: View {
     }
 
     var body: some View {
+        // Read here, not only inside the split layout's closures, so this body depends on the state
+        // the observer writes.
+        let _ = observedDay.todayKey
         Group {
             if horizontalSizeClass == .compact {
                 compactLayout
@@ -48,6 +58,7 @@ struct iOSGoalsView: View {
         }
         .background(Theme.bg)
         .iOSHidesCompactNavigationBar()
+        .cadenceTracksDayChanges($observedDay)
         .onAppear {
             selectedID = selectedID ?? selected?.id
         }
@@ -143,6 +154,7 @@ struct iOSGoalsView: View {
             goal: goal,
             milestones: CadenceGoalGroupSupport.milestones(for: goal),
             habits: CadenceGoalGroupSupport.habits(for: goal),
+            todayKey: todayKey,
             showsBackControl: showsBackControl
         )
     }

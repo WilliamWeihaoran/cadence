@@ -17,6 +17,10 @@ struct iOSGoalDetail: View {
     let goal: Goal
     var milestones: [Goal] = []
     var habits: [Habit] = []
+    /// `iOSGoalsView`'s observed day ([[T-5050]]), not the clock: the "Next" line's due label and
+    /// overdue tint, and the summary's overdue / done-recently counts, are all relative to today,
+    /// and a body whose inputs are the same on both sides of midnight would keep yesterday's.
+    let todayKey: String
     /// Set on the compact push stack, where this view carries its own back control instead of a
     /// navigation bar holding one chevron and nothing else — the same trade every list pane in the
     /// iOS surface already makes (`iOSHidesCompactNavigationBar()`). Left off on iPad, where the
@@ -25,7 +29,7 @@ struct iOSGoalDetail: View {
 
 
     private var summary: GoalContributionSummary {
-        GoalContributionResolver.summary(for: goal)
+        GoalContributionResolver.summary(for: goal, now: DateFormatters.date(from: todayKey) ?? Date())
     }
 
     /// The lists attached to *this* goal, filtered and ordered by the shared rule macOS's
@@ -310,7 +314,6 @@ struct iOSGoalDetail: View {
     @ViewBuilder
     private var nextActionLine: some View {
         if let title = summary.nextActionTitle {
-            let todayKey = DateFormatters.todayKey()
             let dueLabel = summary.nextActionDueDate.flatMap {
                 CadenceFocusSupport.dueLabel(forDueDateKey: $0, todayKey: todayKey)
             }
