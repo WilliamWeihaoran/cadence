@@ -30,7 +30,7 @@ Audit branch: `codex/platform-parity-audit`, created from fetched `origin/main` 
 4. **PA-01 — Mac task rows omitted note excerpts.** CLOSED by [[T-1467]] at `76edf23f`, with PA-02 — see PA-01's CLOSED note.
 5. **PA-19 — Mac search silently capped matches.** CLOSED by [[T-1473]] (`d6b20a60`); the in-place reveal of withheld matches is [[T-3089]]'s Mac half, in the tree and pinned by `CadenceTests/CadenceGlobalSearchCapContinuationTests.swift`.
 
-PA-20 (list-document search) is already a blocked scope decision in T-3084. The two note-discovery gaps PA-15/16 also warrant tickets. Deliberate truncation/space choices stay in this inventory for owner review, without cosmetic ticket spam.
+PA-20 (list-document search) is CLOSED: the owner answered the scope decision on 2026-10-23 and [[T-3084]] landed both halves of it -- Mac global search finds list documents and selecting one opens it in its own list's Documents tab. The two note-discovery gaps PA-15/16 also warrant tickets. Deliberate truncation/space choices stay in this inventory for owner review, without cosmetic ticket spam.
 
 **Evidence level:** code paths and comments were inspected; no new runtime failures were induced. “Tests cover” below means the inspected assertion contract exists, not that this audit ran it. Failure consequences and device behavior are explicitly identified as inferred where relevant. Reported absences name the specific host where a counterpart would belong. Search used raw source for symbols, literals and comments; no literal-absence claim uses `CadenceSourceScan.codeOnly`.
 
@@ -343,7 +343,9 @@ Mac builds already-truncated arrays: matching tasks stop at 14, events at 12, an
 
 #### PA-20 — Mac global search excludes list documents
 
-**KIND:** INFORMATION · **INTENT:** BLOCKED · **DIRECTION:** iOS-only
+**KIND:** INFORMATION · **INTENT:** CLOSED · **DIRECTION:** iOS-only
+
+**CLOSING NOTE 2026-10-23 (agent `macsearch`, the commit carrying this line).** The scope decision this finding was BLOCKED on was given by the owner on 2026-10-23 — Mac global search should find lists, ranked containers-above-contents — and [[T-3084]] implemented it. `GlobalSearchIndexSupport.noteSubtitle(for:)` is the one candidate gate now and draws a `.list` row; `GlobalSearchListNoteRoute` answers both whether a row exists and where it opens, so the gate and the destination cannot drift; `RootCommandActionSupport.handleSearchSelection` opens the note's own list's Documents tab with the document selected. The coverage trap named below is closed in the same commit: `CadenceCodexFunctionalParityTests.macSearchFindsEveryGlobalNoteKindAndKeepsEventIdentity` now contracts **five** kinds, and `CadenceMacListDocumentSearchTests` holds the route, the orphan exclusion and the ranking. The evidence line numbers below were re-derived twice before this landing (`:295`/`:303`, then `:357`/`:365`/`:367`) and have moved again; they are left as the audit wrote them, as pinned to `8c6d218e`.
 
 Mac’s ordinary note search excludes .list documents; iOS searches nonblank notes without that kind exclusion. Mac Daily, Weekly, Notepad and Event Notes support is present and is not reopened here.
 

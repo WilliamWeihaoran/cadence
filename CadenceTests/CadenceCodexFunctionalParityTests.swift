@@ -109,26 +109,41 @@ struct CadenceCodexFunctionalParityTests {
         #expect(compact.contains("completedCount: summary.completedCount,\n                showsCompletedControl: false"))
     }
 
-    @MainActor @Test func macSearchFindsEveryGlobalNoteKindAndKeepsEventIdentity() {
+    /// **Extended for the second half of [[T-3084]], and the extension is the point.** This body
+    /// listed four note kinds and asserted the Notes section held exactly three of them — which is
+    /// the coverage trap parity finding PA-20 named by id: list documents were excluded from the
+    /// contract, so the suite stayed green for a year while a whole kind of thing the owner owns
+    /// was missing from Cmd+K. The fifth kind is in the contract now, with its route.
+    @MainActor @Test func macSearchFindsEveryGlobalNoteKindAndKeepsEventIdentity() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = container.mainContext
+        let area = Area(name: "Archive area")
+        context.insert(area)
         let notes = [
             Note(kind: .daily, content: "unique archive", dateKey: "2026-01-02"),
             Note(kind: .weekly, content: "unique archive", weekKey: "2026-W01"),
             Note(kind: .permanent, title: "unique archive"),
+            Note(kind: .list, title: "unique archive"),
             Note(kind: .meeting, title: "unique archive")
         ]
+        for note in notes { context.insert(note) }
+        CadenceListNoteSupport.attach(notes[3], to: area, project: nil)
+        try context.save()
+
         let index = GlobalSearchIndexSupport.buildIndexedSource(
             query: "unique archive", hiddenTabs: [], areas: [], projects: [], tasks: [], notes: notes,
             eventResults: [], sidebarTabColorsRaw: "", includesCompletedTasks: false
         )
         let ordinary = index.sections.first { $0.category == .notes }?.results ?? []
-        #expect(Set(ordinary.map(\.id)) == Set(notes.prefix(3).map { CadenceSearchIdentity.note($0.id) }))
-        for note in notes.prefix(3) {
+        #expect(Set(ordinary.map(\.id)) == Set(notes.prefix(4).map { CadenceSearchIdentity.note($0.id) }))
+        for note in notes.prefix(4) {
             #expect(ordinary.first { $0.id == CadenceSearchIdentity.note(note.id) }?.destination == .note(note.id))
         }
+        #expect(ordinary.first { $0.id == CadenceSearchIdentity.note(notes[3].id) }?.subtitle == "List • Archive area")
         let events = index.sections.first { $0.category == .meetingNotes }?.results ?? []
         #expect(events.count == 1)
-        #expect(events.first?.destination == .eventNote(notes[3].id))
-        #expect(events.first?.id == CadenceSearchIdentity.eventNote(notes[3].id))
+        #expect(events.first?.destination == .eventNote(notes[4].id))
+        #expect(events.first?.id == CadenceSearchIdentity.eventNote(notes[4].id))
     }
 
     /// **REVISED FOR T-1473, deliberately, because its two count assertions were the pin that

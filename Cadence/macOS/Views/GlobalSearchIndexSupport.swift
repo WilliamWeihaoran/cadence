@@ -6,6 +6,46 @@ struct GlobalSearchIndexedSource {
     let sections: [GlobalSearchSection]
 }
 
+/// **Where a list document opens, and the one reason one is not offered at all** (T-3084).
+///
+/// A `.list` note is reached through its list's **Documents** tab, not through the Notes page:
+/// `NotesNavigationManager.page(for: .list)` is `nil` and stays `nil`, because there is no Notes
+/// page for one to land on. That `nil` is also why the palette dropped list documents for a year
+/// — the candidate gate asked the Notes page whether it could open a note and took "no" for "not
+/// a note".
+///
+/// **One type answers both halves**: whether a row exists for the note, which
+/// `GlobalSearchIndexSupport.noteSubtitle(for:)` asks, and where selecting the row goes, which
+/// `RootCommandActionSupport.handleSearchSelection` asks. The defect this ticket was reopened for
+/// is a hit that cannot be opened, so the gate and the destination must not be able to disagree
+/// about a note; keeping them one function is what makes that structural rather than remembered.
+///
+/// **Area before project**, which is the order `NoteReferencePanelSupport` already names a list
+/// note's container in and the order `GlobalSearchIndexSupport.listNoteSubtitle(for:)` repeats, so
+/// the list the row names is the list the row opens. A note carrying both relationships is filed
+/// in both columns by `CadenceListNoteSupport.notes(for:project:in:)`; this picks one of two real
+/// homes rather than guessing at an impossible state.
+enum GlobalSearchListNoteRoute: Equatable {
+    case area(UUID)
+    case project(UUID)
+
+    /// `nil` for every kind but `.list`, and for a list document filed under no list.
+    static func route(for note: Note) -> GlobalSearchListNoteRoute? {
+        guard note.kind == .list else { return nil }
+        if let area = note.area { return .area(area.id) }
+        if let project = note.project { return .project(project.id) }
+        return nil
+    }
+
+    /// The sidebar row the Documents tab is opened inside.
+    var sidebarItem: SidebarItem {
+        switch self {
+        case .area(let id): .area(id)
+        case .project(let id): .project(id)
+        }
+    }
+}
+
 enum GlobalSearchIndexSupport {
     static func buildIndexedSource(
         query: String,
@@ -354,18 +394,18 @@ enum GlobalSearchIndexSupport {
         }, query: query, preparedQuery: preparedQuery)
     }
 
+    /// **Every note kind the Notes page or a list's Documents tab can open** (T-3084).
+    ///
+    /// The candidate gate used to be a `filter` on `NotesNavigationManager.page(for:) != nil`
+    /// *plus* a second `case .list, .meeting: return nil` inside the switch — two gates saying the
+    /// same thing, and the one a reader reached first said nothing about why. There is one gate
+    /// now: `noteSubtitle(for:)` returns `nil` for exactly the notes this section does not draw,
+    /// so adding a `NoteKind` makes that switch non-exhaustive instead of silently dropping it.
     static func noteResults(notes: [Note], query: String, taskTitles: [UUID: String]) -> [GlobalSearchResult] {
         let preparedQuery = CadenceSearchMatcher.PreparedQuery(query)
-        let candidates = notes.filter { NotesNavigationManager.page(for: $0.kind) != nil && $0.kind != .meeting }
-        return rankedResults(candidates.compactMap { note in
+        return rankedResults(notes.compactMap { note -> GlobalSearchResult? in
+            guard let subtitle = noteSubtitle(for: note) else { return nil }
             let title = note.displayTitle
-            let subtitle: String
-            switch note.kind {
-            case .daily: subtitle = "Daily • \(note.dateKey)"
-            case .weekly: subtitle = "Weekly • \(note.weekKey)"
-            case .permanent: subtitle = "Notepad"
-            case .list, .meeting: return nil
-            }
             let content = MarkdownTaskEmbedTitleCache.resolving(note.content, titles: taskTitles)
             let tags = CadenceSearchTagSupport.text(for: note.sortedTags)
             guard matches(query: preparedQuery, fields: [title, content, subtitle, tags]) else { return nil }
@@ -375,6 +415,42 @@ enum GlobalSearchIndexSupport {
                 tintHex: Theme.purpleHex, destination: .note(note.id)
             )
         }, query: query, preparedQuery: preparedQuery)
+    }
+
+    /// The Notes row's subtitle, **and the section's whole candidate gate**: `nil` means this
+    /// section does not draw the note at all.
+    ///
+    /// Two kinds return `nil`, for unrelated reasons. `.meeting` has its own **Event Notes**
+    /// section one row group up and must not appear twice. A `.list` document filed under no list
+    /// has nowhere to open — `GlobalSearchListNoteRoute` is the only route to one — and the defect
+    /// this ticket was reopened for is a hit that cannot be opened, so it is not offered.
+    ///
+    /// The three dated spellings are unchanged from the kinds Codex's half of T-3084 landed.
+    static func noteSubtitle(for note: Note) -> String? {
+        switch note.kind {
+        case .daily: return "Daily • \(note.dateKey)"
+        case .weekly: return "Weekly • \(note.weekKey)"
+        case .permanent: return "Notepad"
+        case .list:
+            guard GlobalSearchListNoteRoute.route(for: note) != nil else { return nil }
+            return listNoteSubtitle(for: note)
+        case .meeting: return nil
+        }
+    }
+
+    /// "List • Marketing", or the bare kind when the list it is filed under has a blank name.
+    ///
+    /// Same shape as the `Daily •` / `Weekly •` lines beside it, and the same area-before-project
+    /// preference `GlobalSearchListNoteRoute.route(for:)` routes by, so the list this row names is
+    /// the list selecting it opens. `NoteReferencePanelSupport.noteKindDetail` answers the same
+    /// question for iOS but answers it without the kind prefix, which would read as an untitled
+    /// row here.
+    static func listNoteSubtitle(for note: Note) -> String {
+        let container = [note.area?.name, note.project?.name]
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .first { !$0.isEmpty }
+        guard let container else { return "List" }
+        return "List • \(container)"
     }
 
     /// **T-372a: `id` is the tie-break.** `GlobalSearchResult.id` is already the

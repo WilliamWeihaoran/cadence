@@ -9,14 +9,35 @@ private enum ListNotesSelection: Equatable {
 }
 
 struct ListNotesView: View {
+    /// Which of this column's notes a navigation request asked for, if the column holds it.
+    ///
+    /// **A request naming a note this list does not hold stays pending rather than resolving to
+    /// something else** ([[T-3084]]): returning `nil` leaves the id in place for the next
+    /// `allNotes` change, and leaves the selection to `selectFirstNoteIfNeeded`. Selecting the
+    /// first document instead would present some other note as though it were the search hit,
+    /// which is the exact half-fix this ticket was reopened for.
+    enum RequestedListNote {
+        static func resolve(requestedID: UUID?, notes: [Note]) -> UUID? {
+            guard let requestedID, notes.contains(where: { $0.id == requestedID }) else { return nil }
+            return requestedID
+        }
+    }
+
     var area: Area?
     var project: Project?
     @Binding var requestedEventNoteID: UUID?
+    @Binding var requestedListNoteID: UUID?
 
-    init(area: Area? = nil, project: Project? = nil, requestedEventNoteID: Binding<UUID?> = .constant(nil)) {
+    init(
+        area: Area? = nil,
+        project: Project? = nil,
+        requestedEventNoteID: Binding<UUID?> = .constant(nil),
+        requestedListNoteID: Binding<UUID?> = .constant(nil)
+    ) {
         self.area = area
         self.project = project
         _requestedEventNoteID = requestedEventNoteID
+        _requestedListNoteID = requestedListNoteID
     }
 
     @Environment(\.modelContext) private var modelContext
@@ -191,14 +212,19 @@ struct ListNotesView: View {
         .onAppear {
             backfillMeetingNoteMetadata()
             applyRequestedEventNoteSelection()
+            applyRequestedListNoteSelection()
             normalizeSelectionIfNeeded()
         }
         .onChange(of: requestedEventNoteID) { _, _ in
             applyRequestedEventNoteSelection()
         }
+        .onChange(of: requestedListNoteID) { _, _ in
+            applyRequestedListNoteSelection()
+        }
         .onChange(of: allNotes.map(\.id)) { _, _ in
             backfillMeetingNoteMetadata()
             applyRequestedEventNoteSelection()
+            applyRequestedListNoteSelection()
             normalizeSelectionIfNeeded()
         }
         .onChange(of: allTasks.map { "\($0.id.uuidString)-\($0.statusRaw)" }) { _, _ in
@@ -428,6 +454,18 @@ struct ListNotesView: View {
         guard let requestedEventNoteID else { return }
         guard eventNotes.contains(where: { $0.id == requestedEventNoteID }) else { return }
         select(.event(requestedEventNoteID))
+    }
+
+    /// The list-document half of the same one-shot ([[T-3084]]). It clears its own request rather
+    /// than `select`'s event one, so a pending event-note request is not swallowed by a list-note
+    /// arrival that resolved first.
+    private func applyRequestedListNoteSelection() {
+        guard let noteID = RequestedListNote.resolve(
+            requestedID: requestedListNoteID,
+            notes: listNotes
+        ) else { return }
+        select(.list(noteID), clearsRequestedEventNote: false)
+        requestedListNoteID = nil
     }
 
     private func backfillMeetingNoteMetadata() {

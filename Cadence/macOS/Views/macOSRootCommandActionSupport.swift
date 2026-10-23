@@ -149,14 +149,35 @@ enum RootCommandActionSupport {
             context.notesNavigationManager.openMeetingNote(id: noteID)
             context.setSelection(.notes)
         case .note(let noteID):
+            // The row carries an id, not a kind, so the note's *current* kind is resolved here:
+            // a note refiled between the keystroke and the Return opens where it is now.
             let descriptor = FetchDescriptor<Note>(predicate: #Predicate { $0.id == noteID })
-            guard let note = (try? context.modelContext.fetch(descriptor))?.first,
-                  NotesNavigationManager.page(for: note.kind) != nil else { break }
-            context.notesNavigationManager.openNote(id: note.id, kind: note.kind)
-            context.setSelection(.notes)
+            guard let note = (try? context.modelContext.fetch(descriptor))?.first else { break }
+            if let route = GlobalSearchListNoteRoute.route(for: note) {
+                openListNote(note.id, route: route, context: context)
+            } else if NotesNavigationManager.page(for: note.kind) != nil {
+                context.notesNavigationManager.openNote(id: note.id, kind: note.kind)
+                context.setSelection(.notes)
+            }
         }
 
         context.globalSearchManager.dismiss()
+    }
+
+    /// A list document opens in its list's Documents tab with the document selected ([[T-3084]]),
+    /// which is the only surface that draws one — the Notes page has no page for `.list`.
+    private static func openListNote(
+        _ noteID: UUID,
+        route: GlobalSearchListNoteRoute,
+        context: RootSearchSelectionContext
+    ) {
+        switch route {
+        case .area(let areaID):
+            context.listNavigationManager.open(areaID: areaID, page: .documents, listNoteID: noteID)
+        case .project(let projectID):
+            context.listNavigationManager.open(projectID: projectID, page: .documents, listNoteID: noteID)
+        }
+        context.setSelection(route.sidebarItem)
     }
 }
 #endif

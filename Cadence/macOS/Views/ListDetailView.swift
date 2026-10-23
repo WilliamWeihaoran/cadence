@@ -89,6 +89,9 @@ private struct ListDetailView: View {
     @State private var taskSortDirection: TaskSortDirection = .ascending
     @State private var highlightedKanbanSectionName: String?
     @State private var requestedEventNoteID: UUID?
+    /// The list document a global-search hit asked for ([[T-3084]]), handed to the Documents tab
+    /// the same way `requestedEventNoteID` is.
+    @State private var requestedListNoteID: UUID?
 
     private var kanbanUDKey: String {
         if let a = area { return "kanban_\(a.id.uuidString)" }
@@ -125,7 +128,8 @@ private struct ListDetailView: View {
             taskSortDirection: $taskSortDirection,
             taskGroupingMode: $taskGroupingMode,
             highlightedKanbanSectionName: highlightedKanbanSectionName,
-            requestedEventNoteID: $requestedEventNoteID
+            requestedEventNoteID: $requestedEventNoteID,
+            requestedListNoteID: $requestedListNoteID
         )
             .modifier(ListDetailLifecycleModifier(
                 navigationToken: listNavigationManager.request?.token,
@@ -168,6 +172,7 @@ private struct ListDetailView: View {
         tab = request.page
         highlightedKanbanSectionName = request.page == .kanban ? request.sectionName : nil
         requestedEventNoteID = request.page == .documents ? request.eventNoteID : nil
+        requestedListNoteID = request.page == .documents ? request.listNoteID : nil
     }
 
     private func restoreTaskAndKanbanControls() {
@@ -234,6 +239,7 @@ private struct ListDetailChromeView: View {
     @Binding var taskGroupingMode: TaskGroupingMode
     let highlightedKanbanSectionName: String?
     @Binding var requestedEventNoteID: UUID?
+    @Binding var requestedListNoteID: UUID?
 
     @Environment(HoveredEditableManager.self) private var hoveredEditableManager
 
@@ -352,7 +358,12 @@ private struct ListDetailChromeView: View {
                 highlightedSectionName: highlightedKanbanSectionName
             ))
         case .documents:
-            return AnyView(ListNotesView(area: area, project: project, requestedEventNoteID: $requestedEventNoteID))
+            return AnyView(ListNotesView(
+                area: area,
+                project: project,
+                requestedEventNoteID: $requestedEventNoteID,
+                requestedListNoteID: $requestedListNoteID
+            ))
         case .links:
             return AnyView(LinksView(area: area, project: project))
         case .completed:
