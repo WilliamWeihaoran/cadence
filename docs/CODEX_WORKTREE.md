@@ -203,6 +203,14 @@ CadenceTests/CadenceTodaySectionMetricsTests.swift
 CadenceTests/CadenceTodayOverdueSummarySurfaceTests.swift
 CadenceTests/CadenceTaskInspectorHostTests.swift
 CadenceTests/CadenceSharedBoardChromeTests.swift
+Cadence/Shared/CadenceScheduleDraft.swift
+Cadence/macOS/Views/QuickCreateChoicePopover.swift
+Cadence/macOS/Views/SchedulePanelShellViews.swift
+Cadence/macOS/Views/TaskInspectorContentSupportViews.swift
+Cadence/macOS/Views/TaskInspectorFieldSupportViews.swift
+Cadence/macOS/Views/TaskInspectorStatusActionsRow.swift
+Cadence/macOS/Views/TaskInspectorWorkflowSupportViews.swift
+CadenceTests/CadenceQuickCreateTaskInspectorTests.swift
 ```
 
 **Admission 2026-10-19 (coordinator), one line in `CadenceTests/CadenceMarkdownImageCommitSurfaceTests.swift`.**
