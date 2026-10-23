@@ -44,6 +44,9 @@ struct iOSTaskCollectionPage: View {
     // No `@Environment(\.dismiss)` (T-3155) — see `header` and `iOSCompactBackActionReader`.
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(RemindersManager.self) private var remindersManager
+    // T-2088: read here as well as in `iOSTaskCollectionSections`, because the scroll is the
+    // scroll *view's* to make and the sections live inside it.
+    @Environment(CadenceDeepLinkManager.self) private var deepLinkManager
 
     private var metrics: iOSTaskCollectionMetrics {
         .metrics(isRegularWidth: horizontalSizeClass == .regular)
@@ -68,6 +71,33 @@ struct iOSTaskCollectionPage: View {
     }
 
     var body: some View {
+        ScrollViewReader { proxy in
+            scrollBody(proxy: proxy)
+        }
+    }
+
+    /// **T-2088: a deep link to long-finished work scrolls the row it reveals into view.**
+    ///
+    /// Opening the logbook (T-375) made the row *listed*; since T-2057 took the 24-row cap off,
+    /// "listed" for a year-old link means somewhere around row 1,900 of 2,000, which no thumb will
+    /// find. `CadenceDeepLinkResolutionSupport.completedScrollTarget` decides whether to move —
+    /// the same membership test the reveal makes, plus "the section is actually open", because a
+    /// collapsed logbook draws no row for that id and `scrollTo` silently does nothing for an id
+    /// the stack does not contain.
+    ///
+    /// **`ScrollViewReader`, not `.scrollPosition(id:)`.** `scrollPosition` resolves ids against
+    /// the stack it is attached to through `.scrollTargetLayout()`, and the rows here are not that
+    /// stack's children — they are inside `iOSTaskGroupSection`'s own `LazyVStack`, two levels
+    /// down. A proxy addresses the `ForEach` id wherever it is, which is what this needs.
+    ///
+    /// **Unanimated on purpose.** The accepted cost of this ticket is a long programmatic scroll;
+    /// animating a ~1,900-row jump through a lazy stack means building every row on the way past,
+    /// so the row arrives as a jump rather than a flight. A deep link is a teleport already.
+    ///
+    /// **One run loop late.** The reveal writes `showCompleted` and the scroll has to happen after
+    /// the section that change creates has been laid out; asked in the same pass, the id is still
+    /// an id of nothing.
+    private func scrollBody(proxy: ScrollViewProxy) -> some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: metrics.stackSpacing) {
                 if showsHeader {
@@ -98,6 +128,17 @@ struct iOSTaskCollectionPage: View {
             .padding(.bottom, metrics.bottomPadding)
         }
         .scrollIndicators(.hidden)
+        // Both hooks, for the same reason `iOSAllTasksView` opens the section on both: the link
+        // can land before this page appears and while it is already on screen. `showCompleted` is
+        // the third, and it is the one that usually fires — the reveal opens the disclosure, and
+        // the row only exists to scroll to once it has.
+        .onAppear { scrollToRevealedRow(proxy: proxy) }
+        .onChange(of: deepLinkManager.revealedCompletedTaskID) { _, _ in
+            scrollToRevealedRow(proxy: proxy)
+        }
+        .onChange(of: showCompleted) { _, _ in
+            scrollToRevealedRow(proxy: proxy)
+        }
         // **The panel is a destination too, not only the rows and headers in it** (T-1276). The
         // identity is the one the "Active" header and the empty state already take, so all three
         // promise the same thing and the narrower two keep winning on area: Inbox's region offers
@@ -125,6 +166,17 @@ struct iOSTaskCollectionPage: View {
             remindersManager,
             isEnabled: CadenceTasksPageScope(collection: collection) == .inbox
         )
+    }
+
+    private func scrollToRevealedRow(proxy: ScrollViewProxy) {
+        guard let target = CadenceDeepLinkResolutionSupport.completedScrollTarget(
+            revealedTaskID: deepLinkManager.revealedCompletedTaskID,
+            completedTasks: completedTasks,
+            showsCompleted: showCompleted
+        ) else { return }
+        Task { @MainActor in
+            proxy.scrollTo(target, anchor: .center)
+        }
     }
 
     /// **The header scrolls with the content, at both widths.** The `List` hosts pinned it — header,

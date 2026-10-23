@@ -124,6 +124,42 @@ enum CadenceDeepLinkResolutionSupport {
         return completedTasks.contains { $0.id == revealedTaskID }
     }
 
+    /// The row a task surface should **scroll to** for the link being applied, or `nil` for
+    /// "stay where you are" (T-2088).
+    ///
+    /// **Revealing a row is not the same as showing it.** `revealsCompletedSection` opens the
+    /// logbook so the row is drawn; since T-2057 removed the 24-row cap that section lists every
+    /// finished task at its true newest-settled-first place, so a link to work finished a year ago
+    /// lands the row somewhere around position 1,900 of 2,000 — listed, and under no thumb that
+    /// will ever find it. The link has not done its job until the row is on screen.
+    ///
+    /// **Two conditions, and both are load-bearing.**
+    /// - *Membership*, the same test the reveal makes: `revealedCompletedTaskID` is one value on
+    ///   one shared manager that every task surface reads, so a surface whose universe does not
+    ///   contain the task must not move. Today's Completed section is scoped to work settled
+    ///   today; scrolling it for something finished in January is the T-368 shape again, now with
+    ///   the viewport jumping as well.
+    /// - *The section is open*. A collapsed logbook renders no row for that id, and both scroll
+    ///   mechanisms silently do nothing for an id the stack does not contain — so a surface that
+    ///   asks before expanding would scroll once, pointlessly, and then never again. Taking
+    ///   `showsCompleted` here is what makes the answer change when the disclosure opens, which is
+    ///   the moment the scroll can actually land.
+    ///
+    /// Generic over `Identifiable` for the same reason `revealsCompletedSection` is: it is asked
+    /// with `AppTask` in the app and with a stand-in in the tests, and the rule is about identity
+    /// rather than about tasks.
+    static func completedScrollTarget<Task: Identifiable>(
+        revealedTaskID: Task.ID?,
+        completedTasks: [Task],
+        showsCompleted: Bool
+    ) -> Task.ID? {
+        guard showsCompleted else { return nil }
+        guard revealsCompletedSection(revealedTaskID: revealedTaskID, completedTasks: completedTasks) else {
+            return nil
+        }
+        return revealedTaskID
+    }
+
     /// One row by id, or `nil`. A fetch rather than a `@Query`: `macOSRootView` deliberately keeps
     /// unbounded task queries off the root (see `NotificationReconcileObserver`), and a deep link
     /// needs one row on one tap, not an observed collection.

@@ -29,8 +29,9 @@ nonisolated struct CadenceCalendarOverlapPlacement: Equatable, Sendable {
 /// Owner's reference screenshot (the acceptance test, pinned in
 /// `CadenceCalendarOverlapLayoutTests`): 2:15–6:15 / 3:00–5:45 / 4:00–6:00 cascade (gaps 45 and 60
 /// minutes), while 7:00–10:55 / 7:15–10:00 split into equal halves (gap 15). At the Mac block's
-/// measured 29pt header the threshold is 24 minutes at `hourHeight` 75 — between the 15 that must
-/// split and the 45 that must cascade, with room on both sides.
+/// measured 42pt header the threshold is 34 minutes at `hourHeight` 75 — between the 15 that must
+/// split and the 45 that must cascade, with room on both sides. It was 24, from a one-line title
+/// row the block does not draw, until T-3219.
 ///
 /// Pure arithmetic over start/end minutes, in `Shared/` rather than beside either platform's views,
 /// because macOS's `TimelineMetricsSupport` and iOS's timed day column both read it and a second
@@ -131,8 +132,8 @@ nonisolated enum CadenceCalendarOverlapLayout {
 
     /// macOS header height for a given `TimelineBlockStyle.verticalPadding`.
     ///
-    /// `.calendar` pads 3 and `.schedule` pads 4, so the Calendar page's header is 29pt and the
-    /// Schedule panel's 30pt — one point, and one minute of threshold, apart.
+    /// `.calendar` pads 3 and `.schedule` pads 4, so the Calendar page's header is 42pt and the
+    /// Schedule panel's 43pt — one point, and one minute of threshold, apart.
     static func macEventHeaderHeight(verticalPadding: CGFloat) -> CGFloat {
         CadenceCalendarOverlapLayout.headerHeight(
             verticalPadding: verticalPadding,
@@ -143,14 +144,25 @@ nonisolated enum CadenceCalendarOverlapLayout {
         )
     }
 
-    /// **One line, and knowingly so.** `TimelineEventBlock`'s title is `.lineLimit(2)` too, so the
-    /// Mac threshold has the same one-line derivation T-3193 corrected on iOS. T-3193 ruled on the
-    /// iOS threshold only, and the Mac's is pinned by the owner's reference screenshot (24 minutes
-    /// at a 75pt hour); moving it is filed as its own ledger entry rather than done here.
-    static let macEventTitleHeaderLineCount = 1
+    /// The title's wrap limit in `TimelineEventBlock.eventBlockBody`, which is what the Mac
+    /// threshold has to clear — **two lines, because that is what the block draws** (T-3219).
+    ///
+    /// **It was one until T-3219**, the same one-line derivation T-3193 corrected on iOS: the
+    /// block's title goes through `TimelineEventBlockRows.titleLineLimit(for:availableWidth:)`,
+    /// whose wrap limit is 2, so a title that wraps draws a 42pt header while the page protected
+    /// 29pt. A Mac event cascading 24–33 minutes after one whose title wrapped covered its time
+    /// row. At the reference 75pt hour the threshold is now `ceil(42 / (75 / 60)) = 34` minutes,
+    /// which is still inside the owner's screenshot band (the 15 that must split, the 45 that must
+    /// cascade), so the screenshot does not forbid it.
+    ///
+    /// `CadenceCalendarOverlapLayoutTests` pins this to `TimelineEventBlockRows.titleLineLimit` —
+    /// the Mac block's own figure — rather than to a literal, so the two cannot drift apart again.
+    /// It cannot be read from there directly: that type is `#if os(macOS)` and this file is Shared.
+    static let macEventTitleHeaderLineCount = 2
 
-    /// **29pt** — `TimelineBlockStyle.calendar`'s 3pt padding + the 11pt time row + 2pt of spacing
-    /// + the 13pt title row. This is the number T-3161's threshold is derived from on the Mac.
+    /// **42pt** — `TimelineBlockStyle.calendar`'s 3pt padding + the 11pt time row + 2pt of spacing
+    /// + TWO 13pt title rows (the block's own wrap limit). This is the number T-3161's threshold is
+    /// derived from on the Mac. It was 29 — one title line — until T-3219.
     static let macCalendarEventHeaderHeight: CGFloat =
         CadenceCalendarOverlapLayout.macEventHeaderHeight(verticalPadding: 3)
 

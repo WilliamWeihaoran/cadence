@@ -620,11 +620,17 @@ struct CadenceTouchRowStackLazinessTests {
     /// Every phone host that scrolls the group puts it inside `ScrollView { LazyVStack(...) }`. A
     /// lazy row stack inside an eager page is still built whole the moment the page is, which is
     /// the shape T-3004 found on the Mac. Named by host and by the exact opening it draws.
+    ///
+    /// **T-2088 moved the collection page's scrolling page one declaration down**, and this test
+    /// follows it rather than being loosened. `body` is now the `ScrollViewReader` that gives the
+    /// deep-link scroll its proxy, and `scrollBody(proxy:)` is the page it wraps — so the host is
+    /// named by *that* declaration, and the wrapper is pinned below so the indirection cannot
+    /// become a place an eager stack hides.
     @Test func everyCompactScrollHostOfTheGroupIsALazyPage() throws {
         let hosts: [(path: String, declaration: String, opening: String)] = [
             (
                 "Cadence/iOS/iOSTaskCollectionPage.swift",
-                "var body: some View",
+                "private func scrollBody(proxy: ScrollViewProxy) -> some View",
                 "ScrollView { LazyVStack(alignment: .leading, spacing: metrics.stackSpacing) {"
             ),
             (
@@ -647,6 +653,28 @@ struct CadenceTouchRowStackLazinessTests {
                 "\(host.path): \(host.declaration) no longer opens a lazy scrolling page"
             )
         }
+
+        // T-2088: the collection page's `body` is the one wrapper over that page, and it is a
+        // `ScrollViewReader` and nothing else — so the lazy page above is still the whole of what
+        // the page draws, reached through exactly one indirection rather than an unknown number.
+        let page = try cadenceFunctionBody(
+            "var body: some View",
+            in: try code("Cadence/iOS/iOSTaskCollectionPage.swift")
+        )
+        let normalizedPage = desktopSurfaceCollapsingWhitespace(page)
+            .trimmingCharacters(in: .whitespaces)
+        #expect(
+            normalizedPage.hasPrefix("ScrollViewReader { proxy in"),
+            "iOSTaskCollectionPage.body no longer opens the scroll reader: \(normalizedPage)"
+        )
+        #expect(
+            normalizedPage.contains("scrollBody(proxy: proxy)"),
+            "iOSTaskCollectionPage.body no longer hands its proxy to the lazy page: \(normalizedPage)"
+        )
+        #expect(
+            !normalizedPage.contains("Stack("),
+            "view content has moved into the wrapper, where an eager stack would not be checked above"
+        )
 
         // And the groups those pages draw are the shared component, so the lazy stack above is the
         // one they get. The Today and collection pages reach it through their `groupStack`.

@@ -29,11 +29,31 @@ struct CadenceCalendarOverlapLayoutTests {
 
     private static func minutes(_ hour: Int, _ minute: Int) -> Int { hour * 60 + minute }
 
-    /// The threshold at the screenshot's zoom: a 29pt header over a 75pt hour.
+    /// The threshold at the screenshot's zoom: a 42pt header over a 75pt hour.
     private static let screenshotGap = CadenceCalendarOverlapLayout.cascadeGapMinutes(
         headerHeight: CadenceCalendarOverlapLayout.macCalendarEventHeaderHeight,
         hourHeight: 75
     )
+
+    /// The Mac Calendar page's reference zoom, the one the owner's screenshot was measured at.
+    private static let macHourHeight: CGFloat = 75
+
+    /// The Mac header as it was derived before T-3219 — ONE title line — kept only so the
+    /// before/after measurement below states its "before" out of the same constants rather than
+    /// out of a typed 29.
+    private static var macOneLineHeaderHeight: CGFloat {
+        CadenceCalendarOverlapLayout.headerHeight(
+            verticalPadding: 3,
+            rowSpacing: CadenceCalendarOverlapLayout.macEventLabelRowSpacing,
+            titleFontSize: CadenceCalendarOverlapLayout.eventTitleFontSize,
+            titleLineCount: 1,
+            timeFontSize: CadenceCalendarOverlapLayout.eventTimeFontSize
+        )
+    }
+
+    private static var macOneLineCascadeGap: Int {
+        CadenceCalendarOverlapLayout.cascadeGapMinutes(headerHeight: macOneLineHeaderHeight, hourHeight: macHourHeight)
+    }
 
     // MARK: - 1. The header the threshold is derived from
 
@@ -59,12 +79,15 @@ struct CadenceCalendarOverlapLayoutTests {
         #endif
     }
 
-    /// 29pt on the Mac, 45pt on iOS, each the sum of its own block's padding, spacing and rows.
+    /// 42pt on the Mac, 45pt on iOS, each the sum of its own block's padding, spacing and rows.
     @Test func theEventHeaderHeightsAreTheSumsOfTheRowsTheBlocksActuallyDraw() {
-        // 3pt padding + an 11pt time row + 2pt of spacing + a 13pt title row.
-        #expect(CadenceCalendarOverlapLayout.macCalendarEventHeaderHeight == CGFloat(29))
+        // T-3219: 3pt padding + an 11pt time row + 2pt of spacing + TWO 13pt title rows (the Mac
+        // block's own wrap limit). It was 29 — one title line — before.
+        #expect(CadenceCalendarOverlapLayout.macEventTitleHeaderLineCount == 2)
+        #expect(CadenceCalendarOverlapLayout.macCalendarEventHeaderHeight == CGFloat(42))
         // The Schedule panel pads one point more.
-        #expect(CadenceCalendarOverlapLayout.macEventHeaderHeight(verticalPadding: 4) == CGFloat(30))
+        #expect(CadenceCalendarOverlapLayout.macEventHeaderHeight(verticalPadding: 4) == CGFloat(43))
+        #expect(Self.macOneLineHeaderHeight == CGFloat(29), "the one-line header the old threshold was derived from")
         // T-3193: 5pt padding + TWO 13pt title lines (the blocks' `.lineLimit(2)`) + 3pt of
         // spacing + an 11pt time row. It was 32 — one title line — before.
         #expect(CadenceCalendarOverlapLayout.iOSEventTitleLineLimit == 2)
@@ -135,8 +158,10 @@ struct CadenceCalendarOverlapLayoutTests {
     /// Minutes of header, not a tuned constant — and it follows the zoom, because what is being
     /// protected is text whose height in points does not change when an hour does.
     @Test func theThresholdIsTheHeaderHeightDividedByPointsPerMinuteAndFollowsTheZoom() {
-        // 29pt / (75/60 pt per minute) = 23.2 → 24.
-        #expect(Self.screenshotGap == 24)
+        // T-3219: 42pt / (75/60 pt per minute) = 33.6 → 34. It was 29pt / 1.25 = 24 while the
+        // threshold was derived from one title line and the block drew two.
+        #expect(Self.screenshotGap == 34)
+        #expect(Self.macOneLineCascadeGap == 24, "the before figure the measurement below compares against")
         // Zoom out (a shorter hour) and the same text costs more minutes.
         #expect(CadenceCalendarOverlapLayout.cascadeGapMinutes(headerHeight: 29, hourHeight: 50) == 35)
         // Zoom in and it costs fewer.
@@ -153,6 +178,132 @@ struct CadenceCalendarOverlapLayoutTests {
         #expect(Self.screenshotGap > 15)
         #expect(Self.screenshotGap <= 45)
     }
+
+    // MARK: - T-3219: the Mac threshold clears the title the Mac block actually draws
+
+    /// **The behaviour this ticket is about, measured: before 24 minutes → after 34.**
+    ///
+    /// `TimelineEventBlock`'s title wraps to `TimelineEventBlockRows.titleLineLimit` lines, so a
+    /// wrapped title draws a 42pt header. The page protected 29pt, which is 24 minutes at the
+    /// reference 75pt hour — so an event cascading 24–33 minutes after one whose title wrapped was
+    /// drawn over that block's TIME ROW. Every gap in that band must now split instead.
+    ///
+    /// A count and a relation, never a duration: of the 60 one-minute gaps an overlapping pair can
+    /// have here, 37 cascaded before (24…60) and 27 do now (34…60) — the band is exactly the ten
+    /// the fix removes, and nothing outside it moved.
+    @Test func theLostBandNoLongerCascadesOverAHeaderItDoesNotClear() {
+        #expect(Self.macOneLineCascadeGap == 24, "non-vacuity: the before figure is not 24")
+        #expect(Self.screenshotGap == 34, "non-vacuity: the after figure is not 34")
+
+        var cascadedBefore = 0
+        var cascadedAfter = 0
+        var bandChecked = 0
+        for gap in 1...60 {
+            let slots = [Self.event(540, 540 + 180), Self.event(540 + gap, 540 + gap + 120)]
+            let before = CadenceCalendarOverlapLayout.solve(slots: slots, cascadeGapMinutes: Self.macOneLineCascadeGap)
+            let after = CadenceCalendarOverlapLayout.solve(slots: slots, cascadeGapMinutes: Self.screenshotGap)
+            if before[1].cascadeDepth > 0 { cascadedBefore += 1 }
+            if after[1].cascadeDepth > 0 { cascadedAfter += 1 }
+            if (24...33).contains(gap) {
+                #expect(before[1].cascadeDepth > 0, "non-vacuity: a \(gap)-minute gap did not cascade before either")
+                #expect(
+                    after[1].cascadeDepth == 0,
+                    "a \(gap)-minute gap still lays a block over a wrapped title's time row"
+                )
+                #expect(after[1].totalColumns == 2, "the \(gap)-minute pair must split into equal halves instead")
+                bandChecked += 1
+            }
+            // Outside the band nothing moved.
+            if gap < 24 || gap >= 34 {
+                #expect(
+                    (before[1].cascadeDepth > 0) == (after[1].cascadeDepth > 0),
+                    "a \(gap)-minute gap changed behaviour outside the band the fix removes"
+                )
+            }
+        }
+        #expect(bandChecked == 10, "non-vacuity: the sweep checked \(bandChecked) gaps in the band")
+        #expect(cascadedBefore == 37)
+        #expect(cascadedAfter == 27)
+        #expect(cascadedBefore - cascadedAfter == 10, "the fix removed exactly the 24–33 minute cascades")
+    }
+
+    #if os(macOS)
+    /// The line count the threshold assumes IS the Mac block's own wrap limit, not a second copy
+    /// of it. `TimelineEventBlockRows` is `#if os(macOS)` and the layout is Shared, so the two
+    /// cannot be one declaration; this is what stops them drifting apart again.
+    @Test func theMacThresholdsLineCountIsTheBlocksOwnWrapLimit() {
+        #expect(
+            CadenceCalendarOverlapLayout.macEventTitleHeaderLineCount == TimelineEventBlockRows.titleLineLimit,
+            "the threshold protects \(CadenceCalendarOverlapLayout.macEventTitleHeaderLineCount) title lines while the block wraps to \(TimelineEventBlockRows.titleLineLimit)"
+        )
+        // And the shared title-fit rule can only ever return 1 or that limit, so the header the
+        // threshold is derived from is the worst case rather than an average.
+        let wide = TimelineEventBlockRows.titleLineLimit(for: "Design review", availableWidth: 400)
+        let narrow = TimelineEventBlockRows.titleLineLimit(for: "Supercalifragilistic", availableWidth: 12)
+        #expect(wide == TimelineEventBlockRows.titleLineLimit)
+        #expect(narrow == 1)
+    }
+
+    /// The Calendar page itself — through the layout call its canvas makes, with the style's own
+    /// padding — splits a 30-minute pair and cascades the screenshot's 45-minute one.
+    @Test func theMacCalendarPageSplitsAThirtyMinutePairAndStillCascadesTheScreenshotsFortyFive() throws {
+        let gap = CadenceCalendarOverlapLayout.cascadeGapMinutes(
+            headerHeight: CadenceCalendarOverlapLayout.macEventHeaderHeight(
+                verticalPadding: TimelineBlockStyle.calendar.verticalPadding
+            ),
+            hourHeight: Self.macHourHeight
+        )
+        #expect(gap == 34, "non-vacuity: the Calendar page's own derivation is \(gap) minutes")
+
+        let thirty = TimelineMetricsSupport.computeUnifiedLayouts(
+            tasks: [],
+            events: [
+                try Self.t3166Item(hour: 9, minute: 0, durationMinutes: 180),
+                try Self.t3166Item(hour: 9, minute: 30, durationMinutes: 120),
+            ],
+            cascadeGapMinutes: gap
+        )
+        #expect(thirty.events.map(\.cascadeDepth) == [0, 0], "a 30-minute pair still cascades on the Calendar page")
+        #expect(thirty.events.map(\.totalColumns) == [2, 2])
+
+        let fortyFive = TimelineMetricsSupport.computeUnifiedLayouts(
+            tasks: [],
+            events: [
+                try Self.t3166Item(hour: 9, minute: 0, durationMinutes: 180),
+                try Self.t3166Item(hour: 9, minute: 45, durationMinutes: 120),
+            ],
+            cascadeGapMinutes: gap
+        )
+        #expect(fortyFive.events.map(\.cascadeDepth) == [0, 1], "the owner's 45-minute cascade stopped cascading")
+        #expect(fortyFive.events.map(\.totalColumns) == [1, 1])
+    }
+
+    /// The canvas derives its gap from the block's header at its own style's padding, rather than
+    /// from a constant — so the Schedule panel's extra point still costs its extra minute and a
+    /// zoom still moves the threshold.
+    @Test func theDayCanvasDerivesItsGapFromTheBlockHeaderAtItsOwnPadding() throws {
+        let canvas = CadenceSourceScan.codeOnly(
+            try CadenceSourceScan.sourceFile("Cadence/macOS/Views/TimelineDayCanvas.swift")
+        )
+        #expect(canvas.count > 2_000, "non-vacuity: read \(canvas.count) characters of the day canvas")
+        #expect(canvas.contains("CadenceCalendarOverlapLayout.cascadeGapMinutes("))
+        #expect(canvas.contains("headerHeight: CadenceCalendarOverlapLayout.macEventHeaderHeight("))
+        #expect(canvas.contains("verticalPadding: style.verticalPadding"))
+        #expect(canvas.contains("hourHeight: metrics.hourHeight"))
+        #expect(
+            !canvas.contains("macCalendarEventHeaderHeight"),
+            "the canvas hard-wires the Calendar page's header instead of reading its own style's"
+        )
+        // One point of padding is one minute of threshold, which is the whole reason the canvas
+        // passes its style rather than the constant.
+        #expect(
+            CadenceCalendarOverlapLayout.cascadeGapMinutes(
+                headerHeight: CadenceCalendarOverlapLayout.macEventHeaderHeight(verticalPadding: 4),
+                hourHeight: Self.macHourHeight
+            ) == 35
+        )
+    }
+    #endif
 
     // MARK: - 3. The owner's screenshot, by its literal times
 
@@ -480,7 +631,7 @@ struct CadenceCalendarOverlapLayoutTests {
         // The boundary: 44 minutes is exactly 55pt uncovered, 43 is 53.75pt.
         #expect(shows(gapMinutes: 44), "a row that exactly clears the cover was dropped")
         #expect(!shows(gapMinutes: 43), "a row that overruns the cover by a point was kept")
-        #expect(!shows(gapMinutes: 24), "the row ran under the block in front at the threshold gap")
+        #expect(!shows(gapMinutes: 34), "the row ran under the block in front at the threshold gap")
         // 45pt clears a ONE-line title's row (42pt) but not a wrapped one's: the case T-3166 saw.
         #expect(!shows(gapMinutes: 36), "the row was kept on the assumption the title does not wrap")
         // The block's own height floor still applies.

@@ -137,6 +137,28 @@ struct TasksListView: View {
         )
     }
 
+    /// **T-2088.** The completed row this link should bring into view, or nothing.
+    ///
+    /// `CadenceDeepLinkResolutionSupport.completedScrollTarget` owns the rule — the reveal's own
+    /// membership test, plus "the logbook is open", because a collapsed section draws no row for
+    /// that id and `scrollTo` silently does nothing for an id the stack does not contain. The
+    /// universe is threaded in rather than re-derived: see the census note on `body`.
+    ///
+    /// **Unanimated, and one run loop late.** The accepted cost of this ticket is a long
+    /// programmatic scroll; animating a ~1,900-row jump through a lazy stack builds every row on
+    /// the way past, so the row arrives as a jump. And the scroll has to run after the expansion
+    /// that created the row has been laid out — asked in the same pass, the id is an id of nothing.
+    private func scrollToRevealedRow(proxy: ScrollViewProxy, universe: [AppTask]) {
+        guard let target = CadenceDeepLinkResolutionSupport.completedScrollTarget(
+            revealedTaskID: deepLinkManager.revealedCompletedTaskID,
+            completedTasks: completedTasks(in: universe),
+            showsCompleted: !isCompletedCollapsed
+        ) else { return }
+        Task { @MainActor in
+            proxy.scrollTo(target, anchor: .center)
+        }
+    }
+
     private func completedTaskCount(in universe: [AppTask]) -> Int {
         universe.reduce(into: 0) { count, task in
             if task.isDone || task.isCancelled { count += 1 }
@@ -271,122 +293,137 @@ struct TasksListView: View {
         let showsEmptyState = isEmptyPage(activeTasks: visibleTasks, completedCount: completedCount)
         let todayKey = self.todayKey
 
-        ScrollView {
-            LazyVStack(alignment: .leading, spacing: 0) {
-                if let reorderFailureNotice {
-                    CadenceInlineFailureNotice(text: reorderFailureNotice)
-                        .padding(.horizontal, TaskListDisplayMetrics.headerHorizontalInset)
-                        .padding(.top, 12)
-                }
-                if let reorderOffScreenNotice {
-                    CadenceInlineNotice(text: reorderOffScreenNotice, tone: .informational)
-                        .padding(.horizontal, TaskListDisplayMetrics.headerHorizontalInset)
-                        .padding(.top, 12)
-                }
-                ForEach(sections(from: visibleTasks)) { section in
-                    TasksListSectionView(
-                        section: section,
-                        showsContainer: options.showsContainerChip,
-                        isCollapsed: collapsedSectionIDs.contains(section.id),
-                        overdueCount: overdueCount(in: section.tasks),
-                        todayKey: todayKey,
-                        contexts: contexts,
-                        areas: areas,
-                        projects: projects,
-                        dragOverTaskID: $dragOverTaskID,
-                        onToggle: { toggleSection(section.id) },
-                        taskDragPayload: taskDragPayload,
-                        onDropOnSectionPayload: coordinator.sectionDropHandler(for: section.dropKey),
-                        onDropOnTaskPayload: { payload, targetTask in
-                            coordinator.handleTaskDrop(
-                                payload: payload,
-                                targetTask: targetTask,
-                                scopeTasks: section.tasks,
-                                dropKey: section.dropKey
-                            )
-                        }
-                    )
-                }
-
-                if showsRemindersSection {
-                    InboxAppleRemindersSectionView(
-                        // **T-254.** One value, not four booleans the caller could combine
-                        // differently from the way the other three surfaces combine them.
-                        // Also unblocks the type-checker: four independent Bools in a view
-                        // body this size timed the solver out.
-                        state: remindersManager.connectionState,
-                        reminders: remindersManager.reminders,
-                        isLoading: remindersManager.isLoading,
-                        onAccessAction: { action in
-                            switch action {
-                            case .requestAccess: requestRemindersAccess()
-                            case .openSystemSettings: openRemindersPrivacySettings()
+        // **T-2088: a deep link to long-finished work scrolls the row it reveals into view.**
+        //
+        // Opening the logbook (T-375) made the row *listed*; with no cap on this tier that can
+        // mean row ~1,900 of 2,000 for a year-old link — listed, and invisible. A proxy rather
+        // than `.scrollPosition(id:)`: the rows are inside `TasksListCompletedSectionView`'s own
+        // `LazyVStack`, not children of the stack a `scrollTargetLayout` would mark.
+        ScrollViewReader { proxy in
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 0) {
+                    if let reorderFailureNotice {
+                        CadenceInlineFailureNotice(text: reorderFailureNotice)
+                            .padding(.horizontal, TaskListDisplayMetrics.headerHorizontalInset)
+                            .padding(.top, 12)
+                    }
+                    if let reorderOffScreenNotice {
+                        CadenceInlineNotice(text: reorderOffScreenNotice, tone: .informational)
+                            .padding(.horizontal, TaskListDisplayMetrics.headerHorizontalInset)
+                            .padding(.top, 12)
+                    }
+                    ForEach(sections(from: visibleTasks)) { section in
+                        TasksListSectionView(
+                            section: section,
+                            showsContainer: options.showsContainerChip,
+                            isCollapsed: collapsedSectionIDs.contains(section.id),
+                            overdueCount: overdueCount(in: section.tasks),
+                            todayKey: todayKey,
+                            contexts: contexts,
+                            areas: areas,
+                            projects: projects,
+                            dragOverTaskID: $dragOverTaskID,
+                            onToggle: { toggleSection(section.id) },
+                            taskDragPayload: taskDragPayload,
+                            onDropOnSectionPayload: coordinator.sectionDropHandler(for: section.dropKey),
+                            onDropOnTaskPayload: { payload, targetTask in
+                                coordinator.handleTaskDrop(
+                                    payload: payload,
+                                    targetTask: targetTask,
+                                    scopeTasks: section.tasks,
+                                    dropKey: section.dropKey
+                                )
                             }
-                        },
-                        onComplete: remindersManager.completeReminder
-                    )
-                }
+                        )
+                    }
 
-                if options.showsCompletedToggle, completedCount > 0 {
-                    TasksListCompletedSectionView(
-                        tasks: visibleCompletedTasks,
-                        showsContainer: options.showsContainerChip,
-                        isCollapsed: isCompletedCollapsed,
-                        todayKey: todayKey,
-                        contexts: contexts,
-                        areas: areas,
-                        projects: projects,
-                        onToggle: { isCompletedCollapsed.toggle() },
-                        taskDragPayload: taskDragPayload
-                    )
-                }
+                    if showsRemindersSection {
+                        InboxAppleRemindersSectionView(
+                            // **T-254.** One value, not four booleans the caller could combine
+                            // differently from the way the other three surfaces combine them.
+                            // Also unblocks the type-checker: four independent Bools in a view
+                            // body this size timed the solver out.
+                            state: remindersManager.connectionState,
+                            reminders: remindersManager.reminders,
+                            isLoading: remindersManager.isLoading,
+                            onAccessAction: { action in
+                                switch action {
+                                case .requestAccess: requestRemindersAccess()
+                                case .openSystemSettings: openRemindersPrivacySettings()
+                                }
+                            },
+                            onComplete: remindersManager.completeReminder
+                        )
+                    }
 
-                if showsEmptyState {
-                    emptyState
+                    if options.showsCompletedToggle, completedCount > 0 {
+                        TasksListCompletedSectionView(
+                            tasks: visibleCompletedTasks,
+                            showsContainer: options.showsContainerChip,
+                            isCollapsed: isCompletedCollapsed,
+                            todayKey: todayKey,
+                            contexts: contexts,
+                            areas: areas,
+                            projects: projects,
+                            onToggle: { isCompletedCollapsed.toggle() },
+                            taskDragPayload: taskDragPayload
+                        )
+                    }
+
+                    if showsEmptyState {
+                        emptyState
+                    }
                 }
+                .padding(.bottom, 16)
             }
-            .padding(.bottom, 16)
-        }
-        .cadenceSoftPageBounce()
-        .cadenceTracksDayChanges($observedDay)
-        .background(
-            Color.clear.contentShape(Rectangle()).onTapGesture { clearAppEditingFocus() }
-        )
-        .background(Theme.bg)
-        .animation(.easeOut(duration: 0.26), value: visibleTasks.map(\.id))
-        .animation(.easeOut(duration: 0.26), value: remindersManager.reminders.map(\.id))
-        // Collapsed on every appearance **except** the one a deep link asked to open (T-375). A
-        // link for work finished elsewhere routes here, and this page kept the row it named behind
-        // the Completed toggle — so the tap landed on the right page with the task hidden on it,
-        // and the link still did nothing the user could see.
-        .onAppear {
-            isCompletedCollapsed = !revealsCompletedSection
-        }
-        // The route can land while this page is already on screen — the sidebar selection moves to
-        // All Tasks without the view reappearing — so the appearance hook alone would miss it.
-        .onChange(of: deepLinkManager.revealedCompletedTaskID) { _, _ in
-            if revealsCompletedSection {
-                isCompletedCollapsed = false
-            }
-        }
-        // **T-253.** Appearance *and* foreground return, through the one shared modifier the
-        // other three reminders surfaces apply — this view carried its own hand-written pair.
-        // `isEnabled` is the scope, not `showsRemindersSection`: that gate reads `isAuthorized`,
-        // so a page that is not yet authorized would never re-derive and could never notice a
-        // grant. All Tasks has no reminders strip, so re-reading EventKit from it is work with
-        // nothing behind it.
-        .remindersAuthorizationLifecycle(remindersManager, isEnabled: scope == .inbox)
-        .background {
-            // Inbox's hover-freeze, now on both scopes: ticking a task off must not reshuffle the
-            // row under the pointer before the click lands. Row order only, never the group tree —
-            // capturing a date or priority snapshot swaps the section tree under the pointer and
-            // jitters, which is the note `InboxView` and `ListTasksView` both carried.
-            TaskGroupFreezeObserver(
-                frozenOrder: $frozenTaskOrder,
-                frozenGroups: .constant(nil),
-                naturalTasks: naturalTasks,
-                groupSnapshot: []
+            .cadenceSoftPageBounce()
+            .cadenceTracksDayChanges($observedDay)
+            .background(
+                Color.clear.contentShape(Rectangle()).onTapGesture { clearAppEditingFocus() }
             )
+            .background(Theme.bg)
+            .animation(.easeOut(duration: 0.26), value: visibleTasks.map(\.id))
+            .animation(.easeOut(duration: 0.26), value: remindersManager.reminders.map(\.id))
+            // Collapsed on every appearance **except** the one a deep link asked to open (T-375). A
+            // link for work finished elsewhere routes here, and this page kept the row it named behind
+            // the Completed toggle — so the tap landed on the right page with the task hidden on it,
+            // and the link still did nothing the user could see.
+            .onAppear {
+                isCompletedCollapsed = !revealsCompletedSection
+                scrollToRevealedRow(proxy: proxy, universe: universe)
+            }
+            // The route can land while this page is already on screen — the sidebar selection moves to
+            // All Tasks without the view reappearing — so the appearance hook alone would miss it.
+            .onChange(of: deepLinkManager.revealedCompletedTaskID) { _, _ in
+                if revealsCompletedSection {
+                    isCompletedCollapsed = false
+                }
+                scrollToRevealedRow(proxy: proxy, universe: universe)
+            }
+            // The reveal above opens the disclosure, and the row only exists to scroll to once it
+            // has — so the collapse state is the hook that usually lands the scroll, not the id.
+            .onChange(of: isCompletedCollapsed) { _, _ in
+                scrollToRevealedRow(proxy: proxy, universe: universe)
+            }
+            // **T-253.** Appearance *and* foreground return, through the one shared modifier the
+            // other three reminders surfaces apply — this view carried its own hand-written pair.
+            // `isEnabled` is the scope, not `showsRemindersSection`: that gate reads `isAuthorized`,
+            // so a page that is not yet authorized would never re-derive and could never notice a
+            // grant. All Tasks has no reminders strip, so re-reading EventKit from it is work with
+            // nothing behind it.
+            .remindersAuthorizationLifecycle(remindersManager, isEnabled: scope == .inbox)
+            .background {
+                // Inbox's hover-freeze, now on both scopes: ticking a task off must not reshuffle the
+                // row under the pointer before the click lands. Row order only, never the group tree —
+                // capturing a date or priority snapshot swaps the section tree under the pointer and
+                // jitters, which is the note `InboxView` and `ListTasksView` both carried.
+                TaskGroupFreezeObserver(
+                    frozenOrder: $frozenTaskOrder,
+                    frozenGroups: .constant(nil),
+                    naturalTasks: naturalTasks,
+                    groupSnapshot: []
+                )
+            }
         }
     }
 

@@ -313,3 +313,71 @@ nonisolated enum CadenceSyncActivityStamp {
         }
     }
 }
+
+// MARK: - T-3041: the cold import, said outside Settings
+
+/// The one sentence a main surface may add to an empty screen **while an iCloud import is still
+/// landing batches** — and, much more importantly, the conditions under which it may not.
+///
+/// **The defect this answers.** A tester restoring an existing account opens Cadence to the
+/// ordinary "nothing here yet" empty states. Those states are correct — `CadenceEmptyStateAuditTests`
+/// holds about thirty cases over them — and they are indistinguishable from a broken install.
+/// `CadenceSyncActivityLog` has known the answer since T-2000; until now its only two readers were
+/// the two Settings screens, which is the last place somebody wondering whether the app is broken
+/// looks.
+///
+/// **The owner's ruling, and it is the narrow one.** Show it only while the import is
+/// *progressing*: appear when records are arriving, disappear when they stop. The costs were
+/// stated and accepted — a genuinely slow import may flicker, and a **stalled** import shows
+/// nothing, which is the original problem returning in a narrow case. **No stalled state is
+/// invented here**, by instruction: there is no "sync may be stuck" copy and no third tone.
+///
+/// **WHAT THIS CANNOT SEE, stated rather than approximated.** "Records are arriving" is *not*
+/// observable from here. `NSPersistentCloudKitContainer.Event` — the only thing
+/// `CadenceSyncActivityLog` is given — carries an identifier, a type, two dates, a success flag
+/// and an error. **No record count, and no progress figure.** So nothing in this tree can tell a
+/// successful import of nine hundred records from a successful import of none. The nearest
+/// *evidence-bearing* signal is used instead and is named for what it is: **import passes are
+/// still completing**. That is a fact about CloudKit's own events rather than an inference about
+/// their contents, and the two guards below are each a piece of that fact. Closing the gap would
+/// mean observing `.NSPersistentStoreRemoteChange` and counting inserted object ids, which is new
+/// plumbing rather than presentation — filed rather than smuggled in here.
+///
+/// **The two guards:**
+///
+/// 1. **A pass must have succeeded inside `progressWindow`.** This is "records are arriving",
+///    read as far as the events allow: a mirroring pass finished and wrote what it had. When
+///    passes stop completing, the window lapses and the line goes — which is the owner's
+///    "disappear when they stop".
+/// 2. **Another pass must be in flight right now.** This is what makes the signal a *burst*
+///    rather than a single event, and a cold restore is exactly a burst of back-to-back import
+///    passes. It is also what keeps the line off an ordinary device: one routine import begins
+///    (nothing has completed recently, so nothing shows) and ends (nothing is in flight, so
+///    nothing shows), and the sentence is never reached.
+///
+/// And a third thing, which is not a guard but the reason the whole design fails safe: the
+/// platform may post nothing at all, which T-2010 explicitly does not claim for a SwiftData store.
+/// Then no event is observed, both guards fail, and the behaviour is exactly today's silence. It
+/// also cannot speak on a device with no account, which posts no mirroring events at all.
+nonisolated enum CadenceColdImportNotice {
+    /// How recently a pass must have completed for the line to stand.
+    ///
+    /// Short, because the ruling is "disappear when they stop" and the flicker that costs was
+    /// accepted explicitly. It is a ceiling on a *claim*, not a timeout on anything: nothing is
+    /// cancelled when it elapses, and an import that resumes brings the line straight back.
+    static let progressWindow: TimeInterval = 60
+
+    /// The sentence, or `nil` for "say nothing", which is the answer in every state but one.
+    ///
+    /// Present tense and no promise: it names what is happening, not a result. "Your data is on
+    /// its way" would be a claim about an account this type cannot see.
+    static func text(for summary: CadenceSyncActivitySummary, now: Date) -> String? {
+        guard summary.phasesInProgress.contains(.import) else { return nil }
+        guard let landed = summary.lastSuccess(.import) else { return nil }
+        // A completion stamped in the future is clock skew between this device and CloudKit, not
+        // a reason to suppress a burst that is genuinely running — the same reading
+        // `CadenceSyncActivityStamp` takes of a future stamp.
+        guard now.timeIntervalSince(landed) <= progressWindow else { return nil }
+        return "Still importing from iCloud. This screen may fill in."
+    }
+}

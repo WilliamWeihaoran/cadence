@@ -12,6 +12,15 @@ struct EmptyStateView: View {
     let message: String
     var subtitle: String = ""
     let icon: String
+    /// **T-3041: an empty screen during a cold iCloud import says so.**
+    ///
+    /// On by default, and on *here* rather than at each call site, because this view is what every
+    /// main surface draws when it has nothing — which is precisely the screen a tester restoring
+    /// an existing account meets, and precisely the screen that cannot otherwise be told apart
+    /// from a broken install. `CadenceColdImportNotice` owns every condition; this flag only
+    /// exists so a host that is not a view of the store (a picker with no matches, a preview) can
+    /// opt out of a sentence about syncing.
+    var statesColdImport: Bool = true
 
     var body: some View {
         let side = CadenceEmptyStateMetrics.iconSide(at: dynamicTypeSize, scaling: scaling)
@@ -41,8 +50,34 @@ struct EmptyStateView: View {
                         .fixedSize(horizontal: false, vertical: scaling == .enabled)
                 }
             }
+
+            if statesColdImport {
+                coldImportNotice
+            }
         }
         .frame(maxWidth: .infinity)
         .padding(.horizontal, 32)
+    }
+
+    /// **Read through a `TimelineView` so the line can retire on its own.**
+    ///
+    /// The owner's ruling is "disappear when they stop", and stopping is a fact about the clock
+    /// rather than about the summary: an import that stalls posts no further event, so an
+    /// `@Observable` read alone would leave the sentence standing for the rest of the launch —
+    /// the exact "never clears" failure the ticket was filed against. The view therefore takes a
+    /// ticking `now`, at twice the rate of `CadenceColdImportNotice.progressWindow`.
+    ///
+    /// `.informational` and not an accent: a sentence under an empty state is secondary to it.
+    @ViewBuilder
+    private var coldImportNotice: some View {
+        TimelineView(.periodic(from: .now, by: 30)) { context in
+            if let text = CadenceColdImportNotice.text(
+                for: CadenceSyncActivityLog.shared.summary,
+                now: context.date
+            ) {
+                CadenceInlineNotice(text: text, tone: .informational)
+                    .padding(.top, 2)
+            }
+        }
     }
 }

@@ -933,3 +933,201 @@ private final class CadenceRecordingNotificationCentre: NotificationCenter, @unc
 private final class CadenceDeliveredEventCounter: @unchecked Sendable {
     var count = 0
 }
+
+/// **T-3041: the cold import, said outside Settings.**
+///
+/// A tester restoring an existing account opens Cadence to the ordinary "nothing here yet" empty
+/// states, which are correct and indistinguishable from a broken install. The owner's ruling is
+/// the narrow one: show it only while the import is **progressing** — appear when records are
+/// arriving, disappear when they stop, and invent no stalled state. These are written against the
+/// failure that ruling exists to avoid rather than against the feature: an indicator that claims
+/// "syncing" while nothing is arriving is worse than none.
+///
+/// **The signal is "passes are still completing", and that is not the same claim as "records are
+/// arriving"** — see `CadenceColdImportNotice`. These tests assert the signal the events can
+/// actually carry; the gap between the two is recorded on the ledger rather than papered over
+/// with an assertion that would only be testing the approximation.
+struct CadenceColdImportNoticeTests {
+
+    private func moment(_ hour: Int, _ minute: Int) throws -> Date {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try #require(TimeZone(identifier: "UTC"))
+        var components = DateComponents()
+        components.year = 2026
+        components.month = 10
+        components.day = 2
+        components.hour = hour
+        components.minute = minute
+        return try #require(calendar.date(from: components))
+    }
+
+    /// One import pass of a burst, begun at `start` and ending `seconds` later.
+    private func pass(from start: Date, lasting seconds: TimeInterval, succeeded: Bool = true)
+        -> [CadenceSyncActivityEvent] {
+        let identifier = UUID()
+        return [
+            CadenceSyncActivityEvent(identifier: identifier, phase: .import, startDate: start),
+            CadenceSyncActivityEvent(
+                identifier: identifier,
+                phase: .import,
+                startDate: start,
+                endDate: start.addingTimeInterval(seconds),
+                succeeded: succeeded
+            )
+        ]
+    }
+
+    /// **The one state that speaks: a burst.** A pass has just completed — the furthest the events
+    /// go towards "records arrived" — and another is already running, so more is coming.
+    @Test func aBurstOfCompletingImportPassesIsTheOneStateThatSpeaks() throws {
+        let start = try moment(9, 0)
+        let summary = CadenceSyncActivitySummary.summarize(
+            pass(from: start, lasting: 4)
+                + [CadenceSyncActivityEvent(phase: .import, startDate: start.addingTimeInterval(5))]
+        )
+        #expect(summary.lastSuccess(.import) != nil, "non-vacuity: no pass completed in the fixture")
+        #expect(summary.phasesInProgress.contains(.import), "non-vacuity: no pass is in flight")
+
+        let text = try #require(
+            CadenceColdImportNotice.text(for: summary, now: start.addingTimeInterval(6)),
+            "a burst of completing import passes said nothing"
+        )
+        // It names what is happening and promises no result: this type cannot see whether the
+        // account has any data, so "your data is on its way" would be a claim it cannot make.
+        #expect(text.contains("importing"))
+        #expect(!text.lowercased().contains("your data"))
+        // No stalled state is invented, by instruction: one sentence, no second tone.
+        #expect(!text.lowercased().contains("stuck"))
+        #expect(!text.lowercased().contains("stall"))
+    }
+
+    /// **The device with no account.** Silence is not a guess here — it is unreachable: such a
+    /// device posts no mirroring events at all, so the summary never leaves `.empty`. Same for a
+    /// device whose only traffic is export and setup.
+    @Test func aDeviceThatHasObservedNoImportSaysNothing() throws {
+        let now = try moment(9, 0)
+        #expect(CadenceColdImportNotice.text(for: .empty, now: now) == nil)
+
+        let noImports = CadenceSyncActivitySummary.summarize([
+            CadenceSyncActivityEvent(phase: .export, startDate: now.addingTimeInterval(-5)),
+            CadenceSyncActivityEvent(phase: .setup, startDate: now.addingTimeInterval(-5))
+        ])
+        #expect(noImports.isWorking, "non-vacuity: nothing is in flight in the fixture")
+        #expect(CadenceColdImportNotice.text(for: noImports, now: now) == nil)
+    }
+
+    /// **The phase is asked for by name.** A device whose import finished a moment ago and whose
+    /// EXPORT is now running is not importing, and a line saying it is would be a straight
+    /// misstatement — this is the mutation `isWorking` in place of `phasesInProgress.contains`
+    /// survived until this case existed.
+    @Test func anExportInFlightAfterAFinishedImportSaysNothing() throws {
+        let start = try moment(9, 0)
+        let summary = CadenceSyncActivitySummary.summarize(
+            pass(from: start, lasting: 4)
+                + [CadenceSyncActivityEvent(phase: .export, startDate: start.addingTimeInterval(5))]
+        )
+        #expect(summary.isWorking, "non-vacuity: nothing is in flight at all")
+        #expect(summary.phasesInProgress == [.export], "non-vacuity: the fixture is not export-only")
+        #expect(summary.lastSuccess(.import) != nil, "non-vacuity: no import landed, so guard two would carry this")
+        #expect(CadenceColdImportNotice.text(for: summary, now: start.addingTimeInterval(6)) == nil)
+
+        // And a setup pass is not an import either, on the same reading.
+        let setup = CadenceSyncActivitySummary.summarize(
+            pass(from: start, lasting: 4)
+                + [CadenceSyncActivityEvent(phase: .setup, startDate: start.addingTimeInterval(5))]
+        )
+        #expect(setup.phasesInProgress == [.setup], "non-vacuity: the setup fixture is not setup-only")
+        #expect(CadenceColdImportNotice.text(for: setup, now: start.addingTimeInterval(6)) == nil)
+    }
+
+    /// **An ordinary device is never touched by this.** A single routine import begins — nothing
+    /// has completed recently, so nothing shows — and ends — nothing is in flight, so nothing
+    /// shows. The sentence is unreachable outside a burst, at every moment of that pass.
+    @Test func aLoneRoutineImportNeverReachesTheSentence() throws {
+        let start = try moment(9, 0)
+        let begun = CadenceSyncActivitySummary.summarize([
+            CadenceSyncActivityEvent(phase: .import, startDate: start)
+        ])
+        #expect(begun.phasesInProgress.contains(.import), "non-vacuity: the pass is not in flight")
+        #expect(CadenceColdImportNotice.text(for: begun, now: start.addingTimeInterval(1)) == nil)
+
+        let settled = CadenceSyncActivitySummary.summarize(pass(from: start, lasting: 4))
+        #expect(settled.lastSuccess(.import) != nil, "non-vacuity: the pass never succeeded")
+        #expect(settled.phasesInProgress.isEmpty, "non-vacuity: the pass is still in flight")
+        #expect(CadenceColdImportNotice.text(for: settled, now: start.addingTimeInterval(5)) == nil)
+    }
+
+    /// **"Disappear when they stop", which is the owner's ruling and the whole behaviour.**
+    ///
+    /// A burst whose passes stop completing stops saying anything, on the clock, at the boundary
+    /// and not a second before it — and says it again the moment the next pass lands. The pass
+    /// left in flight throughout is the point: a stalled import shows nothing, which is the
+    /// stated, accepted cost.
+    @Test func aBurstThatStopsCompletingStopsSayingAnythingAndResumesWhenItLandsAgain() throws {
+        let start = try moment(9, 0)
+        let window = CadenceColdImportNotice.progressWindow
+        #expect(window > 0, "non-vacuity: the window is \(window)")
+
+        let landed = start.addingTimeInterval(4)
+        let summary = CadenceSyncActivitySummary.summarize(
+            pass(from: start, lasting: 4)
+                + [CadenceSyncActivityEvent(phase: .import, startDate: start.addingTimeInterval(5))]
+        )
+        #expect(summary.phasesInProgress.contains(.import), "non-vacuity: nothing is in flight")
+
+        #expect(CadenceColdImportNotice.text(for: summary, now: landed) != nil)
+        #expect(CadenceColdImportNotice.text(for: summary, now: landed.addingTimeInterval(window)) != nil)
+        #expect(CadenceColdImportNotice.text(for: summary, now: landed.addingTimeInterval(window + 1)) == nil)
+        #expect(CadenceColdImportNotice.text(for: summary, now: landed.addingTimeInterval(window * 60)) == nil)
+        // Clock skew: a completion stamped ahead of this device's clock is CloudKit disagreeing
+        // with it, not a reason to suppress a burst that is genuinely running.
+        #expect(CadenceColdImportNotice.text(for: summary, now: landed.addingTimeInterval(-300)) != nil)
+
+        // It landed again, long after the window lapsed: another pass of the burst completed and
+        // the next began. The line is back.
+        let resumedAt = landed.addingTimeInterval(window * 10)
+        let resumed = CadenceSyncActivitySummary.summarize(
+            pass(from: start, lasting: 4)
+                + pass(from: resumedAt, lasting: 3)
+                + [CadenceSyncActivityEvent(phase: .import, startDate: resumedAt.addingTimeInterval(4))]
+        )
+        #expect(CadenceColdImportNotice.text(for: resumed, now: resumedAt.addingTimeInterval(5)) != nil)
+        #expect(
+            CadenceColdImportNotice.text(for: resumed, now: resumedAt.addingTimeInterval(window + 5)) == nil
+        )
+    }
+
+    /// A pass that FAILED is not a pass that landed records, so a burst of failures says nothing
+    /// however busy it looks — `lastSuccess` is the successful-and-finished answer, which is the
+    /// reason this reads it rather than `latestFinished`.
+    @Test func aBurstOfFailingPassesSaysNothing() throws {
+        let start = try moment(9, 0)
+        let summary = CadenceSyncActivitySummary.summarize(
+            pass(from: start, lasting: 4, succeeded: false)
+                + [CadenceSyncActivityEvent(phase: .import, startDate: start.addingTimeInterval(5))]
+        )
+        #expect(summary.phasesInProgress.contains(.import), "non-vacuity: nothing is in flight")
+        #expect(summary.failure(.import) != nil, "non-vacuity: the fixture's pass did not fail")
+        #expect(CadenceColdImportNotice.text(for: summary, now: start.addingTimeInterval(6)) == nil)
+    }
+
+    /// The main surfaces say it, not only Settings — which is the decision this ticket records.
+    /// `EmptyStateView` is what every page draws when it has nothing, so one reader there is every
+    /// main surface at once; and the `TimelineView` is load-bearing rather than decoration,
+    /// because the line retires on the clock and a burst that stops posts no further event for an
+    /// `@Observable` read to notice.
+    @Test func theEmptyStateEveryMainSurfaceDrawsReadsTheColdImport() throws {
+        let raw = try CadenceSourceScan.sourceFile("Cadence/Shared/Components/EmptyStateView.swift")
+        let source = CadenceSourceScan.strippingComments(raw)
+        #expect(source.count == raw.count, "the stripper changed the file's length")
+        #expect(source.contains("struct EmptyStateView: View"), "non-vacuity")
+        #expect(source.contains("CadenceColdImportNotice.text("))
+        // The notice is drawn, not merely computed: these are what a dead flag would break.
+        #expect(source.contains("if statesColdImport {"))
+        #expect(source.contains("coldImportNotice"))
+        #expect(source.contains("var statesColdImport: Bool = true"), "the main surfaces opt out by default")
+        #expect(source.contains("CadenceSyncActivityLog.shared.summary"))
+        #expect(source.contains("TimelineView(.periodic("))
+        #expect(source.contains("now: context.date"), "the notice reads a frozen clock and cannot retire")
+    }
+}

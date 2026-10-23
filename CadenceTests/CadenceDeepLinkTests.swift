@@ -481,6 +481,119 @@ struct CadenceDeepLinkGrammarAndRevealTests {
         )
     }
 
+    // MARK: - T-2088: the revealed row is scrolled to, not merely listed
+
+    /// **Revealing a row is not showing it.** With no cap on the logbook since T-2057, a link to
+    /// work finished a year ago lands the row at its true newest-settled-first place — around
+    /// 1,900 of 2,000 — where it is listed and invisible. The surface scrolls to it.
+    ///
+    /// The two guards are the behaviour, and each is checked in both directions: the reveal's own
+    /// membership test, so a surface whose universe does not contain the task stays where it is;
+    /// and "the section is open", because a collapsed logbook draws no row for that id and both
+    /// scroll mechanisms silently do nothing for an id the stack does not contain.
+    @Test func aRevealedRowIsScrolledToOnceTheLogbookThatListsItIsOpen() {
+        let listed = AppTask(title: "Finished last January")
+        let elsewhere = AppTask(title: "Listed on another page")
+
+        #expect(
+            CadenceDeepLinkResolutionSupport.completedScrollTarget(
+                revealedTaskID: listed.id,
+                completedTasks: [listed],
+                showsCompleted: true
+            ) == listed.id
+        )
+        // Shut: the row the id names is not drawn, so there is nothing to scroll to yet. This is
+        // the state the reveal is about to change, and it is why the disclosure is an input here.
+        #expect(
+            CadenceDeepLinkResolutionSupport.completedScrollTarget(
+                revealedTaskID: listed.id,
+                completedTasks: [listed],
+                showsCompleted: false
+            ) == nil
+        )
+        // Open, but this page does not list the row: Today's logbook is scoped to work settled
+        // today, and jumping its viewport for something finished in January is the T-368 shape
+        // again with the scroll position moving as well.
+        #expect(
+            CadenceDeepLinkResolutionSupport.completedScrollTarget(
+                revealedTaskID: elsewhere.id,
+                completedTasks: [listed],
+                showsCompleted: true
+            ) == nil
+        )
+        // No link at all — the ordinary appearance, which must never move the viewport.
+        #expect(
+            CadenceDeepLinkResolutionSupport.completedScrollTarget(
+                revealedTaskID: UUID?.none,
+                completedTasks: [listed],
+                showsCompleted: true
+            ) == nil
+        )
+        #expect(
+            CadenceDeepLinkResolutionSupport.completedScrollTarget(
+                revealedTaskID: listed.id,
+                completedTasks: [AppTask](),
+                showsCompleted: true
+            ) == nil
+        )
+    }
+
+    /// The far-down row is the whole point, so it is the one the sweep uses: a 2,000-row logbook,
+    /// the link naming the row at the position the ticket measured, and the answer is that row's
+    /// id — not the first row, not the nearest one, and not `nil` because it is far away.
+    @Test func theScrollTargetIsTheNamedRowHoweverFarDownTheLogbookItSits() {
+        let logbook = (0..<2_000).map { AppTask(title: "Finished \($0)") }
+        var answered = 0
+        for position in [0, 1, 999, 1_899, 1_999] {
+            let row = logbook[position]
+            #expect(
+                CadenceDeepLinkResolutionSupport.completedScrollTarget(
+                    revealedTaskID: row.id,
+                    completedTasks: logbook,
+                    showsCompleted: true
+                ) == row.id,
+                "row \(position) of \(logbook.count) was not the scroll target"
+            )
+            answered += 1
+        }
+        #expect(answered == 5, "non-vacuity: the sweep checked \(answered) positions")
+    }
+
+    /// Both surfaces ask that one function, from a `ScrollViewReader`'s proxy, and neither spells
+    /// the rule a second time. The mechanism is pinned too: `.scrollPosition(id:)` resolves ids
+    /// against the stack it marks with `.scrollTargetLayout()`, and on both platforms the rows
+    /// live two levels down inside a group section's own `LazyVStack`.
+    @Test func bothAllTasksSurfacesScrollToTheRowTheyReveal() throws {
+        let mac = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/macOS/Views/TasksListView.swift")
+        )
+        #expect(mac.contains("struct TasksListView: View"), "non-vacuity")
+        #expect(mac.contains("ScrollViewReader { proxy in"))
+        #expect(mac.contains("CadenceDeepLinkResolutionSupport.completedScrollTarget("))
+        #expect(mac.contains("proxy.scrollTo(target, anchor: .center)"))
+        #expect(mac.contains("showsCompleted: !isCompletedCollapsed"))
+        // The collapse hook, not only the id hook: the reveal opens the disclosure and the row
+        // only exists to scroll to once it has.
+        #expect(mac.contains(".onChange(of: isCompletedCollapsed)"))
+
+        let page = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/iOS/iOSTaskCollectionPage.swift")
+        )
+        #expect(page.contains("struct iOSTaskCollectionPage: View"), "non-vacuity")
+        #expect(page.contains("ScrollViewReader { proxy in"))
+        #expect(page.contains("CadenceDeepLinkResolutionSupport.completedScrollTarget("))
+        #expect(page.contains("proxy.scrollTo(target, anchor: .center)"))
+        #expect(page.contains("showsCompleted: showCompleted"))
+        #expect(page.contains(".onChange(of: showCompleted)"))
+
+        for source in [mac, page] {
+            #expect(
+                !source.contains("scrollPosition(id:"),
+                "a scroll mechanism that cannot address a row two stacks down"
+            )
+        }
+    }
+
     /// **"Expanded" has to mean "listed" — and with no cap, it always does (T-2057).** The touch
     /// tier used to stop the logbook at 24 rows, newest-settled first, so this test pinned that a
     /// revealed row beyond the cap was appended. Neither tier caps now, so a link to the 28th of 30
