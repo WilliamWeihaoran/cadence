@@ -135,6 +135,23 @@ struct CadenceTaskNoteLinkRoutingTests {
         #expect(pane.contains("TaskNoteLinkRouting.open("))
     }
 
+    /// T-5180: the Today page's core-note panel passed neither `referenceNotes:` nor
+    /// `onOpenNoteReference:`, so its `[[note]]` links neither resolved nor acted.
+    @Test func theTodayNotePanelResolvesAndOpensNoteLinks() throws {
+        let source = CadenceSourceScan.codeOnly(
+            try CadenceSourceScan.sourceFile("Cadence/macOS/Views/NotePanel.swift")
+        )
+        let panel = try #require(CadenceSourceScan.declarationBody("struct NotePanel", in: source))
+        #expect(panel.contains("@Query(sort: \\Note.updatedAt, order: .reverse) private var referenceNotes: [Note]"))
+        let editor = try Self.arguments(ofFirst: "MarkdownEditor(", in: panel)
+        #expect(editor.contains("referenceNotes: referenceNotes"))
+        #expect(editor.contains("onOpenNoteReference: openNoteReference"))
+
+        let handler = try #require(CadenceSourceScan.functionBody(named: "openNoteReference", in: panel))
+        #expect(handler.contains("TaskNoteLinkRouting.note(id: id, title: title, in: referenceNotes)"))
+        #expect(handler.contains("TaskNoteLinkRouting.open(note)"))
+    }
+
     @Test func theRootViewAnswersNotesNavigationRequests() throws {
         let root = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile("Cadence/macOS/macOSRootView.swift"))
         let hit = try #require(root.range(of: ".onChange(of: notesNavigationManager.request?.token)"))

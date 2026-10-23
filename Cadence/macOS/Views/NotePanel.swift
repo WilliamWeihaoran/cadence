@@ -12,6 +12,9 @@ struct NotePanel: View {
     @Environment(HoveredTaskManager.self) private var hoveredTaskManager
     @Environment(HoveredEditableManager.self) private var hoveredEditableManager
     @Query(sort: \AppTask.order) private var allTasks: [AppTask]
+    /// [[T-5180]]: what `[[note]]` links in the core notes resolve against — the same query and
+    /// order the Notes page and the task inspector's notes box ([[T-5061]]) use.
+    @Query(sort: \Note.updatedAt, order: .reverse) private var referenceNotes: [Note]
     var useStandardHeaderHeight = false
 
     @State private var activeTab: CadenceCoreNoteTab = .today
@@ -166,7 +169,9 @@ struct NotePanel: View {
     private func noteEditor(for note: Note) -> some View {
         MarkdownEditor(
             text: coreNoteContentBinding(for: note),
+            referenceNotes: referenceNotes,
             referenceTasks: allTasks,
+            onOpenNoteReference: openNoteReference,
             onOpenTaskReference: openTaskReference,
             onCreateEmbeddedTask: createEmbeddedTask,
             onToggleEmbeddedTask: toggleEmbeddedTask,
@@ -428,6 +433,13 @@ struct NotePanel: View {
             MarkdownStylist.apply(to: activeTextView)
             activeTextView.needsDisplay = true
         }
+    }
+
+    /// [[T-5180]]: a `[[note]]` link opens the note where the rest of the Mac app opens it — the
+    /// route [[T-5061]] gave the task inspector. A `.list` note opens its list's Notes tab.
+    private func openNoteReference(id: UUID?, title: String) {
+        guard let note = TaskNoteLinkRouting.note(id: id, title: title, in: referenceNotes) else { return }
+        TaskNoteLinkRouting.open(note)
     }
 
     private func openTaskReference(id: UUID?, title: String) {
