@@ -9,45 +9,95 @@ struct TaskDetailNotesSection: View {
     @State private var editorContent = ""
     @State private var loadedTaskID: UUID?
     @State private var pendingFallbackContentSyncTask: Task<Void, Never>?
+    @Environment(\.modelContext) private var modelContext
+    @Environment(HoveredTaskManager.self) private var hoveredTaskManager
+    @Environment(HoveredEditableManager.self) private var hoveredEditableManager
+    @State private var editorTextView: CadenceTextView?
+    @State private var linkedTaskForPopover: AppTask?
+    @State private var embeddedTaskEditRequest: TaskEmbedFieldEditRequest?
+    @State private var recentEmbeddedTasks: [UUID: AppTask] = [:]
+    /// Set when an edit made on an embedded task card was refused. See `TaskNoteEditorPane`.
+    @State private var embeddedTaskFailureNotice: String?
 
     var body: some View {
-        ZStack(alignment: .topLeading) {
-            MarkdownEditor(
-                text: taskNotesBinding,
-                showsToolbar: false,
-                referenceTasks: referenceTasks,
-                onEditingChanged: handleEditorFocusChange
-            )
-                // MarkdownEditor has no intrinsic content size — it fills exactly what it is
-                // given — so this height IS the notes box, not a floor it grows from.
-                .frame(minHeight: 120)
-                .background(Theme.surfaceRecessed)
-                .clipShape(RoundedRectangle(cornerRadius: 8))
+        VStack(alignment: .leading, spacing: 6) {
+            ZStack(alignment: .topLeading) {
+                // T-5014: `referenceTasks` makes embeds draw as live cards, so every card and
+                // `[[task]]` link handler is passed too — the same set, with the same bodies, as
+                // `TaskNoteEditorPane`, which edits these same notes one click away. Without them the
+                // closures default to no-ops and a ticked card checkbox did nothing.
+                MarkdownEditor(
+                    text: taskNotesBinding,
+                    showsToolbar: false,
+                    referenceTasks: referenceTasks,
+                    onOpenTaskReference: openTaskReference,
+                    onCreateEmbeddedTask: createEmbeddedTask,
+                    onToggleEmbeddedTask: toggleEmbeddedTask,
+                    onToggleEmbeddedSubtask: toggleEmbeddedSubtask,
+                    onRenameEmbeddedTask: renameEmbeddedTask,
+                    onOpenEmbeddedTask: openEmbeddedTask,
+                    onEditEmbeddedTask: editEmbeddedTask,
+                    onHoverEmbeddedTask: hoverEmbeddedTask,
+                    onEditingChanged: handleEditorFocusChange,
+                    onTextViewChanged: { editorTextView = $0 }
+                )
+                    // MarkdownEditor has no intrinsic content size — it fills exactly what it is
+                    // given — so this height IS the notes box, not a floor it grows from.
+                    .frame(minHeight: 120)
+                    .background(Theme.surfaceRecessed)
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                    .popover(item: $linkedTaskForPopover) { linkedTask in
+                        TaskDetailPopover(task: linkedTask)
+                            .frame(width: 380)
+                    }
+                    .onChange(of: linkedTaskForPopover?.id) { previous, current in
+                        guard previous != nil, current == nil else { return }
+                        reconcileEmbeddedTaskReferenceTitles()
+                    }
+                    .popover(item: $embeddedTaskEditRequest) { request in
+                        if let embeddedTask = embeddedTask(id: request.taskID) {
+                            TaskEmbedFieldEditorPopover(task: embeddedTask, initialField: request.field) {
+                                refreshEmbeddedTask(embeddedTask)
+                            }
+                        } else {
+                            Text("Task no longer exists")
+                                .font(.system(size: 12))
+                                .foregroundStyle(Theme.dim)
+                                .padding()
+                        }
+                    }
 
-            if displayedNotes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                Text("Add notes…")
-                    .font(.system(size: 12))
-                    .foregroundStyle(Theme.dim.opacity(0.6))
-                    .padding(.leading, MarkdownEditorMetrics.firstTextColumnInset)
-                    .padding(.top, MarkdownEditorMetrics.textInset)
-                    .allowsHitTesting(false)
+                if displayedNotes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    Text("Add notes…")
+                        .font(.system(size: 12))
+                        .foregroundStyle(Theme.dim.opacity(0.6))
+                        .padding(.leading, MarkdownEditorMetrics.firstTextColumnInset)
+                        .padding(.top, MarkdownEditorMetrics.textInset)
+                        .allowsHitTesting(false)
+                }
+
+                Button {
+                    TaskNotesPanelController.shared.show(task: task, referenceTasks: referenceTasks)
+                } label: {
+                    Image(systemName: "arrow.up.left.and.arrow.down.right")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(Theme.dim)
+                        .frame(width: 24, height: 22)
+                        .background(Theme.surfaceElevated.opacity(0.82))
+                        .clipShape(RoundedRectangle(cornerRadius: 6))
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.cadencePlain)
+                .cadenceControlLabel("Open task notes")
+                .padding(6)
+                .frame(maxWidth: .infinity, alignment: .topTrailing)
             }
 
-            Button {
-                TaskNotesPanelController.shared.show(task: task, referenceTasks: referenceTasks)
-            } label: {
-                Image(systemName: "arrow.up.left.and.arrow.down.right")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(Theme.dim)
-                    .frame(width: 24, height: 22)
-                    .background(Theme.surfaceElevated.opacity(0.82))
-                    .clipShape(RoundedRectangle(cornerRadius: 6))
-                    .contentShape(Rectangle())
+            // Under the box rather than over the card: the card is drawn by the text view, so
+            // there is nothing in SwiftUI's tree to attach a notice to at the point of refusal.
+            if let embeddedTaskFailureNotice {
+                CadenceInlineFailureNotice(text: embeddedTaskFailureNotice) { self.embeddedTaskFailureNotice = nil }
             }
-            .buttonStyle(.cadencePlain)
-            .cadenceControlLabel("Open task notes")
-            .padding(6)
-            .frame(maxWidth: .infinity, alignment: .topTrailing)
         }
         .onAppear {
             loadEditorStateIfNeeded(force: true)
@@ -116,6 +166,176 @@ struct TaskDetailNotesSection: View {
     private func persistEditorContentIfNeeded(_ content: String, taskID: UUID) {
         guard task.id == taskID, task.notes != content else { return }
         task.notes = content
+    }
+
+    // MARK: - Embedded task cards and `[[task]]` links (T-5014)
+    //
+    // Mirrors `TaskNoteEditorPane`'s handlers one for one; a fix to one belongs in both.
+
+    private func openTaskReference(id: UUID?, title: String) {
+        if let id, let linkedTask = referenceTasks.first(where: { $0.id == id }) {
+            linkedTaskForPopover = linkedTask
+            return
+        }
+
+        let targetTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !targetTitle.isEmpty,
+              let linkedTask = referenceTasks.first(where: {
+                  $0.title.trimmingCharacters(in: .whitespacesAndNewlines)
+                      .caseInsensitiveCompare(targetTitle) == .orderedSame
+              }) else { return }
+        linkedTaskForPopover = linkedTask
+    }
+
+    private func createEmbeddedTask(title: String) -> MarkdownReferenceSuggestion? {
+        let container: TaskContainerSelection
+        let areas: [Area]
+        let projects: [Project]
+
+        if let area = task.area {
+            container = .area(area.id)
+            areas = [area]
+            projects = []
+        } else if let project = task.project {
+            container = .project(project.id)
+            areas = []
+            projects = [project]
+        } else {
+            container = .inbox
+            areas = []
+            projects = []
+        }
+
+        let draft = TaskCreationDraft(
+            title: title,
+            notes: "",
+            priority: .none,
+            container: container,
+            sectionName: task.resolvedSectionName,
+            dueDateKey: "",
+            scheduledDateKey: "",
+            subtaskTitles: [],
+            tags: []
+        )
+
+        // T-364: commit first, hand the reference back second — a refused commit returns nil so
+        // the note never points at a task the store did not take.
+        let created: AppTask?
+        do {
+            created = try TaskCreationService(areas: areas, projects: projects)
+                .createTask(from: draft, into: modelContext)
+        } catch {
+            return nil
+        }
+        guard let embeddedTask = created else { return nil }
+
+        recentEmbeddedTasks[embeddedTask.id] = embeddedTask
+        editorTextView?.markdownTaskEmbeds[embeddedTask.id] = MarkdownTaskEmbedRenderInfo.task(embeddedTask)
+        return .task(embeddedTask)
+    }
+
+    private func toggleEmbeddedTask(id: UUID) {
+        guard let embeddedTask = embeddedTask(id: id) else { return }
+        do {
+            try CadenceTaskMutationSupport.setStatus(
+                embeddedTask.isDone ? .todo : .done,
+                for: embeddedTask,
+                modelContext: modelContext
+            )
+        } catch {
+            embeddedTaskFailureNotice = CadenceTaskFieldEditCommit.saveFailureNotice
+            return
+        }
+        embeddedTaskFailureNotice = nil
+        HabitNotificationReconcileSupport.scheduleReconcile(in: modelContext)
+        editorTextView?.markdownTaskEmbeds[id] = MarkdownTaskEmbedRenderInfo.task(embeddedTask)
+        if let editorTextView {
+            MarkdownStylist.apply(to: editorTextView)
+            editorTextView.needsDisplay = true
+        }
+    }
+
+    /// T-648: repaint only after the save took, so a swallowed save is not drawn as a success.
+    private func toggleEmbeddedSubtask(taskID: UUID, subtaskID: UUID) {
+        guard let embeddedTask = embeddedTask(id: taskID),
+              let subtask = (embeddedTask.subtasks ?? []).first(where: { $0.id == subtaskID }) else { return }
+        guard CadenceNoteTaskEmbedEditing.toggleSubtask(subtask, in: modelContext) else {
+            embeddedTaskFailureNotice = CadenceTaskFieldEditCommit.saveFailureNotice
+            return
+        }
+        embeddedTaskFailureNotice = nil
+        refreshEmbeddedTask(embeddedTask)
+    }
+
+    private func renameEmbeddedTask(id: UUID, title: String) {
+        guard let embeddedTask = embeddedTask(id: id) else { return }
+        guard CadenceNoteTaskEmbedEditing.rename(embeddedTask, to: title, in: modelContext) else {
+            embeddedTaskFailureNotice = CadenceTaskFieldEditCommit.saveFailureNotice
+            return
+        }
+        embeddedTaskFailureNotice = nil
+        refreshEmbeddedTask(embeddedTask)
+    }
+
+    private func openEmbeddedTask(id: UUID) {
+        guard let embeddedTask = embeddedTask(id: id) else { return }
+        linkedTaskForPopover = embeddedTask
+    }
+
+    /// Every field chip but status opens the shared task panel inside the note ([[T-1481]]);
+    /// without a text view yet the popover is the fallback.
+    private func editEmbeddedTask(id: UUID, field: MarkdownTaskEmbedField) {
+        guard let embeddedTask = embeddedTask(id: id) else { return }
+        if MarkdownInlineTaskPanelRouting.opensPanel(for: field), let editorTextView {
+            editorTextView.presentInlineTaskPanel(for: embeddedTask, field: field, in: modelContext, onSaved: refreshEmbeddedTask)
+            return
+        }
+        embeddedTaskEditRequest = TaskEmbedFieldEditRequest(taskID: id, field: field)
+    }
+
+    private func hoverEmbeddedTask(id: UUID, hovering: Bool) {
+        guard let embeddedTask = embeddedTask(id: id) else { return }
+        if hovering {
+            hoveredTaskManager.beginHovering(embeddedTask, source: .note)
+            hoveredEditableManager.beginHovering(id: embeddedTaskHoverID(id)) {
+                openEmbeddedTask(id: id)
+            }
+        } else {
+            hoveredTaskManager.endHovering(embeddedTask)
+            hoveredEditableManager.endHovering(id: embeddedTaskHoverID(id))
+            refreshEmbeddedTask(embeddedTask)
+        }
+    }
+
+    private func embeddedTaskHoverID(_ id: UUID) -> String {
+        "task-inspector-note-embed-task-\(id.uuidString)"
+    }
+
+    /// See `NotePanel.reconcileEmbeddedTaskReferenceTitles`.
+    private func reconcileEmbeddedTaskReferenceTitles() {
+        guard let editorTextView else { return }
+        editorTextView.reconcileEmbeddedTaskReferenceTitles(
+            titles: editorTextView.markdownTaskEmbeds.mapValues(\.title)
+        )
+    }
+
+    private func refreshEmbeddedTask(_ embeddedTask: AppTask) {
+        editorTextView?.markdownTaskEmbeds[embeddedTask.id] = MarkdownTaskEmbedRenderInfo.task(embeddedTask)
+        editorTextView?.replaceEmbeddedTaskReferenceTitle(id: embeddedTask.id, title: embeddedTask.title)
+        if let editorTextView {
+            MarkdownStylist.apply(to: editorTextView)
+            editorTextView.needsDisplay = true
+        }
+    }
+
+    /// The live query first, then the creation-latency cache, re-verified against the store (T-349).
+    private func embeddedTask(id: UUID) -> AppTask? {
+        MarkdownEmbeddedTaskLookup.resolve(
+            id: id,
+            liveTasks: referenceTasks,
+            cache: &recentEmbeddedTasks,
+            in: modelContext
+        )
     }
 }
 
