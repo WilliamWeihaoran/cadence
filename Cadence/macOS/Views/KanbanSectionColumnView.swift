@@ -759,7 +759,7 @@ struct ListSectionKanbanColumn: View {
     }
 
     /// **The Default column has no lifecycle, and this is where every route to one converges** —
-    /// the header glyph, the editor's "Mark Section Completed", and Cmd+Return over the hovered
+    /// the header glyph, the editor's "Complete Column", and Cmd+Return over the hovered
     /// column. All three are gated at their own site so the affordance is never *offered*; this
     /// guard is what makes a fourth route safe by default rather than only the three that exist.
     ///

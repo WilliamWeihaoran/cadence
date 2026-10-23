@@ -189,7 +189,7 @@ struct ListEditorColorStrip: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .cadenceControlLabel(isSelected ? "Selected colour" : "Use this colour")
+                .cadenceControlLabel(isSelected ? "Selected color" : "Use this color")
                 .accessibilityAddTraits(isSelected ? .isSelected : [])
             }
         }

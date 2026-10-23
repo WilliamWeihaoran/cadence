@@ -900,7 +900,7 @@ private struct iOSListColorSwatch: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel(isSelected ? "Selected colour" : "Use this colour")
+        .accessibilityLabel(isSelected ? "Selected color" : "Use this color")
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 }

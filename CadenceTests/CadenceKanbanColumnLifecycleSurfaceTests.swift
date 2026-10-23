@@ -247,7 +247,7 @@ struct CadenceKanbanColumnLifecycleSurfaceTests {
             matches(#"if section\.supportsLifecycle \{\s*Button\(action: onToggleCompletion\)"#, in: code) == 1,
             "the section header's completion glyph is not directly inside a supportsLifecycle gate"
         )
-        // The editor popover's "Mark Column Completed", which now shares Archive's gate — the
+        // The editor popover's "Complete Column", which now shares Archive's gate — the
         // divider came inside with it.
         #expect(
             matches(#"if section\.supportsLifecycle \{\s*Divider\(\)[^\n]*\s*Button\(action: onToggleCompletion\)"#, in: code) == 1,
@@ -1197,6 +1197,62 @@ struct CadenceKanbanColumnLifecycleSurfaceTests {
         #expect(matches(#"CadenceInlineFailureNotice\("#, in: support) == 2)
     }
 
+    // MARK: - One name for one action
+
+    /// **T-5004: the same action had two names, and the Mac's was the one that went.**
+    ///
+    /// iOS's wind-down sheet has called this "Complete Column" since [[T-247]]; the Mac's editor
+    /// popover said "Mark Column Completed" and its header glyph "Mark column completed". Same
+    /// settle, same `TaskContainerLifecycleService` call underneath, three spellings — so a reader
+    /// moving between the phone and the Mac had to learn that two different sentences meant one
+    /// thing, and the Archive pair sitting directly beneath the popover's completion button was
+    /// already "Archive Column" / "Unarchive Column", verb-plus-noun, with no "Mark" anywhere.
+    ///
+    /// **The reverse direction is "Reopen", which is not an invention.** iOS's own shipped
+    /// explanation for this action already uses that verb for this direction — "Reopening it does
+    /// not reopen the work marked done below." (`iOSColumnWindDownSupport`) — and so does the
+    /// Mac's own `toggleCompletionFromEditor` doc ("Reopening is synchronous; completing is not").
+    /// "Mark Column Active" named a state rather than the act, and "Uncomplete" is not a word this
+    /// app says anywhere.
+    ///
+    /// The assertion is an **equality between the two platforms' literals**, not two independent
+    /// `contains` checks: respelling one side alone is exactly the defect this ticket is, and two
+    /// `contains` would pass straight through it.
+    @Test func theColumnCompletionActionHasOneNameOnBothPlatforms() throws {
+        let mac = try strippingComments(sourceFile("Cadence/macOS/Views/KanbanColumnSupportViews.swift"))
+        let phone = try strippingComments(sourceFile("Cadence/iOS/iOSColumnWindDownSupport.swift"))
+
+        // Non-vacuity: both files were read and both still draw the control this is about.
+        #expect(mac.contains("Button(action: onToggleCompletion)"), "non-vacuity: the Mac's completion control is gone")
+        #expect(phone.contains("case .complete:"), "non-vacuity: the phone's complete branch is gone")
+
+        let phoneTitle = try #require(
+            firstCapture(#"title: \"([^\"]+)\",\s*\n\s*actionIcon: \"checkmark\.circle\.fill\""#, in: phone),
+            "the phone's complete-column sheet no longer names itself"
+        )
+        #expect(phoneTitle == "Complete Column")
+
+        // The Mac's popover item and its header glyph, both read as literals rather than assumed.
+        #expect(mac.contains(#"Text(section.isCompleted ? "Reopen Column" : "Complete Column")"#))
+        #expect(mac.contains(#".cadenceControlLabel(section.isCompleted ? "Reopen column" : "Complete column")"#))
+
+        // The forward direction is ONE string across the two platforms, spelled the same way.
+        #expect(
+            mac.contains("\"\(phoneTitle)\")"),
+            "the Mac's popover no longer says what the phone says (\(phoneTitle))"
+        )
+
+        // And the retired pair is gone from the whole macOS kanban surface, not just this file.
+        for path in [
+            "Cadence/macOS/Views/KanbanColumnSupportViews.swift",
+            "Cadence/macOS/Views/KanbanSectionColumnView.swift",
+        ] {
+            let code = try strippingComments(sourceFile(path))
+            // Lowercased, so the popover's Title Case and the glyph's sentence case are one check.
+            #expect(!code.lowercased().contains("mark column"), "\(path) says \"Mark Column\" again")
+        }
+    }
+
     // MARK: - The scans are real
 
     /// Every count and every regex above passes against an empty string, so this asserts the
@@ -1210,8 +1266,9 @@ struct CadenceKanbanColumnLifecycleSurfaceTests {
         // Positive reads: the controls this file is about are still drawn, and the Default branch
         // of the popover still explains itself — with completion now named in it.
         let support = try strippingComments(sourceFile("Cadence/macOS/Views/KanbanColumnSupportViews.swift"))
-        // T-5001: "Column", as the popover's title and its Archive/Delete siblings say.
-        #expect(support.contains("Mark Column Completed"))
+        // T-5001 made the noun "Column", as the popover's title and its Archive/Delete siblings
+        // say; T-5004 made the verb iOS's. See `theColumnCompletionActionHasOneNameOnBothPlatforms`.
+        #expect(support.contains("Complete Column"))
         #expect(!support.contains("Mark Section"))
         #expect(support.contains("Default always stays available and cannot be renamed, completed, archived, or deleted."))
         #expect(support.contains("struct KanbanSectionEditorPopover"))
@@ -1347,6 +1404,16 @@ private func bodyOfComputed(_ name: String, in source: String) -> String? {
 }
 
 /// Number of non-overlapping matches of `pattern` in `text`.
+/// The first capture group of `pattern`, or `nil`. Used where an assertion wants the literal the
+/// source actually holds rather than a literal the test re-types beside it.
+private func firstCapture(_ pattern: String, in text: String) -> String? {
+    guard let regex = try? NSRegularExpression(pattern: pattern, options: [.dotMatchesLineSeparators]) else { return nil }
+    let range = NSRange(text.startIndex..., in: text)
+    guard let match = regex.firstMatch(in: text, range: range), match.numberOfRanges > 1,
+          let captured = Range(match.range(at: 1), in: text) else { return nil }
+    return String(text[captured])
+}
+
 private func matches(_ pattern: String, in text: String) -> Int {
     guard let regex = try? NSRegularExpression(pattern: pattern) else { return -1 }
     return regex.numberOfMatches(in: text, range: NSRange(text.startIndex..., in: text))

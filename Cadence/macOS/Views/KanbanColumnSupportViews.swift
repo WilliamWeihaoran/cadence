@@ -391,7 +391,7 @@ struct KanbanColumnHeader<DueDatePopover: View, EditorPopover: View>: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.cadencePlain)
-                .cadenceControlLabel(section.isCompleted ? "Mark column active" : "Mark column completed")
+                .cadenceControlLabel(section.isCompleted ? "Reopen column" : "Complete column")
             }
 
             Button(action: onOpenEditor) {
@@ -601,7 +601,7 @@ struct KanbanSectionEditorPopover: View {
                     HStack(spacing: 8) {
                         Image(systemName: section.isCompleted ? "arrow.uturn.backward.circle.fill" : "checkmark.circle.fill")
                             .font(.system(size: 12, weight: .semibold))
-                        Text(section.isCompleted ? "Mark Column Active" : "Mark Column Completed")
+                        Text(section.isCompleted ? "Reopen Column" : "Complete Column")
                             .font(.system(size: 12, weight: .semibold))
                         Spacer()
                     }

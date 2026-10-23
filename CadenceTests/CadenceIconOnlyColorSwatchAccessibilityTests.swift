@@ -16,7 +16,7 @@ import Testing
 /// answered.** Measured 2026-09-04: six other swatch grids in the tree — `TagColorSwatches`
 /// (`SettingsTagsSection.swift`), `ListEditorColorStrip`, `iOSListColorSwatch`,
 /// `TagPickerPopoverViews`, `KanbanColumnSupportViews` and `iOSSettingsComponents` — all name the
-/// control by what tapping it *does* ("Use this colour" / "Selected colour"), with the hex
+/// control by what tapping it *does* ("Use this color" / "Selected color"), with the hex
 /// reserved for a sighted-only `.help()` tooltip. `SettingsTagsSection.swift` states why in as many
 /// words: "a screen reader cannot verify a colour and the repo does not invent colour names for
 /// one" — the same reasoning `CadenceAccentPalettePresentation` gives for the accent picker.
@@ -122,7 +122,7 @@ struct CadenceIconOnlyColorSwatchAccessibilityTests {
             """
             \(offenders.sorted()) draws a colour swatch from a bare .onTapGesture with no \
             enclosing Button and no accessible name. Wrap it in a Button and name it \
-            "Use this colour" / "Selected colour", matching TagColorSwatches.
+            "Use this color" / "Selected color", matching TagColorSwatches.
             """
         )
     }
@@ -150,7 +150,7 @@ struct CadenceIconOnlyColorSwatchAccessibilityTests {
     @Test func createContextSheetsColorGridNoLongerDrawsTheBannedShape() throws {
         let source = try CadenceSourceScan.sourceFile("Cadence/macOS/Sheets/CreateContextSheet.swift")
         #expect(Self.iconOnlyColorSwatchCount(in: source) == 0)
-        #expect(source.contains(#".accessibilityLabel(isSelected ? "Selected colour" : "Use this colour")"#))
+        #expect(source.contains(#".accessibilityLabel(isSelected ? "Selected color" : "Use this color")"#))
         #expect(source.contains(".help(hex)"))
     }
 
@@ -164,6 +164,6 @@ struct CadenceIconOnlyColorSwatchAccessibilityTests {
     @Test func iOSTrackingColorGridNamesItsSwatchesByActionNotByHex() throws {
         let source = try CadenceSourceScan.sourceFile("Cadence/iOS/iOSTrackingEditorComponents.swift")
         #expect(!source.contains(#"accessibilityLabel("Color \(color)")"#))
-        #expect(source.contains(#".accessibilityLabel(isOn ? "Selected colour" : "Use this colour")"#))
+        #expect(source.contains(#".accessibilityLabel(isOn ? "Selected color" : "Use this color")"#))
     }
 }

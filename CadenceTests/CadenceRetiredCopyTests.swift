@@ -134,6 +134,49 @@ let cadenceRetiredCopy: [CadenceRetiredPhrase] = [
         `CadenceDataExportPresentation.description` says that instead.
         """
     ),
+    CadenceRetiredPhrase(
+        "Selected colour",
+        retiredBy: "T-5003",
+        why: """
+        The app ships one English and the owner picked US, which is what the majority of the \
+        existing copy and all of Apple's own UI already use. This half of the swatch pair was \
+        spelled British on all five grids that draw it — CreateContextSheet, \
+        ListEditorSupportViews, SettingsTagsSection, iOSListEditorViews and \
+        iOSTrackingEditorComponents — so a per-file census would have caught whichever one the \
+        next author edited and none of the other four. It is "Selected color" now.
+        """
+    ),
+    CadenceRetiredPhrase(
+        "Use this colour",
+        retiredBy: "T-5003",
+        why: """
+        The other half of the same VoiceOver pair, retired for the same reason and swept the same \
+        way: five swatch grids said it, every one of them is "Use this color" now, and a sixth \
+        grid written next year inherits the rule without anyone remembering to pin it.
+        """
+    ),
+    CadenceRetiredPhrase(
+        "Mark Column Completed",
+        retiredBy: "T-5004",
+        why: """
+        One settle, two names: the phone's wind-down sheet has said "Complete Column" since \
+        T-247 while the Mac's column editor said this. The Archive control directly beneath it \
+        was already "Archive Column", verb-plus-noun with no "Mark" in it, so the Mac was \
+        inconsistent with itself as well as with the phone. \
+        CadenceKanbanColumnLifecycleSurfaceTests.theColumnCompletionActionHasOneNameOnBothPlatforms \
+        holds the equality; this holds the rest of the tree.
+        """
+    ),
+    CadenceRetiredPhrase(
+        "Mark Column Active",
+        retiredBy: "T-5004",
+        why: """
+        The reverse of the above, and retired for a second reason on top of the shared one: it \
+        named a *state* the column would be in rather than the act of getting it there, which is \
+        what every other control in that popover does. It is "Reopen Column" now — the verb iOS's \
+        own shipped explanation of this action already uses for this direction.
+        """
+    ),
 ]
 
 // MARK: - The sweep

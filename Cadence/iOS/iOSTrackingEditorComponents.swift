@@ -318,7 +318,7 @@ struct iOSTrackingColorGrid: View {
                         .iOSExpandedHitArea(4)
                 }
                 .buttonStyle(.iosPressable)
-                .accessibilityLabel(isOn ? "Selected colour" : "Use this colour")
+                .accessibilityLabel(isOn ? "Selected color" : "Use this color")
                 .accessibilityAddTraits(isOn ? .isSelected : [])
             }
         }

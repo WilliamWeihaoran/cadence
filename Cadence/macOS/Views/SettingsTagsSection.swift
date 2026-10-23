@@ -496,7 +496,7 @@ private struct TagColorSwatches: View {
                 // The tooltip is the hex the swatch paints; the *name* is what the control does,
                 // because a screen reader cannot verify a colour and the repo does not invent
                 // colour names for one — see `CadenceAccentPalettePresentation`.
-                .accessibilityLabel(isSelected ? "Selected colour" : "Use this colour")
+                .accessibilityLabel(isSelected ? "Selected color" : "Use this color")
                 .accessibilityAddTraits(isSelected ? .isSelected : [])
                 .help(option)
             }
