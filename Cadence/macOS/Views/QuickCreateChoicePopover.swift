@@ -29,14 +29,27 @@ struct QuickCreateTaskDraft {
     var sectionName: String
     var priority: TaskPriority
     var notes: String
-    /// **Always empty from the drag-create popover** ([[T-3171]]'s seventh slice), and deliberately
-    /// kept rather than removed: `CadenceScheduleDraft` has no subtasks, so adopting the shared
-    /// panel dropped the old Task tab's subtask composer, and the Calendar page's leased host still
-    /// declares a `subtaskTitles:` argument this value has to fill. Nothing else writes it — the
-    /// composer a drag-created task's subtasks were typed into is gone, and the eighth slice
-    /// removed the full create sheet the Today timeline used to hand off to. Retiring the member
-    /// means editing `CalendarPageMonthSupportViews.swift`, which is on the Codex lease.
+    /// The shared panel's checklist, forwarded by both timeline hosts to the task insert.
     var subtaskTitles: [String]
+}
+
+extension QuickCreateTaskDraft {
+    /// The boundary between the shared form and both macOS creation closures.
+    init(scheduleDraft draft: CadenceScheduleDraft) {
+        self.init(
+            title: draft.title,
+            dateKey: draft.startDateKey,
+            startMin: draft.startMin,
+            endMin: draft.endMin,
+            container: CadenceScheduleDraftChoices.container(for: draft),
+            sectionName: draft.sectionName,
+            priority: draft.priority,
+            notes: draft.notes,
+            subtaskTitles: draft.subtaskTitles
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+        )
+    }
 }
 
 /// The prose each kind of the drag-create popover composes, kept apart.
@@ -216,6 +229,7 @@ struct QuickCreateChoicePopover: View {
             offersTaskRepeat: false,
             offersTaskDue: false,
             offersEventLocation: false,
+            offersSubtasks: true,
             actions: CadenceSchedulePanelActions(
                 commit: create,
                 cancel: onCancel,
@@ -311,19 +325,7 @@ struct QuickCreateChoicePopover: View {
         if let hostLimitNotice { return hostLimitNotice }
         switch draft.kind {
         case .task:
-            onCreateTask(
-                QuickCreateTaskDraft(
-                    title: draft.title,
-                    dateKey: draft.startDateKey,
-                    startMin: draft.startMin,
-                    endMin: draft.endMin,
-                    container: CadenceScheduleDraftChoices.container(for: draft),
-                    sectionName: draft.sectionName,
-                    priority: draft.priority,
-                    notes: draft.notes,
-                    subtaskTitles: []
-                )
-            )
+            onCreateTask(QuickCreateTaskDraft(scheduleDraft: draft))
             return nil
         case .event:
             // Reachable only on a canvas given no event host at all, which neither shipping host
