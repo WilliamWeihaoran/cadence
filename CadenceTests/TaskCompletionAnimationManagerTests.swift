@@ -1,4 +1,5 @@
 #if os(macOS)
+import AppKit
 import Foundation
 import SwiftData
 import Testing
@@ -332,6 +333,71 @@ struct TaskCompletionAnimationManagerTests {
         #expect(task.status == .done)
         let next = try spawnedTask(for: task, in: context)
         #expect(next != nil, "the injected fallback was lost, so the series stopped here")
+    }
+
+    // MARK: - T-5360: a quit inside the fill must not lose the tick
+
+    /// **The bug, stated:** the `.done` write waited behind the fill's 2.5s in-memory sleep and
+    /// nothing settled it on quit, so a Cmd+Q inside that window brought the task back open on the
+    /// next launch. Driven through the real quit hook, so a delegate that stops calling the settle
+    /// fails here too; `audit` can only see what was committed.
+    @Test func quittingInsideTheFillCommitsThePendingCompletionAndCancellation() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let manager = TaskCompletionAnimationManager.shared
+        let injected = manager.modelContext
+        manager.modelContext = context
+        defer { manager.modelContext = injected }
+
+        let ticked = AppTask(title: "file the report")
+        let dropped = AppTask(title: "call the plumber")
+        context.insert(ticked)
+        context.insert(dropped)
+        try context.save()
+
+        manager.toggleCompletion(for: ticked)
+        manager.toggleCancellation(for: dropped)
+        #expect(manager.isPending(ticked))
+        #expect(manager.isPendingCancel(dropped))
+
+        CadenceAppDelegate().applicationWillTerminate(
+            Notification(name: NSApplication.willTerminateNotification)
+        )
+
+        #expect(!manager.isPending(ticked))
+        #expect(!manager.isPendingCancel(dropped))
+        let audit = ModelContext(container)
+        let persisted = try audit.fetch(FetchDescriptor<AppTask>())
+        #expect(persisted.first { $0.id == ticked.id }?.status == .done, "the pending completion was lost on quit")
+        #expect(persisted.first { $0.id == dropped.id }?.status == .cancelled, "the pending cancellation was lost on quit")
+        #expect(context.hasChanges == false)
+    }
+
+    /// The settle replaces the timer's write; it must not be followed by it. A recurring task
+    /// settled twice would spawn two successors, so this waits past the fill and counts them.
+    @Test func aSettleOnQuitIsNotRepeatedWhenTheFillWouldHaveEnded() async throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let manager = TaskCompletionAnimationManager.shared
+        let injected = manager.modelContext
+        manager.modelContext = context
+        defer { manager.modelContext = injected }
+
+        let task = AppTask(title: "water the plants")
+        task.recurrenceRule = .daily
+        task.scheduledDate = "2026-08-04"
+        context.insert(task)
+        try context.save()
+
+        manager.toggleCompletion(for: task)
+        manager.settleAllPendingBeforeTermination()
+        #expect(task.status == .done)
+
+        let deadline = Date().addingTimeInterval(TaskCompletionAnimationManager.animationDuration + 1)
+        while Date() < deadline { try await Task.sleep(nanoseconds: 100_000_000) }
+
+        let all = try context.fetch(FetchDescriptor<AppTask>())
+        #expect(all.count == 2, "expected the task and exactly one successor")
     }
 
     // MARK: - Helpers

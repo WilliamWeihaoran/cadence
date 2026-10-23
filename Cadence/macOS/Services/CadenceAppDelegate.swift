@@ -18,6 +18,8 @@ final class CadenceAppDelegate: NSObject, NSApplicationDelegate {
     func applicationWillTerminate(_ notification: Notification) {
         // T-5305: the focus stopwatch is memory-only; bank it before it is gone.
         FocusManager.shared.bankBeforeTermination()
+        // T-5360: a tick still inside its 2.5s fill has not been written yet; finish it.
+        TaskCompletionAnimationManager.shared.settleAllPendingBeforeTermination()
         GlobalHotKeyManager.shared.unregister()
     }
 

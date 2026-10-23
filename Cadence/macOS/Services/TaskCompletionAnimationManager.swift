@@ -22,10 +22,15 @@ final class TaskCompletionAnimationManager {
     // Completion (green)
     private(set) var pendingStartTimes: [UUID: Date] = [:]
     @ObservationIgnored private var pendingTasks: [UUID: Task<Void, Never>] = [:]
+    /// The task each pending fill will settle (T-5360). The sleep's closure captured it already;
+    /// holding it here too is what lets `settleAllPendingBeforeTermination` write it without
+    /// waiting for a sleep that a quit will never let finish.
+    @ObservationIgnored private var pendingTargets: [UUID: AppTask] = [:]
 
     // Cancellation (gray)
     private(set) var pendingCancelStartTimes: [UUID: Date] = [:]
     @ObservationIgnored private var pendingCancelTasks: [UUID: Task<Void, Never>] = [:]
+    @ObservationIgnored private var pendingCancelTargets: [UUID: AppTask] = [:]
 
     /// Set when a settle was refused and put back (T-628), and read by `macOSRootView`'s alert.
     ///
@@ -82,12 +87,14 @@ final class TaskCompletionAnimationManager {
         pendingTasks[taskID]?.cancel()
         pendingTasks[taskID] = nil
         pendingStartTimes[taskID] = nil
+        pendingTargets[taskID] = nil
     }
 
     private func beginCompletion(for task: AppTask) {
         let id = task.id
         cancelPending(for: id)
         pendingStartTimes[id] = Date()
+        pendingTargets[id] = task
         pendingTasks[id] = Task { [weak self] in
             try? await Task.sleep(nanoseconds: UInt64(Self.animationDuration * 1_000_000_000))
             guard !Task.isCancelled else { return }
@@ -95,6 +102,7 @@ final class TaskCompletionAnimationManager {
                 guard let self, self.pendingStartTimes[id] != nil else { return }
                 self.pendingTasks[id] = nil
                 self.pendingStartTimes[id] = nil
+                self.pendingTargets[id] = nil
                 self.write(.done, to: task)
             }
         }
@@ -130,6 +138,7 @@ final class TaskCompletionAnimationManager {
         pendingCancelTasks[taskID]?.cancel()
         pendingCancelTasks[taskID] = nil
         pendingCancelStartTimes[taskID] = nil
+        pendingCancelTargets[taskID] = nil
     }
 
     private func beginCancellation(for task: AppTask) {
@@ -138,6 +147,7 @@ final class TaskCompletionAnimationManager {
         cancelPending(for: id)
         cancelCancelPending(for: id)
         pendingCancelStartTimes[id] = Date()
+        pendingCancelTargets[id] = task
         pendingCancelTasks[id] = Task { [weak self] in
             try? await Task.sleep(nanoseconds: UInt64(Self.animationDuration * 1_000_000_000))
             guard !Task.isCancelled else { return }
@@ -145,9 +155,31 @@ final class TaskCompletionAnimationManager {
                 guard let self, self.pendingCancelStartTimes[id] != nil else { return }
                 self.pendingCancelTasks[id] = nil
                 self.pendingCancelStartTimes[id] = nil
+                self.pendingCancelTargets[id] = nil
                 self.write(.cancelled, to: task)
             }
         }
+    }
+
+    // MARK: - Termination
+
+    /// **T-5360.** Settle every fill still running, now, before the app quits.
+    ///
+    /// The 2.5s fill holds the `.done` (or `.cancelled`) write behind an in-memory sleep, so a
+    /// Cmd+Q inside that window used to drop the tick: the task came back open on next launch.
+    /// The user's intent was already expressed — the fill is a grace period for an undo, not a
+    /// confirmation step — so quitting finishes it exactly as the timer would have, through the
+    /// same committing `write`. Writing immediately and animating separately was the alternative,
+    /// and was rejected: the deferral is what keeps a hovered row in its group until the fill ends
+    /// and what makes a second tap a free undo, and both are pinned by this manager's tests.
+    /// `CadenceAppDelegate.applicationWillTerminate` calls this beside the focus bank.
+    func settleAllPendingBeforeTermination() {
+        let completions = pendingTargets
+        let cancellations = pendingCancelTargets
+        for id in completions.keys { cancelPending(for: id) }
+        for id in cancellations.keys { cancelCancelPending(for: id) }
+        for task in completions.values { write(.done, to: task) }
+        for task in cancellations.values { write(.cancelled, to: task) }
     }
 
     // MARK: - Status writes
