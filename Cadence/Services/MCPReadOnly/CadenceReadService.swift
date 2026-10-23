@@ -860,7 +860,12 @@ final class CadenceReadService {
                     entityId: context.id.uuidString,
                     title: CadenceTitleNormalization.display(context.name, fallback: CadenceTitleNormalization.defaultContextName),
                     subtitle: context.isArchived ? "Archived context" : "Context",
-                    excerpt: "\(areaCount) areas - \(projectCount) projects - \(goalCount) goals - \(habitCount) habits",
+                    // Inline ternaries, not `CadencePluralization`: the `CadenceMCPServer` target
+                    // does not compile that helper ([[T-4981]]).
+                    excerpt: "\(areaCount) \(areaCount == 1 ? "area" : "areas") - "
+                        + "\(projectCount) \(projectCount == 1 ? "project" : "projects") - "
+                        + "\(goalCount) \(goalCount == 1 ? "goal" : "goals") - "
+                        + "\(habitCount) \(habitCount == 1 ? "habit" : "habits")",
                     score: score
                 )
             }

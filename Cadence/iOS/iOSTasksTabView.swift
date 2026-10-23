@@ -305,24 +305,29 @@ private struct iOSTasksIndexDestinationRows: View, Equatable {
 /// **It carries one row now, not two.** The segmented switcher that used to sit under the header
 /// went with T-2072; its three slices are rows in the index.
 private struct iOSTasksTabHeader: View {
-    /// The tab's observed day, so the date eyebrow turns at midnight ([[T-5011]]). The greeting
-    /// below still reads the clock: it is hour-based, so a day key cannot keep it fresh, and
-    /// whether to refresh it on a coarse timer or drop it is the owner's call (filed on T-5011).
+    /// The tab's observed day, so the date eyebrow turns at midnight ([[T-5011]]).
     let todayKey: String
     let onSearch: () -> Void
 
+    /// The greeting is hour-based, so a day key cannot keep it fresh: it reads the date of a
+    /// coarse `TimelineView(.everyMinute)` instead of a one-shot `Date()`, which froze it at the
+    /// last re-render ("Good morning" into the afternoon, [[T-5020]]). The schedule is
+    /// minute-aligned, so a 5/12/17 boundary shows within a minute, and a timeline re-evaluates on
+    /// return from the background, so activation needs no hook of its own.
     var body: some View {
-        iOSPageHeader(
-            eyebrow: CadenceCompactShellSupport.dateEyebrow(for: DateFormatters.date(from: todayKey) ?? Date()),
-            title: CadenceCompactShellSupport.greeting(for: Date())
-        ) {
-            iOSIconButton(
-                systemImage: "magnifyingglass",
-                accessibilityLabel: "Search",
-                plateSize: 38,
-                iconSize: 14,
-                action: onSearch
-            )
+        TimelineView(.everyMinute) { context in
+            iOSPageHeader(
+                eyebrow: CadenceCompactShellSupport.dateEyebrow(for: DateFormatters.date(from: todayKey) ?? Date()),
+                title: CadenceCompactShellSupport.greeting(for: context.date)
+            ) {
+                iOSIconButton(
+                    systemImage: "magnifyingglass",
+                    accessibilityLabel: "Search",
+                    plateSize: 38,
+                    iconSize: 14,
+                    action: onSearch
+                )
+            }
         }
     }
 }

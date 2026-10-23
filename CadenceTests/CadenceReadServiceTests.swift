@@ -218,6 +218,33 @@ struct CadenceReadServiceTests {
         #expect(eventNoteScopedBodyHits.items.map(\.entityType) == ["event_note"])
     }
 
+    /// T-4981: the context search excerpt agrees each count with its noun — "1 area", not
+    /// "1 areas" — by inline ternaries, since the `CadenceMCPServer` target does not compile
+    /// `CadencePluralization`. One of each kind, then two of each, so both spellings are pinned.
+    @Test func contextSearchExcerptSaysEachCountInTheRightNumber() throws {
+        let fixture = try Fixture()
+        let single = Context(name: "Singlefold")
+        fixture.modelContext.insert(single)
+        fixture.modelContext.insert(Area(name: "One area", context: single))
+        fixture.modelContext.insert(Project(name: "One project", context: single))
+        fixture.modelContext.insert(Goal(title: "One goal", context: single))
+        fixture.modelContext.insert(Habit(title: "One habit", context: single))
+        let double = Context(name: "Twofold")
+        fixture.modelContext.insert(double)
+        for index in 1...2 {
+            fixture.modelContext.insert(Area(name: "Area \(index)", context: double))
+            fixture.modelContext.insert(Project(name: "Project \(index)", context: double))
+            fixture.modelContext.insert(Goal(title: "Goal \(index)", context: double))
+            fixture.modelContext.insert(Habit(title: "Habit \(index)", context: double))
+        }
+        try fixture.modelContext.save()
+
+        let one = try #require(fixture.service.search(query: "Singlefold", scopes: ["contexts"]).items.first)
+        #expect(one.excerpt == "1 area - 1 project - 1 goal - 1 habit")
+        let two = try #require(fixture.service.search(query: "Twofold", scopes: ["contexts"]).items.first)
+        #expect(two.excerpt == "2 areas - 2 projects - 2 goals - 2 habits")
+    }
+
     /// A week-based streak must be spelled in weeks on the MCP search surface.
     ///
     /// `Habit.currentStreak` counts *weeks* for `.timesPerWeek` and *days* for every other

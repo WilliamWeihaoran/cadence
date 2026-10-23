@@ -18,6 +18,9 @@ nonisolated enum CadenceWriteError: Error, LocalizedError, Sendable {
     case invalidContainerStatus(String, [String])
     case sectionNotFound(String, [String])
     case columnNotFound(String, [String])
+    /// The noun is already agreed with `upperBound + 1` at the throw site — singular when the
+    /// row would be alone — by an inline ternary, since this target has no `CadencePluralization`
+    /// ([[T-4981]]).
     case invalidPosition(Int, Int, String)
     case emptyURL
     case tagsUnavailable
@@ -2045,7 +2048,9 @@ final class CadenceWriteService {
         siblings.sort { CadenceMCPOrdering.precedes($0.key, $1.key) }
 
         guard position >= 0, position <= siblings.count else {
-            throw CadenceWriteError.invalidPosition(position, siblings.count, "lists filed there")
+            throw CadenceWriteError.invalidPosition(
+                position, siblings.count, siblings.isEmpty ? "list filed there" : "lists filed there"
+            )
         }
         var rows = siblings.map(\.row)
         rows.insert(target, at: position)
@@ -2061,7 +2066,7 @@ final class CadenceWriteService {
         siblings.sort(by: CadenceMCPOrdering.precedes)
 
         guard position >= 0, position <= siblings.count else {
-            throw CadenceWriteError.invalidPosition(position, siblings.count, "contexts")
+            throw CadenceWriteError.invalidPosition(position, siblings.count, siblings.isEmpty ? "context" : "contexts")
         }
         siblings.insert(target, at: position)
         return siblings.enumerated().map { (row: $0.element, order: $0.offset) }

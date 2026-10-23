@@ -1735,7 +1735,56 @@ struct CadenceWriteServiceTests {
 
         #expect(message.contains("Invalid order: 7"))
         #expect(message.contains("0...1"))
+        #expect(message.contains("among the 2 lists filed there"))
         #expect(try fixture.readService.containerSummary(kind: "project", id: board.container.id).container.name == "Launch board")
+    }
+
+    /// T-4981: a list alone in its context is "among the 1 list", not "the 1 lists". The noun is
+    /// agreed by an inline ternary at the throw site because the `CadenceMCPServer` target does
+    /// not compile `CadencePluralization`.
+    @Test func aRefusedPositionForAListAloneInItsContextSaysListInTheSingular() throws {
+        let fixture = try Fixture()
+        let solo = try fixture.writeService.createContext(options: .init(name: "Solo"))
+        let alone = try fixture.writeService.createContainer(options: .init(
+            containerKind: "area",
+            name: "Only list here",
+            contextId: solo.context.id
+        ))
+
+        var message = ""
+        do {
+            _ = try fixture.writeService.updateContainer(options: .init(
+                containerKind: "area",
+                containerId: alone.container.id,
+                order: 4
+            ))
+            Issue.record("expected a refusal")
+        } catch {
+            message = (error as? LocalizedError)?.errorDescription ?? ""
+        }
+
+        #expect(message.contains("0...0"), "non-vacuity: the list must be alone in its bucket")
+        #expect(message.contains("among the 1 list filed there"))
+        #expect(!message.contains("1 lists"))
+    }
+
+    /// The context sequence's half of T-4981: the fixture's one context, placed past the end, is
+    /// "among the 1 context".
+    @Test func aRefusedPositionForTheOnlyContextSaysContextInTheSingular() throws {
+        let fixture = try Fixture()
+        var message = ""
+        do {
+            _ = try fixture.writeService.updateContext(options: .init(
+                contextId: fixture.context.id.uuidString,
+                order: 3
+            ))
+            Issue.record("expected a refusal")
+        } catch {
+            message = (error as? LocalizedError)?.errorDescription ?? ""
+        }
+
+        #expect(message.contains("0...0"), "non-vacuity: the context must be the only one")
+        #expect(message.contains("among the 1 context this call"))
     }
 
     /// The half of T-1182 that is *not* a change: `update_container` still renumbers nothing when

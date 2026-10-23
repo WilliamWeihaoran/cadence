@@ -90,8 +90,11 @@ struct CadenceSidebarObservedDayTests {
 
         let header = try #require(CadenceSourceScan.declarationBody("private struct iOSTasksTabHeader: View", in: source))
         #expect(header.contains("dateEyebrow(for: DateFormatters.date(from: todayKey) ?? Date())"))
-        // The hour-based greeting still reads the clock on purpose: OWNER DECISION on T-5011.
-        #expect(header.contains("greeting(for: Date())"))
+        // T-5020: the hour-based greeting reads a minute-aligned timeline's date, not a one-shot
+        // `Date()` that froze it at the last re-render.
+        #expect(CadenceSourceScan.matchCount(#"TimelineView\(\.everyMinute\) \{ context in"#, in: header) == 1)
+        #expect(header.contains("greeting(for: context.date)"))
+        #expect(!header.contains("greeting(for: Date())"), "the greeting goes stale within the day")
     }
 }
 #endif
