@@ -76,6 +76,26 @@ struct CadenceCodexTrackingUIRetirementTests {
         #expect(hits.isEmpty, "a retired view is reachable through \(hits)")
     }
 
+    /// **[[T-5150]] — the iOS habit detail draws no Edit control.** [[T-2079]] deleted the habit
+    /// editor and the only caller's `onEdit:`, which left the hero's "Edit habit" pencil wired to
+    /// a defaulted `{}`. A control that draws must act, so the pencil and the property both went,
+    /// as the goal detail's Edit row did. Read against the declaration, not the file, so the
+    /// goal detail beside it cannot answer for it, and comment-stripped rather than `codeOnly`,
+    /// which would blank the "Edit habit" literal and pass vacuously.
+    @Test func theIOSHabitDetailDrawsNoEditControlForTheRetiredEditor() throws {
+        let file = try CadenceSourceScan.sourceFile("Cadence/iOS/iOSFeatureDetailViews.swift")
+        let detail = try #require(CadenceSourceScan.declarationBody(
+            "struct iOSHabitDetail: View", in: file))
+        #expect(detail.contains("HabitIconTile(habit: habit"), "the scan stopped reading the habit hero")
+        #expect(!detail.contains("Edit habit"))
+        #expect(!detail.contains("onEdit"))
+        let caller = try #require(CadenceSourceScan.declarationBody(
+            "struct iOSHabitsView: View",
+            in: try CadenceSourceScan.sourceFile("Cadence/iOS/iOSFeatureViews.swift")))
+        #expect(caller.contains("iOSHabitDetail("))
+        #expect(!caller.contains("onEdit"))
+    }
+
     @Test func codexTrackingArchivePreviewGroupsRecordsWithoutLosingCounts() {
         for mode in [CadenceArchiveImportMode.mergeKeepingExistingRows, .restoreOverwritingExistingRows] {
             let plan = CadenceArchiveImportPlan(

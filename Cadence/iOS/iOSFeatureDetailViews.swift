@@ -495,7 +495,6 @@ struct iOSHabitDetail: View {
 
     let habit: Habit
     let todayKey: String
-    var onEdit: () -> Void = {}
     /// Set on the compact push stack. See `iOSGoalDetail.showsBackControl`.
     var showsBackControl = false
 
@@ -578,18 +577,9 @@ struct iOSHabitDetail: View {
 
             // **Check In Today left with [[T-2079]].** It called the retired habit check-in
             // `toggle`; `chips` above already reports whether the habit is due today and whether
-            // it is checked in.
-            HStack(spacing: 10) {
-                Spacer(minLength: 0)
-
-                iOSIconButton(
-                    systemImage: "square.and.pencil",
-                    accessibilityLabel: "Edit habit",
-                    plateSize: 44,
-                    iconSize: 15,
-                    action: onEdit
-                )
-            }
+            // it is checked in. **The Edit habit pencil left with [[T-5150]]:** T-2079 deleted the
+            // habit editor it opened and the only caller stopped passing `onEdit`, so it drew a
+            // control whose action was `{}` — the goal detail's Edit row went the same way.
         }
         .padding(18)
         .frame(maxWidth: .infinity, alignment: .leading)
