@@ -229,6 +229,8 @@ struct CadenceSubtaskProgress: Hashable {
         "\(completed) of \(total)"
     }
 
+    /// `2/5 subtasks`, for a line with room for the noun — the iOS Markdown task embed's header.
+    /// **T-4980:** that header typed its own `"…/\(total) subtasks"` and read "0/1 subtasks".
     var label: String {
         total == 1 ? "\(completed)/1 subtask" : "\(completed)/\(total) subtasks"
     }
@@ -467,6 +469,13 @@ enum CadenceTaskPresentationSupport {
     /// including for a finished task, which lists none and therefore hides none.
     static func unlistedSubtaskCount(for task: AppTask) -> Int? {
         task.isDone ? nil : hiddenSubtaskCount(for: task)
+    }
+
+    /// What VoiceOver says for the "+N more" button under a task row's subtasks. **T-4980:** iOS
+    /// typed `"Show \(hidden) more subtasks"`, and one hidden subtask is reachable — the row lists
+    /// `rowSubtaskLimit` and a task with one more than that hides exactly one.
+    static func moreSubtasksAccessibilityLabel(hidden: Int) -> String {
+        "Show \(CadencePluralization.phrase(hidden, singular: "more subtask", plural: "more subtasks"))"
     }
 
     /// Minutes → duration label for task chrome — "45m", "2h", "1h 24m", `"0m"` for nothing.

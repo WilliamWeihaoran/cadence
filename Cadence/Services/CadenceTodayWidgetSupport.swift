@@ -75,6 +75,14 @@ nonisolated struct CadenceTodayWidgetSnapshot: Hashable {
     let tasks: [CadenceTodayWidgetTask]
     var suppressionExpiresAt: Date? = nil
 
+    /// The large widget's footer count. **T-4980:** the view typed `"\(totalCount) tasks in view"`
+    /// and so said "1 tasks in view" on a day with one task. Spelled with its own ternary rather
+    /// than `CadencePluralization.phrase` because this file is compiled into the widget extension,
+    /// which does not build that helper.
+    var tasksInViewLabel: String {
+        totalCount == 1 ? "1 task in view" : "\(totalCount) tasks in view"
+    }
+
     var todayURL: URL {
         CadenceDeepLink.today.url
     }

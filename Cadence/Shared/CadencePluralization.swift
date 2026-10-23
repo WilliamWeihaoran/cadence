@@ -9,7 +9,10 @@ import Foundation
 /// `CadenceNoteActionSupport.swift` already had this exact function as a private `line(_:_:_:)`,
 /// word for word — this is that function, given one home so a fifth site cannot retype it a third
 /// way. The two existing copies now call through to this rather than keep their own.
-enum CadencePluralization {
+///
+/// `nonisolated` (T-4980): it is a pure function, and `nonisolated` presentation types such as
+/// `CadenceTaskRecurrenceEndPresentation` call it.
+nonisolated enum CadencePluralization {
     /// `"N \(singular)"` at exactly one, `"N \(plural)"` otherwise — including zero, which this
     /// always shows rather than omits. A caller that wants to omit the phrase entirely at zero
     /// (`CadenceListDeletionSummary`'s cascade lines, `CadenceNoteActionSupport`'s backlink line)

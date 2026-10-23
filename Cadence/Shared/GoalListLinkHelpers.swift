@@ -169,6 +169,13 @@ enum GoalLinkPresentation {
         taskCount == 1 ? "1 task" : "\(taskCount) tasks"
     }
 
+    /// A goal's linked-list chip, both platforms. **T-4980:** macOS's goal card typed
+    /// `"\(summary.linkedListCount) lists"` and said "1 lists"; iOS had its own correct ternary.
+    /// Callers keep their own zero case ("No lists" on macOS, no chip on iOS).
+    static func linkedListCountLabel(_ count: Int) -> String {
+        CadencePluralization.phrase(count, singular: "list", plural: "lists")
+    }
+
     /// What an empty Linked Lists section says. One string, both platforms — it has to state the
     /// *other* way work reaches a goal, or the section reads as the only one.
     static let emptyExplanation =

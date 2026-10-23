@@ -770,7 +770,7 @@ struct CadenceScheduleCaptureCard<NotesField: View>: View {
                         showsClear: false, inlineStyle: true
                     )
                 } else if draft.seriesEndMode == .afterCount {
-                    Stepper("\(max(1, draft.seriesEndCount)) occurrences", value: $draft.seriesEndCount, in: 1...999)
+                    Stepper(CadenceTaskRecurrenceEndPresentation.endCountStepperLabel(draft.seriesEndCount), value: $draft.seriesEndCount, in: 1...999)
                 }
             }
         }

@@ -63,7 +63,8 @@ struct GoalMissionGroup: Identifiable {
         guard hiddenMilestoneCount > 0 else {
             return goals.count == 1 ? "1 milestone" : "\(goals.count) milestones"
         }
-        return "\(goals.count) of \(ownedMilestoneCount) milestones"
+        // T-4980: the noun agrees with the total, so one hidden milestone reads "0 of 1 milestone".
+        return "\(goals.count) of \(CadencePluralization.phrase(ownedMilestoneCount, singular: "milestone", plural: "milestones"))"
     }
 
     /// Shown in place of the milestone list when nothing survived the filter. "No milestones yet"
@@ -269,7 +270,7 @@ struct GoalMissionCard: View {
                 GoalProgressBar(progress: summary.progress, color: Color(hex: goal.colorHex), height: 4)
 
                 HStack(spacing: 12) {
-                    Label(summary.linkedListCount == 0 ? "No lists" : "\(summary.linkedListCount) lists", systemImage: "folder")
+                    Label(summary.linkedListCount == 0 ? "No lists" : GoalLinkPresentation.linkedListCountLabel(summary.linkedListCount), systemImage: "folder")
                     Label(summary.totalTasks == 0 ? "No tasks" : summary.taskCountLabel, systemImage: "checklist")
                     Spacer(minLength: 0)
                     Text(goal.daysSummary)

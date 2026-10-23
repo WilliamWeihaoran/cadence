@@ -205,7 +205,7 @@ struct iOSGoalDetail: View {
             CadenceWrappingHStack(spacing: 7, lineSpacing: 7) {
                 if summary.linkedListCount > 0 {
                     iOSMetaChip(
-                        label: summary.linkedListCount == 1 ? "1 list" : "\(summary.linkedListCount) lists",
+                        label: GoalLinkPresentation.linkedListCountLabel(summary.linkedListCount),
                         color: Theme.dim,
                         systemImage: "folder.fill"
                     )

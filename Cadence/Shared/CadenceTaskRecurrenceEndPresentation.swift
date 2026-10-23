@@ -130,4 +130,11 @@ nonisolated enum CadenceTaskRecurrenceEndPresentation {
     static func normalizedEndCount(_ raw: Int) -> Int {
         max(1, raw)
     }
+
+    /// The schedule capture card's "after N" stepper title. **T-4980:** it typed
+    /// `"\(max(1, count)) occurrences"`, and the stepper's floor is 1, so its lowest value read
+    /// "1 occurrences".
+    static func endCountStepperLabel(_ raw: Int) -> String {
+        CadencePluralization.phrase(normalizedEndCount(raw), singular: "occurrence", plural: "occurrences")
+    }
 }

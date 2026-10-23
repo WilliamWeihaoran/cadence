@@ -345,7 +345,7 @@ struct iOSTaskRow: View {
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(.iosPressable)
-                    .accessibilityLabel("Show \(hidden) more subtasks")
+                    .accessibilityLabel(CadenceTaskPresentationSupport.moreSubtasksAccessibilityLabel(hidden: hidden))
                 }
             }
         }

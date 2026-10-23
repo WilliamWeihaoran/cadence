@@ -362,7 +362,7 @@ private struct iOSMarkdownPreviewTaskEmbedBlock: View {
 
             if task.hasSubtasks {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("\(task.completedSubtaskCount)/\(task.subtaskTotalCount) subtasks")
+                    Text(CadenceSubtaskProgress(completed: task.completedSubtaskCount, total: task.subtaskTotalCount).label)
                         .font(.system(size: 11, weight: .bold))
                         .foregroundStyle(Theme.dim)
 

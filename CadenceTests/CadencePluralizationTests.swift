@@ -86,4 +86,66 @@ struct CadencePluralizationTests {
             )
         }
     }
+
+    /// **T-4980.** Six more count strings were wrong at one, each now spelled by a formatter this
+    /// suite can call: the large Today widget's footer ("1 tasks in view"), iOS's "+N more"
+    /// subtask button for VoiceOver ("Show 1 more subtasks"), the iOS Markdown task embed's header
+    /// ("0/1 subtasks"), the macOS goal card's list chip ("1 lists"), the capture card's
+    /// after-count stepper ("1 occurrences"), and the macOS goal header's filtered count
+    /// ("0 of 1 milestones"). Zero, one and two for each, so dropping a singular branch goes red.
+    @Test func theT4980FormattersAgreeWithTheirCount() throws {
+        func widget(_ total: Int) -> String {
+            CadenceTodayWidgetSnapshot(
+                date: Date(), dateKey: "2026-10-22", state: .ready, statusMessage: nil,
+                totalCount: total, overdueCount: 0, dueTodayCount: 0, scheduledTodayCount: 0, tasks: []
+            ).tasksInViewLabel
+        }
+        #expect(widget(0) == "0 tasks in view")
+        #expect(widget(1) == "1 task in view")
+        #expect(widget(2) == "2 tasks in view")
+
+        #expect(CadenceTaskPresentationSupport.moreSubtasksAccessibilityLabel(hidden: 1) == "Show 1 more subtask")
+        #expect(CadenceTaskPresentationSupport.moreSubtasksAccessibilityLabel(hidden: 2) == "Show 2 more subtasks")
+
+        #expect(CadenceSubtaskProgress(completed: 0, total: 1).label == "0/1 subtask")
+        #expect(CadenceSubtaskProgress(completed: 1, total: 1).label == "1/1 subtask")
+        #expect(CadenceSubtaskProgress(completed: 1, total: 2).label == "1/2 subtasks")
+
+        #expect(GoalLinkPresentation.linkedListCountLabel(0) == "0 lists")
+        #expect(GoalLinkPresentation.linkedListCountLabel(1) == "1 list")
+        #expect(GoalLinkPresentation.linkedListCountLabel(2) == "2 lists")
+
+        // The stepper floor is 1, and a stored 0 is clamped to it rather than shown.
+        #expect(CadenceTaskRecurrenceEndPresentation.endCountStepperLabel(0) == "1 occurrence")
+        #expect(CadenceTaskRecurrenceEndPresentation.endCountStepperLabel(1) == "1 occurrence")
+        #expect(CadenceTaskRecurrenceEndPresentation.endCountStepperLabel(2) == "2 occurrences")
+
+        func header(shown: Int, hidden: Int) -> String {
+            GoalMissionGroup(
+                id: "g", title: "G", icon: "flag", colorHex: "#000000",
+                goals: (0..<shown).map { Goal(title: "M\($0)") },
+                hiddenMilestoneCount: hidden
+            ).milestoneCountLabel
+        }
+        #expect(header(shown: 0, hidden: 1) == "0 of 1 milestone")
+        #expect(header(shown: 1, hidden: 0) == "1 milestone")
+        #expect(header(shown: 1, hidden: 1) == "1 of 2 milestones")
+    }
+
+    /// The call sites the T-4980 formatters replaced read them, and the retired literals are gone.
+    @Test func theT4980SitesReadTheirFormatters() throws {
+        let cases: [(path: String, needle: String, retired: String)] = [
+            ("CadenceWidgets/TodayTasksWidgetView.swift", "Text(entry.snapshot.tasksInViewLabel)", "totalCount) tasks in view\")"),
+            ("Cadence/iOS/iOSTaskViews.swift", "CadenceTaskPresentationSupport.moreSubtasksAccessibilityLabel(hidden: hidden)", "more subtasks\")"),
+            ("Cadence/iOS/iOSMarkdownPreview.swift", "CadenceSubtaskProgress(completed: task.completedSubtaskCount, total: task.subtaskTotalCount).label", "subtaskTotalCount) subtasks\")"),
+            ("Cadence/macOS/Views/GoalsSupportViews.swift", "GoalLinkPresentation.linkedListCountLabel(summary.linkedListCount)", "linkedListCount) lists\""),
+            ("Cadence/iOS/iOSFeatureDetailViews.swift", "GoalLinkPresentation.linkedListCountLabel(summary.linkedListCount)", "linkedListCount) lists\""),
+            ("Cadence/Shared/Components/CadenceScheduleCaptureCard.swift", "CadenceTaskRecurrenceEndPresentation.endCountStepperLabel(draft.seriesEndCount)", "seriesEndCount)) occurrences\""),
+        ]
+        for testCase in cases {
+            let source = try CadenceCommitSurfaceScan.scanned(testCase.path)
+            #expect(source.contains(testCase.needle), "\(testCase.path) does not read its T-4980 formatter")
+            #expect(!source.contains(testCase.retired), "\(testCase.path) still types the retired literal")
+        }
+    }
 }
