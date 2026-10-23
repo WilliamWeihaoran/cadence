@@ -228,6 +228,9 @@ MACRO_WARNING = re.compile(r"macro expansion [^ :]+:[0-9]+:[0-9]+: warning:")
 KILLED = "KILLED"
 SURVIVED = "SURVIVED"
 INCONCLUSIVE = "INCONCLUSIVE"
+# T-3412: a run this runner refused to start because its test-host lease had been reclaimed. Not a
+# verdict about the mutation at all -- the experiment was never performed.
+LOCK_LOST = "LOCK-LOST"
 
 # T-955: the signals `on_signal` treats as "restore and release, then stop". Named once so the
 # registration below and the atomic acquire/release sections in `Runner` block exactly the same set
@@ -1109,6 +1112,9 @@ class Runner:
         self.live = []           # the files a mutation is currently applied to
         self.lock_id = "mut-%s" % ident
         self.lock_held = False
+        self.lock_script = None  # set by acquire_lock; None means this runner manages no lock
+        self.lock_env = None     # the lock script's environment; None inherits ours (selftest only)
+        self.lock_lost = ""      # why the lease is gone, once `renew` has said NOT HELD (T-3412)
 
     # -- restore is the only thing that must happen no matter how we leave --
     def emergency_restore(self, why):
@@ -1140,9 +1146,10 @@ class Runner:
         """
         signal.pthread_sigmask(signal.SIG_BLOCK, CLEANUP_SIGNALS)
         try:
-            taken = subprocess.run([lock_script, "acquire", timeout, self.lock_id])
+            taken = subprocess.run([lock_script, "acquire", timeout, self.lock_id], env=self.lock_env)
             if taken.returncode == 0:
                 self.lock_held = True
+                self.lock_script = lock_script
             return taken
         finally:
             signal.pthread_sigmask(signal.SIG_UNBLOCK, CLEANUP_SIGNALS)
@@ -1156,10 +1163,50 @@ class Runner:
         # direction that would matter -- leave `lock_held` true if this call is ever reordered.
         signal.pthread_sigmask(signal.SIG_BLOCK, CLEANUP_SIGNALS)
         try:
-            subprocess.run([os.path.join(ROOT, "scripts", "test-host-lock.sh"), "release", self.lock_id])
+            subprocess.run([self.lock_script or os.path.join(ROOT, "scripts", "test-host-lock.sh"),
+                            "release", self.lock_id], env=self.lock_env)
             self.lock_held = False
         finally:
             signal.pthread_sigmask(signal.SIG_UNBLOCK, CLEANUP_SIGNALS)
+
+    def still_holds_lock(self):
+        """Renew the lease, and say whether this runner still holds the test-host lock (T-3412).
+
+        Called immediately before EVERY run that can start a test host. The batch takes one lease
+        for the whole plan, and the lock's reclaim branch frees a lease older than 2700 s whenever
+        no `xcodebuild test` is live -- which is exactly the gap between two of our runs. So the
+        lease is restarted here, per run, and a `NOT HELD` answer means a waiter already reclaimed
+        it: the mutex is somebody else's now, and starting a host would be the second host on one
+        app-group container (T-236). The answer is then remembered, `lock_held` is cleared so the
+        `finally` cannot `release` a lock that is no longer ours, and every later call says the same.
+
+        A runner that took no lock (`--no-lock`, `--no-build`) has nothing to renew and answers yes:
+        under `--no-lock` the caller owns the lease, and its renewal is the caller's business.
+        """
+        if self.lock_lost:
+            return False
+        if self.lock_script is None:
+            return True
+        signal.pthread_sigmask(signal.SIG_BLOCK, CLEANUP_SIGNALS)
+        try:
+            renewed = subprocess.run([self.lock_script, "renew", self.lock_id], env=self.lock_env,
+                                     stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+            if renewed.returncode != 0:
+                said = (renewed.stdout or b"").decode("utf-8", "replace").strip()
+                self.lock_lost = said or ("`test-host-lock.sh renew %s` exited %d"
+                                          % (self.lock_id, renewed.returncode))
+                self.lock_held = False
+            return not self.lock_lost
+        finally:
+            signal.pthread_sigmask(signal.SIG_UNBLOCK, CLEANUP_SIGNALS)
+
+    def gated_run(self, run):
+        """`run()` -> RunVerdict, started only while the lock is still ours; LOCK-LOST otherwise."""
+        if not self.still_holds_lock():
+            return RunVerdict("INVALID", LOCK_LOST,
+                              "not run: the test-host lock was reclaimed from %s before this run "
+                              "could start (%s)" % (self.lock_id, self.lock_lost))
+        return run()
 
     def on_signal(self, signum, _frame):
         # A handler that restores and then returns lets the runner carry on mutating, which is how
@@ -1365,17 +1412,25 @@ def run_plan():
                 counter[0] += 1
                 say("   [%d/%d] %s   (the control for %s)"
                     % (counter[0], len(probes), probe.label, ", ".join(probe.idents)))
-                code, log, seconds = run_suite(tree, ident, probe, options["scheme"],
-                                               options["destination"], log_dir,
-                                               "baseline-%s" % (probe.suite or "whole-target"))
-                base = classify_run(code, log, probe.suite, probe.tests, labels, suite_labels)
-                say("   exit=%d  test result lines=%d  swift warnings=%d  %.0fs"
-                    % (code, base.tests_ran, base.warnings, seconds))
-                if base.verdict == SURVIVED:
-                    say("   baseline green over %d tests." % base.tests_ran)
-                return base
+                def run():
+                    code, log, seconds = run_suite(tree, ident, probe, options["scheme"],
+                                                   options["destination"], log_dir,
+                                                   "baseline-%s" % (probe.suite or "whole-target"))
+                    base = classify_run(code, log, probe.suite, probe.tests, labels, suite_labels)
+                    say("   exit=%d  test result lines=%d  swift warnings=%d  %.0fs"
+                        % (code, base.tests_ran, base.warnings, seconds))
+                    if base.verdict == SURVIVED:
+                        say("   baseline green over %d tests." % base.tests_ran)
+                    return base
+                return runner.gated_run(run)
 
             refused = baseline_phase(mutations, measure)
+            if refused is not None and refused[1].reason == LOCK_LOST:
+                say("")
+                say("!! REFUSING: LOCK-LOST before the baseline for %s (T-3412)." % refused[0].label)
+                say("   %s" % refused[1].detail)
+                say("   No run was started without the lock. Re-run the plan once the host is free.")
+                return 1
             if refused is not None:
                 probe, base = refused
                 # A baseline that comes back KILLED carries no `reason`/`detail` at all -- KILLED
@@ -1424,11 +1479,14 @@ def run_plan():
             if not options["build"]:
                 verdict = RunVerdict("INVALID", "NOT-RUN", "--no-build: applied and restored only")
             else:
-                code, log, seconds = run_suite(tree, ident, mutation, options["scheme"],
-                                               options["destination"], log_dir, mutation.ident)
-                verdict = classify_run(code, log, mutation.suite, mutation.tests, labels, suite_labels)
-                say("   run: exit=%d  test result lines=%d  swift warnings=%d  %.0fs"
-                    % (code, verdict.tests_ran, verdict.warnings, seconds))
+                def run():
+                    code, log, seconds = run_suite(tree, ident, mutation, options["scheme"],
+                                                   options["destination"], log_dir, mutation.ident)
+                    ran = classify_run(code, log, mutation.suite, mutation.tests, labels, suite_labels)
+                    say("   run: exit=%d  test result lines=%d  swift warnings=%d  %.0fs"
+                        % (code, ran.tests_ran, ran.warnings, seconds))
+                    return ran
+                verdict = runner.gated_run(run)
             ok = restore_mutation(tree, runner.backups, runner.baselines, mutation)
             runner.live = []
             if not ok:
@@ -1456,6 +1514,15 @@ def run_plan():
                 say("   %s" % verdict.detail)
                 say("   NOT a survivor.")
                 results.append([mutation, "INVALID", verdict.reason, verdict.detail, verdict.tests_ran, verdict.failed])
+            if verdict.reason == LOCK_LOST:
+                # T-3412: once the lease is gone it stays gone, so every later mutation would be
+                # refused the same way; say so for each by name rather than leave them unreported.
+                for later in mutations[index:]:
+                    results.append([later, "INVALID", LOCK_LOST,
+                                    "not run: the batch stopped when its test-host lock was reclaimed",
+                                    0, []])
+                say("   !! stopping the batch: the test-host lock is no longer %s's (T-3412)." % runner.lock_id)
+                break
     finally:
         runner.emergency_restore("finishing")
         runner.release_lock()
@@ -2138,6 +2205,22 @@ def selftest():
     # Still probed rather than assumed: some other sandbox (or a future, stricter one) may refuse
     # even this, and that must read as unverifiable, not as a failed check -- the exact trap of "an
     # in-host approximation that proves less than it appears to".
+    # T-3412, the half that needs no lock script and so runs in every environment, the sandboxed
+    # test host included: once `renew` has said NOT HELD, `gated_run` must not start the run, and
+    # must answer LOCK-LOST rather than any verdict about the mutation. The renewal itself, against
+    # the real `test-host-lock.sh`, is proved further down where exec'ing it is probed first.
+    say("")
+    say(" T-3412 -- a run whose test-host lease was reclaimed is refused, not judged")
+    lost = Runner("selftest-lost", {})
+    lost.lock_script = "/nonexistent/test-host-lock.sh"  # never exec'd: the lost answer is remembered
+    lost.lock_lost = "NOT HELD: the lock is held by 'someone-else'"
+    lost_ran = []
+    refused_run = lost.gated_run(lambda: lost_ran.append(1) or RunVerdict(KILLED))
+    check("a run after the lease was lost is never started, and reads LOCK-LOST (not KILLED/SURVIVED)",
+          lost_ran == [] and refused_run.verdict == "INVALID" and refused_run.reason == LOCK_LOST
+          and not refused_run.earned,
+          "ran=%r verdict=%s reason=%s" % (lost_ran, refused_run.verdict, refused_run.reason))
+
     lock_script = os.path.join(ROOT, "scripts", "test-host-lock.sh")
     signal_workspace = tempfile.mkdtemp(prefix="cadence-mutate-selftest-signal-")
     try:
@@ -2220,6 +2303,55 @@ def selftest():
                   lock_seen and not os.path.isdir(lockdir),
                   "lock dir still exists after the SIGTERM'd runner exited: %s\nchild's own output:\n%s"
                   % (lockdir, child_out))
+
+            # T-3412. One lease for a whole plan outlives the lock's 2700 s LEASE, and the reclaim
+            # branch frees it in the gap between two runs. So every run is gated on `renew`: a held
+            # lock restarts its lease and runs; a lock whose id is no longer ours refuses the run as
+            # LOCK-LOST -- never a KILLED or SURVIVED -- and must not touch the new holder's lock.
+            say("")
+            say(" T-3412 -- each run renews the batch's lease, and a reclaimed lease refuses the run")
+            renew_env = dict(lock_env)
+            renew_env.pop("CADENCE_LOCK_ACQUIRE_DELAY", None)
+            renew_dir = os.path.join(signal_workspace, "renew-lock")
+            renew_env["CADENCE_LOCK_DIR"] = renew_dir
+            since_path = os.path.join(renew_dir, "since")
+            id_path = os.path.join(renew_dir, "id")
+            holder = Runner("selftest-renew", {})
+            holder.lock_env = renew_env
+            taken = holder.acquire_lock(lock_script, "10")
+            check("the renew fixture took its own throwaway lock",
+                  taken.returncode == 0 and holder.lock_held and os.path.isdir(renew_dir))
+            ran = []
+
+            def fake_run():
+                ran.append(1)
+                return RunVerdict(SURVIVED)
+            write_bytes(since_path, b"1\n")  # a lease 50 years old: what a long batch looks like
+            first = holder.gated_run(fake_run)
+            renewed_to = read_bytes(since_path).strip()
+            check("a run under a held lock starts, and restarts the lease first",
+                  ran == [1] and first.verdict == SURVIVED and renewed_to.isdigit()
+                  and int(renewed_to) > 1000000000,
+                  "ran=%r verdict=%s since=%r" % (ran, first.verdict, renewed_to))
+            write_bytes(id_path, b"someone-else\n")  # what a waiter's reclaim + mkdir leaves behind
+            write_bytes(since_path, b"1\n")
+            second = holder.gated_run(fake_run)
+            check("a run after the lock was reclaimed is NOT started, and reads LOCK-LOST",
+                  ran == [1] and second.verdict == "INVALID" and second.reason == LOCK_LOST,
+                  "ran=%r verdict=%s reason=%s" % (ran, second.verdict, second.reason))
+            check("and it neither renewed the new holder's lease nor still believes it holds it",
+                  read_bytes(since_path).strip() == b"1" and not holder.lock_held
+                  and read_bytes(id_path).strip() == b"someone-else",
+                  "since=%r held=%r" % (read_bytes(since_path), holder.lock_held))
+            holder.release_lock()
+            check("so the batch's closing release leaves the new holder's lock in place",
+                  os.path.isdir(renew_dir) and read_bytes(id_path).strip() == b"someone-else")
+            third = holder.gated_run(fake_run)
+            check("a lost lease stays lost: the next run is refused too", ran == [1] and third.reason == LOCK_LOST)
+            unlocked = Runner("selftest-nolock", {})
+            check("a runner that took no lock (--no-lock / --no-build) is not gated",
+                  unlocked.gated_run(fake_run).verdict == SURVIVED and ran == [1, 1])
+            shutil.rmtree(renew_dir, ignore_errors=True)
     finally:
         shutil.rmtree(signal_workspace, ignore_errors=True)
 

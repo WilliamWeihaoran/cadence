@@ -51,6 +51,7 @@
 #
 #   ./scripts/test-host-lock.sh acquire [timeout_seconds] [id]  # blocks, exits 0 when held
 #   ./scripts/test-host-lock.sh release [id]
+#   ./scripts/test-host-lock.sh renew <id>                      # restart the lease, only if <id> holds it (T-3412)
 #   ./scripts/test-host-lock.sh status                          # holder + the queue behind it
 #   ./scripts/test-host-lock.sh selftest                        # proves the properties below
 #
@@ -471,6 +472,46 @@ case "$CMD" in
     print -r -- "TIMED OUT after ${timeout}s; did NOT acquire. Do not run anyway."
     exit 1
     ;;
+  renew)
+    # T-3412: one acquire for MANY runs needs a lease that restarts per run. `scripts/mutate.sh`
+    # takes the lock once for a whole plan (it must: see "FAIRNESS HAS A PRICE" above), and a plan of
+    # a dozen ~650 s runs outlives the 2700 s LEASE. The reclaim branch in `acquire` then frees it
+    # from its LIVE runner in the seconds between two runs, the one moment no `xcodebuild test` is
+    # on the box -- measured 2026-10-23: `mut-mdflush0840` lost the lock at 06:41 and kept starting
+    # hosts, two on one simulator by 07:10 (T-236). The reclaim rules are right and are NOT changed
+    # here (T-956, T-1152); what was missing is a way for a holder to say "still mine" between runs.
+    #
+    # Renews ONLY for the recorded id, and says NOT HELD (exit 1) otherwise -- that answer is the
+    # point, not a side effect: a caller that gets it has lost the mutex and must not start a host.
+    # No id default: defaulting to $PPID, as `release` does, would let a forgotten argument read as
+    # "lost" for every caller that acquired under an explicit id.
+    #
+    # `since` is replaced by rename, never truncated in place: a reader in `acquire` that catches a
+    # truncated file reads an empty `since` as epoch 0, an age of fifty years, and reclaims a lock
+    # that was being renewed. The id is read again after the rename because a reclaim can land
+    # between the first read and the write; the rename then either fails (the old directory is
+    # gone) or lands in the new holder's directory, and the second read says NOT HELD either way.
+    ID="${2:-}"
+    if [[ -z "$ID" ]]; then
+      print -r -- "usage: test-host-lock.sh renew <id>  (the id you acquired under)"; exit 64
+    fi
+    if [[ ! -d "$LOCK" ]]; then
+      print -r -- "NOT HELD: the lock is free, so '$ID' no longer holds it; do not start a test host"; exit 1
+    fi
+    owner_id=$(cat "$LOCK/id" 2>/dev/null)
+    if [[ "$owner_id" != "$ID" ]]; then
+      print -r -- "NOT HELD: the lock is held by '${owner_id:-?}' (pid $(cat "$LOCK/pid" 2>/dev/null)), not '$ID'; do not start a test host"; exit 1
+    fi
+    tmp="$LOCK/since.renew.$$"
+    if ! { date +%s > "$tmp" && mv -f "$tmp" "$LOCK/since"; } 2>/dev/null; then
+      rm -f "$tmp" 2>/dev/null
+      print -r -- "NOT HELD: could not rewrite $LOCK/since for '$ID'; treat the lease as lost"; exit 1
+    fi
+    if [[ "$(cat "$LOCK/id" 2>/dev/null)" != "$ID" ]]; then
+      print -r -- "NOT HELD: the lock changed hands while '$ID' was renewing it; do not start a test host"; exit 1
+    fi
+    print -r -- "renewed ($ID)"
+    ;;
   release)
     ID="${2:-$PPID}"
     if [[ -d "$LOCK" ]]; then
@@ -884,6 +925,57 @@ exit 1' > "$root/fakepgrep" && chmod +x "$root/fakepgrep" || return 1
     cleanup_kids; rm -rf "$CADENCE_LOCK_DIR" "$CADENCE_LOCK_DIR.queue"
     }
 
+    trial_renew() {
+    # 7. A HOLDER THAT RENEWS KEEPS THE LOCK PAST THE LEASE, AND ONLY ITS OWN (T-3412). The
+    #    mutation-batch shape: one acquire, then several runs with gaps between them in which no test
+    #    host is live -- the exact moment the reclaim branch frees an expired lease. Renewing every
+    #    3 s against the selftest's 4 s LEASE for 9 s total must leave a prober unable to reclaim;
+    #    without the renewal the same prober reclaims (the lease is 9 s old). Then the refusals: a
+    #    wrong id, a lock that changed hands, and a free lock must each say NOT HELD, exit non-zero,
+    #    and write nothing -- a renew that "succeeds" for a lost lock is the original defect again.
+    export CADENCE_LOCK_PGREP="$root/never-a-live-host"
+    export CADENCE_LOCK_PGREP_CMD="$FAKE_PGREP"
+    typeset -a probs; probs=()
+    "$SELF" acquire 10 renewer >/dev/null 2>&1 || probs+=("fixture: could not take the lock")
+    for i in 1 2 3; do
+      sleep 3
+      out="$("$SELF" renew renewer 2>&1)" || probs+=("renew $i by the holder refused: $out")
+    done
+    out="$("$SELF" acquire 2 prober 2>&1)"; rc=$?
+    holder="$(cat "$CADENCE_LOCK_DIR/id" 2>/dev/null)"
+    (( rc != 0 )) && [[ "$holder" == renewer ]] \
+      || probs+=("a lock renewed past its lease was reclaimed anyway: prober rc=$rc, holder '$holder', out='$out'")
+    before="$(cat "$CADENCE_LOCK_DIR/since" 2>/dev/null)"
+    out="$("$SELF" renew stranger 2>&1)"; rc=$?
+    (( rc == 1 )) && [[ "$out" == NOT\ HELD* && "$(cat "$CADENCE_LOCK_DIR/since" 2>/dev/null)" == "$before" ]] \
+      || probs+=("renew under a wrong id: rc=$rc out='$out' (wanted exit 1, NOT HELD, since unchanged)")
+    out="$("$SELF" renew 2>&1)"; rc=$?
+    (( rc == 64 )) || probs+=("renew with no id: rc=$rc, wanted 64 (no \$PPID default)")
+    # The incident itself: the lease expires, a waiter reclaims, and the old holder renews.
+    print -r -- 1 > "$CADENCE_LOCK_DIR/since"
+    out="$("$SELF" acquire 5 reclaimer 2>&1)"; rc=$?
+    if (( rc == 0 )) && [[ "$(cat "$CADENCE_LOCK_DIR/id" 2>/dev/null)" == reclaimer ]]; then
+      before="$(cat "$CADENCE_LOCK_DIR/since" 2>/dev/null)"
+      print -r -- 1 > "$CADENCE_LOCK_DIR/since"
+      out="$("$SELF" renew renewer 2>&1)"; rc=$?
+      (( rc == 1 )) && [[ "$out" == NOT\ HELD* && "$(cat "$CADENCE_LOCK_DIR/since" 2>/dev/null)" == 1 ]] \
+        || probs+=("renew by the holder a reclaim displaced: rc=$rc out='$out' since='$(cat "$CADENCE_LOCK_DIR/since" 2>/dev/null)' (wanted exit 1, NOT HELD, the new holder's since untouched)")
+      "$SELF" release reclaimer >/dev/null 2>&1
+    else
+      probs+=("fixture: the expired lease was not reclaimed (rc=$rc out='$out')")
+    fi
+    out="$("$SELF" renew renewer 2>&1)"; rc=$?
+    (( rc == 1 )) && [[ "$out" == NOT\ HELD* && ! -e "$CADENCE_LOCK_DIR" ]] \
+      || probs+=("renew on a free lock: rc=$rc out='$out' (wanted exit 1, NOT HELD, no lock directory created)")
+    if (( ${#probs} == 0 )); then
+      print -r -- "PASS renew-keeps-own-lease: renewed 3x across 9s against a 4s lease, a prober could not reclaim; a wrong id, a displaced holder and a free lock each got NOT HELD and wrote nothing"
+    else
+      print -r -- "FAIL renew-keeps-own-lease: ${(j:; :)probs}"; (( fails++ ))
+    fi
+    unset CADENCE_LOCK_PGREP CADENCE_LOCK_PGREP_CMD
+    cleanup_kids; rm -rf "$CADENCE_LOCK_DIR" "$CADENCE_LOCK_DIR.queue"
+    }
+
     trial_cannottell() {
     # 6. A PROBE THAT CANNOT ANSWER MUST REFUSE, NOT REPORT ZERO (T-1152). Properties 2 and 5b
     #    prove the lock defers to a live host it can SEE. This is the case underneath both of
@@ -1134,7 +1226,7 @@ exit 0' > "$root/blindps"; chmod +x "$root/blindps"
       exit $(( fails > 0 ))
     fi
 
-    for t in ordering noreclaim killedwaiter deadparent deadowner defers cannottell keepsqueue calibration; do
+    for t in ordering noreclaim killedwaiter deadparent deadowner defers renew cannottell keepsqueue calibration; do
       run_trial "$t"
     done
     report_trials

@@ -65,6 +65,10 @@ struct CadenceGuardScriptSelftestTests {
         "SUITE-PREFIXED",
         "UNKNOWN-SUITE",
         "TEST-NOT-IN-SUITE",
+        // T-3412: a run refused because the batch's one test-host lease was reclaimed between two
+        // runs (the lock's 2700 s lease, one acquire for a dozen ~650 s runs). Without it the batch
+        // kept starting hosts on a mutex it no longer held -- two on one simulator, T-236.
+        "LOCK-LOST",
     ]
 
     /// Every refusal `scripts/agent-commit.sh` makes. `SHARED-INDEX-DIRTY` is the post-commit repair
@@ -452,6 +456,9 @@ struct CadenceGuardScriptSelftestTests {
         "cannot-tell-refuses",
         "cannot-tell-keeps-queue",
         "host-pattern-calibration",
+        // T-3412: `renew <id>` restarts the lease only for its holder, so one acquire can span many
+        // runs without the reclaim branch freeing it in a gap between them; NOT HELD otherwise.
+        "renew-keeps-own-lease",
     ]
 
     /// `ordering` and `no-reclaim` cannot be PROVEN from inside this test host -- not "are awkward
