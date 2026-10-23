@@ -389,9 +389,9 @@ struct CadenceMarkdownImageCommitSurfaceTests {
         #expect(code.contains("@ViewBuilder"), "a two-branch body needs it")
     }
 
-    /// Exactly seven call sites take a dismissal, and every one of them is a notice **no later
+    /// Exactly eight call sites take a dismissal, and every one of them is a notice **no later
     /// attempt clears**. Named individually rather than counted, because a count that still totals
-    /// seven cannot tell you the seven are the seven that need it.
+    /// eight cannot tell you the eight are the eight that need it.
     ///
     /// **[[T-642]] widened the category from "markdown editing surface" to the property that was
     /// always doing the work.** T-708 wrote the rule as a place, because the six sites it had were
@@ -431,12 +431,13 @@ struct CadenceMarkdownImageCommitSurfaceTests {
                 "Cadence/macOS/Editor/MarkdownEditorView.swift",
                 "Cadence/macOS/Views/ListNotesSupportViews.swift",
                 "Cadence/macOS/Views/NoteEditorPane.swift",
-                "Cadence/macOS/Views/NotePanel.swift"
+                "Cadence/macOS/Views/NotePanel.swift",
+                "Cadence/macOS/Views/TaskInspectorContentSupportViews.swift"
             ],
             "a dismissal appeared on a notice a later attempt does clear, or left one that it does not"
         )
 
-        // Five files, six notices: the iOS surface carries both of its own.
+        // Seven files, eight notices: the iOS surface carries both of its own.
         var withDismissal = 0
         var total = 0
         for path in paths {
@@ -506,10 +507,16 @@ struct CadenceMarkdownImageCommitSurfaceTests {
         // [[T-4970]] makes it 69, and bare: the Mac sidebar's project due-date flag commits now,
         // and a refused date is named under the section header beside the reorder notice -- the
         // retry is the same flag, and the next date that lands clears it.
-        #expect(total == 69, "the inline notice has \(total) call sites, not the 69 this test was written over")
-        #expect(withDismissal == 7, "\(withDismissal) call sites offer a dismissal, not 7")
+        // [[T-5015]] makes it 70, and bare: the Mac inspector's Start/Stop and Cancel/Restore row
+        // names a refused status change under its buttons -- the retry is the same button, and the
+        // next change that lands clears it.
+        // [[T-5014]] makes it 71, and the eighth dismissable one: the Mac inspector's notes box
+        // names a refused embedded-task write under its editor, as `NotePanel` does -- the next
+        // thing the user does is type, and typing never reaches the write that set it.
+        #expect(total == 71, "the inline notice has \(total) call sites, not the 71 this test was written over")
+        #expect(withDismissal == 8, "\(withDismissal) call sites offer a dismissal, not 8")
 
-        // And each of the six is named, so one swapping places with another is still a failure.
+        // And each of the eight is named, so one swapping places with another is still a failure.
         for (path, notices) in [
             ("Cadence/Shared/Components/CadenceTaskSettleFailureNotice.swift",
              ["CadenceInlineFailureNotice(text: CadencePendingChangePersistence.editFailureNotice) {"]),
@@ -520,7 +527,8 @@ struct CadenceMarkdownImageCommitSurfaceTests {
             ]),
             ("Cadence/macOS/Views/NotePanel.swift", ["CadenceInlineFailureNotice(text: embeddedTaskFailureNotice) { self.embeddedTaskFailureNotice = nil }"]),
             ("Cadence/macOS/Views/NoteEditorPane.swift", ["CadenceInlineFailureNotice(text: embeddedTaskFailureNotice) { self.embeddedTaskFailureNotice = nil }"]),
-            ("Cadence/macOS/Views/ListNotesSupportViews.swift", ["CadenceInlineFailureNotice(text: embeddedTaskFailureNotice) { self.embeddedTaskFailureNotice = nil }"])
+            ("Cadence/macOS/Views/ListNotesSupportViews.swift", ["CadenceInlineFailureNotice(text: embeddedTaskFailureNotice) { self.embeddedTaskFailureNotice = nil }"]),
+            ("Cadence/macOS/Views/TaskInspectorContentSupportViews.swift", ["CadenceInlineFailureNotice(text: embeddedTaskFailureNotice) { self.embeddedTaskFailureNotice = nil }"])
         ] {
             let source = try CadenceSourceScan.sourceFile(path)
             for notice in notices {

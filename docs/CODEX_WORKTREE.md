@@ -233,6 +233,23 @@ branch whose copy of the file differs from `main` was measured with `git diff --
 commits on it, `codex/ios-board-drop-refusal`, carries the PA-13 / T-1470 sentence that is already
 on `main`. The 2026-10-19 note above that it would conflict is stale for this file.
 
+**Admission 2026-10-23 (keeper), the census assertions in `CadenceTests/CadenceMarkdownImageCommitSurfaceTests.swift`.**
+That file is leased above and stays leased. The keeper (`keeper0508`) admitted agent `census0508`
+for exactly the census assertions inside `onlyNoticesNoLaterAttemptClearsOfferToDismissThemselves`
+-- the sweep's `hits` list, `#expect(total == 69, ...)` to `71`, `#expect(withDismissal == 7, ...)`
+to `8`, the named per-file list, the counting comments those touch, and one house-style sentence per
+added call site -- and nothing else in the file. **Why it could not wait for Codex:** `dad46473`
+([[T-5015]]) added a bare `CadenceInlineFailureNotice(text: failureNotice)` to the Mac
+`TaskInspectorStatusActionsRow`, and `65389afc` ([[T-5014]]) added a dismissable
+`CadenceInlineFailureNotice(text: embeddedTaskFailureNotice) { ... }` to the Mac inspector's
+`TaskDetailNotesSection`, so `main` was red in CI (run 39900552169) on a count CI reproduces
+regardless of local worktrees. **Checked before admitting:** every `codex/*` branch whose copy of the
+file differs from `main` was measured with `git diff --stat main <branch> -- <file>` (33 branches);
+each difference is deletions from `main`'s side plus at most the branch's older count line, so no
+branch is ahead of `main` in this file. The one branch with its own commit on it,
+`codex/ios-board-drop-refusal` (`405806ff`), adds only its old `total == 68` line; its PA-13 sentence
+is already on `main`.
+
 ### 2026-10-17 — WHY ALL SIX VERSIONS FAILED: each asked a cheaper question than the one being asked
 
 Agent `blocktail`'s synthesis, recorded because it explains every failure above with one sentence
