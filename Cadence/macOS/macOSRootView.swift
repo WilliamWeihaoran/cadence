@@ -192,6 +192,12 @@ struct macOSRootView: View {
                 selection: &selection
             )
         }
+        .onChange(of: notesNavigationManager.request?.token) { _, _ in
+            macOSRootLifecycleSupport.handleNotesNavigationRequest(
+                request: notesNavigationManager.request,
+                selection: &selection
+            )
+        }
         .onChange(of: taskCreationManager.isPresented) { _, isPresented in
             if isPresented {
                 clearBackgroundHoverState()

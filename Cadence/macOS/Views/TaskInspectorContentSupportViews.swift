@@ -6,6 +6,9 @@ import AppKit
 struct TaskDetailNotesSection: View {
     @Bindable var task: AppTask
     @Query(sort: \AppTask.order) private var referenceTasks: [AppTask]
+    /// [[T-5061]]: what `[[note]]` links in these notes resolve against — the same query and order
+    /// the Notes page and `EventNoteEditorSheet` use.
+    @Query(sort: \Note.updatedAt, order: .reverse) private var referenceNotes: [Note]
     @State private var editorContent = ""
     @State private var loadedTaskID: UUID?
     @State private var pendingFallbackContentSyncTask: Task<Void, Never>?
@@ -29,7 +32,9 @@ struct TaskDetailNotesSection: View {
                 MarkdownEditor(
                     text: taskNotesBinding,
                     showsToolbar: false,
+                    referenceNotes: referenceNotes,
                     referenceTasks: referenceTasks,
+                    onOpenNoteReference: openNoteReference,
                     onOpenTaskReference: openTaskReference,
                     onCreateEmbeddedTask: createEmbeddedTask,
                     onToggleEmbeddedTask: toggleEmbeddedTask,
@@ -77,7 +82,11 @@ struct TaskDetailNotesSection: View {
                 }
 
                 Button {
-                    TaskNotesPanelController.shared.show(task: task, referenceTasks: referenceTasks)
+                    TaskNotesPanelController.shared.show(
+                        task: task,
+                        referenceNotes: referenceNotes,
+                        referenceTasks: referenceTasks
+                    )
                 } label: {
                     Image(systemName: "arrow.up.left.and.arrow.down.right")
                         .font(.system(size: 11, weight: .semibold))
@@ -168,6 +177,12 @@ struct TaskDetailNotesSection: View {
         task.notes = content
         // T-4971: commit at the flush, not per keystroke. See `commitTypedContent`.
         CadencePendingChangePersistence.commitTypedContent(in: modelContext)
+    }
+
+    /// [[T-5061]]: a `[[note]]` link opens the note where the rest of the Mac app opens it.
+    private func openNoteReference(id: UUID?, title: String) {
+        guard let note = TaskNoteLinkRouting.note(id: id, title: title, in: referenceNotes) else { return }
+        TaskNoteLinkRouting.open(note)
     }
 
     // MARK: - Embedded task cards and `[[task]]` links (T-5014)
@@ -353,6 +368,8 @@ struct TaskNotesExpandedEditorSheet: View {
             task: task,
             relatedNotes: referenceNotes,
             relatedTasks: referenceTasks,
+            // [[T-5061]]: the pane's default is a no-op, so a resolved note link went nowhere.
+            onOpenNote: { TaskNoteLinkRouting.open($0) },
             trailingToolbarAccessory: AnyView(
                 Button {
                     if let onClose {
@@ -375,6 +392,42 @@ struct TaskNotesExpandedEditorSheet: View {
         )
         .frame(minWidth: 760, idealWidth: 900, minHeight: 560, idealHeight: 680)
         .background(Theme.surface)
+    }
+}
+
+/// [[T-5061]]: where a `[[note]]` link clicked in a task's notes goes, from a host that is not
+/// itself a notes page (the inspector box, the floating Task Notes panel).
+///
+/// A standalone note takes the route global search takes — `NotesNavigationManager.openNote`, which
+/// `macOSRootView` answers by selecting the Notes page. A `.list` note has no Notes page; it opens
+/// its list's Notes tab through `ListNavigationManager`, but that route carries no note id for a
+/// list note (`ListNotesView` honours only a requested meeting note), so the tab opens without that
+/// note selected — the residual [[T-5061]] is PARTIAL for.
+enum TaskNoteLinkRouting {
+    /// Same resolution as `TaskNoteEditorPane.openNoteReference`: the id first, then the title.
+    static func note(id: UUID?, title: String, in notes: [Note]) -> Note? {
+        if let id, let note = notes.first(where: { $0.id == id }) {
+            return note
+        }
+        let targetTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !targetTitle.isEmpty else { return nil }
+        return notes.first { $0.displayTitle.caseInsensitiveCompare(targetTitle) == .orderedSame }
+    }
+
+    static func open(
+        _ note: Note,
+        notesNavigation: NotesNavigationManager = .shared,
+        listNavigation: ListNavigationManager = .shared
+    ) {
+        guard note.kind == .list else {
+            notesNavigation.openNote(id: note.id, kind: note.kind)
+            return
+        }
+        if let project = note.project {
+            listNavigation.open(projectID: project.id, page: .documents)
+        } else if let area = note.area {
+            listNavigation.open(areaID: area.id, page: .documents)
+        }
     }
 }
 

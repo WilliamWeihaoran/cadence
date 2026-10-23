@@ -90,6 +90,17 @@ enum macOSRootLifecycleSupport {
         }
     }
 
+    /// [[T-5061]]: a note opened from outside the Notes page (a `[[note]]` link in a task's notes)
+    /// sets a `NotesNavigationManager` request and nothing else; this brings the page up to read it.
+    /// `NotesView` consumes the request on appear.
+    static func handleNotesNavigationRequest(
+        request: NotesNavigationManager.Request?,
+        selection: inout SidebarItem?
+    ) {
+        guard request != nil else { return }
+        selection = .notes
+    }
+
     static func handleListNavigationRequest(
         request: ListNavigationManager.Request,
         selection: inout SidebarItem?
