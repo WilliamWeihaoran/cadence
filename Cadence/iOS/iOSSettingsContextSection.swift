@@ -16,6 +16,13 @@ enum iOSContextEditorMode: Identifiable {
     }
 }
 
+/// [[T-5174]] (a): the three fields `iOSContextEditorSheet.save()` writes back for an existing context.
+struct iOSContextEditorDraftSnapshot: Equatable {
+    var name: String
+    var icon: String
+    var colorHex: String
+}
+
 struct iOSContextEditorSheet: View {
     let mode: iOSContextEditorMode
     @Environment(\.dismiss) private var dismiss
@@ -25,8 +32,14 @@ struct iOSContextEditorSheet: View {
     @State private var icon = Self.defaultIcon
     @State private var colorHex = Theme.blueHex
     @State private var hasLoaded = false
+    /// [[T-5174]]: the draft as `load()` left it, against which a swipe-down is refused.
+    @State private var openedDraft: iOSContextEditorDraftSnapshot?
     /// Set when the commit was refused. The editor stays open holding it — see `save()`.
     @State private var saveFailureNotice: String?
+
+    private var currentDraft: iOSContextEditorDraftSnapshot {
+        iOSContextEditorDraftSnapshot(name: name, icon: icon, colorHex: colorHex)
+    }
 
     private static let defaultIcon = "square.stack.fill"
 
@@ -107,6 +120,10 @@ struct iOSContextEditorSheet: View {
                 }
             }
             .onAppear(perform: load)
+            // [[T-5174]] (a): the [[T-3171]] rule. Presented by `.sheet` only (`iOSSettingsView`).
+            .interactiveDismissDisabled(
+                iOSEditSheetDismissGuard.blocksSwipe(isEditing: isEditing, opened: openedDraft, current: currentDraft)
+            )
         }
         .preferredColorScheme(.dark)
     }
@@ -131,6 +148,7 @@ struct iOSContextEditorSheet: View {
             name = context.name
             icon = context.icon
             colorHex = context.colorHex
+            openedDraft = currentDraft
         }
     }
 

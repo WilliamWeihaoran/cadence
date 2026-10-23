@@ -120,6 +120,9 @@ struct CadencePluralizationTests {
         #expect(CadenceTaskRecurrenceEndPresentation.endCountStepperLabel(1) == "1 occurrence")
         #expect(CadenceTaskRecurrenceEndPresentation.endCountStepperLabel(2) == "2 occurrences")
 
+        // T-5200: `GoalMissionGroup` lives in `Cadence/macOS/Views/GoalsSupportViews.swift`, so on
+        // the iOS leg this block did not compile and took every iOS unit test down with it.
+        #if os(macOS)
         func header(shown: Int, hidden: Int) -> String {
             GoalMissionGroup(
                 id: "g", title: "G", icon: "flag", colorHex: "#000000",
@@ -130,6 +133,7 @@ struct CadencePluralizationTests {
         #expect(header(shown: 0, hidden: 1) == "0 of 1 milestone")
         #expect(header(shown: 1, hidden: 0) == "1 milestone")
         #expect(header(shown: 1, hidden: 1) == "1 of 2 milestones")
+        #endif
     }
 
     /// The call sites the T-4980 formatters replaced read them, and the retired literals are gone.

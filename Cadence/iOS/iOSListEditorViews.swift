@@ -18,6 +18,51 @@ enum iOSListEditorMode: Identifiable {
     }
 }
 
+/// [[T-5174]] (a): the [[T-3171]] rule — "a swipe cannot discard an unsaved draft" — for the iOS
+/// **edit** sheets that hold Cancel/Save drafts (Edit List, Edit Context). A creation sheet never
+/// blocks: whether a half-typed new item should hold its sheet is the owner's call, T-5174 (b).
+///
+/// `opened` is the draft as `load()` left it; `nil` until then, so the sheet's first render (with
+/// its `@State` defaults) cannot read as an edit.
+enum iOSEditSheetDismissGuard {
+    static func blocksSwipe<Draft: Equatable>(isEditing: Bool, opened: Draft?, current: Draft) -> Bool {
+        guard isEditing, let opened else { return false }
+        return opened != current
+    }
+}
+
+/// Every field `iOSListEditorSheet.save()` writes back for an existing list, as the sheet holds it.
+/// A column's completed/archived flags are deliberately absent: `applyColumnWindDown` and
+/// `reopenColumn` write those to the model at once, so they are never an unsaved edit.
+struct iOSListEditorDraftSnapshot: Equatable {
+    struct Column: Equatable {
+        var id: UUID
+        var name: String
+        var colorHex: String
+        var dueDate: String
+
+        init(_ draft: CadenceSectionDraft) {
+            id = draft.id
+            name = draft.name
+            colorHex = draft.colorHex
+            dueDate = draft.dueDate
+        }
+    }
+
+    var name: String
+    var details: String
+    var icon: String
+    var colorHex: String
+    var selectedContextID: String
+    var selectedAreaID: String
+    /// The date key Save would write, `""` for none — the form Save compares, so a `Date` that
+    /// moved within its day is not an edit.
+    var dueDateKey: String
+    var hideEmptyDueDates: Bool
+    var hideEmptySectionDueDates: Bool
+    var columns: [Column]
+}
+
 struct iOSListEditorSheet: View {
     let mode: iOSListEditorMode
     /// The group a `.newArea` / `.newProject` opens on, when something already knew one — today
@@ -48,6 +93,8 @@ struct iOSListEditorSheet: View {
     @State private var hasProjectDueDate = false
     @State private var projectDueDate = Date()
     @State private var hasLoaded = false
+    /// [[T-5174]]: the draft as `load()` left it, against which a swipe-down is refused.
+    @State private var openedDraft: iOSListEditorDraftSnapshot?
     @State private var showContextPicker = false
     @State private var showAreaPicker = false
     /// Set only when `CadenceContainerWindDownSummary.requiresConfirmation` says the column has
@@ -109,6 +156,21 @@ struct iOSListEditorSheet: View {
 
     private var trimmedName: String {
         name.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private var currentDraft: iOSListEditorDraftSnapshot {
+        iOSListEditorDraftSnapshot(
+            name: name,
+            details: details,
+            icon: icon,
+            colorHex: colorHex,
+            selectedContextID: selectedContextID,
+            selectedAreaID: selectedAreaID,
+            dueDateKey: hasProjectDueDate ? DateFormatters.dateKey(from: projectDueDate) : "",
+            hideEmptyDueDates: hideEmptyDueDates,
+            hideEmptySectionDueDates: hideEmptySectionDueDates,
+            columns: sectionDrafts.map { iOSListEditorDraftSnapshot.Column($0) }
+        )
     }
 
     private var normalizedSectionConfigs: [TaskSectionConfig] {
@@ -299,6 +361,13 @@ struct iOSListEditorSheet: View {
                 showAreaPicker = false
             }
             .iOSColumnWindDown(target: $pendingColumnWindDown, perform: applyColumnWindDown)
+            // [[T-5174]] (a): Save is the only write, so an unsaved rename, colour or column edit
+            // lives nowhere but this sheet's state; a swipe that dropped it said nothing. Every
+            // presenter is `.sheet`, never `.popover` — [[T-3240]] measured this modifier pushing
+            // an iPad popover out of its popover.
+            .interactiveDismissDisabled(
+                iOSEditSheetDismissGuard.blocksSwipe(isEditing: isEditing, opened: openedDraft, current: currentDraft)
+            )
         }
         .preferredColorScheme(.dark)
     }
@@ -453,6 +522,7 @@ struct iOSListEditorSheet: View {
                 hasProjectDueDate = false
             }
         }
+        if isEditing { openedDraft = currentDraft }
     }
 
     /// T-321: every branch below wrote, ran `try? modelContext.save()` and dismissed, so the
