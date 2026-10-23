@@ -212,7 +212,12 @@ struct iOSFocusView: View {
                     onBack: isCompact ? { dismiss() } : nil
                 )
 
-                if pickItems.isEmpty {
+                // Branch on the session, not on the ready list (T-5306). `selectedItem` keeps a
+                // chosen subject that is not ready — "Focus this" on a task do-dated next month,
+                // or the focused task completed mid-session — so an empty ready list alone would
+                // hide the clock under "Session running". The landscape layout already branches
+                // on the selection; this is the same rule.
+                if selectedItem == nil && pickItems.isEmpty {
                     // A single consolidated empty state avoids showing two
                     // near-duplicate "nothing here" messages stacked on top
                     // of each other (task list pane + focus detail pane).

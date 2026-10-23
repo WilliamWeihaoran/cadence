@@ -44,4 +44,29 @@ struct CadenceCodexFocusLandscapeTests {
         #expect(!landscape.contains("selectedTarget ="))
         #expect(!landscape.contains(".fullScreenCover"))
     }
+
+    /// **T-5306.** The portrait/narrow layout gates its empty state on the session, not on the
+    /// ready list. `selectedItem` resolves a chosen target through `pickItem(for:)`, which falls
+    /// back to every task, so a chosen subject can be live while `pickItems` is empty — and a
+    /// branch on `pickItems.isEmpty` alone drew "nothing ready" with no clock under
+    /// "Session running". Source-shape: `Cadence/iOS/` is not compiled by this target.
+    @Test func compactLayoutKeepsTheClockForAChosenSubjectOutsideTheReadyList() throws {
+        let source = try CadenceSourceScan.strippedSourceReader()("Cadence/iOS/iOSFocusView.swift")
+        #expect(source.contains("struct iOSFocusView: View"), "non-vacuity: wrong file")
+
+        // The premise: a chosen target resolves outside the ready list.
+        let lookup = try #require(CadenceSourceScan.declarationBody("private func pickItem(for target: CadenceFocusTarget)", in: source))
+        #expect(lookup.contains("allTasks.first"))
+
+        let compact = try #require(CadenceSourceScan.declarationBody("private var compactLayout: some View", in: source))
+        #expect(compact.contains("focusDetailPane"), "non-vacuity: compactLayout no longer draws the clock pane")
+        #expect(
+            CadenceSourceScan.matchCount(#"if\s+selectedItem\s*==\s*nil\s*&&\s*pickItems\.isEmpty\s*\{"#, in: compact) == 1,
+            "compactLayout's empty state is not gated on there being no session subject"
+        )
+        #expect(
+            CadenceSourceScan.matchCount(#"if\s+pickItems\.isEmpty\s*\{"#, in: compact) == 0,
+            "compactLayout branches on the ready list alone again, hiding a chosen session's clock"
+        )
+    }
 }

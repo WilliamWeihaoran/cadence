@@ -90,9 +90,24 @@ struct CadenceCodexTaskRowTypographyTests {
         #expect(body.components(separatedBy: ".cadenceScaledTypography()").count - 1 == 1)
         for binding in ["$pushedListRoute", "$pushedDestination"] {
             let destination = try #require(CadenceSourceScan.declarationBody(".navigationDestination(item: \(binding))", in: body))
-            #expect(destination.contains("switch "))
             #expect(destination.contains(".cadenceFixedTypography()"))
         }
+        let lists = try #require(CadenceSourceScan.declarationBody(".navigationDestination(item: $pushedListRoute)", in: body))
+        #expect(lists.contains("switch "))
+        // T-5308: feature destinations go through the shell's one switch, not a copy of it — the
+        // copy fell behind T-2072 and pushed the bare Inbox and All Tasks pages.
+        let features = try #require(CadenceSourceScan.declarationBody(".navigationDestination(item: $pushedDestination)", in: body))
+        #expect(features.contains("iOSCompactFeatureDestinationView(destination: destination)"))
+        #expect(!features.contains("switch "), "Search keeps its own CadenceFeatureDestination switch again")
+        #expect(!features.contains("iOSAllTasksView("))
+        #expect(!features.contains("iOSInboxView("))
+        #expect(CadenceSourceScan.matchCount(#"\.navigationDestination\(for:"#, in: body) == 0,
+                "Search registers a `for:` destination, which collides with the stack it is pushed into")
+        // And the shared view is the one that lands both on the merged page.
+        let shell = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile("Cadence/iOS/iOSCompactTabShell.swift"))
+        let shared = try #require(CadenceSourceScan.declarationBody("struct iOSCompactFeatureDestinationView: View", in: shell))
+        #expect(shared.contains("iOSTasksPageView(requestedScope: .all)"))
+        #expect(shared.contains("iOSTasksPageView(requestedScope: .inbox)"))
         for binding in ["$selectedNote", "$selectedEvent"] {
             let sheet = try #require(CadenceSourceScan.declarationBody(".sheet(item: \(binding))", in: body))
             #expect(sheet.contains(".cadenceFixedTypography()"))

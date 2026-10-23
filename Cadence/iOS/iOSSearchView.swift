@@ -390,28 +390,10 @@ struct iOSSearchView: View {
             .cadenceFixedTypography()
         }
         .navigationDestination(item: $pushedDestination) { destination in
-            Group {
-                switch destination {
-                case .today:
-                    iOSTodayView()
-                case .allTasks:
-                    iOSAllTasksView()
-                case .focus:
-                    iOSFocusView()
-                case .inbox:
-                    iOSInboxView()
-                case .calendar:
-                    iOSCalendarView()
-                case .notes:
-                    iOSNotesView()
-                case .lists:
-                    iOSListsView()
-                case .search:
-                    iOSSearchView()
-                case .settings:
-                    iOSSettingsView()
-                }
-            }
+            // The shell's one destination view, not a copy of it (T-5308): a hand-kept switch here
+            // fell behind T-2072 and pushed the old bare Inbox and All Tasks pages. Still an
+            // `item:` registration, because a `for:` one would collide with the stack Search sits in.
+            iOSCompactFeatureDestinationView(destination: destination)
             // Destination pages choose their own scope; Search cannot opt them in.
             .cadenceFixedTypography()
         }

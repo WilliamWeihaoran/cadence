@@ -186,7 +186,9 @@ struct TodayAndInboxNamingTests {
                 "iOSTasksPageView(requestedScope: .inbox)"
             ],
             "Cadence/iOS/iOSRootView.swift": ["iOSTodayView()"],
-            "Cadence/iOS/iOSSearchView.swift": ["iOSTodayView()", "iOSInboxView()"],
+            // Search pushes through the shell's destination view since T-5308, so it reaches
+            // both through the iOSCompactTabShell.swift needles above rather than its own copy.
+            "Cadence/iOS/iOSSearchView.swift": ["iOSCompactFeatureDestinationView(destination: destination)"],
             "Cadence/iOS/iOSTasksPageView.swift": ["iOSInboxView(showsCompactHeader: false)"]
         ]
         for (path, needles) in callers {
@@ -312,11 +314,12 @@ struct TodayAndInboxNamingTests {
         let twoPane = try #require(CadenceSourceScan.functionBody(named: "twoPaneTodayLayout", in: code))
         #expect(twoPane.contains("iOSTodaySidePanel") == false)
 
-        // And the three compact hosts really do construct the view that carries it, so the reach
+        // And the compact host really does construct the view that carries it, so the reach
         // above is a fact about the app rather than about one file.
+        // Search used to be the second host; since T-5308 it pushes the shell's destination view,
+        // which is the first.
         for path in [
-            "Cadence/iOS/iOSCompactTabShell.swift",
-            "Cadence/iOS/iOSSearchView.swift"
+            "Cadence/iOS/iOSCompactTabShell.swift"
         ] {
             let caller = CadenceSourceScan.codeOnly(try misfiledSourceFile(path))
             #expect(
