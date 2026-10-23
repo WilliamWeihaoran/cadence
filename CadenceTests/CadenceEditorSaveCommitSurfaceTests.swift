@@ -750,6 +750,61 @@ struct CadenceEditorSaveCommitSurfaceTests {
         #expect(visibleNotice.upperBound < board.lowerBound, "the notice must remain outside the scrolling columns")
     }
 
+    // MARK: - The macOS Settings context rename ([[T-4911]])
+
+    #if os(macOS)
+    /// **Behavioural.** A committed inline rename is in the store — read through a second context —
+    /// with nothing left pending for an unrelated save or rollback to decide later.
+    @Test func acommittedSettingsContextRenameIsInTheStoreBeforeTheRowCloses() throws {
+        let modelContainer = try container()
+        let modelContext = ModelContext(modelContainer)
+        let context = Context(name: "Work", colorHex: "#111111", icon: "briefcase")
+        modelContext.insert(context)
+        try modelContext.save()
+
+        try ContextSettingsRow.commitRename(
+            context, name: "Deep Work", colorHex: "#222222", icon: "brain", in: modelContext
+        )
+
+        #expect(!modelContext.hasChanges, "the rename is still pending after commitRename returned")
+        let stored = try ModelContext(modelContainer).fetch(FetchDescriptor<Context>())
+        #expect(stored.map(\.name) == ["Deep Work"])
+        #expect(stored.map(\.colorHex) == ["#222222"])
+        #expect(stored.map(\.icon) == ["brain"])
+    }
+
+    /// **Behavioural, and the defect.** A refused rename rethrows with all three fields back on the
+    /// live row, and leaves an unrelated pending edit in the shared context alone — the reason the
+    /// undo is a snapshot and not a `rollback()`.
+    @Test func arefusedSettingsContextRenamePutsAllThreeFieldsBack() throws {
+        let modelContainer = try container()
+        let modelContext = ModelContext(modelContainer)
+        let context = Context(name: "Work", colorHex: "#111111", icon: "briefcase")
+        let bystander = Area(name: "Home")
+        modelContext.insert(context)
+        modelContext.insert(bystander)
+        try modelContext.save()
+        bystander.name = "Home, being typed"
+
+        #expect(throws: CommitRefused.self) {
+            try ContextSettingsRow.commitRename(
+                context, name: "Deep Work", colorHex: "#222222", icon: "brain",
+                in: modelContext, commit: { _ in throw CommitRefused() }
+            )
+        }
+
+        #expect(context.name == "Work", "the refused rename left the new name on the row")
+        #expect(context.colorHex == "#111111", "the refused rename left the new colour on the row")
+        #expect(context.icon == "briefcase", "the refused rename left the new icon on the row")
+        #expect(bystander.name == "Home, being typed", "the refused rename discarded unrelated pending work")
+
+        // Nothing reached the store, and a later unrelated save commits only the bystander.
+        try modelContext.save()
+        let stored = try #require(try ModelContext(modelContainer).fetch(FetchDescriptor<Context>()).first)
+        #expect([stored.name, stored.colorHex, stored.icon] == ["Work", "#111111", "briefcase"])
+    }
+    #endif
+
     // MARK: - The surfaces
 
     private struct SaveSurface {
@@ -790,6 +845,13 @@ struct CadenceEditorSaveCommitSurfaceTests {
                 path: "Cadence/macOS/Views/TaskEmbedFieldEditorPopover.swift",
                 function: "commit",
                 successSpellings: ["finishCommittedEdit()"]
+            ),
+            // [[T-4911]]: the Settings → Contexts inline rename. The editor folding shut is the
+            // report, so it may only happen once `commitRename` has returned.
+            SaveSurface(
+                path: "Cadence/macOS/Views/SettingsSupportViews.swift",
+                function: "saveEdit",
+                successSpellings: ["isEditing = false"]
             ),
 
             // T-634: the task-detail subtask field, on both platforms. Clearing the draft is the
@@ -860,7 +922,7 @@ struct CadenceEditorSaveCommitSurfaceTests {
     /// Position alone is not control flow, so each branch has to `return` as well — otherwise the
     /// notice is set and the next statements dismiss over it anyway.
     @Test func everyEditorCommitsBeforeItReportsSuccess() throws {
-        let failureBranch = #"(saveFailureNotice|subtaskFailureNotice|failureNotice) = (CadencePendingChangePersistence\.editFailureNotice|CadenceTaskFieldEditCommit\.saveFailureNotice|CadenceTaskInspectorSupport\.subtask(Add|Delete)FailureNotice)\s*return"#
+        let failureBranch = #"(saveFailureNotice|subtaskFailureNotice|renameFailureNotice|failureNotice) = (CadencePendingChangePersistence\.editFailureNotice|CadenceTaskFieldEditCommit\.saveFailureNotice|CadenceTaskInspectorSupport\.subtask(Add|Delete)FailureNotice)\s*return"#
 
         for surface in saveSurfaces {
             let raw = try CadenceSourceScan.sourceFile(surface.path)
@@ -1283,7 +1345,7 @@ struct CadenceEditorSaveCommitSurfaceTests {
         let rowSave = try #require(body(of: "private func saveEdit() {", in: macRow), "saveEdit() was not found")
         let rowGuard = try #require(rowSave.range(of: "DataIntegrityRepairService.activeContextSharingName("),
                                     "the macOS rename does not consult the duplicate-name rule")
-        let rowRename = try #require(rowSave.range(of: "context.name = trimmed"),
+        let rowRename = try #require(rowSave.range(of: "Self.commitRename(context, name: trimmed"),
                                      "saveEdit() no longer renames, so this scan is reading the wrong body")
         #expect(rowGuard.lowerBound < rowRename.lowerBound, "the macOS rename guard runs after the rename")
         #expect(rowSave.contains("excluding: context"), "the macOS rename does not exclude its own row")

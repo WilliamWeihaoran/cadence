@@ -43,6 +43,7 @@ struct ContextSettingsRow: View {
     /// row: the section already holds the list, and one `@Query` per row would be one per context.
     let contexts: [Context]
 
+    @Environment(\.modelContext) private var modelContext
     @State private var isHovered = false
     @State private var isDropTarget = false
     @State private var isEditing = false
@@ -191,6 +192,13 @@ struct ContextSettingsRow: View {
     /// is written, for the reason `CreateContextSheet.create` refuses the same name at creation —
     /// the next launch's `DataIntegrityRepairService` fuses the pair with no undo. The rule is the
     /// merge's own, and this row is excluded so a change of case is not a clash with itself.
+    ///
+    /// [[T-4911]]: the three writes then closed the editor with no commit of any kind, so the rename
+    /// stayed pending in the app's single `ModelContext` — committed by the next unrelated save, or
+    /// discarded by the next unrelated `rollback()` — the [[T-503]] / [[T-322]] shape
+    /// `CreateContextSheet.create` was fixed for. The editor now closes on the committed path
+    /// alone; a refused commit puts the three fields back and the row stays open on the draft with
+    /// the failure named beneath it.
     private func saveEdit() {
         let trimmed = CadenceTitleNormalization.normalized(editName)
         guard !trimmed.isEmpty else { return }
@@ -199,11 +207,41 @@ struct ContextSettingsRow: View {
             renameFailureNotice = Self.duplicateRenameNotice(clash.name)
             return
         }
+        do {
+            try Self.commitRename(context, name: trimmed, colorHex: editColor, icon: editIcon, in: modelContext)
+        } catch {
+            renameFailureNotice = CadencePendingChangePersistence.editFailureNotice
+            return
+        }
         renameFailureNotice = nil
-        context.name = trimmed
-        context.colorHex = editColor
-        context.icon = editIcon
         withAnimation(.easeInOut(duration: 0.15)) { isEditing = false }
+    }
+
+    /// Writes the three fields the inline editor owns and commits them, putting all three back if
+    /// the commit throws ([[T-4911]]).
+    ///
+    /// The undo is the three-field snapshot `CadencePendingChangePersistence.commitEdit` asks for,
+    /// not a `rollback()`, because this is the whole app's context. Static, and the commit a
+    /// parameter, so the refused path is reachable from a test — the view itself has no seam.
+    static func commitRename(
+        _ context: Context,
+        name: String,
+        colorHex: String,
+        icon: String,
+        in modelContext: ModelContext,
+        commit: (ModelContext) throws -> Void = { try $0.save() }
+    ) throws {
+        let previousName = context.name
+        let previousColorHex = context.colorHex
+        let previousIcon = context.icon
+        context.name = name
+        context.colorHex = colorHex
+        context.icon = icon
+        try CadencePendingChangePersistence.commitEdit(in: modelContext, commit: commit) {
+            context.name = previousName
+            context.colorHex = previousColorHex
+            context.icon = previousIcon
+        }
     }
 
     static func duplicateRenameNotice(_ existingName: String) -> String {
