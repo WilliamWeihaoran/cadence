@@ -84,6 +84,10 @@
 #                    uncommitted tests in it) instead of a fresh archive of HEAD
 #   --in-place       allow the repository working tree as the target. Say it out loud or it is refused.
 #   --no-lock        do not take the test-host lock (only if the caller already holds it)
+#   --lock-id ID     with --no-lock: the id the caller acquired the lock under. The runner then
+#                    renews THAT lease before every run and refuses a run as LOCK-LOST once it is
+#                    no longer held, as for a lock it took itself, but never releases it (T-5261).
+#                    Plain --no-lock without it renews and checks nothing: the caller's business.
 #   --no-build       apply and restore each mutation, run nothing. For dry-running a plan.
 #   --scheme NAME    default: Cadence
 #   --destination D  default: platform=macOS
@@ -1154,6 +1158,18 @@ class Runner:
         finally:
             signal.pthread_sigmask(signal.SIG_UNBLOCK, CLEANUP_SIGNALS)
 
+    def adopt_caller_lock(self, lock_script, lock_id):
+        """`--no-lock --lock-id <id>` (T-5261): renew and check the CALLER's lease, never acquire it.
+
+        Under plain `--no-lock` `lock_script` stays None, so `still_holds_lock` answers yes without
+        asking -- a whole plan then runs on a lease nobody renews, which is exactly the T-3412
+        exposure. Setting `lock_script`/`lock_id` puts every run behind the same `renew` gate as a
+        lock this runner took. `lock_held` stays False: the lease is the caller's, so the closing
+        `release_lock` must never free it, and a NOT HELD leaves nothing of ours to release either.
+        """
+        self.lock_script = lock_script
+        self.lock_id = lock_id
+
     def release_lock(self):
         if not self.lock_held:
             return
@@ -1181,7 +1197,8 @@ class Runner:
         `finally` cannot `release` a lock that is no longer ours, and every later call says the same.
 
         A runner that took no lock (`--no-lock`, `--no-build`) has nothing to renew and answers yes:
-        under `--no-lock` the caller owns the lease, and its renewal is the caller's business.
+        under `--no-lock` the caller owns the lease, and its renewal is the caller's business --
+        unless the caller named it with `--lock-id`, when it is renewed here like our own (T-5261).
         """
         if self.lock_lost:
             return False
@@ -1218,7 +1235,7 @@ class Runner:
 
 def main():
     if not ARGV or ARGV[0] in ("-h", "--help"):
-        say("usage: ./scripts/mutate.sh <id> <plan-file> [--tree DIR] [--in-place] [--no-lock] [--check]")
+        say("usage: ./scripts/mutate.sh <id> <plan-file> [--tree DIR] [--in-place] [--no-lock [--lock-id ID]] [--check]")
         say("       ./scripts/mutate.sh selftest")
         return 2
     if ARGV[0] == "selftest":
@@ -1233,7 +1250,7 @@ def run_plan():
     ident, plan_path = ARGV[0], ARGV[1]
     options = {"tree": None, "in_place": False, "lock": True, "build": True,
                "scheme": "Cadence", "destination": "platform=macOS", "keep_tree": False,
-               "check": False}
+               "check": False, "lock_id": None}
     rest = ARGV[2:]
     while rest:
         flag = rest.pop(0)
@@ -1243,6 +1260,11 @@ def run_plan():
             options["in_place"] = True
         elif flag == "--no-lock":
             options["lock"] = False
+        elif flag == "--lock-id":
+            if not rest or not rest[0] or rest[0].startswith("-"):
+                say("--lock-id needs the id the caller acquired the test-host lock under")
+                return 2
+            options["lock_id"] = rest.pop(0)
         elif flag == "--no-build":
             options["build"] = False
         elif flag == "--scheme":
@@ -1256,6 +1278,11 @@ def run_plan():
         else:
             say("unknown option %r" % flag)
             return 2
+    if options["lock_id"] is not None and options["lock"]:
+        # Without --no-lock this runner acquires a lease of its own under `mut-<id>`, and a second
+        # id to renew would be a second lease nobody acquired. Say which one you mean.
+        say("--lock-id names a lease the CALLER holds, so it needs --no-lock (T-5261)")
+        return 2
 
     if not os.path.exists(plan_path):
         plan_path = os.path.join(ROOT, plan_path)
@@ -1270,6 +1297,8 @@ def run_plan():
             return 2
 
     runner = Runner(ident, options)
+    if options["lock_id"] is not None:
+        runner.adopt_caller_lock(os.path.join(ROOT, "scripts", "test-host-lock.sh"), options["lock_id"])
     os.makedirs(runner.scratch, exist_ok=True)
     log_dir = os.path.join(runner.scratch, "logs")
     os.makedirs(log_dir, exist_ok=True)
@@ -2352,6 +2381,125 @@ def selftest():
             check("a runner that took no lock (--no-lock / --no-build) is not gated",
                   unlocked.gated_run(fake_run).verdict == SURVIVED and ran == [1, 1])
             shutil.rmtree(renew_dir, ignore_errors=True)
+
+            # T-5262: the same lease loss, driven through `run_plan` itself rather than through
+            # `gated_run` alone -- the batch-loop wiring nothing above reaches: that a loss before a
+            # baseline refuses as LOCK-LOST and not BASELINE-NOT-GREEN, that the mutation loop stops,
+            # and that each later mutation gets exactly ONE LOCK-LOST row. A REAL `mutate.sh` child
+            # over a stub tree whose `xcb.sh` is green and, on its Nth call, does what a waiter's
+            # reclaim + mkdir leaves behind: rewrites `$CADENCE_LOCK_DIR/id`. The stub is a file this
+            # run wrote, so it is read by `/bin/zsh` (as `run_suite` always does), never exec'd.
+            # T-5261 rides the same fixture: `--no-lock --lock-id <id>` gates a caller's lease.
+            say("")
+            say(" T-5262/T-5261 -- a whole plan over a stub tree whose lease is reclaimed mid-batch")
+            stub_xcb = (b'#!/bin/zsh\n'
+                        b'print -r -- x >> "${0:A:h}/calls"\n'
+                        b'n=$(wc -l < "${0:A:h}/calls")\n'
+                        b'if (( n == ${MUT_STUB_STEAL_AT:-0} )); then\n'
+                        b'  print -r -- someone-else > "$CADENCE_LOCK_DIR/id"\n'
+                        b'fi\n'
+                        b'print -r -- "Suite StubSuite started."\n'
+                        b'print -r -- "Suite OtherSuite started."\n'
+                        b'print -r -- "\xe2\x9c\x94 Test stubCase() passed after 0.001 seconds."\n'
+                        b'exit 0\n')
+            one_suite = b"".join(b"mutation: m%d\nfile: dummy.txt\nsuite: StubSuite\n--- old\nhello\n"
+                                 b"--- new\ngoodbye%d\n--- end\n" % (n, n) for n in (1, 2, 3))
+            two_suites = (b"mutation: m1\nfile: dummy.txt\nsuite: StubSuite\n--- old\nhello\n--- new\n"
+                          b"one\n--- end\nmutation: m2\nfile: dummy.txt\nsuite: OtherSuite\n--- old\n"
+                          b"hello\n--- new\ntwo\n--- end\n")
+            batch_lock = os.path.join(signal_workspace, "batch-lock")
+            batch_env = dict(renew_env, CADENCE_LOCK_DIR=batch_lock,
+                             CADENCE_MUTATE_SCRATCH_ROOT=os.path.join(signal_workspace, "scratch"))
+            batch_id = os.path.join(batch_lock, "id")
+
+            def stub_batch(ident, plan, steal_at, extra=()):
+                root = os.path.join(signal_workspace, ident)
+                os.makedirs(os.path.join(root, "tree", "scripts"))
+                write_bytes(os.path.join(root, "tree", "scripts", "xcb.sh"), stub_xcb)
+                write_bytes(os.path.join(root, "tree", "dummy.txt"), b"hello\n")
+                write_bytes(os.path.join(root, "plan.txt"), plan)
+                env = dict(batch_env, MUT_STUB_STEAL_AT=str(steal_at))
+                try:
+                    done = subprocess.run(
+                        ["/bin/zsh", os.path.join(ROOT, "scripts", "mutate.sh"), ident,
+                         os.path.join(root, "plan.txt"), "--tree", os.path.join(root, "tree")]
+                        + list(extra), env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                        timeout=120)
+                    code, out = done.returncode, done.stdout.decode("utf-8", "replace")
+                except subprocess.TimeoutExpired as late:
+                    code, out = -1, (late.output or b"").decode("utf-8", "replace")
+                calls_path = os.path.join(root, "tree", "scripts", "calls")
+                calls = len(read_bytes(calls_path).splitlines()) if os.path.exists(calls_path) else 0
+                clean = read_bytes(os.path.join(root, "tree", "dummy.txt")) == b"hello\n"
+                return code, out, calls, clean
+
+            def rows(out, ident, reason):
+                return len(re.findall(r"^  %s\s+INVALID\s+%s\b" % (re.escape(ident), re.escape(reason)),
+                                      out, re.M))
+
+            def holder_now():
+                return read_bytes(batch_id).strip() if os.path.exists(batch_id) else None
+
+            # A: the lease is lost between the plan's two baselines.
+            code, out, calls, clean = stub_batch("selftest-batch-base", two_suites, 1)
+            check("a lease lost before a baseline refuses as LOCK-LOST, never BASELINE-NOT-GREEN",
+                  code == 1 and "REFUSING: LOCK-LOST before the baseline" in out
+                  and "BASELINE-NOT-GREEN" not in out and calls == 1 and "-- m1 (" not in out,
+                  "exit=%d xcb calls=%d (want 1)\n%s" % (code, calls, out))
+            check("...and leaves the new holder's lock and the tree as they were",
+                  holder_now() == b"someone-else" and clean, "holder=%r clean=%r" % (holder_now(), clean))
+            shutil.rmtree(batch_lock, ignore_errors=True)
+
+            # B: the lease is lost during m1's run. m1 was started under the lock and stands.
+            code, out, calls, clean = stub_batch("selftest-batch-loop", one_suite, 2)
+            check("a lease lost mid-batch stops it: m1 stands, m2 and m3 get exactly one LOCK-LOST row each",
+                  code == 1 and calls == 2 and re.search(r"^  m1\s+SURVIVED", out, re.M) is not None
+                  and rows(out, "m2", LOCK_LOST) == 1 and rows(out, "m3", LOCK_LOST) == 1
+                  and out.count("stopping the batch") == 1 and "-- m3 (" not in out,
+                  "exit=%d xcb calls=%d (want 2) m2 rows=%d m3 rows=%d\n%s"
+                  % (code, calls, rows(out, "m2", LOCK_LOST), rows(out, "m3", LOCK_LOST), out))
+            check("...never releasing the new holder's lock, over a restored tree",
+                  holder_now() == b"someone-else" and clean, "holder=%r clean=%r" % (holder_now(), clean))
+            shutil.rmtree(batch_lock, ignore_errors=True)
+
+            # C/D/E (T-5261): the CALLER holds the lease under its own id and passes --no-lock.
+            def caller_takes_lock():
+                subprocess.run([lock_script, "acquire", "10", "selftest-caller"], env=batch_env,
+                               stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+                write_bytes(os.path.join(batch_lock, "since"), b"1\n")
+                return holder_now() == b"selftest-caller"
+
+            took = caller_takes_lock()
+            code, out, calls, clean = stub_batch("selftest-batch-lockid", one_suite, 2,
+                                                 ("--no-lock", "--lock-id", "selftest-caller"))
+            check("--no-lock --lock-id <id>: a caller's lease lost mid-batch stops it the same way",
+                  took and code == 1 and calls == 2 and rows(out, "m2", LOCK_LOST) == 1
+                  and rows(out, "m3", LOCK_LOST) == 1 and holder_now() == b"someone-else" and clean,
+                  "took=%r exit=%d xcb calls=%d (want 2) holder=%r\n%s" % (took, code, calls, holder_now(), out))
+            shutil.rmtree(batch_lock, ignore_errors=True)
+
+            took = caller_takes_lock()
+            code, out, calls, clean = stub_batch("selftest-batch-lockid-kept", one_suite, 0,
+                                                 ("--no-lock", "--lock-id", "selftest-caller"))
+            since_file = os.path.join(batch_lock, "since")
+            since = read_bytes(since_file).strip() if os.path.exists(since_file) else b""
+            check("--no-lock --lock-id <id>: a held lease is renewed per run and is NOT released at the end",
+                  took and code == 0 and calls == 4 and holder_now() == b"selftest-caller"
+                  and since.isdigit() and int(since) > 1000000000 and clean,
+                  "took=%r exit=%d xcb calls=%d (want 4) holder=%r since=%r\n%s"
+                  % (took, code, calls, holder_now(), since, out))
+            shutil.rmtree(batch_lock, ignore_errors=True)
+
+            took = caller_takes_lock()
+            code, out, calls, clean = stub_batch("selftest-batch-nolock", one_suite, 2, ("--no-lock",))
+            check("plain --no-lock still renews and checks nothing (today's behaviour)",
+                  took and code == 0 and calls == 4 and LOCK_LOST not in out
+                  and holder_now() == b"someone-else" and clean,
+                  "took=%r exit=%d xcb calls=%d (want 4)\n%s" % (took, code, calls, out))
+            code, out, _, _ = stub_batch("selftest-batch-badflag", one_suite, 0, ("--lock-id", "x"))
+            check("--lock-id without --no-lock is refused as a usage error", code == 2,
+                  "exit=%d\n%s" % (code, out))
+            shutil.rmtree(batch_lock, ignore_errors=True)
     finally:
         shutil.rmtree(signal_workspace, ignore_errors=True)
 
