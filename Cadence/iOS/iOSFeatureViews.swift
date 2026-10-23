@@ -207,7 +207,12 @@ struct iOSHabitsView: View {
     @Query(sort: \Habit.order) private var habits: [Habit]
     @State private var selectedID: UUID?
 
-    private var todayKey: String { DateFormatters.todayKey() }
+    /// The page's one day observer ([[T-5012]]): the eyebrow's "done today" count, every row's
+    /// check-in glyph and the detail pane read this key, so a page left open across midnight rolls
+    /// over with the day. One per page, never per row ([[T-3124]]'s subscription cost).
+    @State private var observedDay = CadenceObservedDay()
+
+    private var todayKey: String { observedDay.todayKey }
 
     /// As on the goals screen: a selected id that no longer resolves falls through to the default
     /// rather than leaving the detail pane permanently empty.
@@ -219,10 +224,13 @@ struct iOSHabitsView: View {
     }
 
     private var dueToday: [Habit] {
-        habits.filter(\.isDueToday)
+        habits.filter { $0.isDue(onDayKey: todayKey) }
     }
 
     var body: some View {
+        // Read here, not only inside the split layout's closures, so this body depends on the state
+        // the observer writes.
+        let _ = observedDay.todayKey
         Group {
             if horizontalSizeClass == .compact {
                 compactLayout
@@ -232,6 +240,7 @@ struct iOSHabitsView: View {
         }
         .background(Theme.bg)
         .iOSHidesCompactNavigationBar()
+        .cadenceTracksDayChanges($observedDay)
         .onAppear {
             selectedID = selectedID ?? selected?.id
         }

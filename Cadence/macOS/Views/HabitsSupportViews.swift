@@ -70,7 +70,7 @@ struct HabitListCard: View {
                             .font(.system(size: 11, weight: .medium))
                             .foregroundStyle(Theme.amber)
 
-                        if habit.isDueToday {
+                        if habit.isDue(onDayKey: todayKey) {
                             Text(isDoneToday ? "Done today" : "Due today")
                                 .font(.system(size: 10, weight: .semibold))
                             .foregroundStyle(isDoneToday ? Theme.green : Theme.blue)
@@ -121,6 +121,11 @@ struct HabitDetailView: View {
 
     private var isDoneToday: Bool {
         habit.isDone(on: todayKey)
+    }
+
+    /// Read against the page's observed day ([[T-5012]]), not the clock, like `isDoneToday`.
+    private var isDueOnObservedDay: Bool {
+        habit.isDue(onDayKey: todayKey)
     }
 
     var body: some View {
@@ -180,7 +185,7 @@ struct HabitDetailView: View {
                     .foregroundStyle(Theme.muted)
 
                 HStack(spacing: 8) {
-                    CommitmentMetaChip(label: habit.isDueToday ? "Due today" : "Not due today", color: habit.isDueToday ? Theme.blue : Theme.dim.opacity(0.8))
+                    CommitmentMetaChip(label: isDueOnObservedDay ? "Due today" : "Not due today", color: isDueOnObservedDay ? Theme.blue : Theme.dim.opacity(0.8))
                     CommitmentMetaChip(label: isDoneToday ? "Checked in" : "Pending", color: isDoneToday ? Theme.green : Theme.amber)
                 }
             }

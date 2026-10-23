@@ -16,12 +16,14 @@ enum HabitListFilter: CaseIterable {
         }
     }
 
-    func matches(_ habit: Habit) -> Bool {
+    /// `todayKey` is the page's observed day ([[T-5012]]), not the clock read here: the page's
+    /// day observer is what re-runs this at midnight, so the key has to come from it.
+    func matches(_ habit: Habit, todayKey: String) -> Bool {
         switch self {
         case .today:
-            return habit.isDueToday
+            return habit.isDue(onDayKey: todayKey)
         case .completed:
-            return habit.isDone(on: DateFormatters.todayKey())
+            return habit.isDone(on: todayKey)
         case .streaking:
             return habit.currentStreak >= 3
         case .all:

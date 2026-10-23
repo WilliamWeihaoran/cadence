@@ -27,6 +27,9 @@ struct CadenceDayChangeAdoptionTests {
         ("Cadence/macOS/Views/SidebarSupportViews.swift", "struct SidebarListRow: View"),
         ("Cadence/iOS/iOSRootSidebar.swift", "struct iOSSidebar: View"),
         ("Cadence/iOS/iOSTasksTabView.swift", "struct iOSTasksTabView: View"),
+        // T-5012 (a): the Habits pages, one observer per page handing its key to every row.
+        ("Cadence/macOS/Views/HabitsView.swift", "struct HabitsView: View"),
+        ("Cadence/iOS/iOSFeatureViews.swift", "struct iOSHabitsView: View"),
         // T-5010: the iOS Calendar, which hands its key to the timeline, month, agenda and board.
         ("Cadence/iOS/iOSCalendarView.swift", "struct iOSCalendarView: View"),
     ]

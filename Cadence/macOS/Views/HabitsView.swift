@@ -11,7 +11,12 @@ struct HabitsView: View {
     @State private var searchText = ""
     @State private var filter: HabitListFilter = .today
 
-    private var todayKey: String { DateFormatters.todayKey() }
+    /// The page's one day observer ([[T-5012]]): "Done today", the streak flame and the Due Today
+    /// and Completed Today filters all read this key, so a page left open across midnight rolls
+    /// over with the day. One per page, never per row ([[T-3124]]'s subscription cost).
+    @State private var observedDay = CadenceObservedDay()
+
+    private var todayKey: String { observedDay.todayKey }
 
     private var selectedHabit: Habit? {
         visibleHabits.first { $0.id == selectedHabitID } ?? habits.first { $0.id == selectedHabitID }
@@ -30,7 +35,7 @@ struct HabitsView: View {
                     || (habit.goal?.title.lowercased().contains(query) ?? false)
             }
 
-            return matchesSearch && filter.matches(habit)
+            return matchesSearch && filter.matches(habit, todayKey: todayKey)
         }
     }
 
@@ -75,6 +80,9 @@ struct HabitsView: View {
     }
 
     var body: some View {
+        // Read here, not only inside the split view's closures, so this body depends on the state
+        // the observer writes.
+        let _ = observedDay.todayKey
         HSplitView {
             leftPane
                 .frame(minWidth: 300, idealWidth: 340)
@@ -87,6 +95,7 @@ struct HabitsView: View {
             }
         }
         .background(Theme.bg)
+        .cadenceTracksDayChanges($observedDay)
         .onAppear {
             if selectedHabitID == nil { selectedHabitID = habits.first?.id }
         }

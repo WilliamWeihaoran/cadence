@@ -440,7 +440,7 @@ struct iOSHabitSummaryRow: View {
                     // Only the outstanding half. The check-in control on this row already draws
                     // itself filled and in the habit's colour once today is done, so "Done today"
                     // beside it was the same fact stated twice.
-                    if habit.isDueToday && !isDoneToday {
+                    if habit.isDue(onDayKey: todayKey) && !isDoneToday {
                         Text("Due today")
                             .font(.system(size: 10, weight: .semibold))
                             .foregroundStyle(Theme.blue)
@@ -502,6 +502,11 @@ struct iOSHabitDetail: View {
 
     private var isDoneToday: Bool {
         habit.isDone(on: todayKey)
+    }
+
+    /// Read against the page's observed day ([[T-5012]]), not the clock, like `isDoneToday`.
+    private var isDueOnObservedDay: Bool {
+        habit.isDue(onDayKey: todayKey)
     }
 
     private var isCompact: Bool {
@@ -620,8 +625,8 @@ struct iOSHabitDetail: View {
                 iOSMetaChip(label: context.name, color: Color(hex: context.colorHex))
             }
             iOSMetaChip(
-                label: habit.isDueToday ? "Due today" : "Not due today",
-                color: habit.isDueToday ? Theme.blue : Theme.dim
+                label: isDueOnObservedDay ? "Due today" : "Not due today",
+                color: isDueOnObservedDay ? Theme.blue : Theme.dim
             )
         }
     }

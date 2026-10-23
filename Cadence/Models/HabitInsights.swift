@@ -13,6 +13,13 @@ extension Habit {
         isDue(on: Calendar.current.startOfDay(for: Date()))
     }
 
+    /// Whether the habit is due on the day `key` names — the form a page holding an observed day
+    /// ([[T-5012]]) asks, so its "Due today" answer turns at midnight with that day rather than
+    /// with whatever happens to redraw the row. An unparseable key falls back to the clock.
+    func isDue(onDayKey key: String, calendar: Calendar = .current) -> Bool {
+        isDue(on: DateFormatters.date(from: key, in: calendar) ?? calendar.startOfDay(for: Date()), calendar: calendar)
+    }
+
     var frequencySummary: String {
         switch frequencyType {
         case .daily:
