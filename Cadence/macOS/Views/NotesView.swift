@@ -105,6 +105,8 @@ private struct DailyNotesPage: View {
     /// current day listed even when blank; it was handed the clock in a body whose inputs do not
     /// change at midnight, so the morning after, yesterday stayed pinned and today had no row.
     @State private var observedDay = CadenceObservedDay()
+    /// A refused note ([[T-5301]]), named above the list column; the Notepad page's create says why.
+    @State private var createFailureNotice: String?
 
     /// Every daily note, in date order. Selection and the editor's reference set resolve against
     /// this, not against `listedNotes` — a day you jumped to from the header picker but have not
@@ -127,6 +129,12 @@ private struct DailyNotesPage: View {
         HSplitView {
             VStack(spacing: 0) {
                 NotesListHeader(title: NotesView.NotesPage.daily.vocabulary.columnTitle, onPickDate: openNote(forDate:))
+
+                if let createFailureNotice {
+                    CadenceInlineFailureNotice(text: createFailureNotice)
+                        .padding(.horizontal, 10)
+                        .padding(.bottom, 8)
+                }
 
                 if listedNotes.isEmpty {
                     Spacer()
@@ -195,10 +203,19 @@ private struct DailyNotesPage: View {
 
     private func openNote(forDateKey key: String) {
         if let existing = notes.first(where: { $0.dateKey == key }) {
+            createFailureNotice = nil
             selectedNoteID = existing.id
-        } else if let note = try? NoteMigrationService.dailyNote(for: key, in: modelContext) {
-            selectedNoteID = note.id
+            return
         }
+        let note: Note
+        do {
+            note = try NoteMigrationService.dailyNote(for: key, in: modelContext)
+        } catch {
+            createFailureNotice = CadencePendingChangePersistence.editFailureNotice
+            return
+        }
+        createFailureNotice = nil
+        selectedNoteID = note.id
     }
 
     private func normalizeSelection() {
@@ -217,6 +234,8 @@ private struct WeeklyNotesPage: View {
     /// pinned current week ([[T-5012]]). A week turns over at a day change, so the day observer
     /// is the week observer too.
     @State private var observedDay = CadenceObservedDay()
+    /// A refused note ([[T-5301]]), named above the list column; the Notepad page's create says why.
+    @State private var createFailureNotice: String?
 
     private var notes: [Note] {
         allNotes
@@ -242,6 +261,12 @@ private struct WeeklyNotesPage: View {
                 // The picker takes a day, not a week: weeks have no handle you can point at, and
                 // "the week containing this date" is how anyone actually locates one.
                 NotesListHeader(title: NotesView.NotesPage.weekly.vocabulary.columnTitle, onPickDate: openNote(forDate:))
+
+                if let createFailureNotice {
+                    CadenceInlineFailureNotice(text: createFailureNotice)
+                        .padding(.horizontal, 10)
+                        .padding(.bottom, 8)
+                }
 
                 if listedNotes.isEmpty {
                     Spacer()
@@ -310,10 +335,19 @@ private struct WeeklyNotesPage: View {
 
     private func openNote(forWeekKey key: String) {
         if let existing = notes.first(where: { $0.weekKey == key }) {
+            createFailureNotice = nil
             selectedNoteID = existing.id
-        } else if let note = try? NoteMigrationService.weeklyNote(for: key, in: modelContext) {
-            selectedNoteID = note.id
+            return
         }
+        let note: Note
+        do {
+            note = try NoteMigrationService.weeklyNote(for: key, in: modelContext)
+        } catch {
+            createFailureNotice = CadencePendingChangePersistence.editFailureNotice
+            return
+        }
+        createFailureNotice = nil
+        selectedNoteID = note.id
     }
 
     private func normalizeSelection() {
@@ -339,6 +373,8 @@ private struct NotepadPage: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(DeleteConfirmationManager.self) private var deleteConfirmationManager
     @State private var selectedNoteID: UUID?
+    /// A refused note ([[T-5301]]), named above the list column.
+    @State private var createFailureNotice: String?
 
     /// Unfiltered — see `NotesListVisibility.notepadNotes`. A notepad note only exists because it
     /// was asked for, so a blank one is a note you are about to write in, not noise.
@@ -354,6 +390,12 @@ private struct NotepadPage: View {
         HSplitView {
             VStack(spacing: 0) {
                 NotesListHeader(title: NotesView.NotesPage.notepad.vocabulary.columnTitle, onCreate: createNote)
+
+                if let createFailureNotice {
+                    CadenceInlineFailureNotice(text: createFailureNotice)
+                        .padding(.horizontal, 10)
+                        .padding(.bottom, 8)
+                }
 
                 if notes.isEmpty {
                     Spacer()
@@ -421,8 +463,21 @@ private struct NotepadPage: View {
         selectedNoteID = (try? CadenceCoreNoteSupport.note(for: .notepad, in: modelContext))?.id
     }
 
+    /// **[[T-5301]].** This was `guard let note = try? … else { return }` — the Mac twin of the
+    /// notepad `+` [[T-1071]] fixed on iOS: a refused store left a button that did nothing and said
+    /// nothing. Same `do`/`catch` and the same shared sentence as `iOSNotesView.createNotepadNote`,
+    /// and so for the daily and weekly pages' date pickers, which create the picked day's note.
+    /// The sentence is true because `NoteMigrationService` un-inserts a refused note. It is bare
+    /// rather than dismissable: the retry is the same button, and the next press that lands clears it.
     private func createNote() {
-        guard let note = try? NoteMigrationService.createPermanentNote(in: modelContext) else { return }
+        let note: Note
+        do {
+            note = try NoteMigrationService.createPermanentNote(in: modelContext)
+        } catch {
+            createFailureNotice = CadencePendingChangePersistence.editFailureNotice
+            return
+        }
+        createFailureNotice = nil
         selectedNoteID = note.id
     }
 

@@ -140,7 +140,17 @@ struct SettingsView: View {
         .sheet(isPresented: $showCreateContext) {
             CreateContextSheet()
         }
-        .sheet(item: $editingSidebarTab) { destination in
+        // [[T-5309]]: the page's notices are about the pane they were raised on, so they go when
+        // the pane does. They used to be cleared only by a later write that landed, which left a
+        // sidebar refusal sitting atop Appearance, About and every other category.
+        .onChange(of: selectedCategory) { _, _ in
+            deleteFailureNotice = nil
+            contextOrderFailureNotice = nil
+            sidebarLayoutNotice = nil
+        }
+        // The row editor draws the layout notice itself, so the sheet's own refusal is said in
+        // the sheet; closing it clears the sentence rather than leaving it on the page behind.
+        .sheet(item: $editingSidebarTab, onDismiss: { sidebarLayoutNotice = nil }) { destination in
             SidebarTabEditorSheet(
                 destination: destination,
                 tintHex: Binding(
@@ -155,7 +165,8 @@ struct SettingsView: View {
                             toggleTab(destination)
                         }
                     }
-                )
+                ),
+                failureNotice: sidebarLayoutNotice
             )
         }
     }
@@ -193,7 +204,10 @@ struct SettingsView: View {
                 orderedSidebarTabs: orderedSidebarTabs,
                 hiddenTabs: hiddenTabs,
                 sidebarTabColorsRaw: sidebarTabColorsRaw,
-                onEdit: { editingSidebarTab = $0 },
+                onEdit: {
+                    sidebarLayoutNotice = nil
+                    editingSidebarTab = $0
+                },
                 onDropBefore: moveSidebarTab(_:before:)
             )
         case .contexts:
@@ -269,7 +283,8 @@ struct SettingsView: View {
 
     /// Shows or hides a row, unless that would hide the last visible one — see
     /// `CadenceSidebarLayoutPreferenceStore.hidden(setting:visible:in:)`. The refusal is a sentence
-    /// on screen rather than a switch that flips itself back, which says nothing.
+    /// on screen rather than a switch that flips itself back, which says nothing — and on the screen
+    /// the switch is on: the row editor sheet draws `sidebarLayoutNotice` itself ([[T-5309]]).
     private func toggleTab(_ destination: SidebarStaticDestination) {
         let layout = sidebarLayout
         let shouldBecomeVisible = layout.hidden.contains(destination.feature)

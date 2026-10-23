@@ -256,6 +256,40 @@ struct CadenceTagAndNoteCommitSurfaceTests {
         )
     }
 
+    /// **[[T-5301]]: the Mac twin of the test above.** The Notes page's `+` and the daily and
+    /// weekly pages' date pickers each create a note, and each was `try? … else { return }` — a
+    /// refused store produced a control that did nothing and said nothing. All three now catch,
+    /// name the refusal with the shared sentence, draw it, and select the note only past the
+    /// `catch`. Three pages, three notices: one per page, since each page owns its own state.
+    @Test func theMacNotesPagesNameARefusedNoteRatherThanDoingNothing() throws {
+        let view = try scanned("Cadence/macOS/Views/NotesView.swift")
+        let sites: [(declaration: String, call: String)] = [
+            ("func createNote()", "try NoteMigrationService.createPermanentNote(in: modelContext)"),
+            ("func openNote(forDateKey key: String)", "try NoteMigrationService.dailyNote(for: key, in: modelContext)"),
+            ("func openNote(forWeekKey key: String)", "try NoteMigrationService.weeklyNote(for: key, in: modelContext)")
+        ]
+        for site in sites {
+            let body = try #require(
+                CadenceSourceScan.declarationBody(site.declaration, in: view),
+                "\(site.declaration) is gone from NotesView.swift"
+            )
+            #expect(CadenceSourceScan.matchCount(#"try\?"#, in: body) == 0, "\(site.declaration) still discards its error")
+            #expect(body.contains(site.call), "\(site.declaration) no longer makes the call this test is about")
+            #expect(
+                body.contains("createFailureNotice = CadencePendingChangePersistence.editFailureNotice"),
+                "\(site.declaration) does not name the refusal with the shared sentence"
+            )
+            #expect(
+                reportFollowsTheCatch("selectedNoteID = note.id", in: body),
+                "\(site.declaration) selects the note above the failure branch"
+            )
+        }
+        #expect(
+            CadenceSourceScan.matchCount(#"CadenceInlineFailureNotice\(text: createFailureNotice\)"#, in: view) == 3,
+            "a Notes page sets a create notice it never draws"
+        )
+    }
+
     /// **Source shape, and iOS-only — this file is behind `#if os(iOS)`.** The event-note button
     /// inserts a note and opens it, so presenting the editor *is* the success report and has to sit
     /// below the `catch`.

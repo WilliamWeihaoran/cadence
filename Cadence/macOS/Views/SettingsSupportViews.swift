@@ -411,6 +411,11 @@ struct SidebarTabEditorSheet: View {
     let destination: SidebarStaticDestination
     @Binding var tintHex: String
     @Binding var isVisible: Bool
+    /// The host's sidebar-layout refusal, drawn here because this sheet is what the user is
+    /// looking at when the switch is refused ([[T-5309]]). Without it, hiding the last visible row
+    /// was a switch that flipped itself back and said nothing — the sentence was drawn on the
+    /// Settings page behind the sheet. The host clears it when the sheet opens and closes.
+    var failureNotice: String? = nil
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -463,6 +468,10 @@ struct SidebarTabEditorSheet: View {
             .padding(.horizontal, 16)
             .padding(.vertical, 14)
             .cadenceCard(cornerRadius: Theme.radiusCard)
+
+            if let failureNotice {
+                CadenceInlineFailureNotice(text: failureNotice)
+            }
 
             HStack {
                 Spacer()

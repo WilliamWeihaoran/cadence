@@ -513,4 +513,52 @@ struct SidebarLayoutCustomisableParityTests {
     }
 }
 
+
+/// **[[T-5309]]: a sidebar refusal is said where the user is looking, and stops being said once
+/// the pane it was about is gone.** Source shape, because the claim is about which view draws the
+/// sentence. The row editor sheet's switch routes through `toggleTab`, whose one-visible-row
+/// refusal used to land only at the top of the Settings scroll, behind the modal sheet — so inside
+/// the sheet it was a switch that flipped back with nothing said — and it was cleared only by a
+/// later write that landed, so it then followed the user onto every other category.
+@MainActor
+struct SettingsSidebarLayoutNoticePlacementTests {
+    @Test func theRowEditorSheetDrawsTheRefusalAndThePageClearsItWhenItsPaneGoes() throws {
+        let settings = try CadenceCommitSurfaceScan.scanned("Cadence/macOS/Views/SettingsView.swift")
+        let support = try CadenceCommitSurfaceScan.scanned("Cadence/macOS/Views/SettingsSupportViews.swift")
+
+        let sheet = try #require(
+            CadenceSourceScan.declarationBody("struct SidebarTabEditorSheet: View", in: support),
+            "the row editor sheet is gone from SettingsSupportViews.swift"
+        )
+        #expect(sheet.contains("var failureNotice: String?"), "the sheet takes no notice to draw")
+        #expect(
+            CadenceSourceScan.matchCount(#"CadenceInlineFailureNotice\(text: failureNotice\)"#, in: sheet) == 1,
+            "the sheet is handed a notice it never draws"
+        )
+
+        let body = try #require(CadenceSourceScan.declarationBody("var body: some View", in: settings))
+        let presented = try #require(
+            CadenceSourceScan.declarationBody(".sheet(item: $editingSidebarTab", in: body),
+            "the row editor is no longer presented from SettingsView.body"
+        )
+        #expect(presented.contains("failureNotice: sidebarLayoutNotice"), "the sheet is not handed the layout notice")
+        #expect(
+            body.contains(".sheet(item: $editingSidebarTab, onDismiss: { sidebarLayoutNotice = nil })"),
+            "closing the sheet leaves its refusal on the page behind it"
+        )
+
+        let categoryChange = try #require(
+            CadenceSourceScan.declarationBody(".onChange(of: selectedCategory)", in: body),
+            "nothing clears the page's notices when the category changes"
+        )
+        for notice in ["deleteFailureNotice", "contextOrderFailureNotice", "sidebarLayoutNotice"] {
+            #expect(categoryChange.contains("\(notice) = nil"), "\(notice) follows the user to every category")
+        }
+
+        // The refusal itself is unchanged: `toggleTab` still names the floor rather than writing.
+        let toggle = try #require(CadenceSourceScan.functionBody(named: "toggleTab", in: settings))
+        #expect(toggle.contains("sidebarLayoutNotice = CadenceSidebarLayoutPreferenceStore.lastVisibleRowNotice"))
+    }
+}
+
 #endif
