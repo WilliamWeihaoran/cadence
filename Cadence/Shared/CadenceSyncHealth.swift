@@ -392,7 +392,7 @@ struct CadenceSyncHealth: Equatable {
                 level: .degraded,
                 tone: .caution,
                 title: "No iCloud account",
-                detail: "Sign into iCloud on this device to sync.",
+                detail: "Sign in to iCloud on this device to sync.",
                 iconName: "icloud.slash"
             )
         case .restricted:

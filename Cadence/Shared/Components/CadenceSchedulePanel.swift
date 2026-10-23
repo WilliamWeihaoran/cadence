@@ -504,7 +504,7 @@ struct CadenceSchedulePanel<NotesField: View>: View {
                 draft.isAllDay = true
                 isDoTimeExpanded = false
             } label: {
-                Text("Remove time")
+                Text("Clear time")
                     .cadenceFont(.metadata, weight: .semibold)
                     .foregroundStyle(Theme.red)
                     .frame(maxWidth: .infinity, alignment: .leading)

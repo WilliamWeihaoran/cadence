@@ -599,7 +599,7 @@ struct KanbanSectionEditorPopover: View {
                     HStack(spacing: 8) {
                         Image(systemName: section.isCompleted ? "arrow.uturn.backward.circle.fill" : "checkmark.circle.fill")
                             .font(.system(size: 12, weight: .semibold))
-                        Text(section.isCompleted ? "Mark Section Active" : "Mark Section Completed")
+                        Text(section.isCompleted ? "Mark Column Active" : "Mark Column Completed")
                             .font(.system(size: 12, weight: .semibold))
                         Spacer()
                     }

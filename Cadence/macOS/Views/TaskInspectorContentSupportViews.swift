@@ -210,7 +210,7 @@ final class TaskNotesPanelController: NSObject, NSWindowDelegate {
             panel.center()
         }
 
-        panel.title = "Task notes"
+        panel.title = "Task Notes"
         panel.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
     }

@@ -247,7 +247,7 @@ struct CadenceKanbanColumnLifecycleSurfaceTests {
             matches(#"if section\.supportsLifecycle \{\s*Button\(action: onToggleCompletion\)"#, in: code) == 1,
             "the section header's completion glyph is not directly inside a supportsLifecycle gate"
         )
-        // The editor popover's "Mark Section Completed", which now shares Archive's gate — the
+        // The editor popover's "Mark Column Completed", which now shares Archive's gate — the
         // divider came inside with it.
         #expect(
             matches(#"if section\.supportsLifecycle \{\s*Divider\(\)[^\n]*\s*Button\(action: onToggleCompletion\)"#, in: code) == 1,
@@ -1210,7 +1210,9 @@ struct CadenceKanbanColumnLifecycleSurfaceTests {
         // Positive reads: the controls this file is about are still drawn, and the Default branch
         // of the popover still explains itself — with completion now named in it.
         let support = try strippingComments(sourceFile("Cadence/macOS/Views/KanbanColumnSupportViews.swift"))
-        #expect(support.contains("Mark Section Completed"))
+        // T-5001: "Column", as the popover's title and its Archive/Delete siblings say.
+        #expect(support.contains("Mark Column Completed"))
+        #expect(!support.contains("Mark Section"))
         #expect(support.contains("Default always stays available and cannot be renamed, completed, archived, or deleted."))
         #expect(support.contains("struct KanbanSectionEditorPopover"))
 
