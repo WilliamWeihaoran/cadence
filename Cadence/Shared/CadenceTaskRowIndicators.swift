@@ -31,7 +31,7 @@ import Foundation
 ///
 /// **This does not touch the app's NOTES FEATURE.** `note.text` still names it at
 /// `CadenceFeatureDestination.swift:201`, `iPadTodaySupportViews.swift:158`,
-/// `iOSSearchSupportViews.swift:32` and `FocusNotesPanel.swift:14`. Dropping the task-row reading
+/// `iOSSearchSupportViews.swift:32` and `FocusNotesPanel.swift:25`. Dropping the task-row reading
 /// REDUCES that symbol's double duty rather than creating a gap — which is the answer to the
 /// owner's stated worry that *"the notes icon is used elsewhere in the app for task notes, so it'd
 /// be inconsistent"*.

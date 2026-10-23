@@ -13,9 +13,9 @@ import Testing
 ///
 /// The closures are private to SwiftUI views and cannot be driven from a unit test, so the rule is
 /// pinned as source text: every `MarkdownEditor(` call under `Cadence/macOS/` that passes
-/// `referenceTasks:` also passes each card and task-link handler. The hosts that pass none
-/// (`FocusNotesPanel`, the template editor) draw no live cards and are outside the rule — see
-/// [[T-5060]] for whether Focus should.
+/// `referenceTasks:` also passes each card and task-link handler. The template editor passes none,
+/// draws no live cards and is outside the rule. `FocusNotesPanel` joined the live-card hosts in
+/// [[T-5060]] (c) and is pinned by name below.
 @MainActor
 struct CadenceMarkdownEditorEmbedWiringTests {
 
@@ -59,10 +59,12 @@ struct CadenceMarkdownEditorEmbedWiringTests {
     @Test func everyEditorThatDrawsLiveTaskCardsWiresTheirClicks() throws {
         let liveCardHosts = try Self.editorCalls().filter { $0.arguments.contains("referenceTasks:") }
 
-        // Non-vacuity: the four hosts that draw live cards today — the core-note panel, the Notes
-        // page, the list/task note pane, and the inspector box this ticket is about.
-        #expect(liveCardHosts.count >= 4)
+        // Non-vacuity: the five hosts that draw live cards today — the core-note panel, the Notes
+        // page, the list/task note pane, the inspector box this ticket is about, and Focus's
+        // notes (T-5060 (c)).
+        #expect(liveCardHosts.count >= 5)
         #expect(liveCardHosts.contains { $0.path.hasSuffix("TaskInspectorContentSupportViews.swift") })
+        #expect(liveCardHosts.contains { $0.path.hasSuffix("FocusNotesPanel.swift") })
 
         for host in liveCardHosts {
             for handler in Self.requiredHandlers {
@@ -88,6 +90,23 @@ struct CadenceMarkdownEditorEmbedWiringTests {
         #expect(arguments.contains("referenceTasks:"))
         for handler in Self.requiredHandlers {
             #expect(arguments.contains(handler), "TaskDetailNotesSection does not pass \(handler)")
+        }
+    }
+
+    /// T-5060 (c): Focus's task notes resolve `[[task:…]]` embeds as cards, and every click on one
+    /// is wired. Before this it passed no `referenceTasks:`, so the embeds drew unresolved.
+    @Test func theFocusNotesPanelResolvesEmbedsAndWiresEveryCardHandler() throws {
+        let source = CadenceSourceScan.codeOnly(
+            try CadenceSourceScan.sourceFile("Cadence/macOS/Views/FocusNotesPanel.swift")
+        )
+        let panel = try #require(CadenceSourceScan.declarationBody("struct FocusNotesPanel", in: source))
+        let call = try #require(panel.range(of: "MarkdownEditor("))
+        let arguments = try #require(
+            CadenceSourceScan.matchedBody(after: panel.index(before: call.upperBound), in: panel, open: "(", close: ")")
+        )
+        #expect(arguments.contains("referenceTasks:"))
+        for handler in Self.requiredHandlers {
+            #expect(arguments.contains(handler), "FocusNotesPanel does not pass \(handler)")
         }
     }
 }

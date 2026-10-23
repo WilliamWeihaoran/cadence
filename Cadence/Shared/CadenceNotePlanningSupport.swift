@@ -247,8 +247,9 @@ enum CadenceCoreNoteSupport {
     }
 
     /// **The shared note commit.** Every iOS editor host writes through here, and so does macOS's
-    /// Today notes panel; macOS's Notes page has its own `persistEditorContentIfNeeded` because it
-    /// deliberately does not save the context.
+    /// Today notes panel; macOS's Notes page has its own `persistEditorContentIfNeeded`, which runs
+    /// the tag sync and `onPersistContent` this does not and commits through
+    /// `CadencePendingChangePersistence.commitTypedContent` (T-4971 — it used to not save at all).
     ///
     /// `MarkdownNoteTitleSync.apply` is the T-223 fix. The `# H1` -> `note.title` rule was private
     /// to `NoteEditorPane`, so it never ran on this path and every iOS list-note row read

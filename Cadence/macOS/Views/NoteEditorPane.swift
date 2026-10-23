@@ -46,6 +46,8 @@ struct NoteEditorPane: View {
     /// Set when an edit made on a task card embedded in this note was refused. See
     /// `toggleEmbeddedSubtask` (T-648).
     @State private var embeddedTaskFailureNotice: String?
+    /// The title field's focus, read only so leaving it is a flush point (T-4971).
+    @FocusState private var isTitleFieldFocused: Bool
 
     private var titleBinding: Binding<String> {
         Binding(
@@ -162,6 +164,14 @@ struct NoteEditorPane: View {
                         .textFieldStyle(.plain)
                         .font(.system(size: 18, weight: .bold))
                         .foregroundStyle(Theme.text)
+                        // T-4971: the title is typed straight into the model; Return and leaving
+                        // the field are its flush points, the same as the body's focus loss.
+                        .focused($isTitleFieldFocused)
+                        .onSubmit { flushPendingEditorContent() }
+                        .onChange(of: isTitleFieldFocused) { _, isFocused in
+                            guard !isFocused else { return }
+                            flushPendingEditorContent()
+                        }
                 } else {
                     Text(headerTitle)
                         .font(.system(size: 18, weight: .bold))
@@ -388,6 +398,9 @@ struct NoteEditorPane: View {
         pendingFallbackContentSyncTask = nil
         persistEditorContentIfNeeded(editorContent, noteID: loadedNoteID ?? note.id)
         refreshDerivedState(for: editorContent)
+        // T-4971: a title typed with an unchanged body reaches no commit in the persist above, so
+        // the flush commits too. A no-op when nothing is pending.
+        CadencePendingChangePersistence.commitTypedContent(in: modelContext)
     }
 
     private func handleEditorFocusChange(_ isFocused: Bool) {
@@ -423,6 +436,8 @@ struct NoteEditorPane: View {
         TagSupport.syncNoteTagsFromMarkdownCommittingInsertions(note, in: modelContext)
         onPersistContent(note, content)
         loadedNoteID = note.id
+        // T-4971: commit at the flush, not per keystroke. See `commitTypedContent`.
+        CadencePendingChangePersistence.commitTypedContent(in: modelContext)
     }
 
     private func refreshDerivedState(for content: String) {

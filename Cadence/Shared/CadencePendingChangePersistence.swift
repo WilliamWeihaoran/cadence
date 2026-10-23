@@ -120,6 +120,40 @@ nonisolated enum CadencePendingChangePersistence {
         }
     }
 
+    /// Commits text a person has been **typing**, at one of the editor's flush points, and does
+    /// **not** undo it when the commit throws (T-4971).
+    ///
+    /// The macOS markdown editors (`NoteEditorPane`, `TaskNoteEditorPane`, `TaskDetailNotesSection`,
+    /// `FocusNotesPanel`) write the model from their debounced fallback sync and from a focus-loss
+    /// `flushPendingEditorContent`, and until T-4971 none of them committed: the typing rode the
+    /// context's autosave and any unrelated `rollback()` in the app's single `ModelContext` took it
+    /// ([[T-322]]'s cost). **Keeper's call:** commit at those existing flush points — not per
+    /// keystroke, and no new debounce.
+    ///
+    /// **Why it differs from `commitEdit`.** An edit's undo puts captured fields back; here that
+    /// would overwrite the text under the caret with what the person typed it over. On a refusal
+    /// the typed content simply stays pending in the context — exactly where it was before this
+    /// existed — and the next flush tries again. The answer is returned for a caller that has a
+    /// surface to report on; the four editors have none and stay silent, as iOS's do.
+    ///
+    /// No-op (and `true`) when the context holds nothing pending, so a focus loss with nothing typed
+    /// writes nothing.
+    ///
+    /// - Parameter commit: See `commitInsert(of:in:commit:)`.
+    @discardableResult
+    static func commitTypedContent(
+        in modelContext: ModelContext,
+        commit: (ModelContext) throws -> Void = { try $0.save() }
+    ) -> Bool {
+        guard modelContext.hasChanges else { return true }
+        do {
+            try commit(modelContext)
+            return true
+        } catch {
+            return false
+        }
+    }
+
     /// Commits a pending delete. If the commit throws, the delete is rolled back, which puts the
     /// rows back where the user can see them rather than leaving them hidden and undeleted.
     ///

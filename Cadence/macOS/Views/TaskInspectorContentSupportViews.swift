@@ -166,6 +166,8 @@ struct TaskDetailNotesSection: View {
     private func persistEditorContentIfNeeded(_ content: String, taskID: UUID) {
         guard task.id == taskID, task.notes != content else { return }
         task.notes = content
+        // T-4971: commit at the flush, not per keystroke. See `commitTypedContent`.
+        CadencePendingChangePersistence.commitTypedContent(in: modelContext)
     }
 
     // MARK: - Embedded task cards and `[[task]]` links (T-5014)

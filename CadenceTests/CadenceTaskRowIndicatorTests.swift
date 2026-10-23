@@ -200,7 +200,7 @@ struct CadenceTaskRowIndicatorTests {
     /// **`note.text` is asserted ABSENT here rather than simply dropped from the list** ([[T-3231]]),
     /// because that symbol is still very much in this app — it names the NOTES FEATURE at
     /// `CadenceFeatureDestination.swift:201`, `iPadTodaySupportViews.swift:158`,
-    /// `iOSSearchSupportViews.swift:32` and `FocusNotesPanel.swift:14`. A grep for the string
+    /// `iOSSearchSupportViews.swift:32` and `FocusNotesPanel.swift:25`. A grep for the string
     /// would therefore keep finding it forever; only a statement about *this* vocabulary can say
     /// the task row stopped using it.
     @Test func eachIndicatorCarriesItsOwnSymbolAlreadyInUseInThisApp() {

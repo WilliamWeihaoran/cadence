@@ -213,8 +213,8 @@ struct CadenceNoteTitleSyncSurfaceTests {
     /// One decision, two commit paths, and **no third spelling of the `# ` test in a view**.
     ///
     /// Exact per-file counts rather than "contains", so removing *either* call site fails: macOS's
-    /// Notes page has its own `persistEditorContentIfNeeded` (it deliberately does not save the
-    /// context, so it cannot route through the shared update), and everything else on both platforms
+    /// Notes page has its own `persistEditorContentIfNeeded` (it runs the tag sync and
+    /// `onPersistContent` itself, and commits through `commitTypedContent` since T-4971), and everything else on both platforms
     /// commits through `CadenceCoreNoteSupport.update`.
     @Test func bothCommitPathsCallTheOneRule() throws {
         try expectTitleSyncOccurrences(of: "MarkdownNoteTitleSync.apply(", at: [

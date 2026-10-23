@@ -246,6 +246,8 @@ struct TaskNoteEditorPane: View {
         guard task.notes != content || loadedTaskID != task.id else { return }
         task.notes = content
         loadedTaskID = task.id
+        // T-4971: commit at the flush, not per keystroke. See `commitTypedContent`.
+        CadencePendingChangePersistence.commitTypedContent(in: modelContext)
     }
 
     private func refreshDerivedState(for content: String) {
