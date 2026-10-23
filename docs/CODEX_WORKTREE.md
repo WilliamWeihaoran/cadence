@@ -220,6 +220,19 @@ ahead of `main` and unlanded; its product change (`Cadence/iOS/iOSCalendarBoardV
 on `main`. Whoever lands it should expect a one-line conflict in this comment block and resolve it
 to 68, because its notice is a real added call site on top of this 67.
 
+**Admission 2026-10-22 (keeper), one line in `CadenceTests/CadenceMarkdownImageCommitSurfaceTests.swift`.**
+That file is leased above and stays leased. The keeper admitted agent `census2040` for exactly one
+assertion in it -- the inline-notice census `#expect(total == 67, ...)` to `68`, with the comment
+sentence the census block's house style requires -- and nothing else in the file. **Why it could not
+wait for Codex:** `e56883a3` ([[T-4722]]) added a bare `CadenceInlineFailureNotice(text:
+renameFailureNotice)` to the Mac `ContextSettingsRow`, so `main` was red in CI (run 39876286334) on a
+count CI reproduces regardless of local worktrees. **Checked before admitting:** every `codex/*`
+branch whose copy of the file differs from `main` was measured with `git diff --stat main <branch>
+-- <file>`; each difference is deletions-only from `main`'s side plus the branch's older count line
+(67, 68, 69 or 70), so no branch is ahead of `main` in this file. The one branch with its own
+commits on it, `codex/ios-board-drop-refusal`, carries the PA-13 / T-1470 sentence that is already
+on `main`. The 2026-10-19 note above that it would conflict is stale for this file.
+
 ### 2026-10-17 — WHY ALL SIX VERSIONS FAILED: each asked a cheaper question than the one being asked
 
 Agent `blocktail`'s synthesis, recorded because it explains every failure above with one sentence

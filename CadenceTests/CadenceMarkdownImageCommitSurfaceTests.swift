@@ -500,7 +500,10 @@ struct CadenceMarkdownImageCommitSurfaceTests {
         // panel as `failureNotice: createFailureNotice ?? hostLimitNotice` rather than drawn here,
         // and `CadenceQuickCreateTaskInspectorTests` holds that hand-off. One call site fewer,
         // same rule: the refusal is still named, through the panel's one notice component.
-        #expect(total == 67, "the inline notice has \(total) call sites, not the 67 this test was written over")
+        // [[T-4722]] makes it 68, and bare: the Mac context row's rename refusal names a name the
+        // startup merge would fuse, above the row's Save -- the retry is the same Save, and the
+        // next rename that lands clears it.
+        #expect(total == 68, "the inline notice has \(total) call sites, not the 68 this test was written over")
         #expect(withDismissal == 7, "\(withDismissal) call sites offer a dismissal, not 7")
 
         // And each of the six is named, so one swapping places with another is still a failure.
