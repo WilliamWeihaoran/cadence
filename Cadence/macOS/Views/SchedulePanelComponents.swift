@@ -131,6 +131,8 @@ struct TaskDetailPopover: View {
                     // No "Actions" heading: a label over two buttons at the foot of the panel
                     // names something the buttons already say.
                     TaskDetailActionsSection(task: task)
+                    // Start/Stop and Cancel/Restore, the shared set iOS renders ([[T-5015]]).
+                    TaskInspectorStatusActionsRow(task: task)
                 }
             }
             .padding(TaskInspectorPopoverMetrics.contentInset)
