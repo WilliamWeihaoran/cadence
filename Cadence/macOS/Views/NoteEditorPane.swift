@@ -249,12 +249,16 @@ struct NoteEditorPane: View {
             } else if let headerAccessory {
                 headerAccessory
             } else {
+                // **T-5211.** The pane's own append here too (Notes page, list Notes tab): the
+                // menu's default is a bare store write this pane's buffer never sees, so the next
+                // flush wrote the pre-summary text back over the accepted summary.
                 NoteActionMenu(
                     note: note,
                     area: area,
                     project: project,
                     templates: templates,
                     onApplyTemplate: applyTemplate,
+                    onAppendSummary: appendSummary,
                     onDelete: onDelete
                 )
             }

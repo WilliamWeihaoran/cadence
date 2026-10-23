@@ -35,6 +35,20 @@ struct CadenceEventNoteSummaryCommitTests {
         // `replaceEditorContent` is what reaches the host: it persists through `onPersistContent`.
         _ = try #require(pane.range(of: "persistEditorContentIfNeeded(content, noteID: note.id)", range: end.upperBound..<pane.endIndex))
     }
+
+    /// **T-5211.** The pane's default menu — the Notes page and a list's Notes tab, every
+    /// `NoteEditorPane` that passes no accessory — routes Summarize through the same append, not the
+    /// menu's bare store write that the next flush overwrote.
+    @Test func thePanesDefaultMenuRoutesSummarizeThroughThePanesAppend() throws {
+        let pane = try codeOnly("Cadence/macOS/Views/NoteEditorPane.swift")
+        let start = try #require(pane.range(of: "private var headerControls: some View {"))
+        let end = try #require(pane.range(of: "var body: some View {", range: start.upperBound..<pane.endIndex))
+        let controls = String(pane[start.upperBound..<end.lowerBound])
+        let menu = try #require(controls.range(of: "NoteActionMenu("), "non-vacuity: the default menu moved")
+        let menuCall = String(controls[menu.lowerBound...])
+        let close = try #require(menuCall.range(of: "onDelete: onDelete"))
+        #expect(String(menuCall[..<close.lowerBound]).contains("onAppendSummary: appendSummary"))
+    }
 }
 
 private func codeOnly(_ relativePath: String) throws -> String {
