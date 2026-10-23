@@ -213,6 +213,9 @@ struct MonthTaskChip: View {
 struct MonthEventChip: View {
     let event: CalendarEventItem
     var calendar: Calendar = .current
+    /// A click opens the event's editor, as the task chip beside it opens its inspector
+    /// ([[T-5240]]).
+    @State private var showEditor = false
 
     var body: some View {
         // Every tier below is solved against `railChipFill`'s own plate, so none of them is a
@@ -244,6 +247,7 @@ struct MonthEventChip: View {
             border: CadenceCalendarEventStyle.railColor(for: event.calendarColor)
                 .opacity(CadenceCalendarEventStyle.chipBorderOpacity())
         )
+        .calendarEventChipEditor(isPresented: $showEditor) { event }
     }
 }
 
@@ -621,6 +625,8 @@ struct AllDayTaskChip: View {
 /// re-asking; at 16pt it is not close.
 struct AllDayEventChip: View {
     let event: EKEvent
+    /// A click opens the event's editor ([[T-5240]]); the drag onto the timeline stays.
+    @State private var showEditor = false
 
     private var eventColor: Color {
         Color(cgColor: event.calendar?.cgColor ?? Theme.nsDim.cgColor)
@@ -650,7 +656,14 @@ struct AllDayEventChip: View {
                 )
         )
         .shadow(color: Theme.chipShadow, radius: 3, y: 1)
-        .draggable(CalendarEventDragPayload.string(for: event))
+        // The all-day form of the item, as `CalendarBoardEventDisplayItem.editItem` builds it.
+        .calendarEventChipEditor(isPresented: $showEditor) { CalendarEventItem(event: event) }
+        // A read-only calendar cannot take the all-day → timed conversion the drop asks for
+        // ([[T-5241]]), so its chip does not offer the drag.
+        .calendarEventDraggable(
+            CalendarEventDragPayload.string(for: event),
+            isEditable: CalendarEventEditPopover.isEditable(event)
+        )
     }
 }
 
@@ -725,7 +738,9 @@ struct CalDayColumn: View {
                 let event = eventCache.allDayEvents(for: sourceDate, calendarManager: calendarManager)
                     .first { CalendarEventIdentity.matches($0, identifier: payload.eventIdentifier) }
                     ?? calendarManager.event(withIdentifier: CalendarEventIdentity.lookupIdentifier(from: payload.eventIdentifier))
-                guard let event else { return }
+                // The chip offers no drag for a read-only event; a payload from anywhere else is
+                // refused here rather than by EventKit after the fact ([[T-5241]]).
+                guard let event, CalendarEventEditPopover.isEditable(event) else { return }
                 calendarManager.convertAllDayEventToTimed(event, startMin: startMin, dateKey: dateKey)
             }
         )

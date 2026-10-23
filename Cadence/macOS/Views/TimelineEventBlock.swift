@@ -53,6 +53,10 @@ struct TimelineEventBlock: View {
 
     private var isSelected: Bool { selectedEventID == item.id }
 
+    /// Read-only calendars (Birthdays, Holidays, subscribed feeds) take no write, so the block
+    /// offers no gesture that would ask for one ([[T-5241]]).
+    private var isEditable: Bool { CalendarEventEditPopover.isEditable(item.ekEvent) }
+
     var body: some View {
         eventBlockBody
             .frame(width: frame.width, height: frame.height)
@@ -106,7 +110,10 @@ struct TimelineEventBlock: View {
                         }
                         isMoveDragActive = false
                         dragGrabOffset = 0
-                    }
+                    },
+                // `.subviews` keeps the tap above and the popover working on a read-only event
+                // while the move itself is never recognised ([[T-5241]]).
+                including: TimelineEventBlockEditGate.allowsMove(isEditable: isEditable) ? .all : .subviews
             )
             // MARK: Resize handles
             .overlay(alignment: .top)    { resizeHandle(edge: .start) }
@@ -217,7 +224,15 @@ struct TimelineEventBlock: View {
     @ViewBuilder
     private func resizeHandle(edge: TimelineResizeEdge) -> some View {
         let handleHeight = TimelineBlockGeometry.resizeHandleHeight(blockHeight: frame.height)
-        if handleHeight > 0 {
+        // A midnight clip of a multi-day event is not an edge it has ([[T-5242]]), and a read-only
+        // event has no edge to drag ([[T-5241]]).
+        if handleHeight > 0,
+           TimelineEventBlockEditGate.drawsResizeHandle(
+               edge: edge,
+               isEditable: isEditable,
+               isFirstSegment: item.isFirstSegment,
+               isLastSegment: item.isLastSegment
+           ) {
             Rectangle()
                 .fill(Color.clear)
                 .frame(height: handleHeight)
@@ -348,13 +363,25 @@ struct TimelineEventBlock: View {
             cancelPendingEventMutation()
             return
         }
-        calendarManager.updateEvent(
+        let failure = calendarManager.updateEvent(
             item.ekEvent,
             title: item.title,
             startDate: range.start,
             endDate: range.end,
             scope: scope
         )
+        // A refused write (read-only calendar, revoked access, a conflict) and a write of the
+        // range the event already has both leave the item's values unchanged, so the `.onChange`
+        // that clears live state never fires and the block would keep drawing the dropped time
+        // — and ignore every later click ([[T-5241]]). The refusal itself still reaches the
+        // page-root `.calendarWriteFailureAlert()`.
+        if TimelineEventBlockEditGate.clearsLiveState(
+            after: failure,
+            requested: range,
+            current: (item.eventStartDate, item.eventEndDate)
+        ) {
+            cancelPendingEventMutation()
+        }
     }
 
     // MARK: - Block Body
