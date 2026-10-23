@@ -26,6 +26,12 @@ struct NoteEditorPane: View {
     var onPersistContent: (Note, String) -> Void = { _, _ in }
     var headerDetail: String?
     var headerAccessory: AnyView?
+    /// **T-5162.** A header accessory that is handed the pane's own summary append, for a host
+    /// whose `NoteActionMenu` must not write the note behind the pane's back. The menu's default
+    /// append is a bare store write: it skips `onPersistContent` (the event-note sheet's Apple
+    /// Calendar mirror) and leaves this pane's buffer stale, so the next flush wrote the old text
+    /// back over the summary. Takes precedence over `headerAccessory`.
+    var summaryHeaderAccessory: ((_ appendSummary: @escaping (String) -> Void) -> AnyView)?
     var headerStyle: HeaderStyle = .full
     @Environment(\.modelContext) private var modelContext
     @Environment(HoveredTaskManager.self) private var hoveredTaskManager
@@ -238,7 +244,9 @@ struct NoteEditorPane: View {
         HStack(spacing: 8) {
             NoteOutlineJumpButton(outline: derivedState.outline, onJump: jumpToOutline)
 
-            if let headerAccessory {
+            if let summaryHeaderAccessory {
+                summaryHeaderAccessory(appendSummary)
+            } else if let headerAccessory {
                 headerAccessory
             } else {
                 NoteActionMenu(
@@ -454,6 +462,15 @@ struct NoteEditorPane: View {
             ),
             outline: MarkdownOutlineParser.items(in: content)
         )
+    }
+
+    /// **T-5162.** Flush first, so the summary is appended to what is on screen rather than to a
+    /// `note.content` the buffer is about to overwrite; then append through `replaceEditorContent`,
+    /// which persists via `onPersistContent` — the host's own commit — and shows the summary here.
+    private func appendSummary(_ summary: String) {
+        flushPendingEditorContent()
+        guard let content = CadenceAINoteSummary.appending(summary, to: note.content) else { return }
+        replaceEditorContent(content)
     }
 
     private func replaceEditorContent(_ content: String) {

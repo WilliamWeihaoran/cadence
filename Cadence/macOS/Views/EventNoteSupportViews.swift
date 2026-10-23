@@ -90,9 +90,12 @@ struct EventNoteEditorSheet: View {
                 relatedTasks: allTasks,
                 onPersistContent: commitEventNote,
                 headerDetail: CadenceTitleNormalization.display(eventTitle, fallback: "Linked event note"),
-                headerAccessory: AnyView(
+                // **T-5162.** The pane's append, not the menu's default store write: it flushes
+                // the buffer, appends, and commits through `commitEventNote`, so a summary reaches
+                // Apple Calendar and a failed mirror shows the notice like any other edit.
+                summaryHeaderAccessory: { appendSummary in AnyView(
                     HStack(spacing: 10) {
-                        NoteActionMenu(note: note)
+                        NoteActionMenu(note: note, onAppendSummary: appendSummary)
                         Button("Done") {
                             dismiss()
                         }
@@ -100,7 +103,7 @@ struct EventNoteEditorSheet: View {
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(Theme.blue)
                     }
-                )
+                ) }
             )
 
             EventNoteCommitNoticeBanner(notice: commitNotice)
