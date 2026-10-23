@@ -86,7 +86,18 @@ struct CadenceCodexPageCompletionTypographyTests {
             ("iOSTasksTabView.swift", "iOSTasksTabHeader(")
         ] {
             let source = try read("Cadence/iOS/" + path)
-            let body = try #require(CadenceSourceScan.declarationBody("var body: some View", in: source))
+            let page = try #require(CadenceSourceScan.declarationBody("var body: some View", in: source))
+            // T-2088: the collection page's `body` is only a `ScrollViewReader` handing its proxy
+            // to `scrollBody(proxy:)`, so the content and the root live there. Pin the hand-off
+            // and a root-free `body`, so the root cannot drift out of `scrollBody` unnoticed.
+            var body = page
+            if path == "iOSTaskCollectionPage.swift" {
+                #expect(page.contains("scrollBody(proxy:"))
+                #expect(!page.contains(".cadenceScaledTypography()"))
+                body = try #require(CadenceSourceScan.declarationBody(
+                    "private func scrollBody(proxy: ScrollViewProxy) -> some View", in: source
+                ))
+            }
             let draw = try #require(body.range(of: content))
             let root = try #require(body.range(of: ".cadenceScaledTypography()"))
             #expect(draw.lowerBound < root.lowerBound)
