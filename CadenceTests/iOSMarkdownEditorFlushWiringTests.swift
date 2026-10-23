@@ -54,6 +54,33 @@ struct iOSMarkdownEditorFlushWiringTests {
         #expect(source.contains("flush: editorFlush"), "\(path): the handle is not given to the surface")
     }
 
+    /// [[T-5190]]: a swipe-dismiss skips Done, so each record-backed note sheet flushes the well
+    /// and commits from its own `onDisappear`. Flush before the commit, and the event note mirrors
+    /// through `persistNote()` (Apple Calendar) only when the context holds something.
+    /// One test over the three, not a parameterised one, so `mutate.sh` can baseline it (T-3212).
+    @Test func eachNoteSheetFlushesAndCommitsWhenSwipedAway() throws {
+        for (path, commit) in [
+            ("Cadence/iOS/iOSEventNoteEditorSheet.swift", "persistNote()"),
+            ("Cadence/iOS/iOSMarkdownReferenceSupport.swift", "persistNote()"),
+            ("Cadence/iOS/iOSSearchSupportViews.swift", "CadencePendingChangePersistence.commitTypedContent(in: modelContext)"),
+        ] {
+            let source = try CadenceCommitSurfaceScan.scanned(path)
+            #expect(source.contains(".onDisappear(perform: persistTypedTailOnDismissal)"), "\(path): a swipe commits nothing")
+            let tail = try #require(
+                CadenceSourceScan.functionBody(named: "persistTypedTailOnDismissal", in: source),
+                "\(path): no dismissal commit"
+            )
+            let flush = try #require(Self.index(of: "editorFlush.flush()", in: tail), "\(path): the swipe does not flush")
+            let save = try #require(Self.index(of: commit, in: tail), "\(path): the swipe does not commit")
+            #expect(flush < save, "\(path): the swipe commits before flushing the well")
+            if commit == "persistNote()" {
+                let gate = try #require(Self.index(of: "guard modelContext.hasChanges else { return }", in: tail),
+                                        "\(path): a dismissal with nothing pending still writes")
+                #expect(flush < gate && gate < save)
+            }
+        }
+    }
+
     /// Every surface host that flushes also hands the surface the handle it flushes.
     @Test func thePanelSheetsHandTheirFlushToTheWell() throws {
         let sections = try CadenceCommitSurfaceScan.scanned("Cadence/iOS/iOSTaskDetailSheetSections.swift")

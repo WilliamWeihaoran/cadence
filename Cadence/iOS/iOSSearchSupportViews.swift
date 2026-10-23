@@ -438,6 +438,8 @@ struct iOSNoteDetailSheet: View {
                 note.updatedAt = Date()
                 try? modelContext.save()
             }
+            // [[T-5190]]: a swipe skips Done, so the well's held tail is written here.
+            .onDisappear(perform: persistTypedTailOnDismissal)
         }
         .iOSMarkdownReferenceSheets(
             selectedNote: $selectedReferenceNote,
@@ -455,6 +457,13 @@ struct iOSNoteDetailSheet: View {
     /// Notes tab did both.
     private func updateContent(_ content: String) {
         CadenceCoreNoteSupport.update(note, content: content, in: modelContext)
+    }
+
+    /// **[[T-5190]].** A swipe-dismiss skips Done. The held tail goes through `updateContent` — so
+    /// its tags and H1 title sync as any other write does — and whatever is still pending commits.
+    private func persistTypedTailOnDismissal() {
+        editorFlush.flush()
+        CadencePendingChangePersistence.commitTypedContent(in: modelContext)
     }
 
     /// **T-497.** Done used to end `try? modelContext.save(); dismiss()`, and the dismissal is what

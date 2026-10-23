@@ -1,3 +1,6 @@
+// [[T-5280]]: `TimelineEventBlockEditGate` is a macOS view type, so the iOS test target cannot
+// compile this file.
+#if os(macOS)
 import Foundation
 import Testing
 @testable import Cadence
@@ -161,3 +164,4 @@ struct CadenceCalendarEventChipEditingTests {
         )
     }
 }
+#endif

@@ -71,6 +71,8 @@ struct iOSEventNoteEditorSheet: View {
             .onChange(of: note.content) { _, _ in
                 persistNote()
             }
+            // [[T-5190]]: a swipe skips Done, so the well's held tail is written here.
+            .onDisappear(perform: persistTypedTailOnDismissal)
         }
         .iOSMarkdownReferenceSheets(
             selectedNote: $selectedReferenceNote,
@@ -178,6 +180,18 @@ struct iOSEventNoteEditorSheet: View {
         )
         commitNotice = outcome.notice
         return outcome
+    }
+
+    /// **[[T-5190]] — the swipe's half of [[T-5170]].** A swipe-dismiss never reaches Done, so the
+    /// well's last 2.5 s of typing arrives — if at all — from the surface's own `onDisappear`, after
+    /// this sheet has stopped answering `.onChange(of: note.content)`: the tail rode autosave and
+    /// never reached Apple Calendar. Flush the held write first, then commit and mirror whatever the
+    /// context still holds. Nothing pending (Done already saved, or nothing was typed), nothing
+    /// written — a dismissal is not an EventKit write.
+    private func persistTypedTailOnDismissal() {
+        editorFlush.flush()
+        guard modelContext.hasChanges else { return }
+        persistNote()
     }
 
     /// Whether Apple Calendar now holds this note's text. A note with no native event to mirror

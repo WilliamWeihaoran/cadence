@@ -87,6 +87,8 @@ struct iOSLinkedNoteEditorSheet: View {
                 .onChange(of: note.content) { _, _ in
                     persistNote()
                 }
+                // [[T-5190]]: a swipe skips Done, so the well's held tail is written here.
+                .onDisappear(perform: persistTypedTailOnDismissal)
         }
         .iOSMarkdownReferenceSheets(
             selectedNote: $selectedReferenceNote,
@@ -163,6 +165,15 @@ struct iOSLinkedNoteEditorSheet: View {
     private func persistNote() {
         note.updatedAt = Date()
         try? modelContext.save()
+    }
+
+    /// **[[T-5190]].** A swipe-dismiss skips Done, and the surface's own `onDisappear` writes the
+    /// held tail after this sheet stops answering `.onChange(of: note.content)`. Flush it, then
+    /// commit whatever is still pending; nothing pending, nothing written.
+    private func persistTypedTailOnDismissal() {
+        editorFlush.flush()
+        guard modelContext.hasChanges else { return }
+        persistNote()
     }
 
     /// **T-497.** `body` used to call `persistNote()` and dismiss unconditionally, so a refused

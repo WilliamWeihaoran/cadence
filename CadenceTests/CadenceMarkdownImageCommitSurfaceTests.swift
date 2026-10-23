@@ -517,7 +517,9 @@ struct CadenceMarkdownImageCommitSurfaceTests {
         // [[T-5060]] (c) makes it 72, and the ninth dismissable one: macOS `FocusNotesPanel` now
         // resolves task embeds and names a refused embedded-task write under its editor, for the
         // inspector notes box's reason -- typing never reaches the write that set it.
-        #expect(total == 72, "the inline notice has \(total) call sites, not the 72 this test was written over")
+        // [[T-5161]] makes it 73, and bare: the iOS capture palette's Note segment names a refused
+        // note above the shell -- the retry is the next press of the palette, which clears it.
+        #expect(total == 73, "the inline notice has \(total) call sites, not the 73 this test was written over")
         #expect(withDismissal == 9, "\(withDismissal) call sites offer a dismissal, not 9")
 
         // And each of the nine is named, so one swapping places with another is still a failure.

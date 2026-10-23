@@ -609,9 +609,21 @@ private struct iOSCaptureHostModifier: ViewModifier {
     /// The note composer, which is a full-screen cover over a note that already exists — the same
     /// presentation the Notes page uses for the same editor.
     @State private var noteBeingCaptured: Note?
+    /// **[[T-5161]].** The Note segment's one failure: the store refused the note the cover would
+    /// have edited. Said above the shell rather than swallowed, and cleared by the next press of
+    /// the palette — that press is the retry, which is why the notice offers no dismissal.
+    @State private var noteCaptureFailureNotice: String?
 
     func body(content: Content) -> some View {
         content
+            .safeAreaInset(edge: .top, spacing: 0) {
+                if let noteCaptureFailureNotice {
+                    CadenceInlineFailureNotice(text: noteCaptureFailureNotice)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 8)
+                        .background(Theme.bg)
+                }
+            }
             .iOSCaptureRadialMenuLayer(interaction)
             .sheet(item: $composer) { request in
                 switch request.kind {
@@ -658,12 +670,44 @@ private struct iOSCaptureHostModifier: ViewModifier {
     }
 
     private func present(_ request: iOSCaptureRequest) {
+        noteCaptureFailureNotice = nil
         switch request.kind {
         case .task, .event, .list:
             composer = request
         case .note:
-            guard let note = try? NoteMigrationService.createPermanentNote(in: modelContext) else { return }
-            noteBeingCaptured = note
+            switch iOSCaptureNoteCreation.create(in: modelContext) {
+            case .created(let note):
+                noteBeingCaptured = note
+            case .refused(let notice):
+                noteCaptureFailureNotice = notice
+            }
+        }
+    }
+}
+
+/// **[[T-5161]] — what the palette's Note segment does before its cover can open.**
+///
+/// This was `guard let note = try? … else { return }` inside `present(_:)`: a refused store left
+/// the palette dismissed with no editor and no sentence, a control that drew and did not act. The
+/// guard was right — nothing may open onto a note the store did not take — so what was missing was
+/// the sentence, and it is the Notepad `+`'s ([[T-1071]]) for the same refusal through the same
+/// call. "Nothing was changed" is true because `createPermanentNote` commits through
+/// `CadencePendingChangePersistence.commitInsert`, which takes the inserted note back out.
+enum iOSCaptureNoteCreation {
+    enum Outcome {
+        case created(Note)
+        case refused(notice: String)
+    }
+
+    /// - Parameter commit: See `NoteMigrationService.createPermanentNote(in:title:commit:)`.
+    static func create(
+        in modelContext: ModelContext,
+        commit: (ModelContext) throws -> Void = { try $0.save() }
+    ) -> Outcome {
+        do {
+            return .created(try NoteMigrationService.createPermanentNote(in: modelContext, commit: commit))
+        } catch {
+            return .refused(notice: CadencePendingChangePersistence.editFailureNotice)
         }
     }
 }
