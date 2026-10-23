@@ -15,6 +15,8 @@ struct iOSEventNoteEditorSheet: View {
     @Query(sort: \Note.updatedAt, order: .reverse) private var allNotes: [Note]
     @Query(sort: \AppTask.order) private var allTasks: [AppTask]
     @State private var isEditorFocused = false
+    /// The well's held-back typing, flushed before Done saves the note ([[T-5170]]).
+    @State private var editorFlush = iOSMarkdownEditorFlush()
     @State private var commitNotice: String?
     @State private var selectedReferenceNote: Note?
     @State private var selectedReferenceTask: AppTask?
@@ -46,6 +48,9 @@ struct iOSEventNoteEditorSheet: View {
                         // keeps the editor open with the notice showing instead. A note that is
                         // saved but not mirrored into Apple Calendar still closes — the text is
                         // safe, and a read-only event can never accept it however long we wait.
+                        // [[T-5170]]: first, so the save and the Apple Calendar mirror carry
+                        // the words typed just before the tap.
+                        editorFlush.flush()
                         guard persistNote().isSaved else { return }
                         isEditorFocused = false
                         dismiss()
@@ -114,7 +119,8 @@ struct iOSEventNoteEditorSheet: View {
             referenceNotes: allNotes,
             referenceTasks: allTasks,
             editingNote: note,
-            onOpenReference: openMarkdownReference
+            onOpenReference: openMarkdownReference,
+            flush: editorFlush
         )
     }
 

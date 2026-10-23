@@ -52,9 +52,13 @@ struct iOSMarkdownEditingSurface: View {
     /// template menu belongs in the format row rather than a page header.
     var templateKind: NoteKind? = nil
     var applyTemplate: ((NoteTemplate) -> Void)? = nil
+    /// **[[T-5170]].** The host's handle on the typing this editor is still holding back. Pass one
+    /// and the host can `flush()` it before it commits, and read `hasPendingEdit` in its dirty
+    /// guard; leave it nil and the editor keeps its own, which nobody outside can reach.
+    var flush: iOSMarkdownEditorFlush? = nil
     @State private var draftText = ""
     @State private var hasLoadedDraft = false
-    @State private var pendingCommitWorkItem: DispatchWorkItem?
+    @State private var ownFlush = iOSMarkdownEditorFlush()
     @State private var referencePickerKind: iOSMarkdownReferencePickerKind?
     @State private var selectedRange = NSRange(location: 0, length: 0)
     @State private var scrollRequest: iOSMarkdownScrollRequest?
@@ -835,22 +839,71 @@ struct iOSMarkdownEditingSurface: View {
         scheduleCommit(nextText)
     }
 
+    private var pendingCommit: iOSMarkdownEditorFlush { flush ?? ownFlush }
+
     private func scheduleCommit(_ nextText: String) {
-        pendingCommitWorkItem?.cancel()
-        let workItem = DispatchWorkItem {
+        pendingCommit.schedule(after: 2.5) {
             if text != nextText {
                 text = nextText
             }
         }
-        pendingCommitWorkItem = workItem
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2.5, execute: workItem)
     }
 
     private func commitDraftImmediately() {
-        pendingCommitWorkItem?.cancel()
-        pendingCommitWorkItem = nil
+        pendingCommit.cancel()
         guard hasLoadedDraft, text != draftText else { return }
         text = draftText
+    }
+}
+
+/// **[[T-5170]] — the typing `iOSMarkdownEditingSurface` has not yet written to its host.**
+///
+/// The surface writes its `text` binding 2.5 s after the last keystroke, on focus loss or on
+/// disappear — some hosts' bindings save the store, so per keystroke is too often. But a SwiftUI
+/// button does not take first responder from the `UITextView`, so a Save or Done tapped inside that
+/// window read the binding without the sentence just typed: the task and event sheets saved the
+/// old Notes, the note sheets saved before the tail reached `note.content`, and a swipe guard
+/// comparing the draft could not see the edit at all.
+///
+/// A host that commits holds one of these, hands it to the surface, and calls `flush()` FIRST in
+/// its commit: the held write runs synchronously, so the binding — and the host's draft behind it —
+/// carries every keystroke by the time the commit reads it. iOS's half of [[T-4971]]: commit at the
+/// flush point, no new debounce.
+@MainActor @Observable
+final class iOSMarkdownEditorFlush {
+    /// Whether typing is held back from the binding right now. It changes only at the edges — the
+    /// first held keystroke, the write — so a dirty guard reading it redraws twice per burst of
+    /// typing, not once per keystroke.
+    private(set) var hasPendingEdit = false
+    @ObservationIgnored private var pendingWrite: (() -> Void)?
+    @ObservationIgnored private var pendingWorkItem: DispatchWorkItem?
+
+    /// Holds `write` to run after `delay`, replacing any write already held.
+    func schedule(after delay: TimeInterval, _ write: @escaping () -> Void) {
+        pendingWorkItem?.cancel()
+        pendingWrite = write
+        let workItem = DispatchWorkItem { [weak self] in
+            MainActor.assumeIsolated { self?.flush() }
+        }
+        pendingWorkItem = workItem
+        if !hasPendingEdit { hasPendingEdit = true }
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: workItem)
+    }
+
+    /// Runs the held write now, once. Nothing held, nothing runs.
+    func flush() {
+        let write = pendingWrite
+        cancel()
+        write?()
+    }
+
+    /// Drops the held write without running it — for the surface, which is about to write its
+    /// whole draft itself.
+    func cancel() {
+        pendingWorkItem?.cancel()
+        pendingWorkItem = nil
+        pendingWrite = nil
+        if hasPendingEdit { hasPendingEdit = false }
     }
 }
 

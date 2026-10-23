@@ -38,6 +38,11 @@ struct iOSCalendarEventEditSheet: View {
     @State private var cardHeight: CGFloat = 520
     @State private var draft: CadenceScheduleDraft
     @State private var notesEditorFocused = false
+    /// The Notes well's held-back typing, flushed before Save reads `draft` ([[T-5170]]).
+    @State private var notesFlush = iOSMarkdownEditorFlush()
+    /// The Apple Calendar note as this sheet last read it from EventKit — what an untouched
+    /// `draft.notes` still equals ([[T-5171]]).
+    @State private var loadedEventNotes: String
     @State private var presentedEventNote: Note?
     @State private var selectedReferenceNote: Note?
     @State private var selectedReferenceTask: AppTask?
@@ -117,6 +122,7 @@ struct iOSCalendarEventEditSheet: View {
         )
         self.openedDraft = opened
         _draft = State(initialValue: opened)
+        _loadedEventNotes = State(initialValue: opened.notes)
     }
 
     var body: some View {
@@ -179,7 +185,7 @@ struct iOSCalendarEventEditSheet: View {
         }
         .onAppear(perform: ensureWritableCalendar)
         .onChange(of: calendarManager.storeVersion) { _, _ in
-            draft.notes = event.notes ?? ""
+            reloadEventNotesIfUntouched()
         }
         .sheet(item: $presentedEventNote) { note in
             iOSEventNoteEditorSheet(note: note, eventTitle: draft.title, event: event)
@@ -188,7 +194,8 @@ struct iOSCalendarEventEditSheet: View {
         .presentationBackground(.clear)
         .presentationDragIndicator(.hidden)
         .presentationDetents([.height(cardHeight)])
-        .interactiveDismissDisabled(draft != openedDraft)
+        // `hasPendingEdit`: notes typed in the well's last 2.5 s are not in `draft` yet ([[T-5170]]).
+        .interactiveDismissDisabled(draft != openedDraft || notesFlush.hasPendingEdit)
         .iOSMarkdownReferenceSheets(
             selectedNote: $selectedReferenceNote,
             selectedTask: $selectedReferenceTask,
@@ -292,7 +299,8 @@ struct iOSCalendarEventEditSheet: View {
                     // its `.externalStorage` bytes. Widening the inventory was never an option:
                     // EventKit has no unbounded "every event" query, so there is no way to ask the
                     // calendar store the question the sweep asks the model store.
-                    allowsImageInsertion: false
+                    allowsImageInsertion: false,
+                    flush: notesFlush
                 )
                 .iOSMarkdownWell()
             }
@@ -353,12 +361,29 @@ struct iOSCalendarEventEditSheet: View {
     /// The panel's commit. `nil` always: a recurring event stops at the scope question, and every
     /// outcome — this one's included — is reported through `actionError`, which the panel draws.
     private func save() -> String? {
+        // [[T-5170]]: first, so `draft.notes` holds the words typed just before the tap.
+        notesFlush.flush()
         if isRecurringEvent {
             pendingAction = .save
             return nil
         }
         applySave(scope: .thisOccurrence)
         return nil
+    }
+
+    /// **[[T-5171]].** Every `EKEventStoreChanged` bumps `storeVersion` — a sync, an edit in Apple
+    /// Calendar, any other event — and this used to copy `event.notes` over `draft.notes` on each,
+    /// throwing away the note being typed. It still picks up a note written elsewhere (the event
+    /// note mirror), but only into a draft the user has not edited since the last read.
+    private func reloadEventNotesIfUntouched() {
+        notesFlush.flush()
+        guard let reloaded = iOSCalendarEventNoteReload.reloadedNotes(
+            draft: draft.notes,
+            lastLoaded: loadedEventNotes,
+            fresh: event.notes ?? ""
+        ) else { return }
+        loadedEventNotes = reloaded
+        draft.notes = reloaded
     }
 
     private func requestDelete() {
@@ -439,6 +464,15 @@ struct iOSCalendarEventEditSheet: View {
             isEventEditable: isEditable,
             writableCalendarIDs: writableCalendarIDs
         )
+    }
+}
+
+/// **[[T-5171]]** — whether a store change may replace the event sheet's draft Apple Calendar note.
+/// `nil` keeps the draft: it differs from what the sheet last read, so it holds the user's edit.
+enum iOSCalendarEventNoteReload {
+    static func reloadedNotes(draft: String, lastLoaded: String, fresh: String) -> String? {
+        guard draft == lastLoaded else { return nil }
+        return fresh
     }
 }
 

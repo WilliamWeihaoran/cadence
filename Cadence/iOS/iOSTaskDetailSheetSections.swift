@@ -331,6 +331,8 @@ struct iOSTaskSubtasksSection: View {
 struct iOSTaskNotesSection: View {
     let notesText: Binding<String>
     let isFocused: Binding<Bool>
+    /// The sheet's handle on typing the well has not yet written to `notesText` ([[T-5170]]).
+    let flush: iOSMarkdownEditorFlush
     let referenceNotes: [Note]
     let referenceTasks: [AppTask]
     let onOpenReference: (MarkdownReferenceDisplayTarget) -> Void
@@ -343,7 +345,8 @@ struct iOSTaskNotesSection: View {
                 placeholder: "Add notes…",
                 referenceNotes: referenceNotes,
                 referenceTasks: referenceTasks,
-                onOpenReference: onOpenReference
+                onOpenReference: onOpenReference,
+                flush: flush
             )
             .iOSMarkdownWell()
         }

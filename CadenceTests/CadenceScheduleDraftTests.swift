@@ -1198,7 +1198,8 @@ struct CadenceTaskEditorPanelAdoptionTests {
         // The note is drafted with everything else.
         #expect(sheet.contains("notesText: $draft.notes"))
         // An unsaved draft is not discarded by a swipe.
-        #expect(sheet.contains(".interactiveDismissDisabled(draft != openedDraft)"))
+        // T-5170: the guard also sees notes the well has not yet written to the draft.
+        #expect(sheet.contains(".interactiveDismissDisabled(draft != openedDraft || notesFlush.hasPendingEdit)"))
     }
 
     /// Save is one commit, asks the series question only where there is a series, and closes only

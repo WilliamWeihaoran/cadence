@@ -36,6 +36,8 @@ struct iOSTaskDetailSheet: View {
     /// same second alert `iOSTaskRow` carries — see `deleteTask()`.
     @State private var deleteFailed = false
     @State private var isNotesFocused = false
+    /// The Notes well's held-back typing, flushed before Save reads `draft` ([[T-5170]]).
+    @State private var notesFlush = iOSMarkdownEditorFlush()
     /// The one slot this sheet reports a refused save through (T-497, T-646): the panel draws it
     /// beside its footer, whether the save was asked directly or after the series-scope question.
     @State private var saveFailureNotice: String?
@@ -158,7 +160,8 @@ struct iOSTaskDetailSheet: View {
         .preferredColorScheme(.dark)
         // The panel writes on Save, so an unsaved draft is the user's work and nowhere else. A
         // swipe that dropped it would be the silent loss the old write-through sheet never had.
-        .interactiveDismissDisabled(draft != openedDraft)
+        // `hasPendingEdit`: notes typed in the well's last 2.5 s are not in `draft` yet ([[T-5170]]).
+        .interactiveDismissDisabled(draft != openedDraft || notesFlush.hasPendingEdit)
         // The two fields this sheet does not draft: status, which its own actions write at once,
         // and logged time, which the focus timer writes. `normalizeCompletionState` is the repair
         // the old field observers fired; Save runs it for every drafted field.
@@ -280,6 +283,7 @@ struct iOSTaskDetailSheet: View {
         iOSTaskNotesSection(
             notesText: $draft.notes,
             isFocused: $isNotesFocused,
+            flush: notesFlush,
             referenceNotes: allNotes,
             referenceTasks: allTasks,
             onOpenReference: openMarkdownReference
@@ -307,6 +311,9 @@ struct iOSTaskDetailSheet: View {
     /// A task with no series has nothing to propagate to, so there is no scope to ask about and the
     /// save lands at once — the rule the per-field series edit this replaces followed.
     private func save() -> String? {
+        // [[T-5170]]: first, so `draft.notes` holds the words typed just before the tap. Dropping
+        // focus alone writes them a frame later, after the sheet has committed and closed.
+        notesFlush.flush()
         isNotesFocused = false
         if draft.changesRecurrence(from: openedDraft) && task.isRecurrenceSeriesMember {
             isAskingRecurrenceScope = true

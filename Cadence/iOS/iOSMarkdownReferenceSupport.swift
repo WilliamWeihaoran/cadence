@@ -49,6 +49,8 @@ struct iOSLinkedNoteEditorSheet: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.modelContext) private var modelContext
     @State private var isEditorFocused = false
+    /// The well's held-back typing, flushed before Done saves the note ([[T-5170]]).
+    @State private var editorFlush = iOSMarkdownEditorFlush()
     /// Set when Done could not flush the note. See `flushBeforeDismissing()`.
     @State private var saveFailureNotice: String?
     @State private var selectedReferenceNote: Note?
@@ -74,6 +76,8 @@ struct iOSLinkedNoteEditorSheet: View {
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) {
                         Button("Done") {
+                            // [[T-5170]]: the well's tail reaches `note.content` before the save.
+                            editorFlush.flush()
                             guard flushBeforeDismissing() else { return }
                             isEditorFocused = false
                             dismiss()
@@ -141,7 +145,8 @@ struct iOSLinkedNoteEditorSheet: View {
                 referenceNotes: referenceNotes,
                 referenceTasks: referenceTasks,
                 editingNote: note,
-                onOpenReference: openMarkdownReference
+                onOpenReference: openMarkdownReference,
+                flush: editorFlush
             )
         }
     }

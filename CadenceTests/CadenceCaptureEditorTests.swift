@@ -78,7 +78,8 @@ struct CadenceCaptureEditorTests {
             let host = CadenceSourceScan.codeOnly(try source("Cadence/iOS/\(name).swift"))
             #expect(host.contains(".capturePresentation(CadenceScheduleCaptureOptions())"))
             #expect(host.contains(".presentationBackground(.clear)"))
-            #expect(host.contains(".interactiveDismissDisabled(draft != openedDraft)"))
+            // T-5170: the guard also sees notes the well has not yet written to the draft.
+            #expect(host.contains(".interactiveDismissDisabled(draft != openedDraft || notesFlush.hasPendingEdit)"))
             #expect(!host.contains("NavigationStack {"))
         }
         let task = CadenceSourceScan.codeOnly(try source("Cadence/iOS/iOSTaskDetailSheet.swift"))
