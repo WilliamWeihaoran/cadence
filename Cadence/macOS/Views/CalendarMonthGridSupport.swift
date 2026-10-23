@@ -13,7 +13,8 @@ enum CalendarMonthGridSupport {
     /// How many days at the head of `month` the grid renders inside the **previous** month's
     /// block.
     ///
-    /// A block begins on its month's first Sunday, so the 0–6 days before that Sunday are
+    /// A block begins on its month's first week-start day (`calendar.firstWeekday` — Sunday in the
+    /// US, Monday in most of Europe), so the 0–6 days before it are
     /// carried as trailing fill on the block before it. This function is the only place that
     /// rule is written down: `weeksInMonth`, `weeks(for:)`, `blockFirstDay(of:)` and
     /// `blockMonthStart(for:)` all read it here instead of each recomputing `7 - startWeekday`.
@@ -26,7 +27,10 @@ enum CalendarMonthGridSupport {
     /// the same lesson learned about the offset table.
     static func leadingDaysRenderedInPreviousBlock(of month: Date, calendar: Calendar) -> Int {
         guard let first = calendar.date(from: calendar.dateComponents([.year, .month], from: month)) else { return 0 }
-        let startWeekday = calendar.component(.weekday, from: first) - 1
+        // Measured from `calendar.firstWeekday`, through the same shared arithmetic the header's
+        // `CadenceScheduleSupport.weekdaySymbols` rotation pairs with ([[T-5361]]). It was
+        // `weekday - 1`, Sunday-first unconditionally, under a header hard-coded `Sun…Sat`.
+        let startWeekday = CadenceScheduleSupport.leadingBlankCount(forFirstOf: first, calendar: calendar)
         return startWeekday == 0 ? 0 : (7 - startWeekday)
     }
 

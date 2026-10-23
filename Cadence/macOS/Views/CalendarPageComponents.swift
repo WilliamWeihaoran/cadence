@@ -95,7 +95,7 @@ struct MonthGridView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            MonthGridWeekdayHeader()
+            MonthGridWeekdayHeader(calendar: cal)
 
             Divider().background(Theme.borderSubtle.opacity(CalendarVisualStyle.dividerOpacity))
 

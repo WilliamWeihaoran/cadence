@@ -99,14 +99,23 @@ struct TimelineEventBlock: View {
                             isMoveDragActive = true
                             dragGrabOffset = value.startLocation.y - metrics.yOffset(for: effectiveStartMin)
                         }
-                        let eventTopY = value.location.y - dragGrabOffset
-                        liveStartMin = metrics.snappedMinute(fromY: max(0, eventTopY))
+                        liveStartMin = TimelineEventBlockEditGate.movedStartMinute(
+                            topY: value.location.y - dragGrabOffset,
+                            durationMinutes: item.durationMinutes,
+                            isMultiDayTimedEvent: item.isMultiDayTimedEvent,
+                            metrics: metrics
+                        )
                     }
                     .onEnded { _ in
                         guard resizeSession == nil else { return }
                         if let newStart = liveStartMin {
-                            requestEventMutation(.move(startMin: newStart))
-                            // Keep liveStartMin set until item refreshes from iCal (onChange clears it)
+                            if TimelineEventBlockEditGate.commitsMove(to: newStart, from: item.startMin) {
+                                requestEventMutation(.move(startMin: newStart))
+                                // Keep liveStartMin set until item refreshes from iCal (onChange clears it)
+                            } else {
+                                // Nothing moved, so no refresh is coming to clear the live state.
+                                liveStartMin = nil
+                            }
                         }
                         isMoveDragActive = false
                         dragGrabOffset = 0

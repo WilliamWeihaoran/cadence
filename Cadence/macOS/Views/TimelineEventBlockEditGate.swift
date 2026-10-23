@@ -51,5 +51,34 @@ enum TimelineEventBlockEditGate {
         if failure != nil { return true }
         return requested.start == current.start && requested.end == current.end
     }
+
+    /// Whether a finished move gesture writes anything ([[T-5354]]).
+    ///
+    /// The move recogniser starts after 4pt, so a click whose pointer slips sideways is a "move"
+    /// that ends on the minute the event already starts at. Writing it raised the recurring-scope
+    /// dialog for nothing on a series member. A click is a click — the resize handle's rule, and
+    /// iOS's, which skips the commit when the snapped delta is zero.
+    static func commitsMove(to newStartMin: Int, from storedStartMin: Int) -> Bool {
+        newStartMin != storedStartMin
+    }
+
+    /// The start minute a move gesture resolves to for a block whose top is at canvas `topY`
+    /// ([[T-5355]]).
+    ///
+    /// A single-day event stops where it still ends by the canvas's last minute — iOS's
+    /// `latestStart = dayEndMinute - duration` (`CadenceTimelineBlockEditSupport.editedRange`).
+    /// The bare `snappedMinute(fromY:)` clamps for a 5-minute block, so an hour-long event dropped
+    /// on the last slot was written as 23:55-00:55 the next day. A multi-day event already spans
+    /// midnight and its segment moves the whole event by the delta, so it keeps the start-only clamp.
+    static func movedStartMinute(
+        topY: CGFloat,
+        durationMinutes: Int,
+        isMultiDayTimedEvent: Bool,
+        metrics: TimelineMetrics
+    ) -> Int {
+        let snapped = metrics.snappedMinute(fromY: max(0, topY))
+        guard !isMultiDayTimedEvent else { return snapped }
+        return metrics.clampStart(snapped, duration: durationMinutes)
+    }
 }
 #endif

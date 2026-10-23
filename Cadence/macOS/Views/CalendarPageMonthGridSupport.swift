@@ -408,10 +408,16 @@ enum CalendarMonthDayLabelSupport {
     }
 }
 
+/// Column headings for the month grid, in the grid's own column order ([[T-5361]]).
+///
+/// Takes the grid's `calendar` so the headings and `CalendarMonthGridSupport`'s tiling read one
+/// `firstWeekday`. The headings used to be a hard-coded `Sun…Sat`.
 struct MonthGridWeekdayHeader: View {
+    let calendar: Calendar
+
     var body: some View {
         HStack(spacing: 0) {
-            ForEach(["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"], id: \.self) { day in
+            ForEach(CadenceScheduleSupport.weekdaySymbols(calendar: calendar, width: .short), id: \.self) { day in
                 Text(day)
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(Theme.dim)
