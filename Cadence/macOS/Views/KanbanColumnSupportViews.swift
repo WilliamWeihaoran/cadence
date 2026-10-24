@@ -570,15 +570,23 @@ struct KanbanSectionEditorPopover: View {
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(Theme.dim)
 
+                // T-5834: a column with no due date reads "No due date", not the `?? Date()` seed
+                // or the date "Clear date" just removed — the placeholder's documented use. Every
+                // pick commits, through the setter rather than `.onChange`, because after a clear
+                // the bound value is still the cleared day and picking it again changes nothing.
                 CadenceDatePicker(
-                    selection: $editorDueDate,
+                    selection: Binding(
+                        get: { editorDueDate },
+                        set: { newValue in
+                            editorDueDate = newValue
+                            editorHasDueDate = true
+                            onDueDateChanged()
+                        }
+                    ),
+                    placeholder: editorHasDueDate ? nil : "No due date",
                     showsClear: editorHasDueDate,
                     onClear: onClearDate
                 )
-                    .onChange(of: editorDueDate) { _, _ in
-                        editorHasDueDate = true
-                        onDueDateChanged()
-                    }
 
                 if editorHasDueDate {
                     Button("Clear date", action: onClearDate)
