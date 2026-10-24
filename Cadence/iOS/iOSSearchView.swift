@@ -339,7 +339,7 @@ struct iOSSearchView: View {
                 resultSection("Calendar Events", results: eventResults)
             }
 
-            if isSearching && visibleResultsAreEmpty && !(showsEvents && !calendarManager.isAuthorized) {
+            if isSearching && visibleResultsAreEmpty && !calendarAccessCardReplacesNoResults {
                 iOSEmptyPanel(
                     systemImage: "magnifyingglass",
                     title: "No results",
@@ -478,6 +478,16 @@ struct iOSSearchView: View {
             .listRowBackground(Color.clear)
             .listRowSeparator(.hidden)
         }
+    }
+
+    /// Whether the "Calendar access is off" card is the whole answer to an empty search, so the
+    /// "No results" panel would only repeat it. True on the **Events** scope alone (T-6113): there
+    /// nothing else is searched, and the card says why nothing came back. On **All** the tasks,
+    /// lists, notes and pages were searched and matched nothing, and that has to be said; gating
+    /// on `showsEvents` left the card as the only thing on screen, reading as if search itself
+    /// needed calendar access. The card still draws above the panel on All.
+    private var calendarAccessCardReplacesNoResults: Bool {
+        scope == .events && !calendarManager.isAuthorized
     }
 
     private var visibleResultsAreEmpty: Bool {
