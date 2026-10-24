@@ -400,9 +400,9 @@ struct TaskNotesExpandedEditorSheet: View {
 ///
 /// A standalone note takes the route global search takes — `NotesNavigationManager.openNote`, which
 /// `macOSRootView` answers by selecting the Notes page. A `.list` note has no Notes page; it opens
-/// its list's Notes tab through `ListNavigationManager`, but that route carries no note id for a
-/// list note (`ListNotesView` honours only a requested meeting note), so the tab opens without that
-/// note selected — the residual [[T-5061]] is PARTIAL for.
+/// its list's Notes tab through `ListNavigationManager` **with that note selected** — the
+/// `listNoteID:` overload global search uses ([[T-3084]]). Without the id the tab selected whatever
+/// document it reached first ([[T-6092]]).
 enum TaskNoteLinkRouting {
     /// Same resolution as `TaskNoteEditorPane.openNoteReference`: the id first, then the title.
     static func note(id: UUID?, title: String, in notes: [Note]) -> Note? {
@@ -424,9 +424,9 @@ enum TaskNoteLinkRouting {
             return
         }
         if let project = note.project {
-            listNavigation.open(projectID: project.id, page: .documents)
+            listNavigation.open(projectID: project.id, page: .documents, listNoteID: note.id)
         } else if let area = note.area {
-            listNavigation.open(areaID: area.id, page: .documents)
+            listNavigation.open(areaID: area.id, page: .documents, listNoteID: note.id)
         }
     }
 }
