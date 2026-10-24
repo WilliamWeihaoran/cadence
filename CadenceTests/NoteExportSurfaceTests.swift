@@ -269,6 +269,32 @@ struct NoteExportSurfaceTests {
         #expect(flushed.lowerBound < rendered.lowerBound, "the held typing is written after the export is rendered")
     }
 
+    /// **[[T-5821]].** The surface holds typing back 2.5 s, and a host that hands it no flush
+    /// leaves that tail in the surface's private one, where Export cannot reach it — so the three
+    /// older call sites wrote the note without the last words typed. Every host now holds one
+    /// flush, hands it to its surface AND to its Export: no call site may export bare, and each
+    /// file that draws an export menu passes `flush: editorFlush` to as many surfaces as menus.
+    @Test func everyIOSExportCallSiteFlushesTheEditorsHeldTyping() throws {
+        var sawCallSite = 0
+        for path in try noteExportSwiftFiles() {
+            let code = strippingNoteExportComments(try noteExportSource(path))
+            let menus = CadenceSourceScan.matchCount(#"iOSNoteExportMenu\(note:"#, in: code)
+            guard menus > 0 else { continue }
+            sawCallSite += menus
+            #expect(
+                CadenceSourceScan.matchCount(#"iOSNoteExportMenu\(note: note, flush: editorFlush\)"#, in: code) == menus,
+                "\(path) exports without the editor's held typing"
+            )
+            #expect(code.contains("@State private var editorFlush = iOSMarkdownEditorFlush()"), "\(path) holds no flush")
+            #expect(
+                CadenceSourceScan.matchCount(#"flush: editorFlush\n\s*\)"#, in: code) == menus,
+                "\(path) never hands its flush to the editing surface"
+            )
+        }
+        // iOSNotesView draws two (header + cover), the list and the event sheet one each.
+        #expect(sawCallSite == 4, "\(sawCallSite)")
+    }
+
     /// Non-vacuity. Every assertion above is a count or an absence over files read off disk; if the
     /// read silently returned nothing they would all pass.
     @Test func theScannerIsReadingRealSourceInNoteExportSurface() throws {

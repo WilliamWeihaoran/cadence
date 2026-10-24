@@ -126,6 +126,11 @@ struct iOSNotesView: View {
     // `@FocusState` had no view to move focus to and could not report focus back either. The
     // editor's own `isFocused` binding is what drives — and observes — the text view.
     @State private var isEditorFocused = false
+    /// [[T-5821]]: `editorPane`'s held-back typing, handed to the surface and to the header's
+    /// Export so a file written within 2.5 s of the last keystroke still carries it. One for the
+    /// pane, not one per note: `.id(note.id)` rebuilds the surface on a switch, and the outgoing
+    /// surface writes its own draft on disappear.
+    @State private var editorFlush = iOSMarkdownEditorFlush()
     /// [[T-5804]]: what the last commit of the selected event note did not do, if anything — the
     /// notice `iOSEventNoteEditorSheet` shows for the same note at compact width.
     @State private var eventNoteCommitNotice: String?
@@ -324,7 +329,7 @@ struct iOSNotesView: View {
             // in the editor cover's navigation bar. Unlike the AI menu this is never absent — a
             // note can always be written out, there is nothing to opt into.
             if showsHeaderTemplateMenu || isShowingInlineEditor, let note = selectedNote {
-                iOSNoteExportMenu(note: note)
+                iOSNoteExportMenu(note: note, flush: editorFlush)
             }
         }
         .frame(height: useStandardHeaderHeight ? iOSNotesHeaderStandardHeight : nil, alignment: .top)
@@ -475,7 +480,8 @@ struct iOSNotesView: View {
                     editingNote: note,
                     onOpenReference: openMarkdownReference,
                     templateKind: showsHeaderTemplateMenu ? nil : activeTab.coreTab?.noteKind,
-                    applyTemplate: showsHeaderTemplateMenu ? nil : { apply($0, to: note) }
+                    applyTemplate: showsHeaderTemplateMenu ? nil : { apply($0, to: note) },
+                    flush: editorFlush
                 )
                 .id(note.id)
             }
@@ -809,6 +815,8 @@ struct iOSNoteEditorCover: View {
     @Query(sort: \Note.updatedAt, order: .reverse) private var allNotes: [Note]
     @Query(sort: \AppTask.order) private var allTasks: [AppTask]
     @State private var isEditorFocused = false
+    /// [[T-5821]]: the surface's held-back typing, handed to Export so the file carries it.
+    @State private var editorFlush = iOSMarkdownEditorFlush()
     @State private var selectedReferenceNote: Note?
     @State private var selectedReferenceTask: AppTask?
 
@@ -828,7 +836,8 @@ struct iOSNoteEditorCover: View {
                 embeddedTaskArea: embeddedTaskArea,
                 embeddedTaskProject: embeddedTaskProject,
                 templateKind: templateKind,
-                applyTemplate: templateKind == nil ? nil : { apply($0) }
+                applyTemplate: templateKind == nil ? nil : { apply($0) },
+                flush: editorFlush
             )
             .id(note.id)
             .background(Theme.surface.ignoresSafeArea())
@@ -854,7 +863,7 @@ struct iOSNoteEditorCover: View {
                 // the navigation bar is this width's header row. Both note headers behind this
                 // cover carry the same control at regular width.
                 ToolbarItem(placement: .primaryAction) {
-                    iOSNoteExportMenu(note: note)
+                    iOSNoteExportMenu(note: note, flush: editorFlush)
                 }
             }
         }

@@ -44,6 +44,9 @@ struct iOSListNotesView: View {
     // `UITextView` inside a `UIViewRepresentable` and nothing here is attached with `.focused(...)`.
     // Same reasoning as `iOSNotesView`.
     @State private var isEditorFocused = false
+    /// [[T-5821]]: `editorPane`'s held-back typing, handed to the surface and to the control row's
+    /// Export so a file written within 2.5 s of the last keystroke still carries it.
+    @State private var editorFlush = iOSMarkdownEditorFlush()
     @State private var selectedReferenceNote: Note?
     @State private var selectedReferenceTask: AppTask?
     /// T-497: the one thing `addNote` can fail at, said above the column the row would have
@@ -144,7 +147,7 @@ struct iOSListNotesView: View {
                     apply(template, to: note)
                 }
                 iOSNoteAIActionsMenu(note: note, area: note.area, project: note.project)
-                iOSNoteExportMenu(note: note)
+                iOSNoteExportMenu(note: note, flush: editorFlush)
             }
 
             newNoteMenu
@@ -273,7 +276,8 @@ struct iOSListNotesView: View {
                 editingNote: note,
                 onOpenReference: openMarkdownReference,
                 embeddedTaskArea: area,
-                embeddedTaskProject: project
+                embeddedTaskProject: project,
+                flush: editorFlush
             )
             .id(note.id)
         } else {

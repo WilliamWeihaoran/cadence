@@ -341,7 +341,7 @@ struct iPadTodayRailSurfaceTests {
         )
         #expect(notes.contains(condition))
         #expect(notes.contains("iOSNoteAIActionsMenu(note: note, area: note.area, project: note.project)"))
-        #expect(notes.contains("iOSNoteExportMenu(note: note)"))
+        #expect(notes.contains("iOSNoteExportMenu(note: note, flush: editorFlush)"))
 
         // The template control is deliberately *not* in that pair: `editorPane` hands it to the
         // editor's own format row whenever the header is not carrying it, so it moves rather than
