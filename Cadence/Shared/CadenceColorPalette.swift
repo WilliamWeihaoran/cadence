@@ -5,10 +5,10 @@ import Foundation
 ///
 /// This existed three times: `ColorGrid.colors` (macOS, `#if os(macOS)`), `iOSListPalette.colors`
 /// (a deliberate iOS mirror of it, added precisely because `ColorGrid` could not be reached), and
-/// `iOSTrackingColorGrid.colors` — which had already drifted to a *different eight colours*, so a
-/// goal or habit could be tinted `#38d5c7` or `#94a3b8` while no list could, and lists offered five
-/// hues that goals did not. One palette, no `#if`, so the next surface that needs swatches has
-/// somewhere to get them.
+/// the iOS goal and habit editors' own colour grid (deleted with them, [[T-5523]]) — which had
+/// already drifted to a *different eight colours*, so a goal or habit could be tinted `#38d5c7`
+/// or `#94a3b8` while no list could, and lists offered five hues that goals did not. One palette,
+/// no `#if`, so the next surface that needs swatches has somewhere to get them.
 ///
 /// `TagSupport.colorOptions` is deliberately **not** folded in here. Tags are a different palette
 /// with a different job, and it is already shared.

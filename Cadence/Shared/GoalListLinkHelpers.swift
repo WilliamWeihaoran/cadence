@@ -176,11 +176,6 @@ enum GoalLinkPresentation {
         CadencePluralization.phrase(count, singular: "list", plural: "lists")
     }
 
-    /// What an empty Linked Lists section says. One string, both platforms — it has to state the
-    /// *other* way work reaches a goal, or the section reads as the only one.
-    static let emptyExplanation =
-        "Attach an area or project so its tasks count toward this goal. Tasks assigned to the goal directly count too."
-
     /// The sentence under the progress bar: how much of the counted work arrives through a linked
     /// list rather than being assigned to the goal.
     ///

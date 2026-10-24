@@ -20,9 +20,10 @@ import Testing
 /// reserved for a sighted-only `.help()` tooltip. `SettingsTagsSection.swift` states why in as many
 /// words: "a screen reader cannot verify a colour and the repo does not invent colour names for
 /// one" — the same reasoning `CadenceAccentPalettePresentation` gives for the accent picker.
-/// `ColorGrid` now draws the converged idiom instead of inventing an eighth one. `iOSTrackingColorGrid`
-/// was the one file that predated the convergence, still naming its swatches `"Color \(hex)"` after
-/// this comment was written; T-934 brought it in line, so all seven swatch grids now agree.
+/// `ColorGrid` now draws the converged idiom instead of inventing an eighth one. The iOS tracking
+/// color grid was the one file that predated the convergence, still naming its swatches
+/// `"Color \(hex)"` after this comment was written; T-934 brought it in line, and [[T-5523]]
+/// deleted it once it had no caller.
 struct CadenceIconOnlyColorSwatchAccessibilityTests {
 
     private func detector() throws -> CadenceScanInstrument {
@@ -157,16 +158,20 @@ struct CadenceIconOnlyColorSwatchAccessibilityTests {
         #expect(source.contains(".help(hex)"))
     }
 
-    /// **T-934: `iOSTrackingColorGrid` was the one holdout this file's own doc comment named.**
-    /// Unlike `ColorGrid`, it already wraps its swatch in a `Button` — this suite's bare-
-    /// `.onTapGesture` detector correctly does not fire on it — but it still names the control by
-    /// its hex value, `"Color \(color)"`, rather than by what tapping it does. A screen reader
-    /// cannot verify a colour, so a hex-named control reads a string sighted users never see and
-    /// non-sighted users cannot check. This pins the fix directly rather than leaving the sweep to
-    /// notice it only if the bare-gesture shape reappears.
-    @Test func iOSTrackingColorGridNamesItsSwatchesByActionNotByHex() throws {
+    /// **T-934: the iOS tracking color grid was the one holdout this file's own doc comment
+    /// named**, and it named its swatches by hex (`"Color \(color)"`) rather than by what tapping
+    /// them does; T-934 fixed the label and [[T-5003]] respelled it. **[[T-5523]] deleted the grid**:
+    /// its only readers were the goal and habit editors [[T-2079]] removed, so it had no caller. The
+    /// pin is inverted rather than dropped — the file that held the grid holds no swatch at all,
+    /// hex-named or otherwise, so a grid that comes back there has to be written against the
+    /// converged idiom the suite above enforces, not resurrected from history.
+    @Test func theIOSTrackingColorGridIsDeletedAndLeftNoSwatchBehind() throws {
         let source = try CadenceSourceScan.sourceFile("Cadence/iOS/iOSTrackingEditorComponents.swift")
-        #expect(!source.contains(#"accessibilityLabel("Color \(color)")"#))
-        #expect(source.contains(#".accessibilityLabel(isOn ? "Selected color" : "Use this color")"#))
+        let code = CadenceSourceScan.strippingComments(source)
+        #expect(!code.contains("struct iOSTrackingColorGrid"))
+        #expect(!code.contains(#"accessibilityLabel("Color \(color)")"#))
+        #expect(!code.contains("Use this color"))
+        // Non-vacuity: the file is still read, and still holds the tracking editor chrome.
+        #expect(code.contains("struct iOSTrackingEditorShell"))
     }
 }

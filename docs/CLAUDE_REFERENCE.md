@@ -130,9 +130,9 @@ Cadence/
 │                       # CadenceValueTile, CadenceWrappingHStack,
 │                       # CommitmentSharedViews (CommitmentPageHeader + CommitmentIconTile),
 │                       # EmptyStateView, EstimatePickerControl (iOS chip; its popover is shared),
-│                       # GoalProgressBar, HabitProgressViews (HabitIconTile, HabitInfoCard, the
-│                       #   52-week HabitHeatmap, and HabitLast7DayStrip — all four read by BOTH
-│                       #   habit details since T-219 deleted iOS's copy of the strip),
+│                       # HabitProgressViews (HabitIconTile, still read; HabitInfoCard and the
+│                       #   52-week HabitHeatmap, callerless since T-5002 deleted both habit
+│                       #   details — GoalProgressBar and HabitLast7DayStrip went in T-5523),
 │                       # SectionEyebrowLabel.
 │                       #
 │                       # This is a list of FILES, and one shared view is not one: CompactTagStrip,

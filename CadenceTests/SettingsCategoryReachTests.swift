@@ -106,14 +106,19 @@ struct MacSettingsAboutAndHabitMetricsTests {
     // relation between best and current — is asserted directly above and is what still has
     // readers, through the widget support and the compact shell.
 
-    /// The strip reads the model's walk rather than doing its own. It lives in `Shared/Components`
-    /// because a recent-week strip is not a platform decision — iOS's habit detail still carries a
-    /// private copy of it (`iOSFeatureDetailViews.swift`), which is the near-copy this placement
-    /// exists to let it collapse into.
-    @Test func theSharedStripReadsTheModelsOwnSevenDayWalk() throws {
+    /// **The shared seven-day strip is deleted ([[T-5523]]).** It lived in `Shared/Components`
+    /// and its only readers were the two habit details [[T-5002]] deleted, so it had no caller on
+    /// either platform. This used to pin that the strip read the model's walk; with the view gone
+    /// it pins the absence instead, so a habit surface that comes back has to bring the strip back
+    /// on purpose rather than finding a stale copy waiting. The model's walk is asserted above.
+    @Test func theSharedSevenDayStripIsGoneWithItsLastCaller() throws {
+        let components = try strippingComments(sourceFile("Cadence/Shared/Components/HabitProgressViews.swift"))
+        #expect(!components.contains("struct HabitLast7DayStrip"))
+        // Non-vacuity: the file is read, and still declares the tile that has readers.
+        #expect(components.contains("struct HabitIconTile"))
         try expectOccurrences(
             of: "habit.last7DayStates",
-            at: ["Cadence/Shared/Components/HabitProgressViews.swift": 1]
+            at: ["Cadence/Shared/Components/HabitProgressViews.swift": 0]
         )
     }
 
