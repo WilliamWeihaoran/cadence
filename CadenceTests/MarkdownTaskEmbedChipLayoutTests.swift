@@ -52,9 +52,13 @@ struct MarkdownTaskEmbedChipLayoutTests {
         return MarkdownTaskEmbedDrawing.chipRects(task: task, cardRect: cardRect).map(\.field)
     }
 
+    /// **The crowding fixture is `.cancelled`, not `.inProgress`** ([[T-5015]] (b)). These cases
+    /// want a card carrying every chip at once; In Progress drew a status chip and no longer does,
+    /// so leaving it here would have left each of these asserting against a card one chip emptier
+    /// than the one they were written to crowd — green, and measuring less than it says.
     @Test func crowdedTaskStillRendersDueChip() {
         let task = renderInfo(
-            statusRaw: TaskStatus.inProgress.rawValue,
+            statusRaw: TaskStatus.cancelled.rawValue,
             priorityRaw: TaskPriority.high.rawValue,
             sectionName: "Backlog Grooming",
             dueDate: "2030-04-18",
@@ -65,7 +69,10 @@ struct MarkdownTaskEmbedChipLayoutTests {
     }
 
     @Test func dueChipSurvivesEveryCrowdingCombination() {
-        let statuses = [TaskStatus.todo.rawValue, TaskStatus.inProgress.rawValue]
+        // A status that draws no chip and one that does. It was `.todo` / `.inProgress` until
+        // [[T-5015]] (b) made In Progress draw nothing — which would have left both arms chipless
+        // and quietly halved what this sweep crowds the card with.
+        let statuses = [TaskStatus.todo.rawValue, TaskStatus.cancelled.rawValue]
         let priorities = [TaskPriority.none.rawValue, TaskPriority.high.rawValue]
         let sections = ["", "Backlog Grooming"]
         let recurrences = [TaskRecurrenceRule.none.rawValue, TaskRecurrenceRule.weekly.rawValue]
@@ -97,7 +104,7 @@ struct MarkdownTaskEmbedChipLayoutTests {
 
     @Test func renderedDueChipIsHitTestable() throws {
         let task = renderInfo(
-            statusRaw: TaskStatus.inProgress.rawValue,
+            statusRaw: TaskStatus.cancelled.rawValue,
             priorityRaw: TaskPriority.high.rawValue,
             sectionName: "Backlog Grooming",
             dueDate: "2030-04-18",
@@ -120,7 +127,7 @@ struct MarkdownTaskEmbedChipLayoutTests {
 
     @Test func droppedChipsAreNeitherDrawnNorHitTestable() {
         let task = renderInfo(
-            statusRaw: TaskStatus.inProgress.rawValue,
+            statusRaw: TaskStatus.cancelled.rawValue,
             priorityRaw: TaskPriority.high.rawValue,
             sectionName: "Backlog Grooming",
             dueDate: "2030-04-18",
@@ -151,7 +158,7 @@ struct MarkdownTaskEmbedChipLayoutTests {
 
     @Test func narrowCardDropsOtherChipsBeforeTheDueDate() {
         let task = renderInfo(
-            statusRaw: TaskStatus.inProgress.rawValue,
+            statusRaw: TaskStatus.cancelled.rawValue,
             priorityRaw: TaskPriority.high.rawValue,
             sectionName: "Backlog Grooming",
             dueDate: "2030-04-18",

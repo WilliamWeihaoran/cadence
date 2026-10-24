@@ -288,15 +288,19 @@ struct iOSTaskRowDateChip: View {
 
 // There is **no status chip and no status menu** (T-74). A `TaskStatus` picker offering Todo / In
 // Progress / Done / Cancelled was a four-option control for a field the row already has two
-// dedicated affordances for — the completion circle owns `done`/`todo`, the swipe tray and context
-// menu own `cancelled` — and `.inProgress` has exactly one writer worth keeping, the task
-// inspector's Start/Stop button (`iOSTaskStatusActionsSection`).
+// dedicated affordances for — the completion circle owns `done`/`todo`, and the swipe tray and
+// context menu own `cancelled`.
 //
 // `AppTask.statusRaw` and `TaskStatus` stay: the property is persisted with no
-// `SchemaMigrationPlan` behind it, `isDone`/`isCancelled` derive from it, and rows already holding
-// `.inprogress` must keep rendering — the row still *reads* the value, it just cannot pick one.
-// Start/Stop is also deliberately kept rather than deleted with the pickers: without it a task
-// already In Progress could never leave that state.
+// `SchemaMigrationPlan` behind it, and `isDone`/`isCancelled` derive from it.
+//
+// **The In Progress half of this is settled rather than balanced** ([[T-5015]] (b), owner decision
+// 2026-10-24). This comment used to argue that the inspector's Start/Stop had to survive the
+// picker's deletion, because without a writer a task already In Progress could never leave that
+// state, and that the row had to keep *reading* the value for rows an earlier build wrote. Both
+// obligations are discharged: `CadenceTaskInspectorSupport.StatusAction` no longer offers the
+// status to any surface, `CadenceInProgressStatusRetirement` brings the stored rows back to
+// `.todo` at launch, and the row's label is gone with them.
 
 /// The repeat chip. Changing the rule on a task that belongs to a series raises the same
 /// `thisTask` / `thisAndFuture` dialog the context menu does — the row owns that dialog, so the

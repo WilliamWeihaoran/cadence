@@ -14,8 +14,10 @@ import SwiftUI
 /// as done rather than as still-completing.
 ///
 /// `.inProgress` deliberately resolves to `.todo`. The circle answers "is this finished?", and
-/// in-progress is not; iOS says so with the status eyebrow above the title, macOS with the row's
-/// own chrome.
+/// in-progress is not. It used to be said elsewhere — the iOS status eyebrow, the row label —
+/// and since [[T-5015]] (b) retired the status it is not said anywhere: this mapping is now the
+/// only reason a stored `.inprogress` row still draws correctly, which is exactly what it has to
+/// keep doing while `CadenceInProgressStatusRetirement` has not yet run on that store.
 nonisolated enum CadenceTaskCompletionState: String, CaseIterable, Equatable, Hashable {
     case todo
     /// Mid-animation on macOS only: the completion ring is filling and the tap can still be taken

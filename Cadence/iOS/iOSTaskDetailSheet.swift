@@ -108,12 +108,15 @@ struct iOSTaskDetailSheet: View {
         CadenceTaskMutationSupport.sectionNames(forArea: selectedArea, project: selectedProject)
     }
 
-    /// The state the old title card drew beside the words: an eyebrow for the two statuses a
+    /// The state the old title card drew beside the words: an eyebrow for the one status a
     /// checkbox cannot express, and a struck-through title once the task is settled. Read live
     /// off the task, because completing it from this sheet lands at once.
+    ///
+    /// It read `status == .inProgress || task.isCancelled` until [[T-5015]] (b) retired In
+    /// Progress; `isCancelled` is the whole test now.
     private var titleStatus: CadenceSchedulePanelTitleStatus {
         let status = task.status
-        let showsEyebrow = status == .inProgress || task.isCancelled
+        let showsEyebrow = task.isCancelled
         return CadenceSchedulePanelTitleStatus(
             eyebrow: showsEyebrow ? status.label : nil,
             eyebrowTint: CadenceTaskPresentationSupport.statusColor(status),

@@ -428,18 +428,23 @@ struct EstimateRollerCommitRateTests {
 @MainActor
 struct TaskEmbedStatusEditorTests {
 
-    /// The boundary that makes the deletion safe. `Start` is the **only** control on macOS that
-    /// can write `.inProgress`; the four-option list it replaced was the other one. If this action
-    /// ever disappears, a task already in that state has no way out but completion.
+    /// **The inverse of what this used to assert**, and the inversion is the ticket.
+    ///
+    /// It read `startIsStillReachableAsTheSoleMacOSWriterOfInProgress`, and it was right for its
+    /// day: Start was the only macOS writer of `.inProgress`, so deleting it would have left a
+    /// task in that state with no way out but completion. [[T-5015]] (b) removed the *state*
+    /// instead — every writer, every render site, and `CadenceInProgressStatusRetirement` to bring
+    /// the stored rows back to `.todo` — so the boundary this guarded no longer exists and the
+    /// guard now points the other way: the popover must not offer Start again.
     @Test
-    func startIsStillReachableAsTheSoleMacOSWriterOfInProgress() {
-        let actions = CadenceTaskInspectorSupport.StatusAction.allCases
-        #expect(actions.contains(.inProgress))
-        #expect(CadenceTaskInspectorSupport.StatusAction.inProgress.target(from: .todo) == .inProgress)
+    func thePopoverOffersNoWriterForTheRetiredStatus() {
+        let offered = Set(CadenceTaskInspectorSupport.StatusAction.allCases.map(\.status))
+        #expect(offered.contains(.inProgress) == false)
+        #expect(offered == [.cancelled])
     }
 
     /// The two values a status control must **not** offer, because the embed card's own checkbox
-    /// already owns them. That is what shrank the list from four rows to two.
+    /// already owns them. That is what shrank the list from four rows to two, and then to one.
     @Test
     func completionIsLeftToTheCheckbox() {
         let offered = Set(CadenceTaskInspectorSupport.StatusAction.allCases.map(\.status))

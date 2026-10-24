@@ -113,7 +113,9 @@ enum iOSSampleDataSupport {
             scheduledDate: todayKey
         ) { task, currentTasks in
             task.priority = .medium
-            task.status = .inProgress
+            // Seeded `.inProgress` until [[T-5015]] (b) retired that status; the sample task is a
+            // plain to-do now, and `CadenceInProgressStatusRetirement` would move it back anyway
+            // on the next launch.
             task.estimatedMinutes = 75
             task.scheduledStartMin = 15 * 60
             assign(task, to: workspace.launchProject, allTasks: currentTasks, sectionName: "Ship")

@@ -77,19 +77,29 @@ enum CadenceTaskInspectorSupport {
 
     // MARK: - Status actions
 
-    /// The two status transitions that are not completion.
+    /// The status transition that is not completion.
     ///
-    /// Completion is the header control's job — one tap, exactly as every task row's circle. These
-    /// two cover the statuses a checkbox cannot express, and each one owns its value outright: no
-    /// other control in the inspector can set `.inProgress` or `.cancelled`, and neither of these
-    /// can set `.done`.
+    /// Completion is the header control's job — one tap, exactly as every task row's circle. This
+    /// covers the one status a checkbox cannot express, and it owns its value outright: no other
+    /// control in the inspector can set `.cancelled`, and this one cannot set `.done`.
+    ///
+    /// **`.inProgress` was the second case and is gone ([[T-5015]] (b), owner decision 2026-10-24).**
+    /// Removing it here is what retires In Progress as a *writable* status on both platforms in one
+    /// edit: all three writers rendered this set — `iOSTaskStatusActionsSection`,
+    /// `TaskInspectorStatusActionsRow` and the macOS note-embed `TaskEmbedFieldEditorPopover` —
+    /// so none of them has a Start/Stop button any more and none of them had to be told separately.
+    /// `TaskStatus.inProgress` itself stays: it is a persisted raw value and old rows must keep
+    /// decoding. `CadenceInProgressStatusRetirement` is the launch pass that moves those rows to
+    /// `.todo`, which is why dropping the writers strands nobody.
+    ///
+    /// A one-case enum rather than a plain function on purpose: the type is the shared *vocabulary*
+    /// — copy, glyph, active state and undo target, written once and read by three surfaces — and
+    /// that is as worth having for one action as it was for two.
     enum StatusAction: CaseIterable {
-        case inProgress
         case cancelled
 
         var status: TaskStatus {
             switch self {
-            case .inProgress: .inProgress
             case .cancelled: .cancelled
             }
         }
@@ -106,14 +116,12 @@ enum CadenceTaskInspectorSupport {
         /// The button says what the tap will *do*, not what the task currently is.
         func title(for current: TaskStatus) -> String {
             switch self {
-            case .inProgress: isActive(current) ? "Stop" : "Start"
             case .cancelled: isActive(current) ? "Restore" : "Cancel"
             }
         }
 
         func systemImage(for current: TaskStatus) -> String {
             switch self {
-            case .inProgress: isActive(current) ? "pause.circle" : "play.circle"
             case .cancelled: isActive(current) ? "arrow.uturn.backward.circle" : "xmark.circle"
             }
         }

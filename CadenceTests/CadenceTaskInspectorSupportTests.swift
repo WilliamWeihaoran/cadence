@@ -89,39 +89,38 @@ struct CadenceTaskInspectorSupportTests {
         }
     }
 
+    /// One value since [[T-5015]] (b) retired In Progress; the set, and the uniqueness, still
+    /// matter because the type is what three surfaces render.
     @Test
     func eachStatusActionOwnsExactlyOneValue() {
         let owned = CadenceTaskInspectorSupport.StatusAction.allCases.map(\.status)
-        #expect(owned == [.inProgress, .cancelled])
+        #expect(owned == [.cancelled])
         #expect(Set(owned).count == owned.count)
     }
 
     @Test
     func anInactiveActionMovesToItsOwnStatus() {
-        #expect(CadenceTaskInspectorSupport.StatusAction.inProgress.target(from: .todo) == .inProgress)
-        #expect(CadenceTaskInspectorSupport.StatusAction.inProgress.target(from: .done) == .inProgress)
         #expect(CadenceTaskInspectorSupport.StatusAction.cancelled.target(from: .todo) == .cancelled)
+        #expect(CadenceTaskInspectorSupport.StatusAction.cancelled.target(from: .done) == .cancelled)
+        // A row still stored `.inprogress` — one the launch pass has not reached yet — can still
+        // be cancelled from the inspector. The status is unwritable, not untouchable.
         #expect(CadenceTaskInspectorSupport.StatusAction.cancelled.target(from: .inProgress) == .cancelled)
     }
 
     @Test
     func anActiveActionIsItsOwnUndo() {
-        #expect(CadenceTaskInspectorSupport.StatusAction.inProgress.target(from: .inProgress) == .todo)
         #expect(CadenceTaskInspectorSupport.StatusAction.cancelled.target(from: .cancelled) == .todo)
     }
 
     @Test
     func activeStateFollowsTheTasksStatus() {
-        #expect(CadenceTaskInspectorSupport.StatusAction.inProgress.isActive(.inProgress))
-        #expect(CadenceTaskInspectorSupport.StatusAction.inProgress.isActive(.cancelled) == false)
         #expect(CadenceTaskInspectorSupport.StatusAction.cancelled.isActive(.cancelled))
+        #expect(CadenceTaskInspectorSupport.StatusAction.cancelled.isActive(.inProgress) == false)
         #expect(CadenceTaskInspectorSupport.StatusAction.cancelled.isActive(.todo) == false)
     }
 
     @Test
     func labelsDescribeTheTapRatherThanTheState() {
-        #expect(CadenceTaskInspectorSupport.StatusAction.inProgress.title(for: .todo) == "Start")
-        #expect(CadenceTaskInspectorSupport.StatusAction.inProgress.title(for: .inProgress) == "Stop")
         #expect(CadenceTaskInspectorSupport.StatusAction.cancelled.title(for: .todo) == "Cancel")
         #expect(CadenceTaskInspectorSupport.StatusAction.cancelled.title(for: .cancelled) == "Restore")
     }

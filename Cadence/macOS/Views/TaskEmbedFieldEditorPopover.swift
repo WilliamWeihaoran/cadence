@@ -72,13 +72,19 @@ struct TaskEmbedFieldEditorPopover: View {
             // No heading, and no four-option list. `TaskStatus.allCases` offered Todo and Done as
             // picker rows when the embed card's own checkbox already owns both — one field, two
             // controls, and the one that looked authoritative was the one nobody used. What is
-            // left is the pair a checkbox cannot express, from the same
+            // left is the status a checkbox cannot express, from the same
             // `CadenceTaskInspectorSupport.StatusAction` the iOS inspector renders, so the two
             // platforms cannot drift on what a status control offers again.
             //
-            // "Start" is deliberately kept rather than deleted with the list: it is the **only**
-            // writer of `.inProgress` on macOS, and dropping it would strand every task already in
-            // that state with no way back out except completing it.
+            // **"Start" is gone, and the warning this comment used to carry has been answered
+            // rather than ignored** ([[T-5015]] (b), owner decision 2026-10-24). It said Start was
+            // the only macOS writer of `.inProgress` and that dropping it "would strand every task
+            // already in that state with no way back out except completing it". That was true, and
+            // it is why the question went to the owner. The owner removed the status itself:
+            // `StatusAction` no longer offers it anywhere, and
+            // `CadenceInProgressStatusRetirement` brings the stored rows back to `.todo` at launch.
+            // There is nothing left to strand. Do not restore this button without restoring a
+            // writer's worth of reasoning first.
             VStack(spacing: 2) {
                 ForEach(CadenceTaskInspectorSupport.StatusAction.allCases, id: \.self) { action in
                     statusActionButton(action)

@@ -358,10 +358,12 @@ struct iOSTaskNotesSection: View {
 /// The task's status transitions, under no heading — a label over the buttons names what the
 /// buttons already say.
 ///
-/// Every status value has exactly one control: **Complete** owns `done` (it was the title card's
-/// circle until [[T-3171]] gave the title row to the shared panel, which draws no platform
-/// completion control), "Start" owns `inProgress`, "Cancel" owns `cancelled`, and each is its own
-/// undo back to `todo` — on a cancelled task Complete restores rather than completes, T-344's rule.
+/// Every status value a control can produce has exactly one: **Complete** owns `done` (it was the
+/// title card's circle until [[T-3171]] gave the title row to the shared panel, which draws no
+/// platform completion control) and "Cancel" owns `cancelled`, each its own undo back to `todo` —
+/// on a cancelled task Complete restores rather than completes, T-344's rule. "Start" owned
+/// `inProgress` until [[T-5015]] (b) retired that status; it is gone from here because it is gone
+/// from `CadenceTaskInspectorSupport.StatusAction`, which this renders.
 /// They land the moment they are tapped, as they always did: a status change is an action on the
 /// record, not a field of the draft. Deleting is the panel's footer, and gains no second home here.
 struct iOSTaskStatusActionsSection: View {

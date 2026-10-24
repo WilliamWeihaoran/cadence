@@ -182,11 +182,11 @@ struct CadenceStartupCostInstrumentTests {
             )
 
             let maintenance: [CadenceStartupStage] = [
-                .pursuitMigration, .bundleRetirement, .noteMigration, .tagSync, .integrityRepair,
-                .focusReconciliation,
+                .pursuitMigration, .bundleRetirement, .inProgressRetirement, .noteMigration,
+                .tagSync, .integrityRepair, .focusReconciliation,
             ]
             #expect(
-                Array(report.stages.map(\.stage).prefix(7)) == [.containerOpen] + maintenance,
+                Array(report.stages.map(\.stage).prefix(maintenance.count + 1)) == [.containerOpen] + maintenance,
                 "the launch timed \(report.stages.map(\.stage.rawValue)), which is not the order it runs them in"
             )
             #expect(report.measuredStages.isSuperset(of: Set(maintenance)))
@@ -264,7 +264,8 @@ struct CadenceStartupCostInstrumentTests {
             recorded == Set(CadenceStartupStage.allCases),
             "these stages exist in the vocabulary and are never recorded by a launch: \(unrecorded)"
         )
-        #expect(CadenceStartupStage.allCases.count == 9)
+        // Nine until [[T-5015]] (b) added `inProgressRetirement`.
+        #expect(CadenceStartupStage.allCases.count == 10)
     }
 
     // MARK: - T-1402: what the three widened passes now let the instrument say
@@ -317,12 +318,14 @@ struct CadenceStartupCostInstrumentTests {
         // Non-vacuity, twice over: the reader can see this body's classifiers at all, and the
         // three widened passes are still the ones being classified through the shared mapping.
         #expect(body.contains("classifying:"), "the reader found no classifier in the launch body")
-        // Four since [[T-3170]] added the Block retirement, which answers the same
-        // `CadenceMaintenancePassOutcome` the three widened passes do and is classified the same way.
-        #expect(body.components(separatedBy: ".forMaintenancePass(").count - 1 == 4)
+        // Four since [[T-3170]] added the Block retirement, five since [[T-5015]] (b) added the
+        // In Progress retirement; each answers the same `CadenceMaintenancePassOutcome` the three
+        // widened passes do and is classified through the same shared mapping.
+        #expect(body.components(separatedBy: ".forMaintenancePass(").count - 1 == 5)
         for pass in [
             "PursuitToGoalMigration.runIfNeeded",
             "TaskBundleRetirement.runIfNeeded",
+            "CadenceInProgressStatusRetirement.runIfNeeded",
             "TagSupport.syncAllNoteTagsFromMarkdown",
             "CadenceFocusLedger.reconcile",
         ] {

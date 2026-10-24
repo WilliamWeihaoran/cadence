@@ -384,11 +384,12 @@ struct iOSTaskRow: View {
     }
 
     /// Row metadata. **Colour is reserved for the exceptional**: every item is `Theme.dim`, icon
-    /// and text alike, so a red thing in a row means something is actually wrong. Only three
-    /// things earn a hue — an overdue deadline, a do date already in the past, and a task that is
-    /// actively In Progress. Everything else (the list, the goal, the repeat marker, a do date that
-    /// is merely *today*) is ordinary and reads as chrome, and that stays true now the chips are
-    /// controls: a plate says "tappable", not "urgent".
+    /// and text alike, so a red thing in a row means something is actually wrong. Only two
+    /// things earn a hue — an overdue deadline and a do date already in the past. (A third, a task
+    /// actively In Progress, went with the status itself in [[T-5015]] (b).) Everything else (the
+    /// list, the goal, the repeat marker, a do date that is merely *today*) is ordinary and reads
+    /// as chrome, and that stays true now the chips are controls: a plate says "tappable", not
+    /// "urgent".
     ///
     /// Before this, a task with four attributes rendered four tinted icons — amber sun, purple
     /// repeat, green checklist, the goal's own colour — and a genuinely late deadline had to
@@ -413,23 +414,15 @@ struct iOSTaskRow: View {
             iOSTaskRowContainerChip(task: task)
         }
 
-        // **Read-only, and deliberately not a chip.** The four-option status picker this used to
-        // open is deleted (T-74): `todo` and `done` are what the completion circle already does,
-        // `cancelled` has its own control, and a picker offering all four was a third affordance
-        // for a field with two. What remains is a *reader* — rows written by an earlier build (and
-        // the sample data) still hold `.inprogress`, and they must keep saying so.
-        //
-        // So it renders as a bare `iOSTaskMetaLabel` rather than a plated chip: in this strip a
-        // plate now means "tappable", and a plate that opened nothing would be exactly the dead
-        // control the plates exist to rule out. Starting and stopping work stays in the task
-        // inspector, where `iOSTaskStatusActionsSection`'s Start/Stop button owns the value.
-        if task.status == .inProgress {
-            iOSTaskMetaLabel(
-                systemImage: task.status.systemImage,
-                text: task.status.label,
-                tint: Theme.blue
-            )
-        }
+        // **The In Progress label is gone from this strip ([[T-5015]] (b), owner decision
+        // 2026-10-24).** It was the last *reader* of `.inProgress` on a row — a bare
+        // `iOSTaskMetaLabel` kept after T-74 deleted the four-option picker, on the ground that
+        // rows written by an earlier build still held `.inprogress` and had to keep saying so.
+        // The owner removed the status itself rather than the label alone: every writer is gone
+        // (`CadenceTaskInspectorSupport.StatusAction` no longer offers it) and
+        // `CadenceInProgressStatusRetirement` moves the stored rows to `.todo` at launch, so there
+        // is nothing left for this to say. `TaskStatus.inProgress` stays in the enum because it is
+        // a persisted raw value; it is simply never written and never drawn.
 
         // The day, never the slot: "9:30 – 10 AM" is gone from this row. See
         // `CadenceTaskPresentationSupport.scheduledDayLabel(for:)` — and note the cost, which was

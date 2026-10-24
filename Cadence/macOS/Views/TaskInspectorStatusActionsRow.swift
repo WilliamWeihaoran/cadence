@@ -2,15 +2,21 @@
 import SwiftUI
 import SwiftData
 
-/// The inspector's Start/Stop and Cancel/Restore pair ([[T-5015]] (a)).
+/// The inspector's Cancel/Restore control ([[T-5015]] (a), narrowed by (b)).
 ///
 /// The same `CadenceTaskInspectorSupport.StatusAction` set the iOS inspector renders in
 /// `iOSTaskStatusActionsSection`, with its copy and glyphs, so the two platforms cannot drift on
-/// what a status control offers. Before this the only macOS writer of `.inProgress` was the
-/// note-embed status popover: a Mac user who never embedded a task could not start one, nor take an
-/// iOS-started task back out of In Progress except by completing it.
+/// what a status control offers.
 ///
-/// Completion stays with "Mark done" in `TaskDetailActionsSection` directly above; each action here
+/// **It shipped as a Start/Stop *and* Cancel/Restore pair, hours before the owner retired In
+/// Progress ([[T-5015]] (b), 2026-10-24).** That is the decision, not an accident: half (a) closed
+/// the macOS gap by adding the iOS set, and seeing the two surfaces side by side is what made the
+/// owner decide the Start half should exist on neither. The Start button is gone from all three
+/// renderers at once because the case is gone from `StatusAction`; this view is unchanged and
+/// simply draws one action now. Cancel/Restore is the half that answered a real gap — Cancel was
+/// otherwise reachable only through the completion circle's pending tap — so the file stays.
+///
+/// Completion stays with "Mark done" in `TaskDetailActionsSection` directly above; the action here
 /// owns its one status and is its own undo back to `.todo`, as on iOS. A file of its own rather
 /// than more buttons in that row, which already carries a flexible primary and two icon buttons.
 struct TaskInspectorStatusActionsRow: View {

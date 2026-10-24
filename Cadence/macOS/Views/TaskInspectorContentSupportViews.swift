@@ -732,7 +732,9 @@ struct TaskInspectorScheduleEditor<Content: View>: View {
                 ),
                 sectionChoices: CadenceTaskMutationSupport.sectionNames(forArea: selectedArea, project: selectedProject),
                 titleStatus: CadenceSchedulePanelTitleStatus(
-                    eyebrow: task.status == .inProgress || task.isCancelled ? task.status.label : nil,
+                    // Cancelled alone since [[T-5015]] (b) retired In Progress; the sibling
+                    // eyebrows in `iOSTaskDetailSheet` and `CadenceTaskInlinePanel` read the same.
+                    eyebrow: task.isCancelled ? task.status.label : nil,
                     eyebrowTint: CadenceTaskPresentationSupport.statusColor(task.status),
                     isSettled: CadenceTaskCompletionState.resolve(task: task).isSettled
                 ),

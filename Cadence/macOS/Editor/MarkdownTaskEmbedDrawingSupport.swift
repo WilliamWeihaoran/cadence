@@ -274,19 +274,25 @@ enum MarkdownTaskEmbedDrawing {
         }
 
         var chips: [Chip] = []
+        let status = TaskStatus(rawValue: task.statusRaw) ?? .todo
         let statusColor: NSColor
-        switch TaskStatus(rawValue: task.statusRaw) ?? .todo {
-        case .todo:
+        switch status {
+        case .todo, .inProgress:
             statusColor = MarkdownStylist.dimColor
-        case .inProgress:
-            statusColor = MarkdownStylist.blueColor
         case .done:
             statusColor = MarkdownStylist.greenColor
         case .cancelled:
             statusColor = MarkdownStylist.dimColor
         }
 
-        if (TaskStatus(rawValue: task.statusRaw) ?? .todo) != .todo {
+        // **`.inProgress` draws no chip, exactly as `.todo` draws none** ([[T-5015]] (b), owner
+        // decision 2026-10-24). It had the blue chip above until then. `drawsStatusChip` is where
+        // the two statuses are made equal rather than an inline `!= .todo`, because this file asks
+        // the question in two places (`statusLabel` below is the other) and the embed reads a
+        // *snapshot* `statusRaw`: a card rendered from an index written before
+        // `CadenceInProgressStatusRetirement` ran can still carry "inprogress", and it must draw
+        // like the plain to-do the store now holds rather than reviving a retired state.
+        if CadenceInProgressStatusRetirement.drawsStatusChip(status) {
             chips.append(Chip(
                 label: statusLabel(task.statusRaw),
                 color: statusColor,
@@ -558,12 +564,14 @@ enum MarkdownTaskEmbedDrawing {
         }
     }
 
+    /// Only reached for a status `drawsStatusChip` admits, so `.todo` and `.inProgress` share the
+    /// unreachable arm rather than `.inProgress` keeping the "In progress" string it had before
+    /// [[T-5015]] (b) — a label nothing can draw is a label that comes back the next time someone
+    /// relaxes the predicate above.
     private static func statusLabel(_ raw: String) -> String {
         switch TaskStatus(rawValue: raw) ?? .todo {
-        case .todo:
+        case .todo, .inProgress:
             return "Todo"
-        case .inProgress:
-            return "In progress"
         case .done:
             return "Done"
         case .cancelled:

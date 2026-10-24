@@ -76,6 +76,10 @@ struct CadenceFirstLaunchEmptyStoreTests {
             // [[T-3170]]. The Block retirement, second because it rewrites the schedule fields the
             // repair pass below reads, and because the two retirement migrations belong together.
             "TaskBundleRetirement.runIfNeeded",
+            // [[T-5015]] (b). The In Progress retirement, third for the same two reasons: it
+            // rewrites the status field the repair and the focus reconcile below both read, and
+            // the retirement migrations belong together.
+            "CadenceInProgressStatusRetirement.runIfNeeded",
             "NoteMigrationService.migrateAndRecordFailure",
             "TagSupport.syncAllNoteTagsFromMarkdown",
             "DataIntegrityRepairService.repairAndRecordFailure",
@@ -190,8 +194,8 @@ struct CadenceFirstLaunchEmptyStoreTests {
 
             #expect(
                 report.stages.map(\.stage) == [
-                    .pursuitMigration, .bundleRetirement, .noteMigration, .tagSync, .integrityRepair,
-                    .focusReconciliation, .maintenanceSave,
+                    .pursuitMigration, .bundleRetirement, .inProgressRetirement, .noteMigration,
+                    .tagSync, .integrityRepair, .focusReconciliation, .maintenanceSave,
                 ],
                 "the launch ran its stages as \(report.stages.map(\.stage.rawValue))"
             )
@@ -304,6 +308,7 @@ struct CadenceFirstLaunchEmptyStoreTests {
     ) {
         PursuitToGoalMigration.runIfNeeded(modelContext: context, defaults: defaults)
         let retiredBlocks = TaskBundleRetirement.runIfNeeded(modelContext: context)
+        let retiredInProgress = CadenceInProgressStatusRetirement.runIfNeeded(modelContext: context)
         let migrationReport = NoteMigrationService.migrateAndRecordFailure(
             in: context, source: "empty-store-test", saveChanges: false
         )
@@ -320,6 +325,11 @@ struct CadenceFirstLaunchEmptyStoreTests {
         // below it.
         #expect(retiredBlocks == .nothingToDo, "the Block retirement changed an empty store")
         #expect(retiredBlocks != .couldNotRead, "the Block retirement could not read an empty store")
+        // [[T-5015]] (b), and the same distinction again: an empty store has never held an
+        // `.inprogress` row, so the In Progress retirement must read as a result rather than as a
+        // store it could not fetch from.
+        #expect(retiredInProgress == .nothingToDo, "the In Progress retirement changed an empty store")
+        #expect(retiredInProgress != .couldNotRead, "the In Progress retirement could not read an empty store")
         // **T-1402.** These two were `#expect(!synced)` and `#expect(!reconciledFocusMinutes)`, and
         // `false` there covered a clean pass *and* a table the pass could not read — so an empty
         // first launch and a launch that could read nothing at all were the same assertion. They

@@ -117,10 +117,11 @@ struct CadenceTaskInlinePanel: View {
         }
     }
 
-    /// The same state the iOS editor draws on the title row, read live off the task.
+    /// The same state the iOS editor draws on the title row, read live off the task. Cancelled is
+    /// the only eyebrow since [[T-5015]] (b) retired In Progress.
     private var titleStatus: CadenceSchedulePanelTitleStatus {
         let status = task.status
-        let showsEyebrow = status == .inProgress || task.isCancelled
+        let showsEyebrow = task.isCancelled
         return CadenceSchedulePanelTitleStatus(
             eyebrow: showsEyebrow ? status.label : nil,
             eyebrowTint: CadenceTaskPresentationSupport.statusColor(status),
