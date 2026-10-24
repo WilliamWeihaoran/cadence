@@ -17,6 +17,9 @@ struct iOSCreateTaskSheet: View {
     @State private var selectedTagIDs: Set<String> = []
     @State private var actionError: String?
     @State private var cardHeight: CGFloat = 260
+    /// [[T-5174]] (b): the draft as `onAppear`'s opening normalisation left it, against which a
+    /// swipe-down is refused. `nil` until then, so the normalisation itself is never read as typing.
+    @State private var openedDraft: CadenceCreateTaskDraftSnapshot?
 
     init(
         seed: CadenceTaskComposerSeed = CadenceTaskComposerSeed(),
@@ -88,9 +91,21 @@ struct iOSCreateTaskSheet: View {
         .presentationBackground(.clear)
         .presentationDragIndicator(.hidden)
         .presentationDetents([.height(cardHeight)])
+        // [[T-5174]] (b), the owner's "one rule for every sheet": a swipe-down cannot discard a
+        // half-typed new task. Presented by `.sheet(item:)` from `iOSCaptureRadialMenu` and never
+        // by `.popover` — [[T-3240]] measured this modifier pushing an iPad popover presentation
+        // out of its popover and clipping it, and a test pins that every presenter is a sheet.
+        .interactiveDismissDisabled(
+            CadenceSheetDismissGuard.blocksSwipe(opened: openedDraft, current: currentDraft)
+        )
         .onAppear {
             reconcileContainer()
             normalizeCalendar()
+            // [[T-5174]] (b). Taken *after* the two normalisations above, which reconcile a seeded
+            // container and a missing calendar before the user has touched anything — snapshotting
+            // the `init` value instead would hold the sheet over work nobody did. Taken once: this
+            // fires again when the sheet comes back from a pushed picker.
+            if openedDraft == nil { openedDraft = currentDraft }
         }
         .onChange(of: draft.listToken) { _, _ in normalizeSection() }
         .onChange(of: containerStillExists) { _, _ in reconcileContainer() }
@@ -99,6 +114,11 @@ struct iOSCreateTaskSheet: View {
             normalizeCalendar()
         }
         .onChange(of: calendarManager.writableCalendars.map(\.calendarIdentifier)) { _, _ in normalizeCalendar() }
+    }
+
+    /// [[T-5174]] (b): what the sheet holds right now, in the form the snapshot compares.
+    private var currentDraft: CadenceCreateTaskDraftSnapshot {
+        CadenceCreateTaskDraftSnapshot(draft: draft, tagIDs: selectedTagIDs)
     }
 
     @ViewBuilder

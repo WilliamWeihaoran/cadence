@@ -42,6 +42,9 @@ struct iOSCalendarQuickCreateSheet: View {
     /// The card sizes the sheet, as it does on the `+` path: a capture surface is as tall as what
     /// it is showing, not as tall as a sheet.
     @State private var cardHeight: CGFloat = 260
+    /// [[T-5174]] (b): the draft as `onAppear`'s calendar normalisation left it, against which a
+    /// swipe-down is refused. `nil` until then, so that normalisation is never read as typing.
+    @State private var openedDraft: CadenceScheduleDraft?
 
     /// `initialKind` is what the capture palette's **Event** segment needs: the kind switch is
     /// still there and still switches, but a palette that says "Event" and opens on Task would be
@@ -111,13 +114,27 @@ struct iOSCalendarQuickCreateSheet: View {
         .presentationBackground(.clear)
         .presentationDragIndicator(.hidden)
         .presentationDetents([.height(cardHeight)])
+        // [[T-5174]] (b), the owner's "one rule for every sheet": a swipe-down cannot discard a
+        // half-typed new task or event. Presented by `.sheet(item:)` from `iOSCalendarView` and
+        // never by `.popover` — [[T-3240]] measured this modifier pushing an iPad popover
+        // presentation out of its popover and clipping it, and a test pins every presenter.
+        .interactiveDismissDisabled(
+            CadenceSheetDismissGuard.blocksSwipe(opened: openedDraft, current: currentDraft)
+        )
         .onChange(of: draft.listToken) { _, _ in normalizeSection() }
         .onChange(of: draft.kind) { _, _ in normalizeCalendarSelection() }
         .onChange(of: calendarManager.writableCalendars.map(\.calendarIdentifier)) { _, _ in normalizeCalendarSelection() }
         .onAppear {
             normalizeCalendarSelection()
+            // [[T-5174]] (b). After the normalisation, which picks a writable calendar before the
+            // user has touched anything; once, because this fires again on a return from a picker.
+            if openedDraft == nil { openedDraft = currentDraft }
         }
     }
+
+    /// [[T-5174]] (b): what the sheet holds right now. The draft is the whole of it here — this
+    /// sheet has no tag selection of its own, unlike the `+` path's.
+    private var currentDraft: CadenceScheduleDraft { draft }
 
     /// What the panel's calendar row says when there is no calendar to pick. Access missing is
     /// answered by `calendarAccessRequest` directly below it.
