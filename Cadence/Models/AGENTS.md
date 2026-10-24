@@ -57,65 +57,20 @@ readings: `../../docs/MODELS_AGENTS_REFERENCE.md`, "Why a new model type needs a
 
 ## Important Models
 
-`CadenceSchema.swift` is the authoritative list. Live models:
+`CadenceSchema.swift` is the authoritative model list. Browse the inventory in
+`../../docs/AGENTS_REFERENCE.md`, "Model inventory and shared value types".
 
-- `Context` - top-level grouping.
-- `Area` / `Project` - list containers; both own tasks and list metadata.
-- `AppTask` / `Subtask` - schedulable work and nested checklist items. `AppTask` also carries the full recurrence field set and `bundle`/`bundleOrder`/`tags`.
-- `TaskBundle` - several tasks grouped into one timeline block (declared in `AppTask.swift`). `tasks` uses a `.nullify` delete rule; verify bundle/task deletion order carefully.
-- `Tag` - cross-cutting label, many-to-many with both `AppTask` and `Note`.
-- `Goal`, `GoalListLink`, `Habit`, `HabitCompletion` - long-running progress and recurring behavior. `Goal` nests via `parentGoal`/`subGoals`: a top-level goal is a direction (usually `kind == .ongoing`), its sub-goals read as milestones.
-  **`GoalListLink` has no write path in the app** — [[T-2079]] retired `attachList` /
-  `detachGoalListLink` / `toggleGoalListLink`; only the archive importer constructs one, never a
-  hand-rolled `insert(GoalListLink(...))`. Readers still filter `isDeleted`: a pre-commit edit is
-  what Xcode 26's `rollback()` undoes late ([[T-1321]]). What a duplicate link does and does *not* break:
-  `../../docs/MODELS_AGENTS_REFERENCE.md`, "The one write path for a goal list link"; the
-  substring-grep trap is in `Cadence/Shared/AGENTS.md`.
-- `Note` - the single live note model (see below).
-- `SavedLink`, `MarkdownImageAsset` - list bookmarks and editor image assets.
-- `SidebarLayoutPreference` - the sidebar's visible rows and their order, **synced** (T-1274: the
-  owner chose across devices). Two comma-separated `CadenceFeatureDestination` raw-value strings,
-  not a to-many. Read and written only through `Shared/CadenceSidebarLayoutPreferenceStore.swift`,
-  which owns the duplicate rule (**newest `updatedAt` wins**, `id` breaks a tie, losers are left
-  alone rather than deleted), the device-local fallback, and the one-visible-row floor. A
-  destination the stored strings never name keeps its declared slot and stays visible, so a future
-  enum case needs no migration; an unrecognised token is dropped on read.
-- `LookPreference` - the **synced** accent palette, sidebar tints, each surface's sort, grouping
-  and show-completed (T-1307, [[T-1288]]), and since [[T-1347]] the work-hours window in a second
-  pair map, `calendarPresentationRaw`. Read only via `CadenceLookPreferenceStore`: the record is
-  truth across devices, the local defaults its **mirrors** — how the widget reads the accent.
-- `NoteTemplatePreference` - the **synced** note-template overrides ([[T-1346]]: the owner decided a
-  template they wrote is content, like a note). One JSON map — the same string `NoteTemplateLibrary`
-  has always written to the `noteTemplateOverrides` default, which is now this record's mirror.
-  Read and written only through `CadenceNoteTemplatePreferenceStore` /
-  `CadenceNoteTemplatePreferenceSync`, which own the duplicate rule (newest `updatedAt` wins, `id`
-  breaks a tie), the canonical spelling of an override map, and the **one-shot first-run merge**
-  that carries a device's pre-sync templates into the shared row without overwriting another
-  device's. Steady state is whole-map last-writer-wins; a reset travels as `{}`, which is a value
-  here and not an absence. `overridesRaw` is markdown-bearing and is in
-  `CadenceMarkdownSourceInventory`.
-
-Non-`@Model` types that live in this folder: `TaskSectionConfig` / `TaskSectionDefaults`
-(in `AppTask.swift`) and `GoalContributionSummary`. Two more *files* here declare no type at all —
-`GoalPresentation.swift` (an `extension Goal`) and `HabitInsights.swift` (an `extension Habit`,
-listed here as a type for a long time; there is no `HabitInsights` symbol to reference) — and two
-this list omitted for a long time carry rules of their own:
-
-- **`ModelEnums.swift`** — the ten data enums (`TaskPriority`, `TaskStatus`,
-  `TaskRecurrenceRule`, `TaskRecurrenceEndMode`, `ProjectStatus`, `AreaStatus`, `GoalStatus`,
-  `GoalKind`, `GoalProgressType`, `HabitFrequency`). Every one is `nonisolated`, and a new one
-  must be too: a status enum written without it builds fine in the app and breaks `CadenceWidgets`
-  and `CadenceMCPServer`, the second as an error rather than a warning.
-  `CadenceTests/NonisolatedValueTypeTests` is the guard.
-- **`TaskOrdering.swift`** — `TaskSortField`, `TaskSortDirection`, and `TaskOrdering`, the app's
-  one task comparator. It lives here rather than in `Shared/` or `macOS/` because the widget and
-  MCP targets order tasks and compile only `Models/`. **The tie-break must stay total**
-  (`fallbackPrecedes`: `order` → `createdAt` → `title` → `id`), which `TaskOrderingTests` pins by
-  sorting a tie-heavy set from two permutations and requiring byte-identical output. And **the raw
-  values are persisted** in `@AppStorage` and per-list `UserDefaults` keys — renaming a case is
-  fine, changing a raw value silently resets every saved sort preference. Why a partial order
-  reshuffles rows between renders, and what `SWIFT_DEFAULT_ACTOR_ISOLATION` does to a bare value
-  type: `../../docs/MODELS_AGENTS_REFERENCE.md`, "Why the enums and the comparator live here".
+- `TaskBundle.tasks` uses `.nullify`; verify bundle/task deletion order.
+- `GoalListLink` is constructed only by the archive importer; never hand-roll a write path.
+  Readers still filter `isDeleted`. See `../../docs/MODELS_AGENTS_REFERENCE.md`,
+  "The one write path for a goal list link".
+- Read/write synced preferences only through `CadenceSidebarLayoutPreferenceStore`,
+  `CadenceLookPreferenceStore`, and `CadenceNoteTemplatePreferenceStore` / Sync.
+  Preserve their duplicate rules, local mirrors, fallback and first-run merge behavior.
+- Every data enum in `ModelEnums.swift` must be `nonisolated`; the widget and MCP compile them.
+- `TaskOrdering` must stay total (`order` → `createdAt` → `title` → `id`), and sort enum raw
+  values are persisted. See `../../docs/MODELS_AGENTS_REFERENCE.md`,
+  "Why the enums and the comparator live here".
 
 ## The List Calendar Link Is An Identifier, And That Is A Decision
 

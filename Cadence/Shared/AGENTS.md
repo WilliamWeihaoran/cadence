@@ -122,13 +122,8 @@ Detailed examples are in `../../docs/SHARED_AGENTS_REFERENCE.md`.
   **load-bearing** reason, and the one to lead with: this app has a single `ModelContext`, so a
   rollback discards pending work the editor knows nothing about. Pinned by
   `arefusedListEditLeavesUnrelatedPendingWorkAlone`, and independent of SwiftData's behaviour.
-  The *secondary* reason is **toolchain-dependent** (T-402's finding, dated by T-1279 and bounded by
-  T-1296): on Xcode 26 a live `PersistentModel` keeps an assigned value until something **fetches**;
-  on 27 it is restored at once. The repo builds on both, so neither answer may be pinned.
-  Pinned by `rollbackUndoesAnEditInTheStoreAndTheSingleContextObjectionStillStands`, whose
-  assertion order stays load-bearing — reading before any fetch is the only position from which the
-  two toolchains differ. Not permission to drop the snapshot; reason one is untouched. A fourth `rollback()` must
-  be a delete — `everyRollbackCallSiteInTheAppIsADeleteCommit` is red on a new one.
+  A fourth `rollback()` must be a delete; `everyRollbackCallSiteInTheAppIsADeleteCommit` guards it.
+  Toolchain measurements: `../../docs/SHARED_AGENTS_REFERENCE.md`, "Rollback across toolchains".
 
 ## Page Headers
 
@@ -162,21 +157,13 @@ Detailed examples are in `../../docs/SHARED_AGENTS_REFERENCE.md`.
   components should be reused before introducing new row chrome.
 - **A view that pins its own width or height declares its typography scaling** (T-1398):
   `.cadenceFixedTypography()` or `.cadenceScaledTypography()` in its own body, never inherited. A
-  custom environment value **crosses** `.sheet`/`.popover`/`.fullScreenCover` while
-  `\.dynamicTypeSize` is re-read from the host window — measured on Xcode 27 / iOS 26.5 and recorded
-  on `CadenceTypographyScaling`. CI runs Xcode 26, so the propagation itself may not be asserted;
-  stating the answer is what makes a panel render the same on both. The four pickers T-1364's sheets
-  open are the declarers and **they do not all answer alike** (T-1410/T-1412): `CadenceFittedPopover`,
-  `EstimatePickerPopoverContent` and `iOSTaskTagPickerPopover` say `.cadenceScaledTypography()`, so
-  their geometry names `.enabled` literally while their fonts read the scope they install; only
-  `CadenceQuickDatePopover` stays pinned, because a month is seven columns wide.
-  `CadencePresentedTypographyBoundaryTests` holds which panel answers which; `CadencePickerLargeTextLayoutTests` prices each.
-- **A shared component converts ahead of its callers by taking `dynamicTypeSize`/`scaling` as
-  parameters defaulting to `.large`/`.fixed`** (T-1412) — a role at `.fixed` is its own literal at
-  **all twelve** sizes, so the eleven unconverted surfaces drawing `CadenceTagChip` are untouched.
-  Read `CadenceTagChipStyle`'s own note for the three judgements (content scales proportionally, a
-  cap grows additively, overhang-derived spacings shrink); `CadenceTagPickerMetrics` is beside it so
-  the macOS test target can read it. `CadenceTagChipScaleTests` holds both halves.
+  panel must state its own scope because presentation hosts can re-read Dynamic Type.
+  Keep `CadenceFittedPopover`, `EstimatePickerPopoverContent` and `iOSTaskTagPickerPopover`
+  scaled, and `CadenceQuickDatePopover` fixed; `CadencePresentedTypographyBoundaryTests` pins
+  the choices and `CadencePickerLargeTextLayoutTests` checks the layout.
+- Convert shared components ahead of callers with `dynamicTypeSize` / `scaling` parameters
+  defaulting to `.large` / `.fixed`. Read `CadenceTagChipStyle` before changing its scale math.
+  Measurements and rationale: `../../docs/SHARED_AGENTS_REFERENCE.md`, "Shared typography conversion".
 
 ## Reference Sections
 

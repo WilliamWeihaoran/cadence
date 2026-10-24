@@ -164,29 +164,13 @@ are in `../plugins/cadence-mcp/AGENTS.md`.
   `create_tag` and `create_list_note` are the constructors outside the context/list/task triangle;
   **nothing deletes anything**, refused with a measurement and settled rather than deferred
   ([[T-1122]]). Archiving is offered instead.
-  **Four of those arms carry a refusal, a removal or a lifting condition whose SHAPE is what the
-  next arm-shaped question gets measured against, and not one is re-decidable from a summary**:
-  `create_goal`/`create_habit` **removed** rather than left advertised and refusing ([[T-2077]],
-  0.13.0 -> 0.14.0, `list_goals`/`get_goal`/`list_habits` untouched); `create_list_note` lifted by
-  splitting a FILE rather than by changing a rule, and still taking no **body**; `create_tag`
-  refused twice before `TagSupport.creationDecision(for:in:)` existed to be asked ([[T-1406]]);
-  and the four block arms, refused for seven sittings and then **removed outright, read arms
-  included** ([[T-3170]], 0.15.0 -> 0.16.0: the startup pass deletes the rows). All four in full:
-  `../docs/MCP_AGENTS_REFERENCE.md`, "What the create and update arms cover", "Why one kind had
-  no constructor" and "Why deletion is refused".
-- **Eleven `Cadence/Shared/` files are in the Sources phase, and none of them earns its place for
-  the obvious reason.** Each earns it by one rule a hand-rolled copy would re-break — a rename that
-  would otherwise strand every card on a name no column has, T-509's case-insensitive scheme rule
-  — never by the feature it arrived with. Adding another is still not casual: one more path by
-  which an app-side edit breaks a target no scheme builds — and `CadenceListNoteFiling` cost a
-  file **split** rather than a file ([[T-1122]]). **A file stops earning it, too, and then it
-  goes**: `CadenceTrackingMutationSupport`, `GoalAssignmentRules` and `CadencePluralization` lost
-  their last caller here when [[T-2077]] removed `create_goal`/`create_habit`, and [[T-3010]] took
-  all three out of the phase while leaving them on disk for the app. Sweep when an arm is retired,
-  not only when one is added. **The eleventh, `CadenceTaskBundleMutationSupport`, is the second
-  that cost a split — of the *declaration*** ([[T-1122]]). What each is for:
-  `../docs/MCP_AGENTS_REFERENCE.md`, "Why eleven shared files joined the Sources phase" and "Why
-  the tracking helpers cost four files".
+  Historical arm decisions: `../docs/AGENTS_REFERENCE.md`, "MCP arm and source membership history";
+  also `../docs/MCP_AGENTS_REFERENCE.md`, "What the create and update arms cover",
+  "Why one kind had no constructor" and "Why deletion is refused".
+- Shared files enter the explicit Sources phase only for a needed shared rule. Sweep membership
+  when retiring an arm, and remove files with no remaining caller. Split app-only dependencies
+  out before adding a file. See `../docs/MCP_AGENTS_REFERENCE.md`,
+  "Why eleven shared files joined the Sources phase" and "Why the tracking helpers cost four files".
 - **The MCP write path's equivalent of "name the failure on screen" is the thrown error the router
   renders as `isError`, plus an undo, and every arm now has both halves** (T-1121). One long-lived
   `ModelContext` per process means a refused `save()` used to leave the mutation *pending* for the

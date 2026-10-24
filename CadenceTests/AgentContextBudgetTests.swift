@@ -2,10 +2,12 @@ import Foundation
 import Testing
 
 struct AgentContextBudgetTests {
-    /// T-434's number, and the only one this suite had until T-1332. Kept exactly as it was: the
-    /// byte budget below is an ADDITION, not a replacement, because the two fail on different
-    /// things and a file can be bad in either direction.
-    static let lineBudget = 200
+    /// T-3149: 210 is a 5% increase from 200. At 703df4f9 the tightest guides were
+    /// MCP 196, Shared 194 and Models 190 wc-l lines; root was already down to 170.
+    /// Ten extra lines cover that narrow pressure band; inventories and history move to
+    /// references as well. The independent 18,000-byte ratchet stays unchanged.
+    /// The newline counting convention stays unchanged too: 209 wc-l lines may pass.
+    static let lineBudget = 210
 
     /// T-1332. A line count is a proxy for "how much an agent must read before starting", and the
     /// thing it proxies for is free to walk away from it. Measured at the ticket's HEAD:
@@ -87,7 +89,7 @@ struct AgentContextBudgetTests {
     /// Guides"). A cap that has to be added by hand is a cap that arrives late, so the list is
     /// discovered by walking the tree: a scoped guide created tomorrow is covered tomorrow.
     ///
-    /// The number is 200, matching the `CLAUDE.md` ceiling above rather than inventing a third
+    /// The original number was 200, matching the `CLAUDE.md` ceiling above rather than inventing a third
     /// scale. 180 was rejected deliberately: the root guide reached 179 lines the day this was
     /// written, so that cap had one line of headroom left and was already forcing trims to pay for
     /// additions — a wall, not a budget, and a budget people route around by starting a thirteenth
@@ -301,7 +303,7 @@ struct AgentContextBudgetTests {
             linkFromGuide: "../../docs/SHARED_AGENTS_REFERENCE.md",
             referencePath: "docs/SHARED_AGENTS_REFERENCE.md",
             archivalMarker: "former long `Cadence/Shared/AGENTS.md`",
-            citedSections: ["This Task Is Over"],
+            citedSections: ["This Task Is Over", "Rollback across toolchains", "Shared typography conversion"],
             pinnedHeadings: ["## Source-Scanning Tests"]
         ),
         GuideReferencePairing(
@@ -405,6 +407,20 @@ struct AgentContextBudgetTests {
             pinnedHeadings: []
         ),
     ]
+
+    @Test func displacedGuideInventoriesStillHaveReferenceDestinations() throws {
+        let reference = try repositoryFile("docs/AGENTS_REFERENCE.md")
+        for (guidePath, section) in [
+            ("Cadence/Models/AGENTS.md", "Model inventory and shared value types"),
+            ("CadenceMCPServer/AGENTS.md", "MCP arm and source membership history"),
+        ] {
+            let guide = flattenedWhitespace(try repositoryFile(guidePath))
+            #expect(guide.contains("AGENTS_REFERENCE.md"))
+            #expect(guide.contains("\"\(section)\""))
+            let hasHeading = reference.contains("## \(section)\n")
+            #expect(hasHeading, "missing reference heading: \(section)")
+        }
+    }
 
     @Test func contextIndexRoutesByChangeType() throws {
         let index = try repositoryFile("docs/CONTEXT_INDEX.md")

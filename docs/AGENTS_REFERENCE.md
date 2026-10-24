@@ -706,3 +706,96 @@ Evidence: `cadence-xcb-suitehygiene-ios-concrete.20261006-155435-58449.log` (con
 by id, `XCODEBUILD_EXIT=0`, 0 warnings, 691 tasks) beside three independent sibling runs of
 `generic/platform=iOS Simulator` the same afternoon (`t1-ios`, `t2-ios`, `app2-ios`), each 1382 tasks
 split 691 arm64 / 691 x86_64.
+
+## Model inventory and shared value types
+
+Displaced from `Cadence/Models/AGENTS.md` for T-3149 (2026-10-23). The guide keeps the operational rules.
+
+`CadenceSchema.swift` is the authoritative list. Live models:
+
+- `Context` - top-level grouping.
+- `Area` / `Project` - list containers; both own tasks and list metadata.
+- `AppTask` / `Subtask` - schedulable work and nested checklist items. `AppTask` also carries the full recurrence field set and `bundle`/`bundleOrder`/`tags`.
+- `TaskBundle` - several tasks grouped into one timeline block (declared in `AppTask.swift`). `tasks` uses a `.nullify` delete rule; verify bundle/task deletion order carefully.
+- `Tag` - cross-cutting label, many-to-many with both `AppTask` and `Note`.
+- `Goal`, `GoalListLink`, `Habit`, `HabitCompletion` - long-running progress and recurring behavior. `Goal` nests via `parentGoal`/`subGoals`: a top-level goal is a direction (usually `kind == .ongoing`), its sub-goals read as milestones.
+  **`GoalListLink` has no write path in the app** — [[T-2079]] retired `attachList` /
+  `detachGoalListLink` / `toggleGoalListLink`; only the archive importer constructs one, never a
+  hand-rolled `insert(GoalListLink(...))`. Readers still filter `isDeleted`: a pre-commit edit is
+  what Xcode 26's `rollback()` undoes late ([[T-1321]]). What a duplicate link does and does *not* break:
+  `docs/MODELS_AGENTS_REFERENCE.md`, "The one write path for a goal list link"; the
+  substring-grep trap is in `Cadence/Shared/AGENTS.md`.
+- `Note` - the single live note model (see `Cadence/Models/AGENTS.md`).
+- `SavedLink`, `MarkdownImageAsset` - list bookmarks and editor image assets.
+- `SidebarLayoutPreference` - the sidebar's visible rows and their order, **synced** (T-1274: the
+  owner chose across devices). Two comma-separated `CadenceFeatureDestination` raw-value strings,
+  not a to-many. Read and written only through `Shared/CadenceSidebarLayoutPreferenceStore.swift`,
+  which owns the duplicate rule (**newest `updatedAt` wins**, `id` breaks a tie, losers are left
+  alone rather than deleted), the device-local fallback, and the one-visible-row floor. A
+  destination the stored strings never name keeps its declared slot and stays visible, so a future
+  enum case needs no migration; an unrecognised token is dropped on read.
+- `LookPreference` - the **synced** accent palette, sidebar tints, each surface's sort, grouping
+  and show-completed (T-1307, [[T-1288]]), and since [[T-1347]] the work-hours window in a second
+  pair map, `calendarPresentationRaw`. Read only via `CadenceLookPreferenceStore`: the record is
+  truth across devices, the local defaults its **mirrors** — how the widget reads the accent.
+- `NoteTemplatePreference` - the **synced** note-template overrides ([[T-1346]]: the owner decided a
+  template they wrote is content, like a note). One JSON map — the same string `NoteTemplateLibrary`
+  has always written to the `noteTemplateOverrides` default, which is now this record's mirror.
+  Read and written only through `CadenceNoteTemplatePreferenceStore` /
+  `CadenceNoteTemplatePreferenceSync`, which own the duplicate rule (newest `updatedAt` wins, `id`
+  breaks a tie), the canonical spelling of an override map, and the **one-shot first-run merge**
+  that carries a device's pre-sync templates into the shared row without overwriting another
+  device's. Steady state is whole-map last-writer-wins; a reset travels as `{}`, which is a value
+  here and not an absence. `overridesRaw` is markdown-bearing and is in
+  `CadenceMarkdownSourceInventory`.
+
+Non-`@Model` types that live in this folder: `TaskSectionConfig` / `TaskSectionDefaults`
+(in `AppTask.swift`) and `GoalContributionSummary`. Two more *files* here declare no type at all —
+`GoalPresentation.swift` (an `extension Goal`) and `HabitInsights.swift` (an `extension Habit`,
+listed here as a type for a long time; there is no `HabitInsights` symbol to reference) — and two
+this list omitted for a long time carry rules of their own:
+
+- **`ModelEnums.swift`** — the ten data enums (`TaskPriority`, `TaskStatus`,
+  `TaskRecurrenceRule`, `TaskRecurrenceEndMode`, `ProjectStatus`, `AreaStatus`, `GoalStatus`,
+  `GoalKind`, `GoalProgressType`, `HabitFrequency`). Every one is `nonisolated`, and a new one
+  must be too: a status enum written without it builds fine in the app and breaks `CadenceWidgets`
+  and `CadenceMCPServer`, the second as an error rather than a warning.
+  `CadenceTests/NonisolatedValueTypeTests` is the guard.
+- **`TaskOrdering.swift`** — `TaskSortField`, `TaskSortDirection`, and `TaskOrdering`, the app's
+  one task comparator. It lives here rather than in `Shared/` or `macOS/` because the widget and
+  MCP targets order tasks and compile only `Models/`. **The tie-break must stay total**
+  (`fallbackPrecedes`: `order` → `createdAt` → `title` → `id`), which `TaskOrderingTests` pins by
+  sorting a tie-heavy set from two permutations and requiring byte-identical output. And **the raw
+  values are persisted** in `@AppStorage` and per-list `UserDefaults` keys — renaming a case is
+  fine, changing a raw value silently resets every saved sort preference. Why a partial order
+  reshuffles rows between renders, and what `SWIFT_DEFAULT_ACTOR_ISOLATION` does to a bare value
+  type: `docs/MODELS_AGENTS_REFERENCE.md`, "Why the enums and the comparator live here".
+
+
+## MCP arm and source membership history
+
+Displaced from `CadenceMCPServer/AGENTS.md` for T-3149 (2026-10-23). The guide keeps the operational rules.
+
+  **Four of those arms carry a refusal, a removal or a lifting condition whose SHAPE is what the
+  next arm-shaped question gets measured against, and not one is re-decidable from a summary**:
+  `create_goal`/`create_habit` **removed** rather than left advertised and refusing ([[T-2077]],
+  0.13.0 -> 0.14.0, `list_goals`/`get_goal`/`list_habits` untouched); `create_list_note` lifted by
+  splitting a FILE rather than by changing a rule, and still taking no **body**; `create_tag`
+  refused twice before `TagSupport.creationDecision(for:in:)` existed to be asked ([[T-1406]]);
+  and the four block arms, refused for seven sittings and then **removed outright, read arms
+  included** ([[T-3170]], 0.15.0 -> 0.16.0: the startup pass deletes the rows). All four in full:
+  `docs/MCP_AGENTS_REFERENCE.md`, "What the create and update arms cover", "Why one kind had
+  no constructor" and "Why deletion is refused".
+- **Eleven `Cadence/Shared/` files are in the Sources phase, and none of them earns its place for
+  the obvious reason.** Each earns it by one rule a hand-rolled copy would re-break — a rename that
+  would otherwise strand every card on a name no column has, T-509's case-insensitive scheme rule
+  — never by the feature it arrived with. Adding another is still not casual: one more path by
+  which an app-side edit breaks a target no scheme builds — and `CadenceListNoteFiling` cost a
+  file **split** rather than a file ([[T-1122]]). **A file stops earning it, too, and then it
+  goes**: `CadenceTrackingMutationSupport`, `GoalAssignmentRules` and `CadencePluralization` lost
+  their last caller here when [[T-2077]] removed `create_goal`/`create_habit`, and [[T-3010]] took
+  all three out of the phase while leaving them on disk for the app. Sweep when an arm is retired,
+  not only when one is added. **The eleventh, `CadenceTaskBundleMutationSupport`, is the second
+  that cost a split — of the *declaration*** ([[T-1122]]). What each is for:
+  `docs/MCP_AGENTS_REFERENCE.md`, "Why eleven shared files joined the Sources phase" and "Why
+  the tracking helpers cost four files".
