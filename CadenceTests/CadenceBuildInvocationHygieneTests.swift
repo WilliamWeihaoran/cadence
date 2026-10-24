@@ -1061,7 +1061,11 @@ struct CadenceBuildInvocationHygieneTests {
         let gated = CadenceTestRunGuard.gatedLogIds(in: shell)
 
         // Non-vacuity first: a walk that found nothing would satisfy every "for all" below.
-        let compiling = runs.filter { $0.action == "build" || $0.action == "test" }
+        // A `raw` run compiles when the xcodebuild action it carries does ([[T-3423]]).
+        let compiling = runs.filter {
+            $0.action == "build" || $0.action == "test"
+                || ($0.action == "raw" && $0.verbs.contains { ["build", "test", "build-for-testing"].contains($0) })
+        }
         #expect(compiling.count >= 3, "ci.yml runs \(compiling.count) compiling xcb.sh invocation(s); the walk or the workflow lost one")
         let ids = Set(compiling.map { $0.id })
         #expect(ids.isSuperset(of: ["ci-mcp", "ci-tests", "ci-ios"]), "ci.yml's compiling jobs are \(ids.sorted())")
@@ -1086,6 +1090,39 @@ struct CadenceBuildInvocationHygieneTests {
             gatedDestinations.contains { $0.contains("platform=macOS") },
             "no gated CI invocation names a macOS destination: \(gatedDestinations)"
         )
+    }
+
+    // MARK: - T-3423: CI compiles the test target for iOS, not only the app
+
+    /// **A plain iOS `build` compiles the app and never `CadenceTests`, so an iOS-only compile break
+    /// in a shared test stayed green in CI** ([[T-3423]], filed twice — [[T-5201]]). It happened at
+    /// `9aebf575` (17 errors), `42650535` ([[T-5200]]) and `1bb9390b` ([[T-6061]]); every time the
+    /// first sign was an agent's local iOS test run exiting 65.
+    ///
+    /// So the gated iOS-simulator invocation must carry `build-for-testing`, which compiles the test
+    /// targets and runs nothing. The control parses the pre-fix spelling and must find no such verb,
+    /// so this check can tell the two shapes apart rather than passing on any iOS line.
+    @Test func theGatedIOSJobCompilesTheTestTargetsNotOnlyTheApp() throws {
+        let shell = try Self.shellText(at: ".github/workflows/ci.yml")
+        let gated = CadenceTestRunGuard.gatedLogIds(in: shell)
+        let ios = CadenceTestRunGuard.guardedRunnerInvocations(in: shell)
+            .filter { $0.destination.contains("iOS Simulator") && gated.contains($0.id) }
+
+        #expect(!ios.isEmpty, "no gated CI invocation builds for an iOS Simulator destination at all")
+        #expect(
+            ios.contains { $0.verbs.contains("build-for-testing") },
+            "CI's gated iOS invocation(s) \(ios.map { "\($0.id) \($0.action) \($0.verbs)" }) never compile CadenceTests for iOS (T-3423)"
+        )
+
+        // Control: the shape this replaced. Same runner, same destination, verb `build`.
+        let before = CadenceTestRunGuard.guardedRunnerInvocations(in: """
+                  ./scripts/xcb.sh ci-ios build \\
+                    -scheme Cadence \\
+                    -destination 'generic/platform=iOS Simulator' \\
+                    -derivedDataPath "$RUNNER_TEMP/dd-ios"
+            """)
+        #expect(before.count == 1 && before.first?.destination == "generic/platform=iOS Simulator", "control did not parse: \(before)")
+        #expect(before.first.map { !$0.verbs.contains("build-for-testing") } == true, "the control reads as compiling tests")
     }
 
     // MARK: - T-1703: the iOS task count is an arch count
@@ -1633,8 +1670,14 @@ enum CadenceTestRunGuard {
     /// the id and the action sit on the `xcb.sh` line and the destination is four continuations
     /// below it, so a per-physical-line walk would find the id of every job and the destination of
     /// none — and would then happily report that no CI job builds for a simulator.
-    static func guardedRunnerInvocations(in shell: String) -> [(id: String, action: String, destination: String)] {
-        var found: [(id: String, action: String, destination: String)] = []
+    ///
+    /// `verbs` are the xcodebuild actions named anywhere on the joined line. For `build`/`test` that
+    /// is the runner's own verb; for `raw` -- which hands xcodebuild every argument, the action last --
+    /// it is the only place the action is visible at all ([[T-3423]]: CI's iOS job is a `raw ...
+    /// build-for-testing`, and reading only `tokens[index + 2]` would see `raw` and nothing else).
+    static func guardedRunnerInvocations(in shell: String) -> [(id: String, action: String, destination: String, verbs: [String])] {
+        let xcodebuildActions: Set<String> = ["build", "test", "build-for-testing", "test-without-building", "analyze", "archive"]
+        var found: [(id: String, action: String, destination: String, verbs: [String])] = []
         let joined = commandLines(shell).replacingOccurrences(of: "\\\n", with: " ")
         for line in joined.split(separator: "\n", omittingEmptySubsequences: false) {
             let tokens = line.split(whereSeparator: { $0 == " " || $0 == "\t" }).map(String.init)
@@ -1651,7 +1694,8 @@ enum CadenceTestRunGuard {
                     destination = tokens[flag + 1]
                 }
             }
-            found.append((id: tokens[index + 1], action: tokens[index + 2], destination: destination))
+            let verbs = tokens[(index + 2)...].filter { xcodebuildActions.contains($0) }
+            found.append((id: tokens[index + 1], action: tokens[index + 2], destination: destination, verbs: verbs))
         }
         return found
     }

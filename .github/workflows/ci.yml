@@ -501,16 +501,31 @@ jobs:
         with:
           path: ${{ runner.temp }}/dd-ios/SourcePackages
           key: ${{ steps.spm-cache.outputs.cache-primary-key }}
-      - name: Build
+      # T-3423 / T-5201: `build-for-testing`, not `build`. A plain `build` compiles the app (and
+      # widgets) only, so an iOS-only compile break in `CadenceTests` -- a macOS-only symbol used
+      # unfenced in a shared test -- stayed green here three times: `9aebf575` (17 errors), `42650535`
+      # (T-5200) and `1bb9390b` (T-6061, live at HEAD when this landed). `build-for-testing` compiles
+      # the app, `CadenceTests` and `CadenceUITests` for the simulator and runs nothing, so no test
+      # host, simulator or lock is involved. `xcb.sh` refuses `build-for-testing` as its own verb, so
+      # the action is spelt through `raw`, which passes every argument (the action last) unchanged;
+      # the log id stays `ci-ios`, so the Gates step below reads this log exactly as before, and
+      # check-log.sh already counts the `** TEST BUILD SUCCEEDED **` banner this action prints.
+      # COST, measured 2026-10-24 cold in a `git archive` tree on the M3 Pro: `build` 96 s / 1404
+      # compile tasks, `build-for-testing` 247 s / 2480 (+1018 CadenceTests, +58 CadenceUITests,
+      # both archs). This job took ~3 min hosted at the time against ~19.5 min for `macos-tests`,
+      # which runs in parallel and is the critical path, so the extra ~4-6 runner minutes are not
+      # expected to lengthen a run at all. `ARCHS=arm64` would halve the compile if that changes.
+      - name: Build app and compile iOS test targets (build-for-testing, T-3423)
         run: |
           export TMPDIR="$RUNNER_TEMP/"
-          ./scripts/xcb.sh ci-ios build \
+          ./scripts/xcb.sh ci-ios raw \
             -scheme Cadence \
             -destination 'generic/platform=iOS Simulator' \
             -derivedDataPath "$RUNNER_TEMP/dd-ios" \
             CODE_SIGN_IDENTITY="-" CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM="" \
             PROVISIONING_PROFILE_SPECIFIER="" \
-            CODE_SIGN_ENTITLEMENTS=.github/ci.entitlements
+            CODE_SIGN_ENTITLEMENTS=.github/ci.entitlements \
+            build-for-testing
       - name: Gates
         if: always()
         run: ./.github/scripts/check-log.sh "$RUNNER_TEMP/cadence-xcb-ci-ios.log" build

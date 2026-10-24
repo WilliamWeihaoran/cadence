@@ -22,10 +22,14 @@ struct CadenceContextNameClashCopyTests {
         #expect(created != renamed)
     }
 
+    // macOS-only: both types live under Cadence/macOS, so iOS build-for-testing cannot see them
+    // ([[T-6061]] -- 2 iOS compile errors from `1bb9390b`, found by CI's new iOS test compile).
+    #if os(macOS)
     @Test func theMacRefusalsReadTheSharedCopy() {
         #expect(CreateContextSheet.duplicateNameNotice("Home") == CadenceContextNameClashCopy.notCreated("Home"))
         #expect(ContextSettingsRow.duplicateRenameNotice("Home") == CadenceContextNameClashCopy.notRenamed("Home"))
     }
+    #endif
 
     @Test func theIOSRefusalsReadTheSharedCopyAndNeverSayList() throws {
         let path = "Cadence/iOS/iOSSettingsContextSection.swift"
