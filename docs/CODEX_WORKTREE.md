@@ -302,11 +302,11 @@ each is a decision-free (or owner-decided at `887b2139`) visible defect for the 
 `codex/capture-list-sections` touched `ListDetailComponents.swift` (2026-10-17), `codex/ui-refresh-reconciliation`
 `CadenceApp.swift` (2026-10-16), `codex/tracking-ui-retirement` `iOSTaskDetailSheetSections.swift` (2026-10-05);
 no `codex/*` worktree has any of these files dirty.
-- Agent `cmdn1408`, [[T-5302]] only: in `Cadence/macOS/Services/QuickTaskPanelController.swift`, the
+- Agent `maccmd1310` (re-addressed from the never-launched `cmdn1408`; the coordinator assigned it these tickets at `725c5279`), [[T-5302]] only: in `Cadence/macOS/Services/QuickTaskPanelController.swift`, the
   resign-key close path and the panel's open path may keep and restore the half-typed draft (cleared
   on save or Esc), per the owner's decision (b). ([[T-5953]]'s `Cadence/CadenceApp.swift` is already
   released to local agents under the 2026-10-20 rule, as that entry records.)
-- Agent `search1408`, [[T-5832]] half (b) only: in `Cadence/macOS/Views/ListDetailComponents.swift`,
+- Agent `maccmd1310` (re-addressed from the never-launched `search1408`), [[T-5832]] half (b) only: in `Cadence/macOS/Views/ListDetailComponents.swift`,
   the "+ Section" row's visibility condition (shown only under By List), per the owner's decision (a).
 - Agent `floor1408`, [[T-6114]] only: in `Cadence/macOS/Views/TaskInspectorWorkflowSupportViews.swift`
   and `Cadence/iOS/iOSTaskDetailSheetSections.swift`, the After-count resolve call and the count
