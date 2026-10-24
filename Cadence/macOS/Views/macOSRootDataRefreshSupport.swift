@@ -40,6 +40,11 @@ enum macOSRootDataRefreshSupport {
         if let session = reresolvedSession(focusManager.activeSession, in: context) {
             focusManager.activeSession = session
         }
+        // T-5893. Another process (MCP's `complete_task`) finishing the focused task never mutates
+        // the app's copy of the row — it arrives here, as the live row, already done — so T-5310's
+        // `statusRaw` watch has nothing to fire on. Ask the adopted row directly, the way the watch
+        // answers an in-process write: bank, then move on.
+        focusManager.releaseIfActiveTaskSettled()
         hoveredTaskManager.clear()
     }
 

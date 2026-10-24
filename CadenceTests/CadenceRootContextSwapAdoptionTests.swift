@@ -154,5 +154,88 @@ struct CadenceRootContextSwapAdoptionTests {
         )
         #expect(HoveredTaskManager.shared.hoveredSource == nil)
     }
+
+    // MARK: - T-5893: the focused task completed by another process (MCP)
+
+    /// **T-5893.** `CadenceMCPServer` is a separate process with its own container on the same
+    /// store file, so its `complete_task` reaches the app only through the swap: nothing mutates the
+    /// app's copy of the row, and T-5310's `statusRaw` watch has nothing to fire on. Measured before
+    /// the fix: the session came through the swap re-pointed at the live — already DONE — row, and
+    /// stayed there, so the next ▶ timed a finished task. The adoption has to look at the row it
+    /// adopted, the way the watch looks at an in-process write.
+    ///
+    /// The fixture is an on-disk store in this test's own temp directory, with two containers on it:
+    /// the app's, and an "MCP" one that makes `CadenceWriteService.completeTask`'s mutation
+    /// (`CadenceTaskRecurrenceWorkflowSupport.markDone`, then save) without its audit log or
+    /// external-write marker, which would reach the real app group.
+    @Test func aFocusedTaskCompletedByAnotherProcessReleasesTheSessionWhenTheSwapAdoptsIt() async throws {
+        resetSharedManagers()
+        defer { resetSharedManagers() }
+
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("T5893-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let storeURL = directory.appendingPathComponent("Cadence.store")
+        func openStore() throws -> ModelContainer {
+            try ModelContainer(
+                for: CadenceSchema.schema,
+                configurations: ModelConfiguration(
+                    "T5893Fixture", schema: CadenceSchema.schema,
+                    url: storeURL, cloudKitDatabase: .none
+                )
+            )
+        }
+
+        let appContainer = try openStore()
+        let appContext = ModelContext(appContainer)
+        let project = Project(name: "Ledger")
+        appContext.insert(project)
+        let focused = AppTask(title: "Reconcile invoices")
+        let next = AppTask(title: "File receipts")
+        for task in [focused, next] {
+            task.project = project
+            appContext.insert(task)
+        }
+        try appContext.save()
+
+        let clock = SwapTestClock()
+        FocusManager.shared.clock = { clock.now }
+        try FocusManager.shared.startFocus(task: focused, in: appContext)
+        clock.now = clock.now.addingTimeInterval(30 * 60)
+
+        // The other process: its own container, its own context, the same file.
+        do {
+            let mcpContainer = try openStore()
+            let mcpContext = ModelContext(mcpContainer)
+            let mcpCopy = try refetchTask(focused.id, in: mcpContext)
+            _ = CadenceTaskRecurrenceWorkflowSupport.markDone(mcpCopy, in: mcpContext)
+            try mcpContext.save()
+        }
+        #expect(focused.isDone == false, "the app's own copy of the row moved without a merge")
+
+        // The app's merge path, as `macOSRootView.refreshAppData()` runs it.
+        let live = CadenceModelContextRefresh.replacement(for: appContext)
+        macOSRootDataRefreshSupport.adoptReplacementContext(
+            live,
+            focusManager: FocusManager.shared,
+            hoveredTaskManager: HoveredTaskManager.shared
+        )
+
+        let deadline = Date().addingTimeInterval(10)
+        while FocusManager.shared.activeTask?.id == focused.id, Date() < deadline {
+            try await Task.sleep(nanoseconds: 20_000_000)
+        }
+        #expect(
+            FocusManager.shared.activeTask?.id == next.id,
+            "a task MCP completed is still the focus session after the swap adopted the write"
+        )
+        #expect(FocusManager.shared.activeTask?.modelContext === live)
+        #expect(FocusManager.shared.elapsed == 0)
+        let liveCopy = try refetchTask(focused.id, in: live)
+        #expect(liveCopy.isDone)
+        #expect(liveCopy.actualMinutes == 30, "the half hour was not banked against the finished task")
+        #expect(live.hasChanges == false)
+    }
 }
 #endif
