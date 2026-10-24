@@ -18,6 +18,11 @@ struct iOSNoteAIActionsMenu: View {
     let note: Note
     var area: Area?
     var project: Project?
+    /// [[T-5931]]: told after a summary has been appended and saved. `append` writes
+    /// `note.content` directly, past any editor binding, so a host whose binding setter is the
+    /// only thing that mirrors the note elsewhere — `iOSNotesView`'s Events pane on iPad, into
+    /// Apple Calendar — has to be told. Hosts that observe `note.content` themselves pass nothing.
+    var onAppended: (() -> Void)? = nil
 
     @Environment(AISettingsManager.self) private var aiSettingsManager
     @Environment(\.modelContext) private var modelContext
@@ -87,6 +92,7 @@ struct iOSNoteAIActionsMenu: View {
         case .summary(let markdown):
             iOSAISummaryReviewSheet(markdown: markdown) {
                 try CadenceAINoteSummary.append(markdown, to: note, modelContext: modelContext)
+                onAppended?()
             }
         case .taskDrafts(let drafts):
             iOSAITaskDraftReviewSheet(

@@ -281,6 +281,29 @@ struct CadenceEventKitPlatformParityTests {
         #expect(update.contains("try? modelContext.save()"))
     }
 
+    /// **[[T-5931]].** An AI summary is appended by `CadenceAINoteSummary.append`, which writes
+    /// `note.content` past the pane's binding, so `commitEditorContent` never ran and on iPad the
+    /// Apple Calendar event kept the pre-summary notes. The AI menu reports a finished append, and
+    /// the Notes header routes that, on the Events tab, through the same `iOSEventNoteCommit`.
+    @Test func anAppendedAISummaryOnTheIPadEventsPaneIsMirroredLikeATypedEdit() throws {
+        let menuFile = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/iOS/iOSAINoteActionsViews.swift")
+        )
+        let review = try #require(CadenceSourceScan.declarationBody("private func reviewSheet(", in: menuFile))
+        let append = try #require(review.range(of: "try CadenceAINoteSummary.append(markdown, to: note, modelContext: modelContext)"))
+        let reported = try #require(review.range(of: "onAppended?()"), "the AI menu never reports an append")
+        #expect(append.upperBound <= reported.lowerBound, "the append is reported before it has been saved")
+
+        let code = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile("Cadence/iOS/iOSNotesView.swift"))
+        #expect(
+            code.components(separatedBy: "onAppended: { commitAppendedSummary(note) }").count - 1 == 1,
+            "the Notes header's AI menu no longer routes an append through the event commit"
+        )
+        let commit = try #require(CadenceSourceScan.functionBody(named: "commitAppendedSummary", in: code))
+        #expect(commit.contains("guard activeTab == .events else { return }"))
+        #expect(commit.contains("eventNoteCommitNotice = iOSEventNoteCommit.commitEventNote("))
+    }
+
     /// The native write has to be able to answer, or ordering the save first buys nothing: the
     /// sheet would still be guessing at the second half.
     ///

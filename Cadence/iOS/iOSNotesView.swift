@@ -323,7 +323,12 @@ struct iOSNotesView: View {
             // by deleting the cover. The row has the space: this branch only runs at regular width,
             // and its narrowest host (Today's inspector) is also the one that suppresses the title.
             if showsHeaderTemplateMenu || isShowingInlineEditor, let note = selectedNote {
-                iOSNoteAIActionsMenu(note: note, area: note.area, project: note.project)
+                iOSNoteAIActionsMenu(
+                    note: note,
+                    area: note.area,
+                    project: note.project,
+                    onAppended: { commitAppendedSummary(note) }
+                )
             }
             // Export, gated on the same rule and riding the same fallback: at compact width it is
             // in the editor cover's navigation bar. Unlike the AI menu this is never absent — a
@@ -723,6 +728,21 @@ struct iOSNotesView: View {
             return
         }
         CadenceCoreNoteSupport.applyContent(note, content: content, in: modelContext)
+        eventNoteCommitNotice = iOSEventNoteCommit.commitEventNote(
+            note,
+            event: nil,
+            in: modelContext,
+            calendarManager: calendarManager
+        ).notice
+    }
+
+    /// **[[T-5931]]:** an appended AI summary is already saved, but it was written past
+    /// `editorPane`'s binding, so `commitEditorContent` never ran and on the Events tab the Apple
+    /// Calendar event kept the pre-summary notes until the next keystroke. The compact sheet
+    /// catches the same write with `.onChange(of: note.content)`. This re-commits through the same
+    /// ordered helper so the mirror and its notice follow; other tabs have nothing to mirror.
+    private func commitAppendedSummary(_ note: Note) {
+        guard activeTab == .events else { return }
         eventNoteCommitNotice = iOSEventNoteCommit.commitEventNote(
             note,
             event: nil,
