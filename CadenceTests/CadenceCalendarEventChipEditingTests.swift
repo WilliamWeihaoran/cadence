@@ -138,9 +138,38 @@ struct CadenceCalendarEventChipEditingTests {
         #expect(!allDay.contains(".draggable("), "the all-day chip drags unconditionally again")
         // The drop that converts all-day to timed refuses a read-only event too.
         #expect(code.contains("guard let event, CalendarEventEditPopover.isEditable(event) else { return }"))
-        // Non-vacuity: the task chip beside it still drags, so the ban above can see `.draggable(`.
-        let task = try #require(CadenceSourceScan.declarationBody("struct AllDayTaskChip: View", in: code))
+        // Non-vacuity: the task chips beside it still drag, so the ban above can see `.draggable(`.
+        let task = try #require(CadenceSourceScan.functionBody(named: "calendarTaskChipInteractions", in: code))
         #expect(task.contains(".draggable("))
+    }
+
+    // MARK: - T-5351: the Month task chip does what the all-day lane's does
+
+    @Test("Month and all-day task chips share one click, inspector and drag")
+    func bothTaskChipsOpenTheInspectorAndDrag() throws {
+        let code = try Self.code(Self.chips)
+        for declaration in ["struct MonthTaskChip: View", "struct AllDayTaskChip: View"] {
+            let chip = try #require(CadenceSourceScan.declarationBody(declaration, in: code))
+            #expect(chip.contains("@State private var showInspector = false"), "\(declaration) holds no inspector state")
+            #expect(
+                CadenceSourceScan.matchCount(#"\.calendarTaskChipInteractions\(task: task, showInspector: \$showInspector\)"#, in: chip) == 1,
+                "\(declaration) does not wear the shared task-chip interactions"
+            )
+            // One definition, not two copies drifting apart.
+            #expect(!chip.contains(".onTapGesture"), "\(declaration) grew its own click again")
+            #expect(!chip.contains(".draggable("), "\(declaration) grew its own drag again")
+        }
+        let shared = try #require(CadenceSourceScan.functionBody(named: "calendarTaskChipInteractions", in: code))
+        #expect(shared.contains(".onTapGesture { showInspector.wrappedValue = true }"), "a click opens nothing")
+        #expect(
+            CadenceSourceScan.matchCount(#"RightClickActionTrigger \{\s*showInspector\.wrappedValue = true\s*\}"#, in: shared) == 1,
+            "a right-click opens nothing"
+        )
+        #expect(
+            CadenceSourceScan.matchCount(#"\.popover\(isPresented: showInspector, arrowEdge: \.bottom\) \{\s*TaskDetailPopover\(task: task\)"#, in: shared) == 1,
+            "the click does not open the task's inspector"
+        )
+        #expect(shared.contains(".draggable(task.id.uuidString)"), "the chip does not drag as its task")
     }
 
     @Test("The chip editor host carries the Board card's write wiring")

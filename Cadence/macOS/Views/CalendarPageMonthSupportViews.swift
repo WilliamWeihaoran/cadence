@@ -140,6 +140,7 @@ struct MonthTaskChip: View {
     /// `yyyy-MM-dd` of the cell this chip is drawn in.
     let dayKey: String
     var todayKey: String = DateFormatters.todayKey()
+    @State private var showInspector = false
 
     private var glyph: String {
         if task.isCancelled { return "xmark.circle.fill" }
@@ -186,6 +187,10 @@ struct MonthTaskChip: View {
             border: Color(hex: task.containerColor)
                 .opacity(CadenceCalendarEventStyle.chipBorderOpacity())
         )
+        // The all-day lane chip's own click, right-click, inspector and drag ([[T-5351]]). What a
+        // click on the day cell around it, or on its "+N more", does is the owner's call and is
+        // deliberately not wired here.
+        .calendarTaskChipInteractions(task: task, showInspector: $showInspector)
     }
 }
 
@@ -598,17 +603,28 @@ struct AllDayTaskChip: View {
                 )
         )
         .shadow(color: Theme.chipShadow, radius: 4, y: 1)
-        .contentShape(Rectangle())
-        .onTapGesture { showInspector = true }
-        .overlay {
-            RightClickActionTrigger {
-                showInspector = true
+        .calendarTaskChipInteractions(task: task, showInspector: $showInspector)
+    }
+}
+
+extension View {
+    /// What a calendar task chip does when touched: a click or right-click opens the task's
+    /// inspector anchored on the chip, and the chip drags as the task's id. One definition for the
+    /// Week/Day all-day lane's `AllDayTaskChip` and the Month grid's `MonthTaskChip` ([[T-5351]]):
+    /// the Month chip used to be a plain plate, so the same task opened from one view and did
+    /// nothing in the other.
+    func calendarTaskChipInteractions(task: AppTask, showInspector: Binding<Bool>) -> some View {
+        contentShape(Rectangle())
+            .onTapGesture { showInspector.wrappedValue = true }
+            .overlay {
+                RightClickActionTrigger {
+                    showInspector.wrappedValue = true
+                }
             }
-        }
-        .popover(isPresented: $showInspector, arrowEdge: .bottom) {
-            TaskDetailPopover(task: task)
-        }
-        .draggable(task.id.uuidString)
+            .popover(isPresented: showInspector, arrowEdge: .bottom) {
+                TaskDetailPopover(task: task)
+            }
+            .draggable(task.id.uuidString)
     }
 }
 
