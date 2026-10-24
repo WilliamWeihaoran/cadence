@@ -3284,6 +3284,31 @@ Resolved as `fields(for:offersTaskRepeat:offersEventRepeat:).filter { isOffered(
 which keeps both behaviours and keeps `isOffered` a live call rather than a helper only its own unit
 test reaches.
 
+### 2026-10-24 (later) — the six paths held for `codex/subtasks-inspector` are RELEASED; that branch landed
+
+`codex/subtasks-inspector` landed in `21834d4c` ([[T-1611]] CLOSED, [[T-3171]] PARTIAL), and
+[[T-5353]] followed in `ad2d51c4`. The branch ref is not an ancestor of main because the gate
+commits with one parent, so check the files, not the ref: every one of the six below has a main
+commit carrying its content.
+
+**Released to local agents, same standing as everything in the 2026-10-20 block:**
+
+- `Cadence/macOS/Views/SchedulePanelComponents.swift` — in main at `21834d4c`
+- `Cadence/macOS/Views/SchedulePanelPopoverSupportViews.swift` — `c9d7f79c`
+- `Cadence/macOS/Views/TaskInspectorContentSupportViews.swift` — `21124632`
+- `Cadence/macOS/Views/TaskInspectorStatusActionsRow.swift` — `dad46473`
+- `Cadence/Shared/CadenceScheduleDraft.swift` — `21834d4c`
+- `CadenceTests/CadenceTaskContextInheritanceTests.swift` — `ad2d51c4`
+
+The other paths granted on 2026-10-24 (the four guard test files of `78e5e26e`, and the nine docs
+and budget paths of `703df4f9` for [[T-3149]], which landed in `7198f79e`) are released on the same
+reasoning: their branches are in main.
+
+**Why this entry exists at all.** A grant made for a branch outlives that branch unless someone
+retires it, and a stale hold reads exactly like a live one. Two agents lost a night to that on
+2026-10-24 ([[T-5602]]). When a Codex branch lands, release its paths in the same session.
+
+
 ### 2026-10-24 — what the 2026-10-20 release does and does NOT cover: paths added to the fence AFTER it
 
 **Read this before concluding a fenced path blocks you.** The 2026-10-20 release below says a local
