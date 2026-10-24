@@ -16,6 +16,9 @@ final class QuickTaskPanelController: NSObject {
     private var panelResignKeyObserver: NSObjectProtocol?
     private var acceptingDismissal = false
     private var sizeObserver: NSKeyValueObservation?
+    /// [[T-5302]] — whether the form standing in `hostingController` is a draft the next open
+    /// should get back.
+    private var draftRetention = QuickTaskPanelDraftRetention()
 
     private override init() {}
 
@@ -37,7 +40,7 @@ final class QuickTaskPanelController: NSObject {
 
         let content = CreateTaskPanelSurface(
             seed: seed,
-            dismissAction: { [weak self] in self?.close() },
+            dismissAction: { [weak self] in self?.closeDiscardingDraft() },
             successAction: { [weak self] in self?.showCaptureSuccessThenClose() }
         )
         .padding(Self.shadowPadding)
@@ -45,13 +48,39 @@ final class QuickTaskPanelController: NSObject {
         .environment(TaskCreationManager.shared)
         .preferredColorScheme(.dark)
 
-        // Always create a fresh hosting controller so @State resets on each open
+        // [[T-5302]]. **The half-typed task survives a click into another app.** The panel still
+        // closes on resign-key — the owner declined the alternative, because a panel that will not
+        // go away when you click somewhere else is its own irritation and getting out of the way
+        // is the point of it. What changed is that the standing form is handed back on the next
+        // open instead of being rebuilt: the draft lives in `CreateTaskSheet`'s `@State`, so
+        // keeping the hosting controller alive is keeping the draft, and the comment that used to
+        // sit here ("Always create a fresh hosting controller so @State resets on each open") was
+        // the whole defect stated as an intention.
+        //
+        // It is handed back only for an **empty** seed. A caller that pre-fills the form is asking
+        // for that form, and a stale draft must not win over it.
         sizeObserver?.invalidate()
         sizeObserver = nil
-        let hc = NSHostingController(rootView: AnyView(content))
+        let restoring = draftRetention.reusesTheStandingForm(
+            hasForm: hostingController != nil,
+            seedIsEmpty: Self.seedIsEmpty(seed)
+        )
+        let hc: NSHostingController<AnyView>
+        if restoring, let standing = hostingController {
+            hc = standing
+        } else {
+            hc = NSHostingController(rootView: AnyView(content))
+        }
         installHostingController(hc, in: panel)
         self.hostingController = hc
-        panel.setContentSize(panelContentSize(for: Self.panelSurfaceSize))
+        // A restored draft may have grown past the default surface — subtasks add rows — so the
+        // panel takes the size the form already asked for rather than snapping back and clipping.
+        let preferred = hc.preferredContentSize
+        if restoring, preferred.height > 50, preferred.width > 0 {
+            panel.setContentSize(preferred)
+        } else {
+            panel.setContentSize(panelContentSize(for: Self.panelSurfaceSize))
+        }
 
         // Auto-resize panel to fit SwiftUI content (e.g. when subtasks are added)
         sizeObserver = hc.observe(\.preferredContentSize, options: [.new]) { [weak self] _, change in
@@ -82,8 +111,29 @@ final class QuickTaskPanelController: NSObject {
         }
     }
 
+    /// Puts the panel away and **keeps** whatever is typed in it ([[T-5302]]).
+    ///
+    /// This is the resign-key path and the hotkey's own toggle: neither is the user saying they
+    /// are finished with the draft. Saving and Escape are, and they go through
+    /// `closeDiscardingDraft()`.
     func close() {
         guard panel?.isVisible == true else { return }
+        draftRetention.panelClosedWithTheDraftUnresolved()
+        orderPanelOut()
+    }
+
+    /// Puts the panel away and throws the draft away with it: the next open starts blank.
+    ///
+    /// Escape and the sheet's own Cancel ✕, which is the owner's "cleared on save or Esc" — plus
+    /// the beat after a successful capture, where the form has already become the success view.
+    func closeDiscardingDraft() {
+        guard panel?.isVisible == true else { return }
+        draftRetention.draftResolved()
+        hostingController = nil
+        orderPanelOut()
+    }
+
+    private func orderPanelOut() {
         logger.debug("Closing quick task panel")
         sizeObserver?.invalidate()
         sizeObserver = nil
@@ -100,6 +150,11 @@ final class QuickTaskPanelController: NSObject {
         acceptingDismissal = false
         stopObservingPanelResignKey()
 
+        // [[T-5302]]: the capture landed, so the draft is spent. Marked here rather than in the
+        // timer below because the form has already been replaced by the success view — a later
+        // `close()` that kept "the draft" would hand the next open a tick and a Captured label.
+        draftRetention.draftResolved()
+
         let content = QuickTaskCaptureSuccessView()
             .padding(Self.shadowPadding)
             .preferredColorScheme(.dark)
@@ -109,7 +164,7 @@ final class QuickTaskPanelController: NSObject {
         setPanelContentSize(panelContentSize(for: Self.panelSuccessSurfaceSize), for: panel)
 
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.95) { [weak self] in
-            self?.close()
+            self?.closeDiscardingDraft()
         }
     }
 
@@ -132,6 +187,22 @@ final class QuickTaskPanelController: NSObject {
             NotificationCenter.default.removeObserver(observer)
             panelResignKeyObserver = nil
         }
+    }
+
+    /// Whether a seed asks for anything, measured against a freshly built one rather than against
+    /// retyped defaults — the defaults are `TaskCreationSeed`'s to change ([[T-5302]]).
+    static func seedIsEmpty(_ seed: TaskCreationSeed) -> Bool {
+        let blank = TaskCreationSeed()
+        return seed.title == blank.title
+            && seed.notes == blank.notes
+            && seed.dueDateKey == blank.dueDateKey
+            && seed.doDateKey == blank.doDateKey
+            && seed.scheduledStartMin == blank.scheduledStartMin
+            && seed.estimatedMinutes == blank.estimatedMinutes
+            && seed.priority == blank.priority
+            && seed.container == blank.container
+            && seed.sectionName == blank.sectionName
+            && seed.subtaskTitles == blank.subtaskTitles
     }
 
     // MARK: - Panel setup
@@ -226,6 +297,47 @@ final class QuickTaskPanelController: NSObject {
 private final class QuickTaskPanel: NSPanel {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
+
+    /// [[T-5302]] — Escape is the user saying they are finished with this draft, so it clears.
+    ///
+    /// The panel is borderless and has no close button, so `NSWindow`'s own `cancelOperation` did
+    /// nothing here; the key simply fell on the floor. It has to mean something now that closing
+    /// otherwise *keeps* what is typed — the owner's decision names Escape as one of the two ways
+    /// a draft goes away.
+    override func cancelOperation(_ sender: Any?) {
+        QuickTaskPanelController.shared.closeDiscardingDraft()
+    }
+}
+
+/// **[[T-5302]] — whether the next open of the quick-capture panel gets the last one's draft.**
+///
+/// A value type rather than a `Bool` on the controller because this is the whole decision the
+/// ticket is about and the controller cannot be driven from a test: `show()` wants a real
+/// `ModelContainer` and puts a floating panel on the screen.
+///
+/// The asymmetry is deliberate. Closing is the default and it **keeps** — clicking into another
+/// app to copy a link is the exact move that used to empty the form. Only the two acts that
+/// finish with the draft, saving it and pressing Escape, resolve it.
+struct QuickTaskPanelDraftRetention: Equatable {
+    /// `true` when a form was left standing with something possibly typed in it.
+    private(set) var holdsDraft = false
+
+    /// The panel went away without the user finishing with the draft: resign-key, or the hotkey
+    /// pressed a second time.
+    mutating func panelClosedWithTheDraftUnresolved() {
+        holdsDraft = true
+    }
+
+    /// Saved, or dismissed with Escape or Cancel. Either way the next open starts blank.
+    mutating func draftResolved() {
+        holdsDraft = false
+    }
+
+    /// `hasForm` is separate from `holdsDraft` because the success view takes the form's place in
+    /// the controller: a held draft with nothing standing is still nothing to restore.
+    func reusesTheStandingForm(hasForm: Bool, seedIsEmpty: Bool) -> Bool {
+        holdsDraft && hasForm && seedIsEmpty
+    }
 }
 
 private struct QuickTaskCaptureSuccessView: View {
