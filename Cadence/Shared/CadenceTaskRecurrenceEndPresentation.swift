@@ -97,7 +97,18 @@ nonisolated enum CadenceTaskRecurrenceEndPresentation {
     /// same problem with none of the same escape hatches. `1` is offered because
     /// `applyRecurrenceEnd` accepts it: it means "this occurrence and no more", which is a real
     /// thing to want and is exactly what the clamp already allows.
-    static let endCountChoices = Array(1...60)
+    ///
+    /// **T-6114:** the list starts at the task's current occurrence number, not at `1`. A count
+    /// below the occurrence already reached cannot be honoured — `recurrenceHasEnded` is
+    /// `occurrenceNumber >= recurrenceEndCount`, so offering it would offer "end this series now,
+    /// and read 15 of 10". The list keeps its sixty entries, shifted up with the floor.
+    static func endCountChoices(from occurrenceNumber: Int) -> [Int] {
+        let lower = max(1, occurrenceNumber)
+        return Array(lower...(lower + endCountChoiceSpan - 1))
+    }
+
+    /// How many counts `endCountChoices(from:)` offers.
+    static let endCountChoiceSpan = 60
 
     /// The day a fresh `.onDate` selection is seeded with. Selecting the mode has to store a real
     /// key: an empty one degrades straight back to `.never`.
@@ -129,6 +140,23 @@ nonisolated enum CadenceTaskRecurrenceEndPresentation {
     /// disabled the limit.
     static func normalizedEndCount(_ raw: Int) -> Int {
         max(1, raw)
+    }
+
+    /// **T-6114:** what an editor's After count *displays and seeds* on a task whose current
+    /// occurrence is `occurrenceNumber`: the stored-or-seeded count, floored at that occurrence.
+    ///
+    /// Without the floor a task on its 15th occurrence picks up the flat seed of 10, reads
+    /// "15 of 10", and its next completion silently ends the series. The floor alone still seeds
+    /// `occurrenceNumber` past the seed (so that next completion still ends the series); what the
+    /// seed itself should be is an owner decision, which is why `seededEndCount` is untouched.
+    static func resolvedEndCount(_ stored: Int, occurrenceNumber: Int) -> Int {
+        max(resolvedEndCount(stored), occurrenceNumber)
+    }
+
+    /// **T-6114:** what an editor's After count may *write*: `normalizedEndCount`, floored at the
+    /// task's current occurrence number, so a typed or picked count cannot fall below it.
+    static func normalizedEndCount(_ raw: Int, occurrenceNumber: Int) -> Int {
+        max(normalizedEndCount(raw), occurrenceNumber)
     }
 
     /// The schedule capture card's "after N" stepper title. **T-4980:** it typed

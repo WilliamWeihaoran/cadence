@@ -129,7 +129,7 @@ struct iOSTaskFieldListSection: View {
     private var endCountRow: some View {
         iOSEditorFieldRow(label: "Occurrences", systemImage: "number", color: Theme.dim) {
             iOSChoiceValueButton(
-                title: "\(CadenceTaskRecurrenceEndPresentation.resolvedEndCount(draft.seriesEndCount))",
+                title: "\(CadenceTaskRecurrenceEndPresentation.resolvedEndCount(draft.seriesEndCount, occurrenceNumber: draft.seriesOccurrenceNumber))",
                 color: Theme.text,
                 minHeight: 44
             ) {
@@ -137,7 +137,7 @@ struct iOSTaskFieldListSection: View {
             }
             .popover(isPresented: $showEndCountPicker) {
                 iOSChoicePopoverList(
-                    rows: CadenceTaskRecurrenceEndPresentation.endCountChoices.map { count in
+                    rows: CadenceTaskRecurrenceEndPresentation.endCountChoices(from: draft.seriesOccurrenceNumber).map { count in
                         iOSChoiceRow(value: count, title: "\(count)", color: Theme.blue)
                     },
                     selection: endCountSelection,
@@ -166,7 +166,7 @@ struct iOSTaskFieldListSection: View {
                         : draft.seriesEndDateKey
                     setEnd(mode, key, 0)
                 case .count:
-                    setEnd(mode, "", CadenceTaskRecurrenceEndPresentation.resolvedEndCount(draft.seriesEndCount))
+                    setEnd(mode, "", CadenceTaskRecurrenceEndPresentation.resolvedEndCount(draft.seriesEndCount, occurrenceNumber: draft.seriesOccurrenceNumber))
                 }
             }
         )
@@ -181,8 +181,8 @@ struct iOSTaskFieldListSection: View {
 
     private var endCountSelection: Binding<Int> {
         Binding(
-            get: { CadenceTaskRecurrenceEndPresentation.resolvedEndCount(draft.seriesEndCount) },
-            set: { setEnd(.afterCount, "", CadenceTaskRecurrenceEndPresentation.normalizedEndCount($0)) }
+            get: { CadenceTaskRecurrenceEndPresentation.resolvedEndCount(draft.seriesEndCount, occurrenceNumber: draft.seriesOccurrenceNumber) },
+            set: { setEnd(.afterCount, "", $0) }
         )
     }
 
@@ -192,7 +192,9 @@ struct iOSTaskFieldListSection: View {
     private func setEnd(_ mode: TaskRecurrenceEndMode, _ dateKey: String, _ count: Int) {
         draft.seriesEndMode = mode
         draft.seriesEndDateKey = mode == .onDate ? dateKey : ""
-        draft.seriesEndCount = mode == .afterCount ? CadenceTaskRecurrenceEndPresentation.normalizedEndCount(count) : 0
+        draft.seriesEndCount = mode == .afterCount
+            ? CadenceTaskRecurrenceEndPresentation.normalizedEndCount(count, occurrenceNumber: draft.seriesOccurrenceNumber)
+            : 0
     }
 
     // MARK: - Logged

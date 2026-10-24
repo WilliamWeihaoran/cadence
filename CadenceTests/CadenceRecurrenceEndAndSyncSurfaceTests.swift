@@ -504,9 +504,66 @@ struct CadenceRecurrenceEndSurfaceTests {
         #expect(CadenceTaskRecurrenceEndPresentation.normalizedEndCount(7) == 7)
 
         // The offered list has to contain both ends of that story: the honest minimum and the seed.
-        #expect(CadenceTaskRecurrenceEndPresentation.endCountChoices.first == 1)
-        #expect(CadenceTaskRecurrenceEndPresentation.endCountChoices.contains(10))
-        #expect(CadenceTaskRecurrenceEndPresentation.endCountChoices == Array(1...60))
+        #expect(CadenceTaskRecurrenceEndPresentation.endCountChoices(from: 1).first == 1)
+        #expect(CadenceTaskRecurrenceEndPresentation.endCountChoices(from: 1).contains(10))
+        #expect(CadenceTaskRecurrenceEndPresentation.endCountChoices(from: 1) == Array(1...60))
+    }
+
+    // MARK: - T-6114: the After count floors at the current occurrence
+
+    /// A task on its 15th occurrence picking Ends -> After used to seed the flat 10, read
+    /// "15 of 10", and end the series on its next completion. The floor is the occurrence number;
+    /// the seed itself (10) is an owner decision and is deliberately unchanged.
+    @Test func theAfterCountNeverResolvesBelowTheCurrentOccurrence() {
+        // Unconfigured past the seed: the floor wins (15, not 10).
+        #expect(CadenceTaskRecurrenceEndPresentation.resolvedEndCount(0, occurrenceNumber: 15) == 15)
+        // A stored count below the occurrence is lifted to it.
+        #expect(CadenceTaskRecurrenceEndPresentation.resolvedEndCount(10, occurrenceNumber: 15) == 15)
+        // Below the seed, nothing changes: the seed and a stored count both stand.
+        #expect(CadenceTaskRecurrenceEndPresentation.resolvedEndCount(0, occurrenceNumber: 3) == 10)
+        #expect(CadenceTaskRecurrenceEndPresentation.resolvedEndCount(20, occurrenceNumber: 15) == 20)
+        #expect(CadenceTaskRecurrenceEndPresentation.resolvedEndCount(4, occurrenceNumber: 1) == 4)
+
+        #expect(CadenceTaskRecurrenceEndPresentation.normalizedEndCount(3, occurrenceNumber: 15) == 15)
+        #expect(CadenceTaskRecurrenceEndPresentation.normalizedEndCount(0, occurrenceNumber: 1) == 1)
+        #expect(CadenceTaskRecurrenceEndPresentation.normalizedEndCount(22, occurrenceNumber: 15) == 22)
+
+        // The summary an editor shows after picking After can no longer read "N of M" with M < N.
+        let seeded = CadenceTaskRecurrenceEndPresentation.resolvedEndCount(0, occurrenceNumber: 15)
+        #expect(
+            CadenceTaskRecurrenceEndPresentation.summary(
+                mode: .afterCount, endDateKey: "", occurrenceNumber: 15, endCount: seeded
+            ) == "15 of 15"
+        )
+        #expect(CadenceTaskRecurrenceEndPresentation.seededEndCount == 10, "the seed is the owner's call")
+    }
+
+    @Test func theCountChoicesStartAtTheCurrentOccurrence() {
+        let choices = CadenceTaskRecurrenceEndPresentation.endCountChoices(from: 15)
+        #expect(choices.first == 15)
+        #expect(!choices.contains(14))
+        #expect(choices.count == CadenceTaskRecurrenceEndPresentation.endCountChoiceSpan)
+        #expect(choices == Array(15...74))
+        // A nonsense occurrence number still offers the honest minimum, never zero.
+        #expect(CadenceTaskRecurrenceEndPresentation.endCountChoices(from: 0).first == 1)
+    }
+
+    /// The helper is worth nothing if an editor still calls the unfloored one. Every After-count
+    /// resolve / clamp in the two editors passes the occurrence number; the one exception is
+    /// macOS's `selectEnd`, whose only caller is the picker panel that has already floored.
+    @Test func bothEditorsFloorTheAfterCountAtTheOccurrence() throws {
+        let floored = #"(resolvedEndCount|normalizedEndCount)\([^\n]*occurrenceNumber:"#
+        let unfloored = #"(resolvedEndCount|normalizedEndCount)\((?![^\n]*occurrenceNumber:)"#
+        let ios = try strippingComments(sourceFile("Cadence/iOS/iOSTaskDetailSheetSections.swift"))
+        let mac = try strippingComments(sourceFile("Cadence/macOS/Views/TaskInspectorWorkflowSupportViews.swift"))
+
+        #expect(CadenceSourceScan.matchCount(floored, in: ios) == 4)
+        #expect(CadenceSourceScan.matchCount(unfloored, in: ios) == 0)
+        #expect(CadenceSourceScan.matchCount(#"endCountChoices\(from: draft\.seriesOccurrenceNumber\)"#, in: ios) == 1)
+
+        #expect(CadenceSourceScan.matchCount(floored, in: mac) == 2)
+        #expect(CadenceSourceScan.matchCount(unfloored, in: mac) == 1)
+        #expect(CadenceSourceScan.matchCount(#"occurrenceNumber: task\.recurrenceOccurrenceNumber"#, in: mac) == 2)
     }
 
     @Test func theSeededEndDateIsAMonthOutAndParses() throws {

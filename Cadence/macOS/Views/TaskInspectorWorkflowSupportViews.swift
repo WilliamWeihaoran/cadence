@@ -49,6 +49,7 @@ struct TaskInspectorRecurrenceControl: View {
                 endMode: task.effectiveRecurrenceEndMode,
                 endDateKey: task.recurrenceEndDate,
                 endCount: task.recurrenceEndCount,
+                occurrenceNumber: task.recurrenceOccurrenceNumber,
                 // A task that isn't in a series has no siblings to spill onto, so there is no
                 // scope question to ask and the row stays hidden.
                 showsScope: task.isRecurrenceSeriesMember,
@@ -205,6 +206,9 @@ private struct TaskRecurrencePickerPanel: View {
     let endMode: TaskRecurrenceEndMode
     let endDateKey: String
     let endCount: Int
+    /// T-6114: the floor for the After count — a count below the occurrence already reached
+    /// cannot be honoured.
+    let occurrenceNumber: Int
     let showsScope: Bool
     let onSelectRule: (TaskRecurrenceRule, CadenceTaskRecurrenceEditScope) -> Void
     let onSelectEnd: (TaskRecurrenceEndMode, String, Int, CadenceTaskRecurrenceEditScope) -> Void
@@ -279,7 +283,7 @@ private struct TaskRecurrencePickerPanel: View {
         }
         .onChange(of: endCount) { _, newValue in
             guard !countFocused else { return }
-            countText = String(max(1, newValue))
+            countText = String(resolvedCount(for: newValue))
             countTextAtFocus = countText
         }
         .onDisappear { commitCount(force: false) }
@@ -517,16 +521,21 @@ private struct TaskRecurrencePickerPanel: View {
     /// floor — are `CadenceTaskRecurrenceEndPresentation`'s, so iOS's stepper starts where this
     /// field does.
     private var resolvedCount: Int {
-        CadenceTaskRecurrenceEndPresentation.resolvedEndCount(endCount)
+        resolvedCount(for: endCount)
+    }
+
+    /// T-6114: floored at the current occurrence number, so a task on its 15th occurrence never
+    /// reads "15 of 10" or seeds a count its next completion would end the series on.
+    private func resolvedCount(for stored: Int) -> Int {
+        CadenceTaskRecurrenceEndPresentation.resolvedEndCount(stored, occurrenceNumber: occurrenceNumber)
     }
 
     /// `force` is Enter — an unambiguous "use this number", which also selects `.afterCount` if it
     /// wasn't already the mode. A blur or a closing popover only commits when the text actually
     /// changed while focused.
     private func commitCount(force: Bool) {
-        let parsed = CadenceTaskRecurrenceEndPresentation.normalizedEndCount(
-            Int(countText.filter(\.isNumber)) ?? resolvedCount
-        )
+        let typed = Int(countText.filter(\.isNumber)) ?? resolvedCount
+        let parsed = CadenceTaskRecurrenceEndPresentation.normalizedEndCount(typed, occurrenceNumber: occurrenceNumber)
         let normalized = String(parsed)
         let textChanged = countText != countTextAtFocus
         if countText != normalized { countText = normalized }
