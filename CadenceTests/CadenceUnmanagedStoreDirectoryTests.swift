@@ -636,7 +636,7 @@ struct CadenceUnmanagedStoreDirectoryTests {
             "dataSafetySection did not read as itself"
         )
         let resetAt = try #require(
-            dataSafety.range(of: "iOSDataResetSettingsSection()"),
+            dataSafety.range(of: "iOSDataResetSettingsSection("),  // takes `onDidReset` since T-5807
             "the iOS Data Safety page no longer presents the reset at all"
         )
         let listAt = try #require(

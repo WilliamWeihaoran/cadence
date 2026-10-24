@@ -671,7 +671,8 @@ struct CadenceArchiveImportEntryPointTests {
         let mac = try CadenceSourceScan.sourceFile("Cadence/macOS/Views/SettingsDataSafetySection.swift")
         #expect(mac.contains("struct SettingsDataSafetySection"), "non-vacuity: wrong file")
         let phone = try CadenceSourceScan.sourceFile("Cadence/iOS/iOSSettingsView.swift")
-        #expect(phone.contains("iOSDataResetSettingsSection()"), "non-vacuity: wrong file")
+        // `(` not `()`: T-5807 (`67e1595d`) hands the reset an `onDidReset` closure.
+        #expect(phone.contains("iOSDataResetSettingsSection("), "non-vacuity: wrong file")
 
         // Comments are stripped before counting, so a mount named only in prose — a tombstone
         // paragraph, a "see also", a commented-out call — is not read as a mount.

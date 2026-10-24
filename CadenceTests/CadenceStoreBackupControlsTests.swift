@@ -265,7 +265,8 @@ struct CadenceStoreBackupControlsTests {
         #expect(count("deleteRetainedUnrestoredOriginals") == 0)
 
         let settings = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile("Cadence/iOS/iOSSettingsView.swift"))
-        #expect(settings.components(separatedBy: "iOSStoreBackupSettingsSection()").count - 1 == 1)
+        // Mounted exactly once. `(` not `()`: T-5807 (`67e1595d`) hands it the reset generation.
+        #expect(settings.components(separatedBy: "iOSStoreBackupSettingsSection(").count - 1 == 1)
     }
 
     /// `forThisLaunch()` is the only place the controls learn where the real store is, and it asks

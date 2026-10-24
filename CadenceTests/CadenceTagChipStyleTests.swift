@@ -465,6 +465,9 @@ struct CadenceTagChipScaleTests {
         let undeclaredControls: Set<String> = [
             "Cadence/Shared/Components/HabitProgressViews.swift",
             "Cadence/iOS/iOSAINoteActionsViews.swift",
+            // [[T-5954]]: the Calendar page's access notice bar draws an `iOSIconTile` and a
+            // compact `iOSActionButton`. It declares no scope of its own and reads the page's.
+            "Cadence/iOS/iOSCalendarChromeViews.swift",
             "Cadence/iOS/iOSCalendarSettingsSection.swift",
             "Cadence/iOS/iOSDataExportSettingsSection.swift",
             "Cadence/iOS/iOSFeatureComponents.swift",
