@@ -43,6 +43,7 @@ struct macOSRootView: View {
     @Environment(DeleteConfirmationManager.self) private var deleteConfirmationManager
     @Environment(HoveredTaskDatePickerManager.self) private var hoveredTaskDatePickerManager
     @Environment(TaskCreationManager.self) private var taskCreationManager
+    @Environment(TaskInspectorPresentationManager.self) private var taskInspectorPresentationManager
     @Environment(CalendarManager.self) private var calendarManager
     @Environment(TodayTimelineFocusManager.self) private var todayTimelineFocusManager
     @Environment(GlobalSearchManager.self) private var globalSearchManager
@@ -289,7 +290,8 @@ struct macOSRootView: View {
             calendarNavigationManager: calendarNavigationManager,
             clearAppEditingFocus: clearAppEditingFocus,
             setSelection: { selection = $0 },
-            presentTaskCreation: { taskCreationManager.present() }
+            presentTaskCreation: { taskCreationManager.present() },
+            presentTaskInspector: { taskInspectorPresentationManager.present(taskID: $0) }
         )
     }
 

@@ -120,17 +120,13 @@ enum RootCommandActionSupport {
         case .project(let id):
             context.setSelection(.project(id))
         case .task(let id):
-            let descriptor = FetchDescriptor<AppTask>()
-            guard let task = (try? context.modelContext.fetch(descriptor))?.first(where: { $0.id == id }) else { break }
-            if let project = task.project {
-                context.listNavigationManager.open(projectID: project.id, page: .tasks)
-                context.setSelection(.project(project.id))
-            } else if let area = task.area {
-                context.listNavigationManager.open(areaID: area.id, page: .tasks)
-                context.setSelection(.area(area.id))
-            } else {
-                context.setSelection(.inbox)
-            }
+            handleTaskSelection(
+                id,
+                modelContext: context.modelContext,
+                listNavigationManager: context.listNavigationManager,
+                setSelection: context.setSelection,
+                presentTaskInspector: context.presentTaskInspector
+            )
         case .event(let eventID):
             // The whole fetched window, not `searchEvents(matching: "")` — an empty query means
             // "what is coming up" and drops everything that has already ended, while search itself
@@ -162,6 +158,42 @@ enum RootCommandActionSupport {
         }
 
         context.globalSearchManager.dismiss()
+    }
+
+    /// **[[T-5300]] — picking a task in Cmd+K opens that task, not just its list.**
+    ///
+    /// It used to open the list and stop: no scroll, no highlight, and with the include-completed
+    /// search setting on a finished result landed inside a Completed group that `ListTasksView`
+    /// collapses on appear, so the row picked was not on screen at all. iOS has always opened the
+    /// task itself (`iOSSearchView` sets `selectedTask` and presents `iOSTaskInspectorSheet`).
+    ///
+    /// **The owner chose the inspector over a scroll-and-reveal**: the Mac already has
+    /// `TaskDetailPopover`, iOS already opens the task, and a reveal would have had to reach into
+    /// every list page's scroll position and un-fold its Completed tier. The list still opens
+    /// behind it — the context is free and the inspector does not depend on it arriving.
+    ///
+    /// Split out of `handleSearchSelection` with its four dependencies named rather than the whole
+    /// `RootSearchSelectionContext`, so the arm can be called from a test: the context carries a
+    /// `CalendarManager`, which owns a real `EKEventStore`, and nothing in this arm wants one.
+    static func handleTaskSelection(
+        _ id: UUID,
+        modelContext: ModelContext,
+        listNavigationManager: ListNavigationManager,
+        setSelection: (SidebarItem) -> Void,
+        presentTaskInspector: (UUID) -> Void
+    ) {
+        let descriptor = FetchDescriptor<AppTask>()
+        guard let task = (try? modelContext.fetch(descriptor))?.first(where: { $0.id == id }) else { return }
+        if let project = task.project {
+            listNavigationManager.open(projectID: project.id, page: .tasks)
+            setSelection(.project(project.id))
+        } else if let area = task.area {
+            listNavigationManager.open(areaID: area.id, page: .tasks)
+            setSelection(.area(area.id))
+        } else {
+            setSelection(.inbox)
+        }
+        presentTaskInspector(task.id)
     }
 
     /// A list document opens in its list's Documents tab with the document selected ([[T-3084]]),

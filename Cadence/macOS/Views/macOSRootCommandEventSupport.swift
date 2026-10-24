@@ -197,6 +197,10 @@ enum RootCommandEventSupport {
             _ = RootCommandActionSupport.handleCancellation(context: context)
             return nil
         case 45:
+            // T-5953: the Kanban arm stays first — over a column Cmd+N makes a card *in that
+            // column*. Handing the key on no longer reaches SwiftUI's File ▸ New Window: the
+            // `.newItem` group is replaced by `macOSRootMenuCommands`, whose New Task item owns
+            // Cmd+N, so the fall-through is New Task rather than a second window.
             if context.hoveredKanbanColumnManager.triggerCreateTask() { return nil }
             return event
         case 42:

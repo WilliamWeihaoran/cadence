@@ -18,6 +18,15 @@ struct CadenceForegroundNotificationSnapshot {
     }
 }
 
+/// The identifier the app's one `WindowGroup` carries, so macOS's "New Window" item has a scene
+/// to open ([[T-5953]]).
+///
+/// Declared here rather than beside that menu because the `Scene` is cross-platform and
+/// `SceneBuilder` has no `#if` to hide an argument behind; the menu itself is macOS-only.
+nonisolated enum CadenceWindowGroupID {
+    static let main = "cadence-main"
+}
+
 @main
 struct CadenceApp: App {
     // Optional since T-817: `PersistenceController.shared.container` is `nil` when the CloudKit
@@ -76,7 +85,7 @@ struct CadenceApp: App {
         // "wrong-but-running app" this launch already refused to be.
         // `CadenceTerminalRecoveryView` asks for no `.modelContainer` at all — it opens its own,
         // read-only, only if the user asks it to try.
-        WindowGroup {
+        WindowGroup(id: CadenceWindowGroupID.main) {
             if let sharedModelContainer {
 #if os(macOS)
                 macOSRootView()
@@ -96,6 +105,7 @@ struct CadenceApp: App {
                     .environment(TaskCompletionAnimationManager.shared)
                     .environment(SectionCompletionAnimationManager.shared)
                     .environment(TaskCreationManager.shared)
+                    .environment(TaskInspectorPresentationManager.shared)
                     .environment(TodayTimelineFocusManager.shared)
                     .environment(GlobalSearchManager.shared)
                     .environment(ListNavigationManager.shared)
@@ -156,6 +166,11 @@ struct CadenceApp: App {
         .defaultAppStorage(CadenceDefaults.store)
 #if os(macOS)
         .windowStyle(.hiddenTitleBar)
+        // T-5953. The app's only `.commands`, and the reason it exists: with none, an unclaimed
+        // Cmd+N reached SwiftUI's File ▸ New Window, and every overlay above is driven by a
+        // `.shared` manager injected once, so a second window drew the New Task panel, Cmd+K and
+        // the delete confirmation twice — over one SwiftData store with two writers on it.
+        .commands { macOSRootMenuCommands() }
 #endif
     }
 }

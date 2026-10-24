@@ -434,6 +434,7 @@ struct macOSRootOverlayStack: View {
         SuccessToastLayerView()
         DeleteConfirmationLayerView()
         DatePickerLayerView()
+        TaskInspectorLayerView()
         GlobalSearchLayerView(onSelect: handleSearchSelection)
     }
 }

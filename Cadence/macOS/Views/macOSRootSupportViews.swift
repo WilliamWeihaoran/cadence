@@ -474,6 +474,51 @@ struct DatePickerLayerView: View {
     }
 }
 
+/// **[[T-5300]] — the inspector for a task picked in Cmd+K.**
+///
+/// `.popover` rather than a scrim-and-panel overlay, and the anchor is a 1pt clear rectangle this
+/// stack keeps in the middle of the shell. Two reasons it is a real popover: the component is
+/// `TaskDetailPopover` and every other host presents it that way, and its own Cancel button calls
+/// `@Environment(\.dismiss)` — outside a presentation that action does nothing, so a hand-rolled
+/// overlay would have shipped a Cancel button that does not cancel. The popover also gives Escape
+/// and click-away for free, and `isPresented`'s setter is what clears the manager when either
+/// happens.
+///
+/// The anchor is drawn unconditionally, and not inside the `if` the other layers use: SwiftUI has
+/// to have the anchor view before `isPresented` turns true, and a view that arrives in the same
+/// transaction as the flag has nothing to point at.
+struct TaskInspectorLayerView: View {
+    @Environment(TaskInspectorPresentationManager.self) private var taskInspectorPresentationManager
+    @Environment(\.modelContext) private var modelContext
+
+    var body: some View {
+        Color.clear
+            .frame(width: 1, height: 1)
+            .allowsHitTesting(false)
+            .popover(isPresented: isPresented, attachmentAnchor: .rect(.bounds), arrowEdge: .bottom) {
+                if let task = requestedTask {
+                    TaskDetailPopover(task: task)
+                }
+            }
+            .zIndex(22)
+    }
+
+    /// Reads through to the task, not merely to the id: a task deleted between the keystroke and
+    /// the Return resolves to nothing, and an empty popover is worse than none.
+    private var isPresented: Binding<Bool> {
+        Binding(
+            get: { requestedTask != nil },
+            set: { if !$0 { taskInspectorPresentationManager.dismiss() } }
+        )
+    }
+
+    private var requestedTask: AppTask? {
+        guard let id = taskInspectorPresentationManager.requestedTaskID else { return nil }
+        let descriptor = FetchDescriptor<AppTask>(predicate: #Predicate { $0.id == id })
+        return (try? modelContext.fetch(descriptor))?.first
+    }
+}
+
 struct GlobalSearchLayerView: View {
     @Environment(GlobalSearchManager.self) private var globalSearchManager
     let onSelect: (GlobalSearchResult) -> Void

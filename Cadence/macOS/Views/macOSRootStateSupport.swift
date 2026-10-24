@@ -107,7 +107,8 @@ enum macOSRootStateSupport {
         calendarNavigationManager: CalendarNavigationManager,
         clearAppEditingFocus: @escaping () -> Void,
         setSelection: @escaping (SidebarItem) -> Void,
-        presentTaskCreation: @escaping () -> Void
+        presentTaskCreation: @escaping () -> Void,
+        presentTaskInspector: @escaping (UUID) -> Void
     ) -> RootSearchSelectionContext {
         RootSearchSelectionContext(
             modelContext: modelContext,
@@ -118,7 +119,8 @@ enum macOSRootStateSupport {
             calendarNavigationManager: calendarNavigationManager,
             clearAppEditingFocus: clearAppEditingFocus,
             setSelection: setSelection,
-            presentTaskCreation: presentTaskCreation
+            presentTaskCreation: presentTaskCreation,
+            presentTaskInspector: presentTaskInspector
         )
     }
 }

@@ -34,6 +34,9 @@ struct RootSearchSelectionContext {
     let clearAppEditingFocus: () -> Void
     let setSelection: (SidebarItem) -> Void
     let presentTaskCreation: () -> Void
+    /// [[T-5300]] — raises `TaskDetailPopover` for a task picked in Cmd+K, which has no row on
+    /// screen to attach a popover to.
+    let presentTaskInspector: (UUID) -> Void
 }
 
 enum RootCommandHandler {
