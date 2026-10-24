@@ -354,6 +354,19 @@ struct MonthDayCell: View {
     var rowHeight: CGFloat = CalendarMonthGridMetrics.cellHeight
 
     @Environment(CalendarManager.self) private var calendarManager
+    /// T-5351. What "open this day" is on the Mac. There is **no Day view mode** here —
+    /// `CadenceCalendarViewMode` has `week`, `twoWeeks` and `month`, and the toolbar picker offers
+    /// only Week and Month — so the ticket's "opens that day in Day view" resolves to the one thing
+    /// this app means by opening a day: leave the grid for the timeline and scroll that day's
+    /// column under the cursor, which is exactly what a calendar deep link and the widget already
+    /// do. `CalendarPageView.applyExternalCalendarJump` takes the request.
+    @Environment(CalendarNavigationManager.self) private var calendarNavigationManager
+    @Environment(\.modelContext) private var modelContext
+
+    /// A card released over this cell, for the dashed ring. Chips drag since this entry's own
+    /// first half; before this one there was nothing on the grid that would take the drop, so a
+    /// user could pick a task up with nowhere to put it down.
+    @State private var isDropTargeted = false
 
     private let cal = Calendar.current
 
@@ -431,6 +444,12 @@ struct MonthDayCell: View {
                         .foregroundStyle(Theme.dim)
                         .padding(.horizontal, 5)
                         .frame(height: CalendarMonthCellLayout.chipHeight, alignment: .center)
+                        // Its own target rather than only the cell's, so the one row that exists
+                        // *because* the day has more than it can show is the row that takes you to
+                        // the day. Same action; stated here so it cannot be lost to a future
+                        // layout change that stops the cell's own tap reaching this strip.
+                        .contentShape(Rectangle())
+                        .onTapGesture { openDay() }
                 }
             }
             .padding(.horizontal, 6)
@@ -463,6 +482,84 @@ struct MonthDayCell: View {
                 .fill(Theme.borderSubtle.opacity(CalendarVisualStyle.gridRuleOpacity))
                 .frame(height: 0.5)
         }
+        // After the plate and the rules, so the whole cell is hit-testable including its empty
+        // lower half. The chips keep their own taps: an inner gesture wins over this one, so a
+        // click on a task chip still opens its inspector rather than leaving the grid.
+        .contentShape(Rectangle())
+        .onTapGesture { openDay() }
+        .dropDestination(for: String.self) { items, _ in
+            handleTaskDrop(items)
+        } isTargeted: { targeted in
+            isDropTargeted = targeted
+        }
+        .overlay {
+            if isDropTargeted {
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .strokeBorder(Theme.blue.opacity(0.72), style: StrokeStyle(lineWidth: 1.25, dash: [5, 4]))
+                    .padding(2)
+            }
+        }
+    }
+
+    /// T-5351. See `calendarNavigationManager` above for why this is a timeline jump rather than a
+    /// Day mode: the Mac has no Day mode to switch to.
+    private func openDay() {
+        // `open(dateKey:)` and not `open(date:)`: a month cell's `date` is a start of day, so
+        // passing it would hand the jump hour 0 and land every click on the top of the column.
+        // The default `now` is the user's clock, which is the row they are already thinking in.
+        calendarNavigationManager.open(dateKey: dateKey)
+    }
+
+    private func handleTaskDrop(_ items: [String]) -> Bool {
+        CalendarMonthDayDropSupport.drop(
+            items,
+            on: dateKey,
+            in: allTasks,
+            modelContext: modelContext
+        ) == .applied
+    }
+}
+
+/// T-5351. **A task card released on a Month day cell, rescheduled onto that day.**
+///
+/// The Month chips have clicked and dragged since this entry's first half landed, and no day on
+/// the grid took the drop — so the user could pick a task up with nowhere to put it down. That
+/// asymmetry is what the owner chose option (a) to close.
+///
+/// It resolves the payload and then hands off to `CalendarPageBoardDropSupport.schedule`, the
+/// Calendar Board day column's own handler, rather than writing a date here: one definition of what
+/// dropping a task on a day means, so the grid cannot drift from the board on the
+/// `CalendarBoardPlannerSupport` action, the detach from a bundle, the materialised
+/// `estimatedMinutes`, or the undo on a refused commit ([[T-1980]]).
+///
+/// Resolution happens before anything is written, for `CalendarPageBoardDropSupport`'s reason: a
+/// payload this grid cannot place must not reach `commit` at all, or a drop that moved no field
+/// would commit whatever unrelated pending work the app's single `ModelContext` is holding.
+///
+/// A refusal answers `.refused`, which the cell reports as `false`, so the card springs back to
+/// where it was picked up instead of being drawn somewhere the store never accepted ([[T-566]],
+/// [[T-1952]]). The month grid has no notice slot to say *why* — the board has one and this does
+/// not; that gap is [[T-6211]].
+@MainActor
+enum CalendarMonthDayDropSupport {
+    static func drop(
+        _ items: [String],
+        on dateKey: String,
+        in allTasks: [AppTask],
+        modelContext: ModelContext,
+        reconciler: CadenceWindDownReconciler? = nil,
+        commit: (ModelContext) throws -> Void = { try $0.save() }
+    ) -> TasksPanelDropOutcome {
+        guard let payload = items.first,
+              let taskID = TaskDragPayload.taskID(from: payload),
+              let task = allTasks.first(where: { $0.id == taskID }) else { return .resolvedNothing }
+        return CalendarPageBoardDropSupport.schedule(
+            task,
+            on: dateKey,
+            modelContext: modelContext,
+            reconciler: reconciler,
+            commit: commit
+        )
     }
 }
 
