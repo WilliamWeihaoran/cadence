@@ -1,220 +1,208 @@
 # Decisions waiting on you
 
-Six tickets were blocked on a product decision, not on work. Each has options, costs, what the
-existing code already assumes, and a recommendation. Written 2026-08-30 against `5c5b124`, plus
-T-780 on 2026-09-04.
+Refreshed 2026-10-24 by agent `dec1138` against `165e74fe` ([[T-6091]]). Every item below is an
+OPEN/PARTIAL ticket whose remaining work is **your call**, re-checked against current source (not
+the ticket prose). None has been seen on screen.
 
-## **One is still waiting: T-481.** Status re-read from the ledger, 2026-10-20
+**How to answer:** reply with the ids and letters, e.g. `5953a 5302b 5357a …`, or `all defaults`.
+**Default** is the agent's recommendation; taking all of them is a coherent set. Size is the work
+once decided: XS < 1 h, S ≈ half a day, M ≈ a day. *Fence* = the file needs a Codex lease grant.
 
-Every section below is kept whole, because a decision's reasoning is what a future reader comes
-back for and because the answer is only legible beside the question it answered. What has changed
-is the status line at the head of each: six of the seven are closed, and this file was still asking
-for them.
-
-| | State | What happened |
-| --- | --- | --- |
-| **T-481** | **OPEN — yours** | one top-level suite per test file. Still undecided; T-1076 was reserved to carry the verdict and the verdict was never written into it |
-| T-352 | CLOSED `5ae916a` | recommendation *not* taken, and rightly: the premise inverted |
-| T-487 | CLOSED `53e223c` | recommendation taken — `.byDoDate` deleted |
-| T-489 | CLOSED `2a8a70a` | recommendation taken — swept app-wide |
-| T-491 | CLOSED `dcd110c` | recommendation taken — page-scoped scrim kept |
-| T-780 | CLOSED `hook4` | recommendation taken — hook landed inert; arming it is still one line and still yours |
-| T-497 | ANSWERED `ab9e513` | answered 2026-09-02; its section records the answer |
-
-Two of these were visual and **nobody had seen them on screen** when the recommendation was
-written — that is stated where it applies, and it is why one of the two is held loosely.
-
-**The second memo is also nearly spent.** `docs/DECISIONS_CALENDAR_LINKS_AND_LIST_DELETION.md`
-covered T-623, T-624, T-899 and T-1043; all four are closed. What survives it is **T-1117**, the
-five-minute test inside the app that was split out of T-624 so it stayed addressed to you. That
-and T-481 are the whole of what either memo still wants.
+Ranked by how visible the defect is (how often a user meets it × how bad it is).
 
 ---
 
-## T-352 — should the root destination persist? **CLOSED 2026-08-31 (`5ae916a`)**
+## A. Visible defects (ranked)
 
-> **Answered by inverting the premise, and no persistence was added.** The defect was never a
-> missing feature: it was the comment below, asserting a launch-restore mechanism that has never
-> existed — `@SceneStorage` appears in zero of the 300+ files under `Cadence/`. The comment was
-> rewritten with a tombstone naming the claim it replaced, and
-> `CadenceRootSelectionLaunchContractTests` pins the contract. The options below are kept because
-> they are what made "decline" a decision rather than an omission.
+**1. T-5953 — Mac: Cmd+N opens a second Cadence window.** Off a Kanban column, Cmd+N falls through
+to SwiftUI's File > New Window; Search, New Task and delete-confirm then draw in both windows.
+(`macOSRootCommandEventSupport.swift:199`; no `.commands` anywhere in `Cadence/`.)
+- a) Cmd+N = New Task everywhere; keep a "New Window" item with no shortcut (harness needs it).
+- b) Strip Cmd+N from New Window; Cmd+N does nothing off a column.
+- c) Leave.
+- **Default a** — it is what every user reaches for Cmd+N to do. **S**.
 
-The recommendation when this was written was *static destinations only*.
+**2. T-5302 — Mac quick-capture panel empties itself on click-away.** Clicking another app to copy
+a link closes the panel; reopening it is blank. (`QuickTaskPanelController.swift:121`, fresh host
+every open at `:48`.)
+- a) Don't close on resign-key while the form has content.
+- b) Close as now, but keep the draft and restore it on next open (clear on save/Esc).
+- c) Both.
+- **Default b** — panel still gets out of the way; nothing typed is lost. **S**. *Fence.*
 
-The comment at `macOSRootSupportViews.swift:720` describing "an `.inbox` selection restored at
-launch" is **wrong** — there is no restore path at all. Fix the comment whichever way you decide.
+**3. T-5357 — Mac inspector: "!" in a title silently resets priority.** Typing "Ship it!" in an
+existing task's title drops it to Low and strips the "!"; even click-in/out does it on titles
+ending in "!". iOS does not. (`SchedulePanelPopoverSupportViews.swift:106-108`.)
+- a) No "!" shortcuts when editing an existing title (match iOS: drop the `priority:` binding).
+- b) Keep shortcuts in the inspector.
+- **Default a** — a shortcut for capture, not for editing someone's text. **XS**. *Fence.*
+- **Probably moot:** `codex/subtasks-inspector` (being landed by `land1138` today) stops using
+  `TaskDetailHeaderSection` and draws the inspector title as plain `Text`. Answer only if the
+  editable title survives that landing.
 
-The app already persists everything *inside* a page (tasks scope, four sort/group keys, calendar
-zoom, remembered timeline hour and date, goals mode and scale, sidebar width) and nothing about
-*which* page. iPhone compact **does** persist its root; iPad regular does not. Same platform, two
-answers by width.
+**4. T-5300 — Mac Cmd+K: picking a task opens its list and stops.** No scroll, no highlight; a
+completed result lands inside the folded Completed group. iOS opens the task.
+(`macOSRootCommandActionSupport.swift:122`; `ListNavigationManager.Request` has no task id.)
+- a) Open the list, expand Completed if needed, scroll to and select the row.
+- b) Open the list and pop the task's inspector (`TaskDetailPopover`).
+- c) Leave.
+- **Default a** — reuses the existing deep-link reveal; keeps the user in context. **M**.
 
-- **Persist static destinations only** (Today, All Tasks, Inbox, Habits, Goals, Calendar, Notes,
-  Focus) — ~30 lines. Static destinations cannot go stale, so this needs no new invariant and no
-  interaction with the deletion machinery. **Recommended.**
-- Persist list ids too — needs `initial: true` on both `SidebarSelectionNormalizer` `onChange`
-  calls, or a restored id for a deleted list sails past it onto `MissingListDetailView`. Only worth
-  it if you actually want to relaunch into a project.
-- Decline — zero code, still needs the comment fixed.
+**5. T-5832(b) — Mac list "+ Section" does nothing visible under the default grouping.** Under By
+Date (the Mac default), None and By Priority, a new section is created but never drawn.
+(`ListDetailComponents.swift:141` draws the row under every grouping.)
+- a) Show "+ Section" only under By List.
+- b) Switch the tab to By List when a section is added.
+- c) Leave.
+- **Default a** — no control that appears to fail. **XS**.
 
-## T-481 — one top-level suite per test file? **STILL OPEN — this is the one** *(Recommend: adopt with the 33 allowlisted)*
+**6. T-5013 — Empty headers over nothing.** (a) Mac Calendar Board's Overdue rail shows "Overdue 0"
+over a ≥200pt empty column — its resting state for anyone who is caught up. (b) iOS Search with an
+empty query on a narrowed scope shows the picker over blank space.
+- a) Inline "Nothing overdue" (`CadenceInlineEmpty`, iOS vocabulary).
+- b) Collapse the rail to its strip when empty.
+- **Default a** — no layout jump when the count changes. Half (b) is decision-free (idle
+  `CadenceInlineEmpty`); do it with this. **XS + XS**.
 
-> The verdict was written once and never landed: `fa4b331` reserved T-1076 to carry it, T-1076 was
-> closed for something else, and the body was never written. So this is undecided rather than
-> decided-and-unfiled, and it is the only question in this file still addressed to you.
+**7. T-6001 — iPhone/iPad: a running Focus session dies with the app.** If iOS evicts or the user
+force-quits, the clock and unlogged minutes are gone. Mac banks on quit. (`iOSFocusView.swift:18`,
+only `.onDisappear` banks.)
+- a) Persist `{target, startedAt, accumulated}` and resume on next open.
+- b) Bank a partial log on `scenePhase == .background` and restart clean.
+- **Default a** — (b) would end the session every time the user glances at another app. **M**.
+  *Fence.*
 
-33 files hold 102 suites; 213 already obey the rule. It is a **ratchet, not detection** — measured
-incidence of the defect is zero, but the failure is invisible: a test in the wrong sibling suite
-means a scoped mutation run silently omits it, which reads as a survivor.
+**8. T-5882 — Mac: Cmd+K inside a note opens Search instead of inserting a link.** The editor's
+Cmd+K binding can never fire. (`macOSRootCommandEventSupport.swift:150`.)
+- a) Let Cmd+K reach an editable markdown view; Search stays Cmd+K everywhere else.
+- b) Keep Cmd+K = Search; move the link shortcut (e.g. Cmd+Shift+K).
+- c) Leave; delete the dead mapping.
+- **Default a** — Cmd+K = link is the universal editor convention. **XS**.
 
-Do **not** mass-split. `private` file scope is load-bearing across the target — `sourceFile` is
-declared privately in 31 files, `strippingComments` in 30, `repositoryRoot` in 29 — and 17 of the 33
-share helpers between their sibling suites. Make the allowlist fail when stale so it drains without
-anyone scheduling it.
+**9. T-5883 — Mac quick-capture hotkey is ⌃Space, unnamed anywhere.** It collides with macOS's
+"previous input source"; with two input sources it either never fires or hijacks switching, and a
+failed registration is only logged. (`GlobalHotKeyManager.swift:45-46`.)
+- a) Keep ⌃Space; name it in Settings and show when registration failed.
+- b) Change the default to ⌃⌥Space; name it + failure state in Settings.
+- c) Make it user-configurable.
+- **Default b** — avoids the system clash; (c) can follow post-RC. **S**.
 
-## T-487 — delete `TasksPanel`'s `.byDoDate` mode? **CLOSED 2026-08-31 (`53e223c`) — deleted**
+**10. T-5351 — Mac Month view: clicking a day or "+N more" does nothing; days refuse a dropped task.**
+Task chips now click/drag (landed); the cell does not. iOS month days are tappable.
+(`CalendarPageMonthSupportViews.swift:328`, `:429`.)
+- a) Click day / "+N more" opens that day in Day view; a day accepts a task drop (reschedules).
+- b) Click selects the day only; no drop.
+- c) Leave.
+- **Default a** — chips already drag, so a drop target is the expected end of that gesture. **S**.
 
-> Recommendation taken: `.byDoDate` deleted along with every branch, helper and view behind it.
+**11. T-6002 — iPhone: Settings → Sidebar Rows switches change nothing.** Hiding Calendar/Notes/Focus
+on a phone has no effect (tabs and More are fixed). (`iOSSidebarLayoutSettingsSection.swift:54`.)
+- a) On compact width list only the rows the phone honours (Today, All Tasks).
+- b) Keep all rows; caption the card "Applies to iPad and Mac sidebars".
+- **Default a** — controls that visibly do nothing read as bugs. **XS**. *Fence.*
 
-Confirmed unreachable: the only `.byDoDate` panel in the repo is in a test. It is not a *planned*
-All Tasks panel but a *replaced* one — All Tasks ships today via `TasksPageView`, a different view
-with controls `.byDoDate` does not have.
+**12. T-5174(b) — iOS creation sheets lose typed text on swipe-down.** New Task, New List, New
+Context and Calendar quick-create. Edit sheets already refuse a dirty swipe.
+- a) Refuse swipe while anything is typed (same guard as the edit sheets).
+- b) Ask "Discard new task?" on swipe.
+- c) Leave.
+- **Default a** — one rule for every sheet. Check each iPad presentation first (T-3240). **S**.
 
-It is not free: `TasksPanelDerivedState` computes `byDoDateBaseTasks` **and**
-`byDoDateBaseSortedTasks` unconditionally, so every Today render sorts the full open-task set and
-throws it away. It has already accumulated three pieces of wrong content — two retired strings and a
-button labelled "New task for today" that opens an unseeded composer — precisely because no
-reviewer could ever see it. Dropping the enum to one case makes the compiler do the migration.
+**13. T-5015(b) — Mac task row shows no "In Progress" or repeat mark; iOS does.**
+(`TasksPanelComponents.swift:6`; iOS `iOSTaskViews.swift:426`, `:459`.)
+- a) Add both chips to the Mac row.
+- b) Remove them from iOS.
+- c) Leave.
+- **Default a** — the Mac inspector now has Start/Stop; the row should show its result. **S**.
 
-If you want to keep the idea, delete the mode and file "should All Tasks get a do-date view?" as a
-product ticket.
+**14. T-5356 — iOS Week grid: all-day chips in the day header are untappable.** Timed blocks and the
+single-day strip open the editor (landed); header chips sit inside the select-day `Button`.
+- a) Chip tap opens the event; tap elsewhere in the header selects the day.
+- b) Header tap selects the day; long-press a chip to open it.
+- **Default a** — same gesture as every other event chip. **S**.
 
-## T-489 — `.stroke` → `.strokeBorder` app-wide? **CLOSED 2026-09-03 (`2a8a70a`) — swept**
+**15. T-5060(b) — iOS Focus notes: checklist circles look tappable and are disabled.**
+(`iOSFocusView.swift:494` passes only `onOpenReference`.) Mac Focus notes are editable.
+- a) Make checklist/embed toggles live (as in the task sheet).
+- b) Keep read-only; draw the checklist as non-interactive.
+- **Default a** — ticking items off during a session is the obvious use. **S**. *Fence.*
 
-> Recommendation taken: swept app-wide wherever the shape is a border, as its own commit.
+**16. T-5370 — Mac: a timed task can be dropped at 23:55 and drawn past midnight.** Events and iOS
+clamp by duration; Mac task moves clamp the start only. (`TimelineDropInteractionSupport.swift:134`.)
+- a) Clamp task moves by `estimatedMinutes`, like events and iOS.
+- b) Keep start-only clamp.
+- **Default a** — parity, and the block stays on the page. **XS**.
 
-> **Not seen on screen.** Derived from source and documented SwiftUI geometry.
+**17. T-5307 — iOS cannot rename, recolour or re-describe a tag.** Mac can (Settings, tag picker).
+Porting the rules is decision-free; you pick where the editor lives.
+- a) Inline row editor in Settings → Tags (mirrors Mac).
+- b) Edit sheet from the tag row.
+- **Default b** — a colour picker and text fields fit a sheet better on touch. **M**.
 
-Not a new decision — an unfinished one. The shared components already use `.strokeBorder`, and
-`CadenceSettingsWell`'s own doc names `.stroke` as the defect verbatim: *"straddles the edge, so the
-well is 1pt wider than it measures."* Scope is **78 border sites**, not the ticket's 28; the other 45
-`.stroke` uses are progress rings, `Path` dividers and chart lines where `.stroke` is correct.
+**18. T-5151(b) — Mac meeting-note sheet: clicking a `[[note]]` link does nothing.** Deliberate
+no-op pending this call. (`EventNoteSupportViews.swift:87`.)
+- a) Dismiss the sheet and open the note on the Notes page.
+- b) Swap the sheet's content to the linked note.
+- **Default a** — same route every other note link uses. **S**.
 
-What changes: **nothing reflows** (an overlay does not participate in layout). Each bordered
-control's *painted* extent shrinks 0.5pt per side. Borders stop rendering as two half-point bands of
-slightly different colour — most of these border colours are translucent — and read as one uniform
-hairline. Where two bordered controls sit flush, the gap grows 1pt.
+**19. T-5175 (tag half) — iOS task sheet: a tag typed but not added is dropped on popover dismiss.**
+Subtask half landed (Save adds it).
+- a) Add the typed tag when the popover dismisses.
+- b) Clear it on dismiss.
+- c) Accept.
+- **Default a** — matches the subtask rule already shipped. **XS**.
 
-Land it alone so disliking it is a one-commit revert.
+**20. T-2090 — iPhone All Tasks spends a whole row on Sort / Completed.** Measured: neither shape fits
+361pt without a new control.
+- a) Leave two rows.
+- b) Fold sort + completed into one icon menu in the header.
+- **Default a for RC** — chrome only, and (b) is a new control plus a state hoist across three views.
+  **M** if (b).
 
-## T-491 — should the iPad capture scrim cover the sidebar? **CLOSED 2026-09-06 (`dcd110c`) — page-scoped kept**
+**21. T-5561 — Mac Cmd+K: list documents rank below that list's tasks.** Discovery works; ranking
+only.
+- a) Leave (Notes section last).
+- b) List documents get their own section above Tasks.
+- c) Whole Notes section moves above Tasks.
+- **Default a** — nothing is broken, and (b)/(c) contradict your "not one section per kind". **XS**.
 
-> Recommendation taken, and the mechanism was verified rather than argued: `iPadMacStyleRootShell`
-> clips `detail()` and the iPad capture host is mounted per page inside that clip, while the
-> phone's is mounted on `iOSCompactRootShell`, which contains no `.clipped()` at all. The risk
-> named below — that it might simply read as a rendering bug — did not materialise.
+**22. T-5522 — "Sign in was canceled." vs "Cancelled" everywhere else.**
+- a) Change that one string to "cancelled".
+- b) Go US: "Canceled" at ~25 display sites; persisted raw value `cancelled` unchanged.
+- **Default b** — the app standardised on US spelling (T-5003). **S**.
 
-> **Not seen on screen**, and the recommendation is explicitly held loosely.
+## B. Rare, visible only on a data edge
 
-`Theme.scrim` is 34% black. On iPad it covers the detail column only, with a hard vertical edge at
-the divider; on iPhone it covers everything. The mechanism is `iPadMacStyleRootShell`'s `.clipped()`,
-which is load-bearing for a documented overflow bug, plus a `zIndex` the sidebar wins.
+**23. T-4910 — Restoring an archived context whose name is now taken makes a pair the next launch
+fuses.** (`iOSSettingsView.swift:536`, `SettingsView.swift:411`, MCP `update_context`.)
+- a) Refuse the restore with a message. b) Restore under "Name (2)".
+- **Default b** — the user cannot pick a name from a Restore button. **S**.
 
-The `+` is a page-corner control with page-local state by explicit design — `iOSFloatingCreateTaskLayer`
-holds its interaction per page so that only the page under the finger opens a composer, which is what
-replaced the old drop-coordinator routing. And the scrim is `.allowsHitTesting(false)` on **both**
-platforms, so it was never a barrier — the iPhone tab bar under its scrim is still tappable. Under
-the T-282 rule (placement may differ across widths, capability may not), this is placement.
+**24. T-3115(2) — Tags "C++", "C#" and "C" share slug `c` and merge.** (`TagSupport.swift:26-35`.)
+- a) Slug keeps `+`/`#` as words. b) Accept for v1.
+- **Default b** — slug is identity; changing it needs a migration, not an RC change. **M** if (a).
 
-**The risk, stated:** a 34% wash with a hard edge down a 1024pt screen may simply read as a rendering
-bug however defensible the reasoning. If it looks broken, take the full-window scrim — the argument
-above is a justification, not a preference, and should not survive contact with the screen.
+**25. T-4720 — Weekly/meeting notes still duplicate-merge on reset-then-import (daily is fixed).**
+- a) Extend the import alias to weekly notes (meeting needs its own key). b) Leave.
+- **Default a (weekly only)**. **S**.
 
-## T-780 — should a git hook refuse a bare `git commit` in this checkout? **CLOSED 2026-09-07 — landed inert**
+**26. T-5521 — MCP tool descriptions/errors say "colour" (12 strings).** Not in-app; wire-visible.
+- a) US-spell them. b) Keep.
+- **Default a** — pre-1.0, nothing pins those strings. **XS**.
 
-> The hook is tracked and executable and changes nothing until you type the one line at the foot
-> of this section. That was the answer: ship the code, leave the switch with you. Nothing further
-> is owed unless you want it armed.
+## C. Older, still open — owner actions rather than choices
 
-Added 2026-09-04. This one is about the agent tooling, not the product, and it is here because it
-would change **your** git behaviour in your own repository — so it is not an agent's call.
+- **T-4515** — you decided "look first": view Settings → Templates on the 11" iPad, docked
+  landscape. One column reads fine → close as intended; reads badly → trim 4pt.
+- **T-1117** — the five-minute EventKit check on your own Mac + iPhone
+  (`docs/DECISIONS_CALENDAR_LINKS_AND_LIST_DELETION.md`).
+- **T-780** — the bare-commit hook is landed inert; arming it is
+  `git config core.hooksPath .githooks`. Optional.
 
-**The problem.** `scripts/agent-commit.sh` is mandatory in prose only: it is a line in `AGENTS.md`
-and a section in the runbook. That is exactly the shape T-679 was filed about. `git add <specific
-paths>` was also prose, was also followed every time, and was also insufficient — the index is one
-object shared by every agent in the checkout, so a bare `git commit` still works and still sweeps a
-sibling's staged hunk into your commit. Nothing mechanical prevents it today.
+## Resolved since the last version (kept as one line each)
 
-**What a hook would do.** A tracked `.githooks/pre-commit`, with `core.hooksPath` pointed at it,
-that exits non-zero unless `CADENCE_ALLOW_BARE_COMMIT=1` is set. Measured in a throwaway repository
-on 2026-09-04:
-
-- a bare `git commit` is **refused**, from the repo root and from a subdirectory;
-- `git commit --amend` is **refused** too;
-- `agent-commit.sh` is **unaffected** — it commits by `write-tree`/`commit-tree`/`update-ref`, and
-  git runs no hooks for plumbing. This is the whole reason the hook can be strict;
-- `git commit --no-verify` **bypasses it**, by design and unfixably.
-
-`core.hooksPath` is already set explicitly in this checkout's `.git/config` (to the default
-`.git/hooks`), so this is a one-line change to a value that is already non-default.
-
-**What it costs you.** Every `git commit` and `git commit --amend` you type in this checkout is
-refused once, until you use `--no-verify` or set the variable. Measured 2026-09-07 with the hook
-armed in a throwaway repository: `merge --no-ff`, `cherry-pick`, `revert`, `rebase` and `stash` are
-all unaffected — only `git commit` runs `pre-commit`. **The one exception is a conflicted merge**,
-which you finish with a literal `git commit`, and which is therefore refused; `--no-verify` finishes
-it. Some GUI git clients pass `--no-verify` themselves and would notice nothing. The refusal
-message names both escapes, so the cost is one surprise, not a recurring one.
-
-**The part that is not solved by the hook.** `core.hooksPath` lives in `.git/config`, which is not
-tracked, so a fresh clone has no hook and nothing reminds anyone to install it — the same prose
-problem one level down. The fix is for the tools every agent already runs (`scripts/xcb.sh`,
-`scripts/agent-commit.sh`) to set `core.hooksPath` idempotently on each invocation, which costs one
-`git config` call. That is the part that makes the hook real rather than aspirational, and it is
-also the part that installs configuration into your repository without asking, which is why the
-whole thing is here.
-
-- **Install it, with both escapes named in the message** — the accident it stops (a swept sibling
-  hunk) has happened; the determination it does not stop has not. **Recommended.**
-- **Install it but gate on `CADENCE_AGENT_SESSION`**, so it only refuses when an agent session is
-  marked active. Costs you nothing at all, and protects nothing during the sessions where nobody
-  remembered to set the variable — which are the sessions where a bare `git commit` happens.
-- **Decline** — zero code. The rule stays prose, and the next sweep is a matter of when.
-
-**Status 2026-09-07: the hook is now in the repository, and it does nothing.** `.githooks/pre-commit`
-is tracked, executable, and tested (25/25 checks in its own `selftest`, pinned from Swift by
-`CadenceGuardScriptSelftestTests`, 4 of 4 mutations killed). Landing it changes **nothing** about
-your `git commit` until you decide, because `core.hooksPath` is untracked local config. So the
-decision above is now one line rather than a piece of work:
-
-```sh
-git config core.hooksPath .githooks     # arm it
-git config --unset core.hooksPath       # take it back off
-```
-
-Nothing else in the repository sets that value, and `AGENTS.md` and the subagent runbook both now
-tell agents in bold not to run it. That closes the "a fresh clone gets nothing" gap the only way
-that does not install configuration into your repository unasked: the hook ships with the code, and
-the one line that turns it on stays yours.
-
-## T-497 Tier 3 — what does undo mean for a field the user still has focus in? **ANSWERED**
-
-**Answered 2026-09-02. Decision: don't close, don't undo — just report.**
-
-> The edit is **in-place on an object the store already holds**, so there is nothing to un-insert.
-> Keep the surface open, keep what the user typed, show the failure inline, let them retry. The rule
-> is broken here only because closing **claims** it worked — stop claiming it, and the undo question
-> disappears.
-
-So the question had no answer because it was the wrong question: an undo here would restore the
-model out from under a live caret, deleting what the user typed in order to tell them it was not
-saved. Landed in `ab9e513` across all four sites — `iOSSearchSupportViews`,
-`iOSTaskDetailSheet.finishEditingAndDismiss` and `iOSMarkdownReferenceSupport` through the new
-`CadenceInPlaceEditFlush`, which commits and answers and touches nothing else (and which
-`CadenceTaskDateEditing.setPlanningDates` used too, because removing the sheet's literal `try?`
-exposed a swallow one frame below it — deleted by [[T-4467]] once the sheet's draft save left it
-caller-less); and
-`KanbanCardMetaSupportViews.select`, which was never blocked and keeps the ordinary
-`commitEdit(in:undo:)` repair because its popover holds no draft. Pinned by
-`CadenceInPlaceEditFlushCommitTests`. See [[T-497]] in `docs/TODO.md` for the closure.
+T-481 CLOSED declined (`7584c5f`, via T-1076) · T-352 `5ae916a` · T-487 `53e223c` · T-489 `2a8a70a` ·
+T-491 `dcd110c` · T-497 answered `ab9e513` · T-4501 decided 2026-10-22 (13" iPad low priority; no
+fix) · T-168 decided 2026-10-23 (Focus widget parked past RC) · T-5061's `.list` note link is no
+longer a decision: T-3084 added `ListNavigationManager.open(…, listNoteID:)`, so it is plain work
+(T-6092). Full reasoning for the closed ones is in this file's git history.
