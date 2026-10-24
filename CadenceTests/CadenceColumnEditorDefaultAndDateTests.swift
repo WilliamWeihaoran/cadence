@@ -69,7 +69,8 @@ struct CadenceColumnEditorDefaultAndDateTests {
         let clearButton = try #require(popover.range(of: "if editorHasDueDate {", range: call.upperBound..<popover.endIndex))
         let tail = String(popover[call.lowerBound..<clearButton.lowerBound])
 
-        #expect(tail.contains("placeholder: editorHasDueDate ? nil : \"No due date\""))
+        // The shared label, not a re-spelling: `CadenceSharedBoardChromeTests` forbids the literal here.
+        #expect(tail.contains("placeholder: editorHasDueDate ? nil : CadenceBoardColumnDueDatePlan.emptyLabel"))
         // Every pick commits through the setter; `.onChange` would miss a re-pick of the cleared day.
         #expect(tail.contains("editorHasDueDate = true"))
         #expect(tail.contains("onDueDateChanged()"))

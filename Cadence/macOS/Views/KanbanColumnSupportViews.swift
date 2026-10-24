@@ -570,8 +570,9 @@ struct KanbanSectionEditorPopover: View {
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(Theme.dim)
 
-                // T-5834: a column with no due date reads "No due date", not the `?? Date()` seed
-                // or the date "Clear date" just removed — the placeholder's documented use. Every
+                // T-5834: a column with no due date reads the board's own empty label (the header's, so
+                // the two cannot disagree), not the `?? Date()` seed or the date "Clear date" just
+                // removed — the placeholder's documented use. Every
                 // pick commits, through the setter rather than `.onChange`, because after a clear
                 // the bound value is still the cleared day and picking it again changes nothing.
                 CadenceDatePicker(
@@ -583,7 +584,7 @@ struct KanbanSectionEditorPopover: View {
                             onDueDateChanged()
                         }
                     ),
-                    placeholder: editorHasDueDate ? nil : "No due date",
+                    placeholder: editorHasDueDate ? nil : CadenceBoardColumnDueDatePlan.emptyLabel,
                     showsClear: editorHasDueDate,
                     onClear: onClearDate
                 )
