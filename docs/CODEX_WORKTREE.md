@@ -222,6 +222,10 @@ docs/SHARED_AGENTS_REFERENCE.md
 docs/SUBAGENT_RUNBOOK.md
 .github/workflows/docs.yml
 CadenceTests/AgentContextBudgetTests.swift
+CadenceTests/CadenceGuardScriptSelftestTests.swift
+CadenceTests/CadenceTaskContextInheritanceTests.swift
+CadenceTests/CadenceTestTargetHygieneTests.swift
+CadenceTests/iOSEditorSheetMetricsTests.swift
 ```
 
 **Admission 2026-10-19 (coordinator), one line in `CadenceTests/CadenceMarkdownImageCommitSurfaceTests.swift`.**
