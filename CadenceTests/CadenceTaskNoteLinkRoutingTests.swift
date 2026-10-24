@@ -73,6 +73,37 @@ struct CadenceTaskNoteLinkRoutingTests {
         #expect(notes.request == nil)
     }
 
+    /// [[T-6092]]: the list's Notes tab opens **on the linked note**, not on whatever document
+    /// `ListNotesView` reaches first — the request carries the note's id, as global search's does.
+    @Test func aListNoteLinkSelectsThatNoteInTheTab() throws {
+        let notes = NotesNavigationManager.shared
+        let lists = ListNavigationManager.shared
+        notes.clear()
+        lists.request = nil
+        defer {
+            notes.clear()
+            lists.request = nil
+        }
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let area = Area(name: "Work")
+        let project = Project(name: "Home")
+        let areaNote = Note(kind: .list, title: "Retro", area: area)
+        let projectNote = Note(kind: .list, title: "Punch list", project: project)
+        context.insert(area)
+        context.insert(project)
+        context.insert(areaNote)
+        context.insert(projectNote)
+
+        TaskNoteLinkRouting.open(areaNote)
+        #expect(lists.request?.listNoteID == areaNote.id)
+        #expect(lists.request?.eventNoteID == nil)
+
+        TaskNoteLinkRouting.open(projectNote)
+        #expect(lists.request?.listNoteID == projectNote.id)
+        #expect(lists.request?.eventNoteID == nil)
+    }
+
     @Test func aLinkResolvesByIDFirstThenByTitle() {
         let first = Note(kind: .permanent, title: "Roadmap")
         let second = Note(kind: .permanent, title: "Ideas")
