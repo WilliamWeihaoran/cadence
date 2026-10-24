@@ -200,8 +200,13 @@ struct CadenceTasksPanelMetricsTests {
         // the title, which is not a chip but is the row's secondary text and must not set its own
         // size either. (The subtask list's "+N more" reads the tier through `overflowFontSize:`,
         // which this pattern does not match; `CadenceSharedTaskRowJobsTests` counts it.)
+        //
+        // **Six again since [[T-5015]] (b)**, and this time the sixth is a chip arriving rather
+        // than leaving: the Mac row's repeat picker, the macOS twin of `iOSTaskRowRepeatChip`.
+        // Its label reads the tier like every other chip on the row, which is the whole point of
+        // this count -- the parity work had to adopt the row's figures, not bring iOS's.
         #expect(
-            CadenceSourceScan.matchCount("size: metrics\\.secondaryFontSize", in: row) == 5
+            CadenceSourceScan.matchCount("size: metrics\\.secondaryFontSize", in: row) == 6
         )
         #expect(CadenceSourceScan.matchCount("size: 10", in: row) == 0)
     }
@@ -243,26 +248,30 @@ struct CadenceTasksPanelMetricsTests {
         // The call sites read the name. Counted exactly, and each one also named below: a value-only
         // assertion stays green while a fourth chip spells `4` and `2` out again.
         //
-        // **Three, not four, since [[T-3196]] took the estimate chip off this row.** The count is
-        // re-pointed rather than loosened: it was `4` with the estimate's plate in it, and the
-        // three anchors below are the three plates the row still draws.
+        // **Three, not four, since [[T-3196]] took the estimate chip off this row; four again
+        // since [[T-5015]] (b) added the repeat picker.** The count is re-pointed rather than
+        // loosened each time, and the anchors below are the plates the row actually draws.
         #expect(
-            CadenceSourceScan.matchCount(#"CadenceTaskChipPadding\.desktopHorizontal"#, in: row) == 3
+            CadenceSourceScan.matchCount(#"CadenceTaskChipPadding\.desktopHorizontal"#, in: row) == 4
         )
         #expect(
-            CadenceSourceScan.matchCount(#"CadenceTaskChipPadding\.desktopVertical"#, in: row) == 3
+            CadenceSourceScan.matchCount(#"CadenceTaskChipPadding\.desktopVertical"#, in: row) == 4
         )
         #expect(CadenceSourceScan.matchCount(#"\.padding\(\.horizontal, 4\)"#, in: row) == 0)
         #expect(CadenceSourceScan.matchCount(#"\.padding\(\.vertical, 2\)"#, in: row) == 0)
 
         // Named, so a count that still adds to three while one chip drifts back cannot pass. The
-        // three anchors are in file order, so each region runs from its own chip to the next one
+        // anchors are in file order, so each region runs from its own chip to the next one
         // and the regions do not overlap — one read of each figure in each, no chip covering
-        // another. The estimate chip was the fourth and last anchor until [[T-3196]].
+        // another. The estimate chip was the fourth and last anchor until [[T-3196]]; the repeat
+        // picker is the fourth and last since [[T-5015]] (b). It is declared after the due-date
+        // pill rather than beside `metadataStrip`, so that file order and strip order agree --
+        // which is what this walk requires, and what the two date pills above already do.
         let chips = [
             #"Text("Cancelled")"#,
             "private var doDatePill",
             "private var dueDateBadgeList",
+            "private var repeatChip",
         ]
         var cursor = row.startIndex
         var bounds: [String.Index] = []

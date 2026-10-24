@@ -52,9 +52,17 @@ struct MacTaskRow: View {
     @State private var showTaskInspector  = false
     @State private var isDoDateHovered    = false
     @State private var isDueDateHovered   = false
-    /// The context menu's two after-the-click states — see `MacTaskRowMenuOutcomeModifier`.
-    @State private var pendingMenuRecurrenceRule: TaskRecurrenceRule?
+    /// The two after-the-click states — see `MacTaskRowMenuOutcomeModifier`.
+    ///
+    /// **Two producers since [[T-5015]] (b)**, which is why the first is no longer named for the
+    /// menu: the context menu's Repeat submenu and `repeatChip` below both settle through
+    /// `MacTaskRowContextMenu.ActionOutcome`, so a series member raises the same scope dialog and
+    /// a refused write the same alert whichever control the user reached for. `menuFailure` keeps
+    /// its name because its *type* is the menu's shared failure vocabulary.
+    @State private var pendingRecurrenceRule: TaskRecurrenceRule?
     @State private var menuFailure: MacTaskRowMenuFailure?
+    @State private var isRepeatChipHovered = false
+    @State private var showRepeatPicker = false
 
     /// **The row's figures, from the type five iOS files already read.** This row hardcoded its own
     /// 14 / 8 / 15 / 11 / 6 while `CadenceTaskRowMetrics` sat in `Shared/` with no macOS reader at
@@ -109,13 +117,13 @@ struct MacTaskRow: View {
                 openDetail: { showTaskInspector = true },
                 startFocus: startFocus,
                 requestDelete: presentDelete,
-                pendingRecurrenceRule: $pendingMenuRecurrenceRule,
+                pendingRecurrenceRule: $pendingRecurrenceRule,
                 failure: $menuFailure
             )
         }
         .modifier(MacTaskRowMenuOutcomeModifier(
             task: task,
-            pendingRecurrenceRule: $pendingMenuRecurrenceRule,
+            pendingRecurrenceRule: $pendingRecurrenceRule,
             failure: $menuFailure
         ))
         .background(TaskRowBackground(task: task, isHovered: isHovered, hoverFill: hoverBackgroundFill))
@@ -386,6 +394,16 @@ struct MacTaskRow: View {
             if datePlan.drawsDueDateChip {
                 dueDateBadgeList
             }
+
+            // **[[T-5015]] (b): the Mac row gains the repeat picker iOS has.** Last in the strip,
+            // where `iOSTaskRow` puts `iOSTaskRowRepeatChip` — the owner's decision was that the
+            // platforms converge on the iOS control, not that iOS sheds it, so the ordering is
+            // copied along with the control. Shown only on a recurring task, the same
+            // `recurrenceRule != .none` guard the iOS row uses: a chip reading "Never" on every
+            // non-repeating row is the dead chrome this strip's rules exist to keep out.
+            if task.recurrenceRule != .none {
+                repeatChip
+            }
         }
         .fixedSize(horizontal: true, vertical: false)
     }
@@ -508,6 +526,54 @@ struct MacTaskRow: View {
             }
         }
         .popover(isPresented: $showDueDatePicker) { dueDatePickerPopover }
+    }
+
+    /// The row-level recurrence picker, matching `iOSTaskRowRepeatChip` ([[T-5015]] (b)).
+    ///
+    /// Drawn like the due-date pill beside it — `metrics.secondaryFontSize`, the shared
+    /// `CadenceTaskChipPadding.desktop*`, `Theme.dim`, and the hover underline this row uses to
+    /// say a chip is a control — rather than inventing a fourth chip idiom. **The write is not
+    /// new code**: it is `MacTaskRowContextMenu.selectRecurrenceRule`, the same static the Repeat
+    /// submenu calls, settled through the same `ActionOutcome`. That is what makes the two Mac
+    /// recurrence controls incapable of disagreeing about a series member, and it is why this is
+    /// a chip and a popover rather than a second copy of the rule-changing logic.
+    private var repeatChip: some View {
+        Button {
+            showRepeatPicker = true
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: task.recurrenceRule.systemImage)
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(Theme.dim.opacity(0.68))
+
+                Text(task.recurrenceRule.label)
+                    .font(.system(size: metrics.secondaryFontSize, weight: .medium))
+                    .foregroundStyle(Theme.dim.opacity(0.68))
+                    .lineLimit(1)
+            }
+            .underline(isRepeatChipHovered)
+            .padding(.horizontal, CadenceTaskChipPadding.desktopHorizontal)
+            .padding(.vertical, CadenceTaskChipPadding.desktopVertical)
+            .background(isRepeatChipHovered ? Theme.surfaceElevated.opacity(0.55) : .clear)
+            .clipShape(RoundedRectangle(cornerRadius: 4))
+        }
+        .buttonStyle(.cadencePlain)
+        .padding(.leading, metrics.badgeSpacing)
+        // Named and valued apart for the reason T-594 gives about the two date pills: the label
+        // says which field this sets, the value says what it is set to.
+        .accessibilityLabel(CadenceTaskControlAccessibility.recurrence)
+        .accessibilityValue(task.recurrenceRule.label)
+        .onHover { hovering in
+            guard isRepeatChipHovered != hovering else { return }
+            isRepeatChipHovered = hovering
+        }
+        .popover(isPresented: $showRepeatPicker) {
+            MacTaskRowRepeatPickerPopover(
+                task: task,
+                pendingRecurrenceRule: $pendingRecurrenceRule,
+                isPresented: $showRepeatPicker
+            )
+        }
     }
 
     // [[T-3170]] removed taskBundleBadge(_:) — a `square.stack` glyph and the block's time range,

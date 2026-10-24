@@ -623,8 +623,9 @@ struct CadenceSharedTaskRowJobsTests {
             ("metrics.verticalPadding", 1),
             ("metrics.contentSpacing", 3),
             // Seven until [[T-3170]] took the block badge off the row with the Block feature, and
-            // six until [[T-3196]] took the estimate chip off it.
-            ("metrics.badgeSpacing", 5),
+            // six until [[T-3196]] took the estimate chip off it. Six again since [[T-5015]] (b):
+            // the repeat picker keeps itself off the chip before it, as every chip here does.
+            ("metrics.badgeSpacing", 6),
             ("metrics.titleFontSize", 1),
             // Four, and the Cancelled chip is one of them: it joined its siblings on this row
             // (T-597) having set its own `size: 10` and `6/3` padding while every other chip beside
@@ -633,8 +634,10 @@ struct CadenceSharedTaskRowJobsTests {
             // reserving width. It was six until [[T-3170]] removed the block badge and five until
             // [[T-3196]] removed the estimate chip; both are chips that went, not readers that
             // stopped reading. Six since [[T-1467]]: the notes excerpt and the subtask list's
-            // "+N more" line both read it — new readers, not copies of a chip's figure.
-            ("metrics.secondaryFontSize", 6),
+            // "+N more" line both read it — new readers, not copies of a chip's figure. Seven
+            // since [[T-5015]] (b): the repeat picker's label, a chip arriving rather than one
+            // leaving, and it reads the tier instead of bringing the iOS chip's own figure.
+            ("metrics.secondaryFontSize", 7),
             // [[T-1467]]: the notes/subtask tier. One read each, so a second inline spelling of
             // any of them (or the row dropping back to abstaining) fails here.
             ("metrics.summarySpacing", 1),

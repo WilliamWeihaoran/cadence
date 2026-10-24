@@ -136,6 +136,12 @@ struct CadenceChoicePickerDismissalTests {
             "Cadence/macOS/Views/SettingsArchiveImportCard.swift": (1, 0),
             "Cadence/macOS/Views/SettingsCalendarWorkHoursSection.swift": (1, 0),
             "Cadence/macOS/Views/SettingsSectionViews.swift": (1, 0),
+            // [[T-5015]] (b): the Mac task row's repeat picker, the macOS twin of the committing
+            // row chip in `iOSTaskRowActionViews.swift` two entries above. Committing, and for the
+            // same reason that one is: its write reaches the store and can be refused, so the
+            // close is the success report and a refusal keeps the popover open with the notice
+            // under the rows.
+            "Cadence/macOS/Views/MacTaskRowRepeatPickerPopover.swift": (1, 1),
         ]
 
         let read = CadenceSourceScan.strippedSourceReader()
@@ -179,8 +185,11 @@ struct CadenceChoicePickerDismissalTests {
         // this app's own vocabulary here instead, because `Cadence/iOS` and `Cadence/Shared` draw
         // no native picker — `SettingsSharedVocabularyTests.noMobileOrSharedSurfaceDrawsANativePicker`
         // caught them. Seven on the card, 31 in all; none commits, because the card commits once.
-        #expect(found.values.map(\.calls).reduce(0, +) == 31)
-        #expect(found.values.map(\.committing).reduce(0, +) == 2)
+        // [[T-5015]] (b) adds the Mac row's repeat picker: 32, and 3 committing -- the first
+        // committing count to move since T-1466, because this is a picker whose write reaches the
+        // store from a row rather than a draft a Save commits later.
+        #expect(found.values.map(\.calls).reduce(0, +) == 32)
+        #expect(found.values.map(\.committing).reduce(0, +) == 3)
     }
 
     /// **The defect itself, as a detector rather than a list.**
