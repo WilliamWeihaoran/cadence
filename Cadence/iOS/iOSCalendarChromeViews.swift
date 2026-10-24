@@ -310,4 +310,52 @@ struct iOSCalendarToolbar: View {
     // home. `dateTitle` carries it on all four now.
 }
 
+/// The Calendar page's one notice about Apple Calendar access ([[T-5954]]), under the toolbar.
+///
+/// iOS Search's "Calendar access is off" card in a slimmer cut: the same icon tile, the same
+/// compact `iOSActionButton`, the same stacking rule at large type, without Search's eyebrow —
+/// this page's toolbar already says where the reader is. The words are Settings > Calendar's, by
+/// way of `CadenceCalendarAccessNotice`, which also decides whether this appears at all.
+struct iOSCalendarAccessNoticeBar: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.cadenceTypographyScaling) private var scaling
+    let notice: CadenceCalendarAccessNotice
+    let onAction: (CadenceCalendarAccessNotice.Action) -> Void
+
+    var body: some View {
+        let stacks = iOSTaskPageTypographyMetrics.stacksControls(at: dynamicTypeSize, scaling: scaling)
+        let layout = stacks ? AnyLayout(VStackLayout(alignment: .leading, spacing: 10))
+            : AnyLayout(HStackLayout(alignment: .center, spacing: 12))
+        let tint = notice == .denied ? Theme.amber : Theme.blue
+        layout {
+            iOSIconTile(systemImage: notice.systemImage, color: tint)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(notice.title)
+                    .cadenceFont(.bodyText, weight: .semibold)
+                    .foregroundStyle(Theme.text)
+                Text(notice.detail(on: .mobile))
+                    .cadenceFont(.fieldLabel, weight: .regular)
+                    .foregroundStyle(Theme.subdued)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            if !stacks { Spacer(minLength: 0) }
+
+            iOSActionButton(
+                title: notice.actionTitle(on: .mobile),
+                role: .primary,
+                size: .compact,
+                tint: tint
+            ) {
+                onAction(notice.action)
+            }
+        }
+        .padding(12)
+        .cadenceCard(background: Theme.surface, cornerRadius: Theme.radiusCard, shadowRadius: 10, shadowY: 4)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
+    }
+}
+
 #endif

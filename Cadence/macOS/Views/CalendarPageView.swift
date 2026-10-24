@@ -8,9 +8,10 @@ import Combine
 struct CalendarPageView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(CalendarNavigationManager.self) private var calendarNavigationManager
-    // Read for one thing only: the first timed item on the day a restore is about to land on
-    // (`firstTimedMinute`). The cache below is what actually holds the events; this is the handle
-    // it needs to fill a day it has not seen.
+    // Read for two things: the first timed item on the day a restore is about to land on
+    // (`firstTimedMinute`), and whether access is granted at all (`accessNotice`, [[T-5954]]). The
+    // cache below is what actually holds the events; this is the handle it needs to fill a day it
+    // has not seen.
     @Environment(CalendarManager.self) private var calendarManager
     @Query private var allTasks: [AppTask]
     @Query(sort: \Area.order) private var areas: [Area]
@@ -87,6 +88,11 @@ struct CalendarPageView: View {
             )
 
             Divider().background(Theme.borderSubtle.opacity(CalendarVisualStyle.dividerOpacity))
+
+            // [[T-5954]]: every event read below answers `[]` without access, so say why.
+            if let accessNotice {
+                CalendarPageAccessNoticeStrip(notice: accessNotice, onAction: performAccessAction)
+            }
 
             if presentation == .board {
                 CalendarPageBoardView(
@@ -186,6 +192,24 @@ struct CalendarPageView: View {
         .onChange(of: selectedBoardDate) { _, newDate in
             guard presentation == .board else { return }
             persistBoardDate(newDate)
+        }
+    }
+
+    private var accessNotice: CadenceCalendarAccessNotice? {
+        CadenceCalendarAccessNotice.resolve(
+            isAuthorized: calendarManager.isAuthorized,
+            isDenied: calendarManager.isDenied,
+            showsFixtureEvents: CalendarBoardUITestEventSupport.isActive
+        )
+    }
+
+    /// The same two actions Settings > Calendar offers for this state.
+    private func performAccessAction(_ action: CadenceCalendarAccessNotice.Action) {
+        switch action {
+        case .requestAccess:
+            Task { await calendarManager.requestAccess() }
+        case .openSystemSettings:
+            NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Calendars")!)
         }
     }
 

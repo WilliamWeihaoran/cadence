@@ -445,4 +445,36 @@ struct CalendarTimelineViewport: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 }
+
+/// The Calendar page's one line about Apple Calendar access ([[T-5954]]), under the toolbar.
+///
+/// Shaped like the Inbox's Reminders access row — glyph, the Settings card's title and sentence,
+/// one compact action — and drawn through `CadenceSettingsNoticeRow`, the row Settings > Calendar
+/// already uses for this same state. Whether it appears, and what it says, is
+/// `CadenceCalendarAccessNotice`; this view only draws the answer.
+struct CalendarPageAccessNoticeStrip: View {
+    let notice: CadenceCalendarAccessNotice
+    let onAction: (CadenceCalendarAccessNotice.Action) -> Void
+
+    var body: some View {
+        CadenceSettingsNoticeRow(
+            systemImage: notice.systemImage,
+            tint: notice == .denied ? Theme.amber : Theme.blue,
+            title: notice.title,
+            detail: notice.detail(on: .mac)
+        ) {
+            CadenceActionButton(
+                title: notice.actionTitle(on: .mac),
+                role: .primary,
+                size: .compact,
+                action: { onAction(notice.action) }
+            )
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 4)
+        .cadenceCard(background: Theme.surface.opacity(0.72), cornerRadius: Theme.radiusCard, shadowRadius: 12, shadowY: 5)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+    }
+}
 #endif

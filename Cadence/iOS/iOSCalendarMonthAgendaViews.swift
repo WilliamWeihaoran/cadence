@@ -105,6 +105,9 @@ struct iOSCalendarMonthAgendaList: View {
     let eventsByDate: [String: [EKEvent]]
     /// The page's observed day ([[T-5010]]) — the today section's amber header compares against it.
     let todayKey: String
+    /// [[T-5954]]: with Apple Calendar unreadable an empty month is empty only of Cadence's own
+    /// items, and the empty state has to say so rather than "Nothing this month".
+    let accessNotice: CadenceCalendarAccessNotice?
 
     /// The agenda section at the top of the scroll view — both the position the agenda is *set* to
     /// when a grid day is tapped and the one it reports back as it is scrolled. `scrollPosition(id:)`
@@ -131,8 +134,10 @@ struct iOSCalendarMonthAgendaList: View {
         selectedDate: Binding<Date>,
         monthTasksByDate: [String: [AppTask]],
         eventsByDate: [String: [EKEvent]],
-        todayKey: String
+        todayKey: String,
+        accessNotice: CadenceCalendarAccessNotice? = nil
     ) {
+        self.accessNotice = accessNotice
         self.monthDate = monthDate
         self._selectedDate = selectedDate
         self.monthTasksByDate = monthTasksByDate
@@ -207,9 +212,10 @@ struct iOSCalendarMonthAgendaList: View {
     private var content: some View {
         let sections = self.sections
         if sections.isEmpty {
+            let copy = CadenceCalendarAccessNotice.monthAgendaEmptyCopy(notice: accessNotice)
             EmptyStateView(
-                message: "Nothing this month",
-                subtitle: "Days with events, blocks or tasks show up here.",
+                message: copy.message,
+                subtitle: copy.subtitle,
                 icon: "calendar"
             )
             .frame(maxWidth: .infinity, maxHeight: .infinity)

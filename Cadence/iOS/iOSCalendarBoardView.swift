@@ -10,6 +10,8 @@ struct iOSCalendarBoardPlanner: View {
     let eventsByDate: [String: [EKEvent]]
     /// The page's observed day ([[T-5010]]), handed to each column's today accent.
     let todayKey: String
+    /// Each empty column's one line; see `CadenceCalendarAccessNotice.dayEmptyText` ([[T-5954]]).
+    var emptyDayText: String = CadenceEmptyStateCopy.nothingScheduledTitle
     let onAddItem: (String) -> Void
 
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
@@ -122,6 +124,7 @@ struct iOSCalendarBoardPlanner: View {
                         tasks: boardTasksByDate[dateKey] ?? [],
                         events: eventsByDate[dateKey] ?? [],
                         allTasks: allTasks,
+                        emptyDayText: emptyDayText,
                         onOpenEvent: { selectedEvent = iOSCalendarEventSelection(event: $0) },
                         onAddTask: { onAddItem(dateKey) },
                         onDropTaskOnDay: { task in schedule(task, on: dateKey) }
@@ -270,6 +273,7 @@ private struct iOSCalendarBoardDayColumn: View {
     let tasks: [AppTask]
     let events: [EKEvent]
     let allTasks: [AppTask]
+    let emptyDayText: String
     let onOpenEvent: (EKEvent) -> Void
     let onAddTask: () -> Void
     let onDropTaskOnDay: (AppTask) -> Bool
@@ -376,7 +380,7 @@ private struct iOSCalendarBoardDayColumn: View {
             // put the inspector on this same pair of views, so the sentence moved to
             // `CadenceEmptyStateCopy` rather than being spelled in both files.
             if completedTasks.isEmpty {
-                CadenceInlineEmpty(text: CadenceEmptyStateCopy.nothingScheduledTitle, surface: .touch)
+                CadenceInlineEmpty(text: emptyDayText, surface: .touch)
             }
         } else {
             ScrollView(.vertical) {

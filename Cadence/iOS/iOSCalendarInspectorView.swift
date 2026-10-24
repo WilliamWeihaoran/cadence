@@ -18,6 +18,9 @@ struct iOSCalendarDayInspector: View {
     let events: [EKEvent]
     let unscheduledTasks: [AppTask]
     let dueOnlyTasks: [AppTask]
+    /// The empty day's one line — "Nothing scheduled", or the not-connected wording while the
+    /// Calendar page's access notice is up ([[T-5954]]).
+    var emptyDayText: String = CadenceEmptyStateCopy.nothingScheduledTitle
     let addItem: () -> Void
     @State private var selectedEvent: iOSCalendarEventSelection?
 
@@ -51,7 +54,7 @@ struct iOSCalendarDayInspector: View {
                         action: addItem
                     )
                     CadenceInlineEmpty(
-                        text: CadenceEmptyStateCopy.nothingScheduledTitle,
+                        text: emptyDayText,
                         surface: .touch
                     )
                 }

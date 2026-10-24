@@ -22,6 +22,7 @@ struct iOSCalendarView: View {
     @AppStorage("ios.calendar.monthDetail") private var monthDetailRaw = CadenceCalendarMonthLayout.defaultDetail.rawValue
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.openURL) private var openURL
     @Environment(\.scenePhase) private var scenePhase
     @State private var selectedDate = Calendar.current.startOfDay(for: Date())
     @State private var anchorDate = Calendar.current.startOfDay(for: Date())
@@ -245,6 +246,11 @@ struct iOSCalendarView: View {
                 )
             )
 
+            // [[T-5954]]: every event read on this page answers empty without access, so say why.
+            if let accessNotice {
+                iOSCalendarAccessNoticeBar(notice: accessNotice, onAction: performAccessAction)
+            }
+
             if isMonthTimeline {
                 // Month splits itself: it has two possible details and two possible placements, and
                 // the pane-wide `hasInspector` branch below can express neither.
@@ -326,6 +332,10 @@ struct iOSCalendarView: View {
         .onChange(of: calendarManager.storeVersion) { _, _ in
             refreshVisibleEvents()
         }
+        // A grant from the notice above changes no store version, so the window would stay empty.
+        .onChange(of: calendarManager.isAuthorized) { _, _ in
+            refreshVisibleEvents()
+        }
         .onChange(of: selectedDate) { _, _ in
             rememberCalendarPosition()
         }
@@ -358,6 +368,7 @@ struct iOSCalendarView: View {
                 allTasks: allTasks,
                 eventsByDate: visibleEventsByDate,
                 todayKey: observedDay.todayKey,
+                emptyDayText: CadenceCalendarAccessNotice.dayEmptyText(notice: accessNotice),
                 onAddItem: openQuickCreate
             )
         } else {
@@ -424,7 +435,8 @@ struct iOSCalendarView: View {
                 selectedDate: $selectedDate,
                 monthTasksByDate: monthTasksByDate,
                 eventsByDate: visibleEventsByDate,
-                todayKey: observedDay.todayKey
+                todayKey: observedDay.todayKey,
+                accessNotice: accessNotice
             )
         case .day:
             dayInspector
@@ -437,9 +449,29 @@ struct iOSCalendarView: View {
             tasks: selectedTasks,
             events: selectedEvents,
             unscheduledTasks: selectedUnscheduledTasks,
-            dueOnlyTasks: selectedDueOnlyTasks
+            dueOnlyTasks: selectedDueOnlyTasks,
+            emptyDayText: CadenceCalendarAccessNotice.dayEmptyText(notice: accessNotice)
         ) {
             openQuickCreate(on: selectedKey)
+        }
+    }
+
+    private var accessNotice: CadenceCalendarAccessNotice? {
+        CadenceCalendarAccessNotice.resolve(
+            isAuthorized: calendarManager.isAuthorized,
+            isDenied: calendarManager.isDenied,
+            showsFixtureEvents: CadenceCalendarFixtureEvents.isActive()
+        )
+    }
+
+    /// The same two actions Settings > Calendar and Search's access card offer for this state.
+    private func performAccessAction(_ action: CadenceCalendarAccessNotice.Action) {
+        switch action {
+        case .requestAccess:
+            Task { await calendarManager.requestAccess() }
+        case .openSystemSettings:
+            guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
+            openURL(url)
         }
     }
 
