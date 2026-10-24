@@ -246,6 +246,41 @@ struct NotificationManagerCentreSeamTests {
         }
     }
 
+    /// **[[T-6000]].** On a fresh install the stored switch is absent, and a granted answer to the
+    /// "Enable Notifications" request turns it on — so the next reconcile schedules rather than
+    /// cancelling everything. A refusal leaves it absent: nobody who said no is opted in.
+    @Test func aGrantedRequestTurnsRemindersOnAndADeclinedOneDoesNot() async throws {
+        let key = NotificationManager.notificationsEnabledDefaultsKey
+        let task = dueTask("Due after granting")
+        let dueID = NotificationIdentifiers.taskDue(taskID: task.id)
+
+        let granting = FakeCentre(status: .authorized, grantsRequest: true)
+        try await withTemporaryDefaults(
+            "cadence.tests.notification-centre-seam",
+            test: "aGrantedRequestTurnsRemindersOnAndADeclinedOneDoesNot.granted",
+            opening: { UserDefaults(suiteName: $0) }
+        ) { defaults in
+            #expect(defaults.object(forKey: key) == nil, "non-vacuity: the suite starts as a fresh install")
+            let manager = NotificationManager(centre: granting, defaults: defaults)
+            #expect(await manager.requestAuthorization())
+            #expect(defaults.object(forKey: key) as? Bool == true, "a granted request left reminders off")
+
+            await manager.reconcile(tasks: [task])
+            #expect(granting.added.contains(dueID), "reminders were turned on but nothing was scheduled")
+        }
+
+        let declining = FakeCentre(status: .denied, grantsRequest: false)
+        try await withTemporaryDefaults(
+            "cadence.tests.notification-centre-seam",
+            test: "aGrantedRequestTurnsRemindersOnAndADeclinedOneDoesNot.declined",
+            opening: { UserDefaults(suiteName: $0) }
+        ) { defaults in
+            let manager = NotificationManager(centre: declining, defaults: defaults)
+            #expect(await manager.requestAuthorization() == false)
+            #expect(defaults.object(forKey: key) == nil, "a declined request wrote the reminders switch")
+        }
+    }
+
     // MARK: - cancel / cancelAll
 
     @Test func cancelTaskIDsRemovesExactlyBothRemindersOfTheGivenTasks() async throws {

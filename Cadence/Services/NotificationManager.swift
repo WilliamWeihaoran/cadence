@@ -95,11 +95,23 @@ final class NotificationManager: NSObject {
     /// The ONLY place in the app that should call `UNUserNotificationCenter.requestAuthorization`.
     /// Must stay gated behind an explicit Settings button — never called from app launch — so
     /// there's no jarring cold-launch permission prompt.
+    ///
+    /// **[[T-6000]]: a granted answer turns reminders on.** The only callers are the two
+    /// "Enable Notifications" buttons, so a `true` here is someone who asked for notifications and
+    /// said yes to the OS. The stored switch defaults to `false` and nothing else writes it `true`,
+    /// so the pane used to flip to an "Enable reminders" row with its switch still off and
+    /// `reconcile` went on cancelling everything. The write goes to `defaults` — for `shared`, the
+    /// `CadenceDefaults.store` both panes' `@AppStorage` reads — so each pane's
+    /// `.onChange(of: notificationsEnabled)` sees it and reconciles. A refusal writes nothing, and
+    /// nobody who never pressed the button is touched: the default stays `false`.
     @discardableResult
     func requestAuthorization() async -> Bool {
         guard centreIsInjected || !Self.isTestEnvironment else { return false }
         let granted = (try? await centre.requestAuthorization(options: [.alert, .sound])) ?? false
         await refreshAuthorizationState()
+        if granted {
+            defaults.set(true, forKey: Self.notificationsEnabledDefaultsKey)
+        }
         return granted
     }
 
