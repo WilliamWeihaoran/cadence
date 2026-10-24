@@ -87,4 +87,14 @@ enum CadencePreferenceKeys {
     /// for whenever you are looking for something you finished; a setting that forgets itself
     /// between launches is then a papercut you hit constantly rather than once.
     static let searchIncludesCompletedTasks = "searchIncludesCompletedTasks"
+
+    // MARK: - Focus (T-6001)
+
+    /// The running or paused iOS focus session, as `CadenceFocusSessionPersistence` encodes it.
+    ///
+    /// In the `ios.*` family because that is what it is: the Mac's session lives in
+    /// `FocusManager` and banks on quit through `applicationWillTerminate` ([[T-5305]]), a door
+    /// iOS does not have. **Not an `@AppStorage`** — nothing renders this value, and a view that
+    /// re-rendered on every tick of the clock it stores would be the opposite of what it is for.
+    static let iosFocusSession = "ios.focus.session"
 }

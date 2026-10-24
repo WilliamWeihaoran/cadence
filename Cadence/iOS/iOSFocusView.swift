@@ -72,6 +72,16 @@ struct iOSFocusView: View {
         timerState.elapsedSeconds()
     }
 
+    /// **[[T-6001]]:** what this screen's state should have on disk, `nil` for "nothing to resume".
+    ///
+    /// Stated against `selectedItem`, not `selectedTarget`, because that is the subject
+    /// `selectedSubject` banks — with nothing explicitly picked the session runs against the head
+    /// of the list, and persisting the `nil` target would write a session nothing would come back
+    /// to while `onDisappear` banked one that did.
+    private var sessionRecord: CadenceFocusSessionRecord? {
+        CadenceFocusSessionPersistence.record(target: selectedItem?.target, state: timerState)
+    }
+
     private var isCompact: Bool {
         horizontalSizeClass == .compact
     }
@@ -89,11 +99,22 @@ struct iOSFocusView: View {
         .background(Theme.bg.ignoresSafeArea())
         .iOSHidesCompactNavigationBar()
         .onAppear {
+            // [[T-6001]]: a session the process did not survive comes back before anything else
+            // decides what this screen is pointing at. It runs *first* so a handoff arriving in
+            // the same breath leaves it the way a handoff always leaves a running session —
+            // through `accept(_:)`, which banks the outgoing subject rather than dropping it.
+            restorePersistedSession()
             if let handoff = focusHandoffCenter.pending {
                 accept(handoff)
             } else if selectedTarget == nil, let first = pickItems.first {
                 adopt(first)
             }
+        }
+        // The one writer. Every path that moves the clock or the subject — the play control, a
+        // pick row, a handoff, Complete, Reset — lands here rather than remembering to persist,
+        // which is the shape that acquires a branch that forgets.
+        .onChange(of: sessionRecord) { _, record in
+            CadenceFocusSessionPersistence.write(record)
         }
         // The screen may already be standing when the request is made — the compact shell keeps a
         // visited tab's stack alive behind the one on screen — so arriving is not the only way a
@@ -123,6 +144,11 @@ struct iOSFocusView: View {
                     state: timerState,
                     modelContext: modelContext
                 )
+                // [[T-6001]]: banked, so there is nothing left to resume. **Only on the way the
+                // commit actually landed** — over a refusal `timerState` is left where it was and
+                // the record with it, so the session is still there to retry, which is the whole
+                // of T-654's rule said in the store this ticket adds.
+                CadenceFocusSessionPersistence.clear()
             } catch {
                 CadenceTaskSettleFailureCenter.shared.record()
             }
@@ -610,6 +636,31 @@ struct iOSFocusView: View {
     /// Point the session at `item`.
     private func adopt(_ item: CadenceFocusPickItem) {
         selectedTarget = item.target
+    }
+
+    /// **[[T-6001]].** Put back the session the process was carrying when it went away.
+    ///
+    /// The clock is wall-clock, so a running session resumes *running*, with the `startedAt` it
+    /// was started on — that is what "resume the live session" means and what the owner chose over
+    /// banking a partial log on background. A paused session comes back paused, holding its
+    /// reading.
+    ///
+    /// A record whose task is gone, done or cancelled resolves to nothing and is cleared rather
+    /// than left to be re-read on every visit: `CadenceFocusSessionPersistence.resumed` asks
+    /// `canFocus`, the same predicate the picker filters on, so a task finished on the Mac while
+    /// this phone was closed does not come back under a running clock (T-276, T-5310).
+    private func restorePersistedSession() {
+        // The cold route only. `onAppear` fires again whenever this screen is re-entered, and a
+        // clock already standing here *is* the live session — re-reading the record over it would
+        // make the defaults a second source of truth for a value memory already holds.
+        guard !timerState.isRunning, timerState.accumulatedSeconds == 0 else { return }
+        let record = CadenceFocusSessionPersistence.read()
+        guard let resumed = CadenceFocusSessionPersistence.resumed(from: record, tasks: allTasks) else {
+            if record != nil { CadenceFocusSessionPersistence.clear() }
+            return
+        }
+        selectedTarget = resumed.target
+        timerState = resumed.state
     }
 
     private func toggleTimer() {
