@@ -208,6 +208,29 @@ struct CadenceSearchCandidateSupportTests {
         #expect(!inboxHits.contains("task-\(fixture.active.id.uuidString)"))
     }
 
+    // MARK: - T-5880: the default section is never named in a result subtitle
+
+    @Test func aTaskResultSubtitleNamesOnlyASectionTheUserNamed() throws {
+        let fixture = try makeTaskFixture()
+
+        // Unsectioned, in an area: the list alone, never "Operations / Default".
+        fixture.active.sectionName = ""
+        #expect(CadenceTaskSearchSupport.resultSubtitle(for: fixture.active) == "Operations")
+        // The default section spelled out, in any case, is still the default section.
+        fixture.active.sectionName = "default"
+        #expect(CadenceTaskSearchSupport.resultSubtitle(for: fixture.active) == "Operations")
+        // A section the user named is worth naming.
+        fixture.active.sectionName = "  Billing "
+        #expect(CadenceTaskSearchSupport.resultSubtitle(for: fixture.active) == "Operations / Billing")
+        // The Inbox has no sections at all.
+        #expect(CadenceTaskSearchSupport.resultSubtitle(for: fixture.scheduled) == "Inbox")
+
+        // And iOS Search draws exactly this helper rather than its own join.
+        let view = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(Self.iOSSearchViewPath))
+        #expect(view.contains("CadenceTaskSearchSupport.resultSubtitle(for: task)"))
+        #expect(!view.contains("task.resolvedSectionName].joined"))
+    }
+
     // MARK: - T-378: one list-inclusion policy
 
     private struct ListFixture {

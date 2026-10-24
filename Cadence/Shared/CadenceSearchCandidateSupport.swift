@@ -59,6 +59,20 @@ nonisolated enum CadenceTaskSearchSupport {
         CadenceTitleNormalization.display(task.containerName, fallback: "Inbox")
     }
 
+    /// The subtitle a task result draws on iOS Search: the container, plus ` / <section>` only
+    /// when the task sits in a section the user named (T-5880). The default section is never
+    /// spelled out — every other surface suppresses it — so an unsectioned task in "Work" reads
+    /// "Work", not "Work / Default". An Inbox task has nowhere to be sectioned and reads "Inbox".
+    static func resultSubtitle(for task: AppTask) -> String {
+        let container = containerLabel(for: task)
+        guard !task.containerName.isEmpty else { return container }
+        let section = task.resolvedSectionName
+        guard section.caseInsensitiveCompare(TaskSectionDefaults.defaultName) != .orderedSame else {
+            return container
+        }
+        return "\(container) / \(section)"
+    }
+
     /// The searchable fields, in matcher order. `fields[0]` is the title and is weighted highest;
     /// everything after it is body text, so the grouping below is about what exists, not about
     /// what ranks.

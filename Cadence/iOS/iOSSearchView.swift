@@ -581,10 +581,7 @@ struct iOSSearchView: View {
     }
 
     private func taskSubtitle(_ task: AppTask) -> String {
-        if !task.containerName.isEmpty {
-            return [task.containerName, task.resolvedSectionName].joined(separator: " / ")
-        }
-        return "Inbox"
+        CadenceTaskSearchSupport.resultSubtitle(for: task)
     }
 
     private func taskDetail(_ task: AppTask) -> String {
