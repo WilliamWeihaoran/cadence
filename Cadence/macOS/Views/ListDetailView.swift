@@ -73,6 +73,18 @@ struct MissingListDetailView: View {
     }
 }
 
+/// **[[T-5833]] — on a list's own Tasks tab, `.byList` is "By Section".** `TaskGroupingMode` says
+/// "By List", which is right on Today and All Tasks, where it groups by list; on one list's page it
+/// groups that list's tasks by section (`CadenceTaskQuerySupport.sectionGroups`), beside the
+/// page's own "+ Section" row and the row menu's "Move Section". Only the label changes here — the
+/// stored grouping key and every other page keep "By List".
+enum ListTasksGroupingLabel {
+    /// `nonisolated`: the badge's `labelOverride` is a plain, non-isolated closure.
+    nonisolated static func label(for mode: TaskGroupingMode) -> String? {
+        mode == .byList ? "By Section" : nil
+    }
+}
+
 // MARK: - Detail View
 
 // `ListDetailPage` — the tabs below — lives in `Shared/CadenceListDetailPage.swift`, because iOS
@@ -478,7 +490,11 @@ private struct ListDetailTabBarView: View {
             HStack(spacing: 6) {
                 CadenceEnumPickerBadge(title: "Sort", selection: $taskSortField)
                 CadenceEnumPickerBadge(title: "Order", selection: $taskSortDirection)
-                CadenceEnumPickerBadge(title: "Group", selection: $taskGroupingMode)
+                CadenceEnumPickerBadge(
+                    title: "Group",
+                    selection: $taskGroupingMode,
+                    labelOverride: ListTasksGroupingLabel.label(for:)
+                )
             }
             .padding(.trailing, 4)
         } else if tab == .kanban, allowsSectionEditing {

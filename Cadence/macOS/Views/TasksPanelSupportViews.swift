@@ -612,16 +612,19 @@ struct CadenceEnumPickerBadge<T: CaseIterable & RawRepresentable & Identifiable>
     let title: String
     @Binding var selection: T
     var excluded: [T] = []
+    /// What one page calls a value where the type's own label would be wrong there — `nil` keeps
+    /// the type's. [[T-5833]]: a list's Tasks tab groups `.byList` by section, so it says so.
+    var labelOverride: (T) -> String? = { _ in nil }
     @State private var showPicker = false
 
     private var availableCases: [T] {
         Array(T.allCases).filter { item in !excluded.contains(where: { $0.id == item.id }) }
     }
 
-    /// What a value is *called*. `rawValue` unless the type says otherwise — see
-    /// `CadenceLabelledPickerValue`.
-    private func label(for value: T) -> String {
-        (value as? CadenceLabelledPickerValue)?.pickerLabel ?? value.rawValue
+    /// What a value is *called*. `rawValue` unless the page (`labelOverride`) or the type says
+    /// otherwise — see `CadenceLabelledPickerValue`. Not `private`, so a test can read it.
+    func label(for value: T) -> String {
+        labelOverride(value) ?? (value as? CadenceLabelledPickerValue)?.pickerLabel ?? value.rawValue
     }
 
     private var selectionLabel: String { label(for: selection) }
