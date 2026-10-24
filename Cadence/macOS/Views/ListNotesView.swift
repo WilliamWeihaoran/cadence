@@ -60,6 +60,9 @@ struct ListNotesView: View {
     /// `createFailureNotice`'s, because the two failures are reachable from different controls and
     /// one clearing the other would blank a sentence the user has not answered yet.
     @State private var moveFailureNotice: String?
+    /// [[T-5803]]: what the last commit of the selected event note did not do, if anything — the
+    /// same notice the Notes page's Events tab and the timeline's sheet show.
+    @State private var commitNotice: String?
     @Query(sort: \Note.order) private var allNotes: [Note]
     @Query(sort: \AppTask.order) private var allTasks: [AppTask]
     @Query(sort: \Tag.order) private var allTags: [Tag]
@@ -183,14 +186,19 @@ struct ListNotesView: View {
                 )
                 .id(task.id)
             } else if let eventNote = selectedEventNote {
-                NoteEditorPane(
-                    note: eventNote,
-                    relatedNotes: relatedNotes,
-                    relatedTasks: allTasks,
-                    onOpenNote: openNote,
-                    headerStyle: .compact
-                )
+                VStack(spacing: 0) {
+                    NoteEditorPane(
+                        note: eventNote,
+                        relatedNotes: relatedNotes,
+                        relatedTasks: allTasks,
+                        onOpenNote: openNote,
+                        onPersistContent: commitEventNote,
+                        headerStyle: .compact
+                    )
                     .id(eventNote.id)
+
+                    EventNoteCommitNoticeBanner(notice: commitNotice)
+                }
             } else if let note = selectedListNote {
                 NoteEditorPane(
                     note: note,
@@ -220,6 +228,11 @@ struct ListNotesView: View {
         }
         .onChange(of: requestedListNoteID) { _, _ in
             applyRequestedListNoteSelection()
+        }
+        .onChange(of: selection) { _, _ in
+            // The notice describes one note's last commit; carrying it onto the next note would
+            // report a miss that never happened there.
+            commitNotice = nil
         }
         .onChange(of: allNotes.map(\.id)) { _, _ in
             backfillMeetingNoteMetadata()
@@ -466,6 +479,22 @@ struct ListNotesView: View {
         ) else { return }
         select(.list(noteID), clearsRequestedEventNote: false)
         requestedListNoteID = nil
+    }
+
+    /// [[T-5803]]: the third macOS editor of an event note. It saved through the pane's default
+    /// no-op `onPersistContent`, so an edit here never reached Apple Calendar and said nothing,
+    /// while the Notes page's Events tab and the timeline's sheet both mirrored the same note. It
+    /// goes through the same ordered commit as those two now — local first, mirror only if the
+    /// local commit landed — and shows its notice.
+    private func commitEventNote(_ note: Note, content: String) {
+        let outcome = CadenceEventNoteSupport.commitNote(
+            syncToCalendar: true,
+            save: { try modelContext.save() },
+            syncToNativeEvent: {
+                EventNoteSupport.syncNativeCalendarNotes(for: note, content: content, calendarManager: calendarManager)
+            }
+        )
+        commitNotice = outcome.notice
     }
 
     private func backfillMeetingNoteMetadata() {

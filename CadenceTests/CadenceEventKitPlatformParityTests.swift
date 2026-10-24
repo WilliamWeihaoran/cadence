@@ -317,7 +317,9 @@ struct CadenceEventKitPlatformParityTests {
     @Test func bothMacEventNoteEditorsCommitThroughTheSharedOutcomeHelper() throws {
         for path in [
             "Cadence/macOS/Views/EventNoteSupportViews.swift",
-            "Cadence/macOS/Views/NotesView.swift"
+            "Cadence/macOS/Views/NotesView.swift",
+            // T-5803: an Area's or Project's Notes tab edits the same event notes.
+            "Cadence/macOS/Views/ListNotesView.swift"
         ] {
             let raw = try CadenceSourceScan.sourceFile(path)
             let code = CadenceSourceScan.strippingComments(raw)
@@ -326,6 +328,7 @@ struct CadenceEventKitPlatformParityTests {
             #expect(code.contains("CadenceEventNoteSupport.commitNote("), "\(path) does not commit through the helper")
             #expect(code.contains("commitNotice = "), "\(path) never stores the outcome notice")
             #expect(code.contains("EventNoteCommitNoticeBanner("), "\(path) never shows the outcome notice")
+            #expect(code.contains("onPersistContent: commitEventNote"), "\(path) never hands the editor the commit")
         }
 
         // The mirror helper must hand its answer back, and must not let a caller drop it — the
