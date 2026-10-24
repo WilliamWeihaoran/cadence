@@ -285,6 +285,16 @@ commits on either file (`git log main..<branch> -- <file>`): `codex/ios-board-dr
 census line only, as above), and `codex/data-safety-audit-fixes` / `codex/parity-functional-batch`
 (2026-10-05 / 2026-10-09, hunks in `EventNoteEditorSheet`, none near the edited comment).
 
+**Admission 2026-10-24 (keeper `keeper1338`), the `TaskNoteLinkRouting` enum in `Cadence/macOS/Views/TaskInspectorContentSupportViews.swift`, for [[T-6092]] only.**
+The file is leased above and stays leased. Agent `land6092` may change the two `listNavigation.open(...)`
+calls in `TaskNoteLinkRouting` to pass `listNoteID: note.id`, and that enum's doc comment -- nothing
+else in the file. If the fix needs `EventNoteSupportViews.swift` (also leased), the agent stops and
+files a ticket rather than editing it. **Why it could not wait for Codex:** a decision-free, visible
+note-link defect for the next RC, already written as WIP `dace8f3a`. **Checked before admitting:**
+every local `codex/*` branch with its own commits on the file (`git log --no-merges main..<branch>`):
+`codex/subtasks-inspector` (its copy is identical to `main`, landed as [[T-3171]]) and
+`codex/data-safety-audit-fixes` (2026-10-05); no `codex/*` worktree has the file dirty.
+
 ### 2026-10-17 — WHY ALL SIX VERSIONS FAILED: each asked a cheaper question than the one being asked
 
 Agent `blocktail`'s synthesis, recorded because it explains every failure above with one sentence
