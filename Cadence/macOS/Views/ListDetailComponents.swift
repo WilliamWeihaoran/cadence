@@ -138,11 +138,20 @@ struct ListTasksView: View {
                     onToggle: { isCompletedCollapsed.toggle() }
                 )
             }
-            CadenceSectionCreationRow(area: area, project: project)
-                .padding(.horizontal, TaskListDisplayMetrics.headerHorizontalInset)
-                .listRowBackground(Color.clear)
-                .listRowSeparator(.hidden)
-                .listRowInsets(.init())
+            // [[T-5832]] (b). **Only By List draws sections, so only By List offers the row that
+            // makes one.** Under By Date (the Mac default), None and By Priority the row created
+            // the section and nothing appeared, because those groupings build their groups from
+            // dates and priorities and never read `sectionNames` — so the control read as broken.
+            // The owner declined the alternative, switching the tab to By List when a section is
+            // added: that moves the view under the user. A control that appears to fail is worse
+            // than a control that is not there.
+            if groupingMode == .byList {
+                CadenceSectionCreationRow(area: area, project: project)
+                    .padding(.horizontal, TaskListDisplayMetrics.headerHorizontalInset)
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
+                    .listRowInsets(.init())
+            }
         }
         .listStyle(.plain)
         .scrollContentBackground(.hidden)

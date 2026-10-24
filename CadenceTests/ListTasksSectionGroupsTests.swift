@@ -96,6 +96,33 @@ struct ListTasksSectionGroupsTests {
         let live = try #require(CadenceSourceScan.declarationBody("private var liveSectionGroups: [ListTasksGroup]", in: source))
         #expect(live.contains("pageIsEmpty: activeTasks.isEmpty && doneTasks.isEmpty"))
     }
+
+    /// **[[T-5832]] (b) — the "+ Section" row is offered only under By List.** Under By Date (the
+    /// Mac default), None and By Priority the row created a section that the page then never drew,
+    /// which reads as the button doing nothing. The owner's decision was to hide the row there
+    /// rather than switch the grouping under the user.
+    ///
+    /// A source pin because `body` is a `private`-state SwiftUI view this target cannot render:
+    /// the scan is scoped to the one declaration, and the two assertions pull in opposite
+    /// directions — the row must be inside a `.byList` gate, and the gate must still be the only
+    /// place the row is drawn.
+    @Test func theSectionCreationRowIsDrawnOnlyUnderByList() throws {
+        let source = try CadenceSourceScan.strippedSourceReader()("Cadence/macOS/Views/ListDetailComponents.swift")
+        let body = try #require(CadenceSourceScan.declarationBody("var body: some View", in: source))
+        #expect(
+            CadenceSourceScan.matchCount(#"CadenceSectionCreationRow\("#, in: body) == 1,
+            "the list Tasks tab draws the row in exactly one place"
+        )
+        #expect(
+            CadenceSourceScan.matchCount(
+                #"if groupingMode == \.byList \{\s*CadenceSectionCreationRow\(area: area, project: project\)"#,
+                in: body
+            ) == 1,
+            "the row is drawn under By List and nowhere else"
+        )
+        // Not vacuous: the scan really is reading this view's body.
+        #expect(body.contains("ListTasksGroupSectionView("))
+    }
 }
 
 #endif
