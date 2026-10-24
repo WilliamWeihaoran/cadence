@@ -22,6 +22,8 @@ struct NotificationManagerCentreSeamTests {
     final class FakeCentre: CadenceNotificationCentre {
         var status: UNAuthorizationStatus
         var grantsRequest: Bool
+        /// What the OS reports once the prompt has been answered, when that differs from `status`.
+        var statusAfterRequest: UNAuthorizationStatus?
         var refused: Set<String> = []
         private(set) var pending: [String]
         private(set) var removeCalls: [[String]] = []
@@ -42,6 +44,7 @@ struct NotificationManagerCentreSeamTests {
 
         func requestAuthorization(options: UNAuthorizationOptions) async throws -> Bool {
             requestedOptions.append(options)
+            if let statusAfterRequest { status = statusAfterRequest }
             return grantsRequest
         }
 
@@ -278,6 +281,38 @@ struct NotificationManagerCentreSeamTests {
             let manager = NotificationManager(centre: declining, defaults: defaults)
             #expect(await manager.requestAuthorization() == false)
             #expect(defaults.object(forKey: key) == nil, "a declined request wrote the reminders switch")
+        }
+    }
+
+    /// **[[T-6000]].** The "Enable Notifications" button opens system Settings only when access was
+    /// ALREADY denied before the tap. A "Don't Allow" given to the prompt the tap itself raised is
+    /// an answer, and must not send the user to Settings unasked; a refusal from before the tap
+    /// cannot be re-asked, so Settings is where it goes — without a pointless second request.
+    @Test func settingsOpensOnlyWhenAccessWasDeniedBeforeTheTap() async throws {
+        // Never asked, then "Don't Allow": the OS reports .denied only AFTER the request.
+        let askedNow = FakeCentre(status: .notDetermined, grantsRequest: false)
+        askedNow.statusAfterRequest = .denied
+        try await withManager(askedNow, test: "settingsOpensOnlyWhenAccessWasDeniedBeforeTheTap.declinedNow") { manager in
+            let opens = await manager.requestAuthorizationOrOpenSettings()
+            #expect(askedNow.requestedOptions == [[.alert, .sound]], "non-vacuity: the tap did not ask the OS")
+            #expect(manager.isDenied, "non-vacuity: the fake did not report the refusal afterwards")
+            #expect(!opens, "a \"Don't Allow\" given just now sent the user to system Settings unasked")
+        }
+
+        // Never asked, then "Allow".
+        let granting = FakeCentre(status: .notDetermined, grantsRequest: true)
+        granting.statusAfterRequest = .authorized
+        try await withManager(granting, test: "settingsOpensOnlyWhenAccessWasDeniedBeforeTheTap.grantedNow") { manager in
+            #expect(await manager.requestAuthorizationOrOpenSettings() == false, "a granted request opened Settings")
+            #expect(granting.requestedOptions.count == 1)
+        }
+
+        // Already refused before the tap: the system will not prompt again.
+        let alreadyDenied = FakeCentre(status: .denied, grantsRequest: false)
+        try await withManager(alreadyDenied, test: "settingsOpensOnlyWhenAccessWasDeniedBeforeTheTap.deniedBefore") { manager in
+            #expect(!manager.isDenied, "non-vacuity: the cached flag starts stale, so the status must be re-read")
+            #expect(await manager.requestAuthorizationOrOpenSettings(), "an earlier refusal did not route to Settings")
+            #expect(alreadyDenied.requestedOptions.isEmpty, "a refusal the OS will not re-prompt was asked again")
         }
     }
 

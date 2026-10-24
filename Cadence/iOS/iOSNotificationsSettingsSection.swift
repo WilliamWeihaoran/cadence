@@ -100,8 +100,9 @@ struct iOSNotificationsSettingsSection: View {
 
     private func requestAuthorization() {
         Task {
-            let granted = await notificationManager.requestAuthorization()
-            if !granted {
+            // [[T-6000]]: Settings only when access was already denied before this tap — a
+            // "Don't Allow" given to the prompt this tap raised is an answer, not a cue.
+            if await notificationManager.requestAuthorizationOrOpenSettings() {
                 await MainActor.run { openSystemSettings() }
             }
         }

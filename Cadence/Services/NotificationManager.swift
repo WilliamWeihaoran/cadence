@@ -115,6 +115,22 @@ final class NotificationManager: NSObject {
         return granted
     }
 
+    /// **[[T-6000]]: what the "Enable Notifications" button does, for both platforms.** Returns
+    /// `true` when the caller should open the system Settings app.
+    ///
+    /// Settings opens only when the status was ALREADY `.denied` before the tap: the OS will not
+    /// prompt twice, so Settings is the only place that answer can be changed. Any other status
+    /// asks the OS, and its answer stands — a "Don't Allow" given just now is the user's choice,
+    /// not a cue to send them to Settings unasked, which is what both panes used to do. The status
+    /// is re-read before `isDenied` is consulted, because the cached flag is only as fresh as the
+    /// pane's last appearance or foreground.
+    func requestAuthorizationOrOpenSettings() async -> Bool {
+        await refreshAuthorizationState()
+        if isDenied { return true }
+        await requestAuthorization()
+        return false
+    }
+
     // MARK: - Reconciliation
 
     /// Diffs the desired notification set (computed from current SwiftData state) against

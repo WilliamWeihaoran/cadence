@@ -62,8 +62,10 @@ struct SettingsNotificationsSection: View {
 
     private func requestAuthorization() {
         Task {
-            let granted = await notificationManager.requestAuthorization()
-            guard !granted,
+            // [[T-6000]]: Settings only when access was already denied before this tap — a
+            // "Don't Allow" given to the prompt this tap raised is an answer, not a cue.
+            let opensSettings = await notificationManager.requestAuthorizationOrOpenSettings()
+            guard opensSettings,
                   let settingsURL = URL(string: "x-apple.systempreferences:com.apple.preference.notifications")
             else { return }
             // Already on the main actor: this view is main-actor isolated and the `Task` inherits it,
