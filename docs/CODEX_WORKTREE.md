@@ -213,6 +213,15 @@ Cadence/macOS/Views/TaskInspectorWorkflowSupportViews.swift
 CadenceTests/CadenceQuickCreateTaskInspectorTests.swift
 Cadence/macOS/Views/SchedulePanelComponents.swift
 Cadence/macOS/Views/SchedulePanelPopoverSupportViews.swift
+AGENTS.md
+CadenceMCPServer/AGENTS.md
+Cadence/Shared/AGENTS.md
+Cadence/Models/AGENTS.md
+docs/AGENTS_REFERENCE.md
+docs/SHARED_AGENTS_REFERENCE.md
+docs/SUBAGENT_RUNBOOK.md
+.github/workflows/docs.yml
+CadenceTests/AgentContextBudgetTests.swift
 ```
 
 **Admission 2026-10-19 (coordinator), one line in `CadenceTests/CadenceMarkdownImageCommitSurfaceTests.swift`.**
