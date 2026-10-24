@@ -223,24 +223,13 @@ struct iOSContextEditorSheet: View {
         }
     }
 
-    /// Names the list that is in the way, because the clash is on the *normalized* name and the
-    /// two spellings can differ — "Work" and "work " read as unrelated until the sentence says
-    /// which row it means.
+    /// [[T-5808]]: the Mac's sentences, from the one shared copy. These said "list".
     static func duplicateNameNotice(_ existingName: String) -> String {
-        """
-        A list named "\(existingName)" already exists. Two lists with the same name are merged \
-        into one the next time Cadence opens, so this one was not created. Pick a different name, \
-        or edit the list you already have.
-        """
+        CadenceContextNameClashCopy.notCreated(existingName)
     }
 
-    /// The rename refusal's sentence: the same clash as `duplicateNameNotice`, but the list
-    /// exists, so what did not happen is the rename.
     static func duplicateRenameNotice(_ existingName: String) -> String {
-        """
-        A list named "\(existingName)" already exists. Two lists with the same name are merged \
-        into one the next time Cadence opens, so this list was not renamed. Pick a different name.
-        """
+        CadenceContextNameClashCopy.notRenamed(existingName)
     }
 
     private var normalizedIcon: String {

@@ -73,11 +73,7 @@ struct CreateContextSheet: View {
     }
 
     static func duplicateNameNotice(_ existingName: String) -> String {
-        """
-        A context named "\(existingName)" already exists. Two contexts with the same name are \
-        merged into one the next time Cadence opens, so this one was not created. Pick a different \
-        name, or edit the context you already have.
-        """
+        CadenceContextNameClashCopy.notCreated(existingName)
     }
 }
 

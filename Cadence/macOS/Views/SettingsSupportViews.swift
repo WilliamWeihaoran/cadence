@@ -245,10 +245,7 @@ struct ContextSettingsRow: View {
     }
 
     static func duplicateRenameNotice(_ existingName: String) -> String {
-        """
-        A context named "\(existingName)" already exists. Two contexts with the same name are \
-        merged into one the next time Cadence opens, so this one was not renamed. Pick a different name.
-        """
+        CadenceContextNameClashCopy.notRenamed(existingName)
     }
 }
 
