@@ -282,9 +282,22 @@ struct CadenceSharedBoardChromeTests {
     /// **The T-161 test for the inline empty**, and the one that catches the specific failure this
     /// component already had: the shared version lived in `Shared/Components/` the whole time, and
     /// iOS still wrote its own because the file around it was `#if os(macOS)`.
-    @Test func bothPlatformsDrawTheSharedInlineEmpty() throws {
+    ///
+    /// **[[T-5002]] left the desktop with no caller at all**, and that is a weakening this test has
+    /// to say out loud rather than hide by quietly dropping a row. `GoalsSupportViews.swift` was
+    /// the ONLY macOS file that drew `CadenceInlineEmpty`, and it went with the Goals screens; the
+    /// three remaining callers are all `Cadence/iOS/`. So the name no longer describes the test,
+    /// and what it checks now is in two halves:
+    ///
+    /// 1. every live caller draws it at the tier its own platform belongs to — unchanged, and
+    ///    still the half that would have caught the original fork; and
+    /// 2. the desktop count is **asserted as zero**, not omitted. The component still ships a
+    ///    `.desktop` tier (`CadenceInlineEmptyMetrics`), so the hazard is a Mac surface growing an
+    ///    inline empty of its own again with nothing left on this list to compare it against —
+    ///    which is exactly the T-161 failure in a tree where it would now go unnoticed. A zero
+    ///    that has to be deliberately changed back to a one is the guard; a deleted row is not.
+    @Test func everyLiveInlineEmptyCallerDrawsItAtItsOwnSurfaceTier() throws {
         let expectations: [(path: String, surface: String)] = [
-            ("Cadence/macOS/Views/GoalsSupportViews.swift", "surface: .desktop"),
             ("Cadence/iOS/iOSCalendarBoardView.swift", "surface: .touch"),
             ("Cadence/iOS/iOSCalendarInspectorView.swift", "surface: .touch"),
             ("Cadence/iOS/iOSMarkdownAccessoryViews.swift", "surface: .touch"),
@@ -302,6 +315,24 @@ struct CadenceSharedBoardChromeTests {
                 "\(expectation.path) draws the shared inline empty at the wrong surface tier"
             )
         }
+
+        // Half two: no macOS file draws it, and the walk that says so is shown to be real.
+        let desktop = try swiftFiles(under: "Cadence/macOS")
+        #expect(desktop.count > 150, "non-vacuity: the macOS walk found \(desktop.count) files")
+        var drawing: [String] = []
+        for path in desktop where CadenceSourceScan.strippingComments(try sourceFile(path))
+            .contains("CadenceInlineEmpty(") {
+            drawing.append(path)
+        }
+        #expect(
+            drawing.isEmpty,
+            """
+            \(drawing) draws the shared inline empty on the desktop again. That is not a \
+            regression — it is welcome — but this list and the `.desktop` tier assertion above \
+            have to come back with it, or the Mac has one caller and nothing comparing it to the \
+            phone's, which is the T-161 shape.
+            """
+        )
     }
 
     /// **T-601(a). The fifth call site above is a fork this ticket closed, not one it found kept.**
@@ -636,8 +667,6 @@ struct CadenceSectionEyebrowConvergenceTests {
             "Cadence/macOS/Views/FocusPickerSupportViews.swift": 1,
             "Cadence/macOS/Views/FocusSidebarSupportViews.swift": 1,
             "Cadence/macOS/Views/GlobalSearchOverlayShellViews.swift": 1,
-            "Cadence/macOS/Views/GoalsSupportViews.swift": 1,
-            "Cadence/macOS/Views/HabitsFormSupportViews.swift": 1,
             "Cadence/macOS/Views/ListDetailSupportViews.swift": 1,
             "Cadence/macOS/Views/ListNotesViewSupportViews.swift": 1,
             "Cadence/macOS/Views/NoteReferenceSupportViews.swift": 1,
@@ -649,11 +678,12 @@ struct CadenceSectionEyebrowConvergenceTests {
             // `SettingsSevenPaneVocabularyTests.theSevenPanesReadTheSharedFieldVocabulary`, so a
             // pane that stops drawing labelled fields altogether still fails something.
             "Cadence/macOS/Views/SettingsTemplatesSection.swift": 0,
-            // `TaskBundlePickerSupportViews.swift` held one until [[T-3170]]'s trio pass deleted it.
+            // `TaskBundlePickerSupportViews.swift` held one until [[T-3170]]'s trio pass deleted
+            // it; `GoalsSupportViews.swift`, `HabitsFormSupportViews.swift` and
+            // `iOSFeatureDetailViews.swift` each held one until [[T-5002]] deleted all three.
             "Cadence/Shared/CadenceSettingsSharedViews.swift": 1,
             "Cadence/macOS/Views/CommitmentSharedViews.swift": 1,
             "Cadence/Shared/Components/HabitProgressViews.swift": 1,
-            "Cadence/iOS/iOSFeatureDetailViews.swift": 1,
             // Zero since T-1273, and a count rather than a deletion for the same reason the
             // templates pane above is: this pane's one eyebrow headed the "Ready to Schedule"
             // stack, and the whole stack came off Today's Timeline tab. A pane that grows a

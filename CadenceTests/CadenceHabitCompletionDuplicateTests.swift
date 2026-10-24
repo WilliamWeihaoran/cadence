@@ -324,8 +324,11 @@ struct CadenceHabitCompletionDuplicateTests {
             "HabitCompletion.swift",                // Models/
             "CadenceHabitCompletionStore.swift",    // Services/ -- now an empty enum
             "CadenceFocusPlanningSupport.swift",    // Shared/
-            "HabitsView.swift",                     // macOS/Views/
-            "iOSFeatureViews.swift",                // iOS/
+            // `HabitsView.swift` and `iOSFeatureViews.swift` were the two UI witnesses until
+            // [[T-5002]] deleted both screens. `CadenceCompactShellSupport.swift` replaces them as
+            // the surviving non-Models, non-Services reader of a habit's completion state, so the
+            // walk is still shown reaching past the two folders this scan is really about.
+            "CadenceCompactShellSupport.swift",     // Shared/
             // T-359 named this as a fourth toggle site and it is not one:
             // `markHabitCompletion` writes the widget's optimistic override into `UserDefaults`
             // and never touches a row. Listed here so the scan is on record as having read it.

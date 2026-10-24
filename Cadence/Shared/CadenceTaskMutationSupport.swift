@@ -1453,7 +1453,8 @@ nonisolated struct CadenceDeleteSurvivorSnapshot {
     /// filter ([[T-1324]]), so every doomed goal's children are doomed too — the one goal on the
     /// far side of a `parentGoal = nil` that outlives the delete is the parent of the goal the
     /// user actually aimed at. Both Goals pages draw a direction with its milestones nested under
-    /// it (`GoalMissionGrouping.groups` on macOS, `milestones(of:)` on iOS), so a refusal that
+    /// it — `GoalAssignmentRules.topLevelGoals` then `nestedGoals(under:)`, the rule both pages
+    /// read before [[T-5002]] deleted them and the one the widgets still read — so a refusal that
     /// missed `subGoals` shows a direction that has lost the milestone it was not asked to remove.
     ///
     /// Applied to every doomed goal rather than only the root, which also covers the arrays

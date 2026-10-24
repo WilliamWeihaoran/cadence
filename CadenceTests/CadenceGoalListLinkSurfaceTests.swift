@@ -505,51 +505,18 @@ struct CadenceGoalListLinkSurfaceTests {
         #expect(try swiftFiles(under: "Cadence").count > 100, "the sweep read no tree")
     }
 
-    /// The presentation decisions are read from one place on both platforms — the ordering rule,
-    /// the row's task-count label, and the empty section's copy.
-    @Test func bothPlatformsReadTheSharedLinkPresentation() throws {
-        try expectOccurrences(of: "GoalLinkPresentation.links(", at: [
-            "Cadence/iOS/iOSFeatureDetailViews.swift": 1,
-            "Cadence/macOS/Views/GoalInspectorView.swift": 1
-        ])
-
-        // macOS's row has the width for the sentence; iOS's 44pt row takes the metric. Both come
-        // from `contributingTaskCount`, and neither file spells the count itself.
-        try expectOccurrences(of: "GoalLinkPresentation.contributionLabel(", at: [
-            "Cadence/iOS/iOSFeatureDetailViews.swift": 0,
-            "Cadence/macOS/Views/GoalsSupportViews.swift": 1
-        ])
-        try expectOccurrences(of: "GoalLinkPresentation.contributionMetric(", at: [
-            "Cadence/iOS/iOSFeatureDetailViews.swift": 1,
-            "Cadence/macOS/Views/GoalsSupportViews.swift": 0
-        ])
-
-        try expectOccurrences(of: "GoalLinkPresentation.emptyExplanation", at: [
-            "Cadence/iOS/iOSFeatureDetailViews.swift": 1,
-            "Cadence/macOS/Views/GoalInspectorView.swift": 1
-        ])
-    }
-
-    /// The explanation is on the screen, not only in the value type: the iOS goal detail draws the
-    /// attribution line under its progress bar and the inherited-links note in its section.
-    @Test func theIOSGoalDetailShowsTheLinkedListsSectionAndTheAttribution() throws {
-        try expectOccurrences(of: "GoalLinkPresentation.attributionLine(", at: [
-            "Cadence/iOS/iOSFeatureDetailViews.swift": 1
-        ])
-        try expectOccurrences(of: "GoalLinkPresentation.inheritedListNote(", at: [
-            "Cadence/iOS/iOSFeatureDetailViews.swift": 1
-        ])
-        // The attach sheet's presentation was asserted here at exactly 1; the sheet is deleted
-        // ([[T-2079]]) and the presentation with it, so the count is 0 — stated rather than
-        // dropped, so a re-added attach surface fails this test rather than passing it silently.
-        try expectOccurrences(of: "iOSGoalAttachListsSheet(", at: [
-            "Cadence/iOS/iOSFeatureDetailViews.swift": 0
-        ])
-        try expectOccurrences(of: "linkedListsSection", at: [
-            // The declaration and the one place the body reads it.
-            "Cadence/iOS/iOSFeatureDetailViews.swift": 2
-        ])
-    }
+    // **`bothPlatformsReadTheSharedLinkPresentation` and
+    // `theIOSGoalDetailShowsTheLinkedListsSectionAndTheAttribution` left with [[T-5002]].** Both
+    // counted `GoalLinkPresentation` call sites inside `iOSFeatureDetailViews.swift`,
+    // `GoalInspectorView.swift` and `GoalsSupportViews.swift` — the three deleted files that drew
+    // a goal's linked lists. There is no surface left to read the presentation from.
+    //
+    // **The presentation itself is NOT deleted and is still fully tested above**, by value rather
+    // than by call site: `GoalListLinkHelpers` is in `Shared/` and `GoalContributionSummary` reads
+    // it, so the ordering rule, the contribution label and metric, the attribution line and the
+    // inherited-list note all keep their behavioural tests. Which of its members are now
+    // callerless in product code is the second-tier dead-code sweep, filed separately rather than
+    // pulled into a decided ticket.
 
     // MARK: - The scan itself
 
@@ -562,10 +529,7 @@ struct CadenceGoalListLinkSurfaceTests {
 
         #expect(files.count > 300, "the source scan found \(files.count) files and cannot be doing its job")
         #expect(files.contains("Cadence/Shared/GoalListLinkHelpers.swift"))
-        #expect(files.contains("Cadence/iOS/iOSFeatureDetailViews.swift"))
-        #expect(files.contains("Cadence/macOS/Views/GoalInspectorView.swift"))
-        #expect(files.contains("Cadence/macOS/Views/GoalsSupportViews.swift"))
-        #expect(files.contains("Cadence/macOS/Views/GoalsView.swift"))
+        #expect(files.contains("Cadence/Models/GoalContributionSummary.swift"))
 
         // **The three the sweep must NOT find ([[T-2079]]).** `iOSGoalAttachListsSheet.swift`,
         // `GoalAttachWorkSheet.swift` and `CreateGoalSheet.swift` were each asserted present
@@ -576,10 +540,20 @@ struct CadenceGoalListLinkSurfaceTests {
         #expect(!files.contains("Cadence/macOS/Views/GoalAttachWorkSheet.swift"))
         #expect(!files.contains("Cadence/macOS/Sheets/CreateGoalSheet.swift"))
 
+        // **And the four READ surfaces [[T-5002]] deleted**, asserted the same way and for the
+        // same reason: these drew a goal's linked lists, and the whole point of that ticket is
+        // that nothing navigates to them any more.
+        #expect(!files.contains("Cadence/iOS/iOSFeatureDetailViews.swift"))
+        #expect(!files.contains("Cadence/macOS/Views/GoalInspectorView.swift"))
+        #expect(!files.contains("Cadence/macOS/Views/GoalsSupportViews.swift"))
+        #expect(!files.contains("Cadence/macOS/Views/GoalsView.swift"))
+
         // And it must be reading *code*, not an empty string: a positive assertion over the same
-        // reader the counts above use.
-        let detail = try strippingComments(sourceFile("Cadence/iOS/iOSFeatureDetailViews.swift"))
-        #expect(detail.contains("struct iOSGoalDetail: View"))
+        // reader the counts above use. Pointed at the helpers file since [[T-5002]] deleted every
+        // view this suite used to read — and it is the right file for it, because it is the one
+        // this suite is actually about.
+        let helpers = try strippingComments(sourceFile("Cadence/Shared/GoalListLinkHelpers.swift"))
+        #expect(helpers.contains("enum GoalLinkPresentation"))
     }
 }
 

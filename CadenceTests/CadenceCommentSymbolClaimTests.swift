@@ -1095,7 +1095,6 @@ enum CadenceCommentSymbolClaim {
         "CadenceMCPServer/CadenceMCPToolDefinitions.swift `CadenceGoalSummary.subGoalCount`",
         "CadenceMCPServer/CadenceMCPToolDefinitions.swift `CadenceGoalSummary.taskCount`",
         "CadenceTests/CadenceBundleCreationParityTests.swift `iOSCalendarTimelineGrid.formBundle`",
-        "CadenceTests/CadenceColorPaletteTests.swift `Theme.neutralHex`",
         "CadenceTests/CadenceEmptyStateAuditTests.swift `CadenceTodayPresentationSupport.emptyScheduleHint`",
         "CadenceTests/CadenceNoteFolderSurfaceTests.swift `CadenceListNoteSupport.firstOrCreateNote`",
         "CadenceTests/CadenceNoteFolderSurfaceTests.swift `ListNotesView.normalizedFolderPath`",
@@ -1197,8 +1196,9 @@ enum CadenceCommentSymbolClaim {
         "CadenceTests/CadenceIconOnlyHelperIdiomDuplicationTests.swift `TimelineBundleBlockSupportViews.rowIconButton`",
         "CadenceTests/CadenceSaveCommitDisciplineTests.swift `CadenceMCPRowOrderSnapshot.restore()`",
         "CadenceTests/CadenceSaveCommitDisciplineTests.swift `TimelineBundleBlock.body`",
-        // Illustrative: "a caller that cannot say Copy.goalsTitle in one token".
-        "CadenceTests/CadenceSharedConstantReuseSweepTests.swift `Copy.goalsTitle`",
+        // The "a caller that cannot say Copy.goalsTitle in one token" illustration left with
+        // [[T-5002]]: goalsTitle is deleted, so the sentence names it without backticks now and
+        // the scan no longer reads a claim there.
         "CadenceTests/SettingsCategoryReachTests.swift `iOSMobileCapability.all`",
     ]
 
@@ -1247,7 +1247,11 @@ enum CadenceCommentSymbolClaim {
         // there, and the ledger has to mirror what the detector finds. **It came back on
         // 2026-10-22** ([[T-3271]]): an implicit member expression no longer vouches for a root,
         // so the group is 6 again.
-        #expect(Self.rootTombstones.count == 11)
+        // **10 since [[T-5002]]**: the "a caller that cannot say Copy.goalsTitle in one
+        // token" illustration in CadenceSharedConstantReuseSweepTests named a constant that
+        // ticket deleted, so the sentence names it without backticks now and the scan reads
+        // no claim there. Removed rather than struck off, as the estimate chip's row was.
+        #expect(Self.rootTombstones.count == 10)
         #expect(Self.rootNonSymbols.count == 6)
         #expect(Self.rootStaleClaims.count == 0)
     }
@@ -1360,7 +1364,10 @@ enum CadenceCommentSymbolClaim {
         // wants to know what used to draw there. This comment spells the section's name without
         // its type on purpose: a qualified claim here would be a third dangling one, in the very
         // file that keeps the list of them.
-        #expect(tombstones.count == 50)
+        // **49 since [[T-5002]]**, which deleted CadenceEmptyStateCopy.goalsTitle: the
+        // CadenceColorPaletteTests memorial naming Theme.neutralHex went with the test that
+        // carried it, so the row is removed rather than struck off, as the estimate chip's was.
+        #expect(tombstones.count == 49)
         // It was 1 while the Calendar Board's formBundle doc named a Mac spelling [[T-3170]] had
         // removed and the file was still Codex-leased; the grant `41ded784` unblocked it and
         // T-3170's Board pass deleted the function that comment documented, taking it to 0. It is

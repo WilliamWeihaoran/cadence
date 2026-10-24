@@ -207,8 +207,8 @@ nonisolated enum CadenceEmptyStateCopy {
     /// The caller answers it, never this function: "the collection this page draws from" is a
     /// different array on every surface (every goal, every habit, every list), and a filtered one
     /// is always empty in exactly the state being asked about — which is why it cannot be inferred
-    /// here. Same shape, and the same reason, as `goalsTitle(isNarrowed:allComplete:)`'s
-    /// `allComplete`. Defaulted to `true` so a caller that has genuinely nothing to report — the
+    /// here. Same shape, and the same reason, as the retired goalsTitle(isNarrowed:allComplete:)'s
+    /// `allComplete` had. Defaulted to `true` so a caller that has genuinely nothing to report — the
     /// attach-lists sheet, whose `filterNarrows` is already a constant `false` — reads as it did.
     static func isNarrowedToEmpty(
         searchText: String,
@@ -219,73 +219,23 @@ nonisolated enum CadenceEmptyStateCopy {
         return filterNarrows || !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
-    /// **The Goals list and the Goals roadmap are one page in two view modes, so they get one
-    /// title** (T-540).
-    ///
-    /// `GoalsViewModeToggle` switches between them without changing the page's identity, and both
-    /// were spelling this pair out at their own call site. They agreed exactly at the point this
-    /// was written — which is luck rather than discipline: the sweep that exists to catch a
-    /// sentence spelled twice **could not see either of them**, because both are written as
-    /// `isNarrowedToEmpty ? … : …` and its reader matched only a literal placed directly after
-    /// `message:`. Widening that reader is what surfaced this pair, and these are the only two
-    /// duplicates it found.
-    ///
-    /// A function taking the predicate, in the shape `activeListsSubtitle(hasArchived:)` and
-    /// `isNarrowedToEmpty` already use, so a call site cannot take one half of the pair without
-    /// answering the question that decides which half is true.
-    ///
-    /// **The two subtitles stay at their call sites, and that is not an oversight.** They name
-    /// different controls because the two modes carry different ones: the list has a visible
-    /// search field beside a status picker ("Try a different search or status."), the roadmap has
-    /// a single popover button labelled *Filter* holding both ("Try a different filter."). Same
-    /// reasoning as `savedLinksSubtitle` naming no control at all — copy converges when the
-    /// surfaces really do show the same thing, not because two sentences sit next to each other.
-    ///
-    /// **A third case, for "every goal is done" (T-689).** `isNarrowed` answers "is a filter or a
-    /// search hiding rows that exist" — true on the Mac, which carries both — but the phone's
-    /// `iOSGoalsView` has neither control, so it could only ever pass `false`, and a reader who had
-    /// finished all five of their goals saw "No goals yet" beside an empty list that was not
-    /// actually a first run. `isNarrowed: true` is not the fix either: it reads "No matching
-    /// goals", which promises a filter to try differently, and this page has none.
-    ///
-    /// `allComplete` is the caller's own answer to "does the collection hold goals that this page
-    /// is simply choosing not to show" — true exactly when the underlying collection is non-empty
-    /// and every goal in it is inactive, never inferred here. It only matters when `isNarrowed` is
-    /// `false`: a real filter miss still reads "No matching goals" regardless of why the filter
-    /// missed. Defaulted to `false` so the Mac's two existing call sites, which have no such state
-    /// to report, keep reading exactly as they did.
-    static func goalsTitle(isNarrowed: Bool, allComplete: Bool = false) -> String {
-        if isNarrowed { return "No matching goals" }
-        return allComplete ? "All goals complete" : "No goals yet"
-    }
-
-    /// **The Habits page's title, on both surfaces** (T-548).
-    ///
-    /// Same shape as `goalsTitle(isNarrowed:)` and found the same way, one widening later: the Mac
-    /// spelled `"No habits yet"` in `HabitsView` and the phone spelled it again in
-    /// `iOSFeatureViews`, byte for byte, while the sweep that exists to catch that could see
-    /// neither — `iOSFeatureViews` names no empty-state component at all, reaching `iOSEmptyPanel`
-    /// through `iOSFeatureEmptyState` → `iOSFeatureEmptyDetail`.
-    ///
-    /// **The phone passes `false` because its Habits chooser holds no search field and no filter**,
-    /// so `nil` there means the collection is empty. That is the question the parameter exists to
-    /// make a caller answer, rather than a formality: the Mac's page defaults to *Due Today*, and
-    /// answering it wrong is exactly the defect `isNarrowedToEmpty` was written for.
-    ///
-    /// **The subtitles stay apart, and unlike the goals pair they have already drifted** — the Mac
-    /// says "Create a habit, then link it to the goal it supports.", the phone "Create repeating
-    /// commitments and track today.". Which one is true of which surface is a copy decision, not a
-    /// de-duplication, so it is left where a reader can see both.
-    static func habitsTitle(isNarrowed: Bool) -> String {
-        isNarrowed ? "No matching habits" : "No habits yet"
-    }
+    // **goalsTitle(isNarrowed:allComplete:) and habitsTitle(isNarrowed:) left with
+    // [[T-5002]].** T-540, T-548 and T-689 converged the Goals and Habits titles here because four
+    // call sites were spelling them, and the owner has since deleted all four screens: [[T-2079]]
+    // retired every in-app writer of a `Goal` or a `Habit` and [[T-2076]] left the pages with no
+    // route in, so the pages, their empty states and these two titles went together. The five
+    // strings — "No goals yet", "No matching goals", "All goals complete", "No habits yet",
+    // "No matching habits" — are entries in `cadenceRetiredCopy`, so a screen written next year
+    // cannot bring one back without saying so. The models stay: `Habit`, `HabitCompletion` and
+    // `Goal` are still in `CadenceSchema`, still exported and still cleared by
+    // `CadencePrivacyDataResetService`.
 
     /// **"No lists yet", converged from three spellings** (T-699). `CadenceListsSummary.eyebrow(…)`
     /// returned it as the fallback branch of the Lists page's summary line, `iOSRootSidebar`'s
     /// collapsed-sections row typed it as a bare `Text`, and `iOSGoalAttachListsSheet` typed
     /// `isNarrowedToEmpty ? "No matching lists" : "No lists yet"` — the third site named the shape
-    /// the other two lacked, so this takes `isNarrowed:` the same way `goalsTitle(isNarrowed:)` and
-    /// `habitsTitle(isNarrowed:)` do, rather than being a bare constant. `"No matching lists"` had
+    /// the other two lacked, so this takes `isNarrowed:` the way the retired goalsTitle(isNarrowed:)
+    /// and habitsTitle(isNarrowed:) did, rather than being a bare constant. `"No matching lists"` had
     /// no declaration anywhere before this.
     static func listsTitle(isNarrowed: Bool) -> String {
         isNarrowed ? "No matching lists" : "No lists yet"

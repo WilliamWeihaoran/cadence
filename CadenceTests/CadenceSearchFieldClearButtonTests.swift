@@ -41,8 +41,6 @@ struct CadenceSearchFieldClearButtonTests {
         "Cadence/macOS/Views/CadenceContextPicker.swift": 12,
         "Cadence/macOS/Views/FocusPickerSupportViews.swift": 12,
         "Cadence/macOS/Views/GlobalSearchSupportViews.swift": 16,
-        "Cadence/macOS/Views/GoalPickerViews.swift": 12,
-        "Cadence/macOS/Views/GoalTimelineSupportViews.swift": 12,
         // T-790's shared row: the four pickers that used to spell this button themselves --
         // ContainerPickerSupportViews, TaskTitleInlineTagPicker, TasksPanelSupportViews and
         // TildeContainerPicker -- now hand their field to `CadenceSearchFieldRow`, which draws the
@@ -95,10 +93,11 @@ struct CadenceSearchFieldClearButtonTests {
         // T-672's ledger plus the eleventh copy no naming rule could see. T-790 then folded four of
         // those into one shared row, so eight files spelled the button and one of them was the
         // shared row itself. [[T-3170]]'s trio pass deleted `TaskBundlePickerSupportViews.swift`,
-        // so seven. **A falling count here is the shared component doing its job** (or a field
+        // so seven; [[T-5002]] deleted GoalPickerViews.swift and GoalTimelineSupportViews.swift
+        // with the Goals screens, so five. **A falling count here is the shared component doing its job** (or a field
         // leaving the app); a rising one is a new hand-spelled copy.
-        #expect(actual.values.reduce(0, +) == 7)
-        #expect(actual.count == 7)
+        #expect(actual.values.reduce(0, +) == 5)
+        #expect(actual.count == 5)
     }
 
     /// The size each call site states, which is the decision the ledger's comment explains. Stated
@@ -171,9 +170,14 @@ struct CadenceSearchFieldClearButtonTests {
     /// them grow one; a `.focused` binding deleted here would leave the component setting focus on
     /// a state nothing is bound to, which no compiler and no sweep above would notice.
     @Test func theFieldsThatGainedAFocusStateStillBindIt() throws {
-        for (path, declaration) in [
-            ("Cadence/macOS/Views/GoalTimelineSupportViews.swift", "struct GoalTimelineFilterPopover: View"),
-        ] {
+        // **`GoalTimelineFilterPopover` was the only entry and left with [[T-5002]].** Kept as an
+        // empty-but-declared list rather than deleted: the claim — a field that gained a
+        // `@FocusState` must still bind it — is one the next picker to grow one needs, and a list
+        // that is there and empty says "nobody has grown one since" where a deleted test says
+        // nothing at all. The loop below is a no-op today and fails the moment an entry is added
+        // whose binding is missing.
+        let fieldsWithFocusState: [(String, String)] = []
+        for (path, declaration) in fieldsWithFocusState {
             let code = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(path))
             guard let body = CadenceSourceScan.declarationBody(declaration, in: code) else {
                 Issue.record("no \(declaration) in \(path)")

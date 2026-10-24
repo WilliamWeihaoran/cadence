@@ -1090,16 +1090,21 @@ struct CadenceArchiveImportSurfaceTests {
         #expect(try observer.fetchCount(FetchDescriptor<AppTask>()) == 0)
     }
 
-    // MARK: - T-1109: a goal cycle the Goals page can never show
+    // MARK: - T-1109: a goal cycle no surface can ever show
 
-    /// **The consequence half, measured against the real grouping rather than reasoned about.**
+    /// **The consequence half, measured against the real rules rather than reasoned about.**
     ///
-    /// `GoalMissionGrouping.groups` — the Goals page's only source of rows — starts at
-    /// `GoalAssignmentRules.topLevelGoals`, which is `parentGoal == nil`. A cycle has no member
-    /// with a `nil` parent, so it contributes no group and no milestone row: the goals are in the
+    /// Every surface that lists goals — the widgets, the MCP read tools, and the Goals pages until
+    /// [[T-5002]] deleted them — starts at `GoalAssignmentRules.topLevelGoals`, which is
+    /// `parentGoal == nil`, and descends with `nestedGoals(under:)`. A cycle has no member with a
+    /// `nil` parent, so it contributes no root and nothing reachable from one: the goals are in the
     /// store, on every device, and on no screen. This is why the importer has to refuse one, and it
     /// is deliberately built by hand here rather than through an import, so the invisibility claim
     /// stands on its own if the importer's guard is ever moved.
+    ///
+    /// Asked of roots-plus-descendants, not of roots alone: `nestedGoals(under:)` carries a visited
+    /// set and so returns the *other* member of a two-cycle when handed one directly, which is the
+    /// answer that makes "no root" and "nothing drawn" two claims instead of one.
     @Test func aRootlessGoalCycleIsInTheStoreAndOnNoGoalsRow() throws {
         let modelContext = ModelContext(try CadenceTestStore.container())
         let first = Goal(title: "Ship the thing")
@@ -1115,9 +1120,13 @@ struct CadenceArchiveImportSurfaceTests {
         #expect(live.count == 2, "the rows are not in the store, so this measures nothing")
         #expect(GoalAssignmentRules.topLevelGoals(from: live).isEmpty, "the cycle has a root after all")
         #expect(GoalAssignmentRules.activeTopLevelGoals(from: live).isEmpty)
+        // [[T-5002]] deleted the Goals pages, so "and on no row" is asked of the rules the pages
+        // read — and which the widgets and the MCP read surface still read — rather than of a page.
+        let drawable = GoalAssignmentRules.topLevelGoals(from: live)
+            .flatMap { [$0] + GoalAssignmentRules.nestedGoals(under: $0) }
         #expect(
-            GoalMissionGrouping.groups(from: live) { _ in true }.isEmpty,
-            "the Goals page can show the cycle, so there is nothing to refuse"
+            drawable.isEmpty,
+            "the cycle is reachable from a root after all, so there is nothing to refuse"
         )
     }
 
@@ -1226,7 +1235,7 @@ struct CadenceArchiveImportSurfaceTests {
         #expect(first.parentGoal == nil, "the refused edge was written anyway")
         #expect(second.parentGoal?.id == first.id)
         let live = try destination.fetch(FetchDescriptor<Goal>())
-        #expect(GoalMissionGrouping.groups(from: live) { _ in true }.count == 1)
+        #expect(GoalAssignmentRules.topLevelGoals(from: live).count == 1)
     }
 
     /// **The same document is accepted in merge mode**, because merge never writes the edge.
@@ -1257,7 +1266,7 @@ struct CadenceArchiveImportSurfaceTests {
         #expect(outcome.skippedRecordCount == 1)
         #expect(first.parentGoal == nil, "a merge overwrote a matched row's relationship")
         let live = try destination.fetch(FetchDescriptor<Goal>())
-        #expect(GoalMissionGrouping.groups(from: live) { _ in true }.count == 1)
+        #expect(GoalAssignmentRules.topLevelGoals(from: live).count == 1)
     }
 
     /// A component of the destination that was already circular is not this import's to refuse.
@@ -1296,11 +1305,13 @@ struct CadenceArchiveImportSurfaceTests {
         #expect(outcome.insertedRecordCount == 3)
         let live = try destination.fetch(FetchDescriptor<Goal>())
         #expect(live.count == 5)
-        // The one importable direction draws its group; the pre-existing cycle still draws nothing,
-        // which is what T-1109 is about and not something an import can repair.
-        let groups = GoalMissionGrouping.groups(from: live) { _ in true }
-        #expect(groups.map(\.title) == ["A direction"])
-        #expect(groups.first?.goals.map(\.title) == ["A milestone"])
+        // The one importable direction is the one root the rules resolve; the pre-existing cycle
+        // still resolves to nothing, which is what T-1109 is about and not something an import can
+        // repair. Read through `GoalAssignmentRules` since [[T-5002]] deleted the page that used
+        // to be asked this — the rules are what the page read, and what the widgets still read.
+        let roots = GoalAssignmentRules.topLevelGoals(from: live)
+        #expect(roots.map(\.title) == ["A direction"])
+        #expect(roots.first.map { GoalAssignmentRules.nestedGoals(under: $0).map(\.title) } == ["A milestone"])
     }
 
     /// A deep but acyclic hierarchy is untouched by the check and still arrives whole.
@@ -1326,9 +1337,12 @@ struct CadenceArchiveImportSurfaceTests {
 
         let live = try destination.fetch(FetchDescriptor<Goal>())
         #expect(live.count == 3)
-        let groups = GoalMissionGrouping.groups(from: live) { _ in true }
-        #expect(groups.map(\.title) == ["A direction"])
-        #expect(Set(groups.first?.goals.map(\.title) ?? []) == ["A milestone", "A sub-milestone"])
+        let roots = GoalAssignmentRules.topLevelGoals(from: live)
+        #expect(roots.map(\.title) == ["A direction"])
+        #expect(
+            Set(roots.first.map { GoalAssignmentRules.nestedGoals(under: $0).map(\.title) } ?? [])
+                == ["A milestone", "A sub-milestone"]
+        )
     }
 
     /// The injected failure, so the tests above are not depending on some real error's wording.

@@ -488,7 +488,8 @@ struct CadenceControlAccessibilityLabelTests {
                 #"Toggle(CadenceNotificationSettingsCopy.remindersToggleTitle, isOn: $notificationsEnabled)"#,
             "Cadence/iOS/iOSNotificationsSettingsSection.swift":
                 #"Toggle(CadenceNotificationSettingsCopy.remindersToggleTitle, isOn: $notificationsEnabled)"#,
-            "Cadence/macOS/Views/HabitsFormSupportViews.swift": #"Toggle("Remind me", isOn: $hasReminder)"#,
+            // The habit reminder toggle left with [[T-5002]], which deleted
+            // `HabitsFormSupportViews.swift` along with the rest of the Habits screen.
             "Cadence/macOS/Views/NoteActionReviewSheets.swift": #"Toggle("Include this task", isOn: $isSelected)"#,
             "Cadence/macOS/Views/SettingsSupportViews.swift": #"Toggle("Visible in Sidebar", isOn: $isVisible)"#,
         ]

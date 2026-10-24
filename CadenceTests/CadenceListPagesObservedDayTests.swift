@@ -164,21 +164,11 @@ struct CadenceListPagesObservedDayTests {
         #expect(!row.contains("DateFormatters.todayKey()"))
     }
 
-    @Test func theGoalsPageHandsItsObservedDayToEveryDueFlag() throws {
-        let page = try #require(CadenceSourceScan.declarationBody(
-            "struct GoalsView: View", in: try Self.code("Cadence/macOS/Views/GoalsView.swift")
-        ))
-        let body = try #require(CadenceSourceScan.declarationBody("var body: some View", in: page))
-        #expect(body.contains("let todayKey = observedDay.todayKey"))
-        #expect(body.contains("GoalInspectorSheet(goal: goal, todayKey: todayKey)"))
-        #expect(page.contains("GoalInspectorView(goal: goal, todayKey: todayKey)"))
-
-        let support = try Self.code("Cadence/macOS/Views/GoalsSupportViews.swift")
-        let label = try #require(CadenceSourceScan.declarationBody("private struct GoalDueDateLabel: View", in: support))
-        #expect(label.contains("let isOverdue = key < todayKey"))
-        #expect(!support.contains("DateFormatters.todayKey()"))
-        #expect(CadenceSourceScan.matchCount(#"GoalDueDateLabel\(dueDateKey: [^)]*todayKey: todayKey"#, in: support) == 2)
-    }
+    // **`theGoalsPageHandsItsObservedDayToEveryDueFlag` left with [[T-5002]].** T-5012 (b)-(d)
+    // gave every list page one `CadenceObservedDay`; Goals was one of them, and the page, its
+    // inspector, its sheet and `GoalDueDateLabel` are all deleted. Every other page the ticket
+    // covered keeps its test in this file, and the adoption list itself is
+    // `CadenceDayChangeAdoptionTests`.
 
     // MARK: - Notes
 

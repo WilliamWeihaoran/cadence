@@ -35,10 +35,12 @@ enum GoalAssignmentRules {
     /// screen draws is the one outcome the user cannot account for, so the descendants are
     /// flattened into the tier that *is* drawn rather than left invisible or quietly discounted.
     ///
-    /// macOS has read it this way since `926a67b` — `GoalMissionGrouping.nestedGoals` was this
-    /// function, privately, on the one platform whose editor could build the tree. It moved here
-    /// so the iOS list reads the same shape, for the reason `mustStayTopLevel(_:)` moved here:
-    /// a rule kept on one of two platforms is not a rule.
+    /// macOS has read it this way since `926a67b`: the Goals page carried this function
+    /// privately, on the one platform whose editor could build the tree, and it moved here so the
+    /// iOS list read the same shape — for the reason `mustStayTopLevel(_:)` moved here, that a
+    /// rule kept on one of two platforms is not a rule. [[T-5002]] has since deleted both pages,
+    /// which is why that argument matters more rather than less: the rule outlived its callers
+    /// because it was not one of them.
     ///
     /// `visited` guards the cycle a corrupted `parentGoal` chain could produce, matching
     /// `deletionCascade(from:)` and `GoalContributionResolver`.

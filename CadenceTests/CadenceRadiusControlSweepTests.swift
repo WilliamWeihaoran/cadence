@@ -458,10 +458,7 @@ struct CadenceRadiusControlSweepTests {
                 "Cadence/Shared/CadenceHoverStyles.swift",
                 "RoundedRectangle\\(cornerRadius: Theme\\.radiusControl\\)"
             ),
-            (
-                "Cadence/macOS/Views/GoalTimelineView.swift",
-                "RoundedRectangle\\(cornerRadius: Theme\\.radiusControl\\)\\.strokeBorder"
-            ),
+            // The Goals roadmap's entry left with [[T-5002]], which deleted the file.
         ]
         for site in sites {
             let source = try CadenceSourceScan.sourceFile(site.file)

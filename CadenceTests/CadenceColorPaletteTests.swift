@@ -558,36 +558,12 @@ struct CadenceSeedColourSourceTests {
     // goal or habit because nothing creates one. The rule they were instances of is unchanged
     // and still has its own tests here: no file outside `Theme.swift` hand-types a hex.
 
-    /// The odd one out: not an accent but the app's single neutral, on the "Unassigned" habit
-    /// group's icon tile.
-    ///
-    /// It reads `TaskSectionDefaults.defaultColorHex` — a constant named for kanban sections —
-    /// and that is a decision rather than an accident. `#6b7a99` is one value with one home, and
-    /// that home has to be `Models/` because `CadenceMCPServer` compiles `Models/` and not
-    /// `Theme.swift`; `Area`/`Project` container fallbacks, `Tag`'s default, `GoalListLink`'s
-    /// fallback and the last swatch of the list palette are all the same grey. A new
-    /// `Theme.neutralHex` beside it would be a **second spelling of a hex the app already
-    /// publishes**, which is the drift T-166 deleted rather than the fix for it.
-    @Test func theUnassignedHabitGroupReadsTheAppsOneNeutral() throws {
-        let view = paletteStrippingSwiftComments(try paletteSourceFile("Cadence/macOS/Views/HabitsView.swift"))
-        #expect(view.contains("title: \"Unassigned\""), "non-vacuity: still the group this is about")
-
-        #expect(view.contains("colorHex: TaskSectionDefaults.defaultColorHex,"))
-        #expect(
-            palettteRegexMatches(paletteHexLiteralPattern, in: view).isEmpty,
-            "HabitsView hand-types a colour: \(palettteRegexMatches(paletteHexLiteralPattern, in: view))"
-        )
-
-        // And `Theme` did not grow a second name for that grey to make the read read nicer.
-        let theme = paletteStrippingSwiftComments(try paletteSourceFile("Cadence/Shared/Theme.swift"))
-        // `static var blueHex` since T-15 made the accents selectable; the neutral ramp is what
-        // this test is about and it is still `static let`, so anchor on that half.
-        #expect(theme.contains("static let bg = Color(hex:"), "non-vacuity: still Theme")
-        #expect(
-            !theme.localizedCaseInsensitiveContains("\"\(TaskSectionDefaults.defaultColorHex)\""),
-            "Theme now spells the neutral too, so there are two homes for one hex"
-        )
-    }
+    // **`theUnassignedHabitGroupReadsTheAppsOneNeutral` left with [[T-5002]].** `HabitsView`'s
+    // "Unassigned" group tile read `TaskSectionDefaults.defaultColorHex` rather than re-typing
+    // `#6b7a99`, and the page is deleted. The CLAIM — one home for that grey — is not this
+    // view's: `Area`/`Project` container fallbacks, `Tag`'s default, `GoalListLink`'s fallback and
+    // the last swatch of the list palette all still read the same constant, and
+    // `noFileOnTheMacOSSurfaceHandTypesAColourHex` below is the invariant with no allowlist.
 
     /// The invariant behind the four file-scoped tests, over the **whole** macOS surface rather
     /// than the four files that happened to be wrong.
@@ -601,7 +577,7 @@ struct CadenceSeedColourSourceTests {
         let files = try paletteSwiftFiles(under: "Cadence/macOS")
         #expect(files.count > 180, "non-vacuity: walked \(files.count) files")
         #expect(
-            files.contains { $0.hasSuffix("Cadence/macOS/Views/HabitsView.swift") },
+            files.contains { $0.hasSuffix("Cadence/macOS/Views/TasksPanel.swift") },
             "non-vacuity: the walk reached a file known to have held a literal"
         )
 

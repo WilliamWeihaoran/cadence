@@ -189,10 +189,10 @@ struct CadenceDesktopSplitLayoutTests {
              ["CadenceDesktopSplitLayout.todayNotesPaneMinWidth": 1,
               "CadenceDesktopSplitLayout.todayTaskPaneMinWidth": 1,
               "CadenceDesktopSplitLayout.todaySchedulePaneMinWidth": 1]),
-            ("Cadence/macOS/Views/GoalsView.swift",
-             ["minWidth: 560", "minWidth: 340"],
-             ["CadenceDesktopSplitLayout.goalListPaneMinWidth": 1,
-              "CadenceDesktopSplitLayout.goalInspectorPaneMinWidth": 2]),
+            // **Goals' entry left with [[T-5002]]**, which deleted `GoalsView.swift`. Its two
+            // floors still exist in `CadenceDesktopSplitLayout` and are still asserted by value
+            // above; they simply have no view left to be referenced from. Filed as a residual
+            // with the rest of the second-tier tracking dead code.
             ("Cadence/macOS/Views/FocusView.swift",
              ["minWidth: 520", "minWidth: 320"],
              ["CadenceDesktopSplitLayout.focusSessionPaneMinWidth": 2,
@@ -225,8 +225,6 @@ struct CadenceDesktopSplitLayoutTests {
         let gates: [(path: String, call: String, count: Int)] = [
             ("Cadence/macOS/Views/TodayView.swift",
              "CadenceDesktopSplitLayout.todayLayout(paneWidth:", 1),
-            ("Cadence/macOS/Views/GoalsView.swift",
-             "CadenceDesktopSplitLayout.goalsShowsInspector(", 1),
             ("Cadence/macOS/Views/FocusView.swift",
              "CadenceDesktopSplitLayout.focusShowsSidebar(paneWidth:", 2),
         ]
@@ -242,107 +240,20 @@ struct CadenceDesktopSplitLayoutTests {
     }
 
     // MARK: - T-271 — the pane may go, the commands may not
+    // **`goalsKeepsARouteToItsInspectorAtTheWidthsThatDropTheColumn` left with [[T-5002]].**
+    // [[T-271]]'s claim was that Goals' inspector stayed reachable below 901pt, where the column
+    // is dropped, by presenting the same `GoalInspectorView` in a sheet. The page, the sheet and
+    // the inspector are all deleted, so there is no route to keep. The RULE the ticket was an
+    // instance of — a pane a width drops must still be reachable — is held for the surviving
+    // pages by `noWidthEverChoosesMorePanesThanItCanPayFor` and by
+    // `theRegularPanePagesEachDeclareTheirNarrowFallback` below.
 
-    /// Dropping a pane is only free when nothing is reachable *only* from it.
-    ///
-    /// `CadenceCalendarPaneLayout` drops its day inspector because that inspector restates a day
-    /// column already on screen; Today drops its notepad because the daily note is the Notes page's
-    /// Daily tab. Goals' inspector is neither: Edit, Attach List and per-list detach exist nowhere
-    /// else in mission mode, so for one release below 901 the page had an unusable control replaced
-    /// by an absent one. The fallback is `CadenceSettingsTemplatesCardLayout`'s — render the form
-    /// the narrow host already has — and the narrow host is `iOSFeatureRowLink`: select beside a
-    /// pane, open without one.
-    ///
-    /// Counted rather than asserted-as-contains, because the failure this guards is a *deleted*
-    /// route, and "contains" cannot see one route becoming two or none.
-    @Test
-    func goalsKeepsARouteToItsInspectorAtTheWidthsThatDropTheColumn() throws {
-        let page = try desktopSplitStrippingComments(
-            desktopSplitSource("Cadence/macOS/Views/GoalsView.swift")
-        )
-
-        // One presenter, one gate, one place the gate is spent.
-        #expect(desktopSplitOccurrences(of: "GoalInspectorSheet(", in: page) == 1)
-        #expect(desktopSplitOccurrences(of: "showGoalDetail = true", in: page) == 1)
-        #expect(
-            desktopSplitOccurrences(of: "if !showsInspector", in: page) == 1,
-            "the sheet is opened unconditionally — at full width a card would both select and raise a modal"
-        )
-        // Both cards go through one selection function, so a direction is not left without a route.
-        #expect(desktopSplitOccurrences(of: "onSelect: { select($0, showsInspector: showsInspector) }", in: page) == 1)
-
-        let sheet = try desktopSplitStrippingComments(
-            desktopSplitSource("Cadence/macOS/Views/GoalInspectorView.swift")
-        )
-
-        // The sheet re-presents the inspector rather than re-implementing it: exactly one call, and
-        // `struct GoalInspectorView: View` carries no parenthesis, so this counts uses only.
-        #expect(desktopSplitOccurrences(of: "GoalInspectorView(", in: sheet) == 1)
-        // **The three commands the column used to be the only home for are gone ([[T-2079]]).**
-        // Edit, Attach List and the per-row unlink each opened or called a write helper that no
-        // longer exists, so the sheet carries the inspector and nothing else. Asserted as zero
-        // rather than deleted: what [[T-271]] is about is that the sheet and the column show the
-        // *same* thing at the width that drops the column, and a command that came back on one of
-        // them and not the other is exactly the drift this test exists to catch.
-        #expect(desktopSplitOccurrences(of: "onEdit:", in: sheet) == 0)
-        #expect(desktopSplitOccurrences(of: "onAttachWork:", in: sheet) == 0)
-        #expect(desktopSplitOccurrences(of: "onDetachList:", in: sheet) == 0)
-        #expect(desktopSplitOccurrences(of: "CreateGoalSheet(", in: sheet) == 0)
-        #expect(desktopSplitOccurrences(of: "AttachWorkSheet(", in: sheet) == 0)
-
-        // And it is the column restored, not a second opinion about how wide an inspector is:
-        // borrowed by reference, so raising the pane minimum raises the sheet with it.
-        #expect(
-            desktopSplitOccurrences(of: "CadenceDesktopSplitLayout.goalInspectorPaneMinWidth", in: sheet) == 1,
-            "the sheet no longer borrows the column's own minimum"
-        )
-        #expect(
-            desktopSplitOccurrences(of: "width: 340", in: sheet) == 0,
-            "the sheet types the floor instead of reading it, and stops following it tomorrow"
-        )
-    }
-
-    /// The iPad half of the same decision (T-252): `iOSFeatureSplitLayout` is the one place all
-    /// four regular-width split surfaces go through, so the gate belongs there rather than four
-    /// times over — and the fallback is each surface's own one column, not a dropped chooser.
-    @Test
-    func theIPadSplitAsksTheSameQuestionInOnePlace() throws {
-        let host = "Cadence/iOS/iOSFeatureComponents.swift"
-        let code = try desktopSplitStrippingComments(desktopSplitSource(host))
-        #expect(desktopSplitOccurrences(of: "CadenceRegularSplitLayout.supportsTwoPanes(", in: code) == 1)
-        #expect(desktopSplitOccurrences(of: "narrow()", in: code) == 1)
-
-        for path in [
-            "Cadence/iOS/iOSFeatureViews.swift",
-            "Cadence/iOS/iOSFocusView.swift",
-            "Cadence/iOS/iOSListViews.swift",
-        ] {
-            let surface = try desktopSplitStrippingComments(desktopSplitSource(path))
-            #expect(
-                desktopSplitOccurrences(of: "CadenceRegularSplitLayout.supportsTwoPanes(", in: surface) == 0,
-                "\(path) asks the gate itself instead of going through iOSFeatureSplitLayout"
-            )
-            #expect(
-                desktopSplitOccurrences(of: "narrow:", in: surface) >= 1,
-                "\(path) uses the split layout without supplying a one-column fallback"
-            )
-        }
-    }
-
-    // MARK: - Non-vacuity
-
-    /// Every source assertion above is a count over a file read from disk, and a read that silently
-    /// returns nothing makes the zero-expectations pass. Same guard, and same reason, as
-    /// `CadencePaneWidthRuleHomesTests.theSourceScanActuallyReachesTheFilesItIsCounting`.
     @Test
     func theSourceScanActuallyReadsTheViewsItIsCounting() throws {
         for path in [
             "Cadence/macOS/Views/TodayView.swift",
-            "Cadence/macOS/Views/GoalsView.swift",
-            "Cadence/macOS/Views/GoalInspectorView.swift",
             "Cadence/macOS/Views/FocusView.swift",
             "Cadence/iOS/iOSFeatureComponents.swift",
-            "Cadence/iOS/iOSFeatureViews.swift",
             "Cadence/iOS/iOSFocusView.swift",
             "Cadence/iOS/iOSListViews.swift",
         ] {

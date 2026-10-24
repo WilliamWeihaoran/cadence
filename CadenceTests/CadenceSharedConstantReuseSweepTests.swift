@@ -63,17 +63,10 @@ struct CadenceSharedLiteralExemption {
 /// deletes any entry that stops describing the tree, so an exemption cannot outlive the line it was
 /// written for and start covering the next offender.
 let cadenceSharedLiteralExemptions: [CadenceSharedLiteralExemption] = [
-    CadenceSharedLiteralExemption(
-        "Completed Today",
-        path: "Cadence/macOS/Views/HabitListSupport.swift",
-        why: """
-        `HabitListFilter.completed` filters habits done today. \
-        `CadenceTodayPresentationSupport.completedSectionTitle` is the Today page's section of \
-        *tasks* completed today. Same English, two concepts: reading one off the other would make \
-        renaming the Today section silently rename a habit filter, which is a coupling this sweep \
-        would have created rather than found.
-        """
-    ),
+    // **The "Completed Today" exemption left with [[T-5002]]**, which deleted
+    // `HabitListSupport.swift` and the HabitListFilter.completed case it covered. The exemption
+    // is removed rather than kept because `everySharedLiteralExemptionIsStillLoadBearing` would
+    // fail on it: an exemption that no longer describes the tree can only hide the next offender.
     CadenceSharedLiteralExemption(
         "No notes yet",
         path: "Cadence/iOS/iOSMarkdownAccessoryViews.swift",
@@ -121,12 +114,13 @@ struct CadenceStaticFuncConstantOffender {
 /// in both directions) survives the next offender rather than being reinvented for it.
 ///
 /// Held four entries, three files, two tickets from the widening that first populated it: the Mac's
-/// `GoalPickerViews` spelling `CadenceEmptyStateCopy.goalsTitle(isNarrowed:)`'s body inline twice,
+/// GoalPickerViews spelling CadenceEmptyStateCopy.goalsTitle(isNarrowed:)'s body inline twice,
 /// and `"No lists yet"` typed again at `iOSRootSidebar.emptyListsRow` and
-/// `iOSGoalAttachListsSheet`. [[T-698]] routed the picker through `goalsTitle(isNarrowed:)` and
+/// iOSGoalAttachListsSheet. [[T-698]] routed the picker through goalsTitle(isNarrowed:) and
 /// deleted the `emptyText` default it was retyping; [[T-699]] added
-/// `CadenceEmptyStateCopy.listsTitle(isNarrowed:)` beside `goalsTitle`/`habitsTitle` and routed all
-/// three lists call sites through it. Both fixes are static-func constants themselves, so the
+/// `CadenceEmptyStateCopy.listsTitle(isNarrowed:)` beside goalsTitle/habitsTitle and routed all
+/// three lists call sites through it. ([[T-5002]] has since deleted both of those, and the picker;
+/// named without backticks here, since this tree is swept for symbol claims.) Both fixes are static-func constants themselves, so the
 /// harvest below keeps guarding this shape without a ledger entry naming it.
 let cadenceStaticFuncConstantLedger: [CadenceStaticFuncConstantOffender] = []
 
@@ -785,36 +779,11 @@ struct CadenceSharedConstantReuseSweepTests {
         }
     }
 
-    /// [[T-513]]'s one unambiguous copy defect, pinned where this target can read it.
-    ///
-    /// `iOSGoalDetail` models a milestone as a nested `Goal`, so both labels are in scope in the
-    /// same file and the wrong one is a plausible edit rather than a typo. The section is titled
-    /// "Milestones" and iterates `milestones`; the three other rows that name a nested goal already
-    /// say "Untitled Milestone".
-    @Test func theMilestoneRowsAllNameAMilestone() throws {
-        let detail = CadenceSourceScan.strippingComments(
-            try CadenceSourceScan.sourceFile("Cadence/iOS/iOSFeatureDetailViews.swift")
-        )
-        #expect(detail.contains("struct iOSGoalDetail"), "non-vacuity: file unread")
-        #expect(detail.contains("iOSEditorSection(title: \"Milestones\")"),
-                "non-vacuity: the Milestones section moved, so this scan pins nothing")
-        // [[T-687]] routed this row through the trimming helper, so the needle is the call rather
-        // than the ternary that used to be here. The claim is unchanged and is about *which label*:
-        // a milestone row must not reach for the goal label that is in scope beside it.
-        #expect(
-            detail.contains(
-                "CadenceTitleNormalization.display(milestone.title, fallback: CadenceTitleNormalization.defaultMilestoneTitle)"
-            ),
-            "the Milestones section labels an untitled milestone with something other than the milestone label"
-        )
-        #expect(
-            detail.contains("milestone.title.isEmpty ?") == false,
-            "the milestone row is back to the untrimmed ternary a title of spaces walks through (T-687)"
-        )
-        // The goal label is still used in the same file, for the rows that really are about a
-        // goal — so this is a fix, not a blanket substitution.
-        #expect(detail.contains("CadenceTitleNormalization.defaultGoalTitle"))
-    }
+    // **`theMilestoneRowsAllNameAMilestone` left with [[T-5002]].** [[T-513]]'s defect was that
+    // `iOSGoalDetail` had both the goal and the milestone label in scope and a milestone row could
+    // reach for the wrong one; the detail view is deleted. `CadenceTitleNormalization`'s two
+    // fallbacks are untouched and keep their own tests — the one that is gone is the claim about
+    // which of them a particular deleted row read.
 
     // MARK: - The detector
 
@@ -845,8 +814,8 @@ struct CadenceSharedConstantReuseSweepTests {
     /// The widening sees something it could not see before, and still refuses a template.
     ///
     /// [[T-555]]. The instrument's two witnesses are the nearest possible miss and both are real
-    /// code: the positive is `CadenceEmptyStateCopy.goalsTitle(isNarrowed:)`, the constant that
-    /// found this gap; the negative is `CadenceCalendarDayAccessibility.markedDayLabel(date:hasItems:)`,
+    /// code: the positive is `CadenceEmptyStateCopy.listsTitle(isNarrowed:)`, the same shape as
+    /// the goalsTitle constant that found this gap before [[T-5002]] deleted it; the negative is `CadenceCalendarDayAccessibility.markedDayLabel(date:hasItems:)`,
     /// whose accessibility label *nests* a nineteen-character literal inside an interpolation. A
     /// detector built on `"([^"\\\n]{12,})"` instead of a lexer fires on that negative — which is
     /// why the instrument is the fixture rather than a comment claiming it was checked.
@@ -882,7 +851,9 @@ struct CadenceSharedConstantReuseSweepTests {
             try CadenceSourceScan.sourceFile("Cadence/Shared/CadenceEmptyStateCopy.swift")
         )
         let declared = Set(cadenceStaticFunctionBodies(in: copy).map(\.name))
-        for name in ["goalsTitle", "habitsTitle", "listsTitle", "activeListsSubtitle"] {
+        // goalsTitle and habitsTitle were in this list until [[T-5002]] deleted both with the
+        // screens that read them. Named without backticks: this tree is swept for symbol claims.
+        for name in ["listsTitle", "activeListsSubtitle"] {
             #expect(declared.contains(name), "the static-func walk missed \(name)")
         }
 
@@ -895,11 +866,6 @@ struct CadenceSharedConstantReuseSweepTests {
         // must hold is that each of these reaches the sweep, and none of them can be reached by
         // the `static let` half — every one is spelled as a function.
         for (name, literal) in [
-            ("goalsTitle", "No matching goals"),
-            ("goalsTitle", "No goals yet"),
-            ("goalsTitle", "All goals complete"),
-            ("habitsTitle", "No matching habits"),
-            ("habitsTitle", "No habits yet"),
             ("listsTitle", "No matching lists"),
             ("listsTitle", "No lists yet"),
             ("dormantLinkSummary", "This area is not active, so Cadence has stopped mirroring it. "
@@ -1208,9 +1174,13 @@ struct CadenceSharedConstantReuseSweepTests {
     /// This does not re-derive the numbers; it pins the shape of the claim, so the sweep cannot
     /// quietly become an empty rule with a paragraph attached.
     @Test func theSharedConstantSweepWasMeasuredBeforeItShipped() {
-        #expect(cadenceSharedLiteralExemptions.count == 2,
+        // Two until [[T-5002]] deleted HabitListSupport.swift and with it the "Completed Today"
+        // collision the first exemption described. An exemption that stops describing the tree is
+        // removed rather than kept, because everySharedLiteralExemptionIsStillLoadBearing fails on
+        // it and because a dead exemption can only ever cover the next offender.
+        #expect(cadenceSharedLiteralExemptions.count == 1,
                 "the exemption list changed size; re-measure the precision claim above it")
-        #expect(cadenceSharedLiteralExemptions.first?.literal == "Completed Today")
+        #expect(cadenceSharedLiteralExemptions.first?.literal == "No notes yet")
         #expect(cadenceSharedLiteralExemptions.last?.literal == "No notes yet")
     }
 }
@@ -1317,10 +1287,10 @@ struct CadenceSharedLiteralIndex {
 /// glyph name.
 ///
 /// **`static func` since [[T-555]].** A shared constant that takes a parameter — because it picks
-/// between two strings, like `CadenceEmptyStateCopy.goalsTitle(isNarrowed:)` — has to be spelled
+/// between two strings, like `CadenceEmptyStateCopy.listsTitle(isNarrowed:)` — has to be spelled
 /// as a function, and the harvest used to walk straight past it. So the one rule this whole file
 /// exists to hold ("every shared user-facing string has one home") did not apply to the constants
-/// most likely to be re-typed, since a caller that cannot say `Copy.goalsTitle` in one token is a
+/// most likely to be re-typed, since a caller that cannot say Copy.listsTitle in one token is a
 /// caller already halfway to typing the words. Found while closing [[T-548]].
 ///
 /// `cadencePlainStringLiterals(in:)` carries the constant-versus-template distinction and its
@@ -1478,8 +1448,9 @@ func cadenceSharedConstantOffenders(
 /// Every **whole, uninterpolated** string literal in `source`, in the order they appear.
 ///
 /// **T-555, and the whole of the constant/template distinction lives here.** A `static func`
-/// returning a string is a *constant* when it picks between finished strings — `goalsTitle(isNarrowed:)`
-/// — and a *template* when it assembles one — `markedDayLabel(date:hasItems:)`. Nothing about the
+/// returning a string is a *constant* when it picks between finished strings —
+/// `listsTitle(isNarrowed:)` — and a *template* when it assembles one —
+/// `markedDayLabel(date:hasItems:)`. Nothing about the
 /// signature separates those two, and nothing needs to: **the literal does.** A template's product
 /// is built at run time, so no call site can re-type it verbatim, so it is not the defect this
 /// sweep can act on. That is not a new rule invented for functions; it is the rule the `static let`

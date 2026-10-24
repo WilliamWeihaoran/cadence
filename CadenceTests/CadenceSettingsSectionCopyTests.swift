@@ -781,7 +781,7 @@ struct CadenceSettingsSectionCopyTests {
         // T-546's six. Declared as plain literals rather than composed from a `sectionTitle(_:of:)`
         // helper precisely so this registration is possible: the harvest reads
         // `static let x = "…"` and cannot see an interpolated title, which is the recorded gap
-        // behind `CadenceEmptyStateCopy.goalsTitle`.
+        // behind CadenceEmptyStateCopy.goalsTitle.
         expected += registrations(of: Self.lifecyclePairs, declaredIn: settingsCopy)
 
         for entry in expected {

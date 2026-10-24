@@ -354,8 +354,9 @@ nonisolated enum CadenceListSettingsCopy {
 ///
 /// They are eight plain literals rather than one `sectionTitle(_:of:)` composer on purpose. An
 /// interpolated title is invisible to `cadenceSharedStringConstants`, which harvests
-/// `static let x = "…"` only — that is the recorded gap behind `CadenceEmptyStateCopy.goalsTitle`,
-/// a converged string a *ninth* call site could re-type with nothing to catch it. Eight declared
+/// `static let x = "…"` only — that is the recorded gap behind
+/// `CadenceEmptyStateCopy.listsTitle(isNarrowed:)`, a converged string a *ninth* call site could
+/// re-type with nothing to catch it. Eight declared
 /// literals stay inside the sweep; a composer with no caller would be dead code that also left the
 /// sweep blind. (T-703 proposed exactly that composer once a `static func` could be harvested —
 /// this file is why the answer is still no: the harvest that would need to see through it reads

@@ -52,14 +52,14 @@ import Testing
 /// naming gap, over the population that pattern search can reach.
 struct CadenceIconOnlyHelperIdiomDuplicationTests {
 
-    /// The five private helpers, keyed by the file that declares them. T-674 fixed the first
-    /// three of them; the last two already required a name before T-674 existed. It was seven
+    /// The private helpers, keyed by the file that declares them. T-674 fixed the first of the
+    /// three left; the other two already required a name before T-674 existed. It was seven
     /// until [[T-3170]] deleted FocusBundleTaskSupportViews.swift with Block Focus — a fourth
     /// T-674 site, removed rather than renamed — and six until its trio pass deleted
     /// `TimelineBundleBlockSupportViews.swift` and its `rowIconButton` with the Mac's Block.
+    /// **Three since [[T-5002]]**, which deleted HabitsFormSupportViews.stepButton and
+    /// GoalTimelineView.timelineNavButton with the Habits and Goals screens.
     private static let iconButtonHelperSites: [String: String] = [
-        "Cadence/macOS/Views/HabitsFormSupportViews.swift": "stepButton",
-        "Cadence/macOS/Views/GoalTimelineView.swift": "timelineNavButton",
         "Cadence/macOS/Views/SettingsSupportViews.swift": "actionButton",
         "Cadence/macOS/Views/TaskInspectorContentSupportViews.swift": "iconButton",
         "Cadence/macOS/Views/SettingsTagsSection.swift": "rowButton",
@@ -71,12 +71,12 @@ struct CadenceIconOnlyHelperIdiomDuplicationTests {
     /// sweep's report ever had a reason to mention them. (Six, with three never unnamed, until
     /// [[T-3170]]'s trio pass deleted `TimelineBundleBlockSupportViews.rowIconButton`.)
     @Test func fiveNearCopiesOfThePrivateIconButtonHelperExist() throws {
-        #expect(Self.iconButtonHelperSites.count == 5)
-        // Three of the five are files T-674's commit names as gaining the required parameter; its
-        // fourth, FocusBundleTaskSupportViews.swift, went with Block Focus in [[T-3170]].
+        #expect(Self.iconButtonHelperSites.count == 3)
+        // One of the three is a file T-674's commit names as gaining the required parameter. Its
+        // other three went with the features that owned them: FocusBundleTaskSupportViews.swift
+        // with Block Focus ([[T-3170]]), and HabitsFormSupportViews.swift and GoalTimelineView.swift
+        // with the Habits and Goals screens ([[T-5002]]).
         let t674Fixed: Set<String> = [
-            "Cadence/macOS/Views/HabitsFormSupportViews.swift",
-            "Cadence/macOS/Views/GoalTimelineView.swift",
             "Cadence/macOS/Views/SettingsSupportViews.swift",
         ]
         let alreadyNamed = Set(Self.iconButtonHelperSites.keys).subtracting(t674Fixed)

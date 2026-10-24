@@ -100,19 +100,11 @@ struct MacSettingsAboutAndHabitMetricsTests {
         #expect(habit.bestStreak >= habit.currentStreak)
     }
 
-    /// The call sites. `HabitQuietMetrics` showed Streak / rate / Total and no best streak, and the
-    /// macOS Activity card was the year-long heatmap alone — the one range a habit is actually
-    /// checked against was missing from the desktop entirely.
-    @Test func theMacOSHabitDetailDrawsBestStreakAndTheSevenDayStrip() throws {
-        try expectOccurrences(
-            of: "habit.bestStreak",
-            at: ["Cadence/macOS/Views/HabitsSupportViews.swift": 1]
-        )
-        try expectCallSites(
-            of: "HabitLast7DayStrip",
-            at: ["Cadence/macOS/Views/HabitsSupportViews.swift": 1]
-        )
-    }
+    // **`theMacOSHabitDetailDrawsBestStreakAndTheSevenDayStrip` left with [[T-5002]].** It read
+    // the macOS habit detail's call sites in `HabitsSupportViews.swift`, which is deleted with the
+    // Habits screen. The MODEL half of the same ticket — `bestStreak`, `last7DayStates` and the
+    // relation between best and current — is asserted directly above and is what still has
+    // readers, through the widget support and the compact shell.
 
     /// The strip reads the model's walk rather than doing its own. It lives in `Shared/Components`
     /// because a recent-week strip is not a platform decision — iOS's habit detail still carries a
@@ -295,15 +287,16 @@ struct MacSettingsAboutAndHabitMetricsTests {
 
     /// The scan itself works. Without this, a wrong repository root or a broken enumerator makes
     /// every absence assertion above pass by reading nothing at all.
+    ///
+    /// The HabitHeatmap call site was the second positive control until [[T-5002]] deleted
+    /// HabitsSupportViews.swift with the Habits screen; the component survives in
+    /// Shared/Components with no caller, which is a residual filed rather than a control. The
+    /// Settings About row below is the surviving positive, and it is asserted over the same walk.
     @Test func theSourceScanIsNotVacuousInMacSettingsAboutAndHabitMetrics() throws {
         let files = try swiftFiles(under: "Cadence")
         #expect(files.count > 200)
         #expect(files.contains("Cadence/macOS/Views/SettingsAboutSection.swift"))
-
-        try expectCallSites(
-            of: "HabitHeatmap",
-            at: ["Cadence/macOS/Views/HabitsSupportViews.swift": 1]
-        )
+        #expect(!files.contains("Cadence/macOS/Views/HabitsSupportViews.swift"))
         // A symbol that is definitely live must be *found* by the same scan the absence
         // assertions use, or those assertions mean nothing.
         var liveHits = 0

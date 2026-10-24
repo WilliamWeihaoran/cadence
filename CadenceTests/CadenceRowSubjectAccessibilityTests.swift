@@ -60,56 +60,17 @@ struct CadenceRowSubjectAccessibilityTests {
     // `QuickCreateBundleTaskSelectionView` with its `selectedTaskRow`, went with the Block
     // feature's creation paths.
 
-    // MARK: - Sites 4 and 5: a goal's attached work
-
-    private static let goalsSupportPath = "Cadence/macOS/Views/GoalsSupportViews.swift"
-
-    // **`goalLinkedListDetachButtonNamesTheListItDetaches` left with [[T-2079]].**
+    // **Sites 4 and 5 left with [[T-5002]].** Both lived in `GoalsSupportViews.swift`, which is
+    // deleted with the Goals screens: `GoalLinkedListRow`'s detach button had already gone with
+    // [[T-2079]], and T-792's two "the visible Text reads the same normalised title the
+    // announcement does" tests — `goalLinkedListVisibleTitleMatchesTheAnnouncedNormalisedTitle`
+    // and `goalTaskContributorVisibleTitleMatchesTheAnnouncedDisplayTitle` — went with the rows
+    // they read, as did `goalTaskContributorDetachButtonNamesTheTaskItDetaches`.
     //
-    // It was [[T-673]]'s fourth site: `GoalLinkedListRow`'s `xmark` button announced
-    // "Detach" with the list's normalised title as its value, so eight identical
-    // announcements did not collapse into one. The button is gone — `detachGoalListLink`, the
-    // only helper that removed a `GoalListLink`, went with the goal write surface — and the
-    // row is read-only. The normalisation it also pinned is still there and is still asserted
-    // by `GoalTaskContributorRow`'s test below.
-
-    /// **T-792.** T-673 fixed what the row *announces* and left what it *draws* untouched: the
-    /// visible `Text` above the detach button still interpolated `link.title` raw, so a list with
-    /// a blank name showed a blank line while VoiceOver correctly said "Missing List"/"Missing
-    /// Project" beside it. Same instrument shape as the tests above — the visible row's own
-    /// `Text(...)` call must read the same `normalizedTitle` the accessibility value already does,
-    /// not a second, independent interpolation of `link.title`.
-    @Test func goalLinkedListVisibleTitleMatchesTheAnnouncedNormalisedTitle() throws {
-        let source = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(Self.goalsSupportPath))
-        let body = try #require(CadenceSourceScan.declarationBody("struct GoalLinkedListRow: View", in: source))
-
-        #expect(body.contains("Text(normalizedTitle)"))
-        #expect(!body.contains("Text(link.title)"))
-    }
-
-    @Test func goalTaskContributorDetachButtonNamesTheTaskItDetaches() throws {
-        let source = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(Self.goalsSupportPath))
-        let body = try #require(CadenceSourceScan.declarationBody("struct GoalTaskContributorRow: View", in: source))
-
-        #expect(body.contains(#".accessibilityLabel("Detach")"#))
-        #expect(body.contains(
-            ".accessibilityValue(TaskTitleSupport.displayTitle(task.title, fallback: TaskTitleSupport.defaultDisplayTitle))"
-        ))
-    }
-
-    /// **T-792, second half.** Same gap, `GoalTaskContributorRow`'s own visible title this time:
-    /// the accessibility value already reads `TaskTitleSupport.displayTitle(task.title, ...)`, but
-    /// the `Text` above it still drew `task.title` raw, so an untitled contributor task showed a
-    /// blank line while its own detach button correctly announced "Untitled Task".
-    @Test func goalTaskContributorVisibleTitleMatchesTheAnnouncedDisplayTitle() throws {
-        let source = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(Self.goalsSupportPath))
-        let body = try #require(CadenceSourceScan.declarationBody("struct GoalTaskContributorRow: View", in: source))
-
-        #expect(body.contains(
-            "Text(TaskTitleSupport.displayTitle(task.title, fallback: TaskTitleSupport.defaultDisplayTitle))"
-        ))
-        #expect(!body.contains("Text(task.title)"))
-    }
+    // **The RULE they were about is not gone and is not left unguarded**: that a row's visible
+    // title and its accessibility value read one normalisation rather than two. `SubtaskRow`
+    // below asserts exactly that, in the same shape, against a surface that still ships.
+    // `TaskTitleSupport.displayTitle` keeps its own tests in `CadenceEmptyTitleFallbackSweepTests`.
 
     // MARK: - Sites 6 and 7: a saved subtask's own row
 
@@ -141,18 +102,12 @@ struct CadenceRowSubjectAccessibilityTests {
         #expect(body.contains(".accessibilityLabel(completionState.accessibilityActionLabel)"))
     }
 
-    // MARK: - Site 8: a habit's completion toggle
-
-    private static let habitsSupportPath = "Cadence/macOS/Views/HabitsSupportViews.swift"
-
-    // **`habitToggleCircleReadsTheSharedCompletionStateLabelAndNamesTheHabit` left with
-    // [[T-2079]].** It was one half of [[T-673]]'s "two completion circles tick one" pair:
-    // `HabitListCard`'s circle read the shared `accessibilityActionLabel` and named the habit,
-    // so eight identical announcements did not collapse into one. The circle is no longer a
-    // button — the shared habit check-in toggle is gone — so it is `accessibilityHidden`
-    // rather than announced, which is the right answer for a glyph that reports state and
-    // performs nothing. The subtask circle, the other half of the pair, is untouched and
-    // still asserted above.
+    // **Site 8 left with [[T-2079]] and its file with [[T-5002]].**
+    // `habitToggleCircleReadsTheSharedCompletionStateLabelAndNamesTheHabit` was one half of
+    // [[T-673]]'s "two completion circles tick one" pair: `HabitListCard`'s circle read the shared
+    // `accessibilityActionLabel` and named the habit. T-2079 made the circle a glyph rather than a
+    // button, and T-5002 deleted `HabitsSupportViews.swift` outright. The subtask circle, the
+    // other half of the pair, is untouched and still asserted above.
 
     // MARK: - The count itself, exact rather than a floor
 
@@ -172,14 +127,14 @@ struct CadenceRowSubjectAccessibilityTests {
 
         var total = 0
         total += try count("private func subtaskRow(at index: Int) -> some View", in: Self.createTaskSheetPath)
-        total += try count("struct GoalTaskContributorRow: View", in: Self.goalsSupportPath)
         // Both subtask-row sites (the circle and the delete button) live in one struct.
         total += try count("struct SubtaskRow: View", in: Self.tasksPanelSupportPath)
         // `GoalLinkedListRow` and `HabitListCard` were the fourth and eighth sites and left with
-        // [[T-2079]]; see the two notes above. The third, the Block tab's `selectedTaskRow`, left
-        // with [[T-3170]] — one `.accessibilityValue(` with it. The second, the drag-create
-        // popover's draft-subtask row, left with [[T-3171]]'s seventh slice, taking another.
+        // [[T-2079]]; `GoalTaskContributorRow` was the fifth and left with [[T-5002]], which
+        // deleted the file all three lived in — one `.accessibilityValue(` with it. The third,
+        // the Block tab's `selectedTaskRow`, left with [[T-3170]], taking another. The second,
+        // the drag-create popover's draft-subtask row, left with [[T-3171]]'s seventh slice.
 
-        #expect(total == 4)
+        #expect(total == 3)
     }
 }

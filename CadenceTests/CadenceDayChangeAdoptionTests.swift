@@ -27,19 +27,19 @@ struct CadenceDayChangeAdoptionTests {
         ("Cadence/macOS/Views/SidebarSupportViews.swift", "struct SidebarListRow: View"),
         ("Cadence/iOS/iOSRootSidebar.swift", "struct iOSSidebar: View"),
         ("Cadence/iOS/iOSTasksTabView.swift", "struct iOSTasksTabView: View"),
-        // T-5012 (a): the Habits pages, one observer per page handing its key to every row.
-        ("Cadence/macOS/Views/HabitsView.swift", "struct HabitsView: View"),
-        ("Cadence/iOS/iOSFeatureViews.swift", "struct iOSHabitsView: View"),
+        // **T-5012 (a)'s two Habits pages left with [[T-5002]]**, which deleted both screens.
+        // The observer they installed is still installed by every page below; their absence is
+        // pinned by `CadenceCodexTrackingUIRetirementTests.codexRetiredTrackingViewsAreGoneFromTheTree`.
         // T-5010: the iOS Calendar, which hands its key to the timeline, month, agenda and board.
         ("Cadence/iOS/iOSCalendarView.swift", "struct iOSCalendarView: View"),
         // T-5012 (b)-(d): the list pages, both kanban boards, Goals and Notes — one observer per
         // page host, handing its key to every row and card (`CadenceListPagesObservedDayTests`).
+        // Goals was one of them until [[T-5002]] deleted the page.
         ("Cadence/macOS/Views/ListDetailComponents.swift", "struct ListTasksView: View"),
         ("Cadence/macOS/Views/TasksListView.swift", "struct TasksListView: View"),
         ("Cadence/macOS/Views/KanbanSupportViews.swift", "struct TaskListsKanbanView: View"),
         ("Cadence/macOS/Views/KanbanListSectionSupportViews.swift", "struct ListSectionsKanbanView: View"),
         ("Cadence/macOS/Views/ListNotesView.swift", "struct ListNotesView: View"),
-        ("Cadence/macOS/Views/GoalsView.swift", "struct GoalsView: View"),
         ("Cadence/macOS/Views/NotesView.swift", "private struct DailyNotesPage: View"),
         ("Cadence/macOS/Views/NotesView.swift", "private struct WeeklyNotesPage: View"),
         ("Cadence/iOS/iOSNotesView.swift", "struct iOSNotesView: View"),

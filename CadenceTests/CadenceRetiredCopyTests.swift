@@ -177,6 +177,84 @@ let cadenceRetiredCopy: [CadenceRetiredPhrase] = [
         own shipped explanation of this action already uses for this direction.
         """
     ),
+    CadenceRetiredPhrase(
+        "No goals yet",
+        retiredBy: "T-5002",
+        why: """
+        The owner deleted the Goals screens rather than rewording them: [[T-2079]] retired every \
+        in-app writer of a `Goal` and [[T-2076]] left the pages with no route in, so a page saying \
+        "No goals yet" beside a subtitle telling the reader to create one was a symptom and not \
+        the defect. T-540 and T-548 had converged this title into \
+        CadenceEmptyStateCopy.goalsTitle(isNarrowed:allComplete:); the function went with its four \
+        call sites. The rows themselves STAY -- schema, export and the privacy reset still carry \
+        Goal -- so this retires the SENTENCE, never the data.
+        """
+    ),
+    CadenceRetiredPhrase(
+        "No matching goals",
+        retiredBy: "T-5002",
+        why: """
+        The narrowed half of the same pair, retired for the same reason. Listed separately \
+        because it was the half a reader could reach without touching anything: the Mac's Goals \
+        page defaulted to the Active filter, so a first run read "No matching goals" until \
+        T-1446. Both halves have to be entries, or a revert brings back whichever one the next \
+        author happens to type.
+        """
+    ),
+    CadenceRetiredPhrase(
+        "All goals complete",
+        retiredBy: "T-5002",
+        why: """
+        T-689's third case, added because the phone's Goals chooser had neither a search field \
+        nor a status picker and so told a reader who had finished every goal that they had none. \
+        It went with the page it was written for. Its own entry rather than folded into the two \
+        above because it is the one of the three that was CORRECT copy: it is retired for having \
+        no screen left to say it on, not for being wrong.
+        """
+    ),
+    CadenceRetiredPhrase(
+        "No habits yet",
+        retiredBy: "T-5002",
+        why: """
+        The Habits half of the same deletion. T-548 converged it out of HabitsView and \
+        iOSFeatureViews, which spelled it byte for byte; T-5002 deleted both files and \
+        CadenceEmptyStateCopy.habitsTitle(isNarrowed:) with them. As with the goals pair this \
+        retires the sentence and not the rows: Habit and HabitCompletion stay in CadenceSchema \
+        and still round-trip through export.
+        """
+    ),
+    CadenceRetiredPhrase(
+        "No matching habits",
+        retiredBy: "T-5002",
+        why: """
+        The narrowed half of the habits pair. The Mac's Habits page defaulted to Due Today, so \
+        this was the sentence a first-run reader actually saw there. Retired with its partner for \
+        the same reason both goals halves are: one entry cannot hold a pair.
+        """
+    ),
+    CadenceRetiredPhrase(
+        "No goals to draw.",
+        retiredBy: "T-5002",
+        why: """
+        The Goals roadmap's own empty state, which T-525 had already had to fix once: it read \
+        "Create a goal, then set its date range." and told a reader who had created a goal that \
+        the page was waiting on dates it never looked at. GoalTimelineView is deleted now, so the \
+        sentence is retired rather than fixed a second time. The full stop is part of it, which is \
+        why it is quoted here exactly as the screen spelled it.
+        """
+    ),
+    CadenceRetiredPhrase(
+        "Create repeating commitments and track today.",
+        retiredBy: "T-5002",
+        why: """
+        The iOS Habits subtitle, and the clearest statement of what T-5002 is about: it invited \
+        the reader to create something no code path in the app can create, on a page with no \
+        control to create it with. The Mac's twin ("Create a habit, then link it to the goal it \
+        supports.") and the two goals subtitles went the same way; this one is the entry because \
+        it names the ACTION rather than a relationship, so it is the one a new empty state is \
+        most likely to re-type.
+        """
+    ),
 ]
 
 // MARK: - The sweep

@@ -425,42 +425,10 @@ struct CadenceRowSeparatorConvergenceTests {
         #expect(!body.contains("borderSubtle"), "CadenceFieldDivider still re-types a raw weight")
     }
 
-    /// The Goal Timeline rail's three row rules, each pinned to its own declaration so a fourth row
-    /// kind added later has to make the same choice explicitly rather than inherit one by proximity.
-    @Test func goalTimelineRowRulesReadTheNamedSeparator() throws {
-        let source = CadenceSourceScan.strippingComments(
-            try CadenceSourceScan.sourceFile("Cadence/macOS/Views/GoalTimelineSupportViews.swift")
-        )
-        #expect(source.contains("struct GoalTimelineRowBackground"), "non-vacuity: wrong file read")
-
-        for declaration in [
-            "struct GoalTimelineRowBackground: View",
-            "struct GoalTimelineGroupRow: View",
-            "struct GoalTimelineGoalRailRow: View",
-        ] {
-            let body = try #require(
-                CadenceSourceScan.declarationBody(declaration, in: source),
-                "could not read the body of \(declaration)"
-            )
-            #expect(
-                CadenceSourceScan.matchCount(#"Theme\.rowSeparator"#, in: body) == 1,
-                "\(declaration) does not draw the shared separator exactly once"
-            )
-            #expect(!body.contains("borderSubtle"), "\(declaration) still re-types a raw weight")
-        }
-    }
-
-    /// `GoalTimelineMonthHeader`'s bottom rule is a header/content boundary, not a rule between two
-    /// stacked rows, and is deliberately left outside the convergence above — pinned so "make it a
-    /// fourth" reads as a decision to widen the ticket rather than a sweep that forgot to stop.
-    @Test func goalTimelineMonthHeaderRuleIsUnrelatedAndUnchanged() throws {
-        let source = CadenceSourceScan.strippingComments(
-            try CadenceSourceScan.sourceFile("Cadence/macOS/Views/GoalTimelineSupportViews.swift")
-        )
-        let body = try #require(
-            CadenceSourceScan.declarationBody("struct GoalTimelineMonthHeader: View", in: source)
-        )
-        #expect(body.contains("Rectangle().fill(Theme.borderSubtle).frame(height: 1)"))
-        #expect(!body.contains("Theme.rowSeparator"), "a header boundary now reads the row token")
-    }
+    // **`goalTimelineRowRulesReadTheNamedSeparator` and
+    // `goalTimelineMonthHeaderRuleIsUnrelatedAndUnchanged` left with [[T-5002]].** Both read
+    // `GoalTimelineSupportViews.swift`, deleted with the Goals roadmap. The convergence they were
+    // the roadmap's share of — a rule between two stacked rows reads `Theme.rowSeparator`, a
+    // header/content boundary does not — is still asserted above for `CadenceFieldDivider` and
+    // for the surfaces that still draw stacked rows.
 }

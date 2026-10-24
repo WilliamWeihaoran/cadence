@@ -92,133 +92,12 @@ struct CadenceDeletedSelectionGuardTests {
         #expect(CadenceSelectionNormalization.normalized(gone, existingIDs: [live], fallback: nil) == nil)
     }
 
-    // MARK: - T-346: macOS Goals, with the search box empty
-
-    /// **The ticket's test.** A real store, a real delete, a real save — and then the question asked
-    /// exactly as the page asks it with nothing typed: `searchIsActive: false`.
-    ///
-    /// `allGoalIDs` is fetched back out of the context rather than assembled by hand, so it is the
-    /// same list `@Query private var allGoals` would hand the view after the delete commits. Against
-    /// the old condition this returns the deleted goal's id, because `trimmedQuery.isEmpty` short-
-    /// circuited the existence check; the page then binds an inspector, an Attach Work sheet and an
-    /// Edit sheet to a goal that is gone.
-    @Test func aDeletedGoalIsRetargetedWithTheSearchBoxEmpty() throws {
-        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
-        let context = ModelContext(container)
-        let doomed = Goal(title: "ship the thing")
-        let survivor = Goal(title: "keep the lights on")
-        context.insert(doomed)
-        context.insert(survivor)
-        try context.save()
-        let doomedID = doomed.id
-
-        context.delete(doomed)
-        try context.save()
-
-        let remaining = try context.fetch(FetchDescriptor<Goal>())
-        #expect(remaining.map(\.id) == [survivor.id], "the delete did not commit, so nothing below is measured")
-
-        let normalized = GoalsView.normalizedSelection(
-            selectedGoalID: doomedID,
-            allGoalIDs: remaining.map(\.id),
-            visibleGoalIDs: remaining.map(\.id),
-            searchIsActive: false
-        )
-
-        #expect(normalized == survivor.id)
-        #expect(normalized != doomedID)
-    }
-
-    /// The control, and the reason the test above had to be written the way it was: the *searching*
-    /// path was always correct. A test that typed a query would have passed against the defect and
-    /// reported it fixed.
-    @Test func aDeletedGoalIsAlsoRetargetedWhileSearching() throws {
-        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
-        let context = ModelContext(container)
-        let doomed = Goal(title: "ship the thing")
-        let survivor = Goal(title: "keep the lights on")
-        context.insert(doomed)
-        context.insert(survivor)
-        try context.save()
-        let doomedID = doomed.id
-
-        context.delete(doomed)
-        try context.save()
-        let remaining = try context.fetch(FetchDescriptor<Goal>())
-
-        #expect(
-            GoalsView.normalizedSelection(
-                selectedGoalID: doomedID,
-                allGoalIDs: remaining.map(\.id),
-                visibleGoalIDs: remaining.map(\.id),
-                searchIsActive: true
-            ) == survivor.id
-        )
-    }
-
-    /// Deleting the *last* goal leaves nothing to retarget to, and the page must say so by clearing
-    /// rather than by keeping the tombstone. `selectedGoal` falls back to `allGoals.first` when the
-    /// id is nil, so nil here is the empty page and not a second stale state.
-    @Test func deletingTheOnlyGoalClearsTheSelectionEntirely() throws {
-        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
-        let context = ModelContext(container)
-        let only = Goal(title: "the only one")
-        context.insert(only)
-        try context.save()
-        let onlyID = only.id
-
-        context.delete(only)
-        try context.save()
-        let remaining = try context.fetch(FetchDescriptor<Goal>())
-        #expect(remaining.isEmpty, "the delete did not commit, so nothing below is measured")
-
-        #expect(
-            GoalsView.normalizedSelection(
-                selectedGoalID: onlyID,
-                allGoalIDs: [],
-                visibleGoalIDs: [],
-                searchIsActive: false
-            ) == nil
-        )
-    }
-
-    /// A live goal the current filter is not listing keeps its selection with the box clear — the
-    /// behaviour the ticket said to preserve, stated so a fix that simply retargets on every
-    /// invisible selection is a failure rather than an improvement.
-    @Test func aLiveGoalHiddenByTheStatusFilterKeepsItsSelection() throws {
-        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
-        let context = ModelContext(container)
-        let hidden = Goal(title: "archived-ish")
-        let shown = Goal(title: "active")
-        context.insert(hidden)
-        context.insert(shown)
-        try context.save()
-
-        #expect(
-            GoalsView.normalizedSelection(
-                selectedGoalID: hidden.id,
-                allGoalIDs: [hidden.id, shown.id],
-                visibleGoalIDs: [shown.id],
-                searchIsActive: false
-            ) == hidden.id
-        )
-    }
-
-    /// Nothing selected seeds from the visible list, which is what `onAppear` has always done and
-    /// what the old `guard let` fell through to.
-    @Test func anEmptySelectionSeedsFromTheVisibleList() {
-        let first = UUID()
-        let second = UUID()
-
-        #expect(
-            GoalsView.normalizedSelection(
-                selectedGoalID: nil,
-                allGoalIDs: [first, second],
-                visibleGoalIDs: [second],
-                searchIsActive: false
-            ) == second
-        )
-    }
+    // **T-346's five tests left with [[T-5002]].** They drove GoalsView.normalizedSelection,
+    // the Goals page's wrapper over the shared rule, and the page is gone. The RULE they were
+    // really about is `CadenceSelectionNormalization.normalized(...)`, which is still exercised
+    // below by the sidebar, the list detail and the iOS surfaces that spend it; the wrapper's
+    // absence is pinned by
+    // `CadenceCodexTrackingUIRetirementTests.codexRetiredTrackingViewsAreGoneFromTheTree`.
 
     // MARK: - T-345: the macOS sidebar
 
@@ -343,32 +222,9 @@ struct CadenceDeletedSelectionGuardTests {
 
     // MARK: - Where the guard is wired (source scan)
 
-    /// T-346's condition, pinned by its absence and by what replaced it. `|| trimmedQuery.isEmpty`
-    /// is the exact text of the bug; the positive half is that the page now spends the shared rule.
-    @Test func goalsNoLongerLetsAnEmptySearchBoxExcuseAMissingGoal() throws {
-        let goals = try strippingComments(sourceFile("Cadence/macOS/Views/GoalsView.swift"))
-
-        #expect(
-            !goals.contains("|| trimmedQuery.isEmpty"),
-            "the search box is answering the existence question again"
-        )
-        #expect(
-            goals.components(separatedBy: "CadenceSelectionNormalization.normalized(").count - 1 == 1
-        )
-
-        // Scoped to the function, not to the file: a normalizer that stopped consulting `allGoalIDs`
-        // — or started passing the visible ids as the existing ones — is the whole defect back, and
-        // both spellings leave every file-level count untouched.
-        let rule = try cadenceFunctionBody("static func normalizedSelection(", in: goals)
-        #expect(rule.contains("existingIDs: Set(allGoalIDs)"))
-        #expect(rule.contains("visibleIDs: Set(visibleGoalIDs)"))
-        #expect(rule.contains("filterIsActive: searchIsActive"))
-
-        // And the page runs it on a goal-list change, not only on a visible-list change: a goal
-        // hidden by the status filter and then deleted moves neither list the old trigger watched.
-        let body = try cadenceFunctionBody("var body: some View", in: goals)
-        #expect(body.contains(".onChange(of: allGoals.map(\\.id))"))
-    }
+    // **`goalsNoLongerLetsAnEmptySearchBoxExcuseAMissingGoal` left with [[T-5002]]**, with the
+    // file it read. It pinned `|| trimmedQuery.isEmpty` by its absence from `GoalsView.swift`;
+    // there is no `GoalsView.swift`, which is the strongest form of that absence there is.
 
     /// T-345's two halves, which are only a fix together: the normalizer that retargets, and the
     /// state the loaders draw for the frames before it does.
@@ -527,7 +383,6 @@ struct CadenceDeletedSelectionGuardTests {
             "Cadence/macOS/Views/macOSRootStateSupport.swift",
             "Cadence/macOS/Views/ListDetailView.swift",
             "Cadence/iOS/iOSRootSidebar.swift",
-            "Cadence/macOS/Views/GoalsView.swift",
             "Cadence/iOS/iOSMarkdownEditingSurface.swift",
             "Cadence/iOS/iOSMarkdownReferenceSupport.swift",
             "Cadence/iOS/iOSSearchView.swift",
@@ -538,11 +393,14 @@ struct CadenceDeletedSelectionGuardTests {
         }
 
         // The needles are only meaningful if the surrounding text is really being read.
-        let goals = try sourceFile("Cadence/macOS/Views/GoalsView.swift")
-        #expect(goals.contains("struct GoalsView: View"))
-        let stripped = try strippingComments(goals)
-        #expect(stripped != goals, "the comment stripper did nothing")
-        #expect(stripped.count == goals.count, "the stripper shortened the source instead of blanking it")
+        // Read against the shared rule's own file since [[T-5002]] deleted `GoalsView.swift`:
+        // it is the one every surface below spends, so a stripper that did nothing here would
+        // blind every scan in this suite rather than one of them.
+        let rule = try sourceFile("Cadence/Shared/CadenceSelectionNormalization.swift")
+        #expect(rule.contains("enum CadenceSelectionNormalization"))
+        let stripped = try strippingComments(rule)
+        #expect(stripped != rule, "the comment stripper did nothing")
+        #expect(stripped.count == rule.count, "the stripper shortened the source instead of blanking it")
 
         let detail = try strippingComments(sourceFile("Cadence/macOS/Views/ListDetailView.swift"))
         #expect(detail.contains("struct MissingListDetailView: View"))

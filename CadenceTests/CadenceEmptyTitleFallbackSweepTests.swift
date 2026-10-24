@@ -195,13 +195,14 @@ struct CadenceEmptyTitleFallbackSweepTests {
         #expect(try read("Cadence/Models/ModelEnums.swift").contains("\"Untitled Task\""),
                 "the sweep's reader blanks string literals, so its needle can never match")
 
-        // The witness was `TaskBundlePickerSupportViews.swift` until [[T-3170]]'s trio pass deleted
-        // it; `GoalsSupportViews.swift` is its sibling in T-783's ledger below -- the other file
-        // that re-typed `containerLabel(for:)`'s untrimmed ternary -- and the walk must reach it.
+        // The witness was `TaskBundlePickerSupportViews.swift` until [[T-3170]]'s trio pass
+        // deleted it, then `GoalsSupportViews.swift` until [[T-5002]] deleted that. It is
+        // `TasksPanelSupportViews.swift` now: the other file in T-783's ledger below that
+        // re-typed `containerLabel(for:)`'s untrimmed ternary, and one that still ships.
         let hits = try instrument.sweep(
             paths,
             atLeast: 300,
-            including: "Cadence/macOS/Views/GoalsSupportViews.swift",
+            including: "Cadence/macOS/Views/TasksPanelSupportViews.swift",
             read: read
         )
 
@@ -240,7 +241,8 @@ struct CadenceEmptyTitleFallbackSweepTests {
         let hits = try instrument.sweep(
             paths,
             atLeast: 300,
-            including: "Cadence/iOS/iOSFeatureDetailViews.swift",
+            // Witness re-pointed by [[T-5002]], which deleted `iOSFeatureDetailViews.swift`.
+            including: "Cadence/iOS/iOSTaskViews.swift",
             read: read
         )
 
@@ -426,7 +428,7 @@ struct CadenceEmptyTitleFallbackSweepTests {
     // `noGoalPickerCallSiteRepeatsTheEmptyTextDefault` asserted `GoalLinkPickerButton` /
     // `GoalLinkPickerList` still declared `var emptyText: String = "No matching goals"`, as
     // non-vacuity for checking no caller repeated that default. T-698 deleted the property itself —
-    // both pickers now call `CadenceEmptyStateCopy.goalsTitle(isNarrowed:)` directly rather than
+    // both pickers now call CadenceEmptyStateCopy.goalsTitle(isNarrowed:) directly rather than
     // storing a second copy of its narrowed-case string — so there is no longer a default for a
     // caller to repeat, and the assertion's premise is gone rather than merely stale. Retired here
     // instead of left red, per T-698's own note that this is the correct and expected outcome.

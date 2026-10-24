@@ -382,9 +382,11 @@ nonisolated enum CadenceArchiveImportService {
     /// A resolvable `parentGoalID` is not an acyclic one. A goal that is its own parent, or a pair
     /// pointing at each other, satisfies every check above: no id is repeated and every reference
     /// names a row that exists. What it produces is a component with **no root**, and the Goals
-    /// page has no other way in — `GoalMissionGrouping.groups` starts at
-    /// `GoalAssignmentRules.topLevelGoals`, which is `parentGoal == nil`. So the goals import,
-    /// sync to every other device, and appear on no screen.
+    /// surfaces that list goals have no other way in — every one of them starts at
+    /// `GoalAssignmentRules.topLevelGoals`, which is `parentGoal == nil`, and descends with
+    /// `GoalAssignmentRules.nestedGoals(under:)`. So the goals import, sync to every other
+    /// device, and appear nowhere. ([[T-5002]] deleted the Goals pages themselves; the widgets
+    /// and the MCP read tools still read the same two rules.)
     /// `aRootlessGoalCycleIsInTheStoreAndOnNoGoalsRow` measures that consequence on its own, built
     /// by hand rather than through an import, so it still stands if this guard ever moves.
     ///
@@ -399,8 +401,8 @@ nonisolated enum CadenceArchiveImportService {
     /// cycles are node-disjoint. "Is this cycle new" is therefore answerable exactly — a cycle is
     /// new if and only if it contains an edge this import writes — rather than approximated by a
     /// depth limit, which would decide a different question. macOS deliberately *flattens* deeper
-    /// descendants (`GoalMissionGrouping.nestedGoals`); it does not forbid them, and a validator
-    /// that did would refuse valid archives.
+    /// descendants (`GoalAssignmentRules.nestedGoals(under:)`); it does not forbid them, and a
+    /// validator that did would refuse valid archives.
     private nonisolated static func validateGoalHierarchy(
         _ archive: CadenceArchive,
         mode: CadenceArchiveImportMode,

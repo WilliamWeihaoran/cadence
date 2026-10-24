@@ -34,11 +34,10 @@ struct CadencePluralizationTests {
                 #"CadencePluralization\.phrase\(noteCount, singular: "note", plural: "notes"\)"#,
                 "Collapsed, \\(noteCount) notes\""
             ),
-            (
-                "Cadence/iOS/iOSFeatureViews.swift",
-                #"CadencePluralization\.phrase\(summary\.activeGoalCount, singular: "milestone", plural: "milestones"\)"#,
-                "\\(summary.activeGoalCount) milestones /"
-            ),
+            // **The two `iOSFeatureViews.swift` entries left with [[T-5002]]**, which deleted the
+            // file: T-844's "1 milestones" and "1 habits" were `iOSGoalDetail`'s summary line, and
+            // the page that drew it is gone. The helper they were converged onto is exercised by
+            // value at the top of this suite and by its three surviving call sites below.
         ]
 
         for testCase in cases {
@@ -53,14 +52,10 @@ struct CadencePluralizationTests {
             )
         }
 
-        // The iOS habits half of the same call, pinned separately: one function returns both
-        // halves, and a fix that repaired only milestones would still read green above.
-        let goalViews = try CadenceCommitSurfaceScan.scanned("Cadence/iOS/iOSFeatureViews.swift")
+        // Non-vacuity: the scan really reads source rather than returning an empty string for a
+        // path that is no longer there — the failure mode [[T-5002]]'s deletions make reachable.
         #expect(
-            CadenceSourceScan.matchCount(
-                #"CadencePluralization\.phrase\(summary\.activeHabitCount, singular: "habit", plural: "habits"\)"#,
-                in: goalViews
-            ) == 1
+            try CadenceCommitSurfaceScan.scanned("Cadence/Shared/CadenceNotesListSupport.swift").count > 500
         )
     }
 
@@ -120,20 +115,10 @@ struct CadencePluralizationTests {
         #expect(CadenceTaskRecurrenceEndPresentation.endCountStepperLabel(1) == "1 occurrence")
         #expect(CadenceTaskRecurrenceEndPresentation.endCountStepperLabel(2) == "2 occurrences")
 
-        // T-5200: `GoalMissionGroup` lives in `Cadence/macOS/Views/GoalsSupportViews.swift`, so on
-        // the iOS leg this block did not compile and took every iOS unit test down with it.
-        #if os(macOS)
-        func header(shown: Int, hidden: Int) -> String {
-            GoalMissionGroup(
-                id: "g", title: "G", icon: "flag", colorHex: "#000000",
-                goals: (0..<shown).map { Goal(title: "M\($0)") },
-                hiddenMilestoneCount: hidden
-            ).milestoneCountLabel
-        }
-        #expect(header(shown: 0, hidden: 1) == "0 of 1 milestone")
-        #expect(header(shown: 1, hidden: 0) == "1 milestone")
-        #expect(header(shown: 1, hidden: 1) == "1 of 2 milestones")
-        #endif
+        // **T-4980's GoalMissionGroup.milestoneCountLabel block left with [[T-5002]]**, which
+        // deleted `GoalsSupportViews.swift` and the group struct in it. T-5200's `#if os(macOS)`
+        // fence around it went too: the fence existed only because the subject was macOS-only.
+        // The "N of M" shape it measured is `CadencePluralization.phrase`, asserted by value above.
     }
 
     /// The call sites the T-4980 formatters replaced read them, and the retired literals are gone.
@@ -142,8 +127,9 @@ struct CadencePluralizationTests {
             ("CadenceWidgets/TodayTasksWidgetView.swift", "Text(entry.snapshot.tasksInViewLabel)", "totalCount) tasks in view\")"),
             ("Cadence/iOS/iOSTaskViews.swift", "CadenceTaskPresentationSupport.moreSubtasksAccessibilityLabel(hidden: hidden)", "more subtasks\")"),
             ("Cadence/iOS/iOSMarkdownPreview.swift", "CadenceSubtaskProgress(completed: task.completedSubtaskCount, total: task.subtaskTotalCount).label", "subtaskTotalCount) subtasks\")"),
-            ("Cadence/macOS/Views/GoalsSupportViews.swift", "GoalLinkPresentation.linkedListCountLabel(summary.linkedListCount)", "linkedListCount) lists\""),
-            ("Cadence/iOS/iOSFeatureDetailViews.swift", "GoalLinkPresentation.linkedListCountLabel(summary.linkedListCount)", "linkedListCount) lists\""),
+            // The two `GoalLinkPresentation.linkedListCountLabel` readers — macOS's
+            // `GoalsSupportViews.swift` and iOS's `iOSFeatureDetailViews.swift` — left with
+            // [[T-5002]]. The formatter itself still has readers and is asserted by value above.
             ("Cadence/Shared/Components/CadenceScheduleCaptureCard.swift", "CadenceTaskRecurrenceEndPresentation.endCountStepperLabel(draft.seriesEndCount)", "seriesEndCount)) occurrences\""),
         ]
         for testCase in cases {

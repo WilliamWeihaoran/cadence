@@ -134,8 +134,11 @@ struct CadenceIconOnlyColorSwatchAccessibilityTests {
     /// now, and this is what proves it rather than assumes it.
     @Test func theWindowSeparatesTheRealSwatchFromItsNearestLookAlikes() throws {
         // A colour dot beside a `Text`, tapped as a whole row — the dot is not the control.
-        let goalRailRow = try CadenceSourceScan.sourceFile("Cadence/macOS/Views/GoalTimelineSupportViews.swift")
-        let goalTimelineBar = try CadenceSourceScan.sourceFile("Cadence/macOS/Views/GoalTimelineBarView.swift")
+        // `GoalTimelineSupportViews.swift` and `GoalTimelineBarView.swift` were the two look-alikes
+        // here until [[T-5002]] deleted them with the Goals roadmap; the sidebar's context row and
+        // the macOS tag picker draw the same shape and still ship.
+        let goalRailRow = try CadenceSourceScan.sourceFile("Cadence/macOS/Views/SidebarSupportViews.swift")
+        let goalTimelineBar = try CadenceSourceScan.sourceFile("Cadence/macOS/Views/TagPickerSupportViews.swift")
         // A `RoundedRectangle` chip background filled with a task's colour, 356 characters from
         // its own `.onTapGesture` — close enough to land inside any window sized for the real
         // shape, and excluded only because it is not a `Circle()`.

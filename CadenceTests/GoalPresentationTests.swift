@@ -325,7 +325,15 @@ struct GoalPresentationTests {
     /// **One definition of the walk, so the two platforms cannot disagree again.** macOS read the
     /// third level and iOS did not, for the same reason `mustStayTopLevel` was iOS-only in
     /// [[T-1327]] and macOS could therefore build the tree: the rule lived on one platform.
-    @Test func bothPlatformsFlattenTheSubtreeThroughOneRule() {
+    ///
+    /// T-1337 made macOS's GoalMissionGrouping.nestedGoals a one-line forward to this rule and
+    /// this test asserted the two agreed. **[[T-5002]] deleted the forwarder with the Goals
+    /// screens**, so "one definition" is now a claim about the tree rather than about two
+    /// expressions: it is asserted as the absence of a second walk, and the behaviour the one
+    /// surviving walk has is asserted directly. Both halves are wanted — an equality between two
+    /// expressions cannot notice a third implementation appearing beside them, which is the shape
+    /// the original defect actually had.
+    @Test func bothPlatformsFlattenTheSubtreeThroughOneRule() throws {
         let direction = goal()
         let milestone = goal()
         let subMilestone = goal()
@@ -334,11 +342,26 @@ struct GoalPresentationTests {
         direction.subGoals = [milestone]
         milestone.subGoals = [subMilestone]
 
+        let flattened = GoalAssignmentRules.nestedGoals(under: direction)
+        #expect(flattened.map(\.id) == [milestone.id, subMilestone.id])
+        #expect(flattened.count == 2)
+
+        // No second definition of the walk anywhere in the app. `nestedGoals` is declared once,
+        // in the file that owns the rule; every other mention is a call or a comment.
+        let files = try CadenceSourceScan.swiftFiles(under: "Cadence")
+        #expect(files.count > 300, "non-vacuity: the walk found \(files.count) files")
+        #expect(files.contains("Cadence/Shared/GoalAssignmentRules.swift"))
+        var declaring: [String] = []
+        for path in files {
+            let code = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile(path))
+            if CadenceSourceScan.matchCount(#"func\s+nestedGoals\s*\("#, in: code) > 0 {
+                declaring.append(path)
+            }
+        }
         #expect(
-            GoalMissionGrouping.nestedGoals(under: direction).map(\.id)
-                == GoalAssignmentRules.nestedGoals(under: direction).map(\.id)
+            declaring == ["Cadence/Shared/GoalAssignmentRules.swift"],
+            "the subtree walk is declared in \(declaring) — one platform grew its own again"
         )
-        #expect(GoalAssignmentRules.nestedGoals(under: direction).count == 2)
     }
 
     /// A `parentGoal` cycle arriving over CloudKit terminates the walk rather than hanging the
@@ -355,22 +378,12 @@ struct GoalPresentationTests {
         #expect(GoalAssignmentRules.activeTopLevelGoals(from: [first, second]).isEmpty)
     }
 
-    /// `CadenceTests` builds on macOS, so the iOS list is read rather than run. It has to ask for
-    /// the flattened subtree; `milestones(of:)` — direct children — is the spelling that left the
-    /// third level with no row.
-    @Test func theIOSGoalsListDrawsTheFlattenedSubtree() throws {
-        let raw = try CadenceSourceScan.sourceFile("Cadence/iOS/iOSFeatureViews.swift")
-        let source = CadenceSourceScan.codeOnly(raw)
-        #expect(source != raw, "nothing was stripped, so this scan is reading prose as code")
-        #expect(source.count == raw.count)
-
-        let body = try #require(
-            CadenceSourceScan.functionBody(named: "milestones", in: source),
-            "the iOS Goals list no longer declares milestones(of:); re-point this scan"
-        )
-        #expect(body.contains("GoalAssignmentRules.activeNestedGoals(under: goal)"))
-        #expect(!body.contains("GoalAssignmentRules.milestones(of: goal)"))
-    }
+    // **`theIOSGoalsListDrawsTheFlattenedSubtree` left with [[T-5002]].** It read
+    // iOSGoalsView.milestones(of:) in `iOSFeatureViews.swift` to prove the phone asked for the
+    // flattened subtree rather than the direct children; the page is deleted and the file with
+    // it. The rule it was guarding is `GoalAssignmentRules.activeNestedGoals(under:)`, whose own
+    // behaviour is pinned above, and the page's absence is pinned by
+    // `CadenceCodexTrackingUIRetirementTests.codexRetiredTrackingViewsAreGoneFromTheTree`.
 
     @Test func rangeLabelNeedsBothEndsBeforeItClaimsARange() {
         #expect(goal(start: "2026-08-01", end: "").rangeLabel == "No date range")
