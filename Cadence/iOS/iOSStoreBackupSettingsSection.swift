@@ -26,6 +26,11 @@ import SwiftUI
 ///
 /// One view for both size classes: iPhone and iPad differ in the width this is handed.
 struct iOSStoreBackupSettingsSection: View {
+    /// [[T-5807]]: `iOSSettingsView`'s count of finished "Delete Cadence Data" runs. The reset
+    /// deletes every backup and the staged restore, and this page stays on screen through it, so
+    /// a change here re-reads them; without it the rows stayed drawn and Restore was refused.
+    let resetGeneration: Int
+
     @State private var backups: [StoreBackupSnapshot] = []
     @State private var pendingRestore: (url: URL, snapshot: StoreBackupSnapshot?)?
     @State private var retainedUnrestoredDirectories: [URL] = []
@@ -68,6 +73,9 @@ struct iOSStoreBackupSettingsSection: View {
             }
         }
         .onAppear(perform: refresh)
+        .onChange(of: resetGeneration) { _, _ in
+            refresh()
+        }
         .confirmationDialog(
             CadenceStoreBackupPresentation.confirmationTitle,
             isPresented: Binding(

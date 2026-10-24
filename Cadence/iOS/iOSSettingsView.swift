@@ -55,6 +55,10 @@ struct iOSSettingsView: View {
     /// only sometimes reachable is the kind of control that looks tappable and does nothing.
     @AppStorage("ios.settings.category") private var settingsCategoryRaw = CadenceMobileSettingsNavigation.categoryListRawValue
     @State private var aiAPIKeyDraft = ""
+    /// [[T-5807]]: advanced each time "Delete Cadence Data" finishes, so the backup section drawn
+    /// below it on the same page re-reads a backups directory the reset just emptied. Its own
+    /// `.onAppear` does not fire again for a page that never left the screen.
+    @State private var dataResetGeneration = 0
     #if DEBUG
     @State private var sampleDataStatus: String?
     #endif
@@ -290,12 +294,12 @@ struct iOSSettingsView: View {
             // back from one; both belong above the control that ends it.
             iOSDataExportSettingsSection()
             iOSArchiveImportSettingsSection()
-            iOSDataResetSettingsSection()
+            iOSDataResetSettingsSection(onDidReset: { dataResetGeneration &+= 1 })
 
             // Local store backups and the staged restore (T-1477). Below the archive, as on the
             // Mac: these copies live inside the app's container and die with it, so the archive is
             // the route that answers "I lost the device" and reads first.
-            iOSStoreBackupSettingsSection()
+            iOSStoreBackupSettingsSection(resetGeneration: dataResetGeneration)
 
             // Below the reset, because the reset's own copy now ends by saying these are "listed
             // further down this page" and that has to be true of the order as well as of the

@@ -18,6 +18,11 @@ import SwiftUI
 /// One view for both size classes: iPhone and iPad differ in the width this is handed, not in how
 /// a card, a sheet or a button inside it looks.
 struct iOSDataResetSettingsSection: View {
+    /// [[T-5807]]: told once the reset has finished, so `iOSSettingsView` can tell the backup
+    /// section on the same page to re-read what the reset deleted — the Mac pane's
+    /// `refreshBackups()` after the same call.
+    let onDidReset: () -> Void
+
     @Environment(\.modelContext) private var modelContext
     @Environment(AISettingsManager.self) private var aiSettingsManager
     @State private var isConfirming = false
@@ -97,6 +102,7 @@ struct iOSDataResetSettingsSection: View {
                 // the reader that Sign in with Apple is macOS-only, and the shared sentence used
                 // to contradict that on the way out (T-474).
                 statusMessage = outcome.dataOnlyStatusMessage
+                onDidReset()
             } catch {
                 statusMessage = "Could not delete Cadence data: \(error.localizedDescription)"
             }

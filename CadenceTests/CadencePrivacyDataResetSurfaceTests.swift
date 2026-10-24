@@ -283,6 +283,48 @@ struct CadencePrivacyDataResetSurfaceTests {
         )
     }
 
+    /// **[[T-5807]]: after the reset, iOS's Data page stops listing the backups it deleted.**
+    ///
+    /// The backup section loaded only `.onAppear`, and the reset card sits on the same page, so
+    /// the deleted rows stayed drawn and a Restore tap on one was refused. The Mac pane calls
+    /// `refreshBackups()` after the same reset. Three links, each pinned, because any one of them
+    /// reverting leaves the rest compiling and the bug back: the reset reports success, the page
+    /// advances a generation, and the backup section re-reads when it changes. Read as text for
+    /// this file's usual reason — all three are inside `#if os(iOS)`.
+    @Test func theIOSBackupListRereadsAfterTheResetDeletesIt() throws {
+        let reset = try strippingComments(sourceFile("Cadence/iOS/iOSDataResetSettingsSection.swift"))
+        let call = try #require(reset.range(of: "PrivacyDataResetService.deleteCadenceDataAndLocalArtifacts"))
+        let failure = try #require(reset.range(of: "} catch", range: call.upperBound..<reset.endIndex))
+        let succeeded = reset[call.upperBound..<failure.lowerBound]
+        #expect(
+            succeeded.components(separatedBy: "onDidReset()").count - 1 == 1,
+            "the iOS reset no longer reports a finished reset to its page (T-5807)"
+        )
+        #expect(reset.components(separatedBy: "onDidReset()").count - 1 == 1)
+
+        let page = try strippingComments(sourceFile("Cadence/iOS/iOSSettingsView.swift"))
+        #expect(
+            matchCount(#"onDidReset:\s*\{\s*dataResetGeneration\s*&?\+=\s*1\s*\}"#, in: page) == 1,
+            "Settings no longer advances the reset generation when the reset finishes (T-5807)"
+        )
+        #expect(
+            matchCount(#"iOSStoreBackupSettingsSection\(\s*resetGeneration:\s*dataResetGeneration\s*\)"#, in: page) == 1,
+            "the backup section is no longer handed the reset generation (T-5807)"
+        )
+
+        let backups = try strippingComments(sourceFile("Cadence/iOS/iOSStoreBackupSettingsSection.swift"))
+        #expect(backups.contains("struct iOSStoreBackupSettingsSection"), "non-vacuity: wrong file")
+        #expect(
+            matchCount(#"\.onChange\(of:\s*resetGeneration\)\s*\{[^}]*\brefresh\(\)"#, in: backups) == 1,
+            "the backup section no longer re-reads its list when a reset finishes (T-5807)"
+        )
+    }
+
+    private func matchCount(_ pattern: String, in text: String) -> Int {
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return -1 }
+        return regex.numberOfMatches(in: text, range: NSRange(text.startIndex..., in: text))
+    }
+
     /// Data Safety is the one category both documents promise on iOS, so the route has to be the
     /// `.data` case rather than some other screen that happens to host the section.
     @Test func theIOSDeleteActionIsInTheDataSafetyCategory() throws {
@@ -297,7 +339,7 @@ struct CadencePrivacyDataResetSurfaceTests {
         )
         #expect(
             try strippingComments(sourceFile("Cadence/iOS/iOSSettingsView.swift"))
-                .contains("iOSDataResetSettingsSection()")
+                .contains("iOSDataResetSettingsSection(onDidReset:")
         )
     }
 
