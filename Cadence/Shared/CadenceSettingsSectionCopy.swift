@@ -249,7 +249,7 @@ nonisolated enum CadenceSettingsEmptyStateCopy {
     /// Settings → Apple Reminders, connected, with nothing open. Says what the list would hold and
     /// how it would be arranged, which is the part that tells a reader the screen is working.
     static let remindersTitle = "No open reminders"
-    static let remindersSubtitle = "Reminders you have not completed yet will be summarised here by list."
+    static let remindersSubtitle = "Reminders you have not completed yet will be summarized here by list."
 
     /// Settings → Contexts.
     ///

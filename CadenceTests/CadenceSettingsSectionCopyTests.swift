@@ -1084,7 +1084,7 @@ struct CadenceSettingsSectionCopyTests {
         #expect(CadenceSettingsEmptyStateCopy.remindersTitle == "No open reminders")
         #expect(
             CadenceSettingsEmptyStateCopy.remindersSubtitle
-                == "Reminders you have not completed yet will be summarised here by list."
+                == "Reminders you have not completed yet will be summarized here by list."
         )
         #expect(CadenceSettingsEmptyStateCopy.contextsTitle == "No active contexts")
         #expect(
