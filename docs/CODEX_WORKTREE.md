@@ -273,6 +273,18 @@ branch is ahead of `main` in this file. The one branch with its own commit on it
 `codex/ios-board-drop-refusal` (`405806ff`), adds only its old `total == 68` line; its PA-13 sentence
 is already on `main`.
 
+**Admission 2026-10-24 (keeper), one line in `CadenceTests/CadenceMarkdownImageCommitSurfaceTests.swift` and one doc comment in `Cadence/macOS/Views/EventNoteSupportViews.swift`.**
+Both files are leased above and stay leased. The keeper (`keeper0602`) changed exactly the census
+`#expect(total == 77, ...)` to `78` with its house-style sentence, and the one doc-comment symbol
+`iOSEventNoteEditorSheet.syncNoteToNativeEvent` to `iOSEventNoteCommit.syncNoteToNativeEvent` --
+nothing else in either file. **Why it could not wait for Codex:** `f7deed74` ([[T-5804]]) added a bare
+`CadenceInlineFailureNotice(text: eventNoteCommitNotice)` to `iOSNotesView` and moved that function
+into `iOSEventNoteCommit`, so `main` was red in CI (run 40084215147) on two counts CI reproduces
+regardless of local worktrees. **Checked before admitting:** every local `codex/*` branch with its own
+commits on either file (`git log main..<branch> -- <file>`): `codex/ios-board-drop-refusal` (its old
+census line only, as above), and `codex/data-safety-audit-fixes` / `codex/parity-functional-batch`
+(2026-10-05 / 2026-10-09, hunks in `EventNoteEditorSheet`, none near the edited comment).
+
 ### 2026-10-17 — WHY ALL SIX VERSIONS FAILED: each asked a cheaper question than the one being asked
 
 Agent `blocktail`'s synthesis, recorded because it explains every failure above with one sentence

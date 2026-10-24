@@ -199,7 +199,7 @@ enum EventNoteSupport {
     /// dropping the answer again is a compile error rather than a silent regression.
     ///
     /// A note with no native event to mirror into has nothing that can fail, so it is not a miss —
-    /// the same rule as `iOSEventNoteEditorSheet.syncNoteToNativeEvent`. Otherwise every ordinary
+    /// the same rule as `iOSEventNoteCommit.syncNoteToNativeEvent`. Otherwise every ordinary
     /// note would wear the "not synced" notice.
     static func syncNativeCalendarNotes(for note: Note, content: String, calendarManager: CalendarManager) -> Bool {
         guard note.kind == .meeting, !note.calendarEventID.isEmpty else { return true }
