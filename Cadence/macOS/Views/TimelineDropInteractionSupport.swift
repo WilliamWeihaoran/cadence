@@ -55,12 +55,15 @@ final class TimelineTaskDragSession {
         }
     }
 
-    /// Whether a block drag that began on one of `taskIDs` is still live — the one case in which
-    /// a canvas refuses drag-to-create. Scoped to the canvas's own blocks so a drag between other
-    /// columns never disables this one.
-    func isDragging(anyOf taskIDs: [UUID]) -> Bool {
-        guard let taskID else { return false }
-        return taskIDs.contains(taskID)
+    /// A drag-to-create gesture has started on a canvas's background ([[T-5380]]). No system drag
+    /// can be live while a background gesture is receiving mouse events, so a session still set
+    /// here is the leftover of a block drag released outside every canvas — cancelled, or dropped
+    /// on something that is not a timeline — which `.onDrag` never reports the end of. It is ended
+    /// rather than allowed to refuse the gesture; ending an already-ended session is a no-op, so
+    /// the per-tick call does not re-render the page's columns.
+    func backgroundDragBegan() {
+        guard taskID != nil else { return }
+        end()
     }
 
     /// The `activeDragTaskID` binding the block and gesture layers already speak.

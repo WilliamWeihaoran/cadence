@@ -5,9 +5,6 @@ struct TimelineCreateGridLayer: View {
     let metrics: TimelineMetrics
     let blockedFrames: [TimelineBlockFrame]
     let showHalfHourMarks: Bool
-    /// True while a block drag that began on this canvas is live ([[T-5350]]: the page's shared
-    /// session, scoped to this canvas's own blocks).
-    let refusesDraftCreation: Bool
     let onTapBackground: () -> Void
     let onDragChanged: (Int, Int) -> Void
     let onDragEnded: (Int, Int) -> Void
@@ -44,9 +41,11 @@ struct TimelineCreateGridLayer: View {
             .suppressWindowBackgroundDrag()
     }
 
+    /// No refusal on a live block drag any more ([[T-5380]]): a press that starts on a block is
+    /// refused by its frame below, and a background press cannot coexist with a system drag, so the
+    /// only session this gesture ever saw was a stale one — which `onDragChanged` now ends.
     private func shouldHandle(startLocation: CGPoint) -> Bool {
-        guard !refusesDraftCreation else { return false }
-        return !TimelineMetricsSupport.isInsideBlockedBlock(point: startLocation, blockedFrames: blockedFrames)
+        !TimelineMetricsSupport.isInsideBlockedBlock(point: startLocation, blockedFrames: blockedFrames)
     }
 }
 

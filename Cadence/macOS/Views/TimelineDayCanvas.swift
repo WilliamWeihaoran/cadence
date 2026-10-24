@@ -114,7 +114,6 @@ struct TimelineDayCanvas: View {
                 metrics: metrics,
                 blockedFrames: blockedFrames(layouts: layouts, eventLayouts: eventLayouts),
                 showHalfHourMarks: showHalfHourMarks,
-                refusesDraftCreation: dragSession.isDragging(anyOf: tasks.map(\.id)),
                 onTapBackground: clearCreateGridSelection,
                 onDragChanged: beginDraftSelection,
                 onDragEnded: commitDraftSelection
@@ -199,6 +198,8 @@ struct TimelineDayCanvas: View {
     }
 
     private func beginDraftSelection(startMin: Int, endMin: Int) {
+        // A block drag released outside every canvas left the session set ([[T-5380]]).
+        dragSession.backgroundDragBegan()
         TimelineDayCanvasStateSupport.beginDraftSelection(
             startMin: startMin,
             endMin: endMin,

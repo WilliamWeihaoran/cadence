@@ -45,14 +45,10 @@ struct TimelineTaskDragSessionTests {
     func endingTheDragOnTheTargetDayFreesTheSourceDaysDragToCreate() {
         let session = TimelineTaskDragSession()
         session.begin(taskID: taskA)
-        let monday = [taskA]
-        let tuesday: [UUID] = []
-        #expect(session.isDragging(anyOf: monday))
-        #expect(!session.isDragging(anyOf: tuesday), "a drag from Monday disabled Tuesday's drag-to-create")
+        #expect(session.taskID == taskA)
 
         // Tuesday's `performDrop` ends the one shared session.
         session.end()
-        #expect(!session.isDragging(anyOf: monday))
         #expect(session.taskID == nil)
         #expect(session.currentOffset == 0)
     }
@@ -70,6 +66,47 @@ struct TimelineTaskDragSessionTests {
         session.reconcile(payloadTaskID: taskB)
         #expect(session.taskID == nil)
         #expect(session.currentOffset == 0, "task B was placed by task A's grab")
+    }
+
+    /// [[T-5380]]: a block drag released outside every canvas reports no end, so the session
+    /// outlived it and the source column's drag-to-create was dead until that column was clicked.
+    @Test
+    func aBackgroundDragEndsABlockDragReleasedOutsideEveryCanvas() {
+        let session = TimelineTaskDragSession()
+        session.begin(taskID: taskA)
+        _ = session.enteredOffset(pointerY: 600, taskStartMin: 9 * 60, metrics: metrics)
+        #expect(session.currentOffset == 60, "non-vacuity: the leftover session holds a grab")
+
+        session.backgroundDragBegan()
+        #expect(session.taskID == nil, "the leftover block drag survived a drag-to-create")
+        #expect(session.currentOffset == 0)
+
+        session.backgroundDragBegan()
+        #expect(session.taskID == nil, "a drag-to-create with no session left one behind")
+    }
+
+    /// The wiring: the canvas ends the leftover where a drag-to-create begins, and the create grid
+    /// no longer refuses on the session at all.
+    @Test
+    func theCreateGridEndsALeftoverSessionInsteadOfRefusing() throws {
+        let canvas = CadenceSourceScan.codeOnly(
+            try CadenceSourceScan.sourceFile("Cadence/macOS/Views/TimelineDayCanvas.swift")
+        )
+        let begin = try #require(CadenceSourceScan.functionBody(named: "beginDraftSelection", in: canvas))
+        #expect(begin.contains("dragSession.backgroundDragBegan()"), "a drag-to-create leaves a stale session in force")
+        #expect(canvas.contains("onDragChanged: beginDraftSelection"))
+
+        let layers = CadenceSourceScan.codeOnly(
+            try CadenceSourceScan.sourceFile("Cadence/macOS/Views/TimelineDayCanvasSupportLayers.swift")
+        )
+        let grid = try #require(CadenceSourceScan.declarationBody("struct TimelineCreateGridLayer: View", in: layers))
+        #expect(grid.contains("guard shouldHandle(startLocation: value.startLocation) else { return }"), "non-vacuity")
+        let handle = try #require(CadenceSourceScan.functionBody(named: "shouldHandle", in: grid))
+        #expect(
+            handle.trimmingCharacters(in: .whitespacesAndNewlines)
+                == "!TimelineMetricsSupport.isInsideBlockedBlock(point: startLocation, blockedFrames: blockedFrames)",
+            "the create grid refuses on something other than a press that starts on a block"
+        )
     }
 
     @Test
