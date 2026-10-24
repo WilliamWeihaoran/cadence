@@ -3570,6 +3570,17 @@ enum CadenceSaveCommitRule {
     /// that never opens a brace is dropped rather than allowed to reach forward for somebody
     /// else's.
     private static func typeExtents(in source: String) -> [(name: String, start: Int, end: Int)] {
+        // **[[T-4801]]: comments are blanked before `typeDeclaration` is matched.** Measured, not
+        // feared: on the tree at the time of writing, 65 of 631 files under `Cadence/` attributed
+        // their declarations to different types when read with comments in — this repository writes
+        // `struct Foo: View` in prose constantly, and each such mention opened a phantom type whose
+        // brace range then swallowed the real declarations after it. Every live caller happens to
+        // pass `codeOnly` text today, so nothing was observed wrong in the app; the next sweep that
+        // reads a file plainly is what this prevents, which is [[T-3371]]'s shape in a new suite.
+        //
+        // Offsets survive because `strippingComments` blanks to spaces of EQUAL WIDTH, so the
+        // `start`/`end` reported here still index the caller's own string.
+        let source = CadenceSourceScan.strippingComments(source)
         let characters = Array(source)
         return CadenceSourceScan.captures(typeDeclaration, in: source).compactMap { capture in
             let head = source.distance(from: source.startIndex, to: capture.range.lowerBound)
