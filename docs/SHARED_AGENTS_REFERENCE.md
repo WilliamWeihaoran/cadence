@@ -439,3 +439,36 @@ offenders across a repository that was enforcing nothing. `sweep`'s `atLeast:` a
 not defaulted for the same reason — a walk with no non-vacuity claim should be a compile failure,
 not a green run over zero files. Use **literal** fixtures rather than ones read out of the tree: a
 fixture read from the tree can be retuned by the very edit that breaks the rule it guards.
+
+## Rollback across toolchains
+
+Displaced from `Cadence/Shared/AGENTS.md` for T-3149 (2026-10-23). The guide keeps the operational rules.
+
+The *secondary* reason is **toolchain-dependent** (T-402's finding, dated by T-1279 and bounded by
+T-1296): on Xcode 26 a live `PersistentModel` keeps an assigned value until something **fetches**;
+on 27 it is restored at once. The repo builds on both, so neither answer may be pinned.
+Pinned by `rollbackUndoesAnEditInTheStoreAndTheSingleContextObjectionStillStands`, whose
+assertion order stays load-bearing — reading before any fetch is the only position from which the
+two toolchains differ. Not permission to drop the snapshot; reason one is untouched. A fourth `rollback()` must
+be a delete — `everyRollbackCallSiteInTheAppIsADeleteCommit` is red on a new one.
+
+
+## Shared typography conversion
+
+Displaced from `Cadence/Shared/AGENTS.md` for T-3149 (2026-10-23). The guide keeps the operational rules.
+
+A custom environment value **crosses** `.sheet`/`.popover`/`.fullScreenCover` while
+`\.dynamicTypeSize` is re-read from the host window — measured on Xcode 27 / iOS 26.5 and recorded
+on `CadenceTypographyScaling`. CI runs Xcode 26, so the propagation itself may not be asserted;
+stating the answer is what makes a panel render the same on both. The four pickers T-1364's sheets
+open are the declarers and **they do not all answer alike** (T-1410/T-1412): `CadenceFittedPopover`,
+`EstimatePickerPopoverContent` and `iOSTaskTagPickerPopover` say `.cadenceScaledTypography()`, so
+their geometry names `.enabled` literally while their fonts read the scope they install; only
+`CadenceQuickDatePopover` stays pinned, because a month is seven columns wide.
+`CadencePresentedTypographyBoundaryTests` holds which panel answers which; `CadencePickerLargeTextLayoutTests` prices each.
+- **A shared component converts ahead of its callers by taking `dynamicTypeSize`/`scaling` as
+parameters defaulting to `.large`/`.fixed`** (T-1412) — a role at `.fixed` is its own literal at
+**all twelve** sizes, so the eleven unconverted surfaces drawing `CadenceTagChip` are untouched.
+Read `CadenceTagChipStyle`'s own note for the three judgements (content scales proportionally, a
+cap grows additively, overhang-derived spacings shrink); `CadenceTagPickerMetrics` is beside it so
+the macOS test target can read it. `CadenceTagChipScaleTests` holds both halves.
