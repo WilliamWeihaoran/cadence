@@ -13,7 +13,11 @@ final class FocusManager {
         case task(AppTask)
     }
 
-    var activeSession: ActiveSession? = nil
+    /// Re-arms the settled-task watch on every assignment (T-5310), so whatever sets the session —
+    /// `startFocus`, a deletion, a context swap re-resolving it — is watched without remembering to.
+    var activeSession: ActiveSession? = nil {
+        didSet { watchActiveTaskStatus() }
+    }
     var wantsNavToFocus: Bool = false
 
     /// **T-1103.** The stopwatch itself, and the only copy of it.
@@ -188,6 +192,67 @@ final class FocusManager {
         } catch {
             Self.logger.error("Focus session could not be banked on quit: \(error.localizedDescription, privacy: .public)")
         }
+    }
+
+    // MARK: - T-5310: a session on a task that was finished somewhere else
+
+    /// Bumped on every arm, so a watch armed for an earlier session (or an earlier arm of this one)
+    /// drops its callback instead of acting on, or re-arming over, the current one.
+    @ObservationIgnored private var statusWatchGeneration = 0
+
+    /// **T-5310.** Watch the focused task's status for as long as it is the session.
+    ///
+    /// Before this, only `endSession`, task deletion and Log Session's own "Mark task as complete"
+    /// (T-5303) ever cleared the session, so ticking the focused task from a list row, the
+    /// inspector, the keyboard, the status menu or MCP left a finished task under the "Ready" chip,
+    /// and the next ▶ timed it. Hooking each of those writers would be six hooks and a seventh
+    /// forgotten; the task's own status is the one thing they all change. The callback runs on
+    /// the main actor *after* the write, so a settle that was refused and put back reads open
+    /// again by then and nothing is released.
+    private func watchActiveTaskStatus() {
+        statusWatchGeneration += 1
+        guard let task = activeTask else { return }
+        let generation = statusWatchGeneration
+        withObservationTracking {
+            _ = task.statusRaw
+        } onChange: { [weak self] in
+            Task { @MainActor [weak self] in
+                guard let self, self.statusWatchGeneration == generation else { return }
+                if !self.releaseIfActiveTaskSettled() {
+                    self.watchActiveTaskStatus()
+                }
+            }
+        }
+    }
+
+    /// If the focused task is done or cancelled, bank its elapsed time against it and move on the
+    /// way Log Session's completion does (T-5303): adopt the next ready task, else end the
+    /// session. Returns whether it released the session.
+    ///
+    /// A refused bank is logged, not shown — the write that finished the task happened on another
+    /// screen, and `commitElapsed` has already undone the refused bank. The session still moves
+    /// on: a finished task is not something to keep timing.
+    @discardableResult
+    func releaseIfActiveTaskSettled(commit: (ModelContext) throws -> Void = { try $0.save() }) -> Bool {
+        guard let task = activeTask, CadenceTaskQuerySupport.isFinishedTask(task) else { return false }
+        let context = task.modelContext
+        if let context {
+            do {
+                try commitElapsed(in: context, commit: commit)
+            } catch {
+                Self.logger.error("Focus session could not be banked for a finished task: \(error.localizedDescription, privacy: .public)")
+            }
+        }
+        reset()
+        activeTask = context.flatMap { Self.nextReadyTask(after: task, in: $0) }
+        return true
+    }
+
+    /// The same next task `FocusView` offers: the head of `readyTasks`, which ranks on its own.
+    private static func nextReadyTask(after task: AppTask, in context: ModelContext) -> AppTask? {
+        let all = (try? context.fetch(FetchDescriptor<AppTask>())) ?? []
+        return FocusSessionSupport.readyTasks(from: all, todayKey: DateFormatters.todayKey())
+            .first { $0.id != task.id }
     }
 
     @ObservationIgnored private static let logger = Logger(subsystem: "com.haoranwei.Cadence", category: "FocusManager")

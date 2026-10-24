@@ -427,6 +427,77 @@ struct FocusLogSessionAndQuitTests {
         #expect(values("", "abc") == [0, 0])
     }
 
+    /// T-5310: completing the focused task somewhere other than Log Session (here, the funnel the
+    /// row checkbox and the inspector reach) banks its time and moves the session on, without the
+    /// test calling anything on the manager — the watch is the code under test.
+    @Test func completingTheFocusedTaskElsewhereMovesTheSessionOn() async throws {
+        resetManager()
+        defer { resetManager() }
+        let (tasks, project, context) = try makeTasks(["Reconcile invoices", "File receipts"])
+        let (done, next) = (tasks[0], tasks[1])
+        let manager = FocusManager.shared
+        let clock = installedClock()
+        try manager.startFocus(task: done, in: context)
+        clock.advance(30 * 60)
+
+        try TaskWorkflowService.commitMarkDone(done, in: context)
+
+        let deadline = Date().addingTimeInterval(10)
+        while manager.activeTask?.id == done.id, Date() < deadline {
+            try await Task.sleep(nanoseconds: 20_000_000)
+        }
+        #expect(manager.activeTask?.id == next.id, "the finished task is still the focus session")
+        #expect(done.actualMinutes == 30)
+        #expect(project.loggedMinutes == 30)
+        #expect(manager.elapsed == 0)
+        #expect(context.hasChanges == false)
+    }
+
+    /// Cancelling counts as finishing; with nothing else ready the session ends.
+    @Test func cancellingTheFocusedTaskWithNothingReadyEndsTheSession() throws {
+        resetManager()
+        defer { resetManager() }
+        let (tasks, _, context) = try makeTasks(["Reconcile invoices"])
+        let manager = FocusManager.shared
+        try manager.startFocus(task: tasks[0], in: context)
+
+        try TaskWorkflowService.commitMarkCancelled(tasks[0], in: context)
+        #expect(manager.releaseIfActiveTaskSettled())
+
+        #expect(manager.activeSession == nil)
+    }
+
+    /// A refused bank is logged and the session still moves on, and the clock does not carry the
+    /// finished task's half hour onto the next one: `commitElapsed` resets only when it banks.
+    @Test func aRefusedBankStillMovesTheSessionOnWithTheClockAtZero() throws {
+        resetManager()
+        defer { resetManager() }
+        struct Refused: Error {}
+        let (tasks, _, context) = try makeTasks(["Reconcile invoices", "File receipts"])
+        let manager = FocusManager.shared
+        let clock = installedClock()
+        try manager.startFocus(task: tasks[0], in: context)
+        clock.advance(30 * 60)
+
+        try TaskWorkflowService.commitMarkDone(tasks[0], in: context)
+        #expect(manager.releaseIfActiveTaskSettled(commit: { _ in throw Refused() }))
+
+        #expect(manager.activeTask?.id == tasks[1].id)
+        #expect(manager.elapsed == 0, "the refused bank's time carried over to the next task")
+    }
+
+    /// An open task is still being worked: nothing is released.
+    @Test func anOpenFocusedTaskIsNotReleased() throws {
+        resetManager()
+        defer { resetManager() }
+        let (tasks, _, context) = try makeTasks(["Reconcile invoices", "File receipts"])
+        let manager = FocusManager.shared
+        try manager.startFocus(task: tasks[0], in: context)
+
+        #expect(manager.releaseIfActiveTaskSettled() == false)
+        #expect(manager.activeTask?.id == tasks[0].id)
+    }
+
     /// T-5305: quitting banks the session against the task and its list.
     @Test func quittingBanksTheRunningSession() throws {
         resetManager()
