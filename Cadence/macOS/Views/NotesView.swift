@@ -413,6 +413,20 @@ private struct NotepadPage: View {
                     ) { note in
                         NotepadNoteListRow(note: note, isSelected: selectedNoteID == note.id)
                             .onTapGesture { selectedNoteID = note.id }
+                            // [[T-5806]]: the same menu as a list's note rows, so a note can be
+                            // deleted without opening it first. Notepad only — see
+                            // `iOSNotesView.sidebarRow(for:)` for why the dated pages have none.
+                            // `deleteNote` already confirms and fixes up a non-selected note.
+                            .contextMenu {
+                                Button("Copy Note Link") {
+                                    NoteActionSupport.copyMarkdownLink(to: note)
+                                }
+                                Button(role: .destructive) {
+                                    deleteNote(note)
+                                } label: {
+                                    Label("Delete", systemImage: "trash")
+                                }
+                            }
                     }
                 }
             }
