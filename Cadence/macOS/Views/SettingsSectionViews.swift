@@ -345,7 +345,27 @@ struct SettingsNavigationSection: View {
         )
     }
 
+    /// T-5883. The quick-capture hotkey had no name anywhere in the app — not a Settings row, not a
+    /// menu item, not a tooltip — so a user who never read the log could neither learn the key nor
+    /// discover that Carbon had refused to register it. It is named here, in the pane the app opens
+    /// on, and the same row reports the refusal.
+    private let hotKeyStatus = QuickCaptureHotKeyStatus.shared
+
     var body: some View {
+        VStack(alignment: .leading, spacing: 24) {
+            listOpeningSection
+            SettingsQuickCaptureSection(registration: hotKeyStatus.registration)
+        }
+        .onAppear {
+            // One-time normalization: rewrite a stale/unrecognized persisted value so the
+            // rest of the app reads a page that actually exists.
+            if listDetailDefaultPage != selectedPage.rawValue {
+                listDetailDefaultPage = selectedPage.rawValue
+            }
+        }
+    }
+
+    private var listOpeningSection: some View {
         CadenceFieldSection(title: "List Opening") {
             CadenceFieldRow(label: "Default page", systemImage: "rectangle.stack") {
                 CadenceChoiceValueButton(
@@ -377,13 +397,47 @@ struct SettingsNavigationSection: View {
                 .padding(.top, 2)
                 .padding(.leading, CadenceSettingsRowMetrics.glyphSlot + CadenceSettingsRowMetrics.glyphLabelSpacing)
         }
-        .onAppear {
-            // One-time normalization: rewrite a stale/unrecognized persisted value so the
-            // rest of the app reads a page that actually exists.
-            if listDetailDefaultPage != selectedPage.rawValue {
-                listDetailDefaultPage = selectedPage.rawValue
+    }
+}
+
+/// T-5883. Settings → Navigation's quick-capture row: the one place the app names ⌘ the
+/// quick-capture hotkey, and the one place a refused registration is visible.
+///
+/// Takes the registration rather than reading the singleton, so what it draws in each state is a
+/// pure function of its input and `QuickCaptureHotKeyRowContent` can be asserted without a pane.
+struct SettingsQuickCaptureSection: View {
+    let registration: QuickCaptureHotKeyRegistration
+
+    private var content: QuickCaptureHotKeyRowContent {
+        QuickCaptureHotKeyRowContent.make(for: registration)
+    }
+
+    var body: some View {
+        CadenceFieldSection(title: QuickCaptureHotKeyCopy.title) {
+            CadenceSettingsNoticeRow(
+                systemImage: content.systemImage,
+                tint: content.isWarning ? Theme.amber : Theme.green,
+                title: content.title,
+                detail: content.detail
+            ) {
+                shortcutBadge
             }
         }
+    }
+
+    /// The key itself, set apart from the sentence: a sentence is skimmed past, and this row
+    /// exists so the shortcut is readable at a glance.
+    private var shortcutBadge: some View {
+        Text(QuickCaptureHotKeyCopy.shortcutSymbol)
+            .font(.system(size: 12, weight: .semibold, design: .monospaced))
+            .foregroundStyle(content.isWarning ? Theme.dim : Theme.text)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(Theme.surfaceHighlight)
+            )
+            .accessibilityLabel("Quick capture shortcut, Control Space")
     }
 }
 

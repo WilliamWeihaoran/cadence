@@ -37,6 +37,7 @@ final class GlobalHotKeyManager {
         guard installStatus == noErr else {
             logger.error("Failed to install global hotkey handler: \(installStatus)")
             eventHandlerRef = nil
+            publish(.failed(installStatus))
             return
         }
 
@@ -56,10 +57,23 @@ final class GlobalHotKeyManager {
                 self.eventHandlerRef = nil
             }
             hotKeyRef = nil
+            publish(.failed(registerStatus))
             return
         }
 
         logger.debug("Registered Control-Space global hotkey")
+        publish(.registered)
+    }
+
+    /// T-5883. Both refusals above used to end at `logger.error` and nothing else, which is a
+    /// diagnostic for whoever is reading the log — nobody, in a shipped app. Carbon refuses
+    /// ⌃Space whenever something else already owns it, and on a Mac with two input sources macOS
+    /// itself does; the user then had a quick-capture key that silently did nothing. Settings
+    /// reads this.
+    private func publish(_ registration: QuickCaptureHotKeyRegistration) {
+        DispatchQueue.main.async {
+            QuickCaptureHotKeyStatus.shared.registration = registration
+        }
     }
 
     func unregister() {
@@ -72,6 +86,9 @@ final class GlobalHotKeyManager {
             RemoveEventHandler(eventHandlerRef)
             self.eventHandlerRef = nil
         }
+
+        // Back to "not asked", not to a failure: nothing refused anything here.
+        publish(.notAttempted)
     }
 
     private func handleHotKey(_ eventRef: EventRef?) -> OSStatus {
