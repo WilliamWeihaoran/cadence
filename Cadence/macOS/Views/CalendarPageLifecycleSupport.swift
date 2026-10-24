@@ -32,13 +32,15 @@ enum CalendarPageLifecycleSupport {
         anchorDateKey: String,
         bufferStart: Date,
         todayDayIdx: Int,
-        calendar: Calendar
+        calendar: Calendar,
+        currentMonthStart: Date? = nil
     ) -> String {
         if viewMode == .month {
             guard let displayedMonth else {
                 return CalendarPageStateSupport.visibleMonthLabel(
                     visibleMonthIdx: visibleMonthIdx,
-                    calendar: calendar
+                    calendar: calendar,
+                    currentMonthStart: currentMonthStart
                 )
             }
             return DateFormatters.monthYear.string(from: displayedMonth)

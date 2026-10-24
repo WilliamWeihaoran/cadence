@@ -55,8 +55,15 @@ struct CalendarPageView: View {
     @State private var observedDay = CadenceObservedDay()
 
     private let cal = Calendar.current
+    /// The day this page was opened, which every column and month block is counted from
+    /// ([[T-5352]]). Held, not read from the clock: a page left open across midnight keeps its
+    /// columns' dates, and `todayDayIdx` — measured from it to the real today — is what moves.
+    @State private var calendarAnchorDay = Calendar.current.startOfDay(for: Date())
     private var bufferStart: Date {
-        CalendarPageDataSupport.bufferStart(calendar: cal)
+        CalendarPageDataSupport.bufferStart(calendar: cal, anchorDay: calendarAnchorDay)
+    }
+    private var monthAnchorStart: Date {
+        CalendarMonthGridSupport.currentMonthStart(calendar: cal, reference: calendarAnchorDay)
     }
     private var todayDayIdx: Int {
         CalendarPageDataSupport.todayDayIndex(bufferStart: bufferStart, calendar: cal)
@@ -95,6 +102,7 @@ struct CalendarPageView: View {
                 MonthGridView(
                     todayKey: observedDay.todayKey,
                     allTasks: allTasks,
+                    currentMonthStart: monthAnchorStart,
                     tasksByDate: tasksByDateForMonth,
                     eventCache: calendarEventDayCache,
                     visibleMonthIdx: $visibleMonthIdx,
@@ -171,7 +179,8 @@ struct CalendarPageView: View {
                 anchorDateKey: &anchorDateKey,
                 bufferStart: bufferStart,
                 todayDayIdx: todayDayIdx,
-                calendar: cal
+                calendar: cal,
+                currentMonthStart: monthAnchorStart
             )
         }
         .onChange(of: selectedBoardDate) { _, newDate in
@@ -193,7 +202,8 @@ struct CalendarPageView: View {
             anchorDateKey: anchorDateKey,
             bufferStart: bufferStart,
             todayDayIdx: todayDayIdx,
-            calendar: cal
+            calendar: cal,
+            currentMonthStart: monthAnchorStart
         )
     }
 
@@ -209,7 +219,7 @@ struct CalendarPageView: View {
             if mode == .month {
                 visibleMonthIdx = CalendarPageStateSupport.monthIndexForTimelineAnchor(
                     anchorDateKey: anchorDateKey,
-                    currentMonthStart: CalendarMonthGridSupport.currentMonthStart(calendar: cal),
+                    currentMonthStart: monthAnchorStart,
                     calendar: cal
                 )
                 monthGridResetNonce += 1
@@ -245,7 +255,7 @@ struct CalendarPageView: View {
             visibleTimelineDayIndex: visibleTimelineDayIndex,
             anchorDateKey: anchorDateKey,
             bufferStart: bufferStart,
-            currentMonthStart: CalendarMonthGridSupport.currentMonthStart(calendar: cal),
+            currentMonthStart: monthAnchorStart,
             calendar: cal
         )
 
@@ -372,7 +382,10 @@ struct CalendarPageView: View {
         if viewMode == .month || presentation == .board {
             // The block that draws today, which on the days before a month's first Sunday is the
             // previous month's block — the same one `handleTodayTrigger` is about to scroll to.
-            visibleMonthIdx = CalendarPageStateSupport.monthIndexForToday(calendar: cal)
+            visibleMonthIdx = CalendarPageStateSupport.monthIndexForToday(
+                calendar: cal,
+                currentMonthStart: monthAnchorStart
+            )
         }
         scrollToTodayTrigger.toggle()
     }

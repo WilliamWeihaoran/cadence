@@ -2,12 +2,18 @@
 import SwiftUI
 
 enum CalendarPageDataSupport {
-    static func bufferStart(calendar: Calendar) -> Date {
-        calendar.date(byAdding: .day, value: -1825, to: calendar.startOfDay(for: Date())) ?? Date()
+    /// Column 0 of the Day/Week timeline: 1825 days before `anchorDay`.
+    ///
+    /// **[[T-5352]]: `anchorDay` is the day the page was opened, held by the page, never "now".**
+    /// Measured from today on every body pass, the buffer slid forward one day at midnight while
+    /// the horizontal scroll offset stayed put, so every column silently took the next day's date
+    /// (Oct 18–24 became Oct 19–25 with no gesture). `todayDayIndex` is what moves instead.
+    static func bufferStart(calendar: Calendar, anchorDay: Date = Date()) -> Date {
+        calendar.date(byAdding: .day, value: -1825, to: calendar.startOfDay(for: anchorDay)) ?? anchorDay
     }
 
-    static func todayDayIndex(bufferStart: Date, calendar: Calendar) -> Int {
-        calendar.dateComponents([.day], from: bufferStart, to: calendar.startOfDay(for: Date())).day ?? 1825
+    static func todayDayIndex(bufferStart: Date, calendar: Calendar, today: Date = Date()) -> Int {
+        calendar.dateComponents([.day], from: bufferStart, to: calendar.startOfDay(for: today)).day ?? 1825
     }
 
     static func tasksByScheduledDate(_ tasks: [AppTask]) -> [String: [AppTask]] {

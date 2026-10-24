@@ -25,12 +25,12 @@ struct CalendarPageStateSupport {
     /// the marked cell is one of them. Keeping `visibleMonthIdx` a single, unambiguous
     /// block index is also what keeps `dateKeyForVisibleMonth` and the month -> timeline return
     /// path honest.
-    static func visibleMonthLabel(visibleMonthIdx: Int, calendar: Calendar) -> String {
-        let currentMonthStart: Date = {
-            var comps = calendar.dateComponents([.year, .month], from: Date())
-            comps.day = 1
-            return calendar.date(from: comps) ?? Date()
-        }()
+    ///
+    /// `currentMonthStart` is the month block `todayMonthIndex` stands for — the page's held
+    /// anchor ([[T-5352]]), so the label cannot slip a month at a month change. `nil` is the
+    /// month of now, for callers with no page.
+    static func visibleMonthLabel(visibleMonthIdx: Int, calendar: Calendar, currentMonthStart: Date? = nil) -> String {
+        let currentMonthStart = currentMonthStart ?? CalendarMonthGridSupport.currentMonthStart(calendar: calendar)
         let month = calendar.date(byAdding: .month, value: visibleMonthIdx - todayMonthIndex, to: currentMonthStart) ?? Date()
         return DateFormatters.monthYear.string(from: month)
     }
@@ -79,14 +79,18 @@ struct CalendarPageStateSupport {
 
     /// Index of the block that renders today — what "jump to today" and the grid's initial
     /// position should target.
+    ///
+    /// `currentMonthStart` is the grid's held anchor ([[T-5352]]); after a month change it is the
+    /// month before today's, and today's block is `todayMonthIdx + 1`. `nil` anchors on today.
     static func monthIndexForToday(
         todayMonthIdx: Int = todayMonthIndex,
         calendar: Calendar,
-        today: Date = Date()
+        today: Date = Date(),
+        currentMonthStart: Date? = nil
     ) -> Int {
         blockIndex(
             for: today,
-            currentMonthStart: CalendarMonthGridSupport.currentMonthStart(calendar: calendar, reference: today),
+            currentMonthStart: currentMonthStart ?? CalendarMonthGridSupport.currentMonthStart(calendar: calendar, reference: today),
             todayMonthIdx: todayMonthIdx,
             calendar: calendar
         )

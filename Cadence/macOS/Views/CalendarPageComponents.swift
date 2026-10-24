@@ -53,6 +53,10 @@ struct CalTimeRailLabel: View {
 struct MonthGridView: View {
     let todayKey: String
     let allTasks: [AppTask]
+    /// The month block `todayMonthIdx` stands for, held by the page ([[T-5352]]). It was the
+    /// month of `Date()`, re-read on every pass, so at a month change every block slid forward a
+    /// month under a scroll offset that stayed put.
+    let currentMonthStart: Date
     let tasksByDate: [String: [AppTask]]
     let eventCache: CalendarEventDayCache
     @Binding var visibleMonthIdx: Int
@@ -75,10 +79,6 @@ struct MonthGridView: View {
     private let cal = Calendar.current
     @State private var didInitialPosition = false
     @State private var isProgrammaticScroll = false
-
-    private var currentMonthStart: Date {
-        CalendarMonthGridSupport.currentMonthStart(calendar: cal)
-    }
 
     /// The single month the whole grid tints against. See `displayedMonth`.
     private var tintMonth: Date {
