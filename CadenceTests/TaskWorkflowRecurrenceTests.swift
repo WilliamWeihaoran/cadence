@@ -491,5 +491,40 @@ struct TaskWorkflowRecurrenceTests {
         let next = try #require(try spawnedTask(for: februaryTask, in: context))
         #expect(next.dueDate == "2026-04-03")
     }
+
+    // MARK: - 11. The next occurrence keeps the predecessor's place in a hand-ordered list (T-6112)
+
+    /// An Inbox of five, the repeating task third. The successor used to keep `AppTask.order`'s
+    /// default `0` and sort among the list's first rows on every completion; it must take the
+    /// predecessor's slot instead, both by value and by the custom-order comparator.
+    @Test func completedRepeatingTaskSuccessorKeepsItsPlaceInAHandOrderedList() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+
+        var inbox: [AppTask] = []
+        for (index, title) in ["First", "Second", "Daily", "Fourth", "Fifth"].enumerated() {
+            let task = title == "Daily"
+                ? makeRecurringTask(title: title, scheduledDate: "2026-08-04")
+                : AppTask(title: title)
+            task.order = index
+            context.insert(task)
+            inbox.append(task)
+        }
+        try context.save()
+        let daily = inbox[2]
+
+        TaskWorkflowService.markDone(daily, in: context)
+        try context.save()
+
+        let next = try #require(try spawnedTask(for: daily, in: context))
+        #expect(next.order == daily.order)
+        #expect(next.order == 2)
+
+        let open = try context.fetch(FetchDescriptor<AppTask>())
+            .filter { $0.status == .todo }
+            .sorted(by: TaskOrdering.fallbackPrecedes)
+        #expect(open.map(\.title) == ["First", "Second", "Daily", "Fourth", "Fifth"])
+        #expect(open.firstIndex { $0.id == next.id } == 2)
+    }
 }
 #endif

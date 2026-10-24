@@ -254,6 +254,7 @@ nonisolated enum CadenceTaskRecurrenceWorkflowSupport {
     ///
     /// **Three fields are left out on purpose, and none of them is work this can protect.**
     /// `createdAt` is minted per device, so two genuine forks legitimately differ on it. `order` is
+    /// copied by the spawn since T-6112, and still left out here, because it is
     /// renumbered *wholesale* across a list by one drag-reorder (`CadenceWriteService`'s placement
     /// write), so requiring it to be pristine would make the collapse inert for anyone who has ever
     /// reordered that list — and a row's position is re-draggable, unlike a project assignment or a
@@ -478,6 +479,13 @@ nonisolated enum CadenceTaskRecurrenceWorkflowSupport {
         // keeps a dirty sub-5 positive at the 5-minute floor every write path already enforces.
         nextTask.estimatedMinutes = task.timelineDurationMinutes
         nextTask.sectionName = task.sectionName
+        // The successor takes the predecessor's slot in a hand-ordered list (T-6112). Left at the
+        // model's default `0`, it sorted among a list's first rows on every completion, so a daily
+        // task kept third in the Inbox came back first. The predecessor is settled, so the shared
+        // value only ever meets it where completed rows are shown, and there `fallbackPrecedes`
+        // breaks the tie on `createdAt` and puts the successor directly after it. `order` is
+        // deliberately NOT in `SpawnCopiedFields`: see `isUntouchedClone`.
+        nextTask.order = task.order
         nextTask.area = task.area
         nextTask.project = task.project
         nextTask.context = task.context
