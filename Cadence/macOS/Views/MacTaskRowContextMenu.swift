@@ -333,6 +333,45 @@ struct MacTaskRowContextMenu: View {
     }
 }
 
+/// Not a menu action, so outside the menu's struct: `MacTaskRowContextMenuParityTests` compares
+/// what the menu itself calls with iOS's menu, and these entry points belong to the pickers.
+extension MacTaskRowContextMenu {
+    /// **T-5353.** The same move, asked by a picker that speaks `TaskContainerSelection` — the
+    /// row's list chip. It wrote `area`/`project`/`context`/`sectionName` inline, never touched
+    /// `order` and left the commit to autosave, so a task landed wherever its old list's order
+    /// number fell in the new one. Routed here it moves the way the context menu does: end of the
+    /// new list, one commit, a refusal put back and reported. A selection naming a list that is
+    /// gone, or the list the task is already in, moves nothing. (The inspector is not a caller: since
+    /// T-4108 it moves a task through the shared panel's draft commit, `CadenceTaskEditDraftCommit`,
+    /// which reaches the same `CadenceTaskMutationSupport.assignContainer`.)
+    static func moveToList(
+        _ task: AppTask,
+        selection: TaskContainerSelection,
+        areas: [Area],
+        projects: [Project],
+        modelContext: ModelContext,
+        commit: (ModelContext) throws -> Void = { try $0.save() }
+    ) -> ActionOutcome {
+        let area: Area?
+        let project: Project?
+        switch selection {
+        case .inbox:
+            (area, project) = (nil, nil)
+        case .area(let id):
+            guard let target = areas.first(where: { $0.id == id }) else { return .settled }
+            (area, project) = (target, nil)
+        case .project(let id):
+            guard let target = projects.first(where: { $0.id == id }) else { return .settled }
+            (area, project) = (nil, target)
+        }
+        guard !CadenceTaskMutationSupport.isAlreadyInContainer(task, area: area, project: project) else {
+            return .settled
+        }
+        let allTasks = (try? modelContext.fetch(FetchDescriptor<AppTask>())) ?? []
+        return moveToList(task, area: area, project: project, allTasks: allTasks, modelContext: modelContext, commit: commit)
+    }
+}
+
 /// What a closed menu could not report itself. Titles are the shared ones iOS's row alerts carry,
 /// so a refusal reads the same on both platforms; `duplicate` has no iOS title because iOS does
 /// not report it.

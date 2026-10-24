@@ -501,6 +501,19 @@ enum TasksPanelSupport {
         }
     }
 
+    /// T-5353: a list drop's container write — `CadenceTaskMutationSupport.assignContainer`, the
+    /// write the context menu's Move to List commits, so the task takes the end of the new list
+    /// and a section that list has. Commits nothing; `assignTask` owns the commit.
+    private static func assignContainer(_ task: AppTask, area: Area?, project: Project?, in modelContext: ModelContext) {
+        CadenceTaskMutationSupport.assignContainer(
+            task,
+            area: area,
+            project: project,
+            sectionName: task.resolvedSectionName,
+            allTasks: (try? modelContext.fetch(FetchDescriptor<AppTask>())) ?? []
+        )
+    }
+
     /// Writes the assignment and **commits nothing** — `assignTask` owns the one commit, which is
     /// why every date edit here is handed `commit: { _ in }` and `reconciler: .inert`. Still routed
     /// through `CadenceTaskDateEditing` rather than writing `task.scheduledDate` by hand: T-362's
@@ -512,19 +525,17 @@ enum TasksPanelSupport {
         todayKey: String,
         modelContext: ModelContext
     ) {
+        // T-5353: a list drop is a move like the context menu's, so it goes through
+        // `assignContainer` — end of the new list, a section that list has — rather than keeping
+        // the old list's `order` and a `sectionName` the new list may not have. The commit is
+        // still `assignTask`'s one, whose snapshot puts all five fields back on a refusal.
         switch assignment {
         case .inbox:
-            task.area = nil
-            task.project = nil
-            task.context = nil
+            assignContainer(task, area: nil, project: nil, in: modelContext)
         case .area(let target):
-            task.area = target
-            task.project = nil
-            task.context = target.context
+            assignContainer(task, area: target, project: nil, in: modelContext)
         case .project(let target):
-            task.project = target
-            task.area = nil
-            task.context = target.resolvedContext
+            assignContainer(task, area: nil, project: target, in: modelContext)
         case .scheduleToday:
             CadenceTaskDateEditing.setScheduledDate(
                 todayKey,

@@ -576,21 +576,20 @@ struct MacTaskRow: View {
         showDoDatePicker.toggle()
     }
 
+    /// T-5353: the list chip moves the task the way the row's own Move to List does — end of the
+    /// new list, committed, a refusal named in the row's menu alert.
     private var taskContainerBinding: Binding<TaskContainerSelection> {
         Binding(
             get: { CadenceTaskComposerSupport.container(of: task) },
             set: { newSelection in
-                switch newSelection {
-                case .inbox:
-                    task.area = nil; task.project = nil; task.context = nil; task.sectionName = TaskSectionDefaults.defaultName
-                case .area(let id):
-                    if let area = areas.first(where: { $0.id == id }) {
-                        task.area = area; task.project = nil; task.context = area.context; task.sectionName = area.sectionNames.first ?? TaskSectionDefaults.defaultName
-                    }
-                case .project(let id):
-                    if let project = projects.first(where: { $0.id == id }) {
-                        task.project = project; task.area = nil; task.context = project.resolvedContext; task.sectionName = project.sectionNames.first ?? TaskSectionDefaults.defaultName
-                    }
+                if case .refused(let refusal) = MacTaskRowContextMenu.moveToList(
+                    task,
+                    selection: newSelection,
+                    areas: areas,
+                    projects: projects,
+                    modelContext: modelContext
+                ) {
+                    menuFailure = refusal
                 }
             }
         )

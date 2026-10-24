@@ -139,6 +139,129 @@ struct MacTaskRowContextMenuEffectTests {
         #expect(f.subject.sectionName == "Later")
     }
 
+    // MARK: - T-5353: the pickers and the drop move a task the way the menu does
+
+    /// The row's list chip speaks `TaskContainerSelection`; it used to write the relationships
+    /// inline and keep the old list's `order`, so the task landed mid-list. Through the menu's path
+    /// it goes to the end of the new list and is committed.
+    @Test func aSelectionMovePutsTheTaskAtTheEndOfTheNewListAndCommits() throws {
+        let f = try makeFixture()
+        let resident = AppTask(title: "Resident")
+        resident.project = f.project
+        resident.order = 5
+        f.context.insert(resident)
+        try f.context.save()
+        var commits = 0
+
+        let outcome = MacTaskRowContextMenu.moveToList(
+            f.subject, selection: .project(f.project.id), areas: [f.area], projects: [f.project],
+            modelContext: f.context, commit: { commits += 1; try $0.save() }
+        )
+
+        #expect(outcome == .settled)
+        #expect(commits == 1)
+        let committed = try #require(try f.committed(f.subject))
+        #expect(committed.project?.id == f.project.id)
+        #expect(committed.order > resident.order, "the moved task kept its old order instead of going last")
+        #expect(committed.sectionName == "Later")
+    }
+
+    /// Re-picking the list the task is already in is not a move: no commit, no re-order.
+    @Test func aSelectionOfTheCurrentListMovesNothing() throws {
+        let f = try makeFixture()
+        var commits = 0
+
+        let outcome = MacTaskRowContextMenu.moveToList(
+            f.subject, selection: .area(f.area.id), areas: [f.area], projects: [f.project],
+            modelContext: f.context, commit: { commits += 1; try $0.save() }
+        )
+
+        #expect(outcome == .settled)
+        #expect(commits == 0)
+        #expect(f.subject.order == 0)
+    }
+
+    @Test func aRefusedSelectionMoveIsReportedAndUndone() throws {
+        let f = try makeFixture()
+
+        let outcome = MacTaskRowContextMenu.moveToList(
+            f.subject, selection: .inbox, areas: [f.area], projects: [f.project],
+            modelContext: f.context, commit: { _ in throw CommitRefused() }
+        )
+
+        #expect(outcome == .refused(.move))
+        #expect(f.subject.area?.id == f.area.id)
+        #expect(f.subject.order == 0)
+    }
+
+    /// Dropping a task on another list's group goes through the same `assignContainer`, inside the
+    /// drop's one commit: end of the new list, and a section that list actually has.
+    @Test func aListDropPutsTheTaskAtTheEndOfTheNewListInASectionItHas() throws {
+        let f = try makeFixture()
+        f.subject.sectionName = "Now" // the area has it; the project does not
+        let resident = AppTask(title: "Resident")
+        resident.project = f.project
+        resident.order = 5
+        f.context.insert(resident)
+        try f.context.save()
+
+        let outcome = TasksPanelSupport.assignTask(
+            f.subject, for: "list:p_\(f.project.id.uuidString)", todayKey: "2026-10-23",
+            areas: [f.area], projects: [f.project], modelContext: f.context
+        )
+
+        #expect(outcome == .applied)
+        let committed = try #require(try f.committed(f.subject))
+        #expect(committed.project?.id == f.project.id)
+        #expect(committed.area == nil)
+        #expect(committed.order > resident.order, "the dropped task kept its old list's order")
+        #expect(committed.sectionName != "Now")
+        #expect(f.project.sectionNames.contains(committed.sectionName), "the dropped task kept a section its new list lacks")
+    }
+
+    /// The row's binding is SwiftUI and cannot be driven from a unit test, so this is the hop read
+    /// from source: it hands the selection to the menu's path and writes no relationship itself.
+    /// The inspector has no such binding since T-4108; its move is pinned by value below.
+    @Test func theRowsListChipRoutesThroughTheMenusMove() throws {
+        let path = "Cadence/macOS/Views/TasksPanelComponents.swift"
+        let code = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(path))
+        let body = try #require(
+            CadenceSourceScan.declarationBody("private var taskContainerBinding: Binding<TaskContainerSelection>", in: code),
+            "taskContainerBinding not found in \(path)"
+        )
+        #expect(CadenceSourceScan.matchCount(#"MacTaskRowContextMenu\.moveToList\("#, in: body) == 1)
+        #expect(CadenceSourceScan.matchCount(#"task\.(area|project|context|sectionName|order)\s*="#, in: body) == 0)
+    }
+
+    /// T-5353's third picker, the inspector's breadcrumb and `~` field. Since T-4108 the inspector
+    /// edits a `CadenceScheduleDraft` and saves through `CadenceTaskEditDraftCommit`, so the move it
+    /// makes is that commit's: end of the new list, in one commit, like the menu's.
+    @Test func theInspectorsDraftSavePutsAMovedTaskAtTheEndOfTheNewList() throws {
+        let f = try makeFixture()
+        let resident = AppTask(title: "Resident")
+        resident.project = f.project
+        resident.order = 5
+        f.context.insert(resident)
+        try f.context.save()
+        let opened = CadenceScheduleDraft(editing: f.subject)
+        var draft = opened
+        draft.listToken = CadenceTaskComposerSupport.token(for: .project(f.project.id))
+        var commits = 0
+
+        let landed = CadenceTaskEditDraftCommit.save(
+            draft, opened: opened, to: f.subject, area: nil, project: f.project,
+            allTasks: [f.subject, resident], scope: .thisTask, in: f.context, reconciler: .inert,
+            commit: { commits += 1; try $0.save() }
+        )
+
+        #expect(landed)
+        #expect(commits == 1)
+        let committed = try #require(try f.committed(f.subject))
+        #expect(committed.project?.id == f.project.id)
+        #expect(committed.area == nil)
+        #expect(committed.order > resident.order, "the inspector's move kept the old list's order")
+    }
+
     // MARK: - Move Section
 
     @Test func moveSectionCommitsTheRowsTaskIntoTheChosenSectionOfItsOwnList() throws {

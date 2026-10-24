@@ -322,7 +322,9 @@ struct CadenceTaskContextInheritanceTests {
     /// `project.resolvedContext` read (pinned by value above). [[T-4108]] moved the inspector's
     /// list edit out of `SchedulePanelComponents.swift` into the shared panel's draft commit,
     /// `CadenceTaskEditDraftCommit` in `Cadence/Shared/CadenceScheduleDraftTaskEditing.swift`, which
-    /// is now the site counted here.
+    /// is now the site counted here. [[T-5353]] routed the row's list chip through
+    /// `MacTaskRowContextMenu.moveToList` (which reaches `assignContainer`) and a list drop in
+    /// `TasksPanelSupport` through `assignContainer` itself.
     @Test func everyPathThatFilesATaskIntoAProjectAsksTheProjectToResolveItsContext() throws {
         let assignContainer = #"CadenceTaskMutationSupport\.assignContainer\("#
         func resolves(_ owner: String) -> String { #"task\.context = \#(owner)\.resolvedContext\b"# }
@@ -331,8 +333,8 @@ struct CadenceTaskContextInheritanceTests {
             ("Cadence/Services/MCPReadOnly/CadenceWriteService.swift", resolves("project")),
             ("Cadence/Services/DataIntegrityRepairService.swift", resolves("target")),
             ("Cadence/Shared/CadenceScheduleDraftTaskEditing.swift", assignContainer),
-            ("Cadence/macOS/Views/TasksPanelComponents.swift", resolves("project")),
-            ("Cadence/macOS/Views/TasksPanelSupport.swift", resolves("target")),
+            ("Cadence/macOS/Views/TasksPanelComponents.swift", #"MacTaskRowContextMenu\.moveToList\("#),
+            ("Cadence/macOS/Views/TasksPanelSupport.swift", assignContainer),
             ("Cadence/macOS/Views/KanbanBoardSupport.swift", resolves("project")),
             ("Cadence/macOS/Views/KanbanSectionColumnView.swift", resolves("project")),
         ]
