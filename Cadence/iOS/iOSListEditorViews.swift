@@ -304,6 +304,10 @@ struct iOSListEditorSheet: View {
                 Section {
                     ForEach($sectionDrafts) { $draft in
                         iOSSectionDraftRow(draft: $draft, lifecycle: lifecycle(for: draft))
+                            // T-5835: Default cannot be removed. A swiped-away Default came back
+                            // on Save, synthesised by `normalizedSectionConfigs`, in the default
+                            // grey and with no due date — a delete that only erased its settings.
+                            .deleteDisabled(draft.isDefaultColumn)
                     }
                     .onDelete { offsets in
                         sectionDrafts.remove(atOffsets: offsets)
@@ -727,11 +731,27 @@ private struct iOSSectionDraftRow: View {
                     .fill(Color(hex: draft.colorHex))
                     .frame(width: 8, height: 8)
 
-                TextField("Column name", text: $draft.name)
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(Theme.text)
+                // T-5835: Default's name is not editable. A rename re-pointed every Default card
+                // to the new name and `normalizedSectionConfigs` then synthesised an empty
+                // "Default" beside it. The caption is the Mac column popover's own sentence.
+                if draft.isDefaultColumn {
+                    Text(draft.name)
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(Theme.text)
+                } else {
+                    TextField("Column name", text: $draft.name)
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(Theme.text)
+                }
             }
             .frame(minHeight: 32)
+
+            if draft.isDefaultColumn {
+                Text("Default always stays available and cannot be renamed, completed, archived, or deleted.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(Theme.dim)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
 
             iOSSectionColorPicker(selectedHex: $draft.colorHex)
 

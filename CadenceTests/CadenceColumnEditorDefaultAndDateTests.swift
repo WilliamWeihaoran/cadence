@@ -19,6 +19,45 @@ import Testing
 @MainActor
 struct CadenceColumnEditorDefaultAndDateTests {
 
+    // MARK: - T-5835, the rule as a value
+
+    /// The draft of the existing Default column is Default whatever its field now holds; a column
+    /// added during the edit is never Default, even one typed as "Default"; other columns are not.
+    @Test func onlyTheExistingDefaultDraftIsTheDefaultColumn() {
+        #expect(CadenceSectionDraft(config: TaskSectionConfig(name: TaskSectionDefaults.defaultName)).isDefaultColumn)
+        #expect(CadenceSectionDraft(config: TaskSectionConfig(name: "default")).isDefaultColumn)
+
+        var renamed = CadenceSectionDraft(config: TaskSectionConfig(name: TaskSectionDefaults.defaultName))
+        renamed.name = "Backlog"
+        #expect(renamed.isDefaultColumn, "keyed on the name the editor opened with, not the field")
+
+        #expect(!CadenceSectionDraft(config: TaskSectionConfig(name: "Doing")).isDefaultColumn)
+        #expect(!CadenceSectionDraft(config: TaskSectionConfig(name: "Defaults")).isDefaultColumn)
+        #expect(!CadenceSectionDraft(name: TaskSectionDefaults.defaultName).isDefaultColumn)
+    }
+
+    // MARK: - T-5835, the iOS row
+
+    @Test func iOSDefaultRowHasNoNameFieldAndCannotBeDeleted() throws {
+        let source = try CadenceSourceScan.sourceFile("Cadence/iOS/iOSListEditorViews.swift")
+        let row = try #require(CadenceSourceScan.declarationBody("private struct iOSSectionDraftRow", in: source))
+
+        // The name field is drawn only on the non-Default branch.
+        let gate = try #require(row.range(of: "if draft.isDefaultColumn {"))
+        let field = try #require(row.range(of: "TextField(\"Column name\", text: $draft.name)"))
+        let elseBranch = try #require(row.range(of: "} else {", range: gate.upperBound..<row.endIndex))
+        #expect(elseBranch.upperBound <= field.lowerBound, "the name field must sit in the else branch")
+        #expect(CadenceSourceScan.matchCount("TextField\\(\"Column name\"", in: row) == 1)
+        #expect(row.contains("cannot be renamed, completed, archived, or deleted."))
+
+        // The row in the editor's ForEach refuses the swipe-delete for Default.
+        let code = CadenceSourceScan.strippingComments(source)
+        #expect(CadenceSourceScan.matchCount(
+            "iOSSectionDraftRow\\(draft: \\$draft, lifecycle: lifecycle\\(for: draft\\)\\)\\s*\\.deleteDisabled\\(draft\\.isDefaultColumn\\)",
+            in: code
+        ) == 1)
+    }
+
     // MARK: - T-5834, the macOS popover
 
     @Test func macColumnDueDateShowsAPlaceholderWithoutADate() throws {

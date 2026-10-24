@@ -42,6 +42,17 @@ struct CadenceSectionDraft: Identifiable, Hashable {
         originalName = nil
     }
 
+    /// Whether this draft is the list's existing **Default** column, which cannot be renamed or
+    /// removed (T-5835) — the Mac's column popover says so and shows no name field for it.
+    ///
+    /// Keyed on `originalName`, not `name`: it is the column the editor opened with that is fixed,
+    /// whatever its field holds now. A column added during this edit is never it, even one typed
+    /// as "Default". Case-insensitive, because that is how `TaskSectionConfig.isDefault` matches.
+    var isDefaultColumn: Bool {
+        guard let originalName else { return false }
+        return originalName.caseInsensitiveCompare(TaskSectionDefaults.defaultName) == .orderedSame
+    }
+
     var config: TaskSectionConfig {
         TaskSectionConfig(
             uuid: id,
