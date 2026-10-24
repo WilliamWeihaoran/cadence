@@ -425,23 +425,19 @@ private struct SettingsTagRow: View {
     /// work another screen has pending. See `CadencePendingChangePersistence.commitEdit`.
     private func saveEdits() {
         guard canSave else { return }
-        let previousName = tag.name
-        let previousSlug = tag.slug
         let previousDesc = tag.desc
         let previousColorHex = tag.colorHex
         let previousUpdatedAt = tag.updatedAt
 
-        let name = TagSupport.displayName(for: draftName)
-        tag.name = name
-        tag.slug = TagSupport.slug(for: name)
+        // T-6251: the rename carries the notes' frontmatter with it, under this same undo.
+        let undoRename = TagSupport.rename(tag, to: draftName)
         tag.desc = draftDescription.trimmingCharacters(in: .whitespacesAndNewlines)
         tag.colorHex = TagSupport.normalizedColorHex(draftColorHex, fallback: tag.colorHex)
         tag.updatedAt = Date()
 
         do {
             try CadencePendingChangePersistence.commitEdit(in: modelContext) {
-                tag.name = previousName
-                tag.slug = previousSlug
+                undoRename()
                 tag.desc = previousDesc
                 tag.colorHex = previousColorHex
                 tag.updatedAt = previousUpdatedAt

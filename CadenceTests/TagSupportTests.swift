@@ -228,6 +228,56 @@ struct TagSupportTests {
         #expect(try context.fetch(FetchDescriptor<Cadence.Tag>()).map(\.slug).sorted() == ["bug", "docs"])
     }
 
+    /// **T-6251: a rename follows the tag into the frontmatter of the notes that carry it.**
+    ///
+    /// The note's `tags:` line is what every re-sync reads. Renaming only the `Tag` row left
+    /// `work` in that line, and the next `syncNoteTagsFromMarkdown` — every note open, every
+    /// launch — minted `work` again and moved the note back onto it: one tag split into two.
+    @Test func renamingATagRewritesTheFrontmatterSoTheNextSyncDoesNotRemintIt() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let note = Note(kind: .daily, title: "Today", content: "---\ntags: [\"work\", \"docs\"]\n---\n\nBody")
+        context.insert(note)
+        TagSupport.syncNoteTagsFromMarkdown(note, in: context)
+        try context.save()
+        let work = try #require(note.tags?.first { $0.slug == "work" })
+
+        let undo = TagSupport.rename(work, to: "Job")
+        TagSupport.syncNoteTagsFromMarkdown(note, in: context)
+        try context.save()
+
+        let slugs = try context.fetch(FetchDescriptor<Cadence.Tag>()).map(\.slug).sorted()
+        #expect(slugs == ["docs", "job"], "the rename split the tag: the old name was minted again")
+        #expect(work.name == "Job")
+        #expect(note.sortedTags.map(\.slug).sorted() == ["docs", "job"])
+        #expect(note.tags?.contains { $0 === work } == true, "the note left the renamed tag")
+        #expect(MarkdownMetadataParser.frontmatterTagNames(in: note.content) == ["Job", "docs"])
+        #expect(note.content.hasSuffix("\n\nBody"), "the rename touched the note body")
+
+        // The undo puts back the name, the slug and the note's text together.
+        undo()
+        #expect(work.name == "work")
+        #expect(work.slug == "work")
+        #expect(MarkdownMetadataParser.frontmatterTagNames(in: note.content) == ["work", "docs"])
+    }
+
+    /// The half of T-6251 left for the owner ([[T-6261]]): an inline `#work` in a note's prose is
+    /// the user's text, and a rename does not edit it. Pinned so that changing it is a decision.
+    @Test func renamingATagLeavesInlineMentionsInTheBodyAlone() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let content = "Follow up on #work today"
+        let note = Note(kind: .daily, title: "Today", content: content)
+        context.insert(note)
+        TagSupport.syncNoteTagsFromMarkdown(note, in: context)
+        let work = try #require(note.tags?.first)
+
+        _ = TagSupport.rename(work, to: "Job")
+
+        #expect(note.content == content)
+        #expect(work.slug == "job")
+    }
+
     @Test func tagSyncAndWritebackSurviveDividersInTheBody() throws {
         // The block still parses when the body below it uses horizontal rules, and a tag edit
         // rewrites that block rather than prepending a second one above it.

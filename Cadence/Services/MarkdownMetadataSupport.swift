@@ -151,6 +151,12 @@ nonisolated enum MarkdownMetadataParser {
         return orderedUnique(inlineTags(in: content, excluding: frontmatter.range))
     }
 
+    /// The names on the frontmatter `tags:` line alone, inline `#tags` excluded — the half of a
+    /// note's tags that Cadence itself wrote, and so the half a tag rename may rewrite (T-6251).
+    nonisolated static func frontmatterTagNames(in content: String) -> [String] {
+        frontmatterTags(from: parseFrontmatter(in: content).properties)
+    }
+
     nonisolated static func content(_ content: String, replacingFrontmatterTags tags: [String]) -> String {
         let frontmatter = parseFrontmatter(in: content)
         let tagLine = "tags: [\(orderedUnique(tags).map { "\"\($0.replacingOccurrences(of: "\"", with: "'"))\"" }.joined(separator: ", "))]"

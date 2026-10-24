@@ -348,8 +348,11 @@ struct CadenceTagAndNoteCommitSurfaceTests {
         let rowSave = try declarationBody(named: "saveEdits", in: catalog)
         #expect(CadenceSourceScan.matchCount(#"try\?"#, in: rowSave) == 0, "saveEdits still swallows its save")
         #expect(rowSave.contains("CadencePendingChangePersistence.commitEdit(in: modelContext)"))
-        // Five fields written, five fields restored.
-        #expect(CadenceSourceScan.matchCount(#"tag\.\w+ = previous\w+"#, in: rowSave) == 5)
+        // Five fields written, five fields restored: three here, and name + slug through the
+        // shared rename, whose undo also restores the notes' frontmatter (T-6251).
+        #expect(CadenceSourceScan.matchCount(#"tag\.\w+ = previous\w+"#, in: rowSave) == 3)
+        #expect(rowSave.contains("let undoRename = TagSupport.rename(tag, to: "))
+        #expect(rowSave.contains("undoRename()"))
         #expect(rowSave.contains("saveFailureNotice = CadencePendingChangePersistence.editFailureNotice"))
         #expect(reportFollowsTheCatch("isEditing = false", in: rowSave), "the row collapses above its failure branch")
         #expect(catalog.contains("CadenceInlineFailureNotice(text: saveFailureNotice)"))
@@ -358,7 +361,13 @@ struct CadenceTagAndNoteCommitSurfaceTests {
         let sheetSave = try declarationBody(named: "saveEdits", in: picker)
         #expect(CadenceSourceScan.matchCount(#"try\?"#, in: sheetSave) == 0)
         #expect(sheetSave.contains("CadencePendingChangePersistence.commitEdit(in: modelContext)"))
-        #expect(CadenceSourceScan.matchCount(#"tag\.\w+ = previous\w+"#, in: sheetSave) == 5)
+        #expect(CadenceSourceScan.matchCount(#"tag\.\w+ = previous\w+"#, in: sheetSave) == 3)
+        #expect(sheetSave.contains("let undoRename = TagSupport.rename(tag, to: "))
+        #expect(sheetSave.contains("undoRename()"))
+        // Neither editor writes the name or slug itself any more; that is the shared rename's.
+        for body in [rowSave, sheetSave] {
+            #expect(CadenceSourceScan.matchCount(#"tag\.(name|slug) = "#, in: body) == 0)
+        }
         #expect(sheetSave.contains("editFailureNotice = CadencePendingChangePersistence.editFailureNotice"))
         #expect(reportFollowsTheCatch("editingTag = nil", in: sheetSave), "the sheet closes above its failure branch")
 

@@ -272,22 +272,19 @@ struct TagPickerPopover: View {
     private func saveEdits(to tag: Tag) {
         let name = TagSupport.displayName(for: editName)
         guard !name.isEmpty else { return }
-        let previousName = tag.name
-        let previousSlug = tag.slug
         let previousDesc = tag.desc
         let previousColorHex = tag.colorHex
         let previousUpdatedAt = tag.updatedAt
 
-        tag.name = name
-        tag.slug = TagSupport.slug(for: name)
+        // T-6251: the rename carries the notes' frontmatter with it, under this same undo.
+        let undoRename = TagSupport.rename(tag, to: name)
         tag.desc = editDescription.trimmingCharacters(in: .whitespacesAndNewlines)
         tag.colorHex = TagSupport.normalizedColorHex(editColorHex)
         tag.updatedAt = Date()
 
         do {
             try CadencePendingChangePersistence.commitEdit(in: modelContext) {
-                tag.name = previousName
-                tag.slug = previousSlug
+                undoRename()
                 tag.desc = previousDesc
                 tag.colorHex = previousColorHex
                 tag.updatedAt = previousUpdatedAt

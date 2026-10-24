@@ -323,6 +323,49 @@ nonisolated enum TagSupport {
         return changed ? .changed : .nothingToDo
     }
 
+    /// Renames a tag **and the frontmatter `tags:` line of every note that carries it** (T-6251),
+    /// answering the undo for both. The caller owns the unit of work: it calls this between
+    /// capturing its own fields and `CadencePendingChangePersistence.commitEdit`, and calls the
+    /// returned closure from that commit's undo.
+    ///
+    /// A note's tags are stored twice — the `note.tags` relationship and the text of its
+    /// frontmatter — and the text is what `syncNoteTagsFromMarkdown` reads back on every open,
+    /// flush and launch. Renaming only the `Tag` row left `tags: ["work"]` in the note, and the
+    /// next sync minted `work` again and moved the note back onto it: one tag split into two.
+    ///
+    /// **Only the frontmatter line is rewritten.** Cadence wrote that line; an inline `#old` in a
+    /// note's prose is the user's text, and whether a rename may edit it is an owner decision
+    /// ([[T-6261]]). Such a note still re-mints the old name until that is decided.
+    ///
+    /// Platform-neutral on purpose: both macOS editors call it, and so must iOS's rename when
+    /// [[T-5307]] lands. `note.updatedAt` is left alone — the edit is to a block the editor hides,
+    /// and bumping it would reorder every note list by a change the user cannot see.
+    static func rename(_ tag: Tag, to newName: String) -> () -> Void {
+        let previousName = tag.name
+        let previousSlug = tag.slug
+        let name = displayName(for: newName)
+
+        var previousContents: [(note: Note, content: String)] = []
+        for note in tag.notes ?? [] {
+            let names = MarkdownMetadataParser.frontmatterTagNames(in: note.content)
+            guard names.contains(where: { slug(for: $0) == previousSlug }) else { continue }
+            let renamed = names.map { slug(for: $0) == previousSlug ? name : $0 }
+            previousContents.append((note, note.content))
+            note.content = MarkdownMetadataParser.content(note.content, replacingFrontmatterTags: renamed)
+        }
+
+        tag.name = name
+        tag.slug = slug(for: name)
+
+        return {
+            tag.name = previousName
+            tag.slug = previousSlug
+            for entry in previousContents {
+                entry.note.content = entry.content
+            }
+        }
+    }
+
     nonisolated static func tagSlugs(_ tags: [Tag]) -> [String] {
         tags.map(\.slug).sorted()
     }
