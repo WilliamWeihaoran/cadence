@@ -3243,6 +3243,42 @@ Resolved as `fields(for:offersTaskRepeat:offersEventRepeat:).filter { isOffered(
 which keeps both behaviours and keeps `isOffered` a live call rather than a helper only its own unit
 test reaches.
 
+### 2026-10-24 — what the 2026-10-20 release does and does NOT cover: paths added to the fence AFTER it
+
+**Read this before concluding a fenced path blocks you.** The 2026-10-20 release below says a local
+agent may write ANY path the fenced block matches, without a per-path grant. That release was
+earned by [[T-3257]]'s audit, which checked **the 137 paths the fence held on that day** and found
+every one free of unlanded Codex work. It cannot speak for a path added later, because a path added
+later was added precisely because Codex is about to write it.
+
+**So the rule is:** a fenced path that was in the block on 2026-10-20 is released to local agents.
+A path added to the block AFTER 2026-10-20 is held for the branch it was granted for, until that
+branch lands. `git show 0a970443:docs/CODEX_WORKTREE.md` and later revisions settle which is which;
+do not guess from the current block alone, because it does not record when a line was added.
+
+**Measured 2026-10-24, because three agents stopped on this.** `mactask2308` ([[T-5310]], [[T-5353]])
+and `iossheet2308` ([[T-5359]], [[T-5173]], [[T-5175]]) each finished sound, tested work, found their
+paths in the fence, and stopped rather than widen the lease. That is the right failure direction and
+neither is at fault — but three of the five paths were never blocked:
+
+- `Cadence/macOS/Services/FocusManager.swift` — in the block before 2026-10-20. **RELEASED. T-5310 may land.**
+- `Cadence/iOS/iOSTaskDetailSheet.swift` — in the block before 2026-10-20. **RELEASED. T-5359/T-5173/T-5175 may land.**
+- `CadenceTests/CadenceCaptureEditorTests.swift` — in the block before 2026-10-20. **RELEASED, same tickets.**
+- `Cadence/macOS/Views/SchedulePanelComponents.swift` — added `6bb56ed7`, 2026-10-24. **HELD** for
+  `codex/subtasks-inspector`, which is finished, reviewed and waiting on three guard updates.
+- `CadenceTests/CadenceTaskContextInheritanceTests.swift` — added `78e5e26e`, 2026-10-24. **HELD**, same branch.
+
+**[[T-5353]]'s inspector half is SUPERSEDED, not merely blocked, and should not be re-attempted.**
+`codex/subtasks-inspector` deletes `taskContainerBinding` from `SchedulePanelComponents.swift`
+outright, so the binding T-5353 repairs will not exist. The behaviour survives: the adopted path
+commits a container change through `CadenceTaskEditDraftCommit.save`
+(`Cadence/Shared/CadenceScheduleDraftTaskEditing.swift:165-179`), which calls
+`CadenceTaskMutationSupport.assignContainer(task:area:project:sectionName:allTasks:)` — the same
+helper `MacTaskRowContextMenu.moveToList` uses, with `allTasks` for the order. T-5353's
+`TasksPanelComponents.swift` half is NOT fenced and NOT touched by that branch; it stands and should
+land on its own.
+
+
 ### 2026-10-20 — EVERY fenced path released to LOCAL agents, on the owner's decision and [[T-3257]]'s evidence
 
 **The owner's instruction, given 2026-10-19: Codex is finished; release the fenced paths.** This
