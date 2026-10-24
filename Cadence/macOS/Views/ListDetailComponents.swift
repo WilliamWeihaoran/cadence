@@ -51,9 +51,11 @@ struct ListTasksView: View {
 
     private var groupedActiveTasks: [ListTasksGroup] {
         if let frozenGroupedTasks = resolveFrozenTaskGroups(frozenGroupedTasks, from: tasks) {
-            return frozenGroupedTasks.map { group in
+            let frozen = frozenGroupedTasks.map { group in
                 ListTasksGroup(id: group.id, title: group.title, tasks: group.tasks)
             }
+            guard groupingMode == .byList else { return frozen }
+            return ListTasksSectionGroups.keepingEmptySections(frozen, live: liveSectionGroups)
         }
 
         switch groupingMode {
@@ -65,12 +67,20 @@ struct ListTasksView: View {
             return CadenceTaskQuerySupport.dateDisplayGroups(from: activeTasks, todayKey: todayKey)
                 .map { ListTasksGroup(id: $0.id, title: $0.title, tasks: $0.tasks) }
         case .byList:
-            return CadenceTaskQuerySupport.sectionGroups(from: activeTasks, sectionNames: sectionNames)
-                .map { ListTasksGroup(id: $0.id, title: $0.title, tasks: $0.tasks) }
+            return liveSectionGroups
         case .byPriority:
             return CadenceTaskQuerySupport.priorityDisplayGroups(from: activeTasks)
                 .map { ListTasksGroup(id: $0.id, title: $0.title, tasks: $0.tasks) }
         }
+    }
+
+    /// The By List groups as the store has them now ([[T-5832]]).
+    private var liveSectionGroups: [ListTasksGroup] {
+        ListTasksSectionGroups.groups(
+            from: activeTasks,
+            sectionNames: sectionNames,
+            pageIsEmpty: activeTasks.isEmpty && doneTasks.isEmpty
+        )
     }
 
     var body: some View {
@@ -302,4 +312,45 @@ struct ListTasksView: View {
         TasksPanelSupport.openCount(in: tasks)
     }
 }
+/// A list's Tasks tab under By List: every configured section, the empty ones included ([[T-5832]]).
+///
+/// The "+ Section" row at the foot of the tab adds a section that is empty by definition, and
+/// `sectionGroups` drops an empty section by default — so the row created a section and nothing
+/// new appeared, while iOS's list Tasks tab (`iOSListDetailView.sectionGroups`) drew it at once.
+/// Same rule as iOS, including its exception: a page with no tasks at all keeps its empty state
+/// rather than a stack of empty headings.
+enum ListTasksSectionGroups {
+    static func groups(from activeTasks: [AppTask], sectionNames: [String], pageIsEmpty: Bool) -> [ListTasksGroup] {
+        CadenceTaskQuerySupport.sectionGroups(
+            from: activeTasks,
+            sectionNames: sectionNames,
+            includingEmpty: !pageIsEmpty
+        )
+        .map { ListTasksGroup(id: $0.id, title: $0.title, tasks: $0.tasks) }
+    }
+
+    /// The hover freeze's groups, with the live empty sections put back in their places.
+    ///
+    /// The freeze holds each group's rows while the pointer is over the list, and
+    /// `resolveFrozenTaskGroups` drops a group with no rows — so without this, an empty section
+    /// would vanish the moment a row was hovered, and the one "+ Section" just made (reached, almost
+    /// always, by crossing a row) would not appear until the pointer left the list. A live empty
+    /// section is placed after the nearest live group before it that is already drawn.
+    static func keepingEmptySections(_ frozen: [ListTasksGroup], live: [ListTasksGroup]) -> [ListTasksGroup] {
+        var result = frozen
+        var drawnIDs = Set(frozen.map(\.id))
+        var insertionIndex = 0
+        for group in live {
+            if let index = result.firstIndex(where: { $0.id == group.id }) {
+                insertionIndex = index + 1
+            } else if group.tasks.isEmpty, !drawnIDs.contains(group.id) {
+                result.insert(group, at: insertionIndex)
+                drawnIDs.insert(group.id)
+                insertionIndex += 1
+            }
+        }
+        return result
+    }
+}
+
 #endif
