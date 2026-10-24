@@ -295,6 +295,25 @@ every local `codex/*` branch with its own commits on the file (`git log --no-mer
 `codex/subtasks-inspector` (its copy is identical to `main`, landed as [[T-3171]]) and
 `codex/data-safety-audit-fixes` (2026-10-05); no `codex/*` worktree has the file dirty.
 
+**Admissions 2026-10-24 (keeper `keeper1408`), three narrow sub-file grants, each for one ticket only.**
+Every file named stays leased; nothing else in it may be edited. **Why they could not wait for Codex:**
+each is a decision-free (or owner-decided at `887b2139`) visible defect for the next RC.
+**Checked before admitting:** `git log --no-merges main..<branch>` on every local `codex/*` branch --
+`codex/capture-list-sections` touched `ListDetailComponents.swift` (2026-10-17), `codex/ui-refresh-reconciliation`
+`CadenceApp.swift` (2026-10-16), `codex/tracking-ui-retirement` `iOSTaskDetailSheetSections.swift` (2026-10-05);
+no `codex/*` worktree has any of these files dirty.
+- Agent `cmdn1408`, [[T-5302]] only: in `Cadence/macOS/Services/QuickTaskPanelController.swift`, the
+  resign-key close path and the panel's open path may keep and restore the half-typed draft (cleared
+  on save or Esc), per the owner's decision (b). ([[T-5953]]'s `Cadence/CadenceApp.swift` is already
+  released to local agents under the 2026-10-20 rule, as that entry records.)
+- Agent `search1408`, [[T-5832]] half (b) only: in `Cadence/macOS/Views/ListDetailComponents.swift`,
+  the "+ Section" row's visibility condition (shown only under By List), per the owner's decision (a).
+- Agent `floor1408`, [[T-6114]] only: in `Cadence/macOS/Views/TaskInspectorWorkflowSupportViews.swift`
+  and `Cadence/iOS/iOSTaskDetailSheetSections.swift`, the After-count resolve call and the count
+  picker's choices / the count field's clamp, so they floor at the current occurrence number through a
+  shared helper in the lease-free `Cadence/Shared/CadenceTaskRecurrenceEndPresentation.swift`. The seed
+  value of 10 must not change (owner decision).
+
 ### 2026-10-17 — WHY ALL SIX VERSIONS FAILED: each asked a cheaper question than the one being asked
 
 Agent `blocktail`'s synthesis, recorded because it explains every failure above with one sentence
