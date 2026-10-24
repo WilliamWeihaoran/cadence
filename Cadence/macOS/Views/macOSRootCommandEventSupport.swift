@@ -29,6 +29,35 @@ nonisolated enum RootModalKeyDisposition: Equatable {
     case noModal
 }
 
+/// T-5800. **Which Cmd-key shortcuts stand down while the user is typing.**
+///
+/// The root key monitor is an app-wide local monitor, so it sees a key before the first responder
+/// does. The hover-scoped shortcuts act on whatever task, row or column the POINTER rests over, and
+/// the pointer stays there while the keyboard is busy in a text field — so Cmd+Delete, the system's
+/// "delete to start of line", asked to delete the hovered task, and the next Return confirmed it.
+/// While an editable text view (a SwiftUI `TextField`'s field editor or a `TextEditor`) is first
+/// responder, those keys belong to the text.
+///
+/// Cmd+K (40), Cmd+\ (42) and Cmd+O (31) name no hovered object and stay global.
+nonisolated enum RootCommandTextEditingGate {
+    /// The hover-scoped keys: Delete (51), Return / keypad Enter (36, 76), T (17), D (2), P (35),
+    /// / (44), S (1), = and - (24, 27), E (14), N (45).
+    static let hoverScopedKeyCodes: Set<UInt16> = [51, 36, 76, 17, 2, 35, 44, 1, 24, 27, 14, 45]
+
+    /// `true` when the key must go to the responder chain untouched instead of the shortcut table.
+    static func passesThrough(keyCode: UInt16, isEditingText: Bool) -> Bool {
+        isEditingText && hoverScopedKeyCodes.contains(keyCode)
+    }
+
+    /// An editable `NSTextView` — the field editor behind every `TextField` is one. A selectable
+    /// but read-only text view is not editing, so the shortcuts still work over it.
+    @MainActor
+    static func isEditingText(_ responder: NSResponder?) -> Bool {
+        guard let textView = responder as? NSTextView else { return false }
+        return textView.isEditable
+    }
+}
+
 enum RootCommandEventSupport {
     /// Return (36), keypad Enter (76) and Escape (53) are the only keys a confirmation overlay
     /// claims.
@@ -109,6 +138,14 @@ enum RootCommandEventSupport {
     /// the reasoning — and once it is gone the remaining branch is what `default` already does.
     /// Re-adding a case to "pass Cmd+Z through" would be a no-op that reads like a feature.
     static func handleCommandKeyEvent(_ event: NSEvent, context: RootCommandContext) -> NSEvent? {
+        let firstResponder = (event.window ?? NSApp.keyWindow)?.firstResponder
+        if RootCommandTextEditingGate.passesThrough(
+            keyCode: event.keyCode,
+            isEditingText: RootCommandTextEditingGate.isEditingText(firstResponder)
+        ) {
+            return event
+        }
+
         switch event.keyCode {
         case 40:
             context.clearAppEditingFocus()
@@ -144,7 +181,10 @@ enum RootCommandEventSupport {
             RootCommandActionSupport.cyclePriority(of: task, in: context.modelContext)
             return nil
         case 36, 76:
-            guard !context.taskCreationManager.isPresented else { return nil }
+            // T-5802: pass, do not swallow. The New Task panel's Create button is bound to
+            // Cmd+Return and only the responder chain can reach it; returning `nil` here ate the
+            // key. Hover is cleared behind the panel, so no background row can take it either way.
+            guard !context.taskCreationManager.isPresented else { return event }
             if let task = context.hoveredTaskManager.hoveredTask {
                 context.taskCompletionAnimationManager.toggleCompletion(for: task)
                 return nil
