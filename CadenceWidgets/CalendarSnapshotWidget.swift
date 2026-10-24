@@ -149,7 +149,7 @@ struct CalendarSnapshotWidgetView: View {
             } else if entry.snapshot.state == .empty {
                 emptyState
             } else {
-                dayStrip(days: Array(entry.snapshot.days.prefix(widgetFamily.cadenceLayout.calendarDayLimit)), compact: true)
+                dayStrip(days: visibleSpan.days, compact: true)
                 agendaLabel
             }
         }
@@ -164,7 +164,7 @@ struct CalendarSnapshotWidgetView: View {
             } else if entry.snapshot.state == .empty {
                 emptyState
             } else {
-                dayStrip(days: Array(entry.snapshot.days.prefix(widgetFamily.cadenceLayout.calendarDayLimit)), compact: false)
+                dayStrip(days: visibleSpan.days, compact: false)
                 HStack(spacing: scale.compactSectionSpacing) {
                     CadenceWidgetMetricCard(title: "Overdue", value: "\(entry.snapshot.overdueCount)")
                     CadenceWidgetMetricCard(title: "Scheduled", value: "\(scheduledCount)")
@@ -183,7 +183,7 @@ struct CalendarSnapshotWidgetView: View {
             } else if entry.snapshot.state == .empty {
                 emptyState
             } else {
-                twoWeekGrid(days: Array(entry.snapshot.days.prefix(widgetFamily.cadenceLayout.calendarDayLimit)))
+                twoWeekGrid(days: visibleSpan.days)
                 HStack(spacing: scale.compactSectionSpacing) {
                     CadenceWidgetMetricCard(title: "Overdue", value: "\(entry.snapshot.overdueCount)")
                     CadenceWidgetMetricCard(title: "Scheduled", value: "\(scheduledCount)")
@@ -204,7 +204,7 @@ struct CalendarSnapshotWidgetView: View {
                 emptyState
             } else {
                 HStack(alignment: .top, spacing: scale.sectionSpacing) {
-                    twoWeekGrid(days: Array(entry.snapshot.days.prefix(widgetFamily.cadenceLayout.calendarDayLimit)))
+                    twoWeekGrid(days: visibleSpan.days)
                         .frame(maxWidth: .infinity, alignment: .leading)
                     VStack(alignment: .leading, spacing: scale.compactSectionSpacing) {
                         agendaPanel
@@ -224,7 +224,7 @@ struct CalendarSnapshotWidgetView: View {
                     .font(.system(size: scale.titleSize, weight: .bold))
                     .foregroundStyle(Theme.text)
                 Spacer(minLength: 8)
-                Text("\(scheduledCount + dueCount)")
+                Text("\(visibleSpan.totalCount)")
                     .font(.system(size: scale.countSize, weight: .black, design: .rounded))
                     .foregroundStyle(Theme.text)
                     .minimumScaleFactor(0.8)
@@ -405,12 +405,17 @@ struct CalendarSnapshotWidgetView: View {
         return AnyShapeStyle(Theme.surfaceElevated)
     }
 
+    /// The days this family draws; every count beside them reads the same span (T-5881).
+    private var visibleSpan: CadenceCalendarWidgetVisibleSpan {
+        CadenceCalendarWidgetVisibleSpan(days: Array(entry.snapshot.days.prefix(widgetFamily.cadenceLayout.calendarDayLimit)))
+    }
+
     private var scheduledCount: Int {
-        entry.snapshot.days.reduce(0) { $0 + $1.scheduledCount }
+        visibleSpan.scheduledCount
     }
 
     private var dueCount: Int {
-        entry.snapshot.days.reduce(0) { $0 + $1.dueCount }
+        visibleSpan.dueCount
     }
 
     private var usesShortCountLabels: Bool {
@@ -420,8 +425,7 @@ struct CalendarSnapshotWidgetView: View {
     private var headerBadges: [WidgetHeaderBadge] {
         let overdueTint = Theme.red
         let upcomingTint = Theme.blueLight
-        let leadingDayCount = widgetFamily == .systemSmall ? 5 : 7
-        let upcomingCount = Array(entry.snapshot.days.prefix(leadingDayCount)).reduce(0) { $0 + $1.totalCount }
+        let upcomingCount = visibleSpan.totalCount
 
         if widgetFamily == .systemSmall {
             return [WidgetHeaderBadge(text: "\(upcomingCount) next up", tint: upcomingTint)]

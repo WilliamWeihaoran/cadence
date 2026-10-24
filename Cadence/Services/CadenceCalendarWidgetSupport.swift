@@ -41,6 +41,19 @@ nonisolated struct CadenceCalendarWidgetSnapshot: Hashable {
     }
 }
 
+/// The stretch of days one widget family actually draws, and every figure it shows beside them
+/// (T-5881). The provider always builds 14 days, but the small widget draws 3 cells and the medium
+/// 6; the header total, the Scheduled/Due tiles and the "upcoming"/"next up" badge used to sum all
+/// 14 (or a hand-picked 5 or 7), so a medium widget could draw six "clear" cells beside
+/// "Scheduled 4". Every number now comes from the same prefix the cells do.
+nonisolated struct CadenceCalendarWidgetVisibleSpan: Hashable {
+    let days: [CadenceCalendarWidgetDay]
+
+    var scheduledCount: Int { days.reduce(0) { $0 + $1.scheduledCount } }
+    var dueCount: Int { days.reduce(0) { $0 + $1.dueCount } }
+    var totalCount: Int { days.reduce(0) { $0 + $1.totalCount } }
+}
+
 nonisolated enum CadenceCalendarWidgetSupport {
     /// **This fetch used to carry no predicate at all, and [[T-1366]] measured what that cost.**
     ///
@@ -132,7 +145,11 @@ nonisolated enum CadenceCalendarWidgetSupport {
             statusMessage: nil,
             days: days,
             overdueCount: overdueCount,
-            upcomingTitle: upcomingTask?.title,
+            // Normalised like the Today widget's rows (T-5881): a task with an empty title draws
+            // the shared fallback rather than a blank "Next up" line.
+            upcomingTitle: upcomingTask.map {
+                CadenceTitleNormalization.display($0.title, fallback: CadenceTitleNormalization.defaultCompactTitle)
+            },
             upcomingDueDate: upcomingTask?.dueDate ?? ""
         )
     }

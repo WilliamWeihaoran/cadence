@@ -546,6 +546,80 @@ struct WidgetSupportTests {
         #expect(snapshot.days.dropFirst().first?.scheduledCount == 1)
     }
 
+    // MARK: - T-5881: every Calendar widget figure counts the days the family draws
+
+    @Test func calendarWidgetFiguresCountOnlyTheDaysEachFamilyDraws() throws {
+        let today = DateFormatters.date(from: "2026-05-11")!
+
+        let dueToday = AppTask(title: "Due today")
+        dueToday.dueDate = "2026-05-11"
+        let scheduledDayTwo = AppTask(title: "Day two")
+        scheduledDayTwo.scheduledDate = "2026-05-13"
+        // Day 5 (offset 4): drawn by medium (6 cells), not by small (3 cells).
+        let scheduledDayFive = AppTask(title: "Day five")
+        scheduledDayFive.scheduledDate = "2026-05-15"
+        // Day 10 (offset 9): drawn only by large / extra-large.
+        let dueDayTen = AppTask(title: "Day ten")
+        dueDayTen.dueDate = "2026-05-20"
+
+        let snapshot = CadenceCalendarWidgetSupport.snapshot(
+            from: [dueToday, scheduledDayTwo, scheduledDayFive, dueDayTen],
+            today: today,
+            dayCount: 14
+        )
+        #expect(snapshot.days.count == 14)
+
+        // The same expression the view builds its span from (pinned below).
+        func span(_ layout: CadenceWidgetFamilyLayout) -> CadenceCalendarWidgetVisibleSpan {
+            CadenceCalendarWidgetVisibleSpan(days: Array(snapshot.days.prefix(layout.calendarDayLimit)))
+        }
+
+        let small = span(.small)
+        #expect(small.days.count == 3)
+        #expect(small.scheduledCount == 1)
+        #expect(small.dueCount == 1)
+        #expect(small.totalCount == 2)
+
+        let medium = span(.medium)
+        #expect(medium.days.count == 6)
+        #expect(medium.scheduledCount == 2)
+        #expect(medium.dueCount == 1)
+        #expect(medium.totalCount == 3)
+
+        for layout in [CadenceWidgetFamilyLayout.large, .extraLarge] {
+            #expect(span(layout).days == snapshot.days)
+            #expect(span(layout).totalCount == 4)
+        }
+
+        // The view builds ONE span from the cells' prefix, and the cells, the header total, the
+        // tiles and the badge all read it: `entry.snapshot.days` is named exactly once, and none
+        // of the old whole-snapshot sums or the hand-picked 5/7-day badge window survive.
+        let widget = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("CadenceWidgets/CalendarSnapshotWidget.swift")
+        )
+        #expect(widget.contains(
+            "CadenceCalendarWidgetVisibleSpan(days: Array(entry.snapshot.days.prefix(widgetFamily.cadenceLayout.calendarDayLimit)))"
+        ))
+        #expect(CadenceSourceScan.matchCount("entry\\.snapshot\\.days", in: widget) == 1)
+        #expect(CadenceSourceScan.matchCount("visibleSpan\\.days", in: widget) == 4)
+        #expect(widget.contains("Text(\"\\(visibleSpan.totalCount)\")"))
+        #expect(widget.contains("let upcomingCount = visibleSpan.totalCount"))
+        #expect(!widget.contains("leadingDayCount"))
+    }
+
+    @Test func calendarWidgetNextUpNeverDrawsABlankTitle() throws {
+        let today = DateFormatters.date(from: "2026-05-11")!
+        let untitled = AppTask(title: "")
+        untitled.dueDate = "2026-05-11"
+
+        let snapshot = CadenceCalendarWidgetSupport.snapshot(from: [untitled], today: today, dayCount: 14)
+
+        #expect(untitled.title.isEmpty)
+        let title = try #require(snapshot.upcomingTitle)
+        #expect(title == CadenceTitleNormalization.defaultCompactTitle)
+        #expect(!title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+    }
+
     // MARK: - T-354: the widget's capture and the app's creation are one rule
 
     /// `review launch plan !!!` typed into the widget and typed into the app have to produce the
