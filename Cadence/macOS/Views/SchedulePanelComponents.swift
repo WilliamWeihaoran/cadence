@@ -5,15 +5,12 @@ import EventKit
 
 struct TaskDetailPopover: View {
     @Bindable var task: AppTask
-    @Query(sort: \Context.order) private var contexts: [Context]
-    @Query(sort: \Area.order)    private var areas:    [Area]
-    @Query(sort: \Project.order) private var projects: [Project]
     @Query(sort: \Tag.order)     private var tags:     [Tag]
     @Environment(\.modelContext) private var modelContext
     @Environment(DeleteConfirmationManager.self) private var deleteConfirmationManager
     @Environment(TaskSubtaskEntryManager.self) private var taskSubtaskEntryManager
 
-    @State private var showPriorityPicker = false
+    @State private var notesFlush = TaskInspectorNotesFlush()
     @State private var newSubtaskTitle = ""
     /// Set when a subtask insert or delete was refused by the store. See `addSubtask()`.
     @State private var subtaskFailureNotice: String?
@@ -21,37 +18,6 @@ struct TaskDetailPopover: View {
     @State private var tagFailureNotice: String?
     @State private var presentationMode: TaskDetailPresentationMode = .full
     @FocusState private var subtaskFieldFocused: Bool
-
-    private var availableSections: [String] {
-        switch taskContainerBinding.wrappedValue {
-        case .inbox:
-            return [TaskSectionDefaults.defaultName]
-        case .area(let id):
-            return areas.first(where: { $0.id == id })?.sectionNames ?? [TaskSectionDefaults.defaultName]
-        case .project(let id):
-            return projects.first(where: { $0.id == id })?.sectionNames ?? [TaskSectionDefaults.defaultName]
-        }
-    }
-
-    private var taskContainerBinding: Binding<TaskContainerSelection> {
-        Binding(
-            get: { CadenceTaskComposerSupport.container(of: task) },
-            set: { newSelection in
-                switch newSelection {
-                case .inbox:
-                    task.area = nil; task.project = nil; task.context = nil; task.sectionName = TaskSectionDefaults.defaultName
-                case .area(let id):
-                    if let area = areas.first(where: { $0.id == id }) {
-                        task.area = area; task.project = nil; task.context = area.context; task.sectionName = area.sectionNames.first ?? TaskSectionDefaults.defaultName
-                    }
-                case .project(let id):
-                    if let project = projects.first(where: { $0.id == id }) {
-                        task.project = project; task.area = nil; task.context = project.resolvedContext; task.sectionName = project.sectionNames.first ?? TaskSectionDefaults.defaultName
-                    }
-                }
-            }
-        )
-    }
 
     /// "1/3" beside the SUBTASKS heading; nil (and so omitted) when there are no subtasks.
     private var subtaskProgressLabel: String? {
@@ -61,103 +27,90 @@ struct TaskDetailPopover: View {
     private var taskTagsBinding: Binding<[Tag]> {
         Binding(
             get: { task.tags ?? [] },
-            set: { task.tags = TagSupport.sorted($0) }
+            set: {
+                tagFailureNotice = TaskInspectorScheduleCommit.setTags(
+                    $0, on: task, in: modelContext, commit: { try $0.save() }
+                ) ? nil : CadenceTaskFieldEditCommit.saveFailureNotice
+            }
         )
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            VStack(alignment: .leading, spacing: 12) {
-                if presentationMode == .full {
-                    TaskDetailHeaderSection(
-                        task: task,
-                        showPriorityPicker: $showPriorityPicker,
-                        contexts: contexts,
-                        areas: areas,
-                        projects: projects,
-                        tags: tags,
-                        taskContainerBinding: taskContainerBinding,
-                        taskTagsBinding: taskTagsBinding,
-                        availableSections: availableSections,
-                        onCreateTag: createTag
-                    )
-
-                    if let tagFailureNotice {
-                        CadenceInlineFailureNotice(text: tagFailureNotice)
-                    }
-
-                    TaskDetailScheduleGroupSection(task: task)
-                } else {
-                    VStack(alignment: .leading, spacing: 6) {
-                        // **T-513.** `TaskTitleSupport.defaultDisplayTitle`, so the compact
-                        // inspector's title agrees with the ~18 other surfaces that show a
-                        // blank-titled task. It read "Untitled task" against the constant's capital.
-                        Text(TaskTitleSupport.displayTitle(task.title))
-                            .font(.system(size: 16, weight: .bold))
-                            .foregroundStyle(Theme.text)
-                            .lineLimit(2)
-                        Text("Add subtasks")
-                            .font(.system(size: 11))
-                            .foregroundStyle(Theme.dim)
-                    }
+        Group {
+            if presentationMode == .full {
+                TaskInspectorScheduleEditor(task: task, beforeSave: prepareToSave) {
+                    recordSections
                 }
-
-                TaskInspectorSectionGroup(title: "Subtasks", trailing: subtaskProgressLabel) {
-                    TaskDetailSubtasksSection(
-                        task: task,
-                        newSubtaskTitle: $newSubtaskTitle,
-                        subtaskFieldFocused: $subtaskFieldFocused,
-                        onAddSubtask: addSubtask,
-                        onDeleteSubtask: { subtask in
-                            deleteConfirmationManager.present(
-                                title: "Delete Subtask?",
-                                message: "This will permanently delete \"\(TaskTitleSupport.displayTitle(subtask.title, fallback: TaskTitleSupport.defaultCompactDisplayTitle))\"."
-                            ) {
-                                deleteSubtask(subtask)
-                            }
-                        }
-                    )
-
-                    if let subtaskFailureNotice {
-                        CadenceInlineFailureNotice(text: subtaskFailureNotice)
-                    }
+                .id(task.id)
+            } else {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text(TaskTitleSupport.displayTitle(task.title))
+                        .font(.system(size: 16, weight: .bold))
+                        .foregroundStyle(Theme.text)
+                        .lineLimit(2)
+                    Text("Add subtasks")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Theme.dim)
+                    subtasksSection
                 }
-
-                if presentationMode == .full {
-                    TaskInspectorSectionGroup(title: "Notes") {
-                        TaskDetailNotesSection(task: task)
-                    }
-
-                    // No "Actions" heading: a label over two buttons at the foot of the panel
-                    // names something the buttons already say.
-                    TaskDetailActionsSection(task: task)
-                    // Start/Stop and Cancel/Restore, the shared set iOS renders ([[T-5015]]).
-                    TaskInspectorStatusActionsRow(task: task)
-                }
+                .padding(TaskInspectorPopoverMetrics.contentInset)
             }
-            .padding(TaskInspectorPopoverMetrics.contentInset)
         }
-        // Both presentation modes share one width now that the field rows drive the layout. The
-        // width and the inset are named constants because the child-popover placement rule reads
-        // them: see `TaskInspectorChildPopoverPlacement` (T-1480).
         .frame(width: TaskInspectorPopoverMetrics.width)
-        .background(
-            RoundedRectangle(cornerRadius: 12)
-                .fill(Theme.surface)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 12)
-                        .strokeBorder(Theme.borderSubtle, lineWidth: 1)
-                )
-        )
-        .onAppear {
-            focusSubtaskFieldIfRequested()
-        }
+        .cadenceFixedTypography()
+        .background(Theme.surface)
+        .onAppear { focusSubtaskFieldIfRequested() }
         .onChange(of: taskSubtaskEntryManager.requestedTaskID) { _, _ in
             focusSubtaskFieldIfRequested()
         }
-        .onChange(of: taskContainerBinding.wrappedValue) { _, _ in
-            normalizeTaskSectionSelection()
+    }
+
+    /// Record actions keep their existing immediate commit boundaries; the panel owns the draft
+    /// of the task's title, placement and schedule. Recurrence keeps its own scope picker.
+    private var recordSections: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            TagPickerControl(
+                selectedTags: taskTagsBinding,
+                allTags: tags,
+                onCreateTag: createTag,
+                triggerSymbol: "plus"
+            )
+            if let tagFailureNotice { CadenceInlineFailureNotice(text: tagFailureNotice) }
+            TaskInspectorRecurrenceControl(task: task, childPlacement: .besideInspector)
+            subtasksSection
+            TaskInspectorSectionGroup(title: "Notes") {
+                TaskDetailNotesSection(task: task, flush: notesFlush)
+            }
+            TaskDetailActionsSection(task: task, offersUnschedule: false, offersDelete: false)
+            TaskInspectorStatusActionsRow(task: task)
         }
+    }
+
+    private var subtasksSection: some View {
+        TaskInspectorSectionGroup(title: "Subtasks", trailing: subtaskProgressLabel) {
+            TaskDetailSubtasksSection(
+                task: task,
+                newSubtaskTitle: $newSubtaskTitle,
+                subtaskFieldFocused: $subtaskFieldFocused,
+                onAddSubtask: addSubtask,
+                onDeleteSubtask: { subtask in
+                    deleteConfirmationManager.present(
+                        title: "Delete Subtask?",
+                        message: "This will permanently delete \"\(TaskTitleSupport.displayTitle(subtask.title, fallback: TaskTitleSupport.defaultCompactDisplayTitle))\"."
+                    ) { deleteSubtask(subtask) }
+                }
+            )
+            if let subtaskFailureNotice { CadenceInlineFailureNotice(text: subtaskFailureNotice) }
+        }
+    }
+
+    /// Flush the markdown well synchronously, and submit an unfinished checklist entry before
+    /// Save can close the popover. A refused insert retains the text and keeps the form open.
+    private func prepareToSave() -> Bool {
+        notesFlush.flush()
+        guard !newSubtaskTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return true }
+        addSubtask()
+        return subtaskFailureNotice == nil
     }
 
     /// **T-634.** This reached no commit at all, and cleared the field regardless.
@@ -230,16 +183,6 @@ struct TaskDetailPopover: View {
         presentationMode = .subtasksOnly
         DispatchQueue.main.async {
             subtaskFieldFocused = true
-        }
-    }
-
-    private func normalizeTaskSectionSelection() {
-        let cleaned = availableSections
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
-        let validSections = cleaned.isEmpty ? [TaskSectionDefaults.defaultName] : cleaned
-        if !validSections.contains(where: { $0.caseInsensitiveCompare(task.sectionName) == .orderedSame }) {
-            task.sectionName = validSections.first ?? TaskSectionDefaults.defaultName
         }
     }
 

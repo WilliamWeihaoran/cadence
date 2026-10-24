@@ -5,6 +5,7 @@ import AppKit
 
 struct TaskDetailNotesSection: View {
     @Bindable var task: AppTask
+    var flush: TaskInspectorNotesFlush? = nil
     @Query(sort: \AppTask.order) private var referenceTasks: [AppTask]
     /// [[T-5061]]: what `[[note]]` links in these notes resolve against — the same query and order
     /// the Notes page and `EventNoteEditorSheet` use.
@@ -110,12 +111,14 @@ struct TaskDetailNotesSection: View {
         }
         .onAppear {
             loadEditorStateIfNeeded(force: true)
+            flush?.action = flushPendingEditorContent
         }
         .onChange(of: task.id) { _, _ in
             loadEditorStateIfNeeded(force: true)
         }
         .onDisappear {
             flushPendingEditorContent()
+            flush?.action = nil
             pendingFallbackContentSyncTask?.cancel()
             pendingFallbackContentSyncTask = nil
         }
@@ -573,6 +576,8 @@ struct TaskDetailSubtasksSection: View {
 
 struct TaskDetailActionsSection: View {
     @Bindable var task: AppTask
+    var offersUnschedule = true
+    var offersDelete = true
     @Environment(\.modelContext) private var modelContext
     @Environment(DeleteConfirmationManager.self) private var deleteConfirmationManager
 
@@ -616,7 +621,7 @@ struct TaskDetailActionsSection: View {
             }
             .buttonStyle(.cadencePlain)
 
-            if task.scheduledStartMin >= 0 {
+            if offersUnschedule && task.scheduledStartMin >= 0 {
                 iconButton(
                     systemImage: "calendar.badge.minus",
                     tint: Theme.dim,
@@ -627,8 +632,10 @@ struct TaskDetailActionsSection: View {
                 }
             }
 
-            iconButton(systemImage: "trash", tint: Theme.red, accessibilityLabel: "Delete task") {
-                deleteConfirmationManager.presentTaskDelete(task, in: modelContext)
+            if offersDelete {
+                iconButton(systemImage: "trash", tint: Theme.red, accessibilityLabel: "Delete task") {
+                    deleteConfirmationManager.presentTaskDelete(task, in: modelContext)
+                }
             }
         }
     }
@@ -670,6 +677,152 @@ struct TaskDetailActionsSection: View {
         }
         .buttonStyle(.cadencePlain)
         .cadenceControlLabel(accessibilityLabel)
+    }
+}
+
+/// The MarkdownEditor owns an unsent text buffer. Save flushes that buffer before reading the
+/// live notes into the schedule commit; focus-loss delivery alone can arrive after dismissal.
+@MainActor
+final class TaskInspectorNotesFlush {
+    var action: (@MainActor () -> Void)?
+    func flush() { action?() }
+}
+
+/// The full macOS inspector's schedule form, using the same panel and edit commit as iOS and
+/// the inline note inspector. Record actions in `content` retain their own commits.
+struct TaskInspectorScheduleEditor<Content: View>: View {
+    @Bindable var task: AppTask
+    let beforeSave: () -> Bool
+    let content: () -> Content
+    @Query(sort: \Area.order) private var areas: [Area]
+    @Query(sort: \Project.order) private var projects: [Project]
+    @Query(sort: \AppTask.order) private var allTasks: [AppTask]
+    @Environment(\.modelContext) private var modelContext
+    @Environment(\.dismiss) private var dismiss
+    @Environment(DeleteConfirmationManager.self) private var deleteConfirmationManager
+    @State private var draft: CadenceScheduleDraft
+
+    init(task: AppTask, beforeSave: @escaping () -> Bool, @ViewBuilder content: @escaping () -> Content) {
+        _task = Bindable(wrappedValue: task)
+        self.beforeSave = beforeSave
+        self.content = content
+        _draft = State(initialValue: CadenceScheduleDraft(editing: task))
+    }
+
+    private var selection: TaskContainerSelection {
+        CadenceTaskComposerSupport.selection(fromToken: draft.listToken)
+    }
+
+    private var selectedArea: Area? {
+        guard let id = CadenceTaskComposerSupport.selectedAreaID(selection) else { return nil }
+        return areas.first { $0.id == id }
+    }
+
+    private var selectedProject: Project? {
+        guard let id = CadenceTaskComposerSupport.selectedProjectID(selection) else { return nil }
+        return projects.first { $0.id == id }
+    }
+
+    var body: some View {
+        ScrollView {
+            CadenceSchedulePanel(
+                draft: $draft,
+                listChoices: CadenceSchedulePanelChoice.editableTaskListChoices(
+                    areas: areas, projects: projects, selection: selection
+                ),
+                sectionChoices: CadenceTaskMutationSupport.sectionNames(forArea: selectedArea, project: selectedProject),
+                titleStatus: CadenceSchedulePanelTitleStatus(
+                    eyebrow: task.status == .inProgress || task.isCancelled ? task.status.label : nil,
+                    eyebrowTint: CadenceTaskPresentationSupport.statusColor(task.status),
+                    isSettled: CadenceTaskCompletionState.resolve(task: task).isSettled
+                ),
+                // The host's recurrence control includes its existing end and scope picker.
+                offersTaskRepeat: false,
+                actions: CadenceSchedulePanelActions(
+                    commit: save,
+                    cancel: { dismiss() },
+                    delete: {
+                        deleteConfirmationManager.presentTaskDelete(task, in: modelContext)
+                        return nil
+                    }
+                ),
+                notesField: content
+            )
+        }
+        .frame(maxHeight: 720)
+        .cadenceFixedTypography()
+        .onChange(of: task.statusRaw) { _, _ in draft.isDone = task.isDone }
+        .onChange(of: draft.listToken) { _, _ in
+            draft.sectionName = CadenceScheduleDraftChoices.normalizedSectionName(
+                for: draft, areas: areas, projects: projects
+            )
+        }
+    }
+
+    private func save() -> String? {
+        guard beforeSave() else { return CadenceTaskInspectorSupport.subtaskAddFailureNotice }
+        guard TaskInspectorScheduleCommit.save(
+            draft, to: task, areas: areas, projects: projects, allTasks: allTasks,
+            in: modelContext, commit: { try $0.save() }
+        ) else { return CadenceTaskFieldEditCommit.saveFailureNotice }
+        dismiss()
+        return nil
+    }
+}
+
+/// The host edits recurrence and notes through existing record controls. Read those fields at
+/// Save, after the markdown flush, so a schedule edit cannot restore their opening values.
+@MainActor
+enum TaskInspectorScheduleCommit {
+    static func save(
+        _ draft: CadenceScheduleDraft,
+        to task: AppTask,
+        areas: [Area],
+        projects: [Project],
+        allTasks: [AppTask],
+        in modelContext: ModelContext,
+        commit: (ModelContext) throws -> Void
+    ) -> Bool {
+        let selection = CadenceTaskComposerSupport.selection(fromToken: draft.listToken)
+        let area = areas.first { $0.id == CadenceTaskComposerSupport.selectedAreaID(selection) }
+        let project = projects.first { $0.id == CadenceTaskComposerSupport.selectedProjectID(selection) }
+        if CadenceTaskComposerSupport.selectedAreaID(selection) != nil && area == nil { return false }
+        if CadenceTaskComposerSupport.selectedProjectID(selection) != nil && project == nil { return false }
+        let current = CadenceScheduleDraft(editing: task)
+        var payload = draft
+        payload.notes = task.notes
+        payload.repeatRule = current.repeatRule
+        payload.seriesEndMode = current.seriesEndMode
+        payload.seriesEndDateKey = current.seriesEndDateKey
+        payload.seriesEndCount = current.seriesEndCount
+        payload.seriesOccurrenceNumber = current.seriesOccurrenceNumber
+        payload.isDone = current.isDone
+        let clearsSchedule = (payload.startDateKey.isEmpty && !current.startDateKey.isEmpty)
+            || (payload.scheduledStartMin < 0 && current.scheduledStartMin >= 0)
+        return CadenceTaskEditDraftCommit.save(
+            payload, opened: current, to: task, area: area, project: project,
+            allTasks: allTasks, scope: .thisTask, in: modelContext,
+            commit: { context in
+                // The old Unschedule action also retired this legacy link. Stay inside the
+                // field snapshot's commit so a refusal restores the link with the schedule.
+                if clearsSchedule { SchedulingActions.removeFromCalendar(task) }
+                try commit(context)
+            }
+        )
+    }
+
+    static func setTags(
+        _ tags: [Tag], on task: AppTask, in modelContext: ModelContext,
+        commit: (ModelContext) throws -> Void
+    ) -> Bool {
+        let restored = task.tags
+        task.tags = TagSupport.sorted(tags)
+        do {
+            try CadencePendingChangePersistence.commitEdit(in: modelContext, commit: commit, undo: {
+                task.tags = restored
+            })
+            return true
+        } catch { return false }
     }
 }
 #endif
