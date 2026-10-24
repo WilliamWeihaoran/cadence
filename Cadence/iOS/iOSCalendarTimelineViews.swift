@@ -152,6 +152,11 @@ struct iOSCalendarTimelineGrid: View {
     /// Set when a move or resize was refused by the store. The block is already back at its
     /// stored minute by then (`CadenceTimelineBlockEdit.commit`); this is the sentence saying so.
     @State private var blockEditFailureNotice: String?
+    /// The event a tap on its timed block opened ([[T-5356]]). Held here, once for every column, and
+    /// presented as the same `iOSCalendarEventEditSheet` the Board, Month, Search and the day
+    /// inspector open, so a meeting on Day/Week (and on Today's schedule pane) is edited where it
+    /// is seen instead of only from another view.
+    @State private var selectedEvent: iOSCalendarEventSelection?
 
     private let calendar = Calendar.current
     /// Read for the two figures that are still about the pane — the hour rail's width and how wide a
@@ -249,6 +254,9 @@ struct iOSCalendarTimelineGrid: View {
             }
             canvas
         }
+        .sheet(item: $selectedEvent) { selection in
+            iOSCalendarEventEditSheet(event: selection.event)
+        }
     }
 
     private var canvas: some View {
@@ -337,6 +345,7 @@ struct iOSCalendarTimelineGrid: View {
             workHoursStartMinute: workHoursStartMinute,
             workHoursEndMinute: workHoursEndMinute,
             onCreateAt: onCreateAt,
+            onOpenEvent: { selectedEvent = iOSCalendarEventSelection(event: $0) },
             drawsDraftBlocks: drawsDraftBlocks,
             onClearTime: clearsTime,
             editingTaskID: editingTaskID,
@@ -1126,6 +1135,9 @@ private struct iOSCalendarTimelineDayColumn: View {
     let workHoursStartMinute: Int
     let workHoursEndMinute: Int
     let onCreateAt: (String, Int) -> Void
+    /// Opens the grid's event editor for a tapped timed event ([[T-5356]]). See
+    /// `iOSCalendarTimelineGrid.selectedEvent`.
+    let onOpenEvent: (EKEvent) -> Void
     /// See `iOSCalendarTimelineGrid.drawsDraftBlocks`.
     var drawsDraftBlocks: Bool = false
     /// Non-`nil` only where a cleared task has a visible place to land — see
@@ -1210,7 +1222,7 @@ private struct iOSCalendarTimelineDayColumn: View {
                 let drawn = CadenceScheduleSupport.timelineVisibleRange(start: range.start, end: range.end)
                 let key = BlockKey.event(event.calendarItemIdentifier)
                 let slot = horizontalFrame(placements[.event(event.calendarItemIdentifier)], kind: .event)
-                iOSCalendarEventBlock(event: event, startMin: range.start, endMin: range.end, blockWidth: slot.width)
+                iOSCalendarEventBlock(event: event, startMin: range.start, endMin: range.end, blockWidth: slot.width, onOpen: { openEvent(event) })
                     .frame(width: slot.width, height: blockHeight(start: drawn.start, end: drawn.end))
                     .offset(x: slot.x, y: yOffset(for: drawn.start))
                     .zIndex(solved.zIndexes[key] ?? 1)
@@ -1383,6 +1395,13 @@ private struct iOSCalendarTimelineDayColumn: View {
     /// Puts a lifted block down, answering whether there was one. A tap on empty canvas while a
     /// block is lifted means "done", not "make something here" — Apple Calendar's answer too —
     /// so the caller stops there.
+    /// A tap on a timed event's block ([[T-5356]]). While a task block is lifted the tap puts it
+    /// down, exactly as a tap on empty canvas does; otherwise it opens the event's editor.
+    private func openEvent(_ event: EKEvent) {
+        guard !putDownLiftedBlock() else { return }
+        onOpenEvent(event)
+    }
+
     private func putDownLiftedBlock() -> Bool {
         guard editingTaskID != nil else { return false }
         onSelectForEditing(nil)
@@ -1836,6 +1855,10 @@ private struct iOSCalendarEventBlock: View {
     /// The width the day column gives the block, so the title can be measured before it is drawn
     /// (T-3323).
     let blockWidth: CGFloat
+    /// The block's one interaction: a tap (or VoiceOver's activate) opens the event's editor
+    /// ([[T-5356]]). Before this the block drew no gesture at all, so a tap on a meeting did
+    /// nothing on Day, Week or Today's pane while the same event opened from Month and the Board.
+    let onOpen: () -> Void
 
     private var calendarColor: Color {
         iOSCalendarEventSupport.color(for: event.calendar)
@@ -1929,8 +1952,12 @@ private struct iOSCalendarEventBlock: View {
                 lineWidth: 1
             )
         }
+        .contentShape(blockShape)
+        .onTapGesture { onOpen() }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(iOSCalendarEventSupport.title(for: event) + ", " + CadenceScheduleSupport.timeRangeLabel(startMinute: startMin, endMinute: endMin))
+        .accessibilityAddTraits(.isButton)
+        .accessibilityAction { onOpen() }
     }
 }
 

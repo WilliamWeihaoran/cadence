@@ -1337,3 +1337,59 @@ struct CadenceTimelineDraftPressGestureTests {
         )
     }
 }
+
+/// **A tap on a timed event opens it** ([[T-5356]]).
+///
+/// The iOS Day/Week grid and Today's schedule pane drew `iOSCalendarEventBlock` with a frame, an
+/// offset and a `zIndex` and nothing else, so tapping a meeting did nothing on either surface while
+/// the same event opened from Month, the Board, Search and the day inspector. A source scan by
+/// necessity: `Cadence/iOS/` is `#if os(iOS)` and this target builds for macOS. Three links, each
+/// of which alone would leave the tap dead: the block takes the tap, the column routes it (putting a
+/// lifted task block down first, as a tap on empty canvas does), and the grid presents the one
+/// shared event editor.
+struct CadenceTimelineEventOpenTests {
+    private static let gridFile = "Cadence/iOS/iOSCalendarTimelineViews.swift"
+
+    private func source() throws -> String {
+        CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(Self.gridFile))
+    }
+
+    @Test func theTimedEventBlockTakesTheTapAndOffersItToVoiceOver() throws {
+        let block = try #require(
+            CadenceSourceScan.declarationBody("private struct iOSCalendarEventBlock: View", in: try source())
+        )
+        #expect(block.count > 600, "non-vacuity: iOSCalendarEventBlock read as \(block.count) characters")
+        #expect(block.contains("let onOpen: () -> Void"))
+        #expect(block.contains(".contentShape(blockShape)"), "the tap needs the whole plate as its shape")
+        #expect(block.contains(".onTapGesture { onOpen() }"), "a tap on the event block opens nothing")
+        #expect(block.contains(".accessibilityAddTraits(.isButton)"))
+        #expect(block.contains(".accessibilityAction { onOpen() }"), "VoiceOver cannot open the event")
+    }
+
+    @Test func theDayColumnRoutesTheTapAfterPuttingALiftedBlockDown() throws {
+        let column = try #require(
+            CadenceSourceScan.declarationBody("private struct iOSCalendarTimelineDayColumn: View", in: try source())
+        )
+        #expect(column.contains("let onOpenEvent: (EKEvent) -> Void"))
+        #expect(column.contains(
+            "iOSCalendarEventBlock(event: event, startMin: range.start, endMin: range.end, blockWidth: slot.width, onOpen: { openEvent(event) })"
+        ))
+        let open = try #require(CadenceSourceScan.functionBody(named: "openEvent", in: column))
+        let guardRange = try #require(open.range(of: "guard !putDownLiftedBlock() else { return }"))
+        let callRange = try #require(open.range(of: "onOpenEvent(event)"), "openEvent no longer opens the event")
+        #expect(guardRange.upperBound <= callRange.lowerBound, "the tap opens an event while a task block is still lifted")
+    }
+
+    @Test func theGridPresentsTheSharedEventEditorForTheTappedEvent() throws {
+        let code = try source()
+        let grid = try #require(
+            CadenceSourceScan.declarationBody("struct iOSCalendarTimelineGrid: View", in: code)
+        )
+        #expect(grid.contains("@State private var selectedEvent: iOSCalendarEventSelection?"))
+        #expect(grid.contains(".sheet(item: $selectedEvent) { selection in\n            iOSCalendarEventEditSheet(event: selection.event)"))
+        let dayColumn = try #require(CadenceSourceScan.functionBody(named: "dayColumn", in: grid))
+        #expect(dayColumn.contains("onOpenEvent: { selectedEvent = iOSCalendarEventSelection(event: $0) }"))
+        // One presenter for the whole grid, not one per column.
+        #expect(CadenceSourceScan.matchCount(#"iOSCalendarEventEditSheet\("#, in: code) == 1)
+    }
+}
