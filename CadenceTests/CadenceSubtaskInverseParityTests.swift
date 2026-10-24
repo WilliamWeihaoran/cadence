@@ -633,7 +633,8 @@ struct CadenceSubtaskInverseParityTests {
             (
                 "Cadence/iOS/iOSTaskDetailSheet.swift",
                 "CadenceTaskMutationSupport.insertSubtask(",
-                "private func addSubtask() {"
+                // [[T-5175]]: it answers whether the subtask landed, so Save can add an unsent one.
+                "private func addSubtask() -> Bool {"
             ),
             (
                 "Cadence/Services/TaskCreationService.swift",

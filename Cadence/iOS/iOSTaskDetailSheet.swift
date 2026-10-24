@@ -59,6 +59,17 @@ struct iOSTaskDetailSheet: View {
         _draft = State(initialValue: opened)
     }
 
+    /// What closing the sheet now would discard: the swipe guard, Focus This Task and Save all read
+    /// this one answer. See `CadenceTaskSheetUnsavedWork`.
+    private var hasUnsavedWork: Bool {
+        CadenceTaskSheetUnsavedWork.hasUnsavedWork(
+            draft: draft,
+            opened: openedDraft,
+            notesHavePendingEdit: notesFlush.hasPendingEdit,
+            pendingSubtaskTitle: newSubtaskTitle
+        )
+    }
+
     private var sortedSubtasks: [Subtask] {
         (task.subtasks ?? []).sorted { $0.order < $1.order }
     }
@@ -161,7 +172,8 @@ struct iOSTaskDetailSheet: View {
         // The panel writes on Save, so an unsaved draft is the user's work and nowhere else. A
         // swipe that dropped it would be the silent loss the old write-through sheet never had.
         // `hasPendingEdit`: notes typed in the well's last 2.5 s are not in `draft` yet ([[T-5170]]).
-        .interactiveDismissDisabled(draft != openedDraft || notesFlush.hasPendingEdit)
+        // Completion is not an edit ([[T-5359]]); an unsent subtask is ([[T-5175]]).
+        .interactiveDismissDisabled(hasUnsavedWork)
         // The two fields this sheet does not draft: status, which its own actions write at once,
         // and logged time, which the focus timer writes. `normalizeCompletionState` is the repair
         // the old field observers fired; Save runs it for every drafted field.
@@ -260,18 +272,33 @@ struct iOSTaskDetailSheet: View {
     /// `iOSFocusView.pickItem(for:)` resolves a handed-over target out of the whole store rather
     /// than out of the ready list. Same predicate the Focus picker filters by and the same one
     /// macOS's hover ▶ has always read.
+    ///
+    /// **[[T-5173]]: disabled while the sheet holds unsaved work.** The handoff closes the sheet, and
+    /// closing it discards the draft, so it used to drop a retitled task or a moved date past the
+    /// very swipe guard that protects them, and Focus opened on the old title. Saving first is not
+    /// done here: Save can stop at the series-scope question or be refused, and neither has a path
+    /// that then also hands off. The caption says what to do instead.
     @ViewBuilder
     private var focusSection: some View {
         if CadenceFocusSupport.canFocus(task) {
+            let blocked = hasUnsavedWork
             iOSEditorSection(title: nil, style: .ruled, contentSpacing: 10) {
                 iOSActionButton(
                     title: "Focus This Task",
                     systemImage: CadenceFeatureDestination.focus.systemImage,
                     tint: CadenceFeatureDestination.focus.tint,
-                    fullWidth: true
+                    fullWidth: true,
+                    isDisabled: blocked
                 ) {
+                    guard !hasUnsavedWork else { return }
                     CadenceFocusHandoffCenter.shared.request(.task(task.id))
                     dismiss()
+                }
+                if blocked {
+                    Text(CadenceTaskSheetUnsavedWork.focusBlockedCaption)
+                        .cadenceFont(.metadata)
+                        .foregroundStyle(Theme.muted)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
         }
@@ -296,13 +323,13 @@ struct iOSTaskDetailSheet: View {
             newSubtaskTitle: $newSubtaskTitle,
             canAddSubtask: canAddSubtask,
             failureNotice: subtaskFailureNotice,
-            onAdd: addSubtask,
+            onAdd: { addSubtask() },
             onDelete: deleteSubtask
         )
     }
 
     private var canAddSubtask: Bool {
-        !newSubtaskTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        CadenceTaskSheetUnsavedWork.hasPendingComposerEntry(newSubtaskTitle)
     }
 
     /// The panel's commit. `nil` always: a series edit stops at the scope question, and every
@@ -329,7 +356,15 @@ struct iOSTaskDetailSheet: View {
     /// which is what makes `editFailureNotice`'s "Nothing was changed" true of the record, while
     /// the draft still holds what the user chose and the sheet stays open over it. Retrying is
     /// pressing Save again.
+    ///
+    /// **[[T-5175]]: a subtask typed and not yet sent is added first**, as Reminders does, through
+    /// the composer's own path. It is an action on the record like any added subtask, so it lands
+    /// before the draft's commit and stays if that commit is refused; if the subtask itself is
+    /// refused, the sheet stays open over the composer's notice and the draft is not committed.
     private func applySave(scope: CadenceTaskRecurrenceEditScope) {
+        if canAddSubtask {
+            guard addSubtask() else { return }
+        }
         guard CadenceTaskEditDraftCommit.save(
             draft,
             opened: openedDraft,
@@ -379,22 +414,26 @@ struct iOSTaskDetailSheet: View {
     /// for the same measured reason: `commitInsert` deletes the row it inserted, but the row is
     /// also in `task.subtasks` and the delete does not reach that array before the sheet
     /// re-renders. See `arefusedSubtaskInsertLeavesAPhantomOnTheParentUntilTheCallerDropsIt`.
-    private func addSubtask() {
+    ///
+    /// Answers whether the subtask landed, for Save ([[T-5175]]); the composer ignores it.
+    @discardableResult
+    private func addSubtask() -> Bool {
         let restored = task.subtasks ?? []
         guard let inserted = CadenceTaskMutationSupport.insertSubtask(
             titled: newSubtaskTitle,
             into: task,
             modelContext: modelContext
-        ) else { return }
+        ) else { return false }
         do {
             try CadencePendingChangePersistence.commitInsert(of: inserted, in: modelContext)
         } catch {
             task.subtasks = restored
             subtaskFailureNotice = CadenceTaskInspectorSupport.subtaskAddFailureNotice
-            return
+            return false
         }
         subtaskFailureNotice = nil
         newSubtaskTitle = ""
+        return true
     }
 
     /// The delete half of T-634, and the twin of `TaskDetailPopover.deleteSubtask` on macOS, whose

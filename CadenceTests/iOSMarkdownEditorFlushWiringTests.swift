@@ -36,7 +36,13 @@ struct iOSMarkdownEditorFlushWiringTests {
         let flush = try #require(Self.index(of: "notesFlush.flush()", in: save), "\(path): save() does not flush")
         let read = try #require(Self.index(of: firstRead, in: save), "\(path): anchor \(firstRead) moved")
         #expect(flush < read, "\(path): save() reads the draft before flushing the well")
-        #expect(source.contains("interactiveDismissDisabled(draft != openedDraft || notesFlush.hasPendingEdit)"))
+        // The task sheet asks `CadenceTaskSheetUnsavedWork` ([[T-5359]], [[T-5175]]), handing it the
+        // same pending-edit flag; the event sheet still spells the comparison inline.
+        #expect(
+            source.contains("interactiveDismissDisabled(draft != openedDraft || notesFlush.hasPendingEdit)")
+                || (source.contains("interactiveDismissDisabled(hasUnsavedWork)")
+                    && source.contains("notesHavePendingEdit: notesFlush.hasPendingEdit"))
+        )
     }
 
     /// The three record-backed sheets flush before Done saves.

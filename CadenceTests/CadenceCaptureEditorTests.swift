@@ -78,8 +78,13 @@ struct CadenceCaptureEditorTests {
             let host = CadenceSourceScan.codeOnly(try source("Cadence/iOS/\(name).swift"))
             #expect(host.contains(".capturePresentation(CadenceScheduleCaptureOptions())"))
             #expect(host.contains(".presentationBackground(.clear)"))
-            // T-5170: the guard also sees notes the well has not yet written to the draft.
-            #expect(host.contains(".interactiveDismissDisabled(draft != openedDraft || notesFlush.hasPendingEdit)"))
+            // T-5170: the guard also sees notes the well has not yet written to the draft. The task
+            // sheet routes the same inputs through `CadenceTaskSheetUnsavedWork` ([[T-5359]]).
+            #expect(
+                host.contains(".interactiveDismissDisabled(draft != openedDraft || notesFlush.hasPendingEdit)")
+                    || (host.contains(".interactiveDismissDisabled(hasUnsavedWork)")
+                        && host.contains("notesHavePendingEdit: notesFlush.hasPendingEdit"))
+            )
             #expect(!host.contains("NavigationStack {"))
         }
         let task = CadenceSourceScan.codeOnly(try source("Cadence/iOS/iOSTaskDetailSheet.swift"))
