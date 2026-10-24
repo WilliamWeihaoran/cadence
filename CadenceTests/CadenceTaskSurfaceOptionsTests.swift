@@ -725,8 +725,9 @@ struct CadenceTouchRowStackLazinessTests {
 ///
 /// **Deliberately not in scope:** `FocusPickerSupportViews.emptyState`. A popover that is empty
 /// *because the search matched nothing* is a different statement from a page that is empty because
-/// there is no work, and `CadenceEmptyStateCopy.focusSubtitle` — "Schedule a task for today to
-/// focus it here" — would be wrong advice under a filtered list.
+/// there is no work. The popover's no-search branch reads `CadenceEmptyStateCopy.focusTitle` and
+/// `focusSubtitle` since [[T-6003]]; its search branch keeps its own words, which those would be
+/// wrong advice under.
 @MainActor
 struct CadenceDesktopEmptyStateConvergenceTests {
 

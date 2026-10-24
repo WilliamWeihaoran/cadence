@@ -634,7 +634,11 @@ struct CadenceEmptyStateAuditTests {
             "a screen reading only shared constants is still counted as hand-spelling"
         )
 
-        let handSpelled = try CadenceSourceScan.sourceFile("Cadence/iOS/iOSCalendarMonthAgendaViews.swift")
+        // The month agenda was this probe until [[T-5954]] moved its copy onto a shared value
+        // (`ed9247e0`), which left the probe naming a file with nothing hand-spelled in it. Search's
+        // no-results panel still types its own words.
+        let handSpelled = try CadenceSourceScan.sourceFile("Cadence/iOS/iOSSearchView.swift")
+        #expect(handSpelled.contains(#"title: "No results""#), "non-vacuity: the probe no longer hand-spells")
         #expect(instrument.fires(on: handSpelled))
     }
 
@@ -1055,6 +1059,38 @@ struct CadenceEmptyStateAuditTests {
                 "\(path) spells the archived predicate more than once again"
             )
         }
+    }
+
+    // MARK: T-6003 — the Focus empty state states the rule, once, on both platforms
+
+    /// **The Focus empty state names what is missing: an open task.** The picker lists every task
+    /// `CadenceFocusSupport.canFocus` admits (not done, not cancelled) whatever its date, so the
+    /// state is reachable only with no open task at all. The phone said "Schedule a task for today
+    /// to focus it here." and the Mac's popover "When a task is ready, it will appear here." —
+    /// neither is the rule, and they disagreed.
+    @Test func theFocusEmptyStateStatesTheOpenTaskRuleOnBothPlatforms() throws {
+        #expect(CadenceEmptyStateCopy.focusTitle == "No open tasks")
+        #expect(CadenceEmptyStateCopy.focusSubtitle == "Add a task to focus on it here.")
+
+        // The rule the words describe: an undated open task is offered, a finished one is not.
+        let undated = AppTask(title: "Undated and open")
+        let done = AppTask(title: "Done")
+        done.status = .done
+        let cancelled = AppTask(title: "Cancelled")
+        cancelled.status = .cancelled
+        let ready = CadenceFocusSupport.readyTasks(from: [undated, done, cancelled], todayKey: "2099-06-10")
+        #expect(ready.map(\.id) == [undated.id], "the picker no longer offers exactly the open tasks")
+        #expect(CadenceFocusSupport.readyTasks(from: [done, cancelled], todayKey: "2099-06-10").isEmpty)
+
+        // The Mac's popover reads the same constants in its no-search branch.
+        let mac = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/macOS/Views/FocusPickerSupportViews.swift")
+        )
+        #expect(mac.contains("private var emptyState: some View"), "non-vacuity: wrong file")
+        #expect(mac.contains(#"Text(isSearching ? "No matching tasks" : CadenceEmptyStateCopy.focusTitle)"#))
+        #expect(mac.contains("CadenceEmptyStateCopy.focusSubtitle"))
+        #expect(!mac.contains("Nothing ready right now"))
+        #expect(!mac.contains("When a task is ready, it will appear here."))
     }
 
     // MARK: T-519 — the Focus detail pane, against the pane beside it

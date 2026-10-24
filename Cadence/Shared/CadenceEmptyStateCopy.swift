@@ -24,9 +24,13 @@ nonisolated enum CadenceEmptyStateCopy {
     /// device the reader is holding one of.
     static let allTasksSubtitle = "Tasks you create on iPhone, iPad, or Mac will collect here."
 
-    static let focusTitle = "No focus tasks"
-    /// The shorter of the two that shipped: an empty state states the one thing to do.
-    static let focusSubtitle = "Schedule a task for today to focus it here."
+    /// **The Focus picker's empty state, on both platforms ([[T-6003]]).** The picker offers every
+    /// task `CadenceFocusSupport.canFocus` admits — not done and not cancelled — whatever its date,
+    /// so this shows only when there is no open task at all. The phone used to say "Schedule a task
+    /// for today to focus it here." and the Mac's popover "When a task is ready, it will appear
+    /// here.": neither is the rule, and they disagreed. What is needed here is any task.
+    static let focusTitle = "No open tasks"
+    static let focusSubtitle = "Add a task to focus on it here."
 
     /// A list, project or area detail page with nothing in it — the Mac's `ListTasksView` and the
     /// phone's `iOSListDetailView`, which are the same page at two widths.

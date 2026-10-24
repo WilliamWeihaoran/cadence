@@ -113,11 +113,11 @@ struct FocusPickSessionCard: View {
                 .font(.system(size: 18, weight: .semibold))
                 .foregroundStyle(isSearching ? Theme.dim : Theme.green)
 
-            Text(isSearching ? "No matching tasks" : "Nothing ready right now")
+            Text(isSearching ? "No matching tasks" : CadenceEmptyStateCopy.focusTitle)
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(Theme.text)
 
-            Text(isSearching ? "Try a project, task title, priority, or date." : "When a task is ready, it will appear here.")
+            Text(isSearching ? "Try a project, task title, priority, or date." : CadenceEmptyStateCopy.focusSubtitle)
                 .font(.system(size: 11))
                 .foregroundStyle(Theme.dim)
                 .lineLimit(2)
