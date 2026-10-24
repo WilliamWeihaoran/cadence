@@ -226,7 +226,6 @@ CadenceTests/CadenceGuardScriptSelftestTests.swift
 CadenceTests/CadenceTaskContextInheritanceTests.swift
 CadenceTests/CadenceTestTargetHygieneTests.swift
 CadenceTests/iOSEditorSheetMetricsTests.swift
-Cadence/iOS/iOSSearchView.swift
 Cadence/iOS/iOSTaskDetailComponents.swift
 ```
 
@@ -3285,6 +3284,23 @@ inlined the identical tag predicate while adding `offersTaskRepeat:` / `offersEv
 Resolved as `fields(for:offersTaskRepeat:offersEventRepeat:).filter { isOffered($0, by: options) }`,
 which keeps both behaviours and keeps `isOffered` a live call rather than a helper only its own unit
 test reaches.
+
+### 2026-10-24 (later still) — `iOSSearchView.swift` is WITHDRAWN from the fence before it cost anything
+
+Granted in `f487409b` for [[T-5307]], three hours ago, and withdrawn now without that job ever
+starting. It blocked [[T-5013]]'s iOS half the same afternoon: `macchrome1420` wrote the change,
+found the path newly fenced, and backed it out — correctly, and at a cost of real work.
+
+**The lesson, which is the point of writing this down rather than just deleting the line:** a grant
+made *in advance* of a job is a hold on a file nobody is writing. The 2026-10-24 rule above says
+release a path when its branch lands; this adds the other half — **do not fence a path until the
+job that needs it is actually running**, and prefer "ask if you need it" to a speculative grant.
+`iOSSearchView.swift` was never core to T-5307: it came out of a broad grep for tag references, and
+the inline row editor that decision chose lives in `iOSSettingsTagsSection.swift`.
+
+T-5307's brief now tells Codex to ask for this path if its rename work genuinely needs to reach
+search. Everything else granted in `f487409b` stands.
+
 
 ### 2026-10-24 (later) — the six paths held for `codex/subtasks-inspector` are RELEASED; that branch landed
 
