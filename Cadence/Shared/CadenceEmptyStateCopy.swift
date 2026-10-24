@@ -89,6 +89,22 @@ nonisolated enum CadenceEmptyStateCopy {
     /// constant this ticket touched.
     static let nothingScheduledTitle = "Nothing scheduled"
 
+    /// **T-5013(a).** The Calendar Board's Overdue rail, which draws a header over nothing in the
+    /// state it is in for anyone who keeps up. `form(for:boardForm:)` returns `.expanded` whenever
+    /// the pane is wide enough regardless of the count, `addBehavior` answers `nil` for this rail
+    /// (a task cannot be dragged — or created — into being late), and `KanbanColumnScroll` then
+    /// draws `content()` alone inside a `.frame(minHeight: 200)`. So "Overdue 0" stood over 200pt
+    /// of empty column at the leading edge of the board.
+    ///
+    /// The owner declined collapsing the rail when empty: the count crosses zero often, and a rail
+    /// that comes and went would shift the whole board each time. Being caught up has to read as
+    /// deliberate rather than broken, which is what a sentence does and a blank does not.
+    ///
+    /// Phrased as a state rather than an instruction, unlike `nothingScheduledTitle`'s neighbours
+    /// that sit beside an add row: there is no control here to point at, and there should not be.
+    static let nothingOverdueTitle = "Nothing overdue"
+
+
 
     /// The saved-links panel on a list, area or project detail page.
     ///

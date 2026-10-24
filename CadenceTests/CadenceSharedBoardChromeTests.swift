@@ -283,24 +283,28 @@ struct CadenceSharedBoardChromeTests {
     /// component already had: the shared version lived in `Shared/Components/` the whole time, and
     /// iOS still wrote its own because the file around it was `#if os(macOS)`.
     ///
-    /// **[[T-5002]] left the desktop with no caller at all**, and that is a weakening this test has
+    /// **[[T-5002]] left the desktop with no caller at all**, and that is a weakening this test had
     /// to say out loud rather than hide by quietly dropping a row. `GoalsSupportViews.swift` was
     /// the ONLY macOS file that drew `CadenceInlineEmpty`, and it went with the Goals screens; the
-    /// three remaining callers are all `Cadence/iOS/`. So the name no longer describes the test,
-    /// and what it checks now is in two halves:
+    /// remaining callers were all `Cadence/iOS/`, so the test asserted the desktop count as **zero**
+    /// rather than omitting it — a zero that has to be deliberately changed back is a guard, and a
+    /// deleted row is not.
     ///
-    /// 1. every live caller draws it at the tier its own platform belongs to — unchanged, and
-    ///    still the half that would have caught the original fork; and
-    /// 2. the desktop count is **asserted as zero**, not omitted. The component still ships a
-    ///    `.desktop` tier (`CadenceInlineEmptyMetrics`), so the hazard is a Mac surface growing an
-    ///    inline empty of its own again with nothing left on this list to compare it against —
-    ///    which is exactly the T-161 failure in a tree where it would now go unnoticed. A zero
-    ///    that has to be deliberately changed back to a one is the guard; a deleted row is not.
+    /// **[[T-5013]](a) is that deliberate change, and the shape the zero was holding open.** The
+    /// Calendar Board's Overdue rail is the one macOS column with no add row — overdue is a derived
+    /// state, so a task cannot be created into being late — and it drew "Overdue 0" over 200pt of
+    /// nothing. It now draws the shared component at `.desktop`, which is exactly the "welcome
+    /// regression" the zero's message asked to bring this list back with. The macOS row is here and
+    /// the walk below is a set equality rather than an emptiness check, so the Mac has a caller the
+    /// phone's three can be compared against and the T-161 fork cannot reopen unseen.
     @Test func everyLiveInlineEmptyCallerDrawsItAtItsOwnSurfaceTier() throws {
         let expectations: [(path: String, surface: String)] = [
             ("Cadence/iOS/iOSCalendarBoardView.swift", "surface: .touch"),
             ("Cadence/iOS/iOSCalendarInspectorView.swift", "surface: .touch"),
             ("Cadence/iOS/iOSMarkdownAccessoryViews.swift", "surface: .touch"),
+            // [[T-5013]](a), the Calendar Board's Overdue rail — the desktop caller the zero below
+            // was holding the place for.
+            ("Cadence/macOS/Views/CalendarBoardRailSupportViews.swift", "surface: .desktop"),
         ]
 
         try expectCallSites(
@@ -316,7 +320,10 @@ struct CadenceSharedBoardChromeTests {
             )
         }
 
-        // Half two: no macOS file draws it, and the walk that says so is shown to be real.
+        // Half two: the macOS files that draw it are EXACTLY the ones listed above, and the walk
+        // that says so is shown to be real. A set equality rather than an emptiness check since
+        // [[T-5013]](a): a Mac caller is welcome, a Mac caller this list has never heard of is the
+        // T-161 shape.
         let desktop = try swiftFiles(under: "Cadence/macOS")
         #expect(desktop.count > 150, "non-vacuity: the macOS walk found \(desktop.count) files")
         var drawing: [String] = []
@@ -324,13 +331,15 @@ struct CadenceSharedBoardChromeTests {
             .contains("CadenceInlineEmpty(") {
             drawing.append(path)
         }
+        let listedDesktop = expectations.map(\.path).filter { $0.hasPrefix("Cadence/macOS/") }
+        #expect(!listedDesktop.isEmpty, "non-vacuity: the desktop side of this list is not empty")
         #expect(
-            drawing.isEmpty,
+            drawing.sorted() == listedDesktop.sorted(),
             """
-            \(drawing) draws the shared inline empty on the desktop again. That is not a \
-            regression — it is welcome — but this list and the `.desktop` tier assertion above \
-            have to come back with it, or the Mac has one caller and nothing comparing it to the \
-            phone's, which is the T-161 shape.
+            \(drawing) draws the shared inline empty on the desktop; this list expects \
+            \(listedDesktop). A new Mac caller is not a regression — it is welcome — but it has to \
+            be added here with its `.desktop` tier, or the Mac has a caller nothing is comparing to \
+            the phone's, which is the T-161 shape.
             """
         )
     }

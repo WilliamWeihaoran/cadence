@@ -98,6 +98,9 @@ struct CalendarBoardRailColumn: View {
             }
 
             KanbanColumnScroll(isColumnHovered: isHovered, add: add) {
+                if let emptyLine = CalendarBoardRailEmptySupport.line(for: rail, taskCount: tasks.count, add: add) {
+                    CadenceInlineEmpty(text: emptyLine, surface: .desktop)
+                }
                 ForEach(tasks) { task in
                     KanbanCard(task: task, showsContainerChip: true, todayKey: todayKey)
                         .draggable(TaskDragPayload.string(for: task.id))
@@ -153,6 +156,29 @@ struct CalendarBoardRailColumn: View {
         .accessibilityLabel("Expand \(rail.label.capitalized)")
         .accessibilityValue("\(tasks.count) task\(tasks.count == 1 ? "" : "s")")
         .help("\(rail.label.capitalized) — \(tasks.count) task\(tasks.count == 1 ? "" : "s"). Click to expand.")
+    }
+}
+
+/// T-5013(a). **Which rail draws a sentence when it holds nothing, and why only one does.**
+///
+/// A column with an add row is never actually blank — the ghost "Add task" row stands in the empty
+/// space and says what the column is for. The Overdue rail is the one column on this board with no
+/// add row, because overdue is a derived state and a task cannot be created into being late, so it
+/// is the one column whose empty state is 200pt of nothing under a header reading "Overdue 0".
+/// That is the board's resting state for anyone who keeps up, which is exactly why the owner wanted
+/// it to read as deliberate.
+///
+/// Derived from "no cards and no add row" rather than written as `rail == .overdue`: the rule is
+/// about what the column actually draws, and a second rail that ever loses its add row would want
+/// this for the same reason.
+nonisolated enum CalendarBoardRailEmptySupport {
+    /// `nil` when the rail has cards, or has an add row to fill the space with.
+    static func line(for rail: CalendarBoardRail, taskCount: Int, add: KanbanColumnAddBehavior?) -> String? {
+        guard taskCount == 0, add == nil else { return nil }
+        switch rail {
+        case .overdue: return CadenceEmptyStateCopy.nothingOverdueTitle
+        case .unscheduled: return CadenceEmptyStateCopy.nothingScheduledTitle
+        }
     }
 }
 
