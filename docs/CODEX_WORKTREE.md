@@ -226,6 +226,8 @@ CadenceTests/CadenceGuardScriptSelftestTests.swift
 CadenceTests/CadenceTaskContextInheritanceTests.swift
 CadenceTests/CadenceTestTargetHygieneTests.swift
 CadenceTests/iOSEditorSheetMetricsTests.swift
+Cadence/iOS/iOSSearchView.swift
+Cadence/iOS/iOSTaskDetailComponents.swift
 ```
 
 **Admission 2026-10-19 (coordinator), one line in `CadenceTests/CadenceMarkdownImageCommitSurfaceTests.swift`.**
