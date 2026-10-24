@@ -354,6 +354,17 @@ struct iOSCalendarTimelineGrid: View {
         )
     }
 
+    /// A tap on an all-day chip in the single-day strip ([[T-5356]]). The same rule as a tap on a
+    /// timed block (`iOSCalendarTimelineDayColumn.openEvent`): while a task block is lifted the tap
+    /// puts it down; otherwise it opens the grid's one event editor.
+    private func openAllDayEvent(_ event: EKEvent) {
+        guard editingTaskID == nil else {
+            editingTaskID = nil
+            return
+        }
+        selectedEvent = iOSCalendarEventSelection(event: event)
+    }
+
     /// A finished move or resize, written through the shared field transaction ([[T-1475]]).
     ///
     /// The same shape as the Calendar Board's day drop (`iOSCalendarBoardPlanner.schedule`,
@@ -418,7 +429,8 @@ struct iOSCalendarTimelineGrid: View {
                 iOSCalendarTimelineAllDayStrip(
                     allDayEvents: allDayEvents(on: leadingDate),
                     split: singleDaySplit,
-                    height: dayHeaderHeight
+                    height: dayHeaderHeight,
+                    onOpenEvent: openAllDayEvent
                 )
             }
 
@@ -960,6 +972,11 @@ private struct iOSCalendarAllDayBandChips: View {
     let allDayEvents: [EKEvent]
     let unscheduledTasks: [AppTask]
     let split: CadenceCalendarMonthCellPriority.Split
+    /// What a tap on an all-day event chip does, or nil for a chip that takes no tap ([[T-5356]]).
+    /// The single-day strip passes the grid's opener. The scrolling grid's day header passes
+    /// nothing: it is itself a `Button` that selects the day, and whether a chip inside it opens
+    /// the event instead is an owner decision, not this view's.
+    var onOpenEvent: ((EKEvent) -> Void)? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: iOSCalendarTimelineMetrics.bandLineSpacing) {
@@ -970,6 +987,7 @@ private struct iOSCalendarAllDayBandChips: View {
                     color: iOSCalendarEventSupport.color(for: event.calendar),
                     isEvent: true
                 )
+                .modifier(iOSCalendarAllDayChipOpen(onOpen: onOpenEvent.map { open in { open(event) } }))
             }
 
             // **An unscheduled task is not an all-day commitment, and now says so**
@@ -990,6 +1008,25 @@ private struct iOSCalendarAllDayBandChips: View {
                     .cadenceFont(.metadata, base: iOSCalendarTimelineMetrics.overflowLabelSize, weight: .medium)
                     .foregroundStyle(Theme.subdued)
             }
+        }
+    }
+}
+
+/// Makes an all-day event chip open its event, when its caller gave it an opener ([[T-5356]]):
+/// the whole chip takes the tap, and VoiceOver hears a button it can activate. Without an opener
+/// the chip is left exactly as it was, so the day header's own tap is not stolen.
+private struct iOSCalendarAllDayChipOpen: ViewModifier {
+    let onOpen: (() -> Void)?
+
+    func body(content: Content) -> some View {
+        if let onOpen {
+            content
+                .contentShape(Rectangle())
+                .onTapGesture { onOpen() }
+                .accessibilityAddTraits(.isButton)
+                .accessibilityAction { onOpen() }
+        } else {
+            content
         }
     }
 }
@@ -1015,12 +1052,16 @@ private struct iOSCalendarTimelineAllDayStrip: View {
     /// the same number the time rail's spacer reads, so the strip and the ladder cannot disagree
     /// about where hour zero is.
     let height: CGFloat
+    /// Opens a chip's event in the grid's one editor ([[T-5356]]). This strip is not inside a
+    /// `Button`, so a chip tap here is free to mean "open", as a tap on a timed block does.
+    let onOpenEvent: (EKEvent) -> Void
 
     var body: some View {
         iOSCalendarAllDayBandChips(
             allDayEvents: allDayEvents,
             unscheduledTasks: [],
-            split: split
+            split: split,
+            onOpenEvent: onOpenEvent
         )
         .frame(maxWidth: .infinity, alignment: .topLeading)
         .padding(iOSCalendarTimelineMetrics.previewInset)
@@ -1031,7 +1072,9 @@ private struct iOSCalendarTimelineAllDayStrip: View {
                 .fill(Theme.borderSubtle.opacity(iOSCalendarHairlineMetrics.pinnedEdgeOpacity))
                 .frame(height: iOSCalendarHairlineMetrics.width)
         }
-        .accessibilityElement(children: .combine)
+        // `.contain`, not `.combine`: each chip is now its own button, and a combined element
+        // would fold them into one that VoiceOver cannot open an event from ([[T-5356]]).
+        .accessibilityElement(children: .contain)
         .accessibilityLabel(
             CadenceCalendarDayAccessibility.allDayStripLabel(allDayEventCount: allDayEvents.count)
         )

@@ -1392,4 +1392,63 @@ struct CadenceTimelineEventOpenTests {
         // One presenter for the whole grid, not one per column.
         #expect(CadenceSourceScan.matchCount(#"iOSCalendarEventEditSheet\("#, in: code) == 1)
     }
+
+    /// [[T-5356]]'s all-day half, the decision-free part: on the single-day pane (iPad Today, and
+    /// the Calendar's Day view) an all-day chip opens the grid's one event editor, while the
+    /// scrolling grid's day header -- itself a `Button` that selects the day -- is left alone.
+    @Test func theSingleDayAllDayStripOpensItsEventsAndTheDayHeaderDoesNot() throws {
+        let code = try source()
+        let grid = try #require(
+            CadenceSourceScan.declarationBody("struct iOSCalendarTimelineGrid: View", in: code)
+        )
+        let canvas = try #require(CadenceSourceScan.functionBody(named: "singleDayCanvas", in: grid))
+        #expect(canvas.contains("onOpenEvent: openAllDayEvent"), "the single-day strip is handed no opener")
+        let open = try #require(CadenceSourceScan.functionBody(named: "openAllDayEvent", in: grid))
+        let guardRange = try #require(open.range(of: "guard editingTaskID == nil else {"))
+        let putDown = try #require(open.range(of: "editingTaskID = nil"))
+        let select = try #require(
+            open.range(of: "selectedEvent = iOSCalendarEventSelection(event: event)"),
+            "a tap on an all-day chip opens nothing"
+        )
+        #expect(guardRange.upperBound <= putDown.lowerBound && putDown.upperBound <= select.lowerBound,
+                "an all-day chip opens its event while a task block is still lifted")
+
+        let strip = try #require(
+            CadenceSourceScan.declarationBody("private struct iOSCalendarTimelineAllDayStrip: View", in: code)
+        )
+        #expect(strip.contains("let onOpenEvent: (EKEvent) -> Void"))
+        #expect(strip.contains("onOpenEvent: onOpenEvent"), "the strip does not pass its opener to the chips")
+        #expect(strip.contains(".accessibilityElement(children: .contain)"),
+                "a combined strip folds the chip buttons into one element VoiceOver cannot open")
+        #expect(!strip.contains("children: .combine"))
+
+        let chips = try #require(
+            CadenceSourceScan.declarationBody("private struct iOSCalendarAllDayBandChips: View", in: code)
+        )
+        #expect(chips.contains("var onOpenEvent: ((EKEvent) -> Void)? = nil"))
+        let events = try #require(chips.range(of: "ForEach(allDayEvents.prefix(split.events)"))
+        let wiring = try #require(
+            chips.range(of: ".modifier(iOSCalendarAllDayChipOpen(onOpen: onOpenEvent.map { open in { open(event) } }))"),
+            "the all-day event chip takes no tap"
+        )
+        let tasks = try #require(chips.range(of: "ForEach(unscheduledTasks.prefix(split.tasks))"))
+        #expect(events.upperBound <= wiring.lowerBound && wiring.upperBound <= tasks.lowerBound,
+                "the opener is on something other than the all-day EVENT chip")
+
+        let modifier = try #require(
+            CadenceSourceScan.declarationBody("private struct iOSCalendarAllDayChipOpen: ViewModifier", in: code)
+        )
+        #expect(modifier.contains("if let onOpen {"), "a chip with no opener is no longer left alone")
+        #expect(modifier.contains(".onTapGesture { onOpen() }"), "the chip takes no tap")
+        #expect(modifier.contains(".accessibilityAddTraits(.isButton)"))
+        #expect(modifier.contains(".accessibilityAction { onOpen() }"), "VoiceOver cannot open the all-day event")
+
+        // The scrolling header is a Button that selects the day; a chip inside it opening the
+        // event instead is the owner's call, so it must still hand the stack no opener.
+        let header = try #require(
+            CadenceSourceScan.declarationBody("private struct iOSCalendarTimelineDayHeader: View", in: code)
+        )
+        #expect(header.count > 600, "non-vacuity: the day header read as \(header.count) characters")
+        #expect(!header.contains("onOpenEvent"), "the day header's chips now steal its select-the-day tap")
+    }
 }
