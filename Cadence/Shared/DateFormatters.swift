@@ -302,7 +302,8 @@ nonisolated enum DateFormatters {
     }
 
     /// Converts a `yyyy-MM-dd` storage key to a relative string using task-friendly rules:
-    /// "Today", "Tomorrow", "Yesterday", "in 5 days", "30 days ago", or "Mar 28"
+    /// "Today", "Tomorrow", "Yesterday", "in 5 days", "30 days ago", or "Mar 28" ("Mar 28, 2027" in
+    /// another year — see `absoluteDay`)
     ///
     /// `relativeTo` exists so a caller that has already decided what "today" is can say so.
     /// `dayOffset` took one from the start; this did not, so Today's since-deleted past-due
@@ -313,7 +314,7 @@ nonisolated enum DateFormatters {
         guard let date = ymd.date(from: key) else { return key }
         let diff = dayOffset(from: key, relativeTo: referenceDate) ?? Int.max
         // The original window, unchanged: forward as far as a fortnight, backward without a limit.
-        guard diff <= 13 else { return shortDate.string(from: date) }
+        guard diff <= 13 else { return absoluteDay(date, relativeTo: referenceDate) }
         return relativeWords(dayOffset: diff)
     }
 
@@ -331,9 +332,22 @@ nonisolated enum DateFormatters {
     static func relativeDate(from key: String, relativeTo referenceDate: Date = Date(), withinDays: Int) -> String {
         guard let date = ymd.date(from: key) else { return key }
         guard let diff = dayOffset(from: key, relativeTo: referenceDate), abs(diff) <= withinDays else {
-            return shortDate.string(from: date)
+            return absoluteDay(date, relativeTo: referenceDate)
         }
         return relativeWords(dayOffset: diff)
+    }
+
+    /// The spelled-out day once the words have stopped: `shortDate` ("Nov 15") inside the reference
+    /// date's own year, `fullShortDate` ("Nov 15, 2027") outside it ([[T-6252]]). Without the year
+    /// a deadline a year out read exactly like one next month. Same-year output is unchanged, so
+    /// no chip widens in the common case. The year is compared in `Calendar.current`, the calendar
+    /// `dayOffset` already measures in.
+    private static func absoluteDay(_ date: Date, relativeTo referenceDate: Date) -> String {
+        let cal = Calendar.current
+        guard cal.component(.year, from: date) != cal.component(.year, from: referenceDate) else {
+            return shortDate.string(from: date)
+        }
+        return fullShortDate.string(from: date)
     }
 
     /// The words themselves, for a day offset a caller has already decided is inside its window.

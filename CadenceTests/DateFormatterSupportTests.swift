@@ -32,14 +32,47 @@ struct DateFormatterSupportTests {
         #expect(DateFormatters.relativeDate(from: DateFormatters.dateKey(from: tomorrow)) == "Tomorrow")
         #expect(DateFormatters.relativeDate(from: DateFormatters.dateKey(from: yesterday)) == "Yesterday")
         #expect(DateFormatters.relativeDate(from: DateFormatters.dateKey(from: inThirteenDays)) == "in 13 days")
+        // Past the fortnight the day is spelled out, with the year only when it differs (T-6252),
+        // so this wall-clock check stays true in the last fortnight of December too.
+        let sameYear = calendar.component(.year, from: inFourteenDays) == calendar.component(.year, from: today)
         #expect(
             DateFormatters.relativeDate(from: DateFormatters.dateKey(from: inFourteenDays)) ==
-            DateFormatters.shortDate.string(from: inFourteenDays)
+            (sameYear ? DateFormatters.shortDate : DateFormatters.fullShortDate).string(from: inFourteenDays)
         )
 
         #expect(TimeFormatters.durationLabel(actual: 45, estimated: 0) == "45m/-")
         #expect(TimeFormatters.durationLabel(actual: 90, estimated: 120) == "1h\u{00A0}30m/2h")
         #expect(TimeFormatters.durationLabel(actual: 0, estimated: 30) == "-/30m")
+    }
+
+    /// **T-6252: a day in another year carries its year.** Past the words, `relativeDate` spelled
+    /// every day `MMM d`, so a deadline on 2027-11-15 and one on 2026-11-15 both read "Nov 15" on
+    /// the row chip, the inspector and search. Same-year output must stay `MMM d` (no chip widens
+    /// in the common case), near days must stay words, and the unbounded backward arm of the
+    /// default overload stays words even a year back. The reference instant is stated, never the
+    /// clock, and the year-boundary pair is the non-vacuity: 18 days ahead across New Year is
+    /// next year's date, 6 days ahead across it is still words.
+    @Test func relativeDateShowsTheYearOnlyForADayInAnotherYear() throws {
+        let noon: TimeInterval = 12 * 60 * 60
+        let reference = try #require(DateFormatters.ymd.date(from: "2026-10-24")).addingTimeInterval(noon)
+
+        #expect(DateFormatters.relativeDate(from: "2026-10-24", relativeTo: reference) == "Today")
+        #expect(DateFormatters.relativeDate(from: "2026-10-25", relativeTo: reference) == "Tomorrow")
+        #expect(DateFormatters.relativeDate(from: "2026-10-23", relativeTo: reference) == "Yesterday")
+        #expect(DateFormatters.relativeDate(from: "2026-10-30", relativeTo: reference) == "in 6 days")
+        #expect(DateFormatters.relativeDate(from: "2026-11-23", relativeTo: reference) == "Nov 23")
+        #expect(DateFormatters.relativeDate(from: "2027-11-15", relativeTo: reference) == "Nov 15, 2027")
+        #expect(DateFormatters.relativeDate(from: "2025-10-24", relativeTo: reference) == "365 days ago")
+
+        // The symmetric chip overload turns over to the same year-aware spelling both ways.
+        #expect(DateFormatters.relativeDate(from: "2026-10-25", relativeTo: reference, withinDays: 7) == "Tomorrow")
+        #expect(DateFormatters.relativeDate(from: "2026-11-23", relativeTo: reference, withinDays: 7) == "Nov 23")
+        #expect(DateFormatters.relativeDate(from: "2027-01-05", relativeTo: reference, withinDays: 7) == "Jan 5, 2027")
+        #expect(DateFormatters.relativeDate(from: "2025-12-20", relativeTo: reference, withinDays: 7) == "Dec 20, 2025")
+
+        let lateDecember = try #require(DateFormatters.ymd.date(from: "2026-12-28")).addingTimeInterval(noon)
+        #expect(DateFormatters.relativeDate(from: "2027-01-15", relativeTo: lateDecember) == "Jan 15, 2027")
+        #expect(DateFormatters.relativeDate(from: "2027-01-03", relativeTo: lateDecember) == "in 6 days")
     }
 
     /// `normalizedDateKey` is the single spelling of "this text is a storage key".
