@@ -656,6 +656,36 @@ struct CadenceDeepLinkGrammarAndRevealTests {
         #expect(expected.count + 2 == CadenceFeatureDestination.allCases.count)
     }
 
+    // MARK: T-6111 — an external link goes to the window already open
+
+    /// A source scan because the preference is a SwiftUI modifier on a scene's root view: no test
+    /// can open a URL into a running `WindowGroup` and count the windows it makes. Without it every
+    /// widget tap on macOS opened a second Cadence window. Pinned beside `.onOpenURL`, because the
+    /// claim is only useful to the window whose `.onOpenURL` then routes the link.
+    @Test func theMacRootClaimsEveryExternalLinkSoAWidgetTapReusesTheOpenWindow() throws {
+        let raw = try CadenceSourceScan.sourceFile("Cadence/macOS/macOSRootView.swift")
+        let source = CadenceSourceScan.strippingComments(raw)
+        // Non-vacuity: the reader read the file and the stripper removed the T-6111 prose, so the
+        // assertions below cannot be satisfied by a comment.
+        #expect(source.contains("struct macOSRootView: View"))
+        #expect(raw.contains("T-6111. With no preference declared"))
+        #expect(!source.contains("T-6111. With no preference declared"))
+
+        let claim = ".handlesExternalEvents(preferring: [\"*\"], allowing: [\"*\"])"
+        #expect(
+            source.components(separatedBy: claim).count - 1 == 1,
+            "macOSRootView no longer claims external URLs, so a widget tap opens a second window (T-6111)"
+        )
+        let openURL = try #require(source.range(of: ".onOpenURL { url in"))
+        let claimRange = try #require(source.range(of: claim))
+        #expect(openURL.upperBound < claimRange.lowerBound)
+        let between = source[openURL.upperBound..<claimRange.lowerBound]
+        #expect(
+            between.filter { $0 == "." }.count == 2,
+            "the claim no longer sits on the same chain as .onOpenURL, right after it (T-6111)"
+        )
+    }
+
     // MARK: T-370(a) — the wiring that consumes the route table
 
     /// The compact route *table* was already pinned; the code that applies it was not.

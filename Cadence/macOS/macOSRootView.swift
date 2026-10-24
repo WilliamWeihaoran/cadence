@@ -128,6 +128,14 @@ struct macOSRootView: View {
         .onOpenURL { url in
             CadenceDeepLinkManager.shared.handle(url)
         }
+        // T-6111. With no preference declared, SwiftUI answers every external `cadence://` URL — a
+        // Today or Calendar widget tap, a link from another app — by opening a SECOND window of
+        // the one `WindowGroup`, and the app is built for one (the quick-capture panel, Cmd+K and
+        // the hover managers are singletons, T-5953). Claiming every URL here sends it to the
+        // window already open, whose `.onOpenURL` above routes it. With no window open SwiftUI
+        // still makes one, as it must. Reminder taps never come this way: `NotificationManager`
+        // hands them to the same `handle(_:)` in-process, so nothing is routed twice.
+        .handlesExternalEvents(preferring: ["*"], allowing: ["*"])
         .onAppear {
             CadenceUITestSupport.prepareAppState(modelContext: currentModelContext)
             mcpRefreshCoordinator.start {
