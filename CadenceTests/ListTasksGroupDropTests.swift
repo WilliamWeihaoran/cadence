@@ -144,6 +144,66 @@ struct ListTasksGroupDropTests {
         #expect(try storedTask(tasks[0].id, in: container)?.scheduledDate == Self.todayKey)
     }
 
+    /// **[[T-5840]]** — a drop on another group's HEADER is answered as a drop on that group's first
+    /// row, so it refiles exactly as a row drop does and lands at the top of the group.
+    @Test func aDropOnAnotherSectionsHeaderJoinsThatSectionAtItsTop() throws {
+        let (container, modelContext) = try store()
+        let tasks = try seeded([("Spec", "Documents"), ("Ship", "Later"), ("Launch", "Later")], in: modelContext)
+        let later = try #require(sectionGroups(tasks).first { $0.title == "Later" })
+
+        let targetID = try #require(
+            ListTasksGroupDrop.headerDropTarget(droppedID: tasks[0].id, in: later),
+            "the Later header refuses a task from Documents"
+        )
+        #expect(targetID == later.tasks.first?.id, "a header drop does not aim at the group's first row")
+        let target = try #require(tasks.first { $0.id == targetID })
+        let refiling = try #require(ListTasksGroupDrop.refiling(
+            dropping: tasks[0], onto: target, in: later, groupingMode: .byList
+        ))
+        #expect(ListTasksGroupDrop.refile(tasks[0], refiling, todayKey: Self.todayKey, modelContext: modelContext))
+        #expect(try storedTask(tasks[0].id, in: container)?.resolvedSectionName == "Later")
+    }
+
+    @Test func aHeaderRefusesItsOwnRowsAndGroupsThatNameNoMove() throws {
+        let (_, modelContext) = try store()
+        let tasks = try seeded([("Spec", "Documents"), ("Ship", "Documents")], in: modelContext)
+        tasks[1].priority = .high
+        tasks[1].dueDate = "2000-01-01"
+        try modelContext.save()
+        let documents = try #require(sectionGroups(tasks).first { $0.title == "Documents" })
+        let priority = CadenceTaskQuerySupport.priorityDisplayGroups(from: tasks)
+            .map { ListTasksGroup(id: $0.id, title: $0.title, tasks: $0.tasks) }
+        let dates = CadenceTaskQuerySupport.dateDisplayGroups(from: [tasks[1]], todayKey: Self.todayKey)
+            .map { ListTasksGroup(id: $0.id, title: $0.title, tasks: $0.tasks) }
+        let high = try #require(priority.first { $0.id == "priority-high" })
+        let overdue = try #require(dates.first { $0.id == "overdue" })
+        let doToday = ListTasksGroup(id: "do-today", title: "Do Today", tasks: [tasks[1]])
+        let ungrouped = ListTasksGroup(id: "all", title: "Tasks", tasks: [tasks[1]])
+
+        #expect(ListTasksGroupDrop.headerDropTarget(droppedID: tasks[0].id, in: documents) == nil,
+                "a header takes a drop from its own group")
+        #expect(ListTasksGroupDrop.headerDropTarget(droppedID: tasks[0].id, in: overdue) == nil,
+                "Overdue has no assignment that makes a task late")
+        #expect(ListTasksGroupDrop.headerDropTarget(droppedID: tasks[0].id, in: ungrouped) == nil)
+        #expect(ListTasksGroupDrop.headerDropTarget(droppedID: tasks[0].id, in: high) == tasks[1].id)
+        #expect(ListTasksGroupDrop.headerDropTarget(droppedID: tasks[0].id, in: doToday) == tasks[1].id)
+    }
+
+    /// The header's call site: it hands its drop to the same row path, aimed at the first row.
+    @Test func theListTabsHeaderHandsItsDropToTheRowPath() throws {
+        let source = try CadenceCommitSurfaceScan.scanned("Cadence/macOS/Views/ListDetailSupportViews.swift")
+        let start = try #require(source.range(of: "struct ListTasksGroupSectionView: View"))
+        let end = try #require(source.range(of: "struct ListTasksCompletedSectionView: View"))
+        let body = String(source[start.upperBound..<end.lowerBound])
+        let header = try #require(body.range(of: "TaskListGroupHeader("))
+        let rows = try #require(body.range(of: "ForEach(group.tasks)"))
+        let drop = try #require(body.range(of: ".dropDestination(for: String.self)"), "the header has no drop target")
+        #expect(header.lowerBound < drop.lowerBound && drop.lowerBound < rows.lowerBound,
+                "the drop target is not on the header")
+        #expect(body.contains("ListTasksGroupDrop.headerDropTarget(droppedID: droppedID, in: group)"))
+        #expect(body.contains("return onReorderTask(droppedID, targetID)"))
+    }
+
     /// The call site: the tab's row drop asks for the refiling before it renumbers, and does not
     /// renumber over a refused one.
     @Test func theListTabsRowDropRefilesBeforeItReorders() throws {

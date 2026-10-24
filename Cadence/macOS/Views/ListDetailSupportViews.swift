@@ -49,6 +49,33 @@ enum ListTasksGroupDrop {
         }
     }
 
+    /// **[[T-5840]] — a drop on a group's HEADER joins that group, at its top.** The header had no
+    /// drop destination, so a task let go over "Later" itself, with no row under the pointer, was
+    /// not taken at all. A header drop is answered as a drop on the group's first row: the same
+    /// refiling as a row drop (`refiling(dropping:onto:in:groupingMode:)` reads that row's priority,
+    /// which is the group's, since every row of a priority group shares it), then the renumber puts
+    /// the task first in the group — the place a drop just under a heading means. Going through the
+    /// row path keeps one commit order and one failure notice for both drop sites.
+    ///
+    /// `nil` — the header refuses the drop — when the task is already in this group, or the group
+    /// names nothing a task can be moved into (the ungrouped "Tasks" group; Overdue / Due Today by
+    /// date). A header that only renumbered would answer a drop the user aimed at a group by leaving
+    /// the task out of it, which is the silent accept T-591 removed from All Tasks' headers.
+    ///
+    /// **Asked of the group's id, not of a grouping mode**, because the id already says which kind
+    /// of group this is — `CadenceTaskQuerySupport` spells section groups `section-…`, priority
+    /// groups `priority-…` and the date buckets by name — and the header view is handed the group,
+    /// not the page's grouping. `ListTasksGroupDropTests` builds its groups with those same
+    /// functions, so a renamed id reddens there rather than turning every header off.
+    static func headerDropTarget(droppedID: UUID, in group: ListTasksGroup) -> UUID? {
+        guard let first = group.tasks.first,
+              !group.tasks.contains(where: { $0.id == droppedID }) else { return nil }
+        let refiles = group.id.hasPrefix("section-")
+            || group.id.hasPrefix("priority-")
+            || TasksListView.dateDropKey(forGroupID: group.id) != nil
+        return refiles ? first.id : nil
+    }
+
     /// Writes the refiling as one commit. `false` means the store refused it and every field is
     /// back as it was (`CadenceTaskFieldEditCommit` / `TasksPanelSupport.assignTask` undo it), so
     /// the caller must not go on to reorder a row the store still files in its old group.
@@ -107,6 +134,14 @@ struct ListTasksGroupSectionView: View {
             .padding(.horizontal, TaskListDisplayMetrics.headerHorizontalInset)
             .padding(.top, 16)
             .padding(.bottom, 8)
+            // [[T-5840]]: a task let go over the header joins the group, as on All Tasks.
+            .dropDestination(for: String.self) { items, _ in
+                guard let payload = items.first,
+                      let droppedID = TaskDragPayload.listTaskID(from: payload),
+                      let targetID = ListTasksGroupDrop.headerDropTarget(droppedID: droppedID, in: group)
+                else { return false }
+                return onReorderTask(droppedID, targetID)
+            }
             .listRowBackground(Color.clear)
             .listRowSeparator(.hidden)
             .listRowInsets(.init())
