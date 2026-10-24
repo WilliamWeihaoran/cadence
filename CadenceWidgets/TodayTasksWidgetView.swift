@@ -58,6 +58,19 @@ struct TodayTasksWidgetView: View {
             }
         }
         .cadenceWidgetBackground(accent: Theme.blue, anchor: .topLeading)
+        .widgetURL(backgroundURL)
+    }
+
+    /// T-5801. Where a tap that lands on no `Link` goes. WidgetKit does not deliver `Link` on a
+    /// small widget at all, so there this is the ONLY tap target: the task the small layout shows,
+    /// else Today. Larger families route to Today; their per-row `Link`s still win where drawn.
+    private var backgroundURL: URL {
+        if widgetFamily == .systemSmall,
+           !entry.snapshot.isUnavailable,
+           let task = entry.snapshot.tasks.first {
+            return task.deepLinkURL
+        }
+        return entry.snapshot.todayURL
     }
 
     private var smallLayout: some View {
