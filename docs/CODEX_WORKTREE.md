@@ -3253,7 +3253,8 @@ later was added precisely because Codex is about to write it.
 
 **So the rule is:** a fenced path that was in the block on 2026-10-20 is released to local agents.
 A path added to the block AFTER 2026-10-20 is held for the branch it was granted for, until that
-branch lands. `git show 0a970443:docs/CODEX_WORKTREE.md` and later revisions settle which is which;
+branch lands. `git show b537dd50:docs/CODEX_WORKTREE.md` (the release commit) settles which is which —
+a later revision such as `0a970443` cannot, because it already holds post-release additions ([[T-5892]]);
 do not guess from the current block alone, because it does not record when a line was added.
 
 **Measured 2026-10-24, because three agents stopped on this.** `mactask2308` ([[T-5310]], [[T-5353]])
@@ -3263,7 +3264,14 @@ neither is at fault — but three of the five paths were never blocked:
 
 - `Cadence/macOS/Services/FocusManager.swift` — in the block before 2026-10-20. **RELEASED. T-5310 may land.**
 - `Cadence/iOS/iOSTaskDetailSheet.swift` — in the block before 2026-10-20. **RELEASED. T-5359/T-5173/T-5175 may land.**
-- `CadenceTests/CadenceCaptureEditorTests.swift` — in the block before 2026-10-20. **RELEASED, same tickets.**
+- `CadenceTests/CadenceCaptureEditorTests.swift` — **NOT** in the block on 2026-10-20 (corrected by
+  [[T-5892]]; this bullet first said it was). Added `db52ebbd` (10-19), retired `1e5f555b` (10-19,
+  T-3238's expired widening), absent at the release `b537dd50`, re-added `44e84dbe` (10-21) for
+  `codex/t3260-source-pins` ([[T-3260]] item 8). T-5602 checked `0a970443`, which postdates the
+  re-add. **Still RELEASED, same tickets — on a different basis:** that branch's one commit
+  `cf9f3297` is already in main's copy of the file, `git diff main:<path> codex/t3260-source-pins:<path>`
+  shows only main's later edits, and its worktree is clean, so the hold lapsed when the branch landed.
+  The test is the fence AT `b537dd50`, or a landed branch — never "present in some later revision".
 - `Cadence/macOS/Views/SchedulePanelComponents.swift` — added `6bb56ed7`, 2026-10-24. **HELD** for
   `codex/subtasks-inspector`, which is finished, reviewed and waiting on three guard updates.
 - `CadenceTests/CadenceTaskContextInheritanceTests.swift` — added `78e5e26e`, 2026-10-24. **HELD**, same branch.
