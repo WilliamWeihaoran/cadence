@@ -51,7 +51,10 @@ final class iOSMarkdownTextView: UITextView {
             command("b", [.command], MarkdownFormatCommandTitle.sentenceCase(for: .bold), #selector(applyBoldCommand)),
             command("i", [.command], MarkdownFormatCommandTitle.sentenceCase(for: .italic), #selector(applyItalicCommand)),
             command("e", [.command], MarkdownFormatCommandTitle.sentenceCase(for: .inlineCode), #selector(applyInlineCodeCommand)),
-            command("k", [.command], MarkdownFormatCommandTitle.sentenceCase(for: .link), #selector(applyLinkCommand)),
+            // T-5882: Cmd+Shift+K, matching macOS. The clash that moved it is the Mac's (Cmd+K is
+            // Search there), but one note editor with two different link shortcuts is worse than a
+            // key left unbound on iOS, so both tables moved together.
+            command("k", [.command, .shift], MarkdownFormatCommandTitle.sentenceCase(for: .link), #selector(applyLinkCommand)),
             command("x", [.command, .shift], MarkdownFormatCommandTitle.sentenceCase(for: .strikethrough), #selector(applyStrikethroughCommand)),
             command("h", [.command, .shift], MarkdownFormatCommandTitle.sentenceCase(for: .highlight), #selector(applyHighlightCommand)),
             command("0", [.command, .alternate], MarkdownFormatCommandTitle.sentenceCase(for: .paragraph), #selector(applyParagraphCommand)),

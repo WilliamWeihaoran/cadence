@@ -36,7 +36,13 @@ enum MarkdownKeyboardShortcutSupport {
             return apply(.italic, in: textView)
         case ("e", [.command]):
             return apply(.inlineCode, in: textView)
-        case ("k", [.command]):
+        case ("k", [.command, .shift]):
+            // T-5882: Cmd+Shift+K, not Cmd+K. Cmd+K means Search everywhere in this app, and the
+            // root key monitor (`RootCommandEventSupport.handleCommandKeyEvent`, key code 40) is an
+            // app-wide *local* monitor, so it sees the key before `performKeyEquivalent` ever
+            // dispatches it to this text view. A Cmd+K case here could never fire; it was not a
+            // shortcut, it was a comment that compiled. The owner chose one meaning for Cmd+K over
+            // the editor convention, so the insert-link shortcut moved rather than the search one.
             return apply(.link, in: textView)
         case ("x", [.command, .shift]):
             return apply(.strikethrough, in: textView)

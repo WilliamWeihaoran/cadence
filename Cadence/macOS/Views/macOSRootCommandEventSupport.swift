@@ -148,6 +148,12 @@ enum RootCommandEventSupport {
 
         switch event.keyCode {
         case 40:
+            // T-5882: unconditional, and that is the decision rather than an oversight. This arm
+            // runs before `performKeyEquivalent`, so for as long as it is here the markdown
+            // editor's own Cmd+K can never fire. The owner chose one meaning for Cmd+K app-wide —
+            // Search — over letting it reach an editable text view, so the editor's insert-link
+            // shortcut moved to Cmd+Shift+K (`MarkdownKeyboardShortcutSupport.handle`) and this
+            // arm does **not** grow a text-editing exception.
             context.clearAppEditingFocus()
             context.globalSearchManager.present()
             return nil
