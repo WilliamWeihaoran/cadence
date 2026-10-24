@@ -126,6 +126,9 @@ struct iOSNotesView: View {
     // `@FocusState` had no view to move focus to and could not report focus back either. The
     // editor's own `isFocused` binding is what drives — and observes — the text view.
     @State private var isEditorFocused = false
+    /// [[T-5804]]: what the last commit of the selected event note did not do, if anything — the
+    /// notice `iOSEventNoteEditorSheet` shows for the same note at compact width.
+    @State private var eventNoteCommitNotice: String?
     /// Which day the Daily and Weekly tabs' date picker is pointing at. Deliberately **not**
     /// persisted: a stored day would reopen the app on whatever date you last browsed to, which for
     /// a daily note is a trap — you would write today's entry into a week-old page. It resets to
@@ -237,6 +240,10 @@ struct iOSNotesView: View {
         }
         .onChange(of: listedNotes.map(\.id)) { _, _ in
             normalizeSelection()
+        }
+        // [[T-5804]]: a notice belongs to the note whose commit it describes.
+        .onChange(of: selectedNoteID) { _, _ in
+            eventNoteCommitNotice = nil
         }
         .fullScreenCover(item: $presentedNote) { note in
             iOSNoteEditorCover(
@@ -449,21 +456,29 @@ struct iOSNotesView: View {
     @ViewBuilder
     private var editorPane: some View {
         if let note = selectedNote {
-            iOSMarkdownEditingSurface(
-                text: Binding(
-                    get: { note.content },
-                    set: { update(note, content: $0) }
-                ),
-                isFocused: $isEditorFocused,
-                placeholder: "Start writing…",
-                referenceNotes: allNotes,
-                referenceTasks: allTasks,
-                editingNote: note,
-                onOpenReference: openMarkdownReference,
-                templateKind: showsHeaderTemplateMenu ? nil : activeTab.coreTab?.noteKind,
-                applyTemplate: showsHeaderTemplateMenu ? nil : { apply($0, to: note) }
-            )
-            .id(note.id)
+            VStack(spacing: 0) {
+                if activeTab == .events, let eventNoteCommitNotice {
+                    CadenceInlineFailureNotice(text: eventNoteCommitNotice)
+                        .padding(.horizontal, listMetrics.columnHorizontalPadding)
+                        .padding(.vertical, listMetrics.columnVerticalPadding)
+                }
+
+                iOSMarkdownEditingSurface(
+                    text: Binding(
+                        get: { note.content },
+                        set: { commitEditorContent(note, content: $0) }
+                    ),
+                    isFocused: $isEditorFocused,
+                    placeholder: "Start writing…",
+                    referenceNotes: allNotes,
+                    referenceTasks: allTasks,
+                    editingNote: note,
+                    onOpenReference: openMarkdownReference,
+                    templateKind: showsHeaderTemplateMenu ? nil : activeTab.coreTab?.noteKind,
+                    applyTemplate: showsHeaderTemplateMenu ? nil : { apply($0, to: note) }
+                )
+                .id(note.id)
+            }
             // The page-clearance reset this used to carry now lives on the strips themselves, in
             // `iOSMarkdownAccessoryViews` — the defect belonged to them, not to this host, and a
             // second host hit it independently. One mechanism, not one per host.
@@ -691,8 +706,23 @@ struct iOSNotesView: View {
         open(note)
     }
 
-    private func update(_ note: Note, content: String) {
-        CadenceCoreNoteSupport.update(note, content: content, in: modelContext)
+    /// The pane's one setter. **[[T-5804]]:** an event note is bound to an Apple Calendar event,
+    /// and every other editor of one — `iOSEventNoteEditorSheet` at compact width, the Mac's three —
+    /// mirrors it there after the save lands. This pane used to save it with the bare
+    /// `CadenceCoreNoteSupport.update`, so on iPad the event never changed. Which *editor* an iPad
+    /// opens is still the recorded choice in `open(_:)`; only the commit behind it changes.
+    private func commitEditorContent(_ note: Note, content: String) {
+        guard activeTab == .events else {
+            CadenceCoreNoteSupport.update(note, content: content, in: modelContext)
+            return
+        }
+        CadenceCoreNoteSupport.applyContent(note, content: content, in: modelContext)
+        eventNoteCommitNotice = iOSEventNoteCommit.commitEventNote(
+            note,
+            event: nil,
+            in: modelContext,
+            calendarManager: calendarManager
+        ).notice
     }
 
     /// Clearing focus first is load-bearing, not tidiness.

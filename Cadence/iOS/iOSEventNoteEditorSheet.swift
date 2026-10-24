@@ -177,13 +177,17 @@ struct iOSEventNoteEditorSheet: View {
     /// so a local commit that never landed must not be mirrored there: the ordering, and the fact
     /// that the sync is only reachable through it, belong to
     /// `CadenceEventNoteSupport.commitNote(syncToCalendar:save:syncToNativeEvent:)`.
+    ///
+    /// [[T-5804]]: the commit itself is `iOSEventNoteCommit`'s now, shared with the iPad's Events
+    /// pane in `iOSNotesView`, which used to save the same note without ever mirroring it.
     @discardableResult
     private func persistNote(syncToCalendar: Bool = true) -> CadenceEventNoteCommitOutcome {
-        note.updatedAt = Date()
-        let outcome = CadenceEventNoteSupport.commitNote(
+        let outcome = iOSEventNoteCommit.commitEventNote(
+            note,
+            event: event,
             syncToCalendar: syncToCalendar,
-            save: { try modelContext.save() },
-            syncToNativeEvent: syncNoteToNativeEvent
+            in: modelContext,
+            calendarManager: calendarManager
         )
         commitNotice = outcome.notice
         return outcome
@@ -201,6 +205,44 @@ struct iOSEventNoteEditorSheet: View {
         persistNote()
     }
 
+    private func openMarkdownReference(_ target: MarkdownReferenceDisplayTarget) {
+        switch target.kind {
+        case .note:
+            selectedReferenceNote = iOSMarkdownReferenceResolver.note(for: target, in: allNotes)
+        case .task:
+            selectedReferenceTask = iOSMarkdownReferenceResolver.task(for: target, in: allTasks)
+        }
+    }
+}
+
+/// **[[T-5804]] — one commit for an event note, whichever iOS editor it was typed in.**
+///
+/// It was `iOSEventNoteEditorSheet`'s private `persistNote` / `syncNoteToNativeEvent`, so only the
+/// sheet mirrored a note into Apple Calendar: on iPad the Events tab edits the same note in
+/// `iOSNotesView.editorPane`, whose setter was the bare `CadenceCoreNoteSupport.update` save. Both
+/// now commit here, through `CadenceEventNoteSupport.commitNote`'s ordering — the local save first,
+/// the mirror only if it landed — the same shape macOS's three event-note editors use.
+@MainActor
+enum iOSEventNoteCommit {
+    /// `event` is the one the host already resolved, if any; `nil` resolves it from the note's
+    /// stored identifier.
+    static func commitEventNote(
+        _ note: Note,
+        event: EKEvent?,
+        syncToCalendar: Bool = true,
+        in modelContext: ModelContext,
+        calendarManager: iOSCalendarManager
+    ) -> CadenceEventNoteCommitOutcome {
+        note.updatedAt = Date()
+        return CadenceEventNoteSupport.commitNote(
+            syncToCalendar: syncToCalendar,
+            save: { try modelContext.save() },
+            syncToNativeEvent: {
+                syncNoteToNativeEvent(note, event: event, calendarManager: calendarManager)
+            }
+        )
+    }
+
     /// Whether Apple Calendar now holds this note's text. A note with no native event to mirror
     /// into has nothing that can fail, so it is not a sync failure.
     ///
@@ -210,7 +252,7 @@ struct iOSEventNoteEditorSheet: View {
     /// about what happened to the *note*: whether the local save landed, and whether the mirror
     /// did. Which EventKit rejection it was does not change either of those, and this editor's
     /// banner is a debounced flush that fires while someone types.
-    private func syncNoteToNativeEvent() -> Bool {
+    static func syncNoteToNativeEvent(_ note: Note, event: EKEvent?, calendarManager: iOSCalendarManager) -> Bool {
         if let event, CadenceEventNoteSupport.matches(event, identifier: note.calendarEventID) {
             return calendarManager.updateEventNotes(event, notes: note.content) == nil
         }
@@ -219,15 +261,6 @@ struct iOSEventNoteEditorSheet: View {
             return calendarManager.updateEventNotes(resolved, notes: note.content) == nil
         }
         return true
-    }
-
-    private func openMarkdownReference(_ target: MarkdownReferenceDisplayTarget) {
-        switch target.kind {
-        case .note:
-            selectedReferenceNote = iOSMarkdownReferenceResolver.note(for: target, in: allNotes)
-        case .task:
-            selectedReferenceTask = iOSMarkdownReferenceResolver.task(for: target, in: allTasks)
-        }
     }
 }
 #endif

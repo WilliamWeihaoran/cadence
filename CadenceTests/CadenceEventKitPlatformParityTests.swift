@@ -231,13 +231,54 @@ struct CadenceEventKitPlatformParityTests {
         #expect(code.count == raw.count, "the stripper must blank, never shorten")
         #expect(code != raw, "expected comments to have been blanked")
 
+        // [[T-5804]]: the sheet's commit is the shared `iOSEventNoteCommit` now, so the ordering
+        // is pinned there and the sheet is pinned to reach it.
         let persist = try #require(CadenceSourceScan.functionBody(named: "persistNote", in: code))
-        #expect(persist.contains("CadenceEventNoteSupport.commitNote("))
-        #expect(persist.contains("syncToNativeEvent: syncNoteToNativeEvent"))
+        #expect(persist.contains("iOSEventNoteCommit.commitEventNote("))
+        let commit = try #require(CadenceSourceScan.functionBody(named: "commitEventNote", in: code))
+        #expect(commit.contains("CadenceEventNoteSupport.commitNote("))
+        #expect(commit.contains("syncNoteToNativeEvent(note, event: event, calendarManager: calendarManager)"))
         // The sheet must not keep a second, unordered way to commit beside the helper.
         #expect(!code.contains("try? modelContext.save()"))
         // Done may not close over a commit that did not land.
         #expect(code.contains("guard persistNote().isSaved else { return }"))
+    }
+
+    /// **[[T-5804]].** On iPad the Events tab edits an event note in `iOSNotesView.editorPane`,
+    /// not in the sheet, and that pane's setter was the bare `CadenceCoreNoteSupport.update` save:
+    /// the note was kept and the Apple Calendar event never changed. The pane's setter must route
+    /// the Events tab through the same `iOSEventNoteCommit` the sheet uses, apply the content
+    /// without a save of its own (the helper's save is the ordered one), and show the notice.
+    /// Pinned by reading it — a view cannot be driven from a unit test — comment-stripped.
+    @Test func theIPadEventsPaneCommitsAnEventNoteThroughTheSheetsMirror() throws {
+        let raw = try CadenceSourceScan.sourceFile("Cadence/iOS/iOSNotesView.swift")
+        let code = CadenceSourceScan.strippingComments(raw)
+        #expect(code.count == raw.count, "the stripper must blank, never shorten")
+
+        let pane = try #require(CadenceSourceScan.declarationBody("private var editorPane: some View", in: code))
+        #expect(pane.contains("set: { commitEditorContent(note, content: $0) }"), "the pane bypasses its commit")
+        #expect(pane.contains("CadenceInlineFailureNotice(text: eventNoteCommitNotice)"), "the pane never shows the notice")
+
+        let setter = try #require(CadenceSourceScan.functionBody(named: "commitEditorContent", in: code))
+        #expect(setter.contains("guard activeTab == .events else {"))
+        #expect(setter.contains("CadenceCoreNoteSupport.applyContent(note, content: content, in: modelContext)"))
+        #expect(setter.contains("eventNoteCommitNotice = iOSEventNoteCommit.commitEventNote("))
+        // The event path must not save on its own beside the ordered helper.
+        let eventPath = try #require(setter.range(of: "guard activeTab == .events else {"))
+        let afterGuard = setter[eventPath.upperBound...]
+        let guardEnd = try #require(afterGuard.range(of: #"return\s*\}"#, options: .regularExpression))
+        #expect(!afterGuard[guardEnd.upperBound...].contains("CadenceCoreNoteSupport.update("))
+        #expect(!afterGuard[guardEnd.upperBound...].contains("modelContext.save()"))
+
+        // `applyContent` is `update` without its save, and `update` is `applyContent` plus one.
+        let shared = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/Shared/CadenceNotePlanningSupport.swift")
+        )
+        let apply = try #require(CadenceSourceScan.functionBody(named: "applyContent", in: shared))
+        #expect(!apply.contains("save()"), "applyContent saves, so the event commit is not the ordered one")
+        let update = try #require(CadenceSourceScan.functionBody(named: "update", in: shared))
+        #expect(update.contains("applyContent(note, content: content, in: modelContext, syncTags: syncTags)"))
+        #expect(update.contains("try? modelContext.save()"))
     }
 
     /// The native write has to be able to answer, or ordering the save first buys nothing: the

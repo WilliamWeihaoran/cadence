@@ -257,13 +257,21 @@ enum CadenceCoreNoteSupport {
     /// it came from, and it is a no-op for the kinds whose title is not their heading -- daily and
     /// weekly notes reaching this from `NotePanel` are unaffected.
     static func update(_ note: Note, content: String, in modelContext: ModelContext, syncTags: Bool = true) {
+        applyContent(note, content: content, in: modelContext, syncTags: syncTags)
+        try? modelContext.save()
+    }
+
+    /// Everything `update` does to the note, without its save. [[T-5804]]: an event note's save is
+    /// not this host's to make — it goes through `CadenceEventNoteSupport.commitNote`, which orders
+    /// the save before the Apple Calendar mirror and reports a save that did not land — so the
+    /// iPad's Events pane applies the content here and commits through that helper instead.
+    static func applyContent(_ note: Note, content: String, in modelContext: ModelContext, syncTags: Bool = true) {
         note.content = content
         note.updatedAt = Date()
         MarkdownNoteTitleSync.apply(to: note, content: content)
         if syncTags {
             TagSupport.syncNoteTagsFromMarkdownCommittingInsertions(note, in: modelContext)
         }
-        try? modelContext.save()
     }
 }
 
