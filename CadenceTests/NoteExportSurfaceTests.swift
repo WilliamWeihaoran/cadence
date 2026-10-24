@@ -247,9 +247,26 @@ struct NoteExportSurfaceTests {
 
         #expect(declarations == ["Cadence/iOS/iOSNoteExportMenu.swift"])
         #expect(callSites.sorted() == [
+            "Cadence/iOS/iOSEventNoteEditorSheet.swift",
             "Cadence/iOS/iOSListNotesView.swift",
             "Cadence/iOS/iOSNotesView.swift",
         ], "\(callSites.sorted())")
+    }
+
+    /// **T-5805.** The iPhone event-note sheet drew Done and the AI menu and no export, while the
+    /// Mac's event sheet offers Export for the same note. It now draws the shared menu in its
+    /// toolbar, handed the sheet's own flush, and the menu writes that held typing into the note
+    /// before it makes any bytes — otherwise the file would lack the last words typed.
+    @Test func theIOSEventNoteSheetDrawsTheSharedExportMenuWithItsFlush() throws {
+        let sheet = strippingNoteExportComments(try noteExportSource("Cadence/iOS/iOSEventNoteEditorSheet.swift"))
+        #expect(sheet.contains("iOSNoteExportMenu(note: note, flush: editorFlush)"))
+
+        let menu = strippingNoteExportComments(try noteExportSource("Cadence/iOS/iOSNoteExportMenu.swift"))
+        let prepare = try #require(menu.range(of: "private func prepareExport(as format: NoteExportFormat) {"))
+        let body = menu[prepare.upperBound...]
+        let flushed = try #require(body.range(of: "flush?.flush()"))
+        let rendered = try #require(body.range(of: "iOSNoteExportService.exportData("))
+        #expect(flushed.lowerBound < rendered.lowerBound, "the held typing is written after the export is rendered")
     }
 
     /// Non-vacuity. Every assertion above is a count or an absence over files read off disk; if the

@@ -54,6 +54,9 @@ nonisolated struct NoteExportDocument: FileDocument {
 ///   the user has already chosen. Same order as the archive export.
 struct iOSNoteExportMenu: View {
     let note: Note
+    /// The host editor's held-back typing, written into `note` before the bytes are made, so the
+    /// export carries the last words typed ([[T-5805]]). `nil` for a host that holds nothing back.
+    var flush: iOSMarkdownEditorFlush? = nil
 
     @Environment(\.modelContext) private var modelContext
     @State private var exportDocument: NoteExportDocument?
@@ -107,6 +110,7 @@ struct iOSNoteExportMenu: View {
     }
 
     private func prepareExport(as format: NoteExportFormat) {
+        flush?.flush()
         let embeddedTasks = NoteExportSupport.embeddedTasks(in: note, modelContext: modelContext)
         let imageAssets = format == .pdf
             ? NoteExportSupport.referencedImageAssets(in: note, modelContext: modelContext)

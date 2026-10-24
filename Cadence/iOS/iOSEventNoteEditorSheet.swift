@@ -63,6 +63,13 @@ struct iOSEventNoteEditorSheet: View {
                 ToolbarItem(placement: .primaryAction) {
                     iOSNoteAIActionsMenu(note: note, area: note.area, project: note.project)
                 }
+
+                // [[T-5805]]: and the same export control. A note can always be written out, and
+                // the Mac's event sheet offers Export for this same note. The flush rides in so
+                // the file carries the words typed just before the tap, as Done's save does.
+                ToolbarItem(placement: .primaryAction) {
+                    iOSNoteExportMenu(note: note, flush: editorFlush)
+                }
             }
             .onAppear {
                 refreshEventMetadata()
