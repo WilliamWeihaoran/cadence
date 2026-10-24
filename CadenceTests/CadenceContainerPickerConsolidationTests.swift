@@ -457,9 +457,12 @@ struct CadenceContainerPickerConsolidationTests {
 
         // T-161: absence of the copy is not presence of the call. Pin the wiring too, so reverting
         // a call site fails this test rather than only the sweep above.
+        // `SchedulePanelComponents.swift` left this list with [[T-4108]]: the inspector no longer
+        // keeps a `taskContainerBinding` of its own. It edits the list through the shared panel's
+        // draft, whose opening token is `CadenceScheduleDraft.containerToken(of:)` in
+        // `Cadence/Shared/CadenceScheduleDraftTaskEditing.swift`; the sweep above still covers it.
         for path in [
             "Cadence/macOS/Views/TasksPanelComponents.swift",
-            "Cadence/macOS/Views/SchedulePanelComponents.swift",
             "Cadence/macOS/Views/TaskEmbedFieldEditorPopover.swift"
         ] {
             let source = try CadenceSourceScan.strippingComments(CadenceSourceScan.sourceFile(path))

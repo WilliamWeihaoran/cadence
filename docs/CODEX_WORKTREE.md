@@ -3284,9 +3284,9 @@ neither is at fault — but three of the five paths were never blocked:
   `cf9f3297` is already in main's copy of the file, `git diff main:<path> codex/t3260-source-pins:<path>`
   shows only main's later edits, and its worktree is clean, so the hold lapsed when the branch landed.
   The test is the fence AT `b537dd50`, or a landed branch — never "present in some later revision".
-- `Cadence/macOS/Views/SchedulePanelComponents.swift` — added `6bb56ed7`, 2026-10-24. **HELD** for
-  `codex/subtasks-inspector`, which is finished, reviewed and waiting on three guard updates.
-- `CadenceTests/CadenceTaskContextInheritanceTests.swift` — added `78e5e26e`, 2026-10-24. **HELD**, same branch.
+- `Cadence/macOS/Views/SchedulePanelComponents.swift` and `CadenceTests/CadenceTaskContextInheritanceTests.swift`
+  — added `6bb56ed7` / `78e5e26e` for `codex/subtasks-inspector`. **RELEASED 2026-10-24**: agent `land1138`
+  landed that branch with its three guard updates ([[T-1611]], [[T-3171]] (C)(i)), so the hold lapsed.
 
 **[[T-5353]]'s inspector half is SUPERSEDED, not merely blocked, and should not be re-attempted.**
 `codex/subtasks-inspector` deletes `taskContainerBinding` from `SchedulePanelComponents.swift`

@@ -291,8 +291,10 @@ struct iOSEditorSheetMetricsTests {
         let panel = CadenceSourceScan.strippingComments(
             try CadenceSourceScan.sourceFile("Cadence/Shared/Components/CadenceSchedulePanel.swift")
         )
+        // Nine since [[T-4107]]: the opt-in Subtasks group (`offersSubtasks`, macOS drag-create
+        // only) is a ninth ruled `CadenceFieldSection`, declared whether or not a host shows it.
         let panelSections = CadenceSourceScan.matchCount(#"CadenceFieldSection\("#, in: panel)
-        #expect(panelSections == 8, "the panel declares \(panelSections) groups — re-count before bumping")
+        #expect(panelSections == 9, "the panel declares \(panelSections) groups — re-count before bumping")
         #expect(CadenceSourceScan.matchCount(#"style: \.ruled"#, in: panel) == panelSections)
         #expect(CadenceSourceScan.matchCount(#"style: \.card"#, in: panel) == 0)
         #expect(panel.contains(".background(Theme.surfaceElevated)"))

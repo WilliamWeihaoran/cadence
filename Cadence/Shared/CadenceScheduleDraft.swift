@@ -123,6 +123,9 @@ struct CadenceScheduleDraft: Equatable {
 
     // MARK: Task only
 
+    /// Creation-only titles. Existing subtasks keep their model identity in the host.
+    /// Kept while switching to Event so returning to Task restores the unfinished checklist.
+    var subtaskTitles: [String] = []
     var dueDateKey: String
     var priority: TaskPriority
     /// `CadenceTaskComposerSupport`'s container token — "inbox", or a prefixed area/project id.

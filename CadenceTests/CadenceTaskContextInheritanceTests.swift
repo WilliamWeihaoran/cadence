@@ -316,16 +316,25 @@ struct CadenceTaskContextInheritanceTests {
     /// The positive count is also the non-vacuity check — an empty or wrong-path read cannot match
     /// it. `stripped != raw` is *not* used here: `DataIntegrityRepairService.swift` contains no
     /// comments at all, so that check is red no matter what the code says.
+    ///
+    /// A site either writes `task.context = <owner>.resolvedContext` itself, or hands the move to
+    /// `CadenceTaskMutationSupport.assignContainer`, whose `inheritedContext` is that same
+    /// `project.resolvedContext` read (pinned by value above). [[T-4108]] moved the inspector's
+    /// list edit out of `SchedulePanelComponents.swift` into the shared panel's draft commit,
+    /// `CadenceTaskEditDraftCommit` in `Cadence/Shared/CadenceScheduleDraftTaskEditing.swift`, which
+    /// is now the site counted here.
     @Test func everyPathThatFilesATaskIntoAProjectAsksTheProjectToResolveItsContext() throws {
-        let sites: [(file: String, owner: String)] = [
-            ("Cadence/Services/TaskCreationService.swift", "project"),
-            ("Cadence/Services/MCPReadOnly/CadenceWriteService.swift", "project"),
-            ("Cadence/Services/DataIntegrityRepairService.swift", "target"),
-            ("Cadence/macOS/Views/SchedulePanelComponents.swift", "project"),
-            ("Cadence/macOS/Views/TasksPanelComponents.swift", "project"),
-            ("Cadence/macOS/Views/TasksPanelSupport.swift", "target"),
-            ("Cadence/macOS/Views/KanbanBoardSupport.swift", "project"),
-            ("Cadence/macOS/Views/KanbanSectionColumnView.swift", "project"),
+        let assignContainer = #"CadenceTaskMutationSupport\.assignContainer\("#
+        func resolves(_ owner: String) -> String { #"task\.context = \#(owner)\.resolvedContext\b"# }
+        let sites: [(file: String, routed: String)] = [
+            ("Cadence/Services/TaskCreationService.swift", resolves("project")),
+            ("Cadence/Services/MCPReadOnly/CadenceWriteService.swift", resolves("project")),
+            ("Cadence/Services/DataIntegrityRepairService.swift", resolves("target")),
+            ("Cadence/Shared/CadenceScheduleDraftTaskEditing.swift", assignContainer),
+            ("Cadence/macOS/Views/TasksPanelComponents.swift", resolves("project")),
+            ("Cadence/macOS/Views/TasksPanelSupport.swift", resolves("target")),
+            ("Cadence/macOS/Views/KanbanBoardSupport.swift", resolves("project")),
+            ("Cadence/macOS/Views/KanbanSectionColumnView.swift", resolves("project")),
         ]
 
         #expect(sites.count == 8)
@@ -334,10 +343,7 @@ struct CadenceTaskContextInheritanceTests {
             let stripped = CadenceSourceScan.strippingComments(raw)
             #expect(stripped.count == raw.count, "\(site.file): the stripper changed the length")
 
-            let routed = CadenceSourceScan.matchCount(
-                #"task\.context = \#(site.owner)\.resolvedContext\b"#,
-                in: stripped
-            )
+            let routed = CadenceSourceScan.matchCount(site.routed, in: stripped)
             #expect(routed >= 1, "\(site.file) does not file a task through the shared rule (\(routed))")
 
             let openCoded = CadenceSourceScan.matchCount(

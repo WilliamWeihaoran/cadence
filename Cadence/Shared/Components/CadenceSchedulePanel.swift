@@ -91,6 +91,8 @@ struct CadenceSchedulePanelActions {
 ///   the way to the store is the inert control T-470 went through this app removing.
 /// - `offersEventLocation` — `false` for the same reason, one field over: that popover's event
 ///   write is `CalendarManager.createStandaloneEvent`, which has no `location:`.
+/// - `offersSubtasks` — off unless a creation host can carry checklist titles into storage.
+///   The macOS drag-create host opts in; existing iOS hosts keep their present fields.
 /// - `notesField` — the host's own notes editor. A sheet has room for the platform's full
 ///   markdown well and its reference sheets; a popover hanging off a block does not, and gets the
 ///   plain field below. Both write the same `draft.notes`.
@@ -112,6 +114,8 @@ struct CadenceSchedulePanel<NotesField: View>: View {
     var offersTaskRepeat = true
     var offersTaskDue = true
     var offersEventLocation = true
+    /// Opt-in: only a host that can persist creation subtasks offers this editor.
+    var offersSubtasks = false
     let actions: CadenceSchedulePanelActions
     private let notesField: NotesField?
     private var captureOptions: CadenceScheduleCaptureOptions?
@@ -175,6 +179,7 @@ struct CadenceSchedulePanel<NotesField: View>: View {
         offersTaskRepeat: Bool = true,
         offersTaskDue: Bool = true,
         offersEventLocation: Bool = true,
+        offersSubtasks: Bool = false,
         actions: CadenceSchedulePanelActions,
         @ViewBuilder notesField: () -> NotesField
     ) {
@@ -192,6 +197,7 @@ struct CadenceSchedulePanel<NotesField: View>: View {
             offersTaskRepeat: offersTaskRepeat,
             offersTaskDue: offersTaskDue,
             offersEventLocation: offersEventLocation,
+            offersSubtasks: offersSubtasks,
             actions: actions,
             customNotesField: notesField()
         )
@@ -211,6 +217,7 @@ struct CadenceSchedulePanel<NotesField: View>: View {
         offersTaskRepeat: Bool,
         offersTaskDue: Bool,
         offersEventLocation: Bool,
+        offersSubtasks: Bool,
         actions: CadenceSchedulePanelActions,
         customNotesField: NotesField?
     ) {
@@ -227,6 +234,7 @@ struct CadenceSchedulePanel<NotesField: View>: View {
         self.offersTaskRepeat = offersTaskRepeat
         self.offersTaskDue = offersTaskDue
         self.offersEventLocation = offersEventLocation
+        self.offersSubtasks = offersSubtasks
         self.actions = actions
         self.notesField = customNotesField
     }
@@ -268,6 +276,7 @@ struct CadenceSchedulePanel<NotesField: View>: View {
                 if draft.kind == .task {
                     taskSchedule
                     listAndSection
+                    if offersSubtasks { subtasksEditor }
                 } else {
                     eventSchedule
                     locationRow
@@ -683,6 +692,23 @@ struct CadenceSchedulePanel<NotesField: View>: View {
         }
     }
 
+    private var subtasksEditor: some View {
+        CadenceFieldSection(title: "Subtasks", style: .ruled) {
+            TextEditor(text: Binding(
+                get: { draft.subtaskTitles.joined(separator: "\n") },
+                set: { draft.subtaskTitles = $0.components(separatedBy: "\n") }
+            ))
+            .cadenceFont(.fieldValue)
+            .foregroundStyle(Theme.text)
+            .scrollContentBackground(.hidden)
+            .frame(height: 80)
+            .accessibilityLabel("Subtasks, one per line")
+            Text("One subtask per line")
+                .cadenceFont(.metadata)
+                .foregroundStyle(Theme.dim)
+        }
+    }
+
     /// Plain text, not the full markdown well the two creation sheets carry.
     ///
     /// That well brings an accessory bar, an image inserter and two reference sheets of its own,
@@ -883,6 +909,7 @@ extension CadenceSchedulePanel where NotesField == EmptyView {
         offersTaskRepeat: Bool = true,
         offersTaskDue: Bool = true,
         offersEventLocation: Bool = true,
+        offersSubtasks: Bool = false,
         actions: CadenceSchedulePanelActions
     ) {
         self.init(
@@ -899,6 +926,7 @@ extension CadenceSchedulePanel where NotesField == EmptyView {
             offersTaskRepeat: offersTaskRepeat,
             offersTaskDue: offersTaskDue,
             offersEventLocation: offersEventLocation,
+            offersSubtasks: offersSubtasks,
             actions: actions,
             customNotesField: nil
         )
