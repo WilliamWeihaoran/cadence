@@ -116,7 +116,7 @@ struct ListTasksView: View {
                     todayKey: todayKey,
                     dragOverTaskID: $dragOverTaskID,
                     onToggle: { toggleGroup(group.id) },
-                    onReorderTask: reorderTask
+                    onReorderTask: { dropTask(droppedID: $0, targetID: $1, into: group) }
                 )
             }
 
@@ -190,6 +190,36 @@ struct ListTasksView: View {
             return .project(project.id)
         }
         return .inbox
+    }
+
+    /// A row dropped on another row: into that row's group first, then into its place ([[T-5358]]).
+    ///
+    /// Only the renumber ran here, so a task dropped on a row under another section, date bucket
+    /// or priority took a new `order` and sprang back into the group it came from. The refiling is
+    /// `ListTasksGroupDrop`'s, the same assign-then-reorder order as All Tasks; a refused refile
+    /// stops before the renumber, because the store still files the task where it was.
+    ///
+    /// The hover freeze is let go on a refile: it holds each group's membership as it was when the
+    /// pointer arrived, so it would keep drawing the moved row in its old group until the pointer
+    /// left the list — the spring-back this fixes, for as long as the user stays on the page.
+    private func dropTask(droppedID: UUID, targetID: UUID, into group: ListTasksGroup) -> Bool {
+        if let dropped = tasks.first(where: { $0.id == droppedID }),
+           let target = tasks.first(where: { $0.id == targetID }),
+           let refiling = ListTasksGroupDrop.refiling(
+               dropping: dropped,
+               onto: target,
+               in: group,
+               groupingMode: groupingMode
+           ) {
+            guard ListTasksGroupDrop.refile(dropped, refiling, todayKey: todayKey, modelContext: modelContext) else {
+                reorderOffScreenNotice = nil
+                reorderFailureNotice = CadencePendingChangePersistence.editFailureNotice
+                return false
+            }
+            frozenGroupedTasks = nil
+            frozenTaskOrder = nil
+        }
+        return reorderTask(droppedID: droppedID, targetID: targetID)
     }
 
     /// Drag a row into a new place on a list's own Tasks tab.

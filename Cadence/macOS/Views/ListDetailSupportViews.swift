@@ -1,10 +1,81 @@
 #if os(macOS)
 import SwiftUI
+import SwiftData
 
 struct ListTasksGroup: Identifiable {
     let id: String
     let title: String
     let tasks: [AppTask]
+}
+
+/// **[[T-5358]] — a row dropped into ANOTHER group on a list's Tasks tab joins that group.**
+///
+/// The tab's row drop only renumbered, so a task dragged from "Documents" onto a row under "Later"
+/// took a new `order` and sprang straight back under Documents, with nothing said. All Tasks and
+/// the section board both refile on the same gesture (`TasksPanelDropCoordinator.handleTaskDrop`
+/// assigns its group's key, then reorders; `KanbanSectionColumnView.moveTask` files the card under
+/// its column). This is that first half for this tab: what the target group means, written as one
+/// commit before the reorder that `ListTasksView.reorderTask` already makes.
+///
+/// - By section: the group's section name — the configured spelling, which is the group's title.
+/// - By priority: the target row's priority, the `priority:` key All Tasks reads.
+/// - By date: `TasksListView.dateDropKey(forGroupID:)`, so Do Today / Scheduled / Unscheduled move
+///   a task exactly as they do on All Tasks, and Overdue / Due Today — a day already gone, with no
+///   assignment that makes a task late — reorder only, as they do there.
+enum ListTasksGroupDrop {
+    enum Refiling: Equatable {
+        case section(String)
+        case dropKey(String)
+    }
+
+    /// `nil` when the drop stays inside its own group, or the group names nothing a task can be
+    /// moved into — the drop is then the plain reorder it always was.
+    static func refiling(
+        dropping dropped: AppTask,
+        onto target: AppTask,
+        in group: ListTasksGroup,
+        groupingMode: TaskGroupingMode
+    ) -> Refiling? {
+        guard !group.tasks.contains(where: { $0.id == dropped.id }) else { return nil }
+        switch groupingMode {
+        case .none:
+            return nil
+        case .byList:
+            return .section(group.title)
+        case .byPriority:
+            return target.priority == dropped.priority ? nil : .dropKey("priority:\(target.priority.rawValue)")
+        case .byDate:
+            return TasksListView.dateDropKey(forGroupID: group.id).map(Refiling.dropKey)
+        }
+    }
+
+    /// Writes the refiling as one commit. `false` means the store refused it and every field is
+    /// back as it was (`CadenceTaskFieldEditCommit` / `TasksPanelSupport.assignTask` undo it), so
+    /// the caller must not go on to reorder a row the store still files in its old group.
+    static func refile(
+        _ task: AppTask,
+        _ refiling: Refiling,
+        todayKey: String,
+        modelContext: ModelContext,
+        commit: (ModelContext) throws -> Void = { try $0.save() }
+    ) -> Bool {
+        switch refiling {
+        case .section(let name):
+            return CadenceTaskFieldEditCommit.commit(task, in: modelContext, commit: commit) {
+                task.sectionName = name
+            }
+        case .dropKey(let key):
+            return TasksPanelSupport.assignTask(
+                task,
+                for: key,
+                todayKey: todayKey,
+                areas: [],
+                projects: [],
+                modelContext: modelContext,
+                commit: commit
+            ) == .applied
+        }
+    }
 }
 
 enum TaskListDisplayMetrics {
