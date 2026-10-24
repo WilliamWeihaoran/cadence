@@ -1237,7 +1237,11 @@ host_launch_refusal_report() {  # $1 = log, $2 = xcodebuild's exit status ("" wh
 # clear it; `release-dd` plus a fresh build did. The error text offers a build-setting override:
 # this report deliberately does not, because that ships a product whose signature may not match
 # its entitlements. Never gates -- the run's exit status is left exactly as it was.
-ENTITLEMENTS_MODIFIED_PATTERN='Entitlements file .* was modified during the build'
+# T-5600: ANCHORED to xcodebuild's own diagnostic line -- `error:` at column 0, then the quoted
+# file name -- never the phrase anywhere in the log. `docs/AGENTS_REFERENCE.md` quotes the phrase,
+# so a red test that dumped the reference made a healthy DerivedData read as poisoned and marked it
+# disposable. Section 8c keeps a quoted-in-an-issue-dump negative fixture silent.
+ENTITLEMENTS_MODIFIED_PATTERN='^error: Entitlements file "[^"]+" was modified during the build'
 # THE BATCH-RULE HALF, which T-2046 left open: IS A DERIVEDDATA DISPOSABLE THE MOMENT THIS FIRES?
 # YES, and it is settled here as a rule the script enforces rather than as advice a reader has to
 # remember at the fourth identical red. The argument is the measurement in the paragraph above:
@@ -3065,6 +3069,21 @@ selftest_only_testing() {
   run_ent "$ws/ent-poisoned.log" 0
   check "CONTROL: the line under exit 0 (nothing red to explain) is silent" \
     $( (( erc == 0 )) && [[ -z "$eout" ]] && print 1 || print 0 ) "exit $erc: $eout"
+  # T-5600: the phrase QUOTED by a red test -- the reference table's backticked sentence, and the
+  # fixture's own `error:` line printed indented inside an issue dump -- is prose, not a diagnostic.
+  print -rl -- \
+    "◇ Test run started." \
+    "✘ Test aRedTestPrintingTheReference() recorded an issue at CadenceDocsTests.swift:12:5: Expectation failed: reference.contains(\"## Missing\")" \
+    "↳ reference → \"| \`builtin-productPackagingUtility\` dies with \`Entitlements file \"Cadence.entitlements\" was modified during the build\`, **0 Swift files compiled** |\"" \
+    "    \"error: Entitlements file \\\"Cadence.entitlements\\\" was modified during the build, which is not supported.\" \\" \
+    "✘ Test run with 13 tests in 1 suite failed after 0.1 seconds with 3 issues." \
+    "** TEST FAILED **" > "$ws/ent-quoted-in-issue.log"
+  mkdir -p "$ws/cadence-dd-quoted"
+  run_ent "$ws/ent-quoted-in-issue.log" 65 "$ws/cadence-dd-quoted"
+  check "the phrase QUOTED inside a red test's issue dump is NOT a poisoned DerivedData (T-5600)" \
+    $( (( erc == 0 )) && [[ -z "$eout" ]] && print 1 || print 0 ) "exit $erc: $eout"
+  check "...and marks nothing, so a healthy tree is not refused next run (T-5600)" \
+    $( [[ ! -f "$ws/cadence-dd-quoted/.cadence-entitlements-poisoned" ]] && print 1 || print 0 ) "$(ls -a "$ws/cadence-dd-quoted")"
   # T-2046's batch-rule half, which the PARTIAL left open and which is settled as: YES, disposable
   # the moment this fires. It is enforced rather than described -- the report MARKS the tree and
   # the next preflight refuses it -- because the thing that went wrong was nobody remembering a
