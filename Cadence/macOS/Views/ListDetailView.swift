@@ -21,7 +21,11 @@ struct AreaDetailLoader: View {
 
     var body: some View {
         if let area = areas.first(where: { $0.id == id }) {
+            // [[T-5831]]: one identity per list, so Area A -> Area B builds a fresh page whose
+            // `onAppear` restores B's own tab, Sort, Order and Group rather than keeping A's
+            // `@State` — the sidebar sets `selection` directly, which is the same switch arm.
             ListDetailView(area: area, project: nil)
+                .id(area.id)
         } else {
             MissingListDetailView()
         }
@@ -34,7 +38,9 @@ struct ProjectDetailLoader: View {
 
     var body: some View {
         if let project = projects.first(where: { $0.id == id }) {
+            // [[T-5831]]: see `AreaDetailLoader`.
             ListDetailView(area: nil, project: project)
+                .id(project.id)
         } else {
             MissingListDetailView()
         }
