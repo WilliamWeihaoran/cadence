@@ -53,6 +53,30 @@ nonisolated enum CadenceCompactTab: String, CaseIterable, Identifiable, Hashable
     var destinations: [CadenceFeatureDestination] {
         CadenceFeatureDestination.allCases.filter { $0.compactTab == self }
     }
+
+    /// **[[T-6002]].** The customisable sidebar rows a *compact* shell actually honours, taken from
+    /// a list of them in the order it was given.
+    ///
+    /// The phone reads the synced sidebar layout in exactly one place — the Tasks index, which is
+    /// `tasksIndexDestinations` below, and which keeps only the destinations the Tasks tab owns.
+    /// Calendar and Notes are fixed tabs and Focus is a row of `compactMoreSections`, a static
+    /// list that never reads the hidden set, so hiding or reordering any of those three in
+    /// Settings changed nothing a phone could show.
+    ///
+    /// It is spelled as a filter over a caller's list rather than as a constant pair, so it stays
+    /// the *same* question `tasksIndexDestinations` asks (`compactTab == .tasks`): a destination
+    /// promoted into the Tasks tab, or demoted out of it, moves in both places at once instead of
+    /// leaving a hand-written `[.today, .allTasks]` behind. Order and membership are the caller's;
+    /// this only drops what the phone would ignore.
+    ///
+    /// Regular width — iPad and Mac — is not this function's business and must not call it: those
+    /// sidebars honour every customisable row, which is why the settings card still lists all five
+    /// there.
+    static func honouredSidebarRows(
+        _ rows: [CadenceFeatureDestination]
+    ) -> [CadenceFeatureDestination] {
+        rows.filter { $0.compactTab == .tasks }
+    }
 }
 
 /// **Not `nonisolated`, and it is the only thing in this file that is not.** Everything else here

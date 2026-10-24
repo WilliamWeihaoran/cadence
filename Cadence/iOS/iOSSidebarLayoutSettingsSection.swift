@@ -15,14 +15,25 @@ import SwiftUI
 /// and this is a card of rows. A one-step move through `CadenceOrderReassignment.neighbourStep` is
 /// the same primitive macOS's drag calls, so the two platforms renumber identically.
 ///
-/// It honours the *whole* customisable set, Focus included, which on this platform means the footer
-/// glyph — the row that hides it is the only control for it on iPhone, where there is no Mac to
-/// reach for. **What Focus's row does not get is the move menu** (T-1292): the footer draws its two
-/// glyphs from `CadenceSidebarLayout.footerGlyphDestinations` in that list's own order, so the
-/// stored order has never reached it. That is `isOrderable`, the predicate T-1287 added for the
-/// Mac's drag handle, asked here of a menu instead.
+/// **At regular width it honours the whole customisable set, Focus included** — that is the iPad
+/// sidebar, which draws Calendar and Notes as rows and Focus as a footer glyph, so every switch
+/// here changes something it can see. **What Focus's row does not get is the move menu** (T-1292):
+/// the footer draws its two glyphs from `CadenceSidebarLayout.footerGlyphDestinations` in that
+/// list's own order, so the stored order has never reached it. That is `isOrderable`, the
+/// predicate T-1287 added for the Mac's drag handle, asked here of a menu instead.
+///
+/// **At compact width it lists only the rows the phone honours** ([[T-6002]]): Today and All
+/// Tasks, through `CadenceCompactTab.honouredSidebarRows(_:)`. The phone reads this layout in one
+/// place, the Tasks index; Calendar and Notes are fixed tabs and Focus is a static row of the More
+/// list, so their switches moved a synced record to every device and changed nothing on the phone
+/// in front of you. The owner's call was to drop them rather than caption the card: a control that
+/// appears to fail is worse than a control that is not there. **This is a presentation filter, not
+/// a change to the preference** — the record still carries all five rows, the iPad and the Mac
+/// still offer and obey all five, and a Calendar row hidden on the Mac stays hidden there.
 struct iOSSidebarLayoutSettingsSection: View {
     @Environment(\.modelContext) private var modelContext
+    /// [[T-6002]]: compact is the phone, which honours only the Tasks tab's rows.
+    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Query private var sidebarLayoutPreferences: [SidebarLayoutPreference]
     @AppStorage(CadencePreferenceKeys.sidebarTabColors) private var sidebarTabColorsRaw = CadencePreferenceKeys.emptySidebarPreference
     /// Set when a change was refused — by the store, or by the one-visible-row floor.
@@ -32,8 +43,15 @@ struct iOSSidebarLayoutSettingsSection: View {
         CadenceSidebarLayoutPreferenceStore.layout(from: sidebarLayoutPreferences)
     }
 
+    /// The rows this width can honour, in the stored order.
+    ///
+    /// [[T-6002]]: compact drops the three the phone ignores. The filter is applied *after* the
+    /// stored order resolves, not instead of it, so the two rows that remain keep the position the
+    /// user gave them and a one-step move between them still means what it says.
     private var rows: [CadenceFeatureDestination] {
-        CadenceSidebarLayoutPreferenceStore.orderedCustomisableDestinations(for: layout)
+        let ordered = CadenceSidebarLayoutPreferenceStore.orderedCustomisableDestinations(for: layout)
+        guard horizontalSizeClass == .compact else { return ordered }
+        return CadenceCompactTab.honouredSidebarRows(ordered)
     }
 
     /// The subset of `rows` the stored order actually places, in the same sequence — the list a
