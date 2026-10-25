@@ -18,6 +18,31 @@ nonisolated enum CadenceTaskRecurrenceEditScope: String, CaseIterable, Hashable 
     }
 }
 
+/// Which occurrences a **delete** on a repeating task means.
+///
+/// The sibling of `CadenceTaskRecurrenceEditScope`, for the other question a repeating task can be
+/// asked. They are deliberately **two** enums rather than one shared pair of cases: an edit's two
+/// scopes are "only this task" and "this and future tasks", both of which rewrite rows that go on
+/// existing, while a delete's are "remove this row and advance the series" and "remove this row and
+/// let the series stop". Collapsing them would put a case on each enum that its own call sites must
+/// never pass, which is the shape a reader resolves wrongly.
+///
+/// `wholeSeries` is the behaviour every delete had before [[T-6115]], and it stays the default
+/// everywhere, so a bulk path or a list cascade keeps minting nothing.
+nonisolated enum CadenceTaskRecurrenceDeleteScope: String, CaseIterable, Hashable {
+    /// Remove this occurrence and advance the series past it, so the next one still appears.
+    case thisOccurrence
+    /// Remove this occurrence and leave the series with nothing to advance from.
+    case wholeSeries
+
+    var label: String {
+        switch self {
+        case .thisOccurrence: return "Delete This Occurrence"
+        case .wholeSeries: return "Delete Series"
+        }
+    }
+}
+
 nonisolated enum CadenceTaskRecurrenceWorkflowSupport {
     /// Returns the successor it spawned, or `nil` — see `spawnNextOccurrenceIfNeeded` (T-628).
     @discardableResult
@@ -86,6 +111,63 @@ nonisolated enum CadenceTaskRecurrenceWorkflowSupport {
             task.completedAt = nil
             task.status = status
         }
+    }
+
+    /// Advances the series past an occurrence that is about to be **deleted** rather than settled
+    /// ([[T-6115]]).
+    ///
+    /// Until this existed, `markDone` and `markCancelled` were the only two ways a successor was
+    /// ever minted, so deleting the live occurrence of a repeating task ended the repeat and
+    /// neither platform's confirmation said so. `markCancelled`'s own doc already states the rule
+    /// this restores: settling one occurrence must not kill the series. A delete scoped to one
+    /// occurrence is the same event with the row removed instead of struck through.
+    ///
+    /// **It is a thin door onto `spawnNextOccurrenceIfNeeded`, on purpose.** Every condition that
+    /// decides whether a series may advance — `recurrenceHasEnded`, `shouldSpawnNextOccurrence`,
+    /// the series metadata, and the field copy `makeNextRecurringTask` performs — has to give the
+    /// delete path the same answer it gives the settle path, and a second implementation beside
+    /// `CadenceTaskMutationSupport.deleteTasks` is exactly the drift this file's header exists to
+    /// prevent. What belongs to the caller is only *when* to ask: see `deleteTasks`, which calls
+    /// this above `repairDanglingRecurrenceLinks` so the repair walks the fresh successor.
+    ///
+    /// Answers `nil` — having inserted nothing — when the series' end condition is already met, so
+    /// deleting the **last** occurrence a finite recurrence would produce behaves exactly like
+    /// deleting the series. That is the honest outcome: there is no next occurrence to keep.
+    @discardableResult
+    static func spawnSuccessorBeforeDeletingOccurrence(
+        _ task: AppTask,
+        in context: ModelContext,
+        now: Date = Date()
+    ) -> AppTask? {
+        spawnNextOccurrenceIfNeeded(from: task, in: context, now: now)
+    }
+
+    /// Whether deleting `task` has a live series to ask the user about ([[T-6115]]).
+    ///
+    /// The one answer both platforms' delete confirmations ask before growing a second button, so
+    /// a non-repeating task cannot gain one and the two surfaces cannot disagree about which tasks
+    /// are repeating.
+    ///
+    /// Three conditions, and the second is the interesting one:
+    ///
+    /// - `isRecurring` — a plain task has no series, and its confirmation is untouched.
+    /// - `recurrenceSpawnedTaskID == nil` — **this is what settles the past-occurrence question.**
+    ///   A settled occurrence that already minted its successor cannot end the series by being
+    ///   deleted: `repairDanglingRecurrenceLinks` re-points its predecessor at the survivor, and
+    ///   the live occurrence is some other row. Offering a choice there would offer two buttons
+    ///   that do the same thing, so it is not offered. The occurrences that *do* get the question
+    ///   are the ones the series actually hangs from — which is the live one, and a settled one
+    ///   whose spawn was refused and which is therefore the tail of the chain.
+    /// - `!recurrenceHasEnded` — a count-limited series that has already produced its last
+    ///   occurrence has no successor to keep, so again the two buttons would coincide.
+    ///
+    /// The date-limited sibling of that last case cannot be decided without a `ModelContext` to
+    /// compute the successor's planned dates from, so a series whose end **date** has passed still
+    /// offers the choice and "this occurrence" then spawns nothing. The cost of that is one
+    /// superfluous question on a series that is over; the cost of taking a context parameter is a
+    /// fetch inside a view body, on every row, to answer a question about a button's label.
+    static func deleteOffersSeriesChoice(for task: AppTask) -> Bool {
+        task.isRecurring && task.recurrenceSpawnedTaskID == nil && !task.recurrenceHasEnded
     }
 
     /// If a predecessor's recorded `recurrenceSpawnedTaskID` points at a task being deleted, that

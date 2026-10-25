@@ -1,6 +1,6 @@
 import Foundation
 
-/// The two "which occurrences does this apply to?" dialogs, worded once.
+/// The "which occurrences does this apply to?" dialogs, worded once.
 ///
 /// Both are asked from three places each, and every one of the six spelled its own copy:
 ///
@@ -20,6 +20,11 @@ import Foundation
 /// `EKSpan`/series semantics — a button whose words and whose effect come from one value cannot
 /// name the wrong scope. `TaskInspectorWorkflowSupportViews.scopeOptions` uses a shorter inline
 /// wording for the same two cases on purpose; its own comment records why.
+///
+/// **A third dialog joined them for the delete ([[T-6115]])**, which is the same question asked of
+/// a repeating task at the one other point a live occurrence can leave its series. Its buttons are
+/// likewise not here: they are `CadenceTaskRecurrenceDeleteScope.label`, beside the enum the delete
+/// core switches on.
 ///
 /// `nonisolated` for the reason `CadenceEmptyStateCopy` gives: the project sets
 /// `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`, and constants have no state to protect.
@@ -42,6 +47,28 @@ nonisolated enum CadenceRecurrenceScopeCopy {
     /// series.
     static let taskScopeMessage =
         "Choose whether this repeat change applies only here or to this task and future instances."
+
+    /// Title of the confirmation raised when a **delete** lands on a repeating task ([[T-6115]]).
+    ///
+    /// The third dialog in this file, and the first that is not an *edit*. Title Case rather than
+    /// the sentence case of the two above, because it replaces a delete confirmation's title and
+    /// the delete family is title-cased on both platforms — "Delete Task?" on the Mac overlay and
+    /// in both iOS alerts, "Couldn't Delete Task" on the failure alert.
+    static let deleteScopeTitle = "Delete Repeating Task?"
+
+    /// What the two delete buttons mean, in one sentence, shared by three surfaces.
+    ///
+    /// Here for the reason `taskScopeFailureTitle` is here: the Mac overlay and the two iOS alerts
+    /// all raise this question, and the one thing a reader must not find worded differently is the
+    /// promise that the repeat survives. The Mac prefixes the task's name to it, which is that
+    /// overlay's existing habit for every other delete; the part that would drift is this.
+    ///
+    /// It says "the next one will still appear" rather than "the series continues" because that is
+    /// the observable claim `CadenceTaskRecurrenceWorkflowSupport.spawnSuccessorBeforeDeletingOccurrence`
+    /// actually makes — one occurrence is minted per settle, and this is a settle in all but name.
+    static let deleteScopeMessage =
+        "Deleting this occurrence keeps the repeat going, so the next one will still appear. "
+        + "Deleting the series ends the repeat."
 
     /// Title of the alert raised when a repeat change on a repeating **task** did not land.
     ///

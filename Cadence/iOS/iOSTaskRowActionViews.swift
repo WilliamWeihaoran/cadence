@@ -922,6 +922,69 @@ struct iOSTaskRowRecurrenceScopeDialogModifier: ViewModifier {
 
 /// The one iOS spelling of "that delete did not land" (T-440).
 ///
+/// The delete confirmation both iOS task surfaces raise, including the scope question a repeating
+/// task gets ([[T-6115]]).
+///
+/// One modifier for the reason `iOSTaskDeleteFailureAlertModifier` records one action later: the
+/// row and the sheet each used to spell this alert out — the same title, the same sentence, the
+/// same two buttons — and two copies of a confirmation is two confirmations waiting to disagree.
+/// This ticket is what would have made them disagree, because it adds a third button to one of
+/// them and the drift would have been invisible until a user deleted a repeating task from the
+/// surface that was missed.
+///
+/// **A repeating task is asked which delete it is.** Deleting the live occurrence used to end the
+/// series in silence: `spawnNextOccurrenceIfNeeded` is reached only from `markDone` and
+/// `markCancelled`, so a user deleting today's occurrence to skip it lost every future one, and
+/// this alert said only that the task and its subtasks would go. "Delete This Occurrence" now
+/// advances the series first, through
+/// `CadenceTaskMutationSupport.delete(_:modelContext:recurrenceScope:)`.
+///
+/// **A non-repeating task sees exactly what it saw before** — "Delete Task?", "This removes the
+/// task and its subtasks.", one `Delete` and one `Cancel`, one step. The guard is
+/// `CadenceTaskRecurrenceWorkflowSupport.deleteOffersSeriesChoice`, which is also what the Mac
+/// overlay asks, so the two platforms cannot hold different opinions about which tasks have a
+/// series worth asking about.
+///
+/// Both scoped buttons are `.destructive`: each removes a row, and the difference between them is
+/// what survives, not whether anything is lost. iOS puts the `.cancel` button last by convention
+/// and the system places it, so the two destructive buttons stay in the order they are written —
+/// the occurrence first, which is the arm that loses less.
+struct iOSTaskDeleteConfirmationModifier: ViewModifier {
+    let task: AppTask
+    @Binding var isPresented: Bool
+    let onDelete: (CadenceTaskRecurrenceDeleteScope) -> Void
+
+    private var offersChoice: Bool {
+        CadenceTaskRecurrenceWorkflowSupport.deleteOffersSeriesChoice(for: task)
+    }
+
+    func body(content: Content) -> some View {
+        content
+            .alert(
+                offersChoice ? CadenceRecurrenceScopeCopy.deleteScopeTitle : "Delete Task?",
+                isPresented: $isPresented
+            ) {
+                if offersChoice {
+                    Button(CadenceTaskRecurrenceDeleteScope.thisOccurrence.label, role: .destructive) {
+                        onDelete(.thisOccurrence)
+                    }
+                    Button(CadenceTaskRecurrenceDeleteScope.wholeSeries.label, role: .destructive) {
+                        onDelete(.wholeSeries)
+                    }
+                } else {
+                    Button("Delete", role: .destructive) { onDelete(.wholeSeries) }
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text(
+                    offersChoice
+                        ? CadenceRecurrenceScopeCopy.deleteScopeMessage
+                        : "This removes the task and its subtasks."
+                )
+            }
+    }
+}
+
 /// Both surfaces that can refuse a task delete — `iOSTaskRow` and `iOSTaskDetailSheet` — used to
 /// carry their own copy of this alert: the same title, the same shared sentence, the same single
 /// `OK` button. The test that pinned them read both files and asserted the two **agreed**, which is
@@ -990,6 +1053,17 @@ struct iOSTaskRowRecurrenceFailureAlertModifier: ViewModifier {
 }
 
 extension View {
+    /// See `iOSTaskDeleteConfirmationModifier`.
+    func iOSTaskDeleteConfirmation(
+        task: AppTask,
+        isPresented: Binding<Bool>,
+        onDelete: @escaping (CadenceTaskRecurrenceDeleteScope) -> Void
+    ) -> some View {
+        modifier(
+            iOSTaskDeleteConfirmationModifier(task: task, isPresented: isPresented, onDelete: onDelete)
+        )
+    }
+
     /// See `iOSTaskDeleteFailureAlertModifier`.
     func iOSTaskDeleteFailureAlert(isPresented: Binding<Bool>) -> some View {
         modifier(iOSTaskDeleteFailureAlertModifier(isPresented: isPresented))

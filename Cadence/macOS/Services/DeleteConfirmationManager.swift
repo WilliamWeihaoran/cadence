@@ -11,11 +11,36 @@ final class DeleteConfirmationManager {
         let message: String
         let confirmLabel: String
 
+        /// A second, differently-scoped confirm on the same overlay, or `nil` for the single-button
+        /// confirmation every delete but one uses ([[T-6115]]).
+        ///
+        /// `nil` is load-bearing rather than merely a default: the overlay draws no third button
+        /// for it, so a delete that does not supply one cannot grow a second step. Only
+        /// `presentTaskDelete` supplies one, and only for a task whose series the delete would
+        /// otherwise end.
+        let alternate: Alternate?
+
         /// What the confirmed action reports back.
         ///
         /// Most deletes on this manager cannot fail in a way the user could act on and are wrapped
         /// by `present(…)` to answer `.deleted` unconditionally. `presentRefusable(…)` is for the
         /// ones that can, and the refusal carries its own sentence.
+        let attempt: () -> Outcome
+    }
+
+    /// The second confirm button on a delete that has two meanings, with its own words and its own
+    /// attempt ([[T-6115]]).
+    ///
+    /// A *button*, not a scope. The manager is a macOS confirmation surface and knows nothing about
+    /// recurrence; what it holds is a label and a closure, exactly as the primary confirm is a
+    /// label and a closure. The `CadenceTaskRecurrenceDeleteScope` that chose both lives one frame
+    /// up, in `presentTaskDelete`, which is the only thing in the app that builds one of these.
+    ///
+    /// It answers the same `Outcome` as the primary, so a refusal on either arm lands in the same
+    /// still-open overlay with the same sentence — the whole of T-376, applied to both buttons
+    /// rather than inherited by one.
+    struct Alternate {
+        let label: String
         let attempt: () -> Outcome
     }
 
@@ -64,6 +89,7 @@ final class DeleteConfirmationManager {
                 title: title,
                 message: message,
                 confirmLabel: confirmLabel,
+                alternate: nil,
                 attempt: { action(); return .deleted }
             )
         )
@@ -79,6 +105,7 @@ final class DeleteConfirmationManager {
         title: String,
         message: String,
         confirmLabel: String = "Delete",
+        alternate: Alternate? = nil,
         attempt: @escaping () -> Outcome
     ) {
         present(
@@ -86,6 +113,7 @@ final class DeleteConfirmationManager {
                 title: title,
                 message: message,
                 confirmLabel: confirmLabel,
+                alternate: alternate,
                 attempt: attempt
             )
         )
@@ -93,9 +121,21 @@ final class DeleteConfirmationManager {
 
     func confirm() {
         guard let request else { return }
+        resolve(request.attempt)
+    }
+
+    /// Confirms the second button, when the request has one ([[T-6115]]). A no-op otherwise, which
+    /// is what keeps a single-button confirmation single-button even if a future overlay forgets to
+    /// hide the control.
+    func confirmAlternate() {
+        guard let alternate = request?.alternate else { return }
+        resolve(alternate.attempt)
+    }
+
+    private func resolve(_ attempt: () -> Outcome) {
         failureNotice = nil
 
-        switch request.attempt() {
+        switch attempt() {
         case .deleted:
             self.request = nil
         case .refused(let notice):
@@ -140,6 +180,25 @@ extension DeleteConfirmationManager {
     /// `TaskTitleSupport.displayTitle`, which is the shared one — a difference of exactly the kind
     /// [[T-374]] is about. `displayTitle` wins.
     ///
+    /// **A repeating task is asked which delete it is ([[T-6115]]).** Deleting the live occurrence
+    /// used to end the whole series in silence, because `spawnNextOccurrenceIfNeeded` was reached
+    /// only from `markDone` and `markCancelled` — so a user deleting today's occurrence to skip it
+    /// lost every future one, and this sentence said only that the task would be permanently
+    /// deleted. The owner's decision was the largest of the four shapes on offer: ask, the way
+    /// Calendar does, and make "this occurrence" genuinely leave the repeat alive.
+    ///
+    /// **What a non-repeating task sees is byte-identical to before** — the same title, the same
+    /// sentence, one `Delete` button and one step. The guard is
+    /// `CadenceTaskRecurrenceWorkflowSupport.deleteOffersSeriesChoice`, which both platforms ask,
+    /// so neither can decide on its own that a plain task has a series; its doc argues the two
+    /// cases where a *repeating* task is also left alone, including the settled occurrence whose
+    /// successor is already alive.
+    ///
+    /// **"Delete This Occurrence" is the primary button.** It is the arm that loses less — one row
+    /// rather than a repeat — and it is what the user who opened a confirmation on today's
+    /// occurrence overwhelmingly means. "Delete Series" is the `Alternate`, still red and still
+    /// destructive, but not what `Return` presses.
+    ///
     /// - Parameter willDelete: surface-local teardown — clearing hover or selection that points at
     ///   the row about to go. Runs before the delete, and still runs if the delete is refused; the
     ///   row re-registers hover on the next mouse move, so there is nothing to undo.
@@ -153,15 +212,33 @@ extension DeleteConfirmationManager {
         commit: @escaping (ModelContext) throws -> Void = { try $0.save() }
     ) {
         let title = TaskTitleSupport.displayTitle(task.title, fallback: "Untitled")
-        presentRefusable(
-            title: "Delete Task?",
-            message: "This will permanently delete \"\(title)\"."
-        ) {
+        let attempt: (CadenceTaskRecurrenceDeleteScope) -> Outcome = { scope in
             willDelete()
-            guard modelContext.deleteTask(task, commit: commit) else {
+            guard modelContext.deleteTask(task, recurrenceScope: scope, commit: commit) else {
                 return .refused(notice: CadenceTaskMutationSupport.deleteFailureNotice)
             }
             return .deleted
+        }
+
+        guard CadenceTaskRecurrenceWorkflowSupport.deleteOffersSeriesChoice(for: task) else {
+            presentRefusable(
+                title: "Delete Task?",
+                message: "This will permanently delete \"\(title)\"."
+            ) {
+                attempt(.wholeSeries)
+            }
+            return
+        }
+
+        presentRefusable(
+            title: CadenceRecurrenceScopeCopy.deleteScopeTitle,
+            message: "\"\(title)\" repeats. " + CadenceRecurrenceScopeCopy.deleteScopeMessage,
+            confirmLabel: CadenceTaskRecurrenceDeleteScope.thisOccurrence.label,
+            alternate: Alternate(label: CadenceTaskRecurrenceDeleteScope.wholeSeries.label) {
+                attempt(.wholeSeries)
+            }
+        ) {
+            attempt(.thisOccurrence)
         }
     }
 }

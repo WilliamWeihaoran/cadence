@@ -679,9 +679,15 @@ extension CadenceTaskMutationSupport {
     static func delete(
         _ task: AppTask,
         modelContext: ModelContext,
+        recurrenceScope: CadenceTaskRecurrenceDeleteScope = .wholeSeries,
         commit: (ModelContext) throws -> Void = { try $0.save() }
     ) -> Bool {
-        deleteTasks(withIDs: [task.id], modelContext: modelContext, commit: commit)
+        deleteTasks(
+            withIDs: [task.id],
+            modelContext: modelContext,
+            recurrenceScope: recurrenceScope,
+            commit: commit
+        )
     }
 
     /// The one task-deletion core. Every surface on both platforms funnels through here — macOS's
@@ -710,6 +716,19 @@ extension CadenceTaskMutationSupport {
     ///
     /// Returning a failure and touching nothing is the only safe reading of "I could not read the
     /// store"; the cascade callers abort on it.
+    ///
+    /// - Parameter recurrenceScope: What a delete on a **repeating** task means ([[T-6115]]).
+    ///   `.wholeSeries`, the default and the behaviour every caller had before the parameter
+    ///   existed, removes the rows and leaves the series with nothing to advance from.
+    ///   `.thisOccurrence` advances each doomed occurrence's series past it first, so the next one
+    ///   still appears — see the call to `spawnSuccessorBeforeDeletingOccurrence` below for why it
+    ///   sits above the pointer repair.
+    ///
+    ///   **The default is what keeps the bulk paths honest.** A list cascade, a privacy reset or a
+    ///   multi-row delete must mint nothing: `settleWithoutAdvancingSeries` exists because
+    ///   completing a list that way refilled it (T-213, T-214), and a delete that spawned would
+    ///   put fresh open work inside a list the user had just removed. Only the two single-task
+    ///   confirmations pass `.thisOccurrence`, and only when the user picked that button.
     ///
     /// - Parameter commitsImmediately: Whether this delete commits itself. `true` for every
     ///   ordinary surface — a task swiped away has no enclosing unit of work to ride, and a delete
@@ -774,6 +793,7 @@ extension CadenceTaskMutationSupport {
     static func deleteTasks(
         withIDs taskIDs: Set<UUID>,
         modelContext: ModelContext,
+        recurrenceScope: CadenceTaskRecurrenceDeleteScope = .wholeSeries,
         commitsImmediately: Bool = true,
         commit: (ModelContext) throws -> Void = { try $0.save() },
         willDelete: (Set<UUID>) -> Void = { _ in },
@@ -819,6 +839,38 @@ extension CadenceTaskMutationSupport {
         }
 
         let touchedBundles = uniqueBundles(from: tasks.compactMap(\.bundle))
+
+        // **"Delete this occurrence" is what keeps the repeat alive ([[T-6115]]).** Before this,
+        // `markDone` and `markCancelled` were the only two callers that ever minted a successor,
+        // so deleting the live occurrence of a repeating task ended the series in silence — the
+        // pointer repair below tidies the *predecessor*, and tidying a predecessor is not the same
+        // as having a next occurrence.
+        //
+        // **Above the repair, deliberately.** With the successor already inserted and the doomed
+        // task pointing at it, `survivingSuccessor` walks predecessor → doomed occurrence → fresh
+        // successor and re-points the predecessor at the successor instead of clearing it to nil.
+        // Below the repair it would leave a predecessor pointing at nothing and a successor
+        // nothing points at — the same chain, broken in a new place.
+        //
+        // **Here rather than beside the existing spawn call** because this is the one core every
+        // surface's delete funnels through, and placement is the only part of this that is a
+        // delete's business. The *decision* — whether this series may advance at all, and what the
+        // successor carries — stays in `CadenceTaskRecurrenceWorkflowSupport`, reached through
+        // `spawnSuccessorBeforeDeletingOccurrence`, so the delete path and the settle path cannot
+        // give different answers about an end condition.
+        //
+        // **The insert needs no undo of its own.** Unlike `TaskWorkflowService.commitSettle`,
+        // which spawns inside an *edit* and therefore has to hand the object to `commitInsert`,
+        // the commit below is `commitDelete`, whose refusal path is `modelContext.rollback()` —
+        // and a row inserted since the last save is one of the pending changes that discards.
+        // `commitsImmediately: false` lands in `commitCascade`, which rolls back on both of its
+        // refusal paths for the same reason. Pinned, not assumed:
+        // `arefusedOccurrenceDeleteLeavesNoSuccessorBehind`.
+        if recurrenceScope == .thisOccurrence {
+            for task in tasks {
+                CadenceTaskRecurrenceWorkflowSupport.spawnSuccessorBeforeDeletingOccurrence(task, in: modelContext)
+            }
+        }
 
         // Otherwise, if a deleted task is a mid-series recurring occurrence, whichever task
         // recorded it as its `recurrenceSpawnedTaskID` would keep believing the series has a live

@@ -10,10 +10,11 @@ extension ModelContext {
     @discardableResult
     func deleteTask(
         _ task: AppTask,
+        recurrenceScope: CadenceTaskRecurrenceDeleteScope = .wholeSeries,
         commit: (ModelContext) throws -> Void = { try $0.save() }
     ) -> Bool {
         let taskID = task.id
-        return deleteTasks(withIDs: [taskID], commit: commit)
+        return deleteTasks(withIDs: [taskID], recurrenceScope: recurrenceScope, commit: commit)
     }
 
     /// Deletes the given tasks and everything hanging off them. Returns `false` — having changed
@@ -25,6 +26,10 @@ extension ModelContext {
     /// implementations used to be independent, and the iOS one had drifted into losing pending
     /// notifications and relationship detachment. Add behaviour to the shared core, not here,
     /// unless it is genuinely AppKit-shaped.
+    ///
+    /// `recurrenceScope` is forwarded for the same reason everything else here is: the choice
+    /// belongs to the confirmation that asked the user, and this wrapper exists only to supply the
+    /// AppKit-only hooks ([[T-6115]]).
     ///
     /// `commitsImmediately` is forwarded rather than fixed here so the list cascades can defer the
     /// commit to the confirmation that owns it — see the shared core for why. `commit` is
@@ -62,6 +67,7 @@ extension ModelContext {
     @discardableResult
     func deleteTasks(
         withIDs taskIDs: Set<UUID>,
+        recurrenceScope: CadenceTaskRecurrenceDeleteScope = .wholeSeries,
         commitsImmediately: Bool = true,
         commit: (ModelContext) throws -> Void = { try $0.save() }
     ) -> Bool {
@@ -74,6 +80,7 @@ extension ModelContext {
         let deleted = CadenceTaskMutationSupport.deleteTasks(
             withIDs: taskIDs,
             modelContext: self,
+            recurrenceScope: recurrenceScope,
             commitsImmediately: commitsImmediately,
             commit: commit,
             willDelete: { ids in
