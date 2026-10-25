@@ -55,3 +55,69 @@ struct CadenceOverdueRailEmptyLineTests {
     }
 }
 #endif
+
+/// T-5013(b). **iOS Search draws an idle line instead of leaving the scope picker over blank
+/// space.**
+///
+/// `resultSection` draws nothing for an empty array and the "No results" panel is gated on
+/// `isSearching`, so narrowing to Notes / Lists / Events with nothing to suggest left the picker
+/// sitting on nothing. macOS's `GlobalSearchEmptyState` has had an idle state for exactly this.
+///
+/// This half was written on 2026-10-24, backed out because `iOSSearchView.swift` was fenced, and
+/// re-applied once the fence was withdrawn at `741a9366` -- the job it was held for never started.
+@Suite
+struct CadenceSearchIdleLineTests {
+    @Test func theIdleLineNamesTheNarrowedScope() {
+        #expect(CadenceEmptyStateCopy.searchIdleTitle(scopeNoun: "notes") == "Start typing to search notes")
+    }
+
+    /// On **All** there is no one kind of thing to name, and "search all" says less than "search".
+    @Test func theIdleLineNamesNoScopeOnAll() {
+        #expect(CadenceEmptyStateCopy.searchIdleTitle(scopeNoun: nil) == "Start typing to search")
+    }
+
+    /// `Cadence/iOS/` sits inside `#if os(iOS)` and is invisible to this macOS-built target, so the
+    /// phone's half is pinned by reading its source -- the same way `iOSCalendarMetricsTests` pins
+    /// the chips it cannot construct.
+    @Test func everyNarrowedScopeHasANounAndAllHasNone() throws {
+        let source = try CadenceSourceScan.sourceFile("Cadence/iOS/iOSSearchSupportViews.swift")
+        let body = try #require(CadenceSourceScan.declarationBody("var idleNoun: String?", in: source))
+
+        #expect(body.contains("case .all: return nil"))
+        for scope in ["tasks", "lists", "notes", "events", "progress"] {
+            #expect(body.contains("case .\(scope): return \""), "\(scope)")
+        }
+    }
+
+    /// **More** is a chip label, not a noun: "start typing to search more" is not a sentence, so
+    /// `.progress` must not answer its own title.
+    @Test func theMoreChipDoesNotNameItselfInTheSentence() throws {
+        let source = try CadenceSourceScan.sourceFile("Cadence/iOS/iOSSearchSupportViews.swift")
+        let body = try #require(CadenceSourceScan.declarationBody("var idleNoun: String?", in: source))
+
+        #expect(body.contains("case .progress: return \"pages\""))
+        #expect(!body.lowercased().contains("return \"more\""))
+    }
+
+    /// The idle branch must be gated on `!isSearching`, or it would draw under a query that simply
+    /// matched nothing -- on top of the "No results" panel that already answers that. It must also
+    /// honour the calendar-access card for [[T-6113]]'s reason.
+    @Test func theIdleBranchIsGatedOnNotSearchingAndDefersToTheAccessCard() throws {
+        let source = try CadenceSourceScan.sourceFile("Cadence/iOS/iOSSearchView.swift")
+
+        #expect(source.contains("if !isSearching && visibleResultsAreEmpty && !calendarAccessCardReplacesNoResults {"))
+        #expect(source.contains("CadenceEmptyStateCopy.searchIdleTitle(scopeNoun: scope.idleNoun)"))
+        // The one-line component at the touch tier, not the 220pt panel: nothing has been searched
+        // yet, so the panel's "try a tag or section name" answers a question nobody asked.
+        #expect(source.contains("surface: .touch"))
+    }
+
+    /// Both branches exist and are mutually exclusive: one `isSearching` panel, one `!isSearching`
+    /// line. A tree with only one of them is the state this entry closed or the state before it.
+    @Test func theSearchingAndIdleBranchesAreBothPresent() throws {
+        let source = try CadenceSourceScan.sourceFile("Cadence/iOS/iOSSearchView.swift")
+
+        #expect(source.contains("if isSearching && visibleResultsAreEmpty && !calendarAccessCardReplacesNoResults {"))
+        #expect(source.contains("if !isSearching && visibleResultsAreEmpty && !calendarAccessCardReplacesNoResults {"))
+    }
+}

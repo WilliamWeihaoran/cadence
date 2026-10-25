@@ -24,6 +24,22 @@ enum iOSSearchScope: String, CaseIterable, Identifiable {
         }
     }
 
+    /// T-5013(b). What the idle line calls this scope, or `nil` on **All**, where there is no one
+    /// kind of thing to name and "search all" would say less than "search".
+    ///
+    /// Not `title.lowercased()`: **More** is a chip label, and "start typing to search more" is not
+    /// a sentence. It gates the Pages section — the screens themselves — so that is what it says.
+    var idleNoun: String? {
+        switch self {
+        case .all: return nil
+        case .tasks: return "tasks"
+        case .lists: return "lists and areas"
+        case .notes: return "notes"
+        case .events: return "calendar events"
+        case .progress: return "pages"
+        }
+    }
+
     var icon: String {
         switch self {
         case .all: return "square.grid.2x2"

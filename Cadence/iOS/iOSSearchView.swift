@@ -349,6 +349,28 @@ struct iOSSearchView: View {
                 .listRowBackground(Color.clear)
                 .listRowSeparator(.hidden)
             }
+
+            // T-5013(b). The **idle** half, which had nothing at all. The panel above is gated on
+            // `isSearching`, and `resultSection` draws nothing for an empty array, so narrowing to
+            // Notes / Lists / Events with nothing to suggest -- a new store, or no events in the
+            // window -- left the scope picker sitting over blank space.
+            //
+            // A line, not the panel: the panel's 220pt and its "try a tag or section name" advice
+            // are answers to a *failed* search, and nothing has been searched yet. The Mac answers
+            // the same idle state in `GlobalSearchEmptyState`, which has always had one.
+            //
+            // `calendarAccessCardReplacesNoResults` is honoured here for the same reason the panel
+            // honours it ([[T-6113]]): on the Events scope with access off, the access card is the
+            // whole answer and a second sentence under it would only repeat.
+            if !isSearching && visibleResultsAreEmpty && !calendarAccessCardReplacesNoResults {
+                CadenceInlineEmpty(
+                    text: CadenceEmptyStateCopy.searchIdleTitle(scopeNoun: scope.idleNoun),
+                    surface: .touch
+                )
+                .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
+            }
         }
         .navigationTitle("Search")
         .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: "Tasks, lists, notes, events")
