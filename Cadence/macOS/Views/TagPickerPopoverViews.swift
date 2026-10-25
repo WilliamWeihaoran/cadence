@@ -21,6 +21,9 @@ struct TagPickerPopover: View {
     /// edit sheet, and `editFailureNotice` is only ever rendered *inside* `TagEditSheet` — which is
     /// not on screen when this runs. A refused restore needs its sentence where the press was.
     @State private var restoreFailureNotice: String?
+    /// T-6261: the notes whose prose mentions the tag being renamed, counted when Save is pressed
+    /// and held while the user answers. Non-`nil` only when the count is non-zero.
+    @State private var inlineMentionPrompt: CadenceTagRenameInlineMentions.Prompt?
     @FocusState private var isSearchFocused: Bool
 
     private var activeTags: [Tag] {
@@ -149,9 +152,15 @@ struct TagPickerPopover: View {
                     editFailureNotice = nil
                     editingTag = nil
                 },
-                onSave: { saveEdits(to: tag) },
+                onSave: { requestSave(for: tag) },
                 onArchive: { archive(tag) }
             )
+            // T-6261: presented over the sheet rather than over the popover behind it, because
+            // the sheet is what is on screen when Save is pressed. Same modifier as both
+            // Settings editors — one question, one wording, three editors.
+            .cadenceTagRenameInlineConfirmation($inlineMentionPrompt) { rewriteInlineMentions in
+                saveEdits(to: tag, rewritingInlineMentions: rewriteInlineMentions)
+            }
         }
         .onChange(of: query) {
             // The notice names the tag the old query matched. Once the query moves on it is about
@@ -262,6 +271,20 @@ struct TagPickerPopover: View {
         editingTag = tag
     }
 
+    /// **The sheet's Save button. T-6261: it asks before it edits the user's own sentences.**
+    ///
+    /// Counted from the notes as they stand, before `rename` changes the text it is counted from.
+    /// Nothing mentioned in prose means no dialog and a straight save.
+    private func requestSave(for tag: Tag) {
+        let name = TagSupport.displayName(for: editName)
+        guard !name.isEmpty else { return }
+        guard let prompt = CadenceTagRenameInlineMentions.prompt(for: tag, renamedTo: name) else {
+            saveEdits(to: tag, rewritingInlineMentions: false)
+            return
+        }
+        inlineMentionPrompt = prompt
+    }
+
     /// T-497, the report half of the `try? save()` rule. `editingTag = nil` closes the sheet, and
     /// it closed whether or not the store took the rename — the chip behind the popover then read
     /// the new name from the live object while the store held the old one.
@@ -269,7 +292,7 @@ struct TagPickerPopover: View {
     /// The undo restores the five fields rather than rolling the context back: this is the app's
     /// single `ModelContext` and the popover is opened from a task inspector that routinely has
     /// unrelated edits pending behind it. See `CadencePendingChangePersistence.commitEdit`.
-    private func saveEdits(to tag: Tag) {
+    private func saveEdits(to tag: Tag, rewritingInlineMentions: Bool) {
         let name = TagSupport.displayName(for: editName)
         guard !name.isEmpty else { return }
         let previousDesc = tag.desc
@@ -277,7 +300,8 @@ struct TagPickerPopover: View {
         let previousUpdatedAt = tag.updatedAt
 
         // T-6251: the rename carries the notes' frontmatter with it, under this same undo.
-        let undoRename = TagSupport.rename(tag, to: name)
+        // T-6261: and their inline `#mentions` too, when the user said so above.
+        let undoRename = TagSupport.rename(tag, to: name, rewritingInlineMentions: rewritingInlineMentions)
         tag.desc = editDescription.trimmingCharacters(in: .whitespacesAndNewlines)
         tag.colorHex = TagSupport.normalizedColorHex(editColorHex)
         tag.updatedAt = Date()

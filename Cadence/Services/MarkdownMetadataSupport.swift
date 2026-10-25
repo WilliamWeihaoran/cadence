@@ -292,12 +292,34 @@ nonisolated enum MarkdownMetadataParser {
 
     nonisolated private static func inlineTags(in content: String, excluding excludedRange: NSRange?) -> [String] {
         var tags: [String] = []
+        enumerateInlineTags(in: content, excluding: excludedRange) { name, _ in tags.append(name) }
+        return tags
+    }
+
+    /// **The one scan for inline `#tags`, walked by both the reader above and the rewriter below.**
+    ///
+    /// `body` is handed the tag's name and the range of the whole `#name` match **in `content`'s
+    /// own coordinates**, so a caller can replace exactly what this scan counted. That is the
+    /// point of having one function: an inline rename that re-derived "which `#work` is a tag"
+    /// from a second, slightly different scan would edit a `#work` inside a code fence or a link
+    /// URL that the tag sweep never read, and the user's prose is not the place to find that out
+    /// ([[T-6261]]).
+    ///
+    /// `maskingNonProse` is length-preserving — it overwrites with spaces rather than deleting —
+    /// which is what lets a range found in the masked line address the same characters in the
+    /// original one.
+    nonisolated private static func enumerateInlineTags(
+        in content: String,
+        excluding excludedRange: NSRange?,
+        body: (String, NSRange) -> Void
+    ) {
         var location = 0
         var inCodeFence = false
 
         for line in content.components(separatedBy: "\n") {
+            let lineStart = location
             defer { location += (line as NSString).length + 1 }
-            let lineRange = NSRange(location: location, length: (line as NSString).length)
+            let lineRange = NSRange(location: lineStart, length: (line as NSString).length)
             if let excludedRange, NSIntersectionRange(lineRange, excludedRange).length > 0 {
                 continue
             }
@@ -315,11 +337,40 @@ nonisolated enum MarkdownMetadataParser {
             let nsLine = scannable as NSString
             inlineTagRegex?.enumerateMatches(in: scannable, range: NSRange(location: 0, length: nsLine.length)) { match, _, _ in
                 guard let match, match.numberOfRanges > 1 else { return }
-                tags.append(nsLine.substring(with: match.range(at: 1)))
+                let whole = match.range
+                body(
+                    nsLine.substring(with: match.range(at: 1)),
+                    NSRange(location: lineStart + whole.location, length: whole.length)
+                )
             }
         }
+    }
 
-        return tags
+    /// Rewrites the inline `#tags` this parser reads, and nothing else in the note.
+    ///
+    /// `rewrite` is asked for each inline tag name the scan above finds and answers the name it
+    /// should carry instead, or `nil` to leave that one alone. Everything the scan skips —
+    /// frontmatter, headings, fenced code, link destinations, inline code, autolinks — is skipped
+    /// here too, because it is the same scan.
+    ///
+    /// **This edits text the user wrote**, which is why `TagSupport.rename` only reaches it behind
+    /// an explicit confirmation ([[T-6261]]); nothing here decides that, it only performs it.
+    nonisolated static func content(_ content: String, rewritingInlineTags rewrite: (String) -> String?) -> String {
+        let frontmatter = parseFrontmatter(in: content)
+        var edits: [(range: NSRange, replacement: String)] = []
+        enumerateInlineTags(in: content, excluding: frontmatter.range) { name, range in
+            guard let replacement = rewrite(name) else { return }
+            edits.append((range, "#" + replacement))
+        }
+        guard !edits.isEmpty else { return content }
+
+        // Back to front: an earlier replacement of a different length would move every range
+        // after it.
+        let updated = NSMutableString(string: content)
+        for edit in edits.reversed() {
+            updated.replaceCharacters(in: edit.range, with: edit.replacement)
+        }
+        return updated as String
     }
 
     /// **The inline-tag pattern, compiled once per process rather than once per note.**
