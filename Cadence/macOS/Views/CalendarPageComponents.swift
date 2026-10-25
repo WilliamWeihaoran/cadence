@@ -79,6 +79,9 @@ struct MonthGridView: View {
     private let cal = Calendar.current
     @State private var didInitialPosition = false
     @State private var isProgrammaticScroll = false
+    /// [[T-6211]]. The grid's one notice slot, the Calendar Board's `dropFailureNotice` in the same
+    /// place: above the content rather than inside a cell, which is too small to hold a sentence.
+    @State private var dropFailureNotice: String?
 
     /// The single month the whole grid tints against. See `displayedMonth`.
     private var tintMonth: Date {
@@ -98,6 +101,12 @@ struct MonthGridView: View {
             MonthGridWeekdayHeader(calendar: cal)
 
             Divider().background(Theme.borderSubtle.opacity(CalendarVisualStyle.dividerOpacity))
+
+            if let dropFailureNotice {
+                CadenceInlineFailureNotice(text: dropFailureNotice)
+                    .padding(.horizontal, CadenceDesktopMetrics.pageHorizontalPadding)
+                    .padding(.vertical, 8)
+            }
 
             // The grid is sized from the space actually left for it, so a month block is one
             // screen tall. That is what makes an empty month stop wasting the window — and it
@@ -137,7 +146,8 @@ struct MonthGridView: View {
                             rowHeight: CalendarMonthGridMetrics.rowHeight(
                                 weeksInMonth: weeksInMonth(month),
                                 viewportHeight: viewportHeight
-                            )
+                            ),
+                            dropFailureNotice: $dropFailureNotice
                         )
                         .id(CalendarMonthGridIdentifiers.month(idx))
                     }
@@ -227,6 +237,8 @@ struct MonthWeeksView: View {
     let allTasks: [AppTask]
     let eventCache: CalendarEventDayCache
     let rowHeight: CGFloat
+    /// [[T-6211]]. `MonthGridView`'s notice slot, passed through to every cell's drop.
+    @Binding var dropFailureNotice: String?
 
     private let cal = Calendar.current
 
@@ -245,7 +257,8 @@ struct MonthWeeksView: View {
                                 displayMonth: displayedMonth,
                                 blockMonth: month,
                                 eventCache: eventCache,
-                                rowHeight: rowHeight
+                                rowHeight: rowHeight,
+                                dropFailureNotice: $dropFailureNotice
                             )
                             .id(CalendarMonthGridIdentifiers.day(monthIndex: monthIndex, dateKey: key))
                         } else {

@@ -111,6 +111,46 @@ struct CadenceCalendarMonthDayDropTests {
         #expect(outcome == .refused)
         #expect(fixture.task.scheduledDate == "2026-06-01", "undone, not left on the refused day")
     }
+
+    /// [[T-6211]]. The refusal above sprang the card back with no sentence; the grid now answers it
+    /// with the board's. Each outcome against the others, so a mapping that always (or never)
+    /// spoke fails here.
+    @Test func aRefusedDropIsExplainedAndAnyOtherOutcomeClearsTheNotice() throws {
+        let fixture = try fixture()
+        let refused = CalendarMonthDayDropSupport.drop(
+            [fixture.task.id.uuidString],
+            on: "2026-07-04",
+            in: [fixture.task],
+            modelContext: fixture.context,
+            commit: { _ in throw Refused() }
+        )
+        #expect(
+            CalendarMonthDayDropSupport.failureNotice(after: refused)
+                == CadencePendingChangePersistence.editFailureNotice
+        )
+        #expect(CalendarMonthDayDropSupport.failureNotice(after: .applied) == nil)
+        #expect(CalendarMonthDayDropSupport.failureNotice(after: .resolvedNothing) == nil)
+    }
+
+    /// [[T-6211]], the wiring: the cell writes the mapped notice into the grid's slot, and the grid
+    /// draws it with the board's component, so a refused month drop is no longer silent.
+    @Test func theMonthGridDrawsTheNoticeItsCellsReport() throws {
+        let read = CadenceSourceScan.strippedSourceReader()
+        let month = try read("Cadence/macOS/Views/CalendarPageMonthSupportViews.swift")
+        let cell = try #require(CadenceSourceScan.declarationBody("struct MonthDayCell", in: month))
+        #expect(cell.contains("@Binding var dropFailureNotice: String?"))
+        let drop = try #require(CadenceSourceScan.declarationBody("private func handleTaskDrop(", in: cell))
+        #expect(drop.contains("dropFailureNotice = CalendarMonthDayDropSupport.failureNotice(after: outcome)"))
+        #expect(drop.contains("return outcome == .applied"))
+
+        let components = try read("Cadence/macOS/Views/CalendarPageComponents.swift")
+        let grid = try #require(CadenceSourceScan.declarationBody("struct MonthGridView", in: components))
+        #expect(grid.contains("@State private var dropFailureNotice: String?"))
+        #expect(grid.contains("CadenceInlineFailureNotice(text: dropFailureNotice)"))
+        #expect(grid.contains("dropFailureNotice: $dropFailureNotice"))
+        let weeks = try #require(CadenceSourceScan.declarationBody("struct MonthWeeksView", in: components))
+        #expect(weeks.contains("dropFailureNotice: $dropFailureNotice"))
+    }
 }
 
 /// T-5351, the click half. A day cell and its "+N more" row open that day, and the Mac has no Day

@@ -352,6 +352,9 @@ struct MonthDayCell: View {
     /// Height the week row was given. Every cell in a row is pinned to it, so the offset table
     /// the header is derived from stays an exact model of the layout.
     var rowHeight: CGFloat = CalendarMonthGridMetrics.cellHeight
+    /// [[T-6211]]. The grid's one notice slot, owned by `MonthGridView` — the board's
+    /// `dropFailureNotice`, so a refused drop says why instead of only springing back.
+    @Binding var dropFailureNotice: String?
 
     @Environment(CalendarManager.self) private var calendarManager
     /// T-5351. What "open this day" is on the Mac. There is **no Day view mode** here —
@@ -511,12 +514,14 @@ struct MonthDayCell: View {
     }
 
     private func handleTaskDrop(_ items: [String]) -> Bool {
-        CalendarMonthDayDropSupport.drop(
+        let outcome = CalendarMonthDayDropSupport.drop(
             items,
             on: dateKey,
             in: allTasks,
             modelContext: modelContext
-        ) == .applied
+        )
+        dropFailureNotice = CalendarMonthDayDropSupport.failureNotice(after: outcome)
+        return outcome == .applied
     }
 }
 
@@ -538,8 +543,8 @@ struct MonthDayCell: View {
 ///
 /// A refusal answers `.refused`, which the cell reports as `false`, so the card springs back to
 /// where it was picked up instead of being drawn somewhere the store never accepted ([[T-566]],
-/// [[T-1952]]). The month grid has no notice slot to say *why* — the board has one and this does
-/// not; that gap is [[T-6211]].
+/// [[T-1952]]). [[T-6211]]: and it says why, in the grid's notice slot above the weeks, with the
+/// board's own sentence and the board's own mapping — see `failureNotice(after:)`.
 @MainActor
 enum CalendarMonthDayDropSupport {
     static func drop(
@@ -560,6 +565,14 @@ enum CalendarMonthDayDropSupport {
             reconciler: reconciler,
             commit: commit
         )
+    }
+
+    /// [[T-6211]]. The Calendar Board's mapping (`handleDayColumnDrop`), so the grid and the board
+    /// answer a refusal with one sentence: `.refused` is "Nothing was changed", and any other
+    /// outcome clears a sentence an earlier drop left standing. `.resolvedNothing` stays silent,
+    /// as it does on the board ([[T-1952]]).
+    static func failureNotice(after outcome: TasksPanelDropOutcome) -> String? {
+        outcome == .refused ? CadencePendingChangePersistence.editFailureNotice : nil
     }
 }
 
