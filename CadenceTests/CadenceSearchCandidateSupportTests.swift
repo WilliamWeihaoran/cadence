@@ -303,6 +303,21 @@ struct CadenceSearchCandidateSupportTests {
         #expect(archivedHits.map(\.id) == ["area-\(fixture.archivedArea.id.uuidString)"])
     }
 
+    /// [[T-6271]]: the cancelled alias is the "completed done" case's sibling. The UI says
+    /// "Canceled" (T-5003), but a user who types the British *cancelled* must still reach the list,
+    /// and `noDisplayLiteralKeepsTheBritishSpellingOfCancelled` deliberately cannot see this alias.
+    @Test func aCancelledListAnswersToBothSpellingsOfCancelled() throws {
+        let fixture = try makeListFixture()
+
+        #expect(CadenceListSearchSupport.matchScore(query: "cancelled", project: fixture.cancelledProject) != nil)
+        #expect(CadenceListSearchSupport.matchScore(query: "canceled", project: fixture.cancelledProject) != nil)
+        // Non-vacuity: the alias is the cancelled project's, not a word every list answers to.
+        #expect(CadenceListSearchSupport.matchScore(query: "cancelled", project: fixture.completedProject) == nil)
+
+        let hits = GlobalSearchIndexSupport.projectResults(projects: fixture.projects, query: "cancelled")
+        #expect(hits.map(\.id) == ["project-\(fixture.cancelledProject.id.uuidString)"])
+    }
+
     @Test func aCancelledProjectIsLabelledCancelledRatherThanActive() throws {
         let fixture = try makeListFixture()
 
