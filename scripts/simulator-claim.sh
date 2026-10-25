@@ -731,7 +731,7 @@ FAKESIMCTL
     CLAIMS="$CADENCE_SIM_CLAIMS_DIR"; QUEUE="${CLAIMS}.queue"
     TICKET_STALE=$CADENCE_SIM_CLAIM_TICKET_STALE; POLL=$CADENCE_SIM_CLAIM_POLL
     print -r -- "selftest: target $SELF"
-    print -r -- "selftest: claims $CADENCE_SIM_CLAIMS_DIR, fake device $FAKE_UDID"
+    print -r -- "selftest: claims under $root (one claims root per trial), fake device $FAKE_UDID"
     fails=0
     kids=()
     # Kill only what this selftest started, by pid -- not a name-pattern kill,
@@ -743,6 +743,26 @@ FAKESIMCTL
       kids=()
       wait 2>/dev/null
     }
+    # T-3287: each trial below runs CONCURRENTLY, in its own subshell, against its own claims root
+    # and queue. They were always independent -- every one of them began by emptying the shared
+    # root -- and four of the five are sleep-bound, so one after another they cost their sum
+    # (17 s) and side by side the longest (~5.5 s). `trial_env` repoints both the exported
+    # CADENCE_SIM_CLAIMS_DIR (read by every `$SELF` subprocess) and this process's own $CLAIMS and
+    # $QUEUE (read in-process by `queue_names` and `claim_field`), for the T-1343 reason recorded
+    # above: an assertion about a directory the fixture never writes to passes by reading
+    # somebody else's.
+    trial_env() {   # $1 = the trial's own root directory
+      mkdir -p "$1" || return 1
+      export CADENCE_SIM_CLAIMS_DIR="$1/CadenceSimClaims"
+      CLAIMS="$CADENCE_SIM_CLAIMS_DIR"; QUEUE="${CLAIMS}.queue"
+      mkdir -p "$CLAIMS"
+    }
+    waiter() {
+      ( "$SELF" claim "$1" 90 >/dev/null 2>&1 \
+        && print -r -- "$1" >> "$order" \
+        && "$SELF" release "$1" >/dev/null 2>&1; : ) &
+      kids+=($!)
+    }
 
     # 1. ORDERING, posed as the failure T-749 actually measured: with exactly one
     #    booted (fake) device, w1..w3 queue behind a held claim and w4 arrives at
@@ -750,40 +770,51 @@ FAKESIMCTL
     #    the just-freed claim while w1..w3 are still inside their poll sleep -- the
     #    newest arrival served first, deterministically. With the queue, w4 files
     #    behind three older tickets and goes last.
-    waiter() {
-      ( "$SELF" claim "$1" 90 >/dev/null 2>&1 \
-        && print -r -- "$1" >> "$order" \
-        && "$SELF" release "$1" >/dev/null 2>&1; : ) &
-      kids+=($!)
+    #    Two booted fakes are allocatable (T-1881), so `holder` alone left the second one free:
+    #    every waiter was served at once, no queue ever formed, and this PASSED with the FIFO
+    #    head check replaced by `if true` (measured on a scratch copy, T-3287). It is held too,
+    #    as mode 3 does, so w4 has exactly one device to race for.
+    trial_ordering() {
+      "$SELF" claim holder 30 >/dev/null || { print -r -- "selftest: could not claim the fake device"; exit 2; }
+      "$SELF" claim holderb 30 "$FAKE_SECOND_UDID" >/dev/null || { print -r -- "selftest: could not hold the second fake device (ordering)"; exit 2; }
+      order="$troot/order"; : > "$order"
+      for w in w1 w2 w3; do waiter "$w"; sleep 1.2; done
+      "$SELF" release holder >/dev/null
+      waiter w4
+      for _ in {1..90}; do (( $(wc -l < "$order") >= 4 )) && break; sleep 1; done
+      got="$(tr '\n' ' ' < "$order")"
+      if [[ "${got% }" == "w1 w2 w3 w4" ]]; then print -r -- "PASS ordering: $got"
+      else print -r -- "FAIL ordering: got '${got% }', wanted 'w1 w2 w3 w4'"; (( fails++ )); fi
+      "$SELF" release holderb >/dev/null
     }
-    "$SELF" claim holder 30 >/dev/null || { print -r -- "selftest: could not claim the fake device"; exit 2; }
-    order="$root/order"; : > "$order"
-    for w in w1 w2 w3; do waiter "$w"; sleep 1.2; done
-    "$SELF" release holder >/dev/null
-    waiter w4
-    for _ in {1..90}; do (( $(wc -l < "$order") >= 4 )) && break; sleep 1; done
-    got="$(tr '\n' ' ' < "$order")"
-    if [[ "${got% }" == "w1 w2 w3 w4" ]]; then print -r -- "PASS ordering: $got"
-    else print -r -- "FAIL ordering: got '${got% }', wanted 'w1 w2 w3 w4'"; (( fails++ )); fi
-    cleanup_kids; rm -rf "$CADENCE_SIM_CLAIMS_DIR" "${CADENCE_SIM_CLAIMS_DIR}.queue"; mkdir -p "$CADENCE_SIM_CLAIMS_DIR"
 
     # 2. A KILLED WAITER DOES NOT BLOCK THE QUEUE. SIGKILL, so no trap can help:
     #    the ticket has to be pruned by the next waiter that looks -- this is the
     #    prune_queue liveness check, exercised for real rather than read off it.
-    "$SELF" claim holder2 30 >/dev/null || { print -r -- "selftest: could not reclaim the fake device"; exit 2; }
-    "$SELF" claim zombie 90 >/dev/null 2>&1 & zpid=$!   # the script itself, so SIGKILL lands on the waiter
-    sleep 2
-    survivor="$root/survivor"; : > "$survivor"
-    ( "$SELF" claim alive 60 >/dev/null 2>&1 && print -r -- ok >> "$survivor" \
-      && "$SELF" release alive >/dev/null 2>&1; : ) &
-    kids+=($!)
-    sleep 2
-    kill -9 $zpid 2>/dev/null; wait $zpid 2>/dev/null
-    "$SELF" release holder2 >/dev/null
-    for _ in {1..40}; do [[ -s "$survivor" ]] && break; sleep 1; done
-    if [[ -s "$survivor" ]]; then print -r -- "PASS killed-waiter: the waiter behind a SIGKILLed one still got the device"
-    else print -r -- "FAIL killed-waiter: queue stalled behind the dead ticket"; (( fails++ )); fi
-    cleanup_kids; rm -rf "$CADENCE_SIM_CLAIMS_DIR" "${CADENCE_SIM_CLAIMS_DIR}.queue"; mkdir -p "$CADENCE_SIM_CLAIMS_DIR"
+    #    TICKET_STALE is raised for this trial alone (T-3287): at the run's 10 s, an untouched
+    #    ticket ages out inside the 40 s wait below, so with the liveness prune deleted outright
+    #    this property still passed, on staleness. Measured on a scratch copy: `if (( wrc == 1 ))`
+    #    -> `if false` plus the age check skipped was PASS on the old serial selftest, whose zombie
+    #    never even queued because the second fake device was free. Both are closed here: the
+    #    second device is held, and only the liveness prune can clear the dead ticket in time.
+    trial_killedwaiter() {
+      export CADENCE_SIM_CLAIM_TICKET_STALE=300; TICKET_STALE=300
+      "$SELF" claim holder2 30 >/dev/null || { print -r -- "selftest: could not reclaim the fake device"; exit 2; }
+      "$SELF" claim holder2b 30 "$FAKE_SECOND_UDID" >/dev/null || { print -r -- "selftest: could not hold the second fake device (killed-waiter)"; exit 2; }
+      "$SELF" claim zombie 90 >/dev/null 2>&1 & zpid=$!   # the script itself, so SIGKILL lands on the waiter
+      sleep 2
+      survivor="$troot/survivor"; : > "$survivor"
+      ( "$SELF" claim alive 60 >/dev/null 2>&1 && print -r -- ok >> "$survivor" \
+        && "$SELF" release alive >/dev/null 2>&1; : ) &
+      kids+=($!)
+      sleep 2
+      kill -9 $zpid 2>/dev/null; wait $zpid 2>/dev/null
+      "$SELF" release holder2 >/dev/null
+      for _ in {1..40}; do [[ -s "$survivor" ]] && break; sleep 1; done
+      if [[ -s "$survivor" ]]; then print -r -- "PASS killed-waiter: the waiter behind a SIGKILLed one still got the device"
+      else print -r -- "FAIL killed-waiter: queue stalled behind the dead ticket"; (( fails++ )); fi
+      "$SELF" release holder2b >/dev/null
+    }
 
     # 2b. THE DENY LIST IS ENFORCED, NOT JUST DOCUMENTED (T-1780). The header has named the
     #     owner's device since this file existed and the allocator never read it: `booted_udids`
@@ -791,40 +822,40 @@ FAKESIMCTL
     #     the prose forbade. Two polarities, because either alone is satisfiable by a broken
     #     allocator -- one that returns nothing passes the refusal half, and one that ignores the
     #     list passes the still-allocates half.
-    "$SELF" claim selftest-deny 5 "$FAKE_DENIED_UDID" >/dev/null 2>&1
-    deny_rc=$?
-    alloc_udid=$("$SELF" claim selftest-allow 5 2>/dev/null | sed -n 's/^UDID=//p')
-    "$SELF" release selftest-allow >/dev/null 2>&1
-    if (( deny_rc == 2 )) && [[ "$alloc_udid" == "$FAKE_UDID" ]]; then
-      # T-1881: and the selector must actually narrow. FAKE_SECOND is allocatable and is NOT
-      # what an unqualified claim returns, so "asked for it and got it" cannot be satisfied by
-      # taking the first free device.
-      sel_udid=$("$SELF" claim selftest-select 5 "$FAKE_SECOND_UDID" 2>/dev/null | sed -n 's/^UDID=//p')
-      "$SELF" release selftest-select >/dev/null 2>&1
-      "$SELF" claim selftest-absent 5 "00000000-0000-0000-0000-000000000000" >/dev/null 2>&1
-      absent_rc=$?
-      if [[ "$sel_udid" == "$FAKE_SECOND_UDID" ]] && (( absent_rc == 2 )); then
-        print -r -- "PASS deny-list-enforced: the denied device leads the booted list and the allocator still answered $FAKE_UDID; asking for it by name exits 2; asking for $FAKE_SECOND_UDID returns it and not the first free device; a device that is not booted exits 2"
+    trial_denylist() {
+      "$SELF" claim selftest-deny 5 "$FAKE_DENIED_UDID" >/dev/null 2>&1
+      deny_rc=$?
+      alloc_udid=$("$SELF" claim selftest-allow 5 2>/dev/null | sed -n 's/^UDID=//p')
+      "$SELF" release selftest-allow >/dev/null 2>&1
+      if (( deny_rc == 2 )) && [[ "$alloc_udid" == "$FAKE_UDID" ]]; then
+        # T-1881: and the selector must actually narrow. FAKE_SECOND is allocatable and is NOT
+        # what an unqualified claim returns, so "asked for it and got it" cannot be satisfied by
+        # taking the first free device.
+        sel_udid=$("$SELF" claim selftest-select 5 "$FAKE_SECOND_UDID" 2>/dev/null | sed -n 's/^UDID=//p')
+        "$SELF" release selftest-select >/dev/null 2>&1
+        "$SELF" claim selftest-absent 5 "00000000-0000-0000-0000-000000000000" >/dev/null 2>&1
+        absent_rc=$?
+        if [[ "$sel_udid" == "$FAKE_SECOND_UDID" ]] && (( absent_rc == 2 )); then
+          print -r -- "PASS deny-list-enforced: the denied device leads the booted list and the allocator still answered $FAKE_UDID; asking for it by name exits 2; asking for $FAKE_SECOND_UDID returns it and not the first free device; a device that is not booted exits 2"
+        else
+          print -r -- "FAIL deny-list-enforced: selector returned '${sel_udid:-<nothing>}' (wanted $FAKE_SECOND_UDID, NOT $FAKE_UDID); not-booted rc=$absent_rc (wanted 2)"; (( fails++ )); fi
       else
-        print -r -- "FAIL deny-list-enforced: selector returned '${sel_udid:-<nothing>}' (wanted $FAKE_SECOND_UDID, NOT $FAKE_UDID); not-booted rc=$absent_rc (wanted 2)"; (( fails++ )); fi
-    elif false; then :
-    else
-      print -r -- "FAIL deny-list-enforced: explicit request rc=$deny_rc (wanted 2); unqualified claim answered '${alloc_udid:-<nothing>}' (wanted $FAKE_UDID, NOT $FAKE_DENIED_UDID)"; (( fails++ ))
-    fi
-    rm -rf "$CADENCE_SIM_CLAIMS_DIR" "${CADENCE_SIM_CLAIMS_DIR}.queue"; mkdir -p "$CADENCE_SIM_CLAIMS_DIR"
+        print -r -- "FAIL deny-list-enforced: explicit request rc=$deny_rc (wanted 2); unqualified claim answered '${alloc_udid:-<nothing>}' (wanted $FAKE_UDID, NOT $FAKE_DENIED_UDID)"; (( fails++ ))
+      fi
 
-    # 2c. `boot` NEVER PICKS A DENIED DEVICE (T-3151). The denied fake is a stock-named
-    #     iPhone listed FIRST, which is what the owner's device looks like to the name
-    #     filter; the old picker returned it. In-process, with SIMCTL repointed inside
-    #     the substitution only -- this process's SIMCTL still names the real one, and its
-    #     deny list was built before CADENCE_SIM_DENY_EXTRA was exported, so append it there.
-    bt_stock=$(SIMCTL="/bin/zsh $root/fake-simctl"; CADENCE_SIM_DENY_UDIDS+=($FAKE_DENIED_UDID); boot_target)
-    bt_standing=$(SIMCTL="/bin/zsh $root/fake-simctl"; CADENCE_SIM_DENY_UDIDS+=($FAKE_DENIED_UDID); SELFTEST_STANDING=1; export SELFTEST_STANDING; boot_target)
-    if [[ "$bt_stock" == "$FAKE_SECOND_UDID" && "$bt_standing" == CAD0F62C-5A83-4FE5-BEBB-5F567FD456B0 ]]; then
-      print -r -- "PASS boot-target-denied: the denied device leads the available list and boot picked $bt_stock; with the standing iPhone present it picked $bt_standing"
-    else
-      print -r -- "FAIL boot-target-denied: stock pick '${bt_stock:-<nothing>}' (wanted $FAKE_SECOND_UDID, NOT $FAKE_DENIED_UDID); standing pick '${bt_standing:-<nothing>}' (wanted CAD0F62C-5A83-4FE5-BEBB-5F567FD456B0)"; (( fails++ ))
-    fi
+      # 2c. `boot` NEVER PICKS A DENIED DEVICE (T-3151). The denied fake is a stock-named
+      #     iPhone listed FIRST, which is what the owner's device looks like to the name
+      #     filter; the old picker returned it. In-process, with SIMCTL repointed inside
+      #     the substitution only -- this process's SIMCTL still names the real one, and its
+      #     deny list was built before CADENCE_SIM_DENY_EXTRA was exported, so append it there.
+      bt_stock=$(SIMCTL="/bin/zsh $root/fake-simctl"; CADENCE_SIM_DENY_UDIDS+=($FAKE_DENIED_UDID); boot_target)
+      bt_standing=$(SIMCTL="/bin/zsh $root/fake-simctl"; CADENCE_SIM_DENY_UDIDS+=($FAKE_DENIED_UDID); SELFTEST_STANDING=1; export SELFTEST_STANDING; boot_target)
+      if [[ "$bt_stock" == "$FAKE_SECOND_UDID" && "$bt_standing" == CAD0F62C-5A83-4FE5-BEBB-5F567FD456B0 ]]; then
+        print -r -- "PASS boot-target-denied: the denied device leads the available list and boot picked $bt_stock; with the standing iPhone present it picked $bt_standing"
+      else
+        print -r -- "FAIL boot-target-denied: stock pick '${bt_stock:-<nothing>}' (wanted $FAKE_SECOND_UDID, NOT $FAKE_DENIED_UDID); standing pick '${bt_standing:-<nothing>}' (wanted CAD0F62C-5A83-4FE5-BEBB-5F567FD456B0)"; (( fails++ ))
+      fi
+    }
 
     # 3. A `ps` THAT CANNOT ANSWER MUST NOT EMPTY THE QUEUE (T-1382). Property 2 above proves the
     #    queue drops a ticket whose waiter is genuinely gone. This is the case underneath it, and
@@ -841,38 +872,40 @@ FAKESIMCTL
     #    otherwise be testing a stub that never ran (T-1381).
     print -r -- '#!/bin/zsh
 exit 0' > "$root/blindps"; chmod +x "$root/blindps"
-    "$SELF" claim holder3 30 >/dev/null || { print -r -- "selftest: could not retake the fake device (blind-ps)"; exit 2; }
-    # T-1881 added a SECOND allocatable fake so the selector property has something to
-    # discriminate against. This property needs waiters to actually QUEUE, which they only do
-    # when no device is free -- so hold that one too, or the waiters get served and the fixture
-    # reports "queue has 0" instead of testing anything.
-    "$SELF" claim holder3b 30 "$FAKE_SECOND_UDID" >/dev/null || { print -r -- "selftest: could not hold the second fake device"; exit 2; }
-    for w in q1 q2 q3; do waiter "$w"; sleep 0.4; done
-    for _ in {1..20}; do (( $(queue_names | wc -l) >= 3 )) && break; sleep 0.5; done
-    before_q=$(queue_names | wc -l | tr -d ' ')
-    if (( before_q >= 3 )); then
-      old_dead=0
-      for t in "$QUEUE"/*(N.); do
-        read -r qpid qrest < "$t" 2>/dev/null || qpid=""
-        [[ "$(/bin/zsh -f $root/blindps -o command= -p "$qpid" 2>/dev/null)" == *simulator-claim* ]] || (( old_dead++ ))
-      done
-      export CADENCE_SIM_PS_CMD="/bin/zsh -f $root/blindps"
-      # `status` runs prune_queue and touches no device, so it is the cheapest way to make one
-      # real pass happen inside a process that has the blind `ps`.
-      "$SELF" status >/dev/null 2>&1
-      unset CADENCE_SIM_PS_CMD
-      after_q=$(queue_names | wc -l | tr -d ' ')
-      if (( old_dead == before_q )) && (( after_q == before_q )); then
-        print -r -- "PASS cannot-tell-keeps-queue: the old reading called all $old_dead waiters dead; a blind \`ps\` pruned none of $before_q"
+    trial_keepsqueue() {
+      "$SELF" claim holder3 30 >/dev/null || { print -r -- "selftest: could not retake the fake device (blind-ps)"; exit 2; }
+      # T-1881 added a SECOND allocatable fake so the selector property has something to
+      # discriminate against. This property needs waiters to actually QUEUE, which they only do
+      # when no device is free -- so hold that one too, or the waiters get served and the fixture
+      # reports "queue has 0" instead of testing anything.
+      "$SELF" claim holder3b 30 "$FAKE_SECOND_UDID" >/dev/null || { print -r -- "selftest: could not hold the second fake device"; exit 2; }
+      order="$troot/order"; : > "$order"
+      for w in q1 q2 q3; do waiter "$w"; sleep 0.4; done
+      for _ in {1..20}; do (( $(queue_names | wc -l) >= 3 )) && break; sleep 0.5; done
+      before_q=$(queue_names | wc -l | tr -d ' ')
+      if (( before_q >= 3 )); then
+        old_dead=0
+        for t in "$QUEUE"/*(N.); do
+          read -r qpid qrest < "$t" 2>/dev/null || qpid=""
+          [[ "$(/bin/zsh -f $root/blindps -o command= -p "$qpid" 2>/dev/null)" == *simulator-claim* ]] || (( old_dead++ ))
+        done
+        export CADENCE_SIM_PS_CMD="/bin/zsh -f $root/blindps"
+        # `status` runs prune_queue and touches no device, so it is the cheapest way to make one
+        # real pass happen inside a process that has the blind `ps`.
+        "$SELF" status >/dev/null 2>&1
+        unset CADENCE_SIM_PS_CMD
+        after_q=$(queue_names | wc -l | tr -d ' ')
+        if (( old_dead == before_q )) && (( after_q == before_q )); then
+          print -r -- "PASS cannot-tell-keeps-queue: the old reading called all $old_dead waiters dead; a blind \`ps\` pruned none of $before_q"
+        else
+          print -r -- "FAIL cannot-tell-keeps-queue: old reading called $old_dead of $before_q dead, queue went $before_q -> $after_q"; (( fails++ ))
+        fi
       else
-        print -r -- "FAIL cannot-tell-keeps-queue: old reading called $old_dead of $before_q dead, queue went $before_q -> $after_q"; (( fails++ ))
+        print -r -- "FAIL cannot-tell-keeps-queue: fixture did not set up (queue has $before_q)"; (( fails++ ))
       fi
-    else
-      print -r -- "FAIL cannot-tell-keeps-queue: fixture did not set up (queue has $before_q)"; (( fails++ ))
-    fi
-    "$SELF" release holder3 >/dev/null
-    "$SELF" release holder3b >/dev/null
-    cleanup_kids; rm -rf "$CADENCE_SIM_CLAIMS_DIR" "${CADENCE_SIM_CLAIMS_DIR}.queue"
+      "$SELF" release holder3 >/dev/null
+      "$SELF" release holder3b >/dev/null
+    }
 
     # 4. A `pgrep` THAT CANNOT ANSWER MUST NOT RECLAIM SOMEBODY ELSE'S DEVICE (T-1384). Mode 3 is
     #    this property one function over, on the QUEUE; this is the one on the CLAIM, and the
@@ -892,14 +925,11 @@ exit 0' > "$root/blindps"; chmod +x "$root/blindps"
     #    `/bin/zsh -f <stub>` for the T-1381 reason, and `print -r --` rather than a heredoc because
     #    zsh writes here-documents to $TMPPREFIX (T-1343).
     #
-    #    A FRESH CLAIMS ROOT, not the one the modes above shared. Measured while writing this: a
-    #    mode-3 waiter that outlives `cleanup_kids` by a moment is still looping against the
-    #    directory IT read at startup, and one such straggler reclaiming this fixture's expired
-    #    claim reads here as "the three-way check failed" — a flake that accuses the thing under
-    #    test. Nothing already running can race a root that did not exist when it started.
-    export CADENCE_SIM_CLAIMS_DIR="$root/CadenceSimClaims4"
-    CLAIMS="$CADENCE_SIM_CLAIMS_DIR"; QUEUE="${CLAIMS}.queue"
-    mkdir -p "$CLAIMS"
+    #    ITS OWN CLAIMS ROOT, like every trial now (`trial_env`). It had one before the others did:
+    #    measured while writing this, a mode-3 waiter that outlives `cleanup_kids` by a moment is
+    #    still looping against the directory IT read at startup, and one such straggler reclaiming
+    #    this fixture's expired claim reads here as "the three-way check failed" — a flake that
+    #    accuses the thing under test. Nothing already running can race a root it never read.
     print -r -- '#!/bin/zsh
 print -u2 -- "pgrep: Cannot get process list"
 exit 3' > "$root/blindpgrep"
@@ -918,36 +948,77 @@ exit 0' > "$root/busypgrep"
       print -r -- 1                        > "$CLAIMS/$FAKE_UDID.claim/pid"
       print -r -- $(( $(date +%s) - 600 )) > "$CLAIMS/$FAKE_UDID.claim/since"
     }
-    old_answer=$(/bin/zsh -f "$root/blindpgrep" -f "simctl .*$FAKE_UDID" 2>/dev/null | wc -l | tr -d ' ')
+    trial_keepsclaim() {
+      old_answer=$(/bin/zsh -f "$root/blindpgrep" -f "simctl .*$FAKE_UDID" 2>/dev/null | wc -l | tr -d ' ')
 
-    stale_stranger_claim
-    export CADENCE_SIM_PGREP_CMD="/bin/zsh -f $root/blindpgrep"
-    blind_out=$("$SELF" claim cannottell 3 2>&1)
-    unset CADENCE_SIM_PGREP_CMD
-    blind_kept=0; [[ "$(claim_field "$FAKE_UDID" id)" == stranger ]] && blind_kept=1
-    blind_said=0; [[ "$blind_out" == *"cannot read the process list"* ]] && blind_said=1
+      stale_stranger_claim
+      export CADENCE_SIM_PGREP_CMD="/bin/zsh -f $root/blindpgrep"
+      blind_out=$("$SELF" claim cannottell 3 2>&1)
+      unset CADENCE_SIM_PGREP_CMD
+      blind_kept=0; [[ "$(claim_field "$FAKE_UDID" id)" == stranger ]] && blind_kept=1
+      blind_said=0; [[ "$blind_out" == *"cannot read the process list"* ]] && blind_said=1
 
-    stale_stranger_claim
-    export CADENCE_SIM_PGREP_CMD="/bin/zsh -f $root/idlepgrep"
-    "$SELF" claim reclaimer 12 >/dev/null 2>&1
-    unset CADENCE_SIM_PGREP_CMD
-    idle_took=0; [[ "$(claim_field "$FAKE_UDID" id)" == reclaimer ]] && idle_took=1
-    "$SELF" release reclaimer >/dev/null 2>&1
+      stale_stranger_claim
+      export CADENCE_SIM_PGREP_CMD="/bin/zsh -f $root/idlepgrep"
+      "$SELF" claim reclaimer 12 >/dev/null 2>&1
+      unset CADENCE_SIM_PGREP_CMD
+      idle_took=0; [[ "$(claim_field "$FAKE_UDID" id)" == reclaimer ]] && idle_took=1
+      "$SELF" release reclaimer >/dev/null 2>&1
 
-    stale_stranger_claim
-    export CADENCE_SIM_PGREP_CMD="/bin/zsh -f $root/busypgrep"
-    busy_out=$("$SELF" claim busyprobe 3 2>&1)
-    unset CADENCE_SIM_PGREP_CMD
-    busy_kept=0; [[ "$(claim_field "$FAKE_UDID" id)" == stranger ]] && busy_kept=1
-    busy_said=0; [[ "$busy_out" == *"live simctl op(s)"* ]] && busy_said=1
+      stale_stranger_claim
+      export CADENCE_SIM_PGREP_CMD="/bin/zsh -f $root/busypgrep"
+      busy_out=$("$SELF" claim busyprobe 3 2>&1)
+      unset CADENCE_SIM_PGREP_CMD
+      busy_kept=0; [[ "$(claim_field "$FAKE_UDID" id)" == stranger ]] && busy_kept=1
+      busy_said=0; [[ "$busy_out" == *"live simctl op(s)"* ]] && busy_said=1
 
-    if (( old_answer == 0 && blind_kept && blind_said && idle_took && busy_kept && busy_said )); then
-      print -r -- "PASS cannot-tell-keeps-claim: the old \`pgrep | wc -l\` answered '$old_answer' for a blind pgrep, which is the reclaim answer; the three-way reading kept the stranger's expired claim, still reclaimed it on an idle pgrep, and still deferred to a live simctl op"
-    else
-      print -r -- "FAIL cannot-tell-keeps-claim: old-expression=$old_answer (wanted 0), blind kept=$blind_kept said=$blind_said, idle reclaimed=$idle_took, busy kept=$busy_kept said=$busy_said; the device is now held by '$(claim_field "$FAKE_UDID" id)'"; (( fails++ ))
+      if (( old_answer == 0 && blind_kept && blind_said && idle_took && busy_kept && busy_said )); then
+        print -r -- "PASS cannot-tell-keeps-claim: the old \`pgrep | wc -l\` answered '$old_answer' for a blind pgrep, which is the reclaim answer; the three-way reading kept the stranger's expired claim, still reclaimed it on an idle pgrep, and still deferred to a live simctl op"
+      else
+        print -r -- "FAIL cannot-tell-keeps-claim: old-expression=$old_answer (wanted 0), blind kept=$blind_kept said=$blind_said, idle reclaimed=$idle_took, busy kept=$busy_kept said=$busy_said; the device is now held by '$(claim_field "$FAKE_UDID" id)'"; (( fails++ ))
+      fi
+    }
+
+    # --- running the trials (T-3287) -------------------------------------------------------------
+    # Same shape as test-host-lock.sh's runner: each trial writes its lines to its own file and
+    # leaves its failure count beside it; the files are printed in the fixed order below once every
+    # trial is done, so the output reads as it always did. A trial that never wrote its count did
+    # not finish -- a fixture that would not set up (`exit 2` inside it) or a crash -- and that is
+    # the run's exit 2, never a pass.
+    zmodload zsh/datetime 2>/dev/null
+    typeset -a trials trial_pids unfinished
+    trials=(); trial_pids=(); unfinished=()
+    started=$EPOCHREALTIME
+    # `trial`, never `t`: trial_keepsqueue loops `for t in "$QUEUE"/*`, and in this subshell the
+    # name it clobbered was the one the count file is written under.
+    for trial in ordering killedwaiter denylist keepsqueue keepsclaim; do
+      ( troot="$root/trial-$trial"
+        trial_env "$troot" || { print -r -- "selftest: could not set up trial $trial"; exit 2 }
+        fails=0; kids=()
+        t0=$EPOCHREALTIME
+        "trial_$trial"
+        cleanup_kids
+        printf 'selftest: trial %s finished in %.1fs\n' "$trial" $(( EPOCHREALTIME - t0 ))
+        print -r -- "$fails" > "$root/$trial.fails" ) > "$root/$trial.out" 2>&1 < /dev/null &
+      trials+=("$trial"); trial_pids+=($!)
+    done
+    for (( i = 1; i <= ${#trials}; i++ )); do
+      wait "${trial_pids[i]}" 2>/dev/null
+      cat "$root/${trials[i]}.out" 2>/dev/null
+      if [[ -s "$root/${trials[i]}.fails" ]]; then
+        (( fails += $(<"$root/${trials[i]}.fails") ))
+      else
+        print -r -- "selftest: trial ${trials[i]} did not finish (no failure count written)"
+        unfinished+=("${trials[i]}")
+      fi
+    done
+
+    pkill -f "$root" 2>/dev/null; rm -rf "$root"
+    printf 'selftest: %d trials, concurrently, in %.1fs\n' ${#trials} $(( EPOCHREALTIME - started ))
+    if (( ${#unfinished} )); then
+      print -r -- "selftest: ${#unfinished} trial(s) did not finish: ${unfinished[*]}"
+      exit 2
     fi
-
-    cleanup_kids; pkill -f "$root" 2>/dev/null; rm -rf "$root"
     print -r -- "selftest: $fails failure(s)"
     exit $(( fails > 0 ))
     ;;
