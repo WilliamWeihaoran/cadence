@@ -91,7 +91,7 @@ struct TaskSameIDTwinDetachTests {
 
     /// The shared "take this task out of its block", which has no caller today but is still the
     /// spelling a new one would reach for.
-    @Test func removingOneOfTwoSameIDTasksFromABlockLeavesItsTwinThere() throws {
+    @Test func theSharedRemoveFromBlockLeavesTheSameIDTwinThere() throws {
         let modelContext = try makeContext()
         let (survivor, copy, bundle) = try sameIDTwinsInABlock(modelContext)
 
