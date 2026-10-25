@@ -642,9 +642,17 @@ struct iOSSearchView: View {
         ]
     }
 
+    /// "Sat, Mar 28" in the reference date's year and "Sat, Mar 28, 2027" outside it
+    /// (`DateFormatters.absoluteDay`, [[T-6252]]) -- the spelling Cmd+K's event subtitle uses. The
+    /// window runs 60 days back to 365 forward, so a recurring event's occurrences a year apart
+    /// otherwise read identically. Static so a test can state its reference date.
+    static func eventDayLabel(_ startDate: Date, relativeTo referenceDate: Date = Date()) -> String {
+        "\(DateFormatters.dayOfWeek.string(from: startDate)), \(DateFormatters.absoluteDay(startDate, relativeTo: referenceDate))"
+    }
+
     private func eventDetail(_ event: EKEvent) -> String {
         let startDate = event.startDate ?? event.occurrenceDate ?? Date()
-        let dayLabel = "\(DateFormatters.dayOfWeek.string(from: startDate)), \(DateFormatters.shortDate.string(from: startDate))"
+        let dayLabel = Self.eventDayLabel(startDate)
         return [
             dayLabel,
             iOSCalendarEventSupport.timeRangeLabel(for: event)
