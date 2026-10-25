@@ -243,7 +243,9 @@ struct iOSTaskTagStrip: View {
                     ),
                     allTags: allTags,
                     newTagName: $newTagName,
-                    onCommit: { previous in commitTags(restoring: previous) }
+                    onCommit: { previous in commitTags(restoring: previous) },
+                    // [[T-6471]]: a dismiss-path refusal lands here, on the surface still on screen.
+                    onDismissRefusal: { tagFailureNotice = $0 }
                 )
             }
 
@@ -315,6 +317,12 @@ struct iOSTaskTagPickerPopover: View {
     /// the undo has to be the caller's. Defaults to accepting, which is what a not-yet-created task
     /// wants: the create sheet holds its array in `@State` and commits nothing until Add is tapped.
     var onCommit: ([Tag]) -> Bool = { _ in true }
+    /// **[[T-6471]].** Where a refusal goes when `addTag()` runs as the popover *closes* (T-5175's
+    /// add-on-dismiss). Its own `tagFailureNotice` is drawn by the surface that is disappearing,
+    /// so on that path the sentence is handed to the caller — the strip, which draws the same
+    /// `CadenceInlineFailureNotice` for its chip removals. The `+` and Return paths still say it
+    /// here, where the popover is open. Defaults to dropping it, for a caller with no surface.
+    var onDismissRefusal: (String) -> Void = { _ in }
     @Environment(\.modelContext) private var modelContext
     /// **Only the size, not the flag** (T-1412). This panel *installs* `.enabled` below itself, so
     /// every figure it draws names `.enabled` literally; reading the flag back out of an
@@ -442,7 +450,19 @@ struct iOSTaskTagPickerPopover: View {
         // It goes through `addTag()` itself, so blank or `#`-only input, an existing name in any
         // case, and a refused store all behave exactly as the `+` would: a refusal leaves the name
         // in the field, which is sheet state, for the next time the popover opens.
-        .onDisappear(perform: addTag)
+        .onDisappear(perform: addTagOnDismiss)
+    }
+
+    /// **[[T-6471]].** `addTag()` itself — so every rule the `+` keeps still holds — with its
+    /// refusal, if it makes one, handed to `onDismissRefusal`. The notice is cleared first so an
+    /// older refusal from a tick while the popover was open is not re-reported by a dismiss that
+    /// had nothing typed.
+    private func addTagOnDismiss() {
+        tagFailureNotice = nil
+        addTag()
+        if let tagFailureNotice {
+            onDismissRefusal(tagFailureNotice)
+        }
     }
 
     private func tagRow(_ tag: Tag) -> some View {

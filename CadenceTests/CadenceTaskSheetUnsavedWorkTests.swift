@@ -132,11 +132,45 @@ struct CadenceTaskSheetUnsavedWorkTests {
             CadenceSourceScan.declarationBody("struct iOSTaskTagPickerPopover: View", in: file)
         )
         let body = try #require(CadenceSourceScan.declarationBody("var body: some View", in: popover))
-        #expect(body.contains(".onDisappear(perform: addTag)"))
+        #expect(body.contains(".onDisappear(perform: addTagOnDismiss)"))
+        let onDismiss = try #require(CadenceSourceScan.functionBody(named: "addTagOnDismiss", in: popover))
+        #expect(onDismiss.contains("addTag()"), "the dismiss path no longer goes through addTag itself")
         #expect(CadenceSourceScan.matchCount(#"\.onDisappear"#, in: popover) == 1)
         let strip = try #require(CadenceSourceScan.declarationBody("struct iOSTaskTagStrip: View", in: file))
         #expect(!strip.contains("newTagName = \"\""), "the strip clears the typed tag (option (b), declined)")
         let add = try #require(CadenceSourceScan.functionBody(named: "addTag", in: popover))
         #expect(add.contains("guard !name.isEmpty else { return }"))
+    }
+
+    // MARK: - T-6471: a refusal on the dismiss path is named by the strip, which is still on screen
+
+    /// [[T-6471]]. On the dismiss path `addTag()` writes its refusal into the popover's own notice,
+    /// and the popover is the surface that is closing. The dismiss wrapper hands that sentence to
+    /// `onDismissRefusal`, which the strip answers by setting the notice it already draws.
+    @Test func aRefusedDismissAddIsNamedByTheStripRatherThanTheClosingPopover() throws {
+        let raw = try CadenceSourceScan.sourceFile("Cadence/iOS/iOSTaskDetailComponents.swift")
+        #expect(raw.count > 1_000)
+        let file = CadenceSourceScan.codeOnly(CadenceSourceScan.strippingComments(raw))
+        let popover = try #require(
+            CadenceSourceScan.declarationBody("struct iOSTaskTagPickerPopover: View", in: file)
+        )
+        let onDismiss = try #require(CadenceSourceScan.functionBody(named: "addTagOnDismiss", in: popover))
+        let cleared = try #require(onDismiss.range(of: "tagFailureNotice = nil"))
+        let added = try #require(onDismiss.range(of: "addTag()"))
+        let reported = try #require(onDismiss.range(of: "onDismissRefusal(tagFailureNotice)"))
+        #expect(cleared.lowerBound < added.lowerBound, "an older refusal would be re-reported by an empty dismiss")
+        #expect(added.lowerBound < reported.lowerBound, "the refusal is handed on before addTag made it")
+        #expect(onDismiss.contains("if let tagFailureNotice {"), "a committed add is reported as a refusal")
+
+        // The open popover's `+` and Return keep their own notice: only the dismiss path hands it on.
+        let add = try #require(CadenceSourceScan.functionBody(named: "addTag", in: popover))
+        #expect(!add.contains("onDismissRefusal"))
+
+        let strip = try #require(CadenceSourceScan.declarationBody("struct iOSTaskTagStrip: View", in: file))
+        let presented = try #require(
+            CadenceSourceScan.declarationBody(".popover(isPresented: $showPicker)", in: strip)
+        )
+        #expect(presented.contains("onDismissRefusal: { tagFailureNotice = $0 }"))
+        #expect(strip.contains("CadenceInlineFailureNotice(text: tagFailureNotice)"))
     }
 }
