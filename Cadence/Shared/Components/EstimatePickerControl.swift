@@ -29,7 +29,7 @@ struct EstimatePickerControl: View {
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
             // 44pt, not the 30pt desktop control height it was built at: every call site is under
-            // `Cadence/iOS/` (macOS opens the same roller from `TaskInspectorEstimateChip`), and in
+            // `Cadence/iOS/` (macOS opens the same roller from a kanban card's estimate), and in
             // the task inspector this chip sits in the title row where a finger has to find it.
             .frame(minHeight: 44)
             .contentShape(Rectangle())

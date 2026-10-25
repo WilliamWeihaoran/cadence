@@ -3,6 +3,11 @@ import SwiftUI
 import SwiftData
 import EventKit
 
+enum TaskDetailPresentationMode {
+    case full
+    case subtasksOnly
+}
+
 struct TaskDetailPopover: View {
     @Bindable var task: AppTask
     @Query(sort: \Tag.order)     private var tags:     [Tag]

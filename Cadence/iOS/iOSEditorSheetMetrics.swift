@@ -111,17 +111,6 @@ nonisolated enum iOSEditorSheetMetrics {
 
     // MARK: - Splitting into two columns
 
-    /// Both calendar sheets lay their groups out in two columns at regular width, and both had
-    /// written the same five widths down. Naming them here is not a new layout — it is the same
-    /// layout stated once, so the next sheet that splits copies a decision rather than a literal.
-    ///
-    /// The columns are deliberately uneven: the trailing one carries the markdown well, which wants
-    /// the extra width more than a column of field rows does.
-    static let primaryColumnMinWidth: CGFloat = 340
-    static let primaryColumnMaxWidth: CGFloat = 440
-    static let secondaryColumnMinWidth: CGFloat = 360
-    static let secondaryColumnMaxWidth: CGFloat = 520
-
     /// The widest a two-column editor sheet is ever drawn. Past this it stops growing and centres,
     /// so a line of text never spans a full iPad.
     static let twoColumnMaxWidth: CGFloat = 980

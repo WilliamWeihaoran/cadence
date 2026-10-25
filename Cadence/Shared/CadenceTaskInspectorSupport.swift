@@ -1,7 +1,7 @@
 import Foundation
 
-/// The rules the task inspector runs on, shared by macOS's `TaskDetailPlacementBreadcrumb` and the
-/// iOS task detail sheet.
+/// The rules the task inspector runs on, shared by the macOS inspector (`TaskDetailPopover` and its
+/// content views) and the iOS task detail sheet.
 ///
 /// Both platforms draw the same inspector — title row, tags, `List › Section` breadcrumb, schedule,
 /// subtasks, notes, actions — and the decisions that shape it are arithmetic, not layout: whether a

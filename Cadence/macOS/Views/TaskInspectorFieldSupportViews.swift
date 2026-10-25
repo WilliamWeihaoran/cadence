@@ -31,8 +31,6 @@ nonisolated enum TaskInspectorPopoverMetrics {
 /// do its sums, and T-1480 quoted the recurrence panel as "268" from the same literal. A width a
 /// placement rule reasons about has to be a width the placement rule can read (T-1600).
 nonisolated enum TaskInspectorPanelMetrics {
-    /// `TaskPriorityPickerPopover` — one row per `TaskPriority`, mark, label and tick.
-    static let priorityWidth: CGFloat = 160
     /// `TaskRecurrencePickerPanel` — APPLY TO / REPEATS / ENDS.
     static let recurrenceWidth: CGFloat = 268
 
@@ -100,7 +98,7 @@ nonisolated enum TaskInspectorChildPanelEscapeKey {
 /// `testEscapeClosesEachInspectorChildPanelAndLeavesTheInspectorOpen` reported *"Escape closed
 /// only ["Estimate"] of ["Priority", "Estimate", "Do", "Due", "Repeat"]"*. Priority and Estimate
 /// are the decisive pair: they are the **same** `.popover(item:)`, with the **same** modifier, on
-/// the **same** content view in `SchedulePanelPopoverSupportViews` — so nothing about the popover,
+/// the **same** content view in the inspector's since-deleted header — so nothing about the popover,
 /// the modifier, the anchor or the key press can be what separates them. The difference is inside:
 /// the roller's columns are `.focusable()` and hold SwiftUI focus; the other four hold nothing
 /// focusable, and the Do / Due calendar is `.focusable(false)` outright.
@@ -414,22 +412,6 @@ struct TaskInspectorRecessedGroup<Content: View>: View {
     }
 }
 
-/// Group heading + recessed well, the standard inspector section shape.
-struct TaskInspectorRecessedSection<Content: View>: View {
-    let title: String
-    var trailing: String? = nil
-    @ViewBuilder let content: Content
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            TaskInspectorGroupLabel(title: title, trailing: trailing)
-            TaskInspectorRecessedGroup {
-                content
-            }
-        }
-    }
-}
-
 /// Value text for a field row — bright when the field has a value, dim when it is empty.
 struct TaskInspectorFieldValueText: View {
     let text: String
@@ -658,69 +640,6 @@ struct InspectorPickerHover: ViewModifier {
             )
             .contentShape(RoundedRectangle(cornerRadius: cornerRadius))
             .onHover { isHovered = $0 }
-    }
-}
-
-/// Estimate as a compact chip for the inspector's title row.
-///
-/// It used to be a field row inside the SCHEDULE well. An estimate is a property of the task the
-/// way its priority is, not a date you pick, so it now sits beside the title with the priority
-/// tile — the two things you set while naming the task. Same roller popover either way.
-struct TaskInspectorEstimateChip: View {
-    @Binding var value: Int
-    /// The host's flag for the roller — **the chip does not present it, and that is T-1722.**
-    ///
-    /// It used to, off its own bounds, and its own bounds are the wrong anchor: the chip sits at
-    /// one end of the inspector's content column and does not span it, so one of the two ends a
-    /// panel can leave by opens back across the inspector's rows — which is the end the running
-    /// app picked. The title row *did* span the column, so the since-deleted
-    /// `TaskDetailHeaderSection` presented the roller from there and this stayed a button.
-    @Binding var isPickerPresented: Bool
-
-    private var isSet: Bool { value > 0 }
-
-    /// The drawn figure and the announced one, from one call — the chip must not be able to say
-    /// one duration and show another.
-    private var estimateText: String {
-        CadenceTaskPresentationSupport.estimateLabel(minutes: value)
-    }
-
-    var body: some View {
-        Button { isPickerPresented.toggle() } label: {
-            HStack(spacing: 4) {
-                Image(systemName: "timer")
-                    .font(.system(size: 10, weight: .semibold))
-                    // Purple is the app's planned-time colour, as it was on the old row's glyph.
-                    .foregroundStyle(isSet ? Theme.purple : Theme.dim)
-                Text(isSet ? estimateText : "Est")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(isSet ? Theme.text : Theme.dim)
-                    .monospacedDigit()
-                    .lineLimit(1)
-            }
-            .padding(.horizontal, 8)
-            .frame(minHeight: 28)
-            .background(Theme.surfaceElevated)
-            .overlay(
-                RoundedRectangle(cornerRadius: Theme.radiusControlCompact)
-                    .strokeBorder(Theme.borderSubtle, lineWidth: 1)
-            )
-            .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControlCompact))
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.cadencePlain)
-        // The title beside it is an editable field: without this the chip is treated as flexible
-        // and a long title squeezes it down to its glyph.
-        .fixedSize()
-        // Buttons take key focus under Full Keyboard Access; leaving the chip out of the focus
-        // ring means clicking it cannot pull the caret out of a title being typed.
-        .focusable(false)
-        .accessibilityIdentifier(
-            CadenceAccessibilityIdentifiers.inspectorPanelControl(CadenceTaskControlAccessibility.estimate)
-        )
-        .accessibilityLabel(CadenceTaskControlAccessibility.estimate)
-        .accessibilityValue(isSet ? estimateText : "None")
-        .help("Estimate")
     }
 }
 

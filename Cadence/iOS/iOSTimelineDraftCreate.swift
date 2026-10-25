@@ -201,85 +201,15 @@ enum iOSTimelineDraftTint {
 /// ([[T-3171]]): the iPad timeline's popover (`iOSTimelineDraftPanelHost`) and the calendar's
 /// quick-create sheet (`iOSCalendarQuickCreateSheet`).
 ///
-/// The choices the panel lists and the two writes it ends in. Each host keeps only what is its own
-/// — its framing, its calendar-access wording, and what it does once a write lands — so a change to
+/// The calendar rows the panel lists and the two writes it ends in. The list and section rows are
+/// `CadenceScheduleDraftChoices`', the one rule the Mac's quick-create popover reads too. Each host
+/// keeps only what is its own — its framing, its calendar-access wording, and what it does once a write lands — so a change to
 /// what a created task *gets* (a due date, a series, a list) is one edit here rather than two that
 /// drift, which is how the docked bar ended up able to make only a 30-minute task ([[T-3169]]).
 ///
 /// Every write returns `String?`: `nil` when it landed, the sentence the panel shows when it did not.
 @MainActor
 enum iOSScheduleDraftCreation {
-    /// Inbox, then the lists a new task may be put in — **narrowed by the shared picker rule**
-    /// (`pickableAreas` / `pickableProjects`: active lists, sorted, plus the one the draft names), as
-    /// `iOSContainerChoicePopover` narrows them for the quick-create sheet it replaced. Built from
-    /// the raw queries, which is what the iPad popover did, it offered archived and completed lists.
-    static func listChoices(for draft: CadenceScheduleDraft, areas: [Area], projects: [Project]) -> [CadenceSchedulePanelChoice] {
-        let choice = CadenceTaskComposerSupport.selection(fromToken: draft.listToken)
-        var rows = [
-            CadenceSchedulePanelChoice(
-                id: CadenceTaskComposerSupport.token(for: .inbox),
-                name: "Inbox",
-                color: Theme.blue,
-                systemImage: "tray.fill"
-            )
-        ]
-        rows += CadenceTaskComposerSupport.pickableAreas(
-            areas,
-            selectedID: CadenceTaskComposerSupport.selectedAreaID(choice)
-        ).map {
-            CadenceSchedulePanelChoice(
-                id: CadenceTaskComposerSupport.token(for: .area($0.id)),
-                name: $0.name,
-                color: Color(hex: $0.colorHex),
-                systemImage: "folder.fill"
-            )
-        }
-        rows += CadenceTaskComposerSupport.pickableProjects(
-            projects,
-            selectedID: CadenceTaskComposerSupport.selectedProjectID(choice)
-        ).map {
-            CadenceSchedulePanelChoice(
-                id: CadenceTaskComposerSupport.token(for: .project($0.id)),
-                name: $0.name,
-                color: Color(hex: $0.colorHex),
-                systemImage: "square.stack.3d.up.fill"
-            )
-        }
-        return rows
-    }
-
-    static func area(for draft: CadenceScheduleDraft, in areas: [Area]) -> Area? {
-        let choice = CadenceTaskComposerSupport.selection(fromToken: draft.listToken)
-        guard let id = CadenceTaskComposerSupport.selectedAreaID(choice) else { return nil }
-        return areas.first { $0.id == id }
-    }
-
-    static func project(for draft: CadenceScheduleDraft, in projects: [Project]) -> Project? {
-        let choice = CadenceTaskComposerSupport.selection(fromToken: draft.listToken)
-        guard let id = CadenceTaskComposerSupport.selectedProjectID(choice) else { return nil }
-        return projects.first { $0.id == id }
-    }
-
-    /// **Empty for the Inbox**, so the panel greys its Section row out there. The Inbox has no
-    /// sections to choose between — `sectionNames` answers the lone default for it — and the
-    /// quick-create sheet has always disabled the row rather than offer a one-row picker.
-    static func sectionChoices(for draft: CadenceScheduleDraft, areas: [Area], projects: [Project]) -> [String] {
-        let area = area(for: draft, in: areas)
-        let project = project(for: draft, in: projects)
-        guard area != nil || project != nil else { return [] }
-        return CadenceTaskMutationSupport.sectionNames(forArea: area, project: project)
-    }
-
-    /// The section name a list change leaves behind: the chosen one where the new list has it,
-    /// that list's first otherwise.
-    static func normalizedSectionName(for draft: CadenceScheduleDraft, areas: [Area], projects: [Project]) -> String {
-        CadenceTaskMutationSupport.normalizedSectionName(
-            draft.sectionName,
-            area: area(for: draft, in: areas),
-            project: project(for: draft, in: projects)
-        )
-    }
-
     static func calendarChoices(_ calendarManager: iOSCalendarManager) -> [CadenceSchedulePanelChoice] {
         calendarManager.writableCalendars.map {
             CadenceSchedulePanelChoice(
@@ -311,8 +241,8 @@ enum iOSScheduleDraftCreation {
         projects: [Project],
         modelContext: ModelContext
     ) -> String? {
-        let area = area(for: draft, in: areas)
-        let project = project(for: draft, in: projects)
+        let area = CadenceScheduleDraftChoices.area(for: draft, in: areas)
+        let project = CadenceScheduleDraftChoices.project(for: draft, in: projects)
         let created: AppTask?
         do {
             created = try CadenceTaskMutationSupport.insertScheduledTask(
@@ -426,8 +356,8 @@ struct iOSTimelineDraftPanelHost: View {
         ScrollView {
             CadenceSchedulePanel(
                 draft: $draft,
-                listChoices: iOSScheduleDraftCreation.listChoices(for: draft, areas: areas, projects: projects),
-                sectionChoices: iOSScheduleDraftCreation.sectionChoices(for: draft, areas: areas, projects: projects),
+                listChoices: CadenceScheduleDraftChoices.listChoices(for: draft, areas: areas, projects: projects),
+                sectionChoices: CadenceScheduleDraftChoices.sectionChoices(for: draft, areas: areas, projects: projects),
                 calendarChoices: iOSScheduleDraftCreation.calendarChoices(calendarManager),
                 calendarUnavailableNotice: calendarUnavailableNotice,
                 actions: CadenceSchedulePanelActions(

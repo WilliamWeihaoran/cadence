@@ -84,8 +84,8 @@ struct iOSCalendarQuickCreateSheet: View {
         ScrollView {
             CadenceSchedulePanel(
                 draft: $draft,
-                listChoices: iOSScheduleDraftCreation.listChoices(for: draft, areas: areas, projects: projects),
-                sectionChoices: iOSScheduleDraftCreation.sectionChoices(for: draft, areas: areas, projects: projects),
+                listChoices: CadenceScheduleDraftChoices.listChoices(for: draft, areas: areas, projects: projects),
+                sectionChoices: CadenceScheduleDraftChoices.sectionChoices(for: draft, areas: areas, projects: projects),
                 calendarChoices: iOSScheduleDraftCreation.calendarChoices(calendarManager),
                 calendarUnavailableNotice: calendarUnavailableNotice,
                 canCommit: canCreate,
@@ -189,7 +189,7 @@ struct iOSCalendarQuickCreateSheet: View {
     }
 
     private func normalizeSection() {
-        draft.sectionName = iOSScheduleDraftCreation.normalizedSectionName(for: draft, areas: areas, projects: projects)
+        draft.sectionName = CadenceScheduleDraftChoices.normalizedSectionName(for: draft, areas: areas, projects: projects)
     }
 
     private func normalizeCalendarSelection() {
