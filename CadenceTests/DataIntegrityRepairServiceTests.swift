@@ -2035,6 +2035,38 @@ struct DataIntegrityRepairServiceTests {
         #expect(merged.order == 2)
     }
 
+    /// **The rule and its end condition move as one unit ([[T-6520]]).** A survivor with no rule
+    /// takes the copy's rule and the copy's bound together, exactly as the copy held them; a
+    /// survivor that already repeats keeps its own bound, because a rule from one row and an end
+    /// condition from the other is a series neither device ever had.
+    @Test func mergingSameIDTasksCarriesTheEndConditionWithTheRule() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let modelContext = ModelContext(container)
+        let adopting = sameIDPair(in: modelContext)
+        adopting.newer.recurrenceRule = .weekly
+        adopting.newer.recurrenceEndMode = .afterCount
+        adopting.newer.recurrenceEndCount = 5
+        let keeping = sameIDPair(in: modelContext)
+        keeping.older.recurrenceRule = .daily
+        keeping.newer.recurrenceRule = .weekly
+        keeping.newer.recurrenceEndMode = .onDate
+        keeping.newer.recurrenceEndDate = "2026-12-31"
+        try modelContext.save()
+
+        _ = try DataIntegrityRepairService.repairIfNeeded(in: modelContext, source: "test")
+
+        let remaining = try ModelContext(container).fetch(FetchDescriptor<AppTask>())
+        #expect(remaining.count == 2)
+        let adopted = try #require(remaining.first { $0.id == adopting.id })
+        #expect(adopted.recurrenceRule == .weekly)
+        #expect(adopted.recurrenceEndMode == .afterCount, "the copy's rule arrived without its bound")
+        #expect(adopted.recurrenceEndCount == 5)
+        let kept = try #require(remaining.first { $0.id == keeping.id })
+        #expect(kept.recurrenceRule == .daily)
+        #expect(kept.recurrenceEndMode == .never, "the survivor's rule took the copy's bound")
+        #expect(kept.recurrenceEndDate.isEmpty)
+    }
+
     /// **Ordering against the forked-occurrence collapse.** A same-id copy of a spawned occurrence
     /// sits in the same series slot, so if the fork pass saw it first it would take the pair for a
     /// fork — and its remover detaches by `id`, which strips the survivor out of its own list.

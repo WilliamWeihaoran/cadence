@@ -87,6 +87,10 @@ struct CadenceRecurrenceEndSurfaceTests {
                 "Cadence/Services/CadenceArchiveImportService.swift",
                 // Reads the field to copy it into the archive, and only that — see above.
                 "Cadence/Services/CadenceDataExportService.swift",
+                // [[T-6435]]/[[T-6520]]: the same-id AppTask merge. Reads the three into its tie-break
+                // fingerprint, and writes them only as a verbatim copy carried with the rule — the
+                // importer's capability, asserted below.
+                "Cadence/Services/DataIntegrityRepairService.swift",
                 // [[T-3171]]: reads the three to open a task in the shared schedule panel's draft,
                 // whose own fields are `series*` so they cannot be mistaken for these. Read only —
                 // asserted below with the views.
@@ -158,6 +162,32 @@ struct CadenceRecurrenceEndSurfaceTests {
             #expect(writes == 1, "the snapshot writes \(field) \(writes) times; only the restore may")
         }
         #expect(!snapshot.contains("applyRecurrenceEnd"), "the undo must restore, not re-apply across the series")
+
+        // **The same-id merge is the importer's case one row at a time ([[T-6435]], [[T-6520]]).**
+        // Two rows sharing an id are one task, so when the survivor has no rule and the copy does,
+        // the copy's rule and its end condition are taken together, as the copy held them. The
+        // workflow is wrong here for the importer's reason — it propagates across the series and
+        // normalizes — and also for its own: it stamps a series id before the merge's own
+        // series-id fill-in runs. So the capability is pinned as one block: the rule copy followed
+        // directly by the three verbatim copies, nothing else assigning the three, and no workflow.
+        let repair = try strippingComments(sourceFile("Cadence/Services/DataIntegrityRepairService.swift"))
+        #expect(
+            repair.range(
+                of: "target\\.recurrenceRaw = source\\.recurrenceRaw\\s*"
+                    + "target\\.recurrenceEndModeRaw = source\\.recurrenceEndModeRaw\\s*"
+                    + "target\\.recurrenceEndDate = source\\.recurrenceEndDate\\s*"
+                    + "target\\.recurrenceEndCount = source\\.recurrenceEndCount\\s",
+                options: .regularExpression
+            ) != nil,
+            "the merge no longer copies the end condition verbatim, together with the rule"
+        )
+        for field in ["recurrenceEndModeRaw", "recurrenceEndDate", "recurrenceEndCount", "recurrenceEndMode"] {
+            let writes = repair.components(separatedBy: ".\(field) =").count
+                - repair.components(separatedBy: ".\(field) ==").count
+            let allowed = field == "recurrenceEndMode" ? 0 : 1
+            #expect(writes == allowed, "the repair writes \(field) \(writes) times; only the merge's copy may")
+        }
+        #expect(!repair.contains("applyRecurrenceEnd"), "the merge must copy one row, not re-apply across the series")
     }
 
     /// All three modes, reachable. The iOS picker is built from `allCases` rather than a typed-out
