@@ -60,10 +60,13 @@ enum SchedulePanelDataSupport {
     /// page's `CalDayColumn` has composed in place since [[T-655]], and this is the same write.
     ///
     /// **The draft's own day, not the panel's `todayKey`.** T-1433 gave the popover editable date
-    /// and time fields, and `QuickCreateChoicePopover.hostWritesDraftDay` tells the panel this host
-    /// honours them — so a slot dragged on this timeline and then moved to tomorrow must land on
-    /// tomorrow rather than being silently filed under today. The Calendar page's column answers
-    /// that question the other way, which is why it passes `usesTaskPanelForTaskCreation: false`.
+    /// and time fields, so a slot dragged on this timeline and then moved to tomorrow must land on
+    /// tomorrow rather than being silently filed under today. **Both hosts write through here**
+    /// since [[T-3171]] (iv): the Calendar page's `CalDayColumn` used to overwrite the draft's day
+    /// with its column's, and the popover refused a moved day to cover for it.
+    ///
+    /// Due and Repeat travel too ([[T-3171]] (iii)) — `TaskCreationService` writes them, the same
+    /// commit `CreateTaskSheet` uses.
     ///
     /// Throws what `TaskCreationService` throws, so the host can name a refused write (T-655)
     /// rather than closing the popover over a task that was never stored.
@@ -84,6 +87,11 @@ enum SchedulePanelDataSupport {
             priority: draft.priority,
             notes: draft.notes,
             subtaskTitles: draft.subtaskTitles,
+            dueDateKey: draft.dueDateKey,
+            repeatRule: draft.repeatRule,
+            seriesEndMode: draft.seriesEndMode,
+            seriesEndDateKey: draft.seriesEndDateKey,
+            seriesEndCount: draft.seriesEndCount,
             areas: areas,
             projects: projects,
             in: modelContext

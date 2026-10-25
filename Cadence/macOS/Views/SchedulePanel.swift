@@ -153,16 +153,16 @@ struct SchedulePanel: View {
                             // the window with the draft as its seed, so pressing Add in the shared
                             // panel re-asked for everything the user had just typed and stored
                             // nothing until they confirmed a second time. `draft.dateKey` is still
-                            // honoured (T-1433 gave the popover a date field, and
-                            // `QuickCreateChoicePopover.hostWritesDraftDay` is true for this host
-                            // because of this line), it is now the day the task is written on
-                            // rather than the day a second sheet opens on.
+                            // honoured (T-1433 gave the popover a date field): it is the day the
+                            // task is written on rather than the day a second sheet opens on.
                             onCreateTask: createTask,
                             onDropTaskAtMinute: { task, startMin in
                                 SchedulingActions.commitDropTask(task, to: todayKey, startMin: startMin, in: modelContext)
                             },
-                            onCreateEvent: { title, startMin, endMin, calendarID, notes in
-                                calendarManager.createStandaloneEvent(title: title, startMin: startMin, durationMinutes: endMin - startMin, calendarID: calendarID, date: Date(), notes: notes)
+                            // The draft's own day, not today's ([[T-3171]] (iv)): the panel's
+                            // Starts row can move the event off the timeline it was dragged on.
+                            onCreateEvent: { draft in
+                                calendarManager.createStandaloneEvent(title: draft.title, startMin: draft.startMin, durationMinutes: draft.endMin - draft.startMin, calendarID: draft.calendarID, date: draft.day(or: Date()), notes: draft.notes)
                             }
                         )
                     }

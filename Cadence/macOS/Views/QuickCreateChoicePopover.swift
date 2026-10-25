@@ -13,12 +13,15 @@ import SwiftData
 ///
 /// **It is the shape of the two hosts' write closures, not of the form** ([[T-3171]], the seventh
 /// adoption slice). The form is `CadenceSchedulePanel` now; this is what both hosts carry into
-/// `SchedulingActions.insertTask` — the Calendar page's day column directly, the Today timeline
-/// through `SchedulePanelDataSupport.insertDragCreatedTask` since the eighth slice took that
-/// host's `TaskCreationManager.present` handoff out. Both call sites are fixed — one of them is in
-/// a Codex-leased file — so a field the panel offers that has no member here has nowhere to go,
-/// and the popover refuses such a draft out loud rather than dropping it (T-470). See
-/// `QuickCreateChoicePopover.hostLimitNotice`.
+/// `SchedulePanelDataSupport.insertDragCreatedTask`, which writes through
+/// `SchedulingActions.insertTask` and so `TaskCreationService.createTask` — the commit every macOS
+/// task composer uses.
+///
+/// **It carries Due and Repeat** ([[T-3171]] (iii)). The popover used to withhold both rows because
+/// this value had no member for them; `TaskCreationService` has always been able to write them, so
+/// the rows are offered and the answers travel here. A field the panel offers that has no member
+/// here still has nowhere to go, and the popover refuses such a draft out loud rather than
+/// dropping it (T-470) — see `QuickCreateChoicePopover.hostLimitNotice`.
 struct QuickCreateTaskDraft {
     var title: String
     /// `yyyy-MM-dd`, the repo's persisted form.
@@ -31,6 +34,14 @@ struct QuickCreateTaskDraft {
     var notes: String
     /// The shared panel's checklist, forwarded by both timeline hosts to the task insert.
     var subtaskTitles: [String]
+    /// `yyyy-MM-dd`, or empty for no due date.
+    var dueDateKey: String = ""
+    var repeatRule: TaskRecurrenceRule = .none
+    /// The series' end, already resolved through `CadenceScheduleDraft.effectiveSeriesEndMode`, so
+    /// an `.onDate` with no day or an `.afterCount` with no count arrives as `.never`.
+    var seriesEndMode: TaskRecurrenceEndMode = .never
+    var seriesEndDateKey: String = ""
+    var seriesEndCount: Int = 0
 }
 
 extension QuickCreateTaskDraft {
@@ -47,7 +58,47 @@ extension QuickCreateTaskDraft {
             notes: draft.notes,
             subtaskTitles: draft.subtaskTitles
                 .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-                .filter { !$0.isEmpty }
+                .filter { !$0.isEmpty },
+            dueDateKey: draft.dueDateKey,
+            repeatRule: draft.repeatRule,
+            seriesEndMode: draft.effectiveSeriesEndMode,
+            seriesEndDateKey: draft.seriesEndDateKey,
+            seriesEndCount: draft.seriesEndCount
+        )
+    }
+}
+
+/// What the drag-create popover's **Event** arm hands its host, in one value ([[T-3171]] (iv)).
+///
+/// It was five positional arguments — `(title, startMin, endMin, calendarID, notes)` — and no day,
+/// so both hosts gave `CalendarManager.createStandaloneEvent` their own date and the popover had to
+/// refuse any draft whose day the panel's grid had moved. The day travels now, as `dateKey`, and
+/// the host resolves it through `day(or:)`.
+struct QuickCreateEventDraft: Equatable {
+    var title: String
+    /// `yyyy-MM-dd`: the day the panel's Starts row names.
+    var dateKey: String
+    var startMin: Int
+    var endMin: Int
+    var calendarID: String
+    var notes: String
+
+    /// The day to create on: the draft's own, or `hostDay` only when the key does not parse — which
+    /// the panel never produces, so the fallback exists to keep the write total, not as a rule.
+    func day(or hostDay: Date) -> Date {
+        DateFormatters.date(from: dateKey) ?? hostDay
+    }
+}
+
+extension QuickCreateEventDraft {
+    init(scheduleDraft draft: CadenceScheduleDraft) {
+        self.init(
+            title: draft.title,
+            dateKey: draft.startDateKey,
+            startMin: draft.startMin,
+            endMin: draft.endMin,
+            calendarID: draft.calendarID,
+            notes: draft.notes
         )
     }
 }
@@ -105,35 +156,31 @@ struct QuickCreateNotesDraft: Equatable {
 /// ## What this host can actually write, and what it therefore does not offer
 ///
 /// The popover is drawn by `TimelineDayCanvas`, whose two hosts are the Today timeline and the
-/// Calendar page's day column — and the day column is **Codex-leased**, so the shapes of both write
-/// closures are fixed:
+/// Calendar page's day column:
 ///
-/// - `onCreateTask` is a `QuickCreateTaskDraft`, which has no due date, no recurrence and no
-///   estimate of its own; the Calendar page's column also supplies **its own day** and ignores the
-///   draft's.
-/// - `onCreateEvent` reaches `CalendarManager.createStandaloneEvent`, which takes a day from the
-///   host, writes `isAllDay = false`, and has no `location:` and no recurrence.
+/// - `onCreateTask` takes a `QuickCreateTaskDraft`, which both hosts write through
+///   `SchedulePanelDataSupport.insertDragCreatedTask` — the draft's own day, Due and Repeat
+///   included ([[T-3171]] (iii), (iv)).
+/// - `onCreateEvent` takes a `QuickCreateEventDraft`, which both hosts hand
+///   `CalendarManager.createStandaloneEvent` on the draft's own day. That write sets
+///   `isAllDay = false` and has no `location:` and no recurrence.
 ///
-/// So the Due, Repeat and Location rows are **withheld** (`offersTaskDue`, `offersTaskRepeat`,
-/// `offersEventRepeat`, `offersEventLocation`), and the schedule facts the user can still reach
-/// from the rows that remain — another day, a span across midnight, all-day, an estimate of None —
-/// are **named and refused** rather than silently dropped (T-470). Each is one sentence in
-/// `hostLimitNotice`, drawn through the panel's existing `failureNotice:` with `canCommit: false`,
-/// so this slice adds no shape to the panel's contract beyond the two `offers*` flags above.
-///
-/// The real fix for the day is that both hosts take one; it is recorded as REMAINING on
-/// [[T-3171]].
+/// So the **event** Repeat and Location rows are still **withheld** (`offersEventRepeat`,
+/// `offersEventLocation`), and the schedule facts the user can still reach from the rows that
+/// remain — a span across midnight, all-day, an estimate of None — are **named and refused**
+/// rather than silently dropped (T-470). Each is one sentence in `hostLimitNotice`, drawn through
+/// the panel's existing `failureNotice:` with `canCommit: false`.
 struct QuickCreateChoicePopover: View {
     let startMin: Int
     let endMin: Int
-    /// The day the **host** creates on. The panel's own Do/Starts grid can move the draft off it;
-    /// `hostLimitNotice` is what stops that becoming a silent write to the wrong day.
+    /// The day the drag was drawn on. It seeds the draft; the panel's Do/Starts grid can move the
+    /// draft off it, and both hosts then create on the draft's day, not this one.
     let dateKey: String
     let onCreateTask: (QuickCreateTaskDraft) -> Void
-    /// `(title, startMin, endMin, calendarID, notes)`. The minutes travel now: the panel's Start
-    /// and End rollers can move the range the drag drew, and the canvas used to capture the drag's
-    /// own `start`/`end` and create those instead.
-    let onCreateEvent: ((String, Int, Int, String, String) -> Void)?
+    /// The range and the day travel: the panel's Start and End rollers and its Starts day can move
+    /// what the drag drew, and the canvas used to capture the drag's own `start`/`end` and create
+    /// those instead.
+    let onCreateEvent: ((QuickCreateEventDraft) -> Void)?
     let onCancel: () -> Void
     /// What to say when the event the user just typed was refused by Apple Calendar (T-658).
     ///
@@ -143,18 +190,6 @@ struct QuickCreateChoicePopover: View {
     /// ([[T-3171]]'s eighth slice) and this popover has already dismissed itself by the time the
     /// store answers, so there is nothing left here to write a notice under.
     @Binding var createFailureNotice: String?
-    /// Whether the host honours the draft's own **day** (the Today timeline) or supplies its own
-    /// (the Calendar page's day column).
-    ///
-    /// **The name is now a misnomer and is kept for one reason: both of its call sites are
-    /// Codex-leased.** It was named for a handoff that no longer exists — [[T-3171]]'s eighth slice
-    /// took `TaskCreationManager.present` out of `SchedulePanel`, so neither host hands a drag to a
-    /// task panel any more and both commit through `SchedulingActions.insertTask`. What the flag
-    /// still decides is the day: `true` means the host writes `draft.dateKey`, `false` means it
-    /// overwrites that with its column's. Renaming it means editing `TimelineDayCanvas.swift` and
-    /// `CalendarPageMonthSupportViews.swift`, both leased; see this file's `hostWritesDraftDay`,
-    /// which is the name the rule is actually read under.
-    let usesTaskPanelForTaskCreation: Bool
 
     @Environment(CalendarManager.self) private var calendarManager
     @Query(sort: \Area.order) private var areas: [Area]
@@ -167,10 +202,9 @@ struct QuickCreateChoicePopover: View {
         endMin: Int,
         dateKey: String,
         onCreateTask: @escaping (QuickCreateTaskDraft) -> Void,
-        onCreateEvent: ((String, Int, Int, String, String) -> Void)?,
+        onCreateEvent: ((QuickCreateEventDraft) -> Void)?,
         onCancel: @escaping () -> Void,
         createFailureNotice: Binding<String?>,
-        usesTaskPanelForTaskCreation: Bool = true,
         defaultsToCalendarEvent: Bool = false
     ) {
         self.startMin = startMin
@@ -180,7 +214,6 @@ struct QuickCreateChoicePopover: View {
         self.onCreateEvent = onCreateEvent
         self.onCancel = onCancel
         _createFailureNotice = createFailureNotice
-        self.usesTaskPanelForTaskCreation = usesTaskPanelForTaskCreation
         _draft = State(
             initialValue: Self.openingDraft(
                 dateKey: dateKey,
@@ -223,11 +256,11 @@ struct QuickCreateChoicePopover: View {
             calendarUnavailableNotice: calendarUnavailableNotice,
             failureNotice: createFailureNotice ?? hostLimitNotice,
             canCommit: canCommit,
-            // Neither write closure carries a recurrence, a due date or a location. See the type
-            // note: withheld, not drawn-and-dropped.
+            // The task write carries Due and Repeat ([[T-3171]] (iii)); the event write carries
+            // neither a recurrence nor a location. See the type note: withheld, not drawn-and-dropped.
             offersEventRepeat: false,
-            offersTaskRepeat: false,
-            offersTaskDue: false,
+            offersTaskRepeat: true,
+            offersTaskDue: true,
             offersEventLocation: false,
             offersSubtasks: true,
             actions: CadenceSchedulePanelActions(
@@ -243,6 +276,7 @@ struct QuickCreateChoicePopover: View {
         .onAppear(perform: resolveCalendarSelection)
         .onChange(of: draft.kind) { previousKind, newKind in
             carryNotes(leaving: previousKind, entering: newKind)
+            dropTaskOnlyFields(entering: newKind)
             resolveCalendarSelection()
         }
         .onChange(of: draft.listToken) { _, _ in
@@ -262,29 +296,15 @@ struct QuickCreateChoicePopover: View {
     /// Refusing out loud is the rule T-470 settled: the alternative is a control that looks like it
     /// worked and a record that does not say what the user said.
     var hostLimitNotice: String? {
-        Self.hostLimitNotice(
-            for: draft,
-            hostDateKey: dateKey,
-            hostWritesDraftDay: hostWritesDraftDay
-        )
-    }
-
-    /// Whether the host stores the day the panel's grid names, or supplies its own.
-    ///
-    /// Only the Today timeline does: it forwards `draft.dateKey` into the task it writes
-    /// (`SchedulePanelDataSupport.insertDragCreatedTask`). The Calendar page's day column
-    /// overwrites it with its own column's, and **both** hosts give `createStandaloneEvent` their
-    /// own date, so no event created here can name another day.
-    private var hostWritesDraftDay: Bool {
-        draft.kind == .task && usesTaskPanelForTaskCreation
+        Self.hostLimitNotice(for: draft)
     }
 
     /// Static so the rule is testable without a view — it is the whole of what this surface refuses.
-    static func hostLimitNotice(
-        for draft: CadenceScheduleDraft,
-        hostDateKey: String,
-        hostWritesDraftDay: Bool
-    ) -> String? {
+    ///
+    /// **No day rule** ([[T-3171]] (iv)). It used to refuse a draft whose day the panel had moved
+    /// off the column's, because the Calendar page's column and both event writes supplied the
+    /// host's own day. Both hosts now create on the draft's day, so a moved day is honoured.
+    static func hostLimitNotice(for draft: CadenceScheduleDraft) -> String? {
         let kindWord = draft.kind == .event ? "event" : "task"
         if draft.isAllDay {
             return draft.kind == .event
@@ -294,8 +314,11 @@ struct QuickCreateChoicePopover: View {
         if draft.spansMultipleDays {
             return "A dragged slot creates an \(kindWord) inside one day. End it on \(dayLabel(draft.startDateKey))."
         }
-        if !hostWritesDraftDay && draft.startDateKey != hostDateKey {
-            return "A slot dragged on \(dayLabel(hostDateKey)) creates on that day. Drag a slot on \(dayLabel(draft.startDateKey)) to create there."
+        if draft.kind == .event && draft.repeatRule != .none {
+            // Unreachable through the panel — the Repeat row is withheld for events and a switch to
+            // Event clears the task's rule (`dropTaskOnlyFields`) — and spelled anyway, so a series
+            // can never be written here as a single event without saying so.
+            return "A dragged slot creates a single event. Create a repeating event from Apple Calendar."
         }
         if draft.kind == .task && draft.estimateMinutes <= 0 {
             return "A dragged slot gives the task its length, so Estimate cannot be None here."
@@ -332,7 +355,7 @@ struct QuickCreateChoicePopover: View {
             // is. Spelled as a refusal rather than a silent `return nil`, so the Event arm can
             // never look like it created something on a timeline that cannot.
             guard let onCreateEvent else { return "This timeline creates tasks only." }
-            onCreateEvent(draft.title, draft.startMin, draft.endMin, draft.calendarID, draft.notes)
+            onCreateEvent(QuickCreateEventDraft(scheduleDraft: draft))
             return nil
         }
     }
@@ -342,6 +365,27 @@ struct QuickCreateChoicePopover: View {
     private func carryNotes(leaving previousKind: CadenceScheduleDraftKind, entering newKind: CadenceScheduleDraftKind) {
         notesDraft.set(draft.notes, for: previousKind)
         draft.notes = notesDraft.notes(for: newKind)
+    }
+
+    /// A switch to **Event** drops the task's Repeat, the way `CadenceScheduleDraft.normalizeForKind`
+    /// drops Due: this host's event write has no recurrence and the event arm draws no Repeat row,
+    /// so a rule kept through the switch would be a field the user cannot see or clear.
+    private func dropTaskOnlyFields(entering newKind: CadenceScheduleDraftKind) {
+        draft = Self.droppingTaskOnlyFields(from: draft, entering: newKind)
+    }
+
+    /// Static so the rule is testable without a view.
+    static func droppingTaskOnlyFields(
+        from draft: CadenceScheduleDraft,
+        entering newKind: CadenceScheduleDraftKind
+    ) -> CadenceScheduleDraft {
+        guard newKind == .event else { return draft }
+        var dropped = draft
+        dropped.repeatRule = .none
+        dropped.seriesEndMode = .never
+        dropped.seriesEndDateKey = ""
+        dropped.seriesEndCount = 0
+        return dropped
     }
 
     // MARK: - Calendars

@@ -156,10 +156,9 @@ struct CadenceTodayTimelineCreateInPlaceTests {
     /// **The day the panel names is the day the task lands on** — the one behaviour the handoff was
     /// carrying that a careless in-place write would drop.
     ///
-    /// T-1433 gave the popover editable date and time fields, and
-    /// `QuickCreateChoicePopover.hostWritesDraftDay` tells the panel this host honours them: a slot
-    /// dragged on the Today timeline and then moved to another day in the panel must be created
-    /// there. Asserted as a **relation** between two drafts that differ only in `dateKey`, so a
+    /// T-1433 gave the popover editable date and time fields, and both hosts honour them since
+    /// [[T-3171]] (iv): a slot dragged on a timeline and then moved to another day in the panel
+    /// must be created there. Asserted as a **relation** between two drafts that differ only in `dateKey`, so a
     /// write that pins every task to the host's own day fails here however that day is spelled.
     @Test("A drafted day is the day the task is created on")
     func aDraftedDayIsTheDayTheTaskIsCreatedOn() throws {
@@ -212,6 +211,61 @@ struct CadenceTodayTimelineCreateInPlaceTests {
         #expect(drawn.estimatedMinutes == 90)
         #expect(collapsed.estimatedMinutes > 0, "a collapsed slot created a task with no length")
         #expect(collapsed.estimatedMinutes < drawn.estimatedMinutes)
+    }
+
+    // MARK: - [[T-3171]] (iii), (iv): Due, Repeat and the Calendar page's column
+
+    /// **Due and Repeat reach the store**, through the same write and read back through a second
+    /// context. The popover used to withhold both rows because this write had nowhere to put them.
+    @Test("Due and Repeat on a drag-created task are stored")
+    func dueAndRepeatAreStored() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        var payload = draft(title: "Dragged with a deadline and a series", dateKey: "2026-05-04")
+        payload.dueDateKey = "2026-05-08"
+        payload.repeatRule = .weekly
+        payload.seriesEndMode = .afterCount
+        payload.seriesEndCount = 3
+
+        _ = try #require(try SchedulePanelDataSupport.insertDragCreatedTask(
+            payload,
+            areas: [],
+            projects: [],
+            in: context
+        ))
+
+        let reader = ModelContext(container)
+        let stored = try #require(try reader.fetch(FetchDescriptor<AppTask>()).first)
+        #expect(stored.dueDate == "2026-05-08")
+        #expect(stored.recurrenceRule == .weekly)
+        #expect(stored.recurrenceEndCount == 3)
+
+        // Non-vacuity: the same draft without them stores neither, so the assertions above are not
+        // reading a default.
+        let bare = try #require(try SchedulePanelDataSupport.insertDragCreatedTask(
+            draft(title: "Dragged plain", dateKey: "2026-05-04"),
+            areas: [],
+            projects: [],
+            in: context
+        ))
+        #expect(bare.dueDate.isEmpty)
+        #expect(bare.recurrenceRule == .none)
+    }
+
+    /// **The Calendar page's column writes the draft whole** — it used to unpack the fields and
+    /// supply its own column's `dateKey`, which is why the popover had to refuse a moved day.
+    @Test("The Calendar page's day column writes the draft's own day")
+    func theCalendarColumnWritesTheDraftsOwnDay() throws {
+        let column = try code(Self.columnPath)
+        #expect(column.contains("struct CalDayColumn: View"), "non-vacuity: column file unread")
+        #expect(column.contains("onCreateTask: createTask,"))
+        #expect(column.contains("private func createTask(_ draft: QuickCreateTaskDraft)"))
+        let body = try #require(CadenceSourceScan.functionBody(named: "createTask", in: column))
+        #expect(body.contains("SchedulePanelDataSupport.insertDragCreatedTask("))
+        #expect(
+            CadenceSourceScan.matchCount(#"\bdateKey\b"#, in: body) == 0,
+            "the column still writes its own day over the draft's"
+        )
     }
 }
 #endif

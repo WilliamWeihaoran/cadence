@@ -284,9 +284,11 @@ struct CadenceCalendarConsistencySurfaceTests {
         // change that preserved everything it claims — the argument is still the stored title, it
         // just moved to its own line. Adjacency was never the claim; **which function wraps the
         // title** is.
+        // [[T-3171]] (iv) made the argument a `QuickCreateEventDraft`, so the title is resolved
+        // onto the value the line before it is forwarded; the claim is unchanged.
         #expect(
             CadenceSourceScan.matchCount(
-                #"onCreateEvent\?\(\s*CadenceEventTitleSupport\.storedTitle\(title\)"#,
+                #"stored\.title = CadenceEventTitleSupport\.storedTitle\(draft\.title\)\s*\n\s*let failure = onCreateEvent\?\(stored\)"#,
                 in: canvas
             ) == 1
         )

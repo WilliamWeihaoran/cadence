@@ -833,30 +833,17 @@ struct CalDayColumn: View {
             showCurrentTimeDot: true,
             showHalfHourMarks: showHalfHourMarks,
             showWorkHoursHighlight: true,
-            usesTaskPanelForTaskCreation: false,
-            // This column's popover composes in place (`usesTaskPanelForTaskCreation: false`),
-            // so its Task tab has no date or time *field* and the draft carries the slot it was
-            // seeded with — on this host the drag is the authority for when. Priority is no longer
-            // in that list (T-1436): the tab draws the row, and `createTask` forwards it through
-            // `SchedulingActions.insertTask`, which takes one now.
-            onCreateTask: { draft in
-                createTask(
-                    title: draft.title,
-                    startMin: draft.startMin,
-                    endMin: draft.endMin,
-                    containerSelection: draft.container,
-                    sectionName: draft.sectionName,
-                    priority: draft.priority,
-                    notes: draft.notes,
-                    subtaskTitles: draft.subtaskTitles
-                )
-            },
+            // The draft is written whole, **on its own day** ([[T-3171]] (iv)): the panel's Do row
+            // can move it off this column, and this host used to overwrite that with the column's
+            // own `dateKey`, so the popover had to refuse the move. Due and Repeat ride in the
+            // same value ([[T-3171]] (iii)).
+            onCreateTask: createTask,
             onDropTaskAtMinute: { task, startMin in
                 SchedulingActions.commitDropTask(task, to: dateKey, startMin: startMin, in: modelContext)
             },
             externalEvents: externalEventItems,
-            onCreateEvent: { title, startMin, endMin, calendarID, notes in
-                calendarManager.createStandaloneEvent(title: title, startMin: startMin, durationMinutes: endMin - startMin, calendarID: calendarID, date: date, notes: notes)
+            onCreateEvent: { draft in
+                calendarManager.createStandaloneEvent(title: draft.title, startMin: draft.startMin, durationMinutes: draft.endMin - draft.startMin, calendarID: draft.calendarID, date: draft.day(or: date), notes: draft.notes)
             },
             prefersCalendarEventCreation: true,
             onDropAllDayEventAtMinute: { payload, startMin in
@@ -891,27 +878,13 @@ struct CalDayColumn: View {
     /// column's `ModelContext` and so — correctly — leaves the commit to whoever owns the unit of
     /// work. Nobody did: the task, its subtasks and its container assignment sat pending in the
     /// app's one context while the quick-create popover closed as though they had landed.
-    private func createTask(
-        title: String,
-        startMin: Int,
-        endMin: Int,
-        containerSelection: TaskContainerSelection,
-        sectionName: String,
-        priority: TaskPriority,
-        notes: String,
-        subtaskTitles: [String]
-    ) {
+    ///
+    /// The same write the Today timeline makes (`SchedulePanelDataSupport.insertDragCreatedTask`),
+    /// so the two hosts cannot disagree about which day, due date or series a draft is stored with.
+    private func createTask(_ draft: QuickCreateTaskDraft) {
         do {
-            try SchedulingActions.insertTask(
-                title: title,
-                dateKey: dateKey,
-                startMin: startMin,
-                endMin: endMin,
-                containerSelection: containerSelection,
-                sectionName: sectionName,
-                priority: priority,
-                notes: notes,
-                subtaskTitles: subtaskTitles,
+            try SchedulePanelDataSupport.insertDragCreatedTask(
+                draft,
                 areas: areas,
                 projects: projects,
                 in: modelContext

@@ -445,7 +445,9 @@ struct CadenceFocusSessionAndBlockCommitTests {
         let source = try CadenceCommitSurfaceScan.scanned(Self.monthGridPath)
         let taskBody = try CadenceCommitSurfaceScan.declarationBody(named: "createTask", in: source)
 
-        #expect(taskBody.contains("try SchedulingActions.insertTask("))
+        // Through the Today timeline's write since [[T-3171]] (iv), which commits through
+        // `SchedulingActions.insertTask` itself.
+        #expect(taskBody.contains("try SchedulePanelDataSupport.insertDragCreatedTask("))
         #expect(taskBody.contains("taskCreateFailed = true"))
         #expect(CadenceSourceScan.matchCount(#"func createBundle\("#, in: source) == 0)
         #expect(CadenceSourceScan.matchCount(#"SchedulingActions\.insertBundle\("#, in: source) == 0)

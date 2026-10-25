@@ -21,7 +21,6 @@ struct TimelineDayCanvas: View {
     let showCurrentTimeDot: Bool
     var showHalfHourMarks: Bool = false
     var showWorkHoursHighlight = false
-    var usesTaskPanelForTaskCreation = true
     let onCreateTask: (QuickCreateTaskDraft) -> Void
     let onDropTaskAtMinute: (AppTask, Int) -> Void
     var externalEvents: [CalendarEventItem] = []
@@ -31,7 +30,10 @@ struct TimelineDayCanvas: View {
     /// to `Void` happened here: `CalendarManager.createStandaloneEvent` has returned a cause since
     /// T-339, the hosts threw it away on the way in, and this canvas then dismissed the popover the
     /// user had typed the event into whatever the store answered.
-    var onCreateEvent: ((String, Int, Int, String, String) -> CalendarWriteFailure?)? = nil
+    ///
+    /// It takes a `QuickCreateEventDraft` ([[T-3171]] (iv)) so the day the panel names reaches the
+    /// host; it used to be five positional arguments with no day, and both hosts wrote their own.
+    var onCreateEvent: ((QuickCreateEventDraft) -> CalendarWriteFailure?)? = nil
     /// Calendar pages should treat dragged time slots as events first; task timelines keep time blocks first.
     var prefersCalendarEventCreation = false
     /// Optional: called when an all-day event chip is dropped onto the timeline, with the event identifier and target minute.
@@ -244,10 +246,9 @@ struct TimelineDayCanvas: View {
                 endMin: end,
                 dateKey: dateKey,
                 // **T-688.** The fallback here is *stored*, not drawn. Both hosts of this canvas
-                // take the string as a task's actual name: the Calendar page hands it straight to
-                // `SchedulingActions.insertTask`, and `SchedulePanel` seeds the create sheet's
-                // title field with it, where confirming without typing stores it unchanged. It
-                // read `"New Task"`, which `CadenceEventTitleSupport`'s own header already argues
+                // take the string as a task's actual name: each hands it straight to
+                // `SchedulePanelDataSupport.insertDragCreatedTask`, where it is stored unchanged.
+                // It read `"New Task"`, which `CadenceEventTitleSupport`'s own header already argues
                 // against for the sibling case — `"New Event"` was retired for `"Untitled Event"`
                 // because a thing created last year is not new but is still untitled — and the
                 // argument is stronger for a stored name than for a drawn one. It now reads the
@@ -260,14 +261,10 @@ struct TimelineDayCanvas: View {
                     onCreateTask(resolved)
                     finishDraftCreation()
                 },
-                onCreateEvent: onCreateEvent == nil ? nil : { title, startMin, endMin, calendarID, notes in
-                    let failure = onCreateEvent?(
-                        CadenceEventTitleSupport.storedTitle(title),
-                        startMin,
-                        endMin,
-                        calendarID,
-                        notes
-                    ) ?? nil
+                onCreateEvent: onCreateEvent == nil ? nil : { draft in
+                    var stored = draft
+                    stored.title = CadenceEventTitleSupport.storedTitle(draft.title)
+                    let failure = onCreateEvent?(stored) ?? nil
                     calendarManager.report(
                         CadenceCalendarEventEditingSupport.saveOutcome(for: failure),
                         into: $eventCreateFailureNotice
@@ -275,7 +272,6 @@ struct TimelineDayCanvas: View {
                 },
                 onCancel: finishDraftCreation,
                 createFailureNotice: $eventCreateFailureNotice,
-                usesTaskPanelForTaskCreation: usesTaskPanelForTaskCreation,
                 defaultsToCalendarEvent: prefersCalendarEventCreation
             )
         )

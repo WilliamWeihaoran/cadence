@@ -29,6 +29,10 @@ enum SchedulingActions {
     /// `TaskCreationDraft.resolvedPriority` is what applies it — the picker is the slower spelling
     /// of the same field, not a second one.
     ///
+    /// **[[T-3171]] (iii).** `dueDateKey` and the recurrence default to "none" for the plain
+    /// drag-out entry point, and are what the drag-create popover's Due and Repeat rows reach the
+    /// store through — `TaskCreationService` already writes both, so nothing new is spelled here.
+    ///
     /// - Parameter commit: See `CadencePendingChangePersistence.commitInsert(of:in:commit:)`.
     @discardableResult
     static func insertTask(
@@ -41,6 +45,11 @@ enum SchedulingActions {
         priority: TaskPriority = .none,
         notes: String = "",
         subtaskTitles: [String] = [],
+        dueDateKey: String = "",
+        repeatRule: TaskRecurrenceRule = .none,
+        seriesEndMode: TaskRecurrenceEndMode = .never,
+        seriesEndDateKey: String = "",
+        seriesEndCount: Int = 0,
         areas: [Area],
         projects: [Project],
         in context: ModelContext,
@@ -52,12 +61,16 @@ enum SchedulingActions {
             priority: priority,
             container: containerSelection,
             sectionName: sectionName,
-            dueDateKey: "",
+            dueDateKey: dueDateKey,
             scheduledDateKey: dateKey,
             subtaskTitles: subtaskTitles,
             tags: [],
             scheduledStartMin: startMin,
-            estimatedMinutes: max(5, endMin - startMin)
+            estimatedMinutes: max(5, endMin - startMin),
+            repeatRule: repeatRule,
+            seriesEndMode: seriesEndMode,
+            seriesEndDateKey: seriesEndDateKey,
+            seriesEndCount: seriesEndCount
         )
         return try TaskCreationService(areas: areas, projects: projects).createTask(
             from: draft,

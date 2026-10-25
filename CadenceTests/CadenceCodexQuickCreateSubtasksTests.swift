@@ -70,10 +70,14 @@ struct CadenceCodexQuickCreateSubtasksTests {
         let popover = try code("Cadence/macOS/Views/QuickCreateChoicePopover.swift")
         #expect(popover.contains("offersSubtasks: true"))
         #expect(popover.contains("onCreateTask(QuickCreateTaskDraft(scheduleDraft: draft))"))
+        // Both hosts write the whole draft through one helper since [[T-3171]] (iv), so the
+        // checklist is forwarded once, there.
         let calendar = try code("Cadence/macOS/Views/CalendarPageMonthSupportViews.swift")
-        #expect(calendar.contains("subtaskTitles: draft.subtaskTitles"))
         let createTask = try #require(CadenceSourceScan.functionBody(named: "createTask", in: calendar))
-        #expect(createTask.contains("subtaskTitles: subtaskTitles"))
+        #expect(createTask.contains("SchedulePanelDataSupport.insertDragCreatedTask("))
+        let write = try code("Cadence/macOS/Views/SchedulePanelDataSupport.swift")
+        let insert = try #require(CadenceSourceScan.functionBody(named: "insertDragCreatedTask", in: write))
+        #expect(insert.contains("subtaskTitles: draft.subtaskTitles"))
     }
 }
 #endif

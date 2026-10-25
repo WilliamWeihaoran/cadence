@@ -798,9 +798,9 @@ struct CadenceEventKitPlatformParityTests {
     @Test func theMacOSQuickCreateEventCallbackKeepsTheTypedFailure() throws {
         for (path, needle) in [
             ("Cadence/macOS/Views/TimelineDayCanvas.swift",
-             "var onCreateEvent: ((String, Int, Int, String, String) -> CalendarWriteFailure?)? = nil"),
+             "var onCreateEvent: ((QuickCreateEventDraft) -> CalendarWriteFailure?)? = nil"),
             ("Cadence/macOS/Views/SchedulePanelShellViews.swift",
-             "let onCreateEvent: (String, Int, Int, String, String) -> CalendarWriteFailure?")
+             "let onCreateEvent: (QuickCreateEventDraft) -> CalendarWriteFailure?")
         ] {
             let raw = try CadenceSourceScan.sourceFile(path)
             let code = CadenceSourceScan.codeOnly(raw)
@@ -808,7 +808,7 @@ struct CadenceEventKitPlatformParityTests {
             #expect(code.count == raw.count, "\(path): the stripper changed the length")
             #expect(code.contains(needle), "\(path) still narrows the create callback to Void")
             #expect(
-                CadenceSourceScan.matchCount(#"onCreateEvent: \(\(String, Int, Int, String, String\) -> Void\)\?"#, in: code) == 0,
+                CadenceSourceScan.matchCount(#"onCreateEvent: \(\([^)]*\) -> Void\)\?"#, in: code) == 0,
                 "\(path) still declares a Void-returning create callback"
             )
         }

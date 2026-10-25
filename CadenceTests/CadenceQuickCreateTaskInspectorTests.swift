@@ -166,53 +166,67 @@ struct CadenceQuickCreateTaskInspectorTests {
         #expect(dragDraft(startMin: 9 * 60, endMin: 8 * 60 + 30).endMin == 9 * 60 + CadenceScheduleDraft.minimumDurationMinutes)
     }
 
-    // MARK: - What the two fixed write closures cannot carry is refused, never dropped
+    // MARK: - What the two write closures cannot carry is refused, never dropped
 
-    /// **The day gate.** `CalendarPageMonthSupportViews.swift` is Codex-leased, and its column
-    /// hands `createStandaloneEvent` its *own* `date:` and overwrites `draft.dateKey` with its own
-    /// column's — so a day picked in the panel has nowhere to be written from this popover. T-470's
-    /// rule is that a refusal is said; this is the sentence.
-    @Test func adayTheHostCannotWriteIsRefusedRatherThanDropped() {
-        var moved = dragDraft()
-        moved.startDateKey = "2026-05-04"
-        moved.endDateKey = "2026-05-04"
-
-        let notice = QuickCreateChoicePopover.hostLimitNotice(
-            for: moved,
-            hostDateKey: "2026-05-01",
-            hostWritesDraftDay: false
-        )
-        #expect(notice != nil, "a day the host overwrites was accepted silently")
-        #expect(notice?.contains(DateFormatters.shortDateString(from: "2026-05-01")) == true)
-        #expect(notice?.contains(DateFormatters.shortDateString(from: "2026-05-04")) == true)
-
-        // The same draft on the host that DOES forward the day is not refused — the Today
-        // timeline's task handoff passes `draft.dateKey` into `TaskCreationManager.present`, which
-        // is T-1433's behaviour and must survive this slice.
-        #expect(
-            QuickCreateChoicePopover.hostLimitNotice(
-                for: moved,
-                hostDateKey: "2026-05-01",
-                hostWritesDraftDay: true
-            ) == nil,
-            "the panel-handoff host lost T-1433's editable day"
-        )
+    /// **[[T-3171]] (iv): a moved day is honoured, not refused.** Both hosts now create on the
+    /// draft's own day — tasks through `SchedulePanelDataSupport.insertDragCreatedTask`, events
+    /// through `QuickCreateEventDraft.day(or:)` — so the popover has no day gate left. It used to
+    /// refuse this exact draft on the Calendar page's column.
+    @Test func aMovedDayIsAcceptedOnBothKinds() {
+        for kind in [CadenceScheduleDraftKind.task, .event] {
+            var moved = dragDraft(kind: kind)
+            moved.startDateKey = "2026-05-04"
+            moved.endDateKey = "2026-05-04"
+            #expect(
+                QuickCreateChoicePopover.hostLimitNotice(for: moved) == nil,
+                "a \(kind.title) moved to another day is still refused"
+            )
+        }
     }
 
-    /// The draft the drag opens with is writable by both hosts, on both kinds — otherwise the gate
-    /// above would be refusing the common case and no test here would notice.
-    @Test func theDraftADragOpensWithIsAcceptedByEitherHost() {
+    /// The event value carries the panel's day, and `day(or:)` resolves **that** day rather than
+    /// the host's. Asserted as a relation against a host day that differs, so a write that answers
+    /// the host's day however it is spelled fails here.
+    @Test func theEventDraftCarriesThePanelsDayNotTheHosts() throws {
+        var moved = dragDraft(kind: .event)
+        moved.startDateKey = "2026-05-04"
+        moved.endDateKey = "2026-05-04"
+        let event = QuickCreateEventDraft(scheduleDraft: moved)
+        #expect(event.dateKey == "2026-05-04")
+        #expect(event.startMin == moved.startMin)
+        #expect(event.endMin == moved.endMin)
+
+        let hostDay = try #require(DateFormatters.date(from: "2026-05-01"))
+        let resolved = event.day(or: hostDay)
+        #expect(DateFormatters.dateKey(from: resolved) == "2026-05-04")
+        #expect(DateFormatters.dateKey(from: resolved) != DateFormatters.dateKey(from: hostDay))
+
+        // The fallback is for a key that does not parse, and only then.
+        var broken = event
+        broken.dateKey = "not a day"
+        #expect(DateFormatters.dateKey(from: broken.day(or: hostDay)) == "2026-05-01")
+    }
+
+    /// Both hosts hand `createStandaloneEvent` the draft's day, never their own `date` alone.
+    @Test func bothEventHostsCreateOnTheDraftsDay() throws {
+        for path in [Self.monthGridPath, "Cadence/macOS/Views/SchedulePanel.swift"] {
+            let source = try code(path)
+            #expect(source.contains("calendarManager.createStandaloneEvent("), "non-vacuity: \(path)")
+            #expect(
+                CadenceSourceScan.matchCount(#"createStandaloneEvent\([^\n]*date: draft\.day\(or: "#, in: source) == 1,
+                "\(path) creates the event on its own day rather than the draft's"
+            )
+        }
+    }
+
+    /// The draft the drag opens with is writable on both kinds — otherwise the gate above would be
+    /// refusing the common case and no test here would notice.
+    @Test func theDraftADragOpensWithIsAccepted() {
         for kind in [CadenceScheduleDraftKind.task, .event] {
-            for writesDay in [true, false] {
-                #expect(
-                    QuickCreateChoicePopover.hostLimitNotice(
-                        for: dragDraft(kind: kind),
-                        hostDateKey: "2026-05-01",
-                        hostWritesDraftDay: writesDay
-                    ) == nil,
-                    "a freshly dragged \(kind.title) is refused on a host that writes-day=\(writesDay)"
-                )
-            }
+            #expect(
+                QuickCreateChoicePopover.hostLimitNotice(for: dragDraft(kind: kind)) == nil,
+                "a freshly dragged \(kind.title) is refused"
+            )
         }
     }
 
@@ -221,20 +235,12 @@ struct CadenceQuickCreateTaskInspectorTests {
     @Test func anAllDayDraftIsRefusedBecauseNeitherWriteCanExpressOne() {
         var allDayEvent = dragDraft(kind: .event)
         allDayEvent.isAllDay = true
-        let eventNotice = QuickCreateChoicePopover.hostLimitNotice(
-            for: allDayEvent,
-            hostDateKey: "2026-05-01",
-            hostWritesDraftDay: false
-        )
+        let eventNotice = QuickCreateChoicePopover.hostLimitNotice(for: allDayEvent)
         #expect(eventNotice?.contains("All day") == true, "the all-day event refusal does not name the control: \(eventNotice ?? "nil")")
 
         var untimedTask = dragDraft()
         untimedTask.isAllDay = true
-        let taskNotice = QuickCreateChoicePopover.hostLimitNotice(
-            for: untimedTask,
-            hostDateKey: "2026-05-01",
-            hostWritesDraftDay: true
-        )
+        let taskNotice = QuickCreateChoicePopover.hostLimitNotice(for: untimedTask)
         #expect(taskNotice != nil, "an untimed task was accepted by a host that stores a minute")
         #expect(taskNotice != eventNotice, "both kinds answered one sentence; the task's control is not All day")
     }
@@ -246,41 +252,79 @@ struct CadenceQuickCreateTaskInspectorTests {
         spanning.endDateKey = "2026-05-02"
         #expect(spanning.spansMultipleDays)
 
-        let notice = QuickCreateChoicePopover.hostLimitNotice(
-            for: spanning,
-            hostDateKey: "2026-05-01",
-            hostWritesDraftDay: false
-        )
+        let notice = QuickCreateChoicePopover.hostLimitNotice(for: spanning)
         #expect(notice?.contains(DateFormatters.shortDateString(from: "2026-05-01")) == true)
     }
 
-    /// **None is a real estimate everywhere else and cannot be one here.** Both task writes floor
-    /// the length at five minutes (`SchedulingActions.insertTask`, `TaskCreationManager.present`),
-    /// so a task created from a drag always has one — the panel's Estimate row says so rather than
-    /// storing 15 minutes over the top of the user's answer.
+    /// **The event write has no recurrence**, so an event draft that still carries a rule is
+    /// refused rather than written as a single event — while the same rule on a task, which the
+    /// task write now stores ([[T-3171]] (iii)), is accepted.
+    @Test func aRepeatingEventIsRefusedAndARepeatingTaskIsNot() {
+        var event = dragDraft(kind: .event)
+        event.repeatRule = .weekly
+        #expect(QuickCreateChoicePopover.hostLimitNotice(for: event) != nil, "a series was accepted as one event")
+
+        var task = dragDraft()
+        task.repeatRule = .weekly
+        #expect(QuickCreateChoicePopover.hostLimitNotice(for: task) == nil, "a repeating task is still refused")
+    }
+
+    /// A switch to Event drops the task's series — the event arm draws no Repeat row, so a kept
+    /// rule would be a field the user could neither see nor clear — and a switch to Task keeps it.
+    @Test func aSwitchToEventDropsTheTasksSeries() {
+        var task = dragDraft()
+        task.repeatRule = .weekly
+        task.seriesEndMode = .afterCount
+        task.seriesEndCount = 5
+
+        let asEvent = QuickCreateChoicePopover.droppingTaskOnlyFields(from: task, entering: .event)
+        #expect(asEvent.repeatRule == .none)
+        #expect(asEvent.seriesEndMode == .never)
+        #expect(asEvent.seriesEndCount == 0)
+        #expect(QuickCreateChoicePopover.hostLimitNotice(for: { var e = asEvent; e.kind = .event; return e }()) == nil)
+
+        let asTask = QuickCreateChoicePopover.droppingTaskOnlyFields(from: task, entering: .task)
+        #expect(asTask.repeatRule == .weekly, "a switch to Task dropped the series it can store")
+    }
+
+    /// **None is a real estimate everywhere else and cannot be one here.** The task write floors
+    /// the length at five minutes (`SchedulingActions.insertTask`), so a task created from a drag
+    /// always has one — the panel's Estimate row says so rather than storing a floor over the top
+    /// of the user's answer.
     @Test func anEstimateOfNoneIsRefusedBecauseBothTaskWritesFloorTheLength() {
         var noEstimate = dragDraft()
         noEstimate.setEstimate(0)
         #expect(noEstimate.estimateMinutes == 0)
         #expect(
-            QuickCreateChoicePopover.hostLimitNotice(
-                for: noEstimate,
-                hostDateKey: "2026-05-01",
-                hostWritesDraftDay: true
-            ) != nil,
+            QuickCreateChoicePopover.hostLimitNotice(for: noEstimate) != nil,
             "Estimate: None was accepted and would have been stored as a quarter hour"
         )
         // An event has no estimate at all, so the same zero must not refuse one.
         var zeroOnAnEvent = dragDraft(kind: .event)
         zeroOnAnEvent.estimateMinutes = 0
         #expect(
-            QuickCreateChoicePopover.hostLimitNotice(
-                for: zeroOnAnEvent,
-                hostDateKey: "2026-05-01",
-                hostWritesDraftDay: false
-            ) == nil,
+            QuickCreateChoicePopover.hostLimitNotice(for: zeroOnAnEvent) == nil,
             "an event was refused for a task's field"
         )
+    }
+
+    /// **[[T-3171]] (iii): Due and Repeat reach the task value.** The series end goes through
+    /// `effectiveSeriesEndMode`, so an `.onDate` with no day arrives as `.never`.
+    @Test func dueAndRepeatTravelIntoTheTaskDraft() {
+        var draft = dragDraft()
+        draft.dueDateKey = "2026-05-09"
+        draft.repeatRule = .weekly
+        draft.seriesEndMode = .afterCount
+        draft.seriesEndCount = 4
+        let payload = QuickCreateTaskDraft(scheduleDraft: draft)
+        #expect(payload.dueDateKey == "2026-05-09")
+        #expect(payload.repeatRule == .weekly)
+        #expect(payload.seriesEndMode == .afterCount)
+        #expect(payload.seriesEndCount == 4)
+
+        draft.seriesEndMode = .onDate
+        draft.seriesEndDateKey = ""
+        #expect(QuickCreateTaskDraft(scheduleDraft: draft).seriesEndMode == .never)
     }
 
     // MARK: - [[T-1610]]: the Event arm's prose is not the Task arm's
@@ -419,9 +463,13 @@ struct CadenceQuickCreateTaskInspectorTests {
         #expect(popover.contains("draft: $draft"))
         #expect(popover.contains("CadenceSchedulePanelActions("))
         #expect(popover.contains("delete: nil"), "the creating popover offers a Delete control")
-        // Withheld, not drawn-and-dropped: neither write closure carries any of the three.
-        for flag in ["offersEventRepeat: false", "offersTaskRepeat: false", "offersTaskDue: false", "offersEventLocation: false"] {
+        // Withheld, not drawn-and-dropped: the event write carries neither of these two.
+        for flag in ["offersEventRepeat: false", "offersEventLocation: false"] {
             #expect(popover.contains(flag), "the popover offers a field its host cannot write: \(flag) missing")
+        }
+        // And offered where the write now carries them ([[T-3171]] (iii)).
+        for flag in ["offersTaskRepeat: true", "offersTaskDue: true"] {
+            #expect(popover.contains(flag), "the popover withholds a task field its host writes: \(flag) missing")
         }
         #expect(popover.contains("canCommit: canCommit"))
         #expect(popover.contains("failureNotice: createFailureNotice ?? hostLimitNotice"))
@@ -433,25 +481,15 @@ struct CadenceQuickCreateTaskInspectorTests {
     @Test func theCanvasCreatesTheRangeThePopoverConfirmedNotTheOneTheDragDrew() throws {
         let canvas = try code(Self.canvasPath)
         #expect(canvas.contains("struct TimelineDayCanvas: View"), "non-vacuity: file unread")
-        #expect(
-            canvas.contains("{ title, startMin, endMin, calendarID, notes in"),
-            "the canvas's event closure no longer takes the popover's range"
-        )
         let popoverBody = try #require(CadenceSourceScan.functionBody(named: "quickCreatePopover", in: canvas))
-        // The forwarded range is the popover's. The needle spans the title argument above it, so a
-        // closure that renamed its parameters and kept creating `start`/`end` cannot satisfy it.
+        // The forwarded value is the popover's own `QuickCreateEventDraft` ([[T-3171]] (iv)), with
+        // only its title resolved — so neither the drag's `start`/`end` nor its day can be swapped in.
         #expect(
-            CadenceSourceScan.matchCount(
-                #"storedTitle\(title\),\s*\n\s*startMin,\s*\n\s*endMin,"#,
-                in: popoverBody
-            ) == 1,
-            "the canvas does not forward the range the popover confirmed"
+            CadenceSourceScan.matchCount(#"onCreateEvent\?\(stored\)"#, in: popoverBody) == 1,
+            "the canvas does not forward the draft the popover confirmed"
         )
         #expect(
-            CadenceSourceScan.matchCount(
-                #"storedTitle\(title\),\s*\n\s*start,\s*\n\s*end,"#,
-                in: popoverBody
-            ) == 0,
+            CadenceSourceScan.matchCount(#"onCreateEvent\?\([^)]*\bstart\b"#, in: popoverBody) == 0,
             "the canvas still creates the drag's own range instead of the confirmed one"
         )
         // The seed is still the drag's, which is the half that must not move.
@@ -572,15 +610,19 @@ struct CadenceQuickCreateTaskInspectorTests {
             "the popover never hands the panel's priority to the host's draft"
         )
 
+        // Both hosts hand the whole draft to one write since [[T-3171]] (iv); the priority is
+        // forwarded there, once.
         let host = try code(Self.monthGridPath)
         let forwarded = try #require(CadenceSourceScan.functionBody(named: "createTask", in: host))
         #expect(
-            forwarded.contains("priority: priority"),
-            "the calendar day column drops the priority again on the way to the store"
+            forwarded.contains("SchedulePanelDataSupport.insertDragCreatedTask("),
+            "the calendar day column no longer writes the draft through the shared drag-create write"
         )
+        let write = try code("Cadence/macOS/Views/SchedulePanelDataSupport.swift")
+        let insert = try #require(CadenceSourceScan.functionBody(named: "insertDragCreatedTask", in: write))
         #expect(
-            CadenceSourceScan.matchCount(#"priority: draft\.priority"#, in: host) == 1,
-            "the popover's draft priority never reaches the column's createTask"
+            CadenceSourceScan.matchCount(#"priority: draft\.priority"#, in: insert) == 1,
+            "the drag-create write drops the draft's priority on the way to the store"
         )
 
         // And the write path itself takes one rather than writing the literal back in.
