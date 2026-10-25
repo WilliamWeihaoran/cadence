@@ -112,9 +112,11 @@ struct NoteEditorPane: View {
         switch note.kind {
         case .daily:
             guard let date = DateFormatters.date(from: note.dateKey) else { return note.displayTitle }
-            return DateFormatters.longDate.string(from: date)
+            // Year only outside this year ([[T-6432]]): the list's month heading is the only other
+            // year on the page, and it scrolls away from the open note.
+            return DateFormatters.absoluteLongDay(date, relativeTo: Date())
         case .weekly:
-            return DateFormatters.weekLabel(from: note.weekKey)
+            return DateFormatters.weekLabel(from: note.weekKey, relativeTo: Date())
         default:
             return note.displayTitle
         }

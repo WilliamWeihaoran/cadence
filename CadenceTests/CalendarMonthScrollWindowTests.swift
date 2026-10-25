@@ -210,7 +210,7 @@ struct CalendarMonthScrollWindowTests {
     @Test func theDayTitleNamesTheLeadingColumn() {
         let someDay = date("2026-08-07")
         #expect(
-            CadenceCalendarDateTitleSupport.label(for: someDay, format: .day, calendar: calendar)
+            CadenceCalendarDateTitleSupport.label(for: someDay, format: .day, now: date("2026-08-08"), calendar: calendar)
                 == DateFormatters.shortDate.string(from: someDay)
         )
         #expect(!CadenceCalendarDateTitleSupport.isAtNow(someDay, format: .day, now: date("2026-08-08"), calendar: calendar))

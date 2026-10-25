@@ -1005,14 +1005,21 @@ struct MeetingNoteListRow: View {
     var metrics: CadenceNotesListMetrics = .desktop
 
     private var detail: String {
+        Self.detail(for: note, showsDate: showsDate, relativeTo: Date())
+    }
+
+    /// The row's second line. With `showsDate`, the date goes through `DateFormatters.absoluteDay`
+    /// -- "Mar 28" this year, "Mar 28, 2025" outside it ([[T-6432]]) -- because the row stands with
+    /// no month header above it, so nothing else on screen says which year the event was in.
+    static func detail(for note: Note, showsDate: Bool, relativeTo referenceDate: Date) -> String {
         let timeLabel = note.eventStartMin >= 0 && note.eventEndMin >= 0
             ? TimeFormatters.timeRange(startMin: note.eventStartMin, endMin: note.eventEndMin)
             : ""
         guard showsDate else { return timeLabel }
         guard let date = DateFormatters.date(from: note.eventDateKey) else {
-            return "Updated \(DateFormatters.shortDate.string(from: note.updatedAt))"
+            return "Updated \(DateFormatters.absoluteDay(note.updatedAt, relativeTo: referenceDate))"
         }
-        let dateLabel = DateFormatters.shortDate.string(from: date)
+        let dateLabel = DateFormatters.absoluteDay(date, relativeTo: referenceDate)
         return timeLabel.isEmpty ? dateLabel : "\(dateLabel) • \(timeLabel)"
     }
 

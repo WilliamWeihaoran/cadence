@@ -24,11 +24,15 @@ enum CadenceCalendarDateTitleSupport {
     static func label(
         for date: Date,
         format: CadenceCalendarDateTitleFormat,
+        now: Date = Date(),
         calendar: Calendar = .current
     ) -> String {
         switch format {
+        // `absoluteDay`: "Jan 5" in the current year, "Jan 5, 2027" outside it ([[T-6431]]). On a
+        // phone nothing else on a Week / 2 Weeks / Board screen names the year -- the column heads
+        // are `EEE · MMM d` -- so a day picked a year out read exactly like this year's.
         case .day:
-            return DateFormatters.shortDate.string(from: date)
+            return DateFormatters.absoluteDay(date, relativeTo: now)
         // `shortMonthYear`, not `monthYear`: "Aug 2026". This control is also the Notes header, and
         // every other reading it shows abbreviates the month — `shortDate`'s "Aug 17" on the day
         // formats here, "Aug 17–23" on Notes' week. The long form was the one label in the shared

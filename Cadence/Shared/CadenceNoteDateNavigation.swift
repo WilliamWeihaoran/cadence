@@ -16,41 +16,63 @@ enum CadenceNoteDateNavigation {
     ///
     /// `nil` rather than the string "Notes": the fallback is the *host's* word, and only the host
     /// knows it.
-    static func title(for tab: CadenceNotesTabVocabulary, dayKey: String, calendar: Calendar = .current) -> String? {
+    ///
+    /// `now` is the reference year: a date outside it carries its year, one inside it does not
+    /// ([[T-6431]], following `DateFormatters.absoluteDay`).
+    static func title(
+        for tab: CadenceNotesTabVocabulary,
+        dayKey: String,
+        now: Date = Date(),
+        calendar: Calendar = .current
+    ) -> String? {
         switch tab {
         case .today:
-            return dayLabel(forDayKey: dayKey)
+            return dayLabel(forDayKey: dayKey, now: now)
         case .week:
-            return weekRangeLabel(forDayKey: dayKey, calendar: calendar)
+            return weekRangeLabel(forDayKey: dayKey, now: now, calendar: calendar)
         case .notepad, .events:
             return nil
         }
     }
 
-    /// `"Aug 17"`. Returns the key itself if it does not parse, which is what the rest of the app
-    /// does with a malformed key (see `DateFormatters.weekLabel`) — a visibly wrong label beats a
-    /// crash or a silent substitution of today.
-    static func dayLabel(forDayKey dayKey: String) -> String {
+    /// `"Aug 17"`, or `"Aug 17, 2025"` outside `now`'s year. Returns the key itself if it does not
+    /// parse, which is what the rest of the app does with a malformed key (see
+    /// `DateFormatters.weekLabel`) — a visibly wrong label beats a crash or a silent substitution
+    /// of today.
+    static func dayLabel(forDayKey dayKey: String, now: Date = Date()) -> String {
         guard let date = DateFormatters.date(from: dayKey) else { return dayKey }
-        return DateFormatters.shortDate.string(from: date)
+        return DateFormatters.absoluteDay(date, relativeTo: now)
     }
 
     /// `"Aug 17–23"` for a week inside one month, `"Aug 31 – Sep 6"` when it straddles two.
     ///
     /// The en dash is tight in the first form and spaced in the second, because `Aug 31 – Sep 6`
     /// set tight reads as one date. Same rule the timeline's `TimeFormatters.timeRange` follows.
-    static func weekRangeLabel(forDayKey dayKey: String, calendar: Calendar = .current) -> String {
+    ///
+    /// Outside `now`'s year the range carries a year ([[T-6431]]): once, at the end, when both ends
+    /// share it (`"Aug 17–23, 2025"`, `"Mar 30 – Apr 5, 2025"`); otherwise on each end that is
+    /// outside it, through `DateFormatters.absoluteDay` (`"Dec 28 – Jan 3, 2027"`). Inside `now`'s
+    /// year the output is unchanged.
+    static func weekRangeLabel(forDayKey dayKey: String, now: Date = Date(), calendar: Calendar = .current) -> String {
         let key = DateFormatters.weekKey(from: DateFormatters.date(from: dayKey) ?? Date())
         guard let monday = DateFormatters.weekStartDate(forWeekKey: key, calendar: calendar),
               let sunday = calendar.date(byAdding: .day, value: 6, to: monday) else {
-            return DateFormatters.weekLabel(from: key)
+            return DateFormatters.weekLabel(from: key, relativeTo: now)
         }
 
+        let nowYear = calendar.component(.year, from: now)
+        let mondayYear = calendar.component(.year, from: monday)
+        let sundayYear = calendar.component(.year, from: sunday)
         let sameMonth = calendar.isDate(monday, equalTo: sunday, toGranularity: .month)
-        if sameMonth {
-            return "\(DateFormatters.shortDate.string(from: monday))–\(DateFormatters.dayNumber.string(from: sunday))"
+
+        if mondayYear == sundayYear {
+            let range = sameMonth
+                ? "\(DateFormatters.shortDate.string(from: monday))–\(DateFormatters.dayNumber.string(from: sunday))"
+                : "\(DateFormatters.shortDate.string(from: monday)) – \(DateFormatters.shortDate.string(from: sunday))"
+            return mondayYear == nowYear ? range : "\(range), \(mondayYear)"
         }
-        return "\(DateFormatters.shortDate.string(from: monday)) – \(DateFormatters.shortDate.string(from: sunday))"
+        // A week straddling New Year: the ends are in different years, so at least one carries its own.
+        return "\(DateFormatters.absoluteDay(monday, relativeTo: now)) – \(DateFormatters.absoluteDay(sunday, relativeTo: now))"
     }
 
     /// True when the panel is showing the note it would have shown before this control existed.

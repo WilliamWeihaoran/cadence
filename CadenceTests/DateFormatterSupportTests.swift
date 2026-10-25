@@ -82,6 +82,31 @@ struct DateFormatterSupportTests {
     /// Same-year output is unchanged. The widget and the drop ghost measure against their own
     /// `todayKey`, not the clock: the same key reads with or without the year depending only on
     /// which year that `todayKey` is in.
+    /// The macOS note editor's daily and weekly headers and the list-detail event-note row carry
+    /// the year only outside the reference year ([[T-6432]]); same-year spellings are unchanged.
+    @MainActor
+    @Test func noteHeadersAndEventRowsShowTheYearOnlyOutsideTheReferenceYear() throws {
+        let reference = try #require(DateFormatters.ymd.date(from: "2026-10-25")).addingTimeInterval(12 * 60 * 60)
+        let lastYear = try #require(DateFormatters.ymd.date(from: "2025-10-25"))
+        let thisYear = try #require(DateFormatters.ymd.date(from: "2026-03-28"))
+
+        #expect(DateFormatters.absoluteLongDay(lastYear, relativeTo: reference) == "Saturday, October 25, 2025")
+        #expect(DateFormatters.absoluteLongDay(thisYear, relativeTo: reference) == "Saturday, March 28")
+
+        // ISO 2025-W13 starts Mon 2025-03-24; 2026-W13 starts Mon 2026-03-23.
+        #expect(DateFormatters.weekLabel(from: "2025-W13", relativeTo: reference) == "Week of Mar 24, 2025")
+        #expect(DateFormatters.weekLabel(from: "2026-W13", relativeTo: reference) == "Week of Mar 23")
+
+        let old = Note(kind: .meeting, title: "Review", eventDateKey: "2025-03-28", eventStartMin: 540, eventEndMin: 600)
+        let recent = Note(kind: .meeting, title: "Review", eventDateKey: "2026-03-28")
+        let oldDetail = MeetingNoteListRow.detail(for: old, showsDate: true, relativeTo: reference)
+        #expect(oldDetail.hasPrefix("Mar 28, 2025 • "))
+        #expect(MeetingNoteListRow.detail(for: recent, showsDate: true, relativeTo: reference) == "Mar 28")
+        #expect(MeetingNoteListRow.detail(for: old, showsDate: false, relativeTo: reference).contains("2025") == false)
+        let undated = Note(kind: .meeting, title: "Review", updatedAt: lastYear)
+        #expect(MeetingNoteListRow.detail(for: undated, showsDate: true, relativeTo: reference) == "Updated Oct 25, 2025")
+    }
+
     @Test func shortDateStringShowsTheYearOnlyForADayInAnotherYear() throws {
         let reference = try #require(DateFormatters.ymd.date(from: "2026-10-24")).addingTimeInterval(12 * 60 * 60)
 

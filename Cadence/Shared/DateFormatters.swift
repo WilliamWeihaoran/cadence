@@ -95,6 +95,16 @@ nonisolated enum DateFormatters {
         return f
     }()
 
+    /// `EEEE, MMMM d, yyyy` — "Saturday, October 25, 2025". `longDate` with the year, for a day
+    /// outside the reference year only; reach it through `absoluteLongDay`, never directly, so a
+    /// same-year header keeps `longDate`'s width ([[T-6432]]).
+    static let longDateWithYear: DateFormatter = {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "EEEE, MMMM d, yyyy"
+        return f
+    }()
+
     /// `EEE, MMM d` — "Tue, Sep 29". **`longDate`'s abbreviated spelling, and only that.**
     ///
     /// It exists because a page header's eyebrow has to be able to say the same day in less room
@@ -355,6 +365,18 @@ nonisolated enum DateFormatters {
         return fullShortDate.string(from: date)
     }
 
+    /// `absoluteDay`'s long spelling: `longDate` ("Saturday, October 25") inside the reference
+    /// date's year, `longDateWithYear` ("Saturday, October 25, 2025") outside it. The macOS note
+    /// editor's daily header is the caller; the list's month heading, the only other year on that
+    /// page, scrolls away from the open note ([[T-6432]]).
+    static func absoluteLongDay(_ date: Date, relativeTo referenceDate: Date) -> String {
+        let cal = Calendar.current
+        guard cal.component(.year, from: date) != cal.component(.year, from: referenceDate) else {
+            return longDate.string(from: date)
+        }
+        return longDateWithYear.string(from: date)
+    }
+
     /// The words themselves, for a day offset a caller has already decided is inside its window.
     private static func relativeWords(dayOffset diff: Int) -> String {
         switch diff {
@@ -416,10 +438,11 @@ nonisolated enum DateFormatters {
         return iso.date(from: components)
     }
 
-    /// Converts an ISO week key to a human-readable label: "Week of Mar 23"
-    static func weekLabel(from weekKey: String) -> String {
+    /// Converts an ISO week key to a human-readable label: "Week of Mar 23", or "Week of Mar 23,
+    /// 2025" when the Monday falls outside the reference date's year (`absoluteDay`, [[T-6432]]).
+    static func weekLabel(from weekKey: String, relativeTo referenceDate: Date = Date()) -> String {
         guard let monday = weekStartDate(forWeekKey: weekKey) else { return weekKey }
-        return "Week of \(shortDate.string(from: monday))"
+        return "Week of \(absoluteDay(monday, relativeTo: referenceDate))"
     }
 }
 
