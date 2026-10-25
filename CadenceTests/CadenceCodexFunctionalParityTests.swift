@@ -9,9 +9,11 @@ import Testing
 
 struct CadenceCodexFunctionalParityTests {
     @Test func mobileProjectDeadlineUsesTheMacFormatterAndLiveHeaderWiring() throws {
-        #expect(DateFormatters.shortDateString(from: "2026-10-14") == "Oct 14")
-        #expect(DateFormatters.shortDateString(from: "2027-01-05") == "Jan 5")
-        #expect(DateFormatters.shortDateString(from: "not-a-date") == "not-a-date")
+        // A stated reference, never the clock: a deadline in another year carries it ([[T-6252]]).
+        let reference = try #require(DateFormatters.ymd.date(from: "2026-10-24")).addingTimeInterval(12 * 60 * 60)
+        #expect(DateFormatters.shortDateString(from: "2026-10-14", relativeTo: reference) == "Oct 14")
+        #expect(DateFormatters.shortDateString(from: "2027-01-05", relativeTo: reference) == "Jan 5, 2027")
+        #expect(DateFormatters.shortDateString(from: "not-a-date", relativeTo: reference) == "not-a-date")
         let read = CadenceSourceScan.strippedSourceReader()
         let source = try read("Cadence/iOS/iOSListDetailView.swift")
         let page = try #require(CadenceSourceScan.declarationBody("struct iOSListDetailView: View", in: source))

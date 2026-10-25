@@ -287,10 +287,14 @@ nonisolated enum DateFormatters {
             .date(from: DateComponents(year: year, month: month, day: day))
     }
 
-    /// Converts a `yyyy-MM-dd` storage key to a short display string: "Jan 15"
-    static func shortDateString(from key: String) -> String {
+    /// Converts a `yyyy-MM-dd` storage key to a short display string: "Jan 15" inside the
+    /// reference date's year, "Jan 15, 2027" outside it (`absoluteDay`, [[T-6252]]) -- so a
+    /// project deadline, the Today widget's due line or a recurrence's "Until" a year out no
+    /// longer reads exactly like one next month. `relativeTo` is for a caller that already knows
+    /// what "today" is (the widget's `todayKey`, a drop's `todayKey`); everyone else gets the clock.
+    static func shortDateString(from key: String, relativeTo referenceDate: Date = Date()) -> String {
         guard let date = ymd.date(from: key) else { return key }
-        return shortDate.string(from: date)
+        return absoluteDay(date, relativeTo: referenceDate)
     }
 
     static func dayOffset(from key: String, relativeTo referenceDate: Date = Date()) -> Int? {

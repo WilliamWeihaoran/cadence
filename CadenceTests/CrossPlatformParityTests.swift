@@ -140,14 +140,14 @@ struct CrossPlatformParityTests {
 
         #expect(CadenceWidgetDateSupport.weekdayLabel(from: saturday) == "SAT")
         #expect(CadenceWidgetDateSupport.dayNumberLabel(from: saturday) == "15")
-        #expect(CadenceWidgetDateSupport.dayLabel(fromKey: "2026-08-15") == "Aug 15")
+        #expect(CadenceWidgetDateSupport.dayLabel(fromKey: "2026-08-15", relativeTo: saturday) == "Aug 15")
         #expect(CadenceWidgetDateSupport.dueLabel(for: "2026-08-15", todayKey: "2026-08-01") == "Due Aug 15")
         #expect(CadenceWidgetDateSupport.dueLabel(for: "2026-08-15", todayKey: "2026-08-20") == "Overdue Aug 15")
 
         // The app's own spelling of the same day, so the two cannot drift apart in either
         // direction — the widget is not merely English, it is the app's English.
-        #expect(CadenceWidgetDateSupport.dayLabel(fromKey: "2026-08-15")
-            == DateFormatters.shortDateString(from: "2026-08-15"))
+        #expect(CadenceWidgetDateSupport.dayLabel(fromKey: "2026-08-15", relativeTo: saturday)
+            == DateFormatters.shortDateString(from: "2026-08-15", relativeTo: saturday))
         #expect(CadenceWidgetDateSupport.weekdayLabel(from: saturday)
             == DateFormatters.dayOfWeek.string(from: saturday).uppercased())
     }

@@ -61,13 +61,14 @@ nonisolated enum CadenceTaskRecurrenceEndPresentation {
         mode: TaskRecurrenceEndMode,
         endDateKey: String,
         occurrenceNumber: Int,
-        endCount: Int
+        endCount: Int,
+        relativeTo referenceDate: Date = Date()
     ) -> String? {
         switch mode {
         case .never:
             return nil
         case .onDate:
-            return "Until \(DateFormatters.shortDateString(from: endDateKey))"
+            return "Until \(DateFormatters.shortDateString(from: endDateKey, relativeTo: referenceDate))"
         case .afterCount:
             return "\(occurrenceNumber) of \(endCount)"
         }

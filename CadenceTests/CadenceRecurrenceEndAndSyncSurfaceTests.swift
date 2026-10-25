@@ -450,7 +450,8 @@ struct CadenceRecurrenceEndSurfaceTests {
 
     /// `.never` says nothing rather than "repeats forever": the row above already states the rule,
     /// and there is no honest next-occurrence date to add from outside the spawn path.
-    @Test func theSummaryIsSilentOnlyForAnUnboundedSeries() {
+    @Test func theSummaryIsSilentOnlyForAnUnboundedSeries() throws {
+        let midAugust = try #require(DateFormatters.date(from: "2026-08-15"))
         #expect(
             CadenceTaskRecurrenceEndPresentation.summary(
                 mode: .never, endDateKey: "2026-09-01", occurrenceNumber: 2, endCount: 5
@@ -459,7 +460,8 @@ struct CadenceRecurrenceEndSurfaceTests {
 
         #expect(
             CadenceTaskRecurrenceEndPresentation.summary(
-                mode: .onDate, endDateKey: "2026-09-01", occurrenceNumber: 2, endCount: 0
+                mode: .onDate, endDateKey: "2026-09-01", occurrenceNumber: 2, endCount: 0,
+                relativeTo: midAugust
             ) == "Until Sep 1"
         )
 

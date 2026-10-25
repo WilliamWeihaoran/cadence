@@ -574,7 +574,12 @@ enum CadenceTaskDropSupport {
     }
 
     private static func dayLabel(_ key: String, todayKey: String) -> String {
-        key == todayKey ? "Today" : DateFormatters.shortDateString(from: key)
+        key == todayKey
+            ? "Today"
+            : DateFormatters.shortDateString(
+                from: key,
+                relativeTo: DateFormatters.date(from: todayKey, in: .current) ?? Date()
+            )
     }
 
     /// `today`, or a `yyyy-MM-dd` day that has not already gone by.

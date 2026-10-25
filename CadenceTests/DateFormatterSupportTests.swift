@@ -75,6 +75,44 @@ struct DateFormatterSupportTests {
         #expect(DateFormatters.relativeDate(from: "2027-01-03", relativeTo: lateDecember) == "in 6 days")
     }
 
+    /// [[T-6252]] remainder (1): `shortDateString` is the other half of the year rule. Project
+    /// deadlines (macOS and iOS), the Today widget's due line (and the Focus sidebar built on it),
+    /// recurrence "Until" labels, the composer tiles and the drop ghost all spell a day through it,
+    /// and it used to drop the year, so a deadline a year out read exactly like one next month.
+    /// Same-year output is unchanged. The widget and the drop ghost measure against their own
+    /// `todayKey`, not the clock: the same key reads with or without the year depending only on
+    /// which year that `todayKey` is in.
+    @Test func shortDateStringShowsTheYearOnlyForADayInAnotherYear() throws {
+        let reference = try #require(DateFormatters.ymd.date(from: "2026-10-24")).addingTimeInterval(12 * 60 * 60)
+
+        #expect(DateFormatters.shortDateString(from: "2026-10-14", relativeTo: reference) == "Oct 14")
+        #expect(DateFormatters.shortDateString(from: "2026-12-31", relativeTo: reference) == "Dec 31")
+        #expect(DateFormatters.shortDateString(from: "2027-01-05", relativeTo: reference) == "Jan 5, 2027")
+        #expect(DateFormatters.shortDateString(from: "2025-12-31", relativeTo: reference) == "Dec 31, 2025")
+        #expect(DateFormatters.shortDateString(from: "not-a-date", relativeTo: reference) == "not-a-date")
+
+        #expect(CadenceWidgetDateSupport.dueLabel(for: "2027-01-05", todayKey: "2026-10-24") == "Due Jan 5, 2027")
+        #expect(CadenceWidgetDateSupport.dueLabel(for: "2027-01-05", todayKey: "2027-01-01") == "Due Jan 5")
+        #expect(CadenceWidgetDateSupport.dueLabel(for: "2026-12-30", todayKey: "2027-01-01") == "Overdue Dec 30, 2026")
+
+        let midJanuary = try #require(DateFormatters.ymd.date(from: "2027-01-15")).addingTimeInterval(12 * 60 * 60)
+        #expect(CadenceTaskRecurrenceEndPresentation.summary(
+            mode: .onDate, endDateKey: "2027-03-01", occurrenceNumber: 1, endCount: 0, relativeTo: reference
+        ) == "Until Mar 1, 2027")
+        #expect(CadenceTaskRecurrenceEndPresentation.summary(
+            mode: .onDate, endDateKey: "2027-03-01", occurrenceNumber: 1, endCount: 0, relativeTo: midJanuary
+        ) == "Until Mar 1")
+
+        let fromLastYear = CadenceTaskDropSupport.placementCaption(
+            forDropKey: "list:inbox|date:2027-01-04", todayKey: "2026-12-28", listName: ""
+        )
+        let fromSameYear = CadenceTaskDropSupport.placementCaption(
+            forDropKey: "list:inbox|date:2027-01-04", todayKey: "2027-01-02", listName: ""
+        )
+        #expect(fromLastYear == "Inbox · Do Jan 4, 2027")
+        #expect(fromSameYear == "Inbox · Do Jan 4")
+    }
+
     /// `normalizedDateKey` is the single spelling of "this text is a storage key".
     ///
     /// The rule under test is normalize-when-unambiguous, reject-when-the-century-is-a-guess:

@@ -397,7 +397,7 @@ nonisolated enum CadenceWidgetDateSupport {
         guard !key.isEmpty else { return nil }
         if key == todayKey { return "Due today" }
 
-        let day = dayLabel(fromKey: key)
+        let day = dayLabel(fromKey: key, relativeTo: parsedDate(fromKey: todayKey) ?? Date())
         if key < todayKey { return "Overdue \(day)" }
 
         if let today = parsedDate(fromKey: todayKey),
@@ -408,11 +408,12 @@ nonisolated enum CadenceWidgetDateSupport {
         return "Due \(day)"
     }
 
-    /// "Aug 14" for a `yyyy-MM-dd` key, falling back to the raw key when it cannot be parsed.
-    /// Literally `DateFormatters.shortDateString(from:)` — the app and the widget say the date the
+    /// "Aug 14" for a `yyyy-MM-dd` key ("Aug 14, 2027" in another year than `referenceDate`'s),
+    /// falling back to the raw key when it cannot be parsed. Literally
+    /// `DateFormatters.shortDateString(from:relativeTo:)` — the app and the widget say the date the
     /// same way because they now say it with the same formatter.
-    nonisolated static func dayLabel(fromKey key: String) -> String {
-        DateFormatters.shortDateString(from: key)
+    nonisolated static func dayLabel(fromKey key: String, relativeTo referenceDate: Date = Date()) -> String {
+        DateFormatters.shortDateString(from: key, relativeTo: referenceDate)
     }
 
     /// Resolves a `yyyy-MM-dd` key to midnight in the current calendar's time zone.
