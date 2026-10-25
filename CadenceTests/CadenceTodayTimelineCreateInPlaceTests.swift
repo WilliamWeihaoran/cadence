@@ -213,6 +213,78 @@ struct CadenceTodayTimelineCreateInPlaceTests {
         #expect(collapsed.estimatedMinutes < drawn.estimatedMinutes)
     }
 
+    // MARK: - [[T-6581]]: All day and Estimate None on a drag-created task
+
+    /// **An untimed task is stored with no time, on its day** — read back through a second context.
+    /// Built through the popover's own boundary (`QuickCreateTaskDraft(scheduleDraft:)`), so the
+    /// value, the forwarding site and the write are all on the path. The timed sibling from the same
+    /// opener keeps its minute, so `-1` is not a default the assertion is reading.
+    @Test("All day on a drag-created task stores it with no time")
+    func allDayStoresTheTaskWithNoTime() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+
+        var untimed = QuickCreateChoicePopover.openingDraft(
+            dateKey: "2026-05-05", startMin: 600, endMin: 660, defaultsToCalendarEvent: false
+        )
+        untimed.title = "Dragged, then made all day"
+        untimed.isAllDay = true
+        var timed = untimed
+        timed.title = "Dragged and left timed"
+        timed.isAllDay = false
+
+        for scheduleDraft in [untimed, timed] {
+            _ = try #require(try SchedulePanelDataSupport.insertDragCreatedTask(
+                QuickCreateTaskDraft(scheduleDraft: scheduleDraft),
+                areas: [],
+                projects: [],
+                in: context
+            ))
+        }
+
+        let reader = ModelContext(container)
+        let stored = try reader.fetch(FetchDescriptor<AppTask>())
+        let storedUntimed = try #require(stored.first { $0.title == "Dragged, then made all day" })
+        let storedTimed = try #require(stored.first { $0.title == "Dragged and left timed" })
+        #expect(storedUntimed.scheduledDate == "2026-05-05")
+        #expect(storedUntimed.scheduledStartMin == -1, "All day was accepted and stored at the slot's minute")
+        #expect(storedTimed.scheduledStartMin == 600)
+    }
+
+    /// **Estimate: None is stored as `0`**, not floored to five minutes; a named estimate is stored
+    /// as named rather than read off the slot. Read back through a second context.
+    @Test("Estimate None on a drag-created task is stored as no estimate")
+    func estimateNoneIsStoredAsNoEstimate() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+
+        var none = QuickCreateChoicePopover.openingDraft(
+            dateKey: "2026-05-06", startMin: 600, endMin: 690, defaultsToCalendarEvent: false
+        )
+        none.title = "Dragged with no estimate"
+        none.setEstimate(0)
+        var named = none
+        named.title = "Dragged with a twenty-minute estimate"
+        named.setEstimate(20)
+
+        for scheduleDraft in [none, named] {
+            _ = try #require(try SchedulePanelDataSupport.insertDragCreatedTask(
+                QuickCreateTaskDraft(scheduleDraft: scheduleDraft),
+                areas: [],
+                projects: [],
+                in: context
+            ))
+        }
+
+        let reader = ModelContext(container)
+        let stored = try reader.fetch(FetchDescriptor<AppTask>())
+        let storedNone = try #require(stored.first { $0.title == "Dragged with no estimate" })
+        let storedNamed = try #require(stored.first { $0.title == "Dragged with a twenty-minute estimate" })
+        #expect(storedNone.estimatedMinutes == 0, "None was stored as \(storedNone.estimatedMinutes) minutes")
+        #expect(storedNamed.estimatedMinutes == 20, "a named estimate was replaced by the slot's length")
+        #expect(storedNone.scheduledStartMin == storedNamed.scheduledStartMin, "None moved the task's time")
+    }
+
     // MARK: - [[T-3171]] (iii), (iv): Due, Repeat and the Calendar page's column
 
     /// **Due and Repeat reach the store**, through the same write and read back through a second

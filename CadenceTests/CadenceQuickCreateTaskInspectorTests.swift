@@ -324,10 +324,11 @@ struct CadenceQuickCreateTaskInspectorTests {
         }
     }
 
-    /// **An all-day event is accepted** — `createStandaloneEvent` writes one now ([[T-3171]]
-    /// (iii)) — while an untimed **task** is still refused: the task hosts take a minute, not a
-    /// `-1`.
-    @Test func anAllDayEventIsAcceptedAndAnUntimedTaskIsRefused() {
+    /// **An all-day event and an untimed task are both accepted** — `createStandaloneEvent` writes
+    /// the first ([[T-3171]] (iii)) and `SchedulingActions.insertTask` writes the second as
+    /// `scheduledStartMin -1` ([[T-6581]]). The write is read back in
+    /// `CadenceTodayTimelineCreateInPlaceTests`.
+    @Test func anAllDayEventAndAnUntimedTaskAreBothAccepted() {
         var allDayEvent = dragDraft(kind: .event)
         allDayEvent.isAllDay = true
         #expect(
@@ -337,20 +338,91 @@ struct CadenceQuickCreateTaskInspectorTests {
 
         var untimedTask = dragDraft()
         untimedTask.isAllDay = true
-        let taskNotice = QuickCreateChoicePopover.hostLimitNotice(for: untimedTask)
-        #expect(taskNotice != nil, "an untimed task was accepted by a host that stores a minute")
-        #expect(taskNotice?.contains("Add a time") == true)
+        #expect(
+            QuickCreateChoicePopover.hostLimitNotice(for: untimedTask) == nil,
+            "an untimed task is still refused by a write that stores -1"
+        )
+        let payload = QuickCreateTaskDraft(scheduleDraft: untimedTask)
+        #expect(payload.isAllDay)
+        #expect(!QuickCreateTaskDraft(scheduleDraft: dragDraft()).isAllDay, "non-vacuity: a timed drag reads as untimed")
     }
 
-    /// The host takes a day and a length, so a block that crosses a midnight has nowhere to be
-    /// written — and the refusal names the day it would have to end on.
-    @Test func ablockThatCrossesMidnightIsRefusedWithTheDayItMustEndOn() {
+    /// **An event that ends on a later day is accepted** ([[T-6582]]), all-day or timed — the write
+    /// takes the draft's range now. A **task** that spans days is still refused, naming the day it
+    /// would have to end on, because an `AppTask` has one `scheduledDate`.
+    @Test func aMultiDayEventIsAcceptedAndAMultiDayTaskIsRefused() {
         var spanning = dragDraft(kind: .event)
         spanning.endDateKey = "2026-05-02"
         #expect(spanning.spansMultipleDays)
+        #expect(QuickCreateChoicePopover.hostLimitNotice(for: spanning) == nil, "a timed multi-day event is refused")
+        spanning.isAllDay = true
+        #expect(QuickCreateChoicePopover.hostLimitNotice(for: spanning) == nil, "an all-day multi-day event is refused")
 
-        let notice = QuickCreateChoicePopover.hostLimitNotice(for: spanning)
+        var spanningTask = dragDraft()
+        spanningTask.endDateKey = "2026-05-02"
+        let notice = QuickCreateChoicePopover.hostLimitNotice(for: spanningTask)
         #expect(notice?.contains(DateFormatters.shortDateString(from: "2026-05-01")) == true)
+    }
+
+    /// **The multi-day event value carries its end day, and its range is iOS's** ([[T-6582]]):
+    /// `QuickCreateEventDraft.multiDayRange` must answer exactly what
+    /// `CadenceScheduleDraft.eventDateRange` answers for the same draft — asserted as that relation,
+    /// on an all-day and a timed draft, rather than as pinned instants. An all-day two-day event
+    /// runs midnight to midnight two days on (EventKit's end is exclusive); a one-day draft has no
+    /// multi-day range at all, so the one-day write is untouched.
+    @Test func aMultiDayEventValueCarriesTheRangeIOSWrites() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try #require(TimeZone(identifier: "America/New_York"))
+
+        var allDay = dragDraft(kind: .event)
+        allDay.isAllDay = true
+        allDay.endDateKey = "2026-05-02"
+        let allDayPayload = QuickCreateEventDraft(scheduleDraft: allDay)
+        #expect(allDayPayload.endDateKey == "2026-05-02")
+        #expect(allDayPayload.spansMultipleDays)
+        let allDayRange = try #require(allDayPayload.multiDayRange(calendar: calendar))
+        let expectedAllDay = try #require(allDay.eventDateRange(calendar: calendar))
+        #expect(allDayRange.start == expectedAllDay.start)
+        #expect(allDayRange.end == expectedAllDay.end)
+        #expect(calendar.dateComponents([.day], from: allDayRange.start, to: allDayRange.end).day == 2)
+        #expect(allDayRange.start == calendar.startOfDay(for: allDayRange.start))
+
+        var timed = dragDraft(startMin: 22 * 60, endMin: 23 * 60, kind: .event)
+        timed.endDateKey = "2026-05-02"
+        timed.endMin = 1 * 60
+        let timedPayload = QuickCreateEventDraft(scheduleDraft: timed)
+        let timedRange = try #require(timedPayload.multiDayRange(calendar: calendar))
+        let expectedTimed = try #require(timed.eventDateRange(calendar: calendar))
+        #expect(timedRange.start == expectedTimed.start)
+        #expect(timedRange.end == expectedTimed.end)
+        #expect(timedRange.end.timeIntervalSince(timedRange.start) == 3 * 3600)
+
+        let oneDay = QuickCreateEventDraft(scheduleDraft: dragDraft(kind: .event))
+        #expect(!oneDay.spansMultipleDays)
+        #expect(oneDay.multiDayRange(calendar: calendar) == nil)
+    }
+
+    /// **The forwarding site hands the range to the write, and the write uses it** ([[T-6582]]).
+    /// Source, because the write sits behind an authorized `EKEventStore`, which this suite must
+    /// never open; the range itself is run above.
+    @Test func theEventWriteTakesTheMultiDayRange() throws {
+        let manager = try code(Self.calendarManagerPath)
+        let forwarding = try #require(
+            CadenceSourceScan.declarationBody(
+                "func createStandaloneEvent(_ draft: QuickCreateEventDraft, hostDay: Date)",
+                in: manager
+            )
+        )
+        #expect(forwarding.contains("let spanning = draft.multiDayRange()"))
+        #expect(forwarding.contains("spanning: spanning"), "the multi-day range is formed and dropped")
+        #expect(
+            forwarding.contains("if draft.spansMultipleDays && spanning == nil { return record(.invalidRange) }"),
+            "an unformable multi-day draft would be written as a one-day event"
+        )
+        let write = try #require(CadenceSourceScan.declarationBody("func createStandaloneEvent(\n", in: manager))
+        #expect(write.contains("if let spanning {"))
+        #expect(write.contains("startDate = spanning.start"))
+        #expect(write.contains("endDate = spanning.end"))
     }
 
     /// **Both writes carry a recurrence now** ([[T-3171]] (iii)), so a repeating draft is
@@ -375,25 +447,26 @@ struct CadenceQuickCreateTaskInspectorTests {
         )
     }
 
-    /// **None is a real estimate everywhere else and cannot be one here.** The task write floors
-    /// the length at five minutes (`SchedulingActions.insertTask`), so a task created from a drag
-    /// always has one — the panel's Estimate row says so rather than storing a floor over the top
-    /// of the user's answer.
-    @Test func anEstimateOfNoneIsRefusedBecauseBothTaskWritesFloorTheLength() {
+    /// **None is a real estimate here too** ([[T-6581]]). The task write used to floor the length
+    /// at five minutes, so None was refused; it stores `0` now, and the value carries the panel's
+    /// Estimate rather than the slot's length.
+    @Test func anEstimateOfNoneIsAcceptedAndCarried() {
         var noEstimate = dragDraft()
         noEstimate.setEstimate(0)
         #expect(noEstimate.estimateMinutes == 0)
         #expect(
-            QuickCreateChoicePopover.hostLimitNotice(for: noEstimate) != nil,
-            "Estimate: None was accepted and would have been stored as a quarter hour"
+            QuickCreateChoicePopover.hostLimitNotice(for: noEstimate) == nil,
+            "Estimate: None is still refused by a write that stores it"
         )
+        #expect(QuickCreateTaskDraft(scheduleDraft: noEstimate).estimateMinutes == 0)
+        // Non-vacuity: a named estimate travels as itself, not as the slot's length.
+        var named = dragDraft()
+        named.setEstimate(20)
+        #expect(QuickCreateTaskDraft(scheduleDraft: named).estimateMinutes == 20)
         // An event has no estimate at all, so the same zero must not refuse one.
         var zeroOnAnEvent = dragDraft(kind: .event)
         zeroOnAnEvent.estimateMinutes = 0
-        #expect(
-            QuickCreateChoicePopover.hostLimitNotice(for: zeroOnAnEvent) == nil,
-            "an event was refused for a task's field"
-        )
+        #expect(QuickCreateChoicePopover.hostLimitNotice(for: zeroOnAnEvent) == nil)
     }
 
     /// **[[T-3171]] (iii): Due and Repeat reach the task value.** The series end goes through

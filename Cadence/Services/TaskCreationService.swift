@@ -181,7 +181,10 @@ struct TaskCreationService {
         task.dueDate = draft.dueDateKey
         task.scheduledDate = draft.scheduledDateKey
         task.scheduledStartMin = draft.scheduledDateKey.isEmpty ? -1 : draft.scheduledStartMin
-        task.estimatedMinutes = max(5, draft.estimatedMinutes)
+        // `0` is "no estimate" — the Estimate row's None — and is stored as itself ([[T-6581]]).
+        // The five-minute floor is for a length too short to draw, not for the absence of one: it
+        // used to turn None into five minutes on every composer that offers None.
+        task.estimatedMinutes = draft.estimatedMinutes <= 0 ? 0 : max(5, draft.estimatedMinutes)
         task.tags = TagSupport.sorted(draft.tags)
         containerResolver.applyContainer(draft.container, to: task)
 

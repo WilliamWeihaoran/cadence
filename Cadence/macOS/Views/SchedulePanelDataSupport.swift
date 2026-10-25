@@ -66,7 +66,7 @@ enum SchedulePanelDataSupport {
     /// with its column's, and the popover refused a moved day to cover for it.
     ///
     /// Due and Repeat travel too ([[T-3171]] (iii)) — `TaskCreationService` writes them, the same
-    /// commit `CreateTaskSheet` uses.
+    /// commit `CreateTaskSheet` uses. So do All day and the Estimate, None included ([[T-6581]]).
     ///
     /// Throws what `TaskCreationService` throws, so the host can name a refused write (T-655)
     /// rather than closing the popover over a task that was never stored.
@@ -82,6 +82,8 @@ enum SchedulePanelDataSupport {
             dateKey: draft.dateKey,
             startMin: draft.startMin,
             endMin: draft.endMin,
+            untimed: draft.isAllDay,
+            estimatedMinutes: draft.estimateMinutes,
             containerSelection: draft.container,
             sectionName: draft.sectionName,
             priority: draft.priority,

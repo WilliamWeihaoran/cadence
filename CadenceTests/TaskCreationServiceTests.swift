@@ -53,6 +53,31 @@ struct TaskCreationServiceTests {
         #expect((task.subtasks ?? []).sorted { $0.order < $1.order }.map(\.title) == ["First pass", "Ship"])
     }
 
+    /// **[[T-6581]]: `0` is "no estimate" and is stored as itself.** The five-minute floor is for a
+    /// length too short to draw; it used to turn the Estimate row's None into five minutes on every
+    /// composer that offers None. A one-minute estimate still floors (the test above).
+    @Test func insertTaskStoresAnEstimateOfNoneAsZero() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let modelContext = ModelContext(container)
+        let draft = TaskCreationDraft(
+            title: "No estimate",
+            notes: "",
+            priority: .none,
+            container: .inbox,
+            sectionName: TaskSectionDefaults.defaultName,
+            dueDateKey: "",
+            scheduledDateKey: "2026-06-18",
+            subtaskTitles: [],
+            tags: [],
+            scheduledStartMin: 600,
+            estimatedMinutes: 0
+        )
+        let task = try #require(TaskCreationService(areas: [], projects: [])
+            .insertTask(from: draft, into: modelContext))
+        try modelContext.save()
+        #expect(task.estimatedMinutes == 0)
+    }
+
     @Test func insertTaskClearsTimeWhenTaskIsUnscheduled() throws {
         let container = try CadenceModelContainerFactory.makeInMemoryContainer()
         let modelContext = ModelContext(container)

@@ -33,6 +33,12 @@ enum SchedulingActions {
     /// drag-out entry point, and are what the drag-create popover's Due and Repeat rows reach the
     /// store through — `TaskCreationService` already writes both, so nothing new is spelled here.
     ///
+    /// **[[T-6581]].** `untimed` and `estimatedMinutes` are what the drag-create popover's All day
+    /// and Estimate rows reach the store through. An untimed task is written with no minute
+    /// (`scheduledStartMin -1`), and an estimate the caller names — `0` for None included — is
+    /// written as named rather than read off the slot. Both default to the plain drag-out's
+    /// behaviour: a timed task whose length is the slot's, floored at five minutes.
+    ///
     /// - Parameter commit: See `CadencePendingChangePersistence.commitInsert(of:in:commit:)`.
     @discardableResult
     static func insertTask(
@@ -40,6 +46,8 @@ enum SchedulingActions {
         dateKey: String,
         startMin: Int,
         endMin: Int,
+        untimed: Bool = false,
+        estimatedMinutes: Int? = nil,
         containerSelection: TaskContainerSelection,
         sectionName: String,
         priority: TaskPriority = .none,
@@ -65,8 +73,8 @@ enum SchedulingActions {
             scheduledDateKey: dateKey,
             subtaskTitles: subtaskTitles,
             tags: [],
-            scheduledStartMin: startMin,
-            estimatedMinutes: max(5, endMin - startMin),
+            scheduledStartMin: untimed ? -1 : startMin,
+            estimatedMinutes: estimatedMinutes ?? max(5, endMin - startMin),
             repeatRule: repeatRule,
             seriesEndMode: seriesEndMode,
             seriesEndDateKey: seriesEndDateKey,

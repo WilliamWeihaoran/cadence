@@ -307,6 +307,11 @@ final class CalendarManager {
     /// single event it always wrote. An all-day event covers `date`'s whole day (`dayBounds`), and
     /// `startMin`/`durationMinutes` are not read for it.
     ///
+    /// **A range across days** ([[T-6582]]). `spanning`, when set, is the event's two instants
+    /// already formed — a multi-day draft's, from `QuickCreateEventDraft.multiDayRange` — and
+    /// `date`, `startMin` and `durationMinutes` are not read. It is `nil` for everything inside one
+    /// day, which is written exactly as before.
+    ///
     /// - Parameter timingCalendar: see `CadenceCalendarEventTiming.startDate`. `.current` in
     ///   production; a test passes an explicit DST-observing zone because the scheme pins the test
     ///   host to `TZ=UTC` ([[T-1116]]). It is not named `calendar` because that name is already the
@@ -325,6 +330,7 @@ final class CalendarManager {
         seriesEndMode: TaskRecurrenceEndMode = .never,
         seriesEndDateKey: String = "",
         seriesEndCount: Int = 0,
+        spanning: (start: Date, end: Date)? = nil,
         timingCalendar: Calendar = .current
     ) -> CalendarWriteFailure? {
         guard isAuthorized else { return record(.notAuthorized) }
@@ -335,7 +341,11 @@ final class CalendarManager {
         else { return record(.noWritableCalendar) }
         let startDate: Date
         let endDate: Date
-        if isAllDay {
+        if let spanning {
+            guard spanning.end > spanning.start else { return record(.invalidRange) }
+            startDate = spanning.start
+            endDate = spanning.end
+        } else if isAllDay {
             let bounds = dayBounds(for: date, calendar: timingCalendar)
             guard bounds.end > bounds.start else { return record(.invalidRange) }
             startDate = bounds.start
@@ -382,9 +392,15 @@ final class CalendarManager {
     /// line, so every field the popover learned to carry had to be threaded twice — and a field
     /// threaded once is a control that works on one page and is dropped on the other. Each host now
     /// names only the day it falls back to; everything the user said travels from here.
+    ///
+    /// **A multi-day draft writes its own range** ([[T-6582]]): `multiDayRange` is iOS's
+    /// `eventDateRange`, and a multi-day draft whose range cannot form is refused here rather than
+    /// written as a one-day event over the top of what the user said.
     @discardableResult
     func createStandaloneEvent(_ draft: QuickCreateEventDraft, hostDay: Date) -> CalendarWriteFailure? {
-        createStandaloneEvent(
+        let spanning = draft.multiDayRange()
+        if draft.spansMultipleDays && spanning == nil { return record(.invalidRange) }
+        return createStandaloneEvent(
             title: draft.title,
             startMin: draft.startMin,
             durationMinutes: draft.endMin - draft.startMin,
@@ -396,7 +412,8 @@ final class CalendarManager {
             repeatRule: draft.repeatRule,
             seriesEndMode: draft.seriesEndMode,
             seriesEndDateKey: draft.seriesEndDateKey,
-            seriesEndCount: draft.seriesEndCount
+            seriesEndCount: draft.seriesEndCount,
+            spanning: spanning
         )
     }
 

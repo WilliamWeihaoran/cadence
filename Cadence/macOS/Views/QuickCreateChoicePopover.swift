@@ -42,6 +42,12 @@ struct QuickCreateTaskDraft {
     var seriesEndMode: TaskRecurrenceEndMode = .never
     var seriesEndDateKey: String = ""
     var seriesEndCount: Int = 0
+    /// The panel's All day: the task is filed on `dateKey` with no time, `scheduledStartMin -1`
+    /// ([[T-6581]]). `startMin`/`endMin` are not written for it.
+    var isAllDay: Bool = false
+    /// The panel's Estimate, written as named — `0` is None. `nil` means "the slot's length",
+    /// which is what a value built without the panel (a plain drag-out) has always meant.
+    var estimateMinutes: Int? = nil
 }
 
 extension QuickCreateTaskDraft {
@@ -63,7 +69,9 @@ extension QuickCreateTaskDraft {
             repeatRule: draft.repeatRule,
             seriesEndMode: draft.effectiveSeriesEndMode,
             seriesEndDateKey: draft.seriesEndDateKey,
-            seriesEndCount: draft.seriesEndCount
+            seriesEndCount: draft.seriesEndCount,
+            isAllDay: draft.isAllDay,
+            estimateMinutes: draft.estimateMinutes
         )
     }
 }
@@ -98,11 +106,33 @@ struct QuickCreateEventDraft: Equatable {
     var seriesEndMode: TaskRecurrenceEndMode = .never
     var seriesEndDateKey: String = ""
     var seriesEndCount: Int = 0
+    /// `yyyy-MM-dd`: the day the panel's Ends row names ([[T-6582]]). Empty, or equal to `dateKey`,
+    /// for an event inside one day — the case the write builds from a day and a length.
+    var endDateKey: String = ""
 
     /// The day to create on: the draft's own, or `hostDay` only when the key does not parse — which
     /// the panel never produces, so the fallback exists to keep the write total, not as a rule.
     func day(or hostDay: Date) -> Date {
         DateFormatters.date(from: dateKey) ?? hostDay
+    }
+
+    var spansMultipleDays: Bool {
+        endDateKey > dateKey
+    }
+
+    /// The two instants of an event that ends on a later day than it starts, all-day or timed
+    /// ([[T-6582]]) — **`CadenceScheduleDraft.eventDateRange`'s answer, not a second spelling of
+    /// it**, which is what iOS's drag-create writes through (`iOSScheduleDraftCreation.createEvent`).
+    /// So an all-day end is exclusive and a timed end is a wall-clock reading on the end day, on
+    /// both platforms. `nil` for an event inside one day, and for keys that cannot form a range.
+    func multiDayRange(calendar: Calendar = .current) -> (start: Date, end: Date)? {
+        guard spansMultipleDays else { return nil }
+        var schedule = CadenceScheduleDraft(dateKey: dateKey, startMin: startMin, kind: .event)
+        schedule.startMin = startMin
+        schedule.endMin = endMin
+        schedule.endDateKey = endDateKey
+        schedule.isAllDay = isAllDay
+        return schedule.eventDateRange(calendar: calendar)
     }
 }
 
@@ -120,7 +150,8 @@ extension QuickCreateEventDraft {
             repeatRule: draft.repeatRule,
             seriesEndMode: draft.effectiveSeriesEndMode,
             seriesEndDateKey: draft.seriesEndDateKey,
-            seriesEndCount: draft.seriesEndCount
+            seriesEndCount: draft.seriesEndCount,
+            endDateKey: draft.endDateKey
         )
     }
 }
@@ -187,10 +218,11 @@ struct QuickCreateNotesDraft: Equatable {
 ///   `CalendarManager.createStandaloneEvent(_:hostDay:)` — the draft's own day, All day, Location
 ///   and Repeat included ([[T-3171]] (iii)).
 ///
-/// So every row the panel draws is offered. The schedule facts neither write can carry — a span
-/// across midnight, and on a **task** all-day or an estimate of None — are **named and refused**
-/// rather than silently dropped (T-470). Each is one sentence in `hostLimitNotice`, drawn through
-/// the panel's existing `failureNotice:` with `canCommit: false`.
+/// So every row the panel draws is offered, and every schedule it can state is written: All day and
+/// an Estimate of None on a task ([[T-6581]]), and an event that ends on a later day ([[T-6582]]).
+/// What remains unwritable — a task spanning days, which an `AppTask` cannot hold — is **named
+/// and refused** rather than silently dropped (T-470), in `hostLimitNotice`, drawn through the
+/// panel's existing `failureNotice:` with `canCommit: false`.
 struct QuickCreateChoicePopover: View {
     let startMin: Int
     let endMin: Int
@@ -327,17 +359,18 @@ struct QuickCreateChoicePopover: View {
     ///
     /// **No all-day or Repeat rule for events** ([[T-3171]] (iii)). The event write used to set
     /// `isAllDay = false` and attach no recurrence, so both were refused here; it writes both now.
-    /// A task's all-day is still refused: `SchedulingActions.insertTask` stores the draft's minute.
+    ///
+    /// **No all-day or None rule for tasks** ([[T-6581]]). `SchedulingActions.insertTask` used to
+    /// store the slot's minute and floor the estimate at five, so an untimed task and Estimate:
+    /// None were refused here; it writes `scheduledStartMin -1` and an estimate of `0` now.
+    ///
+    /// **No multi-day rule for events** ([[T-6582]]). `createStandaloneEvent` took one day, so an
+    /// event ending on a later day — all-day or timed — was refused; it writes the draft's range
+    /// through `CadenceScheduleDraft.eventDateRange` now, as iOS does. A **task** cannot span days
+    /// (an `AppTask` has one `scheduledDate`), so a task draft that somehow does is still refused.
     static func hostLimitNotice(for draft: CadenceScheduleDraft) -> String? {
-        let kindWord = draft.kind == .event ? "event" : "task"
-        if draft.kind == .task && draft.isAllDay {
-            return "A dragged slot creates a task at a time. Add a time to create it here."
-        }
-        if draft.spansMultipleDays {
-            return "A dragged slot creates an \(kindWord) inside one day. End it on \(dayLabel(draft.startDateKey))."
-        }
-        if draft.kind == .task && draft.estimateMinutes <= 0 {
-            return "A dragged slot gives the task its length, so Estimate cannot be None here."
+        if draft.kind == .task && draft.spansMultipleDays {
+            return "A dragged slot creates a task inside one day. End it on \(dayLabel(draft.startDateKey))."
         }
         return nil
     }
