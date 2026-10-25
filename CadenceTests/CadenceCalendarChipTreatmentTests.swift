@@ -555,8 +555,8 @@ struct CadenceCalendarChipTreatmentTests {
         )
         #expect(
             dayHeader.filter { !$0.isWhitespace }
-                .contains("iOSCalendarAllDayBandChips(allDayEvents:allDayEvents,unscheduledTasks:unscheduledTasks,split:split)"),
-            "the week header no longer hands the shared chip stack its day's two lists"
+                .contains("iOSCalendarAllDayBandChips(allDayEvents:allDayEvents,unscheduledTasks:unscheduledTasks,split:split,onOpenEvent:onOpenEvent)"),
+            "the week header no longer hands the shared chip stack its day's two lists and its opener"
         )
 
         let dense = header.filter { !$0.isWhitespace }

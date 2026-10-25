@@ -1393,16 +1393,25 @@ struct CadenceTimelineEventOpenTests {
         #expect(CadenceSourceScan.matchCount(#"iOSCalendarEventEditSheet\("#, in: code) == 1)
     }
 
-    /// [[T-5356]]'s all-day half, the decision-free part: on the single-day pane (iPad Today, and
-    /// the Calendar's Day view) an all-day chip opens the grid's one event editor, while the
-    /// scrolling grid's day header -- itself a `Button` that selects the day -- is left alone.
-    @Test func theSingleDayAllDayStripOpensItsEventsAndTheDayHeaderDoesNot() throws {
+    /// [[T-5356]]'s all-day half, both surfaces: on the single-day pane (iPad Today, and the
+    /// Calendar's Day view) and in the scrolling Week grid's day header, a tap on an all-day chip
+    /// opens the grid's one event editor.
+    ///
+    /// The header is the half that needed the owner's call, answered on 2026-10-24 as option (a):
+    /// the chip opens the event, and a tap anywhere else in the header still selects the day. The
+    /// header is itself a `Button`, so the chips are drawn in an OVERLAY above it rather than
+    /// inside its label -- the structural half of the fix, pinned below, because a gesture inside
+    /// a button's label is arbitrated against the button's own.
+    @Test func theSingleDayStripAndTheWeekDayHeaderBothOpenTheirAllDayEvents() throws {
         let code = try source()
         let grid = try #require(
             CadenceSourceScan.declarationBody("struct iOSCalendarTimelineGrid: View", in: code)
         )
         let canvas = try #require(CadenceSourceScan.functionBody(named: "singleDayCanvas", in: grid))
         #expect(canvas.contains("onOpenEvent: openAllDayEvent"), "the single-day strip is handed no opener")
+        let scroller = try #require(CadenceSourceScan.functionBody(named: "gridScroller", in: grid))
+        #expect(scroller.contains("onOpenEvent: openAllDayEvent"),
+                "the scrolling grid's day header is handed no opener ([[T-5356]], the owner's option (a))")
         let open = try #require(CadenceSourceScan.functionBody(named: "openAllDayEvent", in: grid))
         let guardRange = try #require(open.range(of: "guard editingTaskID == nil else {"))
         let putDown = try #require(open.range(of: "editingTaskID = nil"))
@@ -1443,12 +1452,57 @@ struct CadenceTimelineEventOpenTests {
         #expect(modifier.contains(".accessibilityAddTraits(.isButton)"))
         #expect(modifier.contains(".accessibilityAction { onOpen() }"), "VoiceOver cannot open the all-day event")
 
-        // The scrolling header is a Button that selects the day; a chip inside it opening the
-        // event instead is the owner's call, so it must still hand the stack no opener.
+        // The scrolling header is a Button that selects the day, and the owner's answer (option
+        // (a), 2026-10-24) is that a chip inside it opens the event anyway. It gets there by
+        // drawing the chips ABOVE the Button instead of inside its label: a gesture inside a
+        // button's label is arbitrated against the button's own and may lose, while a chip drawn
+        // over it is simply the topmost hit-testable thing at that point.
         let header = try #require(
             CadenceSourceScan.declarationBody("private struct iOSCalendarTimelineDayHeader: View", in: code)
         )
         #expect(header.count > 600, "non-vacuity: the day header read as \(header.count) characters")
-        #expect(!header.contains("onOpenEvent"), "the day header's chips now steal its select-the-day tap")
+        #expect(header.contains("let onOpenEvent: (EKEvent) -> Void"),
+                "the day header takes no opener, so its chips cannot open anything")
+        // `action` stays LAST: the grid hands it as a trailing closure, which binds to whichever
+        // parameter the memberwise initialiser puts at the end.
+        let opener = try #require(header.range(of: "let onOpenEvent: (EKEvent) -> Void"))
+        let dayTap = try #require(header.range(of: "let action: () -> Void"))
+        #expect(opener.upperBound <= dayTap.lowerBound,
+                "the grid's trailing closure now binds to the opener rather than to the day tap")
+
+        let band = try #require(
+            CadenceSourceScan.declarationBody("private var chipBand: some View", in: header),
+            "the header's chips are not in a band of their own"
+        )
+        #expect(band.contains("onOpenEvent: onOpenEvent"), "the header's chips are handed no opener")
+        // Drawn over the Button, not in its label — which is what keeps the chip's tap out of the
+        // button's arbitration. If the stack ever moves back inside the label this fails.
+        #expect(header.contains(".overlay(alignment: .top) { chipBand }"),
+                "the header's chips are no longer drawn above its select-the-day Button")
+        let labelStack = try #require(header.range(of: "Button(action: action) {"))
+        let overlay = try #require(header.range(of: ".overlay(alignment: .top) { chipBand }"))
+        #expect(CadenceSourceScan.matchCount(#"iOSCalendarAllDayBandChips\("#, in: header) == 1,
+                "the header draws its chip stack more than once")
+        let draw = try #require(header.range(of: "iOSCalendarAllDayBandChips("))
+        #expect(draw.lowerBound >= overlay.upperBound && overlay.lowerBound > labelStack.lowerBound,
+                "the chip stack is back inside the Button's label, where its tap can be swallowed")
+        // And every point the chips do not cover still selects the day: the band's space inside
+        // the label is a hit-testable `Color.clear`, and the overlay's own date-block spacer is
+        // explicitly not.
+        #expect(header.contains(".allowsHitTesting(false)"),
+                "the overlay's date-block spacer now swallows the tap on the day number")
+        #expect(header.contains(".accessibilityElement(children: .contain)"),
+                "a combined header folds the chip buttons into one element VoiceOver cannot open")
+        #expect(!header.contains("children: .combine"))
+
+        // The chips that open nothing let the tap through to the day button beneath them.
+        let taskChip = try #require(chips.range(of: "isUnscheduled: true"))
+        let passthrough = try #require(
+            chips.range(of: ".allowsHitTesting(false)", range: taskChip.upperBound..<chips.endIndex),
+            "the unscheduled chip swallows the week header's select-the-day tap without acting on it"
+        )
+        #expect(passthrough.lowerBound > taskChip.upperBound)
+        #expect(CadenceSourceScan.matchCount(#"\.allowsHitTesting\(false\)"#, in: chips) == 2,
+                "the band's two non-openable rows — the unscheduled chip and the overflow line — do not both pass the tap through")
     }
 }
