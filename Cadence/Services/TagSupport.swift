@@ -61,6 +61,29 @@ nonisolated enum TagSupport {
         return prefixed.lowercased()
     }
 
+    /// The colour a settings swatch strip previews for a draft that may be half-typed (T-4113 (b)).
+    ///
+    /// With a `fallback` — the tag's saved colour, beside a free-text Hex field — a draft that is not
+    /// yet a valid hex previews as that saved colour, exactly what `normalizedColorHex` makes the
+    /// save keep. Painting the raw draft instead went through `Color(hex:)`, whose junk branch is
+    /// black, and told the user their colour had gone to black while they decided whether to save.
+    /// Without one (no Hex field, e.g. a context's stored colour) the stored value is shown as is.
+    nonisolated static func swatchPreviewHex(_ draft: String, fallback: String?) -> String {
+        guard let fallback else { return draft.trimmingCharacters(in: .whitespaces) }
+        return normalizedColorHex(draft, fallback: fallback)
+    }
+
+    /// `options`, plus the previewed colour when it is not one of them, so a stored colour that is
+    /// no longer offered still shows as selected rather than reading as "none of these".
+    nonisolated static func swatchStripOptions(_ options: [String], draft: String, fallback: String?) -> [String] {
+        let previewed = swatchPreviewHex(draft, fallback: fallback)
+        guard !previewed.isEmpty,
+              !options.contains(where: { $0.caseInsensitiveCompare(previewed) == .orderedSame }) else {
+            return options
+        }
+        return options + [previewed]
+    }
+
     /// The one tag ordering, and the reason it ends on `id`.
     ///
     /// `order` then `name` is not a total order: `order` defaults to 0 on every hand-made tag, and

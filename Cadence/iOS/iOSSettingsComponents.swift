@@ -145,16 +145,14 @@ typealias iOSSettingsField<Content: View> = CadenceSettingsField<Content>
 struct iOSSettingsColorSwatchRow: View {
     @Binding var selectedHex: String
     var options: [String] = TagSupport.colorOptions
+    /// The saved colour, when a free-text Hex field edits `selectedHex` beside this strip: a
+    /// half-typed draft previews as it instead of as `Color(hex:)`'s black (T-4113 (b)).
+    var fallbackHex: String? = nil
 
     /// A stored colour that is no longer offered still shows as selected rather than
     /// silently reading as "none of these".
     private var offered: [String] {
-        let stored = selectedHex.trimmingCharacters(in: .whitespaces)
-        guard !stored.isEmpty,
-              !options.contains(where: { $0.caseInsensitiveCompare(stored) == .orderedSame }) else {
-            return options
-        }
-        return options + [stored]
+        TagSupport.swatchStripOptions(options, draft: selectedHex, fallback: fallbackHex)
     }
 
     var body: some View {
@@ -190,7 +188,8 @@ struct iOSSettingsColorSwatchRow: View {
     }
 
     private func isSelected(_ option: String) -> Bool {
-        TagSupport.normalizedColorHex(selectedHex).caseInsensitiveCompare(option) == .orderedSame
+        TagSupport.swatchPreviewHex(selectedHex, fallback: fallbackHex ?? TagSupport.normalizedColorHex(""))
+            .caseInsensitiveCompare(option) == .orderedSame
     }
 }
 

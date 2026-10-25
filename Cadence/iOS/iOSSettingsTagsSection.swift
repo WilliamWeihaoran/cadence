@@ -350,7 +350,7 @@ private struct iOSTagSettingsRow: View {
             }
             VStack(alignment: .leading, spacing: 7) {
                 SectionEyebrowLabel(text: "Color")
-                iOSSettingsColorSwatchRow(selectedHex: $draftColorHex)
+                iOSSettingsColorSwatchRow(selectedHex: $draftColorHex, fallbackHex: tag.colorHex)
                 iOSSettingsField(title: "Hex") {
                     TextField("#hex", text: $draftColorHex)
                         .textInputAutocapitalization(.never)
