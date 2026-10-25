@@ -267,7 +267,7 @@ enum CadenceMCPToolDefinitions {
             ])),
             Tool(name: "create_context", description: "Create a Cadence context, the top-level grouping areas and projects are filed under. Answers the same summary get_context_summary does.", inputSchema: schema([
                 "name": stringProperty("Context name.", minLength: 1),
-                "colorHex": stringProperty("Optional six-digit hex colour such as #4a9eff. A value that is not one is rejected, not replaced by a default."),
+                "colorHex": stringProperty("Optional six-digit hex color such as #4a9eff. A value that is not one is rejected, not replaced by a default."),
                 "icon": stringProperty("Optional SF Symbol name."),
             ], required: ["name"])),
             Tool(name: "create_container", description: "Create a Cadence area or project, optionally with the kanban columns that make it a board. Answers the same summary get_container_summary does, so the new containerId is ready for create_task.", inputSchema: schema([
@@ -276,25 +276,25 @@ enum CadenceMCPToolDefinitions {
                 "description": stringProperty("Optional list description."),
                 "contextId": uuidProperty("Optional context UUID to file the list under. Omit for an unfiled list."),
                 "areaId": uuidProperty("Optional owning area UUID. Projects only — an area cannot be filed inside another area, and sending this with containerKind area is rejected."),
-                "colorHex": stringProperty("Optional six-digit hex colour such as #4a9eff. A value that is not one is rejected, not replaced by a default."),
+                "colorHex": stringProperty("Optional six-digit hex color such as #4a9eff. A value that is not one is rejected, not replaced by a default."),
                 "icon": stringProperty("Optional SF Symbol name."),
                 "dueDate": dateProperty("Optional due date, yyyy-MM-dd or natural day. Projects only — an area is ongoing and carries no due date, and sending this with containerKind area is rejected."),
                 "sectionNames": flexibleStringArrayProperty("Optional kanban column names, in order. Each must be non-empty and unique within the list; a blank or repeated name is rejected rather than dropped. A column named Default always exists and is prepended when this list omits it, because every task with no section name lands in it."),
             ], required: ["containerKind", "name"])),
-            Tool(name: "update_context", description: "Rename, recolour, re-icon or archive a Cadence context that already exists. Answers the same summary get_context_summary does. There is no deletion on this surface — archive instead; an archived context is hidden wherever includeArchived is not asked for, keeps everything filed under it, and is reversible from this same tool.", inputSchema: schema([
+            Tool(name: "update_context", description: "Rename, recolor, re-icon or archive a Cadence context that already exists. Answers the same summary get_context_summary does. There is no deletion on this surface — archive instead; an archived context is hidden wherever includeArchived is not asked for, keeps everything filed under it, and is reversible from this same tool.", inputSchema: schema([
                 "contextId": uuidProperty("Context UUID."),
                 "name": stringProperty("Optional new name. Must be non-empty; a blank name is rejected rather than dropped.", minLength: 1),
-                "colorHex": stringProperty("Optional six-digit hex colour such as #4a9eff. A value that is not one is rejected, not replaced by a default."),
+                "colorHex": stringProperty("Optional six-digit hex color such as #4a9eff. A value that is not one is rejected, not replaced by a default."),
                 "icon": stringProperty("Optional SF Symbol name."),
                 "isArchived": booleanProperty("Optional archived flag. Archiving hides the context from list_contexts unless includeArchived is set; it deletes nothing and is reversible by sending false."),
                 "order": integerProperty("Optional zero-based position among all contexts, counting this one. The whole sequence is renumbered densely, so the order this context reads back with afterwards is the position that was asked for. A position past the end is rejected naming the valid range.", minimum: 0),
             ], required: ["contextId"])),
-            Tool(name: "update_container", description: "Change the fields of a Cadence area or project that already exists: rename, describe, recolour, re-icon, re-file under a context or an owning area, redate, and set status including archived. Answers the same summary get_container_summary does. Columns are update_container_columns; there is no deletion on this surface — set status to archived instead.", inputSchema: schema([
+            Tool(name: "update_container", description: "Change the fields of a Cadence area or project that already exists: rename, describe, recolor, re-icon, re-file under a context or an owning area, redate, and set status including archived. Answers the same summary get_container_summary does. Columns are update_container_columns; there is no deletion on this surface — set status to archived instead.", inputSchema: schema([
                 "containerKind": stringProperty("area or project.", enumValues: ["area", "project"]),
                 "containerId": uuidProperty("Area/project UUID."),
                 "name": stringProperty("Optional new list name. Must be non-empty; a blank name is rejected rather than dropped.", minLength: 1),
                 "description": stringProperty("Optional replacement description. Send an empty string to clear it."),
-                "colorHex": stringProperty("Optional six-digit hex colour such as #4a9eff. A value that is not one is rejected, not replaced by a default."),
+                "colorHex": stringProperty("Optional six-digit hex color such as #4a9eff. A value that is not one is rejected, not replaced by a default."),
                 "icon": stringProperty("Optional SF Symbol name."),
                 "contextId": uuidProperty("Optional context UUID to re-file the list under. The list keeps its order number; re-filing is not a re-ordering."),
                 "clearContext": booleanProperty("Set true to unfile the list from its context. Cannot be combined with contextId."),
@@ -307,12 +307,12 @@ enum CadenceMCPToolDefinitions {
                 "hideDueDateIfEmpty": booleanProperty("Optional display preference: hide this list's own due-date control while it has no due date. Read back on get_container_summary."),
                 "hideSectionDueDateIfEmpty": booleanProperty("Optional display preference: hide each column's due-date control while that column has no due date. Read back on get_container_summary."),
             ], required: ["containerKind", "containerId"])),
-            Tool(name: "update_container_columns", description: "Change the kanban columns of a Cadence area or project that already exists: add, rename, recolour, redate, archive, complete and reorder. Answers the same summary get_container_summary does. Columns are addressed by name. There is no removal — archive a column instead.", inputSchema: schema([
+            Tool(name: "update_container_columns", description: "Change the kanban columns of a Cadence area or project that already exists: add, rename, recolor, redate, archive, complete and reorder. Answers the same summary get_container_summary does. Columns are addressed by name. There is no removal — archive a column instead.", inputSchema: schema([
                 "containerKind": stringProperty("area or project.", enumValues: ["area", "project"]),
                 "containerId": uuidProperty("Area/project UUID."),
                 "columnName": stringProperty("The existing column every field below it applies to, matched case-insensitively. Archived columns are matchable, which is how one is un-archived. Required whenever newName, colorHex, dueDate, clearDueDate, isCompleted or isArchived is sent."),
                 "newName": stringProperty("Optional new name for columnName. Must be non-empty and not already held by another column; a blank or colliding name is rejected rather than dropped. The Default column cannot be renamed.", minLength: 1),
-                "colorHex": stringProperty("Optional six-digit hex colour such as #4a9eff for columnName. A value that is not one is rejected, not replaced by a default."),
+                "colorHex": stringProperty("Optional six-digit hex color such as #4a9eff for columnName. A value that is not one is rejected, not replaced by a default."),
                 "dueDate": dateProperty("Optional due date for columnName, yyyy-MM-dd or natural day."),
                 "clearDueDate": booleanProperty("Set true to clear columnName's due date."),
                 "isCompleted": booleanProperty("Optional completed flag for columnName. Rejected for the Default column, which carries neither lifecycle flag. Note this sets the flag only; it settles no tasks."),
@@ -378,8 +378,8 @@ enum CadenceMCPToolDefinitions {
             Tool(name: "create_tag", description: "Create a Cadence tag, or restore the archived one that already carries its slug. Answers the same detail list_tags returns. A name whose slug an ACTIVE tag already carries is rejected rather than duplicated; a name an ARCHIVED tag carries is rejected too unless unarchive is set, because silently reviving a tag the owner archived is a write nobody asked for. There is no deletion on this surface; archiving is the app's reversible alternative.", inputSchema: schema([
                 "name": stringProperty("Tag display name. Trimmed, and must contain at least one letter or digit. The slug is derived from it.", minLength: 1),
                 "description": stringProperty("Optional tag description."),
-                "colorHex": stringProperty("Optional six-digit hex colour such as #4a9eff. Omitted, the model default is kept."),
-                "unarchive": booleanProperty("Restore the archived tag carrying this slug instead of being refused. Refused alongside description or colorHex: a restore does not re-colour or re-describe the tag it brings back. No effect when nothing archived carries the slug."),
+                "colorHex": stringProperty("Optional six-digit hex color such as #4a9eff. Omitted, the model default is kept."),
+                "unarchive": booleanProperty("Restore the archived tag carrying this slug instead of being refused. Refused alongside description or colorHex: a restore does not re-color or re-describe the tag it brings back. No effect when nothing archived carries the slug."),
             ], required: ["name"])),
             Tool(name: "create_list_note", description: "Create a note on a Cadence area or project, optionally filed in a folder. Answers the same detail get_note returns. The note is created with its title as its only content: a body cannot be sent, because a list note's title IS the first heading of its body and the rule that keeps the two in step is not compiled into this server. Folders are a path convention, not records, so any path is accepted and an empty one files the note at the list's root. There is no deletion on this surface.", inputSchema: schema([
                 "containerKind": stringProperty("area or project.", enumValues: ["area", "project"]),

@@ -57,7 +57,7 @@ struct iOSColumnWindDownTarget: Identifiable {
                 title: "Archive Column",
                 actionIcon: "archivebox.fill",
                 headline: "Archiving settles what is left",
-                explanation: "The column leaves the board and can be unarchived from this editor. Unarchiving it does not reopen the work cancelled below.",
+                explanation: "The column leaves the board and can be unarchived from this editor. Unarchiving it does not reopen the work canceled below.",
                 name: name,
                 icon: "square.grid.3x2",
                 colorHex: config.colorHex,

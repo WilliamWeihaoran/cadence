@@ -1433,7 +1433,7 @@ def main() -> int:
             "complete_task",
             {"taskId": probe_id},
             "completing a cancelled task",
-            f"Cancelled task {probe_id} cannot be completed.",
+            f"Canceled task {probe_id} cannot be completed.",
         )
         call_error(
             63,

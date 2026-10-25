@@ -77,7 +77,7 @@ nonisolated enum CadenceWriteError: Error, LocalizedError, Sendable {
                 Pick a different name.
                 """
         case .invalidColorHex(let value):
-            return "Invalid colorHex: \(value). Expected a six-digit hex colour such as #4a9eff."
+            return "Invalid colorHex: \(value). Expected a six-digit hex color such as #4a9eff."
         case .emptySectionName:
             return "Section names must not be empty."
         case .duplicateSectionName(let name):
@@ -97,7 +97,7 @@ nonisolated enum CadenceWriteError: Error, LocalizedError, Sendable {
         case .noChanges:
             return "No valid changes were provided."
         case .cannotCompleteCancelledTask(let id):
-            return "Cancelled task \(id) cannot be completed."
+            return "Canceled task \(id) cannot be completed."
         case .sectionNotFound(let name, let available):
             guard !available.isEmpty else {
                 return "Invalid sectionName: \(name). An inbox task has no sections."
@@ -371,7 +371,7 @@ nonisolated struct CadenceCreateSavedLinkOptions: Sendable {
 /// asks for it by name. Silently unarchiving a tag the owner archived is a write nobody asked
 /// for; refusing with no reachable remedy is a dead end; so the opt-in is what ships.
 ///
-/// **`unarchive` restores and does not re-colour.** Passing it beside `description` or `colorHex`
+/// **`unarchive` restores and does not re-color.** Passing it beside `description` or `colorHex`
 /// is refused rather than half-applied, because this arm never edits an existing tag's fields:
 /// the `.duplicate` branch beside it refuses outright, and an `unarchive` that quietly rewrote a
 /// colour would make one arm a create on one branch and an editor on the other. The app's Restore
@@ -1388,7 +1388,7 @@ final class CadenceWriteService {
             // dropped — the argument `normalizedSectionName` makes about a mistyped section.
             guard description == nil, colorHex == nil else {
                 throw CadenceWriteError.invalidCombination(
-                    "unarchive restores the existing tag and does not re-colour or re-describe it. Resend without description/colorHex."
+                    "unarchive restores the existing tag and does not re-color or re-describe it. Resend without description/colorHex."
                 )
             }
             let previousUpdatedAt = archived.updatedAt
@@ -1709,7 +1709,7 @@ final class CadenceWriteService {
             let spawnedTask = CadenceTaskRecurrenceWorkflowSupport.markCancelled(task, in: context)
 
             var auditEntries: [PendingAuditEntry] = [
-                .task(tool: "cancel_task", id: task.id, summary: "Cancelled task: \(task.title)")
+                .task(tool: "cancel_task", id: task.id, summary: "Canceled task: \(task.title)")
             ]
             if let spawnedTask {
                 auditEntries.append(.task(tool: "cancel_task", id: spawnedTask.id, summary: "Spawned recurring task from: \(task.title)"))
@@ -1817,7 +1817,7 @@ final class CadenceWriteService {
             snapshots.append(CadenceMCPTaskFieldSnapshot(task))
             let spawnedTask = CadenceTaskRecurrenceWorkflowSupport.markCancelled(task, in: context)
             changed.append(task)
-            auditEntries.append(.task(tool: "bulk_cancel_tasks", id: task.id, summary: "Bulk cancelled task: \(task.title)"))
+            auditEntries.append(.task(tool: "bulk_cancel_tasks", id: task.id, summary: "Bulk canceled task: \(task.title)"))
             if let spawnedTask {
                 spawnedTasks.append(spawnedTask)
                 auditEntries.append(.task(tool: "bulk_cancel_tasks", id: spawnedTask.id, summary: "Spawned recurring task from: \(task.title)"))

@@ -120,7 +120,7 @@ nonisolated enum CadenceListSearchLifecycle {
         case .completed: "Completed"
         case .archived: "Archived"
         case .paused: "Paused"
-        case .cancelled: "Cancelled"
+        case .cancelled: "Canceled"
         }
     }
 
@@ -132,7 +132,7 @@ nonisolated enum CadenceListSearchLifecycle {
         case .completed: "completed done"
         case .archived: "archived"
         case .paused: "paused"
-        case .cancelled: "cancelled"
+        case .cancelled: "canceled cancelled"
         }
     }
 

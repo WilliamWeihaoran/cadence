@@ -37,7 +37,7 @@ nonisolated struct CadenceDormantCalendarLink: Identifiable, Hashable, Sendable 
     /// The stored identifier. Kept for parity with the missing-link row and **never resolved
     /// against EventKit here** — see `CadenceCalendarLinkHealth.dormantLinks(areas:projects:)`.
     let calendarID: String
-    /// The list's own status word — "Archived", "Completed", "Paused", "Cancelled" — read from
+    /// The list's own status word — "Archived", "Completed", "Paused", "Canceled" — read from
     /// `CadenceListSearchLifecycle`, which is where this app already spells them. The section
     /// heading says "dormant"; the row says which kind of dormant, because `Area` has three
     /// inactive states and `Project` four and collapsing them is how a cancelled project comes to

@@ -149,7 +149,7 @@ enum CadenceStoreBackupPresentation {
     /// the time the button was pressed — deleted by a reset, thinned, or never this store's.
     static let notThisStoresBackup = "Could not stage restore: that backup is no longer in this device's backup list."
 
-    static let stagedRestoreCancelled = "Staged restore cancelled. Nothing was changed."
+    static let stagedRestoreCancelled = "Staged restore canceled. Nothing was changed."
 
     static func cancelFailed(_ reason: String) -> String {
         "Could not cancel the staged restore: \(reason)"

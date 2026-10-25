@@ -575,7 +575,7 @@ enum MarkdownTaskEmbedDrawing {
         case .done:
             return "Done"
         case .cancelled:
-            return "Cancelled"
+            return "Canceled"
         }
     }
 

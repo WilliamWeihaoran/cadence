@@ -178,7 +178,7 @@ struct CadenceTasksPanelMetricsTests {
 
         // Non-vacuity: the right file, past the comment stripper, still drawing the chip.
         #expect(row.contains("struct MacTaskRow: View"))
-        let chip = try #require(row.range(of: #"Text("Cancelled")"#))
+        let chip = try #require(row.range(of: #"Text("Canceled")"#))
         let window = String(row[chip.lowerBound...].prefix(400))
 
         #expect(window.contains("size: metrics.secondaryFontSize"))
@@ -268,7 +268,7 @@ struct CadenceTasksPanelMetricsTests {
         // pill rather than beside `metadataStrip`, so that file order and strip order agree --
         // which is what this walk requires, and what the two date pills above already do.
         let chips = [
-            #"Text("Cancelled")"#,
+            #"Text("Canceled")"#,
             "private var doDatePill",
             "private var dueDateBadgeList",
             "private var repeatChip",

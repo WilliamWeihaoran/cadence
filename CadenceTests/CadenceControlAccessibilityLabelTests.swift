@@ -276,7 +276,7 @@ struct CadenceControlAccessibilityLabelTests {
     @Test func theCompletionCircleIsNamedForWhatTappingItDoes() {
         #expect(CadenceTaskCompletionState.todo.accessibilityActionLabel == "Complete task")
         #expect(CadenceTaskCompletionState.pendingCompletion.accessibilityActionLabel == "Cancel task")
-        #expect(CadenceTaskCompletionState.pendingCancellation.accessibilityActionLabel == "Stop cancelling task")
+        #expect(CadenceTaskCompletionState.pendingCancellation.accessibilityActionLabel == "Stop canceling task")
         #expect(CadenceTaskCompletionState.done.accessibilityActionLabel == "Reopen task")
         #expect(CadenceTaskCompletionState.cancelled.accessibilityActionLabel == "Reopen task")
 

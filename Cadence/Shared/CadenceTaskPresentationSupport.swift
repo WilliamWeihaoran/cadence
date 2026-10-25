@@ -346,7 +346,7 @@ extension CadenceTaskCompletionState {
         switch self {
         case .todo:                return "Complete task"
         case .pendingCompletion:   return "Cancel task"
-        case .pendingCancellation: return "Stop cancelling task"
+        case .pendingCancellation: return "Stop canceling task"
         case .done, .cancelled:    return "Reopen task"
         }
     }
