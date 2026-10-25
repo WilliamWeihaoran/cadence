@@ -315,19 +315,26 @@ enum GlobalSearchIndexSupport {
     /// also say how many it is holding back. Returning the full list is what makes that count
     /// expressible; the idle branch's chronological order is what makes revealing the rest mean
     /// "the next events", which is the only order an idle list could continue in.
-    static func eventResults(from events: [EKEvent], query: String) -> [GlobalSearchResult] {
+    static func eventResults(
+        from events: [EKEvent],
+        query: String,
+        relativeTo referenceDate: Date = Date()
+    ) -> [GlobalSearchResult] {
         guard CadenceListSearchSupport.isSearching(query) else {
             // Closures rather than `map(eventResult(for:))`: a method *reference* is passed as a
             // nonisolated function value and loses this enum's main-actor isolation.
-            return events.map { eventResult(for: $0) }
+            return events.map { eventResult(for: $0, relativeTo: referenceDate) }
         }
-        return rankedResults(events.map { eventResult(for: $0) }, query: query)
+        return rankedResults(events.map { eventResult(for: $0, relativeTo: referenceDate) }, query: query)
     }
 
-    static func eventResult(for event: EKEvent) -> GlobalSearchResult {
+    /// The day reads "Sat, Mar 28" in the reference date's year and "Sat, Mar 28, 2027" outside it
+    /// (`DateFormatters.absoluteDay`, [[T-6252]]): the window runs 60 days back to 365 forward, so a
+    /// recurring event's occurrences a year apart otherwise read identically.
+    static func eventResult(for event: EKEvent, relativeTo referenceDate: Date = Date()) -> GlobalSearchResult {
         let item = CalendarEventItem(event: event)
         let startDate = event.startDate ?? Date()
-        let timeLabel = "\(DateFormatters.dayOfWeek.string(from: startDate)), \(DateFormatters.shortDate.string(from: startDate))"
+        let timeLabel = "\(DateFormatters.dayOfWeek.string(from: startDate)), \(DateFormatters.absoluteDay(startDate, relativeTo: referenceDate))"
         // All-day events reach this list now that `searchEvents` stopped dropping them, and
         // `CalendarEventItem` clamps one to 00:00 + 1440 minutes — which reads as
         // "12:00 AM – 12:00 AM". iOS already says "All day" here; so does this.
@@ -359,7 +366,8 @@ enum GlobalSearchIndexSupport {
     static func eventNoteResults(
         notes: [Note],
         query: String,
-        taskTitles: [UUID: String]
+        taskTitles: [UUID: String],
+        relativeTo referenceDate: Date = Date()
     ) -> [GlobalSearchResult] {
         let preparedQuery = CadenceSearchMatcher.PreparedQuery(query)
         let sorted = notes.filter { $0.kind == .meeting }.sorted {
@@ -372,9 +380,9 @@ enum GlobalSearchIndexSupport {
             let dateLabel: String
             if let date = DateFormatters.date(from: note.eventDateKey) {
                 if note.eventStartMin >= 0, note.eventEndMin >= 0 {
-                    dateLabel = "\(DateFormatters.shortDate.string(from: date)) • \(TimeFormatters.timeRange(startMin: note.eventStartMin, endMin: note.eventEndMin))"
+                    dateLabel = "\(DateFormatters.absoluteDay(date, relativeTo: referenceDate)) • \(TimeFormatters.timeRange(startMin: note.eventStartMin, endMin: note.eventEndMin))"
                 } else {
-                    dateLabel = DateFormatters.shortDate.string(from: date)
+                    dateLabel = DateFormatters.absoluteDay(date, relativeTo: referenceDate)
                 }
             } else {
                 dateLabel = "Event note"

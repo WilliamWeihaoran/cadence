@@ -165,6 +165,62 @@ struct GlobalSearchEventResultsTests {
         // The identifier a picked row hands to `CadenceCalendarEventSearchSupport.event(from:)`.
         #expect(CadenceEventNoteSupport.matches(standup, identifier: identifier))
     }
+
+    // MARK: - Year in the day label (T-6252)
+
+    /// Local noon on a day, so the year compared is the one the reader's calendar shows.
+    private func localDay(_ year: Int, _ month: Int, _ day: Int, hour: Int = 12) -> Date {
+        Calendar.current.date(from: DateComponents(year: year, month: month, day: day, hour: hour))!
+    }
+
+    /// Reference Mon 25 Oct 2027 -- deliberately not the year the suite runs in, so a label that
+    /// read the clock instead of its reference would be caught. The event window runs a year
+    /// forward and 60 days back, so a recurring event's occurrences a year apart read
+    /// identically without the year.
+    @Test func anEventInAnotherYearSaysWhichYearAndOneThisYearDoesNot() {
+        let reference = localDay(2027, 10, 25)
+
+        let thisYear = GlobalSearchIndexSupport.eventResult(
+            for: event(title: "Review", start: localDay(2027, 11, 15, hour: 10)),
+            relativeTo: reference
+        )
+        let nextYear = GlobalSearchIndexSupport.eventResult(
+            for: event(title: "Review", start: localDay(2028, 11, 15, hour: 10)),
+            relativeTo: reference
+        )
+        let lastYear = GlobalSearchIndexSupport.eventResult(
+            for: event(title: "Review", start: localDay(2026, 10, 1, hour: 10)),
+            relativeTo: reference
+        )
+
+        // Same year: byte-for-byte the old `EEE, MMM d` label, followed by the time range.
+        #expect(thisYear.subtitle.contains("Mon, Nov 15 • "))
+        #expect(!thisYear.subtitle.contains("2027"))
+        #expect(nextYear.subtitle.contains("Wed, Nov 15, 2028 • "))
+        #expect(lastYear.subtitle.contains("Thu, Oct 1, 2026 • "))
+    }
+
+    /// Same reference. With a time the label is "<day> • <range>"; without one, the day alone.
+    @Test func anEventNoteInAnotherYearSaysWhichYearAndOneThisYearDoesNot() {
+        let reference = localDay(2027, 10, 25)
+        let notes = [
+            Note(kind: .meeting, title: "Retro same", eventDateKey: "2027-12-01"),
+            Note(kind: .meeting, title: "Retro next", eventDateKey: "2028-01-05", eventStartMin: 540, eventEndMin: 600),
+            Note(kind: .meeting, title: "Retro last", eventDateKey: "2026-12-01")
+        ]
+
+        let results = GlobalSearchIndexSupport.eventNoteResults(
+            notes: notes,
+            query: "Retro",
+            taskTitles: [:],
+            relativeTo: reference
+        )
+        let subtitles = Dictionary(uniqueKeysWithValues: results.map { ($0.title, $0.subtitle) })
+
+        #expect(subtitles["Retro same"] == "Dec 1")
+        #expect(subtitles["Retro next"]?.hasPrefix("Jan 5, 2028 • ") == true)
+        #expect(subtitles["Retro last"] == "Dec 1, 2026")
+    }
 }
 
 #endif

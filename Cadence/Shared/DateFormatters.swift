@@ -345,8 +345,9 @@ nonisolated enum DateFormatters {
     /// date's own year, `fullShortDate` ("Nov 15, 2027") outside it ([[T-6252]]). Without the year
     /// a deadline a year out read exactly like one next month. Same-year output is unchanged, so
     /// no chip widens in the common case. The year is compared in `Calendar.current`, the calendar
-    /// `dayOffset` already measures in.
-    private static func absoluteDay(_ date: Date, relativeTo referenceDate: Date) -> String {
+    /// `dayOffset` already measures in. Not private: Cmd+K's event and event-note subtitles spell a
+    /// bare `Date` through it too, so their year follows the same rule.
+    static func absoluteDay(_ date: Date, relativeTo referenceDate: Date) -> String {
         let cal = Calendar.current
         guard cal.component(.year, from: date) != cal.component(.year, from: referenceDate) else {
             return shortDate.string(from: date)
