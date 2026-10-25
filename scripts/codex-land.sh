@@ -198,23 +198,47 @@ grant_status() {   # $1 = a grant row
         # shellcheck disable=SC2254
         case "$_f" in $_pat) _match="$_match $_f" ;; esac
     done
+    # The tip, in every verdict that is not already settled. A branch nobody has touched in a
+    # month is the shape this document calls a graveyard, and an agent that has to run four more
+    # commands to learn the date has not been answered (`spell1545`, 2026-10-25).
+    _tip=$(git log -1 --format='%h %ad' --date=short "$_br" 2>/dev/null)
+
     if [ -z "$_match" ]; then
         STATUS=RESERVED
-        STATUS_TEXT="$_br exists but has written nothing matching this pattern; a grant made ahead of the job is a hold on a file nobody is writing (iOSSearchView.swift, 2026-10-24) -- ask before releasing it"
+        STATUS_TEXT="$_br (tip $_tip) exists but has written nothing matching this pattern; a grant made ahead of the job is a hold on a file nobody is writing (iOSSearchView.swift, 2026-10-24) -- ask before releasing it"
         return 0
     fi
     _unlanded=
+    _shapes=
+    _adds=0
     for _f in $_match; do
         git diff --quiet main "$_br" -- "$_f" 2>/dev/null && continue
         blob_is_in_main_history "$_br" "$_f" && continue
         _unlanded="$_unlanded $_f"
+        # WHICH SIDE THE HUNKS FALL ON, which is the reading this document settles on every time
+        # it corrects itself: "a branch cut weeks ago differs from main in both directions, and
+        # the larger side is usually main's own later work reflected back" (2026-10-20). `+N` is
+        # lines the BRANCH has that main lacks; `-N` is lines main has that the branch lacks.
+        if git rev-parse --verify --quiet "main:$_f" >/dev/null 2>&1; then
+            _ns=$(git diff --numstat "main:$_f" "$_br:$_f" 2>/dev/null | awk '{ print $1 " " $2 }')
+            _a=${_ns%% *}; _r=${_ns##* }
+            [ -n "$_a" ] || { _a=0; _r=0; }
+            _shapes="$_shapes $_f(+$_a/-$_r)"
+            [ "$_a" = "0" ] || _adds=1
+        else
+            _shapes="$_shapes $_f(new on the branch)"
+            _adds=1
+        fi
     done
     if [ -n "$_unlanded" ]; then
         STATUS=HELD
-        STATUS_TEXT="$_br holds work main does not have:$_unlanded"
+        STATUS_TEXT="$_br (tip $_tip) holds work main does not have:$_shapes"
+        if [ "$_adds" -eq 0 ]; then
+            STATUS_TEXT="$STATUS_TEXT -- every file above adds 0 lines over main, so the branch is BEHIND main rather than ahead of it. That is usually a stale branch, but a deletion is real work too: read the commits before concluding either way"
+        fi
     else
         STATUS=SPENT
-        STATUS_TEXT="measured: every file $_br wrote under this pattern is already in main"
+        STATUS_TEXT="measured: every file $_br wrote under this pattern is already in main (tip $_tip)"
     fi
 }
 
@@ -658,9 +682,19 @@ cmd_selftest() {
       && printf 'wip\n' > Cadence/iOS/iOSHeldLive.swift && git add -A && git commit -qm t ) >/dev/null 2>&1
     ( cd "$ws" && git checkout -q main && git checkout -qb codex/idlework \
       && printf 'elsewhere\n' > Cadence/iOS/iOSTaskRowZ.swift && git add -A && git commit -qm t ) >/dev/null 2>&1
-    ( cd "$ws" && git checkout -q main ) >/dev/null 2>&1
+    # A branch BEHIND main on its own granted file: its one commit removes a line, main then adds
+    # another, so the blobs differ, the branch's blob is nowhere in main's history, and yet the
+    # branch holds not one line main lacks. Measured in the wild 2026-10-25 on
+    # `Cadence/iOS/iOSList*.swift`, where four commands were needed to learn it.
+    ( cd "$ws" && git checkout -q main \
+      && printf 'a\nb\n' > Cadence/iOS/iOSHeldBehind.swift && git add -A && git commit -qm seed ) >/dev/null 2>&1
+    ( cd "$ws" && git checkout -qb codex/behindwork \
+      && printf 'a\n' > Cadence/iOS/iOSHeldBehind.swift && git add -A && git commit -qm t ) >/dev/null 2>&1
+    ( cd "$ws" && git checkout -q main \
+      && printf 'a\nb\nc\n' > Cadence/iOS/iOSHeldBehind.swift && git add -A && git commit -qm moved ) >/dev/null 2>&1
     relsha=$( cd "$ws" && git rev-parse HEAD 2>/dev/null )
     livesha=$( cd "$ws" && git rev-parse codex/livework 2>/dev/null )
+    livetip=$( cd "$ws" && git log -1 --format=%h codex/livework 2>/dev/null )
     [ -n "$relsha" ] && [ -n "$livesha" ] \
       || { setup_fail "resolving the fixture's main and codex/livework for spent= values" ""; return 2; }
 
@@ -668,7 +702,7 @@ cmd_selftest() {
         { printf '# x\n\n```lease\n'
           printf 'Cadence/iOS/iOSHeldDone*.swift\nCadence/iOS/iOSHeldLive*.swift\nCadence/iOS/iOSHeldIdle*.swift\n'
           printf 'Cadence/iOS/iOSHeldRel*.swift\nCadence/iOS/iOSHeldBogus*.swift\nCadence/iOS/iOSHeldGone*.swift\n'
-          printf 'Cadence/iOS/iOSHeldUnl*.swift\n'
+          printf 'Cadence/iOS/iOSHeldUnl*.swift\nCadence/iOS/iOSHeldBehind*.swift\n'
           [ -n "$1" ] && printf '%s\n' "$1"
           printf '```\n\n```lease-grants\n'
           printf 'Cadence/iOS/iOSHeldDone*.swift   branch=codex/landedwork  granted=2026-10-20  grant=aaaaaaa\n'
@@ -677,6 +711,7 @@ cmd_selftest() {
           printf 'Cadence/iOS/iOSHeldRel*.swift    branch=-                 granted=2026-10-20  grant=ddddddd  spent=%s\n' "$relsha"
           printf 'Cadence/iOS/iOSHeldBogus*.swift  branch=-                 granted=2026-10-20  grant=eeeeeee  spent=0000000\n'
           printf 'Cadence/iOS/iOSHeldUnl*.swift    branch=-                 granted=2026-10-20  grant=5555555  spent=%s\n' "$livesha"
+          printf 'Cadence/iOS/iOSHeldBehind*.swift branch=codex/behindwork  granted=2026-10-20  grant=4444444\n'
           printf 'Cadence/iOS/iOSHeldGone*.swift   branch=codex/neverwas    granted=2026-10-20  grant=fffffff\n'
           [ -n "$2" ] && printf '%s\n' "$2"
           printf '```\n'
@@ -702,6 +737,26 @@ cmd_selftest() {
     # spent and the script must not pretend to know which.
     ck "a branch that has written nothing under its pattern is RESERVED, not SPENT" \
        "$(run held Cadence/iOS/iOSHeldIdle1.swift)" 4
+
+    # A HELD verdict has to be ACTIONABLE, not just correct: the branch tip and which side the
+    # hunks fall on are what the reader needs, and without them a true HELD still costs four more
+    # commands to act on. Pinned as output, the way the T-1800 clash wording is.
+    ck "a HELD verdict names the branch tip" \
+       "$(printf '%s' "$live_held" | grep -c "tip $livetip")" 1
+    ck "...and says which side the hunks fall on" \
+       "$(printf '%s' "$live_held" | grep -c 'new on the branch')" 1
+    # The shape that reads as live and is not: blobs differ, the branch's blob is nowhere in
+    # main's history, and the branch still holds not one line main lacks. It stays HELD, because
+    # a deletion is real work -- but it must SAY so rather than leaving the reader to measure it.
+    behind_held=$(run_out held Cadence/iOS/iOSHeldBehind1.swift)
+    ck "a branch BEHIND main on its own file is still HELD" \
+       "$(run held Cadence/iOS/iOSHeldBehind1.swift)" 3
+    ck "...and the verdict counts the hunks as +0 over main" \
+       "$(printf '%s' "$behind_held" | grep -c '(+0/-2)')" 1
+    ck "...and says the branch is behind rather than ahead" \
+       "$(printf '%s' "$behind_held" | grep -c 'BEHIND main rather than ahead')" 1
+    ck "...and still does not call it spent" \
+       "$(printf '%s' "$behind_held" | grep -c 'SPENT')" 0
 
     ck "a recorded release that is an ancestor of main spends the grant" \
        "$(run held Cadence/iOS/iOSHeldRel1.swift)" 0
@@ -747,7 +802,7 @@ cmd_selftest() {
     ck "the whole block can be read held-or-spent in one pass" "$(run lease --status)" 0
     status_out=$(run_out lease --status)
     ck "...and that pass counts the live grant" \
-       "$(printf '%s' "$status_out" | grep -c '^lease: 4 held, 1 reserved, 2 spent\.$')" 1
+       "$(printf '%s' "$status_out" | grep -c '^lease: 5 held, 1 reserved, 2 spent\.$')" 1
 
     printf '\nchecks: %d passed, %d failed\n' "$pass" "$fail"
     [ "$fail" -eq 0 ] || return 1
