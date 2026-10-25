@@ -107,7 +107,6 @@ Cadence/macOS/Views/CalendarTimelineViewportSupportViews.swift
 Cadence/macOS/Views/CalendarPageComponents.swift
 Cadence/macOS/Views/CalendarPageMonthSupportViews.swift
 Cadence/macOS/Views/TimelineDayCanvas.swift
-Cadence/macOS/Views/CalendarPageMonthSupportViews.swift
 Cadence/macOS/Views/TimelineDayCanvasSupportLayers.swift
 Cadence/macOS/Views/TimelineTaskBlock.swift
 Cadence/macOS/Views/TimelineTaskBlockSupportViews.swift
@@ -130,7 +129,6 @@ CadenceTests/CadenceCalendarFixtureEventsTests.swift
 CadenceTests/CadenceCalendarChipTreatmentTests.swift
 CadenceTests/CadenceNoteReferencePanelSurfaceTests.swift
 CadenceTests/CadenceOutlineParserRegexTests.swift
-Cadence/iOS/iOSMarkdownEditor.swift
 CadenceUITests/CadenceIOSCalendarAndNoteParityUITests.swift
 Cadence/iOS/iOSCalendarView.swift
 Cadence/iOS/iOSCreateTaskSheet.swift
@@ -148,8 +146,6 @@ Cadence/Shared/Components/CadenceScheduleCaptureCard.swift
 Cadence/Services/TaskCreationService.swift
 Cadence/iOS/iOSTimelineDraftCreate.swift
 Cadence/Shared/Components/EstimatePickerControl.swift
-Cadence/iOS/iOSCalendarManager.swift
-CadenceUITests/CadenceCapturePaletteUITests.swift
 CadenceTests/CadenceComposerContainerSurfaceTests.swift
 CadenceTests/CadenceCapturePaletteTests.swift
 CadenceTests/CadenceInlineTagCommitSurfaceTests.swift
@@ -228,6 +224,270 @@ CadenceTests/CadenceTestTargetHygieneTests.swift
 CadenceTests/iOSEditorSheetMetricsTests.swift
 Cadence/iOS/iOSTaskDetailComponents.swift
 ```
+
+Each pattern above has one row below naming the branch its grant was made for, the date it
+entered the fence, the commit that added it and -- once the grant is spent -- the commit that
+released it. `codex-land.sh` refuses when the two blocks disagree in either direction, so a path
+cannot be fenced without recording who holds it. Ask `./scripts/codex-land.sh held <path>` rather
+than reading either block by eye: *listed* and *held* are different questions, and [[T-6400]]
+below is what it cost to keep answering the first one.
+
+```lease-grants
+Cadence/iOS/iOSList*.swift                                       branch=-                           granted=2026-09-27  grant=dec37fea  spent=b537dd50
+Cadence/Shared/CadenceTypography.swift                           branch=-                           granted=2026-09-27  grant=991ed76e  spent=b537dd50
+CadenceTests/CadenceTypographyScaleTests.swift                   branch=-                           granted=2026-09-27  grant=dec37fea  spent=b537dd50
+CadenceTests/CadenceCodex*.swift                                 branch=-                           granted=2026-10-04  grant=c2ba2a77  spent=b537dd50
+Cadence/Shared/Components/CadenceChoicePicker.swift              branch=-                           granted=2026-10-07  grant=524c3e41  spent=b537dd50
+Cadence/iOS/iOSChoicePicker.swift                                branch=-                           granted=2026-10-07  grant=524c3e41  spent=b537dd50
+Cadence/Shared/Components/CadenceTagChip.swift                   branch=-                           granted=2026-10-07  grant=524c3e41  spent=b537dd50
+Cadence/macOS/Views/SettingsAppearanceSection.swift              branch=-                           granted=2026-10-07  grant=524c3e41  spent=b537dd50
+Cadence/CadenceApp.swift                                         branch=-                           granted=2026-10-07  grant=524c3e41  spent=b537dd50
+Cadence/iOS/iOSTaskViews.swift                                   branch=-                           granted=2026-10-07  grant=524c3e41  spent=b537dd50
+Cadence/iOS/iOSTaskRowActionViews.swift                          branch=-                           granted=2026-10-07  grant=524c3e41  spent=b537dd50
+Cadence/iOS/iOSTaskGroupSection.swift                            branch=-                           granted=2026-10-07  grant=524c3e41  spent=b537dd50
+Cadence/Shared/CadenceCapturePaletteSupport.swift                branch=-                           granted=2026-10-07  grant=524c3e41  spent=b537dd50
+Cadence/iOS/iOSCaptureRadialMenu.swift                           branch=-                           granted=2026-10-07  grant=524c3e41  spent=b537dd50
+Cadence/iOS/iOSFocusView.swift                                   branch=-                           granted=2026-10-07  grant=2a508cc9  spent=b537dd50
+Cadence/Shared/CadenceFocusPlanningSupport.swift                 branch=-                           granted=2026-10-07  grant=2a508cc9  spent=b537dd50
+CadenceWidgets/CadenceWidgetsBundle.swift                        branch=-                           granted=2026-10-07  grant=2a508cc9  spent=b537dd50
+Cadence/iOS/iOSFloatingCreateTaskButton.swift                    branch=-                           granted=2026-10-07  grant=1db66078  spent=b537dd50
+Cadence/Shared/Components/CadenceBoardMetadataChip.swift         branch=-                           granted=2026-10-07  grant=1db66078  spent=b537dd50
+CadenceTests/CadenceTagChipStyleTests.swift                      branch=-                           granted=2026-10-07  grant=1db66078  spent=b537dd50
+Cadence/iOS/iOSMarkdownStylingSupport.swift                      branch=-                           granted=2026-10-07  grant=1db66078  spent=b537dd50
+Cadence/iOS/iOSMarkdownEditor.swift                              branch=-                           granted=2026-10-17  grant=288f86d1  spent=b537dd50
+Cadence/iOS/iOSMarkdownTableGridRendering.swift                  branch=-                           granted=2026-10-07  grant=1db66078  spent=b537dd50
+Cadence/iOS/iOSMarkdownBlockCanvasSupport.swift                  branch=-                           granted=2026-10-07  grant=1db66078  spent=b537dd50
+Cadence/macOS/Services/CadenceMCPRefreshCoordinator.swift        branch=-                           granted=2026-10-07  grant=1db66078  spent=b537dd50
+Cadence/macOS/Services/FocusManager.swift                        branch=-                           granted=2026-10-07  grant=1db66078  spent=b537dd50
+Cadence/macOS/Services/QuickTaskPanelController.swift            branch=-                           granted=2026-10-07  grant=1db66078  spent=b537dd50
+Cadence/macOS/Views/CalendarBoardDayColumnSupportViews.swift     branch=-                           granted=2026-10-07  grant=1db66078  spent=b537dd50
+Cadence/macOS/Views/TimelineDropInteractionSupport.swift         branch=-                           granted=2026-10-07  grant=1db66078  spent=b537dd50
+Cadence/Services/CadenceRemindersManager.swift                   branch=-                           granted=2026-10-07  grant=1db66078  spent=b537dd50
+Cadence/Services/CadenceForkedOccurrenceRemover.swift            branch=-                           granted=2026-10-07  grant=1db66078  spent=b537dd50
+Cadence/Services/CadenceWidgetRefreshCenter.swift                branch=-                           granted=2026-10-07  grant=0cbd6479  spent=b537dd50
+Cadence/Services/CadenceTodayWidgetSupport.swift                 branch=-                           granted=2026-10-07  grant=0cbd6479  spent=b537dd50
+Cadence/iOS/iOSCompactTabShell.swift                             branch=-                           granted=2026-10-07  grant=0cbd6479  spent=b537dd50
+Cadence/iOS/iOSRootView.swift                                    branch=-                           granted=2026-10-07  grant=0cbd6479  spent=b537dd50
+Cadence/macOS/Views/CalendarEventPresentationSupport.swift       branch=-                           granted=2026-10-07  grant=1be71038  spent=b537dd50
+Cadence/iOS/iOSCalendarBoardView.swift                           branch=-                           granted=2026-10-08  grant=6929cfa7  spent=b537dd50
+Cadence/iOS/iOSBoardCards.swift                                  branch=-                           granted=2026-10-08  grant=6929cfa7  spent=b537dd50
+Cadence/macOS/Views/GlobalSearchIndexSupport.swift               branch=-                           granted=2026-10-08  grant=6929cfa7  spent=b537dd50
+Cadence/macOS/Views/GlobalSearchSupportViews.swift               branch=-                           granted=2026-10-09  grant=2d9a65b3  spent=b537dd50
+Cadence/macOS/Views/macOSRootCommandActionSupport.swift          branch=-                           granted=2026-10-09  grant=2d9a65b3  spent=b537dd50
+Cadence/macOS/Views/EventNoteSupportViews.swift                  branch=-                           granted=2026-10-09  grant=2d9a65b3  spent=b537dd50
+Cadence/macOS/Views/NotesView.swift                              branch=-                           granted=2026-10-09  grant=2d9a65b3  spent=b537dd50
+Cadence/iOS/iOSTodayCompactViews.swift                           branch=-                           granted=2026-10-09  grant=2d9a65b3  spent=b537dd50
+Cadence/Shared/CadenceSavedLinkPersistence.swift                 branch=-                           granted=2026-10-09  grant=11d230d5  spent=b537dd50
+CadenceTests/CadenceSavedLinkPersistenceTests.swift              branch=-                           granted=2026-10-09  grant=11d230d5  spent=b537dd50
+Cadence/macOS/Views/LinksView.swift                              branch=-                           granted=2026-10-09  grant=11d230d5  spent=b537dd50
+CadenceTests/CadenceInboxRemindersSurfaceTests.swift             branch=-                           granted=2026-10-09  grant=c114f1f3  spent=b537dd50
+CadenceTests/CadenceSharedConstantReuseSweepTests.swift          branch=-                           granted=2026-10-09  grant=ce48bb2f  spent=b537dd50
+Cadence/macOS/Views/ListNotesView.swift                          branch=-                           granted=2026-10-09  grant=915b2f65  spent=b537dd50
+CadenceUITests/CadenceCapturePaletteUITests.swift                branch=-                           granted=2026-10-17  grant=e5b85893  spent=b537dd50
+Cadence/Services/CadenceArchiveImportService.swift               branch=-                           granted=2026-10-16  grant=840fe34f  spent=b537dd50
+CadenceTests/CadenceArchiveImportSurfaceTests.swift              branch=-                           granted=2026-10-16  grant=840fe34f  spent=b537dd50
+Cadence/macOS/Views/CalendarPageView.swift                       branch=-                           granted=2026-10-16  grant=840fe34f  spent=b537dd50
+Cadence/macOS/Views/CalendarPageSupportViews.swift               branch=-                           granted=2026-10-16  grant=840fe34f  spent=b537dd50
+Cadence/macOS/Views/CalendarTimelineViewportSupportViews.swift   branch=-                           granted=2026-10-16  grant=840fe34f  spent=b537dd50
+Cadence/macOS/Views/CalendarPageComponents.swift                 branch=-                           granted=2026-10-16  grant=840fe34f  spent=b537dd50
+Cadence/macOS/Views/CalendarPageMonthSupportViews.swift          branch=-                           granted=2026-10-17  grant=4fdd74ed  spent=b537dd50
+Cadence/macOS/Views/TimelineDayCanvas.swift                      branch=-                           granted=2026-10-16  grant=840fe34f  spent=b537dd50
+Cadence/macOS/Views/TimelineDayCanvasSupportLayers.swift         branch=-                           granted=2026-10-16  grant=840fe34f  spent=b537dd50
+Cadence/macOS/Views/TimelineTaskBlock.swift                      branch=-                           granted=2026-10-16  grant=840fe34f  spent=b537dd50
+Cadence/macOS/Views/TimelineTaskBlockSupportViews.swift          branch=-                           granted=2026-10-16  grant=840fe34f  spent=b537dd50
+Cadence/macOS/Views/CalendarPageBoardSupportViews.swift          branch=-                           granted=2026-10-16  grant=7ef2fde2  spent=b537dd50
+docs/PLATFORM_PARITY_AUDIT.md                                    branch=-                           granted=2026-10-16  grant=38224bd8  spent=b537dd50
+Cadence/Shared/CadenceTaskMutationSupport.swift                  branch=-                           granted=2026-10-16  grant=e616745b  spent=b537dd50
+CadenceTests/CalendarBoardDayDropCommitTests.swift               branch=-                           granted=2026-10-16  grant=e616745b  spent=b537dd50
+CadenceTests/CadenceEditorSaveCommitSurfaceTests.swift           branch=-                           granted=2026-10-16  grant=e616745b  spent=b537dd50
+Cadence/Shared/CadenceTaskDateEditing.swift                      branch=-                           granted=2026-10-17  grant=2b393a28  spent=b537dd50
+CadenceTests/CadenceMarkdownImageCommitSurfaceTests.swift        branch=-                           granted=2026-10-17  grant=1b198364  spent=b537dd50
+Cadence/iOS/iOSCalendarManager.swift                             branch=-                           granted=2026-10-18  grant=e6a226b6  spent=b537dd50
+Cadence/iOS/iOSTaskDetailSheet.swift                             branch=-                           granted=2026-10-19  grant=3b4756e2  spent=b537dd50
+Cadence/iOS/iOSTaskDetailSheetSections.swift                     branch=-                           granted=2026-10-19  grant=3b4756e2  spent=b537dd50
+Cadence/iOS/iOSCalendarEventEditSheet.swift                      branch=-                           granted=2026-10-19  grant=3b4756e2  spent=b537dd50
+Cadence/iOS/iOSCalendarMonthViews.swift                          branch=-                           granted=2026-10-17  grant=b7cd0fcf  spent=b537dd50
+Cadence/iOS/iOSNotesView.swift                                   branch=-                           granted=2026-10-17  grant=b7cd0fcf  spent=b537dd50
+Cadence/iOS/iOSMarkdownEditingSurface.swift                      branch=-                           granted=2026-10-17  grant=b7cd0fcf  spent=b537dd50
+Cadence/iOS/iOSNoteEditorSheetHeader.swift                       branch=-                           granted=2026-10-17  grant=b7cd0fcf  spent=b537dd50
+CadenceTests/CadenceCalendarFixtureEventsTests.swift             branch=-                           granted=2026-10-17  grant=b7cd0fcf  spent=b537dd50
+CadenceTests/CadenceCalendarChipTreatmentTests.swift             branch=-                           granted=2026-10-17  grant=b7cd0fcf  spent=b537dd50
+CadenceTests/CadenceNoteReferencePanelSurfaceTests.swift         branch=-                           granted=2026-10-17  grant=b7cd0fcf  spent=b537dd50
+CadenceTests/CadenceOutlineParserRegexTests.swift                branch=-                           granted=2026-10-17  grant=b7cd0fcf  spent=b537dd50
+CadenceUITests/CadenceIOSCalendarAndNoteParityUITests.swift      branch=-                           granted=2026-10-17  grant=288f86d1  spent=b537dd50
+Cadence/iOS/iOSCalendarView.swift                                branch=-                           granted=2026-10-17  grant=8171fff2  spent=b537dd50
+Cadence/iOS/iOSCreateTaskSheet.swift                             branch=-                           granted=2026-10-17  grant=d2d86efb  spent=b537dd50
+Cadence/iOS/iOSCreateTaskSheetSupportViews.swift                 branch=-                           granted=2026-10-17  grant=d2d86efb  spent=b537dd50
+Cadence/macOS/Views/KanbanListColumnView.swift                   branch=-                           granted=2026-10-17  grant=d2d86efb  spent=b537dd50
+Cadence/macOS/Views/KanbanColumnSupportViews.swift               branch=-                           granted=2026-10-17  grant=d2d86efb  spent=b537dd50
+Cadence/macOS/Views/KanbanSupportViews.swift                     branch=-                           granted=2026-10-17  grant=d2d86efb  spent=b537dd50
+Cadence/macOS/Views/KanbanCardView.swift                         branch=-                           granted=2026-10-17  grant=d2d86efb  spent=b537dd50
+Cadence/Shared/CadenceSectionEditingSupport.swift                branch=-                           granted=2026-10-17  grant=d2d86efb  spent=b537dd50
+Cadence/Shared/CadenceSectionConfigMerge.swift                   branch=-                           granted=2026-10-17  grant=d2d86efb  spent=b537dd50
+Cadence/macOS/Views/ListDetailComponents.swift                   branch=-                           granted=2026-10-17  grant=4fca5348  spent=b537dd50
+Cadence/Shared/Components/CadenceSectionCreationRow.swift        branch=-                           granted=2026-10-17  grant=4fca5348  spent=b537dd50
+Cadence/Shared/Components/CadenceSchedulePanel.swift             branch=-                           granted=2026-10-17  grant=4fca5348  spent=b537dd50
+Cadence/Shared/Components/CadenceScheduleCaptureCard.swift       branch=-                           granted=2026-10-17  grant=4fca5348  spent=b537dd50
+Cadence/Services/TaskCreationService.swift                       branch=-                           granted=2026-10-17  grant=4fca5348  spent=b537dd50
+Cadence/iOS/iOSTimelineDraftCreate.swift                         branch=-                           granted=2026-10-17  grant=e78488b7  spent=b537dd50
+Cadence/Shared/Components/EstimatePickerControl.swift            branch=-                           granted=2026-10-17  grant=fac1bee9  spent=b537dd50
+CadenceTests/CadenceComposerContainerSurfaceTests.swift          branch=-                           granted=2026-10-17  grant=e5b85893  spent=b537dd50
+CadenceTests/CadenceCapturePaletteTests.swift                    branch=-                           granted=2026-10-17  grant=a985429c  spent=b537dd50
+CadenceTests/CadenceInlineTagCommitSurfaceTests.swift            branch=-                           granted=2026-10-17  grant=a985429c  spent=b537dd50
+CadenceTests/CadenceChoicePickerDismissalTests.swift             branch=-                           granted=2026-10-17  grant=a985429c  spent=b537dd50
+CadenceTests/CadenceContainerPickerConsolidationTests.swift      branch=-                           granted=2026-10-17  grant=a985429c  spent=b537dd50
+CadenceTests/CadencePresentedTypographyBoundaryTests.swift       branch=-                           granted=2026-10-17  grant=a985429c  spent=b537dd50
+Cadence/macOS/Views/TimelineDayCanvasStateSupport.swift          branch=codex/block-removal-finish  granted=2026-10-20  grant=25e925dc  spent=6803ddda
+Cadence/macOS/Services/SchedulingService.swift                   branch=codex/block-removal-finish  granted=2026-10-20  grant=25e925dc  spent=6803ddda
+Cadence/Shared/CadenceTaskFieldEditCommit.swift                  branch=codex/block-removal-finish  granted=2026-10-20  grant=25e925dc  spent=6803ddda
+CadenceTests/CadenceCommentSymbolClaimTests.swift                branch=codex/block-removal-finish  granted=2026-10-20  grant=25e925dc  spent=6803ddda
+Cadence/Shared/CadenceSettingsPresentationSupport.swift          branch=codex/text-scale-finish     granted=2026-10-20  grant=e711077c  spent=e711077c
+Cadence/Shared/Components/CadenceAccentPalettePicker.swift       branch=codex/text-scale-finish     granted=2026-10-20  grant=e711077c  spent=e711077c
+Cadence/Shared/Components/CadenceFieldRows.swift                 branch=codex/text-scale-finish     granted=2026-10-20  grant=e711077c  spent=e711077c
+Cadence/iOS/iOSArchiveImportSettingsSection.swift                branch=codex/text-scale-finish     granted=2026-10-20  grant=e711077c  spent=e711077c
+Cadence/iOS/iOSCalendarChromeViews.swift                         branch=codex/text-scale-finish     granted=2026-10-20  grant=e711077c  spent=e711077c
+Cadence/iOS/iOSCalendarMetrics.swift                             branch=codex/text-scale-finish     granted=2026-10-20  grant=e711077c  spent=e711077c
+Cadence/iOS/iOSCalendarMonthAgendaViews.swift                    branch=codex/text-scale-finish     granted=2026-10-20  grant=e711077c  spent=e711077c
+Cadence/iOS/iOSCalendarQuickCreateSheet.swift                    branch=codex/text-scale-finish     granted=2026-10-20  grant=e711077c  spent=e711077c
+Cadence/iOS/iOSCalendarSettingsSection.swift                     branch=codex/text-scale-finish     granted=2026-10-20  grant=e711077c  spent=e711077c
+Cadence/iOS/iOSCalendarTimelineViews.swift                       branch=codex/text-scale-finish     granted=2026-10-20  grant=e711077c  spent=e711077c
+Cadence/iOS/iOSDataExportSettingsSection.swift                   branch=codex/text-scale-finish     granted=2026-10-20  grant=e711077c  spent=e711077c
+Cadence/iOS/iOSDataResetSettingsSection.swift                    branch=codex/text-scale-finish     granted=2026-10-20  grant=e711077c  spent=e711077c
+Cadence/iOS/iOSDateJumpTitle.swift                               branch=codex/text-scale-finish     granted=2026-10-20  grant=e711077c  spent=e711077c
+Cadence/iOS/iOSMarkdownReferenceSupport.swift                    branch=codex/text-scale-finish     granted=2026-10-20  grant=e711077c  spent=e711077c
+Cadence/iOS/iOSNotificationsSettingsSection.swift                branch=codex/text-scale-finish     granted=2026-10-20  grant=e711077c  spent=e711077c
+Cadence/iOS/iOSRemindersSettingsSection.swift                    branch=codex/text-scale-finish     granted=2026-10-20  grant=e711077c  spent=e711077c
+Cadence/iOS/iOSSettingsComponents.swift                          branch=codex/text-scale-finish     granted=2026-10-20  grant=e711077c  spent=e711077c
+Cadence/iOS/iOSSettingsContextSection.swift                      branch=codex/text-scale-finish     granted=2026-10-20  grant=e711077c  spent=e711077c
+Cadence/iOS/iOSSettingsOverviewSections.swift                    branch=codex/text-scale-finish     granted=2026-10-20  grant=e711077c  spent=e711077c
+Cadence/iOS/iOSSettingsTagsSection.swift                         branch=codex/text-scale-finish     granted=2026-10-20  grant=e711077c  spent=e711077c
+Cadence/iOS/iOSSettingsTemplateAndListSections.swift             branch=codex/text-scale-finish     granted=2026-10-20  grant=e711077c  spent=e711077c
+Cadence/iOS/iOSSettingsView.swift                                branch=codex/text-scale-finish     granted=2026-10-20  grant=e711077c  spent=e711077c
+Cadence/iOS/iOSSidebarLayoutSettingsSection.swift                branch=codex/text-scale-finish     granted=2026-10-20  grant=e711077c  spent=e711077c
+Cadence/iOS/iOSStoreBackupSettingsSection.swift                  branch=codex/text-scale-finish     granted=2026-10-20  grant=e711077c  spent=e711077c
+Cadence/iOS/iOSUnmanagedStoreSettingsSection.swift               branch=codex/text-scale-finish     granted=2026-10-20  grant=e711077c  spent=e711077c
+CadenceTests/CadenceRealTreeSweepManifest.txt                    branch=codex/text-scale-finish     granted=2026-10-20  grant=e711077c  spent=e711077c
+CadenceTests/iOSCalendarMetricsTests.swift                       branch=codex/text-scale-finish     granted=2026-10-20  grant=e711077c  spent=e711077c
+CadenceTests/TaskBundleTests.swift                               branch=codex/block-removal-finish  granted=2026-10-20  grant=e5ff6599  spent=6803ddda
+CadenceTests/CadencePendingChangePersistenceTests.swift          branch=codex/t3260-source-pins     granted=2026-10-21  grant=993cc30a  spent=9d26528e
+CadenceTests/MarkdownImageDropAffordanceTests.swift              branch=codex/t3260-source-pins     granted=2026-10-21  grant=993cc30a  spent=9d26528e
+CadenceTests/MobileTaskSortStabilityTests.swift                  branch=codex/t3260-source-pins     granted=2026-10-21  grant=44e84dbe  spent=9d26528e
+CadenceTests/DataIntegrityRepairServiceTests.swift               branch=codex/t3260-source-pins     granted=2026-10-21  grant=44e84dbe  spent=9d26528e
+CadenceTests/CadenceNoteFolderMoveCommitTests.swift              branch=codex/t3260-source-pins     granted=2026-10-21  grant=44e84dbe  spent=9d26528e
+CadenceTests/CadenceEventKitLaunchGateTests.swift                branch=codex/t3260-source-pins     granted=2026-10-21  grant=44e84dbe  spent=9d26528e
+CadenceTests/CadenceCaptureEditorTests.swift                     branch=codex/t3260-source-pins     granted=2026-10-21  grant=44e84dbe  spent=9d26528e
+Cadence/Shared/Components/CadenceTodayOverdueSummaryCards.swift  branch=codex/batch2-cleanup        granted=2026-10-21  grant=04d51751  spent=82901ff6
+Cadence/Shared/CadenceTodayOverdueSummarySupport.swift           branch=codex/batch2-cleanup        granted=2026-10-21  grant=04d51751  spent=82901ff6
+Cadence/iOS/iOSTodayTaskSections.swift                           branch=codex/batch2-cleanup        granted=2026-10-21  grant=04d51751  spent=82901ff6
+Cadence/iOS/iOSTodayView.swift                                   branch=codex/batch2-cleanup        granted=2026-10-21  grant=04d51751  spent=82901ff6
+CadenceTests/CadenceTodaySectionMetricsTests.swift               branch=codex/batch2-cleanup        granted=2026-10-21  grant=04d51751  spent=82901ff6
+CadenceTests/CadenceTodayOverdueSummarySurfaceTests.swift        branch=codex/batch2-cleanup        granted=2026-10-21  grant=04d51751  spent=82901ff6
+CadenceTests/CadenceTaskInspectorHostTests.swift                 branch=codex/batch2-cleanup        granted=2026-10-21  grant=04d51751  spent=82901ff6
+CadenceTests/CadenceSharedBoardChromeTests.swift                 branch=codex/batch2-cleanup        granted=2026-10-21  grant=9e020baa  spent=82901ff6
+Cadence/Shared/CadenceScheduleDraft.swift                        branch=codex/subtasks-inspector    granted=2026-10-23  grant=460313ab  spent=21834d4c
+Cadence/macOS/Views/QuickCreateChoicePopover.swift               branch=codex/subtasks-inspector    granted=2026-10-23  grant=460313ab  spent=21834d4c
+Cadence/macOS/Views/SchedulePanelShellViews.swift                branch=codex/subtasks-inspector    granted=2026-10-23  grant=460313ab  spent=21834d4c
+Cadence/macOS/Views/TaskInspectorContentSupportViews.swift       branch=codex/subtasks-inspector    granted=2026-10-23  grant=460313ab  spent=21834d4c
+Cadence/macOS/Views/TaskInspectorFieldSupportViews.swift         branch=codex/subtasks-inspector    granted=2026-10-23  grant=460313ab  spent=21834d4c
+Cadence/macOS/Views/TaskInspectorStatusActionsRow.swift          branch=codex/subtasks-inspector    granted=2026-10-23  grant=460313ab  spent=21834d4c
+Cadence/macOS/Views/TaskInspectorWorkflowSupportViews.swift      branch=codex/subtasks-inspector    granted=2026-10-23  grant=460313ab  spent=21834d4c
+CadenceTests/CadenceQuickCreateTaskInspectorTests.swift          branch=codex/subtasks-inspector    granted=2026-10-23  grant=460313ab  spent=21834d4c
+Cadence/macOS/Views/SchedulePanelComponents.swift                branch=codex/subtasks-inspector    granted=2026-10-23  grant=6bb56ed7  spent=21834d4c
+Cadence/macOS/Views/SchedulePanelPopoverSupportViews.swift       branch=codex/subtasks-inspector    granted=2026-10-23  grant=6bb56ed7  spent=21834d4c
+AGENTS.md                                                        branch=codex/agents-cap-t3149      granted=2026-10-23  grant=703df4f9  spent=7198f79e
+CadenceMCPServer/AGENTS.md                                       branch=codex/agents-cap-t3149      granted=2026-10-23  grant=703df4f9  spent=7198f79e
+Cadence/Shared/AGENTS.md                                         branch=codex/agents-cap-t3149      granted=2026-10-23  grant=703df4f9  spent=7198f79e
+Cadence/Models/AGENTS.md                                         branch=codex/agents-cap-t3149      granted=2026-10-23  grant=703df4f9  spent=7198f79e
+docs/AGENTS_REFERENCE.md                                         branch=codex/agents-cap-t3149      granted=2026-10-23  grant=703df4f9  spent=7198f79e
+docs/SHARED_AGENTS_REFERENCE.md                                  branch=codex/agents-cap-t3149      granted=2026-10-23  grant=703df4f9  spent=7198f79e
+docs/SUBAGENT_RUNBOOK.md                                         branch=codex/agents-cap-t3149      granted=2026-10-23  grant=703df4f9  spent=7198f79e
+.github/workflows/docs.yml                                       branch=codex/agents-cap-t3149      granted=2026-10-23  grant=703df4f9  spent=7198f79e
+CadenceTests/AgentContextBudgetTests.swift                       branch=codex/agents-cap-t3149      granted=2026-10-23  grant=703df4f9  spent=7198f79e
+CadenceTests/CadenceGuardScriptSelftestTests.swift               branch=codex/subtasks-inspector    granted=2026-10-23  grant=78e5e26e  spent=21834d4c
+CadenceTests/CadenceTaskContextInheritanceTests.swift            branch=codex/subtasks-inspector    granted=2026-10-23  grant=78e5e26e  spent=21834d4c
+CadenceTests/CadenceTestTargetHygieneTests.swift                 branch=codex/subtasks-inspector    granted=2026-10-23  grant=78e5e26e  spent=21834d4c
+CadenceTests/iOSEditorSheetMetricsTests.swift                    branch=codex/subtasks-inspector    granted=2026-10-23  grant=78e5e26e  spent=21834d4c
+Cadence/iOS/iOSTaskDetailComponents.swift                        branch=codex/ios-inline-tags       granted=2026-10-24  grant=f487409b  spent=2a834d88
+```
+
+### 2026-10-25 — [[T-6400]]: what the fence actually HOLDS, path by path, and the field that makes it expire
+
+**The defect.** `codex-land.sh lease` answers *is this path listed*. Nobody has ever needed that
+answer. The question every reader of this block is actually asking is *is this path held*, and the
+block cannot answer it, because a grant is for a BRANCH and the block records no branch. A line
+added for a branch that landed three days ago looks exactly like a line added for a branch that is
+being written right now. So the list only ever grows, and on 2026-10-24 it cost a full round trip:
+the coordinator matched five tickets against the block with fnmatch, found every path listed, and
+routed all five to Codex, which handed the whole batch back. It is the sixth instance of this
+document's own 2026-10-17 synthesis -- *each test answered a cheaper question than the one being
+asked* -- and the first one where the cheaper question is baked into the data rather than into a
+test over it.
+
+**The repair, in two halves.** The `lease-grants` block above carries, per pattern, the branch the
+grant was made for, the date it entered the fence, the commit that added it, and -- when the grant
+is spent -- the commit that released it. `./scripts/codex-land.sh held <path>` reads those and
+reports HELD, RESERVED, SPENT or UNFENCED; `lease --status` does it for the whole block.
+`CODEX-LEASE-UNRECORDED` refuses whenever the two blocks disagree in either direction, which is
+what makes it impossible to add a path to the fence again without saying who holds it.
+
+**Why `spent=` is checked and `grant=` is not.** `grant=` is provenance a reader follows by hand.
+`spent=` is the field that releases a path, so a release recorded against a commit that does not
+resolve, or that is not an ancestor of `main`, is reported as HELD and not as spent. Where no
+`spent=` is recorded the status is MEASURED from the branch: the files its own `--no-merges`
+commits touched that match the pattern, each asked whether `main` already has that blob. A branch
+that exists but has written nothing under its pattern reports RESERVED rather than SPENT -- that is
+the `iOSSearchView.swift` shape of 2026-10-24, a hold on a file nobody is writing, and it is a
+question for the coordinator, not something this script decides.
+
+**The result of the audit: NOTHING in the fence is currently held.** 175 distinct patterns, every
+one determined:
+
+| grant | branch | paths | determination | evidence |
+|---|---|---|---|---|
+| everything in the block at `b537dd50` | not recorded | 104 | **SPENT** | the 2026-10-20 blanket release; [[T-3257]]'s audit of exactly these patterns |
+| `e711077c` 10-20 | `codex/text-scale-finish` | 27 | **SPENT** | that commit *is* the landing ([[T-1364]] CLOSED) |
+| `25e925dc` 10-20 | `codex/block-removal-finish` | 4 | **SPENT** | `6803ddda` 10-21 landed it; `main` has since moved `staleClaims` 10 -> 0 |
+| `e5ff6599` 10-20 | `codex/block-removal-finish` | 1 | **SPENT** | same landing; `TaskBundleTests.swift` blob is in `main` |
+| `04d51751` / `9e020baa` 10-21 | `codex/batch2-cleanup` | 8 | **SPENT** | `82901ff6` 10-22 ([[T-3078]] CLOSED) |
+| `993cc30a` / `44e84dbe` 10-21 | `codex/t3260-source-pins` | 7 | **SPENT** | `9d26528e` ([[T-4100]] CLOSED, zero conversions); branch tip `cf9f3297` is documentation only |
+| `460313ab` / `6bb56ed7` / `78e5e26e` 10-23 | `codex/subtasks-inspector` | 14 | **SPENT** | `21834d4c` 10-24 ([[T-1611]] CLOSED) |
+| `703df4f9` 10-23 | `codex/agents-cap-t3149` | 9 | **SPENT** | `7198f79e` 10-23 ([[T-3149]] CLOSED) |
+| `f487409b` 10-24 | `codex/ios-inline-tags` | 1 | **SPENT** | `2a834d88` 10-24 ([[T-5307]] CLOSED) |
+
+Cross-checked against the branches rather than against the commit subjects: of the 71 post-release
+patterns, four path/branch pairs differ from `main` by bytes, and all four are stale rather than
+live -- `codex/continuous-quote-rail` and `codex/unified-editors` have every line their own commits
+added present in `main`; `codex/tracking-ui-retirement`'s one missing manifest row names a suite
+that does not exist in `main` and the manifest is a GENERATED file; `codex/block-removal-finish`'s
+two missing lines are the count assertion `main` moved past at `6803ddda`. No `codex/*` worktree
+holds a dirty source file -- the only modification anywhere under `~/.codex/worktrees` is
+`docs/CODEX_LEDGER_INBOX.md` in `codex/branch-audit`'s.
+
+**The 2026-10-21 `CadenceArchiveImportService.swift` contradiction, resolved.** This document was
+read as fencing that path on 2026-10-21 in `44e84dbe`, i.e. AFTER the blanket release, while Codex
+returned [[T-4720]] as covered BY that release. Codex is right and the reading was wrong.
+`git log -S'<path>' -- docs/CODEX_WORKTREE.md` returns `44e84dbe` first, but that commit's only
+occurrence of the string is **prose** -- "`Cadence/Services/CadenceArchiveImportService.swift`, was
+already fenced" -- inside the grant note, not a line in the block. The fence line was added by
+`840fe34f` on 2026-10-16, restating `f00429c0`'s T-3121 grant of the same day, and the path is
+present in `git show b537dd50:docs/CODEX_WORKTREE.md`. It is released. **`-S` answers *did the
+count of this string change here*, which is a cheaper question than *was this path fenced here*;
+it does not distinguish an addition from a removal, nor a fence line from a sentence.** The test
+that settles it is membership in the block AT `b537dd50`, which is what this audit used throughout
+and what the `granted=` dates in `lease-grants` were derived from.
+
+**What did NOT change.** Not one pattern was removed from the `lease` block and not one was
+widened. The block still governs what **Codex** may write, exactly as the 2026-10-20 entry says,
+and deleting a spent line would narrow Codex's write scope and redden `review` on any branch that
+still touches it. Four lines that appeared twice (`iOSCalendarManager.swift`,
+`iOSMarkdownEditor.swift`, `CalendarPageMonthSupportViews.swift`,
+`CadenceCapturePaletteUITests.swift`) were collapsed to one each, which changes nothing a glob
+matches; the count reads 175 rather than 179 for that reason alone.
+
+**For whoever makes the next grant.** Add the pattern to `lease` and its row to `lease-grants` in
+the same commit -- `review` refuses otherwise -- and name the branch, not the ticket. When that
+branch lands, add `spent=<landing sha>` in the landing commit. Do not fence a path before the job
+that needs it is running; `held` will report it RESERVED and the next reader will have to ask.
 
 **Admission 2026-10-19 (coordinator), one line in `CadenceTests/CadenceMarkdownImageCommitSurfaceTests.swift`.**
 That file is leased above and stays leased. The coordinator changed exactly one assertion in it --

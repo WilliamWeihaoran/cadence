@@ -1,10 +1,10 @@
 #!/bin/sh
 # Review a Codex branch before the coordinator lands it (docs/CODEX_WORKTREE.md).
-#
-#   ./scripts/codex-land.sh review <ref>   # what would land, and every refusal that fires
-#   ./scripts/codex-land.sh lease          # the lease, as this script parses it
-#   ./scripts/codex-land.sh inbox          # ids currently pending in the inbox
-#   ./scripts/codex-land.sh selftest       # prove the refusals still fire
+#   ./scripts/codex-land.sh review <ref>      # what would land, and every refusal that fires
+#   ./scripts/codex-land.sh lease [--status]  # the lease as parsed; --status asks held or spent
+#   ./scripts/codex-land.sh held <path>...    # is this path HELD, not merely listed (T-6400)
+#   ./scripts/codex-land.sh inbox             # ids currently pending in the inbox
+#   ./scripts/codex-land.sh selftest          # prove the refusals still fire
 #
 # WHY REVIEW AND NOT LAND. This script never commits. Landing goes through
 # `scripts/agent-commit.sh`, because that is where FOREIGN-STAGED, REMOVES-HEAD-LINES,
@@ -60,8 +60,11 @@ cmd_lease() {
     lease=$(read_lease) || { printf 'REFUSED (CODEX-LEASE-UNREADABLE): %s is missing.\n' "$DOC" >&2; return 2; }
     n=$(printf '%s\n' "$lease" | grep -c '^' )
     [ -n "$lease" ] || { printf 'REFUSED (CODEX-LEASE-EMPTY): the lease block in %s names no path.\n  An empty lease reads exactly like a lease that allows everything; it allows nothing.\n' "$DOC" >&2; return 4; }
+    lease_validate || return $?
+    if [ "${1:-}" = "--status" ]; then cmd_lease_status; return $?; fi
     printf '%s\n' "$lease"
     printf 'lease: %d pattern(s) from %s (plus %s, always allowed).\n' "$n" "$DOC" "$INBOX"
+    printf 'This answers "is it LISTED". For "is it HELD", which is the other question and the one\n  that cost a round trip on 2026-10-24, ask `./scripts/codex-land.sh held <path>` (T-6400).\n'
 }
 
 cmd_inbox() {
@@ -73,6 +76,203 @@ cmd_inbox() {
     nlines=$(grep -c '^- \[T-[0-9]\+\]' "$INBOX" 2>/dev/null); nlines=${nlines:-0}
     nids=$(printf '%s\n' "$ids" | grep -c '^T-'); nids=${nids:-0}
     printf 'inbox: %d entry line(s), %d distinct id(s).\n' "$nlines" "$nids"
+}
+
+# --- the grant record: one row per lease pattern (T-6400) ---------------------
+# WHY A SECOND BLOCK RATHER THAN AN ANNOTATION ON THE LEASE LINES. `read_lease` above is copied
+# verbatim into `scripts/ledger-blocker-check.sh`, deliberately, "so the two cannot answer
+# differently about what the fence holds" -- and that copy feeds each line straight to Python
+# fnmatch. A trailing `branch=... granted=...` on a lease line would quietly turn every pattern
+# there into one that matches nothing: a guard that reads clean because it is asking a question
+# with no answers, which is the failure this whole document is about. So the lease block stays
+# bare and the grant record sits beside it, with refusals below that fire the moment the two
+# disagree in either direction. Two lists that cannot drift is not the same thing as one list.
+#
+# WHAT THE ROWS ARE FOR. `lease` answers *is this path LISTED*. That is a cheaper question than
+# *is this path HELD*, and on 2026-10-24 the gap cost a full round trip: five tickets were routed
+# to Codex because fnmatch found their paths in the block, and Codex handed all five back -- four
+# covered by the 2026-10-20 blanket release, the rest on grants that lapsed when `e711077c` and
+# `82901ff6` landed. A grant is for a BRANCH, and when that branch lands the path is free. The
+# bare list records no branch, so no entry in it can ever expire; it only ever grows.
+#
+#   <pattern>  branch=<ref|->  granted=<YYYY-MM-DD>  grant=<sha>  [spent=<sha>]
+#
+# branch   the Codex branch the grant was made for. `-` is allowed ONLY alongside `spent=`, which
+#          is how the 104 patterns released wholesale on 2026-10-20 are carried: their grants are
+#          spent, and which branch each was for is not recoverable from this document's history.
+# granted  the date the pattern entered the lease block.
+# grant    the commit that added it. Evidence for a reader (`git show <sha> -- docs/CODEX_WORKTREE.md`),
+#          not checked here -- it is the release that has to be true, not the provenance.
+# spent    the commit that RELEASED it. CHECKED, because a release recorded against a commit that
+#          never landed is not a release: it must resolve, and it must be an ancestor of main.
+GRANTS_BLOCK='```lease-grants'
+read_grants() {   # stdout: one row per lease pattern
+    [ -f "$DOC" ] || return 1
+    awk '/^```lease-grants$/ { inb = 1; next } inb && /^```$/ { exit } inb && NF && $1 !~ /^#/ { print }' "$DOC"
+}
+
+row_field() {   # $1 = row, $2 = key; stdout: the value, empty when absent
+    # `grant=` is not a prefix of `granted=` -- they differ at the sixth character -- so an
+    # index() test is enough and no ordering trick is needed.
+    printf '%s\n' "$1" | awk -v k="$2=" '{ for (i = 2; i <= NF; i++) if (index($i, k) == 1) { print substr($i, length(k) + 1); exit } }'
+}
+
+# Every lease pattern has exactly one row, and every row names a lease pattern. Either half alone
+# rots: a pattern with no row is a path nothing can ever expire, and a row with no pattern is a
+# release nobody reads. Both refuse, which is what makes it impossible to add a path to the fence
+# without recording the branch it is held for -- the omission this list died of.
+lease_validate() {
+    _l=$(read_lease) || { printf 'REFUSED (CODEX-LEASE-UNREADABLE): %s is missing.\n' "$DOC" >&2; return 2; }
+    [ -n "$_l" ] || { printf 'REFUSED (CODEX-LEASE-EMPTY): the lease block in %s names no path.\n  An empty lease reads exactly like a lease that allows everything; it allows nothing.\n' "$DOC" >&2; return 4; }
+    _g=$(read_grants)
+    [ -n "$_g" ] || { printf 'REFUSED (CODEX-GRANTS-EMPTY): %s holds a lease block and no %s block.\n  A fence whose entries record no branch cannot expire, so it only grows (T-6400).\n' "$DOC" "$GRANTS_BLOCK" >&2; return 4; }
+    _bad=$( { printf '%s\n' "$_g" | sed 's/^/G	/'; printf '%s\n' "$_l" | sed 's/^/L	/'; } | awk -F'\t' '
+        $1 == "G" {
+            n = split($2, f, /[ \t]+/)
+            pat = f[1]; g[pat]++
+            b = ""; d = ""; c = ""; s = ""
+            for (i = 2; i <= n; i++) {
+                if (f[i] ~ /^branch=/)       b = substr(f[i], 8)
+                else if (f[i] ~ /^granted=/) d = substr(f[i], 9)
+                else if (f[i] ~ /^grant=/)   c = substr(f[i], 7)
+                else if (f[i] ~ /^spent=/)   s = substr(f[i], 7)
+                else print "UNKNOWN-FIELD        " pat "  (" f[i] ")"
+            }
+            if (b == "") print "NO-BRANCH            " pat
+            if (d !~ /^[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]$/) print "NO-GRANTED-DATE      " pat
+            if (c == "") print "NO-GRANT-COMMIT      " pat
+            if (b == "-" && s == "") print "ANONYMOUS-AND-UNSPENT " pat
+        }
+        $1 == "L" { l[$2]++ }
+        END {
+            for (k in l) if (!(k in g)) print "NO-GRANT-ROW         " k
+            for (k in g) if (!(k in l)) print "ROW-WITHOUT-PATTERN  " k
+            for (k in g) if (g[k] > 1)  print "TWO-ROWS-ONE-PATTERN " k
+        }')
+    [ -z "$_bad" ] && return 0
+    printf 'REFUSED (CODEX-LEASE-UNRECORDED): the lease block and the %s block disagree.\n' "$GRANTS_BLOCK" >&2
+    printf '%s\n' "$_bad" | sed 's/^/  /' >&2
+    printf '  Every fenced pattern needs a row naming the branch it is held for, the date, and the\n  commit that fenced it; every row needs a pattern. Without the branch nothing can expire.\n' >&2
+    return 4
+}
+
+# --- is a path HELD, or only listed? (T-6400) ---------------------------------
+# Sets STATUS and STATUS_TEXT. The fail-safe direction is deliberate and it is not symmetrical:
+# an over-wide fence costs a round trip, an under-wide one costs an agent's finished work. So
+# anything this cannot settle reports HELD, and only an answer it can stand behind reports SPENT.
+grant_status() {   # $1 = a grant row
+    _row=$1
+    _pat=$(printf '%s\n' "$_row" | awk '{ print $1 }')
+    _br=$(row_field "$_row" branch)
+    _sp=$(row_field "$_row" spent)
+
+    if [ -n "$_sp" ] && [ "$_sp" != "-" ]; then
+        if ! git rev-parse --verify --quiet "$_sp^{commit}" >/dev/null 2>&1; then
+            STATUS=HELD
+            STATUS_TEXT="spent=$_sp names no commit in this repository, so the release cannot be read -- a release recorded against nothing is not a release"
+            return 0
+        fi
+        if ! git merge-base --is-ancestor "$_sp" main 2>/dev/null; then
+            STATUS=HELD
+            STATUS_TEXT="spent=$_sp is not an ancestor of main, so the landing it records never landed"
+            return 0
+        fi
+        STATUS=SPENT
+        if [ "$_br" = "-" ]; then STATUS_TEXT="released by $_sp"
+        else STATUS_TEXT="granted for $_br, released by $_sp"; fi
+        return 0
+    fi
+
+    if [ "$_br" = "-" ] || ! git rev-parse --verify --quiet "$_br" >/dev/null 2>&1; then
+        STATUS=HELD
+        STATUS_TEXT="branch $_br does not resolve and no release is recorded -- cannot tell, so it stays fenced"
+        return 0
+    fi
+
+    # The branch's OWN commits, `--no-merges`, which is the narrowing this document settled on
+    # after six wrong answers in one day. `git diff main..<branch>` would also hand back what
+    # MAIN changed, which is how a stale branch reads as a live one.
+    _touched=$(git log --no-merges --name-only --format= "main..$_br" 2>/dev/null | sort -u | grep -v '^$')
+    _match=
+    for _f in $_touched; do
+        # shellcheck disable=SC2254
+        case "$_f" in $_pat) _match="$_match $_f" ;; esac
+    done
+    if [ -z "$_match" ]; then
+        STATUS=RESERVED
+        STATUS_TEXT="$_br exists but has written nothing matching this pattern; a grant made ahead of the job is a hold on a file nobody is writing (iOSSearchView.swift, 2026-10-24) -- ask before releasing it"
+        return 0
+    fi
+    _unlanded=
+    for _f in $_match; do
+        git diff --quiet main "$_br" -- "$_f" 2>/dev/null && continue
+        blob_is_in_main_history "$_br" "$_f" && continue
+        _unlanded="$_unlanded $_f"
+    done
+    if [ -n "$_unlanded" ]; then
+        STATUS=HELD
+        STATUS_TEXT="$_br holds work main does not have:$_unlanded"
+    else
+        STATUS=SPENT
+        STATUS_TEXT="measured: every file $_br wrote under this pattern is already in main"
+    fi
+}
+
+cmd_held() {
+    [ $# -gt 0 ] || { printf 'REFUSED (CODEX-HELD-NO-PATH): name the repository-relative path(s) to ask about.\n  `lease` says what is listed; `held` says what is still held, which is the other question.\n' >&2; return 2; }
+    lease_validate || return $?
+    _lease=$(read_lease)
+    _grants=$(read_grants)
+    _worst=0
+    for _q in "$@"; do
+        printf '%s\n' "$_q"
+        _hits=0
+        _done=
+        for _pat in $_lease; do
+            # shellcheck disable=SC2254
+            case "$_q" in $_pat) ;; *) continue ;; esac
+            case " $_done " in *" $_pat "*) continue ;; esac   # the block repeats four patterns
+            _done="$_done $_pat"
+            _hits=$((_hits + 1))
+            _row=$(printf '%s\n' "$_grants" | awk -v p="$_pat" '$1 == p { print; exit }')
+            grant_status "$_row"
+            printf '  %-8s  %s\n            granted %s, grant %s -- %s\n' \
+                "$STATUS" "$_pat" "$(row_field "$_row" granted)" "$(row_field "$_row" grant)" "$STATUS_TEXT"
+            case $STATUS in
+                HELD)     _worst=3 ;;
+                RESERVED) [ "$_worst" -lt 2 ] && _worst=2 ;;
+            esac
+        done
+        [ "$_hits" -eq 0 ] && printf '  UNFENCED  no lease pattern matches this path; write it.\n'
+    done
+    case $_worst in
+        3) printf '\nHELD: a live grant covers at least one path above. Do not write it and do not release it;\n  releasing a path a branch is still writing is the one error here that destroys work.\n'; return 3 ;;
+        2) printf '\nRESERVED: at least one path is fenced for a branch that has written nothing under it.\n  That is a hold on a file nobody is writing. Ask the coordinator rather than assuming either way.\n'; return 4 ;;
+        *) printf '\nNOT HELD: every grant matching the path(s) above is spent. The fence lists them; it does not hold them.\n'; return 0 ;;
+    esac
+}
+
+cmd_lease_status() {
+    lease_validate || return $?
+    _lease=$(read_lease)
+    _grants=$(read_grants)
+    _held=0; _spent=0; _reserved=0
+    _done=
+    for _pat in $_lease; do
+        case " $_done " in *" $_pat "*) continue ;; esac
+        _done="$_done $_pat"
+        _row=$(printf '%s\n' "$_grants" | awk -v p="$_pat" '$1 == p { print; exit }')
+        grant_status "$_row"
+        printf '%-8s  %-62s  %s\n' "$STATUS" "$_pat" "$STATUS_TEXT"
+        case $STATUS in
+            HELD)     _held=$((_held + 1)) ;;
+            RESERVED) _reserved=$((_reserved + 1)) ;;
+            *)        _spent=$((_spent + 1)) ;;
+        esac
+    done
+    printf '\nlease: %d held, %d reserved, %d spent.\n' "$_held" "$_reserved" "$_spent"
+    [ "$_held" -eq 0 ] && [ "$_reserved" -eq 0 ] && printf 'Nothing in the fence is held. Every pattern here is a permission for Codex, not a block on you.\n'
+    return 0
 }
 
 # --- is one named file already in main? (T-1930) ------------------------------
@@ -134,6 +334,9 @@ cmd_review() {
 
     lease=$(read_lease)
     [ -n "$lease" ] || { printf 'REFUSED (CODEX-LEASE-EMPTY): no lease to check against.\n' >&2; return 4; }
+    # The grant record is checked here and not only in `lease`, because this is where a lease that
+    # nobody can expire actually does its damage: it refuses work on a path whose grant is spent.
+    lease_validate || return $?
 
     rc=0
     printf 'codex-land: %s is %d commit(s), %d file(s) over %s\n\n' "$ref" "$ncommits" "$nfiles" "$(echo "$base" | cut -c1-8)"
@@ -264,7 +467,7 @@ cmd_selftest() {
     err=$(git init -q "$ws" 2>&1) || { setup_fail "git init $ws" "$err"; return 2; }
     err=$( ( cd "$ws" && git config user.email t@t && git config user.name t \
       && mkdir -p docs scripts Cadence/iOS \
-      && printf '# x\n\n```lease\nCadence/iOS/iOSTaskRow*.swift\n```\n' > docs/CODEX_WORKTREE.md \
+      && printf '# x\n\n```lease\nCadence/iOS/iOSTaskRow*.swift\n```\n\n```lease-grants\nCadence/iOS/iOSTaskRow*.swift  branch=codex/fixture  granted=2026-10-20  grant=1111111\n```\n' > docs/CODEX_WORKTREE.md \
       && printf 'seed\n' > docs/TODO.md && printf 'seed\n' > docs/TODO_DONE.md \
       && printf 'x\n' > Cadence/iOS/iOSTaskRowExisting.swift \
       && cp "$ROOT/scripts/codex-land.sh" scripts/ && chmod +x scripts/codex-land.sh \
@@ -440,6 +643,112 @@ cmd_selftest() {
       && git add -A && git commit -qm empty-lease ) >/dev/null 2>&1
     ck "an empty lease refuses rather than allowing all" "$(run review codex/good)" 4
 
+    # ---- T-6400: is the path HELD, or only LISTED? -------------------------------------------
+    # The block answered "listed" for three years of grants and nobody noticed, because a spent
+    # grant and a live one are the same line. Six fixtures, because the ONE-CANDIDATE trap applies
+    # here with full force: a selftest holding only a spent grant passes with the entire liveness
+    # reading deleted -- `held` would print SPENT for everything and exit 0, which is exactly the
+    # defect. The live grant beside it, and the assertion that the two reports DIFFER, is what
+    # makes any of this evidence.
+    ( cd "$ws" && git checkout -q main && git checkout -qb codex/landedwork \
+      && printf 'done\n' > Cadence/iOS/iOSHeldDone.swift && git add -A && git commit -qm t ) >/dev/null 2>&1
+    ( cd "$ws" && git checkout -q main \
+      && printf 'done\n' > Cadence/iOS/iOSHeldDone.swift && git add -A && git commit -qm landed ) >/dev/null 2>&1
+    ( cd "$ws" && git checkout -qb codex/livework \
+      && printf 'wip\n' > Cadence/iOS/iOSHeldLive.swift && git add -A && git commit -qm t ) >/dev/null 2>&1
+    ( cd "$ws" && git checkout -q main && git checkout -qb codex/idlework \
+      && printf 'elsewhere\n' > Cadence/iOS/iOSTaskRowZ.swift && git add -A && git commit -qm t ) >/dev/null 2>&1
+    ( cd "$ws" && git checkout -q main ) >/dev/null 2>&1
+    relsha=$( cd "$ws" && git rev-parse HEAD 2>/dev/null )
+    livesha=$( cd "$ws" && git rev-parse codex/livework 2>/dev/null )
+    [ -n "$relsha" ] && [ -n "$livesha" ] \
+      || { setup_fail "resolving the fixture's main and codex/livework for spent= values" ""; return 2; }
+
+    held_doc() {   # $1 = extra lease line(s), $2 = extra grant row(s)
+        { printf '# x\n\n```lease\n'
+          printf 'Cadence/iOS/iOSHeldDone*.swift\nCadence/iOS/iOSHeldLive*.swift\nCadence/iOS/iOSHeldIdle*.swift\n'
+          printf 'Cadence/iOS/iOSHeldRel*.swift\nCadence/iOS/iOSHeldBogus*.swift\nCadence/iOS/iOSHeldGone*.swift\n'
+          printf 'Cadence/iOS/iOSHeldUnl*.swift\n'
+          [ -n "$1" ] && printf '%s\n' "$1"
+          printf '```\n\n```lease-grants\n'
+          printf 'Cadence/iOS/iOSHeldDone*.swift   branch=codex/landedwork  granted=2026-10-20  grant=aaaaaaa\n'
+          printf 'Cadence/iOS/iOSHeldLive*.swift   branch=codex/livework    granted=2026-10-20  grant=bbbbbbb\n'
+          printf 'Cadence/iOS/iOSHeldIdle*.swift   branch=codex/idlework    granted=2026-10-20  grant=ccccccc\n'
+          printf 'Cadence/iOS/iOSHeldRel*.swift    branch=-                 granted=2026-10-20  grant=ddddddd  spent=%s\n' "$relsha"
+          printf 'Cadence/iOS/iOSHeldBogus*.swift  branch=-                 granted=2026-10-20  grant=eeeeeee  spent=0000000\n'
+          printf 'Cadence/iOS/iOSHeldUnl*.swift    branch=-                 granted=2026-10-20  grant=5555555  spent=%s\n' "$livesha"
+          printf 'Cadence/iOS/iOSHeldGone*.swift   branch=codex/neverwas    granted=2026-10-20  grant=fffffff\n'
+          [ -n "$2" ] && printf '%s\n' "$2"
+          printf '```\n'
+        } > "$ws/docs/CODEX_WORKTREE.md"
+    }
+    held_doc "" ""
+
+    ck "a path whose grant branch landed is SPENT, not fenced" \
+       "$(run held Cadence/iOS/iOSHeldDone1.swift)" 0
+    spent_held=$(run_out held Cadence/iOS/iOSHeldDone1.swift)
+    ck "a path a live branch is still writing is HELD" \
+       "$(run held Cadence/iOS/iOSHeldLive1.swift)" 3
+    live_held=$(run_out held Cadence/iOS/iOSHeldLive1.swift)
+    # The pair, not either alone. Both paths are listed in the same block, under the same kind of
+    # glob, with grant rows that differ only in which branch they name.
+    ck "the spent grant and the live grant do not get the same answer" \
+       "$( [ "$spent_held" != "$live_held" ] && echo differ || echo same )" differ
+    ck "...and the spent one says SPENT" "$(printf '%s' "$spent_held" | grep -c 'SPENT')" 1
+    ck "...and the live one says HELD" "$(printf '%s' "$live_held" | grep -c '  HELD  ')" 1
+
+    # A grant made before the job exists is a hold on a file nobody is writing: the 2026-10-24
+    # iOSSearchView.swift case, which cost an agent its finished work. It is neither held nor
+    # spent and the script must not pretend to know which.
+    ck "a branch that has written nothing under its pattern is RESERVED, not SPENT" \
+       "$(run held Cadence/iOS/iOSHeldIdle1.swift)" 4
+
+    ck "a recorded release that is an ancestor of main spends the grant" \
+       "$(run held Cadence/iOS/iOSHeldRel1.swift)" 0
+    # Non-vacuity on the one field that can free a path. A release recorded against a commit this
+    # repository does not have is not a release, and reading it as one would release a held path
+    # on the strength of a typo.
+    ck "a spent= naming no commit is NOT read as a release" \
+       "$(run held Cadence/iOS/iOSHeldBogus1.swift)" 3
+    # The shape a release record actually rots into: a real sha that is the BRANCH tip rather than
+    # the landing commit. It resolves, so a resolve-only check passes it, and it frees a path whose
+    # work never reached main.
+    ck "a spent= that resolves but never landed is NOT read as a release" \
+       "$(run held Cadence/iOS/iOSHeldUnl1.swift)" 3
+    ck "a grant whose branch does not resolve stays fenced" \
+       "$(run held Cadence/iOS/iOSHeldGone1.swift)" 3
+    ck "a path no pattern matches is UNFENCED" \
+       "$(run held Cadence/iOS/iOSNothingMatches.swift)" 0
+    ck "held with no path refuses rather than reporting nothing held" "$(run held)" 2
+
+    # The half that keeps this from rotting again: the fence and the grant record must agree, in
+    # both directions, or nothing reads either of them. A pattern with no row is a path nothing
+    # can expire -- which is precisely how the block got to 179 lines of mostly-spent grants.
+    held_doc "Cadence/iOS/iOSHeldOrphan*.swift" ""
+    ck "a fenced pattern with no grant row refuses" "$(run lease)" 4
+    ck "...and review refuses on it too, where it actually blocks work" "$(run review codex/livework)" 4
+    orphan_out=$(run_out lease)
+    case "$orphan_out" in *"CODEX-LEASE-UNRECORDED"*) got=yes ;; *) got="$orphan_out" ;; esac
+    ck "...and the refusal names the path with no branch recorded" "$got" yes
+
+    held_doc "" "Cadence/iOS/iOSHeldStray*.swift  branch=codex/livework  granted=2026-10-20  grant=9999999"
+    ck "a grant row for a pattern that is not fenced refuses" "$(run lease)" 4
+
+    held_doc "" "Cadence/iOS/iOSHeldDone*.swift  branch=codex/livework  granted=2026-10-20  grant=8888888"
+    ck "two rows for one pattern refuses" "$(run lease)" 4
+
+    held_doc "Cadence/iOS/iOSHeldNodate*.swift" "Cadence/iOS/iOSHeldNodate*.swift  branch=codex/livework  grant=7777777"
+    ck "a grant row with no granted= date refuses" "$(run lease)" 4
+
+    held_doc "Cadence/iOS/iOSHeldAnon*.swift" "Cadence/iOS/iOSHeldAnon*.swift  branch=-  granted=2026-10-20  grant=6666666"
+    ck "a row naming no branch and no release refuses" "$(run lease)" 4
+
+    held_doc "" ""
+    ck "the whole block can be read held-or-spent in one pass" "$(run lease --status)" 0
+    status_out=$(run_out lease --status)
+    ck "...and that pass counts the live grant" \
+       "$(printf '%s' "$status_out" | grep -c '^lease: 4 held, 1 reserved, 2 spent\.$')" 1
+
     printf '\nchecks: %d passed, %d failed\n' "$pass" "$fail"
     [ "$fail" -eq 0 ] || return 1
     printf 'SELFTEST PASSED\n'
@@ -447,7 +756,8 @@ cmd_selftest() {
 
 case "${1:-}" in
     review)   shift; cmd_review "$@" ;;
-    lease)    cmd_lease ;;
+    lease)    shift; cmd_lease "$@" ;;
+    held)     shift; cmd_held "$@" ;;
     inbox)    cmd_inbox ;;
     selftest) cmd_selftest ;;
     -h|--help|"") sed -n '2,8p' "$0" ;;
