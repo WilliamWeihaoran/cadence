@@ -253,9 +253,7 @@ struct iOSListDetailView: View {
                 sortMode: Binding(
                     get: { sortMode },
                     set: { sortModeRaw = $0.rawValue }
-                ),
-                showCompleted: $showCompleted,
-                completedCount: completedTasks.count
+                )
             )
             .padding(.horizontal, 16)
             .padding(.top, 14)
@@ -300,8 +298,12 @@ struct iOSListDetailView: View {
         return config.isCompleted ? Theme.green : Color(hex: config.colorHex)
     }
 
+    /// **Finished work counts as content whether or not it is unfolded (T-2090).** This read
+    /// `!showCompleted || completedTasks.isEmpty`, which was right while a chip decided whether the
+    /// Completed section existed at all; it is always on the page now, so a list whose only work is
+    /// already done draws a folded "Completed" instead of calling itself empty directly above one.
     private var isTaskColumnEmpty: Bool {
-        activeTasks.isEmpty && (!showCompleted || completedTasks.isEmpty)
+        activeTasks.isEmpty && completedTasks.isEmpty
     }
 
     /// **Every configured column, including the ones with nothing in them.** `sectionGroups`
@@ -347,19 +349,23 @@ struct iOSListDetailView: View {
                     )
                 }
 
-                if showCompleted && !completedTasks.isEmpty {
-                    // `.completion` resolves to no key: done-ness is not something a new task can
-                    // be seeded with, so this header neither lights up nor survives emptying.
-                    iOSTaskGroupSection(
-                        title: "Completed",
-                        color: Theme.green,
-                        tasks: CadenceTaskSurfaceOptions.completedRows(from: completedTasks, tier: .touch),
-                        showsContainer: false,
-                        opacity: 0.62,
-                        dropIdentity: .completion,
-                        hiddenCount: CadenceTaskSurfaceOptions.hiddenCompletedCount(from: completedTasks, tier: .touch)
-                    )
-                }
+                // **Always drawn, at the foot of the columns, folded until it is asked for
+                // (T-2090).** This was `if showCompleted { iOSTaskGroupSection("Completed") }` over
+                // the options bar's "Completed" chip; the chip is gone from every iOS surface and
+                // this heading is the control, which is what macOS's own list detail already drew
+                // (`ListTasksCompletedSectionView`). The empty-section predicate comes with the
+                // component — `.completion` resolves to no drop key, so the group never survived
+                // emptying and the drop target it used to declare was inert.
+                iOSCompletedTasksSection(
+                    title: "Completed",
+                    tint: Theme.green,
+                    tasks: CadenceTaskSurfaceOptions.completedRows(from: completedTasks, tier: .touch),
+                    hiddenCount: CadenceTaskSurfaceOptions.hiddenCompletedCount(from: completedTasks, tier: .touch),
+                    // Scoped to one list already — the chip would name the page you are on.
+                    showsContainer: false,
+                    accessibilityNoun: "the tasks you have finished",
+                    isExpanded: $showCompleted
+                )
                 CadenceSectionCreationRow(area: area, project: project)
             }
             // One gutter, not two (T-613). This was `.padding(12)` — the inset of the

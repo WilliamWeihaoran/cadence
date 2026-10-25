@@ -96,19 +96,31 @@ struct CadenceCodexFunctionalParityTests {
         #expect(CadenceTaskCompletionState.resolve(task: task).isSettled)
     }
 
-    @Test func completedControlRemainsOptOutWithoutChangingItsBehavior() throws {
+    /// **The completed control is gone from the bar entirely, and that is T-2090's whole change.**
+    ///
+    /// This test used to pin the opposite: a `showsCompletedControl` opt-out, with Today passing
+    /// `false` and the other three surfaces drawing a "Completed N" chip that lit when the rows
+    /// were shown. The owner's answer to the phone's two-row Tasks page was to delete the chip
+    /// rather than shrink or hide it — the completed rows are a foldable heading at the foot of
+    /// every list now (`iOSCompletedTasksSection`), which is the shape macOS has always drawn. So
+    /// the opt-out has nothing left to opt out of, and what is asserted is its absence: a chip
+    /// grown back here would be a second control writing the same bit as the disclosure.
+    ///
+    /// The sort chip, which is what the bar is now, is asserted unchanged beside it.
+    @Test func theOptionsBarIsTheSortChipAloneWithNoCompletedControl() throws {
         let read = CadenceSourceScan.strippedSourceReader()
         let source = try read("Cadence/iOS/iOSTaskViews.swift")
         let start = try #require(source.range(of: "struct iOSTaskViewOptionsBar: View"))
         let bar = String(source[start.lowerBound...])
-        #expect(bar.contains("var showsCompletedControl = true"))
-        #expect(bar.contains("if showsCompletedControl {\n                Button {\n                    showCompleted.toggle()"))
-        #expect(bar.contains(".disabled(completedCount == 0)"))
-        #expect(bar.contains(".opacity(completedCount == 0 ? 0.45 : 1)"))
-        #expect(bar.contains("showSortPicker = true"))
-        let compact = try read("Cadence/iOS/iOSTodayCompactViews.swift")
-        #expect(compact.contains("struct iOSCompactTodayView"))
-        #expect(compact.contains("completedCount: summary.completedCount,\n                showsCompletedControl: false"))
+        #expect(bar.contains("showSortPicker = true"), "non-vacuity: wrong declaration read")
+        #expect(!bar.contains("showsCompletedControl"))
+        #expect(!bar.contains("showCompleted"))
+        #expect(!bar.contains("completedCount"))
+        for compactPath in ["Cadence/iOS/iOSTodayCompactViews.swift", "Cadence/iOS/iPadTodaySupportViews.swift"] {
+            let host = try read(compactPath)
+            #expect(host.contains("iOSTaskViewOptionsBar("), "non-vacuity: \(compactPath)")
+            #expect(!host.contains("showsCompletedControl"), "\(compactPath)")
+        }
     }
 
     /// **Extended for the second half of [[T-3084]], and the extension is the point.** This body

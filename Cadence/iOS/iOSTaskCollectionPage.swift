@@ -110,7 +110,7 @@ struct iOSTaskCollectionPage: View {
                     collection: collection,
                     activeTasks: activeTasks,
                     completedTasks: completedTasks,
-                    showsCompleted: showCompleted,
+                    showsCompleted: $showCompleted,
                     metrics: metrics,
                     // The empty state and this section are alternatives, not neighbours: "Inbox is
                     // clear" over a list of open reminders says the opposite of what the screen is
@@ -214,16 +214,21 @@ struct iOSTaskCollectionPage: View {
     /// There is no capture field above it on either width. The tab bar's centre `+` and the iPad's
     /// floating `+` open the full composer from every one of these screens, so a title-only field a
     /// thumb's width away was a second, weaker affordance for one action.
+    ///
+    /// **Sort is the only thing left on it (T-2090).** The bar also carried "Completed N", and the
+    /// two of them are what made this page spend a whole row on chrome: measured on a 393pt iPhone,
+    /// the page header's 361pt holds the back control, "All Tasks", the `All | Inbox` switcher and
+    /// neither chip, so the bar could not join the header and the bar's own row could not go. The
+    /// owner's answer was to delete the toggle rather than shrink it — the completed rows are a
+    /// foldable section at the foot of the list now (`iOSCompletedTasksSection`), which is the
+    /// shape macOS's All Tasks has always had. One chip fits the slack the header already has; what
+    /// moves it there is T-2062's move, still the owner's call and still not this ticket.
     @ViewBuilder
     private var optionsBar: some View {
         let options = CadenceTaskSurfaceOptions.options(for: collection.surface)
-        if options.showsSort || options.showsCompletedToggle {
-            iOSTaskViewOptionsBar(
-                sortMode: $sortMode,
-                showCompleted: $showCompleted,
-                completedCount: completedTasks.count
-            )
-            .padding(.vertical, 2)
+        if options.showsSort {
+            iOSTaskViewOptionsBar(sortMode: $sortMode)
+                .padding(.vertical, 2)
         }
     }
 }
@@ -237,7 +242,9 @@ struct iOSTaskCollectionSections: View {
     let collection: CadenceTaskCollection
     let activeTasks: [AppTask]
     let completedTasks: [AppTask]
-    let showsCompleted: Bool
+    /// The Completed section's fold, which is the host's stored `ios.<surface>.showCompleted` bit
+    /// — the one the deleted "Completed N" chip used to write. See `iOSCompletedTasksSection`.
+    @Binding var showsCompleted: Bool
     let metrics: iOSTaskCollectionMetrics
     /// Set when the host is drawing something else in this collection's place — today that is the
     /// Inbox's Apple Reminders section, which is not a task group and so cannot be counted by
@@ -246,9 +253,15 @@ struct iOSTaskCollectionSections: View {
     var hidesEmptyState = false
     @Environment(CadenceDeepLinkManager.self) private var deepLinkManager
 
+    /// **Finished work counts as content whether or not it is unfolded (T-2090).** This read
+    /// `!showsCompleted || completedTasks.isEmpty`, which was right while a chip decided whether
+    /// the Completed section existed at all. It is always on the page now, so a collection whose
+    /// only work is already done draws a folded "Completed" — and without this a page listing one
+    /// would have called itself empty directly above it. Today's `iOSTodayTaskSections.isEmpty`
+    /// made the same correction for the same reason.
     private var isEmpty: Bool {
         guard !hidesEmptyState else { return false }
-        return activeTasks.isEmpty && (!showsCompleted || completedTasks.isEmpty)
+        return activeTasks.isEmpty && completedTasks.isEmpty
     }
 
     var body: some View {
@@ -300,27 +313,35 @@ struct iOSTaskCollectionSections: View {
                 dropIdentity: collection.activeGroupIdentity
             )
 
-            if showsCompleted {
-                // `.completion` resolves to no key: done-ness is not something a new task can be
-                // seeded with, so this header neither lights up nor survives emptying.
-                iOSTaskGroupSection(
-                    title: "Completed",
-                    color: Theme.green,
-                    // **T-375: the reveal had to survive the cap.** Since T-2057 there is no cap
-                    // on either tier, so every completed task is listed and `revealing:` returns
-                    // `completedTasks` unchanged; it stays until T-2087 removes the overload. A
-                    // long-ago row is listed at its true place, far down; scrolling to it is T-2088.
-                    tasks: CadenceTaskSurfaceOptions.completedRows(
-                        from: completedTasks,
-                        tier: .touch,
-                        revealing: deepLinkManager.revealedCompletedTaskID
-                    ),
-                    showsContainer: showsContainer,
-                    opacity: 0.62,
-                    dropIdentity: .completion,
-                    hiddenCount: CadenceTaskSurfaceOptions.hiddenCompletedCount(from: completedTasks, tier: .touch)
-                )
-            }
+            // **Always drawn, at the foot of the list, folded until it is asked for (T-2090).**
+            // This was `if showsCompleted { iOSTaskGroupSection("Completed") }`, so the logbook
+            // existed only while the options bar's "Completed" chip was lit — something you had to
+            // know was behind a chip rather than a section you can see is closed. The owner asked
+            // for the chip gone and this heading in its place, which is the shape macOS's All
+            // Tasks (`ListTasksCompletedSectionView`) has always drawn. Same component Today uses.
+            //
+            // `dropIdentity: .completion` is no longer passed and nothing is lost by that:
+            // completion is a status rather than a placement, so
+            // `CadenceTaskDropSupport.dropKey(forGroup:)` answers nil for it — the drop target was
+            // inert and `showsWhenEmpty` was already false, which is the predicate this section
+            // keeps.
+            iOSCompletedTasksSection(
+                title: "Completed",
+                tint: Theme.green,
+                // **T-375: the reveal had to survive the cap.** Since T-2057 there is no cap on
+                // either tier, so every completed task is listed and `revealing:` returns
+                // `completedTasks` unchanged; it stays until T-2087 removes the overload. A
+                // long-ago row is listed at its true place, far down; scrolling to it is T-2088.
+                tasks: CadenceTaskSurfaceOptions.completedRows(
+                    from: completedTasks,
+                    tier: .touch,
+                    revealing: deepLinkManager.revealedCompletedTaskID
+                ),
+                hiddenCount: CadenceTaskSurfaceOptions.hiddenCompletedCount(from: completedTasks, tier: .touch),
+                showsContainer: showsContainer,
+                accessibilityNoun: "the tasks you have finished",
+                isExpanded: $showsCompleted
+            )
         }
     }
 }

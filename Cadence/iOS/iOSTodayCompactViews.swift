@@ -92,21 +92,17 @@ struct iOSCompactTodayView: View {
     }
 
     /// The same shared bar Inbox and All Tasks draw, and the same one iPad Today carries on its
-    /// header row. Today had neither control on the phone — while still reading `showCompleted`,
-    /// which nothing could then write — so completed work was unreachable here by construction.
-    /// See `CadenceTaskSurfaceOptions`, where "which controls a surface offers" is stated once
-    /// with no size class in sight.
+    /// header row. It is the sort chip and nothing else since T-2090: this surface already drew
+    /// its finished work as a foldable section rather than behind the bar's "Completed" chip, and
+    /// that chip is now gone from every surface. The gate is still asked of
+    /// `CadenceTaskSurfaceOptions`, where "which controls a surface offers" is stated once with no
+    /// size class in sight.
     @ViewBuilder
     private var optionsBar: some View {
         let options = CadenceTaskSurfaceOptions.options(for: .today)
-        if options.showsSort || options.showsCompletedToggle {
-            iOSTaskViewOptionsBar(
-                sortMode: $sortMode,
-                showCompleted: $showCompleted,
-                completedCount: summary.completedCount,
-                showsCompletedControl: false
-            )
-            .padding(.vertical, 2)
+        if options.showsSort {
+            iOSTaskViewOptionsBar(sortMode: $sortMode)
+                .padding(.vertical, 2)
         }
     }
 

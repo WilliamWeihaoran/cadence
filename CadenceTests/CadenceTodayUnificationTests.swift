@@ -316,12 +316,17 @@ struct CadenceTodayUnificationTests {
     /// third place it is written down so that a future convergence sweep meets an argument rather
     /// than a bare inconsistency.
     @Test func eachPlatformsTodayDrawsItsOwnPlatformsGroupHeading() throws {
-        // iOS keeps the shared eyebrow, and is the only caller of it that this pins.
+        // iOS keeps the shared eyebrow, and is the only caller of it that this pins. **Two since
+        // T-2090**, both in this file and both deliberate: `iOSTaskGroupHeader` heads an ordinary
+        // group with it, and `iOSCompletedTasksSection` — the foldable Completed heading all four
+        // iOS task surfaces now draw, moved here out of Today's own file when it stopped being
+        // Today's — heads itself with the same row behind a chevron. A third would be a surface
+        // growing its own heading again, which is what this count is for.
         try expectCallSites(
             of: "CadenceTaskGroupHeading",
             at: [
                 "Cadence/macOS/Views/TasksPanelSectionViews.swift": 0,
-                "Cadence/iOS/iOSTaskGroupSection.swift": 1,
+                "Cadence/iOS/iOSTaskGroupSection.swift": 2,
             ]
         )
 
@@ -1056,13 +1061,14 @@ struct CadenceTodayUnificationTests {
         // Non-vacuity, and the half that makes "a call site, not the line" true: `line` is
         // untouched and still builds exactly the sentence the owner quoted.
         #expect(CadenceTodaySummary(activeCount: 4, timedCount: 1, completedCount: 2).line == "1 timed · 2 done")
-        // The compact host still reads the summary for the two numbers that stayed: the header's
-        // count badge and the options bar's completed count. A host that stopped taking the
-        // summary altogether would have taken those with it.
+        // The compact host still reads the summary for the one number that stayed: the header's
+        // count badge. A host that stopped taking the summary altogether would have taken it with
+        // it. The second reader was the options bar's completed count, and T-2090 deleted the chip
+        // that wanted it — the fold is the section's heading now.
         let compact = try strippingComments(sourceFile("Cadence/iOS/iOSTodayCompactViews.swift"))
         #expect(compact.contains("struct iOSCompactTodayView: View"), "non-vacuity: wrong file read")
         #expect(compact.contains("count: summary.activeCount"))
-        #expect(compact.contains("completedCount: summary.completedCount"))
+        #expect(!compact.contains("completedCount: summary.completedCount"))
     }
 
     /// **Today's finished work is a section you can see is closed, not a section a chip creates.**
@@ -1075,13 +1081,15 @@ struct CadenceTodayUnificationTests {
     @Test func theTouchTodayCompletedSectionIsAlwaysDrawnAndFoldsItself() throws {
         let list = try strippingComments(sourceFile("Cadence/iOS/iOSTodayTaskSections.swift"))
         #expect(list.contains("struct iOSTodayTaskSections: View"), "non-vacuity: wrong file read")
-        #expect(list.contains("iOSTodayCompletedSection("))
+        #expect(list.contains("iOSCompletedTasksSection("))
         #expect(
             !list.contains("if showsCompleted {"),
             "Today's Completed section is gated on the options bar's chip again"
         )
 
-        let section = try declarationBody(of: "iOSTodayCompletedSection", in: "Cadence/iOS/iOSTodayTaskSections.swift")
+        // The section itself moved beside the group it generalises when T-2090 gave it to the
+        // other three surfaces; it was `iOSTodayCompletedSection`, in Today's own file.
+        let section = try declarationBody(of: "iOSCompletedTasksSection", in: "Cadence/iOS/iOSTaskGroupSection.swift")
         #expect(section.contains("@Binding var isExpanded: Bool"), "non-vacuity: wrong declaration read")
         let heading = try #require(section.range(of: "disclosure\n"))
         let fold = try #require(section.range(of: "if isExpanded {"))
@@ -1097,8 +1105,10 @@ struct CadenceTodayUnificationTests {
     }
 
     /// **Folded is the default, and the default is one stored bit.** `isExpanded` is bound to the
-    /// host's `@AppStorage`, which is `false`; the options bar's chip writes the same bit, so two
-    /// controls for one disclosure cannot disagree about whether the section is open.
+    /// host's `@AppStorage`, which is `false`. It was shared with the options bar's "Completed"
+    /// chip so that two controls for one disclosure could not disagree about whether the section
+    /// was open; T-2090 deleted the chip, and the bit is now the disclosure's alone — which is
+    /// what made that deletion a deletion rather than a state migration.
     ///
     /// This is the assertion a mutation has to break: make the stored default `true` and Today
     /// opens with the logbook unrolled.
@@ -1134,7 +1144,7 @@ struct CadenceTodayUnificationTests {
         #expect(sections.contains("struct TasksPanelCompletedSectionView: View"), "non-vacuity: wrong file read")
         #expect(sections.contains("let isCollapsed: Bool"))
         #expect(sections.contains("isCollapsed: isCollapsed"))
-        #expect(!sections.contains("iOSTodayCompletedSection"))
+        #expect(!sections.contains("iOSCompletedTasksSection"))
 
         let panel = try strippingComments(sourceFile("Cadence/macOS/Views/TasksPanel.swift"))
         #expect(panel.contains("struct TasksPanel: View"), "non-vacuity: wrong file read")

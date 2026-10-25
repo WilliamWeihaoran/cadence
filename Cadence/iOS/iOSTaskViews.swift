@@ -626,14 +626,11 @@ struct iOSTaskViewOptionsBar: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.cadenceTypographyScaling) private var scaling
     @Binding var sortMode: CadenceTaskSortMode
-    @Binding var showCompleted: Bool
-    var completedCount: Int
-    /// True on a band of its own, where the bar spans the pane and the two chips go to opposite
-    /// ends. False when it is a *guest* on someone else's row — iPad Today puts it on the trailing
-    /// edge of its page header — where an internal `Spacer` would fight the host's own for the
-    /// leftover width and leave the sort chip floating in the middle of the row.
+    /// True on a band of its own, where the bar spans the pane. False when it is a *guest* on
+    /// someone else's row — iPad Today puts it on the trailing edge of its page header — where an
+    /// internal `Spacer` would fight the host's own for the leftover width and leave the sort chip
+    /// floating in the middle of the row.
     var spreads = true
-    var showsCompletedControl = true
     @State private var showSortPicker = false
 
     /// **One size, at every width.** These two were 13pt/12pt-padded on a regular width and
@@ -646,9 +643,15 @@ struct iOSTaskViewOptionsBar: View {
     private static let fontSize: CGFloat = 13
     private static let horizontalPadding: CGFloat = 12
 
-    /// Both controls are the same neutral chip on the same radius, sized to a 44pt touch target.
-    /// They used to be two different treatments for two peer controls — a blue-washed capsule
-    /// beside a grey one — which read as one being an action and the other a state.
+    /// **One chip, since T-2090.** The bar carried a second, "Completed N", which gated the
+    /// completed rows behind a lit/unlit toggle; the owner's answer to the phone's two-row Tasks
+    /// page was *"we can remove the completed button cuz we can just make it a foldable title
+    /// section heading at the very bottom of the list"*, which is what `iOSCompletedTasksSection`
+    /// now draws on all four surfaces. The chip is deleted rather than hidden per surface: the
+    /// disclosure *is* the control, and two controls for one bit is how one of them starts lying.
+    /// With it gone Sort fits the page header's own slack, which is the row this ticket reclaims.
+    ///
+    /// The one chip left is a neutral chip on `Theme.radiusControl`, sized to a 44pt touch target.
     var body: some View {
         let stacks = iOSTaskPageTypographyMetrics.stacksControls(at: dynamicTypeSize, scaling: scaling)
         let layout = stacks ? AnyLayout(VStackLayout(alignment: .leading, spacing: 10)) : AnyLayout(HStackLayout(spacing: 10))
@@ -679,24 +682,6 @@ struct iOSTaskViewOptionsBar: View {
 
             if spreads && !stacks {
                 Spacer()
-            }
-
-            if showsCompletedControl {
-                Button {
-                    showCompleted.toggle()
-                } label: {
-                    Text(completedCount > 0 ? "Completed \(completedCount)" : "Completed")
-                        .cadenceFont(.controlLabel, base: Self.fontSize)
-                        .foregroundStyle(showCompleted ? Theme.text : Theme.dim)
-                        .padding(.horizontal, Self.horizontalPadding)
-                        .fixedSize(horizontal: false, vertical: stacks)
-                        .frame(minHeight: height)
-                        .background(showCompleted ? Theme.surfaceElevated.opacity(0.72) : Theme.surfaceElevated.opacity(0.36))
-                        .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
-                }
-                .buttonStyle(.iosPressable)
-                .disabled(completedCount == 0)
-                .opacity(completedCount == 0 ? 0.45 : 1)
             }
         }
         .tint(Theme.blue)
