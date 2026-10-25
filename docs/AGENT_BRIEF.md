@@ -101,7 +101,10 @@ parameterised test, so use a non-parameterised sibling to prove the scope ran an
 
 - **Simulators: reuse only `Cadence-iPhone15` (`CAD0F62C-5A83-4FE5-BEBB-5F567FD456B0`) and
   `Cadence-iPadPro11` (`630EA883-AA8E-4290-9E37-C616B58D40BD`). Never create, erase, boot or shut
-  down one you did not create.** `7B642065-86FC-4987-8674-22066D32878C` is the owner's;
+  down one you did not create.** `7B642065-86FC-4987-8674-22066D32878C` is an iPhone 17 Pro
+  SIMULATOR held for the owner -- it is NOT their phone, and saying so has already misled a
+  coordinator into writing it into a brief. The owner's actual handset is an **iPhone 15 base
+  model, 393x852**, which is the size `Cadence-iPhone15` already simulates ([[T-3147]]);
   `53EC6A90-D767-45DE-8EAC-53B8E1673B1D` is BLIND and denied. Verify iOS only through Claude Code's
   simulator tools, never the host Simulator app.
 - Launch the macOS app **only** via `scripts/run-macos-app.sh` — **never the shipping
