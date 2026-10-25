@@ -30,7 +30,15 @@ enum CadenceTaskSurfaceTier: String, CaseIterable, Sendable {
 struct CadenceTaskViewOptions: Equatable, Sendable {
     /// The sort chip.
     var showsSort: Bool
-    /// The "Completed N" toggle, which is the only thing that can write `showCompleted`.
+    /// Whether the surface has a Completed section at all.
+    ///
+    /// **It used to name a chip, and since T-2090 it names the section (on iOS) and keeps naming
+    /// the section (on macOS, which is all it ever did there).** iOS's "Completed N" toggle is
+    /// deleted: the owner's answer to the phone's two-row Tasks page was a foldable heading at the
+    /// foot of the list — `iOSCompletedTasksSection`, which is `ListTasksCompletedSectionView`'s
+    /// shape — so the disclosure *is* the control and there is no second thing to gate. macOS has
+    /// read it this way all along: `TasksPanel`, `TasksListView` and `ListDetailComponents` each
+    /// ask it before drawing their completed section, never a chip.
     var showsCompletedToggle: Bool
     /// Whether a row names the list its task is in.
     ///
@@ -56,7 +64,9 @@ struct CadenceTaskViewOptions: Equatable, Sendable {
 ///
 /// This exists because iPhone Today shipped with neither control while iPad Today had both — and
 /// the compact view still *read* a `showCompleted` binding that nothing on screen could write, so
-/// completed work was permanently hidden on the phone with no way to ask for it.
+/// completed work was permanently hidden on the phone with no way to ask for it. That asymmetry
+/// is gone twice over now: the completed toggle is deleted from every iOS surface (T-2090) and the
+/// rows are a foldable section on all four, so the bar is one sort chip wherever it is drawn.
 ///
 /// **There is deliberately no size class in this file.** The options a surface offers are a
 /// property of the surface, not of the width it happens to be drawn at, so "iPhone Today has no

@@ -153,4 +153,144 @@ struct iOSTaskGroupSection: View {
         }
     }
 }
+
+/// A task surface's finished work: the one group on these pages that is folded until you ask for
+/// it, drawn at the very bottom of the list.
+///
+/// **It is always drawn, at the bottom of the list, closed.** The owner asked for *"the completed
+/// today section (which is always folded until i unfold it) on the bottom of the list"* and then,
+/// for All Tasks, for the same shape in place of the options bar's chip: *"we can remove the
+/// completed button cuz we can just make it a foldable title section heading at the very bottom of
+/// the list… i think on mac os we have/had something similar"* (T-2090). It does: this is the port
+/// of `ListTasksCompletedSectionView` and `TasksPanelCompletedSectionView`, which head macOS's
+/// Completed section with `TaskListGroupHeader`'s own collapse and draw the rows only when it is
+/// open. Before this, finished work on three of the four iOS surfaces was not a closed section —
+/// it was a section that did not exist until you found the control that made it.
+///
+/// **One component for all four surfaces, because the Mac has one.** Today reached this shape
+/// first (T-3076) as a Today-only `iOSTodayCompletedSection`; All Tasks, Inbox and a list's Tasks
+/// tab each still drew `if showsCompleted { iOSTaskGroupSection("Completed") }`. Generalising the
+/// one that existed is the alternative to a second disclosure vocabulary beside it — the failure
+/// the Mac guide calls a parallel mechanism. Only the words, the tint and the accessibility noun
+/// differ per surface, and they are parameters.
+///
+/// **The fold is the host's `showCompleted` bit, not a second `@State` in here**, and that bit is
+/// the `@AppStorage(CadencePreferenceKeys.ios*ShowCompleted)` the deleted chip used to write. It
+/// **defaults to `false`**, which is the whole of "always folded", and it is why T-2090 is a
+/// deletion rather than a state migration: the keys keep their meaning ("is the Completed section
+/// open"), keep being written, and so keep riding `CadenceLookPreferenceStore`'s mirror table
+/// unchanged. macOS's `@State private var isCompletedCollapsed = true` is the weaker precedent on
+/// this one point: the Mac has no synced per-surface bit to follow, and iOS already had one wired
+/// through its deep-link reveal (`iOSAllTasksView.revealCompletedIfLinked`, T-375) and its scroll
+/// (T-2088), both of which keep working untouched.
+///
+/// **Why this is not `iOSTaskGroupSection`, which every other group on these pages is.** That
+/// component draws its heading unconditionally and owns no disclosure: a chevron row above it would
+/// print the title twice, and a chevron inside it would put one on every task group in the app.
+/// What should be shared still is — the heading is `CadenceTaskGroupHeading`, the same row the
+/// groups above and macOS draw, and the rows are `iOSTaskRow` at the same 7pt spacing in the same
+/// `LazyVStack` that T-2057 put them in. Only the fold and its chevron are local, which is the
+/// same shape `iOSCalendarBoardView`'s completed footer already uses on the day columns.
+struct iOSCompletedTasksSection: View {
+    /// The heading's words. Today passes `CadenceTodayPresentationSupport.completedSectionTitle`
+    /// ("Completed Today"), which macOS's Today heads its own section with; the collection pages
+    /// and a list's Tasks tab pass "Completed", which is what their `iOSTaskGroupSection` said.
+    let title: String
+    /// The eyebrow's tint, the one knob the two spellings genuinely differ on: Today's shared
+    /// `completedSectionAccent`, and `Theme.green` on the surfaces whose group carried it inline.
+    let tint: Color
+    let tasks: [AppTask]
+    /// Rows the caller capped away. Carried through unchanged from the call sites that used to
+    /// hand it to `iOSTaskGroupSection`: no tier caps completed rows since T-2057, so this is
+    /// `nil` on every call and the caption below never draws. Removing it is T-2087's.
+    let hiddenCount: Int?
+    /// Asked of `CadenceTaskSurfaceOptions` by the caller, never decided here — this section is
+    /// flat, so its rows are the only thing that can say which list a finished task came from.
+    let showsContainer: Bool
+    /// The surface's own `yyyy-MM-dd`, where it has one. See `iOSTaskRow.dayAlreadyStatedBySurface`.
+    var dayAlreadyStatedBySurface: String? = nil
+    /// What the accessibility hint calls these rows — "the tasks you finished today" on Today,
+    /// "the tasks you have finished" on a page that is not scoped to a day. A hint that named the
+    /// wrong span is the only thing a shared disclosure could get wrong per surface.
+    let accessibilityNoun: String
+    @Binding var isExpanded: Bool
+
+    /// The section's true size: the rows drawn plus the rows the cap withheld.
+    private var totalCount: Int {
+        tasks.count + (hiddenCount ?? 0)
+    }
+
+    var body: some View {
+        // Nothing finished is not "a closed section with nothing in it" — it is no section. The
+        // same predicate `iOSTaskGroupSection.isVisible` applied to this group before, because
+        // `.completion` is a status and resolves to no drop key, so the group was never one of the
+        // "still add to me" groups that survive emptying.
+        if !tasks.isEmpty {
+            VStack(alignment: .leading, spacing: 9) {
+                disclosure
+
+                if isExpanded {
+                    rows
+                }
+            }
+        }
+    }
+
+    /// The heading, as a control. `CadenceTaskGroupHeading` already spans its container, so the
+    /// whole row is the target rather than the glyphs — the same reason it carries that frame for
+    /// `iOSTaskGroupHeader`'s drop target.
+    private var disclosure: some View {
+        Button {
+            withAnimation(.snappy(duration: 0.16)) {
+                isExpanded.toggle()
+            }
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+                    .cadenceFont(.metadata, base: 10, weight: .bold)
+                    .foregroundStyle(Theme.dim)
+                    .frame(width: 12)
+
+                CadenceTaskGroupHeading(title: title, tint: tint)
+            }
+            // The eyebrow's own 6pt top inset, the one `iOSTaskGroupHeader` applies, so this
+            // heading sits where every other heading on the page does.
+            .padding(.top, iOSTaskSectionHeader.topPadding)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.iosPressable)
+        .accessibilityLabel(title)
+        .accessibilityValue(isExpanded ? "Expanded" : "Collapsed")
+        .accessibilityHint(isExpanded ? "Hides \(accessibilityNoun)" : "Shows \(accessibilityNoun)")
+    }
+
+    /// Completed rows are dimmed as a whole rather than row by row — `iOSTaskGroupSection`'s
+    /// `opacity` knob, at the one value every caller ever passed it.
+    private var rows: some View {
+        LazyVStack(spacing: 7) {
+            ForEach(tasks) { task in
+                iOSTaskRow(
+                    task: task,
+                    showsContainer: showsContainer,
+                    dayAlreadyStatedBySurface: dayAlreadyStatedBySurface
+                )
+                .opacity(0.62)
+            }
+
+            if let caption = CadenceTaskSurfaceOptions.overflowCaption(
+                shown: tasks.count,
+                total: totalCount
+            ) {
+                Text(caption)
+                    .cadenceFont(.metadata)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .foregroundStyle(Theme.dim)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.top, 2)
+                    .accessibilityLabel("\(title): \(caption)")
+            }
+        }
+        .transition(.opacity.combined(with: .move(edge: .top)))
+    }
+}
 #endif

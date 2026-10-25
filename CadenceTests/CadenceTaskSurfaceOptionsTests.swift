@@ -683,10 +683,10 @@ struct CadenceTouchRowStackLazinessTests {
         // folds itself now — the owner asked for it always on the page and closed until tapped —
         // and `iOSTaskGroupSection` draws its heading unconditionally and owns no disclosure, so a
         // chevron row above it would print "Completed Today" twice. The laziness this test exists
-        // for therefore has to be asserted of `iOSTodayCompletedSection` directly, below; an eager
+        // for therefore has to be asserted of `iOSCompletedTasksSection` directly, below; an eager
         // stack there is the whole day's logbook built the moment the page is.
         for (path, expected) in [
-            ("Cadence/iOS/iOSTaskCollectionPage.swift", 2),
+            ("Cadence/iOS/iOSTaskCollectionPage.swift", 1),
             ("Cadence/iOS/iOSTodayTaskSections.swift", 1),
         ] {
             let groupStack = try cadenceFunctionBody("private var groupStack: some View", in: try code(path))
@@ -695,13 +695,19 @@ struct CadenceTouchRowStackLazinessTests {
 
         let today = try code("Cadence/iOS/iOSTodayTaskSections.swift")
         let todayGroupStack = try cadenceFunctionBody("private var groupStack: some View", in: today)
-        #expect(todayGroupStack.contains("iOSTodayCompletedSection("), "Today's Completed group lost its section")
-        let completedRows = try cadenceFunctionBody("private var rows: some View", in: today)
+        #expect(todayGroupStack.contains("iOSCompletedTasksSection("), "Today's Completed group lost its section")
+        // Since T-2090 the same section is All Tasks', Inbox's and a list's Tasks tab's, so the
+        // laziness below is four surfaces' rather than Today's — and the collection page's count
+        // above is 1, not 2, for the same reason Today's was.
+        let completedRows = try cadenceFunctionBody(
+            "private var rows: some View",
+            in: try code("Cadence/iOS/iOSTaskGroupSection.swift")
+        )
         #expect(
             desktopSurfaceCollapsingWhitespace(completedRows)
                 .trimmingCharacters(in: .whitespaces)
                 .hasPrefix("LazyVStack(spacing: 7) {"),
-            "iOSTodayCompletedSection builds its rows eagerly"
+            "iOSCompletedTasksSection builds its rows eagerly"
         )
         #expect(completedRows.contains("iOSTaskRow("), "non-vacuity: wrong declaration read")
     }
@@ -849,5 +855,144 @@ private func t285ExpectNoLiveMention(
             "\(path) still refers to the retired \(name)",
             sourceLocation: sourceLocation
         )
+    }
+}
+
+// MARK: - T-2090: the completed toggle is deleted and the section folds itself
+
+/// **The iPhone's Tasks page spent a whole row on two chips, and one of them is gone.**
+///
+/// Measured on a 393pt iPhone, `iOSTasksPageView.header` leaves 361pt and holds the back control,
+/// "All Tasks" and the `All | Inbox` switcher, so neither chip of `iOSTaskViewOptionsBar` could
+/// join it — the audit's two options came out ~128pt and ~17pt over. The owner rejected both:
+/// *"i think we can remove the completed button cuz we can just make it a foldable title section
+/// heading at the very bottom of the list. does that work? i think on mac os we have/had something
+/// similar."* It does — `ListTasksCompletedSectionView` and `TasksPanelCompletedSectionView` head
+/// macOS's completed rows with `TaskListGroupHeader`'s own collapse — so this is a port of an
+/// existing shape that **deletes** a control rather than adding one, and Sort then fits alone.
+///
+/// Today reached that shape first (T-3076) as a Today-only section; these pin that all four iOS
+/// task surfaces now share the one component, that no bar offers a completed chip any more, and
+/// that the stored bit the chip used to write is still the fold and is still mirrored — which is
+/// what makes this a deletion rather than a preference migration.
+///
+/// `Cadence/iOS/` is behind `#if os(iOS)` and invisible to this macOS-built target, so the shape
+/// is read off the source. The preference half below is a real value check.
+struct iOSCompletedDisclosureTests {
+
+    /// Every touch surface that lists finished work draws the section unconditionally — the fold
+    /// is the heading's, not the section's existence. A surface back behind `if showCompleted` is
+    /// the defect this replaced: a section that does not exist until you find the chip.
+    @Test func everyTouchTaskSurfaceDrawsItsCompletedSectionUnconditionally() throws {
+        for path in [
+            "Cadence/iOS/iOSTaskCollectionPage.swift",
+            "Cadence/iOS/iOSListDetailView.swift",
+            "Cadence/iOS/iOSTodayTaskSections.swift",
+        ] {
+            let source = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(path))
+            #expect(source.contains("iOSCompletedTasksSection("), "\(path) lost its completed section")
+            #expect(!source.contains("if showCompleted"), "\(path)")
+            #expect(!source.contains("if showsCompleted {"), "\(path)")
+        }
+
+        // One component, not four: the whole reason the Mac's shape is a port rather than a
+        // parallel mechanism. Its own fold and its own rows, and nothing else local.
+        let section = try #require(CadenceSourceScan.declarationBody(
+            "struct iOSCompletedTasksSection: View",
+            in: try CadenceSourceScan.sourceFile("Cadence/iOS/iOSTaskGroupSection.swift")
+        ))
+        #expect(section.contains("@Binding var isExpanded: Bool"), "non-vacuity: wrong declaration read")
+        let heading = try #require(section.range(of: "disclosure\n"))
+        let fold = try #require(section.range(of: "if isExpanded {"))
+        #expect(heading.lowerBound < fold.lowerBound, "the heading is behind the fold it controls")
+    }
+
+    /// The chip itself, at the one place it could come back and at the four that drew the bar.
+    @Test func noTaskSurfaceOffersACompletedChip() throws {
+        let bar = try #require(CadenceSourceScan.declarationBody(
+            "struct iOSTaskViewOptionsBar: View",
+            in: try CadenceSourceScan.sourceFile("Cadence/iOS/iOSTaskViews.swift")
+        ))
+        #expect(bar.contains("showSortPicker"), "non-vacuity: wrong declaration read")
+        #expect(!bar.contains("showCompleted"))
+        #expect(!bar.contains("completedCount"))
+
+        for path in [
+            "Cadence/iOS/iOSTaskCollectionPage.swift",
+            "Cadence/iOS/iOSListDetailView.swift",
+            "Cadence/iOS/iOSTodayCompactViews.swift",
+            "Cadence/iOS/iPadTodaySupportViews.swift",
+        ] {
+            let source = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(path))
+            #expect(source.contains("iOSTaskViewOptionsBar("), "non-vacuity: \(path)")
+            #expect(!source.contains("completedCount:"), "\(path)")
+            #expect(!source.contains("showsCompletedControl"), "\(path)")
+        }
+    }
+
+    /// **Finished work is content, folded or not.** Both collection predicates read
+    /// `!showsCompleted || completedTasks.isEmpty` while a chip decided whether the section
+    /// existed; left alone, a page whose only work is done would call itself empty directly above
+    /// a folded "Completed". Today made the same correction at T-3076.
+    @Test func aFoldedCompletedSectionIsNotAnEmptyPage() throws {
+        for (path, predicate) in [
+            ("Cadence/iOS/iOSTaskCollectionPage.swift", "private var isEmpty: Bool"),
+            ("Cadence/iOS/iOSListDetailView.swift", "private var isTaskColumnEmpty: Bool"),
+        ] {
+            let body = try #require(CadenceSourceScan.declarationBody(
+                predicate,
+                in: try CadenceSourceScan.sourceFile(path)
+            ))
+            #expect(body.contains("completedTasks.isEmpty"), "non-vacuity: \(path)")
+            #expect(!body.contains("!showsCompleted"), "\(path)")
+            #expect(!body.contains("!showCompleted"), "\(path)")
+        }
+    }
+
+    /// **The stored bit is kept, and that is the answer to the sync question this ticket raised.**
+    ///
+    /// `LookPreference` records that an `allTasks.showCompleted` written by an iPhone is, to the
+    /// Mac, an unknown pair it re-emits verbatim — so retiring the four keys would not have been a
+    /// local change. It is not retired: the keys keep their meaning ("is the Completed section
+    /// open"), the disclosure writes them where the chip used to, and the mirror table carries
+    /// them exactly as before. Nothing on either platform's disk changes, which is why T-2090
+    /// landed as a deletion with no migration.
+    @Test func theFourStoredCompletedBitsSurviveTheChipThatWroteThem() {
+        let keys = [
+            CadencePreferenceKeys.iosTodayShowCompleted,
+            CadencePreferenceKeys.iosAllTasksShowCompleted,
+            CadencePreferenceKeys.iosInboxShowCompleted,
+            CadencePreferenceKeys.iosListDetailShowCompleted,
+        ]
+        #expect(keys == [
+            "ios.today.showCompleted",
+            "ios.allTasks.showCompleted",
+            "ios.inbox.showCompleted",
+            "ios.listDetail.showCompleted",
+        ])
+
+        let mirrored = Set(CadenceLookPreferenceStore.mirrors(on: .iOS).map(\.defaultsKey))
+        for key in keys {
+            #expect(mirrored.contains(key), "\(key) fell out of the synced look")
+        }
+    }
+
+    /// And the default is still `false` at every one of the four hosts, which is the whole of
+    /// "always folded". A `true` here opens a page on somebody's entire logbook.
+    @Test func everyTouchSurfaceStartsWithItsCompletedSectionFolded() throws {
+        for (path, key) in [
+            ("Cadence/iOS/iOSTodayView.swift", "iosTodayShowCompleted"),
+            ("Cadence/iOS/iOSTaskCollectionViews.swift", "iosAllTasksShowCompleted"),
+            ("Cadence/iOS/iOSInboxView.swift", "iosInboxShowCompleted"),
+            ("Cadence/iOS/iOSListDetailView.swift", "iosListDetailShowCompleted"),
+        ] {
+            let source = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(path))
+            #expect(
+                source.contains(
+                    "@AppStorage(CadencePreferenceKeys.\(key)) private var showCompleted = false"
+                ),
+                "\(path) no longer starts folded"
+            )
+        }
     }
 }

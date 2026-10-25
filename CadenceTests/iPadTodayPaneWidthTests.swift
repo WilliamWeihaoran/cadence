@@ -365,7 +365,7 @@ struct iPadTodayRailSurfaceTests {
 ///
 /// **The budget is not the pane, and it is not the column either.** `iOSPageHeader` at
 /// `role: .pane` is one `HStack`: title column, `Spacer(minLength: 8)`, count capsule, then
-/// `trailing()` carrying `.layoutPriority(1)` — on Today, `iOSTaskViewOptionsBar`'s two chips. The
+/// `trailing()` carrying `.layoutPriority(1)` — on Today, `iOSTaskViewOptionsBar`'s sort chip. The
 /// eyebrow receives what is left *after* those have taken their intrinsic widths. At 834 the column
 /// is 513pt and the eyebrow line gets about 160 of it, against roughly 250 for the full line. So a
 /// width-driven rule in `CadenceTodayLayoutSupport` would have been keyed on the wrong number;
@@ -374,20 +374,18 @@ struct iPadTodayRailSurfaceTests {
 /// **What is asserted is a relation, never a point figure** (T-1279/T-1296: CI runs Xcode 26 and
 /// this Mac 27.0, and system font advances are not a constant to pin). Every term is read from the
 /// metrics types — `CadencePageHeaderMetrics`, `SectionEyebrowLabel`, `CadenceTodayLayoutSupport`,
-/// `CadenceTaskSortMode` — except the three figures `iOSTaskViewOptionsBar` keeps `private` behind
+/// `CadenceTaskSortMode` — except the two figures `iOSTaskViewOptionsBar` keeps `private` behind
 /// `#if os(iOS)`, which are restated here and pinned against that source below.
 @MainActor
 struct iPadTodayHeaderEyebrowBudgetTests {
 
-    // MARK: - The three restated figures
+    // MARK: - The restated figures
 
     /// `iOSTaskViewOptionsBar.fontSize`. Private, and behind `#if os(iOS)`, so this target cannot
     /// read it; `theRestatedOptionsBarFiguresStillMatchTheSource` is what stops the copy drifting.
     private static let optionsChipFontSize: CGFloat = 13
     /// `iOSTaskViewOptionsBar.horizontalPadding`, per side.
     private static let optionsChipHorizontalPadding: CGFloat = 12
-    /// The bar's own `HStack(spacing:)` between its two chips.
-    private static let optionsChipSpacing: CGFloat = 10
     /// The gap SwiftUI's own `Label` leaves between its icon and its title. Not a Cadence figure
     /// and not readable from one, so it is an allowance — deliberately generous, since overstating
     /// the trailing controls understates the budget and can only make the relation below harder.
@@ -429,20 +427,19 @@ struct iPadTodayHeaderEyebrowBudgetTests {
         width("\(count)", size: metrics.countSize, weight: .bold) + metrics.countPaddingH * 2
     }
 
-    /// `iOSTaskViewOptionsBar(spreads: false)`: a sort chip carrying a `Label`, then the completed
-    /// chip. The sort title is whichever the user last chose, so the widest one is the honest term.
-    private static func optionsBarWidth(completedCount: Int) -> CGFloat {
+    /// `iOSTaskViewOptionsBar(spreads: false)`: **one** chip, a sort `Label`. It carried a second,
+    /// "Completed N", and T-2090 deleted it — the completed rows are `iOSCompletedTasksSection`'s
+    /// foldable heading now — so the bar no longer spends a chip width, nor the `HStack` gap that
+    /// was between them. The term got smaller, which can only make the relation below easier; it is
+    /// kept honest by taking the *widest* sort title, since that is whichever the user last chose.
+    private static func optionsBarWidth() -> CGFloat {
         let widestSortTitle = CadenceTaskSortMode.allCases
             .map { width($0.title, size: optionsChipFontSize, weight: .semibold) }
             .max() ?? 0
         let glyph = NSImage(systemSymbolName: "arrow.up.arrow.down", accessibilityDescription: nil)?
             .withSymbolConfiguration(.init(pointSize: optionsChipFontSize, weight: .semibold))?
             .size.width ?? 0
-        let sortChip = widestSortTitle + glyph + labelIconGap + optionsChipHorizontalPadding * 2
-        let completedLabel = completedCount > 0 ? "Completed \(completedCount)" : "Completed"
-        let completedChip = width(completedLabel, size: optionsChipFontSize, weight: .semibold)
-            + optionsChipHorizontalPadding * 2
-        return sortChip + optionsChipSpacing + completedChip
+        return widestSortTitle + glyph + labelIconGap + optionsChipHorizontalPadding * 2
     }
 
     /// Everything the `.pane` header's row spends before the eyebrow is measured, subtracted from
@@ -455,7 +452,7 @@ struct iPadTodayHeaderEyebrowBudgetTests {
             - metrics.rowSpacing * 3
             - 8
             - countCapsuleWidth(summary.activeCount, metrics)
-            - optionsBarWidth(completedCount: summary.completedCount)
+            - optionsBarWidth()
     }
 
     private static func rungWidth(_ rung: CadencePageHeaderEyebrowCandidate, _ metrics: CadencePageHeaderMetrics) -> CGFloat {
@@ -539,9 +536,19 @@ struct iPadTodayHeaderEyebrowBudgetTests {
 
     /// **Non-vacuity, and the defect itself.** The relation above is worth nothing if the full
     /// single-line spelling already fitted everywhere — it would then pass over a ladder that never
-    /// narrows. It does not fit in the band the owner photographed, and it does fit once the pane
-    /// is wide enough, which is the other half: the header must not abbreviate a date it has room
-    /// to spell.
+    /// narrows. Some day the header must be able to state does not fit at some pane this layout
+    /// renders at, and the full line does fit once the pane is wide enough, which is the other
+    /// half: the header must not abbreviate a date it has room to spell.
+    ///
+    /// **Asked of every pane and every day, since T-2090, rather than of 834 and the photographed
+    /// one.** The trailing control on this row is `iOSTaskViewOptionsBar`, and that ticket deleted
+    /// its "Completed N" chip, so the row hands the eyebrow about a chip's width more than it used
+    /// to — enough that at 834 **no** day in `summaries` overflows any more, measured, which is
+    /// what reddened the old pinned-at-834 spelling. That is the change working rather than the
+    /// ladder going slack: the task column is 440pt at `twoPaneMinimumWidth` against 513 at 834,
+    /// and the overflow is still there. Scanning the same panes and summaries the relation above
+    /// uses is also the stronger form — it cannot be retired by one band getting roomier — and it
+    /// reports the margin, so the next time this gap closes the red says by how much.
     @Test
     func theFullSpellingOverflowsTheFoldedPortraitBandAndNotTheWideOne() {
         let metrics = CadencePageHeaderMetrics.metrics(role: .pane, isRegularWidth: true)
@@ -553,12 +560,29 @@ struct iPadTodayHeaderEyebrowBudgetTests {
             detail: reported.line
         )
         let widest = Self.rungWidth(ladder.widest, metrics)
-        let middle = Self.rungWidth(ladder.middle, metrics)
 
-        // 834pt of pane, sidebar folded — the device and orientation in the report.
-        let narrowBand = Self.eyebrowBudget(paneWidth: 834, summary: reported)
-        #expect(widest > narrowBand, "the full line fits at 834 and there is nothing to fix")
-        #expect(middle <= narrowBand, "the middle rung does not answer the width it was written for")
+        // At least one day the header must state cannot be spelled in full at one of the widths
+        // this layout renders at, and the margin is reported so a future narrowing of that gap is
+        // legible rather than a bare red.
+        var overflowing: [String] = []
+        var worstMargin = -CGFloat.greatestFiniteMagnitude
+        for summary in Self.summaries {
+            let rungs = CadencePageHeaderEyebrow.ladder(
+                eyebrow: dates.long,
+                compactEyebrow: dates.compact,
+                detail: summary.line
+            )
+            for pane in iPadTodayPaneWidthTests.panes {
+                let band = Self.eyebrowBudget(paneWidth: pane, summary: summary)
+                let margin = Self.rungWidth(rungs.widest, metrics) - band
+                worstMargin = max(worstMargin, margin)
+                if margin > 0 { overflowing.append("\(Int(pane)) / \(summary.line ?? "none")") }
+            }
+        }
+        #expect(
+            !overflowing.isEmpty,
+            "every day's full line fits at every pane; widest overflow margin \(worstMargin)"
+        )
 
         // 1210pt — the same device in landscape with the sidebar folded, the widest pane there is.
         let wideBand = Self.eyebrowBudget(paneWidth: 1_210, summary: reported)
@@ -642,7 +666,7 @@ struct iPadTodayHeaderEyebrowBudgetTests {
 
     // MARK: - Non-vacuity of the restated figures
 
-    /// The three `iOSTaskViewOptionsBar` figures the budget restates, checked against the file that
+    /// The `iOSTaskViewOptionsBar` figures the budget restates, checked against the file that
     /// declares them. This target builds for macOS and the bar is behind `#if os(iOS)`, so a scan
     /// is the only reach there is — and without it the budget above would be three numbers nobody
     /// would notice going stale.
@@ -658,9 +682,11 @@ struct iPadTodayHeaderEyebrowBudgetTests {
             source.contains("private static let horizontalPadding: CGFloat = \(Int(Self.optionsChipHorizontalPadding))"),
             "iOSTaskViewOptionsBar.horizontalPadding moved off \(Self.optionsChipHorizontalPadding)"
         )
+        // And that the second chip really is gone, which is what makes the width above one chip
+        // rather than two (T-2090).
         #expect(
-            source.contains("AnyLayout(HStackLayout(spacing: \(Int(Self.optionsChipSpacing))))"),
-            "the options bar's chip spacing moved off \(Self.optionsChipSpacing)"
+            !source.contains("showCompleted.toggle()"),
+            "the options bar grew its completed chip back"
         )
         // And the half of the budget that is a layout fact rather than a figure: the trailing
         // control takes its intrinsic width before the eyebrow is measured at all.
@@ -679,7 +705,7 @@ struct iPadTodayHeaderEyebrowBudgetTests {
         #expect(long > short)
         #expect(short > 0)
         #expect(Self.detailWidth("3 timed · 1 done", metrics) > 0)
-        #expect(Self.optionsBarWidth(completedCount: 1) > Self.optionsBarWidth(completedCount: 0))
+        #expect(Self.optionsBarWidth() > 0)
         #expect(Self.eyebrowBudget(paneWidth: 1_210, summary: Self.summaries[0])
             > Self.eyebrowBudget(paneWidth: 834, summary: Self.summaries[0]))
     }

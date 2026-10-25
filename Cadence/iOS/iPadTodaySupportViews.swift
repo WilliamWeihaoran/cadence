@@ -50,7 +50,6 @@ struct iPadTodayTaskHeader: View {
     let title: String
     let summary: CadenceTodaySummary
     @Binding var sortMode: CadenceTaskSortMode
-    @Binding var showCompleted: Bool
 
     /// The same gate the compact layout puts on its own bar. It was unconditional here, so a
     /// surface that ever stopped offering these controls would have lost them on the phone and kept
@@ -87,13 +86,8 @@ struct iPadTodayTaskHeader: View {
             color: Theme.amber,
             count: summary.activeCount
         ) {
-            if options.showsSort || options.showsCompletedToggle {
-                iOSTaskViewOptionsBar(
-                    sortMode: $sortMode,
-                    showCompleted: $showCompleted,
-                    completedCount: summary.completedCount,
-                    spreads: false
-                )
+            if options.showsSort {
+                iOSTaskViewOptionsBar(sortMode: $sortMode, spreads: false)
             }
         }
         .background(Theme.surface)

@@ -306,8 +306,7 @@ struct iOSTodayView: View {
                 day: Date(),
                 title: "Today",
                 summary: content.summary,
-                sortMode: sortModeBinding,
-                showCompleted: $showCompleted
+                sortMode: sortModeBinding
             )
 
             Divider().background(Theme.borderSubtle)
