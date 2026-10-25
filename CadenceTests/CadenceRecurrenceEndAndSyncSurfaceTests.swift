@@ -548,6 +548,24 @@ struct CadenceRecurrenceEndSurfaceTests {
         #expect(CadenceTaskRecurrenceEndPresentation.endCountChoices(from: 0).first == 1)
     }
 
+    /// **T-6192.** A count past the sixty-entry window — 100 typed in the Mac's ceiling-less
+    /// field — used to be missing from the list, so the popover showed no selected row.
+    @Test func aStoredCountPastTheWindowIsStillOffered() {
+        let present = CadenceTaskRecurrenceEndPresentation.endCountChoices
+        let span = CadenceTaskRecurrenceEndPresentation.endCountChoiceSpan
+
+        #expect(present(1, 100).contains(100))
+        #expect(present(1, 100) == Array(1...60) + [100])
+        #expect(present(15, 200).last == 200)
+        // One row appended, never the gap filled.
+        #expect(present(1, 10_000).count == span + 1)
+        // Inside the window, or below it (resolvedEndCount already floors it), nothing changes.
+        #expect(present(1, 60) == Array(1...60))
+        #expect(present(15, 20) == Array(15...74))
+        #expect(present(15, 3) == Array(15...74))
+        #expect(present(1, nil) == Array(1...60))
+    }
+
     /// The helper is worth nothing if an editor still calls the unfloored one. Every After-count
     /// resolve / clamp in the two editors passes the occurrence number; the one exception is
     /// macOS's `selectEnd`, whose only caller is the picker panel that has already floored.
@@ -559,7 +577,14 @@ struct CadenceRecurrenceEndSurfaceTests {
 
         #expect(CadenceSourceScan.matchCount(floored, in: ios) == 4)
         #expect(CadenceSourceScan.matchCount(unfloored, in: ios) == 0)
-        #expect(CadenceSourceScan.matchCount(#"endCountChoices\(from: draft\.seriesOccurrenceNumber\)"#, in: ios) == 1)
+        // T-6192: the list is handed the count the row resolves to, so a stored count past the
+        // window is still offered and shown selected.
+        #expect(
+            CadenceSourceScan.matchCount(
+                #"endCountChoices\(\s*from: draft\.seriesOccurrenceNumber,\s*including: endCountSelection\.wrappedValue\s*\)"#,
+                in: ios
+            ) == 1
+        )
 
         #expect(CadenceSourceScan.matchCount(floored, in: mac) == 2)
         #expect(CadenceSourceScan.matchCount(unfloored, in: mac) == 1)

@@ -102,9 +102,17 @@ nonisolated enum CadenceTaskRecurrenceEndPresentation {
     /// below the occurrence already reached cannot be honoured — `recurrenceHasEnded` is
     /// `occurrenceNumber >= recurrenceEndCount`, so offering it would offer "end this series now,
     /// and read 15 of 10". The list keeps its sixty entries, shifted up with the floor.
-    static func endCountChoices(from occurrenceNumber: Int) -> [Int] {
+    ///
+    /// **T-6192:** `selected` is the count the control currently resolves to, and it is always
+    /// offered. The Mac's field has no ceiling, so a series can arrive with a count past the
+    /// window (100 typed on the Mac, read on the phone); without it the list showed no selected
+    /// row at all. It is appended alone rather than widening the window to reach it, so a count
+    /// of 10 000 adds one row, not ten thousand.
+    static func endCountChoices(from occurrenceNumber: Int, including selected: Int? = nil) -> [Int] {
         let lower = max(1, occurrenceNumber)
-        return Array(lower...(lower + endCountChoiceSpan - 1))
+        let window = Array(lower...(lower + endCountChoiceSpan - 1))
+        guard let selected, selected > window[window.count - 1] else { return window }
+        return window + [selected]
     }
 
     /// How many counts `endCountChoices(from:)` offers.

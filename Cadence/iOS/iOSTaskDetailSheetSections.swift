@@ -137,7 +137,10 @@ struct iOSTaskFieldListSection: View {
             }
             .popover(isPresented: $showEndCountPicker) {
                 iOSChoicePopoverList(
-                    rows: CadenceTaskRecurrenceEndPresentation.endCountChoices(from: draft.seriesOccurrenceNumber).map { count in
+                    rows: CadenceTaskRecurrenceEndPresentation.endCountChoices(
+                        from: draft.seriesOccurrenceNumber,
+                        including: endCountSelection.wrappedValue
+                    ).map { count in
                         iOSChoiceRow(value: count, title: "\(count)", color: Theme.blue)
                     },
                     selection: endCountSelection,
