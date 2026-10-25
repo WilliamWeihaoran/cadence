@@ -521,6 +521,9 @@ struct iOSFocusView: View {
                 markdown: task.notes,
                 imageAssets: imageAssets,
                 taskEmbeds: taskEmbedInfos,
+                onToggleChecklist: { lineIndex in toggleChecklistItem(at: lineIndex, on: task) },
+                onToggleEmbeddedTask: { toggleEmbeddedTask(id: $0) },
+                onToggleEmbeddedSubtask: { toggleEmbeddedSubtask(taskID: $0, subtaskID: $1) },
                 onOpenReference: openMarkdownReference
             )
             // No `minHeight`. A two-line note was drawn in a 140pt card with ninety points of
@@ -528,6 +531,45 @@ struct iOSFocusView: View {
             .frame(maxWidth: .infinity, maxHeight: isCompact ? 260 : 320, alignment: .topLeading)
             .cadenceCard(background: Theme.surface, cornerRadius: Theme.radiusCard, shadowRadius: 12, shadowY: 5)
         }
+    }
+
+    /// **Ticking an item off mid-session** ([[T-5060]] (b), the owner's option (a)): the
+    /// checklist circles and the embed toggles in the focus note act, as they do in the task
+    /// sheet, rather than drawing a control that is `.disabled`.
+    ///
+    /// The focus screen draws the note through the read-only `iOSMarkdownPreview` and not through
+    /// `iOSMarkdownEditingSurface`, so there is no draft buffer to rewrite and nothing to debounce:
+    /// the toggle rewrites the task's own `notes` and commits straight away, through the shared
+    /// field transaction every other one-field edit goes through. A refused save puts the text
+    /// back, so the box the user tapped is drawn exactly as the store still holds it.
+    private func toggleChecklistItem(at lineIndex: Int, on task: AppTask) {
+        guard let toggled = MarkdownChecklistSupport.toggledText(task.notes, lineIndex: lineIndex) else { return }
+        CadenceTaskFieldEditCommit.commit(task, in: modelContext) {
+            task.notes = toggled
+        }
+    }
+
+    /// The embed card's own circle. `CadenceTaskStatusEditing.toggleCompletion` is the shared
+    /// path — it is what the editing surface's card calls, and what carries the wind-down
+    /// reconciliation and the settle-failure report with it.
+    private func toggleEmbeddedTask(id: UUID) {
+        guard let task = embeddedTask(id: id) else { return }
+        CadenceTaskStatusEditing.toggleCompletion(task, in: modelContext)
+    }
+
+    /// A subtask inside an embed card. `CadenceNoteTaskEmbedEditing.toggleSubtask` answers whether
+    /// the write landed; the card is redrawn from the store either way, so a refusal leaves the tick
+    /// where the store still has it rather than where the tap put it.
+    private func toggleEmbeddedSubtask(taskID: UUID, subtaskID: UUID) {
+        guard let task = embeddedTask(id: taskID),
+              let subtask = (task.subtasks ?? []).first(where: { $0.id == subtaskID }) else {
+            return
+        }
+        _ = CadenceNoteTaskEmbedEditing.toggleSubtask(subtask, in: modelContext)
+    }
+
+    private func embeddedTask(id: UUID) -> AppTask? {
+        allTasks.first { $0.id == id }
     }
 
     private var taskEmbedInfos: [UUID: MarkdownTaskEmbedRenderInfo] {
