@@ -38,6 +38,7 @@ struct CadenceQuickCreateTaskInspectorTests {
     private static let tildePickerPath = "Cadence/macOS/Views/TildeContainerPicker.swift"
     private static let monthGridPath = "Cadence/macOS/Views/CalendarPageMonthSupportViews.swift"
     private static let schedulingPath = "Cadence/macOS/Services/SchedulingService.swift"
+    private static let calendarManagerPath = "Cadence/macOS/Services/CalendarManager.swift"
 
     private func code(_ path: String) throws -> String {
         let raw = try cadenceTestSource(path)
@@ -207,16 +208,109 @@ struct CadenceQuickCreateTaskInspectorTests {
         #expect(DateFormatters.dateKey(from: broken.day(or: hostDay)) == "2026-05-01")
     }
 
-    /// Both hosts hand `createStandaloneEvent` the draft's day, never their own `date` alone.
+    /// Both hosts hand `createStandaloneEvent` the **whole draft**, naming only the day to fall
+    /// back to, and the one forwarding site resolves the draft's day — never the host's `date`
+    /// alone ([[T-3171]] (iv)). One site, so a field threaded through it reaches both pages.
     @Test func bothEventHostsCreateOnTheDraftsDay() throws {
         for path in [Self.monthGridPath, "Cadence/macOS/Views/SchedulePanel.swift"] {
             let source = try code(path)
             #expect(source.contains("calendarManager.createStandaloneEvent("), "non-vacuity: \(path)")
             #expect(
-                CadenceSourceScan.matchCount(#"createStandaloneEvent\([^\n]*date: draft\.day\(or: "#, in: source) == 1,
-                "\(path) creates the event on its own day rather than the draft's"
+                CadenceSourceScan.matchCount(#"calendarManager\.createStandaloneEvent\(draft, hostDay: "#, in: source) == 1,
+                "\(path) no longer hands the event write the whole draft"
+            )
+            #expect(
+                CadenceSourceScan.matchCount(#"createStandaloneEvent\(title:"#, in: source) == 0,
+                "\(path) spells its own field-by-field event write again"
             )
         }
+        let forwarding = try #require(
+            CadenceSourceScan.declarationBody(
+                "func createStandaloneEvent(_ draft: QuickCreateEventDraft, hostDay: Date)",
+                in: try code(Self.calendarManagerPath)
+            ),
+            "the draft-taking event write is gone"
+        )
+        #expect(CadenceSourceScan.matchCount(#"date: draft\.day\(or: hostDay\)"#, in: forwarding) == 1)
+    }
+
+    /// **[[T-3171]] (iii), the event half: All day, Location and Repeat reach the event value.**
+    /// The series end goes through `effectiveSeriesEndMode`, as the task value's does, so an
+    /// `.onDate` with no day arrives as `.never` rather than as a bound nobody asked for.
+    @Test func allDayLocationAndRepeatTravelIntoTheEventDraft() {
+        var draft = dragDraft(kind: .event)
+        draft.isAllDay = true
+        draft.location = "  Room 4  "
+        draft.repeatRule = .monthly
+        draft.seriesEndMode = .afterCount
+        draft.seriesEndCount = 6
+        let payload = QuickCreateEventDraft(scheduleDraft: draft)
+        #expect(payload.isAllDay)
+        #expect(payload.location == "  Room 4  ", "the value trims nothing; the write does")
+        #expect(payload.repeatRule == .monthly)
+        #expect(payload.seriesEndMode == .afterCount)
+        #expect(payload.seriesEndCount == 6)
+
+        draft.seriesEndMode = .onDate
+        draft.seriesEndDateKey = "2026-08-31"
+        let bounded = QuickCreateEventDraft(scheduleDraft: draft)
+        #expect(bounded.seriesEndMode == .onDate)
+        #expect(bounded.seriesEndDateKey == "2026-08-31")
+
+        draft.seriesEndDateKey = ""
+        #expect(QuickCreateEventDraft(scheduleDraft: draft).seriesEndMode == .never)
+
+        // Non-vacuity: a plain dragged event carries none of the three.
+        let plain = QuickCreateEventDraft(scheduleDraft: dragDraft(kind: .event))
+        #expect(!plain.isAllDay)
+        #expect(plain.location.isEmpty)
+        #expect(plain.repeatRule == .none)
+    }
+
+    /// **The forwarding site hands every one of those answers to the write**, and the write puts
+    /// each on the `EKEvent` it saves. Read as source, because the write sits behind an authorized
+    /// `EKEventStore`, which this suite must never open; the pieces that can run — the recurrence
+    /// mapping, the location trim and the save span — are run in `CadenceEventSeriesEndCarryTests`.
+    @Test func theEventWriteCarriesAllDayLocationAndRepeat() throws {
+        let manager = try code(Self.calendarManagerPath)
+        let forwarding = try #require(
+            CadenceSourceScan.declarationBody(
+                "func createStandaloneEvent(_ draft: QuickCreateEventDraft, hostDay: Date)",
+                in: manager
+            )
+        )
+        for argument in [
+            "isAllDay: draft.isAllDay",
+            "location: draft.location",
+            "repeatRule: draft.repeatRule",
+            "seriesEndMode: draft.seriesEndMode",
+            "seriesEndDateKey: draft.seriesEndDateKey",
+            "seriesEndCount: draft.seriesEndCount",
+        ] {
+            #expect(forwarding.contains(argument), "the event write is not handed \(argument)")
+        }
+
+        let write = try #require(
+            CadenceSourceScan.declarationBody("func createStandaloneEvent(\n", in: manager),
+            "the field-by-field event write is gone"
+        )
+        #expect(write.contains("event.isAllDay = isAllDay"), "All day is accepted and dropped")
+        #expect(CadenceSourceScan.matchCount(#"event\.isAllDay = false"#, in: write) == 0, "the write still forces a timed event")
+        #expect(write.contains("dayBounds(for: date, calendar: timingCalendar)"), "an all-day event does not cover its day")
+        #expect(
+            write.contains("event.location = CadenceEventCreationSupport.storedLocation(location)"),
+            "Location is accepted and dropped"
+        )
+        #expect(write.contains("CadenceEventCreationSupport.recurrenceRule("), "Repeat is accepted and dropped")
+        #expect(write.contains("for: repeatRule,"))
+        #expect(write.contains("endMode: seriesEndMode"), "the series end mode is accepted and dropped")
+        #expect(write.contains("endDateKey: seriesEndDateKey"))
+        #expect(write.contains("endCount: seriesEndCount"))
+        #expect(CadenceSourceScan.matchCount(#"addRecurrenceRule\("#, in: write) == 1)
+        #expect(
+            write.contains("span: CadenceEventCreationSupport.creationSpan(for: repeatRule)"),
+            "a new series is saved as a detached first occurrence"
+        )
     }
 
     /// The draft the drag opens with is writable on both kinds — otherwise the gate above would be
@@ -230,19 +324,22 @@ struct CadenceQuickCreateTaskInspectorTests {
         }
     }
 
-    /// `createStandaloneEvent` writes `isAllDay = false` and the task hosts take a minute, not a
-    /// `-1`. Both spellings of "no time" are refused by name.
-    @Test func anAllDayDraftIsRefusedBecauseNeitherWriteCanExpressOne() {
+    /// **An all-day event is accepted** — `createStandaloneEvent` writes one now ([[T-3171]]
+    /// (iii)) — while an untimed **task** is still refused: the task hosts take a minute, not a
+    /// `-1`.
+    @Test func anAllDayEventIsAcceptedAndAnUntimedTaskIsRefused() {
         var allDayEvent = dragDraft(kind: .event)
         allDayEvent.isAllDay = true
-        let eventNotice = QuickCreateChoicePopover.hostLimitNotice(for: allDayEvent)
-        #expect(eventNotice?.contains("All day") == true, "the all-day event refusal does not name the control: \(eventNotice ?? "nil")")
+        #expect(
+            QuickCreateChoicePopover.hostLimitNotice(for: allDayEvent) == nil,
+            "an all-day event is still refused by a write that can express one"
+        )
 
         var untimedTask = dragDraft()
         untimedTask.isAllDay = true
         let taskNotice = QuickCreateChoicePopover.hostLimitNotice(for: untimedTask)
         #expect(taskNotice != nil, "an untimed task was accepted by a host that stores a minute")
-        #expect(taskNotice != eventNotice, "both kinds answered one sentence; the task's control is not All day")
+        #expect(taskNotice?.contains("Add a time") == true)
     }
 
     /// The host takes a day and a length, so a block that crosses a midnight has nowhere to be
@@ -256,35 +353,26 @@ struct CadenceQuickCreateTaskInspectorTests {
         #expect(notice?.contains(DateFormatters.shortDateString(from: "2026-05-01")) == true)
     }
 
-    /// **The event write has no recurrence**, so an event draft that still carries a rule is
-    /// refused rather than written as a single event — while the same rule on a task, which the
-    /// task write now stores ([[T-3171]] (iii)), is accepted.
-    @Test func aRepeatingEventIsRefusedAndARepeatingTaskIsNot() {
-        var event = dragDraft(kind: .event)
-        event.repeatRule = .weekly
-        #expect(QuickCreateChoicePopover.hostLimitNotice(for: event) != nil, "a series was accepted as one event")
-
-        var task = dragDraft()
-        task.repeatRule = .weekly
-        #expect(QuickCreateChoicePopover.hostLimitNotice(for: task) == nil, "a repeating task is still refused")
-    }
-
-    /// A switch to Event drops the task's series — the event arm draws no Repeat row, so a kept
-    /// rule would be a field the user could neither see nor clear — and a switch to Task keeps it.
-    @Test func aSwitchToEventDropsTheTasksSeries() {
-        var task = dragDraft()
-        task.repeatRule = .weekly
-        task.seriesEndMode = .afterCount
-        task.seriesEndCount = 5
-
-        let asEvent = QuickCreateChoicePopover.droppingTaskOnlyFields(from: task, entering: .event)
-        #expect(asEvent.repeatRule == .none)
-        #expect(asEvent.seriesEndMode == .never)
-        #expect(asEvent.seriesEndCount == 0)
-        #expect(QuickCreateChoicePopover.hostLimitNotice(for: { var e = asEvent; e.kind = .event; return e }()) == nil)
-
-        let asTask = QuickCreateChoicePopover.droppingTaskOnlyFields(from: task, entering: .task)
-        #expect(asTask.repeatRule == .weekly, "a switch to Task dropped the series it can store")
+    /// **Both writes carry a recurrence now** ([[T-3171]] (iii)), so a repeating draft is
+    /// accepted on either kind — and a series chosen on one arm survives a switch to the other,
+    /// because both arms draw the Repeat row that shows it. The popover used to drop a task's
+    /// series on a switch to Event (`droppingTaskOnlyFields`) for exactly the reason that row was
+    /// withheld; with the row offered, there is nothing hidden left to drop.
+    @Test func aRepeatingDraftIsAcceptedOnBothKinds() throws {
+        for kind in [CadenceScheduleDraftKind.task, .event] {
+            var draft = dragDraft(kind: kind)
+            draft.repeatRule = .weekly
+            #expect(
+                QuickCreateChoicePopover.hostLimitNotice(for: draft) == nil,
+                "a repeating \(kind.title) is refused"
+            )
+        }
+        let popover = try code(Self.popoverPath)
+        #expect(popover.contains("struct QuickCreateChoicePopover: View"), "non-vacuity: file unread")
+        #expect(
+            CadenceSourceScan.matchCount(#"droppingTaskOnlyFields|dropTaskOnlyFields"#, in: popover) == 0,
+            "a kind switch still drops a series the Event arm now shows and writes"
+        )
     }
 
     /// **None is a real estimate everywhere else and cannot be one here.** The task write floors
@@ -463,12 +551,8 @@ struct CadenceQuickCreateTaskInspectorTests {
         #expect(popover.contains("draft: $draft"))
         #expect(popover.contains("CadenceSchedulePanelActions("))
         #expect(popover.contains("delete: nil"), "the creating popover offers a Delete control")
-        // Withheld, not drawn-and-dropped: the event write carries neither of these two.
-        for flag in ["offersEventRepeat: false", "offersEventLocation: false"] {
-            #expect(popover.contains(flag), "the popover offers a field its host cannot write: \(flag) missing")
-        }
-        // And offered where the write now carries them ([[T-3171]] (iii)).
-        for flag in ["offersTaskRepeat: true", "offersTaskDue: true"] {
+        // Offered where the write now carries them ([[T-3171]] (iii)): every row, on both arms.
+        for flag in ["offersTaskRepeat: true", "offersTaskDue: true", "offersEventRepeat: true", "offersEventLocation: true"] {
             #expect(popover.contains(flag), "the popover withholds a task field its host writes: \(flag) missing")
         }
         #expect(popover.contains("canCommit: canCommit"))

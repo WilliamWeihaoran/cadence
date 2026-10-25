@@ -298,6 +298,15 @@ final class CalendarManager {
     /// `TimelineMetrics.snappedMinute(fromY:)`, whose `clampStart` bounds it at
     /// `endHour * 60 - duration` and so never reaches the 1440 the helper refuses.
     ///
+    /// **All-day, Location and Repeat** ([[T-3171]] (iii), the event half). This write used to set
+    /// `isAllDay = false` and take no location and no recurrence, so the drag-create popover had to
+    /// withhold the Repeat and Location rows and refuse All day. iOS's `createEvent` already wrote
+    /// all three; this takes the same three answers, through the same
+    /// `CadenceEventCreationSupport`, so the platforms agree about what each one means. All three
+    /// are **defaulted**, so a caller that passes none writes exactly the timed, place-less,
+    /// single event it always wrote. An all-day event covers `date`'s whole day (`dayBounds`), and
+    /// `startMin`/`durationMinutes` are not read for it.
+    ///
     /// - Parameter timingCalendar: see `CadenceCalendarEventTiming.startDate`. `.current` in
     ///   production; a test passes an explicit DST-observing zone because the scheme pins the test
     ///   host to `TZ=UTC` ([[T-1116]]). It is not named `calendar` because that name is already the
@@ -310,6 +319,12 @@ final class CalendarManager {
         calendarID: String,
         date: Date,
         notes: String = "",
+        isAllDay: Bool = false,
+        location: String = "",
+        repeatRule: TaskRecurrenceRule = .none,
+        seriesEndMode: TaskRecurrenceEndMode = .never,
+        seriesEndDateKey: String = "",
+        seriesEndCount: Int = 0,
         timingCalendar: Calendar = .current
     ) -> CalendarWriteFailure? {
         guard isAuthorized else { return record(.notAuthorized) }
@@ -318,22 +333,71 @@ final class CalendarManager {
               calendar.allowsContentModifications,
               isActiveCalendar(calendar)
         else { return record(.noWritableCalendar) }
-        guard let startDate = CadenceCalendarEventTiming.startDate(
-            day: date,
-            startMin: startMin,
-            calendar: timingCalendar
-        ) else { return record(.invalidRange) }
-        guard let endDate = timingCalendar.date(byAdding: .minute, value: max(5, durationMinutes), to: startDate) else {
-            return record(.invalidRange)
+        let startDate: Date
+        let endDate: Date
+        if isAllDay {
+            let bounds = dayBounds(for: date, calendar: timingCalendar)
+            guard bounds.end > bounds.start else { return record(.invalidRange) }
+            startDate = bounds.start
+            endDate = bounds.end
+        } else {
+            guard let timedStart = CadenceCalendarEventTiming.startDate(
+                day: date,
+                startMin: startMin,
+                calendar: timingCalendar
+            ) else { return record(.invalidRange) }
+            startDate = timedStart
+            guard let timedEnd = timingCalendar.date(byAdding: .minute, value: max(5, durationMinutes), to: startDate) else {
+                return record(.invalidRange)
+            }
+            endDate = timedEnd
         }
         let event = EKEvent(eventStore: store)
         event.title = CadenceEventTitleSupport.storedTitle(title)
+        event.isAllDay = isAllDay
         event.startDate = startDate
         event.endDate = endDate
-        event.isAllDay = false
         event.notes = notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : notes
+        event.location = CadenceEventCreationSupport.storedLocation(location)
         event.calendar = calendar
-        return save(event, span: .thisEvent, describing: "create standalone event")
+        if let recurrence = CadenceEventCreationSupport.recurrenceRule(
+            for: repeatRule,
+            endMode: seriesEndMode,
+            endDateKey: seriesEndDateKey,
+            endCount: seriesEndCount
+        ) {
+            event.addRecurrenceRule(recurrence)
+        }
+        return save(
+            event,
+            span: CadenceEventCreationSupport.creationSpan(for: repeatRule),
+            describing: "create standalone event"
+        )
+    }
+
+    /// The drag-create popover's event, written whole ([[T-3171]] (iii), (iv)).
+    ///
+    /// **One forwarding site for both hosts.** The Today timeline (`SchedulePanel`) and the
+    /// Calendar page's day column (`CalDayColumn`) each used to spell the six-argument call on one
+    /// line, so every field the popover learned to carry had to be threaded twice — and a field
+    /// threaded once is a control that works on one page and is dropped on the other. Each host now
+    /// names only the day it falls back to; everything the user said travels from here.
+    @discardableResult
+    func createStandaloneEvent(_ draft: QuickCreateEventDraft, hostDay: Date) -> CalendarWriteFailure? {
+        createStandaloneEvent(
+            title: draft.title,
+            startMin: draft.startMin,
+            durationMinutes: draft.endMin - draft.startMin,
+            calendarID: draft.calendarID,
+            date: draft.day(or: hostDay),
+            notes: draft.notes,
+            isAllDay: draft.isAllDay,
+            location: draft.location,
+            repeatRule: draft.repeatRule,
+            seriesEndMode: draft.seriesEndMode,
+            seriesEndDateKey: draft.seriesEndDateKey,
+            seriesEndCount: draft.seriesEndCount
+        )
     }
 
     // MARK: - Fetching Events

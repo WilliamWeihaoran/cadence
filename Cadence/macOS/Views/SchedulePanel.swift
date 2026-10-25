@@ -162,7 +162,7 @@ struct SchedulePanel: View {
                             // The draft's own day, not today's ([[T-3171]] (iv)): the panel's
                             // Starts row can move the event off the timeline it was dragged on.
                             onCreateEvent: { draft in
-                                calendarManager.createStandaloneEvent(title: draft.title, startMin: draft.startMin, durationMinutes: draft.endMin - draft.startMin, calendarID: draft.calendarID, date: draft.day(or: Date()), notes: draft.notes)
+                                calendarManager.createStandaloneEvent(draft, hostDay: Date())
                             }
                         )
                     }

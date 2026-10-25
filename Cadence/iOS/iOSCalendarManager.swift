@@ -149,72 +149,6 @@ final class iOSCalendarManager {
         )
     }
 
-    /// `TaskRecurrenceRule` as EventKit's own rule, or `nil` for `.none`.
-    ///
-    /// **One mapping, here, because there is exactly one direction to map.** Cadence's recurrence
-    /// vocabulary is `TaskRecurrenceRule` — it is what the task inspector's Repeat row, the widget
-    /// and `CadenceTaskRecurrenceWorkflowSupport` all speak — and an event created from a Cadence
-    /// surface has to carry the same five answers. Spelling the `switch` at the call site would put
-    /// EventKit's enum in a view; spelling it twice is how the app would come to disagree with
-    /// itself about what "monthly" means.
-    ///
-    /// Interval 1, because no Cadence surface offers "every 2 weeks" — inventing one here would be
-    /// this function answering a question nothing asked.
-    ///
-    /// **The series end used to be in that same sentence, and it was wrong** ([[T-3229]]). The
-    /// capture card does ask it, in Event mode as well as Task mode, so `end: nil` was not a
-    /// question nothing asked — it was an answer the user had already given, discarded on the way
-    /// to EventKit. A bounded series became an endless one with nothing anywhere saying so.
-    ///
-    /// The three end parameters are **defaulted, so every caller with no end to pass is
-    /// byte-for-byte unchanged** and still gets exactly the rule it got before.
-    ///
-    /// The mode is expected to be the RESOLVED one — `CadenceScheduleDraft.effectiveSeriesEndMode`
-    /// owns the degrade from an `.onDate` with no day, or an `.afterCount` of zero, back to
-    /// `.never`. This function does not trust that: a value it cannot spell falls back to no end
-    /// rather than to a wrong one, because an unbounded series is at least the series the rule
-    /// above describes, and a bound invented here would not be anybody's answer.
-    ///
-    /// **`.onDate` ends at the last instant of the named day, not at its midnight.** `EKRecurrenceEnd`
-    /// takes a point in time and Cadence stores a `yyyy-MM-dd` day, so a 2 PM weekly series told to
-    /// end on the 10th has to carry 23:59:59 on the 10th or EventKit drops the occurrence the user
-    /// was naming.
-    static func eventRecurrenceRule(
-        for rule: TaskRecurrenceRule,
-        /// Defaulted, so the existing callers are byte-for-byte unchanged.
-        endMode: TaskRecurrenceEndMode = .never,
-        endDateKey: String = "",
-        endCount: Int = 0
-    ) -> EKRecurrenceRule? {
-        let frequency: EKRecurrenceFrequency
-        switch rule {
-        case .none: return nil
-        case .daily: frequency = .daily
-        case .weekly: frequency = .weekly
-        case .monthly: frequency = .monthly
-        case .yearly: frequency = .yearly
-        }
-        let seriesEnd: EKRecurrenceEnd?
-        switch endMode {
-        case .never:
-            seriesEnd = nil
-        case .onDate:
-            let calendar = Calendar.current
-            if let day = DateFormatters.date(from: endDateKey),
-               let lastInstant = calendar.date(
-                   byAdding: DateComponents(day: 1, second: -1),
-                   to: calendar.startOfDay(for: day)
-               ) {
-                seriesEnd = EKRecurrenceEnd(end: lastInstant)
-            } else {
-                seriesEnd = nil
-            }
-        case .afterCount:
-            seriesEnd = endCount >= 1 ? EKRecurrenceEnd(occurrenceCount: endCount) : nil
-        }
-        return EKRecurrenceRule(recurrenceWith: frequency, interval: 1, end: seriesEnd)
-    }
-
     @discardableResult
     func createEvent(
         title: String,
@@ -247,11 +181,10 @@ final class iOSCalendarManager {
         event.calendar = calendar
         let trimmedNotes = notes?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         event.notes = trimmedNotes.isEmpty ? nil : notes
-        let trimmedLocation = location.trimmingCharacters(in: .whitespacesAndNewlines)
-        // `nil` rather than `""`: an empty string is a location Calendar will render a blank row
-        // for, and "no location" is the absence of one.
-        event.location = trimmedLocation.isEmpty ? nil : trimmedLocation
-        if let recurrence = Self.eventRecurrenceRule(
+        event.location = CadenceEventCreationSupport.storedLocation(location)
+        // The mapping is shared with macOS's drag-create write ([[T-3171]] (iii)), so the two
+        // platforms cannot disagree about what a Repeat answer means to EventKit.
+        if let recurrence = CadenceEventCreationSupport.recurrenceRule(
             for: repeatRule,
             endMode: seriesEndMode,
             endDateKey: seriesEndDateKey,
@@ -260,9 +193,8 @@ final class iOSCalendarManager {
             event.addRecurrenceRule(recurrence)
         }
         do {
-            // A new series is saved whole: `.thisEvent` on an event that carries a recurrence
-            // rule would ask EventKit to detach the first occurrence from a series it is creating.
-            try store.save(event, span: repeatRule == .none ? .thisEvent : .futureEvents)
+            // A new series is saved whole — see `CadenceEventCreationSupport.creationSpan`.
+            try store.save(event, span: CadenceEventCreationSupport.creationSpan(for: repeatRule))
             storeVersion += 1
             return nil
         } catch {

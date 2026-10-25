@@ -1,3 +1,4 @@
+import EventKit
 import Foundation
 import Testing
 @testable import Cadence
@@ -7,18 +8,19 @@ import Testing
 /// **The bug this suite exists over was silence, not a crash.** `CadenceScheduleCaptureCard` draws
 /// `Frequency` and `Ends` with no `kind` guard, so a user could switch the card to Event, choose
 /// *"ends after 10 occurrences"*, watch the card accept it — and get an endless series, because
-/// `iOSCalendarManager.eventRecurrenceRule` built every rule with `end: nil` and `createEvent` took
-/// a bare `repeatRule` with nowhere to put a bound. Nothing anywhere said the limit was dropped.
+/// the iOS manager's recurrence builder (`eventRecurrenceRule`, since moved to `Shared/`) built
+/// every rule with `end: nil` and `createEvent` took a bare `repeatRule` with nowhere to put a
+/// bound. Nothing anywhere said the limit was dropped.
 /// On the Task side the same three draft fields persist correctly, which is exactly what made the
 /// Event side a silent loss rather than a visible gap.
 ///
-/// **Why half of this is a source scan and half is not.** Both write-path halves live under
-/// `#if os(iOS)` and this target is macOS-built, so they cannot be called here at all — and
-/// `eventRecurrenceRule` touches `EKRecurrenceRule`, which no test in this repo may construct
-/// against a real `EKEventStore` anyway. What *is* compiled here is the value those two functions
-/// now receive: `CadenceScheduleDraft.effectiveSeriesEndMode`, which decides whether there is a
-/// bound to carry at all. So the resolution is tested for real and the forwarding is pinned by
-/// reading the two function bodies.
+/// **Why half of this is a source scan and half is not.** The iOS write-path halves live under
+/// `#if os(iOS)` and cannot be called from a macOS run, so their forwarding is pinned by reading
+/// the function bodies. The recurrence mapping itself is **run**: [[T-3171]] (iii) moved it out of
+/// `iOSCalendarManager` into `Shared/CadenceEventCreationSupport` so the macOS drag-create write
+/// could use the same one, and an `EKRecurrenceRule` is a value that needs no `EKEventStore`. So
+/// is `CadenceScheduleDraft.effectiveSeriesEndMode`, which decides whether there is a bound to
+/// carry at all.
 @Suite("Event series end")
 struct CadenceEventSeriesEndCarryTests {
 
@@ -72,7 +74,7 @@ struct CadenceEventSeriesEndCarryTests {
     /// when `repeatRule != .none`, but the draft can still be holding a stale end from before the
     /// frequency was cleared, and `createEvent` forwards the fields unconditionally. The `.none`
     /// guard at the top of `effectiveSeriesEndMode` is what stops that stale value reaching
-    /// EventKit — and `eventRecurrenceRule` returns `nil` for `.none` regardless, so the two agree.
+    /// EventKit — and `CadenceEventCreationSupport.recurrenceRule` returns `nil` for `.none` regardless.
     @Test("Clearing the frequency clears the bound the event write would carry")
     @MainActor
     func aNonRepeatingEventDraftCarriesNoBound() {
@@ -102,18 +104,23 @@ struct CadenceEventSeriesEndCarryTests {
         return stripped
     }
 
-    /// `eventRecurrenceRule` can spell a bounded series at all, and spells **both** bounds.
-    ///
-    /// The three parameters are defaulted, which is the precedent `createEvent`'s own comment
-    /// already set — *"Defaulted, so the two existing callers are byte-for-byte unchanged."*
-    /// Without the defaults this is a source-compatible-looking change that silently rewrites
-    /// every other call site's meaning.
-    @Test("eventRecurrenceRule takes a defaulted bound and builds both kinds of it")
+    /// The shared recurrence builder, as source: the bound parameters are **defaulted**, which is
+    /// the precedent `createEvent`'s own comment set — *"Defaulted, so the two existing callers are
+    /// byte-for-byte unchanged."* Without the defaults this is a source-compatible-looking change
+    /// that silently rewrites every other call site's meaning. What the rule it builds *is* is run
+    /// below, in `theSharedBuilderBuildsEachBound`.
+    @Test("The shared recurrence builder takes a defaulted bound and builds both kinds of it")
     func theRecurrenceRuleBuilderCanBoundASeries() throws {
-        let stripped = try strippedManager()
+        let raw = try CadenceSourceScan.sourceFile(Self.sharedSupportPath)
+        let stripped = CadenceSourceScan.strippingComments(raw)
+        #expect(stripped != raw, "the comment stripper removed nothing")
         let body = try #require(
-            CadenceSourceScan.declarationBody("static func eventRecurrenceRule(", in: stripped),
-            "could not find eventRecurrenceRule"
+            CadenceSourceScan.declarationBody("static func recurrenceRule(", in: stripped),
+            "could not find CadenceEventCreationSupport.recurrenceRule"
+        )
+        #expect(
+            CadenceSourceScan.matchCount(#"static func eventRecurrenceRule\("#, in: try strippedManager()) == 0,
+            "iOSCalendarManager spells its own copy of the recurrence mapping again"
         )
 
         #expect(
@@ -149,6 +156,64 @@ struct CadenceEventSeriesEndCarryTests {
             body.contains("DateComponents(day: 1, second: -1)"),
             "the .onDate bound no longer reaches the last instant of the named day"
         )
+    }
+
+    private static let sharedSupportPath = "Cadence/Shared/CadenceEventCreationSupport.swift"
+
+    // MARK: - The shared builder, run
+
+    /// Each frequency maps to its own EventKit frequency at interval 1, `.none` to no rule, and the
+    /// default bound is none at all.
+    @Test("The shared builder maps every frequency and defaults to an endless series")
+    func theSharedBuilderMapsEveryFrequency() throws {
+        #expect(CadenceEventCreationSupport.recurrenceRule(for: .none) == nil)
+        let pairs: [(TaskRecurrenceRule, EKRecurrenceFrequency)] = [
+            (.daily, .daily), (.weekly, .weekly), (.monthly, .monthly), (.yearly, .yearly),
+        ]
+        for (rule, frequency) in pairs {
+            let built = try #require(CadenceEventCreationSupport.recurrenceRule(for: rule), "\(rule) built no rule")
+            #expect(built.frequency == frequency, "\(rule) maps to the wrong frequency")
+            #expect(built.interval == 1)
+            #expect(built.recurrenceEnd == nil, "an unbounded \(rule) was given a bound")
+        }
+    }
+
+    /// Both bounds reach the rule: a count as a count, and a day as its **last instant**.
+    @Test("The shared builder carries an occurrence count and an end day")
+    func theSharedBuilderBuildsEachBound() throws {
+        let counted = try #require(
+            CadenceEventCreationSupport.recurrenceRule(for: .weekly, endMode: .afterCount, endCount: 7)
+        )
+        #expect(counted.recurrenceEnd?.occurrenceCount == 7)
+
+        let dated = try #require(
+            CadenceEventCreationSupport.recurrenceRule(for: .daily, endMode: .onDate, endDateKey: "2026-12-24")
+        )
+        let end = try #require(dated.recurrenceEnd?.endDate, "an .onDate bound was dropped")
+        // Read back through the same parse the builder uses, so the relation holds in whatever zone
+        // the host runs: the bound is on the named day, and after that day's midnight.
+        let midnight = try #require(DateFormatters.date(from: "2026-12-24"))
+        #expect(DateFormatters.dateKey(from: end) == "2026-12-24", "the bound is not on the named day")
+        #expect(end > midnight, "the bound is the named day's midnight, which drops its occurrence")
+        #expect(end.timeIntervalSince(midnight) > 23 * 3600, "the bound is not the day's last instant")
+
+        // A value it cannot spell falls back to no bound, never a wrong one.
+        let unspellable = try #require(
+            CadenceEventCreationSupport.recurrenceRule(for: .daily, endMode: .afterCount, endCount: 0)
+        )
+        #expect(unspellable.recurrenceEnd == nil)
+    }
+
+    /// The save span and the stored location, the other two pieces both platforms' writes share.
+    @Test("A new series saves whole and a blank location is no location")
+    func theSpanAndLocationRules() {
+        #expect(CadenceEventCreationSupport.creationSpan(for: .none) == .thisEvent)
+        for rule in TaskRecurrenceRule.allCases where rule != .none {
+            #expect(CadenceEventCreationSupport.creationSpan(for: rule) == .futureEvents, "\(rule) saves a detached first occurrence")
+        }
+        #expect(CadenceEventCreationSupport.storedLocation("  Room 4 \n") == "Room 4")
+        #expect(CadenceEventCreationSupport.storedLocation(" \n ") == nil)
+        #expect(CadenceEventCreationSupport.storedLocation("") == nil)
     }
 
     /// `createEvent` forwards all three, and still saves **once**. A second EventKit save after the

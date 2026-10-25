@@ -85,12 +85,13 @@ struct CadenceSchedulePanelActions {
 /// - `offersTaskRepeat` — `false` where the host draws a task's series itself. The task editor
 ///   does, because its Repeat row is followed by the end condition and the series-scope question,
 ///   neither of which a creating panel has.
-/// - `offersTaskDue` — `false` where the host has nowhere to write a due date. The macOS
-///   drag-create popover is that host ([[T-3171]], its seventh slice): both of its write closures
-///   are fixed by a leased caller and neither carries one, and a Due row whose value is dropped on
-///   the way to the store is the inert control T-470 went through this app removing.
-/// - `offersEventLocation` — `false` for the same reason, one field over: that popover's event
-///   write is `CalendarManager.createStandaloneEvent`, which has no `location:`.
+/// - `offersTaskDue` — `false` where the host has nowhere to write a due date: a Due row whose
+///   value is dropped on the way to the store is the inert control T-470 went through this app
+///   removing. (The macOS drag-create popover was that host until [[T-3171]] (iii) gave its task
+///   write a due date.)
+/// - `offersEventLocation` — `false` for the same reason, one field over, where the host's event
+///   write has no location. No current host is: the macOS drag-create popover's write,
+///   `CalendarManager.createStandaloneEvent`, gained one under [[T-3171]] (iii).
 /// - `offersSubtasks` — off unless a creation host can carry checklist titles into storage.
 ///   The macOS drag-create host opts in; existing iOS hosts keep their present fields.
 /// - `notesField` — the host's own notes editor. A sheet has room for the platform's full

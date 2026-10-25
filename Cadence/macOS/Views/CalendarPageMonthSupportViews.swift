@@ -843,7 +843,7 @@ struct CalDayColumn: View {
             },
             externalEvents: externalEventItems,
             onCreateEvent: { draft in
-                calendarManager.createStandaloneEvent(title: draft.title, startMin: draft.startMin, durationMinutes: draft.endMin - draft.startMin, calendarID: draft.calendarID, date: draft.day(or: date), notes: draft.notes)
+                calendarManager.createStandaloneEvent(draft, hostDay: date)
             },
             prefersCalendarEventCreation: true,
             onDropAllDayEventAtMinute: { payload, startMin in

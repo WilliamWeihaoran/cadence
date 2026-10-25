@@ -74,6 +74,11 @@ extension QuickCreateTaskDraft {
 /// so both hosts gave `CalendarManager.createStandaloneEvent` their own date and the popover had to
 /// refuse any draft whose day the panel's grid had moved. The day travels now, as `dateKey`, and
 /// the host resolves it through `day(or:)`.
+///
+/// **It carries All day, Location and Repeat** ([[T-3171]] (iii), the event half). The popover
+/// used to withhold the Repeat and Location rows and refuse All day because this value, and the
+/// write behind it, had nowhere to put them. Both hosts now hand the whole value to
+/// `CalendarManager.createStandaloneEvent(_:hostDay:)`, which writes all three.
 struct QuickCreateEventDraft: Equatable {
     var title: String
     /// `yyyy-MM-dd`: the day the panel's Starts row names.
@@ -82,6 +87,17 @@ struct QuickCreateEventDraft: Equatable {
     var endMin: Int
     var calendarID: String
     var notes: String
+    /// When set, the event covers `dateKey`'s whole day and `startMin`/`endMin` are not written.
+    var isAllDay: Bool = false
+    /// Untrimmed; `CadenceEventCreationSupport.storedLocation` trims it at the write.
+    var location: String = ""
+    var repeatRule: TaskRecurrenceRule = .none
+    /// The series' end, already resolved through `CadenceScheduleDraft.effectiveSeriesEndMode`, so
+    /// an `.onDate` with no day or an `.afterCount` with no count arrives as `.never` — the same
+    /// rule the task draft beside this one follows.
+    var seriesEndMode: TaskRecurrenceEndMode = .never
+    var seriesEndDateKey: String = ""
+    var seriesEndCount: Int = 0
 
     /// The day to create on: the draft's own, or `hostDay` only when the key does not parse — which
     /// the panel never produces, so the fallback exists to keep the write total, not as a rule.
@@ -98,7 +114,13 @@ extension QuickCreateEventDraft {
             startMin: draft.startMin,
             endMin: draft.endMin,
             calendarID: draft.calendarID,
-            notes: draft.notes
+            notes: draft.notes,
+            isAllDay: draft.isAllDay,
+            location: draft.location,
+            repeatRule: draft.repeatRule,
+            seriesEndMode: draft.effectiveSeriesEndMode,
+            seriesEndDateKey: draft.seriesEndDateKey,
+            seriesEndCount: draft.seriesEndCount
         )
     }
 }
@@ -162,12 +184,11 @@ struct QuickCreateNotesDraft: Equatable {
 ///   `SchedulePanelDataSupport.insertDragCreatedTask` — the draft's own day, Due and Repeat
 ///   included ([[T-3171]] (iii), (iv)).
 /// - `onCreateEvent` takes a `QuickCreateEventDraft`, which both hosts hand
-///   `CalendarManager.createStandaloneEvent` on the draft's own day. That write sets
-///   `isAllDay = false` and has no `location:` and no recurrence.
+///   `CalendarManager.createStandaloneEvent(_:hostDay:)` — the draft's own day, All day, Location
+///   and Repeat included ([[T-3171]] (iii)).
 ///
-/// So the **event** Repeat and Location rows are still **withheld** (`offersEventRepeat`,
-/// `offersEventLocation`), and the schedule facts the user can still reach from the rows that
-/// remain — a span across midnight, all-day, an estimate of None — are **named and refused**
+/// So every row the panel draws is offered. The schedule facts neither write can carry — a span
+/// across midnight, and on a **task** all-day or an estimate of None — are **named and refused**
 /// rather than silently dropped (T-470). Each is one sentence in `hostLimitNotice`, drawn through
 /// the panel's existing `failureNotice:` with `canCommit: false`.
 struct QuickCreateChoicePopover: View {
@@ -256,12 +277,12 @@ struct QuickCreateChoicePopover: View {
             calendarUnavailableNotice: calendarUnavailableNotice,
             failureNotice: createFailureNotice ?? hostLimitNotice,
             canCommit: canCommit,
-            // The task write carries Due and Repeat ([[T-3171]] (iii)); the event write carries
-            // neither a recurrence nor a location. See the type note: withheld, not drawn-and-dropped.
-            offersEventRepeat: false,
+            // Both writes carry every row offered here ([[T-3171]] (iii)): the task write Due and
+            // Repeat, the event write Repeat, Location and All day.
+            offersEventRepeat: true,
             offersTaskRepeat: true,
             offersTaskDue: true,
-            offersEventLocation: false,
+            offersEventLocation: true,
             offersSubtasks: true,
             actions: CadenceSchedulePanelActions(
                 commit: create,
@@ -276,7 +297,6 @@ struct QuickCreateChoicePopover: View {
         .onAppear(perform: resolveCalendarSelection)
         .onChange(of: draft.kind) { previousKind, newKind in
             carryNotes(leaving: previousKind, entering: newKind)
-            dropTaskOnlyFields(entering: newKind)
             resolveCalendarSelection()
         }
         .onChange(of: draft.listToken) { _, _ in
@@ -304,21 +324,17 @@ struct QuickCreateChoicePopover: View {
     /// **No day rule** ([[T-3171]] (iv)). It used to refuse a draft whose day the panel had moved
     /// off the column's, because the Calendar page's column and both event writes supplied the
     /// host's own day. Both hosts now create on the draft's day, so a moved day is honoured.
+    ///
+    /// **No all-day or Repeat rule for events** ([[T-3171]] (iii)). The event write used to set
+    /// `isAllDay = false` and attach no recurrence, so both were refused here; it writes both now.
+    /// A task's all-day is still refused: `SchedulingActions.insertTask` stores the draft's minute.
     static func hostLimitNotice(for draft: CadenceScheduleDraft) -> String? {
         let kindWord = draft.kind == .event ? "event" : "task"
-        if draft.isAllDay {
-            return draft.kind == .event
-                ? "A dragged slot creates a timed event. Turn All day off to create it here."
-                : "A dragged slot creates a task at a time. Add a time to create it here."
+        if draft.kind == .task && draft.isAllDay {
+            return "A dragged slot creates a task at a time. Add a time to create it here."
         }
         if draft.spansMultipleDays {
             return "A dragged slot creates an \(kindWord) inside one day. End it on \(dayLabel(draft.startDateKey))."
-        }
-        if draft.kind == .event && draft.repeatRule != .none {
-            // Unreachable through the panel — the Repeat row is withheld for events and a switch to
-            // Event clears the task's rule (`dropTaskOnlyFields`) — and spelled anyway, so a series
-            // can never be written here as a single event without saying so.
-            return "A dragged slot creates a single event. Create a repeating event from Apple Calendar."
         }
         if draft.kind == .task && draft.estimateMinutes <= 0 {
             return "A dragged slot gives the task its length, so Estimate cannot be None here."
@@ -365,27 +381,6 @@ struct QuickCreateChoicePopover: View {
     private func carryNotes(leaving previousKind: CadenceScheduleDraftKind, entering newKind: CadenceScheduleDraftKind) {
         notesDraft.set(draft.notes, for: previousKind)
         draft.notes = notesDraft.notes(for: newKind)
-    }
-
-    /// A switch to **Event** drops the task's Repeat, the way `CadenceScheduleDraft.normalizeForKind`
-    /// drops Due: this host's event write has no recurrence and the event arm draws no Repeat row,
-    /// so a rule kept through the switch would be a field the user cannot see or clear.
-    private func dropTaskOnlyFields(entering newKind: CadenceScheduleDraftKind) {
-        draft = Self.droppingTaskOnlyFields(from: draft, entering: newKind)
-    }
-
-    /// Static so the rule is testable without a view.
-    static func droppingTaskOnlyFields(
-        from draft: CadenceScheduleDraft,
-        entering newKind: CadenceScheduleDraftKind
-    ) -> CadenceScheduleDraft {
-        guard newKind == .event else { return draft }
-        var dropped = draft
-        dropped.repeatRule = .none
-        dropped.seriesEndMode = .never
-        dropped.seriesEndDateKey = ""
-        dropped.seriesEndCount = 0
-        return dropped
     }
 
     // MARK: - Calendars
