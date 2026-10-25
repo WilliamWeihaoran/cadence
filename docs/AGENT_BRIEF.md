@@ -53,7 +53,9 @@ parameterised test, so use a non-parameterised sibling to prove the scope ran an
 
 ## Leases
 
-- `./scripts/codex-land.sh lease` prints the fence (lines 50–159 of `docs/CODEX_WORKTREE.md`).
+- `./scripts/codex-land.sh lease` prints the fence (the `lease` code block under `## The lease` in
+  `docs/CODEX_WORKTREE.md`). That answers *is this path LISTED*; `./scripts/codex-land.sh held
+  <path>` answers *is it HELD* (HELD / RESERVED / SPENT / UNFENCED), which is usually the question.
 - Match patterns with Python `fnmatch`, **never a zsh loop** — zsh does not word-split or glob an
   unquoted `$var`.
 - **A grant is SUB-FILE SCOPED unless it says otherwise. Being inside a granted file is not being
