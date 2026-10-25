@@ -26,6 +26,54 @@ import Testing
 /// which taught `StoredLaunchReportSuiteRule` to follow the writer one frame down. It asks now, and
 /// `theArchiveImportSuiteIsAskedForTheTraitByTheRuleRatherThanByItsAuthor` is that claim measured
 /// against this file: strip the trait and the sweep names this suite.
+/// The three note kinds `Note.canonicalKey` gives a **shared** identity to, each with the field it
+/// keys on ([[T-4720]]).
+///
+/// One fixture per kind rather than three near-copies of the same test body, so the round trip
+/// cannot be driven for one kind and quietly skipped for another. `.permanent` and `.list` are
+/// absent on purpose: they key on their own UUID, so two of them never collide and there is
+/// nothing for an import alias to match.
+nonisolated enum CadenceArchiveImportSharedKeyFixture: CaseIterable, Sendable {
+    case daily
+    case weekly
+    case meeting
+
+    /// The word the expectation messages use, so a failure names the kind that broke.
+    var unit: String {
+        switch self {
+        case .daily: "day"
+        case .weekly: "week"
+        case .meeting: "meeting"
+        }
+    }
+
+    /// A note of this kind carrying the key two copies would collide on — and *only* that key, so
+    /// the collision is the shared one and not an id match.
+    @MainActor func makeNote() -> Note {
+        switch self {
+        case .daily: Note(kind: .daily, title: "2026-02-03", dateKey: "2026-02-03")
+        case .weekly: Note(kind: .weekly, title: "2026-W06", weekKey: "2026-W06")
+        case .meeting:
+            Note(
+                kind: .meeting,
+                title: "Design review",
+                calendarEventID: "event-4720-design-review"
+            )
+        }
+    }
+
+    /// What the app put there between the reset and the import: a template body for the two it
+    /// mints from a template, and the heading a meeting note is born with. **Not empty** for any
+    /// of them, which is the whole point — `mergeNoteFields` only glues two non-empty bodies.
+    var mintedBody: String {
+        switch self {
+        case .daily: "# 2026-02-03\n\n## Priorities\n\n- \n"
+        case .weekly: "# 2026-W06\n\n## This week\n\n- \n"
+        case .meeting: "# Design review\n\n## Notes\n\n- \n"
+        }
+    }
+}
+
 @Suite(.preservesTheStoredLaunchReports)
 @MainActor
 struct CadenceArchiveImportSurfaceTests {
@@ -1674,6 +1722,83 @@ struct CadenceArchiveImportSurfaceTests {
                 #expect(kept.content == Self.dailyTemplateBody, "merge did not leave the matched row alone")
             case .restoreOverwritingExistingRows:
                 #expect(kept.content == archivedBody, "overwrite did not write the archive's body")
+            }
+        }
+    }
+
+    /// **Reset, then import, and a day, a week and a meeting are each one note, not a glued pair**
+    /// ([[T-4720]]).
+    ///
+    /// The same sighting `aTemplateDailyNoteAndTheArchivesNoteForThatDayAreOneNoteNotAGluedPair`
+    /// pins for daily notes, driven for all three kinds `Note.canonicalKey` gives a *shared*
+    /// identity to. [[T-3146]] matched `.daily` alone, so a weekly or meeting note the app made
+    /// between the reset and the import still arrived beside the archive's copy and the next
+    /// launch's `repairDuplicateNotes` glued the two bodies with `\n\n---\n\n`. The owner's
+    /// decision of 2026-10-24 took the larger option and fixed both halves.
+    ///
+    /// **The daily leg is kept although it already passed.** It is the regression guard on the
+    /// alias mechanism itself: an extension that broke daily matching while adding the other two
+    /// would otherwise land green.
+    ///
+    /// Deliberately **not** parameterised: [[T-3212]] records that `scripts/mutate.sh` cannot
+    /// baseline a parameterised test, and this is the test a mutation of the alias has to be
+    /// killed by. The loop carries `fixture.unit` into every expectation message instead, so a
+    /// failure still names which of the three kinds broke.
+    @Test func aResetThenImportLeavesOneNoteForEachSharedKeyKind() throws {
+        for fixture in CadenceArchiveImportSharedKeyFixture.allCases {
+            try Self.expectNoDuplicateMergeOnRoundTrip(fixture)
+        }
+    }
+
+    private static func expectNoDuplicateMergeOnRoundTrip(
+        _ fixture: CadenceArchiveImportSharedKeyFixture
+    ) throws {
+        let source = ModelContext(try CadenceTestStore.container())
+        let archived = fixture.makeNote()
+        archived.content = "What the user actually wrote that \(fixture.unit)."
+        source.insert(archived)
+        try source.save()
+        let archive = try CadenceDataExportService.makeArchive(in: source)
+        let archivedBody = archived.content
+
+        for mode in CadenceArchiveImportMode.allCases {
+            let container = try CadenceTestStore.container()
+            let destination = ModelContext(container)
+            // What the app mints on sight between the reset and the import. Not empty, so
+            // `mergeNoteFields` would glue rather than take.
+            let minted = fixture.makeNote()
+            minted.content = fixture.mintedBody
+            destination.insert(minted)
+            try destination.save()
+            let mintedID = minted.id
+            #expect(mintedID != archived.id, "\(fixture.unit): the fixture must collide on the shared key, not on the id")
+
+            let plan = try CadenceArchiveImportService.plan(archive, mode: mode, in: destination)
+            #expect(
+                plan.insertCountsByEntityName["Note"] == 0,
+                "\(fixture.unit): the preview still calls it an insert"
+            )
+            #expect(plan.matchedCountsByEntityName["Note"] == 1, "\(fixture.unit): the preview matched nothing")
+
+            try CadenceArchiveImportService.apply(archive, mode: mode, in: destination)
+            let report = try DataIntegrityRepairService.repairIfNeeded(
+                in: destination, source: "T-4720-shared-key-round-trip"
+            )
+            #expect(
+                report.duplicateNotesMerged == 0,
+                "\(fixture.unit): the import left a pair for the repair to glue"
+            )
+
+            let notes = try ModelContext(container).fetch(FetchDescriptor<Note>())
+            #expect(notes.count == 1, "\(fixture.unit): the import inserted a second note under the same shared key")
+            let kept = try #require(notes.first)
+            #expect(kept.id == mintedID, "\(fixture.unit): the destination's own row did not survive")
+            #expect(!kept.content.contains("\n---\n"), "\(fixture.unit): the two bodies were glued together")
+            switch mode {
+            case .mergeKeepingExistingRows:
+                #expect(kept.content == fixture.mintedBody, "\(fixture.unit): merge did not leave the matched row alone")
+            case .restoreOverwritingExistingRows:
+                #expect(kept.content == archivedBody, "\(fixture.unit): overwrite did not write the archive's body")
             }
         }
     }
