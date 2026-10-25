@@ -16,6 +16,11 @@ struct iOSFocusView: View {
     @State private var selectedReferenceNote: Note?
     @State private var selectedReferenceTask: AppTask?
     @State private var timerState = CadenceFocusTimerState()
+    /// A refused write from the focus note's checklist circle or an embed card's subtask tick
+    /// ([[T-6412]]). Both put the store back, so the circle simply does not move; this is the
+    /// sentence that says why. Bare, not dismissable: the retry is the same tap, and the next
+    /// write that lands clears it -- as does switching to another task, whose note it is not.
+    @State private var noteFailureNotice: String?
 
     private var todayKey: String { DateFormatters.todayKey() }
 
@@ -517,19 +522,26 @@ struct iOSFocusView: View {
     @ViewBuilder
     private func taskNotes(_ task: AppTask) -> some View {
         if !task.notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            iOSMarkdownPreview(
-                markdown: task.notes,
-                imageAssets: imageAssets,
-                taskEmbeds: taskEmbedInfos,
-                onToggleChecklist: { lineIndex in toggleChecklistItem(at: lineIndex, on: task) },
-                onToggleEmbeddedTask: { toggleEmbeddedTask(id: $0) },
-                onToggleEmbeddedSubtask: { toggleEmbeddedSubtask(taskID: $0, subtaskID: $1) },
-                onOpenReference: openMarkdownReference
-            )
-            // No `minHeight`. A two-line note was drawn in a 140pt card with ninety points of
-            // empty surface under it; the cap is what this needs, not a floor.
-            .frame(maxWidth: .infinity, maxHeight: isCompact ? 260 : 320, alignment: .topLeading)
-            .cadenceCard(background: Theme.surface, cornerRadius: Theme.radiusCard, shadowRadius: 12, shadowY: 5)
+            VStack(alignment: .leading, spacing: 8) {
+                if let noteFailureNotice {
+                    CadenceInlineFailureNotice(text: noteFailureNotice)
+                }
+                iOSMarkdownPreview(
+                    markdown: task.notes,
+                    imageAssets: imageAssets,
+                    taskEmbeds: taskEmbedInfos,
+                    onToggleChecklist: { lineIndex in toggleChecklistItem(at: lineIndex, on: task) },
+                    onToggleEmbeddedTask: { toggleEmbeddedTask(id: $0) },
+                    onToggleEmbeddedSubtask: { toggleEmbeddedSubtask(taskID: $0, subtaskID: $1) },
+                    onOpenReference: openMarkdownReference
+                )
+                // No `minHeight`. A two-line note was drawn in a 140pt card with ninety points of
+                // empty surface under it; the cap is what this needs, not a floor.
+                .frame(maxWidth: .infinity, maxHeight: isCompact ? 260 : 320, alignment: .topLeading)
+                .cadenceCard(background: Theme.surface, cornerRadius: Theme.radiusCard, shadowRadius: 12, shadowY: 5)
+            }
+            // The sentence names a tick in *this* note; another task's note did not refuse anything.
+            .onChange(of: task.id) { _, _ in noteFailureNotice = nil }
         }
     }
 
@@ -544,9 +556,14 @@ struct iOSFocusView: View {
     /// back, so the box the user tapped is drawn exactly as the store still holds it.
     private func toggleChecklistItem(at lineIndex: Int, on task: AppTask) {
         guard let toggled = MarkdownChecklistSupport.toggledText(task.notes, lineIndex: lineIndex) else { return }
-        CadenceTaskFieldEditCommit.commit(task, in: modelContext) {
+        let landed = CadenceTaskFieldEditCommit.commit(task, in: modelContext) {
             task.notes = toggled
         }
+        guard landed else {
+            noteFailureNotice = CadenceTaskFieldEditCommit.saveFailureNotice
+            return
+        }
+        noteFailureNotice = nil
     }
 
     /// The embed card's own circle. `CadenceTaskStatusEditing.toggleCompletion` is the shared
@@ -565,7 +582,11 @@ struct iOSFocusView: View {
               let subtask = (task.subtasks ?? []).first(where: { $0.id == subtaskID }) else {
             return
         }
-        _ = CadenceNoteTaskEmbedEditing.toggleSubtask(subtask, in: modelContext)
+        guard CadenceNoteTaskEmbedEditing.toggleSubtask(subtask, in: modelContext) else {
+            noteFailureNotice = CadenceTaskFieldEditCommit.saveFailureNotice
+            return
+        }
+        noteFailureNotice = nil
     }
 
     private func embeddedTask(id: UUID) -> AppTask? {

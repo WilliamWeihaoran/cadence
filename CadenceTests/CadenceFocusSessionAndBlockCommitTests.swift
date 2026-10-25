@@ -221,6 +221,49 @@ struct CadenceFocusSessionAndBlockCommitTests {
         #expect(task.notes == before, "a refused save left the focus note carrying a tick the store does not hold")
     }
 
+    // MARK: - T-6412, the focus note names a refused tick
+
+    /// **A refused tick in the iOS focus note is named** ([[T-6412]]). Both write paths put the
+    /// store back on a refusal, so the circle does not move; without a sentence that read as a
+    /// tap that missed. The notice is the shared sentence, set only in the refusal branch, cleared
+    /// by the next write that lands, drawn above the note card, and bare -- the retry is the same
+    /// tap (`onlyNoticesNoLaterAttemptClearsOfferToDismissThemselves` counts it among the bare).
+    @Test func theIOSFocusNoteNamesARefusedTickAndClearsItOnTheNextOneThatLands() throws {
+        let view = try CadenceCommitSurfaceScan.scanned(Self.focusViewPath)
+        #expect(view.contains("@State private var noteFailureNotice: String?"))
+
+        let refusal = "noteFailureNotice = CadenceTaskFieldEditCommit.saveFailureNotice"
+        for (name, guardLine) in [
+            ("toggleChecklistItem", "guard landed else {"),
+            ("toggleEmbeddedSubtask", "guard CadenceNoteTaskEmbedEditing.toggleSubtask(subtask, in: modelContext) else {")
+        ] {
+            let body = try CadenceCommitSurfaceScan.declarationBody(named: name, in: view)
+            let guarded = try #require(body.range(of: guardLine), "\(name) no longer branches on the commit's answer")
+            let named = try #require(body.range(of: refusal), "\(name) does not name its refusal")
+            let returned = try #require(body.range(of: "return", range: named.upperBound..<body.endIndex))
+            let cleared = try #require(body.range(of: "noteFailureNotice = nil"), "\(name) never clears the notice")
+            #expect(guarded.upperBound <= named.lowerBound, "\(name) names a refusal outside its refusal branch")
+            #expect(returned.upperBound <= cleared.lowerBound, "\(name) clears the notice inside the refusal branch")
+            #expect(CadenceSourceScan.matchCount(NSRegularExpression.escapedPattern(for: refusal), in: body) == 1)
+            #expect(CadenceSourceScan.matchCount(#"noteFailureNotice = nil"#, in: body) == 1)
+            #expect(CadenceSourceScan.matchCount(#"_ = CadenceNoteTaskEmbedEditing"#, in: body) == 0,
+                    "\(name) discards the commit's answer again")
+        }
+        let checklist = try CadenceCommitSurfaceScan.declarationBody(named: "toggleChecklistItem", in: view)
+        #expect(checklist.contains("let landed = CadenceTaskFieldEditCommit.commit(task, in: modelContext) {"))
+
+        // Drawn above the card, bare, and reset when the focus moves to another task's note.
+        let notes = try CadenceCommitSurfaceScan.declarationBody(named: "taskNotes", in: view)
+        let notice = try #require(notes.range(of: "CadenceInlineFailureNotice(text: noteFailureNotice)"),
+                                  "the focus note draws no refusal")
+        let card = try #require(notes.range(of: "iOSMarkdownPreview("))
+        #expect(notice.upperBound <= card.lowerBound, "the refusal is drawn below the note card")
+        #expect(!notes.contains("CadenceInlineFailureNotice(text: noteFailureNotice) {"),
+                "a notice the next landed tick clears offers a dismissal")
+        #expect(notes.contains(".onChange(of: task.id) { _, _ in noteFailureNotice = nil }"),
+                "another task's note inherits this one's refusal")
+    }
+
     // MARK: - T-636(e), source shape
 
     /// The panel no longer creates a block at all ([[T-3170]]): no Block tab reaches it, so it has
