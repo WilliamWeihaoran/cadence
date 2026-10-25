@@ -626,6 +626,20 @@ struct AppStoreReviewReadinessTests {
         #expect(appStorePacket.contains("Minimum OS: macOS 26.1"))
     }
 
+    /// T-6410 decision (3): the iOS floor matches the Mac's 26.1. 26.2 came from the Initial
+    /// Commit's template and nothing in source required it. Every configuration that sets an iOS
+    /// target must say 26.1 -- a COUNT, so a new target added at 26.2 fails here.
+    @Test func iOSDeploymentTargetMatchesTheMacOS261Floor() throws {
+        let project = try textFile(at: "Cadence.xcodeproj/project.pbxproj")
+        let reviewNotes = try textFile(at: "docs/app-review-notes.md")
+        let all = project.components(separatedBy: "IPHONEOS_DEPLOYMENT_TARGET = ").count - 1
+        let at261 = project.components(separatedBy: "IPHONEOS_DEPLOYMENT_TARGET = 26.1;").count - 1
+
+        #expect(all > 0)
+        #expect(at261 == all)
+        #expect(reviewNotes.contains("iOS/iPadOS 26.1 or later"))
+    }
+
     @Test func appTargetDoesNotEmbedMCPServerOrMCPPackage() throws {
         let project = try textFile(at: "Cadence.xcodeproj/project.pbxproj")
         let targetBlock = try #require(

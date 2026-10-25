@@ -5,7 +5,7 @@ Use these notes as the starting point for the App Store Connect "Notes for Revie
 Cadence is a native productivity app for tasks, notes, calendars, goals, habits, and focus planning.
 
 Platform:
-- Cadence targets macOS 26.1 or later and iOS/iPadOS 26.2 or later from a single app target.
+- Cadence targets macOS 26.1 or later and iOS/iPadOS 26.1 or later from a single app target.
 - macOS is the fuller surface. Where a feature is available on only one platform, these notes say which.
 
 Calendar access:

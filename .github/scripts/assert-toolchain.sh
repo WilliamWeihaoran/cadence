@@ -1,7 +1,7 @@
 #!/bin/bash
 # Fail loudly and early when the runner image's Xcode cannot build this project.
 #
-# This project's macOS deployment target is 26.1 and its iOS target is 26.2, so it needs an Xcode
+# This project's macOS deployment target is 26.1 and its iOS target is 26.1, so it needs an Xcode
 # 26.x toolchain. A runner image one major version behind does not produce a clear error: it
 # produces a wall of "is only available in macOS 26.0 or newer" diagnostics that read like a code
 # regression. That misread is the exact failure mode this repository's AGENTS.md "Red-Run Triage"
@@ -76,7 +76,7 @@ swift --version 2>&1 | head -2 || true
 major=$(printf '%s\n' "$active" | awk '{print $2}' | cut -d. -f1)
 if [ "$major" != "$REQUIRED_MAJOR" ]; then
   echo "::error::This runner's Xcode is ${major:-<unreadable>}.x; Cadence needs ${REQUIRED_MAJOR}.x."
-  echo "MACOSX_DEPLOYMENT_TARGET is 26.1 and IPHONEOS_DEPLOYMENT_TARGET is 26.2 (Cadence.xcodeproj)."
+  echo "MACOSX_DEPLOYMENT_TARGET is 26.1 and IPHONEOS_DEPLOYMENT_TARGET is 26.1 (Cadence.xcodeproj)."
   echo "Pin a runner label whose image ships Xcode ${REQUIRED_MAJOR} (e.g. macos-26), or lower the"
   echo "deployment targets. Do NOT read the resulting availability errors as a code regression."
   exit 1

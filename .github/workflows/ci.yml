@@ -78,7 +78,7 @@
 #
 # Every macOS job below says `runs-on: macos-26`, not `macos-latest`. `.github/scripts/assert-
 # toolchain.sh` hard-fails on any Xcode major but 26 (this project's deployment targets are macOS
-# 26.1 / iOS 26.2), so the day GitHub moves the `macos-latest` label to a macOS 27 image, the three
+# 26.1 / iOS 26.1), so the day GitHub moves the `macos-latest` label to a macOS 27 image, the three
 # jobs that run that script die at step 2 and CI reports red for a reason that is not in this
 # repository. Measured off run 39431586913 (green, 2026-10-21): `macos-latest` then resolved to
 # image `macos-26-arm64` / `20261013.0424.1`, which ships Xcode_26.0.1 .. Xcode_26.6. `macos-26` is
