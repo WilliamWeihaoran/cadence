@@ -430,6 +430,64 @@ struct CadenceRetiredCopyTests {
             """
         )
     }
+
+    /// **T-5522: the British spelling of *cancelled* is retired from display copy, everywhere at
+    /// once — and nowhere near the persisted raw value.**
+    ///
+    /// T-5003 recorded the owner's decision that this app ships US spelling, and T-5522 carried it
+    /// through the fifteen literals that still said "Cancelled"/"cancelled"/"cancelling" on a
+    /// screen or in an MCP answer. A per-phrase entry in `cadenceRetiredCopy` would have caught
+    /// those fifteen and none of the sixteenth, because they share no sentence — a chip, a section
+    /// label, a settle phrase, an audit summary and a search label are five different strings whose
+    /// only common factor is the spelling. So this is a shape, the way T-5000's ellipsis is.
+    ///
+    /// **The shape is the double L before `-ed` or `-ing`, inside a literal.** "cancellation" is
+    /// spelled the same on both sides of the Atlantic and is deliberately not matched, which is why
+    /// `CadenceWriteService`'s "titlePrefix must be at least 8 characters for bulk cancellation."
+    /// is left alone.
+    ///
+    /// **Two carve-outs, both in the detector rather than in an allowlist, because both are shapes
+    /// and not places:**
+    ///
+    /// - A literal that is *exactly* `"cancelled"` is the **persisted raw value** —
+    ///   `TaskStatus.cancelled` and `ProjectStatus.cancelled` in `ModelEnums`, and every
+    ///   `statusRaw == "cancelled"` comparison that reads them back. Those are on disk in a
+    ///   CloudKit-synced store; changing one orphans every cancelled row the owner has. This sweep
+    ///   must never be the reason someone "fixes" them, so it cannot see them at all.
+    /// - A literal that *also* carries the US spelling is a deliberate both-spellings input alias,
+    ///   not output copy. `CadenceListSearchLifecycle.aliases` answers to "canceled cancelled" for
+    ///   the same reason `CadenceTaskSearchSupport.lifecycleAliases` answers to "completed done":
+    ///   the matcher scores whole typed tokens and users type both. What the app *hears* is not
+    ///   what the app *says*.
+    ///
+    /// There is no path allowlist at all. There was one line in it while T-5522 ran -- `iOSListWindDownSupport`
+    /// was inside Codex's write fence and could not be edited with its fifteen siblings -- and it was deleted
+    /// the moment that hold turned out to be spent, rather than left here forgiving the next offender.
+    @Test func noDisplayLiteralKeepsTheBritishSpellingOfCancelled() throws {
+        let instrument = try britishCancelledInstrument()
+
+        let offenders = try instrument.sweep(
+            try retiredCopySwiftFiles(under: "Cadence"),
+            // The same floor the retired-copy sweep above uses for the same tree.
+            atLeast: 300,
+            // A file that said "Cancelled" until T-5522, so a walk that skipped the macOS view
+            // folder cannot report this clean.
+            including: "Cadence/macOS/Views/TasksPanelComponents.swift",
+            read: retiredCopyStrippedSourceReader()
+        )
+
+        #expect(
+            offenders.isEmpty,
+            """
+            \(offenders) still spell "cancelled"/"cancelling" in a display literal. The owner's \
+            US-spelling decision (T-5003) was carried through every display site by T-5522; write \
+            "canceled"/"canceling". The persisted raw value is the bare literal "cancelled" and is \
+            not this — do not touch `TaskStatus.cancelled`, `ProjectStatus.cancelled` or any \
+            `statusRaw == "cancelled"` comparison.
+            """
+        )
+    }
+
 }
 
 // MARK: - Fixtures
@@ -502,4 +560,43 @@ private func asciiEllipsisInstrument() throws -> CadenceScanInstrument {
 
 private func asciiEllipsisLiteralCount(in code: String) -> Int {
     CadenceSourceScan.matchCount(#""[^"\n]*[A-Za-z]\.\.\.""#, in: code)
+}
+
+/// The detector for T-5522's sweep.
+///
+/// The negative witness carries every near miss at once, because every one of them is a real line
+/// in this repo and getting any of them wrong is worse than missing an offender: the raw value, a
+/// `statusRaw` comparison against it, the search alias that answers to both spellings, the already
+/// US-spelled copy, the transatlantic "cancellation", and a tombstone comment quoting the retired
+/// word.
+private func britishCancelledInstrument() throws -> CadenceScanInstrument {
+    try CadenceScanInstrument(
+        "British spelling of cancelled in a display literal",
+        fires: """
+        struct Screen {
+            let label = "What Gets Cancelled"
+        }
+        """,
+        andNotOn: #"""
+        enum TaskStatus: String {
+            // It used to read "What Gets Cancelled"; see T-5522.
+            case cancelled = "cancelled"
+            var label: String { "Canceled" }
+            var aliases: String { "canceled cancelled" }
+            var isCancelled: Bool { statusRaw == "cancelled" }
+            let refusal = "titlePrefix must be at least 8 characters for bulk cancellation."
+        }
+        """#,
+        by: { britishCancelledLiterals(in: CadenceSourceScan.strippingComments($0)).isEmpty == false }
+    )
+}
+
+/// Every literal in `code` that still spells the word the British way and is not one of the two
+/// shapes this sweep deliberately cannot see. The carve-outs are argued on the test above.
+private func britishCancelledLiterals(in code: String) -> [String] {
+    CadenceSourceScan
+        .matchLines(#""[^"\n]*[Cc]ancell(?:ed|ing)[^"\n]*""#, in: code)
+        .map(\.matched)
+        .filter { $0 != #""cancelled""# }
+        .filter { !$0.lowercased().contains("canceled") && !$0.lowercased().contains("canceling") }
 }
