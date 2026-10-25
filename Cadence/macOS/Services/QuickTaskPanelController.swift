@@ -19,6 +19,8 @@ final class QuickTaskPanelController: NSObject {
     /// [[T-5302]] — whether the form standing in `hostingController` is a draft the next open
     /// should get back.
     private var draftRetention = QuickTaskPanelDraftRetention()
+    /// [[T-6202]] — which presentation the success beat's close timer belongs to.
+    private var successDismissal = QuickTaskPanelSuccessDismissal()
 
     private override init() {}
 
@@ -37,6 +39,9 @@ final class QuickTaskPanelController: NSObject {
 
         let panel = ensurePanel()
         logger.debug("Preparing quick task panel")
+        // [[T-6202]]. A new presentation: any success timer still pending belongs to the last one
+        // and must not close this one under the user.
+        successDismissal.presentationEnded()
 
         let content = CreateTaskPanelSurface(
             seed: seed,
@@ -118,6 +123,12 @@ final class QuickTaskPanelController: NSObject {
     /// `closeDiscardingDraft()`.
     func close() {
         guard panel?.isVisible == true else { return }
+        // [[T-6202]]. During the success beat what stands in the panel is the tick, not a form, and
+        // the draft is already spent. Keeping "it" would hand the next open a Captured label.
+        if successDismissal.isShowingSuccess {
+            closeDiscardingDraft()
+            return
+        }
         draftRetention.panelClosedWithTheDraftUnresolved()
         orderPanelOut()
     }
@@ -138,6 +149,7 @@ final class QuickTaskPanelController: NSObject {
         sizeObserver?.invalidate()
         sizeObserver = nil
         acceptingDismissal = false
+        successDismissal.presentationEnded()
         stopObservingPanelResignKey()
         panel?.orderOut(nil)
     }
@@ -163,8 +175,12 @@ final class QuickTaskPanelController: NSObject {
         hostingController = hc
         setPanelContentSize(panelContentSize(for: Self.panelSuccessSurfaceSize), for: panel)
 
+        // [[T-6202]]. Tokened: a panel reopened inside these 0.95 s is a newer presentation, and
+        // this timer closing it would throw away whatever the user has started typing there.
+        let token = successDismissal.successShown()
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.95) { [weak self] in
-            self?.closeDiscardingDraft()
+            guard let self, self.successDismissal.timerMayClose(token: token) else { return }
+            self.closeDiscardingDraft()
         }
     }
 
@@ -337,6 +353,37 @@ struct QuickTaskPanelDraftRetention: Equatable {
     /// the controller: a held draft with nothing standing is still nothing to restore.
     func reusesTheStandingForm(hasForm: Bool, seedIsEmpty: Bool) -> Bool {
         holdsDraft && hasForm && seedIsEmpty
+    }
+}
+
+/// **[[T-6202]] — whether the success beat's close timer still owns the panel.**
+///
+/// `showCaptureSuccessThenClose` closes the panel 0.95 s after a capture, and that timer used to
+/// fire whatever had happened since. Press the hotkey twice inside the beat and the reopened
+/// panel was torn down — through `closeDiscardingDraft()`, so with whatever had been typed in it.
+/// Every presentation change moves the generation on, and the timer only closes the presentation
+/// it was scheduled for. A value type for `QuickTaskPanelDraftRetention`'s reason: the controller
+/// cannot be driven from a test.
+struct QuickTaskPanelSuccessDismissal: Equatable {
+    private(set) var generation = 0
+    /// `true` while the success view, not a form, is what stands in the panel.
+    private(set) var isShowingSuccess = false
+
+    /// The success view went up. Returns the token its close timer must present.
+    mutating func successShown() -> Int {
+        generation += 1
+        isShowingSuccess = true
+        return generation
+    }
+
+    /// The panel was opened again or put away: any pending success timer is now stale.
+    mutating func presentationEnded() {
+        generation += 1
+        isShowingSuccess = false
+    }
+
+    func timerMayClose(token: Int) -> Bool {
+        isShowingSuccess && token == generation
     }
 }
 

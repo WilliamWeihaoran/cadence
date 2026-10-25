@@ -59,6 +59,51 @@ struct CadenceQuickTaskPanelDraftTests {
         #expect(!retention.reusesTheStandingForm(hasForm: true, seedIsEmpty: false))
     }
 
+    // MARK: - [[T-6202]] the success beat's timer
+
+    /// The defect: capture, then reopen inside the 0.95 s beat. The old timer closed the new
+    /// panel, through the path that discards its draft.
+    @Test func aSuccessTimerCannotCloseAPanelReopenedInsideTheBeat() {
+        var dismissal = QuickTaskPanelSuccessDismissal()
+        let token = dismissal.successShown()
+        #expect(dismissal.timerMayClose(token: token), "control: an undisturbed beat closes itself")
+
+        dismissal.presentationEnded() // the hotkey's close
+        dismissal.presentationEnded() // and the reopen
+        #expect(!dismissal.timerMayClose(token: token))
+        #expect(!dismissal.isShowingSuccess)
+    }
+
+    /// A second capture in the reopened panel schedules its own timer; the first one's is still
+    /// stale and the second one's still closes.
+    @Test func onlyTheLatestCapturesTimerMayClose() {
+        var dismissal = QuickTaskPanelSuccessDismissal()
+        let first = dismissal.successShown()
+        dismissal.presentationEnded()
+        let second = dismissal.successShown()
+        #expect(!dismissal.timerMayClose(token: first))
+        #expect(dismissal.timerMayClose(token: second))
+    }
+
+    /// The wiring, read as source: every presentation change moves the token on, the timer asks
+    /// before it closes, and a close during the beat does not keep the tick as a "draft".
+    @Test func theControllerTokensTheSuccessTimerAndEveryPresentationChangeMovesIt() throws {
+        let source = try CadenceSourceScan.strippedSourceReader()("Cadence/macOS/Services/QuickTaskPanelController.swift")
+        let success = try #require(CadenceSourceScan.declarationBody("private func showCaptureSuccessThenClose()", in: source))
+        #expect(success.contains("let token = successDismissal.successShown()"))
+        #expect(success.contains("guard let self, self.successDismissal.timerMayClose(token: token) else { return }"))
+
+        let show = try #require(CadenceSourceScan.declarationBody("func show(seed: TaskCreationSeed", in: source))
+        #expect(show.contains("successDismissal.presentationEnded()"))
+        let orderOut = try #require(CadenceSourceScan.declarationBody("private func orderPanelOut()", in: source))
+        #expect(orderOut.contains("successDismissal.presentationEnded()"))
+
+        let close = try #require(CadenceSourceScan.declarationBody("func close()", in: source))
+        let beat = try #require(close.range(of: "if successDismissal.isShowingSuccess"))
+        let keep = try #require(close.range(of: "draftRetention.panelClosedWithTheDraftUnresolved()"))
+        #expect(beat.lowerBound < keep.lowerBound, "a close during the beat must discard before it can keep")
+    }
+
     // MARK: - What counts as an empty seed
 
     @Test func afreshSeedIsEmptyAndAnyFilledFieldIsNot() {
@@ -112,7 +157,7 @@ struct CadenceQuickTaskPanelDraftTests {
         // A capture that landed spends the draft before the success view replaces the form.
         let success = try #require(CadenceSourceScan.declarationBody("private func showCaptureSuccessThenClose()", in: source))
         #expect(success.contains("draftRetention.draftResolved()"))
-        #expect(success.contains("self?.closeDiscardingDraft()"))
+        #expect(success.contains("self.closeDiscardingDraft()"))
 
         // And the open path asks, rather than always rebuilding.
         let show = try #require(CadenceSourceScan.declarationBody("func show(seed: TaskCreationSeed", in: source))
