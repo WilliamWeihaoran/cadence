@@ -526,7 +526,8 @@ struct CadenceMarkdownImageCommitSurfaceTests {
         // the same switch, and the sheet clears it when it opens and closes. [[T-5804]] makes it
         // 78, and bare: the iPad Notes > Events pane names a note that saved but did not reach
         // Apple Calendar above its editor, and a selection change clears it.
-        #expect(total == 78, "the inline notice has \(total) call sites, not the 78 this test was written over")
+        // T-5307: the mobile inline tag editor adds its retryable save failure notice.
+        #expect(total == 79, "the inline notice has \(total) call sites, not the 79 this test was written over")
         #expect(withDismissal == 9, "\(withDismissal) call sites offer a dismissal, not 9")
 
         // And each of the nine is named, so one swapping places with another is still a failure.

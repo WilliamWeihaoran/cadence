@@ -1,5 +1,41 @@
-#if os(iOS)
+import Foundation
 import SwiftData
+
+/// The mobile inline editor's validation and atomic field edit, available to unit tests.
+enum iOSTagSettingsEdit {
+    static func hasDuplicate(name: String, tag: Tag, allTags: [Tag]) -> Bool {
+        let slug = TagSupport.slug(for: name)
+        return allTags.contains { $0.id != tag.id && $0.slug == slug }
+    }
+
+    static func canSave(name: String, tag: Tag, allTags: [Tag]) -> Bool {
+        !TagSupport.displayName(for: name).isEmpty && !hasDuplicate(name: name, tag: tag, allTags: allTags)
+    }
+
+    @MainActor
+    static func save(
+        tag: Tag, name: String, description: String, colorHex: String,
+        allTags: [Tag], in modelContext: ModelContext,
+        commit: (ModelContext) throws -> Void = { try $0.save() }
+    ) throws {
+        guard canSave(name: name, tag: tag, allTags: allTags) else { return }
+        let previousDesc = tag.desc
+        let previousColorHex = tag.colorHex
+        let previousUpdatedAt = tag.updatedAt
+        let undoRename = TagSupport.rename(tag, to: name)
+        tag.desc = description.trimmingCharacters(in: .whitespacesAndNewlines)
+        tag.colorHex = TagSupport.normalizedColorHex(colorHex, fallback: tag.colorHex)
+        tag.updatedAt = Date()
+        try CadencePendingChangePersistence.commitEdit(in: modelContext, commit: commit, undo: {
+            undoRename()
+            tag.desc = previousDesc
+            tag.colorHex = previousColorHex
+            tag.updatedAt = previousUpdatedAt
+        })
+    }
+}
+
+#if os(iOS)
 import SwiftUI
 
 struct iOSTagsSettingsSection: View {
@@ -121,14 +157,14 @@ struct iOSTagsSettingsSection: View {
                         subtitle: CadenceTagSettingsCopy.emptyCatalogSubtitle
                     )
                 } else {
-                    iOSTagList(tags: activeTags, isArchivedList: false, archive: archive(_:), restore: restore(_:))
+                    iOSTagList(tags: activeTags, allTags: tags, isArchivedList: false, archive: archive(_:), restore: restore(_:))
                 }
             }
 
             if !archivedTags.isEmpty {
                 CadenceSettingsSectionLabel(text: "Archived Tags")
                 iOSSettingsCard {
-                    iOSTagList(tags: archivedTags, isArchivedList: true, archive: archive(_:), restore: restore(_:))
+                    iOSTagList(tags: archivedTags, allTags: tags, isArchivedList: true, archive: archive(_:), restore: restore(_:))
                 }
             }
         }
@@ -194,6 +230,7 @@ struct iOSTagsSettingsSection: View {
 
 private struct iOSTagList: View {
     let tags: [Tag]
+    let allTags: [Tag]
     let isArchivedList: Bool
     let archive: (Tag) -> Void
     let restore: (Tag) -> Void
@@ -203,6 +240,7 @@ private struct iOSTagList: View {
             ForEach(Array(tags.enumerated()), id: \.element.id) { index, tag in
                 iOSTagSettingsRow(
                     tag: tag,
+                    allTags: allTags,
                     isArchivedList: isArchivedList,
                     archive: { archive(tag) },
                     restore: { restore(tag) }
@@ -219,7 +257,14 @@ private struct iOSTagList: View {
 private struct iOSTagSettingsRow: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.cadenceTypographyScaling) private var scaling
+    @Environment(\.modelContext) private var modelContext
+    @State private var isEditing = false
+    @State private var draftName = ""
+    @State private var draftDescription = ""
+    @State private var draftColorHex = ""
+    @State private var saveFailureNotice: String?
     let tag: Tag
+    let allTags: [Tag]
     let isArchivedList: Bool
     let archive: () -> Void
     let restore: () -> Void
@@ -227,7 +272,23 @@ private struct iOSTagSettingsRow: View {
     private var taskCount: Int { tag.tasks?.count ?? 0 }
     private var noteCount: Int { tag.notes?.count ?? 0 }
 
+    private var canSave: Bool {
+        iOSTagSettingsEdit.canSave(name: draftName, tag: tag, allTags: allTags)
+    }
+
     var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            if isEditing {
+                editContent
+            } else {
+                displayContent
+            }
+        }
+        .padding(.vertical, 8)
+        .opacity(tag.isArchived ? 0.72 : 1)
+    }
+
+    private var displayContent: some View {
         HStack(alignment: .top, spacing: 11) {
             Circle()
                 .fill(Color(hex: tag.colorHex))
@@ -258,6 +319,14 @@ private struct iOSTagSettingsRow: View {
 
             Spacer(minLength: 8)
 
+            iOSIconButton(systemImage: "pencil", accessibilityLabel: "Edit tag") {
+                draftName = tag.name
+                draftDescription = tag.desc
+                draftColorHex = tag.colorHex
+                saveFailureNotice = nil
+                isEditing = true
+            }
+
             iOSIconButton(
                 systemImage: isArchivedList ? "arrow.uturn.backward" : "archivebox",
                 accessibilityLabel: isArchivedList ? "Restore tag" : "Archive tag",
@@ -267,8 +336,58 @@ private struct iOSTagSettingsRow: View {
                 isArchivedList ? restore() : archive()
             }
         }
-        .padding(.vertical, 8)
-        .opacity(tag.isArchived ? 0.72 : 1)
+    }
+
+    private var editContent: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            iOSSettingsField(title: "Name") {
+                TextField("Tag name", text: $draftName)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+            }
+            iOSSettingsField(title: "Description") {
+                TextField("Optional description", text: $draftDescription, axis: .vertical)
+            }
+            VStack(alignment: .leading, spacing: 7) {
+                SectionEyebrowLabel(text: "Color")
+                iOSSettingsColorSwatchRow(selectedHex: $draftColorHex)
+                iOSSettingsField(title: "Hex") {
+                    TextField("#hex", text: $draftColorHex)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                }
+            }
+            if iOSTagSettingsEdit.hasDuplicate(name: draftName, tag: tag, allTags: allTags) {
+                iOSTagNoticeRow(icon: "exclamationmark.triangle.fill",
+                                text: "A tag with this name already exists.",
+                                actionTitle: nil, action: {})
+            }
+            if let saveFailureNotice {
+                CadenceInlineFailureNotice(text: saveFailureNotice)
+            }
+            HStack(spacing: 10) {
+                Spacer(minLength: 0)
+                iOSActionButton(title: "Cancel", role: .secondary, size: .compact) {
+                    saveFailureNotice = nil
+                    isEditing = false
+                }
+                iOSActionButton(title: "Save", role: .primary, size: .compact,
+                                isDisabled: !canSave, action: saveEdits)
+            }
+        }
+    }
+
+    private func saveEdits() {
+        guard canSave else { return }
+        do {
+            try iOSTagSettingsEdit.save(tag: tag, name: draftName, description: draftDescription,
+                                       colorHex: draftColorHex, allTags: allTags, in: modelContext)
+        } catch {
+            saveFailureNotice = CadencePendingChangePersistence.editFailureNotice
+            return
+        }
+        saveFailureNotice = nil
+        isEditing = false
     }
 }
 
