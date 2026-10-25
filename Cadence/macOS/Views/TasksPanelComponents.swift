@@ -225,7 +225,7 @@ struct MacTaskRow: View {
                 // exists to stop (T-597). The plate was four inline `4/2` pairs until T-617. Two of
                 // those four readers have since gone: the block badge with the Block feature
                 // ([[T-3170]]), and the estimate chip with [[T-3196]].
-                Text("Cancelled")
+                Text("Canceled")
                     .font(.system(size: metrics.secondaryFontSize, weight: .semibold))
                     .foregroundStyle(Theme.dim)
                     .padding(.horizontal, CadenceTaskChipPadding.desktopHorizontal)

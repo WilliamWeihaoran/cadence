@@ -229,7 +229,7 @@ struct CadenceWriteServiceTests {
     @Test func cancelTaskAuditsSpawnedRecurringTask() throws {
         // Companion regression test for the single-task cancelTask path: it always spawned the
         // next occurrence via CadenceTaskRecurrenceWorkflowSupport.markCancelled, but the audit
-        // log only recorded the "Cancelled task" entry, silently omitting that a new task row was
+        // log only recorded the "Canceled task" entry, silently omitting that a new task row was
         // also created. completeTask already logs its spawn; cancelTask should match.
         let auditURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("cadence-mcp-cancel-spawn-audit-\(UUID().uuidString)")
@@ -248,7 +248,7 @@ struct CadenceWriteServiceTests {
 
         let auditEntries = try readAuditEntries(from: auditURL)
         #expect(auditEntries.map(\.tool) == ["cancel_task", "cancel_task"])
-        #expect(auditEntries.first?.summary == "Cancelled task: Daily standup")
+        #expect(auditEntries.first?.summary == "Canceled task: Daily standup")
         #expect(auditEntries.last?.summary == "Spawned recurring task from: Daily standup")
         #expect(auditEntries.last?.entityId == spawnedID.uuidString)
     }
@@ -460,7 +460,7 @@ struct CadenceWriteServiceTests {
 
         let auditEntries = try readAuditEntries(from: auditURL)
         #expect(auditEntries.map(\.tool) == ["bulk_cancel_tasks", "bulk_cancel_tasks"])
-        #expect(auditEntries.allSatisfy { $0.summary.hasPrefix("Bulk cancelled task: MCP TEST cleanup") })
+        #expect(auditEntries.allSatisfy { $0.summary.hasPrefix("Bulk canceled task: MCP TEST cleanup") })
     }
 
     // MARK: - T-1365: the pattern branch gets a breadth control, and a way to look first
@@ -782,7 +782,7 @@ struct CadenceWriteServiceTests {
         let error = #expect(throws: CadenceWriteError.self) {
             try fixture.writeService.createContext(options: .init(name: "Bad colour", colorHex: "#GGGGGG"))
         }
-        #expect(error?.errorDescription == "Invalid colorHex: #GGGGGG. Expected a six-digit hex colour such as #4a9eff.")
+        #expect(error?.errorDescription == "Invalid colorHex: #GGGGGG. Expected a six-digit hex color such as #4a9eff.")
 
         // The same grammar as the tag editors: a missing `#` is accepted and the result is
         // lower-cased, so the two surfaces cannot disagree about what a colour is.
@@ -1083,7 +1083,7 @@ struct CadenceWriteServiceTests {
         let combined = #expect(throws: CadenceWriteError.self) {
             try fixture.writeService.createTag(options: .init(name: "bug", colorHex: "#4a9eff", unarchive: true))
         }
-        #expect(combined?.errorDescription?.contains("does not re-colour") == true)
+        #expect(combined?.errorDescription?.contains("does not re-color") == true)
         #expect(archived.isArchived)
 
         let restored = try fixture.writeService.createTag(options: .init(name: "bug", unarchive: true))

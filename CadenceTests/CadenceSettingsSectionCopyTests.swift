@@ -1261,7 +1261,7 @@ struct CadenceSettingsSectionCopyTests {
         ("CadenceListLifecycleSectionCopy.archivedProjects", "Archived Projects"),
         // T-690: the other two of `ProjectStatus`'s five cases. Project-only — `Area` has neither.
         ("CadenceListLifecycleSectionCopy.pausedProjects", "Paused Projects"),
-        ("CadenceListLifecycleSectionCopy.cancelledProjects", "Cancelled Projects"),
+        ("CadenceListLifecycleSectionCopy.cancelledProjects", "Canceled Projects"),
     ]
 
     /// Which file draws which group, and how many times. Settings → Contexts and Settings → Lists

@@ -160,8 +160,8 @@ struct CadenceListWindDownSurfaceTests {
     }
 
     @Test func theSettledLineCountsAndPluralizesAndSaysNothingAtZero() {
-        #expect(CadenceContainerWindDownSummary(openTasks: 1).settledLine == "1 open task will be cancelled")
-        #expect(CadenceContainerWindDownSummary(openTasks: 7).settledLine == "7 open tasks will be cancelled")
+        #expect(CadenceContainerWindDownSummary(openTasks: 1).settledLine == "1 open task will be canceled")
+        #expect(CadenceContainerWindDownSummary(openTasks: 7).settledLine == "7 open tasks will be canceled")
         #expect(CadenceContainerWindDownSummary(openTasks: 0).settledLine == nil)
         #expect(CadenceContainerWindDownSummary().isEmpty)
     }
@@ -197,7 +197,7 @@ struct CadenceListWindDownSurfaceTests {
         let completing = CadenceContainerWindDownSummary.forArea(area, outcome: .done)
         #expect(archiving.openTasks == 2)
         #expect(completing.openTasks == archiving.openTasks)
-        #expect(archiving.settledLine == "2 open tasks will be cancelled")
+        #expect(archiving.settledLine == "2 open tasks will be canceled")
         #expect(completing.settledLine == "2 open tasks will be marked done")
 
         let project = CadenceContainerWindDownSummary.forProject(child, outcome: .done)
@@ -330,7 +330,7 @@ struct CadenceListWindDownSurfaceTests {
     /// distinction is spelled in words.
     @Test func theOutcomeNamesBothSettlementsAndNothingElse() {
         #expect(CadenceWindDownOutcome.allCases.count == 2)
-        #expect(CadenceWindDownOutcome.cancelled.settledPhrase == "cancelled")
+        #expect(CadenceWindDownOutcome.cancelled.settledPhrase == "canceled")
         #expect(CadenceWindDownOutcome.done.settledPhrase == "marked done")
     }
 

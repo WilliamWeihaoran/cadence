@@ -70,7 +70,7 @@ struct CadenceColumnWindDownSurfaceTests {
         let summary = CadenceContainerWindDownSummary.forColumn(column, area: area, project: nil, outcome: .cancelled)
         #expect(summary.openTasks == 2)
         #expect(summary.requiresConfirmation)
-        #expect(summary.settledLine == "2 open tasks will be cancelled")
+        #expect(summary.settledLine == "2 open tasks will be canceled")
 
         TaskContainerLifecycleService.cancelRemainingActiveTasks(in: column, area: area, project: nil, in: context)
 
@@ -105,7 +105,7 @@ struct CadenceColumnWindDownSurfaceTests {
         #expect(named.status == .todo)
     }
 
-    /// Both directions settle, and the sentence names which. A confirmation that said "cancelled"
+    /// Both directions settle, and the sentence names which. A confirmation that said "canceled"
     /// over an action that marks work done would be the one thing this type exists to prevent.
     @Test func completingAColumnMarksItsWorkDoneAndArchivingCancelsIt() throws {
         let context = ModelContext(try container())
@@ -125,7 +125,7 @@ struct CadenceColumnWindDownSurfaceTests {
         #expect(
             CadenceContainerWindDownSummary
                 .forColumn(later, area: area, project: nil, outcome: .cancelled)
-                .settledLine == "1 open task will be cancelled"
+                .settledLine == "1 open task will be canceled"
         )
 
         TaskContainerLifecycleService.completeRemainingActiveTasks(in: doing, area: area, project: nil, in: context)

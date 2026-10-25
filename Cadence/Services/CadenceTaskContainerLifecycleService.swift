@@ -254,7 +254,7 @@ enum CadenceWindDownOutcome: String, Sendable, CaseIterable {
     /// Reads after "N open tasks will be …".
     var settledPhrase: String {
         switch self {
-        case .cancelled: return "cancelled"
+        case .cancelled: return "canceled"
         case .done: return "marked done"
         }
     }
@@ -371,7 +371,7 @@ struct CadenceContainerWindDownSummary: Equatable, Sendable {
         !isEmpty
     }
 
-    /// `nil` when there is nothing to say, rather than "0 open tasks will be cancelled" — the same
+    /// `nil` when there is nothing to say, rather than "0 open tasks will be canceled" — the same
     /// rule `CadenceListDeletionSummary.lostItemLines` follows about zeroes.
     var settledLine: String? {
         guard openTasks > 0 else { return nil }
@@ -383,7 +383,7 @@ struct CadenceContainerWindDownSummary: Equatable, Sendable {
     /// The `outcome` is a required argument rather than a defaulted `.cancelled`, and the reason is
     /// the one the column factory already had: the walk is identical in both directions and only
     /// the sentence over it changes, so a default would let a completion quietly promise
-    /// "cancelled" — the failure mode this whole type exists to prevent, wearing the right number.
+    /// "canceled" — the failure mode this whole type exists to prevent, wearing the right number.
     /// It was `.cancelled` unconditionally until T-214, when iOS gained the Complete action macOS
     /// has had all along.
     static func forArea(_ area: Area, outcome: CadenceWindDownOutcome) -> Self {

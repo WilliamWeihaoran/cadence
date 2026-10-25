@@ -299,7 +299,7 @@ struct EditProjectSheet: View {
         case .done:      return "Completed"
         case .archived:  return "Archived"
         case .paused:    return "Paused"
-        case .cancelled: return "Cancelled"
+        case .cancelled: return "Canceled"
         }
     }
 

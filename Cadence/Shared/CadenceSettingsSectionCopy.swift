@@ -386,7 +386,7 @@ nonisolated enum CadenceListLifecycleSectionCopy {
     /// paused or cancelled status, so these are project-only — there is no `pausedAreas` /
     /// `cancelledAreas` to pair them with.
     static let pausedProjects = "Paused Projects"
-    static let cancelledProjects = "Cancelled Projects"
+    static let cancelledProjects = "Canceled Projects"
 }
 
 /// The sentences both platforms say about the store folders Cadence is **not** using, and the

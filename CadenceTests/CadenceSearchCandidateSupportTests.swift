@@ -306,14 +306,14 @@ struct CadenceSearchCandidateSupportTests {
     @Test func aCancelledProjectIsLabelledCancelledRatherThanActive() throws {
         let fixture = try makeListFixture()
 
-        #expect(CadenceListSearchSupport.lifecycle(of: fixture.cancelledProject).statusLabel == "Cancelled")
+        #expect(CadenceListSearchSupport.lifecycle(of: fixture.cancelledProject).statusLabel == "Canceled")
         #expect(CadenceListSearchSupport.lifecycle(of: fixture.completedProject).statusLabel == "Completed")
         #expect(CadenceListSearchSupport.lifecycle(of: fixture.archivedArea).statusLabel == "Archived")
 
         let result = try #require(
             GlobalSearchIndexSupport.projectResults(projects: fixture.projects, query: "atlas").first
         )
-        #expect(result.subtitle.hasSuffix("Cancelled"))
+        #expect(result.subtitle.hasSuffix("Canceled"))
         #expect(!result.subtitle.contains("Active"))
     }
 

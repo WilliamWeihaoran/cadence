@@ -281,7 +281,7 @@ nonisolated enum TaskStatus: String, Codable, CaseIterable, Hashable {
         case .todo: return "Todo"
         case .inProgress: return "In Progress"
         case .done: return "Done"
-        case .cancelled: return "Cancelled"
+        case .cancelled: return "Canceled"
         }
     }
 

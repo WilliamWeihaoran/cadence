@@ -100,7 +100,7 @@ struct iOSWindDownConfirmationSheet: View {
                         }
                     }
 
-                    CadenceSettingsSectionLabel(text: isCancelling ? "What Gets Cancelled" : "What Gets Marked Done")
+                    CadenceSettingsSectionLabel(text: isCancelling ? "What Gets Canceled" : "What Gets Marked Done")
 
                     iOSSettingsCard {
                         VStack(alignment: .leading, spacing: 12) {

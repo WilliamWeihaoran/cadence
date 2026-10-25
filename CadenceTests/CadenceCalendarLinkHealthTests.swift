@@ -385,7 +385,7 @@ struct CadenceCalendarLinkHealthTests {
             projects: [archivedProject, paused, cancelled]
         )
         #expect(links.count == 4)
-        #expect(links.map(\.statusLabel) == ["Completed", "Archived", "Paused", "Cancelled"])
+        #expect(links.map(\.statusLabel) == ["Completed", "Archived", "Paused", "Canceled"])
         // Areas first, then projects, each group in the order given — the same ordering contract
         // `missingLinks` states.
         #expect(links.map(\.name) == ["Home", "Launch", "Rewrite", "Scrapped"])
