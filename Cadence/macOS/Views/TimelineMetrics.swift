@@ -39,6 +39,15 @@ struct TimelineMetrics {
         snapToGrid(yToMins(y))
     }
 
+    /// The grid minute a block of `duration` minutes starts at when its top is at `y`, clamped so
+    /// the whole block stays on the visible canvas ([[T-5370]]). `snappedMinute(fromY:)` clamps
+    /// the start alone, which let a 60-minute task land at 23:55 and draw past midnight. Snap, then
+    /// clamp — the order `TimelineEventBlockEditGate.movedStartMinute` uses for an event's move, so
+    /// a block whose length is off the grid still ends exactly at the canvas's last minute.
+    func snappedStart(fromY y: CGFloat, duration: Int) -> Int {
+        clampStart(snappedMinute(fromY: y), duration: duration)
+    }
+
     func yOffset(for minute: Int) -> CGFloat {
         yOffset(forFractionalMinute: CGFloat(minute))
     }
@@ -73,6 +82,15 @@ enum TimelineDayRange {
     static func clampStart(_ minute: Int, duration: Int = minimumDuration) -> Int {
         let usableDuration = max(minimumDuration, duration)
         return min(max(minute, startMin), max(startMin, endMin - usableDuration))
+    }
+
+    /// The minutes a task block occupies on the timeline: its estimate, or — for a task with none —
+    /// the default a drop writes onto it (`AppTask.defaultTimelineDurationMinutes`). A move clamps
+    /// by this, the way an event's move clamps by its length and iOS's by the drawn range
+    /// ([[T-5370]]); `nil` (a drop that is not a task) keeps the start-only floor.
+    static func taskDuration(estimatedMinutes: Int?) -> Int {
+        guard let estimatedMinutes else { return minimumDuration }
+        return estimatedMinutes > 0 ? estimatedMinutes : AppTask.defaultTimelineDurationMinutes
     }
 }
 

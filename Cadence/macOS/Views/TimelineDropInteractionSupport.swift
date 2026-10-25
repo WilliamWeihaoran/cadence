@@ -131,7 +131,7 @@ struct TimelineDropDelegate: DropDelegate {
 
     func performDrop(info: DropInfo) -> Bool {
         isTargeted = false
-        let startMin = previewStartMin ?? metrics.snappedMinute(fromY: info.location.y - dragSession.currentOffset)
+        let startMin = previewStartMin ?? snappedStart(for: info)
 
         previewTaskID = nil
         previewStartMin = nil
@@ -161,7 +161,19 @@ struct TimelineDropDelegate: DropDelegate {
     }
 
     private func updatePreview(with info: DropInfo) {
-        previewStartMin = metrics.snappedMinute(fromY: info.location.y - dragSession.currentOffset)
+        previewStartMin = snappedStart(for: info)
+    }
+
+    /// The minute the dragged block's top resolves to, clamped by the dragged task's length so the
+    /// preview never shows a slot the drop would refuse ([[T-5370]]). Until the payload names a
+    /// task — and for an all-day event chip, which is not one — this is the start-only clamp.
+    private func snappedStart(for info: DropInfo) -> Int {
+        let draggedID = dragSession.taskID ?? previewTaskID
+        let task = draggedID.flatMap { id in allTasks.first(where: { $0.id == id }) }
+        return metrics.snappedStart(
+            fromY: info.location.y - dragSession.currentOffset,
+            duration: TimelineDayRange.taskDuration(estimatedMinutes: task?.estimatedMinutes)
+        )
     }
 
     private func resolveTaskID(from info: DropInfo) {

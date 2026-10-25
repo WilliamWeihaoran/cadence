@@ -71,8 +71,13 @@ enum SchedulingActions {
     static func dropTask(_ task: AppTask, to dateKey: String, startMin: Int) {
         removeTaskFromBundle(task, keepOnBundleDate: false)
         task.scheduledDate = dateKey
-        task.scheduledStartMin = clampedStartMin(startMin)
         if task.estimatedMinutes <= 0 { task.estimatedMinutes = AppTask.defaultTimelineDurationMinutes }
+        // [[T-5370]]: clamped by the block's length, not its start alone, so a 60-minute task
+        // dropped at 23:55 starts at 23:00 and ends at midnight instead of drawing past it.
+        task.scheduledStartMin = TimelineDayRange.clampStart(
+            startMin,
+            duration: TimelineDayRange.taskDuration(estimatedMinutes: task.estimatedMinutes)
+        )
     }
 
     /// A task dropped on a minute of the timeline — Today's schedule panel and the Calendar page's
@@ -174,10 +179,6 @@ enum SchedulingActions {
     /// Detach any legacy calendar-event reference from a task without deleting the calendar event.
     static func removeFromCalendar(_ task: AppTask) {
         task.calendarEventID = ""
-    }
-
-    private static func clampedStartMin(_ startMin: Int) -> Int {
-        TimelineDayRange.clampStart(startMin)
     }
 
     private static func memberTasks(in bundle: TaskBundle) -> [AppTask] {

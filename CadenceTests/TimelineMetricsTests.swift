@@ -323,20 +323,92 @@ struct TimelineMetricsTests {
         SchedulingActions.dropTask(task, to: "2026-06-02", startMin: 1_600)
 
         #expect(task.scheduledDate == "2026-06-02")
-        // TimelineDayRange.endMin (1_440) - TimelineDayRange.minimumDuration (5). The exact
-        // value, not a range: a range wide enough to hold the input is not an assertion about
-        // clamping.
-        #expect(task.scheduledStartMin == 1_435)
+        // TimelineDayRange.endMin (1_440) less the task's 30-minute estimate ([[T-5370]]: it was
+        // less the 5-minute floor, which let the block draw past midnight). The exact value, not
+        // a range: a range wide enough to hold the input is not an assertion about clamping.
+        #expect(task.scheduledStartMin == 1_410)
 
         // The floor is the same clamp read from the other end.
         SchedulingActions.dropTask(task, to: "2026-06-02", startMin: -50)
         #expect(task.scheduledStartMin == 0)
 
-        // And a drop that needs no clamping must pass through untouched.
+        // A drop inside the last half hour is pulled up so the block ends at midnight...
         SchedulingActions.dropTask(task, to: "2026-06-02", startMin: 1_438)
-        #expect(task.scheduledStartMin == 1_435)
+        #expect(task.scheduledStartMin == 1_410)
+        // ...and one that needs no clamping passes through untouched.
         SchedulingActions.dropTask(task, to: "2026-06-02", startMin: 600)
         #expect(task.scheduledStartMin == 600)
+        #expect(task.estimatedMinutes == 30)
+    }
+
+    // MARK: - 9. [[T-5370]] a task move clamps by its estimate
+
+    @Test func aSixtyMinuteTaskDroppedAtTheLastSlotEndsAtMidnightInsteadOfPastIt() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let task = AppTask(title: "Hour block")
+        task.estimatedMinutes = 60
+        context.insert(task)
+
+        SchedulingActions.dropTask(task, to: "2026-06-02", startMin: 23 * 60 + 55)
+
+        #expect(task.scheduledStartMin == 23 * 60)
+        #expect(task.scheduledStartMin + task.estimatedMinutes == TimelineDayRange.endMin)
+        #expect(task.estimatedMinutes == 60, "the clamp moved the block; it must not shorten it")
+    }
+
+    /// A task with no estimate keeps today's behaviour — the drop gives it the default duration —
+    /// and is clamped by that default, which is the length the block is then drawn at.
+    @Test func aTaskWithNoEstimateIsClampedByTheDefaultDurationTheDropGivesIt() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let task = AppTask(title: "Unestimated")
+        task.estimatedMinutes = 0
+        context.insert(task)
+
+        SchedulingActions.dropTask(task, to: "2026-06-02", startMin: 23 * 60 + 55)
+
+        #expect(task.estimatedMinutes == AppTask.defaultTimelineDurationMinutes)
+        #expect(task.scheduledStartMin == TimelineDayRange.endMin - AppTask.defaultTimelineDurationMinutes)
+        #expect(TimelineDayRange.taskDuration(estimatedMinutes: 0) == AppTask.defaultTimelineDurationMinutes)
+        #expect(TimelineDayRange.taskDuration(estimatedMinutes: 45) == 45)
+        #expect(TimelineDayRange.taskDuration(estimatedMinutes: nil) == TimelineDayRange.minimumDuration)
+    }
+
+    /// The drop preview resolves the same clamp on the visible canvas, so it never shows a slot
+    /// the drop would move; with no task (an all-day event chip) it is the old start-only clamp.
+    @Test func theDropPreviewClampsByTheDraggedBlocksLength() {
+        let metrics = TimelineMetrics(startHour: 0, endHour: 24, hourHeight: 60)
+        #expect(metrics.snappedStart(fromY: metrics.totalHeight, duration: 60) == 23 * 60)
+        #expect(metrics.snappedStart(fromY: metrics.yOffset(for: 23 * 60 + 55), duration: 60) == 23 * 60)
+        #expect(
+            metrics.snappedStart(fromY: metrics.totalHeight, duration: TimelineDayRange.minimumDuration)
+                == metrics.snappedMinute(fromY: metrics.totalHeight)
+        )
+        #expect(metrics.snappedStart(fromY: metrics.yOffset(for: 600) + 3, duration: 60) == 600)
+        #expect(metrics.snappedStart(fromY: -20, duration: 60) == 0)
+        let evening = TimelineMetrics(startHour: 8, endHour: 18, hourHeight: 60)
+        #expect(evening.snappedStart(fromY: evening.totalHeight, duration: 90) == 18 * 60 - 90)
+    }
+
+    /// **Source shape.** `TimelineDropDelegate` is a `DropDelegate` driven by AppKit's drag
+    /// session, so its wiring is pinned by text: the preview and the drop both resolve through the
+    /// length-aware clamp, asked with the dragged task's estimate.
+    @Test func theDropDelegatePreviewsAndDropsThroughTheLengthAwareClamp() throws {
+        let raw = try CadenceSourceScan.sourceFile("Cadence/macOS/Views/TimelineDropInteractionSupport.swift")
+        #expect(raw.count > 1_000)
+        let file = CadenceSourceScan.codeOnly(CadenceSourceScan.strippingComments(raw))
+        let delegate = try #require(
+            CadenceSourceScan.declarationBody("struct TimelineDropDelegate: DropDelegate", in: file)
+        )
+        #expect(!delegate.contains("metrics.snappedMinute(fromY:"), "a task drop still clamps its start alone")
+        let preview = try #require(CadenceSourceScan.functionBody(named: "updatePreview", in: delegate))
+        #expect(preview.contains("previewStartMin = snappedStart(for: info)"))
+        let drop = try #require(CadenceSourceScan.functionBody(named: "performDrop", in: delegate))
+        #expect(drop.contains("let startMin = previewStartMin ?? snappedStart(for: info)"))
+        let resolve = try #require(CadenceSourceScan.functionBody(named: "snappedStart", in: delegate))
+        #expect(resolve.contains("metrics.snappedStart("))
+        #expect(resolve.contains("TimelineDayRange.taskDuration(estimatedMinutes: task?.estimatedMinutes)"))
     }
 
     @Test func droppingABundledTaskOntoAnotherDayColumnMovesItAndClearsBundleMembership() throws {
