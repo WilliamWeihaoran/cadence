@@ -225,10 +225,6 @@ struct ContainerPickerBadge: View {
     /// Renders as a bordered, unfilled chip with no chevron — used in toolbar rows
     /// (e.g. CreateTaskSheet) alongside other outlined chips.
     var outlined: Bool = false
-    /// Renders the trigger as one segment of the task inspector's `List › Section` breadcrumb:
-    /// icon + name, no pill, no chevron, sized to its text. The popover — search, arrow-key
-    /// highlight, selection — is the same one the chip presents.
-    var breadcrumbSegment: Bool = false
 
     @State private var showPicker = false
 
@@ -259,55 +255,30 @@ struct ContainerPickerBadge: View {
         }
     }
 
-    /// Inbox is the *absence* of a list, so the inspector row reads it as an unset field.
-    private var hasContainer: Bool {
-        selection != .inbox
-    }
-
     @ViewBuilder
     private var trigger: some View {
-        if breadcrumbSegment {
-            // Always the real container name ("Inbox" when unset) so the segment and its picker
-            // agree; the dimmer treatment is what conveys "no list chosen".
-            // The leading glyph is the container's own icon in its own colour.
-            HStack(spacing: 5) {
-                Image(systemName: labelIcon)
-                    .font(.system(size: 10))
-                    .foregroundStyle(labelColor)
-                Text(label)
-                    .font(TaskInspectorBreadcrumbMetrics.font)
-                    .foregroundStyle(hasContainer ? Theme.muted : Theme.dim)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                    .frame(maxWidth: TaskInspectorBreadcrumbMetrics.maxSegmentWidth, alignment: .leading)
+        HStack(spacing: 4) {
+            Image(systemName: labelIcon).font(.system(size: compact ? 9 : 10)).foregroundStyle(labelColor)
+            Text(label)
+                .font(.system(size: compact ? 10 : 11))
+                .foregroundStyle(flat ? Theme.dim : Theme.muted)
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .frame(maxWidth: compact ? 60 : 80, alignment: .leading)
+            if !flat && !outlined {
+                Image(systemName: "chevron.down").font(.system(size: compact ? 7 : 8, weight: .semibold)).foregroundStyle(Theme.dim)
             }
-            .padding(.horizontal, TaskInspectorBreadcrumbMetrics.segmentHorizontalPadding)
-            .frame(minHeight: TaskInspectorBreadcrumbMetrics.segmentHeight)
-            .contentShape(Rectangle())
-        } else {
-            HStack(spacing: 4) {
-                Image(systemName: labelIcon).font(.system(size: compact ? 9 : 10)).foregroundStyle(labelColor)
-                Text(label)
-                    .font(.system(size: compact ? 10 : 11))
-                    .foregroundStyle(flat ? Theme.dim : Theme.muted)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                    .frame(maxWidth: compact ? 60 : 80, alignment: .leading)
-                if !flat && !outlined {
-                    Image(systemName: "chevron.down").font(.system(size: compact ? 7 : 8, weight: .semibold)).foregroundStyle(Theme.dim)
-                }
-            }
-            .padding(.horizontal, flat ? 0 : (compact ? 6 : 8))
-            .padding(.vertical, flat ? 0 : (compact ? 3 : 6))
-            .frame(minHeight: flat ? 0 : (compact ? 21 : 28))
-            .contentShape(Rectangle())
-            .background(flat || outlined ? AnyShapeStyle(Color.clear) : AnyShapeStyle(Theme.surfaceElevated))
-            .clipShape(RoundedRectangle(cornerRadius: flat ? 0 : (compact ? 6 : 7)))
-            .overlay {
-                if outlined {
-                    RoundedRectangle(cornerRadius: compact ? 6 : 7)
-                        .strokeBorder(Theme.borderSubtle, lineWidth: 1)
-                }
+        }
+        .padding(.horizontal, flat ? 0 : (compact ? 6 : 8))
+        .padding(.vertical, flat ? 0 : (compact ? 3 : 6))
+        .frame(minHeight: flat ? 0 : (compact ? 21 : 28))
+        .contentShape(Rectangle())
+        .background(flat || outlined ? AnyShapeStyle(Color.clear) : AnyShapeStyle(Theme.surfaceElevated))
+        .clipShape(RoundedRectangle(cornerRadius: flat ? 0 : (compact ? 6 : 7)))
+        .overlay {
+            if outlined {
+                RoundedRectangle(cornerRadius: compact ? 6 : 7)
+                    .strokeBorder(Theme.borderSubtle, lineWidth: 1)
             }
         }
     }
@@ -316,11 +287,11 @@ struct ContainerPickerBadge: View {
         Button { showPicker.toggle() } label: {
             trigger
         }
-        .modifier(TaskPickerTriggerStyle(breadcrumbSegment: breadcrumbSegment))
+        .buttonStyle(.cadencePlain)
         // On the badge itself rather than on the task row that hosts it, so every surface that
-        // draws this chip — the row, the composer, the inspector breadcrumb — is named by fixing it
-        // once. It announced only the container's name, so a row read "…, Inbox, button" with
-        // nothing saying Inbox was the *list* (T-594).
+        // draws this chip — the row, the composer — is named by fixing it once. It announced only
+        // the container's name, so a row read "…, Inbox, button" with nothing saying Inbox was the
+        // *list* (T-594).
         .accessibilityLabel(CadenceTaskControlAccessibility.list)
         .accessibilityValue(label)
         .popover(isPresented: $showPicker) {
@@ -337,32 +308,10 @@ struct ContainerPickerBadge: View {
     }
 }
 
-/// Button style for a container/section picker trigger.
-///
-/// Breadcrumb segments live inside the task inspector, so they take the inspector's single hover
-/// layer at its own small radius; `cadencePlain`'s radius-10 fill and stroke would draw a chip
-/// around text that is deliberately not a chip. Every other presentation keeps `cadencePlain`.
-private struct TaskPickerTriggerStyle: ViewModifier {
-    let breadcrumbSegment: Bool
-
-    func body(content: Content) -> some View {
-        if breadcrumbSegment {
-            content
-                .buttonStyle(.plain)
-                .modifier(InspectorPickerHover(cornerRadius: TaskInspectorBreadcrumbMetrics.hoverCornerRadius))
-        } else {
-            content.buttonStyle(.cadencePlain)
-        }
-    }
-}
-
 struct TaskSectionPickerBadge: View {
     @Binding var selection: String
     let sections: [String]
     var compact: Bool = false
-    /// Renders the trigger as one segment of the task inspector's `List › Section` breadcrumb:
-    /// bare name, no pill, no chevron. Presents the same picker popover.
-    var breadcrumbSegment: Bool = false
 
     @State private var showPicker = false
     @State private var searchQuery = ""
@@ -398,44 +347,29 @@ struct TaskSectionPickerBadge: View {
 
     @ViewBuilder
     private var trigger: some View {
-        if breadcrumbSegment {
-            // Always the real section name ("Default" when the task isn't in a named section)
-            // so the segment and its picker agree; dim styling conveys the unset state. No
-            // glyph: the list segment beside it already carries the one icon this line needs.
+        HStack(spacing: 4) {
+            Image(systemName: "square.split.2x1")
+                .font(.system(size: compact ? 9 : 10, weight: .semibold))
+                .foregroundStyle(Theme.dim)
+                .frame(width: compact ? 11 : 13)
             Text(label)
-                .font(TaskInspectorBreadcrumbMetrics.font)
-                .foregroundStyle(matchedSection != nil ? Theme.muted : Theme.dim)
+                .font(.system(size: compact ? 10 : 11, weight: .medium))
+                .foregroundStyle(Theme.muted)
                 .lineLimit(1)
                 .truncationMode(.tail)
-                .frame(maxWidth: TaskInspectorBreadcrumbMetrics.maxSegmentWidth, alignment: .leading)
-                .padding(.horizontal, TaskInspectorBreadcrumbMetrics.segmentHorizontalPadding)
-                .frame(minHeight: TaskInspectorBreadcrumbMetrics.segmentHeight)
-                .contentShape(Rectangle())
-        } else {
-            HStack(spacing: 4) {
-                Image(systemName: "square.split.2x1")
-                    .font(.system(size: compact ? 9 : 10, weight: .semibold))
-                    .foregroundStyle(Theme.dim)
-                    .frame(width: compact ? 11 : 13)
-                Text(label)
-                    .font(.system(size: compact ? 10 : 11, weight: .medium))
-                    .foregroundStyle(Theme.muted)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                    .frame(maxWidth: compact ? 70 : 90, alignment: .leading)
-                Image(systemName: "chevron.down")
-                    .font(.system(size: compact ? 7 : 8, weight: .semibold))
-                    .foregroundStyle(Theme.dim)
-            }
-            .padding(.horizontal, compact ? 6 : 10)
-            .frame(height: compact ? 22 : 32)
-            .contentShape(Rectangle())
-            .background(compact ? Color.clear : Theme.surfaceElevated)
-            .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControlCompact))
-            .overlay {
-                if compact {
-                    RoundedRectangle(cornerRadius: Theme.radiusControlCompact).strokeBorder(Theme.borderSubtle, lineWidth: 1)
-                }
+                .frame(maxWidth: compact ? 70 : 90, alignment: .leading)
+            Image(systemName: "chevron.down")
+                .font(.system(size: compact ? 7 : 8, weight: .semibold))
+                .foregroundStyle(Theme.dim)
+        }
+        .padding(.horizontal, compact ? 6 : 10)
+        .frame(height: compact ? 22 : 32)
+        .contentShape(Rectangle())
+        .background(compact ? Color.clear : Theme.surfaceElevated)
+        .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControlCompact))
+        .overlay {
+            if compact {
+                RoundedRectangle(cornerRadius: Theme.radiusControlCompact).strokeBorder(Theme.borderSubtle, lineWidth: 1)
             }
         }
     }
@@ -444,7 +378,7 @@ struct TaskSectionPickerBadge: View {
         Button { showPicker.toggle() } label: {
             trigger
         }
-        .modifier(TaskPickerTriggerStyle(breadcrumbSegment: breadcrumbSegment))
+        .buttonStyle(.cadencePlain)
         .popover(isPresented: $showPicker) {
             VStack(alignment: .leading, spacing: 0) {
                 CadenceSearchFieldRow(query: $searchQuery, focus: $isSearchFocused) {

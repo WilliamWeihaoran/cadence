@@ -322,19 +322,6 @@ enum TaskInspectorFieldRowMetrics {
     static let groupLabelFont = SectionEyebrowLabel.Size.compact.font
 }
 
-/// Shared metrics for the inspector's `List › Section` breadcrumb. The segments themselves are
-/// `ContainerPickerBadge` / `TaskSectionPickerBadge` in `breadcrumbSegment` mode — the same
-/// pickers the chips elsewhere present, drawn as bare text.
-enum TaskInspectorBreadcrumbMetrics {
-    static let font = Font.system(size: 11, weight: .medium)
-    static let segmentHeight: CGFloat = 20
-    static let segmentHorizontalPadding: CGFloat = 5
-    /// Caps one segment so a long list name cannot push the section out of the panel; the text
-    /// still takes its intrinsic width when it is shorter.
-    static let maxSegmentWidth: CGFloat = 128
-    static let hoverCornerRadius: CGFloat = 5
-}
-
 /// One line of the inspector overview list: leading glyph, field name, value flush right.
 struct TaskInspectorFieldRow<Value: View>: View {
     let label: String
