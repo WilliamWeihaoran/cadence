@@ -144,9 +144,11 @@ struct CadenceStrokeBorderSweepTests {
         // TaskInspectorContentSupportViews.swift's iconButton has no separate background fill —
         // the RoundedRectangle IS the button's boundary, drawn via `.background`. Still a bounded
         // control outline (not a "stroke-only decoration" like a progress ring or chart line), so
-        // it converts.
+        // it converts. Since T-6231 an active (status-tinted) button drops the rim, so the colour
+        // is conditional; the rim is still a strokeBorder.
         let source = try CadenceSourceScan.sourceFile("Cadence/macOS/Views/TaskInspectorContentSupportViews.swift")
-        #expect(CadenceSourceScan.matchCount("RoundedRectangle\\(cornerRadius: Self\\.cornerRadius\\)\\s*\\.strokeBorder\\(Theme\\.borderSubtle, lineWidth: 1\\)", in: source) == 1)
+        #expect(CadenceSourceScan.matchCount("RoundedRectangle\\(cornerRadius: Self\\.cornerRadius\\)\\s*\\.strokeBorder\\(isActive \\? Color\\.clear : Theme\\.borderSubtle, lineWidth: 1\\)", in: source) == 1)
+        #expect(!source.contains(".stroke(isActive ? Color.clear : Theme.borderSubtle"))
     }
 
     @Test
