@@ -114,7 +114,7 @@ struct CadenceCodexInlineTagEditingTests {
         #expect(source.contains("accessibilityLabel: \"Edit tag\""))
         #expect(source.contains("TextField(\"Tag name\", text: $draftName)"))
         #expect(source.contains("TextField(\"Optional description\", text: $draftDescription, axis: .vertical)"))
-        #expect(source.contains("iOSSettingsColorSwatchRow(selectedHex: $draftColorHex)"))
+        #expect(source.contains("iOSSettingsColorSwatchRow(selectedHex: $draftColorHex, fallbackHex: tag.colorHex)"))
         #expect(source.contains("A tag with this name already exists."))
         #expect(source.contains("CadenceInlineFailureNotice(text: saveFailureNotice)"))
         let body = try #require(CadenceSourceScan.functionBody(named: "saveEdits", in: source))
