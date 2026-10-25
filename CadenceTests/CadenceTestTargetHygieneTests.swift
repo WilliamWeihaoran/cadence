@@ -1706,6 +1706,120 @@ struct CadenceTestTargetHygieneTests {
             "the measurement no longer reads the control through app.buttons, so the control sites are now pinned to the wrong spelling"
         )
     }
+
+    /// **[[T-6222]]: no `CadenceTests` file compiles to nothing where it is meant to run.**
+    ///
+    /// `iOSEditSheetDismissGuardTests.swift` opened with `#if os(iOS)` and closed with `#endif`,
+    /// so on the macOS leg — the only leg CI RUNS this target on — its five tests compiled to
+    /// nothing while the suite read as present: `CadenceRealTreeSweepManifest.txt` is generated
+    /// from a SOURCE scan, so a test that never compiled is still listed. [[T-5174]] (b) fixed that
+    /// one file; this is the guard that notices the next.
+    ///
+    /// **The filed premise was half stale, and the guard is shaped by the half that is not.** The
+    /// ticket said the target builds for macOS only; since [[T-3244]] it also compiles for iOS (CI's
+    /// `ios-build` job runs `build-for-testing` on it), and three suites are whole-file `#if os(iOS)`
+    /// ON PURPOSE — they hold iOS-only types by effect and say so in their headers. Flagging those
+    /// would be wrong; ignoring the shape would be the defect. So: a file compiled out on BOTH legs
+    /// is refused outright, and a file compiled out on macOS alone must be NAMED below. The list is
+    /// exact in both directions, so the next whole-file iOS suite is noticed the day it lands (and
+    /// is listed on purpose, not by accident), and a listed file that stops being one fails too.
+    /// CI compiles those suites for iOS and runs them nowhere — [[T-6541]].
+    ///
+    /// A condition this reader cannot evaluate is reported, never passed, so a new directive
+    /// spelling gets a decision instead of a blind spot.
+    static let deliberatelyIOSOnlyTestFiles: Set<String> = [
+        "CadenceTests/iOSMarkdownEditorFlushTests.swift",
+        "CadenceTests/iOSMarkdownInlineTaskPanelEffectTests.swift",
+        "CadenceTests/iOSTaskRecurrenceSelectionEffectTests.swift",
+    ]
+
+    @Test func noTestFileCompilesToNothingWhereItIsMeantToRun() throws {
+        let instrument = try CadenceScanInstrument(
+            "a test file wholly compiled out on macOS",
+            fires: "import Testing\n#if os(iOS)\nstruct Gone { @Test func never() {} }\n#endif\n",
+            andNotOn: "import Testing\n#if os(macOS)\nstruct Here { @Test func runs() {} }\n#endif\n",
+            by: { cadenceTestFileExclusion(of: $0, on: .macOS) != nil }
+        )
+        // The spellings the guard must also see, and the ones it must not mistake for it.
+        for compiledOut in [
+            "#if !os(macOS)\nstruct A {}\n#endif",
+            "// a header comment\n\n@testable import Cadence\n#if canImport(UIKit)\nstruct A {}\n#endif\n",
+            "#if os(iOS) || os(visionOS)\nstruct A {}\n#endif",
+            "#if os(macOS) && targetEnvironment(macCatalyst)\nstruct A {}\n#endif",
+            "#if os(iOS)\n#if DEBUG\nstruct A {}\n#endif\n#endif",
+            "#if os(iOS) /* the iOS twin */\nstruct A {}\n#endif // os(iOS)",
+            "#if (os(tvOS))\nstruct A {}\n#endif",
+        ] {
+            #expect(instrument.fires(on: compiledOut), "missed a wholly compiled-out file: \(compiledOut)")
+        }
+        for compiledIn in [
+            "#if os(iOS)\nstruct A {}\n#else\nstruct B {}\n#endif",
+            "#if os(iOS)\nstruct A {}\n#elseif os(macOS)\nstruct B {}\n#endif",
+            "#if os(iOS)\nstruct A {}\n#endif\nstruct B {}",
+            "#if os(iOS) || os(macOS)\nstruct A {}\n#endif",
+            "#if DEBUG\nstruct A {}\n#endif",
+            "import Testing\nstruct A {}\n#if os(iOS)\nstruct B {}\n#endif",
+            "let s = \"#if os(iOS)\"\nstruct A {}",
+        ] {
+            #expect(instrument.fires(on: compiledIn) == false, "flagged a file that compiles on macOS: \(compiledIn)")
+        }
+        // The two legs are told apart: an iOS-only file is out on macOS and IN on iOS; a tvOS one is
+        // out on both, which is the shape no list may admit.
+        let iOSOnly = "#if os(iOS)\nstruct A {}\n#endif"
+        #expect(cadenceTestFileExclusion(of: iOSOnly, on: .iOS) == nil)
+        #expect(cadenceTestFileExclusion(of: "#if os(tvOS)\nstruct A {}\n#endif", on: .iOS) == "os(tvOS)")
+        #expect(cadenceTestFileExclusion(of: "#if os(macOS)\nstruct A {}\n#endif", on: .iOS) == "os(macOS)")
+        #expect(cadenceTestFileExclusion(of: "#if swift(>=6.0)\nstruct A {}\n#endif", on: .macOS) == "unevaluable: swift(>=6.0)",
+                "a condition the reader cannot evaluate must be reported, not passed")
+
+        // A file that opens with `#if os(macOS)` is the commonest shape in the target, so the sweep
+        // must reach one and leave it alone; this file is the walk's witness.
+        let witness = "CadenceTests/CadenceGuardScriptSelftestTests.swift"
+        #expect(try cadenceTestSource(witness).contains("\n#if os(macOS)\n"),
+                "the compiled-in witness no longer carries a whole-file #if os(macOS); pick another")
+        let offenders = try instrument.sweep(
+            try cadenceTestFiles(),
+            atLeast: 400,
+            including: witness,
+            read: cadenceTestSource
+        )
+        var outOnBothLegs: [String] = []
+        var iOSOnlyFiles: Set<String> = []
+        for path in offenders {
+            let source = try cadenceTestSource(path)
+            if cadenceTestFileExclusion(of: source, on: .iOS) == nil {
+                iOSOnlyFiles.insert(path)
+            } else {
+                outOnBothLegs.append("\(path): \(cadenceTestFileExclusion(of: source, on: .macOS) ?? "?")")
+            }
+        }
+        #expect(
+            outOnBothLegs.isEmpty,
+            """
+            test files that compile to NOTHING on either leg CadenceTests builds for, so every test \
+            in them is recorded as present and never runs (T-6222):
+            \(outOnBothLegs.joined(separator: "\n"))
+            """
+        )
+        #expect(
+            iOSOnlyFiles.subtracting(Self.deliberatelyIOSOnlyTestFiles).isEmpty,
+            """
+            whole-file iOS-only test files that are not in `deliberatelyIOSOnlyTestFiles`. On the macOS \
+            leg — the only one CI runs — every test in them compiles to nothing (T-6222). If the \
+            suite is iOS-only on purpose, list it there; otherwise move what it tests into \
+            Cadence/Shared/ and drop the guard:
+            \(iOSOnlyFiles.subtracting(Self.deliberatelyIOSOnlyTestFiles).sorted().joined(separator: "\n"))
+            """
+        )
+        #expect(
+            Self.deliberatelyIOSOnlyTestFiles.subtracting(iOSOnlyFiles).isEmpty,
+            """
+            listed in `deliberatelyIOSOnlyTestFiles` but no longer a whole-file iOS-only test file; \
+            take it off the list so it cannot vouch for the next one:
+            \(Self.deliberatelyIOSOnlyTestFiles.subtracting(iOSOnlyFiles).sorted().joined(separator: "\n"))
+            """
+        )
+    }
 }
 
 // MARK: - Reading the test target
@@ -2284,5 +2398,127 @@ struct CadenceUITestScenarioSeedLiteralDriftTests {
             LOOK configured (T-2075).
             """
         )
+    }
+}
+
+/// The two legs `CadenceTests` compiles for ([[T-3244]]), for `cadenceTestFileExclusion`.
+enum CadenceTestLeg { case macOS, iOS }
+
+/// **[[T-6222]]** Why `source` compiles to nothing on `leg`, or `nil` when some of it compiles.
+///
+/// A file is wholly compiled out when, after its comments, string literals and leading `import`
+/// lines are set aside, it is ONE `#if` block with no `#else`/`#elseif` and nothing after its
+/// `#endif`, and that `#if`'s condition is false on `leg`. The answer is the condition as written,
+/// or `"unevaluable: <atom>"` for a condition naming something `cadenceConditionValue` does not
+/// know — reported rather than passed, so a new spelling is decided rather than skipped.
+func cadenceTestFileExclusion(of source: String, on leg: CadenceTestLeg) -> String? {
+    var lines = CadenceSourceScan.codeOnly(source)
+        .split(separator: "\n", omittingEmptySubsequences: false)
+        .map { $0.trimmingCharacters(in: .whitespaces) }
+        .filter { !$0.isEmpty }
+    while let first = lines.first, first.hasPrefix("import ") || first.hasPrefix("@testable import ")
+            || first.hasPrefix("@preconcurrency import ") {
+        lines.removeFirst()
+    }
+    guard let opening = lines.first, opening.hasPrefix("#if ") else { return nil }
+    var depth = 0
+    for (index, line) in lines.enumerated() {
+        if line.hasPrefix("#if ") {
+            depth += 1
+        } else if line.hasPrefix("#endif") {
+            depth -= 1
+            if depth == 0 {
+                guard index == lines.count - 1 else { return nil }
+                break
+            }
+        } else if depth == 1, line.hasPrefix("#else") || line.hasPrefix("#elseif") {
+            return nil
+        }
+    }
+    guard depth == 0 else { return nil }
+    let condition = String(opening.dropFirst(4)).trimmingCharacters(in: .whitespaces)
+    switch cadenceConditionValue(condition, on: leg) {
+    case .success(true): return nil
+    case .success(false): return condition
+    case .failure(let unknown): return "unevaluable: \(unknown.atom)"
+    }
+}
+
+struct CadenceUnevaluableCondition: Error { let atom: String }
+
+/// A `#if` condition's value in the `CadenceTests` build for `leg`: `!`, `&&`, `||` and
+/// parentheses over the atoms below. Anything else is `.failure`, never a guess.
+func cadenceConditionValue(_ condition: String, on leg: CadenceTestLeg) -> Result<Bool, CadenceUnevaluableCondition> {
+    var tokens: [String] = []
+    var index = condition.startIndex
+    while index < condition.endIndex {
+        let character = condition[index]
+        if character == " " || character == "\t" {
+            index = condition.index(after: index)
+        } else if condition[index...].hasPrefix("&&") || condition[index...].hasPrefix("||") {
+            tokens.append(String(condition[index..<condition.index(index, offsetBy: 2)]))
+            index = condition.index(index, offsetBy: 2)
+        } else if character == "!" || character == "(" || character == ")" {
+            tokens.append(String(character))
+            index = condition.index(after: index)
+        } else {
+            // An atom: a name, optionally followed by one parenthesised argument list.
+            var end = index
+            while end < condition.endIndex, condition[end].isLetter || condition[end].isNumber || condition[end] == "_" {
+                end = condition.index(after: end)
+            }
+            if end == index { return .failure(CadenceUnevaluableCondition(atom: String(condition[index...]))) }
+            if end < condition.endIndex, condition[end] == "(" {
+                guard let close = condition[end...].firstIndex(of: ")") else {
+                    return .failure(CadenceUnevaluableCondition(atom: String(condition[index...])))
+                }
+                end = condition.index(after: close)
+            }
+            tokens.append(String(condition[index..<end]))
+            index = end
+        }
+    }
+    let onMac = leg == .macOS
+    let atoms: [String: Bool] = [
+        "os(macOS)": onMac, "os(OSX)": onMac, "os(iOS)": !onMac,
+        "os(tvOS)": false, "os(watchOS)": false, "os(visionOS)": false, "os(Linux)": false, "os(Windows)": false,
+        "canImport(AppKit)": onMac, "canImport(Cocoa)": onMac, "canImport(UIKit)": !onMac, "canImport(WatchKit)": false,
+        // The iOS leg is only ever a simulator here: the owner's phone is never a test destination.
+        "targetEnvironment(macCatalyst)": false, "targetEnvironment(simulator)": !onMac,
+        "DEBUG": true,
+    ]
+    var position = 0
+    func primary() throws -> Bool {
+        guard position < tokens.count else { throw CadenceUnevaluableCondition(atom: condition) }
+        let token = tokens[position]
+        position += 1
+        if token == "!" { return try !primary() }
+        if token == "(" {
+            let value = try disjunction()
+            guard position < tokens.count, tokens[position] == ")" else { throw CadenceUnevaluableCondition(atom: condition) }
+            position += 1
+            return value
+        }
+        guard let value = atoms[token] else { throw CadenceUnevaluableCondition(atom: token) }
+        return value
+    }
+    func conjunction() throws -> Bool {
+        var value = try primary()
+        while position < tokens.count, tokens[position] == "&&" { position += 1; value = try primary() && value }
+        return value
+    }
+    func disjunction() throws -> Bool {
+        var value = try conjunction()
+        while position < tokens.count, tokens[position] == "||" { position += 1; value = try conjunction() || value }
+        return value
+    }
+    do {
+        let value = try disjunction()
+        guard position == tokens.count else { throw CadenceUnevaluableCondition(atom: condition) }
+        return .success(value)
+    } catch let unknown as CadenceUnevaluableCondition {
+        return .failure(unknown)
+    } catch {
+        return .failure(CadenceUnevaluableCondition(atom: condition))
     }
 }
