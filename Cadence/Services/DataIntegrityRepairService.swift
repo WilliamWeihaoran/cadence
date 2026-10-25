@@ -12,6 +12,8 @@ nonisolated struct DataIntegrityRepairReport: Codable, Equatable {
     var duplicateAreasMerged: Int = 0
     var duplicateProjectsMerged: Int = 0
     var duplicateNotesMerged: Int = 0
+    /// [[T-6435]]: `AppTask` rows folded into another row carrying the same `id`.
+    var duplicateTasksMerged: Int = 0
     var duplicateHabitCompletionsRemoved: Int = 0
     var duplicateRecurrenceOccurrencesRemoved: Int = 0
     var habitRemindersCleared: Int = 0
@@ -39,11 +41,21 @@ nonisolated struct DataIntegrityRepairReport: Codable, Equatable {
     /// number means it did and that is how many rows came back.
     var taskRowsFetched: Int?
 
+    /// **How many `AppTask` rows the same-id scan ([[T-6435]]) read with `id` as the only fetched
+    /// property**, and `nil` when it did not run.
+    ///
+    /// Kept apart from `taskRowsFetched` on purpose: that counter is [[T-1443]]'s bound on *whole*
+    /// rows, and this scan asks the store for one column. Folding the two together would either
+    /// hide a whole-table read behind an id scan or make the T-1443 bound unreadable. Like
+    /// `taskRowsFetched` it is the size of a read and not a term in `changed`.
+    var taskIdentitiesScanned: Int?
+
     var changed: Bool {
         duplicateContextsMerged > 0 ||
             duplicateAreasMerged > 0 ||
             duplicateProjectsMerged > 0 ||
             duplicateNotesMerged > 0 ||
+            duplicateTasksMerged > 0 ||
             duplicateHabitCompletionsRemoved > 0 ||
             duplicateRecurrenceOccurrencesRemoved > 0 ||
             habitRemindersCleared > 0 ||
@@ -108,6 +120,7 @@ nonisolated extension DataIntegrityRepairReport {
         duplicateAreasMerged = try container.decodeIfPresent(Int.self, forKey: .duplicateAreasMerged) ?? 0
         duplicateProjectsMerged = try container.decodeIfPresent(Int.self, forKey: .duplicateProjectsMerged) ?? 0
         duplicateNotesMerged = try container.decodeIfPresent(Int.self, forKey: .duplicateNotesMerged) ?? 0
+        duplicateTasksMerged = try container.decodeIfPresent(Int.self, forKey: .duplicateTasksMerged) ?? 0
         duplicateHabitCompletionsRemoved = try container.decodeIfPresent(Int.self, forKey: .duplicateHabitCompletionsRemoved) ?? 0
         duplicateRecurrenceOccurrencesRemoved = try container.decodeIfPresent(Int.self, forKey: .duplicateRecurrenceOccurrencesRemoved) ?? 0
         habitRemindersCleared = try container.decodeIfPresent(Int.self, forKey: .habitRemindersCleared) ?? 0
@@ -124,6 +137,7 @@ nonisolated extension DataIntegrityRepairReport {
         movedFocusSessions = try container.decodeIfPresent(Int.self, forKey: .movedFocusSessions) ?? 0
         noteReferencesRedirected = try container.decodeIfPresent(Int.self, forKey: .noteReferencesRedirected) ?? 0
         taskRowsFetched = try container.decodeIfPresent(Int.self, forKey: .taskRowsFetched)
+        taskIdentitiesScanned = try container.decodeIfPresent(Int.self, forKey: .taskIdentitiesScanned)
     }
 }
 
@@ -159,7 +173,7 @@ typealias CadenceForkedOccurrenceRemoval = ([AppTask], ModelContext) -> [UUID]
 ///
 /// The main shape it repairs is the *same* row present twice, which is what a restore, a CloudKit
 /// round trip or a pre-merge migration leaves behind. It merges duplicate `Context`, `Area`,
-/// `Project` and `Note` rows, collapses duplicate habit-days and forked recurring occurrences, and
+/// `Project`, `AppTask` ([[T-6435]]) and `Note` rows, collapses duplicate habit-days and forked recurring occurrences, and
 /// re-points the tasks, notes, documents, links, goal links and focus session rows each merge
 /// would otherwise strand.
 ///
@@ -378,6 +392,10 @@ nonisolated enum DataIntegrityRepairService {
             }
         }
 
+        // T-6435. After the container merges, so a same-id pair they re-filed is merged where it
+        // now lives; before the forked-occurrence collapse, which groups by series slot and would
+        // otherwise see a same-id pair as a fork and cancel the survivor's reminders by its id.
+        try repairDuplicateTasks(modelContext: context, report: &report)
         try repairDuplicateNotes(in: store, modelContext: context, state: &state, report: &report)
         try repairDuplicateRecurrenceOccurrences(
             modelContext: context,
@@ -576,6 +594,289 @@ nonisolated enum DataIntegrityRepairService {
             predecessor.recurrenceSpawnedTaskID = survivorID
         }
         report.duplicateRecurrenceOccurrencesRemoved += removedIDs.count
+    }
+
+    /// **[[T-6435]]: two `AppTask` rows carrying one `id`, folded into one.**
+    ///
+    /// `id` is an app-level attribute with no uniqueness (CloudKit forbids `.unique`), and three
+    /// things write a second row under an id the store already holds: an archive import in merge
+    /// mode that ran before the first CloudKit import had landed the rows it would have matched
+    /// (`CadenceArchiveImportService` writes archive ids verbatim), a store-backup restore that
+    /// CloudKit then re-exports beside the server's own copies, and two devices each importing
+    /// the same archive. [[T-6451]] stopped the trap such a pair caused in every id-keyed map
+    /// (`CadenceIdentityMap.firstWins`); this removes the pair itself, so a task is no longer
+    /// drawn twice in a list and the copy a note embed resolves to is the only copy.
+    ///
+    /// **Which row survives** — `preferredDuplicateTask`, the rule the ledger records:
+    /// 1. the **earliest `createdAt`**;
+    /// 2. then the higher `taskScore`, the same shape as the note pass's `noteScore` (non-empty
+    ///    notes, capped; a title; then the scheduling a person set);
+    /// 3. then the greater `scalarFingerprint`, every stored scalar of the row in one string;
+    /// 4. and when all three tie, **the group is left alone**.
+    ///
+    /// The order differs from `preferredNoteSort`'s (score, `updatedAt`, `createdAt`, `id`) on
+    /// purpose, for [[T-3101]]'s reason: a survivor rule has to give the same answer on every
+    /// device, or two devices each delete the copy the other kept and both deletes sync. The note
+    /// pass's last resort, `id`, is the one thing a same-id pair cannot be told apart by, and its
+    /// first, a score over content, moves with every edit. `createdAt` is minted once at insert,
+    /// travels with the record and is never written again, so it is the only immutable
+    /// discriminator these rows have and it goes first. Rules 2 and 3 read only the row's own
+    /// scalars — never a relationship, whose far side may not have synced yet — so two devices
+    /// holding the same version of both rows agree. Rule 4 is the honest end of the line: two rows
+    /// equal in every scalar give a device nothing to choose by that another device would choose
+    /// the same way, and guessing there risks *both* copies going. A wrong "leave it" is a visible
+    /// duplicate; a wrong "merge" is a lost task. [[T-6481]] holds the residual.
+    ///
+    /// **How the fields merge** — `mergeTaskFields`, following `mergeNoteFields`: the survivor's
+    /// value stands, and an empty one is filled from the copy; `notes` is appended with the note
+    /// pass's separator unless the survivor already contains it; tags are the union; `createdAt`
+    /// and `order` take the `min` and `actualMinutes` the `max`, as the container merges do for
+    /// their own counters. A finished copy finishes an open survivor, because a completion is a
+    /// deliberate act and nothing else in the store records it.
+    ///
+    /// **What is re-pointed** — `rePointChildren`: every `Subtask` and every `FocusSessionLog`
+    /// the copy holds moves to the survivor, except a child that is an exact copy of one the
+    /// survivor already holds (same `id` and every field), which is deleted rather than drawn
+    /// twice — and, for a ledger row, rather than counted twice by
+    /// `CadenceFocusLedger.reconcile`. The to-one filings (`area`/`project`/`context`/`sectionName`
+    /// as one unit, `goal`, `bundle`) fill an empty survivor slot. Nothing that names a task *by
+    /// id* needs re-pointing — note embeds, `recurrenceSpawnedTaskIDRaw`, reminders — because the
+    /// survivor carries the same id, which is also why no reminder is cancelled here.
+    ///
+    /// **Safe under partial sync**, by the monotonicity every merge here has ([[T-328]]): it fires
+    /// only when it can see both rows, so a half-imported store merges less. What it cannot see is
+    /// a child of the copy still in flight — that child lands after its parent is gone and arrives
+    /// unparented. The container merges carry the same window and there is no sync-state gate in
+    /// this service to reuse ([[T-6482]]).
+    ///
+    /// **The scan reads one column.** Finding a pair needs every row's `id`, and [[T-1443]] took
+    /// the whole-table read off the warm launch; `propertiesToFetch = [\.id]` asks the store for
+    /// the id alone and `taskIdentitiesScanned` counts it, apart from `taskRowsFetched`.
+    ///
+    /// Deferred commit: `repairIfNeeded` saves once, after every pass, when anything changed.
+    private static func repairDuplicateTasks(
+        modelContext: ModelContext,
+        report: inout DataIntegrityRepairReport
+    ) throws {
+        var descriptor = FetchDescriptor<AppTask>()
+        descriptor.propertiesToFetch = [\.id]
+        let scanned = try modelContext.fetch(descriptor).filter { !$0.isDeleted }
+        report.taskIdentitiesScanned = (report.taskIdentitiesScanned ?? 0) + scanned.count
+
+        let groups = Dictionary(grouping: scanned, by: \.id).values.filter { $0.count > 1 }
+        for group in groups {
+            guard let survivor = preferredDuplicateTask(among: group) else {
+                logger.info("Left \(group.count, privacy: .public) same-id tasks unmerged: no field tells them apart")
+                continue
+            }
+            for duplicate in group where duplicate !== survivor {
+                mergeTask(duplicate, into: survivor, modelContext: modelContext)
+                report.duplicateTasksMerged += 1
+            }
+        }
+    }
+
+    /// The row a same-id group keeps, or `nil` when no rule separates the best two. See
+    /// `repairDuplicateTasks` for why the order is what it is.
+    private static func preferredDuplicateTask(among group: [AppTask]) -> AppTask? {
+        let ranked = group.sorted(by: taskRanksAbove)
+        guard let best = ranked.first else { return nil }
+        if ranked.count > 1, !taskRanksAbove(best, ranked[1]) { return nil }
+        return best
+    }
+
+    private static func taskRanksAbove(_ lhs: AppTask, _ rhs: AppTask) -> Bool {
+        if lhs.createdAt != rhs.createdAt { return lhs.createdAt < rhs.createdAt }
+        let lhsScore = taskScore(lhs)
+        let rhsScore = taskScore(rhs)
+        if lhsScore != rhsScore { return lhsScore > rhsScore }
+        return scalarFingerprint(lhs) > scalarFingerprint(rhs)
+    }
+
+    /// `noteScore`'s shape over a task's own scalars. No relationship is read: a tag or a subtask
+    /// that has not synced yet would score the same row differently on two devices.
+    private static func taskScore(_ task: AppTask) -> Int {
+        var score = 0
+        if !task.notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            score += min(task.notes.count, 2_000)
+        }
+        if !task.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { score += 100 }
+        if !task.dueDate.isEmpty { score += 10 }
+        if !task.scheduledDate.isEmpty { score += 10 }
+        if task.scheduledStartMin >= 0 { score += 5 }
+        if task.priority != .none { score += 5 }
+        if task.recurrenceRule != .none { score += 5 }
+        return score
+    }
+
+    /// Every stored scalar of the row, in one string, so that two rows differing in any of them are
+    /// ordered the same way on every device. The unit separator keeps `("ab", "c")` apart from
+    /// `("a", "bc")`.
+    private static func scalarFingerprint(_ task: AppTask) -> String {
+        let fields: [String] = [
+            task.title, task.notes, task.priorityRaw, task.statusRaw, task.dueDate, task.scheduledDate,
+            String(task.scheduledStartMin), String(task.estimatedMinutes), String(task.actualMinutes),
+            task.calendarEventID, task.recurrenceRaw, task.recurrenceSpawnedTaskIDRaw,
+            task.recurrenceSeriesIDRaw, task.recurrenceSourceTaskIDRaw, String(task.recurrenceOccurrenceIndex),
+            task.recurrenceEndModeRaw, task.recurrenceEndDate, String(task.recurrenceEndCount),
+            task.sectionName, String(task.order), String(task.bundleOrder),
+            task.completedAt.map { String($0.timeIntervalSinceReferenceDate) } ?? "",
+        ]
+        return fields.joined(separator: "\u{1F}")
+    }
+
+    private static func mergeTask(_ source: AppTask, into target: AppTask, modelContext: ModelContext) {
+        mergeTaskFields(from: source, into: target)
+        rePointChildren(of: source, to: target, modelContext: modelContext)
+        detachByIdentity(source)
+        modelContext.delete(source)
+    }
+
+    private static func mergeTaskFields(from source: AppTask, into target: AppTask) {
+        if target.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+           !source.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            target.title = source.title
+        }
+
+        let targetNotes = target.notes.trimmingCharacters(in: .whitespacesAndNewlines)
+        let sourceNotes = source.notes.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !sourceNotes.isEmpty, !targetNotes.contains(sourceNotes) {
+            target.notes = targetNotes.isEmpty ? source.notes : "\(target.notes)\n\n---\n\n\(source.notes)"
+        }
+
+        if target.priority == .none, source.priority != .none {
+            target.priorityRaw = source.priorityRaw
+        }
+        if target.status == .todo, source.status != .todo {
+            target.statusRaw = source.statusRaw
+            target.completedAt = source.completedAt
+        }
+        if target.dueDate.isEmpty {
+            target.dueDate = source.dueDate
+        }
+        if target.scheduledDate.isEmpty, !source.scheduledDate.isEmpty {
+            target.scheduledDate = source.scheduledDate
+            target.scheduledStartMin = source.scheduledStartMin
+        } else if target.scheduledDate == source.scheduledDate, target.scheduledStartMin < 0 {
+            target.scheduledStartMin = source.scheduledStartMin
+        }
+        if target.calendarEventID.isEmpty {
+            target.calendarEventID = source.calendarEventID
+        }
+        if target.recurrenceRule == .none, source.recurrenceRule != .none {
+            target.recurrenceRaw = source.recurrenceRaw
+            target.recurrenceEndModeRaw = source.recurrenceEndModeRaw
+            target.recurrenceEndDate = source.recurrenceEndDate
+            target.recurrenceEndCount = source.recurrenceEndCount
+        }
+        if target.recurrenceSeriesIDRaw.isEmpty, !source.recurrenceSeriesIDRaw.isEmpty {
+            target.recurrenceSeriesIDRaw = source.recurrenceSeriesIDRaw
+            target.recurrenceOccurrenceIndex = source.recurrenceOccurrenceIndex
+        }
+        if target.recurrenceSourceTaskIDRaw.isEmpty {
+            target.recurrenceSourceTaskIDRaw = source.recurrenceSourceTaskIDRaw
+        }
+        if target.recurrenceSpawnedTaskIDRaw.isEmpty {
+            target.recurrenceSpawnedTaskIDRaw = source.recurrenceSpawnedTaskIDRaw
+        }
+        target.actualMinutes = max(target.actualMinutes, source.actualMinutes)
+        target.order = min(target.order, source.order)
+        target.createdAt = min(target.createdAt, source.createdAt)
+
+        // The filing is one unit: an area from one copy and a project from the other could name
+        // two different lists, and `context` is derived from them.
+        if target.area == nil, target.project == nil, target.context == nil {
+            target.area = source.area
+            target.project = source.project
+            target.context = source.context
+            target.sectionName = source.sectionName
+        }
+        if target.goal == nil {
+            target.goal = source.goal
+        }
+        if target.bundle == nil, let bundle = source.bundle {
+            target.bundle = bundle
+            target.bundleOrder = source.bundleOrder
+        }
+        let mergedTaskTags = mergedTags(primary: target.tags ?? [], secondary: source.tags ?? [])
+        if Set(mergedTaskTags.map(\.id)) != Set((target.tags ?? []).map(\.id)) {
+            target.tags = mergedTaskTags
+        }
+    }
+
+    /// Moves the copy's subtasks and focus-ledger rows to the survivor. A child that is an exact
+    /// copy of one the survivor already holds is deleted instead: the restore or import that made
+    /// the task pair made its children in pairs too, and re-pointing both would draw each subtask
+    /// twice and count each focus session twice. The copy being removed is the same row on every
+    /// device (that is what `preferredDuplicateTask` guarantees), so this deletes the same child
+    /// record everywhere and never the one that stays.
+    private static func rePointChildren(of source: AppTask, to target: AppTask, modelContext: ModelContext) {
+        let keptSubtasks = target.subtasks ?? []
+        var arrivingSubtasks: [Subtask] = []
+        for subtask in source.subtasks ?? [] {
+            if keptSubtasks.contains(where: { isSameSubtask($0, subtask) }) {
+                modelContext.delete(subtask)
+            } else {
+                arrivingSubtasks.append(subtask)
+            }
+        }
+        source.subtasks = []
+        for subtask in arrivingSubtasks {
+            subtask.parentTask = target
+        }
+        if !arrivingSubtasks.isEmpty {
+            target.subtasks = keptSubtasks + arrivingSubtasks
+        }
+
+        let keptSessions = target.focusSessions ?? []
+        var arrivingSessions: [FocusSessionLog] = []
+        for session in source.focusSessions ?? [] {
+            if keptSessions.contains(where: { isSameFocusSession($0, session) }) {
+                modelContext.delete(session)
+            } else {
+                arrivingSessions.append(session)
+            }
+        }
+        source.focusSessions = []
+        for session in arrivingSessions {
+            session.task = target
+        }
+        if !arrivingSessions.isEmpty {
+            target.focusSessions = keptSessions + arrivingSessions
+        }
+    }
+
+    private static func isSameSubtask(_ lhs: Subtask, _ rhs: Subtask) -> Bool {
+        lhs !== rhs && lhs.id == rhs.id && lhs.title == rhs.title && lhs.isDone == rhs.isDone
+    }
+
+    private static func isSameFocusSession(_ lhs: FocusSessionLog, _ rhs: FocusSessionLog) -> Bool {
+        lhs !== rhs && lhs.id == rhs.id && lhs.minutes == rhs.minutes &&
+            lhs.previousMinutes == rhs.previousMinutes && lhs.loggedAt == rhs.loggedAt &&
+            lhs.dayKey == rhs.dayKey
+    }
+
+    /// Takes the copy out of every inverse array before it is deleted, by **identity**.
+    ///
+    /// Deliberately not `CadenceTaskMutationSupport.detachRelationships`, and not only because the
+    /// MCP target does not compile it: that helper filters each inverse by `$0.id != task.id`,
+    /// which for a same-id pair removes the *survivor* from its own area, project, context, goal,
+    /// bundle and tags too ([[T-6483]]).
+    private static func detachByIdentity(_ task: AppTask) {
+        if let area = task.area { area.tasks = (area.tasks ?? []).filter { $0 !== task } }
+        if let project = task.project { project.tasks = (project.tasks ?? []).filter { $0 !== task } }
+        if let context = task.context { context.tasks = (context.tasks ?? []).filter { $0 !== task } }
+        if let goal = task.goal { goal.tasks = (goal.tasks ?? []).filter { $0 !== task } }
+        if let bundle = task.bundle { bundle.tasks = (bundle.tasks ?? []).filter { $0 !== task } }
+        for tag in task.tags ?? [] {
+            tag.tasks = (tag.tasks ?? []).filter { $0 !== task }
+        }
+        task.area = nil
+        task.project = nil
+        task.context = nil
+        task.goal = nil
+        task.bundle = nil
+        task.tags = []
     }
 
     private static func mergeContext(
@@ -1266,7 +1567,7 @@ nonisolated enum DataIntegrityRepairService {
     private static func log(_ report: DataIntegrityRepairReport) {
         guard report.changed else { return }
         logger.info(
-            "Data integrity repair merged contexts=\(report.duplicateContextsMerged, privacy: .public), areas=\(report.duplicateAreasMerged, privacy: .public), projects=\(report.duplicateProjectsMerged, privacy: .public), notes=\(report.duplicateNotesMerged, privacy: .public), habitCompletions=\(report.duplicateHabitCompletionsRemoved, privacy: .public), habitReminders=\(report.habitRemindersCleared, privacy: .public), movedTasks=\(report.movedTasks, privacy: .public) from \(report.source, privacy: .public)"
+            "Data integrity repair merged contexts=\(report.duplicateContextsMerged, privacy: .public), areas=\(report.duplicateAreasMerged, privacy: .public), projects=\(report.duplicateProjectsMerged, privacy: .public), notes=\(report.duplicateNotesMerged, privacy: .public), tasks=\(report.duplicateTasksMerged, privacy: .public), habitCompletions=\(report.duplicateHabitCompletionsRemoved, privacy: .public), habitReminders=\(report.habitRemindersCleared, privacy: .public), movedTasks=\(report.movedTasks, privacy: .public) from \(report.source, privacy: .public)"
         )
     }
 }

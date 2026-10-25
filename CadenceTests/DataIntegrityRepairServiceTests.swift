@@ -1445,6 +1445,8 @@ struct DataIntegrityRepairServiceTests {
 
         #expect(!report.changed, "nothing in this fixture is repairable, so this is the warm case")
         #expect(report.taskRowsFetched == 6)
+        // T-6435: the same-id scan reads every row, but for its `id` alone, and is counted apart.
+        #expect(report.taskIdentitiesScanned == 206)
         #expect(
             try modelContext.fetchCount(FetchDescriptor<AppTask>()) == 206,
             "the fixture has to be big enough for 6 to mean something"
@@ -1510,6 +1512,7 @@ struct DataIntegrityRepairServiceTests {
         let report = try DataIntegrityRepairService.repairIfNeeded(in: modelContext, source: "test")
 
         #expect(report.taskRowsFetched == nil, "a pass that took no fetch reported a row count of zero")
+        #expect(report.taskIdentitiesScanned == 50)
         #expect(try modelContext.fetchCount(FetchDescriptor<AppTask>()) == 50)
     }
 
@@ -1789,6 +1792,294 @@ struct DataIntegrityRepairServiceTests {
             .collapsibleDuplicateOccurrences(among: [fork.lower, fork.higher])?
             .removable.map(\.id) ?? []
         #expect(removable == [fork.higherID])
+    }
+
+    // MARK: - T-6435, same-id tasks
+
+    /// Two rows sharing one `id`, as a restore or an early archive import leaves them. `older` is
+    /// created first; `newer` is given the longer notes so a rule that read the score before
+    /// `createdAt` would pick it instead.
+    private func sameIDPair(
+        in modelContext: ModelContext,
+        olderFirst: Bool = true
+    ) -> (id: UUID, older: AppTask, newer: AppTask) {
+        let id = UUID()
+        let older = AppTask(title: "Original")
+        older.id = id
+        older.notes = "kept"
+        older.createdAt = Date(timeIntervalSince1970: 1_000)
+        let newer = AppTask(title: "Copy")
+        newer.id = id
+        newer.notes = "a much longer note that only the copy carries"
+        newer.createdAt = Date(timeIntervalSince1970: 2_000)
+        for task in olderFirst ? [older, newer] : [newer, older] {
+            modelContext.insert(task)
+        }
+        return (id, older, newer)
+    }
+
+    /// **The survivor rule's first term, and that it does not depend on the order rows come back
+    /// in.** Run twice with the pair inserted in opposite orders: both runs must keep the
+    /// earlier-created row's title. The copy's richer notes are carried across, not dropped.
+    @Test func sameIDTasksMergeIntoTheEarliestCreatedRowWhateverTheInsertionOrder() throws {
+        for olderFirst in [true, false] {
+            let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+            let modelContext = ModelContext(container)
+            let pair = sameIDPair(in: modelContext, olderFirst: olderFirst)
+            try modelContext.save()
+
+            let report = try DataIntegrityRepairService.repairIfNeeded(in: modelContext, source: "test")
+
+            let remaining = try ModelContext(container).fetch(FetchDescriptor<AppTask>())
+            #expect(report.duplicateTasksMerged == 1, "olderFirst=\(olderFirst)")
+            #expect(report.changed)
+            #expect(remaining.count == 1, "olderFirst=\(olderFirst): the pair was not folded into one row")
+            let survivor = try #require(remaining.first)
+            #expect(survivor.id == pair.id)
+            #expect(survivor.title == "Original", "olderFirst=\(olderFirst): the later-created copy survived")
+            #expect(survivor.notes.contains("kept"))
+            #expect(survivor.notes.contains("only the copy carries"), "the copy's notes were lost")
+            #expect(survivor.createdAt == Date(timeIntervalSince1970: 1_000))
+        }
+    }
+
+    /// The second term: with `createdAt` equal (a restore copies it exactly), the row with more
+    /// of the user's own text in it is kept.
+    @Test func aSameIDPairCreatedTogetherKeepsTheRowWithMoreInIt() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let modelContext = ModelContext(container)
+        let pair = sameIDPair(in: modelContext, olderFirst: true)
+        pair.newer.createdAt = pair.older.createdAt
+        try modelContext.save()
+
+        let report = try DataIntegrityRepairService.repairIfNeeded(in: modelContext, source: "test")
+
+        let remaining = try ModelContext(container).fetch(FetchDescriptor<AppTask>())
+        #expect(report.duplicateTasksMerged == 1)
+        #expect(remaining.map(\.title) == ["Copy"], "the emptier row survived a tie on createdAt")
+    }
+
+    /// The last term: two rows equal in every scalar give no rule another device would follow the
+    /// same way, so the pair is left exactly as it was found rather than guessed at.
+    @Test func sameIDTasksEqualInEveryFieldAreLeftAlone() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let modelContext = ModelContext(container)
+        let pair = sameIDPair(in: modelContext)
+        pair.newer.title = pair.older.title
+        pair.newer.notes = pair.older.notes
+        pair.newer.createdAt = pair.older.createdAt
+        try modelContext.save()
+
+        let report = try DataIntegrityRepairService.repairIfNeeded(in: modelContext, source: "test")
+
+        #expect(report.duplicateTasksMerged == 0)
+        #expect(!report.changed)
+        #expect(try ModelContext(container).fetchCount(FetchDescriptor<AppTask>()) == 2)
+    }
+
+    /// **Distinct ids are never a group**, however alike the rows are otherwise — and a store with
+    /// nothing to merge is not reported as changed, so the launch takes no save.
+    @Test func tasksWithDistinctIDsAreNeverMergedHoweverAlikeTheyAre() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let modelContext = ModelContext(container)
+        // Distinct `createdAt`s, so a pass that grouped on anything but `id` would find a
+        // survivor here and merge rather than stop at a tie.
+        for index in 0..<3 {
+            let task = AppTask(title: "Same title")
+            task.notes = "same notes"
+            task.createdAt = Date(timeIntervalSince1970: 1_000 + Double(index))
+            modelContext.insert(task)
+        }
+        try modelContext.save()
+
+        let report = try DataIntegrityRepairService.repairIfNeeded(in: modelContext, source: "test")
+
+        #expect(report.duplicateTasksMerged == 0)
+        #expect(!report.changed)
+        #expect(report.taskIdentitiesScanned == 3, "the scan did not run, so this proves nothing")
+        #expect(try ModelContext(container).fetchCount(FetchDescriptor<AppTask>()) == 3)
+    }
+
+    /// **Every relationship the deleted copy held ends up on the survivor**, and an exact copy of
+    /// a child the survivor already has is collapsed rather than drawn (or counted) twice. The
+    /// survivor starts with no filing at all, so each leg below can only be satisfied by the merge.
+    @Test func mergingSameIDTasksRePointsEveryRelationshipOfTheCopy() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let modelContext = ModelContext(container)
+        let pair = sameIDPair(in: modelContext)
+        let survivor = pair.older
+        let copy = pair.newer
+
+        let workContext = Context(name: "Work")
+        let area = Area(name: "Ops", context: workContext)
+        let project = Project(name: "Launch", context: workContext, area: area)
+        let goal = Goal(title: "Ship", context: workContext)
+        let bundle = TaskBundle(title: "Block", dateKey: "2026-10-25", startMin: 540, durationMinutes: 60)
+        let keptTag = Tag(name: "kept")
+        let copiedTag = Tag(name: "copied")
+        for model in [workContext, area, project, goal, bundle, keptTag, copiedTag] as [any PersistentModel] {
+            modelContext.insert(model)
+        }
+        copy.area = area
+        copy.project = project
+        copy.context = workContext
+        copy.sectionName = "This week"
+        copy.goal = goal
+        copy.bundle = bundle
+        copy.bundleOrder = 3
+        survivor.tags = [keptTag]
+        copy.tags = [keptTag, copiedTag]
+
+        let sharedSubtaskID = UUID()
+        let survivorSubtask = Subtask(title: "Step one")
+        survivorSubtask.id = sharedSubtaskID
+        let copiedTwin = Subtask(title: "Step one")
+        copiedTwin.id = sharedSubtaskID
+        let editedTwin = Subtask(title: "Step one, rewritten")
+        editedTwin.id = sharedSubtaskID
+        let copyOnlySubtask = Subtask(title: "Step two")
+        for subtask in [survivorSubtask, copiedTwin, editedTwin, copyOnlySubtask] {
+            modelContext.insert(subtask)
+        }
+        survivorSubtask.parentTask = survivor
+        survivor.subtasks = [survivorSubtask]
+        for subtask in [copiedTwin, editedTwin, copyOnlySubtask] {
+            subtask.parentTask = copy
+        }
+        copy.subtasks = [copiedTwin, editedTwin, copyOnlySubtask]
+
+        let sharedSessionID = UUID()
+        let loggedAt = Date(timeIntervalSince1970: 5_000)
+        let survivorSession = FocusSessionLog(minutes: 25, previousMinutes: 0, loggedAt: loggedAt, dayKey: "2026-10-25")
+        survivorSession.id = sharedSessionID
+        let copiedSession = FocusSessionLog(minutes: 25, previousMinutes: 0, loggedAt: loggedAt, dayKey: "2026-10-25")
+        copiedSession.id = sharedSessionID
+        let copyOnlySession = FocusSessionLog(minutes: 10, previousMinutes: 25, loggedAt: loggedAt, dayKey: "2026-10-25")
+        for session in [survivorSession, copiedSession, copyOnlySession] {
+            modelContext.insert(session)
+        }
+        survivorSession.task = survivor
+        survivor.focusSessions = [survivorSession]
+        copiedSession.task = copy
+        copyOnlySession.task = copy
+        copy.focusSessions = [copiedSession, copyOnlySession]
+        try modelContext.save()
+
+        let report = try DataIntegrityRepairService.repairIfNeeded(in: modelContext, source: "test")
+        #expect(report.duplicateTasksMerged == 1)
+
+        let reopened = ModelContext(container)
+        let tasks = try reopened.fetch(FetchDescriptor<AppTask>())
+        #expect(tasks.count == 1)
+        let merged = try #require(tasks.first)
+        #expect(merged.title == "Original", "the wrong row survived, so the legs below prove nothing")
+        #expect(merged.area?.id == area.id, "area")
+        #expect(merged.project?.id == project.id, "project")
+        #expect(merged.context?.id == workContext.id, "context")
+        #expect(merged.sectionName == "This week", "sectionName travels with the filing")
+        #expect(merged.goal?.id == goal.id, "goal")
+        #expect(merged.bundle?.id == bundle.id, "bundle")
+        #expect(merged.bundleOrder == 3, "bundleOrder travels with the bundle")
+        #expect(Set((merged.tags ?? []).map(\.name)) == ["kept", "copied"], "tags")
+
+        let subtasks = try reopened.fetch(FetchDescriptor<Subtask>())
+        #expect(
+            Set(subtasks.map(\.title)) == ["Step one", "Step one, rewritten", "Step two"],
+            "subtasks: the exact twin goes, an edited twin and a new step stay"
+        )
+        #expect(subtasks.count == 3, "the exact twin of the survivor's subtask was kept as a second row")
+        #expect(subtasks.allSatisfy { $0.parentTask === merged }, "a subtask was left without the survivor as its parent")
+        #expect((merged.subtasks ?? []).count == 3)
+
+        let sessions = try reopened.fetch(FetchDescriptor<FocusSessionLog>())
+        #expect(sessions.count == 2, "the exact twin of a ledger row would be counted twice")
+        #expect(sessions.allSatisfy { $0.task === merged }, "focus sessions")
+        #expect(Set(sessions.map(\.minutes)) == [25, 10])
+
+        let reopenedArea = try #require(try reopened.fetch(FetchDescriptor<Area>()).first)
+        #expect((reopenedArea.tasks ?? []).count == 1, "the area still lists the deleted copy")
+        let reopenedTags = try reopened.fetch(FetchDescriptor<Cadence.Tag>())
+        #expect(reopenedTags.allSatisfy { ($0.tasks ?? []).count == 1 }, "a tag still lists the deleted copy")
+    }
+
+    /// The scalar half of the merge: a completion, a schedule, a priority, focus minutes and a
+    /// sidebar position that only the deleted copy had are all kept.
+    @Test func mergingSameIDTasksKeepsWorkOnlyTheCopyHad() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let modelContext = ModelContext(container)
+        let pair = sameIDPair(in: modelContext)
+        pair.older.order = 7
+        pair.older.actualMinutes = 10
+        let completed = Date(timeIntervalSince1970: 9_000)
+        pair.newer.status = .done
+        pair.newer.completedAt = completed
+        pair.newer.priority = .high
+        pair.newer.dueDate = "2026-10-30"
+        pair.newer.scheduledDate = "2026-10-26"
+        pair.newer.scheduledStartMin = 600
+        pair.newer.actualMinutes = 40
+        pair.newer.order = 2
+        try modelContext.save()
+
+        _ = try DataIntegrityRepairService.repairIfNeeded(in: modelContext, source: "test")
+
+        let merged = try #require(try ModelContext(container).fetch(FetchDescriptor<AppTask>()).first)
+        #expect(merged.title == "Original")
+        #expect(merged.status == .done, "the copy's completion was lost")
+        #expect(merged.completedAt == completed)
+        #expect(merged.priority == .high)
+        #expect(merged.dueDate == "2026-10-30")
+        #expect(merged.scheduledDate == "2026-10-26")
+        #expect(merged.scheduledStartMin == 600)
+        #expect(merged.actualMinutes == 40)
+        #expect(merged.order == 2)
+    }
+
+    /// **Ordering against the forked-occurrence collapse.** A same-id copy of a spawned occurrence
+    /// sits in the same series slot, so if the fork pass saw it first it would take the pair for a
+    /// fork — and its remover detaches by `id`, which strips the survivor out of its own list.
+    /// Merged first, the survivor keeps its area and the series still has one row in the slot.
+    @Test func aSameIDCopyOfASpawnedOccurrenceIsMergedBeforeTheForkCollapseSeesIt() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let modelContext = ModelContext(container)
+        let area = Area(name: "Home")
+        modelContext.insert(area)
+        let seriesID = UUID()
+        let first = occurrence(seriesID: seriesID, index: 1, in: modelContext)
+        first.createdAt = Date(timeIntervalSince1970: 1_000)
+        let copy = occurrence(seriesID: seriesID, index: 1, in: modelContext)
+        copy.id = first.id
+        copy.createdAt = Date(timeIntervalSince1970: 2_000)
+        first.area = area
+        copy.area = area
+        try modelContext.save()
+
+        let report = try DataIntegrityRepairService.repairIfNeeded(
+            in: modelContext,
+            source: "test",
+            removingForkedOccurrences: CadenceForkedOccurrenceRemover.removeAndCancelReminders
+        )
+
+        let remaining = try ModelContext(container).fetch(FetchDescriptor<AppTask>())
+        #expect(report.duplicateTasksMerged == 1)
+        #expect(report.duplicateRecurrenceOccurrencesRemoved == 0, "the fork pass reached a same-id pair")
+        #expect(remaining.count == 1)
+        #expect(remaining.first?.area?.id == area.id, "the survivor lost its list")
+    }
+
+    /// The same pair through the real launch, so a startup that stopped reaching the pass reds.
+    @Test func theAppStartupMaintenanceMergesSameIDTasks() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let modelContext = ModelContext(container)
+        _ = sameIDPair(in: modelContext)
+        try modelContext.save()
+
+        try withTemporaryDefaults("CadenceTests.startupSameIDTaskMerge") { defaults in
+            PersistenceController.performStartupMaintenance(in: modelContext, defaults: defaults)
+        }
+
+        let remaining = try ModelContext(container).fetch(FetchDescriptor<AppTask>())
+        #expect(remaining.map(\.title) == ["Original"])
     }
 
 }
