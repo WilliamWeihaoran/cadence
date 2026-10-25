@@ -222,15 +222,25 @@ struct CadenceStartupPopulationSweepTests {
         #expect(stored == 3, "the parser holds \(stored) stored patterns, not the expected 3")
 
         // The two bodies the measurement named, by name, so a hoist that put the compile back into
-        // only one of them still fails.
-        for function in ["inlineTags", "isMarkdownHeading"] {
+        // only one of them still fails. [[T-6261]] moved the inline-tag scan out of `inlineTags`
+        // into `enumerateInlineTags`, which the tag rename's rewriter walks too, so that body is
+        // read as well and is the one that must reach the stored pattern ([[T-6610]]).
+        for function in ["inlineTags", "enumerateInlineTags", "isMarkdownHeading"] {
             let body = try #require(
                 CadenceSourceScan.functionBody(named: function, in: parser),
                 "\(function) is gone"
             )
             #expect(!body.contains("NSRegularExpression("), "\(function) compiles its pattern per call again")
         }
-        #expect(try #require(CadenceSourceScan.functionBody(named: "inlineTags", in: parser)).contains("inlineTagRegex"))
+        #expect(
+            try #require(CadenceSourceScan.functionBody(named: "inlineTags", in: parser))
+                .contains("enumerateInlineTags(in: content, excluding: excludedRange)"),
+            "inlineTags no longer goes through the one shared scan"
+        )
+        #expect(
+            try #require(CadenceSourceScan.functionBody(named: "enumerateInlineTags", in: parser))
+                .contains("inlineTagRegex")
+        )
         #expect(
             try #require(CadenceSourceScan.functionBody(named: "isMarkdownHeading", in: parser))
                 .contains("headingPrefixRegex")

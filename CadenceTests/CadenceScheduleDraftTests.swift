@@ -1227,7 +1227,18 @@ struct CadenceTaskEditorPanelAdoptionTests {
         let actions = try #require(CadenceSourceScan.declarationBody("private var panelActions: CadenceSchedulePanelActions", in: sheet))
         #expect(actions.contains("showDeleteConfirmation = true"), "Delete skipped its confirmation")
         #expect(!sheet.contains("ToolbarItem("), "a second Delete or Done is still in the toolbar")
-        #expect(sheet.contains("Button(\"Delete\", role: .destructive, action: deleteTask)"))
+        // [[T-6115]] moved the alert into the modifier the row shares, so the sheet's half is the
+        // one call raising it and the delete running only from inside it ([[T-6610]]).
+        let confirmation = try #require(CadenceSourceScan.declarationBody(
+            ".iOSTaskDeleteConfirmation(task: task, isPresented: $showDeleteConfirmation)", in: sheet),
+            "the sheet no longer raises the shared delete confirmation")
+        #expect(confirmation.contains("deleteTask(scope: scope)"))
+        #expect(CadenceSourceScan.matchCount(#"deleteTask\("#, in: sheet) == 2,
+                "the delete is reached from somewhere other than its confirmation")
+        let modifier = try #require(CadenceSourceScan.declarationBody(
+            "struct iOSTaskDeleteConfirmationModifier: ViewModifier",
+            in: try code("Cadence/iOS/iOSTaskRowActionViews.swift")))
+        #expect(modifier.contains("Button(\"Delete\", role: .destructive) { onDelete(.wholeSeries) }"))
     }
 
     /// The panel's task rows carry what the inspector had: a Clear on an existing task's do date,

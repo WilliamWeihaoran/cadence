@@ -270,6 +270,8 @@ struct CadenceRecurringDeleteScopeTests {
         #expect(try openTasks(in: modelContext).isEmpty)
     }
 
+    // `DeleteConfirmationManager` is macOS-only, and the iOS leg compiles this file too ([[T-6610]]).
+#if os(macOS)
     // MARK: - Both confirmations carry it, and neither grows a button for a plain task
 
     /// The Mac overlay. A plain task's request has the title and sentence it always had, one
@@ -359,6 +361,8 @@ struct CadenceRecurringDeleteScopeTests {
         #expect(manager.request != nil)
         #expect(try openTasks(in: modelContext).count == 1)
     }
+
+#endif
 
     // MARK: - Source scans
 

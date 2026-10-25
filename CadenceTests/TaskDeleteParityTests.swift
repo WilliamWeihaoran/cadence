@@ -365,9 +365,12 @@ struct TaskDeleteParityTests {
             "iOSTaskViews.swift has no deleteTask()"
         )
         #expect(
-            deleteTask.contains("deleteFailed = !CadenceTaskMutationSupport.delete(task, modelContext: modelContext)"),
+            deleteTask.contains("deleteFailed = !CadenceTaskMutationSupport.delete("),
             "the row still throws away the delete's answer"
         )
+        // [[T-6115]] gave the call the scope the confirmation chose; it is the same call, and the
+        // scope it passes must be the one it was handed, not a constant ([[T-6610]]).
+        #expect(deleteTask.contains("recurrenceScope: scope"), "the row drops the chosen delete scope")
         #expect(row.contains("@State private var deleteFailed = false"))
         // T-440: the alert itself is `iOSTaskDeleteFailureAlert`, shared with
         // `iOSTaskDetailSheet`. What the row owns is the flag and the call.

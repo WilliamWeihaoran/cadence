@@ -207,7 +207,11 @@ struct IOSTaskDetailSheetResidueTests {
             CadenceSourceScan.functionBody(named: "deleteTask", in: sheet),
             "the sheet has no deleteTask(), so the delete still runs inline in the alert button"
         )
-        #expect(delete.contains("guard CadenceTaskMutationSupport.delete(task, modelContext: modelContext) else"),
+        // [[T-6115]] split the call across lines to pass the confirmation's scope ([[T-6610]]);
+        // what is held is still that the answer is the guard's condition.
+        #expect(CadenceSourceScan.matchCount(
+                    #"guard CadenceTaskMutationSupport\.delete\(\s*task,\s*modelContext: modelContext,\s*recurrenceScope: scope\s*\) else"#,
+                    in: delete) == 1,
                 "the sheet still throws away the delete's answer (T-407)")
         #expect(delete.contains("deleteFailed = true"))
         #expect(CadenceSourceScan.matchCount(#"dismiss\(\)"#, in: delete) == 1,
