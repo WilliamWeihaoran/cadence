@@ -858,10 +858,10 @@ nonisolated enum DataIntegrityRepairService {
 
     /// Takes the copy out of every inverse array before it is deleted, by **identity**.
     ///
-    /// Deliberately not `CadenceTaskMutationSupport.detachRelationships`, and not only because the
-    /// MCP target does not compile it: that helper filters each inverse by `$0.id != task.id`,
-    /// which for a same-id pair removes the *survivor* from its own area, project, context, goal,
-    /// bundle and tags too ([[T-6483]]).
+    /// Not `CadenceTaskMutationSupport.detachRelationships`, because the MCP target does not compile
+    /// it. That helper used to filter each inverse by `$0.id != task.id`, which for a same-id pair
+    /// removed the *survivor* from its own area, project, context, goal, bundle and tags too; it
+    /// has detached by identity as well since [[T-6483]].
     private static func detachByIdentity(_ task: AppTask) {
         if let area = task.area { area.tasks = (area.tasks ?? []).filter { $0 !== task } }
         if let project = task.project { project.tasks = (project.tasks ?? []).filter { $0 !== task } }

@@ -94,6 +94,31 @@ struct TaskBundleTests {
         #expect(bundle.sortedTasks.isEmpty)
     }
 
+    /// [[T-6483]]: two rows sharing an `id` until repair merges them. Taking one out of the block
+    /// must leave the other in it; the `id` filter this replaced emptied the block.
+    @Test func removingOneOfTwoSameIDTasksFromABlockLeavesItsTwinThere() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let bundle = TaskBundle(title: "Batch", dateKey: "2026-05-01", startMin: 600, durationMinutes: 30)
+        let survivor = AppTask(title: "Survivor")
+        let copy = AppTask(title: "Copy")
+        copy.id = survivor.id
+        context.insert(bundle)
+        context.insert(survivor)
+        context.insert(copy)
+        survivor.bundle = bundle
+        copy.bundle = bundle
+        copy.bundleOrder = 1
+        try context.save()
+        try #require((bundle.tasks ?? []).count == 2, "fixture: both copies must start in the block")
+
+        SchedulingActions.removeTaskFromBundle(copy)
+
+        #expect(copy.bundle == nil)
+        #expect((bundle.tasks ?? []).count == 1 && bundle.tasks?.first === survivor, "the twin left the block")
+        #expect(survivor.bundle === bundle)
+    }
+
     @Test func bundleOrderCanBeChangedManually() throws {
         let container = try CadenceModelContainerFactory.makeInMemoryContainer()
         let context = ModelContext(container)

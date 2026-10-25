@@ -141,7 +141,7 @@ enum SchedulingActions {
             task.scheduledDate = bundle.dateKey
             task.scheduledStartMin = -1
         }
-        bundle.tasks = (bundle.tasks ?? []).filter { $0.id != task.id }
+        bundle.tasks = (bundle.tasks ?? []).filter { $0 !== task }
         task.bundle = nil
         task.bundleOrder = 0
         normalizeBundleOrder(bundle)
