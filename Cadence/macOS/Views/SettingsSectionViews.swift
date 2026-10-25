@@ -7,6 +7,13 @@ struct SettingsAccountSection: View {
     let appleAccountManager: AppleAccountManager
     let onDeleteAccount: () -> Void
 
+    /// "Signed in Oct 20" this year, "Signed in Oct 20, 2025" from another ([[T-6433]]): the
+    /// sign-in date persists indefinitely, so a bare month and day made a sign-in from last year
+    /// read like last week. Same rule as `DateFormatters.absoluteDay` ([[T-6252]]).
+    static func signedInLabel(_ signedInAt: Date, relativeTo referenceDate: Date = Date()) -> String {
+        "Signed in \(DateFormatters.absoluteDay(signedInAt, relativeTo: referenceDate))"
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             SettingsCard {
@@ -31,7 +38,7 @@ struct SettingsAccountSection: View {
                                         .font(.system(size: 12))
                                         .foregroundStyle(Theme.dim)
                                 }
-                                Text("Signed in \(DateFormatters.shortDate.string(from: profile.signedInAt))")
+                                Text(Self.signedInLabel(profile.signedInAt))
                                     .font(.system(size: 11))
                                     .foregroundStyle(Theme.muted)
                             } else {

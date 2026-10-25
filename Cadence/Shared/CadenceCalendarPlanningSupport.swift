@@ -156,13 +156,25 @@ enum CalendarBoardPlannerSupport {
         return recentered
     }
 
-    static func title(for anchorDate: Date, calendar: Calendar = .current) -> String {
+    /// The Board's page title: the visible week's range, "May 29 - Jun 4" or "Oct 5-11".
+    ///
+    /// The year appears only outside `referenceDate`'s year ([[T-6434]], following
+    /// `DateFormatters.absoluteDay`'s [[T-6252]] rule), so same-year titles are unchanged while a
+    /// board jumped into next year says so: "Jan 5-11, 2027", "Dec 28 - Jan 3, 2027". A range whose
+    /// ends share a year spells that year once, at the end; a range spanning years spells it on
+    /// whichever end is outside the reference year. The column heads stay year-less.
+    static func title(for anchorDate: Date, relativeTo referenceDate: Date = Date(), calendar: Calendar = .current) -> String {
         let start = calendar.startOfDay(for: anchorDate)
         let end = calendar.date(byAdding: .day, value: visibleDayCount - 1, to: start) ?? start
+        let referenceYear = calendar.component(.year, from: referenceDate)
+        let startYear = calendar.component(.year, from: start)
+        let endYear = calendar.component(.year, from: end)
+        let endSuffix = endYear == referenceYear ? "" : ", \(endYear)"
+        let startSuffix = (startYear == endYear || startYear == referenceYear) ? "" : ", \(startYear)"
         if calendar.isDate(start, equalTo: end, toGranularity: .month) {
-            return "\(DateFormatters.monthAbbrev.string(from: start)) \(DateFormatters.dayNumber.string(from: start))-\(DateFormatters.dayNumber.string(from: end))"
+            return "\(DateFormatters.monthAbbrev.string(from: start)) \(DateFormatters.dayNumber.string(from: start))-\(DateFormatters.dayNumber.string(from: end))\(endSuffix)"
         }
-        return "\(DateFormatters.monthAbbrev.string(from: start)) \(DateFormatters.dayNumber.string(from: start)) - \(DateFormatters.monthAbbrev.string(from: end)) \(DateFormatters.dayNumber.string(from: end))"
+        return "\(DateFormatters.monthAbbrev.string(from: start)) \(DateFormatters.dayNumber.string(from: start))\(startSuffix) - \(DateFormatters.monthAbbrev.string(from: end)) \(DateFormatters.dayNumber.string(from: end))\(endSuffix)"
     }
 
     static func dateByMovingWindow(_ date: Date, by delta: Int, calendar: Calendar = .current) -> Date {
