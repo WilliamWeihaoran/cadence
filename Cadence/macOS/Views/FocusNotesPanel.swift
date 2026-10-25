@@ -5,6 +5,9 @@ import SwiftData
 struct FocusNotesPanel: View {
     let task: AppTask
     @Query(sort: \AppTask.order) private var referenceTasks: [AppTask]
+    /// [[T-6461]]: the store's notes, sorted as `NotePanel` sorts them, so `[[` offers notes and a
+    /// `[[note]]` link resolves. Without them both defaulted to `[]` / a no-op and a link did nothing.
+    @Query(sort: \Note.updatedAt, order: .reverse) private var referenceNotes: [Note]
     @Environment(\.modelContext) private var modelContext
     @Environment(HoveredTaskManager.self) private var hoveredTaskManager
     @Environment(HoveredEditableManager.self) private var hoveredEditableManager
@@ -50,7 +53,9 @@ struct FocusNotesPanel: View {
             // `TaskDetailNotesSection` and `TaskNoteEditorPane`, which edit these same notes.
             MarkdownEditor(
                 text: taskNotesBinding,
+                referenceNotes: referenceNotes,
                 referenceTasks: referenceTasks,
+                onOpenNoteReference: openNoteReference,
                 onOpenTaskReference: openTaskReference,
                 onCreateEmbeddedTask: createEmbeddedTask,
                 onToggleEmbeddedTask: toggleEmbeddedTask,
@@ -168,6 +173,14 @@ struct FocusNotesPanel: View {
     //
     // Copied from `TaskDetailNotesSection`, which mirrors `TaskNoteEditorPane`; a fix to one
     // belongs in all three.
+
+    /// [[T-6461]]: a `[[note]]` link opens the note where every other note link goes (the Notes
+    /// page, or a list note's own Notes tab) — [[T-5180]]'s `NotePanel` route. Leaving the Focus
+    /// page does not stop the session: the timer is `FocusManager.shared`'s, not this view's.
+    private func openNoteReference(id: UUID?, title: String) {
+        guard let note = TaskNoteLinkRouting.note(id: id, title: title, in: referenceNotes) else { return }
+        TaskNoteLinkRouting.open(note)
+    }
 
     private func openTaskReference(id: UUID?, title: String) {
         if let id, let linkedTask = referenceTasks.first(where: { $0.id == id }) {

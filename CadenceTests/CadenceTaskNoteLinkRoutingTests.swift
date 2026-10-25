@@ -222,6 +222,23 @@ struct CadenceTaskNoteLinkRoutingTests {
         #expect(handler.contains("TaskNoteLinkRouting.open(note)"))
     }
 
+    /// [[T-6461]]: the Focus page's task-notes panel passed neither `referenceNotes:` nor
+    /// `onOpenNoteReference:`, so its `[[note]]` links neither resolved nor acted.
+    @Test func theFocusNotesPanelResolvesAndOpensNoteLinks() throws {
+        let source = CadenceSourceScan.codeOnly(
+            try CadenceSourceScan.sourceFile("Cadence/macOS/Views/FocusNotesPanel.swift")
+        )
+        let panel = try #require(CadenceSourceScan.declarationBody("struct FocusNotesPanel", in: source))
+        #expect(panel.contains("@Query(sort: \\Note.updatedAt, order: .reverse) private var referenceNotes: [Note]"))
+        let editor = try Self.arguments(ofFirst: "MarkdownEditor(", in: panel)
+        #expect(editor.contains("referenceNotes: referenceNotes"))
+        #expect(editor.contains("onOpenNoteReference: openNoteReference"))
+
+        let handler = try #require(CadenceSourceScan.functionBody(named: "openNoteReference", in: panel))
+        #expect(handler.contains("TaskNoteLinkRouting.note(id: id, title: title, in: referenceNotes)"))
+        #expect(handler.contains("TaskNoteLinkRouting.open(note)"))
+    }
+
     /// [[T-5151]] (b): the meeting-note sheet's pane is handed an `onOpenNote` — its default is a
     /// no-op — and that handler dismisses the sheet through the router.
     @Test func theMeetingNoteSheetDismissesAndRoutesANoteLink() throws {
