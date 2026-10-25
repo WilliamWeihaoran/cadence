@@ -527,7 +527,10 @@ struct CadenceMarkdownImageCommitSurfaceTests {
         // 78, and bare: the iPad Notes > Events pane names a note that saved but did not reach
         // Apple Calendar above its editor, and a selection change clears it.
         // T-5307: the mobile inline tag editor adds its retryable save failure notice.
-        #expect(total == 79, "the inline notice has \(total) call sites, not the 79 this test was written over")
+        // [[T-6211]] makes it 80, and bare: the Mac Month grid names a refused task drop above its
+        // weeks, as the Calendar Board does -- the retry is the drag itself, and the next drop
+        // that lands clears it ([[T-6281]]).
+        #expect(total == 80, "the inline notice has \(total) call sites, not the 80 this test was written over")
         #expect(withDismissal == 9, "\(withDismissal) call sites offer a dismissal, not 9")
 
         // And each of the nine is named, so one swapping places with another is still a failure.
