@@ -31,8 +31,8 @@ struct CreateTaskSheet: View {
     @State private var showDoPicker  = false
     @State private var showDuePicker = false
     // showLocalSuccessToast removed — global toast used instead
-    @FocusState private var focusedSubtask: Int?
-    @State private var subtaskTitles: [String] = []
+    @FocusState private var focusedSubtask: CreateTaskSubtaskDraft.ID?
+    @State private var subtaskDrafts: [CreateTaskSubtaskDraft] = []
 
     init(
         seed: TaskCreationSeed,
@@ -53,7 +53,7 @@ struct CreateTaskSheet: View {
         _dueDate           = State(initialValue: resolvedDueDate)
         _hasDoDate         = State(initialValue: !seed.doDateKey.isEmpty)
         _doDate            = State(initialValue: resolvedDoDate)
-        _subtaskTitles     = State(initialValue: seed.subtaskTitles)
+        _subtaskDrafts     = State(initialValue: CreateTaskSubtaskDraft.drafts(from: seed.subtaskTitles))
     }
 
     var body: some View {
@@ -164,28 +164,32 @@ struct CreateTaskSheet: View {
 
     @ViewBuilder
     private var subtasksSection: some View {
-        if !subtaskTitles.isEmpty {
+        if !subtaskDrafts.isEmpty {
             VStack(spacing: 0) {
-                ForEach(subtaskTitles.indices, id: \.self) { index in
-                    subtaskRow(at: index)
+                // T-6452: keyed by each draft's own id, not its index. An index-keyed row bound to
+                // `$titles[index]` outlived a removal — the row SwiftUI retired was the last index,
+                // whose binding still subscripted the shrunk array as it tore down.
+                ForEach($subtaskDrafts) { $draft in
+                    subtaskRow($draft)
                 }
             }
         }
     }
 
-    private func subtaskRow(at index: Int) -> some View {
-        HStack(spacing: 8) {
+    private func subtaskRow(_ draft: Binding<CreateTaskSubtaskDraft>) -> some View {
+        let draftID = draft.wrappedValue.id
+        return HStack(spacing: 8) {
             Circle()
                 .strokeBorder(Theme.dim.opacity(0.3), lineWidth: 1)
                 .frame(width: 12, height: 12)
-            TextField("Subtask", text: $subtaskTitles[index])
+            TextField("Subtask", text: draft.title)
                 .textFieldStyle(.plain)
                 .font(.system(size: 14))
                 .foregroundStyle(Theme.text)
-                .focused($focusedSubtask, equals: index)
+                .focused($focusedSubtask, equals: draftID)
                 .onSubmit(addNextSubtask)
             Button {
-                subtaskTitles.remove(at: index)
+                subtaskDrafts = CreateTaskSubtaskDraft.removing(draftID, from: subtaskDrafts)
             } label: {
                 Image(systemName: "xmark")
                     .font(.system(size: 9))
@@ -197,7 +201,7 @@ struct CreateTaskSheet: View {
             // same way an unnamed one would render.
             .accessibilityLabel("Remove")
             .accessibilityValue(TaskTitleSupport.displayTitle(
-                subtaskTitles[index],
+                draft.wrappedValue.title,
                 fallback: TaskTitleSupport.defaultCompactDisplayTitle
             ))
         }
@@ -291,8 +295,9 @@ struct CreateTaskSheet: View {
     }
 
     private func addNextSubtask() {
-        subtaskTitles.append("")
-        focusedSubtask = subtaskTitles.count - 1
+        let draft = CreateTaskSubtaskDraft(title: "")
+        subtaskDrafts.append(draft)
+        focusedSubtask = draft.id
     }
 
     // MARK: - Logic
@@ -360,7 +365,7 @@ struct CreateTaskSheet: View {
             sectionName: selectedSectionName,
             dueDateKey: hasDueDate ? DateFormatters.dateKey(from: dueDate) : "",
             scheduledDateKey: hasDoDate ? DateFormatters.dateKey(from: doDate) : "",
-            subtaskTitles: subtaskTitles,
+            subtaskTitles: CreateTaskSubtaskDraft.titles(of: subtaskDrafts),
             tags: selectedTags,
             scheduledStartMin: seed.scheduledStartMin,
             estimatedMinutes: seed.estimatedMinutes
@@ -462,6 +467,36 @@ struct CreateTaskSheet: View {
         return tag
     }
 
+}
+
+/// One draft subtask in the New Task sheet, with an identity of its own (T-6452).
+///
+/// The sheet used to hold `[String]` and key its rows by index, so removing a draft retired the
+/// row for the *last* index while its `$titles[index]` binding still read the shrunk array. A
+/// draft keyed by its own id removes exactly itself, and the row bound to it goes with it.
+struct CreateTaskSubtaskDraft: Identifiable, Equatable {
+    let id: UUID
+    var title: String
+
+    init(id: UUID = UUID(), title: String) {
+        self.id = id
+        self.title = title
+    }
+
+    static func drafts(from titles: [String]) -> [CreateTaskSubtaskDraft] {
+        titles.map { CreateTaskSubtaskDraft(title: $0) }
+    }
+
+    /// What the save path hands `TaskCreationDraft.subtaskTitles` — the titles in row order,
+    /// unchanged, exactly as the `[String]` state was handed over before.
+    static func titles(of drafts: [CreateTaskSubtaskDraft]) -> [String] {
+        drafts.map(\.title)
+    }
+
+    /// The drafts without the one whose x was clicked; every other draft keeps its id and text.
+    static func removing(_ id: CreateTaskSubtaskDraft.ID, from drafts: [CreateTaskSubtaskDraft]) -> [CreateTaskSubtaskDraft] {
+        drafts.filter { $0.id != id }
+    }
 }
 
 #endif

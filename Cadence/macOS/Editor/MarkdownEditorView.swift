@@ -103,7 +103,7 @@ struct MarkdownEditor: View {
     }
 
     @MainActor private var taskEmbedInfos: [UUID: MarkdownTaskEmbedRenderInfo] {
-        Dictionary(uniqueKeysWithValues: referenceTasks.map { ($0.id, MarkdownTaskEmbedRenderInfo.task($0)) })
+        NoteExportSupport.taskEmbedRenderInfos(for: referenceTasks)
     }
 
     /// `nil` when this host refuses images, which is how the toolbar drops the photo button rather
@@ -604,17 +604,13 @@ struct MarkdownEditorView: NSViewRepresentable {
     private func configure(_ textView: CadenceTextView, context: NSViewRepresentableContext<MarkdownEditorView>) -> Bool {
         let referencedImageIDs = MarkdownImageAssetService.standaloneReferencedIDs(in: text)
         let referencedAssets = imageAssets.filter { referencedImageIDs.contains($0.id) }
-        let imageAssetVersions = Dictionary(uniqueKeysWithValues: referencedAssets.map { ($0.id, $0.updatedAt) })
+        let imageAssetVersions = CadenceIdentityMap.firstWins(referencedAssets.map { ($0.id, $0.updatedAt) })
         var didUpdateRenderedContent = false
 
         if textView.markdownImageAssetVersions != imageAssetVersions {
             textView.markdownImageAssetVersions = imageAssetVersions
             textView.markdownImageRects.removeAll()
-            textView.markdownImageAssets = Dictionary(
-                uniqueKeysWithValues: referencedAssets.compactMap { asset in
-                    MarkdownImageAssetService.renderAsset(for: asset.id, in: referencedAssets).map { (asset.id, $0) }
-                }
-            )
+            textView.markdownImageAssets = MarkdownImageAssetService.renderAssets(for: referencedAssets)
             if let selectedMarkdownImageID = textView.selectedMarkdownImageID,
                imageAssetVersions[selectedMarkdownImageID] == nil {
                 textView.selectedMarkdownImageID = nil

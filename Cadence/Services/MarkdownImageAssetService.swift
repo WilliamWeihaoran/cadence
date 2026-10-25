@@ -447,6 +447,15 @@ nonisolated enum MarkdownImageAssetService {
         )
     }
 
+    /// Every decodable asset's render asset, keyed by id — the map each editor and PDF renderer
+    /// hands its text view. Two rows sharing an id keep the first (T-6451), as `renderAsset(for:in:)`
+    /// already resolves an id; `Dictionary(uniqueKeysWithValues:)` here trapped on that state.
+    static func renderAssets(for assets: [MarkdownImageAsset]) -> [UUID: MarkdownImageRenderAsset] {
+        CadenceIdentityMap.firstWins(assets.compactMap { asset in
+            renderAsset(for: asset.id, in: assets).map { (asset.id, $0) }
+        })
+    }
+
     static func setDisplayWidth(_ width: CGFloat, for id: UUID, in assets: [MarkdownImageAsset]) {
         guard let asset = assets.first(where: { $0.id == id }) else { return }
         asset.displayWidth = Double(clampedDisplayWidth(width))

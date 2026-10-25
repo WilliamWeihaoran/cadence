@@ -413,9 +413,7 @@ struct iOSMarkdownEditingSurface: View {
         let tasks = referenceTasks + recentEmbeddedTasks.values.filter { recentTask in
             !referenceTasks.contains(where: { $0.id == recentTask.id })
         }
-        return Dictionary(uniqueKeysWithValues: tasks.map { task in
-            (task.id, MarkdownTaskEmbedRenderInfo.task(task))
-        })
+        return NoteExportSupport.taskEmbedRenderInfos(for: tasks)
     }
 
     private var referenceCompletionContext: MarkdownReferenceCompletionContext? {

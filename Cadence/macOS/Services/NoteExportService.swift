@@ -146,11 +146,7 @@ enum NoteExportService {
         layoutManager.addTextContainer(textContainer)
 
         let textView = CadenceTextView(frame: .zero, textContainer: textContainer)
-        textView.markdownImageAssets = Dictionary(
-            uniqueKeysWithValues: imageAssets.compactMap { asset in
-                MarkdownImageAssetService.renderAsset(for: asset.id, in: imageAssets).map { (asset.id, $0) }
-            }
-        )
+        textView.markdownImageAssets = MarkdownImageAssetService.renderAssets(for: imageAssets)
         textView.markdownTaskEmbeds = taskEmbeds
         textView.isEditable = false
         textView.isSelectable = false

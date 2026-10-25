@@ -65,7 +65,7 @@ func applyFrozenTaskOrder(_ sorted: [AppTask], frozen: [AppTask]?) -> [AppTask] 
 /// to survive the `isEmpty` check and keep rendering.
 func resolveFrozenTaskGroups(_ frozen: [FrozenTaskGroupSnapshot]?, from allTasks: [AppTask]) -> [ResolvedFrozenTaskGroup]? {
     guard let frozen else { return nil }
-    let tasksByID = Dictionary(uniqueKeysWithValues: allTasks.map { ($0.id, $0) })
+    let tasksByID = CadenceIdentityMap.firstWins(allTasks.map { ($0.id, $0) })
     return frozen.compactMap { group in
         let resolvedTasks = group.taskIDs
             .compactMap { tasksByID[$0] }

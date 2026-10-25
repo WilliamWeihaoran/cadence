@@ -100,7 +100,10 @@ nonisolated enum CadenceTaskRecurrenceWorkflowSupport {
     /// tasks — sharing one implementation here (rather than each delete path reimplementing it) is
     /// what keeps that guarantee true everywhere.
     static func repairDanglingRecurrenceLinks(forDeleted deletedTasks: [AppTask], allTasks: [AppTask]) {
-        let deletedByID = Dictionary(uniqueKeysWithValues: deletedTasks.map { ($0.id, $0) })
+        // First wins on a shared id (T-6451), the rule `CadenceIdentityMap.firstWins` states. Spelt
+        // out here because this file is also compiled into the widget and MCP targets, which do not
+        // carry `CadenceIdentityMap`; `uniqueKeysWithValues:` trapped on two rows sharing an id.
+        let deletedByID = Dictionary(deletedTasks.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         guard !deletedByID.isEmpty else { return }
 
         func survivingSuccessor(startingFrom taskID: UUID) -> UUID? {

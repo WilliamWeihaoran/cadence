@@ -122,10 +122,7 @@ nonisolated enum NoteExportSupport {
     /// cached title. That is what exporting a note used to do on macOS, and it is exactly the trap
     /// a second renderer would fall into independently.
     nonisolated static func taskEmbedRenderInfos(for tasks: [AppTask]) -> [UUID: MarkdownTaskEmbedRenderInfo] {
-        Dictionary(
-            tasks.map { ($0.id, MarkdownTaskEmbedRenderInfo.task($0)) },
-            uniquingKeysWith: { first, _ in first }
-        )
+        CadenceIdentityMap.firstWins(tasks.map { ($0.id, MarkdownTaskEmbedRenderInfo.task($0)) })
     }
 
     /// The tasks a note embeds, fetched on demand.

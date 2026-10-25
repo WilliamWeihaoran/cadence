@@ -38,9 +38,7 @@ enum iOSMarkdownStyler {
         }
 
         storage.setAttributes(baseTypingAttributes, range: fullRange)
-        let renderAssets = Dictionary(uniqueKeysWithValues: imageAssets.compactMap { asset in
-            MarkdownImageAssetService.renderAsset(for: asset.id, in: imageAssets).map { (asset.id, $0) }
-        })
+        let renderAssets = MarkdownImageAssetService.renderAssets(for: imageAssets)
 
         let lineRecords = MarkdownSourceLines.lines(in: markdown)
         let tableRows = MarkdownTableParser.rowStyles(in: markdown)

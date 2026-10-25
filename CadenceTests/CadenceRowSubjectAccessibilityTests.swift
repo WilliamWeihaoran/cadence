@@ -34,13 +34,14 @@ struct CadenceRowSubjectAccessibilityTests {
     @Test func createTaskSheetDraftSubtaskRemoveButtonNamesTheDraftItRemoves() throws {
         let source = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(Self.createTaskSheetPath))
         let body = try #require(
-            CadenceSourceScan.declarationBody("private func subtaskRow(at index: Int) -> some View", in: source)
+            CadenceSourceScan.declarationBody("private func subtaskRow(_ draft: Binding<CreateTaskSubtaskDraft>) -> some View", in: source)
         )
 
         #expect(body.contains(#".accessibilityLabel("Remove")"#))
         #expect(body.contains(".accessibilityValue(TaskTitleSupport.displayTitle("))
         // The subject: this row's own draft text, not the model `Subtask` (there is none yet).
-        #expect(body.contains("subtaskTitles[index],"))
+        // Since T-6452 the row is bound to its draft by identity rather than by index.
+        #expect(body.contains("draft.wrappedValue.title,"))
         #expect(body.contains("fallback: TaskTitleSupport.defaultCompactDisplayTitle"))
     }
 
@@ -126,7 +127,7 @@ struct CadenceRowSubjectAccessibilityTests {
         }
 
         var total = 0
-        total += try count("private func subtaskRow(at index: Int) -> some View", in: Self.createTaskSheetPath)
+        total += try count("private func subtaskRow(_ draft: Binding<CreateTaskSubtaskDraft>) -> some View", in: Self.createTaskSheetPath)
         // Both subtask-row sites (the circle and the delete button) live in one struct.
         total += try count("struct SubtaskRow: View", in: Self.tasksPanelSupportPath)
         // `GoalLinkedListRow` and `HabitListCard` were the fourth and eighth sites and left with

@@ -594,9 +594,7 @@ struct iOSFocusView: View {
     }
 
     private var taskEmbedInfos: [UUID: MarkdownTaskEmbedRenderInfo] {
-        Dictionary(uniqueKeysWithValues: allTasks.map { task in
-            (task.id, MarkdownTaskEmbedRenderInfo.task(task))
-        })
+        NoteExportSupport.taskEmbedRenderInfos(for: allTasks)
     }
 
     private func openMarkdownReference(_ target: MarkdownReferenceDisplayTarget) {

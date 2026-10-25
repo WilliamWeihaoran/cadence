@@ -422,7 +422,7 @@ nonisolated enum MarkdownTaskEmbedTitleCache {
     /// Build this once per query rather than per note — a search pass resolves many notes against
     /// the same task set.
     static func titles(for tasks: [AppTask]) -> [UUID: String] {
-        Dictionary(tasks.map { ($0.id, $0.title) }, uniquingKeysWith: { first, _ in first })
+        CadenceIdentityMap.firstWins(tasks.map { ($0.id, $0.title) })
     }
 
     static func resolving(_ markdown: String, tasks: [AppTask]) -> String {
