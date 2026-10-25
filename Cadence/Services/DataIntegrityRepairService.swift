@@ -1116,6 +1116,51 @@ nonisolated enum DataIntegrityRepairService {
         }
     }
 
+    /// A name no **active** context carries: `name` itself when it is free, else `name` under the
+    /// lowest free `" (n)"` starting at 2 ([[T-4910]]).
+    ///
+    /// **Why a suffix and not a refusal.** The three writers that un-archive a context — iOS
+    /// `iOSSettingsView.restore`, macOS `SettingsView.restoreContext` and MCP `update_context` with
+    /// `isArchived: false` — wrote `isArchived = false` unconditionally, so restoring a context
+    /// whose name an active row has since taken made exactly the pair `repairDuplicateNotes`'
+    /// sibling `repairDuplicateContexts` fuses on the next launch, with no undo. The owner's
+    /// decision of 2026-10-24 is to restore under a suffixed name rather than refuse: you cannot
+    /// pick a name from a Restore button, so a refusal leaves the user at a dead end with no way
+    /// forward from the control they pressed. A suffixed name is one they can then rename.
+    ///
+    /// **Creation and rename are deliberately not routed here.** [[T-3125]] and [[T-4722]] refuse,
+    /// and should: both reach the user through a field they are already typing in, so there is a
+    /// name to pick and `CadenceContextNameClashCopy` asks them to pick it. Restore is the one
+    /// entry point with no field.
+    ///
+    /// `excluding` is the row being restored, for `activeContextSharingName`'s own reason — a row
+    /// is not a second copy of itself. The clash test is that function, not a second spelling of
+    /// it, so what counts as "taken" here is what the merge groups on: trimmed and case-folded.
+    /// An **empty** name is never a clash there, so it is returned unsuffixed here.
+    ///
+    /// **The suffix is built on the trimmed name**, although a free name comes back exactly as it
+    /// was given. `normalizedContextName` trims, so suffixing a name with trailing space would put
+    /// the space *inside* the key — `"Work "` becoming `"Work  (2)"`, which is a different key
+    /// from the `"Work (2)"` already here and so reads as free. Climbing on the trimmed base means
+    /// the numbers this walks are the numbers the clash test sees.
+    ///
+    /// Terminates: each candidate is distinct and each taken one needs a distinct row of
+    /// `contexts`, so the loop cannot outrun a finite table.
+    static func availableContextName(
+        _ name: String,
+        among contexts: [Context],
+        excluding restored: Context? = nil
+    ) -> String {
+        guard activeContextSharingName(name, among: contexts, excluding: restored) != nil else { return name }
+        let base = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        var suffix = 2
+        while true {
+            let candidate = "\(base) (\(suffix))"
+            if activeContextSharingName(candidate, among: contexts, excluding: restored) == nil { return candidate }
+            suffix += 1
+        }
+    }
+
     /// Carries across what can be carried of the copy this merge is about to delete.
     ///
     /// [[T-3101]]: `mergeArea` and `mergeProject` have had a field merge since they were written

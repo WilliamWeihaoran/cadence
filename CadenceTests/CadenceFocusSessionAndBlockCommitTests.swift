@@ -153,6 +153,74 @@ struct CadenceFocusSessionAndBlockCommitTests {
         #expect(view.contains("struct iOSFocusView: View"))
     }
 
+    // MARK: - T-5060(b), the focus note's live controls
+
+    /// **The checklist circles in an iOS focus note act** ([[T-5060]] (b), the owner's option (a),
+    /// decided 2026-10-24): the preview is handed a toggle for the checklist and for both embed
+    /// controls, where it used to be handed `onOpenReference` and nothing else, which left every
+    /// circle drawn as a `.disabled` button (`iOSMarkdownPreview.swift`, `.disabled(onToggleChecklist == nil)`).
+    ///
+    /// A scan, because `Cadence/iOS/` is behind `#if os(iOS)` and this target builds for macOS.
+    /// The behaviour the wiring buys is measured by the test below it.
+    @Test func theIOSFocusNoteHandsItsPreviewALiveChecklistAndLiveEmbedToggles() throws {
+        let view = try CadenceCommitSurfaceScan.scanned(Self.focusViewPath)
+        let notes = try CadenceCommitSurfaceScan.declarationBody(named: "taskNotes", in: view)
+        #expect(notes.contains("onToggleChecklist: { lineIndex in toggleChecklistItem(at: lineIndex, on: task) }"),
+                "the focus note's checklist circles are disabled again")
+        #expect(notes.contains("onToggleEmbeddedTask: { toggleEmbeddedTask(id: $0) }"))
+        #expect(notes.contains("onToggleEmbeddedSubtask: { toggleEmbeddedSubtask(taskID: $0, subtaskID: $1) }"))
+        // The reference opener it already had, so this reads an addition and not a replacement.
+        #expect(notes.contains("onOpenReference: openMarkdownReference"))
+
+        // The write path: the task's own notes, rewritten by the shared checklist rule and
+        // committed through the shared field transaction, which puts the text back on a refusal.
+        let toggle = try CadenceCommitSurfaceScan.declarationBody(named: "toggleChecklistItem", in: view)
+        let rewrite = try #require(toggle.range(of: "MarkdownChecklistSupport.toggledText(task.notes, lineIndex: lineIndex)"))
+        let commit = try #require(
+            toggle.range(of: "CadenceTaskFieldEditCommit.commit(task, in: modelContext) {"),
+            "the focus note writes its checklist outside the shared field transaction"
+        )
+        #expect(rewrite.upperBound <= commit.lowerBound)
+        #expect(toggle.contains("task.notes = toggled"))
+
+        // The two embed toggles go through the same shared paths the editing surface's cards use,
+        // rather than a second spelling of completion.
+        let embed = try CadenceCommitSurfaceScan.declarationBody(named: "toggleEmbeddedTask", in: view)
+        #expect(embed.contains("CadenceTaskStatusEditing.toggleCompletion(task, in: modelContext)"))
+        let subtask = try CadenceCommitSurfaceScan.declarationBody(named: "toggleEmbeddedSubtask", in: view)
+        #expect(subtask.contains("CadenceNoteTaskEmbedEditing.toggleSubtask(subtask, in: modelContext)"))
+        #expect(view.contains("struct iOSFocusView: View"))
+    }
+
+    /// The behaviour the wiring above buys, and the half a scan cannot claim: the composition the
+    /// focus note's handler performs ticks the line the user tapped and leaves every other line
+    /// alone, and a refused save puts the whole note back.
+    @Test func tickingAFocusNotesChecklistLineWritesThatLineAndRollsBackARefusedSave() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let task = AppTask(title: "Ship the build")
+        task.notes = "- [ ] archive\n- [ ] upload\n- [ ] notes"
+        context.insert(task)
+        try context.save()
+
+        let toggled = try #require(MarkdownChecklistSupport.toggledText(task.notes, lineIndex: 1))
+        #expect(CadenceTaskFieldEditCommit.commit(task, in: context) { task.notes = toggled })
+        #expect(task.notes == "- [ ] archive\n- [x] upload\n- [ ] notes",
+                "the tap ticked a line other than the one it landed on")
+
+        let before = task.notes
+        let refusedText = try #require(MarkdownChecklistSupport.toggledText(task.notes, lineIndex: 2))
+        let landed = CadenceTaskFieldEditCommit.commit(
+            task,
+            in: context,
+            commit: { _ in throw CommitRefused() }
+        ) {
+            task.notes = refusedText
+        }
+        #expect(landed == false)
+        #expect(task.notes == before, "a refused save left the focus note carrying a tick the store does not hold")
+    }
+
     // MARK: - T-636(e), source shape
 
     /// The panel no longer creates a block at all ([[T-3170]]): no Block tab reaches it, so it has

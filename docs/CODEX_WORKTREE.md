@@ -484,6 +484,16 @@ still touches it. Four lines that appeared twice (`iOSCalendarManager.swift`,
 `CadenceCapturePaletteUITests.swift`) were collapsed to one each, which changes nothing a glob
 matches; the count reads 175 rather than 179 for that reason alone.
 
+**A HELD verdict has to be actionable, not merely correct ([[T-6402]], 2026-10-25).** Agent
+`spell1545` measured `Cadence/iOS/iOSList*.swift` by hand the same day and needed four commands to
+learn what one should have said: the branch tip's date, and which side the hunks fall on. `held`
+now reports both on every measured verdict -- `+N` is lines the BRANCH has that `main` lacks, `-N`
+is lines `main` has that the branch lacks -- and when every unlanded file adds `+0`, it says the
+branch is BEHIND `main` rather than ahead of it. It still reports HELD in that case, because a
+deletion is real work and this is not the place to decide it; it just stops making the reader
+measure it. That is the 2026-10-20 correction turned into output: *"a branch cut weeks ago differs
+from main in both directions, and the larger side is usually main's own later work reflected back"*.
+
 **For whoever makes the next grant.** Add the pattern to `lease` and its row to `lease-grants` in
 the same commit -- `review` refuses otherwise -- and name the branch, not the ticket. When that
 branch lands, add `spent=<landing sha>` in the landing commit. Do not fence a path before the job

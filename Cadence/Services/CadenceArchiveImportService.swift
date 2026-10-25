@@ -500,19 +500,20 @@ nonisolated enum CadenceArchiveImportService {
             inserts["Tag", default: 0] -= aliasedTags.count
             matches["Tag", default: 0] += aliasedTags.count
         }
-        // [[T-3146]]: and a daily note matched by its date key, for the same reason.
-        let aliasedDailyNotes = dailyNoteAliases(archive, against: destination)
+        // [[T-3146]], widened by [[T-4720]]: and a note matched by the shared key its kind keys
+        // on — a day, a week or a calendar event — for the same reason.
+        let aliasedSharedKeyNotes = sharedKeyNoteAliases(archive, against: destination)
         var presentNotes = destination.notes
-        if !aliasedDailyNotes.isEmpty {
-            inserts["Note", default: 0] -= aliasedDailyNotes.count
-            matches["Note", default: 0] += aliasedDailyNotes.count
+        if !aliasedSharedKeyNotes.isEmpty {
+            inserts["Note", default: 0] -= aliasedSharedKeyNotes.count
+            matches["Note", default: 0] += aliasedSharedKeyNotes.count
             // So `differingCounts` below compares each aliased record against the row it will
             // actually be written onto rather than skipping it for having no row under its id.
-            for (recordID, note) in aliasedDailyNotes { presentNotes[recordID] = note }
+            for (recordID, note) in aliasedSharedKeyNotes { presentNotes[recordID] = note }
         }
         // Both normalizations `write` applies, replayed here so the preview compares what the
-        // write will store: an aliased tag id, and an aliased daily note's references ([[T-3146]]).
-        let noteReferenceRedirects = aliasedNoteReferenceRedirects(aliasedDailyNotes)
+        // write will store: an aliased tag id, and an aliased note's references ([[T-3146]]).
+        let noteReferenceRedirects = aliasedNoteReferenceRedirects(aliasedSharedKeyNotes)
         func asWritten(_ record: CadenceArchiveTask) -> CadenceArchiveTask {
             var record = record
             record.tagIDs = aliasedTagIDs(record.tagIDs, aliasedTags)
@@ -868,9 +869,19 @@ nonisolated enum CadenceArchiveImportService {
     /// here exactly as it is, overwrite replaces its fields with the archive's copy, and neither
     /// deletes or re-ids anything. Re-running the import finds the same match.
     ///
-    /// **Daily notes only.** The owner's decision of 2026-10-22 names daily notes, and that is what
-    /// this does. Weekly and meeting notes have the same shared-key shape and are untouched here;
-    /// [[T-4720]] carries that.
+    /// **All three shared-key kinds** ([[T-4720]]). The owner's decision of 2026-10-22 named daily
+    /// notes and this matched `.daily` alone; the owner's decision of 2026-10-24 took the larger of
+    /// the two options and extended it to weekly and meeting notes, declining a "weekly only"
+    /// middle. The three are the three `Note.canonicalKey` gives a *shared* identity to —
+    /// `daily:<dateKey>`, `weekly:<weekKey>` and `meeting:<calendarEventID>` — and
+    /// `repairDuplicateNotes` groups on all three, so `mergeNoteFields` glued two non-empty bodies
+    /// with `\n\n---\n\n` for any of them, not just for days. `.permanent` and `.list` key on
+    /// their own UUID, have no shared identity to collide on, and are not aliased here.
+    ///
+    /// Each kind's key field is the one `canonicalKey` reads for it, which is why this asks the
+    /// record for all three and lets `canonicalKey` pick: a meeting note keys on
+    /// `calendarEventID`, not on `dateKey`, and a single `dateKey` parameter would have silently
+    /// keyed every meeting note as the dateless fallback and aliased nothing.
     ///
     /// **What merge mode now does with the archive's copy**, which the glue used to hide: nothing.
     /// A matched row is a row merge leaves exactly as it is, so the body the archive carries for
@@ -884,25 +895,45 @@ nonisolated enum CadenceArchiveImportService {
     /// share one destination row, and a note with no date key has no shared identity to collide on
     /// so it is skipped outright. Among several candidates the lowest `order`, then the oldest,
     /// then the smallest id wins, so the preview and the write name the same pairs.
-    private nonisolated static func dailyNoteAliases(
+    private nonisolated static func sharedKeyNoteAliases(
         _ archive: CadenceArchive,
         against destination: DestinationIndex
     ) -> [UUID: Note] {
         // Asked of `Note.canonicalKey` rather than spelled `"daily:\(dateKey)"` here, so the one
         // rule that decides whether two notes are the same note cannot drift into two. The `id`
-        // argument is the per-note fallback that only a *dateless* daily note reaches, and
-        // `dayKey`'s own guard rejects those before asking — one placeholder serves every call.
+        // argument is the per-note fallback that only a *keyless* row of a shared kind reaches,
+        // and `sharedKey`'s own guard rejects those before asking — one placeholder serves every
+        // call. The guard is on the kind's *own* key field, so an empty one is skipped the way a
+        // dateless daily note was: it has no shared identity to collide on.
         let keyPlaceholder = UUID()
-        func dayKey(kindRaw: String, dateKey: String) -> String? {
-            guard NoteKind(rawValue: kindRaw) == .daily,
-                  !dateKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            else { return nil }
-            return Note.canonicalKey(kind: .daily, dateKey: dateKey, id: keyPlaceholder)
+        func sharedKey(kindRaw: String, dateKey: String, weekKey: String, calendarEventID: String) -> String? {
+            func present(_ value: String) -> Bool {
+                !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            }
+            guard let kind = NoteKind(rawValue: kindRaw) else { return nil }
+            switch kind {
+            case .daily: guard present(dateKey) else { return nil }
+            case .weekly: guard present(weekKey) else { return nil }
+            case .meeting: guard present(calendarEventID) else { return nil }
+            case .permanent, .list: return nil
+            }
+            return Note.canonicalKey(
+                kind: kind,
+                dateKey: dateKey,
+                weekKey: weekKey,
+                calendarEventID: calendarEventID,
+                id: keyPlaceholder
+            )
         }
         let archiveIDs = Set(archive.notes.map(\.id))
         var candidates: [String: Note] = [:]
         for note in destination.notes.values where !archiveIDs.contains(note.id) {
-            guard let slot = dayKey(kindRaw: note.kindRaw, dateKey: note.dateKey) else { continue }
+            guard let slot = sharedKey(
+                kindRaw: note.kindRaw,
+                dateKey: note.dateKey,
+                weekKey: note.weekKey,
+                calendarEventID: note.calendarEventID
+            ) else { continue }
             if let current = candidates[slot], !Self.notePrecedes(note, current) { continue }
             candidates[slot] = note
         }
@@ -913,7 +944,12 @@ nonisolated enum CadenceArchiveImportService {
             .filter { destination.notes[$0.id] == nil }
             .sorted(by: Self.archiveNotePrecedes)
         for record in unmatched {
-            guard let slot = dayKey(kindRaw: record.kindRaw, dateKey: record.dateKey),
+            guard let slot = sharedKey(
+                      kindRaw: record.kindRaw,
+                      dateKey: record.dateKey,
+                      weekKey: record.weekKey,
+                      calendarEventID: record.calendarEventID
+                  ),
                   let target = candidates[slot],
                   claimed.insert(target.id).inserted
             else { continue }
@@ -922,8 +958,8 @@ nonisolated enum CadenceArchiveImportService {
         return aliases
     }
 
-    /// `[[note:<archive id>|…]]` -> `[[note:<destination id>|…]]` for every daily note this import
-    /// matched under another id ([[T-3146]]).
+    /// `[[note:<archive id>|…]]` -> `[[note:<destination id>|…]]` for every note this import
+    /// matched under another id ([[T-3146]], widened to all three shared-key kinds by [[T-4720]]).
     ///
     /// An aliased note keeps the destination's id, so a reference the archive wrote to its own copy
     /// names a row this store will never hold, and an id-named reference resolves to its row or to
@@ -1009,8 +1045,8 @@ nonisolated enum CadenceArchiveImportService {
         // Computed before anything is inserted, for the reason `aliasedTags` is: the preview and
         // the write must name the same pairs ([[T-3146]]). It is read first because the task table
         // below already needs `noteReferenceRedirects`.
-        let aliasedDailyNotes = dailyNoteAliases(archive, against: destination)
-        let noteReferenceRedirects = aliasedNoteReferenceRedirects(aliasedDailyNotes)
+        let aliasedSharedKeyNotes = sharedKeyNoteAliases(archive, against: destination)
+        let noteReferenceRedirects = aliasedNoteReferenceRedirects(aliasedSharedKeyNotes)
 
         _ = upsert(
             archive.contexts, into: &destination.contexts,
@@ -1269,7 +1305,7 @@ nonisolated enum CadenceArchiveImportService {
             CadenceListNoteFiling.fileWithoutCommitting(model, toFolder: record.folderPath)
         }
         worklist.notes = upsert(
-            archive.notes.filter { aliasedDailyNotes[$0.id] == nil }, into: &destination.notes,
+            archive.notes.filter { aliasedSharedKeyNotes[$0.id] == nil }, into: &destination.notes,
             mode: mode, tally: &tally, in: modelContext,
             make: { _ in Note(kind: .list) },
             fields: { record, model in
@@ -1277,13 +1313,14 @@ nonisolated enum CadenceArchiveImportService {
                 copyNoteFields(record, onto: model)
             }
         )
-        // [[T-3146]]: an archive daily note for a day this store already has a daily note for is
-        // that note, not a second one beside it. Same shape as the tag alias above — the
+        // [[T-3146]], widened by [[T-4720]]: an archive note whose shared key this store already
+        // holds a note under — the same day, the same week, the same calendar event — is that
+        // note, not a second one beside it. Same shape as the tag alias above — the
         // destination's id is kept, each mode then does what it does to any matched row, and
         // overwrite's pair joins the wiring worklist so the archive's area, project and tags land
         // on the row that survived.
         for record in archive.notes {
-            guard let existing = aliasedDailyNotes[record.id] else { continue }
+            guard let existing = aliasedSharedKeyNotes[record.id] else { continue }
             switch mode {
             case .mergeKeepingExistingRows:
                 tally.skipped += 1

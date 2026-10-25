@@ -789,6 +789,22 @@ final class CadenceWriteService {
             throw CadenceWriteError.contextRenameClashes(name: clash.name, id: clash.id.uuidString)
         }
 
+        // [[T-4910]]: a restore under a name an active context has since taken makes the same
+        // pair, and the Restore control the other two surfaces offer has no name field, so the
+        // owner's decision of 2026-10-24 is to suffix rather than refuse. Reached only when this
+        // request un-archives a row that is archived now — the guard above has already refused a
+        // *changed* clashing name, so the name landing here is the row's own. Resolved before any
+        // write, because `activeContextSharingName` skips archived rows and would find this row
+        // itself active afterwards.
+        var restoredName: String?
+        if options.isArchived == false, target.isArchived {
+            let carried = name ?? target.name
+            let free = DataIntegrityRepairService.availableContextName(
+                carried, among: try fetchContexts(), excluding: target
+            )
+            if free != carried { restoredName = free }
+        }
+
         // Validated, and the whole new numbering computed, before anything is written — the shape
         // every editing arm here shares, so a refused position cannot leave a rename applied.
         let placement = try options.order.map { try plannedContextOrders(moving: target, to: $0) }
@@ -804,7 +820,7 @@ final class CadenceWriteService {
         let previousIcon = target.icon
         let previousIsArchived = target.isArchived
 
-        if let name { target.name = name }
+        if let name = restoredName ?? name { target.name = name }
         if let colorHex { target.colorHex = colorHex }
         if let icon { target.icon = icon }
         if let isArchived = options.isArchived { target.isArchived = isArchived }

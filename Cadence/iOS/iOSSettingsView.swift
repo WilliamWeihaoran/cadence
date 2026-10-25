@@ -532,7 +532,16 @@ struct iOSSettingsView: View {
         try? modelContext.save()
     }
 
+    /// Un-archive a context, under a free name ([[T-4910]]).
+    ///
+    /// The name is resolved before `isArchived` is cleared, because the clash test skips archived
+    /// rows: asking after the write would find the row itself active and suffix nothing. See
+    /// `DataIntegrityRepairService.availableContextName` for why a restore suffixes where creation
+    /// and rename refuse. The three un-archiving writers all do this, so no two of them disagree.
     private func restore(_ context: Context) {
+        context.name = DataIntegrityRepairService.availableContextName(
+            context.name, among: contexts, excluding: context
+        )
         context.isArchived = false
         try? modelContext.save()
     }

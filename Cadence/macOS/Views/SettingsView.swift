@@ -407,7 +407,16 @@ struct SettingsView: View {
     }
 
     /// Unarchive a context. See `archiveContext(_:)` for why the commit is here and why it is `try?`.
+    ///
+    /// **The name is resolved first ([[T-4910]]).** The clash test skips archived rows, so asking
+    /// after `isArchived` is cleared would find this row itself active and suffix nothing. iOS's
+    /// `restore(_:)` and MCP `update_context` do the same, in that order, for the same reason;
+    /// `DataIntegrityRepairService.availableContextName` says why a restore suffixes where
+    /// creation ([[T-3125]]) and rename ([[T-4722]]) refuse.
     private func restoreContext(_ context: Context) {
+        context.name = DataIntegrityRepairService.availableContextName(
+            context.name, among: contexts, excluding: context
+        )
         context.isArchived = false
         try? modelContext.save()
     }

@@ -354,8 +354,8 @@ struct iOSCalendarTimelineGrid: View {
         )
     }
 
-    /// A tap on an all-day chip in the single-day strip ([[T-5356]]). The same rule as a tap on a
-    /// timed block (`iOSCalendarTimelineDayColumn.openEvent`): while a task block is lifted the tap
+    /// A tap on an all-day chip, in the single-day strip or in the scrolling grid's day header
+    /// ([[T-5356]]). The same rule as a tap on a timed block (`iOSCalendarTimelineDayColumn.openEvent`): while a task block is lifted the tap
     /// puts it down; otherwise it opens the grid's one event editor.
     private func openAllDayEvent(_ event: EKEvent) {
         guard editingTaskID == nil else {
@@ -472,7 +472,8 @@ struct iOSCalendarTimelineGrid: View {
                             allDayEvents: allDayEvents(on: date),
                             unscheduledTasks: items(unscheduledTasksByDate, on: date),
                             capacity: bandCapacity,
-                            bandHeight: dayHeaderHeight
+                            bandHeight: dayHeaderHeight,
+                            onOpenEvent: openAllDayEvent
                         ) {
                             selectedDate = date
                         }
@@ -861,6 +862,17 @@ private struct iOSCalendarTimelineDayHeader: View {
     let capacity: Int
     /// The pinned row's height, shared by every column — the busiest visible day's need.
     let bandHeight: CGFloat
+    /// What a tap on one of the band's all-day event chips does ([[T-5356]]): it opens that
+    /// event, while a tap anywhere else in the header still runs `action` and selects the day.
+    ///
+    /// This is why `chipBand` is an OVERLAY and not part of the `Button`'s label. A tap gesture
+    /// inside a button's label is arbitrated against the button's own, and which one wins is not
+    /// this view's to choose; a chip drawn above the button is simply the topmost hit-testable
+    /// thing at that point, and everything the chips do not cover falls through to the button
+    /// beneath. The chips that are not openable — the unscheduled tasks and the "+N more" line —
+    /// take no hit at all, so the day is still selectable through them.
+    let onOpenEvent: (EKEvent) -> Void
+    /// Selects the day. Last, because the grid passes it as a trailing closure.
     let action: () -> Void
 
     /// Who gets the strip's rows, and how many items the "+N more" line stands for.
@@ -903,18 +915,17 @@ private struct iOSCalendarTimelineDayHeader: View {
                 }
                 .frame(height: iOSCalendarTypographyMetrics.dateBlock(at: dynamicTypeSize, scaling: scaling))
 
-                iOSCalendarAllDayBandChips(
-                    allDayEvents: allDayEvents,
-                    unscheduledTasks: unscheduledTasks,
-                    split: split
-                )
-                .frame(
-                    maxWidth: .infinity,
-                    minHeight: iOSCalendarTimelineMetrics.previewMinHeight,
-                    alignment: .topLeading
-                )
-                .padding(.horizontal, iOSCalendarTimelineMetrics.previewInset)
-                .padding(.bottom, iOSCalendarTimelineMetrics.previewInset)
+                // The band's SPACE, reserved here and drawn by `chipBand` above. `Color.clear`
+                // is hit-testable, which is the point: every part of the band a chip does not
+                // cover still selects the day.
+                Color.clear
+                    .frame(
+                        maxWidth: .infinity,
+                        minHeight: iOSCalendarTimelineMetrics.previewMinHeight,
+                        alignment: .topLeading
+                    )
+                    .padding(.horizontal, iOSCalendarTimelineMetrics.previewInset)
+                    .padding(.bottom, iOSCalendarTimelineMetrics.previewInset)
             }
             .frame(height: bandHeight, alignment: .top)
             .background(isToday ? Theme.blue.opacity(0.035) : Theme.surface)
@@ -930,6 +941,7 @@ private struct iOSCalendarTimelineDayHeader: View {
             }
         }
         .buttonStyle(.iosPressable)
+        .overlay(alignment: .top) { chipBand }
         // The two stacks the band draws — all-day events (T-3163) and unscheduled tasks — where it
         // used to announce the long date and nothing else (T-573), and where it briefly announced
         // an "N timed" count as well (T-1271 took that chip off the band).
@@ -945,6 +957,38 @@ private struct iOSCalendarTimelineDayHeader: View {
                 unscheduledCount: unscheduledTasks.count
             )
         )
+        // `.contain`, not `.combine`: the select-the-day button and each openable chip are
+        // separate elements, and a combined header would fold them into one that VoiceOver can
+        // only select the day from ([[T-5356]]). The single-day strip is `.contain` for the same
+        // reason.
+        .accessibilityElement(children: .contain)
+    }
+
+    /// The chip stack, drawn ABOVE the select-the-day `Button` rather than inside its label — see
+    /// `onOpenEvent` for why. It reproduces the label's own layout so the chips land exactly where
+    /// the reserved space below them is: the date block's height, then the band at the same inset.
+    private var chipBand: some View {
+        VStack(spacing: 0) {
+            // The date block's space. Unlike the reserved band space inside the Button, this one
+            // takes no hit — a tap on the day number belongs to the button underneath.
+            Color.clear
+                .frame(height: iOSCalendarTypographyMetrics.dateBlock(at: dynamicTypeSize, scaling: scaling))
+                .allowsHitTesting(false)
+
+            iOSCalendarAllDayBandChips(
+                allDayEvents: allDayEvents,
+                unscheduledTasks: unscheduledTasks,
+                split: split,
+                onOpenEvent: onOpenEvent
+            )
+            .frame(
+                maxWidth: .infinity,
+                minHeight: iOSCalendarTimelineMetrics.previewMinHeight,
+                alignment: .topLeading
+            )
+            .padding(.horizontal, iOSCalendarTimelineMetrics.previewInset)
+            .padding(.bottom, iOSCalendarTimelineMetrics.previewInset)
+        }
     }
 }
 
@@ -973,9 +1017,11 @@ private struct iOSCalendarAllDayBandChips: View {
     let unscheduledTasks: [AppTask]
     let split: CadenceCalendarMonthCellPriority.Split
     /// What a tap on an all-day event chip does, or nil for a chip that takes no tap ([[T-5356]]).
-    /// The single-day strip passes the grid's opener. The scrolling grid's day header passes
-    /// nothing: it is itself a `Button` that selects the day, and whether a chip inside it opens
-    /// the event instead is an owner decision, not this view's.
+    /// Both callers pass the grid's opener now — the owner's answer was that a chip in the
+    /// scrolling grid's day header opens its event too, and the header gets there by drawing this
+    /// stack above its select-the-day `Button` rather than inside it. The nil case stays because
+    /// a chip that opens nothing is still a legal thing to draw, and a caller that passes nothing
+    /// should get the chip it always got rather than a dead button.
     var onOpenEvent: ((EKEvent) -> Void)? = nil
 
     var body: some View {
@@ -1001,12 +1047,18 @@ private struct iOSCalendarAllDayBandChips: View {
                     color: Color(hex: task.containerColor),
                     isUnscheduled: true
                 )
+                // Nothing opens from an unscheduled chip, so it takes no hit ([[T-5356]]): in the
+                // week header this stack is drawn ABOVE the select-the-day button, and a chip
+                // that swallowed the tap without acting on it would make part of the band dead.
+                .allowsHitTesting(false)
             }
 
             if split.hidden > 0 {
                 Text(CadenceTaskSurfaceOptions.moreLabel(hidden: split.hidden))
                     .cadenceFont(.metadata, base: iOSCalendarTimelineMetrics.overflowLabelSize, weight: .medium)
                     .foregroundStyle(Theme.subdued)
+                    // As above: the overflow line is a label, not a control.
+                    .allowsHitTesting(false)
             }
         }
     }
