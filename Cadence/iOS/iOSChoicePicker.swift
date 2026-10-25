@@ -6,8 +6,8 @@ import SwiftUI
 /// `Shared/Components/CadenceChoicePicker.swift` and are read by **both** platforms.
 ///
 /// They were written as "shared custom replacements for native SwiftUI `Picker`/
-/// `.pickerStyle(.segmented)` controls on iOS, matching the checkmarked-popover-list language
-/// already used by macOS's `TaskPriorityPickerPopover` / `ContainerPickerBadge`" — a control that
+/// `.pickerStyle(.segmented)` controls on iOS", matching the checkmarked-popover-list language of
+/// macOS's inspector priority popover (since deleted) and `ContainerPickerBadge` — a control that
 /// named the desktop vocabulary it was matching while being unreachable from it. macOS Settings
 /// went on drawing `Picker(.menu)` for work hours and a row of saturated filled pills for the
 /// default list page (T-20). Nothing about them was iOS-specific except the compact-size popover

@@ -21,8 +21,9 @@ import Testing
 /// side of it. [[T-1440]] made the panel taller by folding the weekday headings inside its bounded
 /// height, which is how an overlap that was always there became legible; it did not create one.
 ///
-/// **Scope.** All three rows of the inspector's Schedule well — Do, Due, Repeat — not only the one
-/// the screenshot caught. Each opens a panel narrower than the same column, off a row with the
+/// **Scope.** All three of the inspector's date rows — Do, Due, Repeat — not only the one the
+/// screenshot caught (Do and Due now live inside `CadenceSchedulePanel`; Repeat is the inspector's
+/// own row and is the call site this file scans). Each opens a panel narrower than the same column, off a row with the
 /// same bounds, so they are one defect and take one rule.
 ///
 /// **[[T-1722]] — what this file is NOT evidence about, stated before anything below is read.**
@@ -199,21 +200,25 @@ struct CadenceInspectorChildPopoverPlacementTests {
 
     // MARK: - The call sites
 
-    /// **Every** row in the inspector's Schedule well asks for the beside-inspector placement, not
-    /// just the one the screenshot caught. *Do* is the row that opened the panel; *Due* and
+    /// **Every** inspector row that opens a child panel asks for the beside-inspector placement,
+    /// not just the one the screenshot caught. *Do* is the row that opened the panel; *Due* and
     /// *Repeat* are two of the rows it sliced ("Set" and "er"), and each of them opens a panel of
-    /// its own that is narrower than the same column. One well, one rule.
+    /// its own that is narrower than the same column. One column, one rule.
     ///
-    /// Counted as a **relation between two counts** rather than against a fixed three, so a fourth
-    /// row added to this well is caught rather than ignored.
+    /// **Repointed by [[T-6561]].** This read the old Schedule well section long after nothing drew
+    /// it; the live inspector (`TaskDetailPopover`) keeps Do and Due inside `CadenceSchedulePanel`
+    /// and hangs only Repeat off its own record sections, so that is the body read now.
+    ///
+    /// Counted as a **relation between two counts** rather than against a fixed figure, so a
+    /// panel-opening row added to the record sections is caught rather than ignored.
     @Test
     func everyRowInTheScheduleWellAsksForTheBesideInspectorPlacement() throws {
         let source = try CadenceCommitSurfaceScan.scanned(
-            "Cadence/macOS/Views/SchedulePanelPopoverSupportViews.swift"
+            "Cadence/macOS/Views/SchedulePanelComponents.swift"
         )
         let body = try #require(
-            CadenceSourceScan.declarationBody("struct TaskDetailScheduleGroupSection: View", in: source),
-            "TaskDetailScheduleGroupSection no longer reads as a declaration this scan can scope to"
+            CadenceSourceScan.declarationBody("private var recordSections: some View", in: source),
+            "TaskDetailPopover.recordSections no longer reads as a declaration this scan can scope to"
         )
 
         let controls = CadenceSourceScan.matchCount(
@@ -222,7 +227,7 @@ struct CadenceInspectorChildPopoverPlacementTests {
         let placements = CadenceSourceScan.matchCount(
             #"childPlacement:\s*\.besideInspector"#, in: body
         )
-        #expect(controls >= 3, "expected at least the Do, Due and Repeat rows, found \(controls)")
+        #expect(controls >= 1, "expected at least the Repeat row, found \(controls)")
         #expect(
             placements == controls,
             "a row in the inspector's Schedule well no longer asks for .besideInspector, so its panel slices the rows below it (T-1480)"
@@ -465,16 +470,12 @@ struct CadenceInspectorChildPopoverPlacementTests {
 
     /// **The views frame from the metric, not from a literal that happens to equal it.** The needle
     /// is built *from* the constant, so a panel left framing the old number fails the moment the
-    /// constant moves — which is the exact failure mode this test exists to rule out.
+    /// constant moves — which is the exact failure mode this test exists to rule out. The priority
+    /// panel's site left with that panel and its width metric, which nothing drew after the
+    /// inspector's header section was deleted ([[T-6561]]).
     @Test
-    func thePriorityAndRecurrencePanelsFrameThemselvesFromTheirNamedWidths() throws {
+    func theRecurrencePanelFramesItselfFromItsNamedWidth() throws {
         let sites: [(path: String, declaration: String, metric: String, width: CGFloat)] = [
-            (
-                "Cadence/macOS/Views/SchedulePanelPopoverSupportViews.swift",
-                "struct TaskPriorityPickerPopover: View",
-                "TaskInspectorPanelMetrics.priorityWidth",
-                TaskInspectorPanelMetrics.priorityWidth
-            ),
             (
                 "Cadence/macOS/Views/TaskInspectorWorkflowSupportViews.swift",
                 "private struct TaskRecurrencePickerPanel: View",

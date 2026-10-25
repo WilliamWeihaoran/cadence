@@ -6,8 +6,8 @@ import SwiftUI
 /// **This is iOS's vocabulary, lifted rather than re-invented.** It was `iOSChoiceRow` /
 /// `iOSChoicePopoverList` / `iOSChoiceValueButton` / `iOSFittedPopover` in
 /// `Cadence/iOS/iOSChoicePicker.swift`, written to replace `Picker(.segmented)` on mobile, and its
-/// own doc comment already said it was matching "the checkmarked-popover-list language already
-/// used by macOS's `TaskPriorityPickerPopover` / `ContainerPickerBadge`". macOS Settings never got
+/// own doc comment already said it was matching the checkmarked-popover-list language of macOS's
+/// inspector priority popover (since deleted) and `ContainerPickerBadge`. macOS Settings never got
 /// it: it kept `Picker(.menu)` (AppKit chrome, no palette colour) for work hours and a row of
 /// saturated filled pills for the default list page. T-20 moved the four types here whole and left
 /// the iOS spellings as typealiases, so both platforms present one control rather than two that

@@ -12,9 +12,8 @@ import SwiftUI
 /// **It holds no platform type and no manager**, only the models the panel's two kinds of list come
 /// from, so it compiles and is testable on the Mac.
 ///
-/// The iOS hosts still reach the same rules through `iOSScheduleDraftCreation`, which is where they
-/// were written first and which is the copy to retire into this one — see this ticket's seventh
-/// slice in `docs/TODO.md`.
+/// The iOS hosts read it too: `iOSScheduleDraftCreation`'s own copy, where these rules were written
+/// first, was retired into this one (T-3171 (vi)).
 @MainActor
 enum CadenceScheduleDraftChoices {
 

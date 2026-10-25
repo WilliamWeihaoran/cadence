@@ -232,7 +232,7 @@ struct CadenceContainerPickerConsolidationTests {
     // MARK: - The call sites, which the macOS test target does not compile
 
     /// [[T-3171]] took `iOSCalendarQuickCreateSheet` off this list: its List row is the shared
-    /// schedule panel's now, whose rows `iOSScheduleDraftCreation.listChoices` narrows — pinned by
+    /// schedule panel's now, whose rows `CadenceScheduleDraftChoices.listChoices` narrows — pinned by
     /// `theQuickCreateRowsAreNarrowedByTheSharedPickableRule` below. T-3195's capture host uses
     /// the same builder; the sweep also pins that handoff rather than pretending it is a direct picker.
     private static let containerPickerCallSites = [
@@ -286,7 +286,7 @@ struct CadenceContainerPickerConsolidationTests {
         // Keep the three-file floor, and positively verify its query handoff too.
         let capture = try CadenceSourceScan.strippedSourceReader()("Cadence/iOS/iOSCreateTaskSheet.swift")
         #expect(capture.contains("struct iOSCreateTaskSheet: View"))
-        #expect(capture.contains("listChoices: iOSScheduleDraftCreation.listChoices(for: draft, areas: areas, projects: projects)"))
+        #expect(capture.contains("listChoices: CadenceScheduleDraftChoices.listChoices(for: draft, areas: areas, projects: projects)"))
         #expect(capture.contains(".capturePresentation("))
     }
 
@@ -535,27 +535,28 @@ struct CadenceContainerPickerConsolidationTests {
     }
 
     /// **The quick-create sheet's List rows are narrowed, as its popover narrowed them** ([[T-3171]]).
-    /// It hosts the shared schedule panel now, whose rows are `iOSScheduleDraftCreation.listChoices`
-    /// — the builder the iPad timeline shares — so that builder must apply T-514's rule: the active
-    /// lists, sorted, **plus the one the draft names**. Built from the raw queries, as the iPad
-    /// popover's was, it offers archived and completed lists as places to put a new task.
+    /// It hosts the shared schedule panel now, whose rows are `CadenceScheduleDraftChoices.listChoices`
+    /// — the builder the iPad timeline and the Mac popover share — so that builder must apply T-514's
+    /// rule: the active lists, sorted, **plus the one the draft names**. Built from the raw queries,
+    /// as the iPad popover's was, it offers archived and completed lists as places to put a new task.
     @Test func theQuickCreateRowsAreNarrowedByTheSharedPickableRule() throws {
         let creation = try CadenceSourceScan.strippingComments(
-            CadenceSourceScan.sourceFile("Cadence/iOS/iOSTimelineDraftCreate.swift")
+            CadenceSourceScan.sourceFile("Cadence/Shared/CadenceScheduleDraftChoices.swift")
         )
         let builder = try #require(CadenceSourceScan.functionBody(named: "listChoices", in: creation))
         #expect(builder.contains("CadenceTaskComposerSupport.pickableAreas("))
         #expect(builder.contains("CadenceTaskComposerSupport.pickableProjects("))
-        #expect(builder.contains("selectedID: CadenceTaskComposerSupport.selectedAreaID(choice)"))
-        #expect(builder.contains("selectedID: CadenceTaskComposerSupport.selectedProjectID(choice)"))
+        #expect(builder.contains("selectedID: CadenceTaskComposerSupport.selectedAreaID(selection)"))
+        #expect(builder.contains("selectedID: CadenceTaskComposerSupport.selectedProjectID(selection)"))
         #expect(CadenceSourceScan.matchCount(#"\b(areas|projects)\.map\b"#, in: builder) == 0, "a raw query is mapped into rows unnarrowed")
-        // Both hosts read that one builder.
+        // Both iOS hosts read that one builder; the iOS copy of it is retired (T-3171 (vi)).
         for path in ["Cadence/iOS/iOSCalendarQuickCreateSheet.swift", "Cadence/iOS/iOSTimelineDraftCreate.swift"] {
             let source = try CadenceSourceScan.strippingComments(CadenceSourceScan.sourceFile(path))
             #expect(
-                CadenceSourceScan.matchCount(#"iOSScheduleDraftCreation\.listChoices\(for: draft"#, in: source) == 1,
+                CadenceSourceScan.matchCount(#"CadenceScheduleDraftChoices\.listChoices\(for: draft"#, in: source) == 1,
                 "\(path) builds its List rows some other way"
             )
+            #expect(CadenceSourceScan.functionBody(named: "listChoices", in: source) == nil, "\(path) re-declares the builder")
         }
     }
 

@@ -52,8 +52,8 @@ struct iOSCreateTaskSheet: View {
         ScrollView {
             CadenceSchedulePanel(
                 draft: $draft,
-                listChoices: iOSScheduleDraftCreation.listChoices(for: draft, areas: areas, projects: projects),
-                sectionChoices: iOSScheduleDraftCreation.sectionChoices(for: draft, areas: areas, projects: projects),
+                listChoices: CadenceScheduleDraftChoices.listChoices(for: draft, areas: areas, projects: projects),
+                sectionChoices: CadenceScheduleDraftChoices.sectionChoices(for: draft, areas: areas, projects: projects),
                 calendarChoices: iOSScheduleDraftCreation.calendarChoices(calendarManager),
                 calendarUnavailableNotice: calendarUnavailableNotice,
                 failureNotice: actionError,

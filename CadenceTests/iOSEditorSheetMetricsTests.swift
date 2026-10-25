@@ -138,41 +138,11 @@ struct iOSEditorSheetMetricsTests {
 
     // MARK: - Splitting into two columns
 
-    /// Both calendar sheets had written these five widths down independently, byte for byte. The
-    /// trailing column is the wider one because it is the one carrying the markdown well.
-    @Test func theTwoColumnFormIsStatedOnce() {
-        #expect(iOSEditorSheetMetrics.primaryColumnMinWidth == 340)
-        #expect(iOSEditorSheetMetrics.primaryColumnMaxWidth == 440)
-        #expect(iOSEditorSheetMetrics.secondaryColumnMinWidth == 360)
-        #expect(iOSEditorSheetMetrics.secondaryColumnMaxWidth == 520)
+    /// The cap is the one two-column width a sheet still reads (`iOSTrackingEditorComponents`).
+    /// The four per-column min/max widths beside it were read by nothing but this suite and were
+    /// deleted under T-3171 (vii).
+    @Test func theTwoColumnCapIsStatedOnce() {
         #expect(iOSEditorSheetMetrics.twoColumnMaxWidth == 980)
-    }
-
-    /// A column whose minimum exceeded its maximum would resolve to a fixed width and silently stop
-    /// being a range — the failure mode a pile of loose literals invites.
-    @Test func everyColumnRangeIsARange() {
-        #expect(iOSEditorSheetMetrics.primaryColumnMinWidth < iOSEditorSheetMetrics.primaryColumnMaxWidth)
-        #expect(iOSEditorSheetMetrics.secondaryColumnMinWidth < iOSEditorSheetMetrics.secondaryColumnMaxWidth)
-        #expect(iOSEditorSheetMetrics.secondaryColumnMaxWidth > iOSEditorSheetMetrics.primaryColumnMaxWidth)
-    }
-
-    /// Both columns at their widest, plus the gap between them, must fit inside the cap — otherwise
-    /// the cap is what sets the column widths and the two ranges above are decoration.
-    @Test func bothColumnsFitInsideTheSheetsCap() {
-        let widest = iOSEditorSheetMetrics.primaryColumnMaxWidth + iOSEditorSheetMetrics.secondaryColumnMaxWidth
-        #expect(widest < iOSEditorSheetMetrics.twoColumnMaxWidth)
-    }
-
-    /// A gutter that ate into the content would stop being a margin and start being layout.
-    @Test func theGutterNeverCrowdsTheColumns() {
-        for isRegular in [true, false] {
-            let gutter = iOSEditorSheetMetrics.gutter(isRegularWidth: isRegular)
-            let narrowest = iOSEditorSheetMetrics.primaryColumnMinWidth
-                + iOSEditorSheetMetrics.secondaryColumnMinWidth
-
-            #expect(gutter > 0, "regular=\(isRegular)")
-            #expect(gutter * 2 < narrowest, "regular=\(isRegular)")
-        }
     }
 
     // MARK: - Sanity
@@ -184,10 +154,6 @@ struct iOSEditorSheetMetricsTests {
         #expect(iOSEditorSheetMetrics.cardPadding > 0)
         #expect(iOSEditorSheetMetrics.titleSize > 0)
         #expect(iOSEditorSheetMetrics.titleLineLimit > 0)
-        #expect(iOSEditorSheetMetrics.primaryColumnMinWidth > 0)
-        #expect(iOSEditorSheetMetrics.primaryColumnMaxWidth > 0)
-        #expect(iOSEditorSheetMetrics.secondaryColumnMinWidth > 0)
-        #expect(iOSEditorSheetMetrics.secondaryColumnMaxWidth > 0)
         #expect(iOSEditorSheetMetrics.twoColumnMaxWidth > 0)
     }
 

@@ -787,15 +787,14 @@ Shared behavior for the popovers:
 - If a recurring task is scheduled, the next occurrence continues through the normal scheduling path
 
 ## Task Inspector
-The shared task inspector (opened from timeline blocks, calendar board cards, and task rows) is
-composed from `SchedulePanelPopoverSupportViews` (stateful wrapper + header/schedule sections and
-the placement breadcrumb) plus `TaskInspector*SupportViews` (field-row primitives, content
-sections, recurrence). Current shape, top to bottom: title row, tags, breadcrumb, SCHEDULE,
-SUBTASKS, NOTES, action buttons.
-- **The header tile *is* the priority control.** It used to be a decorative container glyph with a duplicate priority control on the right — two affordances for one field. Tapping the tile opens `TaskPriorityPickerPopover`.
-- **Estimate is a chip at the trailing edge of the title row** (`TaskInspectorEstimateChip`), not a row in the SCHEDULE well — an estimate is a property of the task like its priority, not a date. It is `fixedSize`, so a long title wraps instead of squeezing it, and non-focusable, so clicking it cannot pull the caret out of a title being edited. Same **two-column roller** popover, which is now literally `EstimatePickerPopoverContent` — one picker, both platforms.
-- **Tags sit directly under the title**, indented to the title column, as a chip strip with a `+`. They are `task.tags` and always were — they previously sat under a heading reading NOTES, which implied tagging a task also tagged a note. (`AppTask.notes` is a `String`; there is no note object to tag.)
-- **Placement is one breadcrumb line** under the tags — `China › Documents` (`TaskDetailPlacementBreadcrumb`), replacing a "PLACEMENT" well with a List row and a Section row. Each segment opens its full picker. The section segment is omitted when the container has nothing to choose between — an Inbox task reads simply `Inbox`.
+The shared macOS task inspector (opened from timeline blocks, calendar board cards, and task rows)
+is `TaskDetailPopover` in `SchedulePanelComponents.swift`. Since the `codex/subtasks-inspector`
+landing it draws its title, priority, list/section, Do/Due/time and estimate through
+`CadenceSchedulePanel` in edit mode (`TaskInspectorScheduleEditor`, saved through
+`CadenceTaskEditDraftCommit`), then its own record sections: tags, Repeat, subtasks, notes and the
+status actions. `TaskInspector*SupportViews` hold the field-row primitives, content sections and
+recurrence control. The old header (priority popover, estimate chip), Schedule well and placement
+breadcrumb were deleted as dead code under T-6232 and T-6561.
 - **No "Actual" row.** Logged time is measured, not typed; the focus timer accumulates it.
 - Repeat is an inline row + picker panel, not a dialog (see Recurrence above).
 - The Mark done / Unschedule / delete buttons carry **no group heading** — a label over two buttons at the foot of the panel names what the buttons already say.

@@ -1464,7 +1464,7 @@ struct CadenceQuickCreatePanelAdoptionTests {
     func aListChangeReResolvesTheSection() throws {
         let sheet = try code("Cadence/iOS/iOSCalendarQuickCreateSheet.swift")
         #expect(sheet.contains(".onChange(of: draft.listToken) { _, _ in normalizeSection() }"))
-        let creation = try code("Cadence/iOS/iOSTimelineDraftCreate.swift")
+        let creation = try code("Cadence/Shared/CadenceScheduleDraftChoices.swift")
         let sections = try #require(CadenceSourceScan.functionBody(named: "sectionChoices", in: creation))
         #expect(sections.contains("guard area != nil || project != nil else { return [] }"))
     }

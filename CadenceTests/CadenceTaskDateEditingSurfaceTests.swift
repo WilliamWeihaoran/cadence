@@ -209,7 +209,9 @@ struct CadenceTaskDateEditingSurfaceTests {
         "Cadence/macOS/Views/TaskEmbedFieldEditorPopover.swift",
         "Cadence/macOS/Services/HoveredTaskDatePickerManager.swift",
         "Cadence/macOS/Views/macOSRootCommandActionSupport.swift",
-        "Cadence/macOS/Views/SchedulePanelPopoverSupportViews.swift",
+        // `Cadence/macOS/Views/SchedulePanelPopoverSupportViews.swift` was here for its Schedule
+        // well's Do/Due rows. That section was dead after the inspector moved onto
+        // `CadenceSchedulePanel`, and [[T-6561]] deleted it with the file.
         "Cadence/macOS/Views/TaskInspectorContentSupportViews.swift",
         "Cadence/macOS/Views/TasksPanelSupport.swift",
         "Cadence/iOS/iOSTaskRowActionViews.swift",
@@ -291,7 +293,7 @@ struct CadenceTaskDateEditingSurfaceTests {
             filesRead += 1
         }
 
-        #expect(filesRead == 11, "the scan read \(filesRead) of 11 routed surfaces")
+        #expect(filesRead == 10, "the scan read \(filesRead) of 10 routed surfaces")
     }
 
     /// Every entry point on the wrapper ends in the one private reconcile. Stated as a relation
