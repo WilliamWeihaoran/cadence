@@ -107,12 +107,70 @@ case "$0" in
     /*) SELF_PATH=$0 ;;
     *)  SELF_PATH="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")" ;;
 esac
-ROOT=$(cd "$(dirname "$SELF_PATH")/.." && pwd)
+ROOT=${CADENCE_LEDGER_VIEW_ROOT:-$(cd "$(dirname "$SELF_PATH")/.." && pwd)}
 
+# WHICH COPY IS READ, and why it is HEAD (T-6510). The shared checkout's WORKTREE `docs/TODO.md` is
+# not the ledger. Agents commit it through `agent-commit.sh`'s `docs/TODO.md=<content-file>` form,
+# which writes the blob without touching the file on disk, and [[T-5971]]'s re-sync only refreshes
+# a disk copy byte-identical to the revision it replaced -- so the disk copy drifts behind and stays
+# behind. Measured at `9f8c32f8`: ~190 lines behind, `head T-6435` refused an id HEAD holds, and
+# `head T-5356` read PARTIAL for an entry HEAD has CLOSED, which sent an agent after finished work.
+# So the default reads the COMMITTED blob, `git show HEAD:docs/TODO.md` (and `TODO_DONE.md`).
+# A worktree edit NEWER than HEAD loses, on purpose: the ledger is the id allocator and an id or a
+# closure exists when it is committed, not when one agent has typed it into a file every sibling
+# shares; in this checkout a differing disk copy is far more often the stale echo than a fresher
+# draft. The difference is never silent -- a NOTE says the disk copy differs -- and an agent that
+# wants to read its own uncommitted draft asks for it: `CADENCE_LEDGER_VIEW_SOURCE=worktree`.
+# An explicit `CADENCE_LEDGER_VIEW_TODO`/`_DONE` path is read as given, whatever the source: that is
+# the selftest's fixtures and `agent-commit.sh`'s lint of the STAGED blob, both already exact.
+SOURCE=${CADENCE_LEDGER_VIEW_SOURCE:-head}
 TODO_PATH=${CADENCE_LEDGER_VIEW_TODO:-$ROOT/docs/TODO.md}
 DONE_PATH=${CADENCE_LEDGER_VIEW_DONE:-$ROOT/docs/TODO_DONE.md}
+TODO_LABEL=$(printf '%s' "$TODO_PATH" | sed "s|^${ROOT}/||")
+DONE_LABEL=$(printf '%s' "$DONE_PATH" | sed "s|^${ROOT}/||")
 
 refuse() { printf 'REFUSED (%s): %s\n' "$1" "$2" >&2; exit "$3"; }
+
+# `/usr/bin/git` is an xcrun shim and xcrun REFUSES to run inside an App Sandbox, which is where
+# `CadenceGuardScriptSelftestTests` runs the selftest below. Same probe, same order and the same
+# reason as `scripts/ledger-lag-check.sh` and `scripts/agent-commit.sh` (T-719); duplicated rather
+# than shared because a guard script that needs another file to start has a new way to stop.
+if ! git --version >/dev/null 2>&1; then
+    for _candidate in /Applications/Xcode.app/Contents/Developer/usr/bin /opt/homebrew/bin /usr/local/bin; do
+        [ -x "$_candidate/git" ] || continue
+        "$_candidate/git" --version >/dev/null 2>&1 || continue
+        PATH="$_candidate:$PATH"; export PATH; break
+    done
+fi
+
+# Point TODO_PATH/DONE_PATH at HEAD's blobs unless an explicit path or the worktree source was
+# asked for. A checkout with no HEAD is REFUSED rather than quietly read from disk: falling back
+# silently is exactly the reading this exists to stop.
+resolve_source() {
+    case "$SOURCE" in
+        head) ;;
+        worktree) return 0 ;;
+        *) refuse LEDGER-VIEW-BAD-SOURCE "CADENCE_LEDGER_VIEW_SOURCE is '$SOURCE'; it takes head (the default, the committed ledger) or worktree (the file on disk)." 2 ;;
+    esac
+    [ -z "${CADENCE_LEDGER_VIEW_TODO:-}" ] || [ -z "${CADENCE_LEDGER_VIEW_DONE:-}" ] || return 0
+    snap=$(mktemp -d "${TMPDIR:-/tmp}/cadence-ledger-view-XXXXXX") || refuse LEDGER-VIEW-NO-HEAD "could not make a temp directory to hold HEAD's ledger." 4
+    trap 'rm -rf "$snap"' EXIT INT TERM
+    if [ -z "${CADENCE_LEDGER_VIEW_TODO:-}" ]; then
+        git -C "$ROOT" show HEAD:docs/TODO.md > "$snap/TODO.md" 2>/dev/null \
+            || refuse LEDGER-VIEW-NO-HEAD "$ROOT has no docs/TODO.md at HEAD (not a git checkout, or no commit holds it), so there is no committed ledger to read. CADENCE_LEDGER_VIEW_SOURCE=worktree reads the file on disk instead." 4
+        if ! GIT_OPTIONAL_LOCKS=0 git -C "$ROOT" diff --no-ext-diff --quiet HEAD -- docs/TODO.md 2>/dev/null; then
+            printf 'NOTE (T-6510): read docs/TODO.md at HEAD; the worktree copy differs from it and is not shown (CADENCE_LEDGER_VIEW_SOURCE=worktree reads it).\n' >&2
+        fi
+        TODO_PATH=$snap/TODO.md; TODO_LABEL=HEAD:docs/TODO.md
+    fi
+    if [ -z "${CADENCE_LEDGER_VIEW_DONE:-}" ]; then
+        if git -C "$ROOT" show HEAD:docs/TODO_DONE.md > "$snap/TODO_DONE.md" 2>/dev/null; then
+            DONE_PATH=$snap/TODO_DONE.md; DONE_LABEL=HEAD:docs/TODO_DONE.md
+        else
+            DONE_PATH=/dev/null; DONE_LABEL=/dev/null
+        fi
+    fi
+}
 
 # ---------------------------------------------------------------------------
 # The reading itself, as one awk pass over the two ledgers. Held in a variable rather than a temp
@@ -414,12 +472,12 @@ AWK
 )
 
 run_view() {  # $1 = mode, $2 = wanted id (show/head only)
+    resolve_source
     [ -r "$TODO_PATH" ] || refuse LEDGER-VIEW-VACUOUS "$TODO_PATH is not readable; there is no ledger to read." 4
-    [ -r "$DONE_PATH" ] || DONE_PATH=/dev/null
+    [ -r "$DONE_PATH" ] || { DONE_PATH=/dev/null; DONE_LABEL=/dev/null; }
     awk -v mode="$1" -v want="${2:-}" -v min_entries="$MIN_ENTRIES" \
         -v f_todo="$TODO_PATH" -v f_done="$DONE_PATH" \
-        -v todo_label="$(printf '%s' "$TODO_PATH" | sed "s|^${ROOT}/||")" \
-        -v done_label="$(printf '%s' "$DONE_PATH" | sed "s|^${ROOT}/||")" \
+        -v todo_label="$TODO_LABEL" -v done_label="$DONE_LABEL" \
         "$AWK_PROG" "$TODO_PATH" "$DONE_PATH"
 }
 
@@ -764,6 +822,57 @@ FIXTURE
     out=$(CADENCE_LEDGER_VIEW_TODO="$ws/lint.md" sh "$SELF_PATH" brief 2>&1); rc=$?
     check "$rc" 0 "$out" "brief still READS such an entry and warns, rather than refusing the whole ledger" \
         "T-50     OPEN" "T-54     OPEN" "WARNING 3 entries carry an illegal lead token"
+
+    # --- mode 7: the committed ledger, not the stale disk copy (T-6510) -----------
+    # A real git fixture, because the defect IS the difference between a blob and a file: HEAD holds
+    # T-60 CLOSED and T-61 at all, while the disk copy is an older revision that has T-60 open and
+    # no T-61 -- the exact shape of the shared checkout on 2026-10-25. No path override here, so the
+    # script resolves its own ledgers the way every agent's call does.
+    echo; echo " mode 7 (LEDGER-VIEW-BAD-SOURCE, LEDGER-VIEW-NO-HEAD) -- HEAD's ledger is read, not the worktree copy"
+    repo="$ws/repo"; mkdir -p "$repo/docs"
+    printf '%s\n' '# Ledger' '' '## Open' '' \
+        '- [T-60] **CLOSED 2026-10-25 (`aaaaaaa`) -- closed in the committed ledger.**' \
+        '- [T-61] **OPEN 2026-10-25 -- filed in a commit the disk copy never saw.**' > "$repo/docs/TODO.md"
+    printf '%s\n' '# Archive' '' '- [T-62] **CLOSED 2026-10-01 (`bbbbbbb`) -- archived at HEAD.**' > "$repo/docs/TODO_DONE.md"
+    (
+        unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE
+        cd "$repo" && git init -q . && git config user.name selftest \
+            && git config user.email selftest@example.com && git config commit.gpgsign false \
+            && git add -A . && git commit -q -m fixture
+    ) >"$ws/git.err" 2>&1 || { echo "   FAIL could not create the fixture repository:"; sed 's/^/        /' "$ws/git.err"; fail=$((fail + 1)); }
+    printf '%s\n' '# Ledger' '' '## Open' '' \
+        '- [T-60] **OPEN 2026-10-24 -- the stale disk copy, before the closure landed.**' > "$repo/docs/TODO.md"
+    vrun() { env -u CADENCE_LEDGER_VIEW_TODO -u CADENCE_LEDGER_VIEW_DONE -u GIT_DIR -u GIT_WORK_TREE \
+        -u GIT_INDEX_FILE CADENCE_LEDGER_VIEW_ROOT="$repo" sh "$SELF_PATH" "$@" 2>&1; }
+
+    out=$(vrun head T-61); rc=$?
+    check "$rc" 0 "$out" "an id filed at HEAD is found though the disk copy lacks it" \
+        "filed in a commit the disk copy never saw" "HEAD:docs/TODO.md:"
+    out=$(vrun head T-60); rc=$?
+    check "$rc" 0 "$out" "an entry reads by its COMMITTED state, not the stale copy's" "closed in the committed ledger"
+    checkno "$rc" 0 "$out" "and the stale copy's older revision is not shown" "the stale disk copy"
+    check "$rc" 0 "$out" "a disk copy that differs from HEAD is said, never silent" "NOTE (T-6510)" "worktree copy differs"
+    out=$(vrun brief); rc=$?
+    check "$rc" 0 "$out" "brief reads HEAD too: the entry the disk copy lacks is listed" "T-61     OPEN"
+    checkno "$rc" 0 "$out" "and the closed one is not listed as active" "T-60     "
+    out=$(vrun show T-62); rc=$?
+    check "$rc" 0 "$out" "the archive is read at HEAD as well" "archived at HEAD" "HEAD:docs/TODO_DONE.md:"
+
+    out=$(CADENCE_LEDGER_VIEW_SOURCE=worktree vrun head T-60); rc=$?
+    check "$rc" 0 "$out" "SOURCE=worktree reads the disk copy, for an agent's own uncommitted draft" "the stale disk copy"
+    out=$(CADENCE_LEDGER_VIEW_SOURCE=worktree vrun head T-61); rc=$?
+    check "$rc" 5 "$out" "and under it an id only HEAD holds is not there" LEDGER-VIEW-NO-SUCH-ID
+    out=$(CADENCE_LEDGER_VIEW_SOURCE=wibble vrun brief); rc=$?
+    check "$rc" 2 "$out" "an unknown source is refused, never quietly defaulted" LEDGER-VIEW-BAD-SOURCE
+
+    ( unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE; cd "$repo" && git show HEAD:docs/TODO.md > docs/TODO.md ) 2>/dev/null
+    out=$(vrun head T-60); rc=$?
+    checkno "$rc" 0 "$out" "a disk copy equal to HEAD draws no NOTE" "NOTE (T-6510)"
+
+    mkdir -p "$ws/norepo/docs"; cp "$todo" "$ws/norepo/docs/TODO.md"
+    out=$(env -u CADENCE_LEDGER_VIEW_TODO -u CADENCE_LEDGER_VIEW_DONE GIT_CEILING_DIRECTORIES="$ws" \
+        CADENCE_LEDGER_VIEW_ROOT="$ws/norepo" sh "$SELF_PATH" brief 2>&1); rc=$?
+    check "$rc" 4 "$out" "a tree with no HEAD is refused, not silently read from disk" LEDGER-VIEW-NO-HEAD
 
     echo
     # The vocabulary `CadenceGuardScriptSelftestTests` reads. A tally is what a selftest gutted to

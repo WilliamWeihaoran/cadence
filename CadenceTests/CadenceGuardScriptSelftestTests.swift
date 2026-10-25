@@ -371,12 +371,18 @@ struct CadenceGuardScriptSelftestTests {
     /// called from the file's last line — the refusals did not move, the code that makes them did.
     ///
     /// `LEDGER-VIEW-ILLEGAL-LEAD` is [[T-4300]]'s lint refusal, listed here by [[T-4471]].
+    ///
+    /// `LEDGER-VIEW-BAD-SOURCE` and `LEDGER-VIEW-NO-HEAD` are [[T-6510]]'s: the view reads
+    /// `git show HEAD:docs/TODO.md`, not the shared checkout's stale disk copy, and its selftest's
+    /// mode 7 proves it against a real git fixture whose disk copy lags HEAD.
     static let ledgerViewRefusals = [
         "LEDGER-VIEW-VACUOUS",
         "LEDGER-VIEW-NO-SUCH-ID",
         "LEDGER-VIEW-BAD-ID",
         "LEDGER-VIEW-UNKNOWN-MODE",
         "LEDGER-VIEW-ILLEGAL-LEAD",
+        "LEDGER-VIEW-BAD-SOURCE",
+        "LEDGER-VIEW-NO-HEAD",
     ]
 
     /// Every check `scripts/codex-inbox.sh`'s selftest names (T-1334). This one is not a list of
