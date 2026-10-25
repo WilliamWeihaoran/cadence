@@ -79,4 +79,41 @@ struct CadenceCompactSidebarRowsTests {
         // The regular-width answer is the unfiltered list, so iPad and Mac keep every row.
         #expect(rows.contains("orderedCustomisableDestinations(for: layout)"))
     }
+
+    // MARK: - T-6221: the one-visible-row floor is measured over the rows the phone draws
+
+    /// **T-6221.** With Today hidden, hiding All Tasks used to be allowed because Calendar and
+    /// Notes — fixed tabs on the phone, never rows of its Tasks index — kept the floor "satisfied",
+    /// and the index was left with no view rows. Measured over the compact rows it is refused;
+    /// measured over the default (every primary row, the Mac's and iPad's sidebar) it still goes.
+    @Test func theCompactFloorRefusesHidingTheLastOfTodayAndAllTasks() {
+        let store = CadenceSidebarLayoutPreferenceStore.self
+        let todayHidden = CadenceSidebarLayoutPreferenceStore.Layout(order: [], hidden: [.today])
+        let compactFloor = CadenceCompactTab.honouredSidebarRows(CadenceSidebarLayout.primaryDestinations)
+        #expect(compactFloor == [.today, .allTasks])
+
+        #expect(store.hidden(setting: .allTasks, visible: false, in: todayHidden, floor: compactFloor) == nil)
+        // The index the refusal protects still has a view row.
+        #expect(!CadenceCompactTab.tasksIndexDestinations(hidden: todayHidden.hidden).isEmpty)
+
+        // Regular width is unchanged: Calendar and Notes are rows there, so the toggle is allowed.
+        #expect(store.hidden(setting: .allTasks, visible: false, in: todayHidden) == [.today, .allTasks])
+        // And a row the phone ignores still toggles freely under the compact floor.
+        #expect(store.hidden(setting: .calendar, visible: false, in: todayHidden, floor: compactFloor) == [.today, .calendar])
+    }
+
+    @Test func theSettingsCardMeasuresTheFloorOverTheCompactRowsOnlyAtCompactWidth() throws {
+        let source = CadenceSourceScan.codeOnly(
+            try CadenceSourceScan.sourceFile("Cadence/iOS/iOSSidebarLayoutSettingsSection.swift")
+        )
+        let section = try #require(
+            CadenceSourceScan.declarationBody("struct iOSSidebarLayoutSettingsSection", in: source)
+        )
+        let floor = try #require(CadenceSourceScan.declarationBody("private var floorRows:", in: section))
+        #expect(floor.contains("horizontalSizeClass == .compact"))
+        #expect(floor.contains("CadenceCompactTab.honouredSidebarRows(CadenceSidebarLayout.primaryDestinations)"))
+
+        let toggle = try #require(CadenceSourceScan.functionBody(named: "setVisibility", in: section))
+        #expect(toggle.contains("floor: floorRows"), "the toggle no longer hands the store the width's floor")
+    }
 }

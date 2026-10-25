@@ -129,10 +129,19 @@ enum CadenceSidebarLayoutPreferenceStore {
     /// says so rather than silently flipping the switch back. Focus is not part of the floor — the
     /// footer glyph is not one of the places the sidebar navigates *to* in the same sense, and
     /// Settings, which is always drawn, is the door back either way.
+    ///
+    /// **`floor` is the rows the floor is measured over, and it is the caller's width's question**
+    /// ([[T-6221]]). The default is every primary row, which is what the Mac's and the iPad's
+    /// sidebars draw. The phone draws only the Tasks tab's rows — Calendar and Notes are fixed tabs
+    /// there — so a floor over all four let Today and All Tasks both go while two rows the phone
+    /// never lists kept it "satisfied", leaving the Tasks index with no view rows. The compact
+    /// Settings card passes `CadenceCompactTab.honouredSidebarRows(_:)` of the primary rows, so the
+    /// phone's floor is "one of Today / All Tasks" and every other width's is unchanged.
     static func hidden(
         setting destination: CadenceFeatureDestination,
         visible: Bool,
-        in layout: Layout
+        in layout: Layout,
+        floor: [CadenceFeatureDestination] = CadenceSidebarLayout.primaryDestinations
     ) -> Set<CadenceFeatureDestination>? {
         guard customisableDestinations.contains(destination) else { return nil }
         var hidden = layout.hidden
@@ -143,7 +152,7 @@ enum CadenceSidebarLayoutPreferenceStore {
         }
         guard !hidden.contains(destination) else { return nil }
         hidden.insert(destination)
-        let stillVisible = CadenceSidebarLayout.primaryDestinations.filter { !hidden.contains($0) }
+        let stillVisible = floor.filter { !hidden.contains($0) }
         return stillVisible.isEmpty ? nil : hidden
     }
 

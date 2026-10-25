@@ -54,6 +54,17 @@ struct iOSSidebarLayoutSettingsSection: View {
         return CadenceCompactTab.honouredSidebarRows(ordered)
     }
 
+    /// The rows the one-visible-row floor is measured over at this width ([[T-6221]]).
+    ///
+    /// Compact narrows it the same way `rows` narrows the card: the phone lists only the Tasks
+    /// tab's rows, so a floor still satisfied by Calendar or Notes — fixed tabs there — would let
+    /// both Today and All Tasks go and leave the Tasks index with no view rows. Regular width
+    /// keeps the store's default, every primary row, which is what the iPad sidebar draws.
+    private var floorRows: [CadenceFeatureDestination] {
+        guard horizontalSizeClass == .compact else { return CadenceSidebarLayout.primaryDestinations }
+        return CadenceCompactTab.honouredSidebarRows(CadenceSidebarLayout.primaryDestinations)
+    }
+
     /// The subset of `rows` the stored order actually places, in the same sequence — the list a
     /// one-step move is measured in (T-1292).
     ///
@@ -185,7 +196,8 @@ struct iOSSidebarLayoutSettingsSection: View {
         guard let hidden = CadenceSidebarLayoutPreferenceStore.hidden(
             setting: destination,
             visible: visible,
-            in: layout
+            in: layout,
+            floor: floorRows
         ) else {
             failureNotice = CadenceSidebarLayoutPreferenceStore.lastVisibleRowNotice
             return
