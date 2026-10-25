@@ -1018,9 +1018,12 @@ extension CadenceTaskMutationSupport {
     /// workflow mutates `AppTask` from a `nonisolated enum` already), so the isolation was
     /// incidental rather than a guarantee. Making it explicit is what stops the collapse pass from
     /// growing a second, drifting copy of this list.
+    ///
+    /// **Every filter is by identity (`!==`), never by `id` ([[T-6483]]).** Two rows can share an
+    /// `id` until repair merges them -- a sync race, or a launch that has not repaired yet -- and an
+    /// `id` filter took the doomed row's twin out of its area, project, context, goal, block and
+    /// tags along with it. Within one context each row is one object, so identity is exact.
     nonisolated static func detachRelationships(for task: AppTask) {
-        let taskID = task.id
-
         // Legacy rows written by an earlier build can still carry a calendar event identifier.
         // Clearing it is what `SchedulingActions.removeFromCalendar` does; it is spelled out here
         // because that helper is macOS-only and this path is shared.
@@ -1029,22 +1032,22 @@ extension CadenceTaskMutationSupport {
         }
 
         if let area = task.area {
-            area.tasks = (area.tasks ?? []).filter { $0.id != taskID }
+            area.tasks = (area.tasks ?? []).filter { $0 !== task }
         }
         if let project = task.project {
-            project.tasks = (project.tasks ?? []).filter { $0.id != taskID }
+            project.tasks = (project.tasks ?? []).filter { $0 !== task }
         }
         if let context = task.context {
-            context.tasks = (context.tasks ?? []).filter { $0.id != taskID }
+            context.tasks = (context.tasks ?? []).filter { $0 !== task }
         }
         if let goal = task.goal {
-            goal.tasks = (goal.tasks ?? []).filter { $0.id != taskID }
+            goal.tasks = (goal.tasks ?? []).filter { $0 !== task }
         }
         if let bundle = task.bundle {
-            bundle.tasks = (bundle.tasks ?? []).filter { $0.id != taskID }
+            bundle.tasks = (bundle.tasks ?? []).filter { $0 !== task }
         }
         for tag in task.tags ?? [] {
-            tag.tasks = (tag.tasks ?? []).filter { $0.id != taskID }
+            tag.tasks = (tag.tasks ?? []).filter { $0 !== task }
         }
 
         task.area = nil
@@ -1147,7 +1150,7 @@ extension CadenceTaskMutationSupport {
 
     static func removeTaskFromBundle(_ task: AppTask, modelContext: ModelContext) {
         let bundleDateKey = task.bundle?.dateKey ?? task.scheduledDate
-        task.bundle?.tasks = (task.bundle?.tasks ?? []).filter { $0.id != task.id }
+        task.bundle?.tasks = (task.bundle?.tasks ?? []).filter { $0 !== task }
         task.bundle = nil
         task.bundleOrder = 0
         task.scheduledDate = bundleDateKey
@@ -1172,7 +1175,7 @@ extension CadenceTaskMutationSupport {
     /// timeline row on a past day.
     static func rollOverTaskToToday(_ task: AppTask, todayKey: String, modelContext: ModelContext) {
         if let bundle = task.bundle {
-            bundle.tasks = (bundle.tasks ?? []).filter { $0.id != task.id }
+            bundle.tasks = (bundle.tasks ?? []).filter { $0 !== task }
             task.bundle = nil
             task.bundleOrder = 0
             normalizeBundleOrder(bundle)

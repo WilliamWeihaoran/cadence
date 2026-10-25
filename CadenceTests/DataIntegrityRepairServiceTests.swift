@@ -2069,7 +2069,7 @@ struct DataIntegrityRepairServiceTests {
 
     /// **Ordering against the forked-occurrence collapse.** A same-id copy of a spawned occurrence
     /// sits in the same series slot, so if the fork pass saw it first it would take the pair for a
-    /// fork — and its remover detaches by `id`, which strips the survivor out of its own list.
+    /// fork — and its remover detached by `id` until [[T-6483]], stripping the survivor out of its own list.
     /// Merged first, the survivor keeps its area and the series still has one row in the slot.
     @Test func aSameIDCopyOfASpawnedOccurrenceIsMergedBeforeTheForkCollapseSeesIt() throws {
         let container = try CadenceModelContainerFactory.makeInMemoryContainer()
