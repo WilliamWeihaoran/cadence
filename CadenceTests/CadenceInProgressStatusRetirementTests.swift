@@ -222,7 +222,7 @@ struct CadenceInProgressStatusRetirementTests {
     }
 
     /// **No control anywhere offers the status.** `StatusAction` is the shared set all three former
-    /// writers render — `iOSTaskStatusActionsSection`, `TaskInspectorStatusActionsRow` and the
+    /// writers render — `iOSTaskStatusActionsSection`, `TaskDetailActionsSection` and the
     /// macOS note-embed `TaskEmbedFieldEditorPopover` — so a case reappearing here is a Start
     /// button reappearing on three surfaces, and this is the one assertion that catches it.
     @Test func noStatusActionCanWriteInProgress() {

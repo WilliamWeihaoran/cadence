@@ -588,26 +588,43 @@ struct TaskDetailSubtasksSection: View {
     }
 }
 
+/// The inspector's action row: one flexible primary ("Mark done") and square icon buttons for
+/// everything else.
+///
+/// **Cancel/Restore is one of the icon buttons** ([[T-6231]]). [[T-5015]] (a) added it as its own
+/// `TaskInspectorStatusActionsRow` under this one, a Start/Stop + Cancel/Restore pair; (b) retired
+/// In Progress, and the pair became one button stretched across the inspector — a second wide
+/// control directly under "Mark done", with the weight of the action the panel is *for*. Cancelling
+/// a task is a secondary action, so it takes the secondary shape this row already had for
+/// Unschedule and Delete: a 32pt square with its glyph, its name as the label and tooltip, and the
+/// shared `StatusAction` copy and glyphs so it still cannot drift from iOS. The row's rule is that
+/// the primary is the only control here that takes the width, and
+/// `CadenceMacTaskInspectorStatusActionsTests` pins it.
 struct TaskDetailActionsSection: View {
     @Bindable var task: AppTask
     var offersUnschedule = true
     var offersDelete = true
+    /// The shared `CadenceTaskInspectorSupport.StatusAction` set (Cancel/Restore since [[T-5015]]
+    /// (b)), as icon buttons after the primary. Off by default: the full inspector is the one host
+    /// that offers it.
+    var offersStatusActions = false
     @Environment(\.modelContext) private var modelContext
     @Environment(DeleteConfirmationManager.self) private var deleteConfirmationManager
 
     private static let controlHeight: CGFloat = 32
     private static let cornerRadius: CGFloat = Theme.radiusControlCompact
 
-    /// Set when "Mark done" was refused and put back (T-628). The inspector is the one surface
-    /// that reaches the settle *without* going through `TaskCompletionAnimationManager`, so the
-    /// root alert cannot speak for it and it says so where the button is.
-    @State private var settleFailureNotice: String?
+    /// Set when "Mark done" or a status action was refused and put back (T-628). The inspector is
+    /// the one surface that reaches the settle *without* going through
+    /// `TaskCompletionAnimationManager`, so the root alert cannot speak for it and it says so where
+    /// the button is. One notice for the row: both refusals read the same sentence.
+    @State private var failureNotice: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             controlRow
-            if let settleFailureNotice {
-                CadenceInlineFailureNotice(text: settleFailureNotice)
+            if let failureNotice {
+                CadenceInlineFailureNotice(text: failureNotice)
             }
         }
     }
@@ -646,12 +663,55 @@ struct TaskDetailActionsSection: View {
                 }
             }
 
+            if offersStatusActions {
+                ForEach(CadenceTaskInspectorSupport.StatusAction.allCases, id: \.self) { action in
+                    statusActionButton(action)
+                }
+            }
+
             if offersDelete {
                 iconButton(systemImage: "trash", tint: Theme.red, accessibilityLabel: "Delete task") {
                     deleteConfirmationManager.presentTaskDelete(task, in: modelContext)
                 }
             }
         }
+    }
+
+    /// A status action as an icon button. Active (the task is already cancelled) it fills with its
+    /// status's tint and says "Restore", so the button is its own undo, as on iOS.
+    private func statusActionButton(_ action: CadenceTaskInspectorSupport.StatusAction) -> some View {
+        let isActive = action.isActive(task.status)
+        return iconButton(
+            systemImage: action.systemImage(for: task.status),
+            tint: isActive ? Theme.statusColor(action.status) : Theme.dim,
+            accessibilityLabel: action.title(for: task.status),
+            isActive: isActive
+        ) {
+            do {
+                try Self.apply(action, to: task, in: modelContext)
+                failureNotice = nil
+            } catch {
+                failureNotice = CadencePendingChangePersistence.editFailureNotice
+            }
+        }
+    }
+
+    /// One tap: the action's target from the current status, committed, then the notification
+    /// reconcile every other macOS status writer runs. A refused commit has already been put back
+    /// by the shared mutation, so it throws without reconciling.
+    static func apply(
+        _ action: CadenceTaskInspectorSupport.StatusAction,
+        to task: AppTask,
+        in context: ModelContext,
+        commit: (ModelContext) throws -> Void = { try $0.save() }
+    ) throws {
+        try CadenceTaskMutationSupport.setStatus(
+            action.target(from: task.status),
+            for: task,
+            modelContext: context,
+            commit: commit
+        )
+        HabitNotificationReconcileSupport.scheduleReconcile(in: context)
     }
 
     /// The settle, with a commit boundary and the failure named where the button is (T-628).
@@ -665,9 +725,9 @@ struct TaskDetailActionsSection: View {
             } else {
                 try TaskWorkflowService.commitMarkDone(task, in: modelContext)
             }
-            settleFailureNotice = nil
+            failureNotice = nil
         } catch {
-            settleFailureNotice = CadencePendingChangePersistence.editFailureNotice
+            failureNotice = CadencePendingChangePersistence.editFailureNotice
         }
     }
 
@@ -676,6 +736,7 @@ struct TaskDetailActionsSection: View {
         systemImage: String,
         tint: Color,
         accessibilityLabel: String,
+        isActive: Bool = false,
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
@@ -683,10 +744,12 @@ struct TaskDetailActionsSection: View {
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(tint)
                 .frame(width: Self.controlHeight, height: Self.controlHeight)
-                .background(
+                .background(isActive ? tint.opacity(0.12) : Color.clear)
+                .overlay(
                     RoundedRectangle(cornerRadius: Self.cornerRadius)
-                        .strokeBorder(Theme.borderSubtle, lineWidth: 1)
+                        .strokeBorder(isActive ? Color.clear : Theme.borderSubtle, lineWidth: 1)
                 )
+                .clipShape(RoundedRectangle(cornerRadius: Self.cornerRadius))
                 .contentShape(Rectangle())
         }
         .buttonStyle(.cadencePlain)

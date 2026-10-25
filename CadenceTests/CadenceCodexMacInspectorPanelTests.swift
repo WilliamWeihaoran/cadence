@@ -169,7 +169,7 @@ struct CadenceCodexMacInspectorPanelTests {
         #expect(root.contains("notesFlush.flush()"))
         #expect(root.contains("return subtaskFailureNotice == nil"))
         #expect(root.contains("TaskInspectorRecurrenceControl(task: task, childPlacement: .besideInspector)"))
-        #expect(root.contains("TaskInspectorStatusActionsRow(task: task)"))
+        #expect(root.contains("offersStatusActions: true"))
         let support = try source("Cadence/macOS/Views/TaskInspectorContentSupportViews.swift")
         let editor = try #require(CadenceSourceScan.declarationBody("struct TaskInspectorScheduleEditor<Content: View>: View", in: support))
         #expect(editor.contains("CadenceSchedulePanel("))

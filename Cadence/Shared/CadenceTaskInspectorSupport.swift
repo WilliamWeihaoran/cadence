@@ -85,8 +85,9 @@ enum CadenceTaskInspectorSupport {
     ///
     /// **`.inProgress` was the second case and is gone ([[T-5015]] (b), owner decision 2026-10-24).**
     /// Removing it here is what retires In Progress as a *writable* status on both platforms in one
-    /// edit: all three writers rendered this set — `iOSTaskStatusActionsSection`,
-    /// `TaskInspectorStatusActionsRow` and the macOS note-embed `TaskEmbedFieldEditorPopover` —
+    /// edit: all three writers rendered this set — `iOSTaskStatusActionsSection`, the macOS
+    /// inspector's `TaskDetailActionsSection` (an icon button there since [[T-6231]]) and the macOS
+    /// note-embed `TaskEmbedFieldEditorPopover` —
     /// so none of them has a Start/Stop button any more and none of them had to be told separately.
     /// `TaskStatus.inProgress` itself stays: it is a persisted raw value and old rows must keep
     /// decoding. `CadenceInProgressStatusRetirement` is the launch pass that moves those rows to
