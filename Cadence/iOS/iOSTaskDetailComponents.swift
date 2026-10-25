@@ -436,6 +436,13 @@ struct iOSTaskTagPickerPopover: View {
         // because both come from `CadenceTagPickerMetrics`.
         .cadenceScaledTypography()
         .presentationCompactAdaptation(.popover)
+        // **T-5175, the tag half (owner decision 2026-10-24, option (a)).** A name typed into
+        // "New tag" but never sent with Return or `+` is the user's work, so dismissing the
+        // popover adds it — the rule the same sheet already keeps for an unsent subtask on Save.
+        // It goes through `addTag()` itself, so blank or `#`-only input, an existing name in any
+        // case, and a refused store all behave exactly as the `+` would: a refusal leaves the name
+        // in the field, which is sheet state, for the next time the popover opens.
+        .onDisappear(perform: addTag)
     }
 
     private func tagRow(_ tag: Tag) -> some View {

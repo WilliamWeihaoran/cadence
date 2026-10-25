@@ -118,4 +118,25 @@ struct CadenceTaskSheetUnsavedWorkTests {
         let canAdd = try #require(CadenceSourceScan.declarationBody("private var canAddSubtask: Bool", in: sheet))
         #expect(canAdd.contains("CadenceTaskSheetUnsavedWork.hasPendingComposerEntry(newSubtaskTitle)"))
     }
+
+    // MARK: - T-5175, the tag half: an unsent tag is added when its popover dismisses
+
+    /// Owner decision 2026-10-24, option (a). The popover's own body, not the strip's, carries the
+    /// dismiss handler, and it is `addTag` itself, so blank input, an existing name and a refused
+    /// store keep the `+` button's rules. Option (b), clearing the field, was declined.
+    @Test func dismissingTheTagPopoverAddsTheTypedNameThroughAddTag() throws {
+        let raw = try CadenceSourceScan.sourceFile("Cadence/iOS/iOSTaskDetailComponents.swift")
+        #expect(raw.count > 1_000)
+        let file = CadenceSourceScan.codeOnly(CadenceSourceScan.strippingComments(raw))
+        let popover = try #require(
+            CadenceSourceScan.declarationBody("struct iOSTaskTagPickerPopover: View", in: file)
+        )
+        let body = try #require(CadenceSourceScan.declarationBody("var body: some View", in: popover))
+        #expect(body.contains(".onDisappear(perform: addTag)"))
+        #expect(CadenceSourceScan.matchCount(#"\.onDisappear"#, in: popover) == 1)
+        let strip = try #require(CadenceSourceScan.declarationBody("struct iOSTaskTagStrip: View", in: file))
+        #expect(!strip.contains("newTagName = \"\""), "the strip clears the typed tag (option (b), declined)")
+        let add = try #require(CadenceSourceScan.functionBody(named: "addTag", in: popover))
+        #expect(add.contains("guard !name.isEmpty else { return }"))
+    }
 }
