@@ -535,7 +535,10 @@ struct CadenceMarkdownImageCommitSurfaceTests {
         // embed notice: the focus note is a read-only preview, so the next thing the user does
         // there is not typing but the same tap, and the next tick that lands clears it -- as does
         // switching to another task.
-        #expect(total == 81, "the inline notice has \(total) call sites, not the 81 this test was written over")
+        // [[T-6231]] makes it 80 again: the Mac inspector's Cancel/Restore moved into
+        // `TaskDetailActionsSection` and shares that row's one notice, so the status row's own
+        // bare notice went with `TaskInspectorStatusActionsRow.swift` ([[T-6571]]).
+        #expect(total == 80, "the inline notice has \(total) call sites, not the 80 this test was written over")
         #expect(withDismissal == 9, "\(withDismissal) call sites offer a dismissal, not 9")
 
         // And each of the nine is named, so one swapping places with another is still a failure.
