@@ -399,7 +399,8 @@ struct TaskNotesExpandedEditorSheet: View {
 }
 
 /// [[T-5061]]: where a `[[note]]` link clicked in a task's notes goes, from a host that is not
-/// itself a notes page (the inspector box, the floating Task Notes panel).
+/// itself a notes page (the inspector box, the floating Task Notes panel, the Today note panel,
+/// and — through `openDismissing` — the meeting-note sheet, [[T-5151]]).
 ///
 /// A standalone note takes the route global search takes — `NotesNavigationManager.openNote`, which
 /// `macOSRootView` answers by selecting the Notes page. A `.list` note has no Notes page; it opens
@@ -431,6 +432,19 @@ enum TaskNoteLinkRouting {
         } else if let area = note.area {
             listNavigation.open(areaID: area.id, page: .documents, listNoteID: note.id)
         }
+    }
+
+    /// [[T-5151]] (b): a link clicked inside a modal sheet (the meeting-note sheet) closes the
+    /// sheet first, then takes the same route as `open` — the owner's 2026-10-24 decision, so a
+    /// note link never stays trapped behind the modal it was clicked in.
+    static func openDismissing(
+        _ note: Note,
+        dismiss: () -> Void,
+        notesNavigation: NotesNavigationManager = .shared,
+        listNavigation: ListNavigationManager = .shared
+    ) {
+        dismiss()
+        open(note, notesNavigation: notesNavigation, listNavigation: listNavigation)
     }
 }
 

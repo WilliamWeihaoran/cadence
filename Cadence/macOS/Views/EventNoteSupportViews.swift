@@ -76,8 +76,11 @@ struct EventNoteEditorSheet: View {
     /// [[T-5151]] (a): the store's notes and tasks, sorted as the Notes page sorts them. Without
     /// them `NoteEditorPane` defaulted both to `[]`, so in this sheet `[[` offered nothing, every
     /// `[[task:…]]` drew unresolved, and neither a task link nor a task chip found a task to open.
-    /// `onOpenNote` is still the pane's no-op on purpose: where a note link opened inside a modal
-    /// goes is [[T-5151]] (b), an owner decision shared with [[T-5061]].
+    ///
+    /// [[T-5151]] (b), owner decision 2026-10-24: a `[[note]]` link or note chip clicked here
+    /// dismisses the sheet and opens that note where every other note link goes — the Notes page,
+    /// or a list note's own Notes tab — through `TaskNoteLinkRouting.openDismissing`. Swapping the
+    /// sheet's note in place was declined: it would be a second navigation model with no way back.
     @Query(sort: \Note.updatedAt, order: .reverse) private var allNotes: [Note]
     @Query(sort: \AppTask.order) private var allTasks: [AppTask]
     @State private var commitNotice: String?
@@ -88,6 +91,7 @@ struct EventNoteEditorSheet: View {
                 note: note,
                 relatedNotes: allNotes,
                 relatedTasks: allTasks,
+                onOpenNote: { TaskNoteLinkRouting.openDismissing($0, dismiss: { dismiss() }) },
                 onPersistContent: commitEventNote,
                 headerDetail: CadenceTitleNormalization.display(eventTitle, fallback: "Linked event note"),
                 // **T-5162.** The pane's append, not the menu's default store write: it flushes

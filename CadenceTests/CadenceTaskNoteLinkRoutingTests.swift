@@ -104,6 +104,45 @@ struct CadenceTaskNoteLinkRoutingTests {
         #expect(lists.request?.eventNoteID == nil)
     }
 
+    /// [[T-5151]] (b): a link clicked in the meeting-note sheet closes the sheet, exactly once and
+    /// before the request is raised, then takes the same route as any other note link.
+    @Test func aLinkFromAModalDismissesItThenOpensTheNote() throws {
+        let notes = NotesNavigationManager.shared
+        let lists = ListNavigationManager.shared
+        notes.clear()
+        lists.request = nil
+        defer {
+            notes.clear()
+            lists.request = nil
+        }
+
+        let standalone = Note(kind: .permanent, title: "Roadmap")
+        var dismissals = 0
+        var requestWhenDismissed: NotesNavigationManager.Request?
+        TaskNoteLinkRouting.openDismissing(standalone, dismiss: {
+            dismissals += 1
+            requestWhenDismissed = notes.request
+        })
+        #expect(dismissals == 1)
+        #expect(requestWhenDismissed == nil)
+        #expect(notes.request?.page == .notepad)
+        #expect(notes.request?.noteID == standalone.id)
+        #expect(lists.request == nil)
+        notes.clear()
+
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let project = Project(name: "Home")
+        let listNote = Note(kind: .list, title: "Punch list", project: project)
+        context.insert(project)
+        context.insert(listNote)
+        TaskNoteLinkRouting.openDismissing(listNote, dismiss: { dismissals += 1 })
+        #expect(dismissals == 2)
+        #expect(lists.request?.projectID == project.id)
+        #expect(lists.request?.listNoteID == listNote.id)
+        #expect(notes.request == nil)
+    }
+
     @Test func aLinkResolvesByIDFirstThenByTitle() {
         let first = Note(kind: .permanent, title: "Roadmap")
         let second = Note(kind: .permanent, title: "Ideas")
@@ -181,6 +220,17 @@ struct CadenceTaskNoteLinkRoutingTests {
         let handler = try #require(CadenceSourceScan.functionBody(named: "openNoteReference", in: panel))
         #expect(handler.contains("TaskNoteLinkRouting.note(id: id, title: title, in: referenceNotes)"))
         #expect(handler.contains("TaskNoteLinkRouting.open(note)"))
+    }
+
+    /// [[T-5151]] (b): the meeting-note sheet's pane is handed an `onOpenNote` — its default is a
+    /// no-op — and that handler dismisses the sheet through the router.
+    @Test func theMeetingNoteSheetDismissesAndRoutesANoteLink() throws {
+        let source = CadenceSourceScan.codeOnly(
+            try CadenceSourceScan.sourceFile("Cadence/macOS/Views/EventNoteSupportViews.swift")
+        )
+        let sheet = try #require(CadenceSourceScan.declarationBody("struct EventNoteEditorSheet", in: source))
+        let pane = try Self.arguments(ofFirst: "NoteEditorPane(", in: sheet)
+        #expect(pane.contains("onOpenNote: { TaskNoteLinkRouting.openDismissing($0, dismiss: { dismiss() }) }"))
     }
 
     @Test func theRootViewAnswersNotesNavigationRequests() throws {
