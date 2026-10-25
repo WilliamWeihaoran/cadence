@@ -261,9 +261,15 @@ struct TagSupportTests {
         #expect(MarkdownMetadataParser.frontmatterTagNames(in: note.content) == ["work", "docs"])
     }
 
-    /// The half of T-6251 left for the owner ([[T-6261]]): an inline `#work` in a note's prose is
-    /// the user's text, and a rename does not edit it. Pinned so that changing it is a decision.
-    @Test func renamingATagLeavesInlineMentionsInTheBodyAlone() throws {
+    /// **T-6261, the declined branch — and it is a branch, not a no-op.** An inline `#work` in a
+    /// note's prose is the user's text, and the rename leaves it alone unless they say otherwise.
+    /// The tag then really does split, which is what the warning told them would happen; this
+    /// test asserts the split rather than only the untouched text, because "we left the prose
+    /// alone" is only half of what the user agreed to.
+    ///
+    /// Was `renamingATagLeavesInlineMentionsInTheBodyAlone`, which pinned this as the *only*
+    /// behaviour. It is now the answer to a question.
+    @Test func decliningTheRenameWarningLeavesTheProseAloneAndSplitsTheTag() throws {
         let container = try CadenceModelContainerFactory.makeInMemoryContainer()
         let context = ModelContext(container)
         let content = "Follow up on #work today"
@@ -272,10 +278,167 @@ struct TagSupportTests {
         TagSupport.syncNoteTagsFromMarkdown(note, in: context)
         let work = try #require(note.tags?.first)
 
-        _ = TagSupport.rename(work, to: "Job")
+        _ = TagSupport.rename(work, to: "Job", rewritingInlineMentions: false)
 
         #expect(note.content == content)
         #expect(work.slug == "job")
+
+        TagSupport.syncNoteTagsFromMarkdown(note, in: context)
+        try context.save()
+        #expect(try context.fetch(FetchDescriptor<Cadence.Tag>()).map(\.slug).sorted() == ["job", "work"],
+                "declining is supposed to split the tag — that is what the warning says")
+    }
+
+    /// **T-6261, the confirmed branch.** `#work` in the body becomes `#Job`, so the next sweep
+    /// reads back the renamed tag and the tag stays one thing. The undo puts the sentence back
+    /// exactly as the user wrote it.
+    @Test func confirmingTheRenameWarningRewritesInlineMentionsSoTheTagStaysOne() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let content = "Follow up on #work today, and again on #work tomorrow"
+        let note = Note(kind: .daily, title: "Today", content: content)
+        context.insert(note)
+        TagSupport.syncNoteTagsFromMarkdown(note, in: context)
+        let work = try #require(note.tags?.first)
+
+        let undo = TagSupport.rename(work, to: "Job", rewritingInlineMentions: true)
+
+        #expect(note.content == "Follow up on #Job today, and again on #Job tomorrow")
+        TagSupport.syncNoteTagsFromMarkdown(note, in: context)
+        try context.save()
+        #expect(try context.fetch(FetchDescriptor<Cadence.Tag>()).map(\.slug).sorted() == ["job"])
+
+        undo()
+        #expect(note.content == content, "the undo gives the user their own sentence back")
+        #expect(work.name == "work")
+    }
+
+    /// A confirmed rename carries both halves of a note's tags in one unit of work: the
+    /// frontmatter line Cadence wrote and the `#mention` the user typed.
+    @Test func confirmingTheRenameRewritesFrontmatterAndProseTogether() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let content = "---\ntags: [\"work\", \"docs\"]\n---\n\nFollow up on #work today"
+        let note = Note(kind: .daily, title: "Today", content: content)
+        context.insert(note)
+        TagSupport.syncNoteTagsFromMarkdown(note, in: context)
+        try context.save()
+        let work = try #require(note.tags?.first { $0.slug == "work" })
+
+        let undo = TagSupport.rename(work, to: "Job", rewritingInlineMentions: true)
+
+        #expect(MarkdownMetadataParser.frontmatterTagNames(in: note.content) == ["Job", "docs"])
+        #expect(note.content.hasSuffix("Follow up on #Job today"))
+        undo()
+        #expect(note.content == content)
+    }
+
+    /// **The number in the warning, and what it is counted from.**
+    ///
+    /// Only notes whose *prose* mentions the tag are counted. A frontmatter-only note is rewritten
+    /// either way, so counting it would ask the user to approve an edit to text that does not
+    /// exist; a `#work` inside fenced code or a link URL is not a tag the sweep reads, so it is
+    /// not one the rename would touch either.
+    @Test func theInlineMentionCountIsOnlyTheNotesWhoseProseMentionsTheTag() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let frontmatterOnly = Note(kind: .daily, title: "A", content: "---\ntags: [\"work\"]\n---\n\nNo mention here")
+        let inProse = Note(kind: .daily, title: "B", content: "---\ntags: [\"work\"]\n---\n\nFollow up on #work today")
+        let codeOnly = Note(kind: .daily, title: "C", content: "---\ntags: [\"work\"]\n---\n\n```\n#work\n```\n\nSee [spec](https://x.test/a#work)")
+        for note in [frontmatterOnly, inProse, codeOnly] {
+            context.insert(note)
+            TagSupport.syncNoteTagsFromMarkdown(note, in: context)
+        }
+        try context.save()
+        let work = try #require(try context.fetch(FetchDescriptor<Cadence.Tag>()).first { $0.slug == "work" })
+        #expect(work.notes?.count == 3, "all three are linked through their frontmatter")
+
+        #expect(TagSupport.inlineMentionCount(of: work, renamedTo: "Job") == 1)
+
+        // A rename that does not move the slug cannot split anything, so there is nothing to ask.
+        #expect(TagSupport.inlineMentionCount(of: work, renamedTo: "WORK") == 0)
+        #expect(TagSupport.inlineMentionCount(of: work, renamedTo: " #work# ") == 0)
+    }
+
+    /// The prompt is the only way the dialog is presented, so "zero notes means no warning" is a
+    /// property of the type rather than a check three editors each remember to make.
+    @Test func thereIsNoRenamePromptWhenNoNoteMentionsTheTagInProse() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let note = Note(kind: .daily, title: "A", content: "---\ntags: [\"work\"]\n---\n\nNo mention here")
+        context.insert(note)
+        TagSupport.syncNoteTagsFromMarkdown(note, in: context)
+        try context.save()
+        let work = try #require(note.tags?.first)
+
+        #expect(CadenceTagRenameInlineMentions.prompt(for: work, renamedTo: "Job") == nil)
+
+        note.content = "---\ntags: [\"work\"]\n---\n\nFollow up on #work today"
+        let prompt = try #require(CadenceTagRenameInlineMentions.prompt(for: work, renamedTo: "Job"))
+        #expect(prompt.count == 1)
+        #expect(prompt.oldName == "work")
+        #expect(prompt.newInlineName == "Job")
+        #expect(CadenceTagRenameInlineMentions.message(for: prompt)
+            == "1 note mentions #work in its text. Rewriting it keeps this as one tag. "
+            + "Leaving it alone splits #work back out as a separate tag the next time that note is read.")
+        #expect(CadenceTagRenameInlineMentions.title(for: prompt) == "Rewrite #work to #Job in note text?")
+
+        // Plural is spelled, not implied by an "(s)".
+        let many = CadenceTagRenameInlineMentions.Prompt(oldName: "work", newInlineName: "Job", count: 4)
+        #expect(CadenceTagRenameInlineMentions.message(for: many).hasPrefix("4 notes mention #work in their text."))
+    }
+
+    /// A display name a body cannot hold is written as its slug, because `#Day Job` in prose is a
+    /// third tag (`day`) rather than the renamed one. The dialog promises the same text.
+    @Test func aRenameToANameProseCannotHoldWritesTheSlugInstead() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let note = Note(kind: .daily, title: "Today", content: "Follow up on #work today")
+        context.insert(note)
+        TagSupport.syncNoteTagsFromMarkdown(note, in: context)
+        let work = try #require(note.tags?.first)
+        let prompt = try #require(CadenceTagRenameInlineMentions.prompt(for: work, renamedTo: "Day Job"))
+        #expect(prompt.newInlineName == "day-job")
+
+        _ = TagSupport.rename(work, to: "Day Job", rewritingInlineMentions: true)
+
+        #expect(note.content == "Follow up on #day-job today")
+        TagSupport.syncNoteTagsFromMarkdown(note, in: context)
+        try context.save()
+        #expect(try context.fetch(FetchDescriptor<Cadence.Tag>()).map(\.slug).sorted() == ["day-job"])
+    }
+
+    /// The rewrite edits exactly what the tag sweep reads and nothing else: not a heading, not a
+    /// fenced block, not a link destination, not inline code, not `#workflow`, and not the
+    /// frontmatter line (which the rename rewrites by its own path, to a display name).
+    @Test func theInlineRewriteTouchesOnlyWhatTheTagScanReads() throws {
+        let content = """
+        ---
+        tags: ["work"]
+        ---
+
+        # Heading about #work
+        Follow up on #work and #workflow, see `#work` and [spec](https://x.test/a#work).
+
+        ```
+        #work
+        ```
+
+        Ends with #work
+        """
+        let rewritten = MarkdownMetadataParser.content(content, rewritingInlineTags: { name in
+            TagSupport.slug(for: name) == "work" ? "Job" : nil
+        })
+
+        #expect(rewritten.contains("# Heading about #work"))
+        #expect(rewritten.contains("Follow up on #Job and #workflow, see `#work` and [spec](https://x.test/a#work)."))
+        #expect(rewritten.contains("```\n#work\n```"))
+        #expect(rewritten.hasSuffix("Ends with #Job"))
+        #expect(MarkdownMetadataParser.frontmatterTagNames(in: rewritten) == ["work"])
+        #expect(MarkdownMetadataParser.inlineTagNames(in: rewritten) == ["Job", "workflow"])
+
+        // Nothing to replace leaves the note identical, rather than rebuilding it.
+        #expect(MarkdownMetadataParser.content(content, rewritingInlineTags: { _ in nil }) == content)
     }
 
     @Test func tagSyncAndWritebackSurviveDividersInTheBody() throws {

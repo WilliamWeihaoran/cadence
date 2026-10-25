@@ -229,6 +229,9 @@ private struct SettingsTagRow: View {
     @State private var draftColorHex = ""
     /// T-497: the row's own failure line, which is why the row can stay open over a refused save.
     @State private var saveFailureNotice: String?
+    /// T-6261: the notes whose prose mentions this tag, counted when Save is pressed and held
+    /// here while the user answers. Non-`nil` only when the count is non-zero.
+    @State private var inlineMentionPrompt: CadenceTagRenameInlineMentions.Prompt?
 
     private var taskCount: Int {
         tag.tasks?.count ?? 0
@@ -268,6 +271,11 @@ private struct SettingsTagRow: View {
         }
         .opacity(tag.isArchived ? 0.72 : 1)
         .animation(.easeInOut(duration: 0.15), value: isEditing)
+        // T-6261: the same dialog the tag picker and the phone's tag editor present, from the
+        // same shared modifier, so the three rename editors cannot answer this differently.
+        .cadenceTagRenameInlineConfirmation($inlineMentionPrompt) { rewriteInlineMentions in
+            saveEdits(rewritingInlineMentions: rewriteInlineMentions)
+        }
     }
 
     private var displayContent: some View {
@@ -368,7 +376,7 @@ private struct SettingsTagRow: View {
                 SettingsActionButton(tone: .tinted(Theme.dim), action: cancelEditing) {
                     Text("Cancel")
                 }
-                SettingsActionButton(tone: .filled(Theme.blue), action: saveEdits) {
+                SettingsActionButton(tone: .filled(Theme.blue), action: requestSave) {
                     Text("Save")
                 }
                 .disabled(!canSave)
@@ -415,6 +423,21 @@ private struct SettingsTagRow: View {
         }
     }
 
+    /// **The Save button. T-6261: it asks before it edits the user's own sentences.**
+    ///
+    /// The count comes from the notes as they are now, before anything is written, which is the
+    /// only moment it is true — `rename` is about to change the very text it is counted from. No
+    /// mentions means no dialog and a straight save; the question is only worth asking when there
+    /// is something to answer.
+    private func requestSave() {
+        guard canSave else { return }
+        guard let prompt = CadenceTagRenameInlineMentions.prompt(for: tag, renamedTo: draftName) else {
+            saveEdits(rewritingInlineMentions: false)
+            return
+        }
+        inlineMentionPrompt = prompt
+    }
+
     /// T-497, the report half of the `try? save()` rule. An inline row editor collapsing back to
     /// its display row is a dismissal — it just has no sheet to say so with — and this one
     /// collapsed over a name the store may not hold, leaving the catalog reading one thing and the
@@ -423,14 +446,15 @@ private struct SettingsTagRow: View {
     /// The undo restores the five fields written above rather than rolling the context back: this
     /// is the app's single `ModelContext`, and a rollback here would discard whatever unrelated
     /// work another screen has pending. See `CadencePendingChangePersistence.commitEdit`.
-    private func saveEdits() {
+    private func saveEdits(rewritingInlineMentions: Bool) {
         guard canSave else { return }
         let previousDesc = tag.desc
         let previousColorHex = tag.colorHex
         let previousUpdatedAt = tag.updatedAt
 
         // T-6251: the rename carries the notes' frontmatter with it, under this same undo.
-        let undoRename = TagSupport.rename(tag, to: draftName)
+        // T-6261: and their inline `#mentions` too, when the user said so above.
+        let undoRename = TagSupport.rename(tag, to: draftName, rewritingInlineMentions: rewritingInlineMentions)
         tag.desc = draftDescription.trimmingCharacters(in: .whitespacesAndNewlines)
         tag.colorHex = TagSupport.normalizedColorHex(draftColorHex, fallback: tag.colorHex)
         tag.updatedAt = Date()

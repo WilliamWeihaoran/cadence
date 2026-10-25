@@ -12,17 +12,22 @@ enum iOSTagSettingsEdit {
         !TagSupport.displayName(for: name).isEmpty && !hasDuplicate(name: name, tag: tag, allTags: allTags)
     }
 
+    /// `rewritingInlineMentions` is the user's answer to the T-6261 warning, not a default the
+    /// caller may skip thinking about: `false` is today's behaviour — the tag splits — and `true`
+    /// rewrites `#old` in the note bodies as well. The row above asks before it calls this, and
+    /// only when `TagSupport.inlineMentionCount` found something to ask about.
     @MainActor
     static func save(
         tag: Tag, name: String, description: String, colorHex: String,
         allTags: [Tag], in modelContext: ModelContext,
+        rewritingInlineMentions: Bool,
         commit: (ModelContext) throws -> Void = { try $0.save() }
     ) throws {
         guard canSave(name: name, tag: tag, allTags: allTags) else { return }
         let previousDesc = tag.desc
         let previousColorHex = tag.colorHex
         let previousUpdatedAt = tag.updatedAt
-        let undoRename = TagSupport.rename(tag, to: name)
+        let undoRename = TagSupport.rename(tag, to: name, rewritingInlineMentions: rewritingInlineMentions)
         tag.desc = description.trimmingCharacters(in: .whitespacesAndNewlines)
         tag.colorHex = TagSupport.normalizedColorHex(colorHex, fallback: tag.colorHex)
         tag.updatedAt = Date()
@@ -263,6 +268,9 @@ private struct iOSTagSettingsRow: View {
     @State private var draftDescription = ""
     @State private var draftColorHex = ""
     @State private var saveFailureNotice: String?
+    /// T-6261: the notes whose prose mentions this tag, counted when Save is tapped and held here
+    /// while the user answers. Non-`nil` only when the count is non-zero.
+    @State private var inlineMentionPrompt: CadenceTagRenameInlineMentions.Prompt?
     let tag: Tag
     let allTags: [Tag]
     let isArchivedList: Bool
@@ -286,6 +294,11 @@ private struct iOSTagSettingsRow: View {
         }
         .padding(.vertical, 8)
         .opacity(tag.isArchived ? 0.72 : 1)
+        // T-6261: the same dialog both macOS editors present, from the same shared modifier. A
+        // rename that warns on the Mac and splits silently on the phone is worse than today.
+        .cadenceTagRenameInlineConfirmation($inlineMentionPrompt) { rewriteInlineMentions in
+            saveEdits(rewritingInlineMentions: rewriteInlineMentions)
+        }
     }
 
     private var displayContent: some View {
@@ -372,16 +385,30 @@ private struct iOSTagSettingsRow: View {
                     isEditing = false
                 }
                 iOSActionButton(title: "Save", role: .primary, size: .compact,
-                                isDisabled: !canSave, action: saveEdits)
+                                isDisabled: !canSave, action: requestSave)
             }
         }
     }
 
-    private func saveEdits() {
+    /// **The Save button. T-6261: it asks before it edits the user's own sentences.**
+    ///
+    /// Counted from the notes as they stand, before `rename` changes the text it is counted from.
+    /// Nothing mentioned in prose means no dialog and a straight save.
+    private func requestSave() {
+        guard canSave else { return }
+        guard let prompt = CadenceTagRenameInlineMentions.prompt(for: tag, renamedTo: draftName) else {
+            saveEdits(rewritingInlineMentions: false)
+            return
+        }
+        inlineMentionPrompt = prompt
+    }
+
+    private func saveEdits(rewritingInlineMentions: Bool) {
         guard canSave else { return }
         do {
             try iOSTagSettingsEdit.save(tag: tag, name: draftName, description: draftDescription,
-                                       colorHex: draftColorHex, allTags: allTags, in: modelContext)
+                                       colorHex: draftColorHex, allTags: allTags, in: modelContext,
+                                       rewritingInlineMentions: rewritingInlineMentions)
         } catch {
             saveFailureNotice = CadencePendingChangePersistence.editFailureNotice
             return

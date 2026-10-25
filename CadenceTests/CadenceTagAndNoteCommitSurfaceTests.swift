@@ -378,6 +378,28 @@ struct CadenceTagAndNoteCommitSurfaceTests {
         #expect(archive.contains("editFailureNotice = CadencePendingChangePersistence.editFailureNotice"))
         #expect(reportFollowsTheCatch("editingTag = nil", in: archive), "the sheet closes above its failure branch")
 
+        // **T-6261: all three rename editors ask the same question, from the same modifier.**
+        // A rename that warns in Settings and splits silently in the picker — or on the phone —
+        // is worse than the consistent split it replaces, so the agreement is pinned here rather
+        // than left to three screens staying in step. The phone's half is
+        // `CadenceCodexInlineTagEditingTests.mobileTagRowOffersInlineDraftAndClosesOnlyAfterCommit`;
+        // the macOS target does not compile `Cadence/iOS/`, but this scan reads source, not symbols.
+        let phone = try scanned("Cadence/iOS/iOSSettingsTagsSection.swift")
+        for body in [rowSave, sheetSave] {
+            #expect(body.contains("rewritingInlineMentions: rewritingInlineMentions"),
+                    "the editor passes the user's answer down rather than deciding for them")
+        }
+        for source in [catalog, picker, phone] {
+            #expect(CadenceSourceScan.matchCount(#"\.cadenceTagRenameInlineConfirmation\("#, in: source) == 1,
+                    "one shared confirmation per rename editor, and not a second copy of the dialog")
+            #expect(!CadenceSourceScan.codeOnly(source).contains("TagSupport.rename(tag, to: draftName)"),
+                    "no rename reaches the store without an answer to the warning")
+        }
+        let requestSave = try declarationBody(named: "requestSave", in: catalog)
+        #expect(requestSave.contains("CadenceTagRenameInlineMentions.prompt(for: tag, renamedTo: draftName)"))
+        #expect(requestSave.contains("saveEdits(rewritingInlineMentions: false)"),
+                "no note mentioning the tag in prose means no dialog at all")
+
         #expect(picker.contains("CadenceInlineFailureNotice(text: failureNotice)"))
         #expect(picker.contains("failureNotice: editFailureNotice"), "the sheet is never handed the notice")
 

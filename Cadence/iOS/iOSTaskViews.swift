@@ -155,11 +155,10 @@ struct iOSTaskRow: View {
                 task: task,
                 pendingRecurrenceRule: $pendingRecurrenceRule
             )
-            .alert("Delete Task?", isPresented: $showDeleteConfirmation) {
-                Button("Delete", role: .destructive, action: deleteTask)
-                Button("Cancel", role: .cancel) {}
-            } message: {
-                Text("This removes the task and its subtasks.")
+            // Shared with `iOSTaskDetailSheet`, and the scope question a repeating task is asked
+            // lives inside it — see `iOSTaskDeleteConfirmationModifier` (T-6115).
+            .iOSTaskDeleteConfirmation(task: task, isPresented: $showDeleteConfirmation) { scope in
+                deleteTask(scope: scope)
             }
             // The other half of that confirmation, and the same modifier `iOSTaskDetailSheet`
             // applies — see `iOSTaskDeleteFailureAlert` for why the two are one call rather than
@@ -540,8 +539,12 @@ struct iOSTaskRow: View {
     /// Attempt, then decide — the shape `iOSNoteDeleteConfirmationSheet.confirm()` uses. The
     /// delete returns `false` when its commit was refused and rolled back, and a row that ignored
     /// that reported a deletion the store never took.
-    private func deleteTask() {
-        deleteFailed = !CadenceTaskMutationSupport.delete(task, modelContext: modelContext)
+    private func deleteTask(scope: CadenceTaskRecurrenceDeleteScope) {
+        deleteFailed = !CadenceTaskMutationSupport.delete(
+            task,
+            modelContext: modelContext,
+            recurrenceScope: scope
+        )
     }
 
     private func openDetail() {

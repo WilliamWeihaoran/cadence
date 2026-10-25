@@ -129,11 +129,10 @@ struct iOSTaskDetailSheet: View {
     /// iOS-simulator build. Two expressions rather than one is the whole fix.
     var body: some View {
         editorSurface
-            .alert("Delete Task?", isPresented: $showDeleteConfirmation) {
-                Button("Delete", role: .destructive, action: deleteTask)
-                Button("Cancel", role: .cancel) {}
-            } message: {
-                Text("This removes the task and its subtasks.")
+            // Shared with `iOSTaskRow`, scope question and all; see
+            // `iOSTaskDeleteConfirmationModifier` (T-6115).
+            .iOSTaskDeleteConfirmation(task: task, isPresented: $showDeleteConfirmation) { scope in
+                deleteTask(scope: scope)
             }
             // Shared with `iOSTaskRow`; see `iOSTaskDeleteFailureAlert`.
             .iOSTaskDeleteFailureAlert(isPresented: $deleteFailed)
@@ -485,8 +484,12 @@ struct iOSTaskDetailSheet: View {
     /// notice is `CadenceTaskMutationSupport.deleteFailureNotice`, the shared sentence, on a second
     /// alert — [[T-376]]'s answer for a confirmation that dismisses itself on the tap, rather than
     /// a third pattern.
-    private func deleteTask() {
-        guard CadenceTaskMutationSupport.delete(task, modelContext: modelContext) else {
+    private func deleteTask(scope: CadenceTaskRecurrenceDeleteScope) {
+        guard CadenceTaskMutationSupport.delete(
+            task,
+            modelContext: modelContext,
+            recurrenceScope: scope
+        ) else {
             deleteFailed = true
             return
         }

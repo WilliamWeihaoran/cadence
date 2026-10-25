@@ -443,10 +443,15 @@ struct DeleteConfirmationLayerView: View {
                 title: deleteRequest.title,
                 message: deleteRequest.message,
                 confirmLabel: deleteRequest.confirmLabel,
+                // Nil for every delete but a repeating task's (T-6115), and the overlay draws no
+                // third button when it is nil — which is how an ordinary task keeps exactly the
+                // two it has always had.
+                alternateLabel: deleteRequest.alternate?.label,
                 // T-376. A refused delete leaves the overlay standing and puts the reason here, so
                 // the reappearing row is explained rather than merely surprising.
                 failureNotice: deleteConfirmationManager.failureNotice,
                 onConfirm: { deleteConfirmationManager.confirm() },
+                onAlternate: { deleteConfirmationManager.confirmAlternate() },
                 onCancel: { deleteConfirmationManager.cancel() }
             )
             .transition(.opacity.combined(with: .scale(scale: 0.98)))
@@ -671,9 +676,13 @@ struct DeleteConfirmationOverlay: View {
     let title: String
     let message: String
     let confirmLabel: String
+    /// The second confirm's words, or `nil` for the single-confirm overlay every delete but a
+    /// repeating task's uses (T-6115). Nil is the whole guard: no label, no button, no second step.
+    var alternateLabel: String?
     /// Shown in place of nothing when the confirmed delete was refused and rolled back (T-376).
     var failureNotice: String?
     let onConfirm: () -> Void
+    var onAlternate: () -> Void = {}
     let onCancel: () -> Void
 
     var body: some View {
@@ -726,6 +735,20 @@ struct DeleteConfirmationOverlay: View {
                         onCancel()
                     }
 
+                    // `.destructive` rather than `.primary`: both arms of a scoped delete remove
+                    // something, so both are red, but only one of them is what Return presses.
+                    // No `minWidth` here — "Delete Series" and "Delete This Occurrence" are longer
+                    // than "Delete" and size themselves.
+                    if let alternateLabel {
+                        CadenceActionButton(
+                            title: alternateLabel,
+                            role: .destructive,
+                            size: .regular
+                        ) {
+                            onAlternate()
+                        }
+                    }
+
                     CadenceActionButton(
                         title: confirmLabel,
                         role: .primary,
@@ -739,7 +762,9 @@ struct DeleteConfirmationOverlay: View {
                 }
                 .padding(20)
             }
-            .frame(width: 420)
+            // Wider when a third button is on the row, so the two scoped labels keep their words
+            // on one line (T-6115). Unchanged at 420 for every other delete.
+            .frame(width: alternateLabel == nil ? 420 : 520)
             .background(
                 RoundedRectangle(cornerRadius: Theme.radiusPanel)
                     .fill(Theme.surface)

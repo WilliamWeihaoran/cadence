@@ -356,25 +356,44 @@ nonisolated enum TagSupport {
     /// flush and launch. Renaming only the `Tag` row left `tags: ["work"]` in the note, and the
     /// next sync minted `work` again and moved the note back onto it: one tag split into two.
     ///
-    /// **Only the frontmatter line is rewritten.** Cadence wrote that line; an inline `#old` in a
-    /// note's prose is the user's text, and whether a rename may edit it is an owner decision
-    /// ([[T-6261]]). Such a note still re-mints the old name until that is decided.
+    /// **The frontmatter line is always rewritten; an inline `#old` in prose only on
+    /// `rewritingInlineMentions`** ([[T-6261]]). Cadence wrote the frontmatter line, so rewriting
+    /// it is bookkeeping. The body is the user's own text, and the owner's decision is that the
+    /// app neither edits it silently nor leaves the tag split behind the user's back: the rename
+    /// editors count the notes that mention the tag in prose, say the number, and pass what the
+    /// user answered down here. Defaulting to `false` keeps the silent path the un-asked one.
     ///
-    /// Platform-neutral on purpose: both macOS editors call it, and so must iOS's rename when
-    /// [[T-5307]] lands. `note.updatedAt` is left alone — the edit is to a block the editor hides,
-    /// and bumping it would reorder every note list by a change the user cannot see.
-    static func rename(_ tag: Tag, to newName: String) -> () -> Void {
+    /// Declining is a real outcome, not a no-op the caller can skip: the note keeps `#old` in its
+    /// text, the next `syncNoteTagsFromMarkdown` mints the old name again, and the tag splits in
+    /// two. That is what the warning says will happen, and it happens because the user chose it.
+    ///
+    /// Platform-neutral on purpose: both macOS editors call it, and so does iOS's inline tag
+    /// editor since [[T-5307]]. `note.updatedAt` is left alone — for the frontmatter the edit is
+    /// to a block the editor hides, and bumping it would reorder every note list by a change the
+    /// user cannot see; an inline rewrite rides in the same unit of work and is held to the same
+    /// rule rather than reordering half the user's lists behind one confirmation.
+    static func rename(_ tag: Tag, to newName: String, rewritingInlineMentions: Bool = false) -> () -> Void {
         let previousName = tag.name
         let previousSlug = tag.slug
         let name = displayName(for: newName)
+        let inlineName = inlineTagBody(for: name)
 
         var previousContents: [(note: Note, content: String)] = []
         for note in tag.notes ?? [] {
-            let names = MarkdownMetadataParser.frontmatterTagNames(in: note.content)
-            guard names.contains(where: { slug(for: $0) == previousSlug }) else { continue }
-            let renamed = names.map { slug(for: $0) == previousSlug ? name : $0 }
+            var updated = note.content
+            let names = MarkdownMetadataParser.frontmatterTagNames(in: updated)
+            if names.contains(where: { slug(for: $0) == previousSlug }) {
+                let renamed = names.map { slug(for: $0) == previousSlug ? name : $0 }
+                updated = MarkdownMetadataParser.content(updated, replacingFrontmatterTags: renamed)
+            }
+            if rewritingInlineMentions {
+                updated = MarkdownMetadataParser.content(updated, rewritingInlineTags: { mention in
+                    slug(for: mention) == previousSlug ? inlineName : nil
+                })
+            }
+            guard updated != note.content else { continue }
             previousContents.append((note, note.content))
-            note.content = MarkdownMetadataParser.content(note.content, replacingFrontmatterTags: renamed)
+            note.content = updated
         }
 
         tag.name = name
@@ -387,6 +406,47 @@ nonisolated enum TagSupport {
                 entry.note.content = entry.content
             }
         }
+    }
+
+    /// The text an inline `#mention` must carry for the tag sweep to resolve it back to `name`.
+    ///
+    /// An inline tag body is `[A-Za-z0-9][A-Za-z0-9_-]*` and nothing else, so a display name with
+    /// a space, an accent or punctuation in it cannot be written into prose as-is: `#Day Job`
+    /// parses as `#Day`, which is a *third* tag rather than the renamed one. The slug is always a
+    /// legal body and always slugs back to itself, so it is what gets written in that case; a name
+    /// that is already a legal body is written as the user typed it, capitals and all, because
+    /// `slug(for:)` folds case and `#Job` and `#job` are the same tag.
+    nonisolated static func inlineTagBody(for name: String) -> String {
+        let display = displayName(for: name)
+        if display.range(of: #"^[A-Za-z0-9][A-Za-z0-9_-]*$"#, options: .regularExpression) != nil {
+            return display
+        }
+        return slug(for: display)
+    }
+
+    /// **How many of `tag`'s notes mention it INLINE in their prose**, and so would be left behind
+    /// on the old name by a rename that rewrote only frontmatter ([[T-6261]]).
+    ///
+    /// This is the number the rename editors put in front of the user, so it is counted from the
+    /// notes themselves before anything is written — never estimated, and never rounded up to
+    /// "some notes". Frontmatter-only notes are deliberately **not** counted: those are rewritten
+    /// either way and are not what the question is about, and padding the number with them would
+    /// ask the user to approve an edit to prose that does not exist.
+    ///
+    /// **Zero when the rename does not move the slug.** `work` → `Work` leaves every `#work` in
+    /// the body resolving to the same tag, so nothing splits and there is nothing to ask. A
+    /// confirmation that appears on every save is one the user learns to dismiss.
+    ///
+    /// It asks `tag.notes` rather than the whole `Note` table because that is the set `rename`
+    /// walks: a note whose prose says `#work` but which the tag sweep has not linked yet is not a
+    /// note this rename touches, and counting it would overstate the edit.
+    static func inlineMentionCount(of tag: Tag, renamedTo newName: String) -> Int {
+        let previousSlug = tag.slug
+        guard slug(for: displayName(for: newName)) != previousSlug else { return 0 }
+        return (tag.notes ?? []).filter { note in
+            MarkdownMetadataParser.inlineTagNames(in: note.content)
+                .contains { slug(for: $0) == previousSlug }
+        }.count
     }
 
     nonisolated static func tagSlugs(_ tags: [Tag]) -> [String] {

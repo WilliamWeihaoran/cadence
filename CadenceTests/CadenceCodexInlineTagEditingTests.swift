@@ -32,7 +32,8 @@ struct CadenceCodexInlineTagEditingTests {
         try context.save()
         let id = tag.id
         try iOSTagSettingsEdit.save(tag: tag, name: " #Job# ", description: " Revised \n",
-                                    colorHex: "ABCDEF", allTags: [tag], in: context)
+                                    colorHex: "ABCDEF", allTags: [tag], in: context,
+                                    rewritingInlineMentions: false)
         let reader = ModelContext(container)
         let stored = try #require(reader.fetch(FetchDescriptor<Cadence.Tag>()).first)
         #expect(stored.id == id)
@@ -68,6 +69,7 @@ struct CadenceCodexInlineTagEditingTests {
         #expect(throws: Refused.self) {
             try iOSTagSettingsEdit.save(tag: tag, name: "Job", description: "New",
                                         colorHex: Theme.redHex, allTags: [tag], in: context,
+                                        rewritingInlineMentions: false,
                                         commit: { _ in throw Refused() })
         }
         #expect(tag.name == "Work")
@@ -95,13 +97,15 @@ struct CadenceCodexInlineTagEditingTests {
         for name in ["###", "Job"] {
             try iOSTagSettingsEdit.save(tag: tag, name: name, description: "Changed",
                                         colorHex: Theme.redHex, allTags: [tag, other], in: context,
+                                        rewritingInlineMentions: false,
                                         commit: { _ in attempts += 1 })
         }
         #expect(attempts == 0)
         #expect(tag.name == "Work")
         #expect(tag.desc.isEmpty)
         try iOSTagSettingsEdit.save(tag: tag, name: "Work", description: "Changed",
-                                    colorHex: "invalid", allTags: [tag, other], in: context)
+                                    colorHex: "invalid", allTags: [tag, other], in: context,
+                                    rewritingInlineMentions: false)
         #expect(tag.colorHex == Theme.blueHex)
         #expect(tag.desc == "Changed")
     }
@@ -120,7 +124,48 @@ struct CadenceCodexInlineTagEditingTests {
         let body = try #require(CadenceSourceScan.functionBody(named: "saveEdits", in: source))
         #expect(body.contains("try iOSTagSettingsEdit.save("))
         #expect(body.contains("guard canSave else { return }"))
+        #expect(body.contains("rewritingInlineMentions: rewritingInlineMentions"),
+                "the phone passes the user's answer down rather than deciding for them (T-6261)")
         #expect(body.contains("catch {\n            saveFailureNotice = CadencePendingChangePersistence.editFailureNotice\n            return\n        }\n        saveFailureNotice = nil\n        isEditing = false"))
         #expect(!CadenceSourceScan.codeOnly(source).contains(".sheet("))
+
+        // T-6261: Save asks first, and the question comes from the one shared modifier rather
+        // than a phone-shaped copy of it.
+        #expect(source.contains("isDisabled: !canSave, action: requestSave)"))
+        #expect(source.contains(".cadenceTagRenameInlineConfirmation($inlineMentionPrompt)"))
+        let request = try #require(CadenceSourceScan.functionBody(named: "requestSave", in: source))
+        #expect(request.contains("CadenceTagRenameInlineMentions.prompt(for: tag, renamedTo: draftName)"))
+        #expect(request.contains("saveEdits(rewritingInlineMentions: false)"),
+                "no mentions in anybody's prose means no dialog and a straight save")
+    }
+
+    /// **T-6261 on the phone, both branches.** The editor is a caller of the shared rename, and a
+    /// rename that warns in macOS Settings and splits silently here would be worse than the
+    /// consistent split it replaces.
+    @Test func mobileTagEditRewritesInlineMentionsOnlyWhenTheUserConfirms() throws {
+        for confirmed in [false, true] {
+            let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+            let context = ModelContext(container)
+            let tag = Cadence.Tag(name: "Work")
+            let note = Note(kind: .daily, title: "Note", content: "---\ntags: [Work]\n---\n\nFollow up on #work today")
+            context.insert(tag)
+            context.insert(note)
+            note.tags = [tag]
+            try context.save()
+
+            #expect(TagSupport.inlineMentionCount(of: tag, renamedTo: "Job") == 1)
+            try iOSTagSettingsEdit.save(tag: tag, name: "Job", description: "", colorHex: tag.colorHex,
+                                        allTags: [tag], in: context,
+                                        rewritingInlineMentions: confirmed)
+
+            #expect(MarkdownMetadataParser.frontmatterTagNames(in: note.content) == ["Job"])
+            #expect(note.content.hasSuffix(confirmed ? "Follow up on #Job today" : "Follow up on #work today"))
+
+            // The split is the declined branch's actual outcome, not a description of one.
+            TagSupport.syncNoteTagsFromMarkdown(note, in: context)
+            try context.save()
+            let slugs = try context.fetch(FetchDescriptor<Cadence.Tag>()).map(\.slug).sorted()
+            #expect(slugs == (confirmed ? ["job"] : ["job", "work"]))
+        }
     }
 }
