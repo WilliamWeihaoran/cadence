@@ -20,9 +20,10 @@ import SwiftUI
 struct TaskPriorityMarkControl: View {
     /// The drawn tile's side, and the one place it is spelled (T-1600).
     ///
-    /// macOS's `TaskDetailHeaderSection` indents everything under the task title by this plus the
-    /// title row's spacing, so the number is not private to the control: it used to be written out
-    /// again over there, which is two files holding one fact about a view only one of them draws.
+    /// macOS's `TaskDetailHeaderSection` used to indent everything under the task title by this,
+    /// and had once written the 28 out again — two files holding one fact about a view only one of
+    /// them draws. That header was deleted as dead code ([[T-6232]]); the side stays named here so
+    /// the next reader borrows it rather than retyping it.
     static let side: CGFloat = 28
 
     let priority: TaskPriority

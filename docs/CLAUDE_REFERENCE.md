@@ -719,9 +719,9 @@ The same shared sheet is used for:
 
 **Inline title shortcuts — `TaskTitleEntryField` (Views/TaskTitleEntryField.swift):**
 
-This is now a **shared field**, not `CreateTaskSheet`-local logic. Both `CreateTaskSheet` and the
-task inspector header (`SchedulePanelPopoverSupportViews.TaskDetailHeaderSection`) use it, so
-behavior changes land on both. The marker parsing lives in `Shared/TaskTitleSupport.swift`.
+This is now a **shared field**, not `CreateTaskSheet`-local logic. The task inspector header
+(`TaskDetailHeaderSection`) was its second host until [[T-6232]] deleted it as dead code; check
+`rg 'TaskTitleEntryField\('` for the current hosts. The marker parsing lives in `Shared/TaskTitleSupport.swift`.
 
 Three triggers:
 - **`~` — list.** Typing `~` at the start of the title or right after a space opens a list-search popover anchored at the `~` badge. Selecting a list sets the container, normalizes the section to one the new container actually has (`normalizeSelectedSection()` — silent, no UI), clears the query and returns focus to the title. **There is no second step.** This file previously described `~` as "list, **then** section", with the section picker opening at the same spot with "Default" pre-highlighted, and named `TildeSectionPickerRow` and `TildeSectionSearchPanel` as the types behind it. Neither type has ever existed (zero hits repo-wide) and `TaskTitleTildeMode` has exactly two cases, `.none` and `.list`. Section is chosen from the chip strip's `TaskSectionPickerBadge`, not from the title field.

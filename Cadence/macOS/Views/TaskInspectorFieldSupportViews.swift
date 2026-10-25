@@ -38,6 +38,11 @@ nonisolated enum TaskInspectorPanelMetrics {
 
     /// Every panel the inspector can open, named, at one type size.
     ///
+    /// **Two since [[T-6232]].** The estimate roller and the priority panel were opened from
+    /// `TaskDetailHeaderSection`'s title row; that view was deleted as dead code (the inspector draws
+    /// its title through `CadenceSchedulePanel`, whose priority control cycles in place), so they
+    /// are no longer panels the inspector opens and the source count below agrees.
+    ///
     /// **It is a typed list, and it has to be: a width is a value, not a spelling** (T-1941). Two
     /// of the four are computed from a `DynamicTypeSize` by types that live elsewhere, so nothing
     /// that reads source text can produce this array. What *can* be read out of source is how many
@@ -58,8 +63,6 @@ nonisolated enum TaskInspectorPanelMetrics {
     static func allWidths(at dynamicTypeSize: DynamicTypeSize) -> [(name: String, width: CGFloat)] {
         [
             ("date", CadenceDateSelectionMetrics.width(at: dynamicTypeSize)),
-            ("estimate", EstimateRollerMetrics.panelWidth(at: dynamicTypeSize, scaling: .enabled)),
-            ("priority", priorityWidth),
             ("recurrence", recurrenceWidth)
         ]
     }
@@ -670,8 +673,8 @@ struct TaskInspectorEstimateChip: View {
     /// It used to, off its own bounds, and its own bounds are the wrong anchor: the chip sits at
     /// one end of the inspector's content column and does not span it, so one of the two ends a
     /// panel can leave by opens back across the inspector's rows — which is the end the running
-    /// app picked. The title row *does* span the column, so `TaskDetailHeaderSection` presents the
-    /// roller from there and this stays a button.
+    /// app picked. The title row *did* span the column, so the since-deleted
+    /// `TaskDetailHeaderSection` presented the roller from there and this stayed a button.
     @Binding var isPickerPresented: Bool
 
     private var isSet: Bool { value > 0 }

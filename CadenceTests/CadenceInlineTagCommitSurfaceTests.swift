@@ -379,13 +379,14 @@ struct CadenceInlineTagCommitSurfaceTests {
     /// **Source shape.** No picker selects, appends or clears over a refused creation.
     ///
     /// This is the half that makes the `nil` mean something. `onCreateTag` answers `Tag?` on all
-    /// four macOS declarations now, and the two places that consume it guard rather than force —
+    /// three macOS declarations now ([[T-6232]] deleted the fourth's view), and the two places that consume it guard rather than force —
     /// so a refused tag leaves the query in the field and no chip on the row.
     @Test func neitherTagPickerSelectsATagItsCreatorRefusedToMake() throws {
         for path in [
             "Cadence/macOS/Views/TagPickerSupportViews.swift",
-            "Cadence/macOS/Views/TagPickerPopoverViews.swift",
-            "Cadence/macOS/Views/SchedulePanelPopoverSupportViews.swift"
+            "Cadence/macOS/Views/TagPickerPopoverViews.swift"
+            // `SchedulePanelPopoverSupportViews.swift` was the third: its `onCreateTag` belonged
+            // to `TaskDetailHeaderSection`, deleted as dead code ([[T-6232]]).
         ] {
             let view = try CadenceCommitSurfaceScan.scanned(path)
             #expect(

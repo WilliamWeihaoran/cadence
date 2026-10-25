@@ -43,8 +43,10 @@ import Testing
 /// `.bottom` turns `aColumnSpanningAnchorClearsTheColumnAtEitherEnd`'s companion
 /// `theShippedPlacementLeavesTheInspectorsRowsIntact` red; dropping
 /// `childPlacement: .besideInspector` from any call site turns
-/// `everyRowInTheScheduleWellAsksForTheBesideInspectorPlacement` red; and presenting either header
-/// panel from its own control again turns `theHeaderPanelsArePresentedFromTheTitleRow` red.
+/// `everyRowInTheScheduleWellAsksForTheBesideInspectorPlacement` red. The header-panel call-site
+/// test that used to close this list was retired with `TaskDetailHeaderSection` ([[T-6232]]): the
+/// live inspector draws its title through `CadenceSchedulePanel`, whose priority control cycles in
+/// place and presents no panel, so there was no header anchor left for it to guard.
 struct CadenceInspectorChildPopoverPlacementTests {
 
     // MARK: - Fixtures
@@ -365,53 +367,13 @@ struct CadenceInspectorChildPopoverPlacementTests {
         }
     }
 
-    /// The fix's call sites. Both header panels are presented from `TaskDetailHeaderSection`'s
-    /// title row, on one placement, and neither control presents one of its own — a `.popover` back
-    /// on the tile or the chip is the defect returning, because those anchors are the ones the test
-    /// above disqualifies.
-    @Test
-    func theHeaderPanelsArePresentedFromTheTitleRow() throws {
-        let headerSource = try CadenceCommitSurfaceScan.scanned(
-            "Cadence/macOS/Views/SchedulePanelPopoverSupportViews.swift"
-        )
-        let header = try #require(
-            CadenceSourceScan.declarationBody("struct TaskDetailHeaderSection: View", in: headerSource),
-            "TaskDetailHeaderSection no longer reads as a declaration this scan can scope to"
-        )
-
-        #expect(
-            CadenceSourceScan.matchCount(#"\.popover\("#, in: header) == 1,
-            "TaskDetailHeaderSection no longer presents its header panels from exactly one anchor. Two .popover modifiers on one row do not both present — measured, the second one showed nothing — and a panel presented anywhere else is anchored on a control that does not span the content column (T-1722)"
-        )
-        #expect(
-            CadenceSourceScan.matchCount(#"\.popover\(item: presentedPanel"#, in: header) == 1,
-            "the header panels no longer share one optional state, so the two can race for the row's anchor again (T-1722)"
-        )
-        #expect(
-            CadenceSourceScan.matchCount(#"arrowEdge:\s*Self\.headerPanelPlacement\.arrowEdge"#, in: header) == 1,
-            "the header panel no longer opens on the section's one placement (T-1722)"
-        )
-        #expect(
-            CadenceSourceScan.matchCount(#"arrowEdge:\s*\.[a-z]"#, in: header) == 0,
-            "a header picker hand-types an arrow edge again (T-1510)"
-        )
-        #expect(
-            CadenceSourceScan.matchCount(#"\.besideInspector\("#, in: headerSource) == 0,
-            "a call site picks the end a panel leaves by again — measured, the platform ignores it (T-1722)"
-        )
-
-        let chipSource = try CadenceCommitSurfaceScan.scanned(
-            "Cadence/macOS/Views/TaskInspectorFieldSupportViews.swift"
-        )
-        let chip = try #require(
-            CadenceSourceScan.declarationBody("struct TaskInspectorEstimateChip: View", in: chipSource),
-            "TaskInspectorEstimateChip no longer reads as a declaration this scan can scope to"
-        )
-        #expect(
-            CadenceSourceScan.matchCount(#"\.popover\("#, in: chip) == 0,
-            "TaskInspectorEstimateChip presents a panel off its own bounds again, and its own bounds are the anchor T-1722 measured opening across four of the inspector's rows"
-        )
-    }
+    // `theHeaderPanelsArePresentedFromTheTitleRow` lived here: T-1722's call-site rule that
+    // `TaskDetailHeaderSection` presents both header panels from its title row through one
+    // `.popover(item:)`. It retired with that view ([[T-6232]]) rather than moving, because it has
+    // no live owner — the Mac inspector's title row is `CadenceSchedulePanel`'s now, its priority
+    // tile cycles in place, and the panels it does open (recurrence) keep their own guard in
+    // `theScheduleControlsPresentOnThePlacementTheyWereHanded`. The arithmetic above and below is
+    // about any control pinned at one end of the column and does not depend on the header.
 
     /// **The ticket's correction, as arithmetic.** T-1510 described both header pickers as
     /// stranding a sliver "per side", which is what a panel centred *in the column* does. A header
@@ -447,28 +409,29 @@ struct CadenceInspectorChildPopoverPlacementTests {
     /// assertion below.
     private static let desktopTypeSize: DynamicTypeSize = .large
 
-    /// **Non-vacuity, and the count the ticket turns on.** T-1600 says "two of the four panels";
-    /// this is the four, enumerated by the type the placement rule reads rather than by a comment.
+    /// **Non-vacuity, and the count the ticket turns on.** T-1600 said "two of the four panels";
+    /// the priority and estimate panels left with `TaskDetailHeaderSection` ([[T-6232]]), so this is
+    /// the two that remain, enumerated by the type the placement rule reads rather than by a comment.
     ///
     /// **This is not the guard on the count, and it never was** (T-1941). It reads the enumeration
     /// and asserts a figure about the enumeration, so it is circular with respect to the thing at
     /// risk: a fifth `.popover` added to the inspector changes neither side and nothing here goes
-    /// red. What it *does* hold is that the four rows already enumerated keep their names and
+    /// red. What it *does* hold is that the rows already enumerated keep their names and
     /// report a positive width. The omission is caught by
     /// `theEnumeratedPanelsAreCountedAgainstTheInspectorsOwnPopovers`, which counts the inspector's
     /// own popovers out of the source.
     @MainActor
     @Test
-    func theInspectorOpensFourPanelsAndEachOneNamesItsWidth() {
+    func theInspectorOpensTwoPanelsAndEachOneNamesItsWidth() {
         let panels = TaskInspectorPanelMetrics.allWidths(at: Self.desktopTypeSize)
-        #expect(panels.count == 4, "read \(panels.count) inspector panels")
-        #expect(Set(panels.map(\.name)) == ["date", "estimate", "priority", "recurrence"])
+        #expect(panels.count == 2, "read \(panels.count) inspector panels")
+        #expect(Set(panels.map(\.name)) == ["date", "recurrence"])
         for panel in panels {
             #expect(panel.width > 0, "\(panel.name) reports a \(panel.width)pt panel")
         }
     }
 
-    /// **The precondition every assertion in this file rests on, now stated for all four panels
+    /// **The precondition every assertion in this file rests on, now stated for every panel
     /// rather than for the date one.** `theDatePanelIsNarrowerThanTheInspectorsContentColumn` could
     /// only ever be written about a panel whose width was readable; two of the four were literals
     /// inside a view body, so the relation that makes `.belowRow` a defect went unasserted for
@@ -484,12 +447,12 @@ struct CadenceInspectorChildPopoverPlacementTests {
         }
     }
 
-    /// And therefore: anchored under a row that spans the column, **every** one of the four slices
+    /// And therefore: anchored under a row that spans the column, **every** one of them slices
     /// the inspector's own rows. This is T-1480's defect reproduced for the priority and recurrence
     /// panels for the first time — before T-1600 neither width could be read to say it.
     @MainActor
     @Test
-    func anchoringAnyOfTheFourPanelsUnderARowSlicesTheRowsBelowIt() {
+    func anchoringAnyInspectorPanelUnderARowSlicesTheRowsBelowIt() {
         for panel in TaskInspectorPanelMetrics.allWidths(at: Self.desktopTypeSize) {
             let size = CGSize(width: panel.width, height: Self.headerPanelHeight)
             #expect(
@@ -537,16 +500,17 @@ struct CadenceInspectorChildPopoverPlacementTests {
         }
     }
 
-    /// **One owner for the priority tile's 28.** The header indents everything under the task title
-    /// by the tile's width, and the tile is `TaskPriorityMarkControl` — a **shared** view the iOS
-    /// inspector draws too, so a number copied into the macOS header could drift from the thing it
-    /// describes without a single test failing.
+    /// **One owner for the priority tile's 28** (T-1600), kept for the half that still has an
+    /// owner. `TaskPriorityMarkControl` is a **shared** view — the schedule panel and the capture
+    /// card draw it on both platforms — and it spells its side once and draws at it.
     ///
-    /// Asserted as a borrow rather than as a value, the same shape as
-    /// `CadenceSettingsTemplatesCardLayoutTests.theEditorFloorIsBorrowedFromTheNotesEditorRatherThanInvented`:
-    /// a value assertion alone cannot fail against a re-typed literal that still equals 28.
+    /// The other half asserted that macOS's `TaskDetailHeaderSection` *borrowed* that side for its
+    /// title-column indent instead of restating it. That view was never rendered after the
+    /// inspector moved onto `CadenceSchedulePanel`, and it was deleted with its guard ([[T-6232]]):
+    /// no live view indents by the tile, and `CadenceSchedulePanel` frames the tile in a 32pt hit
+    /// square rather than restating 28, so there was nowhere for the borrow rule to move to.
     @Test
-    func theInspectorHeaderBorrowsThePriorityTilesWidthRatherThanRestatingIt() throws {
+    func thePriorityTileDrawsAtTheSideItDeclares() throws {
         let controlSource = try CadenceCommitSurfaceScan.scanned(
             "Cadence/Shared/Components/TaskPriorityMarkControl.swift"
         )
@@ -557,22 +521,6 @@ struct CadenceInspectorChildPopoverPlacementTests {
         #expect(
             CadenceSourceScan.matchCount(#"\.frame\(minWidth: Self\.side, minHeight: Self\.side\)"#, in: controlSource) == 1,
             "TaskPriorityMarkControl no longer draws itself at its own declared side (T-1600)"
-        )
-
-        let headerSource = try CadenceCommitSurfaceScan.scanned(
-            "Cadence/macOS/Views/SchedulePanelPopoverSupportViews.swift"
-        )
-        let header = try #require(
-            CadenceSourceScan.declarationBody("struct TaskDetailHeaderSection: View", in: headerSource),
-            "TaskDetailHeaderSection no longer reads as a declaration this scan can scope to"
-        )
-        #expect(
-            CadenceSourceScan.matchCount(#"tileSize: CGFloat \{ TaskPriorityMarkControl\.side \}"#, in: header) == 1,
-            "TaskDetailHeaderSection states the tile's size itself again instead of reading the control's (T-1600)"
-        )
-        #expect(
-            CadenceSourceScan.matchCount(#"tileSize: CGFloat = "#, in: header) == 0,
-            "TaskDetailHeaderSection stores a second copy of the tile's size (T-1600)"
         )
     }
 
@@ -587,10 +535,11 @@ struct CadenceInspectorChildPopoverPlacementTests {
     /// searchable across every Swift file in the app rather than in a list of three files somebody
     /// has to remember to extend.
     ///
-    /// One `.popover` is not one panel. `TaskDetailHeaderSection` presents **two** from a single
-    /// modifier — deliberately, because two `.popover`s chained onto one anchor do not both work —
-    /// switching over its `HeaderPanel` cases. So a closure that switches contributes one panel per
-    /// case and any other closure contributes one.
+    /// One `.popover` is not one panel. The retired `TaskDetailHeaderSection` presented **two**
+    /// from a single modifier — deliberately, because two `.popover`s chained onto one anchor do
+    /// not both work — switching over its `HeaderPanel` cases. So a closure that switches
+    /// contributes one panel per case and any other closure contributes one; the rule outlived the
+    /// view that prompted it ([[T-6232]]).
     ///
     /// **The known limit, stated rather than hidden:** a closure that presented a second panel
     /// through an `if`/`else` instead of a `switch` would still read as one. Nothing in the
@@ -629,7 +578,7 @@ struct CadenceInspectorChildPopoverPlacementTests {
 
     /// **The enumeration is checked against the source, not against itself** (T-1941).
     ///
-    /// `theInspectorOpensFourPanelsAndEachOneNamesItsWidth` above asserts `count == 4` against
+    /// `theInspectorOpensTwoPanelsAndEachOneNamesItsWidth` above asserts a count against
     /// `allWidths(at:)` — the same hand-written list it is trying to protect. That is circular with
     /// respect to the thing at risk: a fifth `.popover` added to the inspector changes neither
     /// side, and every relation in this section — narrower than the content column, slices the rows
@@ -654,9 +603,9 @@ struct CadenceInspectorChildPopoverPlacementTests {
         let enumerated = TaskInspectorPanelMetrics.allWidths(at: Self.desktopTypeSize)
 
         // Floors first: an empty sweep must fail here rather than agree with an empty enumeration.
-        #expect(scan.sites.count >= 3, "scanned \(scan.sites.count) inspector child popovers: \(scan.sites)")
-        #expect(scan.panels >= 4, "scanned \(scan.panels) inspector panels: \(scan.sites)")
-        #expect(enumerated.count >= 4, "enumerated \(enumerated.count) panels")
+        #expect(scan.sites.count >= 2, "scanned \(scan.sites.count) inspector child popovers: \(scan.sites)")
+        #expect(scan.panels >= 2, "scanned \(scan.panels) inspector panels: \(scan.sites)")
+        #expect(enumerated.count >= 2, "enumerated \(enumerated.count) panels")
 
         #expect(
             scan.panels == enumerated.count,
@@ -683,12 +632,9 @@ struct CadenceInspectorChildPopoverPlacementTests {
             "the inspector filter matched every popover in the app (\(all)), so it is not filtering on the placement type (T-1941)"
         )
 
-        // And it is anchored on the placement rather than on a file: the three it does match are
-        // the ones whose arrow edge comes from TaskInspectorChildPopoverPlacement.
-        #expect(
-            scanned.sites.contains { $0.contains("SchedulePanelPopoverSupportViews.swift") },
-            "the header's two-panel popover fell out of the sweep: \(scanned.sites)"
-        )
+        // And it is anchored on the placement rather than on a file: the two it does match are
+        // the ones whose arrow edge comes from TaskInspectorChildPopoverPlacement. (The header's
+        // two-panel popover was the third, and went with `TaskDetailHeaderSection`, [[T-6232]].)
         #expect(
             scanned.sites.contains { $0.contains("TaskInspectorWorkflowSupportViews.swift") },
             "the recurrence panel fell out of the sweep: \(scanned.sites)"
