@@ -265,7 +265,7 @@ extension iOSListWindDownTarget {
                 title: "Archive \(noun)",
                 actionIcon: action.filledIcon,
                 headline: "Archiving settles what is left",
-                explanation: "The \(lowerNoun) moves to Archived and can be restored from there. Restoring it does not reopen the work cancelled below.",
+                explanation: "The \(lowerNoun) moves to Archived and can be restored from there. Restoring it does not reopen the work canceled below.",
                 name: list.name,
                 icon: list.icon,
                 colorHex: list.colorHex,
