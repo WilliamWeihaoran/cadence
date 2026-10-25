@@ -920,6 +920,118 @@ struct CadenceWriteServiceTests {
         #expect(DataIntegrityRepairService.activeContextSharingName("side projects", among: rows, excluding: firstRow) == nil)
     }
 
+    /// **Restoring an archived context whose name an active row has since taken succeeds under a
+    /// suffixed name, rather than being refused or making the pair the next launch fuses**
+    /// ([[T-4910]]).
+    ///
+    /// The third of the three writers that clear `isArchived`; the other two are
+    /// `iOSSettingsView.restore` and `SettingsView.restoreContext`, held in order by
+    /// `CadenceEditorSaveCommitSurfaceTests.everyRestoreSurfaceSuffixesATakenNameBeforeUnarchiving`
+    /// over the same shared function. All three wrote `isArchived = false` unconditionally, so the
+    /// restore made exactly the pair `repairDuplicateContexts` fuses with no undo.
+    ///
+    /// The owner's decision of 2026-10-24 is (b), suffix rather than refuse: you cannot pick a name
+    /// from a Restore button, so a refusal leaves the user at a dead end with no way forward from
+    /// the control they pressed. [[T-3125]] and [[T-4722]] still refuse, because creation and
+    /// rename both reach the user through a field they are already typing in.
+    @Test func restoringAContextWhoseNameIsNowTakenSucceedsUnderASuffixedName() throws {
+        let fixture = try Fixture()
+        let retired = try fixture.writeService.createContext(options: .init(name: "Side projects"))
+        _ = try fixture.writeService.updateContext(options: .init(
+            contextId: retired.context.id,
+            isArchived: true
+        ))
+        // Accepted only because the row above is archived — [[T-3125]] would refuse it otherwise.
+        let taken = try fixture.writeService.createContext(options: .init(name: "  SIDE Projects "))
+
+        let restored = try fixture.writeService.updateContext(options: .init(
+            contextId: retired.context.id,
+            isArchived: false
+        ))
+        #expect(restored.context.name == "Side projects (2)", "restore did not suffix a taken name")
+        #expect(!restored.context.isArchived, "the restore was refused rather than suffixed")
+
+        // The point of the suffix: no group for the next launch's repair to fuse.
+        let rows = try fixture.modelContext.fetch(FetchDescriptor<Context>())
+        let active = rows.filter { !$0.isArchived }
+        let names = Set(active.map { DataIntegrityRepairService.normalizedContextName($0.name) })
+        #expect(names.count == active.count, "two active contexts share a normalized name")
+        #expect(active.contains { $0.id.uuidString == taken.context.id }, "the row already here was renamed instead")
+
+        // A second restore into the same clash climbs to the next free number rather than
+        // re-using "(2)" and making the pair one step along.
+        let third = Context(name: "Side projects")
+        third.isArchived = true
+        fixture.modelContext.insert(third)
+        try fixture.modelContext.save()
+        let again = try fixture.writeService.updateContext(options: .init(
+            contextId: third.id.uuidString,
+            isArchived: false
+        ))
+        #expect(again.context.name == "Side projects (3)", "the second restore re-used a taken suffix")
+
+        // Restoring into a free name changes nothing, so this is a disambiguation and not a
+        // suffix stapled onto every restore.
+        let unique = Context(name: "Reading")
+        unique.isArchived = true
+        fixture.modelContext.insert(unique)
+        try fixture.modelContext.save()
+        let untouched = try fixture.writeService.updateContext(options: .init(
+            contextId: unique.id.uuidString,
+            isArchived: false
+        ))
+        #expect(untouched.context.name == "Reading", "a free name was suffixed anyway")
+    }
+
+    /// The rule the three restore surfaces share, asked directly ([[T-4910]]), and the two limits
+    /// that keep it from being a second, looser spelling of the clash test:
+    /// an **archived** row never blocks a name, and an **empty** name is never a clash — both
+    /// because this asks `activeContextSharingName` rather than comparing names itself.
+    ///
+    /// A **rename** is still refused, not suffixed: `update_context` with a changed clashing name
+    /// throws even when the same request un-archives the row, because that caller had a name field
+    /// and chose the name. The suffix is for the restore that carries no name at all.
+    @Test func theRestoreSuffixRuleClimbsToTheFirstFreeNumberAndLeavesFreeNamesAlone() throws {
+        let fixture = try Fixture()
+        // Not "Work": `Fixture` seeds a context under that name, and this test's whole subject is
+        // which rows a name is measured against. See [[T-3125]]'s note on the same collision.
+        let one = Context(name: "Studio")
+        let two = Context(name: "studio (2)")
+        let archived = Context(name: "Archived")
+        archived.isArchived = true
+        for row in [one, two, archived] { fixture.modelContext.insert(row) }
+        try fixture.modelContext.save()
+        let rows = try fixture.modelContext.fetch(FetchDescriptor<Context>())
+
+        // Matched on the merge's own key, so case and surrounding space do not open a free slot:
+        // the climb is on the trimmed base, or `"  STUDIO  (2)"` would key apart from `"studio (2)"`.
+        #expect(DataIntegrityRepairService.availableContextName("  STUDIO ", among: rows) == "STUDIO (3)")
+        #expect(DataIntegrityRepairService.availableContextName("Studio", among: rows) == "Studio (3)")
+        // The archived row blocks nothing, and a free name comes back unchanged.
+        #expect(DataIntegrityRepairService.availableContextName("Archived", among: rows) == "Archived")
+        #expect(DataIntegrityRepairService.availableContextName("Reading", among: rows) == "Reading")
+        // A row is not a second copy of itself.
+        #expect(DataIntegrityRepairService.availableContextName("Studio", among: rows, excluding: one) == "Studio")
+        // An empty name has no shared identity to collide on, so it is not suffixed.
+        #expect(DataIntegrityRepairService.availableContextName("", among: rows) == "")
+        #expect(DataIntegrityRepairService.availableContextName("   ", among: rows) == "   ")
+
+        // A rename that also restores is still [[T-4722]]'s refusal, not a suffix.
+        let renamed = Context(name: "Old name")
+        renamed.isArchived = true
+        fixture.modelContext.insert(renamed)
+        try fixture.modelContext.save()
+        #expect(throws: CadenceWriteError.self) {
+            try fixture.writeService.updateContext(options: .init(
+                contextId: renamed.id.uuidString,
+                name: "Studio",
+                isArchived: false
+            ))
+        }
+        #expect(renamed.name == "Old name", "the refused rename still landed")
+        #expect(renamed.isArchived, "the refused request still restored the row")
+    }
+
     /// `CadenceMCPOrdering.precedes` breaks an `order` tie on the *name*, so a new row left at the
     /// model default of 0 interleaves alphabetically with everything already at 0 instead of
     /// landing at the end. Areas and projects share one sequence per context, and `nil == nil` is

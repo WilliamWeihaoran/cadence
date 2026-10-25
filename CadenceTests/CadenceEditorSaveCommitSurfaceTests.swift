@@ -1672,6 +1672,56 @@ struct CadenceEditorSaveCommitSurfaceTests {
         }
     }
 
+    /// **Both view restore surfaces resolve a free name before they clear `isArchived`**
+    /// ([[T-4910]]).
+    ///
+    /// Read from source: iOS `iOSSettingsView` is `#if os(iOS)` and the macOS settings pane is a
+    /// view with no seam a test can drive. The third writer, MCP `update_context`, is held
+    /// behaviourally by
+    /// `CadenceWriteServiceTests.restoringAContextWhoseNameIsNowTakenSucceedsUnderASuffixedName`
+    /// over the same shared function; which names clash and which number the suffix climbs to is
+    /// held there too.
+    ///
+    /// What the scan has to see is the **order**, and it is the opposite of [[T-3125]]'s guards:
+    /// the name must be resolved *before* the row goes active, because
+    /// `activeContextSharingName` skips archived rows — ask after the write and the restored row
+    /// is itself the only active one carrying the name, so nothing is suffixed and the pair the
+    /// next launch fuses is made anyway. A surface that spells its own `(2)` is a second
+    /// convention, so neither may.
+    @Test func everyRestoreSurfaceSuffixesATakenNameBeforeUnarchiving() throws {
+        let surfaces = [
+            ("iOS", "Cadence/iOS/iOSSettingsView.swift", "private func restore(_ context: Context) {"),
+            ("macOS", "Cadence/macOS/Views/SettingsView.swift", "private func restoreContext(_ context: Context) {"),
+        ]
+        for (label, path, declaration) in surfaces {
+            let source = try scanned(path)
+            let restore = try #require(
+                body(of: declaration, in: source),
+                "\(label): the restore function was not found, so this scan is reading nothing"
+            )
+            let resolve = try #require(
+                restore.range(of: "DataIntegrityRepairService.availableContextName("),
+                "\(label): restore does not resolve a free name at all"
+            )
+            let unarchive = try #require(
+                restore.range(of: "isArchived = false"),
+                "\(label): restore no longer un-archives, so this scan is reading the wrong body"
+            )
+            #expect(
+                resolve.lowerBound < unarchive.lowerBound,
+                "\(label): the name is resolved after the row goes active, so nothing is suffixed"
+            )
+            #expect(
+                restore.contains("excluding: context"),
+                "\(label): restore does not exclude the row it is restoring"
+            )
+            #expect(
+                CadenceSourceScan.matchCount(#"\(2\)"#, in: restore) == 0,
+                "\(label): restore spells a suffix of its own rather than asking the shared rule"
+            )
+        }
+    }
+
     /// A function body from its declaration line to the closing brace at four-space indentation.
     private func body(of declaration: String, in source: String) -> String? {
         guard let start = source.range(of: declaration) else { return nil }
