@@ -50,6 +50,62 @@ struct CadenceCalendarEventDeleteCopyTests {
     }
 }
 
+/// [[T-7075]]: deleting a repeating event asks how far first, then confirms for that scope.
+///
+/// The iPhone confirmed first and asked the scope second, so its confirmation could only read the
+/// single-occurrence sentence even when the delete went on to remove the rest of the series.
+@MainActor
+struct CadenceEventDeleteStepTests {
+    @Test func aSeriesMemberIsAskedTheScopeBeforeAnyConfirmation() {
+        #expect(CadenceEventDeleteStep.first(isRecurringSeriesMember: true) == .askScope)
+        #expect(CadenceEventDeleteStep.first(isRecurringSeriesMember: true).confirmationScope == nil)
+    }
+
+    @Test func aSingleEventGoesStraightToTheOneConfirmation() {
+        #expect(CadenceEventDeleteStep.first(isRecurringSeriesMember: false) == .confirm(.thisOccurrence))
+    }
+
+    @Test func theConfirmationAfterTheScopeNamesTheScopeChosen() {
+        for scope in CalendarRecurrenceEditScope.allCases {
+            #expect(CadenceEventDeleteStep.afterScope(scope) == .confirm(scope))
+            #expect(CadenceEventDeleteStep.afterScope(scope).confirmationScope == scope)
+        }
+    }
+
+    /// `Cadence/iOS/` is not compiled into this target, so the wiring is read as source: the
+    /// Delete button opens on `CadenceEventDeleteStep.first`, the scope dialog's delete path only
+    /// queues the confirmation (on a later main-queue turn, after the scope dialog has gone), and
+    /// the only delete write sits behind the confirmation, which names the scope it carries.
+    @Test func theIPhoneSheetAsksScopeThenConfirmsThatScope() throws {
+        let source = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/iOS/iOSCalendarEventEditSheet.swift")
+        )
+        let begin = try #require(CadenceSourceScan.functionBody(named: "beginDelete", in: source))
+        #expect(begin.contains("CadenceEventDeleteStep.first(isRecurringSeriesMember: isRecurringEvent)"))
+        #expect(!begin.contains("applyDelete("), "Delete writes before anything is confirmed")
+
+        let pending = try #require(CadenceSourceScan.functionBody(named: "applyPendingAction", in: source))
+        #expect(pending.contains("confirmDelete(after: scope)"))
+        #expect(!pending.contains("applyDelete("), "the scope dialog deletes without a confirmation")
+
+        let queued = try #require(CadenceSourceScan.functionBody(named: "confirmDelete", in: source))
+        #expect(queued.contains("CadenceEventDeleteStep.afterScope(scope)"))
+        #expect(queued.contains("DispatchQueue.main.async"), "the confirmation is raised while the scope dialog dismisses")
+
+        // One write site plus its declaration, and that site is the confirmation's Delete button.
+        #expect(CadenceSourceScan.matchCount(#"applyDelete\(scope:"#, in: source) == 2)
+        let dialog = try #require(
+            CadenceSourceScan.declarationBody(
+                ".confirmationDialog(\n            CadenceCalendarEventEditingSupport.deleteConfirmationTitle",
+                in: source
+            )
+        )
+        #expect(dialog.contains("applyDelete(scope: scope)"))
+        #expect(source.contains("eventTitle: iOSCalendarEventSupport.title(for: event),\n                    scope: scope"))
+        #expect(!source.contains("scope: .thisOccurrence\n                )"), "the confirmation reads a fixed scope again")
+    }
+}
+
 /// [[T-7072]]: a completed timed task's block says it is completed.
 @MainActor
 struct CadenceTimelineTaskBlockSpeechTests {

@@ -100,8 +100,8 @@ enum CadenceCalendarEventEditingSupport {
     static let deleteConfirmationLabel = "Delete"
 
     /// `"This will permanently delete \"Standup\" from your calendar."`, or with "and future
-    /// events" when the scope reaches past this occurrence. The iPhone asks before it asks the
-    /// scope, so it reads the `.thisOccurrence` sentence.
+    /// events" when the scope reaches past this occurrence. Both platforms ask the scope first
+    /// ([[T-7075]]), so the sentence always reads the scope the user chose.
     static func deleteConfirmationMessage(eventTitle: String, scope: CalendarRecurrenceEditScope) -> String {
         switch scope {
         case .futureOccurrences:
@@ -180,5 +180,33 @@ nonisolated enum CadenceCalendarWriteOutcome: Equatable {
         case .committed: return nil
         case .refused(let notice): return notice
         }
+    }
+}
+
+/// **[[T-7075]].** The questions an event delete asks, in order, on both platforms.
+///
+/// A series member is asked *how far* first and confirmed second, so the confirmation can say
+/// what it is about to remove ("... and future events ..."). The iPhone used to confirm first and
+/// ask the scope second, which left its confirmation reading the single-occurrence sentence even
+/// for a delete that reached the rest of the series. A non-repeating event has no scope to ask:
+/// it goes straight to the one confirmation.
+enum CadenceEventDeleteStep: Equatable {
+    case askScope
+    case confirm(CalendarRecurrenceEditScope)
+
+    /// The first question the Delete button raises.
+    static func first(isRecurringSeriesMember: Bool) -> CadenceEventDeleteStep {
+        isRecurringSeriesMember ? .askScope : .confirm(.thisOccurrence)
+    }
+
+    /// The question after the scope dialog has been answered: the confirmation, for that scope.
+    static func afterScope(_ scope: CalendarRecurrenceEditScope) -> CadenceEventDeleteStep {
+        .confirm(scope)
+    }
+
+    /// The scope the confirmation names, or `nil` while the scope is still being asked.
+    var confirmationScope: CalendarRecurrenceEditScope? {
+        if case .confirm(let scope) = self { return scope }
+        return nil
     }
 }

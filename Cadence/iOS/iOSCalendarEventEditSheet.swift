@@ -47,7 +47,9 @@ struct iOSCalendarEventEditSheet: View {
     @State private var presentedEventNote: Note?
     @State private var selectedReferenceNote: Note?
     @State private var selectedReferenceTask: AppTask?
-    @State private var confirmDelete = false
+    /// The scope the delete confirmation names, while it is up. A series member reaches it only
+    /// through the scope dialog ([[T-7075]]); see `CadenceEventDeleteStep`.
+    @State private var deleteConfirmationScope: CalendarRecurrenceEditScope?
     @State private var actionError: String?
     @State private var pendingAction: PendingAction?
 
@@ -169,22 +171,27 @@ struct iOSCalendarEventEditSheet: View {
         .cadenceScaledTypography()
         .scrollDismissesKeyboard(.never)
         .scrollIndicators(.hidden)
-        // [[T-7070]]: the Mac's words, from the one owner its three delete sites read. The scope
-        // is asked after this on a phone, so the sentence is the single-occurrence one.
+        // [[T-7070]]: the Mac's words, from the one owner its three delete sites read.
+        // [[T-7075]]: a series member's scope was asked before this, so the sentence names the
+        // scope chosen — "and future events" when the delete reaches past this occurrence.
         .confirmationDialog(
             CadenceCalendarEventEditingSupport.deleteConfirmationTitle,
-            isPresented: $confirmDelete,
-            titleVisibility: .visible
-        ) {
+            isPresented: Binding(
+                get: { deleteConfirmationScope != nil },
+                set: { if !$0 { deleteConfirmationScope = nil } }
+            ),
+            titleVisibility: .visible,
+            presenting: deleteConfirmationScope
+        ) { scope in
             Button(CadenceCalendarEventEditingSupport.deleteConfirmationLabel, role: .destructive) {
-                requestDelete()
+                applyDelete(scope: scope)
             }
             Button("Cancel", role: .cancel) {}
-        } message: {
+        } message: { scope in
             Text(
                 CadenceCalendarEventEditingSupport.deleteConfirmationMessage(
                     eventTitle: iOSCalendarEventSupport.title(for: event),
-                    scope: .thisOccurrence
+                    scope: scope
                 )
             )
         }
@@ -245,7 +252,7 @@ struct iOSCalendarEventEditSheet: View {
         // there raised a confirmation dialog for a delete that could never happen.
         if isEditable {
             actions.delete = {
-                confirmDelete = true
+                beginDelete()
                 return nil
             }
         }
@@ -417,12 +424,25 @@ struct iOSCalendarEventEditSheet: View {
         draft.notes = reloaded
     }
 
-    private func requestDelete() {
-        if isRecurringEvent {
+    /// **[[T-7075]].** Scope first for a series member, then the confirmation for that scope; a
+    /// single event goes straight to the one confirmation. Nothing is written until it is confirmed.
+    private func beginDelete() {
+        switch CadenceEventDeleteStep.first(isRecurringSeriesMember: isRecurringEvent) {
+        case .askScope:
             pendingAction = .delete
-            return
+        case .confirm(let scope):
+            deleteConfirmationScope = scope
         }
-        applyDelete(scope: .thisOccurrence)
+    }
+
+    /// The scope dialog is still dismissing when its button runs, and a second dialog raised in
+    /// that same pass can fail to appear. The confirmation is raised on the next main-queue turn,
+    /// after the scope dialog's dismissal has been committed.
+    private func confirmDelete(after scope: CalendarRecurrenceEditScope) {
+        guard let confirmed = CadenceEventDeleteStep.afterScope(scope).confirmationScope else { return }
+        DispatchQueue.main.async {
+            deleteConfirmationScope = confirmed
+        }
     }
 
     private func applyPendingAction(scope: CalendarRecurrenceEditScope) {
@@ -432,7 +452,7 @@ struct iOSCalendarEventEditSheet: View {
         case .save:
             applySave(scope: scope)
         case .delete:
-            applyDelete(scope: scope)
+            confirmDelete(after: scope)
         }
     }
 
