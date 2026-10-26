@@ -16,10 +16,12 @@ struct MacNotepadRowContextMenuTests {
         let menuStart = try #require(afterRow.range(of: ".contextMenu {"))
         let menu = String(afterRow[menuStart.upperBound...].prefix(400))
         #expect(menu.contains("NoteActionSupport.copyMarkdownLink(to: note)"))
-        #expect(menu.contains("Button(role: .destructive) {\n                                    deleteNote(note)"))
-        // The menu belongs to the row, not to something drawn after it.
+        #expect(menu.contains("Button(role: .destructive) {\n                                deleteNote(note)"))
+        // The menu belongs to the row's `NoteListRowButton` ([[T-7068]]), not to something drawn
+        // after it: only the button's closing brace sits between the row and the menu.
+        #expect(page.contains("NoteListRowButton(action: { selectedNoteID = note.id }) {\n" + String(repeating: " ", count: 28) + "NotepadNoteListRow(note: note, isSelected: selectedNoteID == note.id)"))
         let between = afterRow[..<menuStart.lowerBound].filter { !$0.isWhitespace }
-        #expect(between == ".onTapGesture{selectedNoteID=note.id}")
+        #expect(between == "}")
         // The dated pages stay without one (see `iOSNotesView.sidebarRow(for:)`).
         for other in ["DailyNotesPage", "WeeklyNotesPage", "MeetingNotesPage"] {
             let body = try #require(CadenceSourceScan.declarationBody("private struct \(other): View", in: source))

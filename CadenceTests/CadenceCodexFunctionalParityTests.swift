@@ -26,7 +26,9 @@ struct CadenceCodexFunctionalParityTests {
         #expect(header.contains(".cadenceFont(.metadata, base: 11, weight: .regular)"))
         #expect(header.contains(".cadenceFont(.metadata, base: 10, weight: .regular)"))
         #expect(header.contains(".fixedSize(horizontal: false, vertical: true)"))
-        #expect(header.contains(".accessibilityLabel(\"Deadline \\(DateFormatters.shortDateString(from: projectDueDate))\")"))
+        // The label moved to the shared helper with [[T-7080]]; it still reads the Mac formatter.
+        #expect(ListDetailHeaderAccessibility.deadlineLabel(dueDate: "2026-10-14") == "Deadline \(DateFormatters.shortDateString(from: "2026-10-14"))")
+        #expect(header.contains(".accessibilityLabel(ListDetailHeaderAccessibility.deadlineLabel(dueDate: projectDueDate))"))
         #expect(header.contains("accessibilityLabel: \"Edit list\",\n                    action: onEdit"))
         #expect(!header.contains("relativeDate"))
         #expect(!header.contains("fullShortDate"))
