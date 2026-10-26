@@ -843,6 +843,79 @@ struct CadenceSearchCandidateSupportTests {
         // funnel would re-sort all three to alphabetical, since with no query every row scores 0.
         #expect(CadenceSourceScan.matchCount("iOSSearchIndexSupport\\.rankedResults\\(", in: stripped) == 5)
     }
+
+    // MARK: - T-6975: both surfaces say when Completed is holding matches back
+
+    /// The shared count is exactly the rows turning Completed on would add on **both** surfaces:
+    /// the palette's `taskResults` difference and the iOS `searchableTasks` filter difference.
+    /// Finished matches only — never the active match, never the cancelled "Done deal" (whose
+    /// title holds the query word), never a finished non-match — and zero with the filter on or
+    /// the field blank.
+    @Test func theSharedWithheldCountIsTheRowsTheCompletedFilterWouldAddOnBothSurfaces() throws {
+        let fixture = try makeTaskFixture()
+        let finishedNonMatch = AppTask(title: "Invoice")
+        finishedNonMatch.status = .done
+        let secondFinished = AppTask(title: "Ship the docs")
+        secondFinished.status = .done
+        let tasks = fixture.tasks + [finishedNonMatch, secondFinished]
+
+        let withheld = CadenceTaskSearchSupport.withheldCompletedMatchCount(tasks: tasks, query: "ship", includingCompleted: false)
+        #expect(withheld == 2)
+
+        // macOS: the palette's entry point answers the same, and equals the row difference.
+        #expect(GlobalSearchIndexSupport.withheldCompletedTaskMatchCount(tasks: tasks, query: "ship", includingCompleted: false) == withheld)
+        let macOff = GlobalSearchIndexSupport.taskResults(tasks: tasks, query: "ship", includingCompleted: false)
+        let macOn = GlobalSearchIndexSupport.taskResults(tasks: tasks, query: "ship", includingCompleted: true)
+        #expect(withheld == macOn.count - macOff.count)
+
+        // iOS: the same difference over the filter `searchableTasks` applies.
+        func iOSMatches(_ including: Bool) -> Int {
+            tasks.filter { CadenceTaskSearchSupport.isSearchable($0, includingCompleted: including) }
+                .filter { CadenceTaskSearchSupport.matchScore(query: "ship", task: $0) != nil }
+                .count
+        }
+        #expect(withheld == iOSMatches(true) - iOSMatches(false))
+
+        // "done" matches the cancelled task's title and the finished task's alias: only the
+        // finished one is held back.
+        #expect(CadenceTaskSearchSupport.withheldCompletedMatchCount(tasks: tasks, query: "done", includingCompleted: false) == 3)
+        #expect(CadenceTaskSearchSupport.withheldCompletedMatchCount(tasks: [fixture.cancelled], query: "done", includingCompleted: false) == 0)
+        #expect(CadenceTaskSearchSupport.withheldCompletedMatchCount(tasks: [fixture.active], query: "invoice", includingCompleted: false) == 0)
+        #expect(CadenceTaskSearchSupport.withheldCompletedMatchCount(tasks: tasks, query: "ship", includingCompleted: true) == 0)
+        #expect(CadenceTaskSearchSupport.withheldCompletedMatchCount(tasks: tasks, query: "  ", includingCompleted: false) == 0)
+    }
+
+    /// One sentence for both surfaces, singular and plural, and `nil` when nothing is held back so
+    /// each surface keeps its own advice. The Mac palette reads it through
+    /// `GlobalSearchEmptyState.subtitle`.
+    @Test func theWithheldCompletedSentenceIsSharedByThePaletteAndIOSSearch() {
+        #expect(CadenceEmptyStateCopy.searchWithheldCompletedTasks(count: 0) == nil)
+        #expect(CadenceEmptyStateCopy.searchWithheldCompletedTasks(count: 1)
+            == "1 completed task matches. Turn on Completed to show it.")
+        #expect(CadenceEmptyStateCopy.searchWithheldCompletedTasks(count: 3)
+            == "3 completed tasks match. Turn on Completed to show them.")
+        #expect(GlobalSearchEmptyState.subtitle(query: "ship", withheldCompletedTaskCount: 3)
+            == CadenceEmptyStateCopy.searchWithheldCompletedTasks(count: 3))
+    }
+
+    /// The iOS "No results" panel reads the shared count and the shared sentence, and the count is
+    /// zero off the task scopes, where the scope picker hides the Completed toggle the sentence
+    /// names. Source-scanned because `Cadence/iOS/` does not compile into this macOS bundle.
+    @Test func theIOSNoResultsPanelSaysWhenCompletedHoldsMatchesBack() throws {
+        let raw = try CadenceSourceScan.sourceFile(Self.iOSSearchViewPath)
+        let stripped = CadenceSourceScan.strippingComments(raw)
+        #expect(raw.contains("struct iOSSearchView"))
+        #expect(stripped.contains("title: \"No results\""))
+
+        let flat = stripped.filter { !$0.isWhitespace }
+        #expect(flat.contains("title:\"Noresults\",subtitle:CadenceEmptyStateCopy.searchWithheldCompletedTasks(count:withheldCompletedTaskCount)??\"Tryatask,note,area,project,event,tag,orsectionname.\""),
+                "the No results panel no longer reads the withheld count")
+
+        let counter = try #require(CadenceSourceScan.declarationBody("private var withheldCompletedTaskCount: Int", in: stripped))
+        let flatCounter = counter.filter { !$0.isWhitespace }
+        #expect(flatCounter.contains("guardshowsTaskselse{return0}"), "the hint can name a Completed toggle the scope hides")
+        #expect(flatCounter.contains("CadenceTaskSearchSupport.withheldCompletedMatchCount(tasks:tasks,query:trimmedQuery,includingCompleted:includeCompletedTasks)"))
+    }
 }
 
 #endif

@@ -120,6 +120,23 @@ nonisolated enum CadenceEmptyStateCopy {
         return "Start typing to search \(scopeNoun)"
     }
 
+    /// **[[T-6971]] / [[T-6975]].** A failed search whose matches are all finished tasks, with the
+    /// Completed filter off — the default on both platforms. Without this line the Mac palette said
+    /// "No matches found" and iOS "No results" over generic advice, which is false: the tasks exist
+    /// and the Completed control beside the field shows them. Both surfaces name that control by
+    /// its label, so one sentence is true on both. `nil` when nothing is held back, so each surface
+    /// keeps its own ordinary advice.
+    static func searchWithheldCompletedTasks(count: Int) -> String? {
+        switch count {
+        case ..<1:
+            return nil
+        case 1:
+            return "1 completed task matches. Turn on Completed to show it."
+        default:
+            return "\(count) completed tasks match. Turn on Completed to show them."
+        }
+    }
+
 
 
     /// The saved-links panel on a list, area or project detail page.

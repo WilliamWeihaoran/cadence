@@ -501,14 +501,9 @@ struct GlobalSearchEmptyState: View {
         if query.isEmpty {
             return "Pages, lists, tasks, events, and quick commands all show up here."
         }
-        switch withheldCompletedTaskCount {
-        case ..<1:
-            return "Try a different title or list name, or a command like New Task."
-        case 1:
-            return "1 completed task matches. Turn on Completed to show it."
-        default:
-            return "\(withheldCompletedTaskCount) completed tasks match. Turn on Completed to show them."
-        }
+        // The sentence is shared with iOS Search's "No results" panel ([[T-6975]]).
+        return CadenceEmptyStateCopy.searchWithheldCompletedTasks(count: withheldCompletedTaskCount)
+            ?? "Try a different title or list name, or a command like New Task."
     }
 
     var body: some View {

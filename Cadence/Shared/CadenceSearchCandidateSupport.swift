@@ -99,6 +99,32 @@ nonisolated enum CadenceTaskSearchSupport {
         if task.scheduledStartMin >= 0 { return .scheduled }
         return task.isDone ? .completed : .active
     }
+
+    /// How many tasks the query matches that the Completed filter is holding back ([[T-6971]],
+    /// lifted here for iOS by [[T-6975]] so both search surfaces count the same rows).
+    ///
+    /// **Zero whenever nothing is being held back** — the filter is on, or the field is blank —
+    /// so a caller can draw its hint on `> 0` alone. Counted through the same `isSearchable` and
+    /// `searchFields` both surfaces build their task rows from, so the hint and the list cannot
+    /// disagree about which tasks match: a task is counted exactly when turning Completed on would
+    /// add its row. Cancelled work is unsearchable either way and is never counted.
+    static func withheldCompletedMatchCount(
+        tasks: [AppTask],
+        query: String,
+        includingCompleted: Bool
+    ) -> Int {
+        guard !includingCompleted,
+              !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        else { return 0 }
+        let preparedQuery = CadenceSearchMatcher.PreparedQuery(query)
+        return tasks.reduce(into: 0) { count, task in
+            guard isSearchable(task, includingCompleted: true),
+                  !isSearchable(task, includingCompleted: false),
+                  CadenceSearchMatcher.matchScore(query: preparedQuery, fields: searchFields(for: task)) != nil
+            else { return }
+            count += 1
+        }
+    }
 }
 
 // MARK: - Lists

@@ -343,7 +343,8 @@ struct iOSSearchView: View {
                 iOSEmptyPanel(
                     systemImage: "magnifyingglass",
                     title: "No results",
-                    subtitle: "Try a task, note, area, project, event, tag, or section name."
+                    subtitle: CadenceEmptyStateCopy.searchWithheldCompletedTasks(count: withheldCompletedTaskCount)
+                        ?? "Try a task, note, area, project, event, tag, or section name."
                 )
                 .frame(minHeight: 220)
                 .listRowBackground(Color.clear)
@@ -519,6 +520,20 @@ struct iOSSearchView: View {
     /// needed calendar access. The card still draws above the panel on All.
     private var calendarAccessCardReplacesNoResults: Bool {
         scope == .events && !calendarManager.isAuthorized
+    }
+
+    /// Finished tasks the query matches that the Completed toggle is holding back ([[T-6975]], the
+    /// iOS half of [[T-6971]]). Read only by the "No results" panel, so the extra pass over the
+    /// tasks is paid on an empty result set alone. Zero off the scopes that search tasks: the
+    /// scope picker hides the Completed toggle there, and the hint would name a control the
+    /// screen does not show.
+    private var withheldCompletedTaskCount: Int {
+        guard showsTasks else { return 0 }
+        return CadenceTaskSearchSupport.withheldCompletedMatchCount(
+            tasks: tasks,
+            query: trimmedQuery,
+            includingCompleted: includeCompletedTasks
+        )
     }
 
     private var visibleResultsAreEmpty: Bool {
