@@ -197,8 +197,8 @@ struct ListNotesEmptyState: View {
         } else if !hasAnyFilteredMatches {
             Spacer()
             EmptyStateView(
-                message: "No matches",
-                subtitle: "Try a different search",
+                message: CadenceEmptyStateCopy.listNotesNoMatchesTitle,
+                subtitle: CadenceEmptyStateCopy.listNotesNoMatchesSubtitle,
                 icon: "magnifyingglass"
             )
             Spacer()

@@ -146,6 +146,9 @@ struct NoteFolderListRow: View {
     var tags: [Tag] = []
     let isSelected: Bool
     var metrics: CadenceNotesListMetrics = .desktop
+    /// The leading glyph. A list note is a document; the iPad tab's task-note rows ([[T-7031]])
+    /// draw the open-task circle macOS's `TaskNoteListRow` draws.
+    var systemImage: String = "doc.text"
     /// Non-nil while the row is being renamed in place — macOS's double-click rename. The text
     /// field takes the title's own slot rather than the row drawing a second form of itself, and it
     /// claims focus on appear because it only exists while editing.
@@ -176,7 +179,7 @@ struct NoteFolderListRow: View {
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: Self.glyphSpacing) {
-            Image(systemName: "doc.text")
+            Image(systemName: systemImage)
                 .font(.system(size: metrics.dayNumberSize))
                 .foregroundStyle(isSelected ? Theme.text : Theme.dim)
                 .frame(width: metrics.dayNumberWidth)

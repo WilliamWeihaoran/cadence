@@ -102,12 +102,17 @@ struct ListNotesView: View {
     }
 
     private var linkedCalendarID: String {
-        area?.linkedCalendarID ?? project?.linkedCalendarID ?? ""
+        CadenceListRelatedNotes.linkedCalendarID(area: area, project: project)
     }
 
+    /// [[T-7031]]: the same derivation the iPad tab lists from.
     private var eventNotes: [Note] {
-        EventNoteSupport.meetingNotes(forLinkedCalendarID: linkedCalendarID, in: allNotes)
-            .filter { !isPastEventNote($0) }
+        CadenceListRelatedNotes.upcomingEventNotes(
+            linkedCalendarID: linkedCalendarID,
+            in: allNotes,
+            todayKey: observedDay.todayKey,
+            nowMinutes: CadenceEventNoteSupport.startMinute(for: Date())
+        )
     }
 
     private var filteredListNotes: [Note] {
@@ -123,14 +128,12 @@ struct ListNotesView: View {
     }
 
     private var filterableTags: [Tag] {
-        let noteSlugs = relatedNotes.flatMap { ($0.tags ?? []).map(\.slug) }
-        let taskSlugs = taskNotes.flatMap { ($0.tags ?? []).map(\.slug) }
-        let slugs = Set(noteSlugs + taskSlugs)
-        return allTags.filter { slugs.contains($0.slug) }
+        CadenceListRelatedNotes.filterableTags(notes: relatedNotes, taskNotes: taskNotes, in: allTags)
     }
 
-    /// This list's tasks. Feeds `taskNotes` — the sidebar's "tasks in this list that have notes" —
-    /// which is genuinely a per-list question and must stay scoped.
+    /// This list's open tasks with notes — the sidebar's "tasks in this list that have notes" —
+    /// which is genuinely a per-list question and must stay scoped ([[T-7031]]: derived in
+    /// `CadenceListRelatedNotes`, which the iPad tab reads too).
     ///
     /// It deliberately does **not** feed the editor's `relatedTasks`. `MarkdownEditor` uses that one
     /// input for two jobs: the `[[task:` suggestion list *and* the map it renders embedded task
@@ -138,27 +141,16 @@ struct ListNotesView: View {
     /// entry in the render map and fell through to `.missing` styling — a live task drawn as if it
     /// had been deleted. The editor now gets `allTasks`, which is what `NotePanel` has always
     /// passed, so a task embed renders the same wherever the note is opened.
-    private var tasks: [AppTask] {
-        CadenceTaskQuerySupport.tasks(for: area, project: project, in: allTasks)
-    }
-
     private var taskNotes: [AppTask] {
-        tasks.filter {
-            !$0.isDone &&
-            !$0.isCancelled &&
-            !$0.notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        }
+        CadenceListRelatedNotes.taskNotes(for: area, project: project, in: allTasks)
     }
 
     private var filteredTaskNotes: [AppTask] {
-        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        return taskNotes.filter {
-            let taskTagSlugs = Set(($0.tags ?? []).map(\.slug))
-            guard selectedTagFilterSlugs.isSubset(of: taskTagSlugs) else { return false }
-            guard !query.isEmpty else { return true }
-            return $0.title.localizedCaseInsensitiveContains(query) ||
-                $0.notes.localizedCaseInsensitiveContains(query)
-        }
+        CadenceListRelatedNotes.filter(
+            taskNotes: taskNotes,
+            query: searchText,
+            requiredTagSlugs: selectedTagFilterSlugs
+        )
     }
 
     /// The folders this list already has, for the row menu. Shared with iOS — see
@@ -443,24 +435,12 @@ struct ListNotesView: View {
     }
 
     private func filteredNotes(_ notes: [Note]) -> [Note] {
-        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        let requiredTagSlugs = selectedTagFilterSlugs
-        guard !query.isEmpty || !requiredTagSlugs.isEmpty else { return notes }
-        // Task embeds are searched under the task's live title, not the copy cached in the note
-        // text — see `MarkdownTaskEmbedTitleCache`. Built once here, not once per note.
-        let taskTitles = MarkdownTaskEmbedTitleCache.titles(for: allTasks)
-        return notes.filter { note in
-            let noteTagSlugs = Set((note.tags ?? []).map(\.slug))
-            guard requiredTagSlugs.isSubset(of: noteTagSlugs) else { return false }
-            guard !query.isEmpty else { return true }
-            return note.displayTitle.localizedCaseInsensitiveContains(query) ||
-                    MarkdownTaskEmbedTitleCache.resolving(note.content, titles: taskTitles)
-                        .localizedCaseInsensitiveContains(query) ||
-                    note.sortedTags.contains { tag in
-                        tag.name.localizedCaseInsensitiveContains(query) ||
-                            tag.slug.localizedCaseInsensitiveContains(TagSupport.slug(for: query))
-                    }
-        }
+        CadenceListRelatedNotes.filter(
+            notes,
+            query: searchText,
+            requiredTagSlugs: selectedTagFilterSlugs,
+            tasks: allTasks
+        )
     }
 
     private func applyRequestedEventNoteSelection() {
@@ -560,18 +540,6 @@ struct ListNotesView: View {
             return .task(taskID)
         }
         return nil
-    }
-
-    private func isPastEventNote(_ note: Note) -> Bool {
-        guard !note.eventDateKey.isEmpty else { return false }
-        let todayKey = observedDay.todayKey
-        if note.eventDateKey < todayKey { return true }
-        guard note.eventDateKey == todayKey else { return false }
-
-        let components = Calendar.current.dateComponents([.hour, .minute], from: Date())
-        let nowMinutes = ((components.hour ?? 0) * 60) + (components.minute ?? 0)
-        let comparisonMinutes = note.eventEndMin >= 0 ? note.eventEndMin : note.eventStartMin
-        return comparisonMinutes >= 0 && comparisonMinutes < nowMinutes
     }
 }
 #endif

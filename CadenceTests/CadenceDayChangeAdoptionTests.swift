@@ -43,6 +43,9 @@ struct CadenceDayChangeAdoptionTests {
         ("Cadence/macOS/Views/NotesView.swift", "private struct DailyNotesPage: View"),
         ("Cadence/macOS/Views/NotesView.swift", "private struct WeeklyNotesPage: View"),
         ("Cadence/iOS/iOSNotesView.swift", "struct iOSNotesView: View"),
+        // [[T-7031]]: the iPad list Notes tab's event-note section drops a meeting once its day
+        // is past, the same rule `ListNotesView` reads its own observed day for.
+        ("Cadence/iOS/iOSListNotesView.swift", "struct iOSListNotesView: View"),
     ]
 
     private static let install = ".cadenceTracksDayChanges($observedDay)"

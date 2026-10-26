@@ -167,6 +167,11 @@ nonisolated enum CadenceEmptyStateCopy {
     static let listNotesTitle = "No notes"
     static let listNotesSubtitle = "Add a note with +."
 
+    /// The list-detail Notes tab when it has notes and its search or tag filter reaches none of
+    /// them. Both platforms ([[T-7031]] gave iOS the filter).
+    static let listNotesNoMatchesTitle = "No matches"
+    static let listNotesNoMatchesSubtitle = "Try a different search"
+
     /// The Log / Completed tab of a list detail page.
     ///
     /// The Mac's subtitle ("Completed tasks will appear here") restated its own title and said

@@ -21,6 +21,13 @@ import SwiftUI
 /// (`CadenceNotesListMetrics.layout(isRegularWidth:hostWidth:)`), so this host cannot acquire a
 /// second floor. **The floor is not changed and no third pane is added**: a folder is a heading
 /// inside the existing column, exactly as on macOS, not a column of its own.
+///
+/// **[[T-7031]]: the same three sections, search field and tag filter as macOS.** Below the list's
+/// own notes the column lists the linked calendar's upcoming event notes and "Task Notes" (the
+/// list's open tasks that carry notes), each derived by `CadenceListRelatedNotes` — the function
+/// macOS's `ListNotesView` reads — and narrowed by the same search-and-tag predicate. An event note
+/// opens in `iOSEventNoteEditorSheet` and a task note in the task inspector; neither is the pane's
+/// selection, because the pane edits list notes only.
 struct iOSListNotesView: View {
     let area: Area?
     let project: Project?
@@ -29,6 +36,16 @@ struct iOSListNotesView: View {
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Query(sort: \Note.order) private var allNotes: [Note]
     @Query(sort: \AppTask.order) private var allTasks: [AppTask]
+    @Query(sort: \Tag.order) private var allTags: [Tag]
+    @Environment(\.iOSTaskInspector) private var taskInspector
+    @Environment(iOSCalendarManager.self) private var calendarManager
+    /// The day the event-note section is measured against ([[T-5012]]).
+    @State private var observedDay = CadenceObservedDay()
+    @State private var searchText = ""
+    @FocusState private var isSearchFocused: Bool
+    @State private var selectedTagFilterSlugs: Set<String> = []
+    /// An event note opened from the column. A sheet, as everywhere else on iOS an event note opens.
+    @State private var selectedEventNote: Note?
 
     /// Which row is lit, and — in the two-column form — which note the pane beside it holds.
     @State private var selectedNoteID: UUID?
@@ -74,8 +91,54 @@ struct iOSListNotesView: View {
         CadenceListNoteSupport.notes(for: area, project: project, in: allNotes)
     }
 
-    private var groups: [CadenceNoteFolderGroup] {
-        CadenceNoteFolderGrouping.groups(for: listNotes)
+    private var eventNotes: [Note] {
+        CadenceListRelatedNotes.upcomingEventNotes(
+            linkedCalendarID: CadenceListRelatedNotes.linkedCalendarID(area: area, project: project),
+            in: allNotes,
+            todayKey: observedDay.todayKey,
+            nowMinutes: CadenceEventNoteSupport.startMinute(for: Date())
+        )
+    }
+
+    private var taskNotes: [AppTask] {
+        CadenceListRelatedNotes.taskNotes(for: area, project: project, in: allTasks)
+    }
+
+    private var filteredGroups: [CadenceNoteFolderGroup] {
+        CadenceNoteFolderGrouping.groups(for: filtered(listNotes))
+    }
+
+    private var filteredEventNotes: [Note] {
+        filtered(eventNotes)
+    }
+
+    private var filteredTaskNotes: [AppTask] {
+        CadenceListRelatedNotes.filter(
+            taskNotes: taskNotes,
+            query: searchText,
+            requiredTagSlugs: selectedTagFilterSlugs
+        )
+    }
+
+    private var filterableTags: [Tag] {
+        CadenceListRelatedNotes.filterableTags(
+            notes: listNotes + eventNotes,
+            taskNotes: taskNotes,
+            in: allTags
+        ).filter { !$0.isArchived }
+    }
+
+    private var hasAnyNotes: Bool {
+        !(listNotes.isEmpty && eventNotes.isEmpty && taskNotes.isEmpty)
+    }
+
+    private func filtered(_ notes: [Note]) -> [Note] {
+        CadenceListRelatedNotes.filter(
+            notes,
+            query: searchText,
+            requiredTagSlugs: selectedTagFilterSlugs,
+            tasks: allTasks
+        )
     }
 
     private var folderNames: [String] {
@@ -105,9 +168,22 @@ struct iOSListNotesView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Theme.surface)
+        .cadenceTracksDayChanges($observedDay)
         .onAppear(perform: normalizeSelection)
         .onChange(of: listNotes.map(\.id)) { _, _ in
             normalizeSelection()
+        }
+        // A tag that no longer appears on anything listed cannot stay a hidden requirement.
+        .onChange(of: filterableTags.map(\.slug)) { _, slugs in
+            selectedTagFilterSlugs.formIntersection(Set(slugs))
+        }
+        .sheet(item: $selectedEventNote) { note in
+            let event = calendarManager.event(for: note)
+            iOSEventNoteEditorSheet(
+                note: note,
+                eventTitle: event.map { iOSCalendarEventSupport.title(for: $0) } ?? note.displayTitle,
+                event: event
+            )
         }
         .fullScreenCover(item: $presentedNote) { note in
             iOSNoteEditorCover(
@@ -206,25 +282,105 @@ struct iOSListNotesView: View {
                     .padding(.vertical, metrics.columnVerticalPadding)
             }
 
+            if hasAnyNotes {
+                filterRow
+            }
+
             notesColumnContent
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Theme.surface)
     }
 
+    /// macOS's `ListNotesSearchField` over its `TagFilterBar`: one query and an all-of tag filter
+    /// narrowing every section at once.
+    private var filterRow: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            CadenceSearchFieldRow(query: $searchText, focus: $isSearchFocused) {
+                TextField("Search notes", text: $searchText)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 15))
+                    .foregroundStyle(Theme.text)
+                    .focused($isSearchFocused)
+                    .submitLabel(.search)
+                    .autocorrectionDisabled()
+            }
+            .frame(minHeight: 44)
+            .background(
+                RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous)
+                    .fill(Theme.surfaceElevated)
+            )
+
+            if !filterableTags.isEmpty {
+                tagFilterBar
+            }
+        }
+        .padding(.horizontal, metrics.columnHorizontalPadding)
+        .padding(.top, metrics.columnVerticalPadding)
+    }
+
+    private var tagFilterBar: some View {
+        ScrollView(.horizontal) {
+            HStack(spacing: 6) {
+                ForEach(filterableTags) { tag in
+                    let isSelected = selectedTagFilterSlugs.contains(tag.slug)
+                    Button {
+                        if isSelected {
+                            selectedTagFilterSlugs.remove(tag.slug)
+                        } else {
+                            selectedTagFilterSlugs.insert(tag.slug)
+                        }
+                    } label: {
+                        CadenceTagChip(tag: tag, selection: isSelected ? .on : .off)
+                            .frame(minHeight: 44)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.iosPressable)
+                    .accessibilityLabel("Filter by \(CadenceTagChipStyle.displayName(for: tag))")
+                    .accessibilityValue(isSelected ? "On" : "Off")
+                }
+
+                if !selectedTagFilterSlugs.isEmpty {
+                    Button {
+                        selectedTagFilterSlugs.removeAll()
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(Theme.dim)
+                            .frame(minWidth: 44, minHeight: 44)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.iosPressable)
+                    .accessibilityLabel("Clear tag filters")
+                }
+            }
+        }
+        .scrollIndicators(.hidden)
+    }
+
     @ViewBuilder
     private var notesColumnContent: some View {
         Group {
-            if groups.isEmpty {
+            if !hasAnyNotes {
                 iOSEmptyPanel(
                     systemImage: "doc.text",
                     title: CadenceEmptyStateCopy.listNotesTitle,
                     subtitle: CadenceEmptyStateCopy.listNotesSubtitle
                 )
+            } else if filteredGroups.isEmpty && filteredEventNotes.isEmpty && filteredTaskNotes.isEmpty {
+                iOSEmptyPanel(
+                    systemImage: "magnifyingglass",
+                    title: CadenceEmptyStateCopy.listNotesNoMatchesTitle,
+                    subtitle: CadenceEmptyStateCopy.listNotesNoMatchesSubtitle
+                )
             } else {
                 ScrollView {
-                    NoteFolderGroupList(groups: groups, metrics: metrics) { note in
-                        noteRow(note)
+                    VStack(alignment: .leading, spacing: metrics.groupSpacing) {
+                        NoteFolderGroupList(groups: filteredGroups, metrics: metrics) { note in
+                            noteRow(note)
+                        }
+                        eventNoteSection
+                        taskNoteSection
                     }
                     .padding(.horizontal, metrics.columnHorizontalPadding)
                     .padding(.vertical, metrics.columnVerticalPadding)
@@ -233,6 +389,62 @@ struct iOSListNotesView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    /// The linked calendar's upcoming event notes, under the Events tab's own word.
+    @ViewBuilder
+    private var eventNoteSection: some View {
+        if !filteredEventNotes.isEmpty {
+            VStack(alignment: .leading, spacing: metrics.rowSpacing) {
+                relatedSectionHeader(CadenceNotesTabVocabulary.events.columnTitle)
+                ForEach(filteredEventNotes) { note in
+                    Button {
+                        selectedEventNote = note
+                    } label: {
+                        // No month header above this section, so the row spells its own date out.
+                        MeetingNoteListRow(note: note, isSelected: false, showsDate: true, metrics: metrics)
+                    }
+                    .buttonStyle(.iosPressable)
+                }
+            }
+        }
+    }
+
+    /// The list's open tasks that carry notes. A row opens the task in the inspector, where its
+    /// notes are edited — the inspector host, never a sheet the row owns.
+    @ViewBuilder
+    private var taskNoteSection: some View {
+        if !filteredTaskNotes.isEmpty {
+            VStack(alignment: .leading, spacing: metrics.rowSpacing) {
+                relatedSectionHeader("Task Notes")
+                ForEach(filteredTaskNotes) { task in
+                    Button {
+                        taskInspector(task)
+                    } label: {
+                        NoteFolderListRow(
+                            title: TaskTitleSupport.displayTitle(task.title),
+                            detail: task.notes
+                                .replacingOccurrences(of: "\n", with: " ")
+                                .trimmingCharacters(in: .whitespacesAndNewlines),
+                            tags: task.sortedTags,
+                            isSelected: false,
+                            metrics: metrics,
+                            systemImage: "circle"
+                        )
+                    }
+                    .buttonStyle(.iosPressable)
+                }
+            }
+        }
+    }
+
+    private func relatedSectionHeader(_ title: String) -> some View {
+        Text(title)
+            .font(.system(size: metrics.headerLabelSize, weight: .semibold))
+            .foregroundStyle(Theme.dim)
+            .lineLimit(1)
+            .padding(.horizontal, metrics.headerHorizontalPadding)
+            .accessibilityAddTraits(.isHeader)
     }
 
     private func noteRow(_ note: Note) -> some View {
@@ -299,7 +511,7 @@ struct iOSListNotesView: View {
 
     private func normalizeSelection() {
         guard selectedNoteID == nil || !listNotes.contains(where: { $0.id == selectedNoteID }) else { return }
-        selectedNoteID = groups.first?.notes.first?.id
+        selectedNoteID = filteredGroups.first?.notes.first?.id
     }
 
     // MARK: - Creating and filing
