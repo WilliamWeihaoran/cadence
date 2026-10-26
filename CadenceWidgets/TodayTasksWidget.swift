@@ -174,5 +174,11 @@ struct CadenceTodayTasksWidget: Widget {
         .configurationDisplayName("Today Tasks")
         .description("See and complete today's Cadence tasks.")
         .supportedFamilies([.systemSmall, .systemMedium, .systemLarge, .systemExtraLarge])
+        // WidgetKit insets widget content by ~16pt a side unless a configuration opts out, and
+        // `TodayTasksWidgetView` already draws `scale.outerPadding` inside that. Both together
+        // took 32pt off the height of the 158pt `systemMedium` tile, which is what pushed the
+        // `Today` title and its count off the top edge and sliced the last task row in half at the
+        // bottom (T-7121). The padding the view already carries IS the margin.
+        .contentMarginsDisabled()
     }
 }

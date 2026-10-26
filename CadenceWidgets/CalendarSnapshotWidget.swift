@@ -115,6 +115,15 @@ struct CadenceCalendarSnapshotWidget: Widget {
         .configurationDisplayName("Calendar Snapshot")
         .description("See your next stretch of due and scheduled work at a glance.")
         .supportedFamilies([.systemSmall, .systemMedium, .systemLarge, .systemExtraLarge])
+        // WidgetKit insets widget content by ~16pt a side unless a configuration opts out, and
+        // `CalendarSnapshotWidgetView` already draws `scale.outerPadding` inside that. Both
+        // together spent 56pt of a 158pt `systemSmall` tile on chrome before the first day cell
+        // was laid out, which left each of the three cells ~31pt wide -- less glyph room than two
+        // black rounded digits need even at `.minimumScaleFactor(0.6)`, so SwiftUI truncated every
+        // two-digit day to an ellipsis (T-7120) -- and took 32pt off the height of the 158pt
+        // `systemMedium` tile, which is what sheared the title off the top and cut the summary row
+        // off the bottom (T-7122). The padding the view already carries IS the margin.
+        .contentMarginsDisabled()
     }
 }
 
@@ -156,6 +165,16 @@ struct CalendarSnapshotWidgetView: View {
         .padding(scale.outerPadding)
     }
 
+    /// `systemMedium` is a 158pt tile, so with WidgetKit's own margins off (see the configuration)
+    /// this view has 134pt of height to spend. A two-line header plus a 74pt day strip plus a row
+    /// of `CadenceWidgetMetricCard`s wants about 200pt of it, and WidgetKit does not scroll: the
+    /// overflow came off both ends at once, shearing `Calendar` through the middle at the top and
+    /// cutting the Overdue/Scheduled/Due values mid-digit at the bottom (T-7122).
+    ///
+    /// The three numbers are not dropped, they are re-sited. `headerBadges` carries them at this
+    /// family, which costs one badge line rather than the ~54pt a padded card row costs, and the
+    /// strip drops to the compact cell. 134pt now holds the whole layout with room to spare
+    /// instead of 200pt of content hanging out of both edges.
     private var mediumLayout: some View {
         VStack(alignment: .leading, spacing: scale.sectionSpacing) {
             header
@@ -164,15 +183,11 @@ struct CalendarSnapshotWidgetView: View {
             } else if entry.snapshot.state == .empty {
                 emptyState
             } else {
-                dayStrip(days: visibleSpan.days, compact: false)
-                HStack(spacing: scale.compactSectionSpacing) {
-                    CadenceWidgetMetricCard(title: "Overdue", value: "\(entry.snapshot.overdueCount)")
-                    CadenceWidgetMetricCard(title: "Scheduled", value: "\(scheduledCount)")
-                    CadenceWidgetMetricCard(title: "Due", value: "\(dueCount)")
-                }
+                dayStrip(days: visibleSpan.days, compact: true)
             }
         }
         .padding(scale.outerPadding)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
     private var largeLayout: some View {
@@ -217,23 +232,44 @@ struct CalendarSnapshotWidgetView: View {
         .padding(scale.outerPadding)
     }
 
+    /// At `systemMedium` the badges ride the title line and the count drops to title size. A
+    /// second header line plus a 21pt count costs ~23pt of a 134pt budget, and that family has no
+    /// 23pt to spare — see `mediumLayout` (T-7122).
+    private var usesInlineHeaderBadges: Bool { widgetFamily == .systemMedium }
+
     private var header: some View {
         VStack(alignment: .leading, spacing: scale.compactSectionSpacing) {
-            HStack(alignment: .firstTextBaseline) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text("Calendar")
                     .font(.system(size: scale.titleSize, weight: .bold))
                     .foregroundStyle(Theme.text)
+                    .lineLimit(1)
+                if usesInlineHeaderBadges {
+                    badgeRow
+                }
                 Spacer(minLength: 8)
                 Text("\(visibleSpan.totalCount)")
-                    .font(.system(size: scale.countSize, weight: .black, design: .rounded))
+                    .font(
+                        .system(
+                            size: usesInlineHeaderBadges ? scale.titleSize : scale.countSize,
+                            weight: .black,
+                            design: .rounded
+                        )
+                    )
                     .foregroundStyle(Theme.text)
                     .minimumScaleFactor(0.8)
             }
 
-            HStack(spacing: 5) {
-                ForEach(headerBadges) { badge in
-                    CadenceWidgetBadge(text: badge.text, tint: badge.tint)
-                }
+            if !usesInlineHeaderBadges {
+                badgeRow
+            }
+        }
+    }
+
+    private var badgeRow: some View {
+        HStack(spacing: 5) {
+            ForEach(headerBadges) { badge in
+                CadenceWidgetBadge(text: badge.text, tint: badge.tint)
             }
         }
     }
@@ -247,7 +283,9 @@ struct CalendarSnapshotWidgetView: View {
     }
 
     private func twoWeekGrid(days: [CadenceCalendarWidgetDay]) -> some View {
-        let columns = Array(repeating: GridItem(.flexible(), spacing: 6), count: 7)
+        // 4pt between columns, not 6: seven columns pay the gap six times, and the 12pt this
+        // returns goes straight back into the day number's glyph width (T-7120).
+        let columns = Array(repeating: GridItem(.flexible(), spacing: 4), count: 7)
         return LazyVGrid(columns: columns, spacing: 6) {
             ForEach(days) { day in
                 dayCell(day, compact: false)
@@ -263,10 +301,15 @@ struct CalendarSnapshotWidgetView: View {
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
 
+            // No `+ 1` for the grid families any more. The grid is where the cell is NARROWEST --
+            // seven columns across a 338pt `systemLarge` tile -- so the one place the number was
+            // drawn a point larger was the one place it had the least room to be drawn in
+            // (T-7120).
             Text(day.dayNumberLabel)
-                .font(.system(size: compact ? scale.metricValueSize : scale.metricValueSize + 1, weight: .black, design: .rounded))
+                .font(.system(size: scale.metricValueSize, weight: .black, design: .rounded))
                 .foregroundStyle(Theme.text)
                 .lineLimit(1)
+                .allowsTightening(true)
                 .minimumScaleFactor(0.6)
                 .monospacedDigit()
 
@@ -279,23 +322,16 @@ struct CalendarSnapshotWidgetView: View {
             } else {
                 VStack(alignment: .leading, spacing: compact ? 3 : 4) {
                     if day.dueCount > 0 {
-                        countChip(
-                            value: "\(day.dueCount)",
-                            label: usesShortCountLabels ? "d" : "due",
-                            tint: Theme.amber
-                        )
+                        countChip(value: "\(day.dueCount)", label: "d", tint: Theme.amber)
                     }
                     if day.scheduledCount > 0 {
-                        countChip(
-                            value: "\(day.scheduledCount)",
-                            label: usesShortCountLabels ? "p" : "planned",
-                            tint: Theme.blueLight
-                        )
+                        countChip(value: "\(day.scheduledCount)", label: "p", tint: Theme.blueLight)
                     }
                 }
             }
         }
-        .padding(compact ? max(scale.compactCardPadding - 1, 7) : scale.compactCardPadding)
+        .padding(.horizontal, dayCellHorizontalInset)
+        .padding(.vertical, compact ? max(scale.compactCardPadding - 1, 7) : scale.compactCardPadding)
         .frame(maxWidth: .infinity, minHeight: compact ? 68 : 74, alignment: .topLeading)
         .background(dayBackground(for: day))
         .clipShape(RoundedRectangle(cornerRadius: scale.cardCornerRadius, style: .continuous))
@@ -418,8 +454,18 @@ struct CalendarSnapshotWidgetView: View {
         visibleSpan.dueCount
     }
 
-    private var usesShortCountLabels: Bool {
-        widgetFamily == .systemSmall || widgetFamily == .systemMedium
+    /// The side inset is what a two-digit day number is taken out of, and the families do not
+    /// share a cell width. `systemLarge` lays SEVEN columns across a 338pt tile — about 39pt a
+    /// cell — while `systemExtraLarge` lays the same seven across roughly 495pt. One inset sized
+    /// for the roomy case left `26` with less width than even the minimum scale factor needed, so
+    /// SwiftUI truncated instead of shrinking further (T-7120); this cuts it where the columns are
+    /// narrow and leaves it alone where they are not.
+    private var dayCellHorizontalInset: CGFloat {
+        switch widgetFamily {
+        case .systemExtraLarge: scale.compactCardPadding
+        case .systemLarge: 5
+        default: 6
+        }
     }
 
     private var headerBadges: [WidgetHeaderBadge] {
@@ -431,12 +477,28 @@ struct CalendarSnapshotWidgetView: View {
             return [WidgetHeaderBadge(text: "\(upcomingCount) next up", tint: upcomingTint)]
         }
 
+        if widgetFamily == .systemMedium {
+            // The three numbers the metric-card row used to carry at this family, in the one line
+            // the tile can actually afford. `mediumLayout` says why the cards went (T-7122); the
+            // total they sat under is still the count in the header's trailing corner.
+            return [
+                WidgetHeaderBadge(text: "\(entry.snapshot.overdueCount) overdue", tint: overdueTint),
+                WidgetHeaderBadge(text: "\(dueCount) due", tint: Theme.amber),
+                WidgetHeaderBadge(text: "\(scheduledCount) planned", tint: upcomingTint),
+            ]
+        }
+
         return [
             WidgetHeaderBadge(text: "\(entry.snapshot.overdueCount) overdue", tint: overdueTint),
             WidgetHeaderBadge(text: "\(upcomingCount) upcoming", tint: upcomingTint),
         ]
     }
 
+    /// `d` and `p`, at every family rather than only the two narrow ones. `2 planned` needs ~49pt
+    /// of glyph width, and no family's day cell has that: the widest is `systemExtraLarge`'s, at
+    /// ~67pt before its own inset. The long labels were truncating on the iPad's `systemLarge` and
+    /// `systemExtraLarge` tiles (`1 du`, `3 pl`) exactly as they did on the small ones, so the
+    /// strip speaks one vocabulary across families instead of spelling a word it cannot fit.
     private func countChip(value: String, label: String, tint: Color) -> some View {
         HStack(spacing: 3) {
             Text(value)

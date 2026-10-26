@@ -8,10 +8,15 @@ import SwiftData
 nonisolated enum CadenceWidgetFamilyLayout: CaseIterable, Sendable {
     case small, medium, large, extraLarge
 
+    /// `.medium` is 2, not 3. Three rows plus a header needed about 215pt against the ~134pt a
+    /// `systemMedium` tile actually gives the view, so the header was pushed off the top and the
+    /// third row sliced by the bottom edge (T-7121). This is still an entry count and still
+    /// carries the caveat above; what makes 2 the right count is that the drawn result was looked
+    /// at on both standing simulators, not that the arithmetic came out.
     var todayTaskLimit: Int {
         switch self {
         case .small: 1
-        case .medium: 3
+        case .medium: 2
         case .large: 2
         case .extraLarge: 8
         }

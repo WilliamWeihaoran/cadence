@@ -6,7 +6,9 @@ import Testing
 struct CadenceCodexWidgetFollowupTests {
     @Test func codexWidgetFamilyBudgetsMatchTheSelectedContent() {
         let families = CadenceWidgetFamilyLayout.allCases
-        #expect(families.map(\.todayTaskLimit) == [1, 3, 2, 8])
+        // `.medium` was 3 until T-7121: a header plus three rows overflowed the 158pt tile at both
+        // ends on `Cadence-iPhone15` and `Cadence-iPadPro11`, seen on screen in both galleries.
+        #expect(families.map(\.todayTaskLimit) == [1, 2, 2, 8])
         #expect(families.map(\.habitLimit) == [2, 3, 8, 8])
         #expect(families.map(\.habitColumns) == [2, 3, 3, 3])
         #expect(families.map(\.calendarDayLimit) == [3, 6, 14, 14])
@@ -131,6 +133,34 @@ struct CadenceCodexWidgetFollowupTests {
             .map { "prefix(\($0.todayTaskLimit))" }
             .filter { todayView.contains($0) }
         #expect(hardcodedBudgets.isEmpty, "the Today view's row budget must come from cadenceLayout, not a literal")
+    }
+
+    /// [[T-7120]], [[T-7121]], [[T-7122]] — the shared half of all three defects, pinned where a
+    /// later edit to either configuration would drop it silently.
+    ///
+    /// WidgetKit insets widget content by about 16pt a side unless a configuration opts out, and
+    /// both widget views draw their own `scale.outerPadding` inside that. Together they spent 56pt
+    /// of a 158pt `systemSmall` tile and 32pt of a 158pt `systemMedium` tile's height on chrome
+    /// before any content was laid out — which is what made a small day cell ~31pt wide (every
+    /// two-digit day number truncated to a bare ellipsis, seen on both standing simulators) and
+    /// what pushed the medium header off the top edge of both widgets.
+    ///
+    /// This is a source assertion rather than a layout one on purpose: no test host here can ask
+    /// SwiftUI what a widget's content margins resolved to, which is the same limit
+    /// `CadenceCalendarCaptureClearanceTests` records for `contentMargins`. What CAN be held is
+    /// that the opt-out is still written, on both configurations.
+    @Test func codexWidgetConfigurationsOptOutOfWidgetKitContentMargins() throws {
+        let read = CadenceSourceScan.strippedSourceReader()
+        for path in [
+            "CadenceWidgets/TodayTasksWidget.swift",
+            "CadenceWidgets/CalendarSnapshotWidget.swift",
+        ] {
+            let source = CadenceSourceScan.codeOnly(try read(path))
+            #expect(
+                source.contains(".contentMarginsDisabled()"),
+                "\(path) must opt out of WidgetKit's default content margins (T-7120/T-7121/T-7122)"
+            )
+        }
     }
 
     @Test func codexHabitSnapshotRequestsOverridesForItsOwnDate() throws {

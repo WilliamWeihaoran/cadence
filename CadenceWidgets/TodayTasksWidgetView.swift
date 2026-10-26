@@ -88,6 +88,22 @@ struct TodayTasksWidgetView: View {
         .padding(scale.outerPadding)
     }
 
+    /// `systemMedium` is a 158pt tile, so with WidgetKit's own margins off (see the configuration)
+    /// this view has 134pt of height. A two-line header plus three ~50pt rows wanted about 215pt
+    /// of it, and WidgetKit does not scroll: the overflow came off both ends, so the title and the
+    /// count were gone off the top and the third row was cut in half by the bottom edge (T-7121).
+    ///
+    /// Three changes. The badges ride the title line, the rows are the dense single-line variant,
+    /// and `todayTaskLimit` for `.medium` drops 3 -> 2. Header plus two dense rows measures ~130pt
+    /// against the 134pt an iPhone 15 gives this family and the 146pt an 11-inch iPad gives it,
+    /// and both were checked on screen in the widget gallery rather than computed and trusted.
+    ///
+    /// **`ViewThatFits(in: .vertical)` was tried here first and is deliberately not used.** Asked
+    /// to choose between a two-row and a one-row stack it answered differently on the two devices
+    /// from one build — two rows on `Cadence-iPhone15` and ONE on `Cadence-iPadPro11`, which has
+    /// the taller tile of the pair. A chooser that drops a row on the roomier device is reading
+    /// something other than the tile (a `VStack` does not hand a flexible child the full height to
+    /// measure against), so what is drawn here is the budget, which is at least the same on both.
     private var mediumLayout: some View {
         VStack(alignment: .leading, spacing: scale.sectionSpacing) {
             widgetHeader
@@ -99,12 +115,13 @@ struct TodayTasksWidgetView: View {
             } else {
                 VStack(spacing: scale.compactSectionSpacing) {
                     ForEach(entry.snapshot.tasks.prefix(widgetFamily.cadenceLayout.todayTaskLimit)) { task in
-                        taskRow(task, dense: false)
+                        taskRow(task, dense: true, titleLines: 1)
                     }
                 }
             }
         }
         .padding(scale.outerPadding)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
     private var largeLayout: some View {
@@ -218,23 +235,44 @@ struct TodayTasksWidgetView: View {
         }
     }
 
+    /// At `systemMedium` the badges ride the title line and the count drops to title size. A
+    /// second header line plus a 21pt count costs ~23pt of a 134pt budget, and that family has no
+    /// 23pt to spare — see `mediumLayout` (T-7121).
+    private var usesInlineHeaderBadges: Bool { widgetFamily == .systemMedium }
+
     private var widgetHeader: some View {
         VStack(alignment: .leading, spacing: scale.compactSectionSpacing) {
-            HStack(alignment: .firstTextBaseline) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text("Today")
                     .font(.system(size: scale.titleSize, weight: .bold))
                     .foregroundStyle(Theme.text)
+                    .lineLimit(1)
+                if usesInlineHeaderBadges {
+                    badgeRow
+                }
                 Spacer(minLength: 10)
                 Text("\(entry.snapshot.totalCount)")
-                    .font(.system(size: scale.countSize, weight: .black, design: .rounded))
+                    .font(
+                        .system(
+                            size: usesInlineHeaderBadges ? scale.titleSize : scale.countSize,
+                            weight: .black,
+                            design: .rounded
+                        )
+                    )
                     .foregroundStyle(Theme.text)
                     .minimumScaleFactor(0.8)
             }
 
-            HStack(spacing: 5) {
-                ForEach(headerBadges) { badge in
-                    CadenceWidgetBadge(text: badge.text, tint: badge.tint)
-                }
+            if !usesInlineHeaderBadges {
+                badgeRow
+            }
+        }
+    }
+
+    private var badgeRow: some View {
+        HStack(spacing: 5) {
+            ForEach(headerBadges) { badge in
+                CadenceWidgetBadge(text: badge.text, tint: badge.tint)
             }
         }
     }
@@ -345,7 +383,11 @@ struct TodayTasksWidgetView: View {
         }
     }
 
-    private func taskRow(_ task: CadenceTodayWidgetTask, dense: Bool) -> some View {
+    /// `titleLines` is separate from `dense` because the two are not the same question. `dense`
+    /// sets the metrics; the line limit is a height budget, and `systemMedium` is the one caller
+    /// that cannot afford a second title line (T-7121) while the large queue card and the
+    /// extra-large columns can.
+    private func taskRow(_ task: CadenceTodayWidgetTask, dense: Bool, titleLines: Int = 2) -> some View {
         let status = task.widgetStatus(for: entry.snapshot.dateKey)
 
         return HStack(spacing: dense ? 7 : 8) {
@@ -354,7 +396,7 @@ struct TodayTasksWidgetView: View {
                     Text(task.title)
                         .font(.system(size: dense ? scale.bodyFontSize + 0.5 : scale.bodyFontSize + 1, weight: .semibold))
                         .foregroundStyle(Theme.text)
-                        .lineLimit(dense ? 2 : 2)
+                        .lineLimit(titleLines)
                         .minimumScaleFactor(0.9)
 
                     HStack(spacing: 5) {
