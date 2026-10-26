@@ -354,10 +354,16 @@ struct CadenceTypographyConversionSweepTests {
     /// A file with every `.font` deleted satisfies the sweep above.
     @Test func everyWorkflowFileThatDrawsTextGoesThroughTheAdapter() throws {
         let read = CadenceSourceScan.strippedSourceReader()
-        // The detail sheet itself draws no text of its own; the capture host still draws its
-        // permission action, and its shared card is part of the converted workflow too.
-        let drawsText = Self.workflow.filter { $0 != "Cadence/iOS/iOSTaskDetailSheet.swift" }
-        #expect(drawsText.count == 6)
+        // The detail sheet draws no text of its own, and since [[T-7073]] neither does the capture
+        // host: its permission action is `iOSCaptureCalendarAccessButton`, an `iOSActionButton`,
+        // which scales through `.cadenceFont` in `iOSDesignSystem.swift` (pinned below). Its
+        // shared card is part of the converted workflow too.
+        let drawsText = Self.workflow.filter {
+            $0 != "Cadence/iOS/iOSTaskDetailSheet.swift" && $0 != "Cadence/iOS/iOSCreateTaskSheet.swift"
+        }
+        #expect(drawsText.count == 5)
+        #expect(try read("Cadence/iOS/iOSCreateTaskSheet.swift").contains("iOSCaptureCalendarAccessButton("))
+        #expect(try read("Cadence/iOS/iOSDesignSystem.swift").contains(".cadenceFont(.controlLabel, base: size.fontSize)"))
         for path in drawsText {
             #expect(try read(path).contains(".cadenceFont("), "\(path) draws no scaled font")
         }
