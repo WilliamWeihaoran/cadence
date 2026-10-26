@@ -4,6 +4,8 @@ import SwiftUI
 struct GlobalSearchSectionsList: View {
     let sections: [GlobalSearchVisibleSection]
     let query: String
+    /// Completed tasks the query matches that the Completed filter holds back ([[T-6971]]).
+    var withheldCompletedTaskCount: Int = 0
     let highlightedResultID: String?
     let onSelect: (GlobalSearchResult) -> Void
     let onHover: (String) -> Void
@@ -12,7 +14,7 @@ struct GlobalSearchSectionsList: View {
 
     var body: some View {
         if sections.isEmpty {
-            GlobalSearchEmptyState(query: query)
+            GlobalSearchEmptyState(query: query, withheldCompletedTaskCount: withheldCompletedTaskCount)
         } else {
             ScrollView {
                 VStack(alignment: .leading, spacing: 15) {

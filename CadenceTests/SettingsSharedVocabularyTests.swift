@@ -879,6 +879,25 @@ struct SettingsSevenPaneVocabularyTests {
             at: ["Cadence/macOS/Views/SettingsSupportViews.swift": 3]
         )
     }
+
+    /// [[T-6972]]: the completed/archived list row truncates a long name instead of wrapping it,
+    /// and its status capsule and both buttons keep their natural width. Before this nothing in
+    /// the row had a line limit, so a long name wrapped and squeezed "Completed" and "Restore"
+    /// into broken lines with it.
+    @Test func theListLifecycleRowTruncatesTheNameAndHoldsItsControls() throws {
+        let source = CadenceSourceScan.strippingComments(try t20SourceFile("Cadence/macOS/Views/SettingsSupportViews.swift"))
+        let row = try #require(CadenceSourceScan.declarationBody("struct ListLifecycleRow: View", in: source))
+        let flat = t286RemovingWhitespace(row)
+
+        #expect(flat.contains("Text(title).font(.system(size:13,weight:.semibold)).foregroundStyle(Theme.text).lineLimit(1)"),
+                "the list name can wrap again")
+        #expect(flat.contains("Text(subtitle).font(.system(size:11)).foregroundStyle(Theme.dim).lineLimit(1)"),
+                "the subtitle can wrap again")
+        #expect(flat.contains("Text(statusLabel).font(.system(size:10,weight:.semibold))") , "non-vacuity: still the status capsule")
+        // The capsule and the two buttons: three fixed sizes, each behind a one-line limit.
+        #expect(CadenceSourceScan.matchCount("\\.lineLimit\\(1\\)\\.fixedSize\\(\\)", in: flat) == 3,
+                "the status capsule or a button can be squeezed into wrapping again")
+    }
 }
 
 /// Removes every whitespace character, so a modifier chain reads the same however it is wrapped.

@@ -489,6 +489,27 @@ struct GlobalSearchCompletedFilterToggle: View {
 
 struct GlobalSearchEmptyState: View {
     let query: String
+    /// Completed tasks this query matches that the Completed filter is holding back
+    /// (`GlobalSearchIndexSupport.withheldCompletedTaskMatchCount`).
+    var withheldCompletedTaskCount: Int = 0
+
+    /// [[T-6971]]: with Completed off — the default since [[T-1476]] — a search whose only matches
+    /// are finished tasks used to read "No matches found" and advise a "cleaner title", which is
+    /// false: the tasks exist and one click on the filter beside the field shows them. The
+    /// subtitle now says how many are held back and names that control.
+    static func subtitle(query: String, withheldCompletedTaskCount: Int) -> String {
+        if query.isEmpty {
+            return "Pages, lists, tasks, events, and quick commands all show up here."
+        }
+        switch withheldCompletedTaskCount {
+        case ..<1:
+            return "Try a different title or list name, or a command like New Task."
+        case 1:
+            return "1 completed task matches. Turn on Completed to show it."
+        default:
+            return "\(withheldCompletedTaskCount) completed tasks match. Turn on Completed to show them."
+        }
+    }
 
     var body: some View {
         VStack(spacing: 10) {
@@ -498,7 +519,7 @@ struct GlobalSearchEmptyState: View {
             Text(query.isEmpty ? "Start typing to search or run a command" : "No matches found")
                 .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(Theme.text)
-            Text(query.isEmpty ? "Pages, lists, tasks, events, and quick commands all show up here." : "Try a cleaner title, list name, or command like new task.")
+            Text(Self.subtitle(query: query, withheldCompletedTaskCount: withheldCompletedTaskCount))
                 .font(.system(size: 12))
                 .foregroundStyle(Theme.dim)
         }

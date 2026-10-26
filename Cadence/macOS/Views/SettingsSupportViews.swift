@@ -508,14 +508,23 @@ struct ListLifecycleRow: View {
                         .foregroundStyle(color)
                 }
 
+            // [[T-6972]]: a long list name is the part that gives. Nothing here had a line limit, so
+            // a long name wrapped over several lines and the status capsule and the two buttons
+            // were squeezed with it — "Completed" broke inside its pill and "Restore" wrapped
+            // under its own fill. The name and subtitle now truncate on one line; the capsule and
+            // the buttons hold their natural width.
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 8) {
                     Text(title)
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(Theme.text)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
                     Text(statusLabel)
                         .font(.system(size: 10, weight: .semibold))
                         .foregroundStyle(statusLabel == "Completed" ? Theme.green : Theme.amber)
+                        .lineLimit(1)
+                        .fixedSize()
                         .padding(.horizontal, 7)
                         .padding(.vertical, 3)
                         .background((statusLabel == "Completed" ? Theme.green : Theme.amber).opacity(0.14))
@@ -525,15 +534,19 @@ struct ListLifecycleRow: View {
                     Text(subtitle)
                         .font(.system(size: 11))
                         .foregroundStyle(Theme.dim)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
                 }
             }
 
-            Spacer()
+            Spacer(minLength: 8)
 
             Button(primaryLabel, action: onPrimary)
                 .buttonStyle(.cadencePlain)
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(Theme.text)
+                .lineLimit(1)
+                .fixedSize()
                 .padding(.horizontal, 10)
                 .padding(.vertical, 7)
                 .background(Theme.surfaceElevated)
@@ -543,6 +556,8 @@ struct ListLifecycleRow: View {
                 .buttonStyle(.cadencePlain)
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(Theme.onColor(for: Theme.red))
+                .lineLimit(1)
+                .fixedSize()
                 .padding(.horizontal, 10)
                 .padding(.vertical, 7)
                 .background(Theme.red)

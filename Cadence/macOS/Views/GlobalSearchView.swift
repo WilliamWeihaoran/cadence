@@ -81,6 +81,17 @@ struct GlobalSearchOverlay: View {
         GlobalSearchDataSupport.visibleSections(from: indexedSections, expandedCategories: expandedCategories)
     }
 
+    /// Only read when nothing matched — `GlobalSearchEmptyState` draws it, and nothing else — so
+    /// the extra pass over the tasks is paid on an empty result set alone ([[T-6971]]).
+    private var withheldCompletedTaskCount: Int {
+        guard sections.isEmpty else { return 0 }
+        return GlobalSearchIndexSupport.withheldCompletedTaskMatchCount(
+            tasks: tasks,
+            query: query,
+            includingCompleted: includesCompletedTasks
+        )
+    }
+
     private var keyboardRows: [GlobalSearchKeyboardRow] {
         GlobalSearchOverlayStateSupport.keyboardRows(from: sections)
     }
@@ -102,6 +113,7 @@ struct GlobalSearchOverlay: View {
                 GlobalSearchHighlightList(
                     sections: sections,
                     query: query,
+                    withheldCompletedTaskCount: withheldCompletedTaskCount,
                     highlightedResultID: $highlightedResultID,
                     onSelect: onSelect,
                     onReveal: revealSection
@@ -214,6 +226,7 @@ struct GlobalSearchOverlay: View {
 struct GlobalSearchHighlightList: View {
     let sections: [GlobalSearchVisibleSection]
     let query: String
+    var withheldCompletedTaskCount: Int = 0
     @Binding var highlightedResultID: String?
     let onSelect: (GlobalSearchResult) -> Void
     let onReveal: (String) -> Void
@@ -222,6 +235,7 @@ struct GlobalSearchHighlightList: View {
         GlobalSearchSectionsList(
             sections: sections,
             query: query,
+            withheldCompletedTaskCount: withheldCompletedTaskCount,
             highlightedResultID: highlightedResultID,
             onSelect: onSelect,
             onHover: { highlightedResultID = $0 },

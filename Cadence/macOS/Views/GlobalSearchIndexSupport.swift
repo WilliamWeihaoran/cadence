@@ -285,6 +285,31 @@ enum GlobalSearchIndexSupport {
         }, query: query, preparedQuery: preparedQuery)
     }
 
+    /// How many tasks the query matches that the Completed filter is holding back ([[T-6971]]).
+    ///
+    /// **Zero whenever nothing is being held back** — the filter is on, or the field is blank —
+    /// so a caller can draw its hint on `> 0` alone. Counted through the same `isSearchable` and
+    /// `searchFields` `taskResults` uses, so the hint and the list cannot disagree about which
+    /// tasks match: a task is counted exactly when turning Completed on would add its row.
+    /// Cancelled work is unsearchable either way and is never counted.
+    static func withheldCompletedTaskMatchCount(
+        tasks: [AppTask],
+        query: String,
+        includingCompleted: Bool
+    ) -> Int {
+        guard !includingCompleted,
+              !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        else { return 0 }
+        let preparedQuery = CadenceSearchMatcher.PreparedQuery(query)
+        return tasks.reduce(into: 0) { count, task in
+            guard CadenceTaskSearchSupport.isSearchable(task, includingCompleted: true),
+                  !CadenceTaskSearchSupport.isSearchable(task, includingCompleted: false),
+                  matches(query: preparedQuery, fields: CadenceTaskSearchSupport.searchFields(for: task))
+            else { return }
+            count += 1
+        }
+    }
+
     /// The desktop's symbols for the three shared glyph states. `completed` and `active` draw the
     /// same circle here on purpose: this row already carries the word "Completed" or "Active" at
     /// the end of its subtitle, which an iOS row has no room for.

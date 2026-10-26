@@ -357,9 +357,15 @@ struct CadenceGlobalSearchCapContinuationTests {
         #expect(views.contains("restoreFocus()"))
 
         // And the index no longer decides for itself.
+        // [[T-6971]]'s `withheldCompletedTaskMatchCount` is carved out: it asks the widened
+        // question on purpose, to count what the filter is holding back, and builds no rows.
         let index = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile("Cadence/macOS/Views/GlobalSearchIndexSupport.swift"))
-        #expect(CadenceSourceScan.matchCount("includingCompleted: true", in: index) == 0)
-        #expect(index.contains("includingCompleted: includingCompleted"))
+        let withheldStart = try #require(index.range(of: "static func withheldCompletedTaskMatchCount("))
+        let withheldEnd = try #require(index.range(of: "static func taskIcon(", range: withheldStart.upperBound..<index.endIndex))
+        var rowBuilders = index
+        rowBuilders.removeSubrange(withheldStart.lowerBound..<withheldEnd.lowerBound)
+        #expect(CadenceSourceScan.matchCount("includingCompleted: true", in: rowBuilders) == 0)
+        #expect(rowBuilders.contains("includingCompleted: includingCompleted"))
     }
 
     /// The four `*Results` functions must not hand back a prefix again. This is the assertion that
@@ -370,6 +376,58 @@ struct CadenceGlobalSearchCapContinuationTests {
 
         #expect(CadenceSourceScan.matchCount("\\.prefix\\(", in: index) == 0)
         #expect(index.contains("static func resultCap(for category: GlobalSearchCategory, query: String) -> Int"))
+    }
+
+    // MARK: - T-6971: an empty result set says when Completed is holding matches back
+
+    /// The count the empty state reads is exactly the rows turning Completed on would add: the
+    /// finished matches, never the active ones, never a cancelled one, never a non-match — and
+    /// zero once the filter is on or the field is blank, so nothing is claimed to be hidden.
+    @Test func withheldCompletedCountIsExactlyTheRowsTheFilterWouldAdd() {
+        let tasks = roadmapTasks(count: 6, completedCount: 3)
+        let cancelled = AppTask(title: "Roadmap cancelled")
+        cancelled.status = .cancelled
+        let unrelatedDone = AppTask(title: "Invoice")
+        unrelatedDone.status = .done
+        let all = tasks + [cancelled, unrelatedDone]
+
+        let withheld = GlobalSearchIndexSupport.withheldCompletedTaskMatchCount(tasks: all, query: "roadmap", includingCompleted: false)
+        let excluded = GlobalSearchIndexSupport.taskResults(tasks: all, query: "roadmap", includingCompleted: false)
+        let included = GlobalSearchIndexSupport.taskResults(tasks: all, query: "roadmap", includingCompleted: true)
+
+        #expect(withheld == 3)
+        #expect(withheld == included.count - excluded.count)
+        #expect(GlobalSearchIndexSupport.withheldCompletedTaskMatchCount(tasks: all, query: "roadmap", includingCompleted: true) == 0)
+        #expect(GlobalSearchIndexSupport.withheldCompletedTaskMatchCount(tasks: all, query: "  ", includingCompleted: false) == 0)
+    }
+
+    /// The reported defect: every match finished, Completed off, and the palette said "No matches
+    /// found — try a cleaner title". It now names the count and the control, singular and plural,
+    /// and keeps the ordinary advice when nothing is held back.
+    @Test func emptyStateNamesWithheldCompletedMatchesAndTheFilter() {
+        let finished = roadmapTasks(count: 2, completedCount: 2)
+        let sections = sections(tasks: finished, notes: [], query: "roadmap", includesCompleted: false)
+        #expect(!sections.contains { $0.category == .tasks })
+
+        let count = GlobalSearchIndexSupport.withheldCompletedTaskMatchCount(tasks: finished, query: "roadmap", includingCompleted: false)
+        #expect(GlobalSearchEmptyState.subtitle(query: "roadmap", withheldCompletedTaskCount: count)
+            == "2 completed tasks match. Turn on Completed to show them.")
+        #expect(GlobalSearchEmptyState.subtitle(query: "roadmap", withheldCompletedTaskCount: 1)
+            == "1 completed task matches. Turn on Completed to show it.")
+
+        let ordinary = GlobalSearchEmptyState.subtitle(query: "roadmap", withheldCompletedTaskCount: 0)
+        #expect(!ordinary.contains("Completed"))
+        #expect(!ordinary.contains("cleaner"))
+    }
+
+    /// Declared and reached: the overlay must hand the count down to the empty state, or the hint
+    /// is a sentence nothing ever draws.
+    @Test func overlayPassesTheWithheldCountToTheEmptyState() throws {
+        let shell = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile("Cadence/macOS/Views/GlobalSearchOverlayShellViews.swift"))
+        #expect(shell.contains("GlobalSearchEmptyState(query: query, withheldCompletedTaskCount: withheldCompletedTaskCount)"))
+        let view = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile("Cadence/macOS/Views/GlobalSearchView.swift"))
+        #expect(CadenceSourceScan.matchCount("withheldCompletedTaskCount: withheldCompletedTaskCount", in: view) == 2)
+        #expect(view.contains("GlobalSearchIndexSupport.withheldCompletedTaskMatchCount("))
     }
 }
 
