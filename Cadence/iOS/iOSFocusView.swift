@@ -326,10 +326,12 @@ struct iOSFocusView: View {
         }
     }
 
-    private func detail(of item: CadenceFocusPickItem) -> String {
+    /// Segments, not a string (T-7017): the row draws them through `CadenceTaskDetailLineLabel`,
+    /// the label macOS's `FocusPickItemRow` uses, so an overdue date reads red on both.
+    private func detail(of item: CadenceFocusPickItem) -> CadenceTaskDetailLine {
         switch item {
         case .task(let task):
-            return CadenceFocusSupport.sidebarDetail(for: task, todayKey: todayKey)
+            return CadenceFocusSupport.pickRowDetailParts(for: task, todayKey: todayKey)
         }
     }
 
@@ -839,7 +841,7 @@ private let iOSFocusTransportSize: CGFloat = 44
 /// row and the thing sitting on it.
 private struct iOSFocusPickRow: View {
     let title: String
-    let detail: String
+    let detail: CadenceTaskDetailLine
     let tint: Color
     /// `nil` draws the list-colour dot a task row has always shown.
     let glyph: String?
@@ -861,10 +863,9 @@ private struct iOSFocusPickRow: View {
                             .lineLimit(1)
                             .frame(maxWidth: .infinity, alignment: .leading)
 
-                        Text(detail)
-                            .font(.system(size: 11))
-                            .foregroundStyle(Theme.subdued)
-                            .lineLimit(1)
+                        // The shared label tints only the due segment, red when overdue — the
+                        // line macOS's `FocusPickItemRow` draws (T-7017).
+                        CadenceTaskDetailLineLabel(parts: detail, fontSize: 11)
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
                 }

@@ -1,4 +1,5 @@
 #if os(iOS)
+import SwiftData
 import SwiftUI
 
 /// The iPad shell's **Tasks** destination: one header, an All / Inbox switcher, and whichever of
@@ -67,22 +68,33 @@ struct iOSTasksPageView: View {
     /// The group is `.compact` at compact width for the reason `iOSSegmentedPillDensity` gives:
     /// an iPhone row cannot pay for the standard density beside a title, and this page is reachable
     /// at compact width whenever an iPad shell is in a narrow split.
+    ///
+    /// **It carries the count macOS's header does (T-7014)**, read by `iOSTasksPageHeaderCount`
+    /// rather than here so the whole-store query re-runs the header row alone, not the page and the
+    /// child list under it.
     private var header: some View {
         iOSCompactBackActionReader { onBack in
-            iOSPageHeader(
-                eyebrow: "Tasks",
-                title: scope.pageTitle,
-                color: Theme.blue,
-                onBack: onBack
-            ) {
-                iOSSegmentedPillGroup(density: horizontalSizeClass == .regular ? .standard : .compact) {
-                    ForEach(CadenceTasksPageScope.allCases) { option in
-                        iOSSegmentedPill(
-                            title: option.title,
-                            isSelected: scope == option
-                        ) {
-                            scopeRaw = option.rawValue
-                        }
+            iOSTasksPageHeaderCount(scope: scope) { count in
+                headerRow(count: count, onBack: onBack)
+            }
+        }
+    }
+
+    private func headerRow(count: Int, onBack: (() -> Void)?) -> some View {
+        iOSPageHeader(
+            eyebrow: "Tasks",
+            title: scope.pageTitle,
+            color: Theme.blue,
+            count: count,
+            onBack: onBack
+        ) {
+            iOSSegmentedPillGroup(density: horizontalSizeClass == .regular ? .standard : .compact) {
+                ForEach(CadenceTasksPageScope.allCases) { option in
+                    iOSSegmentedPill(
+                        title: option.title,
+                        isSelected: scope == option
+                    ) {
+                        scopeRaw = option.rawValue
                     }
                 }
             }
@@ -97,6 +109,29 @@ struct iOSTasksPageView: View {
         case .inbox:
             iOSInboxView(showsCompactHeader: false)
         }
+    }
+}
+
+/// The Tasks page header's count, read in its own view (T-7014).
+///
+/// The number is `CadenceTaskQuerySupport.tasksPageHeaderCount` — the function macOS's header is
+/// meant to share — so the badge counts open tasks on All Tasks and open tasks plus Apple Reminders
+/// on Inbox. The `@Query` lives here and not on `iOSTasksPageView` so a store change re-runs this
+/// row and not the page around it (the reason T-3155 kept `dismiss` out of the page too).
+private struct iOSTasksPageHeaderCount<Content: View>: View {
+    let scope: CadenceTasksPageScope
+    @ViewBuilder let content: (_ count: Int) -> Content
+    @Query(sort: \AppTask.order) private var allTasks: [AppTask]
+    @Environment(RemindersManager.self) private var remindersManager
+
+    var body: some View {
+        content(
+            CadenceTaskQuerySupport.tasksPageHeaderCount(
+                scope: scope,
+                tasks: allTasks,
+                reminderCount: remindersManager.reminders.count
+            )
+        )
     }
 }
 #endif

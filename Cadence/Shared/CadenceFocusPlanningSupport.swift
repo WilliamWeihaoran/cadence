@@ -147,6 +147,18 @@ enum CadenceFocusSupport {
         sidebarDetailParts(for: task, todayKey: todayKey, fallback: fallback).text
     }
 
+    /// What an undated, unfiled task says on a **Focus picker row**, on both platforms (T-7017).
+    /// The sidebar's shorter "Ready" sits beside a status chip that already says the rest; a pick
+    /// row has no chip, so it says what the task is ready for.
+    static let pickRowFallback = "Ready to focus"
+
+    /// The Focus picker row's detail line, as segments so the row can tint an overdue due date
+    /// red through `CadenceTaskDetailLineLabel`. iOS printed `sidebarDetail`'s flat string in one
+    /// colour with the sidebar's fallback, so a week-late task read the same as one due next month.
+    static func pickRowDetailParts(for task: AppTask, todayKey: String) -> CadenceTaskDetailLine {
+        sidebarDetailParts(for: task, todayKey: todayKey, fallback: pickRowFallback)
+    }
+
     /// The stopwatch state after the play/pause control on a pick row is tapped.
     ///
     /// The rows in the focus picker each carry a play affordance. It used to be decorative — part

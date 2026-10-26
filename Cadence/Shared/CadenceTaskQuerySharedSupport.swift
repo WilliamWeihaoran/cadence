@@ -92,6 +92,26 @@ nonisolated extension CadenceTaskQuerySupport {
         openTaskCount(from: project.tasks ?? [])
     }
 
+    /// The count badge on the merged **Tasks** page's header, for both shells (T-7014).
+    ///
+    /// All Tasks counts open work in still-active lists — the number the sidebar's Tasks row
+    /// shows. Inbox counts its open tasks **plus the Apple Reminders** its strip draws: they are
+    /// items in the inbox whether or not Cadence owns them. macOS's `TasksPageView.headerCount`
+    /// spelled this inline; the iOS header passed no count at all, so the same page carried a
+    /// badge on one platform and none on the other. One function is what stops them drifting.
+    static func tasksPageHeaderCount(
+        scope: CadenceTasksPageScope,
+        tasks: [AppTask],
+        reminderCount: Int
+    ) -> Int {
+        switch scope {
+        case .all:
+            return openTaskCount(from: tasks.filter(\.isInActiveContainer))
+        case .inbox:
+            return openTaskCount(from: inboxTasks(from: tasks)) + reminderCount
+        }
+    }
+
     private static func isOpenTask(_ task: AppTask) -> Bool {
         !task.isDone && !task.isCancelled
     }

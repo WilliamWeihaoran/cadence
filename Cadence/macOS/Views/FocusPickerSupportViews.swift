@@ -212,7 +212,7 @@ private struct FocusPickItemRow: View {
     private var detailLine: some View {
         switch item {
         case .task(let task):
-            CadenceTaskDetailLineLabel(task: task, fallback: "Ready to focus", fontSize: 11)
+            CadenceTaskDetailLineLabel(task: task, fallback: CadenceFocusSupport.pickRowFallback, fontSize: 11)
         }
     }
 

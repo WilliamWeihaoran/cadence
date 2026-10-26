@@ -116,12 +116,12 @@ struct iOSTaskCollectionPage: View {
                     // clear" over a list of open reminders says the opposite of what the screen is
                     // showing. macOS spells the same rule as an extra clause on its `isEmpty`, and
                     // the two are the same statement — its clause is the negation of this gate.
-                    hidesEmptyState: showsRemindersSection
+                    hidesEmptyState: showsRemindersSection,
+                    // Between Active and Completed, where macOS's `TasksListView` draws it
+                    // (T-7015) — not after the sections, which put open reminders under the
+                    // finished work and let an expanded logbook push them off the screen.
+                    showsRemindersSection: showsRemindersSection
                 )
-
-                if showsRemindersSection {
-                    iOSInboxRemindersSection(remindersManager: remindersManager)
-                }
             }
             .padding(.horizontal, metrics.horizontalPadding)
             .padding(.top, metrics.topPadding)
@@ -233,7 +233,8 @@ struct iOSTaskCollectionPage: View {
     }
 }
 
-/// The page's counted groups — Active over Completed — or its empty state.
+/// The page's counted groups — Active, then the Inbox's Reminders, then Completed — or its empty
+/// state.
 ///
 /// Split out from the page for the reason `iOSTodayTaskSections` is: the scroll container and its
 /// gutters belong to the *page*, and the list of groups is the part a second host could ever want
@@ -251,7 +252,13 @@ struct iOSTaskCollectionSections: View {
     /// `isEmpty`, but is very much content. Without it a cleared Inbox with three open reminders
     /// under it announced "Inbox is clear" directly above them.
     var hidesEmptyState = false
+    /// The Inbox's Apple Reminders section, drawn **between Active and Completed** (T-7015): open
+    /// reminders are unprocessed inbox items, so they belong with the open work, above the folded
+    /// logbook — the order macOS's Inbox has always drawn. The host decides it through
+    /// `CadenceTasksPageScope.showsRemindersStrip`; this view only places it.
+    var showsRemindersSection = false
     @Environment(CadenceDeepLinkManager.self) private var deepLinkManager
+    @Environment(RemindersManager.self) private var remindersManager
 
     /// **Finished work counts as content whether or not it is unfolded (T-2090).** This read
     /// `!showsCompleted || completedTasks.isEmpty`, which was right while a chip decided whether
@@ -312,6 +319,10 @@ struct iOSTaskCollectionSections: View {
                 showsContainer: showsContainer,
                 dropIdentity: collection.activeGroupIdentity
             )
+
+            if showsRemindersSection {
+                iOSInboxRemindersSection(remindersManager: remindersManager)
+            }
 
             // **Always drawn, at the foot of the list, folded until it is asked for (T-2090).**
             // This was `if showsCompleted { iOSTaskGroupSection("Completed") }`, so the logbook
