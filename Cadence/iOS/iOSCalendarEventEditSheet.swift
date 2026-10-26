@@ -24,9 +24,10 @@ struct iOSCalendarEventSelection: Identifiable {
 /// **What it gained by adopting the panel**: a separate end DATE, so a timed event can be moved
 /// across a midnight and an all-day one given any number of days (the old Days list stopped at
 /// 30); an End time instead of a Duration; and a Location row, written back through
-/// `iOSCalendarManager.updateEvent(location:)`. **What it deliberately does not offer** is Repeat:
-/// an existing series is not re-ruled from here, so the panel is told `offersEventRepeat: false`
-/// rather than shown a row whose choice would be dropped.
+/// `iOSCalendarManager.updateEvent(location:)`. **Repeat** ([[T-3171]] (ii)) is offered whenever
+/// the event's own rules are ones Cadence can spell (`CadenceEventRepeatSetting`), opened on what
+/// the event does; a changed answer is saved for this and future events only, and the scope
+/// question drops "Only This Event" for it, as Apple Calendar does.
 struct iOSCalendarEventEditSheet: View {
     let event: EKEvent
 
@@ -82,6 +83,18 @@ struct iOSCalendarEventEditSheet: View {
         )
     }
 
+    /// Whether the panel draws Repeat: only over rules it can read back — see
+    /// `CadenceEventRepeatSetting(rules:…)`.
+    private var offersRepeat: Bool {
+        CadenceEventRepeatSetting(event: event) != nil
+    }
+
+    /// A Save that re-rules the series asks only "this and future" — see
+    /// `CadenceEventCreationSupport.editSpan`.
+    private var savesRecurrenceChange: Bool {
+        pendingAction == .save && draft.changesRecurrence(from: openedDraft)
+    }
+
     private var isRecurringEvent: Bool {
         CadenceEventNoteSupport.isRecurringSeriesMember(event)
     }
@@ -110,7 +123,7 @@ struct iOSCalendarEventEditSheet: View {
         self.event = event
         let start = event.startDate ?? Date()
         let end = event.endDate ?? start.addingTimeInterval(30 * 60)
-        let opened = CadenceScheduleDraft(
+        var opened = CadenceScheduleDraft(
             editingEventID: event.eventIdentifier ?? event.calendarItemIdentifier,
             title: iOSCalendarEventSupport.title(for: event),
             notes: event.notes ?? "",
@@ -120,6 +133,7 @@ struct iOSCalendarEventEditSheet: View {
             end: end,
             isAllDay: event.isAllDay
         )
+        CadenceEventRepeatSetting(event: event)?.seed(&opened)
         self.openedDraft = opened
         _draft = State(initialValue: opened)
         _loadedEventNotes = State(initialValue: opened.notes)
@@ -140,7 +154,7 @@ struct iOSCalendarEventEditSheet: View {
                 // than as the panel's own call returning, which is why this is a parameter.
                 failureNotice: actionError,
                 canCommit: canSave,
-                offersEventRepeat: false,
+                offersEventRepeat: offersRepeat,
                 actions: panelActions
             ) {
                 eventNoteSection
@@ -171,8 +185,10 @@ struct iOSCalendarEventEditSheet: View {
             ),
             titleVisibility: .visible
         ) {
-            Button(CalendarRecurrenceEditScope.thisOccurrence.label) {
-                applyPendingAction(scope: .thisOccurrence)
+            if !savesRecurrenceChange {
+                Button(CalendarRecurrenceEditScope.thisOccurrence.label) {
+                    applyPendingAction(scope: .thisOccurrence)
+                }
             }
             Button(CalendarRecurrenceEditScope.futureOccurrences.label) {
                 applyPendingAction(scope: .futureOccurrences)
@@ -181,7 +197,11 @@ struct iOSCalendarEventEditSheet: View {
                 pendingAction = nil
             }
         } message: {
-            Text(CadenceRecurrenceScopeCopy.eventScopeMessage)
+            Text(
+                savesRecurrenceChange
+                    ? CadenceRecurrenceScopeCopy.eventRepeatScopeMessage
+                    : CadenceRecurrenceScopeCopy.eventScopeMessage
+            )
         }
         .onAppear(perform: ensureWritableCalendar)
         .onChange(of: calendarManager.storeVersion) { _, _ in
@@ -424,6 +444,7 @@ struct iOSCalendarEventEditSheet: View {
             actionError = CadenceCalendarEventEditingSupport.saveFailureNotice(for: nil)
             return
         }
+        let recurrence = CadenceEventRepeatSetting.edit(draft: draft, opened: openedDraft)
         if let failure = calendarManager.updateEvent(
             event,
             title: draft.title,
@@ -431,9 +452,10 @@ struct iOSCalendarEventEditSheet: View {
             endDate: range.end,
             calendarID: draft.calendarID,
             notes: draft.notes,
-            span: scope.eventSpan,
+            span: CadenceEventCreationSupport.editSpan(for: scope, changesRecurrence: recurrence != nil),
             isAllDay: draft.isAllDay,
-            location: draft.location
+            location: draft.location,
+            recurrence: recurrence
         ) {
             // A rejected write used to return here and do nothing at all: the sheet stayed open,
             // unchanged, with no indication that the save had failed. It then said *that* it had

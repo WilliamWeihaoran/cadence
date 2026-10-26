@@ -159,7 +159,8 @@ struct TimelineEventBlock: View {
                             notes: request.notes,
                             scope: scope,
                             isAllDay: request.isAllDay,
-                            location: request.location
+                            location: request.location,
+                            recurrence: request.recurrence
                         )
                         calendarManager.report(
                             CadenceCalendarEventEditingSupport.saveOutcome(for: failure),

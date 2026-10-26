@@ -79,8 +79,9 @@ struct CadenceSchedulePanelActions {
 ///   write's answer cannot come back through `actions.commit`'s return value.
 /// - `canCommit` — a gate the draft cannot see, such as "the chosen calendar is one this event
 ///   can be moved to". Save greys out exactly as it does for an empty title.
-/// - `offersEventRepeat` — `false` where the host cannot write a recurrence (an existing event's
-///   series is not edited from here), so no Repeat row offers a choice that would be dropped.
+/// - `offersEventRepeat` — `false` where the host cannot write a recurrence (an existing event
+///   whose rules Cadence cannot spell, [[T-3171]] (ii)), so no Repeat row offers a choice that
+///   would be dropped or would overwrite a rule it cannot show.
 /// - `titleStatus` — an existing task's state, drawn on the title row. See the type.
 /// - `offersTaskRepeat` — `false` where the host draws a task's series itself. The task editor
 ///   does, because its Repeat row is followed by the end condition and the series-scope question,

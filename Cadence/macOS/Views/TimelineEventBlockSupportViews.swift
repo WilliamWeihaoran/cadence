@@ -26,6 +26,10 @@ struct CalendarEventEditRequest {
     let notes: String?
     let location: String?
     let isAllDay: Bool?
+    /// The series' new Repeat answer, or `nil` to leave the event's rules alone ([[T-3171]] (ii)).
+    /// Non-`nil` only when the Repeat or Ends row moved; the host's write then saves
+    /// `.futureEvents` whatever scope was answered — see `CadenceEventCreationSupport.editSpan`.
+    let recurrence: CadenceEventRepeatSetting?
 
     init(
         draft: CadenceScheduleDraft,
@@ -45,6 +49,7 @@ struct CalendarEventEditRequest {
         notes = draft.notes == opened.notes ? nil : draft.notes
         location = draft.location == opened.location ? nil : draft.location
         isAllDay = draft.isAllDay == opened.isAllDay ? nil : draft.isAllDay
+        recurrence = CadenceEventRepeatSetting.edit(draft: draft, opened: opened)
     }
 }
 
@@ -59,9 +64,10 @@ struct CalendarEventEditRequest {
 /// a midnight), a Location row, the Apple Calendar notes field, and **the whole event** rather than
 /// the clicked day's segment of it — the old Start/End fields edited one day of a multi-day event,
 /// and only that day's own end. Both ends are now set on the wall clock (T-3119's gap rule), where
-/// the old fields added elapsed minutes to the segment's midnight. **What it deliberately does not
-/// offer** is Repeat: an existing series is not re-ruled from here (`offersEventRepeat: false`), as
-/// on iOS. **Changed on purpose:** the clock is the shared roller, not two typed fields; Save greys
+/// the old fields added elapsed minutes to the segment's midnight. **Repeat** ([[T-3171]] (ii)) is
+/// offered whenever the event's own rules are ones Cadence can spell (`CadenceEventRepeatSetting`),
+/// opened on what the event does, and a changed answer is saved for this and future events only —
+/// the scope question drops "Only This Event" for it, as Apple Calendar does. **Changed on purpose:** the clock is the shared roller, not two typed fields; Save greys
 /// out on an empty title; and an event on a read-only calendar is read-only here — the panel draws
 /// no Save and no Delete for one, where this popover used to offer both and let EventKit refuse.
 struct CalendarEventEditPopover: View {
@@ -124,7 +130,7 @@ struct CalendarEventEditPopover: View {
         let event = item.ekEvent
         let start = event.startDate ?? item.eventStartDate
         let end = event.endDate ?? item.eventEndDate
-        return CadenceScheduleDraft(
+        var draft = CadenceScheduleDraft(
             editingEventID: item.id,
             title: item.title,
             notes: event.notes ?? "",
@@ -135,6 +141,8 @@ struct CalendarEventEditPopover: View {
             isAllDay: event.isAllDay,
             calendar: calendar
         )
+        CadenceEventRepeatSetting(event: event, calendar: calendar)?.seed(&draft)
+        return draft
     }
 
     /// The event's calendar identifier, or `""` when it has none (T-2047).
@@ -156,6 +164,15 @@ struct CalendarEventEditPopover: View {
     }
 
     private var isEditable: Bool { Self.isEditable(item.ekEvent) }
+
+    /// Whether the panel draws Repeat: only over rules it can read back — see
+    /// `CadenceEventRepeatSetting(rules:…)`.
+    private var offersRepeat: Bool { CadenceEventRepeatSetting(event: item.ekEvent) != nil }
+
+    /// A Save that re-rules the series asks only "this and future" — see `editSpan`.
+    private var savesRecurrenceChange: Bool {
+        pendingAction == .save && draft.changesRecurrence(from: openedDraft)
+    }
 
     private var writableCalendarIDs: [String] {
         calendarManager.writableCalendars.map(\.calendarIdentifier)
@@ -210,7 +227,7 @@ struct CalendarEventEditPopover: View {
                     : CadenceCalendarEventEditingSupport.readOnlyNotice(calendarName: item.calendarTitle),
                 failureNotice: actionFailureNotice,
                 canCommit: canSave,
-                offersEventRepeat: false,
+                offersEventRepeat: offersRepeat,
                 actions: panelActions
             ) {
                 linkedNoteCard
@@ -241,8 +258,10 @@ struct CalendarEventEditPopover: View {
             ),
             titleVisibility: .visible
         ) {
-            Button(CalendarRecurrenceEditScope.thisOccurrence.label) {
-                applyPendingAction(scope: .thisOccurrence)
+            if !savesRecurrenceChange {
+                Button(CalendarRecurrenceEditScope.thisOccurrence.label) {
+                    applyPendingAction(scope: .thisOccurrence)
+                }
             }
             Button(CalendarRecurrenceEditScope.futureOccurrences.label) {
                 applyPendingAction(scope: .futureOccurrences)
@@ -251,7 +270,11 @@ struct CalendarEventEditPopover: View {
                 pendingAction = nil
             }
         } message: {
-            Text(CadenceRecurrenceScopeCopy.eventScopeMessage)
+            Text(
+                savesRecurrenceChange
+                    ? CadenceRecurrenceScopeCopy.eventRepeatScopeMessage
+                    : CadenceRecurrenceScopeCopy.eventScopeMessage
+            )
         }
     }
 

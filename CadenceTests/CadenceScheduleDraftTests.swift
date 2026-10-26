@@ -813,8 +813,9 @@ struct CadenceEventEditorPanelAdoptionTests {
         #expect(editor.contains("location: draft.location"), "the panel's Location row writes nowhere")
         #expect(editor.contains("draft.eventDateRange()"))
         #expect(editor.contains("draft.hasSameSchedule(as: openedDraft)"))
-        // An existing series is not re-ruled from here, so the panel offers no Repeat.
-        #expect(editor.contains("offersEventRepeat: false"))
+        // Repeat is offered over rules the editor can read ([[T-3171]] (ii));
+        // `CadenceEventRepeatEditTests` owns what it writes.
+        #expect(editor.contains("offersEventRepeat: offersRepeat"))
     }
 
     /// Delete is the one control that separates editing from creating, and a read-only event has

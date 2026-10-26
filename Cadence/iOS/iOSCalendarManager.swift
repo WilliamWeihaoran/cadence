@@ -219,7 +219,11 @@ final class iOSCalendarManager {
         /// `nil` leaves the event's location as it is — the default, so a caller that edits no
         /// location cannot clear one. A string, even an empty one, is written ([[T-3171]]: the
         /// shared panel's Location row is the first editor on this platform that has one).
-        location: String? = nil
+        location: String? = nil,
+        /// `nil` leaves the event's rules alone. A value re-rules the series; the caller passes
+        /// the span `CadenceEventCreationSupport.editSpan` answers for it, which is `.futureEvents`
+        /// ([[T-3171]] (ii)).
+        recurrence: CadenceEventRepeatSetting? = nil
     ) -> CalendarWriteFailure? {
         guard isAuthorized, !isEventKitDisarmed else { return .notAuthorized }
         guard endDate > startDate else { return .invalidRange }
@@ -239,6 +243,9 @@ final class iOSCalendarManager {
             let trimmedLocation = location.trimmingCharacters(in: .whitespacesAndNewlines)
             // `nil` rather than `""`, as `createEvent` writes it: "no location" is the absence of one.
             event.location = trimmedLocation.isEmpty ? nil : trimmedLocation
+        }
+        if let recurrence {
+            CadenceEventCreationSupport.applyRecurrence(recurrence, to: event)
         }
         do {
             try store.save(event, span: span)

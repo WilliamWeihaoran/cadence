@@ -584,7 +584,11 @@ final class CalendarManager {
         /// and passes each only when the user changed it. Set before the dates, because EventKit
         /// reads an all-day event's dates as whole days.
         isAllDay: Bool? = nil,
-        location: String? = nil
+        location: String? = nil,
+        /// `nil` leaves the event's rules alone. A value re-rules the series and saves
+        /// `.futureEvents` whatever `scope` says — `CadenceEventCreationSupport.editSpan`
+        /// ([[T-3171]] (ii)).
+        recurrence: CadenceEventRepeatSetting? = nil
     ) -> CalendarWriteFailure? {
         guard isAuthorized else { return record(.notAuthorized) }
         guard endDate > startDate else { return record(.invalidRange) }
@@ -607,7 +611,14 @@ final class CalendarManager {
            targetCalendar.allowsContentModifications {
             event.calendar = targetCalendar
         }
-        return save(event, span: scope.eventSpan, describing: "update event")
+        if let recurrence {
+            CadenceEventCreationSupport.applyRecurrence(recurrence, to: event)
+        }
+        return save(
+            event,
+            span: CadenceEventCreationSupport.editSpan(for: scope, changesRecurrence: recurrence != nil),
+            describing: "update event"
+        )
     }
 
     @discardableResult

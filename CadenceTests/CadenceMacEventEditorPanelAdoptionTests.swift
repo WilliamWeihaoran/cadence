@@ -214,8 +214,9 @@ struct CadenceMacEventEditorPanelAdoptionTests {
         ] {
             #expect(!popover.contains(retired), "the popover still draws \(retired)")
         }
-        // An existing series is not re-ruled from here, so the panel offers no Repeat.
-        #expect(popover.contains("offersEventRepeat: false"))
+        // Repeat is offered over rules the popover can read ([[T-3171]] (ii));
+        // `CadenceEventRepeatEditTests` owns what it writes.
+        #expect(popover.contains("offersEventRepeat: offersRepeat"))
         #expect(popover.contains("readOnlyNotice: isEditable"))
         #expect(popover.contains("canCommit: canSave"))
         // The Apple Calendar notes field is the panel's own spelling, and inert on a read-only

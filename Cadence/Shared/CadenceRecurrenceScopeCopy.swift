@@ -39,6 +39,12 @@ nonisolated enum CadenceRecurrenceScopeCopy {
     static let eventScopeMessage =
         "Choose whether this calendar change applies only to this occurrence or to this and future events."
 
+    /// The same dialog when the Save changes the event's **Repeat** ([[T-3171]] (ii)): one button,
+    /// because a new rule can only be saved for this and future events
+    /// (`CadenceEventCreationSupport.editSpan`), so the two-way question would be a lie.
+    static let eventRepeatScopeMessage =
+        "A repeat change applies to this and future events."
+
     /// Title of the confirmation dialog raised when a repeat rule changes on a repeating **task**.
     static let taskScopeTitle = "Change repeating task?"
 
