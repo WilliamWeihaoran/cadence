@@ -167,7 +167,7 @@ struct MonthTaskChip: View {
             Image(systemName: glyph)
                 .font(.system(size: CalendarMonthCellLayout.completionGlyphSize, weight: .semibold))
                 .foregroundStyle(glyphTint)
-            Text(task.title)
+            Text(TaskTitleSupport.displayTitle(task.title, fallback: TaskTitleSupport.defaultCompactDisplayTitle))
                 .font(.system(size: 10))
                 .foregroundStyle(
                     task.isDone
@@ -678,7 +678,7 @@ struct AllDayTaskChip: View {
             Image(systemName: task.isCancelled ? "xmark.circle.fill" : (task.isDone ? "checkmark.circle.fill" : "circle"))
                 .font(.system(size: CalendarMonthCellLayout.completionGlyphSize, weight: .semibold))
                 .foregroundStyle(allDayGlyphTint)
-            Text(task.title)
+            Text(TaskTitleSupport.displayTitle(task.title, fallback: TaskTitleSupport.defaultCompactDisplayTitle))
                 .font(.system(size: 10))
                 .foregroundStyle(
                     task.isDone

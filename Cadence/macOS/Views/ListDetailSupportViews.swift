@@ -437,6 +437,42 @@ struct TaskListInteractiveRow: View {
     }
 }
 
+/// **[[T-6995]] — what one row of a list's Completed tab says.**
+///
+/// The tab used to hand-roll its row: a green `checkmark.circle.fill` for every task in it,
+/// cancelled ones included; `task.title` raw, so a title of spaces drew a struck-through blank
+/// line; and `task.dueDate` raw, so the line under the title read `2026-10-19` with nothing to
+/// say it was the deadline. Every other Mac task surface already answers each of those through
+/// the shared helpers, so this reads them too rather than spelling a fourth answer.
+enum ListLogRowPresentation {
+    static func title(for task: AppTask) -> String {
+        TaskTitleSupport.displayTitle(task.title)
+    }
+
+    /// The same symbol and tint the task row's completion control settles on.
+    static func glyph(for task: AppTask) -> CadenceTaskCompletionGlyph {
+        CadenceTaskCompletionGlyph.resolve(task: task)
+    }
+
+    /// `"Due Tomorrow"`, `"Due Oct 19"` — the spelling Cmd+K and Focus already use — or nil.
+    static func dueLine(for task: AppTask) -> String? {
+        guard !task.dueDate.isEmpty else { return nil }
+        return "Due \(CadenceTaskPresentationSupport.dueDateLabel(for: task))"
+    }
+
+    /// The eyebrow over the rows. It counted cancelled tasks as "completed"; it now names both
+    /// when both are there.
+    static func countLabel(for tasks: [AppTask]) -> String {
+        let cancelled = tasks.filter(\.isCancelled).count
+        let completed = tasks.count - cancelled
+        switch (completed, cancelled) {
+        case (_, 0): return "\(completed) completed"
+        case (0, _): return "\(cancelled) cancelled"
+        default: return "\(completed) completed, \(cancelled) cancelled"
+        }
+    }
+}
+
 struct ListLogView: View {
     let tasks: [AppTask]
 
@@ -457,26 +493,29 @@ struct ListLogView: View {
             } else {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 0) {
-                        SectionEyebrowLabel(text: "\(doneTasks.count) completed")
+                        SectionEyebrowLabel(text: ListLogRowPresentation.countLabel(for: doneTasks))
                             .padding(.horizontal, 20)
                             .padding(.top, 16)
                             .padding(.bottom, 8)
 
                         ForEach(doneTasks) { task in
+                            let glyph = ListLogRowPresentation.glyph(for: task)
                             HStack(spacing: 10) {
-                                Image(systemName: "checkmark.circle.fill")
+                                Image(systemName: glyph.symbolName)
                                     .font(.system(size: 14))
-                                    .foregroundStyle(Theme.green)
+                                    .foregroundStyle(glyph.tint)
 
                                 VStack(alignment: .leading, spacing: 2) {
-                                    Text(task.title)
+                                    Text(ListLogRowPresentation.title(for: task))
                                         .font(.system(size: 13))
                                         .foregroundStyle(Theme.dim)
                                         .strikethrough(true, color: Theme.dim)
-                                    if !task.dueDate.isEmpty {
-                                        Text(task.dueDate)
+                                        .lineLimit(2)
+                                    if let dueLine = ListLogRowPresentation.dueLine(for: task) {
+                                        Text(dueLine)
                                             .font(.system(size: 10))
                                             .foregroundStyle(Theme.dim.opacity(0.6))
+                                            .lineLimit(1)
                                     }
                                 }
                                 Spacer()

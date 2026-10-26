@@ -219,7 +219,7 @@ func timelineBlockBody(
                         .lineLimit(1)
                 }
                 if frame.height >= 38 {
-                    Text(task.title)
+                    Text(TaskTitleSupport.displayTitle(task.title, fallback: TaskTitleSupport.defaultCompactDisplayTitle))
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(titleInk)
                         .lineLimit(2)
@@ -250,7 +250,7 @@ func timelineBlockBody(
                     // deadline outranks the title for width so the title truncates first.
                     let label = TimeFormatters.durationLabel(actual: task.actualMinutes, estimated: durationMinutes)
                     HStack(spacing: 4) {
-                        Text(task.title)
+                        Text(TaskTitleSupport.displayTitle(task.title, fallback: TaskTitleSupport.defaultCompactDisplayTitle))
                             .font(.system(size: 11, weight: .semibold))
                             .foregroundStyle(titleInk)
                             .lineLimit(1)
