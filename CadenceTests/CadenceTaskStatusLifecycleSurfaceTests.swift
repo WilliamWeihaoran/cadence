@@ -679,13 +679,18 @@ struct CadenceTaskStatusLifecycleSurfaceTests {
                 // [[T-3171]]: the inspector's completion control moved from the title card's
                 // circle (components) to the Complete button in the status section.
                 "Cadence/iOS/iOSTaskDetailSheetSections.swift": 1,
-                "Cadence/iOS/iOSBoardCards.swift": 1
+                // [[T-6982]]: the board card left the predicate the way `iOSTaskViews` did.
+                "Cadence/iOS/iOSBoardCards.swift": 0
             ]
         )
-        // The file that left the predicate must be reading the shared answer, not spelling its own.
+        // The files that left the predicate must be reading the shared answer, not spelling their own.
         try expectOccurrences(
             of: "glyph.state.accessibilityActionLabel",
             at: ["Cadence/iOS/iOSTaskViews.swift": 1]
+        )
+        try expectOccurrences(
+            of: "completionGlyph.state.accessibilityActionLabel",
+            at: ["Cadence/iOS/iOSBoardCards.swift": 1]
         )
         try expectOccurrences(of: "isFinished ?", at: ["Cadence/iOS/iOSTaskRowActionViews.swift": 3])
 

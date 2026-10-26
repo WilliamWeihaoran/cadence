@@ -250,6 +250,11 @@ struct iOSBoardTaskCard: View {
         Color(hex: task.containerColor)
     }
 
+    /// One resolve for the circle and its name, so the two cannot read different states.
+    private var completionGlyph: CadenceTaskCompletionGlyph {
+        CadenceTaskCompletionGlyph.resolve(task: task)
+    }
+
     /// Square on the leading edge so the list colour strip reads as a strip, rounded elsewhere.
     private var cardShape: UnevenRoundedRectangle {
         UnevenRoundedRectangle(
@@ -269,12 +274,15 @@ struct iOSBoardTaskCard: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .top, spacing: 8) {
                 Button(action: toggleCompletion) {
-                    iOSTaskCompletionCircle(glyph: .resolve(task: task), diameter: completionDiameter)
+                    iOSTaskCompletionCircle(glyph: completionGlyph, diameter: completionDiameter)
                         .frame(width: completionFrame, height: completionFrame)
                         .iOSExpandedHitArea(max(0, (44 - completionFrame) / 2))
                 }
                 .buttonStyle(.iosPressable)
-                .accessibilityLabel(CadenceTaskQuerySupport.isFinishedTask(task) ? "Mark not done" : "Mark done")
+                // Named for what the tap does, off the glyph's own state — the row's rule since
+                // T-611. This card kept a "Mark done" / "Mark not done" pair of its own, so a
+                // task mid-completion, where the tap cancels it, was announced "Mark done".
+                .accessibilityLabel(completionGlyph.state.accessibilityActionLabel)
 
                 Text(TaskTitleSupport.displayTitle(task.title, fallback: TaskTitleSupport.defaultCompactDisplayTitle))
                     .cadenceFont(.rowTitle, base: isRegularWidth ? 15 : 14, weight: .medium)

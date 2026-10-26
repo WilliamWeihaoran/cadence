@@ -37,7 +37,7 @@ struct CadenceCodexPageCompletionTypographyTests {
         let card = try #require(CadenceSourceScan.declarationBody("struct iOSBoardTaskCard: View", in: cards))
         #expect(card.contains("CadenceTypeScale.size(.rowTitle, base: 13, at: dynamicTypeSize, scaling: scaling)"))
         #expect(card.contains("CadenceTypeScale.height(30, holding: .rowTitle, textBase: 13, at: dynamicTypeSize, scaling: scaling)"))
-        #expect(card.contains("iOSTaskCompletionCircle(glyph: .resolve(task: task), diameter: completionDiameter)"))
+        #expect(card.contains("iOSTaskCompletionCircle(glyph: completionGlyph, diameter: completionDiameter)"))
         #expect(card.contains(".frame(width: completionFrame, height: completionFrame)"))
         #expect(card.contains(".iOSExpandedHitArea(max(0, (44 - completionFrame) / 2))"))
         #expect(card.contains(".cadenceFont(.rowTitle, base: isRegularWidth ? 15 : 14, weight: .medium)"))

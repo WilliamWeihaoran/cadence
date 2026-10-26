@@ -1433,6 +1433,38 @@ struct CadenceSettingsSectionCopyTests {
                 "a plain HStack is back around the count chips")
     }
 
+    /// **T-6981: iOS Search's calendar-access card speaks the Calendar page's words.**
+    ///
+    /// It was the third spelling of one state: "Calendar access is off" over "Allow Calendar
+    /// Access" in Search, where the Calendar tab's notice bar and Settings both say "Connect Apple
+    /// Calendar" over "Allow Access" — and "Calendar access denied" where Search said "is
+    /// disabled". The card now resolves `CadenceCalendarAccessNotice` and reads its title, glyph,
+    /// button title and action, so the three cannot drift apart again. The detail sentence stays
+    /// Search's own on purpose: it says what the missing access costs in search.
+    @Test func theSearchCalendarAccessCardReadsTheSharedNotice() throws {
+        let code = try Self.strippedSource(at: "Cadence/iOS/iOSSearchView.swift")
+        let card = try #require(
+            CadenceSourceScan.declarationBody("private var calendarAccessSection: some View", in: code),
+            "non-vacuity: Search's access card was not found"
+        )
+        #expect(card.contains("CadenceCalendarAccessNotice.resolve("), "the card decides its own state")
+        for read in ["notice.title", "notice.systemImage", "notice.actionTitle(on: .mobile)", "notice.action"] {
+            #expect(card.contains(read), "the card does not read \(read)")
+        }
+        for literal in [
+            "\"Calendar access is off\"",
+            "\"Calendar access is disabled\"",
+            "\"Allow Calendar Access\"",
+            "\"calendar.badge.exclamationmark\"",
+        ] {
+            #expect(card.contains(literal) == false, "the card spells \(literal) again")
+        }
+        // The notice's words are the Settings card's, so pinning them here pins all three surfaces.
+        #expect(CadenceCalendarAccessNotice.connectOffer.title == CadenceCalendarSettingsCopy.connectOfferTitle)
+        #expect(CadenceCalendarAccessNotice.denied.title == CadenceCalendarSettingsCopy.accessDeniedTitle)
+        #expect(CadenceCalendarAccessNotice.connectOffer.actionTitle(on: .mobile) == "Allow Access")
+    }
+
     private static func strippedSource(at path: String) throws -> String {
         CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(path))
     }

@@ -448,7 +448,15 @@ struct iOSSearchView: View {
 
     @ViewBuilder
     private var calendarAccessSection: some View {
-        if !calendarManager.isAuthorized {
+        // The title, glyph and button are the Calendar page's and Settings' words, by way of the
+        // one notice type (T-5954), rather than a third spelling: this card said "Calendar access
+        // is off" / "Allow Calendar Access" where the Calendar tab's bar above the same missing
+        // events said "Connect Apple Calendar" / "Allow Access". The sentence stays Search's own,
+        // because it says what the missing access costs *here*.
+        if let notice = CadenceCalendarAccessNotice.resolve(
+            isAuthorized: calendarManager.isAuthorized,
+            isDenied: calendarManager.isDenied
+        ) {
             // Geometry here belongs to the enabled page, outside its environment modifier.
             let stacks = iOSTaskPageTypographyMetrics.stacksControls(at: dynamicTypeSize, scaling: .enabled)
             let layout = stacks ? AnyLayout(VStackLayout(alignment: .leading, spacing: 12))
@@ -460,30 +468,31 @@ struct iOSSearchView: View {
 
                     layout {
                         iOSIconTile(
-                            systemImage: calendarManager.isDenied ? "calendar.badge.exclamationmark" : "calendar",
-                            color: calendarManager.isDenied ? Theme.amber : Theme.blue
+                            systemImage: notice.systemImage,
+                            color: notice == .denied ? Theme.amber : Theme.blue
                         )
 
                         VStack(alignment: .leading, spacing: 6) {
-                            Text(calendarManager.isDenied ? "Calendar access is disabled" : "Calendar access is off")
+                            Text(notice.title)
                                 .cadenceFont(.bodyText, weight: .semibold)
                                 .foregroundStyle(Theme.text)
 
-                            Text(calendarManager.isDenied ? "Enable Calendar access in Settings to include Apple Calendar events in search." : "Allow Calendar access to search and edit Apple Calendar events from Cadence.")
+                            Text(notice == .denied ? "Enable Calendar access in Settings to include Apple Calendar events in search." : "Allow Calendar access to search and edit Apple Calendar events from Cadence.")
                                 .cadenceFont(.fieldLabel, weight: .regular)
                                 .foregroundStyle(Theme.subdued)
                                 .fixedSize(horizontal: false, vertical: true)
 
                             iOSActionButton(
-                                title: calendarManager.isDenied ? "Open Settings" : "Allow Calendar Access",
-                                systemImage: calendarManager.isDenied ? "gearshape.fill" : "checkmark.shield.fill",
+                                title: notice.actionTitle(on: .mobile),
+                                systemImage: notice == .denied ? "gearshape.fill" : "checkmark.shield.fill",
                                 role: .primary,
                                 size: .compact,
-                                tint: calendarManager.isDenied ? Theme.amber : Theme.blue
+                                tint: notice == .denied ? Theme.amber : Theme.blue
                             ) {
-                                if calendarManager.isDenied {
+                                switch notice.action {
+                                case .openSystemSettings:
                                     openAppSettings()
-                                } else {
+                                case .requestAccess:
                                     Task { await calendarManager.requestAccess() }
                                 }
                             }
@@ -502,7 +511,7 @@ struct iOSSearchView: View {
         }
     }
 
-    /// Whether the "Calendar access is off" card is the whole answer to an empty search, so the
+    /// Whether the calendar-access card is the whole answer to an empty search, so the
     /// "No results" panel would only repeat it. True on the **Events** scope alone (T-6113): there
     /// nothing else is searched, and the card says why nothing came back. On **All** the tasks,
     /// lists, notes and pages were searched and matched nothing, and that has to be said; gating

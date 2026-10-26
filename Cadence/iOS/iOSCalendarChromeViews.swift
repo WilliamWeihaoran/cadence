@@ -312,7 +312,7 @@ struct iOSCalendarToolbar: View {
 
 /// The Calendar page's one notice about Apple Calendar access ([[T-5954]]), under the toolbar.
 ///
-/// iOS Search's "Calendar access is off" card in a slimmer cut: the same icon tile, the same
+/// iOS Search's calendar-access card in a slimmer cut: the same icon tile, the same
 /// compact `iOSActionButton`, the same stacking rule at large type, without Search's eyebrow —
 /// this page's toolbar already says where the reader is. The words are Settings > Calendar's, by
 /// way of `CadenceCalendarAccessNotice`, which also decides whether this appears at all.

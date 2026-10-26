@@ -292,6 +292,25 @@ struct CadenceControlAccessibilityLabelTests {
         )
     }
 
+    /// **T-6982, a T-611 straggler: the iOS board card's completion circle reads the shared name.**
+    ///
+    /// The list row moved onto `accessibilityActionLabel` under T-611; the Calendar Board's card
+    /// kept its own `isFinishedTask ? "Mark not done" : "Mark done"` pair, so a task mid-completion
+    /// (where a tap cancels it) was announced "Mark done", and a cancelled one "Mark not done".
+    @Test func theIOSBoardCardCompletionCircleIsNamedForWhatTappingItDoes() throws {
+        let code = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/iOS/iOSBoardCards.swift")
+        )
+        #expect(code.contains("Button(action: toggleCompletion)"), "non-vacuity: wrong file read")
+        #expect(
+            CadenceSourceScan.matchCount(#"\.accessibilityLabel\(completionGlyph\.state\.accessibilityActionLabel\)"#, in: code) == 1,
+            "the board card's completion circle does not read the shared action name"
+        )
+        #expect(code.contains("iOSTaskCompletionCircle(glyph: completionGlyph"), "the circle and its name resolve separately")
+        #expect(code.contains("\"Mark done\"") == false, "the board card spells its own completion name again")
+        #expect(code.contains("\"Mark not done\"") == false, "the board card spells its own completion name again")
+    }
+
     /// The widened detector, against the tree on both sides.
     ///
     /// The positive is a file from the ledger; the negatives are `MarkdownEditorView.swift`, the
