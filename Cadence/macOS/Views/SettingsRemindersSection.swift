@@ -50,9 +50,18 @@ struct SettingsRemindersSection: View {
                         Text(action.title)
                     }
                 } else if state.isConnected {
+                    // T-6974: the "Check iCloud Status" shape. Once reminders are listed the
+                    // loading row no longer draws, so the spinner here is the only sign a
+                    // refresh is running, and the button stays off until it lands.
+                    if remindersManager.isLoading {
+                        ProgressView()
+                            .controlSize(.small)
+                    }
+
                     SettingsActionButton(tone: .tinted(Theme.blue), action: remindersManager.reload) {
                         Text("Refresh")
                     }
+                    .disabled(remindersManager.isLoading)
                 }
                 // `.restricted` falls through both branches above: `accessAction` is `nil` and the
                 // state is not connected, so there is neither an action to offer nor a fetch to

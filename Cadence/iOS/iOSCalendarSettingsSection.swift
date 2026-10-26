@@ -670,7 +670,7 @@ private struct iOSCalendarSettingsRow: View {
                             Button {
                                 onToggleArea(area)
                             } label: {
-                                Label(area.name, systemImage: area.linkedCalendarID == calendar.calendarIdentifier ? "checkmark" : area.icon)
+                                Label(CadenceCalendarSettingsCopy.areaDisplayName(area.name), systemImage: area.linkedCalendarID == calendar.calendarIdentifier ? "checkmark" : area.icon)
                             }
                         }
                     }
@@ -682,7 +682,7 @@ private struct iOSCalendarSettingsRow: View {
                             Button {
                                 onToggleProject(project)
                             } label: {
-                                Label(project.name, systemImage: project.linkedCalendarID == calendar.calendarIdentifier ? "checkmark" : project.icon)
+                                Label(CadenceCalendarSettingsCopy.projectDisplayName(project.name), systemImage: project.linkedCalendarID == calendar.calendarIdentifier ? "checkmark" : project.icon)
                             }
                         }
                     }
@@ -712,19 +712,29 @@ private struct iOSCalendarSettingsRow: View {
         calendar.source?.title ?? CadenceAppleCalendarNaming.unnamedAccountTitle
     }
 
-    private var connectedNames: [String] {
-        let areaNames = areas
+    private var connectedAreaNames: [String] {
+        areas
             .filter { $0.linkedCalendarID == calendar.calendarIdentifier }
             .map(\.name)
-        let projectNames = projects
-            .filter { $0.linkedCalendarID == calendar.calendarIdentifier }
-            .map(\.name)
-        return areaNames + projectNames
     }
 
+    private var connectedProjectNames: [String] {
+        projects
+            .filter { $0.linkedCalendarID == calendar.calendarIdentifier }
+            .map(\.name)
+    }
+
+    private var connectedNames: [String] {
+        connectedAreaNames + connectedProjectNames
+    }
+
+    // T-6973: the names go through their display fallback, so a blank-named list reads
+    // "Untitled Area" here rather than an empty slot between two commas.
     private var connectionSummary: String {
-        guard !connectedNames.isEmpty else { return CadenceCalendarSettingsCopy.unconnectedSummary }
-        return connectedNames.joined(separator: ", ")
+        CadenceCalendarSettingsCopy.connectionSummary(
+            areaNames: connectedAreaNames,
+            projectNames: connectedProjectNames
+        )
     }
 }
 #endif

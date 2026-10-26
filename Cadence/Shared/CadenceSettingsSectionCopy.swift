@@ -57,6 +57,27 @@ nonisolated enum CadenceCalendarSettingsCopy {
     /// any, so this is the whole line rather than a prefix.
     static let unconnectedSummary = "Not connected to any area or project"
 
+    /// **T-6973.** An area's name as the connect menu and the summary print it: trimmed, and the
+    /// default area name when blank, so an unnamed list never draws an empty menu item. The same
+    /// fallback [[T-577]] gave `ListLifecycleRow`.
+    static func areaDisplayName(_ raw: String) -> String {
+        CadenceTitleNormalization.display(raw, fallback: CadenceTitleNormalization.defaultAreaName)
+    }
+
+    /// **T-6973.** `areaDisplayName`, for a project.
+    static func projectDisplayName(_ raw: String) -> String {
+        CadenceTitleNormalization.display(raw, fallback: CadenceTitleNormalization.defaultProjectName)
+    }
+
+    /// **T-6973.** The calendar row's "connected to" line, from the raw names of the areas and
+    /// projects linked to it: each name through its display fallback, or `unconnectedSummary`
+    /// when nothing is linked.
+    static func connectionSummary(areaNames: [String], projectNames: [String]) -> String {
+        let names = areaNames.map(areaDisplayName) + projectNames.map(projectDisplayName)
+        guard !names.isEmpty else { return unconnectedSummary }
+        return names.joined(separator: ", ")
+    }
+
     /// The work-hours row's title, on Settings > Calendar at both widths.
     ///
     /// **Only the title is shared**, and the sentence under it still differs — deliberately, and

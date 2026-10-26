@@ -75,13 +75,24 @@ struct iOSRemindersSettingsSection: View {
                         )
                         .padding(.top, 2)
                     } else if state.isConnected {
-                        iOSActionButton(
-                            title: "Refresh",
-                            systemImage: "arrow.clockwise",
-                            role: .secondary,
-                            size: .compact,
-                            action: remindersManager.reload
-                        )
+                        // T-6974: the "Check iCloud Status" shape -- a spinner while the fetch
+                        // runs and the button off until it lands. The loading row below draws only
+                        // while the list is empty, so this is the only sign of a refresh.
+                        HStack(spacing: 10) {
+                            iOSActionButton(
+                                title: "Refresh",
+                                systemImage: "arrow.clockwise",
+                                role: .secondary,
+                                size: .compact,
+                                isDisabled: remindersManager.isLoading,
+                                action: remindersManager.reload
+                            )
+
+                            if remindersManager.isLoading {
+                                ProgressView()
+                                    .tint(Theme.blue)
+                            }
+                        }
                         .padding(.top, 2)
                     }
                     // `.restricted` offers neither button: no action can help, and there is
