@@ -50,14 +50,59 @@ struct ListTasksSectionGroupsTests {
         #expect(groups.first { $0.title == "Documents" }?.tasks.map(\.id) == tasks.map(\.id))
     }
 
-    /// iOS's rule, kept: a page with no tasks at all shows its empty state, not empty headings.
-    @Test func aPageWithNoTasksDrawsNoEmptyHeadings() {
+    /// **[[T-6201]], the owner's 2026-10-26 ruling: an empty page draws its sections.** This used
+    /// to assert the opposite (`aPageWithNoTasksDrawsNoEmptyHeadings`), which is what left
+    /// "+ Section" on an empty list creating a section that never appeared. The user's sections are
+    /// drawn, in order; Default — the section nobody made — is not, so the risk the ruling named
+    /// (an empty list reading as a column of blank headings) is held to the headings the user
+    /// asked for.
+    @Test func anEmptyPageDrawsTheUsersSectionsButNotDefault() {
         let groups = ListTasksSectionGroups.groups(
             from: [],
-            sectionNames: ["Documents", "Later"],
+            sectionNames: [TaskSectionDefaults.defaultName, "Documents", "Later"],
             pageIsEmpty: true
         )
-        #expect(groups.isEmpty)
+        #expect(groups.map(\.title) == ["Documents", "Later"])
+        #expect(groups.allSatisfy { $0.tasks.isEmpty })
+
+        // A brand-new list has only Default, so it still reads as empty: no heading at all.
+        let fresh = ListTasksSectionGroups.groups(
+            from: [],
+            sectionNames: [TaskSectionDefaults.defaultName],
+            pageIsEmpty: true
+        )
+        #expect(fresh.isEmpty)
+
+        // On a page with any task Default is drawn as before, empty or not — it is where a task
+        // with no section lands. Matched case-insensitively, as `isDefault` is.
+        let spec = AppTask(title: "Spec")
+        spec.sectionName = "Documents"
+        let populated = ListTasksSectionGroups.groups(
+            from: [spec],
+            sectionNames: ["default", "Documents", "Later"],
+            pageIsEmpty: false
+        )
+        #expect(populated.map(\.title) == ["default", "Documents", "Later"])
+        let emptyDefault = CadenceTaskQuerySupport.listSectionGroups(
+            from: [],
+            sectionNames: ["DEFAULT", "Later"],
+            pageIsEmpty: true
+        )
+        #expect(emptyDefault.map(\.title) == ["Later"])
+    }
+
+    /// iOS reads the same rule ([[T-6201]] changes both platforms). A source pin: the tab's
+    /// groups and its empty gate are `private` members of a SwiftUI view this target cannot render.
+    @Test func theIOSListTabDrawsAnEmptyPagesSectionsFromTheSharedRule() throws {
+        let source = try CadenceSourceScan.strippedSourceReader()("Cadence/iOS/iOSListDetailView.swift")
+        let groups = try #require(CadenceSourceScan.declarationBody("private var sectionGroups: [CadenceTaskDisplayGroup]", in: source))
+        #expect(groups.contains("CadenceTaskQuerySupport.listSectionGroups("))
+        #expect(groups.contains("pageIsEmpty: isTaskColumnEmpty"))
+        let column = try #require(CadenceSourceScan.declarationBody("private var taskColumn: some View", in: source))
+        #expect(column.contains("if isTaskColumnEmpty && sectionGroups.isEmpty {"))
+        // The empty state heads the stack when the page is empty but has sections to draw.
+        let stack = try #require(CadenceSourceScan.declarationBody("private var sectionStack: some View", in: source))
+        #expect(CadenceSourceScan.matchCount(#"if isTaskColumnEmpty \{\s*listEmptyPanel\s*\}\s*ForEach\(sectionGroups\)"#, in: stack) == 1)
     }
 
     /// Under the hover freeze an empty section still shows, in its place, exactly once.
@@ -95,6 +140,9 @@ struct ListTasksSectionGroupsTests {
         #expect(grouped.contains("return ListTasksSectionGroups.keepingEmptySections(frozen, live: liveSectionGroups)"))
         let live = try #require(CadenceSourceScan.declarationBody("private var liveSectionGroups: [ListTasksGroup]", in: source))
         #expect(live.contains("pageIsEmpty: activeTasks.isEmpty && doneTasks.isEmpty"))
+        // [[T-6201]]: the helper is the shared rule iOS reads, not a Mac-only copy of it.
+        let helper = try #require(CadenceSourceScan.declarationBody("enum ListTasksSectionGroups", in: source))
+        #expect(helper.contains("CadenceTaskQuerySupport.listSectionGroups("))
     }
 
     /// **[[T-5832]] (b) — the "+ Section" row is offered only under By List.** Under By Date (the

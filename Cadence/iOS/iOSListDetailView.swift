@@ -287,7 +287,11 @@ struct iOSListDetailView: View {
             .padding(.top, 14)
             .padding(.bottom, 12)
 
-            if isTaskColumnEmpty {
+            // [[T-6201]]: an empty page draws its own sections too, so a section "+ Section" just
+            // made appears. Only a page with nothing to draw at all — no task and no section of
+            // the user's (`listSectionGroups` leaves Default out of an empty page) — takes the
+            // whole-column empty panel; otherwise `sectionStack` heads its columns with it.
+            if isTaskColumnEmpty && sectionGroups.isEmpty {
                 // The list itself is the only placement left when the page has neither rows nor
                 // columns drawn to point at — the `.list` half of `groupIdentity`, and the same
                 // move the Inbox's empty panel already makes. See `iOSTaskCollectionSections`.
@@ -295,17 +299,7 @@ struct iOSListDetailView: View {
                 // task above", naming an inline field this page has never had — the affordance is
                 // the floating `+` applied above — which is the exact mistake
                 // `CadenceTodayPresentationSupport.emptySubtitle` already records having made.
-                iOSEmptyPanel(
-                    systemImage: "checklist",
-                    title: CadenceEmptyStateCopy.listDetailTitle,
-                    subtitle: CadenceEmptyStateCopy.listDetailSubtitle
-                )
-                .iOSNewTaskDropTarget(
-                    group: CadenceTaskDropSupport.groupIdentity(
-                        container: containerSelection,
-                        listName: title
-                    )
-                )
+                listEmptyPanel
                 CadenceSectionCreationRow(area: area, project: project)
                     .padding(.horizontal, iOSListDetailTaskMetrics.horizontalPadding)
                     .padding(.bottom, iOSListDetailTaskMetrics.bottomPadding)
@@ -315,6 +309,24 @@ struct iOSListDetailView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(Theme.bg)
+    }
+
+    /// The page's empty state, with the list itself as its drop placement. Drawn alone when the
+    /// column has nothing else, and at the head of `sectionStack` above the user's empty sections
+    /// when it does ([[T-6201]]) — so an empty list with sections still says it has no tasks
+    /// rather than reading as a column of blank headings.
+    private var listEmptyPanel: some View {
+        iOSEmptyPanel(
+            systemImage: "checklist",
+            title: CadenceEmptyStateCopy.listDetailTitle,
+            subtitle: CadenceEmptyStateCopy.listDetailSubtitle
+        )
+        .iOSNewTaskDropTarget(
+            group: CadenceTaskDropSupport.groupIdentity(
+                container: containerSelection,
+                listName: title
+            )
+        )
     }
 
     private func sectionColor(for name: String) -> Color {
@@ -339,12 +351,13 @@ struct iOSListDetailView: View {
     /// nothing — and wrong here, because this is a surface you can add to. An unfilled kanban
     /// column is the case `CadenceTaskDropSupport.showsWhenEmpty(_:)` was written for, and the rule
     /// could never fire on this page: the column was gone before `iOSTaskGroupSection` got to
-    /// decide. The whole-page empty state above still wins over a stack of zeroes.
+    /// decide. Since [[T-6201]] that holds on a page with no tasks as well — the shared rule the
+    /// Mac's list Tasks tab reads too, which leaves only Default out of an empty page.
     private var sectionGroups: [CadenceTaskDisplayGroup] {
-        CadenceTaskQuerySupport.sectionGroups(
+        CadenceTaskQuerySupport.listSectionGroups(
             from: activeTasks,
             sectionNames: sectionNames,
-            includingEmpty: true
+            pageIsEmpty: isTaskColumnEmpty
         )
     }
 
@@ -360,6 +373,9 @@ struct iOSListDetailView: View {
     private var sectionStack: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: iOSTaskCollectionMetrics.groupSpacing) {
+                if isTaskColumnEmpty {
+                    listEmptyPanel
+                }
                 ForEach(sectionGroups) { group in
                     iOSTaskGroupSection(
                         title: group.title,

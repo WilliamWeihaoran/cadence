@@ -326,14 +326,15 @@ struct ListTasksView: View {
 /// The "+ Section" row at the foot of the tab adds a section that is empty by definition, and
 /// `sectionGroups` drops an empty section by default — so the row created a section and nothing
 /// new appeared, while iOS's list Tasks tab (`iOSListDetailView.sectionGroups`) drew it at once.
-/// Same rule as iOS, including its exception: a page with no tasks at all keeps its empty state
-/// rather than a stack of empty headings.
+/// **Since [[T-6201]] that holds on a page with no tasks at all as well**, by the owner's ruling,
+/// and the rule is the shared one both platforms read: the empty state stays, the user's own
+/// sections are drawn under it, and Default is left out so a new list still reads as empty.
 enum ListTasksSectionGroups {
     static func groups(from activeTasks: [AppTask], sectionNames: [String], pageIsEmpty: Bool) -> [ListTasksGroup] {
-        CadenceTaskQuerySupport.sectionGroups(
+        CadenceTaskQuerySupport.listSectionGroups(
             from: activeTasks,
             sectionNames: sectionNames,
-            includingEmpty: !pageIsEmpty
+            pageIsEmpty: pageIsEmpty
         )
         .map { ListTasksGroup(id: $0.id, title: $0.title, tasks: $0.tasks) }
     }

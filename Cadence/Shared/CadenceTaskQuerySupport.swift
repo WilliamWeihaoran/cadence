@@ -276,6 +276,29 @@ enum CadenceTaskQuerySupport {
         }
     }
 
+    /// A list's own Tasks tab under By List, on **both** platforms ([[T-6201]]): every configured
+    /// section, the empty ones included — **and on a page with no tasks at all, too.**
+    ///
+    /// Until the owner's 2026-10-26 ruling an empty page dropped every heading so it would read as
+    /// empty rather than as a stack of blank headings; the cost was that "+ Section" on an empty
+    /// list made a section and drew nothing. Headings are drawn now, with one exception that
+    /// keeps the empty page reading as empty: **Default is not drawn on an empty page.** It is
+    /// the section every list has without anyone making it (`TaskSectionConfig.isDefault`), so a
+    /// brand-new list still shows its empty state and nothing else, and the headings that do
+    /// appear under it are the ones the user created. On a page with any task Default is drawn
+    /// as before — it is where a task with no section lands.
+    static func listSectionGroups(
+        from activeTasks: [AppTask],
+        sectionNames: [String],
+        pageIsEmpty: Bool
+    ) -> [CadenceTaskDisplayGroup] {
+        let groups = sectionGroups(from: activeTasks, sectionNames: sectionNames, includingEmpty: true)
+        guard pageIsEmpty else { return groups }
+        return groups.filter {
+            $0.title.caseInsensitiveCompare(TaskSectionDefaults.defaultName) != .orderedSame
+        }
+    }
+
     static func dateDisplayGroups(
         from tasks: [AppTask],
         todayKey: String,
