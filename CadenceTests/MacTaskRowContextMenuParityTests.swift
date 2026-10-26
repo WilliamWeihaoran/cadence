@@ -73,8 +73,10 @@ struct MacTaskRowContextMenuParityTests {
         let rowFile = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(Self.macRowPath))
         #expect(rowFile.contains("struct MacTaskRow: View"), "non-vacuity: wrong file read")
 
-        // Tap is untouched.
-        #expect(CadenceSourceScan.matchCount(#"\.onTapGesture \{ showTaskInspector = true \}"#, in: row) == 1)
+        // Tap is untouched. Since [[T-7092]] it opens the inspector through `openDetail`, the one
+        // function the tap, the menu's Edit and the "Open task" accessibility action share.
+        #expect(CadenceSourceScan.matchCount(#"\.onTapGesture\(perform: openDetail\)"#, in: row) == 1)
+        #expect(CadenceSourceScan.matchCount(#"func openDetail\(\) \{\s*showTaskInspector = true\s*\}"#, in: rowFile) == 1)
 
         // Right-click is the menu, and nothing else claims the gesture first.
         #expect(CadenceSourceScan.matchCount(#"\.contextMenu \{"#, in: row) == 1)
@@ -83,9 +85,10 @@ struct MacTaskRowContextMenuParityTests {
                 "an AppKit right-click overlay on the row would take the click before the menu sees it")
         #expect(CadenceSourceScan.matchCount(#"MacTaskRowMenuOutcomeModifier\("#, in: row) == 1)
 
-        // The menu's Edit is the inspector, so exactly two paths open it from the row body: the tap
-        // and the menu item.
-        #expect(CadenceSourceScan.matchCount(#"showTaskInspector = true"#, in: row) == 2)
+        // The menu's Edit is the inspector: the body hands the menu `openDetail` and sets the flag
+        // nowhere itself, so every path from the row body goes through that one function ([[T-7164]]).
+        #expect(CadenceSourceScan.matchCount(#"openDetail: openDetail"#, in: row) == 1)
+        #expect(CadenceSourceScan.matchCount(#"showTaskInspector = true"#, in: row) == 0)
     }
 
     @Test func aRefusedMenuWriteIsTitledLikeIOSTitlesIt() {
