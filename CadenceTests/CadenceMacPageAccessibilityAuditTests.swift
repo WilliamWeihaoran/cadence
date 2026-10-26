@@ -1,5 +1,6 @@
 #if os(macOS)
 import AppKit
+import SwiftData
 import SwiftUI
 import Testing
 @testable import Cadence
@@ -24,7 +25,11 @@ struct CadenceMacPageAccessibilityAuditTests {
         let label: String
         let value: String
         let isSelected: Bool
-        var description: String { "[\(role) label:'\(label)' value:'\(value)'\(isSelected ? " selected" : "")]" }
+        /// Named accessibility actions ([[T-7092]]), read as `accessibilityCustomActions` names.
+        var actions: [String] = []
+        var description: String {
+            "[\(role) label:'\(label)' value:'\(value)'\(isSelected ? " selected" : "")\(actions.isEmpty ? "" : " actions:\(actions)")]"
+        }
     }
 
     private func allNodes<V: View>(in view: V, size: NSSize = NSSize(width: 900, height: 120)) -> [Node] {
@@ -63,6 +68,13 @@ struct CadenceMacPageAccessibilityAuditTests {
                   node.responds(to: NSSelectorFromString("isAccessibilitySelected")) else { return false }
             return (node.value(forKey: "accessibilitySelected") as? NSNumber)?.boolValue ?? false
         }
+        func customActionNames(_ object: AnyObject) -> [String] {
+            let selector = NSSelectorFromString("accessibilityCustomActions")
+            guard object.responds(to: selector),
+                  let actions = object.perform(selector)?.takeUnretainedValue() as? [NSAccessibilityCustomAction]
+            else { return [] }
+            return actions.map(\.name)
+        }
         func walk(_ element: Any, depth: Int) {
             guard depth < 24 else { return }
             let object = element as AnyObject
@@ -70,7 +82,8 @@ struct CadenceMacPageAccessibilityAuditTests {
                 role: string(object, "accessibilityRole"),
                 label: string(object, "accessibilityLabel"),
                 value: string(object, "accessibilityValue"),
-                isSelected: isSelected(object)
+                isSelected: isSelected(object),
+                actions: customActionNames(object)
             ))
             let childrenSelector = NSSelectorFromString("accessibilityChildren")
             guard object.responds(to: childrenSelector),
@@ -290,6 +303,77 @@ struct CadenceMacPageAccessibilityAuditTests {
             try CadenceSourceScan.sourceFile("Cadence/iOS/iOSMarkdownEditingSurface.swift")
         ).filter { !$0.isWhitespace }
         #expect(ios.contains(".accessibilityLabel(NoteUnlinkedMentionCopy.linkControlLabel(noteTitle:note.displayTitle))"))
+    }
+
+    // MARK: - T-7092: a board card and a list task row open their task without a pointer
+
+    private static let openTask = CadenceTaskControlAccessibility.openTaskActionName
+
+    /// The control for the two below: a named action on a plain element is on the tree. If this
+    /// ever reads empty, an absence below is the harness going blind, not the view.
+    @Test func theHarnessSeesANamedAccessibilityAction() {
+        let nodes = allNodes(in: Text("Probe").accessibilityAction(named: "Probe action") {})
+        #expect(nodes.contains { $0.actions.contains("Probe action") }, "the harness cannot read a named action: \(nodes)")
+    }
+
+    private func hostedTaskSurface<V: View>(_ view: V, container: ModelContainer) -> some View {
+        view
+            .retainingModelContainerForProcessLifetime(container)
+            .environment(CadenceDeepLinkManager.shared)
+            .environment(DeleteConfirmationManager.shared)
+            .environment(HoveredTaskManager.shared)
+            .environment(HoveredEditableManager.shared)
+            .environment(FocusManager.shared)
+            .environment(TaskCompletionAnimationManager.shared)
+    }
+
+    /// A card opened its detail only on click or right-click, neither of which an assistive client
+    /// can send. Exactly one element on the card's tree offers "Open task" — the card's own.
+    @Test func aBoardCardOffersOpenTaskAsAnAccessibilityAction() throws {
+        let container = try CadenceTestStore.container()
+        let task = AppTask(title: "Board card task")
+        ModelContext(container).insert(task)
+        let nodes = allNodes(
+            in: hostedTaskSurface(KanbanCard(task: task, todayKey: DateFormatters.todayKey()).frame(width: 260), container: container),
+            size: NSSize(width: 300, height: 200)
+        )
+        #expect(nodes.contains { $0.label.contains("Board card task") || $0.value.contains("Board card task") },
+                "non-vacuity: the card is not on the tree: \(nodes)")
+        let offering = nodes.filter { $0.actions.contains(Self.openTask) }
+        #expect(offering.count == 1, "the card does not offer Open task exactly once: \(nodes)")
+    }
+
+    @Test func aListTaskRowOffersOpenTaskAsAnAccessibilityAction() throws {
+        let container = try CadenceTestStore.container()
+        let task = AppTask(title: "List row task")
+        ModelContext(container).insert(task)
+        let nodes = allNodes(
+            in: hostedTaskSurface(MacTaskRow(task: task, todayKey: DateFormatters.todayKey()).frame(width: 520), container: container),
+            size: NSSize(width: 560, height: 120)
+        )
+        #expect(nodes.contains { $0.label.contains("List row task") || $0.value.contains("List row task") },
+                "non-vacuity: the row is not on the tree: \(nodes)")
+        let offering = nodes.filter { $0.actions.contains(Self.openTask) }
+        #expect(offering.count == 1, "the row does not offer Open task exactly once: \(nodes)")
+    }
+
+    /// The action is the click's path, not a second one: each surface routes tap, right-click or
+    /// menu, and the action through one function that raises the detail popover.
+    @Test func theOpenTaskActionRunsTheSameOpenDetailPathAsTheClick() throws {
+        let card = CadenceSourceScan.codeOnly(
+            try CadenceSourceScan.sourceFile("Cadence/macOS/Views/KanbanCardView.swift")
+        ).filter { !$0.isWhitespace }
+        #expect(card.contains(".accessibilityAction(named:CadenceTaskControlAccessibility.openTaskActionName,openTaskInspector)"))
+        #expect(card.contains("RightClickActionTrigger(action:openTaskInspector)"))
+        #expect(card.contains("privatefuncopenTaskInspector(){showTaskInspector=true}"))
+
+        let row = CadenceSourceScan.codeOnly(
+            try CadenceSourceScan.sourceFile("Cadence/macOS/Views/TasksPanelComponents.swift")
+        ).filter { !$0.isWhitespace }
+        #expect(row.contains(".accessibilityAction(named:CadenceTaskControlAccessibility.openTaskActionName,openDetail)"))
+        #expect(row.contains(".onTapGesture(perform:openDetail)"))
+        #expect(row.contains("openDetail:openDetail,"))
+        #expect(row.contains("privatefuncopenDetail(){showTaskInspector=true}"))
     }
 }
 #endif

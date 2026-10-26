@@ -318,6 +318,9 @@ nonisolated enum CadenceTaskControlAccessibility: Sendable {
     /// itself, and what `CadenceTaskComposerSupport.containerName` resolves.
     static let list = "List"
     static let startFocus = "Start focus session"
+    /// The accessibility action that opens a Mac task row's or board card's detail popover, the
+    /// same popover a click opens ([[T-7092]]).
+    static let openTaskActionName = "Open task"
     /// The repeat chip (T-611). "Repeat" is what `iOSTaskRowContextMenu`'s submenu is already
     /// titled, so the two ways into the same field are named the same thing.
     static let recurrence = "Repeat"

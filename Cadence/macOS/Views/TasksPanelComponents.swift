@@ -106,7 +106,7 @@ struct MacTaskRow: View {
         }
         .padding(.vertical, metrics.verticalPadding)
         .contentShape(Rectangle())
-        .onTapGesture { showTaskInspector = true }
+        .onTapGesture(perform: openDetail)
         // **Right-click is a menu, not a second tap ([[T-1479]]).** It used to be a
         // `RightClickActionTrigger` overlay running the same `showTaskInspector = true` as the
         // line above, which spent the gesture macOS reserves for a menu on a duplicate. Tap keeps
@@ -114,7 +114,7 @@ struct MacTaskRow: View {
         .contextMenu {
             MacTaskRowContextMenu(
                 task: task,
-                openDetail: { showTaskInspector = true },
+                openDetail: openDetail,
                 startFocus: startFocus,
                 requestDelete: presentDelete,
                 pendingRecurrenceRule: $pendingRecurrenceRule,
@@ -126,6 +126,12 @@ struct MacTaskRow: View {
             pendingRecurrenceRule: $pendingRecurrenceRule,
             failure: $menuFailure
         ))
+        // [[T-7092]]: a click was the row's only direct way to its detail — the menu's Edit item
+        // reaches it too, but only through a menu VoiceOver has to know to open. `.contain` makes
+        // the row one element without swallowing its completion button and chips, as the board
+        // card does, so the action has a row to sit on.
+        .accessibilityElement(children: .contain)
+        .accessibilityAction(named: CadenceTaskControlAccessibility.openTaskActionName, openDetail)
         .background(TaskRowBackground(task: task, isHovered: isHovered, hoverFill: hoverBackgroundFill))
         .overlay {
             RoundedRectangle(cornerRadius: Theme.radiusCard)
@@ -718,6 +724,12 @@ struct MacTaskRow: View {
     /// re-encoded as a hover-only background hue.
     private var hoverBackgroundFill: Color {
         TaskHoverVisuals.hoverFill(isHovered: isHovered)
+    }
+
+    /// The one way into this row's detail: the tap, the context menu's Edit, and the "Open task"
+    /// accessibility action ([[T-7092]]).
+    private func openDetail() {
+        showTaskInspector = true
     }
 
     private func handlePendingDeepLink() {

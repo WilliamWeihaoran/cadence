@@ -97,9 +97,7 @@ struct KanbanCard: View {
             openTaskInspectorFromCardTap()
         }
         .overlay {
-            RightClickActionTrigger {
-                showTaskInspector = true
-            }
+            RightClickActionTrigger(action: openTaskInspector)
         }
         .onHover { hovering in
             isPointerOverCard = hovering
@@ -141,6 +139,10 @@ struct KanbanCard: View {
         // duration badge with it, and the first of those is a popover anchor of its own.
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier(CadenceAccessibilityIdentifiers.boardCard(title: task.title))
+        // [[T-7092]]: click and right-click were the card's only ways to its detail, and neither is
+        // an accessibility action, so VoiceOver could reach the chips and never the task. The
+        // action runs the right-click's path — unconditionally, since no chip is under a pointer.
+        .accessibilityAction(named: CadenceTaskControlAccessibility.openTaskActionName, openTaskInspector)
         .popover(isPresented: $showTaskInspector, attachmentAnchor: .rect(.bounds), arrowEdge: .trailing) {
             TaskDetailPopover(task: task)
         }
@@ -448,6 +450,12 @@ struct KanbanCard: View {
 
     private func openTaskInspectorFromCardTap() {
         guard !isAttributeFocused && !isPresentingInlinePopover else { return }
+        openTaskInspector()
+    }
+
+    /// The one way into this card's detail: the tap (past its chip guard), the right-click, and
+    /// the "Open task" accessibility action ([[T-7092]]).
+    private func openTaskInspector() {
         showTaskInspector = true
     }
 
