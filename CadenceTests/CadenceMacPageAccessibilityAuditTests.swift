@@ -208,6 +208,66 @@ struct CadenceMacPageAccessibilityAuditTests {
         )
     }
 
+    // MARK: - T-7068: the Notes page's note rows
+
+    /// Every note list on the Mac Notes page drew `…NoteListRow(...).onTapGesture { select }`: one
+    /// `AXGroup` of loose texts, no button, and nothing that said which note was open. Hosted the
+    /// way the four tabs host them, each row is one button and the open one reads selected.
+    @Test func aNotesPageRowIsAButtonThatSaysWhichNoteIsOpen() {
+        let closed = Note(kind: .permanent, title: "Grocery list")
+        let open = Note(kind: .permanent, title: "Trip plan")
+        let nodes = allNodes(in: VStack(spacing: 0) {
+            NoteListRowButton(action: {}) { NotepadNoteListRow(note: closed, isSelected: false) }
+            NoteListRowButton(action: {}) { NotepadNoteListRow(note: open, isSelected: true) }
+        }, size: NSSize(width: 320, height: 160))
+        let rows = nodes.filter { $0.role == Self.buttonRole }
+        #expect(rows.count == 2, "a note row is not one button on the tree: \(nodes)")
+        let selected = rows.filter(\.isSelected)
+        #expect(selected.count == 1, "the open note is not the one selected row: \(rows)")
+        #expect(
+            selected.first.map { $0.label.contains("Trip plan") || $0.value.contains("Trip plan") } == true,
+            "the selected row is not the open note: \(rows)"
+        )
+    }
+
+    /// The list-detail Notes tab's event and task sections, hosted as the page draws them.
+    @Test func theListNotesSectionRowsAreButtonsThatSayWhichIsOpen() {
+        let first = Note(kind: .meeting, title: "Standup")
+        let second = Note(kind: .meeting, title: "Retro")
+        let events = allNodes(
+            in: VStack(spacing: 0) {
+                ListEventNoteSectionRows(notes: [first, second], selectedNoteID: second.id, onSelect: { _ in })
+            },
+            size: NSSize(width: 320, height: 160)
+        ).filter { $0.role == Self.buttonRole }
+        #expect(events.count == 2, "an event-note row is not one button: \(events)")
+        #expect(events.filter(\.isSelected).count == 1, "the open event note is not marked selected: \(events)")
+
+        let taskA = AppTask(title: "Draft agenda")
+        let taskB = AppTask(title: "Send minutes")
+        let tasks = allNodes(
+            in: VStack(spacing: 0) {
+                ListTaskNoteSectionRows(tasks: [taskA, taskB], todayKey: "2026-10-26", selectedTaskID: taskA.id, onSelect: { _ in })
+            },
+            size: NSSize(width: 320, height: 160)
+        ).filter { $0.role == Self.buttonRole }
+        #expect(tasks.count == 2, "a task-note row is not one button: \(tasks)")
+        #expect(tasks.filter(\.isSelected).count == 1, "the open task is not marked selected: \(tasks)")
+    }
+
+    /// The four tab pages are `private` and need a store, so their call sites are scanned: each
+    /// draws its row inside `NoteListRowButton`, and none is a bare tap gesture any more.
+    @Test func everyNotesTabDrawsItsRowsAsButtons() throws {
+        let source = CadenceSourceScan.codeOnly(
+            try CadenceSourceScan.sourceFile("Cadence/macOS/Views/NotesView.swift")
+        )
+        for page in ["DailyNotesPage", "WeeklyNotesPage", "NotepadPage", "MeetingNotesPage"] {
+            let body = try CadenceControlAccessibilityLabelTests.bodyOfStruct(page, in: source)
+            #expect(body.contains("NoteListRowButton("), "\(page) no longer draws its rows as buttons")
+            #expect(!body.contains(".onTapGesture"), "\(page) selects a row with a tap gesture again")
+        }
+    }
+
     // MARK: - T-7066: the Notes page
 
     @Test func anUnlinkedMentionLinkControlIsNamedForItsNote() throws {

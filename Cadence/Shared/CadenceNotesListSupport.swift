@@ -882,6 +882,10 @@ struct NoteListDayRow: View {
         .contentShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
         .onHover { isHovered = $0 }
         .animation(.easeOut(duration: 0.12), value: isHovered)
+        // [[T-7068]]: the blue plate is the only thing that said which note is open, and an
+        // assistive client reads no fill. Both platforms host this row inside a `Button`, so the
+        // trait reaches the control VoiceOver lands on.
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 }
 

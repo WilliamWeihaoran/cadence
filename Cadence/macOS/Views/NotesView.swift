@@ -150,8 +150,9 @@ private struct DailyNotesPage: View {
                         kind: NotesView.NotesPage.daily.noteKind,
                         dateKey: { $0.dateKey }
                     ) { note in
-                        DailyNoteListRow(note: note, isSelected: selectedNoteID == note.id)
-                            .onTapGesture { selectedNoteID = note.id }
+                        NoteListRowButton(action: { selectedNoteID = note.id }) {
+                            DailyNoteListRow(note: note, isSelected: selectedNoteID == note.id)
+                        }
                     }
                 }
             }
@@ -282,8 +283,9 @@ private struct WeeklyNotesPage: View {
                         kind: NotesView.NotesPage.weekly.noteKind,
                         dateKey: { NotesListGrouping.weekStartDateKey(forWeekKey: $0.weekKey) }
                     ) { note in
-                        WeeklyNoteListRow(note: note, isSelected: selectedNoteID == note.id)
-                            .onTapGesture { selectedNoteID = note.id }
+                        NoteListRowButton(action: { selectedNoteID = note.id }) {
+                            WeeklyNoteListRow(note: note, isSelected: selectedNoteID == note.id)
+                        }
                     }
                 }
             }
@@ -411,22 +413,23 @@ private struct NotepadPage: View {
                         kind: NotesView.NotesPage.notepad.noteKind,
                         dateKey: { DateFormatters.dateKey(from: $0.createdAt) }
                     ) { note in
-                        NotepadNoteListRow(note: note, isSelected: selectedNoteID == note.id)
-                            .onTapGesture { selectedNoteID = note.id }
-                            // [[T-5806]]: the same menu as a list's note rows, so a note can be
-                            // deleted without opening it first. Notepad only — see
-                            // `iOSNotesView.sidebarRow(for:)` for why the dated pages have none.
-                            // `deleteNote` already confirms and fixes up a non-selected note.
-                            .contextMenu {
-                                Button("Copy Note Link") {
-                                    NoteActionSupport.copyMarkdownLink(to: note)
-                                }
-                                Button(role: .destructive) {
-                                    deleteNote(note)
-                                } label: {
-                                    Label("Delete", systemImage: "trash")
-                                }
+                        NoteListRowButton(action: { selectedNoteID = note.id }) {
+                            NotepadNoteListRow(note: note, isSelected: selectedNoteID == note.id)
+                        }
+                        // [[T-5806]]: the same menu as a list's note rows, so a note can be
+                        // deleted without opening it first. Notepad only — see
+                        // `iOSNotesView.sidebarRow(for:)` for why the dated pages have none.
+                        // `deleteNote` already confirms and fixes up a non-selected note.
+                        .contextMenu {
+                            Button("Copy Note Link") {
+                                NoteActionSupport.copyMarkdownLink(to: note)
                             }
+                            Button(role: .destructive) {
+                                deleteNote(note)
+                            } label: {
+                                Label("Delete", systemImage: "trash")
+                            }
+                        }
                     }
                 }
             }
@@ -564,11 +567,12 @@ private struct MeetingNotesPage: View {
                         kind: NotesView.NotesPage.meeting.noteKind,
                         dateKey: { NotesListVisibility.meetingDayKey(for: $0) }
                     ) { note in
-                        MeetingNoteListRow(note: note, isSelected: selectedNoteID == note.id, showsDate: false)
-                            .onTapGesture {
-                                selectedNoteID = note.id
-                                requestedNoteID = nil
-                            }
+                        NoteListRowButton(action: {
+                            selectedNoteID = note.id
+                            requestedNoteID = nil
+                        }) {
+                            MeetingNoteListRow(note: note, isSelected: selectedNoteID == note.id, showsDate: false)
+                        }
                     }
                 }
             }

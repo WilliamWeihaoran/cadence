@@ -169,6 +169,8 @@ struct TaskNoteListRow: View {
             fillColor: Theme.blue.opacity(isSelected ? 0.16 : 0.06),
             strokeColor: Theme.blue.opacity(isSelected ? 0.24 : 0.12)
         )
+        // [[T-7068]]: the open task is a blue fill, which an assistive client cannot read.
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 }
 

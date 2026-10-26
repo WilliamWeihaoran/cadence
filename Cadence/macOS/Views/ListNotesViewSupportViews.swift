@@ -144,6 +144,25 @@ struct ListNoteFolderRow: View {
     }
 }
 
+// MARK: - Row Button
+
+/// A note-list row as a control ([[T-7068]]): the rows were a tap gesture on a plain stack, so
+/// VoiceOver found two loose texts, no button, and no way to open the note. `iOSNotesView`
+/// already hosts the same rows in a `Button`; this is the Mac's.
+///
+/// `.plain` so the button adds no bezel and no padding: the row keeps its own full-width frame,
+/// `contentShape` and hover fill, which is the hit area the tap gesture had. A row's
+/// `.contextMenu` goes on this, outside, so the right-click target is the whole button too.
+struct NoteListRowButton<Label: View>: View {
+    let action: () -> Void
+    @ViewBuilder let label: () -> Label
+
+    var body: some View {
+        Button(action: action, label: label)
+            .buttonStyle(.plain)
+    }
+}
+
 // MARK: - Event / Task Note Section Rows
 
 struct ListEventNoteSectionRows: View {
@@ -154,10 +173,9 @@ struct ListEventNoteSectionRows: View {
     var body: some View {
         ForEach(notes) { note in
             // No month header above this section, so the row spells its own date out.
-            MeetingNoteListRow(note: note, isSelected: selectedNoteID == note.id, showsDate: true)
-                .onTapGesture {
-                    onSelect(note)
-                }
+            NoteListRowButton(action: { onSelect(note) }) {
+                MeetingNoteListRow(note: note, isSelected: selectedNoteID == note.id, showsDate: true)
+            }
         }
     }
 }
@@ -171,10 +189,9 @@ struct ListTaskNoteSectionRows: View {
 
     var body: some View {
         ForEach(tasks) { task in
-            TaskNoteListRow(task: task, isSelected: selectedTaskID == task.id, todayKey: todayKey)
-                .onTapGesture {
-                    onSelect(task)
-                }
+            NoteListRowButton(action: { onSelect(task) }) {
+                TaskNoteListRow(task: task, isSelected: selectedTaskID == task.id, todayKey: todayKey)
+            }
         }
     }
 }
