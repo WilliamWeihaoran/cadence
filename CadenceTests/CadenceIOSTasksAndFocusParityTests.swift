@@ -63,6 +63,21 @@ struct CadenceTasksPageHeaderCountTests {
         #expect(header.contains("iOSTasksPageHeaderCount(scope: scope)"))
         #expect(header.contains("headerRow(count: count"))
     }
+
+    /// T-7021: macOS's header reads the same function rather than its own copy of the arithmetic.
+    @Test func theMacTasksPageHeaderPassesTheSharedCount() throws {
+        let source = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/macOS/Views/macOSRootSupportViews.swift")
+        )
+        let count = try #require(
+            CadenceSourceScan.declarationBody("private var headerCount: Int", in: source),
+            "the Mac header count has moved — this pin is unanchored"
+        )
+        #expect(count.contains("CadenceTaskQuerySupport.tasksPageHeaderCount("), "got: \(count)")
+        #expect(count.contains("reminderCount: remindersManager.reminders.count"))
+        #expect(!count.contains("openTaskCount("), "macOS spells the header arithmetic inline again")
+        #expect(source.contains("count: headerCount"), "the Mac Tasks header no longer draws this count")
+    }
 }
 
 /// T-7015: iOS Inbox draws its Apple Reminders between the open tasks and the Completed logbook,

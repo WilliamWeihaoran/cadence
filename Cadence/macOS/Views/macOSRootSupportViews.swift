@@ -859,14 +859,13 @@ struct TasksPageView: View {
     /// The same number the sidebar's Tasks row shows, plus — in the Inbox view — the Apple
     /// Reminders the strip below is about to draw. Inbox's header has always counted those; they
     /// are items in the inbox whether or not Cadence owns them.
+    /// The shared rule iOS's header reads too (T-7014, T-7021), so the two badges cannot drift.
     private var headerCount: Int {
-        switch scope {
-        case .all:
-            return CadenceTaskQuerySupport.openTaskCount(from: allTasks.filter(\.isInActiveContainer))
-        case .inbox:
-            return CadenceTaskQuerySupport.openTaskCount(from: CadenceTaskQuerySupport.inboxTasks(from: allTasks))
-                + remindersManager.reminders.count
-        }
+        CadenceTaskQuerySupport.tasksPageHeaderCount(
+            scope: scope,
+            tasks: allTasks,
+            reminderCount: remindersManager.reminders.count
+        )
     }
 
     var body: some View {

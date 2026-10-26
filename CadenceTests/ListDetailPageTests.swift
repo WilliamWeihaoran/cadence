@@ -102,6 +102,17 @@ struct ListDetailPageTests {
             CadenceSourceScan.matchCount("ListDetailPage\\(rawValue:", in: body) == 0,
             "the restore still parses the remembered value with the failable initialiser"
         )
+
+        // T-7037: the per-list key is the shared builder iOS writes, not a macOS-local spelling.
+        let key = try #require(
+            CadenceSourceScan.declarationBody("private var tabDefaultsKey: String", in: source),
+            "tabDefaultsKey is gone or its braces do not balance"
+        )
+        #expect(
+            key.contains("ListDetailPage.rememberedPageDefaultsKey(areaID: area?.id, projectID: project?.id)"),
+            "got: \(key)"
+        )
+        #expect(!key.contains("listDetailTab."), "macOS spells the remembered-tab key inline again")
     }
 
     // MARK: - T-7032: iPad kept the previous list's tab
