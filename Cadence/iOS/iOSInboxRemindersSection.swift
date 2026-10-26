@@ -258,11 +258,14 @@ private struct iOSInboxReminderRow: View {
                 )
             }
 
-            iOSTaskMetaLabel(
-                systemImage: "list.bullet",
-                text: reminder.listTitle,
-                tint: Theme.purple
-            )
+            // T-7009: an untitled list draws no label, rather than a bare glyph.
+            if let listChipTitle = AppleReminderRowPresentation.listChipTitle(reminder.listTitle) {
+                iOSTaskMetaLabel(
+                    systemImage: "list.bullet",
+                    text: listChipTitle,
+                    tint: Theme.purple
+                )
+            }
         }
     }
 

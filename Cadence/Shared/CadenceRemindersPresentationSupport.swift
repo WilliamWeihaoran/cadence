@@ -264,6 +264,18 @@ enum AppleReminderRowPresentation {
     static func completionControlOpacity(allowsCompletion: Bool) -> Double {
         allowsCompletion ? 1 : 0.4
     }
+
+    /// The list chip's text, or `nil` when the row should draw no list chip at all ([[T-7009]]).
+    ///
+    /// `RemindersManager.makeItem` stores an untitled list as `""` — on purpose, because that
+    /// string is the grouping key `RemindersSyncSummary.listRows` reads — and both Inbox rows used
+    /// to print it raw: macOS a purple capsule holding only the list glyph, iOS an empty meta
+    /// label. Hiding the chip, rather than naming the list "Reminders" or similar, is a keeper call
+    /// the owner can reverse here, once, for both platforms.
+    static func listChipTitle(_ listTitle: String) -> String? {
+        let trimmed = listTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : listTitle
+    }
 }
 
 /// What `RemindersManager.completeReminder(id:)` actually did.

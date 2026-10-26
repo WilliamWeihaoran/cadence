@@ -336,6 +336,11 @@ private struct iOSCalendarBoardDayColumn: View {
         // The column had no name at all: VoiceOver reached a stack of cards with no statement of
         // which day they were on (T-572). The one spelling both platforms read, so the announced
         // count cannot drift from the header's the way macOS's hand-written label had.
+        // T-7034: `.contain` first, so the label names the column's own container element. On a
+        // stack that is not an element SwiftUI hands the label to every child, and each card,
+        // the "Add task" row and the "Completed" toggle was read as the day. `.contain`, not
+        // `.combine`, keeps each of them a separate, separately named element.
+        .accessibilityElement(children: .contain)
         .accessibilityLabel(
             CadenceBoardColumnAccessibility.dayColumnLabel(date: date, itemCount: activeItems.count)
         )

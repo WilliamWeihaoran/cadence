@@ -172,20 +172,23 @@ private struct AppleReminderTaskRow: View {
                 reminderDueDateBadge(dueDate)
             }
 
-            HStack(spacing: 4) {
-                Image(systemName: "list.bullet")
-                    .font(.system(size: 9, weight: .semibold))
-                Text(reminder.listTitle)
-                    .font(.system(size: 10, weight: .medium))
-                    .lineLimit(1)
+            // T-7009: an untitled list draws no chip, rather than a capsule holding only the glyph.
+            if let listChipTitle = AppleReminderRowPresentation.listChipTitle(reminder.listTitle) {
+                HStack(spacing: 4) {
+                    Image(systemName: "list.bullet")
+                        .font(.system(size: 9, weight: .semibold))
+                    Text(listChipTitle)
+                        .font(.system(size: 10, weight: .medium))
+                        .lineLimit(1)
+                }
+                .foregroundStyle(Theme.purple)
+                .padding(.horizontal, 7)
+                .padding(.vertical, 4)
+                .background(Theme.purple.opacity(0.1))
+                .clipShape(RoundedRectangle(cornerRadius: 5))
+                .padding(.leading, 6)
+                .padding(.trailing, 6)
             }
-            .foregroundStyle(Theme.purple)
-            .padding(.horizontal, 7)
-            .padding(.vertical, 4)
-            .background(Theme.purple.opacity(0.1))
-            .clipShape(RoundedRectangle(cornerRadius: 5))
-            .padding(.leading, 6)
-            .padding(.trailing, 6)
         }
     }
 

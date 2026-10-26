@@ -117,6 +117,11 @@ struct CalendarBoardDayColumn: View {
         // Same count the header above it draws, through the same shared spelling iOS reads. It
         // used to announce a local `totalCount` of active + completed while the header showed
         // active only, so VoiceOver and the visible number disagreed (T-571/T-572).
+        // T-7034: `.contain` first, so the label names the column's own container element. On a
+        // stack that is not an element SwiftUI hands the label to every child, and each card,
+        // the "Add task" row and the "Completed" toggle was read as the day. `.contain`, not
+        // `.combine`, keeps each of them a separate, separately named element.
+        .accessibilityElement(children: .contain)
         .accessibilityLabel(
             CadenceBoardColumnAccessibility.dayColumnLabel(date: date, itemCount: activeItems.count)
         )

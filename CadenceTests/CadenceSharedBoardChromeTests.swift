@@ -180,6 +180,13 @@ struct CadenceSharedBoardChromeTests {
                 dense.contains(".accessibilityLabel(CadenceBoardColumnAccessibility.dayColumnLabel(date:date,itemCount:activeItems.count))"),
                 "\(path) no longer names its day column from the shared label with the count it lists"
             )
+            // T-7034(a): the label lands on the column's own container element. Without the
+            // `.contain` directly before it, the column stack is not an element and SwiftUI gives
+            // the label to every child, so each card, "Add task" and "Completed" read as the day.
+            #expect(
+                dense.contains(".accessibilityElement(children:.contain).accessibilityLabel(CadenceBoardColumnAccessibility.dayColumnLabel("),
+                "\(path) labels a day column that is not an accessibility element, so every child inherits the label"
+            )
             // The defect by name: a local sum of active + completed, which is what macOS announced
             // and what the ticket asked iOS to copy.
             #expect(
