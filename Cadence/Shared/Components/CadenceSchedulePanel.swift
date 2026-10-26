@@ -161,6 +161,7 @@ struct CadenceSchedulePanel<NotesField: View>: View {
     @State private var showSectionPicker = false
     @State private var showCalendarPicker = false
     @State private var showRepeatPicker = false
+    @State private var showSeriesEndPicker = false
     @State private var doViewMonth = Date()
     @State private var dueViewMonth = Date()
     @State private var actionError: String?
@@ -445,6 +446,7 @@ struct CadenceSchedulePanel<NotesField: View>: View {
                 if offersTaskRepeat {
                     CadenceFieldDivider()
                     repeatRow
+                    seriesEndRows
                 }
             }
         }
@@ -624,6 +626,7 @@ struct CadenceSchedulePanel<NotesField: View>: View {
                 if offersEventRepeat {
                     CadenceFieldDivider()
                     repeatRow
+                    seriesEndRows
                 }
             }
         }
@@ -692,6 +695,72 @@ struct CadenceSchedulePanel<NotesField: View>: View {
                 )
             }
         }
+    }
+
+    /// **The series' end, under Repeat, on both arms** ([[T-6901]]). The capture card's
+    /// `Never / On Date / After` control, drawn in this presentation's row vocabulary: a mode
+    /// picker, then the one value that mode needs. It was missing, so on the Mac a drag-created
+    /// series was always endless and an existing series' end rode through the event editor with
+    /// nothing on screen naming it. Hidden while Repeat is None — nothing repeats, so nothing ends.
+    ///
+    /// Every control writes through `CadenceScheduleDraft`'s `selectSeriesEnd(_:)` /
+    /// `setSeriesEndCount(_:)` / `setSeriesEndDate(_:)`, which is where the seeding and the floors
+    /// live and are tested; this view only binds them.
+    @ViewBuilder
+    private var seriesEndRows: some View {
+        if draft.showsSeriesEndRows {
+            CadenceFieldDivider()
+            CadenceFieldRow(label: "Ends", systemImage: draft.effectiveSeriesEndMode.systemImage, color: Theme.purple) {
+                CadenceChoiceValueButton(
+                    title: draft.effectiveSeriesEndMode.label,
+                    color: draft.effectiveSeriesEndMode == .never ? Theme.dim : Theme.text
+                ) {
+                    showSeriesEndPicker = true
+                }
+                .popover(isPresented: $showSeriesEndPicker) {
+                    CadenceChoicePopoverList(
+                        rows: TaskRecurrenceEndMode.allCases.map {
+                            CadenceChoiceRow(value: $0, title: $0.label, systemImage: $0.systemImage, color: Theme.purple)
+                        },
+                        selection: seriesEndModeBinding,
+                        isPresented: $showSeriesEndPicker
+                    )
+                }
+            }
+
+            switch CadenceTaskRecurrenceEndPresentation.detail(for: draft.effectiveSeriesEndMode) {
+            case .none:
+                EmptyView()
+            case .date:
+                CadenceFieldRow(label: "End date", systemImage: "calendar", color: Theme.purple) {
+                    CadenceDatePicker(selection: seriesEndDateBinding, minHeight: 36)
+                }
+            case .count:
+                Stepper(value: seriesEndCountBinding, in: draft.seriesEndCountRange) {
+                    CadenceInlineFieldLabel(
+                        label: CadenceTaskRecurrenceEndPresentation.endCountStepperLabel(draft.seriesEndCount),
+                        systemImage: "number",
+                        color: Theme.purple
+                    )
+                }
+                .frame(minHeight: 36)
+            }
+        }
+    }
+
+    private var seriesEndModeBinding: Binding<TaskRecurrenceEndMode> {
+        Binding(get: { draft.effectiveSeriesEndMode }, set: { draft.selectSeriesEnd($0) })
+    }
+
+    private var seriesEndDateBinding: Binding<Date> {
+        Binding(
+            get: { CadenceTaskRecurrenceEndPresentation.resolvedEndDate(draft.seriesEndDateKey) },
+            set: { draft.setSeriesEndDate($0) }
+        )
+    }
+
+    private var seriesEndCountBinding: Binding<Int> {
+        Binding(get: { draft.seriesEndCount }, set: { draft.setSeriesEndCount($0) })
     }
 
     private var subtasksEditor: some View {
@@ -1054,4 +1123,60 @@ enum CadenceSchedulePanelMetrics {
     /// The panel's width where its host gives it none — a popover has no container to be a fraction
     /// of. A sheet or an inspector column overrides it with its own frame.
     static let preferredWidth: CGFloat = 372
+}
+
+/// The standard panel's Ends row, as draft writes ([[T-6901]]).
+///
+/// **Choosing a mode stores a value that mode can honour.** `effectiveSeriesEndMode` degrades an
+/// `.onDate` with no day and an `.afterCount` below one to `.never`, so writing the bare mode would
+/// look like the picker refusing the tap. On Date seeds through `seedSeriesEnd(for:)` -- the
+/// capture card's T-3233 seed, anchored on the later of today and the start, keeping a day already
+/// chosen. After seeds `resolvedEndCount(_:occurrenceNumber:)`: the shared seed of ten rather than
+/// the floor of one (a fresh series ending on its first occurrence), floored at the occurrence an
+/// existing task has already reached (T-6114). Never keeps the other values, so switching back
+/// finds the count or day the user had; every write reads only the value of the resolved mode.
+extension CadenceScheduleDraft {
+    /// The Ends rows are drawn only under a Repeat that repeats.
+    var showsSeriesEndRows: Bool {
+        CadenceTaskRecurrenceEndPresentation.showsEndControls(rule: repeatRule)
+    }
+
+    /// The After stepper's bounds: never below one or the occurrence already reached, and never
+    /// capping a stored count that is already larger (the task inspector's field has no ceiling).
+    var seriesEndCountRange: ClosedRange<Int> {
+        let floor = max(1, seriesOccurrenceNumber)
+        return floor...max(999, seriesEndCount, floor)
+    }
+
+    mutating func selectSeriesEnd(
+        _ mode: TaskRecurrenceEndMode,
+        reference: Date = Date(),
+        calendar: Calendar = .current
+    ) {
+        seriesEndMode = mode
+        switch mode {
+        case .never:
+            break
+        case .onDate:
+            seedSeriesEnd(for: .onDate, reference: reference, calendar: calendar)
+        case .afterCount:
+            seriesEndCount = CadenceTaskRecurrenceEndPresentation.resolvedEndCount(
+                seriesEndCount,
+                occurrenceNumber: seriesOccurrenceNumber
+            )
+        }
+    }
+
+    mutating func setSeriesEndCount(_ count: Int) {
+        seriesEndMode = .afterCount
+        seriesEndCount = CadenceTaskRecurrenceEndPresentation.normalizedEndCount(
+            count,
+            occurrenceNumber: seriesOccurrenceNumber
+        )
+    }
+
+    mutating func setSeriesEndDate(_ date: Date) {
+        seriesEndMode = .onDate
+        seriesEndDateKey = DateFormatters.dateKey(from: date)
+    }
 }

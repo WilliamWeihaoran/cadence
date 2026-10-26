@@ -116,8 +116,9 @@ struct CadenceChoicePickerDismissalTests {
             // this panel holds a `CadenceScheduleDraft`, a value it copies on every keystroke, and
             // nothing it writes reaches the store until Add/Save is pressed. A committing setter
             // here would write a half-made task on the way past a picker row. It is the same
-            // answer, for the same reason, as the three sheets above it.
-            "Cadence/Shared/Components/CadenceSchedulePanel.swift": (4, 0),
+            // answer, for the same reason, as the three sheets above it. [[T-6901]] adds a fifth,
+            // the Ends mode under Repeat, on the same side of the line: it writes the draft.
+            "Cadence/Shared/Components/CadenceSchedulePanel.swift": (5, 0),
             "Cadence/Shared/Components/CadenceScheduleCaptureCard.swift": (7, 0),
             "Cadence/Shared/Components/CadenceStartTimeFieldRow.swift": (1, 0),
             "Cadence/iOS/iOSArchiveImportSettingsSection.swift": (1, 0),
@@ -188,7 +189,8 @@ struct CadenceChoicePickerDismissalTests {
         // [[T-5015]] (b) adds the Mac row's repeat picker: 32, and 3 committing -- the first
         // committing count to move since T-1466, because this is a picker whose write reaches the
         // store from a row rather than a draft a Save commits later.
-        #expect(found.values.map(\.calls).reduce(0, +) == 32)
+        // [[T-6901]] adds the standard panel's Ends picker: 33, still 3 committing.
+        #expect(found.values.map(\.calls).reduce(0, +) == 33)
         #expect(found.values.map(\.committing).reduce(0, +) == 3)
     }
 
