@@ -124,13 +124,7 @@ private struct ListDetailView: View {
     }
 
     private var tabDefaultsKey: String {
-        if let area {
-            return "listDetailTab.area.\(area.id.uuidString)"
-        }
-        if let project {
-            return "listDetailTab.project.\(project.id.uuidString)"
-        }
-        return "listDetailTab.unknown"
+        ListDetailPage.rememberedPageDefaultsKey(areaID: area?.id, projectID: project?.id)
     }
 
     var body: some View {
