@@ -188,10 +188,172 @@ struct CadenceFocusSessionPersistenceTests {
 
     /// [[T-6001]] persists; it must not have grown a second banking path. `endSession` stays the
     /// only writer of minutes on this screen, and the declined option (b) must not reappear.
+    /// [[T-6223]] gave the screen a `scenePhase` handler, so the pin is now said about that
+    /// handler: it notes an instant and applies the absence rule, and banks nothing.
     @Test func theScreenStillBanksThroughEndSessionAloneAndNotOnBackground() throws {
         let view = try Self.focusView()
         #expect(view.contains("CadenceFocusSupport.endSession("))
-        #expect(!view.contains("scenePhase"))
+        #expect(view.components(separatedBy: "CadenceFocusSupport.endSession(").count == 2)
+        let phase = try #require(view.range(of: ".onChange(of: scenePhase)"))
+        let handler = String(view[phase.lowerBound...].prefix(700))
+        #expect(!handler.contains("endSession"))
+        #expect(!handler.contains("commitElapsed"))
+        #expect(!handler.contains("modelContext"))
+    }
+
+    // MARK: - [[T-6223]]: a gap past the threshold comes back paused
+
+    private static let threshold = CadenceFocusAbsenceRule.unobservedGapThreshold
+
+    private static func runningRecord(
+        for task: AppTask,
+        startedAt: Date,
+        lastSeenAt: Date?
+    ) throws -> CadenceFocusSessionRecord {
+        var state = CadenceFocusTimerState()
+        state.toggle(now: startedAt)
+        return try #require(
+            CadenceFocusSessionPersistence.record(target: .task(task.id), state: state, lastSeenAt: lastSeenAt)
+        )
+    }
+
+    /// The owner's case: started at night, half an hour of work, force-quit, opened at eleven. The
+    /// session comes back PAUSED holding the half hour it was seen for, not the night.
+    @Test func aRunningSessionUnseenPastTheThresholdComesBackPausedAtItsLastSighting() throws {
+        let container = try CadenceTestStore.container()
+        let context = ModelContext(container)
+        let task = AppTask(title: "Late session")
+        context.insert(task)
+
+        let started = Date(timeIntervalSince1970: 6_000_000)
+        let lastSeen = started.addingTimeInterval(1_800)
+        let record = try Self.runningRecord(for: task, startedAt: started, lastSeenAt: lastSeen)
+        let morning = lastSeen.addingTimeInterval(11 * 60 * 60)
+
+        let resumed = try #require(
+            CadenceFocusSessionPersistence.resumed(from: record, tasks: [task], now: morning)
+        )
+        #expect(resumed.target == .task(task.id))
+        #expect(!resumed.state.isRunning)
+        #expect(resumed.state.startedAt == nil)
+        #expect(resumed.state.accumulatedSeconds == 1_800)
+        // Paused means it stays put: an hour later it still reads the half hour.
+        #expect(resumed.state.elapsedSeconds(now: morning.addingTimeInterval(3_600)) == 1_800)
+    }
+
+    /// The other side of the line: a gap up to the threshold is a glance and resumes live, exactly
+    /// as [[T-6001]] decided. One second past it is not.
+    @Test func aGapUpToTheThresholdResumesLiveAndOneSecondPastItDoesNot() throws {
+        let container = try CadenceTestStore.container()
+        let context = ModelContext(container)
+        let task = AppTask(title: "Glance")
+        context.insert(task)
+
+        let started = Date(timeIntervalSince1970: 7_000_000)
+        let lastSeen = started.addingTimeInterval(600)
+        let record = try Self.runningRecord(for: task, startedAt: started, lastSeenAt: lastSeen)
+
+        let atTheLine = lastSeen.addingTimeInterval(Self.threshold)
+        let live = try #require(
+            CadenceFocusSessionPersistence.resumed(from: record, tasks: [task], now: atTheLine)
+        )
+        #expect(live.state.isRunning)
+        #expect(live.state.elapsedSeconds(now: atTheLine) == 600 + Int(Self.threshold))
+
+        let past = try #require(
+            CadenceFocusSessionPersistence.resumed(from: record, tasks: [task], now: atTheLine.addingTimeInterval(1))
+        )
+        #expect(!past.state.isRunning)
+        #expect(past.state.accumulatedSeconds == 600)
+    }
+
+    /// A paused session is already holding its reading; a long gap changes nothing about it. And a
+    /// record with no sighting — written before this rule, or by a process that died in front —
+    /// is no evidence of a gap and resumes as [[T-6001]] always did.
+    @Test func aPausedSessionAndARecordWithNoSightingAreLeftAsTheyWere() throws {
+        let container = try CadenceTestStore.container()
+        let context = ModelContext(container)
+        let task = AppTask(title: "Held")
+        context.insert(task)
+
+        let paused = CadenceFocusSessionRecord(
+            taskID: task.id,
+            isRunning: false,
+            startedAt: nil,
+            accumulatedSeconds: 420,
+            lastSeenAt: Date(timeIntervalSince1970: 8_000_000)
+        )
+        let later = Date(timeIntervalSince1970: 8_000_000 + 86_400)
+        let resumedPaused = try #require(
+            CadenceFocusSessionPersistence.resumed(from: paused, tasks: [task], now: later)
+        )
+        #expect(!resumedPaused.state.isRunning)
+        #expect(resumedPaused.state.accumulatedSeconds == 420)
+
+        let started = Date(timeIntervalSince1970: 8_000_000)
+        let unsighted = try Self.runningRecord(for: task, startedAt: started, lastSeenAt: nil)
+        let resumedLive = try #require(
+            CadenceFocusSessionPersistence.resumed(from: unsighted, tasks: [task], now: later)
+        )
+        #expect(resumedLive.state.isRunning)
+    }
+
+    /// The sighting has to survive the trip to disk, and a record from the build before it must
+    /// still decode rather than resolve to no session.
+    @Test func theSightingRoundTripsAndARecordWrittenBeforeItStillDecodes() throws {
+        try withTemporaryDefaults("cadence.tests.focusSession.sighting") { defaults in
+            let record = CadenceFocusSessionRecord(
+                taskID: UUID(),
+                isRunning: true,
+                startedAt: Date(timeIntervalSince1970: 9_000_000),
+                accumulatedSeconds: 5,
+                lastSeenAt: Date(timeIntervalSince1970: 9_000_600)
+            )
+            CadenceFocusSessionPersistence.write(record, to: defaults)
+            #expect(CadenceFocusSessionPersistence.read(from: defaults)?.lastSeenAt == record.lastSeenAt)
+        }
+        let id = UUID()
+        let legacy = #"{"taskID":"\#(id.uuidString)","isRunning":true,"startedAt":"1970-04-16T17:46:40Z","accumulatedSeconds":3}"#
+        let decoded = try #require(CadenceFocusSessionPersistence.decoded(legacy))
+        #expect(decoded.taskID == id)
+        #expect(decoded.isRunning)
+        #expect(decoded.lastSeenAt == nil)
+    }
+
+    /// The freeze is one function both platforms call. It holds the reading at the instant, leaves
+    /// a stopped clock alone, and never reads less than what was already on the clock.
+    @Test func theFreezeHoldsTheReadingAtTheInstantAndNeverTakesTimeOff() {
+        let started = Date(timeIntervalSince1970: 10_000_000)
+        var state = CadenceFocusTimerState()
+        state.accumulatedSeconds = 60
+        state.toggle(now: started)
+
+        let frozen = CadenceFocusAbsenceRule.frozen(state, at: started.addingTimeInterval(300))
+        #expect(!frozen.isRunning)
+        #expect(frozen.startedAt == nil)
+        #expect(frozen.accumulatedSeconds == 360)
+        #expect(CadenceFocusAbsenceRule.frozen(frozen, at: started.addingTimeInterval(9_999)) == frozen)
+
+        // A clock set back before the start cannot take the banked minute away.
+        let setBack = CadenceFocusAbsenceRule.frozen(state, at: started.addingTimeInterval(-500))
+        #expect(setBack.accumulatedSeconds == 60)
+    }
+
+    /// One rule, not two: the Mac's sleep freeze calls the shared function, and the iOS screen
+    /// applies the same absence rule on return to the foreground as on a cold resume.
+    @Test func theMacSleepAndTheIOSReturnBothGoThroughTheSharedRule() throws {
+        let manager = CadenceSourceScan.codeOnly(
+            try CadenceSourceScan.sourceFile("Cadence/macOS/Services/FocusManager.swift")
+        )
+        let sleep = try #require(CadenceSourceScan.functionBody(named: "handleSystemWillSleep", in: manager))
+        #expect(sleep.contains("CadenceFocusAbsenceRule.frozen(timerState, at: clock())"))
+
+        let view = try Self.focusView()
+        let phase = try #require(view.range(of: ".onChange(of: scenePhase)"))
+        let handler = String(view[phase.lowerBound...].prefix(700))
+        #expect(handler.contains("lastSeenAt = Date()"))
+        #expect(handler.contains("CadenceFocusAbsenceRule.afterAbsence("))
+        #expect(view.contains("lastSeenAt: lastSeenAt"))
     }
 
 }

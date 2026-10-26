@@ -17,6 +17,10 @@ struct CadenceFocusSessionRecord: Equatable, Codable {
     var isRunning: Bool
     var startedAt: Date?
     var accumulatedSeconds: Int
+    /// **[[T-6223].** The instant the screen last saw this session — stamped when the app leaves
+    /// the foreground — which is what lets a resume tell a glance from a night. Optional so a
+    /// record written before it existed still decodes, as "no evidence of a gap".
+    var lastSeenAt: Date? = nil
 }
 
 /// **[[T-6001]].** The iOS focus session survives eviction and a force-quit, as it already does on
@@ -52,7 +56,8 @@ enum CadenceFocusSessionPersistence {
     /// whichever task happened to head the picker.
     static func record(
         target: CadenceFocusTarget?,
-        state: CadenceFocusTimerState
+        state: CadenceFocusTimerState,
+        lastSeenAt: Date? = nil
     ) -> CadenceFocusSessionRecord? {
         guard let taskID = target?.taskID else { return nil }
         guard state.isRunning || state.accumulatedSeconds > 0 else { return nil }
@@ -60,7 +65,8 @@ enum CadenceFocusSessionPersistence {
             taskID: taskID,
             isRunning: state.isRunning,
             startedAt: state.startedAt,
-            accumulatedSeconds: state.accumulatedSeconds
+            accumulatedSeconds: state.accumulatedSeconds,
+            lastSeenAt: lastSeenAt
         )
     }
 
@@ -71,9 +77,14 @@ enum CadenceFocusSessionPersistence {
     /// minutes against something completed or cancelled on another device moves `actualMinutes`,
     /// and from there a goal. A record naming a task that is gone, done or cancelled resolves to
     /// nothing and the caller clears it.
+    ///
+    /// **[[T-6223]]: a session unseen for longer than `CadenceFocusAbsenceRule`'s threshold comes
+    /// back paused**, its clock stopped at `lastSeenAt` — the owner's ruling, and the rule the Mac
+    /// applies on lid-close. A shorter gap resumes live, as [[T-6001]] decided.
     static func resumed(
         from record: CadenceFocusSessionRecord?,
-        tasks: [AppTask]
+        tasks: [AppTask],
+        now: Date = Date()
     ) -> (target: CadenceFocusTarget, state: CadenceFocusTimerState)? {
         guard let record else { return nil }
         guard let task = tasks.first(where: { $0.id == record.taskID }),
@@ -82,7 +93,7 @@ enum CadenceFocusSessionPersistence {
         state.isRunning = record.isRunning
         state.startedAt = record.startedAt
         state.accumulatedSeconds = record.accumulatedSeconds
-        return (.task(task.id), state)
+        return (.task(task.id), CadenceFocusAbsenceRule.afterAbsence(state, lastSeenAt: record.lastSeenAt, now: now))
     }
 
     // MARK: - The defaults round trip

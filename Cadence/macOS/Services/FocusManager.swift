@@ -318,9 +318,11 @@ final class FocusManager {
         }
     }
 
+    /// The freeze is `CadenceFocusAbsenceRule.frozen`, the rule iOS applies past its unobserved-gap
+    /// threshold ([[T-6223]]); sleep is an explicit signal, so the Mac's threshold is zero.
     func handleSystemWillSleep() {
         guard timerState.isRunning else { return }
-        timerState.toggle(now: clock())
+        timerState = CadenceFocusAbsenceRule.frozen(timerState, at: clock())
         resumesOnWake = true
     }
 

@@ -44,6 +44,58 @@ struct CadenceFocusTimerState: Hashable {
     }
 }
 
+/// **[[T-6223]].** The one rule for time a focus clock ran while nothing could see it.
+///
+/// The clock is wall-clock, so a session the device stopped watching keeps counting. Both
+/// platforms answer that the same way: **stop the clock at the last instant the session was
+/// observed, keeping the reading it had then.** Nothing is banked; the user sees the reading and
+/// decides.
+///
+/// What differs is only how each platform learns there *was* an absence:
+///
+/// - **macOS** is told. `NSWorkspace.willSleepNotification` is an explicit "nobody is working",
+///   so its threshold is zero — `FocusManager.handleSystemWillSleep` freezes the clock through
+///   `frozen(_:at:)` at the sleep instant, and wakes it again on `didWake` ([[T-1103]]).
+/// - **iOS** is not. Going to the background is also a glance at another app or a locked phone
+///   on the desk while the user works, which the owner declined to treat as the end of a session
+///   ([[T-6001]]). So iOS measures the gap from the instant the screen was last seen and freezes
+///   only past `unobservedGapThreshold` — the force-quit-at-night, open-at-eleven case — and the
+///   frozen session stays **paused**: unlike a Mac waking, nothing says the user is back at work.
+enum CadenceFocusAbsenceRule {
+
+    /// How long an unobserved gap may be before it stops being credited as focus. Long enough that
+    /// a phone locked on the desk through a long working block keeps its session; short enough
+    /// that a night does not.
+    static let unobservedGapThreshold: TimeInterval = 2 * 60 * 60
+
+    /// The clock stopped at `instant`, holding what it read then. A clock already stopped is
+    /// returned unchanged. Never reads less than the seconds already banked, so an `instant` before
+    /// `startedAt` (a clock set back) cannot take time off the reading.
+    static func frozen(_ state: CadenceFocusTimerState, at instant: Date) -> CadenceFocusTimerState {
+        guard state.isRunning else { return state }
+        var frozen = state
+        frozen.accumulatedSeconds = max(state.accumulatedSeconds, state.elapsedSeconds(now: instant))
+        frozen.startedAt = nil
+        frozen.isRunning = false
+        return frozen
+    }
+
+    /// The session as it should stand at `now`, after going unobserved since `lastSeenAt`.
+    ///
+    /// `nil` `lastSeenAt` is no evidence of a gap — a session written before this rule existed, or
+    /// a process that died in the foreground — and leaves the clock as it was. A gap at or under
+    /// `threshold` is a glance and is credited; past it, the clock is frozen at `lastSeenAt`.
+    static func afterAbsence(
+        _ state: CadenceFocusTimerState,
+        lastSeenAt: Date?,
+        now: Date,
+        threshold: TimeInterval = unobservedGapThreshold
+    ) -> CadenceFocusTimerState {
+        guard let lastSeenAt, now.timeIntervalSince(lastSeenAt) > threshold else { return state }
+        return frozen(state, at: lastSeenAt)
+    }
+}
+
 /// Segments of a one-line task detail: a context/scheduling `lead` and an independently styleable
 /// `due` marker. Kept apart so a row can render "Scheduled today / Overdue Aug 2" with only the
 /// overdue half in red.

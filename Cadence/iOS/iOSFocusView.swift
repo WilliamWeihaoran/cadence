@@ -6,6 +6,7 @@ struct iOSFocusView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @Environment(\.scenePhase) private var scenePhase
     /// The inbox a "Focus this" tap from a task row arrives in. This screen is the only thing
     /// that adopts one, because this screen is where the clock lives.
     @Environment(CadenceFocusHandoffCenter.self) private var focusHandoffCenter
@@ -16,6 +17,10 @@ struct iOSFocusView: View {
     @State private var selectedReferenceNote: Note?
     @State private var selectedReferenceTask: AppTask?
     @State private var timerState = CadenceFocusTimerState()
+    /// **[[T-6223].** When the app last left the foreground with this screen standing, `nil` while
+    /// it is in front. It rides in the persisted record, so a resume after eviction can measure
+    /// the gap, and is read back on return so a suspended-not-evicted app measures the same one.
+    @State private var lastSeenAt: Date?
     /// A refused write from the focus note's checklist circle or an embed card's subtask tick
     /// ([[T-6412]]). Both put the store back, so the circle simply does not move; this is the
     /// sentence that says why. Bare, not dismissable: the retry is the same tap, and the next
@@ -84,7 +89,11 @@ struct iOSFocusView: View {
     /// of the list, and persisting the `nil` target would write a session nothing would come back
     /// to while `onDisappear` banked one that did.
     private var sessionRecord: CadenceFocusSessionRecord? {
-        CadenceFocusSessionPersistence.record(target: selectedItem?.target, state: timerState)
+        CadenceFocusSessionPersistence.record(
+            target: selectedItem?.target,
+            state: timerState,
+            lastSeenAt: lastSeenAt
+        )
     }
 
     private var isCompact: Bool {
@@ -120,6 +129,25 @@ struct iOSFocusView: View {
         // which is the shape that acquires a branch that forgets.
         .onChange(of: sessionRecord) { _, record in
             CadenceFocusSessionPersistence.write(record)
+        }
+        // [[T-6223]]: leaving the foreground only *notes the instant*; it banks nothing, because
+        // a glance at another app is not the end of a session ([[T-6001]] declined that). Coming
+        // back applies the same absence rule a cold resume does, so an app iOS merely suspended
+        // overnight does not credit the night either.
+        .onChange(of: scenePhase) { _, phase in
+            switch phase {
+            case .background:
+                lastSeenAt = Date()
+            case .active:
+                timerState = CadenceFocusAbsenceRule.afterAbsence(
+                    timerState,
+                    lastSeenAt: lastSeenAt,
+                    now: Date()
+                )
+                lastSeenAt = nil
+            default:
+                break
+            }
         }
         // The screen may already be standing when the request is made — the compact shell keeps a
         // visited tab's stack alive behind the one on screen — so arriving is not the only way a
