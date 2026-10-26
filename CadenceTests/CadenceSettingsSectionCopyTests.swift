@@ -118,6 +118,13 @@ struct CadenceSettingsSectionCopyTests {
         ("CadenceNotificationSettingsCopy.enableNotificationsAction", "Enable Notifications"),
     ]
 
+    /// **T-6997.** A converged string both surfaces reach through a shared helper that returns it,
+    /// rather than by naming the constant: since T-6973 the rows' "connected to" summary calls
+    /// `connectionSummary(...)`, which returns `unconnectedSummary` for a calendar with no links.
+    private static let calendarRoutedExpressions = [
+        "CadenceCalendarSettingsCopy.unconnectedSummary": "CadenceCalendarSettingsCopy.connectionSummary(",
+    ]
+
     private static let calendarSurfaces = [
         "Cadence/macOS/Views/SettingsListManagementSections.swift",
         "Cadence/iOS/iOSCalendarSettingsSection.swift",
@@ -164,8 +171,9 @@ struct CadenceSettingsSectionCopyTests {
         for path in Self.calendarSurfaces {
             let code = try Self.strippedSource(at: path)
             for pair in Self.calendarPairs {
+                let route = Self.calendarRoutedExpressions[pair.expression]
                 #expect(
-                    code.contains(pair.expression),
+                    code.contains(pair.expression) || route.map(code.contains) == true,
                     "\(path) does not read \(pair.expression)"
                 )
                 #expect(
