@@ -10,11 +10,11 @@ import Testing
 /// sidebar docked, no multitasking — a 646pt pane) the editor was drawn **16pt wide**. No current
 /// shell produces that pane: 834 is under the 865pt dock threshold, so the portrait pane is all 834
 /// ([[T-4500]]). The device panes are asserted through `CadenceRootShellLayout.detailWidth` in
-/// `theTargetIPadSplitsOnlyInLandscapeWithTheSidebarFolded`; the measured set stays as measured.
+/// `theTargetIPadSplitsInLandscapeDockedOrFoldedAndNotInPortrait`.
 ///
 /// The values below are the same arithmetic an `NSHostingView` reproduction of the shipped modifier
 /// chain measured: 0.0 at a 570pt pane, 16.0 at 646, 146.0 at 776, 204.0 at 834, 392.0 at 1022 and
-/// 580.0 at 1210 on iOS; 0.0 at 570, 100.0 at 696, 144.0 at 740, 364.0 at 960 and 604.0 at 1200 on
+/// 580.0 at 1210 on iOS with the 260pt chooser, each 4pt more since [[T-4515]] trimmed it to 256; 0.0 at 570, 100.0 at 696, 144.0 at 740, 364.0 at 960 and 604.0 at 1200 on
 /// macOS. They are restated here as a *chrome* translation rather than as a second floor — see
 /// `iOSCardContentWidth` / `desktopCardContentWidth` below.
 struct CadenceSettingsTemplatesCardLayoutTests {
@@ -87,8 +87,8 @@ struct CadenceSettingsTemplatesCardLayoutTests {
     }
 
     @Test func theTwoColumnFloorIsTheSumOfTheColumnsAndTheGapsBetweenThem() {
-        // 260 + 16 + 1 + 16 + 320
-        #expect(CadenceSettingsTemplatesCardLayout.twoColumnMinimumWidth(isDesktop: false) == 613)
+        // 256 + 16 + 1 + 16 + 320 (the chooser lost 4pt to T-4515)
+        #expect(CadenceSettingsTemplatesCardLayout.twoColumnMinimumWidth(isDesktop: false) == 609)
         // 230 + 16 + 1 + 16 + 320
         #expect(CadenceSettingsTemplatesCardLayout.twoColumnMinimumWidth(isDesktop: true) == 583)
     }
@@ -126,13 +126,16 @@ struct CadenceSettingsTemplatesCardLayoutTests {
     /// 1022 landscape docked. Which panes the device produces *today* is the next test's question.
     @Test func everyMeasuredPaneResolvesToTheFormItsEditorWidthEarns() {
         let cases: [(pane: CGFloat, editorBefore: CGFloat, layout: CadenceSettingsCardLayout)] = [
+            // Editor widths at today's 256pt chooser: four more than the 260pt one measured.
             (570, 0, .oneColumn),
-            (646, 16, .oneColumn),
-            (776, 146, .oneColumn),
-            (834, 204, .oneColumn),
-            (950, 320, .twoColumn),
-            (1022, 392, .twoColumn),
-            (1210, 580, .twoColumn),
+            (646, 20, .oneColumn),
+            (776, 150, .oneColumn),
+            (834, 208, .oneColumn),
+            (945, 319, .oneColumn),
+            (946, 320, .twoColumn),
+            (950, 324, .twoColumn),
+            (1022, 396, .twoColumn),
+            (1210, 584, .twoColumn),
         ]
 
         for row in cases {
@@ -156,16 +159,15 @@ struct CadenceSettingsTemplatesCardLayoutTests {
     /// The target device's real panes, read from the shell rather than restated ([[T-4500]]).
     ///
     /// An 11" iPad Pro in portrait is a drawer shell, so the pane is 834 sidebar out or folded, and
-    /// the card is one column (a 204pt editor). In landscape the sidebar docks and leaves **946** —
-    /// four points under the 950 at which the card splits, a 316pt editor — so it is one column
-    /// there too. Only landscape with the sidebar folded (1210) splits. The ticket's "splits in
-    /// landscape" held for the 188pt sidebar's 1022 and does not hold for 946; whether it should is
-    /// an owner question filed as [[T-4515]], and this asserts what ships until that is answered.
-    @Test func theTargetIPadSplitsOnlyInLandscapeWithTheSidebarFolded() {
+    /// the card is one column (a 208pt editor). In landscape the sidebar docks and leaves **946**,
+    /// which the 260pt chooser left four points short of the split (a 316pt editor). The owner
+    /// ruled on 2026-10-26 to trim those 4pt ([[T-4515]]): with the 256pt chooser 946 is exactly
+    /// the floor, a 320pt editor, so both landscape configurations split and portrait does not.
+    @Test func theTargetIPadSplitsInLandscapeDockedOrFoldedAndNotInPortrait() {
         let cases: [(window: CGFloat, folded: Bool, pane: CGFloat, layout: CadenceSettingsCardLayout)] = [
             (834, false, 834, .oneColumn),
             (834, true, 834, .oneColumn),
-            (1_210, false, 946, .oneColumn),
+            (1_210, false, 946, .twoColumn),
             (1_210, true, 1_210, .twoColumn),
         ]
 

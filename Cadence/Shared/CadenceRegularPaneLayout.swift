@@ -491,18 +491,20 @@ nonisolated enum CadenceSettingsCardLayout: Equatable, Sendable {
 /// two is chrome owned by the settings shell, and re-stating the shell's rail width and paddings
 /// here would be a second copy of them that nothing would keep in step. The pane translation, for
 /// the record and for the device the ticket was filed from: on iOS the card's content is
-/// `paneWidth − 249 − 56 − 32`, so `twoColumnMinimumWidth` of 613 is reached at **950pt of pane**.
-/// That was written when an 11" iPad Pro's panes were 1022 in landscape and 646 in portrait. Read
-/// from `CadenceRootShellLayout.detailWidth` they are 946 docked / 1210 folded in landscape and 834
-/// in portrait, so today only folded landscape reaches it — docked landscape misses by 4pt
-/// ([[T-4500]], owner question [[T-4515]]).
+/// `paneWidth − 249 − 56 − 32`, so `twoColumnMinimumWidth` of 609 is reached at **946pt of pane**.
+/// Read from `CadenceRootShellLayout.detailWidth` an 11" iPad Pro's panes are 946 docked / 1210
+/// folded in landscape and 834 in portrait. With the 260pt chooser docked landscape missed the
+/// split by 4pt ([[T-4500]]); the owner ruled 2026-10-26 to trim those 4pt out of the chooser
+/// ([[T-4515]]), so both landscape panes split and portrait stays one column.
 nonisolated enum CadenceSettingsTemplatesCardLayout {
     /// macOS's chooser column, as `SettingsTemplatesSection` already had it.
     static let desktopChooserWidth: CGFloat = 230
-    /// iOS's chooser column at regular width, as `iOSTemplatesSettingsSection` already had it. The
-    /// two differ because the rows do — macOS sets a 12pt title where iOS sets 15 — and unifying
-    /// them is a visual change this floor does not need to make.
-    static let regularChooserWidth: CGFloat = 260
+    /// iOS's chooser column at regular width. The two differ because the rows do — macOS sets a
+    /// 12pt title where iOS sets 15 — and unifying them is a visual change this floor does not need
+    /// to make. **256, not the 260 `iOSTemplatesSettingsSection` had** ([[T-4515]], owner decision
+    /// 2026-10-26): the 4pt is what lets the 11" iPad's docked landscape pane (946) split with
+    /// exactly the 320pt editor floor, rather than lowering the floor itself.
+    static let regularChooserWidth: CGFloat = 256
     /// The gap on each side of the divider. 16 on both surfaces already: `iOSEditorSheetMetrics
     /// .groupSpacing` on one and the `HStack`'s own spacing on the other.
     static let columnSpacing: CGFloat = 16
@@ -525,16 +527,15 @@ nonisolated enum CadenceSettingsTemplatesCardLayout {
     /// case that decides it. That is now the 11" iPad's portrait pane outright, sidebar out or
     /// folded, since 834 is under the shell's dock threshold ([[T-4490]]): 204pt of markdown well
     /// beside a 260pt chooser is the "worse than one column" this floor exists to name. The same
-    /// band now also holds that iPad's docked landscape pane, 946, where a 316pt editor is four
-    /// points under the floor — the one real pane where this number alone decides, and not the
-    /// clear-cut case 834 is ([[T-4515]]).
+    /// band also holds that iPad's docked landscape pane, 946, which the 260pt chooser left a
+    /// 316pt editor, four points under the floor; [[T-4515]] trimmed the chooser rather than this.
     static var minimumEditorWidth: CGFloat { CadenceNotesListMetrics.minimumEditorWidth }
 
     static func chooserWidth(isDesktop: Bool) -> CGFloat {
         isDesktop ? desktopChooserWidth : regularChooserWidth
     }
 
-    /// 613pt of card content on iOS, 583 on macOS. **A sum, not a constant** — widen the chooser and
+    /// 609pt of card content on iOS, 583 on macOS. **A sum, not a constant** — widen the chooser and
     /// this moves with it, which is the whole reason it is spelled this way.
     static func twoColumnMinimumWidth(isDesktop: Bool) -> CGFloat {
         chooserWidth(isDesktop: isDesktop) + columnSpacing * 2 + columnDividerWidth + minimumEditorWidth
