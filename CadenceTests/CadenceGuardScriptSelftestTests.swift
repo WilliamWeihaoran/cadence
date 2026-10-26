@@ -1676,6 +1676,18 @@ struct CadenceGuardScriptSelftestTests {
                 "the locked-screen guard consults the selection again. It must not: measured 2026-10-02, the screen-free suite executed 0 tests on a locked Mac because the UI-test runner could not initialize (T-1933)")
         #expect(guardSection.contains("REFUSING: the screen is locked"),
                 "the locked-screen refusal itself is gone — T-563 is not weakened by T-1933")
+        // T-6782: the refusal asks `selection_reaches_ui_tests` (via one named decision), not the
+        // bare substring, which refused `-skip-testing:CadenceUITests` -- the flag that EXCLUDES the
+        // target -- with exit 5 on every locked-screen overnight unit run. The behaviour is proven
+        // by `xcb.sh selftest` section 10b; this pins the wiring CI can read without a shell.
+        #expect(guardSection.contains(#"screen_is_locked && locked_screen_refuses_selection "${args[@]}""#),
+                "the locked-screen refusal no longer asks locked_screen_refuses_selection, so -skip-testing:CadenceUITests may be refused again (T-6782)")
+        #expect(!guardSection.contains(#"screen_is_locked && [[ "${args[*]}" == *CadenceUITests* ]]"#),
+                "the locked-screen refusal is the bare substring again, which refuses -skip-testing:CadenceUITests (T-6782)")
+        #expect(body.contains("locked_screen_refuses_selection() {") && body.contains("  selection_reaches_ui_tests \"$@\"\n}"),
+                "locked_screen_refuses_selection no longer defers to selection_reaches_ui_tests (T-6782)")
+        #expect(selftest.contains("T-6782's whole subject"),
+                "xcb.sh's selftest no longer proves a locked screen admits -skip-testing:CadenceUITests (T-6782)")
         #expect(guardSection.contains("test runner failed to"),
                 "the refusal no longer names the measured mechanism. T-563 blamed app.launch(), which only a suite launching something ever reaches, and that wording is precisely why exempting a screen-free suite looked correct for two days")
         #expect(leaseSection.contains(call),

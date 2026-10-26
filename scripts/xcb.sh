@@ -17,6 +17,7 @@
 #   ./scripts/xcb.sh run-state [<id>...]                       # QUEUED / RUNNING / WEDGED (T-2071)
 #   ./scripts/xcb.sh release-dd <id|path>                      # delete a DerivedData no live build uses
 #   ./scripts/xcb.sh check-destination <-destination value>   # resolve a simulator, no build
+#   ./scripts/xcb.sh check-locked-refusal [args...]            # would a locked screen refuse this run (T-6782)
 #   ./scripts/xcb.sh selftest                                  # prove the refusals still fire
 #
 # `-project Cadence.xcodeproj` is supplied for you; pass `-scheme` and `-destination` yourself.
@@ -1101,6 +1102,23 @@ selection_reaches_ui_tests() {  # $@ = the run's own arguments. 0 = can reach Ca
     [[ "${v%%/*}" == CadenceUITests ]] && return 0
   done
   return 1
+}
+
+# The ioreg probe's no-pipe rule is explained at the locked-screen refusal below (T-563).
+# Read through `session_dictionary` so `CADENCE_SESSION_FIXTURE` drives this guard too (T-6782):
+# the selftest needs a LOCKED host to prove which selections the refusal admits.
+screen_is_locked() {
+  [[ "$(session_dictionary)" == *'"CGSSessionScreenIsLocked"=Yes'* ]]
+}
+# WHICH SELECTIONS THE LOCKED-SCREEN REFUSAL COVERS (T-6782). It used to be the bare substring
+# `"${args[*]}" == *CadenceUITests*`, so `-skip-testing:CadenceUITests` -- the flag that EXCLUDES the
+# target -- was refused with exit 5, while `selection_reaches_ui_tests` (T-2041) already read it as
+# unit-only. The substring stays as the first condition so no run that was admitted before is
+# refused now (a bare `-scheme Cadence` names no UI target and is still admitted; T-6811); the
+# predicate is the second, so the one spelling that names the target in order to exclude it passes.
+locked_screen_refuses_selection() {  # $@ = the run's own arguments. 0 = refuse on a locked screen.
+  [[ "${(j: :)@}" == *CadenceUITests* ]] || return 1
+  selection_reaches_ui_tests "$@"
 }
 
 screen_lock_report() {  # $1 = run start (epoch s), $2... = the run's own arguments (T-2041)
@@ -3557,6 +3575,59 @@ selftest_only_testing() {
     "the refusal no longer says why a screen-free suite is refused too"
 
   say ""
+  say " 10b. which selections the locked-screen refusal covers (T-6782)"
+  # The refusal used to be the substring `*CadenceUITests*` over the joined arguments, so the flag
+  # that EXCLUDES the target -- `-skip-testing:CadenceUITests`, the spelling an overnight unit run on
+  # a locked Mac uses -- was refused with exit 5. The session dictionary is a fixture, as in 9b.
+  print -rl -- '    "CGSSessionScreenIsLocked"=Yes' > "$ws/lr-locked.txt"
+  print -rl -- '    "kCGSSessionOnConsoleKey"=Yes' > "$ws/lr-unlocked.txt"
+  local lrout; local -i lrrc
+  run_lr() { lrout=$(CADENCE_SESSION_FIXTURE="$1" zsh "$here" check-locked-refusal "${@:2}" 2>&1); lrrc=$?; }
+  run_lr "$ws/lr-locked.txt" -scheme Cadence -skip-testing:CadenceUITests
+  check "locked: -skip-testing:CadenceUITests is ADMITTED (T-6782's whole subject)" \
+    $( (( lrrc == 1 )) && [[ "$lrout" == *ADMIT* ]] && print 1 || print 0 ) "exit $lrrc: $lrout"
+  run_lr "$ws/lr-locked.txt" -scheme Cadence -skip-testing CadenceUITests
+  check "locked: the two-token -skip-testing CadenceUITests is admitted too" \
+    $( (( lrrc == 1 )) && print 1 || print 0 ) "exit $lrrc: $lrout"
+  run_lr "$ws/lr-locked.txt" -scheme Cadence -only-testing:CadenceTests
+  check "locked: -only-testing:CadenceTests is admitted" \
+    $( (( lrrc == 1 )) && print 1 || print 0 ) "exit $lrrc: $lrout"
+  run_lr "$ws/lr-locked.txt" -scheme Cadence -only-testing:CadenceUITests/CadenceOverdrawVerdictTests
+  check "CONTROL locked: an -only-testing:CadenceUITests suite is still REFUSED" \
+    $( (( lrrc == 0 )) && [[ "$lrout" == *REFUSE* ]] && print 1 || print 0 ) "exit $lrrc: $lrout"
+  run_lr "$ws/lr-locked.txt" -scheme CadenceUITestsOnly
+  check "CONTROL locked: the CadenceUITestsOnly scheme is still refused" \
+    $( (( lrrc == 0 )) && print 1 || print 0 ) "exit $lrrc: $lrout"
+  run_lr "$ws/lr-locked.txt" -scheme Cadence -skip-testing:CadenceUITests -only-testing:CadenceUITests/X
+  check "CONTROL locked: an -only-testing: UI suite beside a -skip-testing: flag is still refused" \
+    $( (( lrrc == 0 )) && print 1 || print 0 ) "exit $lrrc: $lrout"
+  run_lr "$ws/lr-unlocked.txt" -scheme Cadence -only-testing:CadenceUITests/CadenceOverdrawVerdictTests
+  check "CONTROL unlocked: a UI selection is admitted when the screen is not locked" \
+    $( (( lrrc == 1 )) && print 1 || print 0 ) "exit $lrrc: $lrout"
+  # THE WHOLE RUN, so a guard that stopped consulting the shared decision goes red here and not just
+  # the subcommand: a stub xcodebuild records whether the run got past the refusal at all.
+  mkdir -p "$ws/lr/tmp"
+  print -rl -- '#!/bin/zsh' 'print -r -- "${(j: :)@}" >> "$FAKE_XCB_CALLS"' \
+    'print -r -- "** BUILD SUCCEEDED **"; exit 0' > "$ws/lr/xcodebuild"
+  chmod +x "$ws/lr/xcodebuild"
+  local -i lrcalls
+  run_lr_main() {
+    : > "$ws/lr/calls"
+    lrout=$(CADENCE_SESSION_FIXTURE="$ws/lr-locked.txt" XCODEBUILD="$ws/lr/xcodebuild" \
+      FAKE_XCB_CALLS="$ws/lr/calls" TMPDIR="$ws/lr/tmp/" CADENCE_STALL_POLL=1 CADENCE_SKIP_IOS_LEG=1 \
+      CADENCE_ALLOW_LOCKED_SCREEN_UI_RUN= zsh "$here" selftest-ios-leg build -scheme Cadence \
+      -destination 'platform=macOS' -derivedDataPath "$ws/lr/dd" "$@" 2>&1); lrrc=$?
+    lrcalls=$(grep -c . "$ws/lr/calls" | tr -d ' ')
+  }
+  run_lr_main -skip-testing:CadenceUITests
+  check "WHOLE RUN locked: -skip-testing:CadenceUITests reaches xcodebuild, not exit 5" \
+    $( (( lrrc != 5 && lrcalls == 1 )) && [[ "$lrout" != *"REFUSING: the screen is locked"* ]] && print 1 || print 0 ) \
+    "exit $lrrc, $lrcalls xcodebuild call(s)"
+  run_lr_main -only-testing:CadenceUITests/CadenceOverdrawVerdictTests
+  check "CONTROL WHOLE RUN locked: a UI selection exits 5 before xcodebuild runs" \
+    $( (( lrrc == 5 && lrcalls == 0 )) && print 1 || print 0 ) "exit $lrrc, $lrcalls xcodebuild call(s)"
+
+  say ""
   say " 11. the iOS leg after a green macOS run (T-1956)"
   # THE WHOLE RUN, NOT A HELPER. Every case below is a real `xcb.sh <id> build` through the real main
   # flow, with `$XCODEBUILD` pointed at a stub that records its argv and replays a fixture log --
@@ -4498,6 +4569,17 @@ if [[ "${1:-}" == "check-ui-selection" ]]; then
   exit 1
 fi
 
+# The locked-screen refusal's selection question on its own (T-6782), driven by `selftest`.
+# Exits 0 when the run would be REFUSED on a locked screen and 1 when it is admitted; the screen
+# itself is read too, so `CADENCE_SESSION_FIXTURE` decides locked or not.
+if [[ "${1:-}" == "check-locked-refusal" ]]; then
+  shift
+  if screen_is_locked && locked_screen_refuses_selection "$@"; then
+    say "locked-screen refusal: REFUSE"; exit 0
+  fi
+  say "locked-screen refusal: ADMIT"; exit 1
+fi
+
 if [[ "${1:-}" == "check-destination" ]]; then
   shift
   if (( $# == 0 )); then
@@ -4673,9 +4755,8 @@ done
 # so the probe answers "not locked" precisely when it *did* find the key. Measured while writing
 # this guard, which is the same shape as the assert-toolchain.sh incident in the runbook: the
 # probe's own plumbing eating the finding.
-screen_is_locked() {
-  [[ "$(ioreg -n Root -d1 -k IOConsoleUsers 2>/dev/null)" == *'"CGSSessionScreenIsLocked"=Yes'* ]]
-}
+# `screen_is_locked` and `locked_screen_refuses_selection` are defined beside
+# `selection_reaches_ui_tests`, above the subcommand dispatch, so `check-locked-refusal` can call them.
 # CADENCE_ALLOW_LOCKED_SCREEN_UI_RUN=1 exists so this guard can be *tested* -- a guard nobody can
 # exercise is the hollow-instrument shape this repo keeps catching. It is not a way to get a UI run
 # out of a locked Mac, and there is no spelling of it that makes an app reach the foreground.
@@ -4712,7 +4793,7 @@ screen_is_locked() {
 # TEST-HOST LEASE below, which is a question about T-236's app-group container and not about the
 # screen. Two decisions, one of which turned out to depend on the selection and one of which does
 # not -- which is only knowable by measuring both.
-if screen_is_locked && [[ "${args[*]}" == *CadenceUITests* ]] \
+if screen_is_locked && locked_screen_refuses_selection "${args[@]}" \
    && [[ "${CADENCE_ALLOW_LOCKED_SCREEN_UI_RUN:-}" != "1" ]]; then
   say ""
   say "!! REFUSING: the screen is locked, and NO suite in CadenceUITests can run while it is --"
