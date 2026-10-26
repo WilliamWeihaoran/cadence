@@ -251,61 +251,93 @@ struct TaskListGroupHeader<LeadingContent: View>: View {
         self.leadingContent = leadingContent
     }
 
+    /// **What VoiceOver hears (T-7008).** A collapsible group is a button that states its own
+    /// state, the value iOS's completed-section header already gives. A group that cannot collapse
+    /// (the Inbox's "Apple Reminders" heading) is no longer a `Button` whose action does nothing:
+    /// it is plain text carrying the header trait, so VoiceOver offers a heading, not a dead control.
+    @ViewBuilder
     var body: some View {
-        Button(action: { if isToggleEnabled { onToggle() } }) {
-            HStack(spacing: 10) {
-                if isToggleEnabled {
-                    Image(systemName: isCollapsed ? "chevron.right" : "chevron.down")
-                        .font(.system(size: 9, weight: .semibold))
-                        .foregroundStyle(Theme.dim)
-                        .frame(width: 16, height: 20)
-                } else {
-                    Color.clear.frame(width: 16, height: 20)
-                }
-
-                leadingContent()
-
-                Text(title)
-                    .font(.system(size: 14, weight: .bold))
-                    .foregroundStyle(Theme.text)
-                    .lineLimit(1)
-
-                Spacer(minLength: 12)
-
-                if let overdueCount, overdueCount > 0 {
-                    HStack(spacing: 4) {
-                        Image(systemName: "flag.fill")
-                            .font(.system(size: 9, weight: .bold))
-                        Text("\(overdueCount)")
-                            .font(.system(size: 11, weight: .bold))
-                    }
-                    .foregroundStyle(Theme.red)
-                    .padding(.horizontal, 7)
-                    .padding(.vertical, 4)
-                    .background(Theme.red.opacity(0.12))
-                    .clipShape(Capsule())
-                }
-
-            }
-            .frame(maxWidth: .infinity, minHeight: 34, alignment: .leading)
-            .padding(.horizontal, 6)
-            .padding(.vertical, 4)
-            .background(
-                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(isToggleEnabled && !isCollapsed ? Theme.surface.opacity(0.28) : Color.clear)
-            )
-            .overlay(alignment: .bottom) {
-                Rectangle()
-                    .fill(Theme.borderSubtle.opacity(0.52))
-                    // 34 before T-2084 took the 3pt accent bar and its 10pt of spacing out of
-                    // the HStack above: this hairline is anchored to the chevron's trailing edge,
-                    // so it moves exactly as far as the chevron did.
-                    .frame(height: 1)
-                    .padding(.leading, 21)
-            }
-            .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        if isToggleEnabled {
+            Button(action: onToggle) { headerContent }
+                .buttonStyle(.cadencePlain)
+                .accessibilityValue(TaskListGroupHeaderAccessibility.value(isCollapsed: isCollapsed))
+        } else {
+            headerContent
+                .accessibilityElement(children: .combine)
+                .accessibilityAddTraits(.isHeader)
         }
-        .buttonStyle(.cadencePlain)
+    }
+
+    private var headerContent: some View {
+        HStack(spacing: 10) {
+            if isToggleEnabled {
+                Image(systemName: isCollapsed ? "chevron.right" : "chevron.down")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(Theme.dim)
+                    .frame(width: 16, height: 20)
+            } else {
+                Color.clear.frame(width: 16, height: 20)
+            }
+
+            leadingContent()
+
+            Text(title)
+                .font(.system(size: 14, weight: .bold))
+                .foregroundStyle(Theme.text)
+                .lineLimit(1)
+
+            Spacer(minLength: 12)
+
+            if let overdueCount, overdueCount > 0 {
+                HStack(spacing: 4) {
+                    Image(systemName: "flag.fill")
+                        .font(.system(size: 9, weight: .bold))
+                    Text("\(overdueCount)")
+                        .font(.system(size: 11, weight: .bold))
+                }
+                .foregroundStyle(Theme.red)
+                .padding(.horizontal, 7)
+                .padding(.vertical, 4)
+                .background(Theme.red.opacity(0.12))
+                .clipShape(Capsule())
+                // A flag glyph and a bare number read as "3" to VoiceOver (T-7008).
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(TaskListGroupHeaderAccessibility.overdueLabel(count: overdueCount))
+                .help(TaskListGroupHeaderAccessibility.overdueLabel(count: overdueCount))
+            }
+
+        }
+        .frame(maxWidth: .infinity, minHeight: 34, alignment: .leading)
+        .padding(.horizontal, 6)
+        .padding(.vertical, 4)
+        .background(
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(isToggleEnabled && !isCollapsed ? Theme.surface.opacity(0.28) : Color.clear)
+        )
+        .overlay(alignment: .bottom) {
+            Rectangle()
+                .fill(Theme.borderSubtle.opacity(0.52))
+                // 34 before T-2084 took the 3pt accent bar and its 10pt of spacing out of
+                // the HStack above: this hairline is anchored to the chevron's trailing edge,
+                // so it moves exactly as far as the chevron did.
+                .frame(height: 1)
+                .padding(.leading, 21)
+        }
+        .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+}
+
+/// The words `TaskListGroupHeader` speaks to VoiceOver (T-7008), outside the generic view so a
+/// test can read them without naming a `LeadingContent`.
+enum TaskListGroupHeaderAccessibility {
+    /// "Expanded" / "Collapsed", the same words iOS's `iOSTaskGroupSection` header states.
+    static func value(isCollapsed: Bool) -> String {
+        isCollapsed ? "Collapsed" : "Expanded"
+    }
+
+    /// The overdue capsule's label and tooltip: "1 overdue task", "3 overdue tasks".
+    static func overdueLabel(count: Int) -> String {
+        CadencePluralization.phrase(count, singular: "overdue task", plural: "overdue tasks")
     }
 }
 
