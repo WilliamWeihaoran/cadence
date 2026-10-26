@@ -191,6 +191,7 @@ struct KanbanCompletedTasksToggle: View {
             HStack(spacing: 8) {
                 Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
                     .font(.system(size: 10, weight: .semibold))
+                    .accessibilityHidden(true)
                 Text("Completed")
                     .font(.system(size: 11, weight: .semibold))
                 Text("\(count)")
@@ -218,6 +219,9 @@ struct KanbanCompletedTasksToggle: View {
             .contentShape(RoundedRectangle(cornerRadius: kanbanCardCornerRadius, style: .continuous))
         }
         .buttonStyle(.cadencePlain)
+        // T-7081: the list's own "Completed" heading states Expanded/Collapsed (T-7008) and so
+        // does iOS's; this disclosure stated nothing, on both boards that draw it.
+        .accessibilityValue(TaskListGroupHeaderAccessibility.value(isCollapsed: !isExpanded))
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.top, 4)
     }

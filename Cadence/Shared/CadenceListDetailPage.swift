@@ -157,3 +157,14 @@ enum ListDetailKanbanBoard {
         !columns.isEmpty
     }
 }
+
+/// What a list page's header chips say to VoiceOver ([[T-7080]]).
+///
+/// The project deadline chip is a calendar glyph and a bare "Oct 30". iOS labelled it "Deadline
+/// Oct 30" ([[T-3091]]); the Mac header drew the same chip unlabelled, so VoiceOver read a date
+/// with nothing to say whose date it was. One spelling, read by both headers.
+enum ListDetailHeaderAccessibility {
+    static func deadlineLabel(dueDate: String) -> String {
+        "Deadline \(DateFormatters.shortDateString(from: dueDate))"
+    }
+}

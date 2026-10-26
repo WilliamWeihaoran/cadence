@@ -100,6 +100,8 @@ struct KanbanCompletionButton: View {
     let icon: String
     let color: Color
     var progress: Double?
+    /// The state's action phrase, `CadenceTaskCompletionState.accessibilityActionLabel` ([[T-7083]]).
+    let accessibilityLabel: String
     let action: () -> Void
 
     var body: some View {
@@ -113,6 +115,9 @@ struct KanbanCompletionButton: View {
             )
         }
         .buttonStyle(.cadencePlain)
+        // T-7083: the list row's circle has said "Complete task" since T-594, and iOS's board card
+        // says it too; the Mac card's was an unnamed button.
+        .accessibilityLabel(accessibilityLabel)
     }
 }
 
@@ -127,6 +132,7 @@ struct KanbanCardHeader: View {
     let completionButtonIcon: String
     let completionButtonColor: Color
     var completionProgress: Double?
+    let completionAccessibilityLabel: String
     let onCompletionTap: () -> Void
 
     var body: some View {
@@ -135,6 +141,7 @@ struct KanbanCardHeader: View {
                 icon: completionButtonIcon,
                 color: completionButtonColor,
                 progress: completionProgress,
+                accessibilityLabel: completionAccessibilityLabel,
                 action: onCompletionTap
             )
 

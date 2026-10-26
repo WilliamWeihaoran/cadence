@@ -309,6 +309,7 @@ private struct ListDetailChromeView: View {
                 if let project = project, !project.dueDate.isEmpty {
                     HStack(spacing: 4) {
                         Image(systemName: "calendar").font(.system(size: 10))
+                            .accessibilityHidden(true)
                         Text(DateFormatters.shortDateString(from: project.dueDate)).font(.system(size: 11))
                     }
                     .foregroundStyle(Theme.dim)
@@ -316,6 +317,10 @@ private struct ListDetailChromeView: View {
                     .padding(.vertical, 4)
                     .background(Theme.surfaceElevated)
                     .clipShape(RoundedRectangle(cornerRadius: 6))
+                    // T-7080: a bare "Oct 30" to VoiceOver; iOS's chip says whose date it is.
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel(ListDetailHeaderAccessibility.deadlineLabel(dueDate: project.dueDate))
+                    .help(ListDetailHeaderAccessibility.deadlineLabel(dueDate: project.dueDate))
                 }
 
                 CadenceIconButton(

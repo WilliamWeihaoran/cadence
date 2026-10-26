@@ -490,6 +490,14 @@ struct KanbanCard: View {
         )
     }
 
+    private var completionAccessibilityLabel: String {
+        KanbanCardComputedSupport.completionGlyph(
+            task: task,
+            isPendingCompletion: isPendingCompletion,
+            isPendingCancel: isPendingCancel
+        ).state.accessibilityActionLabel
+    }
+
     private var completionButtonColor: Color {
         KanbanCardComputedSupport.completionButtonColor(
             task: task,
@@ -547,6 +555,7 @@ struct KanbanCard: View {
                     completionButtonIcon: completionButtonIcon,
                     completionButtonColor: completionButtonColor,
                     completionProgress: pendingCompletionProgress(now: context.date),
+                    completionAccessibilityLabel: completionAccessibilityLabel,
                     onCompletionTap: handleCompletionTap
                 )
             }
@@ -562,6 +571,7 @@ struct KanbanCard: View {
                 completionButtonIcon: completionButtonIcon,
                 completionButtonColor: completionButtonColor,
                 completionProgress: nil,
+                completionAccessibilityLabel: completionAccessibilityLabel,
                 onCompletionTap: handleCompletionTap
             )
         }

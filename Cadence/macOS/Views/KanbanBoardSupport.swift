@@ -293,6 +293,9 @@ enum KanbanBoardSupport {
         }
     }
 
+    /// The add-column rail's name and tooltip ([[T-7082]]).
+    static let addColumnLabel = "Add column"
+
     static func nextSectionName(from sectionConfigs: [TaskSectionConfig]) -> String {
         let existingNames = Set(sectionConfigs.map { $0.name.lowercased() })
         if !existingNames.contains("new section") {

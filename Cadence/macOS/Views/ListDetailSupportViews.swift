@@ -486,6 +486,13 @@ enum ListLogRowPresentation {
         CadenceTaskCompletionGlyph.resolve(task: task)
     }
 
+    /// What the glyph says to VoiceOver ([[T-7084]]): the eyebrow's own two words. The green tick
+    /// and the grey cross were the only thing telling a finished task from a canceled one, and
+    /// VoiceOver read neither.
+    static func statusLabel(for task: AppTask) -> String {
+        task.isCancelled ? "Canceled" : "Completed"
+    }
+
     /// `"Due Tomorrow"`, `"Due Oct 19"` — the spelling Cmd+K and Focus already use — or nil.
     static func dueLine(for task: AppTask) -> String? {
         guard !task.dueDate.isEmpty else { return nil }
@@ -536,6 +543,7 @@ struct ListLogView: View {
                                 Image(systemName: glyph.symbolName)
                                     .font(.system(size: 14))
                                     .foregroundStyle(glyph.tint)
+                                    .accessibilityLabel(ListLogRowPresentation.statusLabel(for: task))
 
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(ListLogRowPresentation.title(for: task))
@@ -554,6 +562,7 @@ struct ListLogView: View {
                             }
                             .padding(.horizontal, 20)
                             .padding(.vertical, 8)
+                            .accessibilityElement(children: .combine)
                             .overlay(alignment: .bottom) {
                                 Rectangle().fill(Theme.borderSubtle.opacity(0.4)).frame(height: 0.5)
                             }

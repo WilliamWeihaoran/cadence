@@ -471,7 +471,7 @@ private struct iOSListDetailHeader: View {
                     .background(Theme.surfaceElevated)
                     .clipShape(RoundedRectangle(cornerRadius: 6))
                     .accessibilityElement(children: .combine)
-                    .accessibilityLabel("Deadline \(DateFormatters.shortDateString(from: projectDueDate))")
+                    .accessibilityLabel(ListDetailHeaderAccessibility.deadlineLabel(dueDate: projectDueDate))
                 }
                 iOSIconButton(
                     systemImage: "slider.horizontal.3",

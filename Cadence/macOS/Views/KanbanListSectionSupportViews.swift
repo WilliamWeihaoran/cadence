@@ -233,6 +233,9 @@ struct ListSectionsKanbanView: View {
             .contentShape(RoundedRectangle(cornerRadius: 14))
         }
         .buttonStyle(.cadencePlain)
+        // T-7082: a bare "+" with no name and no tooltip. "Column" is this board's own noun —
+        // the editor beside it says "Edit Column" and "Delete Column".
+        .cadenceControlLabel(KanbanBoardSupport.addColumnLabel)
     }
 
     /// **The new column reaches the store, and says so when it does not (T-885).**
