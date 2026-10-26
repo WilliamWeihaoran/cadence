@@ -61,14 +61,12 @@ struct iOSCreateTaskSheet: View {
                 actions: CadenceSchedulePanelActions(commit: create, cancel: { dismiss() })
             ) {
                 markerSuggestions
-                if draft.kind == .event, !calendarManager.isAuthorized {
-                    Button("Allow Calendar Access") {
-                        Task {
-                            _ = await calendarManager.requestAccess()
-                            normalizeCalendar()
-                        }
+                // [[T-7073]]: the slot sheet's control, which opens Settings after a refusal
+                // rather than re-asking a prompt iOS will never show again.
+                if draft.kind == .event {
+                    iOSCaptureCalendarAccessButton(calendarManager: calendarManager) {
+                        normalizeCalendar()
                     }
-                    .cadenceFont(.controlLabel)
                 }
             }
             .capturePresentation(CadenceScheduleCaptureOptions(

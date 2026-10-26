@@ -65,10 +65,8 @@ struct CalendarBoardEventCard: View {
                 },
                 onDelete: { scope in
                     deleteConfirmationManager.presentRefusable(
-                        title: "Delete Calendar Event?",
-                        message: scope == .futureOccurrences
-                            ? "This will permanently delete \"\(item.title)\" and future events from your calendar."
-                            : "This will permanently delete \"\(item.title)\" from your calendar."
+                        title: CadenceCalendarEventEditingSupport.deleteConfirmationTitle,
+                        message: CadenceCalendarEventEditingSupport.deleteConfirmationMessage(eventTitle: item.title, scope: scope)
                     ) {
                         // There is no draft to keep here — nothing was typed — and by the time
                         // this runs there is no popover either: unlike `TimelineEventBlock`, this

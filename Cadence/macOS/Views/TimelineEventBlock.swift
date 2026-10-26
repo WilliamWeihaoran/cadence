@@ -356,10 +356,8 @@ struct TimelineEventBlock: View {
             // confirmation was ever presented), so the overlay is the only surface left that can
             // carry the reason.
             deleteConfirmationManager.presentRefusable(
-                title: "Delete Calendar Event?",
-                message: scope == .futureOccurrences
-                    ? "This will permanently delete \"\(item.title)\" and future events from your calendar."
-                    : "This will permanently delete \"\(item.title)\" from your calendar."
+                title: CadenceCalendarEventEditingSupport.deleteConfirmationTitle,
+                message: CadenceCalendarEventEditingSupport.deleteConfirmationMessage(eventTitle: item.title, scope: scope)
             ) {
                 calendarManager.deleteOutcome(
                     for: calendarManager.deleteEvent(item.ekEvent, scope: scope)

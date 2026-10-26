@@ -169,13 +169,24 @@ struct iOSCalendarEventEditSheet: View {
         .cadenceScaledTypography()
         .scrollDismissesKeyboard(.never)
         .scrollIndicators(.hidden)
-        .confirmationDialog("Delete Event?", isPresented: $confirmDelete, titleVisibility: .visible) {
-            Button("Delete Event", role: .destructive) {
+        // [[T-7070]]: the Mac's words, from the one owner its three delete sites read. The scope
+        // is asked after this on a phone, so the sentence is the single-occurrence one.
+        .confirmationDialog(
+            CadenceCalendarEventEditingSupport.deleteConfirmationTitle,
+            isPresented: $confirmDelete,
+            titleVisibility: .visible
+        ) {
+            Button(CadenceCalendarEventEditingSupport.deleteConfirmationLabel, role: .destructive) {
                 requestDelete()
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("This removes the event from Apple Calendar.")
+            Text(
+                CadenceCalendarEventEditingSupport.deleteConfirmationMessage(
+                    eventTitle: iOSCalendarEventSupport.title(for: event),
+                    scope: .thisOccurrence
+                )
+            )
         }
         .confirmationDialog(
             CadenceRecurrenceScopeCopy.eventScopeTitle,

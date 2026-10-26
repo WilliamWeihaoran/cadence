@@ -1036,6 +1036,9 @@ private struct iOSNotesHeader<Title: View, Trailing: View>: View {
                 ForEach(CadenceNotesTabVocabulary.allCases) { tab in
                     iOSQuietTabButton(
                         title: usesFullLabels ? tab.label : tab.shortLabel,
+                        // [[T-7071]]: the abbreviation is a width budget, and speech has none.
+                        // VoiceOver read "Pad" for the Notepad tab on every phone.
+                        spokenTitle: tab.label,
                         isSelected: selection == tab,
                         horizontalPadding: isRegularWidth
                             ? iOSNotesTabMetrics.horizontalPadding
@@ -1165,6 +1168,9 @@ enum iOSNotesTabMetrics {
 /// alongside `iOSSegmentedPill` once the other iOS tab bars adopt it.
 struct iOSQuietTabButton: View {
     let title: String
+    /// What VoiceOver reads, when the drawn `title` is an abbreviation of it ([[T-7071]]). The
+    /// drawn word stays an input label, so Voice Control still answers to what is on screen.
+    var spokenTitle: String? = nil
     let isSelected: Bool
     /// Tightened on the phone, where the Notes header now spends part of its row on the date. At
     /// 12 the four labels truncated to "To… We… Eve… Pad" on a 390pt screen — the strip stopped
@@ -1190,7 +1196,8 @@ struct iOSQuietTabButton: View {
                 .contentShape(shape)
         }
         .buttonStyle(.iosPressable)
-        .accessibilityLabel(title)
+        .accessibilityLabel(spokenTitle ?? title)
+        .accessibilityInputLabels(spokenTitle.map { [$0, title] } ?? [title])
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 }

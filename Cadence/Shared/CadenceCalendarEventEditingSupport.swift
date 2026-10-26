@@ -87,6 +87,30 @@ enum CadenceCalendarEventEditingSupport {
         return .refused(notice: deleteFailureNotice(for: failure))
     }
 
+    /// The confirmation every event delete asks, on both platforms ([[T-7070]]).
+    ///
+    /// macOS typed these words at three sites (the timeline block, the Board card and the
+    /// chip popover) while the iPhone's event sheet asked "Delete Event?" over "This removes the
+    /// event from Apple Calendar." -- one destructive action, two sets of words, and only the Mac's
+    /// named the event being deleted. One owner now, read by all four sites.
+    static let deleteConfirmationTitle = "Delete Calendar Event?"
+
+    /// The confirm button. macOS's `DeleteConfirmationManager` defaults to it; the iPhone's
+    /// dialog spelled "Delete Event" beside a title that already says what is deleted.
+    static let deleteConfirmationLabel = "Delete"
+
+    /// `"This will permanently delete \"Standup\" from your calendar."`, or with "and future
+    /// events" when the scope reaches past this occurrence. The iPhone asks before it asks the
+    /// scope, so it reads the `.thisOccurrence` sentence.
+    static func deleteConfirmationMessage(eventTitle: String, scope: CalendarRecurrenceEditScope) -> String {
+        switch scope {
+        case .futureOccurrences:
+            return "This will permanently delete \"\(eventTitle)\" and future events from your calendar."
+        case .thisOccurrence:
+            return "This will permanently delete \"\(eventTitle)\" from your calendar."
+        }
+    }
+
     /// Shown in place of the calendar picker and the delete button when the event cannot be
     /// written. It names the calendar so the sentence is about *this* event rather than a
     /// general disclaimer.

@@ -178,6 +178,20 @@ nonisolated enum CadenceCalendarDayAccessibility {
         "\(allDayEventCount) all-day event\(allDayEventCount == 1 ? "" : "s")"
     }
 
+    /// **A timed task's block on the iOS timeline** ([[T-7072]]).
+    ///
+    /// `"Standup, 9:00 – 9:30 AM"`, and `"Standup, 9:00 – 9:30 AM, completed"` for a finished
+    /// one. Completed timed tasks stay on the grid since [[T-3164]], drawn struck through and
+    /// dimmed, but the block is one combined element whose circle is a glyph rather than a
+    /// button, so nothing spoken said which of two identical-sounding blocks was already done.
+    static func timedTaskLabel(title: String, timeRange: String, isDone: Bool) -> String {
+        let label = "\(title), \(timeRange)"
+        return isDone ? "\(label), \(completedPhrase)" : label
+    }
+
+    /// The state word `timedTaskLabel` appends. Lowercase because it is spoken after a comma.
+    static let completedPhrase = "completed"
+
     /// One wording for an empty day, so the three cells cannot drift into three ways of saying
     /// nothing. `countedDayLabel(itemCount: 0)` and `markedDayLabel(hasItems: false)` are the same
     /// sentence by construction.

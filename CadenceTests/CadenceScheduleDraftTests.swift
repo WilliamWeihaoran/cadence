@@ -1391,9 +1391,13 @@ struct CadenceQuickCreatePanelAdoptionTests {
     func calendarAccessStaysInTheHost() throws {
         let sheet = try code("Cadence/iOS/iOSCalendarQuickCreateSheet.swift")
         let request = try #require(CadenceSourceScan.declarationBody("private var calendarAccessRequest: some View", in: sheet))
-        #expect(request.contains("if draft.kind == .event && !calendarManager.isAuthorized {"))
-        #expect(request.contains(#"title: "Allow Calendar Access""#))
-        #expect(CadenceSourceScan.matchCount(#"calendarManager\.requestAccess\(\)"#, in: request) == 1)
+        #expect(request.contains("if draft.kind == .event {"))
+        // [[T-7073]]: the control is the capture card's shared one, which reads the access notice
+        // and so offers Settings after a refusal instead of a prompt iOS will not show.
+        #expect(request.contains("iOSCaptureCalendarAccessButton(calendarManager: calendarManager)"))
+        let button = try #require(CadenceSourceScan.declarationBody("struct iOSCaptureCalendarAccessButton: View", in: sheet))
+        #expect(button.contains("CadenceCalendarAccessNotice.resolve("))
+        #expect(CadenceSourceScan.matchCount(#"calendarManager\.requestAccess\(\)"#, in: button) == 1)
         #expect(CadenceSourceScan.matchCount(#"calendarManager\.requestAccess\(\)"#, in: sheet) == 1)
         #expect(request.contains("normalizeCalendarSelection()"), "access granted, and no calendar chosen")
         // Drawn in the panel's host slot. The markdown well that used to follow it there went with

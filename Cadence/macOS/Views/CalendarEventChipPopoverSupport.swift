@@ -52,10 +52,8 @@ struct CalendarEventChipEditPopover: View {
                 // As on the Board card: the popover stays bound while the confirmation overlay
                 // asks, and closes only on a delete that happened, so a refusal is named there.
                 deleteConfirmationManager.presentRefusable(
-                    title: "Delete Calendar Event?",
-                    message: scope == .futureOccurrences
-                        ? "This will permanently delete \"\(item.title)\" and future events from your calendar."
-                        : "This will permanently delete \"\(item.title)\" from your calendar."
+                    title: CadenceCalendarEventEditingSupport.deleteConfirmationTitle,
+                    message: CadenceCalendarEventEditingSupport.deleteConfirmationMessage(eventTitle: item.title, scope: scope)
                 ) {
                     let outcome = calendarManager.deleteOutcome(
                         for: calendarManager.deleteEvent(item.ekEvent, scope: scope)

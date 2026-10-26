@@ -151,19 +151,16 @@ struct iOSCalendarQuickCreateSheet: View {
     /// **The request the panel will not make, kept in the host** ([[T-3171]]). The panel's calendar
     /// row names what is missing; this sheet is a surface opened on purpose, with room to ask, so
     /// it offers the system prompt from the host's own slot.
+    ///
+    /// **[[T-7073]]: and when the answer was already no, it offers the Settings app instead.** This
+    /// was "Allow Calendar Access" over `requestAccess()` in every state, and iOS never re-prompts a
+    /// refusal, so on a denied device the button did nothing at all. The state, words and action
+    /// are `CadenceCalendarAccessNotice`'s, as on the Calendar page's own bar and Search's card.
     @ViewBuilder
     private var calendarAccessRequest: some View {
-        if draft.kind == .event && !calendarManager.isAuthorized {
-            iOSActionButton(
-                title: "Allow Calendar Access",
-                systemImage: "calendar.badge.plus",
-                role: .primary,
-                size: .compact
-            ) {
-                Task {
-                    _ = await calendarManager.requestAccess()
-                    normalizeCalendarSelection()
-                }
+        if draft.kind == .event {
+            iOSCaptureCalendarAccessButton(calendarManager: calendarManager) {
+                normalizeCalendarSelection()
             }
         }
     }
@@ -212,4 +209,41 @@ struct iOSCalendarQuickCreateSheet: View {
     }
 }
 
+/// The capture card's calendar-access control, for both capture hosts ([[T-7073]]): the `+` sheet
+/// and the calendar's slot sheet are one surface, so they ask in one way.
+///
+/// Nothing is drawn once access is granted. Before anyone has asked it raises the system prompt;
+/// after a refusal it opens the Settings app, because a second prompt is never shown.
+struct iOSCaptureCalendarAccessButton: View {
+    let calendarManager: iOSCalendarManager
+    /// Run after a prompt that may have granted access, so the draft can pick a calendar.
+    var onRequested: () -> Void = {}
+    @Environment(\.openURL) private var openURL
+
+    var body: some View {
+        if let notice = CadenceCalendarAccessNotice.resolve(
+            isAuthorized: calendarManager.isAuthorized,
+            isDenied: calendarManager.isDenied
+        ) {
+            iOSActionButton(
+                title: notice.actionTitle(on: .mobile),
+                systemImage: notice == .denied ? "gearshape.fill" : notice.systemImage,
+                role: .primary,
+                size: .compact,
+                tint: notice == .denied ? Theme.amber : Theme.blue
+            ) {
+                switch notice.action {
+                case .requestAccess:
+                    Task {
+                        _ = await calendarManager.requestAccess()
+                        onRequested()
+                    }
+                case .openSystemSettings:
+                    guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
+                    openURL(url)
+                }
+            }
+        }
+    }
+}
 #endif

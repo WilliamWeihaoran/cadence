@@ -2199,7 +2199,13 @@ struct iOSTimelineTaskBlock: View {
             .onTapGesture { handleTap() }
             .gesture(movePressGesture, isEnabled: editing != nil)
             .accessibilityElement(children: .combine)
-            .accessibilityLabel(TaskTitleSupport.displayTitle(task.title) + ", " + CadenceScheduleSupport.timeRangeLabel(startMinute: startMin, endMinute: endMin))
+            .accessibilityLabel(
+                CadenceCalendarDayAccessibility.timedTaskLabel(
+                    title: TaskTitleSupport.displayTitle(task.title),
+                    timeRange: CadenceScheduleSupport.timeRangeLabel(startMinute: startMin, endMinute: endMin),
+                    isDone: task.isDone
+                )
+            )
             .accessibilityAddTraits(.isButton)
             .accessibilityAction { openInspector() }
             .overlay(alignment: .top) { resizeHandle(.resizeStart) }
