@@ -18,6 +18,7 @@
 #   ./scripts/xcb.sh release-dd <id|path>                      # delete a DerivedData no live build uses
 #   ./scripts/xcb.sh check-destination <-destination value>   # resolve a simulator, no build
 #   ./scripts/xcb.sh check-locked-refusal [build|test|raw] [args...] # would a locked screen refuse this run (T-6782)
+#   ./scripts/xcb.sh export-archive <archive> <options.plist> <dir> # -exportArchive, no DerivedData (T-7103)
 #   ./scripts/xcb.sh selftest                                  # prove the refusals still fire
 #
 # `-project Cadence.xcodeproj` is supplied for you; pass `-scheme` and `-destination` yourself.
@@ -750,6 +751,114 @@ suite_started_guard() {  # $1 = log, $2 = test result lines, $3... = the run's o
 # scopes nothing, scopes a whole file, or scopes a suite that is alone in its file.
 typeset -ga PARTIAL_SCOPE_SKIPPED=()
 
+# --- a macOS-only suite asked for on an iOS destination (T-3244, T-7140) -----
+# `CadenceTests` builds for iOS too now, but ~60 of its files are wrapped WHOLE in `#if os(macOS)`
+# (or `#if canImport(AppKit)`), and ~40 more suites are gated one by one beneath an ungated
+# `import` block. On an iOS destination those suites do not exist. `test-suite-index.sh` reads
+# source and knows no platform, so the resolver above calls them KNOWN, the run builds and queues,
+# and then: scoped alone, 0 tests -- T-552's refusal, which blames the filter's SPELLING; scoped
+# beside an iOS-capable suite, the run is green over the others and T-667 calls the missing one a
+# typo'd name. MEASURED 2026-10-20: `CadenceTodayUnificationTests` scoped on `Cadence-iPhone15`
+# ran 0 tests and the cause was read as "the repo is not readable from the iOS test host". It is
+# not: the suite is compiled out. T-6541 records that these selections are made by hand and
+# routinely, so this is answered HERE, before the build, with the real cause named.
+#
+# THERE IS NO pbxproj HALF, AND THAT IS DELIBERATE (T-7140). The guard as first written also
+# parsed `EXCLUDED_SOURCE_FILE_NAMES[sdk=iphone*]` out of `project.pbxproj`, because three files
+# were dropped from the iOS build that way. T-3244's 2026-10-22 closure DELETED that setting from
+# both `CadenceTests` configurations -- `git show HEAD:Cadence.xcodeproj/project.pbxproj` has only
+# `EXCLUDED_SOURCE_FILE_NAMES = "";` -- and every one of those files now carries its own
+# `#if os(macOS)` instead, so the source scan below catches them. A parser for a setting the
+# project no longer has is a second reading that can only go stale, and it would be exercised by
+# nothing but its own synthetic fixture.
+#
+# ONLY_TESTING_PLATFORM is "ios" when the run is a `test` action aimed at an iOS destination, and
+# empty otherwise -- a macOS run, a build, or `check-only-testing` without `-destination`.
+# CADENCE_TEST_SOURCE_DIR is the selftest's seam.
+typeset -g ONLY_TESTING_PLATFORM=""
+
+destination_platform() {  # $@ = the run's own arguments; prints "ios" for an iOS destination
+  local -i i
+  local d
+  for (( i = 1; i <= $#; i++ )); do
+    d=""
+    case "${argv[i]}" in
+      -destination=*) d="${argv[i]#-destination=}" ;;
+      -destination)   d="${argv[i+1]:-}" ;;
+    esac
+    [[ "$d" == *platform=iOS* ]] && { print -rn -- ios; return 0; }
+  done
+  return 0
+}
+
+# Which CadenceTests types do not compile for iOS. One `file<TAB>Type<TAB>M|I` line per
+# `struct`/`class`/`enum`/`actor` declaration -- M when it sits inside an `#if os(macOS)` or
+# `#if canImport(AppKit)` branch at any depth, I otherwise. Per TYPE, not per file, because both
+# shapes are live: the files gated WHOLE by T-3244, and the suites gated one by one beneath an
+# ungated `import` block, which a whole-file reading misses. An `#else` of a macOS branch is not
+# macOS-only, and a type declared in both branches is I as well as M, so it is not refused.
+macos_only_declarations() {
+  local dir="${CADENCE_TEST_SOURCE_DIR:-$ROOT_DIR/CadenceTests}"
+  local -a files; files=("$dir"/**/*.swift(N))
+  (( ${#files} )) || return 0
+  awk '
+    function mac(c) { return c ~ /^(os\(macOS\)|canImport\(AppKit\))$/ ? "M" : "U" }
+    function cond(l) { sub(/^#(if|elseif)[ \t]+/, "", l); sub(/[ \t]*\/\/.*$/, "", l); return l }
+    FNR == 1 { n = split(FILENAME, parts, "/"); fname = parts[n]; depth = 0 }
+    {
+      line = $0
+      sub(/^[ \t]+/, "", line); sub(/[ \t\r]+$/, "", line)
+      if (line == "" || line ~ /^\/\//) next
+      if (line ~ /^#if[ \t(]/)         { st[++depth] = mac(cond(line)); next }
+      if (line ~ /^#elseif[ \t(]/)     { if (depth) st[depth] = mac(cond(line)); next }
+      if (line ~ /^#else([ \t\/]|$)/)  { if (depth) st[depth] = "U"; next }
+      if (line ~ /^#endif([ \t\/]|$)/) { if (depth) depth--; next }
+      while (line ~ /^@[A-Za-z_][A-Za-z0-9_.]*(\([^)]*\))?[ \t]+/) sub(/^@[A-Za-z_][A-Za-z0-9_.]*(\([^)]*\))?[ \t]+/, "", line)
+      while (line ~ /^(public|internal|private|fileprivate|final|open|nonisolated)[ \t]+/) sub(/^[a-z]+[ \t]+/, "", line)
+      if (line !~ /^(struct|class|enum|actor)[ \t]+[A-Za-z_]/) next
+      sub(/^[a-z]+[ \t]+/, "", line); match(line, /^[A-Za-z_][A-Za-z0-9_]*/)
+      g = "I"; for (i = 1; i <= depth; i++) if (st[i] == "M") g = "M"
+      print fname "\t" substr(line, 1, RLENGTH) "\t" g
+    }
+  ' "${files[@]}" 2>/dev/null
+  return 0
+}
+
+macos_only_suite_refusal() {  # $@ = requested suite names; uses the caller's suite_file map
+  local -a hits; hits=()
+  typeset -A seen_m seen_i
+  local f t g s
+  while IFS=$'\t' read -r f t g; do
+    [[ -z "$f" ]] && continue
+    if [[ "$g" == M ]]; then seen_m[$f/$t]=1
+    else seen_i[$f/$t]=1
+    fi
+  done < <(macos_only_declarations)
+  for s in "$@"; do
+    f="${suite_file[$s]:-}"
+    [[ -z "$f" ]] && continue
+    if [[ -n "${seen_m[$f/$s]:-}" ]] && [[ -z "${seen_i[$f/$s]:-}" ]]; then
+      hits+=("$s")
+    fi
+  done
+  (( ${#hits} )) || return 0
+  hits=(${(u)hits})
+  say ""
+  say "!! REFUSING (MACOS-ONLY-SUITE): ${#hits} -only-testing: suite(s) do not exist on an iOS destination (T-3244)."
+  say "   Nothing was built and no lock was taken. Each lives in source compiled for macOS only, so"
+  say "   on iOS the suite is not there: alone it runs 0 tests, and beside an iOS-capable suite it"
+  say "   contributes 0 to a run that still goes green. Neither is a reading of the suite."
+  for s in ${(o)hits}; do
+    say "     $s   [${suite_file[$s]}]"
+  done
+  say "   This is NOT the test host failing to read the repository, and not a misspelt name."
+  say "   Run these on macOS (-destination 'platform=macOS'). To hold them on iOS, narrow the"
+  say "   \`#if os(macOS)\` gate around the suite so it compiles there -- that is T-3244's"
+  say "   remaining work, not a flag."
+  return 1
+}
+
+
 # Exit 8 on an unknown suite, 0 otherwise. Prints the partial-scope notice as a side effect.
 resolve_only_testing() {
   local -a filters; filters=("$@")
@@ -832,6 +941,12 @@ resolve_only_testing() {
       fi
     done
     return 8
+  fi
+
+  # A real suite that does not EXIST on the destination's platform (T-3244). Same exit, same
+  # family: a name that selects nothing there.
+  if [[ "$ONLY_TESTING_PLATFORM" == "ios" ]]; then
+    macos_only_suite_refusal "${requested_suites[@]}" || return 8
   fi
 
   # --- the quiet half: a real suite that leaves siblings behind ---------------
@@ -2479,6 +2594,144 @@ run_state_report() {  # $@ = ids, or none for every id in TMPDIR
   return $worst
 }
 
+# --- the export step, and why it is a SUBCOMMAND (T-7103) --------------------
+# `xcodebuild -exportArchive` is the one step between a signed archive and an installable build,
+# and until now it had no sanctioned runner at all. The standing rule is "never a bare xcodebuild",
+# and this script STRUCTURALLY COULD NOT RUN ONE: every `<id> <action>` invocation injects a
+# private `-derivedDataPath`, and xcodebuild refuses that alongside `-exportArchive` --
+#
+#     error: The flag -scheme, -testProductsPath, or -xctestrun is required when specifying
+#            -derivedDataPath
+#
+# -- while adding the `-scheme` it asks for fails the other way:
+#
+#     error: The flag -scheme cannot be specified along with -exportArchive
+#
+# Both measured at `XCODEBUILD_EXIT=64` by `rcarchive1800`, twice, against the real runner. So the
+# export was the one thing an agent could only do by breaking the rule, which is how a rule stops
+# being followed; [[T-7100]] worked around it by proving distribution signing with `codesign` on
+# throwaway copies, which answers whether the SIGNATURE is acceptable and not whether xcodebuild
+# would assemble a valid `.ipa`.
+#
+# IT IS A SUBCOMMAND RATHER THAN AN ACTION, AND THAT IS THE REPAIR. The three hazards this script
+# exists for (the header's 1, 2 and 3) are the three reasons an invocation is given a private
+# DerivedData, a project-file watchdog and a test-host lease -- and NOT ONE of them is true of an
+# export. It compiles nothing: the archive is already built and `-exportArchive` only re-signs and
+# repackages what is in it. It runs no test, so there is no second test host and no app-group
+# container to corrupt (T-236). And it never opens `Cadence.xcodeproj` -- the archive carries its
+# own `Info.plist` and products -- so there is no `NSFileCoordinator` claim to block on (T-117).
+# An export that took a DerivedData would be injecting the one flag that makes the step impossible,
+# in order to guard a hazard it cannot have. So this path omits it deliberately, and says so in its
+# own preflight rather than leaving a reader to wonder whether the omission was an oversight.
+#
+# WHAT IS GUARDED INSTEAD is the one hazard an export really does have. `-exportOptionsPlist`
+# accepts `destination: upload`, which hands the build to App Store Connect from inside a build
+# command, with no confirmation and no separate credential step -- and that is the OWNER's action,
+# not an agent's (docs/AGENT_BRIEF.md: "Do not touch App Store Connect"). It is refused here,
+# before xcodebuild is reached, along with the `app-store`/`app-store-connect`/`validation` methods
+# that exist to feed it: a `destination: export` run of an app-store method still produces a
+# package whose only purpose is an upload, and the next step after it is the thing being refused.
+# Development and ad-hoc/release-testing exports -- the ones that answer "does this archive make a
+# valid .ipa" -- are exactly what is left admitted.
+EXPORT_GATE_EXIT=15
+
+# One key out of an export-options plist, or nothing. `PlistBuddy` exits non-zero and prints to
+# stderr for a key that is not there, and "not there" is an ordinary answer here (`destination`
+# defaults to `export`), so the error is dropped rather than read as a finding.
+export_option() {  # $1 = plist, $2 = key
+  [[ -r "$1" ]] || return 0
+  /usr/libexec/PlistBuddy -c "Print :$2" "$1" 2>/dev/null
+  return 0
+}
+
+export_archive_refusal() {  # $1 = archive, $2 = options plist, $3 = export dir, $4... = extra args
+  local archive="$1" plist="$2" dir="$3"; shift 3
+  local a method destination
+  if [[ ! -d "$archive" || "${archive:e}" != xcarchive ]]; then
+    say "!! REFUSING (EXPORT-NO-ARCHIVE): '$archive' is not an .xcarchive directory, so there is"
+    say "   nothing to export. Cut one first, through this same script:"
+    say "     ./scripts/xcb.sh <id> raw archive -scheme Cadence -destination 'generic/platform=iOS' \\"
+    say "        -configuration Release -archivePath <path>.xcarchive"
+    return 1
+  fi
+  if [[ ! -f "$plist" ]]; then
+    say "!! REFUSING (EXPORT-NO-OPTIONS): '$plist' is not a readable export-options plist."
+    say "   -exportArchive cannot be run without one; it is what names the method and the team."
+    return 1
+  fi
+  for a in "$@"; do
+    case "$a" in
+      -derivedDataPath|-scheme|-destination|-derivedDataPath=*|-scheme=*|-destination=*)
+        say "!! REFUSING (EXPORT-FLAG-REFUSED): '$a' cannot be passed to an export (T-7103)."
+        say "   xcodebuild refuses -derivedDataPath without -scheme and refuses -scheme alongside"
+        say "   -exportArchive, which is the deadlock this subcommand exists to break. An export"
+        say "   compiles nothing, so it needs neither -- and neither does it need a destination."
+        return 1 ;;
+    esac
+  done
+  destination="$(export_option "$plist" destination)"
+  method="$(export_option "$plist" method)"
+  case "${destination:-export}:${method:-}" in
+    upload:*|*:app-store|*:app-store-connect|*:validation)
+      say "!! REFUSING (EXPORT-UPLOAD-REFUSED): this export is aimed at App Store Connect"
+      say "   (destination=${destination:-export}, method=${method:-<unset>}), and the upload is the"
+      say "   OWNER's action -- docs/AGENT_BRIEF.md, \"Do not touch App Store Connect\" (T-7103)."
+      say "   \`destination: upload\` uploads from inside the build command with no further step, and"
+      say "   an app-store method exists only to be uploaded, so both are refused here rather than"
+      say "   one notch later. Export \`development\` or \`ad-hoc\`/\`release-testing\` instead: that"
+      say "   answers whether the archive assembles a valid package, which is the question an agent"
+      say "   is allowed to ask. Hand the result to the owner for the upload."
+      return 1 ;;
+  esac
+  return 0
+}
+
+# The export itself. No lock, no DerivedData, no watchdog -- see the block above for each omission.
+# `CADENCE_EXPORT_DRY_RUN=1` prints the invocation instead of running it, so `selftest` can prove
+# the refusals above fire and that an admitted export really is spelled without the two flags,
+# without a five-minute archive and a signing identity on whatever machine is reading this.
+export_archive_run() {  # $1 = archive, $2 = options plist, $3 = export dir, $4... = extra args
+  local archive="$1" plist="$2" dir="$3"; shift 3
+  local log="${TMP_BASE}cadence-xcb-export-$(date +%Y%m%d-%H%M%S)-$$.log"
+  say "== xcb export-archive preflight =="
+  say "  archive:   $archive"
+  say "  options:   $plist (method=$(export_option "$plist" method), destination=$(export_option "$plist" destination || true))"
+  say "  exportTo:  $dir"
+  say "  log:       $log"
+  say "  derivedDataPath: NOT PASSED, deliberately -- an export compiles nothing, runs no test and"
+  say "                   never opens Cadence.xcodeproj, so none of T-86/T-117/T-236 applies (T-7103)."
+  if [[ "${CADENCE_EXPORT_DRY_RUN:-}" == "1" ]]; then
+    say "  EXPORT-DRY-RUN: the invocation that would run is"
+    say "    $XCODEBUILD -exportArchive -archivePath $archive -exportOptionsPlist $plist -exportPath $dir $*"
+    return 0
+  fi
+  mkdir -p "$dir" || return 1
+  "$XCODEBUILD" -exportArchive -archivePath "$archive" -exportOptionsPlist "$plist" \
+    -exportPath "$dir" "$@" >"$log" 2>&1
+  local rc=$?
+  say ""
+  say "== xcb export result =="
+  say "  XCODEBUILD_EXIT=$rc"
+  say "  log:             $log"
+  if (( rc != 0 )); then
+    say "  !! EXPORT-FAILED: xcodebuild did not produce a package. Its last lines:"
+    tail -20 "$log" | while IFS= read -r l; do say "     $l"; done
+    return 1
+  fi
+  local p
+  local -a packages; packages=("$dir"/*.(ipa|pkg|app)(N))
+  if (( ${#packages} == 0 )); then
+    say "  !! EXPORT-EMPTY: xcodebuild exited 0 and $dir holds no .ipa/.pkg/.app. That is the"
+    say "     T-552 shape on this path -- a green run over nothing -- so it is a failure here."
+    return 1
+  fi
+  for p in "${packages[@]}"; do
+    say "  package: $p  ($(du -sh "$p" 2>/dev/null | cut -f1))"
+  done
+  say "  The upload is NOT part of this and is the owner's action (T-7103)."
+  return 0
+}
+
 # --- selftest ----------------------------------------------------------------
 # `agent-commit.sh selftest` and `mutate.sh selftest` are the precedent: a guard nobody exercises
 # is the hollow instrument this repository keeps finding one layer up, and this one is easy to
@@ -2589,6 +2842,79 @@ selftest_only_testing() {
     $( [[ $rc == 8 && "$out" == *"It is a FILE"* && "$out" == *AIActionServiceTests* ]] && print 1 || print 0 ) "exit $rc: $out"
   check "live: and the file branch carries no stray zsh assignment line (T-1074)" \
     $( print -r -- "$out" | grep -qE '^[a-z_][a-z_0-9]*=' && print 0 || print 1 ) "$out"
+  fi
+
+  say ""
+  say " 5b. a suite compiled for macOS only is REFUSED on an iOS destination, before any build (T-3244)"
+  # Every shape the live target holds, plus the three that must NOT be refused: a type with an iOS
+  # branch too, a type declared in both branches, and an `#elseif os(iOS)` arm.
+  local mo="$ws/macos-only"; mkdir -p "$mo/src/Sub"
+  print -rl -- '// header comment' '#if os(macOS)' 'import Testing' '@MainActor' 'struct WholeFileTests {}' '#endif' > "$mo/src/Whole.swift"
+  print -rl -- 'import Testing' '#if canImport(AppKit)' 'import AppKit' '#endif' '' '#if os(macOS)' \
+               '@Suite(.serialized) @MainActor final class PerSuiteMacTests {}' '#endif' 'struct PerSuiteIOSTests {}' > "$mo/src/PerSuite.swift"
+  print -rl -- '#if os(macOS)' 'struct BothBranchTests {}' '#else' 'struct BothBranchTests {}' '#endif' \
+               '#if os(macOS)' '#elseif os(iOS)' 'struct ElseIfIOSTests {}' '#endif' > "$mo/src/Both.swift"
+  print -rl -- '#if os(macOS)' '#if DEBUG' 'struct NestedDebugTests {}' '#else' 'struct NestedReleaseTests {}' '#endif' '#endif' > "$mo/src/Sub/Nested.swift"
+  print -rl -- '#if os(iOS)' 'struct IOSOnlyTests {}' '#endif' > "$mo/src/IOSOnly.swift"
+  print -rl -- $'WholeFileTests\tWhole.swift\t1' $'PerSuiteMacTests\tPerSuite.swift\t1' $'PerSuiteIOSTests\tPerSuite.swift\t1' \
+               $'BothBranchTests\tBoth.swift\t1' $'ElseIfIOSTests\tBoth.swift\t1' $'NestedDebugTests\tNested.swift\t1' \
+               $'NestedReleaseTests\tNested.swift\t1' $'IOSOnlyTests\tIOSOnly.swift\t1' > "$mo/index.tsv"
+  local ios_dest='platform=iOS Simulator,id=00000000-0000-0000-0000-000000000000'
+  run_macos_only() {
+    out=$(CADENCE_SUITE_FILES="$mo/index.tsv" CADENCE_TEST_SOURCE_DIR="$mo/src" \
+      zsh "$here" check-only-testing "$@" 2>&1); rc=$?
+  }
+  local sname
+  for sname in WholeFileTests PerSuiteMacTests NestedDebugTests NestedReleaseTests; do
+    run_macos_only -destination "$ios_dest" "CadenceTests/$sname"
+    check "iOS: $sname is refused (exit 8, MACOS-ONLY-SUITE, named)" \
+      $( [[ $rc == 8 && "$out" == *MACOS-ONLY-SUITE* && "$out" == *"     $sname   ["* ]] && print 1 || print 0 ) "exit $rc: $out"
+  done
+  for sname in PerSuiteIOSTests BothBranchTests ElseIfIOSTests IOSOnlyTests; do
+    run_macos_only -destination "$ios_dest" "CadenceTests/$sname"
+    check "iOS: $sname, which compiles there, is NOT refused" \
+      $( [[ $rc == 0 && "$out" != *MACOS-ONLY-SUITE* ]] && print 1 || print 0 ) "exit $rc: $out"
+  done
+  # The mixed request is T-667's quiet case: green over the iOS half, 0 from the other.
+  run_macos_only "-destination=$ios_dest" CadenceTests/PerSuiteIOSTests CadenceTests/WholeFileTests
+  check "iOS: one macOS-only suite beside a real one still refuses the run, and names only it" \
+    $( [[ $rc == 8 && "$out" == *"1 -only-testing: suite(s)"* && "$out" == *"     WholeFileTests   ["* && "$out" != *"     PerSuiteIOSTests   ["* ]] && print 1 || print 0 ) "exit $rc: $out"
+  run_macos_only -destination 'platform=macOS' CadenceTests/WholeFileTests CadenceTests/PerSuiteMacTests
+  check "macOS: the same suites are not refused" \
+    $( [[ $rc == 0 && "$out" != *MACOS-ONLY-SUITE* ]] && print 1 || print 0 ) "exit $rc: $out"
+  run_macos_only CadenceTests/WholeFileTests
+  check "no destination: not asked, not refused" \
+    $( [[ $rc == 0 && "$out" != *MACOS-ONLY-SUITE* ]] && print 1 || print 0 ) "exit $rc: $out"
+  run_macos_only -destination "$ios_dest" CadenceTests
+  check "iOS: the whole target is not refused (it runs what compiles)" \
+    $( [[ $rc == 0 && "$out" != *MACOS-ONLY-SUITE* ]] && print 1 || print 0 ) "exit $rc: $out"
+  # The real `test` path, not only `check-only-testing`: it sets the platform separately. A device
+  # id that does not exist is the safety net -- were the resolver to pass, the destination guard
+  # refuses next (exit 10) and nothing is built either way.
+  out=$(CADENCE_SUITE_FILES="$mo/index.tsv" CADENCE_TEST_SOURCE_DIR="$mo/src" \
+    CADENCE_ALLOW_AUTOMATION_PROMPT=1 zsh "$here" selftest-mos test -scheme Cadence \
+    -destination 'platform=iOS Simulator,id=00000000-0000-0000-0000-00000000DEAD' -only-testing:CadenceTests/WholeFileTests 2>&1); rc=$?
+  check "a real iOS \`test\` run is refused by the resolver (exit 8), ahead of the destination guard" \
+    $( [[ $rc == 8 && "$out" == *MACOS-ONLY-SUITE* ]] && print 1 || print 0 ) "exit $rc: $out"
+  # A `build` is not a test run, so the platform question is not asked of it at all -- the same
+  # reading `run_is_a_test_action` makes for the automation-prompt guard.
+  out=$(CADENCE_SUITE_FILES="$mo/index.tsv" CADENCE_TEST_SOURCE_DIR="$mo/src" \
+    zsh "$here" selftest-mos build -scheme Cadence \
+    -destination 'platform=iOS Simulator,id=00000000-0000-0000-0000-00000000DEAD' -only-testing:CadenceTests/WholeFileTests 2>&1); rc=$?
+  check "a \`build\` on the same destination is NOT refused by this guard (it compiles, it does not select)" \
+    $( [[ "$out" != *MACOS-ONLY-SUITE* ]] && print 1 || print 0 ) "exit $rc: $out"
+  if (( $(suite_files_source | grep -c . ) == 0 )); then
+    say "  skip  live iOS checks: test-suite-index.sh returned no suites here"
+  else
+    # LIVE, against the real tree: a whole-file gate and a per-suite gate. The refusal count is
+    # asserted as the number of names handed in, so a suite that stops being macOS-only shows up
+    # here as a red rather than as a quietly smaller number.
+    out=$(zsh "$here" check-only-testing -destination "$ios_dest" CadenceTests/CadenceTodayUnificationTests CadenceTests/TaskBundleTests CadenceTests/CadenceCodexWidgetReopenTests 2>&1); rc=$?
+    check "live iOS: two whole-file gates and a per-suite gate are all refused" \
+      $( [[ $rc == 8 && "$out" == *"3 -only-testing: suite(s)"* ]] && print 1 || print 0 ) "exit $rc: $out"
+    out=$(zsh "$here" check-only-testing -destination "$ios_dest" CadenceTests/iOSTaskRecurrenceSelectionEffectTests 2>&1); rc=$?
+    check "live iOS: the iOS-only effect suite is not refused" \
+      $( [[ $rc == 0 && "$out" != *MACOS-ONLY-SUITE* ]] && print 1 || print 0 ) "exit $rc: $out"
   fi
 
   say ""
@@ -4445,6 +4771,72 @@ selftest_only_testing() {
          && "$dl_out" == *"last-green: not recorded -- the tree changed during the run"* \
          && -z "$(print -r -- "$ws/dl/state"/cadence-xcb-last-green.*(N))" ]] && print 1 || print 0 ) "exit $dl_rc: $dl_out"
 
+
+  say ""
+  say " 17. the export step has a sanctioned runner, and it refuses an upload (T-7103)"
+  # No archive is cut here and no identity is needed: `CADENCE_EXPORT_DRY_RUN=1` stops at the
+  # invocation, which is the thing this ticket is about -- that it is spelled WITHOUT
+  # `-derivedDataPath` and WITHOUT `-scheme`, the two flags that made the step impossible.
+  local ex="$ws/export"; mkdir -p "$ex/Fake.xcarchive" "$ex/out"
+  ex_plist() {  # $1 = file, $2... = key/value pairs
+    local f="$1"; shift
+    { print -r -- '<?xml version="1.0" encoding="UTF-8"?>'
+      print -r -- '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">'
+      print -r -- '<plist version="1.0"><dict>'
+      while (( $# >= 2 )); do print -r -- "<key>$1</key><string>$2</string>"; shift 2; done
+      print -r -- '</dict></plist>'
+    } > "$f"
+  }
+  ex_plist "$ex/dev.plist" method development
+  ex_plist "$ex/upload.plist" method development destination upload
+  ex_plist "$ex/appstore.plist" method app-store
+  ex_plist "$ex/appstoreconnect.plist" method app-store-connect destination export
+  local ex_out ex_rc
+  ex_run() { ex_out=$(CADENCE_EXPORT_DRY_RUN=1 zsh "$here" export-archive "$@" 2>&1); ex_rc=$? }
+
+  ex_run "$ex/Fake.xcarchive" "$ex/dev.plist" "$ex/out"
+  check "a development export is ADMITTED and reaches the invocation" \
+    $( [[ $ex_rc == 0 && "$ex_out" == *EXPORT-DRY-RUN* && "$ex_out" == *-exportArchive* ]] && print 1 || print 0 ) "exit $ex_rc: $ex_out"
+  check "...and the invocation carries NO -derivedDataPath and NO -scheme, which is the whole repair" \
+    $( [[ "$ex_out" != *"-derivedDataPath"* && "$ex_out" != *"-scheme"* ]] && print 1 || print 0 ) "$ex_out"
+  check "...and it says in its own preflight that the omission is deliberate, not an oversight" \
+    $( [[ "$ex_out" == *"derivedDataPath: NOT PASSED"* ]] && print 1 || print 0 ) "$ex_out"
+  ex_run "$ex/Fake.xcarchive" "$ex/upload.plist" "$ex/out"
+  check "destination: upload is REFUSED (EXPORT-UPLOAD-REFUSED, exit 15), before xcodebuild" \
+    $( [[ $ex_rc == 15 && "$ex_out" == *EXPORT-UPLOAD-REFUSED* && "$ex_out" != *-exportArchive* ]] && print 1 || print 0 ) "exit $ex_rc: $ex_out"
+  ex_run "$ex/Fake.xcarchive" "$ex/appstore.plist" "$ex/out"
+  check "method: app-store is REFUSED too -- the package exists only to be uploaded" \
+    $( [[ $ex_rc == 15 && "$ex_out" == *EXPORT-UPLOAD-REFUSED* ]] && print 1 || print 0 ) "exit $ex_rc: $ex_out"
+  ex_run "$ex/Fake.xcarchive" "$ex/appstoreconnect.plist" "$ex/out"
+  check "...and its Xcode 16 spelling, app-store-connect, is not a way round that" \
+    $( [[ $ex_rc == 15 && "$ex_out" == *EXPORT-UPLOAD-REFUSED* ]] && print 1 || print 0 ) "exit $ex_rc: $ex_out"
+  ex_run "$ex/NotThere.xcarchive" "$ex/dev.plist" "$ex/out"
+  check "a missing archive is EXPORT-NO-ARCHIVE, and the message says how to cut one" \
+    $( [[ $ex_rc == 15 && "$ex_out" == *EXPORT-NO-ARCHIVE* && "$ex_out" == *"raw archive"* ]] && print 1 || print 0 ) "exit $ex_rc: $ex_out"
+  ex_run "$ex/Fake.xcarchive" "$ex/nosuch.plist" "$ex/out"
+  check "a missing options plist is EXPORT-NO-OPTIONS" \
+    $( [[ $ex_rc == 15 && "$ex_out" == *EXPORT-NO-OPTIONS* ]] && print 1 || print 0 ) "exit $ex_rc: $ex_out"
+  ex_run "$ex/Fake.xcarchive" "$ex/dev.plist" "$ex/out" -derivedDataPath /tmp/nope
+  check "passing -derivedDataPath back in is EXPORT-FLAG-REFUSED: the deadlock cannot be re-entered" \
+    $( [[ $ex_rc == 15 && "$ex_out" == *EXPORT-FLAG-REFUSED* ]] && print 1 || print 0 ) "exit $ex_rc: $ex_out"
+  ex_run "$ex/Fake.xcarchive" "$ex/dev.plist" "$ex/out" -scheme Cadence
+  check "...and so is -scheme, which is the other half of the same refusal pair" \
+    $( [[ $ex_rc == 15 && "$ex_out" == *EXPORT-FLAG-REFUSED* ]] && print 1 || print 0 ) "exit $ex_rc: $ex_out"
+  ex_run "$ex/Fake.xcarchive" "$ex/dev.plist" "$ex/out" -derivedDataPath=/tmp/nope
+  check "...and so is the \`-flag=value\` spelling of it, which is not a way round the refusal" \
+    $( [[ $ex_rc == 15 && "$ex_out" == *EXPORT-FLAG-REFUSED* ]] && print 1 || print 0 ) "exit $ex_rc: $ex_out"
+  # A tab-completed directory argument carries a trailing slash, on which `:e` is empty.
+  ex_run "$ex/Fake.xcarchive/" "$ex/dev.plist" "$ex/out"
+  check "a trailing slash on the archive path is still an archive, not EXPORT-NO-ARCHIVE" \
+    $( [[ $ex_rc == 0 && "$ex_out" == *EXPORT-DRY-RUN* ]] && print 1 || print 0 ) "exit $ex_rc: $ex_out"
+  mkdir -p "$ex/NotAnArchive"
+  ex_run "$ex/NotAnArchive/" "$ex/dev.plist" "$ex/out"
+  check "...and that normalisation does not admit a directory that is not an .xcarchive" \
+    $( [[ $ex_rc == 15 && "$ex_out" == *EXPORT-NO-ARCHIVE* ]] && print 1 || print 0 ) "exit $ex_rc: $ex_out"
+  ex_out=$(zsh "$here" export-archive "$ex/Fake.xcarchive" 2>&1); ex_rc=$?
+  check "too few arguments is a usage error (exit 2), not a half-run export" \
+    $( [[ $ex_rc == 2 && "$ex_out" == *"usage: "* ]] && print 1 || print 0 ) "exit $ex_rc: $ex_out"
+
   rm -rf "$ws"
   say ""
   # A tally derived from the checks that actually ran: a selftest gutted to `return 0` still exits
@@ -4595,7 +4987,18 @@ if [[ "${1:-}" == "check-only-testing" ]]; then
   if (( $# == 0 )); then
     say "usage: ./scripts/xcb.sh check-only-testing <CadenceTests/Suite>..."; exit 2
   fi
-  resolve_only_testing "${@#-only-testing:}"
+  # `-destination <dest>` anywhere in the list asks the platform question too (T-3244); every
+  # other value is a filter.
+  ONLY_TESTING_PLATFORM="$(destination_platform "$@")"
+  local_filters=()
+  for (( i = 1; i <= $#; i++ )); do
+    case "${argv[i]}" in
+      -destination=*) ;;
+      -destination) (( i++ )) ;;
+      *) local_filters+=("${argv[i]#-only-testing:}") ;;
+    esac
+  done
+  resolve_only_testing "${local_filters[@]}"
   exit $?
 fi
 
@@ -4689,6 +5092,30 @@ if [[ "${1:-}" == "release-dd" ]]; then
   rm -rf -- "$RDD"
   say "release-dd: deleted $RDD (no live xcodebuild named it)."
   exit 0
+fi
+
+# The export step (T-7103). A SUBCOMMAND and not an `<id> <action>`, because an action is given a
+# private `-derivedDataPath` and xcodebuild refuses that alongside `-exportArchive` -- the full
+# argument, and the three hazards none of which an export has, are beside `export_archive_refusal`
+# above. Exits 15 on a refusal, 1 on a failed or empty export, 0 with the package named.
+if [[ "${1:-}" == "export-archive" ]]; then
+  shift
+  if (( $# < 3 )); then
+    say "usage: ./scripts/xcb.sh export-archive <path.xcarchive> <export-options.plist> <export-dir> [extra xcodebuild args...]"
+    say "  Development or ad-hoc/release-testing only: an App Store Connect upload is the owner's action."
+    exit 2
+  fi
+  # A directory argument that was tab-completed arrives as `Cadence.xcarchive/`, and `${1:e}` is
+  # EMPTY on that -- so the refusal below would read a perfectly good archive as EXPORT-NO-ARCHIVE
+  # and tell the caller to cut one they already have. Normalised here, once, so both halves see the
+  # same path. (`setopt extendedglob` is not on in this script, so this is a loop, not `%%/##`.)
+  export_args=("$@")
+  while [[ "${export_args[1]}" == */ && "${export_args[1]}" != / ]]; do
+    export_args[1]="${export_args[1]%/}"
+  done
+  export_archive_refusal "${export_args[@]}" || exit $EXPORT_GATE_EXIT
+  export_archive_run "${export_args[@]}"
+  exit $?
 fi
 
 if [[ "${1:-}" == "selftest" ]]; then
@@ -4884,6 +5311,7 @@ fi
 # that has been reaching forty minutes; neither is worth paying to learn that a suite is misspelt.
 # (The flags themselves are parsed further up, where the locked-screen guard needs them.)
 if (( ${#only_testing} )); then
+  run_is_a_test_action && ONLY_TESTING_PLATFORM="$(destination_platform "${args[@]}")"
   resolve_only_testing "${only_testing[@]}" || exit 8
 fi
 
