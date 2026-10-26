@@ -59,4 +59,20 @@ enum CadenceRootShellLayout {
     static func sidebarTopReserve(topLeadingCorner: CGSize) -> CGFloat {
         topReserve(paneLeadingX: 0, topLeadingCorner: topLeadingCorner)
     }
+
+    /// The compact tab shell's reserve (T-6711). An iPad window too narrow for the regular size
+    /// class runs the phone's tab shell, and the window controls are drawn over its top-leading
+    /// corner exactly as over the regular shell's. Every compact page hides the navigation bar and
+    /// draws its own header row there (back chevron, or a tab root's title with none), so nothing
+    /// the system lays out steps aside for the controls. The page always starts at the window's
+    /// leading edge, so it is the leading pane. The shell measures the corner in its own
+    /// safe-area frame, so whatever part of the region the top safe area already clears is not
+    /// reported and not reserved twice.
+    ///
+    /// Only on an iPad: a phone has no window controls, and the corner it may report is the
+    /// display's rounding, which its safe area already handles.
+    static func compactTopReserve(topLeadingCorner: CGSize, isPad: Bool) -> CGFloat {
+        guard isPad else { return 0 }
+        return topReserve(paneLeadingX: 0, topLeadingCorner: topLeadingCorner)
+    }
 }

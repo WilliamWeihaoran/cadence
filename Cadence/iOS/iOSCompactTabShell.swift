@@ -85,16 +85,30 @@ struct iOSCompactRootShell: View {
     /// padding this replaced, and which would break again the moment the bar changed size).
     var body: some View {
         VStack(spacing: 0) {
-            ZStack {
-                ForEach(CadenceCompactTab.allCases) { tab in
-                    if visitedTabs.contains(tab) || tab == selectedTab {
-                        stack(for: tab)
-                            .opacity(tab == selectedTab ? 1 : 0)
-                            .allowsHitTesting(tab == selectedTab)
-                            .accessibilityHidden(tab != selectedTab)
-                            .zIndex(tab == selectedTab ? 1 : 0)
+            // T-6711: a windowed iPad narrow enough for compact width runs this shell, and the
+            // window controls cover the top-leading corner where every page draws its header.
+            // Zero on a phone and full screen; see CadenceRootShellLayout's compact reserve.
+            GeometryReader { proxy in
+                let topReserve = CadenceRootShellLayout.compactTopReserve(
+                    topLeadingCorner: proxy.containerCornerInsets.topLeading,
+                    isPad: UIDevice.current.userInterfaceIdiom == .pad
+                )
+                ZStack {
+                    ForEach(CadenceCompactTab.allCases) { tab in
+                        if visitedTabs.contains(tab) || tab == selectedTab {
+                            stack(for: tab)
+                                .opacity(tab == selectedTab ? 1 : 0)
+                                .allowsHitTesting(tab == selectedTab)
+                                .accessibilityHidden(tab != selectedTab)
+                                .zIndex(tab == selectedTab ? 1 : 0)
+                        }
                     }
                 }
+                .padding(.top, topReserve)
+                .frame(width: proxy.size.width, height: proxy.size.height)
+                // The reserved strip takes the page colour rather than the bar's surface behind
+                // the shell, as the regular shell's detail pane does.
+                .background(Theme.bg)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 

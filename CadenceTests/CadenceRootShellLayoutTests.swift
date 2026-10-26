@@ -8,7 +8,8 @@ import Foundation
 /// Full screen the target iPad is 834 (portrait) and 1210 (landscape). The rest are multitasking:
 /// 585 is a half Split View in landscape, 782 and 795 are the 2/3 pane on the two generations that
 /// produce one. 865 is the docked threshold; narrower regular-width windows use a drawer.
-/// Compact width still runs the tab shell and is not decided by this helper.
+/// Compact width still runs the tab shell and its split is not decided by this helper; only its
+/// window-controls reserve is (T-6711).
 struct CadenceRootShellLayoutTests {
     private static let windowWidths: [CGFloat] = [585, 782, 795, 820, 834, 864, 865, 1210]
 
@@ -198,5 +199,39 @@ struct CadenceRootShellLayoutTests {
                            options: .regularExpression) != nil)
         #expect(root.range(of: #"detail\(\)\s*\.padding\(\.top, detailTopReserve\)\s*\.frame\(width: detailWidth"#,
                            options: .regularExpression) != nil)
+    }
+
+    // MARK: - Window controls, compact shell (T-6711)
+
+    /// A windowed iPad narrow enough for compact width runs the tab shell, whose page always
+    /// starts at the leading edge: it drops by the region's height, like a drawer-mode detail.
+    @Test
+    func theCompactShellOnAnIPadDropsBelowTheWindowControls() {
+        #expect(CadenceRootShellLayout.compactTopReserve(topLeadingCorner: Self.controls, isPad: true)
+                == Self.controls.height)
+        #expect(CadenceRootShellLayout.compactTopReserve(topLeadingCorner: Self.controls, isPad: true)
+                == Self.detailReserve(585, folded: true, corner: Self.controls))
+    }
+
+    /// A phone has no window controls; whatever corner it reports is the display's rounding, which
+    /// its safe area already clears. Full screen on an iPad reports nothing and nothing moves.
+    @Test
+    func theCompactShellReservesNothingOnAPhoneOrFullScreen() {
+        #expect(CadenceRootShellLayout.compactTopReserve(topLeadingCorner: Self.controls, isPad: false) == 0)
+        #expect(CadenceRootShellLayout.compactTopReserve(topLeadingCorner: .zero, isPad: true) == 0)
+        #expect(CadenceRootShellLayout.compactTopReserve(topLeadingCorner: .zero, isPad: false) == 0)
+    }
+
+    /// The compact shell must read the system's region on an iPad and pad the tab content, which
+    /// is what holds every compact page's header, or the rule above is a function nothing calls.
+    @Test
+    func theCompactShellAppliesTheReserveFromTheSystemsCornerRegion() throws {
+        let code = CadenceSourceScan.codeOnly(
+            try CadenceSourceScan.sourceFile("Cadence/iOS/iOSCompactTabShell.swift"))
+        let shell = try cadenceFunctionBody("struct iOSCompactRootShell: View", in: code)
+        #expect(shell.range(of: #"let topReserve = CadenceRootShellLayout\.compactTopReserve\(\s*topLeadingCorner: proxy\.containerCornerInsets\.topLeading,\s*isPad: UIDevice\.current\.userInterfaceIdiom == \.pad\s*\)"#,
+                            options: .regularExpression) != nil)
+        #expect(shell.range(of: #"stack\(for: tab\)[\s\S]*?\}\s*\}\s*\}\s*\.padding\(\.top, topReserve\)\s*\.frame\(width: proxy\.size\.width"#,
+                            options: .regularExpression) != nil)
     }
 }
