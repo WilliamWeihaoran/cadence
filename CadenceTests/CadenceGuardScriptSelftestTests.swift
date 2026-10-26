@@ -190,6 +190,11 @@ struct CadenceGuardScriptSelftestTests {
         // a word. Naming it here means deleting mode 4f goes red rather than quietly leaving the
         // allocator guarded only against the sequential mistake.
         "LEDGER-ID-DUPLICATE",
+        // T-3234, and it is the same collision when the two agents do NOT share a file: an id
+        // filed on a branch or a Codex worktree branch is invisible to a file read anywhere else,
+        // so both stubs land in different ledgers and `LEDGER-ID-DUPLICATE` sees one of each.
+        // T-3232 and T-3241 each went to two agents on 2026-10-19 this way. Mode 4f2 induces it.
+        "LEDGER-ID-ALLOCATED-ELSEWHERE",
         // T-1142, and it is the third failure of the one step `LEDGER-CLOSURE-BURIED` guards: the
         // moment an agent writes a closure into an entry. That guard asks whether the closure was
         // written where every instrument looks. This asks whether writing it REPLACED the draft it

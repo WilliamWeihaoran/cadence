@@ -108,6 +108,13 @@
 #                        day after T-1123 counted eight of exactly those (T-1207). Name the id in a
 #                        ledger in this same commit, or, if it is not a ticket reference at all,
 #                        say that instead: `--not-an-id <T-n>`.
+#   LEDGER-ID-ALLOCATED-ELSEWHERE
+#                        a `- [T-n]` entry this commit FILES -- an id in no ledger HEAD has -- is
+#                        already a formal entry on another ref: a branch, a Codex worktree branch,
+#                        a remote, a detached worktree HEAD. "Next free" read in one checkout is not
+#                        free in another; T-3232 and T-3241 each went to two agents in one day this
+#                        way (T-3234). Renumber yours. `--claims-ids <exact,sorted,list>` says it is
+#                        the SAME ticket, landed here from that ref with its first line changed.
 #   WORKTREE-BEHIND-HEAD a bare `<path>` whose worktree copy is built on a revision older than
 #                        HEAD's. Committing it writes the stale bytes into history, where no drift
 #                        check looks. Rebuild on `git show HEAD:<path>` and pass the `=` form, or
@@ -362,7 +369,7 @@ usage() {
     say "              --retires-ids <ids>"
     say "              --unfiled-ids <ids> --buried-closures <ids> --duplicate-ids <ids>"
     say "              --unfiled-links <ids> --not-an-id <T-n>"
-    say "              --duplicated-entries <ids> --unclaimed-entries <ids>"
+    say "              --duplicated-entries <ids> --unclaimed-entries <ids> --claims-ids <ids>"
     say "              --accept-declined <path> --commits-stale <path> --not-a-sweep <@Test name>"
     say "       ./scripts/agent-commit.sh <id> -F <message-file> <path>..."
     say "              the -F file's basename must contain <id> -- the scratchpad is shared (T-1222)"
@@ -913,14 +920,25 @@ significant_lines() {  # $1 = file
 
 # Exit 0 when the content is a rewrite of entries that exist only in HEAD, i.e. when both halves
 # above hold. Prints the ids it is granting the licence for.
-ledger_rewrites_only_new_entries() {  # $1 = head blob, $2 = base blob, $3 = content, $4 = scratch
+#
+# T-3234: AND A RENUMBER. An id `--retires-ids` strikes off (`$5`) may be missing from the content
+# and needs no closure: its entry was not overwritten by somebody else's ticket, it was moved to a
+# new number by the agent that filed it. That is the repair LEDGER-ID-ALLOCATED-ELSEWHERE asks for
+# when the clash is found after the id was committed, and before this it read as a revert --
+# T-3234's addendum took TWO commits (`4324f4fc`, `ffc39187`) to get past this one reading, because
+# a renumber rewrites the one line HEAD added and "from where that guard stands, a renumber and a
+# revert are the same diff". The retirement is an explicit claim -- LEDGER-IDS-LOST and
+# LEDGER-ID-UNARCHIVED each demand the id by name first -- so this widens nothing silently, and an id
+# kept in the content still has to be closed, which is T-1072's overwrite shape and stays refused.
+ledger_rewrites_only_new_entries() {  # $1 = head blob, $2 = base blob, $3 = content, $4 = scratch, $5 = retired ids file
     local sc=$4
     ledger_ids "$1" > "$sc/rw.head.ids"
     ledger_ids "$2" > "$sc/rw.base.ids"
     ledger_ids "$3" > "$sc/rw.content.ids"
+    sort -u -- "${5:-/dev/null}" > "$sc/rw.retired.ids" 2>/dev/null || : > "$sc/rw.retired.ids"
     comm -23 "$sc/rw.head.ids" "$sc/rw.base.ids" > "$sc/rw.new.ids"
     [[ -s "$sc/rw.new.ids" ]] || return 1                       # HEAD filed nothing new: not this shape
-    [[ -z "$(comm -23 "$sc/rw.new.ids" "$sc/rw.content.ids")" ]] || return 1
+    [[ -z "$(comm -23 "$sc/rw.new.ids" "$sc/rw.content.ids" | comm -23 - "$sc/rw.retired.ids")" ]] || return 1
     significant_lines "$1" > "$sc/rw.head.lines"
     significant_lines "$3" > "$sc/rw.content.lines"
     comm -23 "$sc/rw.head.lines" "$sc/rw.content.lines" > "$sc/rw.missing"
@@ -944,6 +962,9 @@ ledger_rewrites_only_new_entries() {  # $1 = head blob, $2 = base blob, $3 = con
         ledger_lines_only_in_entries "$1" "$sc/rw.one.id" > "$sc/rw.one.lines"
         [[ -n "$(comm -12 "$sc/rw.missing" "$sc/rw.one.lines")" ]] || continue
         print -r -- "$rwid" >> "$sc/rw.rewritten.ids"
+        if grep -qx -- "$rwid" "$sc/rw.retired.ids" && ! grep -qx -- "$rwid" "$sc/rw.content.ids"; then
+            continue                                            # renumbered away, not overwritten
+        fi
         grep -qx -- "$rwid" "$sc/rw.content.closed" || return 1
     done
     [[ -s "$sc/rw.rewritten.ids" ]] || return 1
@@ -1224,6 +1245,31 @@ ledger_duplicate_ids() {  # $1... = ledger files, read as one ledger
 # added, not invisible in a flag on one command line.
 LEDGER_DUPLICATE_EXEMPT_IDS=(T-1043)
 
+# T-3234, and it is LEDGER-ID-DUPLICATE when the two agents do NOT share a file. That guard reads
+# the staged ledger, which is one checkout's view; an id filed on a `claude/*` or `codex/*` branch,
+# or committed to `main` after a worktree branched, is in a ledger this checkout never reads. Both
+# T-3232 and T-3241 were allocated twice on 2026-10-19 exactly so, and the second time the sweep
+# that was meant to prevent it WAS run -- by hand, over a list of refs that missed the live one.
+#
+# So the list is not a list: it is every ref that can hold a commit this HEAD does not --
+# `for-each-ref --no-merged` over refs/heads, refs/remotes and refs/codex -- plus each detached
+# worktree HEAD that is not an ancestor of it. A ref merged into HEAD is skipped on purpose: every
+# formal id it carries is in HEAD already, or was retired there, and HEAD's ledger is read anyway.
+# A filesystem read of another worktree is deliberately NOT taken: T-3234's addendum measured that
+# it shows the working tree, which is exactly where a committed id is not.
+#
+# Measured 2026-10-25 at b4a6b35e: 151 refs, 77 not merged; one `git grep` over those 77 for the
+# new ids took 0.2 s wall. It runs ONLY when the commit files an id HEAD's ledgers do not carry --
+# every other commit, ledger or not, pays nothing past one read of HEAD's ledgers.
+ledger_crossref_refs() {  # $1 = head sha -> one tree-ish per line, none of them merged into $1
+    git for-each-ref --no-merged="$1" --format='%(refname)' refs/heads refs/remotes refs/codex 2>/dev/null
+    local wsha
+    for wsha in ${(f)"$(git worktree list --porcelain 2>/dev/null | awk '/^HEAD /{h=$2} /^detached$/{print h}' | sort -u)"}; do
+        git merge-base --is-ancestor "$wsha" "$1" 2>/dev/null && continue
+        print -r -- "$wsha"
+    done
+}
+
 STALE_MINUTES="${CADENCE_DECLINED_STALE_MINUTES:-30}"
 
 # Age from the record's mtime, not from a field inside it: records written before this check
@@ -1411,7 +1457,7 @@ cmd_commit() {
     local declared_retired_ids=""
     local declared_unfiled_ids="" declared_buried_ids="" declared_duplicate_ids=""
     local declared_duplicated_entries="" declared_unfiled_links=""
-    local declared_unclaimed_entries=""
+    local declared_unclaimed_entries="" declared_claimed_ids=""
     local -a paths accepted stale_declared not_sweeps not_ids
     paths=(); accepted=(); stale_declared=(); not_sweeps=(); not_ids=()
 
@@ -1460,6 +1506,8 @@ cmd_commit() {
                 declared_duplicated_entries="$2"; shift 2 ;;
             --unclaimed-entries) [[ $# -ge 2 ]] || refuse BAD-OPTION "--unclaimed-entries needs a comma-separated id list"
                 declared_unclaimed_entries="$2"; shift 2 ;;
+            --claims-ids) [[ $# -ge 2 ]] || refuse BAD-OPTION "--claims-ids needs a comma-separated id list"
+                declared_claimed_ids="$2"; shift 2 ;;
             --commits-stale) [[ $# -ge 2 ]] || refuse BAD-OPTION "--commits-stale needs a path"
                 stale_declared+=("$2"); shift 2 ;;
             --not-a-sweep) [[ $# -ge 2 ]] || refuse BAD-OPTION "--not-a-sweep needs a @Test name"
@@ -1648,10 +1696,12 @@ cmd_commit() {
             rewrite_base=$(print -r -- "$reading" | cut -f3)
             git cat-file -p "$headsha:$name" > "$rewrite_scratch/head.blob" 2>/dev/null
             git cat-file -p "$rewrite_base:$name" > "$rewrite_scratch/base.blob" 2>/dev/null
+            print -rl -- ${(s:,:)declared_retired_ids} > "$rewrite_scratch/retired.ids"
             if rewrite_ids=$(ledger_rewrites_only_new_entries \
-                    "$rewrite_scratch/head.blob" "$rewrite_scratch/base.blob" "$src" "$rewrite_scratch"); then
+                    "$rewrite_scratch/head.blob" "$rewrite_scratch/base.blob" "$src" "$rewrite_scratch" \
+                    "$rewrite_scratch/retired.ids"); then
                 say "note: $name=$src reads [stale base] against ${rewrite_base[1,8]} and is NOT refused (T-1246):"
-                say "      it carries a formal entry for $rewrite_ids, which exist nowhere but ${headsha[1,8]}, and every"
+                say "      it closes or --retires-ids $rewrite_ids, which exist nowhere but ${headsha[1,8]}, and every"
                 say "      line of ${headsha[1,8]} it drops belongs to those entries alone. That is a rewrite of the"
                 say "      newest entry, not a reconstruction built before it. The count is still yours to declare."
                 continue
@@ -2555,6 +2605,86 @@ $(print -r -- "$lint_out" | grep -v '^REFUSED' | sed "s|${staged_content[$lint_n
   If this really is one ticket written twice on purpose, for THIS commit only:
   --duplicate-ids $duplicate_sorted"
         fi
+    fi
+
+    # 3a5a. T-3234: the same question asked of every OTHER ref. Rationale and cost are on
+    #       `ledger_crossref_refs`. Only an id this commit FILES is asked -- one in none of HEAD's
+    #       ledgers in that directory, the Codex inbox included, so an entry moving to the archive or
+    #       an inbox id being filed formally is not a new allocation. Only a formal `- [T-n]` line
+    #       on the other ref counts: a keeper's reserved RANGE, written in prose, and a `[[T-n]]`
+    #       mention allocate nothing. The same entry read back on the ref it came from -- first
+    #       line byte-identical -- is a landing, not a clash, and the addendum's warning is why that
+    #       is decided here rather than left to the agent: a refusal that fires on your own branch
+    #       read twice teaches everyone to type the flag.
+    #
+    #       THE RENUMBER PATH stays open without --commits-stale. An id refused here is in no
+    #       ledger HEAD has, so renumbering it is an edit inside your own hunk and needs no flag at
+    #       all; and an id already in HEAD is never re-asked, so the two-commit renumber T-3234's
+    #       addendum walked (add the new id, then drop the old with --drops-ids/--retires-ids) never
+    #       meets this guard on its old id. Mode 4f2 drives both.
+    local -a crossref_ids crossref_report xr_dirs xr_refs
+    crossref_ids=(); crossref_report=(); xr_dirs=(); xr_refs=()
+    local xr_staged="$scratch/xr.staged" xr_known="$scratch/xr.known" xr_new="$scratch/xr.new"
+    local xr_d xr_f xr_p xr_line xr_id xr_ref xr_rest xr_path xr_text xr_pattern
+    local -a xr_specs; xr_specs=()
+    local -A xr_first xr_seen
+    : > "$xr_staged"; : > "$xr_known"; : > "$xr_new"
+    for name in "${names[@]}"; do
+        is_any_ledger_path "$name" || continue
+        [[ -n "${staged_content[$name]+x}" ]] || continue
+        grep -E '^- \[T-[0-9]+\]' -- "${staged_content[$name]}" >> "$xr_staged" 2>/dev/null
+        xr_dirs+=("${name:h}")
+    done
+    if [[ -s "$xr_staged" ]]; then
+        for xr_d in "${(@u)xr_dirs}"; do
+            for xr_f in TODO.md TODO_DONE.md CODEX_LEDGER_INBOX.md; do
+                [[ "$xr_d" == "." ]] && xr_p="$xr_f" || xr_p="$xr_d/$xr_f"
+                xr_specs+=("$xr_p")
+                git cat-file -p "$headsha:$xr_p" 2>/dev/null | ledger_ids /dev/stdin >> "$xr_known"
+            done
+        done
+        comm -23 <(ledger_ids "$xr_staged") <(sort -u "$xr_known") > "$xr_new"
+    fi
+    if [[ -s "$xr_new" ]]; then
+        while IFS= read -r xr_line; do
+            xr_id=${${xr_line#- \[}%%\]*}
+            [[ -n "${xr_first[$xr_id]+x}" ]] || xr_first[$xr_id]="$xr_line"
+        done < "$xr_staged"
+        xr_refs=(${(f)"$(ledger_crossref_refs "$headsha")"})
+        xr_pattern="^- \\[(${(j:|:)${(f)"$(<"$xr_new")"}})\\]"
+        if (( ${#xr_refs} )); then
+            while IFS= read -r xr_line; do
+                xr_ref=${xr_line%%:*}; xr_rest=${xr_line#*:}
+                xr_path=${xr_rest%%:*}; xr_text=${xr_rest#*:}
+                xr_id=${${xr_text#- \[}%%\]*}
+                [[ "$xr_text" == "${xr_first[$xr_id]}" ]] && continue
+                [[ -n "${xr_seen[$xr_id]+x}" ]] && continue
+                xr_seen[$xr_id]=1
+                crossref_ids+=("$xr_id")
+                crossref_report+=("$xr_id on $xr_ref:$xr_path -- ${xr_text[1,160]}")
+            done < <(git grep --no-color -E -e "$xr_pattern" "${xr_refs[@]}" -- "${(@u)xr_specs}" 2>/dev/null)
+        fi
+    fi
+    if (( ${#crossref_ids} )); then
+        local declared_claimed_sorted="${(pj:,:)${(@o)${(@s:,:)declared_claimed_ids}}}"
+        local crossref_sorted="${(pj:,:)${(@o)crossref_ids}}"
+        if [[ "$declared_claimed_sorted" != "$crossref_sorted" ]]; then
+            rm -rf "$scratch"
+            refuse LEDGER-ID-ALLOCATED-ELSEWHERE "this commit files ledger ids that another ref already carries a formal entry for:
+${(F)${(@)crossref_report/#/    }}
+  The ledger is the allocator, and \"next free\" read in one checkout is not free in another: an
+  entry committed on a branch or a Codex worktree branch is invisible to every file read here.
+  T-3232 and T-3241 each went to two agents in one day exactly so (T-3234). Read is every local,
+  remote and refs/codex ref NOT merged into HEAD, plus detached worktree HEADs; only a formal
+  \`- [T-n]\` line counts there, so a reserved range or a mention in prose is not a clash.
+  A DIFFERENT ticket: renumber yours to an id that is free everywhere -- your keeper-reserved range
+  if you have one -- and fix its references. It is an edit inside your own hunk and needs no flag.
+  (Had the id already been in HEAD, dropping it is --drops-ids plus --retires-ids; never
+  --commits-stale.)
+  The SAME ticket, landed here from that ref with its first line changed: --claims-ids $crossref_sorted"
+        fi
+        splice_trailers "Claims-Ids: ${crossref_sorted//,/, }"
+        say "note: recorded the claimed ids in the commit message: Claims-Ids: ${crossref_sorted//,/, }"
     fi
 
     # 3a5b. T-1304, and it is [[T-1222]]'s unshipped half: a commit whose MESSAGE names one set of
@@ -5206,6 +5336,86 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>" ) >/dev/null 2>&1
     check "an illegal staged blob is refused over a legal worktree copy" \
         $( (( rc == 3 )) && [[ "$out" == *LEDGER-ILLEGAL-LEAD*T-201*"lead token DECIDE"* ]] && print 1 || print 0 ) "exit $rc: $out"
     selftest_segment_close s13 ) > "$runs/s13.log" 2>&1 &
+    # Its own segment and its own fixture: it creates branches, which every other mode's fixture
+    # must never see, and it reads nothing any other mode leaves behind.
+    segments+=(s14)
+    ( selftest_segment_open s14
+    say ""
+    say " mode 4f2 (LEDGER-ID-ALLOCATED-ELSEWHERE) -- T-3234: an id \"next free\" here but filed on another ref"
+    rm -f "$CADENCE_DECLINED_LEDGER"/*.declined(N)
+    # Three other refs, each built from the base and never merged: a sibling's branch filing T-150
+    # and carrying a keeper-style reserved RANGE in prose, and a Codex branch filing T-160 in its
+    # inbox. A file read of this checkout sees none of them, which is the whole ticket.
+    ( cd "$ws"
+      git checkout -q -b claude/sib
+      print -rl -- "" "- [T-150] **OPEN** the sibling's finding, filed on its own branch" \
+                   "  body, which reserves T-170..T-179 for another agent in prose" >> TODO.md
+      git commit -qam "sibling files T-150"
+      git checkout -q -
+      git checkout -q -b codex/inbox
+      print -rl -- "# Inbox" "" "- [T-160] **OPEN** Codex's finding, filed in its inbox" > CODEX_LEDGER_INBOX.md
+      git add CODEX_LEDGER_INBOX.md; git commit -qm "codex files T-160"
+      git checkout -q - ) >/dev/null 2>&1
+    ( cd "$ws"
+      git show HEAD:TODO.md > xr-clash.md
+      print -rl -- "" "- [T-150] **OPEN** my own, unrelated finding" "  body" >> xr-clash.md ) >/dev/null 2>&1
+    prehead=$( cd "$ws" && git rev-parse HEAD )
+    out=$( cd "$ws" && zsh "$here" x1 -m "$M" TODO.md=xr-clash.md 2>&1 ); rc=$?
+    check "an id another branch already filed is refused" \
+        $( [[ $rc == 3 && "$out" == *LEDGER-ID-ALLOCATED-ELSEWHERE*T-150* ]] && print 1 || print 0 ) "exit $rc: $out"
+    check "and the refusal names the branch and the colliding title" \
+        $( [[ "$out" == *"claude/sib:TODO.md"*"the sibling's finding"* ]] && print 1 || print 0 ) "$out"
+    check "nothing was committed" $( [[ $( cd "$ws" && git rev-parse HEAD ) == "$prehead" ]] && print 1 || print 0 )
+    ( cd "$ws"
+      git show HEAD:TODO.md > xr-inbox.md
+      print -rl -- "" "- [T-160] **OPEN** my own finding again" "  body" >> xr-inbox.md ) >/dev/null 2>&1
+    out=$( cd "$ws" && zsh "$here" x2 -m "$M" TODO.md=xr-inbox.md 2>&1 ); rc=$?
+    check "an id filed in a Codex branch's inbox is refused too" \
+        $( [[ $rc == 3 && "$out" == *LEDGER-ID-ALLOCATED-ELSEWHERE*"codex/inbox:CODEX_LEDGER_INBOX.md"* ]] && print 1 || print 0 ) "exit $rc: $out"
+    # The cure needs no flag: renumbered inside the agent's own hunk. T-171 is inside the range the
+    # sibling's branch RESERVES in prose, which allocates nothing and must not be read as a clash.
+    ( cd "$ws"
+      git show HEAD:TODO.md > xr-renum.md
+      print -rl -- "" "- [T-171] **OPEN** my own, unrelated finding" "  body" >> xr-renum.md ) >/dev/null 2>&1
+    out=$( cd "$ws" && zsh "$here" x3 -m "$M" TODO.md=xr-renum.md 2>&1 ); rc=$?
+    check "renumbered -- into a range another ref only RESERVES in prose -- it lands with no flag" \
+        $(( rc == 0 )) "exit $rc: $out"
+    # The same entry landed from the ref it was filed on, first line byte-identical, is not a clash.
+    ( cd "$ws"
+      git show HEAD:TODO.md > xr-land.md
+      print -rl -- "" "- [T-150] **OPEN** the sibling's finding, filed on its own branch" "  body" >> xr-land.md ) >/dev/null 2>&1
+    out=$( cd "$ws" && zsh "$here" x4 -m "$M" TODO.md=xr-land.md 2>&1 ); rc=$?
+    check "the sibling's own entry, landed unchanged, is not refused" $(( rc == 0 )) "exit $rc: $out"
+    # Landed with its first line rewritten it is indistinguishable from a clash, so it is said aloud.
+    ( cd "$ws"
+      git show HEAD:TODO.md > xr-claim.md
+      print -rl -- "" "- [T-160] **CLOSED** Codex's finding, filed in its inbox, landed and closed" "  body" >> xr-claim.md ) >/dev/null 2>&1
+    out=$( cd "$ws" && zsh "$here" x5 -m "$M" TODO.md=xr-claim.md 2>&1 ); rc=$?
+    check "a landing with a rewritten first line is refused bare" \
+        $( [[ $rc == 3 && "$out" == *"--claims-ids T-160"* ]] && print 1 || print 0 ) "exit $rc: $out"
+    out=$( cd "$ws" && zsh "$here" x5 -m "$M" --claims-ids T-160 TODO.md=xr-claim.md 2>&1 ); rc=$?
+    check "--claims-ids lands it" $(( rc == 0 )) "exit $rc: $out"
+    check "and the claim is recorded in the commit message" \
+        $( [[ $( cd "$ws" && git log -1 --format=%B ) == *"Claims-Ids: T-160"* ]] && print 1 || print 0 ) \
+        "$( cd "$ws" && git log -1 --format=%B )"
+    # T-3234's addendum: the renumber of an id ALREADY in HEAD must stay reachable without
+    # --commits-stale. File T-180, let a sibling branch file T-180 after it, then renumber ours.
+    ( cd "$ws"
+      git show HEAD:TODO.md > xr-mine.md
+      print -rl -- "" "- [T-180] **OPEN** filed here first" "  body" >> xr-mine.md ) >/dev/null 2>&1
+    out=$( cd "$ws" && zsh "$here" x6 -m "$M" TODO.md=xr-mine.md 2>&1 ); rc=$?
+    check "an id free on every ref lands" $(( rc == 0 )) "exit $rc: $out"
+    ( cd "$ws"
+      git checkout -q -b claude/late HEAD~1
+      print -rl -- "" "- [T-180] **OPEN** the late sibling's" >> TODO.md
+      git commit -qam "late sibling files T-180"
+      git checkout -q - ) >/dev/null 2>&1
+    ( cd "$ws"
+      git show HEAD:TODO.md | sed 's/^- \[T-180\] \*\*OPEN\*\* filed here first$/- [T-181] **OPEN** filed here first/' > xr-move.md ) >/dev/null 2>&1
+    out=$( cd "$ws" && zsh "$here" x7 -m "$M" --drops-ids T-180 --retires-ids T-180 --removes 1 TODO.md=xr-move.md 2>&1 ); rc=$?
+    check "renumbering an id already in HEAD walks --drops-ids/--retires-ids, never --commits-stale" \
+        $(( rc == 0 )) "exit $rc: $out"
+    selftest_segment_close s14 ) > "$runs/s14.log" 2>&1 &
     wait
     performed=(); failures=()
     local seg segtally
