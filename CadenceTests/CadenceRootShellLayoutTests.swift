@@ -136,6 +136,13 @@ struct CadenceRootShellLayoutTests {
     /// the system reports, so no test here pins the system's own figure.
     private static let controls = CGSize(width: 80, height: 30)
 
+    /// What the shell asks for the detail: the reserve at the docked reservation's trailing edge.
+    private static func detailReserve(_ width: CGFloat, folded: Bool, corner: CGSize) -> CGFloat {
+        CadenceRootShellLayout.topReserve(
+            paneLeadingX: CadenceRootShellLayout.sidebarWidth(windowWidth: width, isCollapsed: folded),
+            topLeadingCorner: corner)
+    }
+
     /// The defect: in a window narrow enough for the drawer, or with the sidebar folded, the page
     /// starts at the window's leading edge, so its header sat under the controls.
     @Test
@@ -143,9 +150,8 @@ struct CadenceRootShellLayoutTests {
         for width in Self.windowWidths {
             for folded in [false, true] where CadenceRootShellLayout.sidebarWidth(
                 windowWidth: width, isCollapsed: folded) == 0 {
-                #expect(CadenceRootShellLayout.detailTopReserve(
-                    windowWidth: width, isCollapsed: folded, topLeadingCorner: Self.controls
-                ) == Self.controls.height, "width \(width) folded \(folded)")
+                #expect(Self.detailReserve(width, folded: folded, corner: Self.controls)
+                        == Self.controls.height, "width \(width) folded \(folded)")
             }
         }
     }
@@ -162,8 +168,7 @@ struct CadenceRootShellLayoutTests {
     func aPageBesideTheDockedSidebarKeepsItsTop() {
         for width in Self.windowWidths where CadenceRootShellLayout.usesExpandedSidebar(windowWidth: width) {
             #expect(CadenceRootShellLayout.sidebarWidth(windowWidth: width) > Self.controls.width)
-            #expect(CadenceRootShellLayout.detailTopReserve(
-                windowWidth: width, topLeadingCorner: Self.controls) == 0)
+            #expect(Self.detailReserve(width, folded: false, corner: Self.controls) == 0)
         }
     }
 
@@ -172,8 +177,7 @@ struct CadenceRootShellLayoutTests {
     func fullScreenReservesNothing() {
         for width in Self.windowWidths {
             for folded in [false, true] {
-                #expect(CadenceRootShellLayout.detailTopReserve(
-                    windowWidth: width, isCollapsed: folded, topLeadingCorner: .zero) == 0)
+                #expect(Self.detailReserve(width, folded: folded, corner: .zero) == 0)
             }
         }
         #expect(CadenceRootShellLayout.sidebarTopReserve(topLeadingCorner: .zero) == 0)
@@ -188,7 +192,8 @@ struct CadenceRootShellLayoutTests {
         let root = try cadenceFunctionBody("struct iPadMacStyleRootShell<Content: View>: View", in: code)
         #expect(root.contains("let topLeadingCorner = proxy.containerCornerInsets.topLeading"))
         #expect(root.contains("CadenceRootShellLayout.sidebarTopReserve(topLeadingCorner: topLeadingCorner)"))
-        #expect(root.contains("CadenceRootShellLayout.detailTopReserve("))
+        #expect(root.range(of: #"let detailTopReserve = CadenceRootShellLayout\.topReserve\(\s*paneLeadingX: sidebarWidth,\s*topLeadingCorner: topLeadingCorner\s*\)"#,
+                           options: .regularExpression) != nil)
         #expect(root.range(of: #"\.padding\(\.top, sidebarTopReserve\)\s*\.frame\(width: drawerWidth"#,
                            options: .regularExpression) != nil)
         #expect(root.range(of: #"detail\(\)\s*\.padding\(\.top, detailTopReserve\)\s*\.frame\(width: detailWidth"#,

@@ -32,9 +32,8 @@ struct iPadMacStyleRootShell<Content: View>: View {
             // the container safe area, so it is the shell that has to keep pages out from under it.
             let topLeadingCorner = proxy.containerCornerInsets.topLeading
             let sidebarTopReserve = CadenceRootShellLayout.sidebarTopReserve(topLeadingCorner: topLeadingCorner)
-            let detailTopReserve = CadenceRootShellLayout.detailTopReserve(
-                windowWidth: proxy.size.width,
-                isCollapsed: isSidebarCollapsed,
+            let detailTopReserve = CadenceRootShellLayout.topReserve(
+                paneLeadingX: sidebarWidth,
                 topLeadingCorner: topLeadingCorner
             )
 
