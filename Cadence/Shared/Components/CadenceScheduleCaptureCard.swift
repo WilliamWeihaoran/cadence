@@ -178,7 +178,12 @@ extension CadenceScheduleDraft {
             let anchor = max(today, start ?? today)
             seriesEndDateKey = CadenceTaskRecurrenceEndPresentation.defaultEndDateKey(from: anchor, calendar: calendar)
         case .afterCount:
-            seriesEndCount = max(1, seriesEndCount)
+            // T-6931: this stored `max(1, seriesEndCount)`, so a fresh After seeded a series that
+            // ends on its first occurrence. Seed like every other Ends control instead.
+            seriesEndCount = CadenceTaskRecurrenceEndPresentation.resolvedEndCount(
+                seriesEndCount,
+                occurrenceNumber: seriesOccurrenceNumber
+            )
         default:
             break
         }

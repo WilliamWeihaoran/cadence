@@ -66,11 +66,41 @@ struct CadenceCaptureCardSeriesEndSeedTests {
         #expect(draft.seriesEndDateKey == "2026-12-25")
     }
 
-    @Test func choosingAfterCountFloorsTheCountAtOneAndLeavesTheEndDayAlone() throws {
+    /// [[T-6931]]: this seeded `max(1, count)` -- a fresh After was a series ending on its first
+    /// occurrence -- while every other Ends control seeds the shared count.
+    @Test func choosingAfterCountSeedsTheSharedCountAndLeavesTheEndDayAlone() throws {
         var draft = Self.weeklyDraft(startingOn: "2026-10-21")
         draft.seedSeriesEnd(for: .afterCount, reference: try Self.day("2026-10-21"), calendar: Self.calendar)
-        #expect(draft.seriesEndCount == 1)
+        #expect(draft.seriesEndCount == CadenceTaskRecurrenceEndPresentation.seededEndCount)
+        #expect(draft.seriesEndCount > 1, "a fresh After ends the series on its first occurrence")
         #expect(draft.seriesEndDateKey.isEmpty)
+    }
+
+    @Test func choosingAfterCountKeepsACountTheUserAlreadyChose() throws {
+        var draft = Self.weeklyDraft(startingOn: "2026-10-21")
+        draft.seriesEndCount = 3
+        draft.seedSeriesEnd(for: .afterCount, reference: try Self.day("2026-10-21"), calendar: Self.calendar)
+        #expect(draft.seriesEndCount == 3)
+    }
+
+    @Test func choosingAfterCountFloorsTheSeedAtTheCurrentOccurrence() throws {
+        var draft = Self.weeklyDraft(startingOn: "2026-10-21")
+        draft.seriesOccurrenceNumber = 15
+        draft.seedSeriesEnd(for: .afterCount, reference: try Self.day("2026-10-21"), calendar: Self.calendar)
+        #expect(draft.seriesEndCount == 15)
+    }
+
+    /// The capture card and the standard panel seed the same After count for the same draft.
+    @Test func captureCardAndStandardPanelSeedTheSameAfterCount() throws {
+        let reference = try Self.day("2026-10-21")
+        for occurrence in [1, 15] {
+            var card = Self.weeklyDraft(startingOn: "2026-10-21")
+            card.seriesOccurrenceNumber = occurrence
+            var panel = card
+            card.seedSeriesEnd(for: .afterCount, reference: reference, calendar: Self.calendar)
+            panel.selectSeriesEnd(.afterCount, reference: reference, calendar: Self.calendar)
+            #expect(card.seriesEndCount == panel.seriesEndCount)
+        }
     }
 
     /// The seam above is only the fix if the card calls it: SwiftUI's `.onChange` is not reachable
