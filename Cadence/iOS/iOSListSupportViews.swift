@@ -202,64 +202,127 @@ struct iOSListDetailPagePicker: View {
     /// names the tab — took the counts with them, and the count was not the redundant half.
     var counts: [ListDetailPage: Int] = [:]
 
-    var body: some View {
-        ScrollView(.horizontal) {
-            HStack(spacing: 2) {
-                ForEach(ListDetailPage.allCases) { item in
-                    let isSelected = page == item
-                    Button {
-                        page = item
-                    } label: {
-                        HStack(spacing: 6) {
-                            Text(item.rawValue)
-                                .cadenceFont(.controlLabel, weight: isSelected ? .semibold : .medium)
-                                // `muted`, not `dim`: an unselected tab is a label you read and
-                                // tap, and `dim` on this surface sits under the AA floor at 13pt.
-                                .foregroundStyle(isSelected ? Theme.text : Theme.muted)
-                                .lineLimit(1)
+    /// Whether the scrolling fallback has tabs hidden past either edge.
+    @State private var overflow = EdgeOverflow()
 
-                            if let count = counts[item], count > 0 {
-                                Text("\(count)")
-                                    .cadenceFont(.metadata, base: 11, weight: .semibold)
-                                    .monospacedDigit()
-                                    .foregroundStyle(isSelected ? Theme.muted : Theme.dim)
-                            }
-                        }
-                            .padding(.horizontal, 12)
-                            .frame(minHeight: CadenceTypeScale.height(44, holding: .controlLabel, at: dynamicTypeSize, scaling: scaling))
-                            .background(
-                                RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous)
-                                    .fill(isSelected ? Theme.surfaceHighlight : Color.clear)
-                            )
-                            .contentShape(
-                                RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous)
-                            )
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel(item.rawValue)
-                    .accessibilityAddTraits(isSelected ? .isSelected : [])
+    private struct EdgeOverflow: Equatable {
+        var leading = false
+        var trailing = false
+    }
+
+    /// T-6985. The first padding tier at which all five tabs fit is the one drawn, so on an
+    /// iPhone with counts showing the strip tightens instead of running "Completed" off the edge.
+    /// Only when even the tightest tier cannot hold them — large text, or very large counts —
+    /// does it scroll, and that fallback fades the edge that has more tabs behind it and keeps
+    /// the selected tab in view. See `ListDetailTabStripMetrics`.
+    var body: some View {
+        ViewThatFits(in: .horizontal) {
+            ForEach(ListDetailTabStripMetrics.horizontalPaddingTiers, id: \.self) { padding in
+                tabRow(horizontalPadding: padding)
+            }
+            scrollingStrip
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var scrollingStrip: some View {
+        ScrollViewReader { proxy in
+            ScrollView(.horizontal) {
+                tabRow(horizontalPadding: ListDetailTabStripMetrics.horizontalPaddingTiers.last ?? 6)
+            }
+            .scrollIndicators(.hidden)
+            .onScrollGeometryChange(for: EdgeOverflow.self) { geometry in
+                EdgeOverflow(
+                    leading: geometry.contentOffset.x > 1,
+                    trailing: geometry.contentOffset.x + geometry.containerSize.width < geometry.contentSize.width - 1
+                )
+            } action: { _, newValue in
+                overflow = newValue
+            }
+            .mask {
+                HStack(spacing: 0) {
+                    LinearGradient(colors: [overflow.leading ? .clear : .black, .black], startPoint: .leading, endPoint: .trailing)
+                        .frame(width: 28)
+                    Rectangle()
+                    LinearGradient(colors: [.black, overflow.trailing ? .clear : .black], startPoint: .leading, endPoint: .trailing)
+                        .frame(width: 28)
                 }
             }
-            .padding(.horizontal, 1)
+            .onAppear { proxy.scrollTo(page, anchor: .center) }
+            .onChange(of: page) { _, newPage in
+                withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo(newPage, anchor: .center) }
+            }
+            // A page carrying the floating `+` sets
+            // `contentMargins(.bottom, iOSCircularAddButton.scrollClearance, for: .scrollContent)` — 100pt —
+            // once, for its own bottom-reaching list. `contentMargins` is **inherited through the
+            // environment**, so it lands on every scroll view underneath, including this tab strip. This
+            // one is a single 44pt row, so the inherited 100pt becomes 100pt of empty content region
+            // *below* the tabs — the strip grows to 144pt and every tab on the page appears to start a
+            // touch target and a half lower. The band reads as the page's, which is why it looked like
+            // five separate bugs: it is above `pageBody`, so it is in front of Tasks, Kanban, Notes,
+            // Links and Completed alike. Compact width was never affected — the host sets 0 there,
+            // because the tab bar's centre `+` is the capture affordance and no page floats one.
+            //
+            // Reset here rather than at the host, for the same reason the markdown accessory strips do
+            // it: a short single-row horizontal scroll view is never the page's bottom-reaching content,
+            // so it should never inherit the page's clearance for the button. This is the third instance
+            // of `D-104` — see `iOSMarkdownAccessoryViews.swift` — and putting the reset on the strip is
+            // what makes it true for the next host as well as this one.
+            .contentMargins(.vertical, 0, for: .scrollContent)
         }
-        .scrollIndicators(.hidden)
-        // A page carrying the floating `+` sets
-        // `contentMargins(.bottom, iOSCircularAddButton.scrollClearance, for: .scrollContent)` — 100pt —
-        // once, for its own bottom-reaching list. `contentMargins` is **inherited through the
-        // environment**, so it lands on every scroll view underneath, including this tab strip. This
-        // one is a single 44pt row, so the inherited 100pt becomes 100pt of empty content region
-        // *below* the tabs — the strip grows to 144pt and every tab on the page appears to start a
-        // touch target and a half lower. The band reads as the page's, which is why it looked like
-        // five separate bugs: it is above `pageBody`, so it is in front of Tasks, Kanban, Notes,
-        // Links and Completed alike. Compact width was never affected — the host sets 0 there,
-        // because the tab bar's centre `+` is the capture affordance and no page floats one.
-        //
-        // Reset here rather than at the host, for the same reason the markdown accessory strips do
-        // it: a short single-row horizontal scroll view is never the page's bottom-reaching content,
-        // so it should never inherit the page's clearance for the button. This is the third instance
-        // of `D-104` — see `iOSMarkdownAccessoryViews.swift` — and putting the reset on the strip is
-        // what makes it true for the next host as well as this one.
-        .contentMargins(.vertical, 0, for: .scrollContent)
+    }
+
+    private func tabRow(horizontalPadding: CGFloat) -> some View {
+        HStack(spacing: ListDetailTabStripMetrics.tabSpacing) {
+            ForEach(ListDetailPage.allCases) { item in
+                let isSelected = page == item
+                Button {
+                    page = item
+                } label: {
+                    HStack(spacing: ListDetailTabStripMetrics.labelCountSpacing) {
+                        // Sized by the semibold spelling whatever the state, so selecting a tab
+                        // never widens the row — which would otherwise flip the strip between
+                        // padding tiers as you tap along it.
+                        Text(item.rawValue)
+                            .cadenceFont(.controlLabel, weight: .semibold)
+                            .lineLimit(1)
+                            .hidden()
+                            .overlay {
+                                Text(item.rawValue)
+                                    .cadenceFont(.controlLabel, weight: isSelected ? .semibold : .medium)
+                                    // `muted`, not `dim`: an unselected tab is a label you read and
+                                    // tap, and `dim` on this surface sits under the AA floor at 13pt.
+                                    .foregroundStyle(isSelected ? Theme.text : Theme.muted)
+                                    .lineLimit(1)
+                                    .fixedSize()
+                            }
+
+                        if let count = counts[item], count > 0 {
+                            Text("\(count)")
+                                .cadenceFont(.metadata, base: 11, weight: .semibold)
+                                .monospacedDigit()
+                                .foregroundStyle(isSelected ? Theme.muted : Theme.dim)
+                        }
+                    }
+                        .padding(.horizontal, horizontalPadding)
+                        .frame(minWidth: ListDetailTabStripMetrics.minimumTabWidth)
+                        .frame(minHeight: CadenceTypeScale.height(44, holding: .controlLabel, at: dynamicTypeSize, scaling: scaling))
+                        .background(
+                            RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous)
+                                .fill(isSelected ? Theme.surfaceHighlight : Color.clear)
+                        )
+                        .contentShape(
+                            RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous)
+                        )
+                }
+                .buttonStyle(.plain)
+                .id(item)
+                .accessibilityLabel(item.rawValue)
+                .accessibilityAddTraits(isSelected ? .isSelected : [])
+            }
+        }
+        .fixedSize(horizontal: true, vertical: false)
+        .padding(.horizontal, ListDetailTabStripMetrics.stripInset)
     }
 }
 

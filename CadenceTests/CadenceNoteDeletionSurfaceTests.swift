@@ -654,6 +654,18 @@ struct CadenceNoteDeletionSurfaceTests {
         // refused-delete notice keeps `Theme.red` and this keeps `Theme.amber`.
         #expect(sheet.contains("Theme.amber"))
     }
+
+    /// T-6986: the note confirmation follows the reader's text size, as its list sibling does.
+    /// It declares the scaled scope itself — a presented sheet states its scaling rather than
+    /// inheriting it — and draws no fixed font that the scope could not reach. The shared
+    /// unknown-impact row lives in this file too, so the list sheet's copy of it scales with it.
+    @Test func theIOSConfirmationScalesWithTheReadersTextSize() throws {
+        let sheet = try strippingComments(sourceFile("Cadence/iOS/iOSNoteDeletionSupport.swift"))
+        #expect(sheet.contains("struct iOSNoteDeleteConfirmationSheet: View"))
+        #expect(sheet.components(separatedBy: ".cadenceScaledTypography()").count - 1 == 1)
+        #expect(!sheet.contains(".font(.system("))
+        #expect(sheet.components(separatedBy: ".cadenceFont(").count - 1 >= 10)
+    }
 }
 
 // MARK: - Source-reading helpers

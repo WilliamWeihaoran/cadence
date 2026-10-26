@@ -436,6 +436,7 @@ struct CadenceTypographyConversionSweepTests {
             "Cadence/iOS/iOSArchiveImportSettingsSection.swift",
             "Cadence/iOS/iOSDataResetSettingsSection.swift",
             "Cadence/iOS/iOSListDeletionSupport.swift",
+            "Cadence/iOS/iOSNoteDeletionSupport.swift",
             "Cadence/iOS/iOSCreateTaskSheet.swift",
             "Cadence/iOS/iOSListDetailView.swift",
             "Cadence/iOS/iOSListViews.swift",

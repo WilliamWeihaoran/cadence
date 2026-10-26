@@ -62,3 +62,38 @@ enum ListDetailPage: String, CaseIterable, Identifiable, Hashable {
         }
     }
 }
+
+/// The geometry of the iOS list-detail tab strip (`Tasks / Kanban / Notes / Links / Completed`).
+///
+/// **T-6985: the strip overran an iPhone once its counts showed.** At 12 pt of padding either side
+/// of every tab the five labels need ~356 pt bare and ~419 pt with two-digit counts beside Tasks,
+/// Kanban and Completed (SF 13 pt, measured), against 369 pt on a 393 pt iPhone after the host's
+/// 12 pt gutters. It sat in a horizontal scroll view with its indicator hidden, so "Completed" was
+/// cut off at the right edge with nothing saying the row moved.
+///
+/// So the strip now tries these paddings in order and takes the first at which every tab fits
+/// (`ViewThatFits`); only past the tightest does it scroll, and then it says so with an edge fade
+/// and keeps the selected tab in view. Here, in `Shared/`, rather than in the iOS view, because
+/// `Cadence/iOS/` is invisible to the macOS-hosted test target and the tiers are the decision —
+/// `CadenceListDetailTabStripFitTests` prices them against measured label widths.
+enum ListDetailTabStripMetrics {
+    /// Horizontal padding either side of each tab's label, loosest first.
+    static let horizontalPaddingTiers: [CGFloat] = [12, 8, 6]
+    /// Between adjacent tabs.
+    static let tabSpacing: CGFloat = 2
+    /// Between a tab's label and its count.
+    static let labelCountSpacing: CGFloat = 6
+    /// The strip's own inset either side, inside the scroll content.
+    static let stripInset: CGFloat = 1
+    /// No tab narrower than a touch target, whatever the tier. "Links" sits right at it at 6 pt.
+    static let minimumTabWidth: CGFloat = 44
+
+    /// The width the strip needs, given each tab's content width (label, plus spacing and count
+    /// where one shows) and a padding tier. The same sum `ViewThatFits` makes of the real views.
+    static func stripWidth(contentWidths: [CGFloat], horizontalPadding: CGFloat) -> CGFloat {
+        let tabs = contentWidths.map { max($0 + horizontalPadding * 2, minimumTabWidth) }
+        return tabs.reduce(0, +)
+            + tabSpacing * CGFloat(max(contentWidths.count - 1, 0))
+            + stripInset * 2
+    }
+}

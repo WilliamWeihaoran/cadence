@@ -143,7 +143,7 @@ struct iOSNoteDeleteConfirmationSheet: View {
                                 iOSRowDivider()
 
                                 Text(failureNotice)
-                                    .font(.system(size: 13, weight: .semibold))
+                                    .cadenceFont(.controlLabel, base: 13, weight: .semibold)
                                     .foregroundStyle(Theme.red)
                                     .fixedSize(horizontal: false, vertical: true)
                                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -177,6 +177,10 @@ struct iOSNoteDeleteConfirmationSheet: View {
                 }
             }
         }
+        // T-6986: scaled like `iOSListDeleteConfirmationSheet`, declared here rather than inherited —
+        // a presented sheet states its own scaling (see `cadenceFixedTypography`). The card is a
+        // scroll view of wrapping rows, so nothing in it is a literal height the type could outgrow.
+        .cadenceScaledTypography()
         .preferredColorScheme(.dark)
     }
 
@@ -202,11 +206,11 @@ struct iOSNoteDeleteConfirmationSheet: View {
 
             VStack(alignment: .leading, spacing: 4) {
                 Text("This cannot be undone")
-                    .font(.system(size: 15, weight: .semibold))
+                    .cadenceFont(.rowTitle, base: 15, weight: .semibold)
                     .foregroundStyle(Theme.text)
 
                 Text("Cadence syncs through your private iCloud database, so this deletion reaches your other devices.")
-                    .font(.system(size: 12))
+                    .cadenceFont(.metadata, base: 12, weight: .regular)
                     .foregroundStyle(Theme.subdued)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -238,17 +242,17 @@ struct iOSNoteDeleteConfirmationSheet: View {
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(note.displayTitle)
-                    .font(.system(size: 15, weight: .semibold))
+                    .cadenceFont(.rowTitle, base: 15, weight: .semibold)
                     .foregroundStyle(Theme.text)
                     .lineLimit(2)
 
                 if let folder = summary.folder {
                     HStack(spacing: 4) {
                         Image(systemName: "folder")
-                            .font(.system(size: 10, weight: .semibold))
+                            .cadenceFont(.metadata, base: 10, weight: .semibold)
 
                         Text(folder)
-                            .font(.system(size: 12))
+                            .cadenceFont(.metadata, base: 12, weight: .regular)
                             .lineLimit(1)
                             .truncationMode(.middle)
                     }
@@ -264,7 +268,7 @@ struct iOSNoteDeleteConfirmationSheet: View {
     private var lostLines: some View {
         if summary.isEmpty {
             Text("Nothing has been written in this note yet.")
-                .font(.system(size: 12))
+                .cadenceFont(.metadata, base: 12, weight: .regular)
                 .foregroundStyle(Theme.subdued)
                 .fixedSize(horizontal: false, vertical: true)
         } else {
@@ -272,11 +276,11 @@ struct iOSNoteDeleteConfirmationSheet: View {
                 ForEach(summary.lostItemLines, id: \.self) { line in
                     HStack(spacing: 8) {
                         Image(systemName: "trash")
-                            .font(.system(size: 11, weight: .semibold))
+                            .cadenceFont(.controlLabel, base: 11, weight: .semibold)
                             .foregroundStyle(Theme.red)
 
                         Text(line)
-                            .font(.system(size: 13, weight: .medium))
+                            .cadenceFont(.controlLabel, base: 13, weight: .medium)
                             .foregroundStyle(Theme.text)
 
                         Spacer(minLength: 0)
@@ -301,14 +305,14 @@ struct iOSNoteDeleteConfirmationSheet: View {
         VStack(alignment: .leading, spacing: 6) {
             if let retainedLine = summary.retainedLine {
                 Text(retainedLine)
-                    .font(.system(size: 12))
+                    .cadenceFont(.metadata, base: 12, weight: .regular)
                     .foregroundStyle(Theme.subdued)
                     .fixedSize(horizontal: false, vertical: true)
             }
 
             if let brokenLinkLine = summary.brokenLinkLine {
                 Text(brokenLinkLine)
-                    .font(.system(size: 12))
+                    .cadenceFont(.metadata, base: 12, weight: .regular)
                     .foregroundStyle(Theme.subdued)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -327,11 +331,11 @@ struct iOSDeleteUnknownImpactRow: View {
     var body: some View {
         HStack(alignment: .top, spacing: 8) {
             Image(systemName: "exclamationmark.circle")
-                .font(.system(size: 11, weight: .semibold))
+                .cadenceFont(.controlLabel, base: 11, weight: .semibold)
                 .foregroundStyle(Theme.amber)
 
             Text(line)
-                .font(.system(size: 12))
+                .cadenceFont(.metadata, base: 12, weight: .regular)
                 .foregroundStyle(Theme.subdued)
                 .fixedSize(horizontal: false, vertical: true)
 

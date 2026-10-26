@@ -477,7 +477,6 @@ struct CadenceTagChipScaleTests {
             "Cadence/iOS/iOSListNotesView.swift",
             "Cadence/iOS/iOSListSupportViews.swift",
             "Cadence/iOS/iOSMarkdownAccessoryViews.swift",
-            "Cadence/iOS/iOSNoteDeletionSupport.swift",
             "Cadence/iOS/iOSNoteExportMenu.swift",
             "Cadence/iOS/iOSNotesView.swift",
             "Cadence/iOS/iOSNotificationsSettingsSection.swift",
@@ -506,6 +505,8 @@ struct CadenceTagChipScaleTests {
             "Cadence/iOS/iOSArchiveImportSettingsSection.swift",
             "Cadence/iOS/iOSDataResetSettingsSection.swift",
             "Cadence/iOS/iOSListDeletionSupport.swift",
+            // [[T-6986]]: the note delete sheet declares its scope like its list sibling above.
+            "Cadence/iOS/iOSNoteDeletionSupport.swift",
             "Cadence/iOS/iOSCalendarEventEditSheet.swift",
             "Cadence/iOS/iOSCalendarQuickCreateSheet.swift",
             "Cadence/iOS/iOSTaskDetailSheet.swift",
