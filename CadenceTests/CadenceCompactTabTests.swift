@@ -81,7 +81,12 @@ struct CadenceCompactTabTests {
         // sidebar's rule is that Inbox *is* one of the Tasks row's two views.
         #expect(CadenceCompactTab.tasksIndexDestinations(hidden: [.today]) == [.allTasks, .inbox])
         #expect(CadenceCompactTab.tasksIndexDestinations(hidden: [.allTasks]) == [.today])
-        #expect(CadenceCompactTab.tasksIndexDestinations(hidden: [.today, .allTasks]).isEmpty)
+        // T-6291 (owner decision 2026-10-26): the Mac may hide both (its floor counts Calendar and
+        // Notes) and the layout syncs; the phone's index shows them anyway rather than no rows.
+        #expect(
+            CadenceCompactTab.tasksIndexDestinations(hidden: [.today, .allTasks])
+                == [.today, .allTasks, .inbox]
+        )
 
         // Nothing another tab owns can be dragged into this index by reordering the sidebar.
         let everythingReordered = CadenceCompactTab.tasksIndexDestinations(
@@ -89,6 +94,23 @@ struct CadenceCompactTabTests {
         )
         #expect(everythingReordered.allSatisfy { $0.compactTab == .tasks })
         #expect(everythingReordered == [.allTasks, .inbox, .today])
+    }
+
+    /// **T-6291.** Whatever the synced layout hides, the phone's Tasks index keeps a view row:
+    /// with Today and All Tasks both hidden it shows both, in the user's order, and a row the
+    /// phone does not draw (Calendar, Notes, Focus) stays hidden and out of the index.
+    @Test func theTasksIndexNeverEndsUpWithNoViewRows() {
+        let bothHidden: Set<CadenceFeatureDestination> = [.today, .allTasks, .calendar, .notes]
+        #expect(
+            CadenceCompactTab.tasksIndexDestinations(storedOrder: [.allTasks, .today], hidden: bothHidden)
+                == [.allTasks, .inbox, .today]
+        )
+        let everyHidden = CadenceSidebarLayout.customisableDestinations
+        let rows = CadenceCompactTab.tasksIndexDestinations(hidden: everyHidden)
+        #expect(rows == [.today, .allTasks, .inbox])
+        #expect(rows.allSatisfy { $0.compactTab == .tasks })
+        // Only the empty case falls back: one hidden row is still honoured.
+        #expect(CadenceCompactTab.tasksIndexDestinations(hidden: [.today, .calendar]) == [.allTasks, .inbox])
     }
 
     /// The three slices and the three destinations are the same three, however they are drawn —

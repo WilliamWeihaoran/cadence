@@ -112,9 +112,28 @@ extension CadenceCompactTab {
     ///
     /// Only destinations this tab owns survive the filter, so Calendar and Notes stay where their
     /// own tabs put them however the user reorders the sidebar.
+    ///
+    /// **T-6291 (owner decision 2026-10-26): the index is never left with no view rows.** The Mac
+    /// and the iPad measure the one-visible-row floor over all four primary rows, so they may hide
+    /// both Today and All Tasks (Calendar and Notes are still rows there), and that hidden set
+    /// syncs. When honouring it would empty this index, the phone shows its rows anyway -- the
+    /// hidden set is ignored for this tab's destinations, in the user's order. Phone-only: nothing
+    /// about the Mac's or the iPad's sidebar, nor the stored preference, changes.
     static func tasksIndexDestinations(
         storedOrder: [CadenceFeatureDestination] = [],
         hidden: Set<CadenceFeatureDestination> = []
+    ) -> [CadenceFeatureDestination] {
+        let honoured = tasksIndexRows(storedOrder: storedOrder, hidden: hidden)
+        guard honoured.isEmpty else { return honoured }
+        return tasksIndexRows(
+            storedOrder: storedOrder,
+            hidden: hidden.filter { $0.compactTab != .tasks }
+        )
+    }
+
+    private static func tasksIndexRows(
+        storedOrder: [CadenceFeatureDestination],
+        hidden: Set<CadenceFeatureDestination>
     ) -> [CadenceFeatureDestination] {
         CadenceSidebarLayout.resolvedDestinations(
             in: .primary,
