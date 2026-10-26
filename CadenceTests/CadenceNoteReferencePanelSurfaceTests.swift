@@ -647,12 +647,21 @@ struct CadenceNoteReferencePanelSurfaceTests {
         let taskChip = try #require(taskSection.components(separatedBy: "NoteReferencePanelSection.backlinks.label").first)
         #expect(taskChip.contains("onOpenTask(task)"))
 
-        for host in ["Cadence/macOS/Views/NoteEditorPane.swift", "Cadence/macOS/Views/ListNotesSupportViews.swift"] {
+        // [[T-5120]]: `TaskNoteEditorPane`'s popover slot is the shared `TaskNotesEmbedHandlers`'
+        // and is attached by `taskNotesEmbedPopovers`, so its two spellings name that.
+        for (host, raise, popover) in [
+            ("Cadence/macOS/Views/NoteEditorPane.swift", "onOpenTask: { linkedTaskForPopover = $0 }", ".popover(item: $linkedTaskForPopover)"),
+            ("Cadence/macOS/Views/ListNotesSupportViews.swift", "onOpenTask: { embeds.linkedTaskForPopover = $0 }", ".taskNotesEmbedPopovers(embeds, scope: embedScope)")
+        ] {
             let code = try strippingComments(sourceFile(host))
             #expect(code.components(separatedBy: "NoteReferenceStrip(").count - 1 == 1, "\(host)")
-            #expect(code.contains("onOpenTask: { linkedTaskForPopover = $0 }"), "\(host)")
-            #expect(code.contains(".popover(item: $linkedTaskForPopover)"), "\(host)")
+            #expect(code.contains(raise), "\(host)")
+            #expect(code.contains(popover), "\(host)")
         }
+        #expect(
+            try strippingComments(sourceFile("Cadence/macOS/Views/TaskNotesEmbedHandlers.swift"))
+                .contains(".popover(item: $handlers.linkedTaskForPopover)")
+        )
     }
 
     /// **[[T-5151]] (a) — every macOS `NoteEditorPane` is handed the store's notes and tasks.** The

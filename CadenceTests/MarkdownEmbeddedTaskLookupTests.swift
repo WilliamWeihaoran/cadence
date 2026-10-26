@@ -156,7 +156,8 @@ struct MarkdownEmbeddedTaskLookupTests {
     private static let embeddingEditors = [
         "Cadence/macOS/Views/NotePanel.swift",
         "Cadence/macOS/Views/NoteEditorPane.swift",
-        "Cadence/macOS/Views/ListNotesSupportViews.swift",
+        // [[T-5120]]: `TaskNoteEditorPane`'s, the inspector box's and Focus's lookup.
+        "Cadence/macOS/Views/TaskNotesEmbedHandlers.swift",
         "Cadence/iOS/iOSMarkdownEditingSurface.swift"
     ]
 

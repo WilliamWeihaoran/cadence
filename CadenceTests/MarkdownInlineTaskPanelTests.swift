@@ -295,20 +295,24 @@ struct MarkdownInlineTaskPanelTests {
         #expect(!MarkdownInlineTaskPanelRouting.opensPanel(for: .title))
     }
 
-    /// The three macOS note hosts each route a field chip to the inline panel, and keep the
-    /// popover only as the status chip's editor and the no-text-view fallback.
+    /// The macOS note hosts each route a field chip to the inline panel, and keep the popover only
+    /// as the status chip's editor and the no-text-view fallback. [[T-5120]]: the three task-notes
+    /// editors share `TaskNotesEmbedHandlers`, whose context arrives in its `scope`.
     @Test func everyMacNoteHostOpensThePanelInline() throws {
         for path in [
             "Cadence/macOS/Views/NoteEditorPane.swift",
             "Cadence/macOS/Views/NotePanel.swift",
-            "Cadence/macOS/Views/ListNotesSupportViews.swift"
+            "Cadence/macOS/Views/TaskNotesEmbedHandlers.swift"
         ] {
             let source = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile(path))
             let body = try #require(CadenceSourceScan.functionBody(named: "editEmbeddedTask", in: source), "\(path)")
             #expect(body.contains("MarkdownInlineTaskPanelRouting.opensPanel(for: field)"), "\(path)")
             #expect(body.contains(".presentInlineTaskPanel(for:"), "\(path)")
             // The clicked chip travels with the request, so its row can open expanded (T-3253 (a)).
-            #expect(body.contains("field: field, in: modelContext"), "\(path)")
+            #expect(
+                CadenceSourceScan.matchCount(#"field: field, in: (scope\.)?modelContext"#, in: body) == 1,
+                "\(path)"
+            )
         }
     }
 

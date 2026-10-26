@@ -259,8 +259,9 @@ struct CadenceCreateTaskCommitSurfaceTests {
                 failureBranch: Self.embedFailureBranch,
                 successSpellings: ["recentEmbeddedTasks[", "return .task("]
             ),
+            // [[T-5120]]: `TaskNoteEditorPane`'s, the inspector box's and Focus's copies.
             CommitSurface(
-                path: "Cadence/macOS/Views/ListNotesSupportViews.swift",
+                path: "Cadence/macOS/Views/TaskNotesEmbedHandlers.swift",
                 function: "createEmbeddedTask",
                 failureBranch: Self.embedFailureBranch,
                 successSpellings: ["recentEmbeddedTasks[", "return .task("]

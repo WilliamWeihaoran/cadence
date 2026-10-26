@@ -20,14 +20,10 @@ struct TaskNoteEditorPane: View {
     @Environment(HoveredTaskManager.self) private var hoveredTaskManager
     @Environment(HoveredEditableManager.self) private var hoveredEditableManager
     @AppStorage(NoteTemplateLibrary.storageKey) private var noteTemplateOverridesRaw = ""
-    @State private var editorTextView: CadenceTextView?
-    @State private var linkedTaskForPopover: AppTask?
-    @State private var embeddedTaskEditRequest: TaskEmbedFieldEditRequest?
-    @State private var recentEmbeddedTasks: [UUID: AppTask] = [:]
+    /// The live-card embed handlers, shared with `TaskDetailNotesSection` and `FocusNotesPanel`
+    /// ([[T-5120]]). Its `editorTextView` is this pane's text view too (the outline jump reads it).
+    @State private var embeds = TaskNotesEmbedHandlers(hoverIDPrefix: "task-note-embed-task-")
     @State private var editorContent = ""
-    /// Set when an edit made on a task card embedded in this note was refused. See
-    /// `toggleEmbeddedSubtask` (T-648).
-    @State private var embeddedTaskFailureNotice: String?
     @State private var loadedTaskID: UUID?
     @State private var derivedState = TaskNoteDerivedState()
     @State private var pendingDerivedStateTask: Task<Void, Never>?
@@ -116,9 +112,15 @@ struct TaskNoteEditorPane: View {
                     linkedTasks: derivedState.linkedTasks,
                     backlinks: [],
                     onOpenNote: onOpenNote,
-                    onOpenTask: { linkedTaskForPopover = $0 }
+                    onOpenTask: { embeds.linkedTaskForPopover = $0 }
                 )
             }
+            let embedScope = TaskNotesEmbedScope(referenceTasks: relatedTasks, ownerTask: task, modelContext: modelContext)
+            let embedCallbacks = embeds.callbacks(
+                in: embedScope,
+                hoveredTaskManager: hoveredTaskManager,
+                hoveredEditableManager: hoveredEditableManager
+            )
             MarkdownEditor(
                 text: noteContentBinding,
                 toolbarAccessory: toolbarAccessory,
@@ -126,45 +128,26 @@ struct TaskNoteEditorPane: View {
                 referenceNotes: relatedNotes,
                 referenceTasks: relatedTasks,
                 onOpenNoteReference: openNoteReference,
-                onOpenTaskReference: openTaskReference,
-                onCreateEmbeddedTask: createEmbeddedTask,
-                onToggleEmbeddedTask: toggleEmbeddedTask,
-                onToggleEmbeddedSubtask: toggleEmbeddedSubtask,
-                onRenameEmbeddedTask: renameEmbeddedTask,
-                onOpenEmbeddedTask: openEmbeddedTask,
-                onEditEmbeddedTask: editEmbeddedTask,
-                onHoverEmbeddedTask: hoverEmbeddedTask,
+                onOpenTaskReference: embedCallbacks.openTaskReference,
+                onCreateEmbeddedTask: embedCallbacks.createEmbeddedTask,
+                onToggleEmbeddedTask: embedCallbacks.toggleEmbeddedTask,
+                onToggleEmbeddedSubtask: embedCallbacks.toggleEmbeddedSubtask,
+                onRenameEmbeddedTask: embedCallbacks.renameEmbeddedTask,
+                onOpenEmbeddedTask: embedCallbacks.openEmbeddedTask,
+                onEditEmbeddedTask: embedCallbacks.editEmbeddedTask,
+                onHoverEmbeddedTask: embedCallbacks.hoverEmbeddedTask,
                 onEditingChanged: handleEditorFocusChange,
-                onTextViewChanged: { editorTextView = $0 }
+                onTextViewChanged: embedCallbacks.textViewChanged
             )
             .overlay(alignment: .topLeading) {
                 NoteEmptyBodyPlaceholder(templates: templates, isVisible: isNoteBlank, onApply: applyTemplate)
             }
-            .popover(item: $linkedTaskForPopover) { linkedTask in
-                TaskDetailPopover(task: linkedTask)
-                    .frame(width: 380)
-            }
-            .onChange(of: linkedTaskForPopover?.id) { previous, current in
-                guard previous != nil, current == nil else { return }
-                reconcileEmbeddedTaskReferenceTitles()
-            }
-            .popover(item: $embeddedTaskEditRequest) { request in
-                if let embeddedTask = embeddedTask(id: request.taskID) {
-                    TaskEmbedFieldEditorPopover(task: embeddedTask, initialField: request.field) {
-                        refreshEmbeddedTask(embeddedTask)
-                    }
-                } else {
-                    Text("Task no longer exists")
-                        .font(.system(size: 12))
-                        .foregroundStyle(Theme.dim)
-                        .padding()
-                }
-            }
+            .taskNotesEmbedPopovers(embeds, scope: embedScope)
 
             // Under the editor rather than over the card: the card is drawn by the text view, so
             // there is nothing in SwiftUI's tree to attach a notice to at the point of the refusal.
-            if let embeddedTaskFailureNotice {
-                CadenceInlineFailureNotice(text: embeddedTaskFailureNotice) { self.embeddedTaskFailureNotice = nil }
+            if let embeddedTaskFailureNotice = embeds.embeddedTaskFailureNotice {
+                CadenceInlineFailureNotice(text: embeddedTaskFailureNotice) { embeds.embeddedTaskFailureNotice = nil }
                     .padding(.horizontal, 12)
                     .padding(.vertical, 6)
             }
@@ -292,183 +275,8 @@ struct TaskNoteEditorPane: View {
         onOpenNote(note)
     }
 
-    private func openTaskReference(id: UUID?, title: String) {
-        if let id, let linkedTask = relatedTasks.first(where: { $0.id == id }) {
-            linkedTaskForPopover = linkedTask
-            return
-        }
-
-        let targetTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !targetTitle.isEmpty,
-              let linkedTask = relatedTasks.first(where: {
-                  $0.title.trimmingCharacters(in: .whitespacesAndNewlines)
-                      .caseInsensitiveCompare(targetTitle) == .orderedSame
-              }) else { return }
-        linkedTaskForPopover = linkedTask
-    }
-
-    private func createEmbeddedTask(title: String) -> MarkdownReferenceSuggestion? {
-        let container: TaskContainerSelection
-        let areas: [Area]
-        let projects: [Project]
-
-        if let area = task.area {
-            container = .area(area.id)
-            areas = [area]
-            projects = []
-        } else if let project = task.project {
-            container = .project(project.id)
-            areas = []
-            projects = [project]
-        } else {
-            container = .inbox
-            areas = []
-            projects = []
-        }
-
-        let draft = TaskCreationDraft(
-            title: title,
-            notes: "",
-            priority: .none,
-            container: container,
-            sectionName: task.resolvedSectionName,
-            dueDateKey: "",
-            scheduledDateKey: "",
-            subtaskTitles: [],
-            tags: []
-        )
-
-        // T-364: commit first, hand the reference back second. The editor writes
-        // `[[task:UUID|Title]]` into the note only when this returns non-nil, so a refused commit
-        // has to return nil rather than leave the note pointing at a task the store never took.
-        let created: AppTask?
-        do {
-            created = try TaskCreationService(areas: areas, projects: projects)
-                .createTask(from: draft, into: modelContext)
-        } catch {
-            return nil
-        }
-        guard let embeddedTask = created else { return nil }
-
-        recentEmbeddedTasks[embeddedTask.id] = embeddedTask
-        editorTextView?.markdownTaskEmbeds[embeddedTask.id] = MarkdownTaskEmbedRenderInfo.task(embeddedTask)
-        return .task(embeddedTask)
-    }
-
-    private func toggleEmbeddedTask(id: UUID) {
-        guard let embeddedTask = embeddedTask(id: id) else { return }
-        do {
-            try CadenceTaskMutationSupport.setStatus(
-                embeddedTask.isDone ? .todo : .done,
-                for: embeddedTask,
-                modelContext: modelContext
-            )
-        } catch {
-            embeddedTaskFailureNotice = CadenceTaskFieldEditCommit.saveFailureNotice
-            return
-        }
-        embeddedTaskFailureNotice = nil
-        HabitNotificationReconcileSupport.scheduleReconcile(in: modelContext)
-        editorTextView?.markdownTaskEmbeds[id] = MarkdownTaskEmbedRenderInfo.task(embeddedTask)
-        if let editorTextView {
-            MarkdownStylist.apply(to: editorTextView)
-            editorTextView.needsDisplay = true
-        }
-    }
-
-    /// **T-648.** See `NotePanel.toggleEmbeddedSubtask`: `refreshEmbeddedTask` repaints the card in
-    /// the note, so running it over a swallowed save is a success report.
-    private func toggleEmbeddedSubtask(taskID: UUID, subtaskID: UUID) {
-        guard let embeddedTask = embeddedTask(id: taskID),
-              let subtask = (embeddedTask.subtasks ?? []).first(where: { $0.id == subtaskID }) else { return }
-        guard CadenceNoteTaskEmbedEditing.toggleSubtask(subtask, in: modelContext) else {
-            embeddedTaskFailureNotice = CadenceTaskFieldEditCommit.saveFailureNotice
-            return
-        }
-        embeddedTaskFailureNotice = nil
-        refreshEmbeddedTask(embeddedTask)
-    }
-
-    /// See `toggleEmbeddedSubtask` — the same claim, about the card's title rather than its ticks.
-    private func renameEmbeddedTask(id: UUID, title: String) {
-        guard let embeddedTask = embeddedTask(id: id) else { return }
-        guard CadenceNoteTaskEmbedEditing.rename(embeddedTask, to: title, in: modelContext) else {
-            embeddedTaskFailureNotice = CadenceTaskFieldEditCommit.saveFailureNotice
-            return
-        }
-        embeddedTaskFailureNotice = nil
-        refreshEmbeddedTask(embeddedTask)
-    }
-
-    private func openEmbeddedTask(id: UUID) {
-        guard let embeddedTask = embeddedTask(id: id) else { return }
-        linkedTaskForPopover = embeddedTask
-    }
-
-    /// Every field chip but status opens the shared task panel **inside the note**, under the
-    /// card ([[T-1481]]); status keeps its own small editor, which holds Start and Cancel. Without
-    /// a text view yet there is nowhere inline to put it, so the popover is the fallback.
-    private func editEmbeddedTask(id: UUID, field: MarkdownTaskEmbedField) {
-        guard let embeddedTask = embeddedTask(id: id) else { return }
-        if MarkdownInlineTaskPanelRouting.opensPanel(for: field), let editorTextView {
-            editorTextView.presentInlineTaskPanel(for: embeddedTask, field: field, in: modelContext, onSaved: refreshEmbeddedTask)
-            return
-        }
-        embeddedTaskEditRequest = TaskEmbedFieldEditRequest(taskID: id, field: field)
-    }
-
-    private func hoverEmbeddedTask(id: UUID, hovering: Bool) {
-        guard let embeddedTask = embeddedTask(id: id) else { return }
-        if hovering {
-            hoveredTaskManager.beginHovering(embeddedTask, source: .note)
-            hoveredEditableManager.beginHovering(id: embeddedTaskHoverID(id)) {
-                openEmbeddedTask(id: id)
-            }
-        } else {
-            hoveredTaskManager.endHovering(embeddedTask)
-            hoveredEditableManager.endHovering(id: embeddedTaskHoverID(id))
-            refreshEmbeddedTask(embeddedTask)
-        }
-    }
-
-    private func embeddedTaskHoverID(_ id: UUID) -> String {
-        "task-note-embed-task-\(id.uuidString)"
-    }
-
-    /// Bring this task's note text back in line with the tasks it embeds.
-    ///
-    /// See `NotePanel.reconcileEmbeddedTaskReferenceTitles` for why this hangs off the inspector
-    /// closing rather than off the rename itself, and for what it deliberately does not reach.
-    private func reconcileEmbeddedTaskReferenceTitles() {
-        guard let editorTextView else { return }
-        editorTextView.reconcileEmbeddedTaskReferenceTitles(
-            titles: editorTextView.markdownTaskEmbeds.mapValues(\.title)
-        )
-    }
-
-    private func refreshEmbeddedTask(_ embeddedTask: AppTask) {
-        editorTextView?.markdownTaskEmbeds[embeddedTask.id] = MarkdownTaskEmbedRenderInfo.task(embeddedTask)
-        editorTextView?.replaceEmbeddedTaskReferenceTitle(id: embeddedTask.id, title: embeddedTask.title)
-        if let editorTextView {
-            MarkdownStylist.apply(to: editorTextView)
-            editorTextView.needsDisplay = true
-        }
-    }
-
-    /// The live query first, then the creation-latency cache — re-verified against the store, so
-    /// a task deleted elsewhere stops being interactive in this note instead of living on in
-    /// `recentEmbeddedTasks` (T-349).
-    private func embeddedTask(id: UUID) -> AppTask? {
-        MarkdownEmbeddedTaskLookup.resolve(
-            id: id,
-            liveTasks: relatedTasks,
-            cache: &recentEmbeddedTasks,
-            in: modelContext
-        )
-    }
-
     private func jumpToOutline(_ item: MarkdownOutlineItem) {
-        guard let editorTextView else { return }
+        guard let editorTextView = embeds.editorTextView else { return }
         let safeLocation = min(max(item.location, 0), (editorTextView.string as NSString).length)
         editorTextView.window?.makeFirstResponder(editorTextView)
         editorTextView.setSelectedRange(NSRange(location: safeLocation, length: 0))

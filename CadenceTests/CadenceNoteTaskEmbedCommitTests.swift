@@ -219,13 +219,15 @@ struct CadenceNoteTaskEmbedCommitTests {
         let editors = [
             ("Cadence/macOS/Views/NotePanel.swift", "toggleEmbeddedSubtask", "refreshEmbeddedTask(task)"),
             ("Cadence/macOS/Views/NotePanel.swift", "renameEmbeddedTask", "refreshEmbeddedTask(task)"),
+            // [[T-5120]]: `TaskNoteEditorPane`'s pair (and the inspector box's and Focus's copies)
+            // is the shared `TaskNotesEmbedHandlers` now.
             (
-                "Cadence/macOS/Views/ListNotesSupportViews.swift",
+                "Cadence/macOS/Views/TaskNotesEmbedHandlers.swift",
                 "toggleEmbeddedSubtask",
                 "refreshEmbeddedTask(embeddedTask)"
             ),
             (
-                "Cadence/macOS/Views/ListNotesSupportViews.swift",
+                "Cadence/macOS/Views/TaskNotesEmbedHandlers.swift",
                 "renameEmbeddedTask",
                 "refreshEmbeddedTask(embeddedTask)"
             ),
@@ -280,21 +282,28 @@ struct CadenceNoteTaskEmbedCommitTests {
 
     /// **Source shape.** Each of the four editors holds a notice slot and draws it. A notice set and
     /// never rendered is the same silence one layer further in.
+    ///
+    /// [[T-5120]]: the three task-notes editors hold their slot in the shared
+    /// `TaskNotesEmbedHandlers` and each draws it, so the slot and the drawing are read from
+    /// different files for those three.
     @Test func everyEmbeddedTaskCardEditorDrawsTheNoticeItSets() throws {
-        for path in [
-            "Cadence/macOS/Views/NotePanel.swift",
-            "Cadence/macOS/Views/ListNotesSupportViews.swift",
-            "Cadence/macOS/Views/NoteEditorPane.swift",
-            "Cadence/iOS/iOSMarkdownEditingSurface.swift"
+        let stateSlot = "@State private var embeddedTaskFailureNotice: String?"
+        let sharedPath = "Cadence/macOS/Views/TaskNotesEmbedHandlers.swift"
+        for (slotPath, slot, drawPath) in [
+            ("Cadence/macOS/Views/NotePanel.swift", stateSlot, "Cadence/macOS/Views/NotePanel.swift"),
+            (sharedPath, "var embeddedTaskFailureNotice: String?", "Cadence/macOS/Views/ListNotesSupportViews.swift"),
+            (sharedPath, "var embeddedTaskFailureNotice: String?", "Cadence/macOS/Views/TaskInspectorContentSupportViews.swift"),
+            (sharedPath, "var embeddedTaskFailureNotice: String?", "Cadence/macOS/Views/FocusNotesPanel.swift"),
+            ("Cadence/macOS/Views/NoteEditorPane.swift", stateSlot, "Cadence/macOS/Views/NoteEditorPane.swift"),
+            ("Cadence/iOS/iOSMarkdownEditingSurface.swift", stateSlot, "Cadence/iOS/iOSMarkdownEditingSurface.swift")
         ] {
-            let view = try CadenceCommitSurfaceScan.scanned(path)
             #expect(
-                view.contains("@State private var embeddedTaskFailureNotice: String?"),
-                "\(path) does not hold a notice slot"
+                try CadenceCommitSurfaceScan.scanned(slotPath).contains(slot),
+                "\(slotPath) does not hold a notice slot"
             )
             #expect(
-                view.contains("CadenceInlineFailureNotice(text: embeddedTaskFailureNotice)"),
-                "\(path) sets a notice it never draws"
+                try CadenceCommitSurfaceScan.scanned(drawPath).contains("CadenceInlineFailureNotice(text: embeddedTaskFailureNotice)"),
+                "\(drawPath) sets a notice it never draws"
             )
         }
     }
@@ -305,7 +314,7 @@ struct CadenceNoteTaskEmbedCommitTests {
     @Test func theembeddedTaskCardScanReadsTheFilesItClaimsTo() throws {
         let markers = [
             ("Cadence/macOS/Views/NotePanel.swift", "struct NotePanel: View {"),
-            ("Cadence/macOS/Views/ListNotesSupportViews.swift", "struct TaskNoteEditorPane: View {"),
+            ("Cadence/macOS/Views/TaskNotesEmbedHandlers.swift", "final class TaskNotesEmbedHandlers {"),
             ("Cadence/macOS/Views/NoteEditorPane.swift", "struct NoteEditorPane: View {"),
             ("Cadence/iOS/iOSMarkdownEditingSurface.swift", "struct iOSMarkdownEditingSurface: View {")
         ]

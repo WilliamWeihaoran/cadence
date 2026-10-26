@@ -552,9 +552,9 @@ struct CadenceMarkdownImageCommitSurfaceTests {
             ]),
             ("Cadence/macOS/Views/NotePanel.swift", ["CadenceInlineFailureNotice(text: embeddedTaskFailureNotice) { self.embeddedTaskFailureNotice = nil }"]),
             ("Cadence/macOS/Views/NoteEditorPane.swift", ["CadenceInlineFailureNotice(text: embeddedTaskFailureNotice) { self.embeddedTaskFailureNotice = nil }"]),
-            ("Cadence/macOS/Views/ListNotesSupportViews.swift", ["CadenceInlineFailureNotice(text: embeddedTaskFailureNotice) { self.embeddedTaskFailureNotice = nil }"]),
-            ("Cadence/macOS/Views/TaskInspectorContentSupportViews.swift", ["CadenceInlineFailureNotice(text: embeddedTaskFailureNotice) { self.embeddedTaskFailureNotice = nil }"]),
-            ("Cadence/macOS/Views/FocusNotesPanel.swift", ["CadenceInlineFailureNotice(text: embeddedTaskFailureNotice) { self.embeddedTaskFailureNotice = nil }"])
+            ("Cadence/macOS/Views/ListNotesSupportViews.swift", ["CadenceInlineFailureNotice(text: embeddedTaskFailureNotice) { embeds.embeddedTaskFailureNotice = nil }"]),
+            ("Cadence/macOS/Views/TaskInspectorContentSupportViews.swift", ["CadenceInlineFailureNotice(text: embeddedTaskFailureNotice) { embeds.embeddedTaskFailureNotice = nil }"]),
+            ("Cadence/macOS/Views/FocusNotesPanel.swift", ["CadenceInlineFailureNotice(text: embeddedTaskFailureNotice) { embeds.embeddedTaskFailureNotice = nil }"])
         ] {
             let source = try CadenceSourceScan.sourceFile(path)
             for notice in notices {
