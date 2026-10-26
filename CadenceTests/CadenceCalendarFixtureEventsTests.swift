@@ -101,7 +101,7 @@ struct CadenceCalendarFixtureEventsTests {
     @Test func aLaunchThatSeesTheFixturesCannotReachARealEventStore() {
         var checked = 0
         for modeValue in ["1", "0", ""] {
-            for scenarioValue in ["calendar-hues", "today-geometry", "nonsense", ""] {
+            for scenarioValue in ["calendar-hues", "calendar-cascade", "today-geometry", "nonsense", ""] {
                 let environment = [Self.mode: modeValue, Self.scenario: scenarioValue]
                 guard CadenceCalendarFixtureEvents.isActive(in: environment) else { continue }
                 checked += 1
@@ -111,7 +111,7 @@ struct CadenceCalendarFixtureEventsTests {
                 )
             }
         }
-        #expect(checked == 1, "non-vacuity: expected exactly one active combination, saw \(checked)")
+        #expect(checked == 2, "non-vacuity: expected exactly two active combinations, saw \(checked)")
     }
 
     // MARK: - 3. What it answers when it is open
@@ -197,6 +197,90 @@ struct CadenceCalendarFixtureEventsTests {
         }
     }
 
+    // MARK: - 3b. The calendar-cascade scenario (T-3194)
+
+    private static let cascadeActive: [String: String] = [mode: "1", scenario: "calendar-cascade"]
+
+    /// Each calendar scenario serves its own specs and nothing of the other's: a cascade frame with
+    /// the hue fixture's three events in it would no longer be the frame it was built to show.
+    @Test func eachCalendarScenarioServesOnlyItsOwnEvents() throws {
+        #expect(CadenceCalendarFixtureEvents.activeScenario(in: Self.cascadeActive) == .calendarCascade)
+        #expect(CadenceCalendarFixtureEvents.activeScenario(in: Self.active) == .calendarHues)
+        #expect(CadenceCalendarFixtureEvents.activeScenario(in: [Self.scenario: "calendar-cascade"]) == nil)
+
+        let cascade = CadenceCalendarFixtureEvents.CascadeFixture.self
+        let hues = CadenceCalendarFixtureEvents.Fixture.self
+        let cascadeTimed = try #require(CadenceCalendarFixtureEvents.timedEvents(for: Date(), in: Self.cascadeActive))
+        let cascadeAllDay = try #require(CadenceCalendarFixtureEvents.allDayEvents(for: Date(), in: Self.cascadeActive))
+        #expect(cascadeTimed.compactMap(\.title) == cascade.timed.map(\.title))
+        #expect(cascadeAllDay.compactMap(\.title) == cascade.allDay.map(\.title))
+        #expect(cascadeTimed.compactMap(\.title) == ["Lunch with Sam"])
+        #expect(cascadeAllDay.compactMap(\.title) == ["Company offsite"])
+        #expect(cascadeTimed.allSatisfy { $0.isAllDay == false && $0.calendar != nil })
+        #expect(cascadeAllDay.allSatisfy { $0.isAllDay && $0.calendar != nil })
+
+        let hueTimed = try #require(CadenceCalendarFixtureEvents.timedEvents(for: Date(), in: Self.active))
+        #expect(hueTimed.compactMap(\.title) == hues.timed.map(\.title))
+        #expect(Set(hueTimed.compactMap(\.title)).isDisjoint(with: cascadeTimed.compactMap(\.title)))
+
+        // Titles key the held events, so they must be unique across both scenarios.
+        let allTitles = (hues.timed + hues.allDay + cascade.timed + cascade.allDay).map(\.title)
+        #expect(Set(allTitles).count == allTitles.count)
+
+        // Another day is answered empty, not fallen through, exactly as for `calendar-hues`.
+        let tomorrow = try #require(Calendar.current.date(byAdding: .day, value: 1, to: Date()))
+        #expect(CadenceCalendarFixtureEvents.timedEvents(for: tomorrow, in: Self.cascadeActive)?.isEmpty == true)
+    }
+
+    /// **The thing the scenario exists to show, measured against the live layout:** at the iOS
+    /// grid's resting hour, the seeded task CASCADES over `Lunch with Sam` on a phone-width column
+    /// and SPLITS from it at regular width ([[T-3184]]). The recipe's 40-minute gap would split at
+    /// both widths since [[T-3193]] raised the threshold to 47 minutes; this goes red if the gap or
+    /// the threshold moves so that the fixture stops cascading.
+    @Test func theCascadeTaskCascadesOverTheLunchOnAPhoneAndSplitsOnAnIPad() throws {
+        let lunch = try #require(CadenceCalendarFixtureEvents.CascadeFixture.timed.first)
+        let lunchStart = try #require(lunch.startMinute)
+        let taskStart = CadenceUITestScenarioSeed.Fixture.cascadeTaskStartMinute
+        let taskEnd = taskStart + CadenceUITestScenarioSeed.Fixture.cascadeTaskEstimateMinutes
+        #expect(lunchStart < taskStart && taskStart < lunchStart + lunch.durationMinutes, "the task must start inside the lunch")
+        #expect(taskEnd > lunchStart + lunch.durationMinutes, "the task runs past the lunch's end")
+
+        let blocks: [iOSCalendarTimelineBlockLayout.Block<String>] = [
+            .init(key: "lunch", kind: .event, startMin: lunchStart, endMin: lunchStart + lunch.durationMinutes),
+            .init(key: "task", kind: .task, startMin: taskStart, endMin: taskEnd),
+        ]
+        func placements(compact: Bool) -> [String: CadenceCalendarOverlapPlacement] {
+            iOSCalendarTimelineBlockLayout.placements(
+                for: blocks,
+                hourHeight: iOSCalendarTimelineMetrics.hourHeight,
+                headerHeight: CadenceCalendarOverlapLayout.iOSEventHeaderHeight,
+                isCompactWidth: compact
+            )
+        }
+        let phone = placements(compact: true)
+        #expect(phone["task"]?.cascadeDepth == 1, "phone: \(phone)")
+        #expect(phone["lunch"]?.cascadeDepth == 0)
+        #expect(phone["task"]?.totalColumns == 1, "a cascade shares one column")
+
+        let pad = placements(compact: false)
+        #expect(pad["task"]?.cascadeDepth == 0, "pad: \(pad)")
+        #expect(pad["task"]?.totalColumns == 2, "regular width splits a task from an event")
+    }
+
+    /// The strip task is unscheduled by construction: `Fixture` names it, the seed leaves its start
+    /// at the model default, and only an unscheduled task reaches the day-header strip.
+    @Test func theCascadeSeedsAnUnscheduledStripTaskBesideTheAllDayEvent() throws {
+        let source = CadenceSourceScan.codeOnly(
+            try CadenceSourceScan.sourceFile("Cadence/Services/CadenceUITestScenarioSeed.swift")
+        )
+        let body = try CadenceCommitSurfaceScan.declarationBody(named: "seedCalendarCascade", in: source)
+        #expect(body.contains("AppTask(title: Fixture.stripTaskTitle)"))
+        #expect(body.contains("AppTask(title: Fixture.cascadeTaskTitle)"))
+        #expect(CadenceSourceScan.matchCount(#"scheduledStartMin\s*="#, in: body) == 1, "only the cascade task is timed")
+        #expect(CadenceSourceScan.matchCount(#"scheduledDate\s*=\s*todayKey"#, in: body) == 2)
+        #expect(AppTask(title: "probe").scheduledStartMin < 0, "the model default is unscheduled")
+    }
+
     // MARK: - 4. The scenario reader the gate is built on
 
     @Test func theScenarioReaderIsPureAndRefusesWhatItDoesNotKnow() {
@@ -204,6 +288,7 @@ struct CadenceCalendarFixtureEventsTests {
         #expect(CadenceUITestScenarioSeed.scenario(in: [Self.scenario: ""]) == nil)
         #expect(CadenceUITestScenarioSeed.scenario(in: [Self.scenario: "no-such-scenario"]) == nil)
         #expect(CadenceUITestScenarioSeed.scenario(in: [Self.scenario: "calendar-hues"]) == .calendarHues)
+        #expect(CadenceUITestScenarioSeed.scenario(in: [Self.scenario: "calendar-cascade"]) == .calendarCascade)
         // The process reader is the pure one over this process, not a second implementation.
         #expect(CadenceUITestScenarioSeed.requestedScenario
             == CadenceUITestScenarioSeed.scenario(in: ProcessInfo.processInfo.environment))

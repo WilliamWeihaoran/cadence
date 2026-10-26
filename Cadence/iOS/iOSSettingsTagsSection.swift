@@ -47,6 +47,8 @@ struct iOSTagsSettingsSection: View {
     let tags: [Tag]
 
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.cadenceTypographyScaling) private var scaling
     @State private var newName = ""
     @State private var newDescription = ""
     @State private var newColorHex = TagSupport.colorOptions[2]
@@ -129,8 +131,15 @@ struct iOSTagsSettingsSection: View {
                         CadenceInlineFailureNotice(text: seedFailureNotice)
                     }
 
-                    HStack(spacing: 10) {
-                        Spacer(minLength: 0)
+                    // T-4113(a): at accessibility sizes the two buttons stack, trailing-aligned,
+                    // rather than share one row an iPhone card is too narrow for — side by side
+                    // they wrapped mid-word ("Add Default" / "s"). Same idiom as the settings rows.
+                    let stacksActions = CadenceSettingsTypographyLayout.stacks(at: dynamicTypeSize, scaling: scaling)
+                    let actionLayout = stacksActions
+                        ? AnyLayout(VStackLayout(alignment: .trailing, spacing: 10))
+                        : AnyLayout(HStackLayout(spacing: 10))
+                    actionLayout {
+                        if !stacksActions { Spacer(minLength: 0) }
 
                         iOSActionButton(
                             title: "Add Defaults",
@@ -150,6 +159,7 @@ struct iOSTagsSettingsSection: View {
                             action: createTag
                         )
                     }
+                    .frame(maxWidth: .infinity, alignment: .trailing)
                 }
             }
 
@@ -323,8 +333,12 @@ private struct iOSTagSettingsRow: View {
                 }
 
                 // Two counts, two chips — the same shape macOS's tag row uses, instead of
-                // one comma-joined sentence.
-                HStack(spacing: 6) {
+                // one comma-joined sentence. T-4113(a): stacked at accessibility sizes, where
+                // side by side each wrapped into a two-line oval.
+                let countLayout = CadenceSettingsTypographyLayout.stacks(at: dynamicTypeSize, scaling: scaling)
+                    ? AnyLayout(VStackLayout(alignment: .leading, spacing: 6))
+                    : AnyLayout(HStackLayout(spacing: 6))
+                countLayout {
                     iOSMetaChip(label: taskCount == 1 ? "1 task" : "\(taskCount) tasks", color: Theme.muted)
                     iOSMetaChip(label: noteCount == 1 ? "1 note" : "\(noteCount) notes", color: Theme.muted)
                 }

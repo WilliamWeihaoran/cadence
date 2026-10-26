@@ -1398,6 +1398,41 @@ struct CadenceSettingsSectionCopyTests {
         #expect(CadenceSourceScan.codeOnly(sample).contains("\"Enable reminders\"") == false)
     }
 
+    /// **[[T-4113]](a).** The phone's Tags create card drew `Add Defaults` and `Create Tag` in
+    /// one unconditional `HStack`, and at accessibility sizes both wrapped mid-word. The pair now
+    /// goes through the settings rows' own large-text switch, so it stacks exactly where they do.
+    /// Source text, because no rendering is reachable from this target; not seen on screen.
+    @Test func thePhoneTagCreateActionsStackAtAccessibilitySizes() throws {
+        let code = try Self.strippedSource(at: Self.tagSurfaces[1])
+        let addDefaults = try #require(code.range(of: "title: \"Add Defaults\"")?.lowerBound)
+        let createTag = try #require(code.range(of: "title: \"Create Tag\"", range: addDefaults..<code.endIndex)?.lowerBound)
+        // The layout the two buttons sit in is chosen right above the first of them.
+        let floor = code.index(addDefaults, offsetBy: -700, limitedBy: code.startIndex) ?? code.startIndex
+        let switchCall = try #require(code.range(
+            of: "CadenceSettingsTypographyLayout.stacks(at: dynamicTypeSize, scaling: scaling)",
+            options: .backwards, range: floor..<addDefaults
+        ))
+        let tail = switchCall.upperBound..<addDefaults
+        #expect(code.range(of: "VStackLayout(", range: tail) != nil, "no stacked layout for the create actions")
+        #expect(code.range(of: "HStackLayout(", range: tail) != nil, "no side-by-side layout for the create actions")
+        // ...and nothing between the switch and the second button reopens a fixed row around them.
+        #expect(code.range(of: "HStack(", range: switchCall.upperBound..<createTag) == nil,
+                "a plain HStack is back around the create actions")
+        #expect(addDefaults < createTag)
+
+        // The row's two count chips take the same switch, for the same two-line-oval wrap.
+        let firstChip = try #require(code.range(of: "iOSMetaChip(label: taskCount")?.lowerBound)
+        let chipFloor = code.index(firstChip, offsetBy: -900, limitedBy: code.startIndex) ?? code.startIndex
+        let chipSwitch = try #require(code.range(
+            of: "CadenceSettingsTypographyLayout.stacks(at: dynamicTypeSize, scaling: scaling)",
+            options: .backwards, range: chipFloor..<firstChip
+        ))
+        #expect(code.range(of: "VStackLayout(", range: chipSwitch.upperBound..<firstChip) != nil,
+                "the count chips have no stacked layout")
+        #expect(code.range(of: "HStack(", range: chipSwitch.upperBound..<firstChip) == nil,
+                "a plain HStack is back around the count chips")
+    }
+
     private static func strippedSource(at path: String) throws -> String {
         CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(path))
     }

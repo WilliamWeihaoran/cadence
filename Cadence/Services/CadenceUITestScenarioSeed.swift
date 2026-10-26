@@ -44,6 +44,11 @@ enum CadenceUITestScenarioSeed {
         /// event plate reads *beside a task plate*, and a selector that could turn on one half
         /// without the other would make that frame impossible to ask for.
         case calendarHues = "calendar-hues"
+        /// **The cascade-and-strip calendar scenario** ([[T-3194]]). A 12:30 `Lunch with Sam`
+        /// event with a timed task cascaded over it, an all-day `Company offsite` beside an
+        /// unscheduled task in the day header, all on today. Both halves again: the tasks below,
+        /// the events from `CadenceCalendarFixtureEvents.CascadeFixture`.
+        case calendarCascade = "calendar-cascade"
     }
 
     /// The alt text on the seeded picture, and the text of the paragraph under it. Both are read
@@ -170,6 +175,22 @@ enum CadenceUITestScenarioSeed {
         /// Minutes, so the task block is the same height as the event beside it. A size difference
         /// would be a second variable in a reading that is only about colour.
         static let hueTaskEstimateMinutes = 60
+
+        // MARK: - calendar-cascade (T-3194)
+
+        /// The timed task cascaded over `Lunch with Sam`. Its start is read from the event
+        /// fixture, `cascadeTaskGapMinutes` into the lunch, so the gap is one fact.
+        static let cascadeTaskTitle = "Prep slides for review"
+        static let cascadeTaskStartMinute =
+            CadenceCalendarFixtureEvents.CascadeFixture.lunchStartMinute
+            + CadenceCalendarFixtureEvents.CascadeFixture.cascadeTaskGapMinutes
+        /// Runs past the lunch's end, so the cascaded block is not wholly inside the one behind it.
+        static let cascadeTaskEstimateMinutes = 60
+
+        /// The UNSCHEDULED task planned for today: the one the day-header strip draws beside the
+        /// all-day `Company offsite` ([[T-3185]]'s question). No start, so it reaches the strip
+        /// rather than the timed grid.
+        static let stripTaskTitle = "Buy milk"
     }
 
     /// The variable this enum is selected by, named once so the tests and the readers agree on the
@@ -204,6 +225,8 @@ enum CadenceUITestScenarioSeed {
             seedPopoverAnchors(modelContext: modelContext)
         case .calendarHues:
             seedCalendarHues(modelContext: modelContext)
+        case .calendarCascade:
+            seedCalendarCascade(modelContext: modelContext)
         }
     }
 
@@ -430,6 +453,46 @@ enum CadenceUITestScenarioSeed {
             try modelContext.save()
         } catch {
             print("[CadenceUITestScenarioSeed] the calendar-hues seed could not be saved: \(error)")
+        }
+    }
+
+    /// **The task half of the cascade fixture** ([[T-3194]]): one timed task that cascades over
+    /// the fixture's `Lunch with Sam` on a phone-width column, and one unscheduled task for the
+    /// day-header strip beside the all-day `Company offsite`. No tag, deadline or list beyond the
+    /// stock seed's area, for the reason `seedCalendarHues` gives.
+    @MainActor
+    private static func seedCalendarCascade(modelContext: ModelContext) {
+        let todayKey = DateFormatters.ymd.string(from: Date())
+
+        // Idempotent by the same test the stock seed and the other scenarios use.
+        let existingTasks = (try? modelContext.fetch(FetchDescriptor<AppTask>())) ?? []
+        guard existingTasks.isEmpty else { return }
+
+        let areas = (try? modelContext.fetch(FetchDescriptor<Area>())) ?? []
+        let host = areas.first { $0.name == "Alpha Area" } ?? areas.first
+
+        let timed = AppTask(title: Fixture.cascadeTaskTitle)
+        timed.scheduledDate = todayKey
+        timed.scheduledStartMin = Fixture.cascadeTaskStartMinute
+        timed.estimatedMinutes = Fixture.cascadeTaskEstimateMinutes
+        timed.order = 0
+        timed.area = host
+        timed.context = host?.context
+        modelContext.insert(timed)
+
+        // Planned for today with no start (`scheduledStartMin` stays -1): the strip's task.
+        let unscheduled = AppTask(title: Fixture.stripTaskTitle)
+        unscheduled.scheduledDate = todayKey
+        unscheduled.order = 1
+        unscheduled.area = host
+        unscheduled.context = host?.context
+        modelContext.insert(unscheduled)
+
+        // **Not `try?`**, for the reason the scenarios above state.
+        do {
+            try modelContext.save()
+        } catch {
+            print("[CadenceUITestScenarioSeed] the calendar-cascade seed could not be saved: \(error)")
         }
     }
 

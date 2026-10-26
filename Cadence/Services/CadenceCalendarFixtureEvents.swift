@@ -176,6 +176,57 @@ enum CadenceCalendarFixtureEvents {
         )
     }
 
+    /// **[[T-3194]] — the `calendar-cascade` fixture: a real cascade and a populated day-header
+    /// strip, on the surface `calendar-hues` cannot show either on.**
+    ///
+    /// `calendar-hues` seeds one 9:00 task 15 minutes ahead of an event, which is a SPLIT at every
+    /// zoom, and no unscheduled task, so it can show neither the cascade [[T-3184]] ruled on nor
+    /// the strip's task-beside-all-day-event question ([[T-3185]]). Agent `compactcascade` built
+    /// this scene by hand in a scratch tree twice; it is committed so the third time is a launch.
+    ///
+    /// **The task's start gap is NOT the recipe's 40 minutes.** The recipe put the task at 13:10,
+    /// 40 minutes into the lunch, which cascaded under the one-title-line threshold of the day
+    /// (34 minutes). Since [[T-3193]] the iOS threshold at the resting 58pt hour is 47 minutes, so
+    /// a 40-minute gap would photograph a split. The task starts `cascadeTaskGapMinutes` (50)
+    /// into the lunch instead, which clears 47 at rest and every pinch above it (a taller hour is
+    /// a smaller threshold); `CadenceCalendarFixtureEventsTests` measures that against the live
+    /// layout rather than trusting this sentence. At regular width only events cascade, so an iPad
+    /// draws the same pair as a split, which is the other half of T-3184's ruling.
+    ///
+    /// The seeded task half (the timed `Prep slides for review` and the unscheduled `Buy milk`)
+    /// lives in `CadenceUITestScenarioSeed.Fixture`, which reads its start from here.
+    enum CascadeFixture {
+        static let lunchHue = Hue(red: 0x3B, green: 0x82, blue: 0xC4)
+        static let offsiteHue = Hue(red: 0x5E, green: 0x9E, blue: 0x6E)
+
+        /// 12:30 to 14:00, the event the task cascades over.
+        static let lunchStartMinute = 12 * 60 + 30
+        static let lunchDurationMinutes = 90
+
+        /// How far into the lunch the seeded task starts. See the note above for why it is 50.
+        static let cascadeTaskGapMinutes = 50
+
+        static let timed: [Spec] = [
+            Spec(
+                title: "Lunch with Sam",
+                calendarTitle: "Personal",
+                hue: lunchHue,
+                startMinute: lunchStartMinute,
+                durationMinutes: lunchDurationMinutes
+            )
+        ]
+
+        static let allDay: [Spec] = [
+            Spec(
+                title: "Company offsite",
+                calendarTitle: "Work",
+                hue: offsiteHue,
+                startMinute: nil,
+                durationMinutes: 24 * 60
+            )
+        ]
+    }
+
     /// A timed event that starts on one day and ends `endDayOffset` days later. See
     /// `Fixture.multiDay`.
     struct MultiDaySpec {
@@ -208,8 +259,20 @@ enum CadenceCalendarFixtureEvents {
     /// test-mode flag. Pure over its input, so it is driven with literal dictionaries rather than
     /// by launching — the shape `CadenceEventKitLaunchGate.isDisarmed(in:)` already has.
     static func isActive(in environment: [String: String] = ProcessInfo.processInfo.environment) -> Bool {
-        guard environment[CadenceEventKitLaunchGate.uiTestModeVariable] == "1" else { return false }
-        return CadenceUITestScenarioSeed.scenario(in: environment) == .calendarHues
+        activeScenario(in: environment) != nil
+    }
+
+    /// The calendar scenario this launch asked for, or `nil`. The two-part gate lives here once,
+    /// so `isActive` and the spec choice below cannot disagree about which launches are inside it.
+    static func activeScenario(
+        in environment: [String: String] = ProcessInfo.processInfo.environment
+    ) -> CadenceUITestScenarioSeed.Scenario? {
+        guard environment[CadenceEventKitLaunchGate.uiTestModeVariable] == "1" else { return nil }
+        switch CadenceUITestScenarioSeed.scenario(in: environment) {
+        case .calendarHues: return .calendarHues
+        case .calendarCascade: return .calendarCascade
+        case .todayGeometry, .todayRowCrush, .popoverAnchors, nil: return nil
+        }
     }
 
     /// The day's timed fixtures, or `nil` for "ask EventKit" — which is every shipping launch.
@@ -224,7 +287,12 @@ enum CadenceCalendarFixtureEvents {
         calendar: Calendar = .current,
         in environment: [String: String] = ProcessInfo.processInfo.environment
     ) -> [EKEvent]? {
-        events(for: date, specs: Fixture.timed, calendar: calendar, in: environment)
+        events(
+            for: date,
+            specs: { $0 == .calendarCascade ? CascadeFixture.timed : Fixture.timed },
+            calendar: calendar,
+            in: environment
+        )
     }
 
     /// The day's all-day fixtures, or `nil` for "ask EventKit". Same contract as above.
@@ -233,21 +301,27 @@ enum CadenceCalendarFixtureEvents {
         calendar: Calendar = .current,
         in environment: [String: String] = ProcessInfo.processInfo.environment
     ) -> [EKEvent]? {
-        events(for: date, specs: Fixture.allDay, calendar: calendar, in: environment)
+        events(
+            for: date,
+            specs: { $0 == .calendarCascade ? CascadeFixture.allDay : Fixture.allDay },
+            calendar: calendar,
+            in: environment
+        )
     }
 
     private static func events(
         for date: Date,
-        specs: [Spec],
+        specs: (CadenceUITestScenarioSeed.Scenario) -> [Spec],
         calendar: Calendar,
         in environment: [String: String]
     ) -> [EKEvent]? {
-        guard isActive(in: environment) else { return nil }
+        guard let scenario = activeScenario(in: environment) else { return nil }
         guard DateFormatters.dateKey(from: date) == DateFormatters.todayKey() else { return [] }
-        return specs.map { built(spec: $0, on: date, calendar: calendar) }
+        return specs(scenario).map { built(spec: $0, on: date, calendar: calendar) }
     }
 
-    /// **Held once per spec title, and that is not an optimisation.** Every surface here
+    /// **Held once per spec title, and that is not an optimisation.** Titles are unique across both
+    /// scenarios, so one launch's held events are never another scenario's. Every surface here
     /// re-renders on each store change, and a fresh `EKEvent` per render carries a fresh
     /// `calendarItemIdentifier` — a new `ForEach` identity, and therefore a block whose selection
     /// and popover `@State` reset underneath the pointer. The board seam learned this the same way.
