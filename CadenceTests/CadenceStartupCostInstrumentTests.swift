@@ -247,6 +247,69 @@ struct CadenceStartupCostInstrumentTests {
         }
     }
 
+    /// **Each label times its own pass ([[T-3260]]).** The bundle retirement and the focus
+    /// reconcile both classify through `.forMaintenancePass`, so swapping their two bodies between
+    /// `measure` labels compiles and keeps the stage list the order test reads. Two stores, each
+    /// with work for exactly one of the two, tell them apart: the stage that reports `changed` must
+    /// be the one whose pass had something to do. The focus store also holds the consequence a
+    /// swap has: the reconcile's answer is what makes the launch save, so a reconcile run under the
+    /// wrong label would raise the counter in memory and leave the store unraised.
+    @Test func theBundleAndFocusStagesEachReportTheirOwnPass() throws {
+        func launch(_ container: ModelContainer) throws -> CadenceStartupCostReport {
+            try withTemporaryDefaults("CadenceTests.startupCost.attribution") { defaults in
+                CadenceStartupCostLedger.setEnabled(true, defaults: defaults)
+                let recorder = try #require(CadenceStartupCostLedger.begin(defaults: defaults))
+                PersistenceController.performStartupMaintenance(
+                    in: ModelContext(container),
+                    defaults: defaults,
+                    recorder: recorder
+                )
+                return try #require(recorder.commit(), "a launch that ran its passes left no report")
+            }
+        }
+
+        // Work only for the bundle retirement: one block, two members, no focus ledger rows.
+        let blockStore = try CadenceTestStore.container()
+        let blockSeed = ModelContext(blockStore)
+        let bundle = TaskBundle(title: "Morning", dateKey: "2026-10-26", startMin: 540, durationMinutes: 60)
+        blockSeed.insert(bundle)
+        for index in 0..<2 {
+            let member = AppTask(title: "Morning member \(index)")
+            member.estimatedMinutes = 30
+            blockSeed.insert(member)
+            member.bundle = bundle
+            member.bundleOrder = index
+            member.scheduledDate = "2026-10-26"
+            member.scheduledStartMin = -1
+            bundle.tasks = (bundle.tasks ?? []) + [member]
+        }
+        try blockSeed.save()
+
+        let blockReport = try launch(blockStore)
+        #expect(blockReport.stage(.bundleRetirement)?.outcome == .changed, "the block store's retirement was not filed under its own stage")
+        #expect(blockReport.stage(.focusReconciliation)?.outcome == .noChange, "the focus stage reported the block store's work")
+        // Non-vacuity: the retirement really ran, so the `changed` above is its answer.
+        #expect(try ModelContext(blockStore).fetch(FetchDescriptor<TaskBundle>()).isEmpty)
+
+        // Work only for the focus reconcile: a counter a merge left 25 minutes below its ledger.
+        let focusStore = try CadenceTestStore.container()
+        let focusSeed = ModelContext(focusStore)
+        let task = AppTask(title: "Draft the proposal")
+        task.actualMinutes = 100
+        focusSeed.insert(task)
+        let row = FocusSessionLog(minutes: 25, previousMinutes: 100, loggedAt: Date(), dayKey: "2026-10-26")
+        focusSeed.insert(row)
+        row.task = task
+        try focusSeed.save()
+
+        let focusReport = try launch(focusStore)
+        #expect(focusReport.stage(.focusReconciliation)?.outcome == .changed, "the focus reconcile was not filed under its own stage")
+        #expect(focusReport.stage(.bundleRetirement)?.outcome == .noChange, "the bundle stage reported the focus store's work")
+        // Read back from a second context: what the launch saved, not what it holds.
+        let saved = try #require(try ModelContext(focusStore).fetch(FetchDescriptor<AppTask>()).first)
+        #expect(saved.actualMinutes == 125, "the launch left the reconciled counter at \(saved.actualMinutes) in the store")
+    }
+
     /// Every stage the launch path can reach is a case of `CadenceStartupStage`, and every case is
     /// one the launch path can reach — so a stage added to the enum and never recorded, or a stage
     /// recorded under a name the enum has lost, fails here rather than going unnoticed.

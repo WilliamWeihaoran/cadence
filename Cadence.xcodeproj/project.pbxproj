@@ -242,6 +242,13 @@
 			);
 			target = B10000002FCE00000000010D /* CadenceWidgets */;
 		};
+		D20370372FCE000000000001 /* Exceptions for "CadenceTests" folder in "CadenceUITests" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				CadenceSeededSidebarArrivalVerdict.swift,
+			);
+			target = 8850FF392F75C94C00A80F43 /* CadenceUITests */;
+		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -255,6 +262,9 @@
 		};
 		8850FF332F75C94C00A80F43 /* CadenceTests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				D20370372FCE000000000001 /* Exceptions for "CadenceTests" folder in "CadenceUITests" target */,
+			);
 			path = CadenceTests;
 			sourceTree = "<group>";
 		};

@@ -1,3 +1,6 @@
+// [[T-2020]](a): this file lives in `CadenceTests/` so its pure cases run unattended, and it is
+// ALSO a member of `CadenceUITests` (an exception set on the `CadenceTests` folder in
+// `project.pbxproj`), because `CadenceSeededSidebarTimingUITests` calls it from a real launch.
 import Foundation
 
 /// **What one launch of `CadenceSeededSidebarTimingUITests` actually established — and, above all,
