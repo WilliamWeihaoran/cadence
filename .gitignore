@@ -9,3 +9,12 @@ xcuserdata/
 
 # Python bytecode from the screenshot tooling.
 __pycache__/
+
+# Merge and patch artefacts. `Cadence` is a PBXFileSystemSynchronizedRootGroup, so ANY
+# non-source file under it is bundled into the app as a Resource with no project-file
+# entry to notice — a stray .orig shipped inside both products until T-7101. Xcode's
+# sync does not consult this file, so this rule stops the file reaching git, not the
+# bundle; the bundle is only safe while no such file exists in the tree.
+*.orig
+*.rej
+*.bak
