@@ -1,5 +1,6 @@
 import Testing
 import CoreGraphics
+import Foundation
 @testable import Cadence
 
 /// The iPad shell's own split, at the window widths the app actually runs at.
@@ -127,5 +128,70 @@ struct CadenceRootShellLayoutTests {
                     == CadenceRootShellLayout.sidebarWidth(windowWidth: width, isCollapsed: false)
             )
         }
+    }
+
+    // MARK: - Window controls (T-6700)
+
+    /// A stand-in for the iPadOS 26 window-controls region. The rule is a relation to whatever
+    /// the system reports, so no test here pins the system's own figure.
+    private static let controls = CGSize(width: 80, height: 30)
+
+    /// The defect: in a window narrow enough for the drawer, or with the sidebar folded, the page
+    /// starts at the window's leading edge, so its header sat under the controls.
+    @Test
+    func aPageAtTheLeadingEdgeDropsBelowTheWindowControls() {
+        for width in Self.windowWidths {
+            for folded in [false, true] where CadenceRootShellLayout.sidebarWidth(
+                windowWidth: width, isCollapsed: folded) == 0 {
+                #expect(CadenceRootShellLayout.detailTopReserve(
+                    windowWidth: width, isCollapsed: folded, topLeadingCorner: Self.controls
+                ) == Self.controls.height, "width \(width) folded \(folded)")
+            }
+        }
+    }
+
+    /// The sidebar is always the leading pane while it is shown, so it owns the corner instead.
+    @Test
+    func theSidebarDropsBelowTheWindowControls() {
+        #expect(CadenceRootShellLayout.sidebarTopReserve(topLeadingCorner: Self.controls)
+                == Self.controls.height)
+    }
+
+    /// Beside a docked sidebar the page starts clear of the controls and must not lose height.
+    @Test
+    func aPageBesideTheDockedSidebarKeepsItsTop() {
+        for width in Self.windowWidths where CadenceRootShellLayout.usesExpandedSidebar(windowWidth: width) {
+            #expect(CadenceRootShellLayout.sidebarWidth(windowWidth: width) > Self.controls.width)
+            #expect(CadenceRootShellLayout.detailTopReserve(
+                windowWidth: width, topLeadingCorner: Self.controls) == 0)
+        }
+    }
+
+    /// Full screen the system reports no corner, and nothing moves.
+    @Test
+    func fullScreenReservesNothing() {
+        for width in Self.windowWidths {
+            for folded in [false, true] {
+                #expect(CadenceRootShellLayout.detailTopReserve(
+                    windowWidth: width, isCollapsed: folded, topLeadingCorner: .zero) == 0)
+            }
+        }
+        #expect(CadenceRootShellLayout.sidebarTopReserve(topLeadingCorner: .zero) == 0)
+    }
+
+    /// The shell must actually read the system's region and apply both reserves, or the rule
+    /// above is a function nothing calls.
+    @Test
+    func theIPadShellAppliesTheReserveFromTheSystemsCornerRegion() throws {
+        let code = CadenceSourceScan.codeOnly(
+            try CadenceSourceScan.sourceFile("Cadence/iOS/iOSRootSidebar.swift"))
+        let root = try cadenceFunctionBody("struct iPadMacStyleRootShell<Content: View>: View", in: code)
+        #expect(root.contains("let topLeadingCorner = proxy.containerCornerInsets.topLeading"))
+        #expect(root.contains("CadenceRootShellLayout.sidebarTopReserve(topLeadingCorner: topLeadingCorner)"))
+        #expect(root.contains("CadenceRootShellLayout.detailTopReserve("))
+        #expect(root.range(of: #"\.padding\(\.top, sidebarTopReserve\)\s*\.frame\(width: drawerWidth"#,
+                           options: .regularExpression) != nil)
+        #expect(root.range(of: #"detail\(\)\s*\.padding\(\.top, detailTopReserve\)\s*\.frame\(width: detailWidth"#,
+                           options: .regularExpression) != nil)
     }
 }

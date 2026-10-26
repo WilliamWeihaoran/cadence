@@ -28,6 +28,15 @@ struct iPadMacStyleRootShell<Content: View>: View {
                 isCollapsed: isSidebarCollapsed
             )
             let drawerWidth = CadenceRootShellLayout.drawerWidth(windowWidth: proxy.size.width)
+            // T-6700: the iPadOS 26 window controls' region, zero full screen. The shell ignores
+            // the container safe area, so it is the shell that has to keep pages out from under it.
+            let topLeadingCorner = proxy.containerCornerInsets.topLeading
+            let sidebarTopReserve = CadenceRootShellLayout.sidebarTopReserve(topLeadingCorner: topLeadingCorner)
+            let detailTopReserve = CadenceRootShellLayout.detailTopReserve(
+                windowWidth: proxy.size.width,
+                isCollapsed: isSidebarCollapsed,
+                topLeadingCorner: topLeadingCorner
+            )
 
             // Keep one sidebar and one detail alive across folding, drawer taps and resizing.
             // Only the docked reservation changes; an overlay never subtracts from the page.
@@ -38,6 +47,7 @@ struct iPadMacStyleRootShell<Content: View>: View {
                     onCreateList: { listEditorRequest = $0 },
                     onCollapse: { setSidebarVisible(false, isDrawerMode: isDrawerMode) }
                 )
+                .padding(.top, sidebarTopReserve)
                 .frame(width: drawerWidth, height: proxy.size.height)
                 .background(Theme.surface)
                 .overlay(alignment: .trailing) {
@@ -78,6 +88,7 @@ struct iPadMacStyleRootShell<Content: View>: View {
                     // Hard-size and clip at the pane boundary, not just at the window edge:
                     // descendant minimums and page-local capture scrims stay in their pane.
                     detail()
+                        .padding(.top, detailTopReserve)
                         .frame(width: detailWidth, height: proxy.size.height)
                         .background(Theme.bg)
                         .clipped()
