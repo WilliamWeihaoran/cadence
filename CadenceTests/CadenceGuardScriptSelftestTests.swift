@@ -1680,14 +1680,18 @@ struct CadenceGuardScriptSelftestTests {
         // bare substring, which refused `-skip-testing:CadenceUITests` -- the flag that EXCLUDES the
         // target -- with exit 5 on every locked-screen overnight unit run. The behaviour is proven
         // by `xcb.sh selftest` section 10b; this pins the wiring CI can read without a shell.
-        #expect(guardSection.contains(#"screen_is_locked && locked_screen_refuses_selection "${args[@]}""#),
-                "the locked-screen refusal no longer asks locked_screen_refuses_selection, so -skip-testing:CadenceUITests may be refused again (T-6782)")
+        #expect(guardSection.contains(#"screen_is_locked && locked_screen_refuses_selection "$ACTION" "${args[@]}""#),
+                "the locked-screen refusal no longer asks locked_screen_refuses_selection with the action, so -skip-testing:CadenceUITests may be refused again (T-6782) or a bare test -scheme Cadence admitted (T-6811)")
         #expect(!guardSection.contains(#"screen_is_locked && [[ "${args[*]}" == *CadenceUITests* ]]"#),
                 "the locked-screen refusal is the bare substring again, which refuses -skip-testing:CadenceUITests (T-6782)")
-        #expect(body.contains("locked_screen_refuses_selection() {") && body.contains("  selection_reaches_ui_tests \"$@\"\n}"),
+        #expect(body.contains("locked_screen_refuses_selection() {") && body.contains("  selection_reaches_ui_tests \"$@\" || return 1\n"),
                 "locked_screen_refuses_selection no longer defers to selection_reaches_ui_tests (T-6782)")
-        #expect(selftest.contains("T-6782's whole subject"),
-                "xcb.sh's selftest no longer proves a locked screen admits -skip-testing:CadenceUITests (T-6782)")
+        // T-6811: a bare `test -scheme Cadence` names no UI target but runs the scheme's whole test
+        // action, which lists CadenceUITests; the refusal must ask the scheme file, not only the argv.
+        #expect(body.contains("  scheme_test_action_runs_ui_tests \"$scheme\"\n}"),
+                "locked_screen_refuses_selection no longer asks whether the scheme's test action runs CadenceUITests, so a bare test -scheme Cadence drives the screen on a locked Mac again (T-6811)")
+        #expect(selftest.contains("T-6782's whole subject") && selftest.contains("T-6811's whole subject"),
+                "xcb.sh's selftest no longer proves a locked screen admits -skip-testing:CadenceUITests (T-6782) and refuses a bare test -scheme Cadence (T-6811)")
         #expect(guardSection.contains("test runner failed to"),
                 "the refusal no longer names the measured mechanism. T-563 blamed app.launch(), which only a suite launching something ever reaches, and that wording is precisely why exempting a screen-free suite looked correct for two days")
         #expect(leaseSection.contains(call),
