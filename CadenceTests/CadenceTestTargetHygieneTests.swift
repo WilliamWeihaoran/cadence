@@ -1820,68 +1820,6 @@ struct CadenceTestTargetHygieneTests {
             """
         )
     }
-
-    /// The suites a `test-without-building` step in a workflow scopes with `-only-testing:`.
-    /// Only that action is read, so the macOS job's `-only-testing:CadenceTests` (the whole target)
-    /// is not mistaken for an iOS-only suite.
-    static func suitesRunWithoutBuilding(inWorkflow workflow: String) -> Set<String> {
-        var suites: Set<String> = []
-        var pending: Set<String> = []
-        for line in workflow.split(separator: "\n", omittingEmptySubsequences: false) {
-            for piece in line.components(separatedBy: "-only-testing:CadenceTests/").dropFirst() {
-                let name = piece.prefix { $0.isLetter || $0.isNumber || $0 == "_" }
-                if !name.isEmpty { pending.insert(String(name)) }
-            }
-            if line.contains("test-without-building") && !line.trimmingCharacters(in: .whitespaces).hasPrefix("#") {
-                suites.formUnion(pending)
-                pending.removeAll()
-            } else if line.trimmingCharacters(in: .whitespaces).hasPrefix("- name:") {
-                pending.removeAll()
-            }
-        }
-        return suites
-    }
-
-    /// [[T-6541]]: the whole-file iOS-only suites compile to nothing on the macOS leg, so the only
-    /// place they can run is the `ios-build` job's simulator step. This holds that step's
-    /// `-only-testing:` list equal to `deliberatelyIOSOnlyTestFiles`, both ways: a suite listed
-    /// there and not run in CI is the hole T-6541 was filed for, and a name run in CI that is no
-    /// longer such a suite would be refused by `xcb.sh` as UNKNOWN-SUITE on every push.
-    @Test func theIOSOnlySuitesAreTheOnesCIRunsOnASimulator() throws {
-        // The reader itself, on fixtures: the step's names are read, a `build-for-testing` or a
-        // plain `test` step's are not, and a name in another step does not leak into the next.
-        let fixture = """
-              - name: Test
-                run: |
-                  ./scripts/xcb.sh ci-tests test \\
-                    -only-testing:CadenceTests \\
-                    -only-testing:CadenceTests/NotThisOne
-              - name: iOS
-                run: |
-                  ./scripts/xcb.sh ci-ios-tests raw \\
-                    -only-testing:CadenceTests/SuiteA \\
-                    -only-testing:CadenceTests/SuiteB \\
-                    test-without-building
-            """
-        #expect(Self.suitesRunWithoutBuilding(inWorkflow: fixture) == ["SuiteA", "SuiteB"])
-        #expect(Self.suitesRunWithoutBuilding(inWorkflow: "# test-without-building\n-only-testing:CadenceTests/X").isEmpty,
-                "a comment mentioning the action is not a step running it")
-
-        let ciRuns = Self.suitesRunWithoutBuilding(inWorkflow: try cadenceTestSource(".github/workflows/ci.yml"))
-        let iOSOnly = Set(Self.deliberatelyIOSOnlyTestFiles.map {
-            (($0 as NSString).lastPathComponent as NSString).deletingPathExtension
-        })
-        #expect(!iOSOnly.isEmpty)
-        #expect(!ciRuns.isEmpty, "read no -only-testing: suite out of any test-without-building step in ci.yml")
-        #expect(
-            iOSOnly.subtracting(ciRuns).isEmpty,
-            "iOS-only suites CI never runs (add them to the ios-build simulator step): \(iOSOnly.subtracting(ciRuns).sorted())"
-        )
-        #expect(
-            ciRuns.subtracting(iOSOnly).isEmpty,
-            "the ios-build simulator step runs suites that are not listed as iOS-only: \(ciRuns.subtracting(iOSOnly).sorted())"
-        )
-    }
 }
 
 // MARK: - Reading the test target

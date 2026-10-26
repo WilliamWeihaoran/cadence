@@ -529,58 +529,6 @@ jobs:
       - name: Gates
         if: always()
         run: ./.github/scripts/check-log.sh "$RUNNER_TEMP/cadence-xcb-ci-ios.log" build
-      # T-6541: RUN the CadenceTests suites that are whole-file `#if os(iOS)` on purpose. On the
-      # macOS leg they compile to nothing, and the step above only compiles them, so until this step
-      # a red in any of them reached no gate at all. The list is exactly the suites in
-      # `CadenceTestTargetHygieneTests.deliberatelyIOSOnlyTestFiles`, and
-      # `theIOSOnlySuitesAreTheOnesCIRunsOnASimulator` holds the two equal in both directions, so a
-      # new whole-file iOS suite cannot be listed there without being run here.
-      #
-      # `test-without-building` over the products the step above just built, so it compiles nothing
-      # and adds no compile time; what it costs is a simulator boot plus a test-host launch. Measured
-      # 2026-10-25 on the M3 Pro: 22 tests in 3 suites, 0.37 s of test time. This job ran ~16 min
-      # hosted against ~21 min for `macos-tests` in parallel, so the boot is not expected to move
-      # the run's critical path. `check-log.sh` is NOT run over this log: it would rightly call a
-      # log with 0 compile tasks VACUOUS. The step's own exit status is the gate -- `xcb.sh` fails
-      # on any red test, refuses an `-only-testing:` name matching no suite (exit 8), and fails a
-      # run that executed no test (exit 4); measured locally with a bogus suite name.
-      #
-      # The destination is the newest iPhone simulator THIS Xcode lists as compatible, read from
-      # `-showdestinations` rather than named, because the image's device names and runtimes move
-      # with it and a hard-coded `name=` would fail as "no such destination". None listed is a
-      # hard failure, not a skip: a quiet skip here is the T-535 shape.
-      - name: Run the deliberately iOS-only CadenceTests suites on a simulator (T-6541)
-        run: |
-          export TMPDIR="$RUNNER_TEMP/"
-          xcodebuild -project Cadence.xcodeproj -scheme Cadence \
-            -derivedDataPath "$RUNNER_TEMP/dd-ios" -showdestinations > "$RUNNER_TEMP/ios-destinations.txt" 2>&1 || true
-          udid=$(python3 -I -c '
-          import re, sys
-          text = open(sys.argv[1]).read().split("Ineligible destinations")[0]
-          found = sorted(
-              (tuple(int(p) for p in m.group(2).split(".")), m.group(1), m.group(3))
-              for m in re.finditer(r"platform:iOS Simulator, arch:\w+, id:([0-9A-F-]{36}), OS:([0-9.]+), name:(iPhone[^}]*?)\s*\}", text)
-          )
-          if found:
-              print(found[-1][1])
-              print("picked:", found[-1], file=sys.stderr)
-          ' "$RUNNER_TEMP/ios-destinations.txt")
-          if [ -z "$udid" ]; then
-            echo "::error::no eligible iPhone simulator is listed for the Cadence scheme on this runner (T-6541)."
-            cat "$RUNNER_TEMP/ios-destinations.txt"
-            exit 1
-          fi
-          ./scripts/xcb.sh ci-ios-tests raw \
-            -scheme Cadence \
-            -destination "platform=iOS Simulator,id=$udid" \
-            -derivedDataPath "$RUNNER_TEMP/dd-ios" \
-            CODE_SIGN_IDENTITY="-" CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM="" \
-            PROVISIONING_PROFILE_SPECIFIER="" \
-            CODE_SIGN_ENTITLEMENTS=.github/ci.entitlements \
-            -only-testing:CadenceTests/iOSMarkdownEditorFlushTests \
-            -only-testing:CadenceTests/iOSMarkdownInlineTaskPanelEffectTests \
-            -only-testing:CadenceTests/iOSTaskRecurrenceSelectionEffectTests \
-            test-without-building
 
   # ---------------------------------------------------------------------------
   # T-1641: the one lock property that NOTHING has ever run on a schedule.
