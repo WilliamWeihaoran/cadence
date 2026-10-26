@@ -1,3 +1,7 @@
+// T-3244: compiled for macOS only. This suite reaches macOS-only app code, and `CadenceTests` also
+// builds for an iOS destination. The gate is here, in the file, so the reason is visible where it
+// applies.
+#if os(macOS)
 import Foundation
 import Testing
 @testable import Cadence
@@ -61,3 +65,5 @@ struct TaskListGroupHeaderAccessibilityTests {
         #expect(header.contains(".accessibilityElement(children: .ignore)"), "the glyph and number are read separately again")
     }
 }
+
+#endif
