@@ -544,11 +544,11 @@ struct CadenceRecurrenceEndSurfaceTests {
     // MARK: - T-6114: the After count floors at the current occurrence
 
     /// A task on its 15th occurrence picking Ends -> After used to seed the flat 10, read
-    /// "15 of 10", and end the series on its next completion. The floor is the occurrence number;
-    /// the seed itself (10) is an owner decision and is deliberately unchanged.
+    /// "15 of 10", and end the series on its next completion. A stored count floors at the
+    /// occurrence number; an unconfigured one seeds max(10, n + 1) (owner decision 2026-10-26).
     @Test func theAfterCountNeverResolvesBelowTheCurrentOccurrence() {
-        // Unconfigured past the seed: the floor wins (15, not 10).
-        #expect(CadenceTaskRecurrenceEndPresentation.resolvedEndCount(0, occurrenceNumber: 15) == 15)
+        // Unconfigured past the seed: one more than the occurrence (16, not 10 and not 15).
+        #expect(CadenceTaskRecurrenceEndPresentation.resolvedEndCount(0, occurrenceNumber: 15) == 16)
         // A stored count below the occurrence is lifted to it.
         #expect(CadenceTaskRecurrenceEndPresentation.resolvedEndCount(10, occurrenceNumber: 15) == 15)
         // Below the seed, nothing changes: the seed and a stored count both stand.
@@ -565,9 +565,28 @@ struct CadenceRecurrenceEndSurfaceTests {
         #expect(
             CadenceTaskRecurrenceEndPresentation.summary(
                 mode: .afterCount, endDateKey: "", occurrenceNumber: 15, endCount: seeded
-            ) == "15 of 15"
+            ) == "15 of 16"
         )
-        #expect(CadenceTaskRecurrenceEndPresentation.seededEndCount == 10, "the seed is the owner's call")
+        #expect(CadenceTaskRecurrenceEndPresentation.seededEndCount == 10, "a young series keeps the flat seed")
+    }
+
+    /// **T-6114, owner decision 2026-10-26:** seed max(10, n + 1), so picking Ends -> After never
+    /// ends a series on its own next completion, and a new series still starts at 10.
+    @Test func theAfterSeedLeavesAtLeastOneMoreOccurrence() {
+        let seed = CadenceTaskRecurrenceEndPresentation.seededEndCount(occurrenceNumber:)
+        #expect(seed(1) == 10)
+        #expect(seed(9) == 10)
+        #expect(seed(10) == 11)
+        #expect(seed(15) == 16)
+        for n in 1...200 {
+            let count = CadenceTaskRecurrenceEndPresentation.resolvedEndCount(0, occurrenceNumber: n)
+            // recurrenceHasEnded is occurrenceNumber >= recurrenceEndCount: the seed must stay above n.
+            #expect(count > n)
+            #expect(count >= CadenceTaskRecurrenceEndPresentation.seededEndCount)
+        }
+        // A stored count is not re-seeded: it is only floored at the occurrence.
+        #expect(CadenceTaskRecurrenceEndPresentation.resolvedEndCount(15, occurrenceNumber: 15) == 15)
+        #expect(CadenceTaskRecurrenceEndPresentation.resolvedEndCount(3, occurrenceNumber: 15) == 15)
     }
 
     @Test func theCountChoicesStartAtTheCurrentOccurrence() {

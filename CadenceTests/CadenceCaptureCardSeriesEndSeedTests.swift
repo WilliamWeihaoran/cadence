@@ -87,7 +87,8 @@ struct CadenceCaptureCardSeriesEndSeedTests {
         var draft = Self.weeklyDraft(startingOn: "2026-10-21")
         draft.seriesOccurrenceNumber = 15
         draft.seedSeriesEnd(for: .afterCount, reference: try Self.day("2026-10-21"), calendar: Self.calendar)
-        #expect(draft.seriesEndCount == 15)
+        // T-6114 owner decision 2026-10-26: max(10, n + 1), so the seed never ends the series next.
+        #expect(draft.seriesEndCount == 16)
     }
 
     /// The capture card and the standard panel seed the same After count for the same draft.

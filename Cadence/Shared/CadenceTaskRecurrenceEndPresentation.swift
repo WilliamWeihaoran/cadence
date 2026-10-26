@@ -155,11 +155,21 @@ nonisolated enum CadenceTaskRecurrenceEndPresentation {
     /// occurrence is `occurrenceNumber`: the stored-or-seeded count, floored at that occurrence.
     ///
     /// Without the floor a task on its 15th occurrence picks up the flat seed of 10, reads
-    /// "15 of 10", and its next completion silently ends the series. The floor alone still seeds
-    /// `occurrenceNumber` past the seed (so that next completion still ends the series); what the
-    /// seed itself should be is an owner decision, which is why `seededEndCount` is untouched.
+    /// "15 of 10", and its next completion silently ends the series. An unconfigured count seeds
+    /// `seededEndCount(occurrenceNumber:)`; a stored one is only floored at the occurrence.
     static func resolvedEndCount(_ stored: Int, occurrenceNumber: Int) -> Int {
-        max(resolvedEndCount(stored), occurrenceNumber)
+        guard stored >= 1 else { return seededEndCount(occurrenceNumber: occurrenceNumber) }
+        return max(stored, occurrenceNumber)
+    }
+
+    /// **T-6114 (owner decision 2026-10-26):** the count a fresh `.afterCount` selection seeds on a
+    /// task whose current occurrence is `occurrenceNumber` -- `max(seededEndCount, n + 1)`.
+    ///
+    /// Seeding `n` ("15 of 15") would end an old series on its very next completion, which picking
+    /// Ends -> After must never do on its own; plain `n + 1` was declined because it seeds 1 or 2 on
+    /// a brand-new series. A young series keeps the flat 10, an old one gets at least one more.
+    static func seededEndCount(occurrenceNumber: Int) -> Int {
+        max(seededEndCount, occurrenceNumber + 1)
     }
 
     /// **T-6114:** what an editor's After count may *write*: `normalizedEndCount`, floored at the
