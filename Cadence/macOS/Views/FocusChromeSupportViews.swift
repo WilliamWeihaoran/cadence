@@ -65,7 +65,8 @@ struct FocusSessionHeader: View {
     var body: some View {
         let hasContainer = !task.containerName.isEmpty
         let hasPriority = task.priority != .none
-        let hasDueDate = !task.dueDate.isEmpty
+        let dueLabel = CadenceFocusSupport.sessionHeaderDueLabel(forDueDateKey: task.dueDate)
+        let hasDueDate = dueLabel != nil
         let hasEstimate = estimateLabel != nil
 
         FocusSurfaceHeader(
@@ -96,8 +97,8 @@ struct FocusSessionHeader: View {
                     if hasDueDate || hasEstimate { FocusMetaSeparator() }
                 }
 
-                if hasDueDate {
-                    Text("Due \(DateFormatters.relativeDate(from: task.dueDate))")
+                if let dueLabel {
+                    Text(dueLabel)
                     if hasEstimate { FocusMetaSeparator() }
                 }
 

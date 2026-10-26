@@ -408,6 +408,14 @@ struct iOSFocusView: View {
             if task.priority != .none {
                 iOSMetaChip(label: task.priority.label, color: Theme.priorityColor(task.priority))
             }
+            // macOS's `FocusSessionHeader` order: container, priority, due, estimate (T-7016).
+            if let due = CadenceFocusSupport.sessionHeaderDueLabel(forDueDateKey: task.dueDate) {
+                iOSMetaChip(
+                    label: due,
+                    color: CadenceFocusSupport.isOverdue(dueDateKey: task.dueDate, todayKey: todayKey)
+                        ? Theme.red : Theme.dim
+                )
+            }
             if let estimate = estimateLabel(for: task) {
                 iOSMetaChip(label: estimate, color: Theme.dim)
             }

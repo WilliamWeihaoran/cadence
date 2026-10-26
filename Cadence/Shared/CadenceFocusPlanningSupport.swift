@@ -116,6 +116,16 @@ enum CadenceFocusSupport {
         CadenceWidgetDateSupport.dueLabel(for: key, todayKey: todayKey)
     }
 
+    /// The due-date chip in a **Focus session header**, on both platforms (T-7016): "Due " and
+    /// `DateFormatters.relativeDate`, the words macOS's `FocusSessionHeader` has always drawn.
+    /// `nil` when the task has no due date, so the chip is absent rather than empty. iOS's
+    /// `selectedTaskHeader` drew container, priority and estimate and never the deadline; both
+    /// headers now read this one builder so the two cannot word the same date differently.
+    static func sessionHeaderDueLabel(forDueDateKey key: String, relativeTo referenceDate: Date = Date()) -> String? {
+        guard !key.isEmpty else { return nil }
+        return "Due \(DateFormatters.relativeDate(from: key, relativeTo: referenceDate))"
+    }
+
     /// Detail line for focus rows, split into segments so surfaces can tint the due segment red
     /// without staining the scheduling segment beside it.
     ///
