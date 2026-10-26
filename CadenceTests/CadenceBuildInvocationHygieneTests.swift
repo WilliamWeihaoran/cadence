@@ -1198,7 +1198,9 @@ struct CadenceBuildInvocationHygieneTests {
     /// runs. Measured again 2026-10-09: `-scheme Cadence` on `platform=iOS Simulator` with
     /// `-only-testing:CadenceUITests/CadenceIOSSeededStoreUITests` exits 65 with **1 compile error
     /// and 0 test result lines**, on exactly that module dependency; the same filter through
-    /// `CadenceUITestsOnly` executes **2 tests, 0 failures, 27.9 s**.
+    /// `CadenceUITestsOnly` executes **2 tests, 0 failures, 27.9 s**. (The compile half is history:
+    /// since [[T-3244]] `CadenceTests` compiles for iOS, and [[T-6541]] runs its iOS-only suites
+    /// through `-scheme Cadence` on a simulator. The scheme still keeps a UI run from building it.)
     ///
     /// So the whole property is *which testables the scheme holds*, and it is pinned in both
     /// directions. The second half is the control that matters: this is a SECOND scheme, not a

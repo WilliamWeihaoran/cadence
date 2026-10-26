@@ -20,9 +20,10 @@ compact. The full former guide is preserved at `../../docs/IOS_AGENTS_REFERENCE.
   over zero compiled files, dissented from only by `VACUOUS-COUNT`. `xcb.sh` now refuses it
   outright (`NO-SUCH-SIMULATOR`, exit 10) and names the devices it does have.
 - **An iOS UI test runs through `CadenceUITestsOnly`, never through `Cadence`** (T-2074).
-  `xcodebuild` builds every testable in the scheme whatever `-only-testing:` says, and `CadenceTests`
-  cannot compile for iOS — 35 files open with a bare `import AppKit`, so `-scheme Cadence` on an iOS
-  destination dies at `CadenceAccentPaletteTests.swift:1:8` with 0 tests run. The shared
+  `xcodebuild` builds every testable in the scheme whatever `-only-testing:` says. (The reason first
+  given here, that `CadenceTests` cannot compile for iOS, ended with [[T-3244]]: it compiles, and its
+  three whole-file `#if os(iOS)` suites run through `-scheme Cadence` on `Cadence-iPhone15` and in
+  CI's `ios-build` simulator step, [[T-6541]] — 22 tests, measured 2026-10-25.) The shared
   `CadenceUITestsOnly` scheme holds `CadenceUITests` alone: `scripts/simulator-claim.sh claim <id>`,
   then `scripts/xcb.sh <id> test -scheme CadenceUITestsOnly -destination 'platform=iOS Simulator,id=<udid>'
   -only-testing:CadenceUITests/<Suite>`. Measured 2026-10-09: 2 tests, 0 failures, 27.9 s against
