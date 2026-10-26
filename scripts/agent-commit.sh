@@ -1432,6 +1432,24 @@ resync_landed_worktree() {  # $1 = commit that landed, $2 = path, $3 = the revis
     return 0
 }
 
+# T-6414. The commit in $1's history of path $2 whose tree holds EXACTLY the
+# bytes of the file at $3 (default: $2 on disk); prints its sha, or nothing. A worktree copy that
+# is byte-identical to a committed revision holds nobody's uncommitted edit -- every one of its
+# bytes is in history -- so it is a STALE COPY, not in-flight work: the case T-1209's "identical to
+# the revision replaced" rule missed whenever the copy had fallen MORE than one revision behind.
+# One `git log --raw` over the path; measured at 0.04 s over docs/TODO.md's 1,772 revisions.
+# A copy matching nothing (a sibling's draft line, a torn read) prints nothing, which is the safe
+# direction: the caller then treats it as in-flight exactly as before.
+historical_revision_of() {  # $1 = commit to walk back from, $2 = path, $3 = file to hash (default $2)
+    local blob
+    [[ -f "${3:-$2}" ]] || return 0
+    blob=$(git hash-object -- "${3:-$2}" 2>/dev/null) || return 0
+    [[ -n "$blob" ]] || return 0
+    git --literal-pathspecs log --raw --no-abbrev --no-renames --format='commit %H' "$1" -- "$2" 2>/dev/null \
+        | awk -v b="$blob" '$1 == "commit" { c = $2; next } substr($0, 1, 1) == ":" && $4 == b { print c; exit }'
+    return 0
+}
+
 # Installed only across the compare-and-swap and the repair straight after it. It reads cmd_commit's
 # locals (zsh scoping is dynamic) and repairs only if the commit is really in HEAD's history, so a
 # signal that lands before the swap leaves the index exactly as it was.
@@ -2989,6 +3007,24 @@ ${(F)${(@)crossref_report/#/    }}
         local previous="$scratch/$(ledger_key "$name").previous"
         git cat-file -p "$headsha:$name" > "$previous" 2>/dev/null || : > "$previous"
         declined=$(declined_lines "${staged_content[$name]}" "$name" "$previous" "$scratch")
+        # T-6414. A worktree copy byte-identical to a committed revision declines nothing: every
+        # candidate line is in that commit, so "in no commit" would be false, and the record would
+        # demand an `accept` of lines nobody wrote -- the 25-44 superseded ledger lines T-5971
+        # measured on every `docs/TODO.md=` commit while the disk copy lagged. Only lines that are
+        # whole lines of THAT revision are dropped, so a sibling's line written after the hash was
+        # taken still survives into the record.
+        local wt_historical="" wt_hist_blob="$scratch/$(ledger_key "$name").wthistorical" declined_kept=""
+        if [[ -n "$declined" ]]; then
+            wt_historical=$(historical_revision_of "$headsha" "$name")
+            if [[ -n "$wt_historical" ]] && git --literal-pathspecs show "$wt_historical:$name" > "$wt_hist_blob" 2>/dev/null; then
+                declined_kept=$(print -r -- "$declined" | grep -F -x -v -f "$wt_hist_blob")
+                if [[ "$declined_kept" != "$declined" ]]; then
+                    say "note: the worktree copy of $name is ${wt_historical[1,8]}'s committed revision of it, so"
+                    say "      $(( $(print -r -- "$declined" | grep -c .) - $(print -r -- "$declined_kept" | grep -c .) )) of its line(s) absent from this commit are in history, not declined (T-6414)."
+                fi
+                declined=$declined_kept
+            fi
+        fi
         local dropped=0 unstable=0
         [[ -s "$scratch/$(ledger_key "$name").wtdropped" ]] && dropped=$(<"$scratch/$(ledger_key "$name").wtdropped")
         [[ -s "$scratch/$(ledger_key "$name").wtunstable" ]] && unstable=$(<"$scratch/$(ledger_key "$name").wtunstable")
@@ -3028,9 +3064,9 @@ ${(F)${(@)crossref_report/#/    }}
     #     revision this commit replaced, so it holds nobody's edits. Any other copy is left exactly
     #     alone and said out loud with the one-line cure, because a worktree still holding a
     #     sibling's hunks is the case the `=` form exists for and overwriting it is the bug.
-    local -a resynced left_behind created missing
-    resynced=(); left_behind=(); created=(); missing=()
-    local wt_previous
+    local -a resynced left_behind created missing resynced_from
+    resynced=(); left_behind=(); created=(); missing=(); resynced_from=()
+    local wt_previous wt_resync_from=""
     # Declared out here, not in the loop: a bare `local` reached twice is what
     # `noZshScriptReachesABareLocalDeclarationTwice` refuses.
     local resync_tmp resync_mode resync_wrote
@@ -3055,7 +3091,13 @@ ${(F)${(@)crossref_report/#/    }}
         cmp -s -- "$name" "${staged_content[$name]}" && continue   # already what this commit landed
         wt_previous="$scratch/$(ledger_key "$name").wtprevious"
         git cat-file -p "$headsha:$name" > "$wt_previous" 2>/dev/null || : > "$wt_previous"
-        if cmp -s -- "$name" "$wt_previous"; then
+        # T-6414: a copy that is ANY committed revision of the path is as safe to overwrite as
+        # one identical to the revision replaced -- nobody's uncommitted edit is in it -- and
+        # leaving it guarantees the NEXT `=` commit of this path declines its stale lines again.
+        wt_resync_from=""
+        cmp -s -- "$name" "$wt_previous" || wt_resync_from=$(historical_revision_of "$headsha" "$name")
+        if cmp -s -- "$name" "$wt_previous" || [[ -n "$wt_resync_from" ]]; then
+            [[ -n "$wt_resync_from" ]] && resynced_from+=("$name (was ${wt_resync_from[1,8]}'s revision)")
             # T-1387. NOT `cp` onto "$name": `cp` truncates and rewrites the existing inode, and
             # when "$name" is THIS script zsh -- which reads a script lazily, not wholly -- resumes
             # at a byte offset into content that has moved. Measured on `0fbfc74`, which grew this
@@ -3079,7 +3121,12 @@ ${(F)${(@)crossref_report/#/    }}
     done
     if (( ${#resynced} )); then
         say "note: re-synced the worktree copy of ${(j:, :)resynced} to what this commit landed (T-1209)."
-        say "      It was byte-identical to the revision replaced, so no in-flight edit could be lost."
+        if (( ${#resynced_from} )); then
+            say "      Each was byte-identical to a committed revision, so no in-flight edit could be lost;"
+            say "      older than the revision replaced: ${(j:, :)resynced_from} (T-6414)."
+        else
+            say "      It was byte-identical to the revision replaced, so no in-flight edit could be lost."
+        fi
     fi
     if (( ${#created} )); then
         say "note: wrote ${(j:, :)created} into the worktree: new to HEAD and absent on disk (T-3280)."
@@ -4497,6 +4544,47 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
         $( [[ ! -e "$ws/sub/created.txt" && "$out" == *"sub/created.txt is MISSING from the worktree"* ]] && print 1 || print 0 ) "$out"
     ( cd "$ws" && git show HEAD:sub/created.txt > sub/created.txt ) >/dev/null 2>&1
     rm -f "${ws}.newpath"
+    rm -f "$CADENCE_DECLINED_LEDGER"/*.declined(N)
+
+    say ""
+    say " mode 4j2 (T-6414) -- a worktree copy SEVERAL revisions behind is a stale copy, not a sibling's draft"
+    # T-1209 re-synced only a copy identical to the revision replaced. One that had fallen two
+    # revisions behind was "somebody's edits", so it was left on disk, and every later `=` commit
+    # recorded its superseded lines as DECLINED -- lines in history, called "in no commit", that
+    # each committer then had to `accept` (T-5971 measured 25-44 of them per ledger commit).
+    ( cd "$ws" && print -rl -- "alpha entry, first version" "beta entry stays" > stale.txt ) >/dev/null 2>&1
+    out=$( cd "$ws" && zsh "$here" j5 -m "$M" stale.txt 2>&1 ); rc=$?
+    check "the stale-copy fixture's first revision commits" $(( rc == 0 )) "exit $rc: $out"
+    ( cd "$ws" && print -rl -- "alpha entry, second version" "beta entry stays" > stale.txt ) >/dev/null 2>&1
+    out=$( cd "$ws" && zsh "$here" j6 -m "$M" --removes 1 stale.txt 2>&1 ); rc=$?
+    check "and its second revision commits" $(( rc == 0 )) "exit $rc: $out"
+    ( cd "$ws"
+      git show HEAD~1:stale.txt > stale.txt
+      git show HEAD:stale.txt > ../"${ws:t}.stale"
+      print -r -- "gamma entry, added by the = form" >> ../"${ws:t}.stale" ) >/dev/null 2>&1
+    out=$( cd "$ws" && zsh "$here" j7 -m "$M" stale.txt=../"${ws:t}.stale" 2>&1 ); rc=$?
+    check "an = commit over a copy two revisions behind commits" $(( rc == 0 )) "exit $rc: $out"
+    check "and records NO declined hunk for lines that are in history" \
+        $( [[ -z "$(print -r -- "$CADENCE_DECLINED_LEDGER"/*.declined(N))" && "$out" != *"were declined"* ]] && print 1 || print 0 ) "$out"
+    check "and the stale copy is re-synced to what landed, not left behind" \
+        $( [[ $( cd "$ws" && cat stale.txt ) == $( cd "$ws" && git show HEAD:stale.txt ) && "$out" != *"BEHIND this commit"* ]] && print 1 || print 0 ) "$out"
+    check "and it names the revision the copy was" \
+        $( [[ "$out" == *"T-6414"* && "$out" == *"'s revision"* ]] && print 1 || print 0 ) "$out"
+    # The branch that must NOT move: the same stale copy plus ONE line no commit has is a sibling's
+    # draft, and overwriting it is the bug the = form exists to avoid.
+    ( cd "$ws"
+      git show HEAD~2:stale.txt > stale.txt
+      print -r -- "a sibling's draft line, in no commit" >> stale.txt
+      git show HEAD:stale.txt > ../"${ws:t}.stale"
+      print -r -- "delta entry, added by the = form" >> ../"${ws:t}.stale" ) >/dev/null 2>&1
+    out=$( cd "$ws" && zsh "$here" j8 -m "$M" stale.txt=../"${ws:t}.stale" 2>&1 ); rc=$?
+    check "an = commit over a stale copy holding a draft line still commits" $(( rc == 0 )) "exit $rc: $out"
+    check "and the draft line is still recorded as declined" \
+        $( [[ "$(cat "$CADENCE_DECLINED_LEDGER"/*.declined(N) 2>/dev/null)" == *"a sibling's draft line"* ]] && print 1 || print 0 ) "$out"
+    check "and the copy holding it is left exactly alone" \
+        $( [[ $( cd "$ws" && cat stale.txt ) == *"a sibling's draft line"* && "$out" == *"BEHIND this commit"* ]] && print 1 || print 0 ) "$out"
+    ( cd "$ws" && git show HEAD:stale.txt > stale.txt ) >/dev/null 2>&1
+    rm -f "${ws}.stale"
     rm -f "$CADENCE_DECLINED_LEDGER"/*.declined(N)
     say ""
     say " mode 4k (MESSAGE-FILE-SHARED) -- T-1222: a -F message file must name the agent using it"
