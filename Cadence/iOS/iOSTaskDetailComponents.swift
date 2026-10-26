@@ -564,6 +564,9 @@ struct iOSTaskTagPickerPopover: View {
 
 struct iOSSubtaskRow: View {
     @Bindable var subtask: Subtask
+    /// The circle's tick, committed by the sheet ([[T-7013]]), which owns the notice a refusal is
+    /// named in. The title field below still saves itself; see `save()`.
+    let toggle: () -> Void
     let delete: () -> Void
     @Environment(\.modelContext) private var modelContext
 
@@ -577,10 +580,7 @@ struct iOSSubtaskRow: View {
 
     var body: some View {
         HStack(spacing: 9) {
-            Button {
-                subtask.isDone.toggle()
-                save()
-            } label: {
+            Button(action: toggle) {
                 iOSTaskCompletionCircle(isDone: subtask.isDone, tint: Theme.dim, diameter: 16)
                     .frame(width: 20, height: 20)
                     .iOSExpandedHitArea(12)
@@ -624,6 +624,14 @@ struct iOSSubtaskRow: View {
         }
     }
 
+    /// The title field's save, and only that since [[T-7013]] moved the tick to the sheet.
+    ///
+    /// A quiet in-place field edit, which the `try? save()` rule in `AGENTS.md` allows: it commits
+    /// one field of a row the store already holds, and nothing after it says it worked. It is not
+    /// routed through `commitEdit`, whose undo would overwrite the text under the caret with what
+    /// was typed over — the reason `CadencePendingChangePersistence.commitTypedContent` exists —
+    /// and a refused keystroke stays pending for the next one to retry, as on every other iOS
+    /// text field.
     private func save() {
         try? modelContext.save()
     }

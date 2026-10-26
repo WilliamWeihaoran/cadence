@@ -326,6 +326,7 @@ struct iOSTaskDetailSheet: View {
             canAddSubtask: canAddSubtask,
             failureNotice: subtaskFailureNotice,
             onAdd: { addSubtask() },
+            onToggle: toggleSubtask,
             onDelete: deleteSubtask
         )
     }
@@ -463,6 +464,13 @@ struct iOSTaskDetailSheet: View {
             return
         }
         subtaskFailureNotice = nil
+    }
+
+    /// The subtask circle's tick ([[T-7013]]), the twin of macOS's `SubtaskRow.toggleCompletion`.
+    /// A refusal un-ticks the circle and says so under the list; a tick that lands clears whatever
+    /// the last add or delete left there, as `deleteSubtask` does.
+    private func toggleSubtask(_ subtask: Subtask) {
+        subtaskFailureNotice = CadenceTaskInspectorSupport.toggleSubtaskCommitting(subtask, in: modelContext)
     }
 
     /// The completion half of the old title card's circle — it settles the task the moment it is

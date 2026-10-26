@@ -248,6 +248,8 @@ struct iOSTaskSubtasksSection: View {
     /// last one landed, which is the only state the section had before.
     let failureNotice: String?
     let onAdd: () -> Void
+    /// The circle's tick ([[T-7013]]): the sheet commits it and names a refusal in `failureNotice`.
+    let onToggle: (Subtask) -> Void
     let onDelete: (Subtask) -> Void
 
     private var progressLabel: String? {
@@ -276,7 +278,7 @@ struct iOSTaskSubtasksSection: View {
     private var subtaskBlock: some View {
         VStack(spacing: 0) {
             ForEach(subtasks) { subtask in
-                iOSSubtaskRow(subtask: subtask) {
+                iOSSubtaskRow(subtask: subtask, toggle: { onToggle(subtask) }) {
                     onDelete(subtask)
                 }
             }

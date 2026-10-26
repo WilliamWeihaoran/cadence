@@ -974,6 +974,41 @@ struct CadenceEditorSaveCommitSurfaceTests {
         #expect(try ModelContext(modelContainer).fetch(FetchDescriptor<Subtask>()).map(\.isDone) == [false])
     }
 
+    /// **Behavioural ([[T-7013]]).** The iOS task sheet's subtask circle commits its tick and
+    /// names nothing.
+    @Test func acommittedIOSSheetSubtaskTickIsInTheStoreWithNoNotice() throws {
+        let modelContainer = try container()
+        let modelContext = ModelContext(modelContainer)
+        let subtask = Subtask(title: "Book flight")
+        modelContext.insert(subtask)
+        try modelContext.save()
+
+        #expect(CadenceTaskInspectorSupport.toggleSubtaskCommitting(subtask, in: modelContext) == nil)
+
+        #expect(!modelContext.hasChanges, "the tick is still pending")
+        #expect(try ModelContext(modelContainer).fetch(FetchDescriptor<Subtask>()).map(\.isDone) == [true])
+    }
+
+    /// **Behavioural ([[T-7013]]).** A refused tick puts the circle back, says so, and leaves
+    /// unrelated pending work alone.
+    @Test func arefusedIOSSheetSubtaskTickPutsTheCircleBackAndSaysSo() throws {
+        let modelContainer = try container()
+        let modelContext = ModelContext(modelContainer)
+        let subtask = Subtask(title: "Book flight")
+        modelContext.insert(subtask)
+        try modelContext.save()
+        let bystander = try pendingBystander(in: modelContext)
+
+        let notice = CadenceTaskInspectorSupport.toggleSubtaskCommitting(
+            subtask, in: modelContext, commit: { _ in throw CommitRefused() }
+        )
+
+        #expect(notice == CadencePendingChangePersistence.editFailureNotice)
+        #expect(!subtask.isDone, "the refused tick left the subtask done")
+        #expect(bystander.name == "Home, being typed", "the refused tick discarded unrelated pending work")
+        #expect(try ModelContext(modelContainer).fetch(FetchDescriptor<Subtask>()).map(\.isDone) == [false])
+    }
+
     /// **Behavioural.** A task dropped on a timeline minute is in the store at its new slot.
     @Test func acommittedTimelineMinuteDropIsInTheStore() throws {
         let modelContainer = try container()
@@ -1095,6 +1130,26 @@ struct CadenceEditorSaveCommitSurfaceTests {
         #expect(endResize.contains("TimelineTaskBlockInteractionSupport.commitResize(task, restoring: resizeOrigin, in: modelContext)"))
         let begin = try #require(CadenceSourceScan.functionBody(named: "beginResizeIfNeeded", in: block))
         #expect(begin.contains("resizeOrigin = CadenceTaskFieldSnapshot(task)"))
+    }
+
+    /// [[T-7013]]'s call sites: the iOS row's circle hands its tick to the sheet, and the sheet
+    /// commits it through the shared helper into the section's notice. The row's own `save()` is
+    /// left to the title field.
+    @Test func theT7013IOSSubtaskTickReachesTheCommittingHelper() throws {
+        let row = try scanned("Cadence/iOS/iOSTaskDetailComponents.swift")
+        let rowBody = try #require(CadenceSourceScan.declarationBody("struct iOSSubtaskRow: View", in: row))
+        #expect(rowBody.contains("Button(action: toggle)"))
+        #expect(CadenceSourceScan.matchCount(#"subtask\.isDone\.toggle\(\)"#, in: rowBody) == 0)
+
+        let section = try scanned("Cadence/iOS/iOSTaskDetailSheetSections.swift")
+        #expect(section.contains("iOSSubtaskRow(subtask: subtask, toggle: { onToggle(subtask) })"))
+
+        let sheet = try scanned("Cadence/iOS/iOSTaskDetailSheet.swift")
+        #expect(sheet.contains("onToggle: toggleSubtask,"))
+        let toggle = try #require(CadenceSourceScan.functionBody(named: "toggleSubtask", in: sheet))
+        #expect(toggle.contains(
+            "subtaskFailureNotice = CadenceTaskInspectorSupport.toggleSubtaskCommitting(subtask, in: modelContext)"
+        ))
     }
     #endif
 

@@ -1,4 +1,5 @@
 import Foundation
+import SwiftData
 
 /// The rules the task inspector runs on, shared by the macOS inspector (`TaskDetailPopover` and its
 /// content views) and the iOS task detail sheet.
@@ -74,6 +75,28 @@ enum CadenceTaskInspectorSupport {
     /// subtask really is still there. Word for word `CadenceTaskMutationSupport.deleteFailureNotice`
     /// with the noun changed, because the two are the same event one level apart.
     static let subtaskDeleteFailureNotice = "Couldn't delete this subtask. Nothing was removed."
+
+    /// The iOS task sheet's subtask circle, committed ([[T-7013]]).
+    ///
+    /// `iOSSubtaskRow` toggled `isDone` and swallowed `try? modelContext.save()`, so a refused tick
+    /// stayed drawn — pending in the app's single `ModelContext` for some unrelated `save()` or
+    /// `rollback()` to settle — with nothing said. It is macOS's `SubtaskRow.toggleCompletion`
+    /// ([[T-4970]]) one platform over, and goes through the same
+    /// `CadenceNoteTaskEmbedEditing.toggleSubtask`, whose one-field undo un-ticks the circle on a
+    /// refusal. iOS has a surface macOS's row lacks — the section's notice line — so this answers
+    /// the sentence to draw there: `nil` when the tick landed, `editFailureNotice` when it did not.
+    /// That sentence's "Nothing was changed" is true only because the undo ran first.
+    ///
+    /// - Parameter commit: See `CadenceNoteTaskEmbedEditing.toggleSubtask(_:in:commit:)`.
+    static func toggleSubtaskCommitting(
+        _ subtask: Subtask,
+        in modelContext: ModelContext,
+        commit: (ModelContext) throws -> Void = { try $0.save() }
+    ) -> String? {
+        CadenceNoteTaskEmbedEditing.toggleSubtask(subtask, in: modelContext, commit: commit)
+            ? nil
+            : CadencePendingChangePersistence.editFailureNotice
+    }
 
     // MARK: - Status actions
 
