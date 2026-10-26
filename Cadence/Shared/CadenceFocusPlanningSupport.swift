@@ -157,6 +157,16 @@ enum CadenceFocusSupport {
         sidebarDetailParts(for: task, todayKey: todayKey, fallback: fallback).text
     }
 
+    /// **The accessible name of a row that starts a focus session on one task** ([[T-7065]]).
+    ///
+    /// `"Focus Write report"`: the verb, then the task, the name iOS's pick row has always
+    /// announced. The Mac's "Next up" rows were named `"Focus this task"` -- the tooltip's words --
+    /// so up to four rows in one sidebar announced the same three words and nothing said which
+    /// task each would start. Both platforms read this one spelling now.
+    static func focusTaskControlLabel(title: String) -> String {
+        "Focus \(title)"
+    }
+
     /// What an undated, unfiled task says on a **Focus picker row**, on both platforms (T-7017).
     /// The sidebar's shorter "Ready" sits beside a status chip that already says the rest; a pick
     /// row has no chip, so it says what the task is ready for.

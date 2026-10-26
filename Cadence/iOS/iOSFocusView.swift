@@ -883,7 +883,7 @@ private struct iOSFocusPickRow: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.iosPressable)
-            .accessibilityLabel("Focus \(title)")
+            .accessibilityLabel(CadenceFocusSupport.focusTaskControlLabel(title: title))
             .accessibilityAddTraits(isSelected ? .isSelected : [])
 
             Button(action: toggleSession) {

@@ -39,7 +39,9 @@ struct LogSessionPopover: View {
                     Circle()
                         .fill(Color(hex: task.containerColor))
                         .frame(width: 6, height: 6)
-                    Text(task.title)
+                    // T-7065: the header's spelling, so an untitled task is "Untitled Task" here as
+                    // it is on the session header behind this popover, not an empty line.
+                    Text(TaskTitleSupport.displayTitle(task.title))
                         .font(.system(size: 11))
                         .foregroundStyle(Theme.dim)
                         .lineLimit(1)

@@ -66,6 +66,10 @@ struct CalendarBoardRailColumn: View {
             onDrop: onDrop,
             onTargetChange: { isDropTargeted = $0 }
         ))
+        // T-7064: `.contain` first, as the day columns beside it now do (T-7034). On a stack that
+        // is not an element SwiftUI hands this label to every child, so each card read as
+        // "Unscheduled, 3 tasks" and the collapsed rail's "Expand Unscheduled" lost its verb.
+        .accessibilityElement(children: .contain)
         .accessibilityLabel("\(rail.label.capitalized), \(tasks.count) task\(tasks.count == 1 ? "" : "s")")
     }
 

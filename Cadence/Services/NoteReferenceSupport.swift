@@ -352,6 +352,17 @@ nonisolated enum NoteReferencePanelSection: String, Hashable, CaseIterable, Iden
     }
 }
 
+/// **The accessible name of the control that links one unlinked mention** ([[T-7066]]).
+///
+/// `"Link Weekly Review"`. The Mac footer drew one "Link" button per mention and named none of
+/// them, so VoiceOver read "Link" once per row with nothing to say which note each would link;
+/// iOS's sheet already said `"Link <title>"`. Both read this one spelling now.
+nonisolated enum NoteUnlinkedMentionCopy {
+    static func linkControlLabel(noteTitle: String) -> String {
+        "Link \(noteTitle)"
+    }
+}
+
 /// What one note points at, and what points back at it.
 ///
 /// Deliberately three arrays of models rather than anything pre-formatted: the panel draws a live

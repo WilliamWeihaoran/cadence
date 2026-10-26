@@ -637,6 +637,20 @@ struct CalDayHeaderView: View {
                 .fill(Theme.borderSubtle.opacity(CalendarVisualStyle.timelineDaySeparatorOpacity))
                 .frame(width: CalendarVisualStyle.timelineDaySeparatorLineWidth)
         }
+        // T-7064: the label iOS's `iOSCalendarTimelineDayHeader` has carried since T-573, from the
+        // same shared builder, so the Mac header says the day and what its band holds rather than
+        // "Mon" and "26" as two loose words. The band draws every chip (`bandCapacity` is `.max`),
+        // so both counts are exactly what is on screen. `.contain` first, so each chip stays its
+        // own openable element instead of inheriting the day's name (T-7034's rule). No
+        // `.isSelected`: like iOS's, this header has no selected state to announce.
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(
+            CadenceCalendarDayAccessibility.timelineDayLabel(
+                date: date,
+                allDayEventCount: allDayEventItems.count,
+                unscheduledCount: unscheduledTasks.count
+            )
+        )
     }
 
     private var allDayBannerContent: some View {

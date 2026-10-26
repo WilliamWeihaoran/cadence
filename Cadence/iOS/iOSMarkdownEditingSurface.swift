@@ -373,7 +373,7 @@ struct iOSMarkdownEditingSurface: View {
                                 .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
                         }
                         .buttonStyle(.iosPressable)
-                        .accessibilityLabel("Link \(note.displayTitle)")
+                        .accessibilityLabel(NoteUnlinkedMentionCopy.linkControlLabel(noteTitle: note.displayTitle))
                     }
                 }
                 .padding(14)

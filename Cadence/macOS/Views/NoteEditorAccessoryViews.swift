@@ -278,6 +278,8 @@ private struct NoteUnlinkedMentionRow: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            // T-7066: one "Link" per mention, so the visible word alone named none of them.
+            .accessibilityLabel(NoteUnlinkedMentionCopy.linkControlLabel(noteTitle: title))
         }
         .padding(.leading, 22)
         .padding(.trailing, 8)

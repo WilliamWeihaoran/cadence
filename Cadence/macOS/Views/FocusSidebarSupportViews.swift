@@ -116,12 +116,12 @@ struct FocusSidebarTaskRow: View {
                 .frame(width: 22, height: 22)
 
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(TaskTitleSupport.displayTitle(task.title, fallback: TaskTitleSupport.defaultCompactDisplayTitle))
+                    Text(title)
                         .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(Theme.text)
                         .lineLimit(1)
 
-                    CadenceTaskDetailLineLabel(task: task, fallback: "Ready")
+                    CadenceTaskDetailLineLabel(task: task, fallback: Self.detailFallback)
                 }
 
                 Spacer(minLength: 8)
@@ -139,8 +139,22 @@ struct FocusSidebarTaskRow: View {
             .clipShape(RoundedRectangle(cornerRadius: 8))
         }
         .buttonStyle(.cadencePlain)
-        .cadenceControlLabel("Focus this task")
+        // T-7065: named for the task it starts, with the detail line it draws as the value. It was
+        // `.cadenceControlLabel("Focus this task")`, which replaced the row's own words, so every
+        // "Next up" row announced the same three words. The sentence stays as the tooltip.
+        .accessibilityLabel(CadenceFocusSupport.focusTaskControlLabel(title: title))
+        .accessibilityValue(
+            CadenceFocusSupport.sidebarDetail(for: task, todayKey: DateFormatters.todayKey(), fallback: Self.detailFallback)
+        )
+        .help("Focus this task")
         .onHover { isHovered = $0 }
+    }
+
+    /// The fallback the detail line above draws, so the value is the words on screen.
+    private static let detailFallback = "Ready"
+
+    private var title: String {
+        TaskTitleSupport.displayTitle(task.title, fallback: TaskTitleSupport.defaultCompactDisplayTitle)
     }
 }
 

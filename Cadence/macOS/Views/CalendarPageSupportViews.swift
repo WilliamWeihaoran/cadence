@@ -100,6 +100,9 @@ private struct CalendarViewModeControl: View {
                         )
                 }
                 .buttonStyle(.cadencePlain)
+                // T-7064: the blue plate says which mode is on; VoiceOver now hears it too, as on
+                // iOS's `iOSSegmentedPill` and the Mac's own `CadenceQuietTabButton`.
+                .accessibilityAddTraits(presentation == .timeline && viewMode == mode ? .isSelected : [])
             }
 
             Button { setPresentation(.board) } label: {
@@ -119,6 +122,7 @@ private struct CalendarViewModeControl: View {
                     )
             }
             .buttonStyle(.cadencePlain)
+            .accessibilityAddTraits(presentation == .board ? .isSelected : [])
         }
         .padding(3)
         .background(
