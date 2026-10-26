@@ -53,8 +53,8 @@ final class CadenceCaptureEditorUITests: XCTestCase {
         XCTAssertTrue(complete.isHittable, app.debugDescription)
         photograph("iPad task completion and status")
         complete.tap()
-        XCTAssertTrue(card.buttons["Mark task todo"].waitForExistence(timeout: 5))
-        card.buttons["Mark task todo"].tap()
+        XCTAssertTrue(card.buttons["Reopen task"].waitForExistence(timeout: 5))
+        card.buttons["Reopen task"].tap()
         for _ in 0..<6 where !app.buttons["capture-save"].isHittable { editorScroll.swipeDown() }
         app.buttons["capture-save"].tap()
         XCTAssertTrue(title.waitForNonExistence(timeout: 5))

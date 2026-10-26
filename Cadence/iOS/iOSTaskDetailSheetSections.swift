@@ -390,7 +390,12 @@ struct iOSTaskStatusActionsSection: View {
                     fullWidth: true,
                     action: onToggleCompletion
                 )
-                .accessibilityLabel(isFinished ? "Mark task todo" : "Complete task")
+                // [[T-7010]]: the shared action-keyed name, as the row's circle has read since T-611.
+                // It spelled `isFinished ? "Mark task todo" : "Complete task"`, so VoiceOver said
+                // "Mark task todo" over a button whose visible word is "Reopen", and Voice Control's
+                // "Tap Reopen" matched nothing. `resolve(task:)` is `.done`/`.cancelled` exactly when
+                // `isFinished` is, so the name now says "Reopen task" wherever the button says Reopen.
+                .accessibilityLabel(CadenceTaskCompletionState.resolve(task: task).accessibilityActionLabel)
 
                 ForEach(CadenceTaskInspectorSupport.StatusAction.allCases, id: \.self) { action in
                     let isActive = action.isActive(task.status)

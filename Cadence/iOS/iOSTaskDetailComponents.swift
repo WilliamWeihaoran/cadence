@@ -567,6 +567,14 @@ struct iOSSubtaskRow: View {
     let delete: () -> Void
     @Environment(\.modelContext) private var modelContext
 
+    /// [[T-7011]]: the subject both buttons announce, normalised the way macOS's `SubtaskRow` names
+    /// its own (T-673). Without it every row in the block read "Complete subtask" and "Delete
+    /// subtask", so a VoiceOver user deleting the third of five could not tell which one the
+    /// trash glyph under their finger belonged to — and a blank title reads "Untitled", not "".
+    private var displayTitle: String {
+        TaskTitleSupport.displayTitle(subtask.title, fallback: TaskTitleSupport.defaultCompactDisplayTitle)
+    }
+
     var body: some View {
         HStack(spacing: 9) {
             Button {
@@ -579,6 +587,7 @@ struct iOSSubtaskRow: View {
             }
             .buttonStyle(.iosPressable)
             .accessibilityLabel(subtask.isDone ? "Mark subtask todo" : "Complete subtask")
+            .accessibilityValue(displayTitle)
 
             TextField("Subtask", text: $subtask.title, axis: .vertical)
                 .textFieldStyle(.plain)
@@ -604,6 +613,7 @@ struct iOSSubtaskRow: View {
             }
             .buttonStyle(.iosPressable)
             .accessibilityLabel("Delete subtask")
+            .accessibilityValue(displayTitle)
         }
         .padding(.horizontal, 2)
         .frame(minHeight: 44)

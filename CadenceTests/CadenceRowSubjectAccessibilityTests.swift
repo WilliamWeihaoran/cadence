@@ -103,6 +103,29 @@ struct CadenceRowSubjectAccessibilityTests {
         #expect(body.contains(".accessibilityLabel(completionState.accessibilityActionLabel)"))
     }
 
+    // MARK: - The iOS twin of sites 6 and 7: the task sheet's subtask row ([[T-7011]])
+
+    private static let iOSTaskDetailComponentsPath = "Cadence/iOS/iOSTaskDetailComponents.swift"
+
+    /// **`iOSSubtaskRow` was the one subtask row T-673 never reached.** Its circle and its trash
+    /// glyph announced "Complete subtask" and "Delete subtask" on every row alike, so a VoiceOver
+    /// user in a five-item block could not tell which subtask a delete would take. It names its
+    /// subject now exactly the way macOS's `SubtaskRow` does: one normalised `displayTitle`, handed
+    /// to both buttons, with the compact "Untitled" fallback for a blank title.
+    @Test func iOSSubtaskRowButtonsNameTheSubtaskTheyActOn() throws {
+        let source = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(Self.iOSTaskDetailComponentsPath))
+        let body = try #require(CadenceSourceScan.declarationBody("struct iOSSubtaskRow: View", in: source))
+
+        #expect(body.contains(#".accessibilityLabel("Delete subtask")"#), "non-vacuity: wrong body read")
+        #expect(body.contains("private var displayTitle: String {"))
+        #expect(body.contains(
+            "TaskTitleSupport.displayTitle(subtask.title, fallback: TaskTitleSupport.defaultCompactDisplayTitle)"
+        ))
+        #expect(CadenceSourceScan.matchCount(#"\.accessibilityValue\(displayTitle\)"#, in: body) == 2)
+        // The fallback a blank subtask announces is a word, not silence.
+        #expect(TaskTitleSupport.displayTitle("   ", fallback: TaskTitleSupport.defaultCompactDisplayTitle) == "Untitled")
+    }
+
     // **Site 8 left with [[T-2079]] and its file with [[T-5002]].**
     // `habitToggleCircleReadsTheSharedCompletionStateLabelAndNamesTheHabit` was one half of
     // [[T-673]]'s "two completion circles tick one" pair: `HabitListCard`'s circle read the shared

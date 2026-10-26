@@ -384,6 +384,39 @@ struct CadenceIconOnlyButtonAccessibilityTests {
         }
     }
 
+    /// **[[T-7010]]: the iOS task sheet's Complete / Reopen button reads the same shared name.**
+    ///
+    /// T-611 moved the row's circle off `"Mark task todo"`, and the sheet's twin kept it: through
+    /// T-3171 and T-3238 the button's visible word became "Reopen" while VoiceOver still said
+    /// "Mark task todo", and Voice Control's "Tap Reopen" matched nothing. The source half pins the
+    /// call; the behavioural half pins that the shared state is settled on exactly the tasks the
+    /// section's `isFinished` draws "Reopen" for, so the name and the visible word cannot part.
+    @Test func theIOSTaskSheetCompletionButtonTakesTheSharedActionLabel() throws {
+        let source = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/iOS/iOSTaskDetailSheetSections.swift")
+        )
+        let body = try #require(
+            CadenceSourceScan.declarationBody("struct iOSTaskStatusActionsSection: View", in: source)
+        )
+        #expect(body.contains(#"title: isFinished ? "Reopen" : "Complete""#), "non-vacuity: wrong body read")
+        #expect(body.contains(
+            ".accessibilityLabel(CadenceTaskCompletionState.resolve(task: task).accessibilityActionLabel)"
+        ))
+        #expect(!body.contains(#""Mark task todo""#), "the sheet is spelling the completion name for itself again")
+
+        var checked = 0
+        for status in TaskStatus.allCases {
+            let task = AppTask(title: "Probe")
+            task.status = status
+            let visibleWord = CadenceTaskQuerySupport.isFinishedTask(task) ? "Reopen" : "Complete"
+            let name = CadenceTaskCompletionState.resolve(task: task).accessibilityActionLabel
+            #expect(name == "\(visibleWord) task", "\(status): button says \(visibleWord), VoiceOver says \(name)")
+            checked += 1
+        }
+        #expect(checked == TaskStatus.allCases.count)
+        #expect(checked >= 3, "non-vacuity: todo, done and cancelled at least")
+    }
+
     private func unnamedIconButtonInstrument() throws -> CadenceScanInstrument {
         try CadenceScanInstrument(
             "icon-only button with no accessible name",
