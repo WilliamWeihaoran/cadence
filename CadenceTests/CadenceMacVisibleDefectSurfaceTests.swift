@@ -48,9 +48,9 @@ struct CadenceMacListLogRowPresentationTests {
             return task
         }
         #expect(ListLogRowPresentation.countLabel(for: [task(.done), task(.done)]) == "2 completed")
-        #expect(ListLogRowPresentation.countLabel(for: [task(.cancelled)]) == "1 cancelled")
+        #expect(ListLogRowPresentation.countLabel(for: [task(.cancelled)]) == "1 canceled")
         #expect(ListLogRowPresentation.countLabel(for: [task(.done), task(.cancelled), task(.done)])
-                == "2 completed, 1 cancelled")
+                == "2 completed, 1 canceled")
     }
 
     /// The view has to read the presentation, or every assertion above is about dead code.

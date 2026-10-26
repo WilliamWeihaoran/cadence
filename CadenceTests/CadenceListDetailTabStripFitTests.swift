@@ -1,3 +1,6 @@
+// T-3244: compiled for macOS only. This suite measures label widths through AppKit, and
+// `CadenceTests` also builds for an iOS destination, where that import does not resolve.
+#if os(macOS)
 import AppKit
 import Foundation
 import Testing
@@ -96,3 +99,5 @@ struct CadenceListDetailTabStripFitTests {
         #expect(compact.contains("overflow.leading?.clear:.black"))
     }
 }
+
+#endif

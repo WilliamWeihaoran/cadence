@@ -467,8 +467,8 @@ enum ListLogRowPresentation {
         let completed = tasks.count - cancelled
         switch (completed, cancelled) {
         case (_, 0): return "\(completed) completed"
-        case (0, _): return "\(cancelled) cancelled"
-        default: return "\(completed) completed, \(cancelled) cancelled"
+        case (0, _): return "\(cancelled) canceled"
+        default: return "\(completed) completed, \(cancelled) canceled"
         }
     }
 }
