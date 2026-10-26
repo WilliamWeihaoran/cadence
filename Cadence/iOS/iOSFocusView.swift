@@ -432,11 +432,15 @@ struct iOSFocusView: View {
                 .foregroundStyle(Theme.text)
                 .lineLimit(3)
 
-            HStack(spacing: 8) {
+            // Wraps rather than squeezing (T-7087). Up to four chips — list, priority, "Due …",
+            // estimate — ride this row, and on a 393pt iPhone the detail pane leaves it ~329pt: a
+            // longer list name or "Due Wednesday" pushed an `HStack` past that, and each chip is
+            // one line, so the row truncated its own words ("Personal Er…") instead of taking a
+            // second line. macOS's `FocusSessionHeader` has a whole window and keeps its one row.
+            CadenceWrappingHStack(spacing: 8, lineSpacing: 6) {
                 chips()
-                Spacer(minLength: 0)
             }
-            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }

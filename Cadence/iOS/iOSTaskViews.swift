@@ -673,6 +673,11 @@ struct iOSTaskViewOptionsBar: View {
                     .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
             }
             .buttonStyle(.iosPressable)
+            // Named for what it is, with the mode as its value (T-7088). The chip draws only the
+            // mode, so VoiceOver announced "Priority, button" on Today, Inbox and All Tasks with
+            // nothing saying it sorts; macOS's `CadenceEnumPickerBadge` says "Sort, Priority".
+            .accessibilityLabel("Sort")
+            .accessibilityValue(sortMode.title)
             .popover(isPresented: $showSortPicker) {
                 iOSChoicePopoverList(
                     rows: CadenceTaskSortMode.allCases.map { mode in

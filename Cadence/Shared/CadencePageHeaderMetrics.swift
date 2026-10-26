@@ -115,6 +115,16 @@ nonisolated struct CadencePageHeaderMetrics: Equatable, Sendable {
     /// and macOS 0.12 for the same capsule; neither was chosen.
     static let countFillOpacity: Double = 0.12
 
+    /// Whether a header draws its count capsule at all. **A zero is chrome** — the absence of a
+    /// badge is the zero state, the rule the sidebar counts follow. macOS's `DesktopPageHeader`
+    /// held it inline as `count > 0` while `iOSPageHeader` drew any non-nil count, so an empty
+    /// Today, Inbox or Focus picker on iPhone read "Today 0" beside the Mac's bare "Today"
+    /// (T-7086). Both headers ask here now.
+    static func drawsCountBadge(_ count: Int?) -> Bool {
+        guard let count else { return false }
+        return count > 0
+    }
+
     /// The count capsule is where `.desktop` deliberately answers with `.compact`'s figures rather
     /// than a third set. That is not laziness about the third tier: a 12pt count in an 8/4 capsule
     /// is what macOS already drew, and it is the same *physical* size as the phone's at their own

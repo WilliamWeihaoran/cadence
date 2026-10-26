@@ -306,7 +306,7 @@ struct iOSPageHeader<Trailing: View>: View {
                         titleColumn(metrics)
                     }
                     HStack(spacing: metrics.rowSpacing) {
-                        if let count {
+                        if let count, CadencePageHeaderMetrics.drawsCountBadge(count) {
                             iOSPageHeaderCountBadge(count: count, tint: color, metrics: metrics)
                         }
                         trailing()
@@ -320,7 +320,7 @@ struct iOSPageHeader<Trailing: View>: View {
                     }
                     titleColumn(metrics)
                     Spacer(minLength: 8)
-                    if let count {
+                    if let count, CadencePageHeaderMetrics.drawsCountBadge(count) {
                         iOSPageHeaderCountBadge(count: count, tint: color, metrics: metrics)
                     }
                     trailing()

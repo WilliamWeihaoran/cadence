@@ -108,7 +108,7 @@ struct DesktopPageHeader<TrailingContent: View>: View {
 
                     // A zero is chrome: the absence of a badge is the zero state, the same
                     // rule the sidebar counts follow.
-                    if let count, count > 0 {
+                    if let count, CadencePageHeaderMetrics.drawsCountBadge(count) {
                         countBadge(count)
                     }
                 }
