@@ -154,8 +154,11 @@ private struct AppleReminderTaskRow: View {
             }
             .buttonStyle(.cadencePlain)
             .disabled(!reminder.allowsCompletion || rowState.isCompleting)
-            .accessibilityLabel("Complete in Apple Reminders")
-            .help(reminder.allowsCompletion ? "Complete in Apple Reminders" : "This reminder list is read-only")
+            .opacity(AppleReminderRowPresentation.completionControlOpacity(allowsCompletion: reminder.allowsCompletion))
+            // T-7007: one name for the circle in every state, iOS's, so a read-only list's circle
+            // is not announced as able to complete anything.
+            .accessibilityLabel(completionControlLabel)
+            .help(completionControlLabel)
             .padding(.horizontal, 8)
 
             Text(CadenceTitleNormalization.display(reminder.title, fallback: CadenceTitleNormalization.defaultReminderTitle))
@@ -184,6 +187,10 @@ private struct AppleReminderTaskRow: View {
             .padding(.leading, 6)
             .padding(.trailing, 6)
         }
+    }
+
+    private var completionControlLabel: String {
+        AppleReminderRowPresentation.completionControlLabel(allowsCompletion: reminder.allowsCompletion)
     }
 
     /// Both tints are `AppleReminderRowPresentation`'s rather than this row's own. They were

@@ -223,11 +223,9 @@ private struct iOSInboxReminderRow: View {
         }
         .buttonStyle(.iosPressable)
         .disabled(!reminder.allowsCompletion || rowState.isCompleting)
-        .opacity(reminder.allowsCompletion ? 1 : 0.4)
+        .opacity(AppleReminderRowPresentation.completionControlOpacity(allowsCompletion: reminder.allowsCompletion))
         .accessibilityLabel(
-            reminder.allowsCompletion
-                ? "Complete reminder in Apple Reminders"
-                : "This reminder list is read-only"
+            AppleReminderRowPresentation.completionControlLabel(allowsCompletion: reminder.allowsCompletion)
         )
     }
 

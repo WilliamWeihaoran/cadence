@@ -249,6 +249,21 @@ enum AppleReminderRowPresentation {
         if dayOffset < 0 { return Theme.red }
         return dayOffset == 0 ? Theme.amber : Theme.dim
     }
+
+    /// What the completion circle is called, on both rows ([[T-7007]]).
+    ///
+    /// iOS spelled this; macOS named its circle "Complete in Apple Reminders" in every state, so on
+    /// a read-only list VoiceOver offered to complete a reminder the disabled button would never
+    /// complete, and only the hover tooltip said why.
+    static func completionControlLabel(allowsCompletion: Bool) -> String {
+        allowsCompletion ? "Complete reminder in Apple Reminders" : "This reminder list is read-only"
+    }
+
+    /// A read-only list's circle is drawn faded, so the row reads as checkable-but-not-here without
+    /// a hover. iOS's value; macOS drew its disabled circle at full strength ([[T-7007]]).
+    static func completionControlOpacity(allowsCompletion: Bool) -> Double {
+        allowsCompletion ? 1 : 0.4
+    }
 }
 
 /// What `RemindersManager.completeReminder(id:)` actually did.
