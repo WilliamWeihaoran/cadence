@@ -1324,11 +1324,15 @@ private struct iOSCalendarTimelineDayColumn: View {
             }
 
             ForEach(tasks) { task in
+                // T-6921: `range` is the true span (or the live edit preview) and is what the block
+                // labels itself with; `drawn` is that span floored to a tappable height, the way an
+                // event's is above, and is the only thing the geometry reads.
                 let stored = taskRange(task)
                 let range = drawnRange(for: task, stored: stored)
+                let drawn = CadenceScheduleSupport.timelineVisibleRange(start: range.start, end: range.end)
                 let key = BlockKey.task(task.persistentModelID)
                 let slot = horizontalFrame(placements[.task(task.persistentModelID)], kind: .task)
-                let height = blockHeight(start: range.start, end: range.end)
+                let height = blockHeight(start: drawn.start, end: drawn.end)
                 let isLifted = editingTaskID == task.persistentModelID
                     || editPreview?.taskID == task.persistentModelID
                 iOSTimelineTaskBlock(
@@ -1340,7 +1344,7 @@ private struct iOSCalendarTimelineDayColumn: View {
                     editing: blockEditing(for: task, stored: stored, drawnHeight: height)
                 )
                 .frame(width: slot.width, height: height)
-                .offset(x: slot.x, y: yOffset(for: range.start))
+                .offset(x: slot.x, y: yOffset(for: drawn.start))
                 // A lifted block is drawn over its neighbours, so the handle bands it hangs past
                 // its own edges are not under the block it is being dragged across. Still below
                 // the draft and the now-line, which are declared after it at the same index.
@@ -1842,13 +1846,12 @@ private struct iOSCalendarTimelineDayColumn: View {
         case event(String)
     }
 
-    /// The minutes a task block is drawn over — read by both the block and the layout, so the
-    /// rectangle that is columned is the rectangle that is drawn.
+    /// The true minutes a task block stands for — `AppTask.timelineDurationMinutes`, the rule every
+    /// other surface reads ([[T-6921]]). The block labels itself with it and edits are measured
+    /// from it; the rectangle (and the layout, so what is columned is what is drawn) reads it
+    /// through `timelineVisibleRange`.
     private func taskRange(_ task: AppTask) -> (start: Int, end: Int) {
-        CadenceScheduleSupport.blockRange(
-            startMinute: task.scheduledStartMin,
-            fallbackDuration: task.estimatedMinutes
-        )
+        CadenceScheduleSupport.taskTimelineRange(for: task)
     }
 
     /// Column + cascade depth for **every** timed block in the column — tasks and events in one
@@ -1878,7 +1881,8 @@ private struct iOSCalendarTimelineDayColumn: View {
             ))
         }
         for task in tasks {
-            let range = taskRange(task)
+            let stored = taskRange(task)
+            let range = CadenceScheduleSupport.timelineVisibleRange(start: stored.start, end: stored.end)
             blocks.append(.init(
                 key: .task(task.persistentModelID),
                 kind: .task,

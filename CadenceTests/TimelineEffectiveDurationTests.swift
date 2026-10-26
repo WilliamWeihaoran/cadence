@@ -74,6 +74,37 @@ struct TimelineEffectiveDurationTests {
         #expect(task.timelineDurationMinutes == 30)
     }
 
+    // MARK: - The iOS timeline reads the same rule (T-6921)
+
+    @Test func theIOSTimelineTaskRangeIsTheStartPlusTheSharedDurationForEveryEstimate() {
+        // A relation, not a figure: for Estimate None (0), a 5-minute estimate, a 10-minute one
+        // and an ordinary one, the range the iOS block is labelled and edited from is exactly
+        // `scheduledStartMin ..< scheduledEndMin`, the span the Board card and the Mac read.
+        // `blockRange`'s `max(15, _)` gave 0 -> 15 and 5 -> 15 here.
+        for estimate in [0, 5, 10, 45] {
+            let task = AppTask(title: "Estimate \(estimate)")
+            task.scheduledStartMin = 540
+            task.estimatedMinutes = estimate
+
+            let range = CadenceScheduleSupport.taskTimelineRange(for: task)
+            #expect(range.start == task.scheduledStartMin, "estimate \(estimate)")
+            #expect(range.end - range.start == task.timelineDurationMinutes, "estimate \(estimate)")
+            #expect(range.end == task.scheduledEndMin, "estimate \(estimate)")
+        }
+    }
+
+    @Test func theIOSTimelineDrawsAndColumnsItsTaskBlocksFromTheSharedRangeNotTheFifteenMinuteFloor() throws {
+        // The iOS file does not compile into this target, so the wiring is pinned by source: the
+        // task range comes from `taskTimelineRange`, and no task range is built from the raw
+        // estimate through `blockRange`.
+        let code = CadenceSourceScan.codeOnly(
+            try CadenceSourceScan.sourceFile("Cadence/iOS/iOSCalendarTimelineViews.swift")
+        )
+        #expect(code.contains("CadenceScheduleSupport.taskTimelineRange(for: task)"))
+        #expect(!code.contains("fallbackDuration: task.estimatedMinutes"))
+        #expect(!code.contains("CadenceScheduleSupport.blockRange("))
+    }
+
     #if os(macOS)
 
     // 1 pt == 1 minute, so a frame's y and height read directly as minutes.

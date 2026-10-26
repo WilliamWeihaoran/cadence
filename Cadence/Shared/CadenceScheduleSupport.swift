@@ -559,6 +559,18 @@ enum CadenceScheduleSupport {
         return (clampedStart, max(clampedStart + 15, clampedEnd))
     }
 
+    /// The true minutes a timed task occupies on a day timeline: its start plus
+    /// `AppTask.timelineDurationMinutes` — the one duration rule the Mac timeline, the iOS Board
+    /// card and `scheduledDateLabel` already read ([[T-6921]]). An Estimate-None task (0) is the
+    /// 30-minute default, a 5-minute estimate stays 5. **Not** `blockRange`, whose `max(15, _)`
+    /// read 0 as 15 and stretched a 5-minute task to 15, so the iOS block was labelled 9:00–9:15
+    /// where every other surface said 9:00–9:30. The drawn rectangle is floored separately, by
+    /// `timelineVisibleRange`, exactly as an event's is; the label keeps this range.
+    static func taskTimelineRange(for task: AppTask) -> (start: Int, end: Int) {
+        let start = task.scheduledStartMin
+        return (start, start + task.timelineDurationMinutes)
+    }
+
     static func blockRange(startMinute: Int, fallbackDuration: Int) -> (start: Int, end: Int) {
         let start = max(calendarStartHour * 60, startMinute)
         let duration = max(15, fallbackDuration)
