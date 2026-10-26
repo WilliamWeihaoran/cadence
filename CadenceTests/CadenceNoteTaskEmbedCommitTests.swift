@@ -217,10 +217,9 @@ struct CadenceNoteTaskEmbedCommitTests {
     /// anybody which site drifted back.
     @Test func everyEmbeddedTaskCardEditorRepaintsOnlyBelowItsRefusal() throws {
         let editors = [
-            ("Cadence/macOS/Views/NotePanel.swift", "toggleEmbeddedSubtask", "refreshEmbeddedTask(task)"),
-            ("Cadence/macOS/Views/NotePanel.swift", "renameEmbeddedTask", "refreshEmbeddedTask(task)"),
             // [[T-5120]]: `TaskNoteEditorPane`'s pair (and the inspector box's and Focus's copies)
-            // is the shared `TaskNotesEmbedHandlers` now.
+            // is the shared `TaskNotesEmbedHandlers` now; [[T-6721]]: so are `NotePanel`'s and
+            // `NoteEditorPane`'s.
             (
                 "Cadence/macOS/Views/TaskNotesEmbedHandlers.swift",
                 "toggleEmbeddedSubtask",
@@ -231,8 +230,6 @@ struct CadenceNoteTaskEmbedCommitTests {
                 "renameEmbeddedTask",
                 "refreshEmbeddedTask(embeddedTask)"
             ),
-            ("Cadence/macOS/Views/NoteEditorPane.swift", "toggleEmbeddedSubtask", "refreshEmbeddedTask(task)"),
-            ("Cadence/macOS/Views/NoteEditorPane.swift", "renameEmbeddedTask", "refreshEmbeddedTask(task)"),
             (
                 "Cadence/iOS/iOSMarkdownEditingSurface.swift",
                 "toggleEmbeddedSubtask",
@@ -283,18 +280,18 @@ struct CadenceNoteTaskEmbedCommitTests {
     /// **Source shape.** Each of the four editors holds a notice slot and draws it. A notice set and
     /// never rendered is the same silence one layer further in.
     ///
-    /// [[T-5120]]: the three task-notes editors hold their slot in the shared
+    /// [[T-5120]], [[T-6721]]: the five macOS editors hold their slot in the shared
     /// `TaskNotesEmbedHandlers` and each draws it, so the slot and the drawing are read from
-    /// different files for those three.
+    /// different files for those five.
     @Test func everyEmbeddedTaskCardEditorDrawsTheNoticeItSets() throws {
         let stateSlot = "@State private var embeddedTaskFailureNotice: String?"
         let sharedPath = "Cadence/macOS/Views/TaskNotesEmbedHandlers.swift"
         for (slotPath, slot, drawPath) in [
-            ("Cadence/macOS/Views/NotePanel.swift", stateSlot, "Cadence/macOS/Views/NotePanel.swift"),
+            (sharedPath, "var embeddedTaskFailureNotice: String?", "Cadence/macOS/Views/NotePanel.swift"),
             (sharedPath, "var embeddedTaskFailureNotice: String?", "Cadence/macOS/Views/ListNotesSupportViews.swift"),
             (sharedPath, "var embeddedTaskFailureNotice: String?", "Cadence/macOS/Views/TaskInspectorContentSupportViews.swift"),
             (sharedPath, "var embeddedTaskFailureNotice: String?", "Cadence/macOS/Views/FocusNotesPanel.swift"),
-            ("Cadence/macOS/Views/NoteEditorPane.swift", stateSlot, "Cadence/macOS/Views/NoteEditorPane.swift"),
+            (sharedPath, "var embeddedTaskFailureNotice: String?", "Cadence/macOS/Views/NoteEditorPane.swift"),
             ("Cadence/iOS/iOSMarkdownEditingSurface.swift", stateSlot, "Cadence/iOS/iOSMarkdownEditingSurface.swift")
         ] {
             #expect(

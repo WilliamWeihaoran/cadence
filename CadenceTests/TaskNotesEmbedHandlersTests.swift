@@ -211,5 +211,135 @@ struct TaskNotesEmbedHandlersTests {
         #expect(embedded.title == "Renamed")
         #expect(committing.embeddedTaskFailureNotice == nil)
     }
+
+    // MARK: - [[T-6721]]: the two note-owned editors' host policy
+
+    /// `NotePanel`'s core notes file a new card into the Inbox, default section — and a `[[task]]`
+    /// link's id reads the creation cache there, so a card created moments ago opens from its link
+    /// before the host's query holds it. The other editors' scopes do not read the cache.
+    @Test func theCoreNotesFileIntoTheInboxAndTheirTaskLinkIDsReadTheCreationCache() throws {
+        let (_, modelContext) = try context()
+        let handlers = TaskNotesEmbedHandlers(hoverIDPrefix: "note-embed-task-")
+        // The host's query has not caught up with anything yet.
+        let coreNotes = TaskNotesEmbedScope(
+            referenceTasks: [],
+            embedTarget: .coreNotes,
+            modelContext: modelContext,
+            taskLinkIDsReadCreationCache: true
+        )
+
+        let suggestion = try #require(handlers.createEmbeddedTask(title: "Call the venue", in: coreNotes))
+        let created = try #require(
+            try modelContext.fetch(FetchDescriptor<AppTask>()).first { $0.id == suggestion.targetID }
+        )
+        #expect(created.area == nil)
+        #expect(created.project == nil)
+        #expect(created.sectionName == TaskSectionDefaults.defaultName)
+
+        handlers.openTaskReference(id: created.id, title: "", in: coreNotes)
+        #expect(handlers.linkedTaskForPopover?.id == created.id, "the core notes' link missed a just-created task")
+
+        handlers.linkedTaskForPopover = nil
+        let liveOnly = TaskNotesEmbedScope(referenceTasks: [], embedTarget: .coreNotes, modelContext: modelContext)
+        handlers.openTaskReference(id: created.id, title: "", in: liveOnly)
+        #expect(handlers.linkedTaskForPopover == nil, "a live-tasks-only link read the creation cache")
+    }
+
+    /// `NoteEditorPane`: a list note files into the list its host passes, else its own; a project
+    /// list's card lands in that project; any other kind of note's card lands in the Inbox.
+    @Test func aNoteEditorFilesAListNotesCardIntoItsListAndAnyOtherNotesIntoTheInbox() throws {
+        let (_, modelContext) = try context()
+        let hostArea = Area(name: "Host area")
+        let noteArea = Area(name: "Note area")
+        let project = Project(name: "Launch")
+        project.sectionNames = [TaskSectionDefaults.defaultName, "Later"]
+        let areaList = Note(kind: .list, title: "Area list")
+        areaList.area = noteArea
+        let projectList = Note(kind: .list, title: "Project list")
+        projectList.project = project
+        let meeting = Note(kind: .meeting, title: "Standup")
+        meeting.area = noteArea
+        for model: any PersistentModel in [hostArea, noteArea, project, areaList, projectList, meeting] as [any PersistentModel] {
+            modelContext.insert(model)
+        }
+        try modelContext.save()
+        let handlers = TaskNotesEmbedHandlers(hoverIDPrefix: "note-embed-task-")
+
+        func created(_ title: String, _ target: TaskNotesEmbedTarget) throws -> AppTask {
+            let scope = TaskNotesEmbedScope(referenceTasks: [], embedTarget: target, modelContext: modelContext)
+            let suggestion = try #require(handlers.createEmbeddedTask(title: title, in: scope), "\(title)")
+            return try #require(try modelContext.fetch(FetchDescriptor<AppTask>()).first { $0.id == suggestion.targetID })
+        }
+
+        let hosted = try created("Hosted", .noteEditor(areaList, area: hostArea, project: nil))
+        #expect(hosted.area?.id == hostArea.id, "the host's area did not win over the note's")
+        let own = try created("Own", .noteEditor(areaList, area: nil, project: nil))
+        #expect(own.area?.id == noteArea.id)
+        let inProject = try created("In project", .noteEditor(projectList, area: nil, project: nil))
+        #expect(inProject.project?.id == project.id)
+        #expect(inProject.area == nil)
+        #expect(inProject.sectionName == TaskSectionDefaults.defaultName)
+        let loose = try created("Loose", .noteEditor(meeting, area: hostArea, project: project))
+        #expect(loose.area == nil)
+        #expect(loose.project == nil)
+    }
+
+    /// `NoteEditorPane` bumps the note's `updatedAt` inside the creation's own commit, and puts it
+    /// back when that commit is refused — so a refused card leaves neither a task nor an edited note.
+    @Test func aNoteEditorsCardBumpsTheNoteInTheSameCommitAndARefusalPutsItBack() throws {
+        let (container, modelContext) = try context()
+        let note = Note(kind: .list, title: "Plans")
+        let earlier = Date(timeIntervalSince1970: 1_000_000)
+        note.updatedAt = earlier
+        modelContext.insert(note)
+        try modelContext.save()
+        let scope = TaskNotesEmbedScope(
+            referenceTasks: [],
+            embedTarget: .noteEditor(note, area: nil, project: nil),
+            modelContext: modelContext
+        )
+
+        let refusing = TaskNotesEmbedHandlers(hoverIDPrefix: "note-embed-task-") { _ in throw CommitRefused() }
+        #expect(refusing.createEmbeddedTask(title: "Refused", in: scope) == nil)
+        #expect(note.updatedAt == earlier, "a refused card left the note marked as edited")
+        #expect(try modelContext.fetch(FetchDescriptor<AppTask>()).allSatisfy { $0.title != "Refused" })
+
+        let committing = TaskNotesEmbedHandlers(hoverIDPrefix: "note-embed-task-")
+        #expect(committing.createEmbeddedTask(title: "Taken", in: scope) != nil)
+        #expect(note.updatedAt > earlier)
+        let stored = try ModelContext(container).fetch(FetchDescriptor<Note>()).first { $0.id == note.id }
+        #expect(stored.map { $0.updatedAt > earlier } == true, "the note's bump did not ride in the creation's commit")
+
+        // A task's notes touch no note.
+        let owner = try seededTask("Owner", in: modelContext)
+        #expect(TaskNotesEmbedTarget.ownerTask(owner).touchedNote == nil)
+    }
+
+    /// **Source shape — the one part a test cannot drive without a window.** Each note-owned host
+    /// builds its scope in a view, so which policy it picks is read from source: `NotePanel` takes
+    /// the core-notes target and reads the creation cache for link ids; `NoteEditorPane` takes its
+    /// note's target and does not. The behaviour each choice means is pinned above.
+    @Test func eachNoteOwnedHostPassesItsOwnPolicy() throws {
+        for (path, target, readsCache) in [
+            ("Cadence/macOS/Views/NotePanel.swift", "embedTarget: .coreNotes,", true),
+            ("Cadence/macOS/Views/NoteEditorPane.swift", "embedTarget: .noteEditor(note, area: area, project: project),", false)
+        ] {
+            let code = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile(path))
+            let scope = try #require(
+                CadenceSourceScan.declarationBody("private var embedScope: TaskNotesEmbedScope", in: code),
+                "\(path) builds no embed scope"
+            )
+            #expect(scope.contains(target), "\(path) files new cards somewhere else")
+            #expect(
+                scope.contains("taskLinkIDsReadCreationCache: true") == readsCache,
+                "\(path) changed whether its task links read the creation cache"
+            )
+            #expect(code.contains(".taskNotesEmbedPopovers(embeds, scope: embedScope)"), "\(path)")
+            #expect(
+                CadenceSourceScan.matchCount(#"func (createEmbeddedTask|toggleEmbeddedTask|openTaskReference)\("#, in: code) == 0,
+                "\(path) grew its own copy of a shared handler back"
+            )
+        }
+    }
 }
 #endif

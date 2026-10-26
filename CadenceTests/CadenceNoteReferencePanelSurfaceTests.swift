@@ -650,7 +650,8 @@ struct CadenceNoteReferencePanelSurfaceTests {
         // [[T-5120]]: `TaskNoteEditorPane`'s popover slot is the shared `TaskNotesEmbedHandlers`'
         // and is attached by `taskNotesEmbedPopovers`, so its two spellings name that.
         for (host, raise, popover) in [
-            ("Cadence/macOS/Views/NoteEditorPane.swift", "onOpenTask: { linkedTaskForPopover = $0 }", ".popover(item: $linkedTaskForPopover)"),
+            // [[T-6721]]: `NoteEditorPane`'s too.
+            ("Cadence/macOS/Views/NoteEditorPane.swift", "onOpenTask: { embeds.linkedTaskForPopover = $0 }", ".taskNotesEmbedPopovers(embeds, scope: embedScope)"),
             ("Cadence/macOS/Views/ListNotesSupportViews.swift", "onOpenTask: { embeds.linkedTaskForPopover = $0 }", ".taskNotesEmbedPopovers(embeds, scope: embedScope)")
         ] {
             let code = try strippingComments(sourceFile(host))

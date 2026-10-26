@@ -299,9 +299,8 @@ struct MarkdownInlineTaskPanelTests {
     /// as the status chip's editor and the no-text-view fallback. [[T-5120]]: the three task-notes
     /// editors share `TaskNotesEmbedHandlers`, whose context arrives in its `scope`.
     @Test func everyMacNoteHostOpensThePanelInline() throws {
+        // [[T-6721]]: `NoteEditorPane` and `NotePanel` are on the shared handlers too.
         for path in [
-            "Cadence/macOS/Views/NoteEditorPane.swift",
-            "Cadence/macOS/Views/NotePanel.swift",
             "Cadence/macOS/Views/TaskNotesEmbedHandlers.swift"
         ] {
             let source = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile(path))

@@ -154,9 +154,8 @@ struct MarkdownEmbeddedTaskLookupTests {
     // MARK: - Shape: the four editors route through it
 
     private static let embeddingEditors = [
-        "Cadence/macOS/Views/NotePanel.swift",
-        "Cadence/macOS/Views/NoteEditorPane.swift",
-        // [[T-5120]]: `TaskNoteEditorPane`'s, the inspector box's and Focus's lookup.
+        // [[T-5120]]: `TaskNoteEditorPane`'s, the inspector box's and Focus's lookup; [[T-6721]]:
+        // `NotePanel`'s and `NoteEditorPane`'s.
         "Cadence/macOS/Views/TaskNotesEmbedHandlers.swift",
         "Cadence/iOS/iOSMarkdownEditingSurface.swift"
     ]
@@ -193,7 +192,7 @@ struct MarkdownEmbeddedTaskLookupTests {
             filesRead += 1
         }
 
-        #expect(filesRead == 4, "the scan read \(filesRead) of 4 embedding editors")
+        #expect(filesRead == 2, "the scan read \(filesRead) of 2 embedding editors")
     }
 
     /// The missing-card behaviour has to stay: the markdown reference remains and the card renders

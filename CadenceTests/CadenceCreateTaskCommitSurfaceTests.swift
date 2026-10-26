@@ -247,19 +247,8 @@ struct CadenceCreateTaskCommitSurfaceTests {
                     "entryGeneration += 1"
                 ]
             ),
-            CommitSurface(
-                path: "Cadence/macOS/Views/NotePanel.swift",
-                function: "createEmbeddedTask",
-                failureBranch: Self.embedFailureBranch,
-                successSpellings: ["recentEmbeddedTasks[", "return .task("]
-            ),
-            CommitSurface(
-                path: "Cadence/macOS/Views/NoteEditorPane.swift",
-                function: "createEmbeddedTask",
-                failureBranch: Self.embedFailureBranch,
-                successSpellings: ["recentEmbeddedTasks[", "return .task("]
-            ),
-            // [[T-5120]]: `TaskNoteEditorPane`'s, the inspector box's and Focus's copies.
+            // [[T-5120]]: `TaskNoteEditorPane`'s, the inspector box's and Focus's copies; and
+            // [[T-6721]]: `NotePanel`'s and `NoteEditorPane`'s.
             CommitSurface(
                 path: "Cadence/macOS/Views/TaskNotesEmbedHandlers.swift",
                 function: "createEmbeddedTask",
@@ -332,10 +321,11 @@ struct CadenceCreateTaskCommitSurfaceTests {
     /// The note embed pane bumps `note.updatedAt` as part of the creation, so that bump has to be
     /// put back when the commit throws — otherwise a refused embed leaves the note marked as
     /// edited for text that was never written. Both non-success exits restore it, which is why the
-    /// count is two rather than one.
+    /// count is two rather than one. [[T-6721]]: the bump is the shared handlers' now, made on the
+    /// scope's `touchedNote`; `TaskNotesEmbedHandlersTests` drives it against a refused commit.
     @Test func theNoteEmbedPaneRestoresItsTimestampBumpOnEveryFailedExit() throws {
-        let raw = try CadenceSourceScan.sourceFile("Cadence/macOS/Views/NoteEditorPane.swift")
-        #expect(raw.count > 400, "NoteEditorPane.swift read as \(raw.count) characters")
+        let raw = try CadenceSourceScan.sourceFile("Cadence/macOS/Views/TaskNotesEmbedHandlers.swift")
+        #expect(raw.count > 400, "TaskNotesEmbedHandlers.swift read as \(raw.count) characters")
 
         let stripped = CadenceSourceScan.strippingComments(raw)
         #expect(stripped != raw, "the comment stripper removed nothing")
@@ -347,17 +337,21 @@ struct CadenceCreateTaskCommitSurfaceTests {
         )
 
         let snapshot = try #require(
-            body.range(of: "let previousUpdatedAt = note.updatedAt"),
+            body.range(of: "let previousUpdatedAt = note?.updatedAt"),
             "the bump is made with nothing held to put back"
         )
-        let bump = try #require(body.range(of: "note.updatedAt = Date()"))
+        let bump = try #require(body.range(of: "note?.updatedAt = Date()"))
         #expect(snapshot.upperBound <= bump.lowerBound, "the snapshot is taken after the bump")
         #expect(
-            CadenceSourceScan.matchCount(#"note\.updatedAt = Date\(\)"#, in: body) == 1,
+            CadenceSourceScan.matchCount(#"note\??\.updatedAt = Date\(\)"#, in: body) == 1,
             "the note is bumped more than once"
         )
         #expect(
-            CadenceSourceScan.matchCount(#"note\.updatedAt = previousUpdatedAt"#, in: body) == 2,
+            CadenceSourceScan.matchCount(#"note\.updatedAt = previousUpdatedAt"#, in: body) == 1,
+            "the bump is put back in more than one spelling"
+        )
+        #expect(
+            CadenceSourceScan.matchCount(#"putTheNoteBumpBack\(\)\n"#, in: body) == 2,
             "one of the two non-success exits keeps the note marked as edited"
         )
     }
@@ -404,8 +398,9 @@ struct CadenceCreateTaskCommitSurfaceTests {
         #expect(try ModelContext(container).fetch(FetchDescriptor<AppTask>()).isEmpty)
     }
 
-    /// Non-vacuity for the scan above: it names six real files, each holding the function it says
+    /// Non-vacuity for the scan above: it names four real files, each holding the function it says
     /// it does, and a path that does not exist throws rather than reading as an empty pass.
+    /// [[T-6721]]: six until `NotePanel`'s and `NoteEditorPane`'s copies joined the shared handlers.
     @Test func theSixCreateSurfaceFilesAreAllReachedByTheScan() throws {
         var paths: Set<String> = []
         for surface in commitSurfaces {
@@ -417,7 +412,7 @@ struct CadenceCreateTaskCommitSurfaceTests {
             )
             paths.insert(surface.path)
         }
-        #expect(paths.count == 6, "the surface table lost a file: \(paths.sorted())")
+        #expect(paths.count == 4, "the surface table lost a file: \(paths.sorted())")
 
         #expect(throws: (any Error).self) {
             try CadenceSourceScan.sourceFile("Cadence/macOS/Views/ThereIsNoSuchFile.swift")

@@ -3,13 +3,72 @@ import SwiftUI
 import SwiftData
 import AppKit
 
+/// Where a card created from the editor is filed, and what else rides in that creation's commit.
+/// The one real policy difference between the hosts ([[T-6721]]): a task's notes file into the
+/// owner task's list and section; `NotePanel`'s core notes into the Inbox; a `NoteEditorPane` into
+/// its list note's area or project, and it bumps that note's `updatedAt` in the same commit.
+struct TaskNotesEmbedTarget {
+    /// Checked first: a non-nil area wins over `project`, else the Inbox.
+    let area: Area?
+    let project: Project?
+    let sectionName: String
+    /// A note whose `updatedAt` is bumped inside the creation's commit and put back when the
+    /// commit is refused, so a refused embed cannot leave the note marked as edited.
+    var touchedNote: Note? = nil
+
+    /// A task's notes: the owner's area or project, in the owner's section.
+    static func ownerTask(_ task: AppTask) -> Self {
+        Self(area: task.area, project: task.project, sectionName: task.resolvedSectionName)
+    }
+
+    /// `NotePanel`'s core notes (today, week, notepad) belong to no list: the Inbox, default section.
+    static var coreNotes: Self {
+        Self(area: nil, project: nil, sectionName: TaskSectionDefaults.defaultName)
+    }
+
+    /// `NoteEditorPane`: a list note files into its list — the area or project the host passes,
+    /// else the note's own — and any other kind of note into the Inbox; default section either way.
+    /// The note's `updatedAt` rides in the creation's commit.
+    static func noteEditor(_ note: Note, area: Area?, project: Project?) -> Self {
+        let isListNote = note.kind == .list
+        return Self(
+            area: isListNote ? (area ?? note.area) : nil,
+            project: isListNote ? (project ?? note.project) : nil,
+            sectionName: TaskSectionDefaults.defaultName,
+            touchedNote: note
+        )
+    }
+}
+
 /// What the embed handlers read from their host at the moment a card is clicked: the tasks the
-/// editor resolves `[[task:…]]` against, the task whose notes these are (new embeds are created in
-/// its list and section), and the context every commit goes through.
+/// editor resolves `[[task:…]]` against, where a new embed is filed, and the context every commit
+/// goes through.
 struct TaskNotesEmbedScope {
     let referenceTasks: [AppTask]
-    let ownerTask: AppTask
+    let embedTarget: TaskNotesEmbedTarget
     let modelContext: ModelContext
+    /// **[[T-6721]].** Whether a `[[task]]` link's id is also looked up in the creation-latency
+    /// cache (`embeddedTask(id:in:)`) rather than in `referenceTasks` alone. `NotePanel` always
+    /// did; the other four editors never have. Kept per host so moving onto this type changed
+    /// nothing; which is right is [[T-6781]].
+    var taskLinkIDsReadCreationCache = false
+
+    init(
+        referenceTasks: [AppTask],
+        embedTarget: TaskNotesEmbedTarget,
+        modelContext: ModelContext,
+        taskLinkIDsReadCreationCache: Bool = false
+    ) {
+        self.referenceTasks = referenceTasks
+        self.embedTarget = embedTarget
+        self.modelContext = modelContext
+        self.taskLinkIDsReadCreationCache = taskLinkIDsReadCreationCache
+    }
+
+    /// A task's notes editor: new embeds go into the owner task's list and section.
+    init(referenceTasks: [AppTask], ownerTask: AppTask, modelContext: ModelContext) {
+        self.init(referenceTasks: referenceTasks, embedTarget: .ownerTask(ownerTask), modelContext: modelContext)
+    }
 }
 
 /// **[[T-5120]]: the one live-card embed handler set for the three macOS editors of a task's
@@ -21,11 +80,13 @@ struct TaskNotesEmbedScope {
 /// three were still identical when they were merged, apart from the hover id prefix, which stays
 /// per host.
 ///
+/// [[T-6721]] moved the two note-owned editors, `NotePanel` and `NoteEditorPane`, onto it too.
+/// Their differences are host policy and arrive in the `scope`: where a new embed is filed
+/// (`TaskNotesEmbedTarget`), and whether a `[[task]]` link's id reads the creation cache.
+///
 /// The host keeps one of these in `@State`, passes `callbacks(in:)`'s closures to
 /// `MarkdownEditor`, attaches `taskNotesEmbedPopovers(_:scope:)` where its popovers were, and draws
-/// `embeddedTaskFailureNotice` under the editor. Note-owned editors (`NotePanel`,
-/// `NoteEditorPane`) create embeds in the note's container rather than a task's and are not on this
-/// type yet — [[T-6721]].
+/// `embeddedTaskFailureNotice` under the editor.
 @Observable
 final class TaskNotesEmbedHandlers {
     /// The task whose detail popover is open — from a `[[task]]` link, a card body, or the hover
@@ -41,8 +102,8 @@ final class TaskNotesEmbedHandlers {
     /// Tasks created from this editor that the host's live query may not hold yet (T-349).
     @ObservationIgnored var recentEmbeddedTasks: [UUID: AppTask] = [:]
     @ObservationIgnored let hoverIDPrefix: String
-    /// How every card edit commits. A parameter only so a test can refuse the commit; the hosts
-    /// take the default.
+    /// How every card edit and card creation commits. A parameter only so a test can refuse the
+    /// commit; the hosts take the default.
     @ObservationIgnored private let commit: (ModelContext) throws -> Void
 
     init(hoverIDPrefix: String, commit: @escaping (ModelContext) throws -> Void = { try $0.save() }) {
@@ -93,8 +154,11 @@ final class TaskNotesEmbedHandlers {
     // MARK: - Handlers
 
     /// A `[[task]]` link: by id, then by trimmed, case-insensitive title, against the host's tasks.
+    /// The id lookup also reads the creation cache when the scope says so ([[T-6721]]).
     func openTaskReference(id: UUID?, title: String, in scope: TaskNotesEmbedScope) {
-        if let id, let linkedTask = scope.referenceTasks.first(where: { $0.id == id }) {
+        if let id, let linkedTask = scope.taskLinkIDsReadCreationCache
+            ? embeddedTask(id: id, in: scope)
+            : scope.referenceTasks.first(where: { $0.id == id }) {
             linkedTaskForPopover = linkedTask
             return
         }
@@ -108,18 +172,18 @@ final class TaskNotesEmbedHandlers {
         linkedTaskForPopover = linkedTask
     }
 
-    /// A new embed goes into the owner task's area or project (else the Inbox), in its section.
+    /// A new embed goes into the scope's target area or project (else the Inbox), in its section.
     func createEmbeddedTask(title: String, in scope: TaskNotesEmbedScope) -> MarkdownReferenceSuggestion? {
-        let owner = scope.ownerTask
+        let target = scope.embedTarget
         let container: TaskContainerSelection
         let areas: [Area]
         let projects: [Project]
 
-        if let area = owner.area {
+        if let area = target.area {
             container = .area(area.id)
             areas = [area]
             projects = []
-        } else if let project = owner.project {
+        } else if let project = target.project {
             container = .project(project.id)
             areas = []
             projects = [project]
@@ -134,24 +198,38 @@ final class TaskNotesEmbedHandlers {
             notes: "",
             priority: .none,
             container: container,
-            sectionName: owner.resolvedSectionName,
+            sectionName: target.sectionName,
             dueDateKey: "",
             scheduledDateKey: "",
             subtaskTitles: [],
             tags: []
         )
 
-        // T-364: commit first, hand the reference back second. The editor writes
-        // `[[task:UUID|Title]]` into the note only when this returns non-nil, so a refused commit
-        // has to return nil rather than leave the note pointing at a task the store never took.
+        // T-364, two orderings in one. The reference is handed back only after the commit lands,
+        // because the editor writes `[[task:UUID|Title]]` into the note exactly when this returns
+        // non-nil — a nil return is what keeps the note free of a dangling reference. And a host
+        // note's timestamp bump rides in that same commit and is put back when it is refused, the
+        // shape `AINoteActionSupport.append` uses, so a refused creation cannot leave the note
+        // marked as edited for an embed that was never written.
+        let note = target.touchedNote
+        let previousUpdatedAt = note?.updatedAt
+        note?.updatedAt = Date()
+        func putTheNoteBumpBack() {
+            if let note, let previousUpdatedAt { note.updatedAt = previousUpdatedAt }
+        }
+
         let created: AppTask?
         do {
             created = try TaskCreationService(areas: areas, projects: projects)
-                .createTask(from: draft, into: scope.modelContext)
+                .createTask(from: draft, into: scope.modelContext, commit: commit)
         } catch {
+            putTheNoteBumpBack()
             return nil
         }
-        guard let embeddedTask = created else { return nil }
+        guard let embeddedTask = created else {
+            putTheNoteBumpBack()
+            return nil
+        }
 
         recentEmbeddedTasks[embeddedTask.id] = embeddedTask
         editorTextView?.markdownTaskEmbeds[embeddedTask.id] = MarkdownTaskEmbedRenderInfo.task(embeddedTask)
@@ -247,8 +325,19 @@ final class TaskNotesEmbedHandlers {
         "\(hoverIDPrefix)\(id.uuidString)"
     }
 
-    /// Bring the note text back in line with the tasks it embeds when the task popover closes.
-    /// See `NotePanel.reconcileEmbeddedTaskReferenceTitles` for why it hangs off that moment.
+    /// Bring the open note's `[[task:UUID|Title]]` source back in line with the tasks it embeds.
+    ///
+    /// Run when the task popover this editor opens on a card closes, which is the one moment where
+    /// a rename has demonstrably just happened and this note is the note on screen. The inline
+    /// rename over the card already writes both halves; the popover writes `task.title` alone, and
+    /// the card goes on looking right because it is drawn from the live task rather than from the
+    /// text under it. `MarkdownTaskEmbedParser` decides which references move — the same call iOS
+    /// makes when its task sheet dismisses.
+    ///
+    /// This closes the renames made *through this note*. A rename made anywhere else while the note
+    /// is open — Today's task column beside the core notes, a list, the timeline — still leaves the
+    /// reference stale until the pointer next crosses the card (`hoverEmbeddedTask`) or the note is
+    /// reopened after a rename here.
     func reconcileEmbeddedTaskReferenceTitles() {
         guard let editorTextView else { return }
         editorTextView.reconcileEmbeddedTaskReferenceTitles(
