@@ -693,16 +693,50 @@ enum CadenceCalendarEventStyle {
 
     /// Incidental glyphs on a rail-treated block — the recurrence marker is the one that matters,
     /// and it stays with the event through the swap.
+    ///
+    /// **Held to `railChromaCeiling`, the rail's own ceiling ([[T-3232]]).** This tier is solved
+    /// to only 3.2:1, so for a fully-saturated hue the solve barely has to dim it at all: `#3d0000`
+    /// came back at (252, 0, 0), OKLab chroma 0.2554, and once [[T-3230]] had capped the rail
+    /// beside it at 0.206 the 10 pt calendar glyph was the loudest red in the app. The cap walks
+    /// saturation down and **re-solves brightness for the same luminance** at every step — the
+    /// argument `cappedFill` makes — so every `(L1 + 0.05) / (L2 + 0.05)` ratio this tier is held
+    /// to is unchanged; only the colourfulness goes. It binds on the tertiary tier alone: the
+    /// title and secondary tiers solve to higher luminance and are already inside the ceiling.
     static func railTertiaryLabelColor(
         for calendarColor: Color,
         isSelected: Bool = false,
         isActive: Bool = false
     ) -> Color {
-        railLabelColor(
-            for: calendarColor,
-            ratio: railTertiaryContrastTarget,
-            isSelected: isSelected,
-            isActive: isActive
+        let plate = railFillLuminance(for: calendarColor, isSelected: isSelected, isActive: isActive)
+        let target = (railTertiaryContrastTarget * (plate + 0.05)) - 0.05
+        let source = hsb(of: calendarColor)
+        // The saturation the uncapped solve (`solvedTint`) would land on: the calendar's own when
+        // brightness can reach the target, otherwise the desaturated point at full brightness.
+        let saturation = relativeLuminance(hue: source.hue, saturation: source.saturation, brightness: 1) >= target
+            ? source.saturation
+            : desaturatedSaturation(hue: source.hue, ceiling: source.saturation, luminance: target)
+        if chroma(hue: source.hue, saturation: saturation, luminance: target) <= railChromaCeiling {
+            return Color(
+                hue: source.hue,
+                saturation: saturation,
+                brightness: solvedBrightness(hue: source.hue, saturation: saturation, luminance: target)
+            )
+        }
+
+        var low = 0.0
+        var high = saturation
+        for _ in 0..<20 {
+            let mid = (low + high) / 2
+            if chroma(hue: source.hue, saturation: mid, luminance: target) > railChromaCeiling {
+                high = mid
+            } else {
+                low = mid
+            }
+        }
+        return Color(
+            hue: source.hue,
+            saturation: low,
+            brightness: solvedBrightness(hue: source.hue, saturation: low, luminance: target)
         )
     }
 
@@ -963,6 +997,11 @@ enum CadenceCalendarEventStyle {
     /// `target`. Luminance falls as saturation rises here, so the bracket runs the other way:
     /// `low` is the whiter end and is the one known to clear the target.
     private static func desaturatedTint(hue: Double, ceiling: Double, luminance target: Double) -> Color {
+        Color(hue: hue, saturation: desaturatedSaturation(hue: hue, ceiling: ceiling, luminance: target), brightness: 1)
+    }
+
+    /// The saturation `desaturatedTint` lands on, for a caller that keeps solving from it.
+    private static func desaturatedSaturation(hue: Double, ceiling: Double, luminance target: Double) -> Double {
         var low = 0.0
         var high = max(ceiling, 0)
         for _ in 0..<20 {
@@ -973,7 +1012,7 @@ enum CadenceCalendarEventStyle {
                 low = mid
             }
         }
-        return Color(hue: hue, saturation: low, brightness: 1)
+        return low
     }
 
     private static func hsb(of color: Color) -> (hue: Double, saturation: Double, brightness: Double) {

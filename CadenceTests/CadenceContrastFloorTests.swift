@@ -790,6 +790,69 @@ struct CadenceContrastFloorTests {
         )
     }
 
+    /// **[[T-3232]]: the tertiary label tier is held to the rail's chroma ceiling, and keeps every
+    /// contrast ratio it had.**
+    ///
+    /// Before the cap, `#3d0000`'s tertiary glyph solved to (252, 0, 0) at chroma 0.2554 — louder
+    /// than the rail [[T-3230]] had just capped at 0.206 beside it. Three claims:
+    ///
+    /// 1. **No tertiary glyph out-colours the ceiling**, for every sweep hue and every shipped
+    ///    accent in all three states.
+    /// 2. **It costs no contrast.** The ratio against the plate is still the 3.2:1 target, to a
+    ///    tolerance ten times tighter than the generic tier sweep uses — the cap re-solves for the
+    ///    same luminance, so the ratio should not move at all.
+    /// 3. **It binds on the hue it was written for and leaves ordinary calendars alone**: the deep
+    ///    red lands on the ceiling in its own hue, and a hue already inside it keeps its own
+    ///    saturation exactly.
+    @Test func theTertiaryGlyphIsHeldToTheRailsChromaCeilingAtTheSameContrast() {
+        var swatches = t853CalendarHues
+        for palette in CadenceAccentPalette.all { swatches += palette.swatchHexes }
+        var measured = 0
+        var atCeiling: Set<String> = []
+        for hex in swatches {
+            let swatch = Color(hex: hex)
+            for (selected, active) in [(false, false), (false, true), (true, false)] {
+                measured += 1
+                let glyph = CadenceCalendarEventStyle.railTertiaryLabelColor(
+                    for: swatch, isSelected: selected, isActive: active
+                )
+                let plate = CadenceCalendarEventStyle.railFill(for: swatch, isSelected: selected, isActive: active)
+                #expect(
+                    t853Chroma(glyph) <= CadenceCalendarEventStyle.railChromaCeiling + 1e-6,
+                    "the tertiary glyph for \(hex) (selected: \(selected), active: \(active)) carries \(t853Rounded(t853Chroma(glyph))) chroma, over the rail's \(CadenceCalendarEventStyle.railChromaCeiling) ceiling"
+                )
+                let ratio = t853Ratio(glyph, on: plate)
+                #expect(
+                    abs(ratio - CadenceCalendarEventStyle.railTertiaryContrastTarget) < 0.008,
+                    "the tertiary glyph for \(hex) (selected: \(selected), active: \(active)) reads \(t853Rounded(ratio)):1 — the chroma cap moved its luminance"
+                )
+                if abs(t853Chroma(glyph) - CadenceCalendarEventStyle.railChromaCeiling) < 0.001 {
+                    atCeiling.insert(hex)
+                }
+            }
+        }
+        #expect(measured == 3 * (7 + 18), "non-vacuity: \(measured) measured")
+
+        // It binds on the fully-saturated red the ticket measured, and keeps that red's hue.
+        let red = Color(hex: "#3d0000")
+        #expect(atCeiling.contains("#3d0000"), "the cap no longer binds on #3d0000: \(atCeiling.sorted())")
+        let redGlyph = CadenceCalendarEventStyle.railTertiaryLabelColor(for: red)
+        #expect(t853Hue(redGlyph) == t853Hue(red), "the capped red glyph is no longer red")
+        #expect(
+            t853Components(redGlyph).g > 20.0 / 255,
+            "the #3d0000 glyph is still at the gamut corner (green \(t853Components(redGlyph).g * 255))"
+        )
+
+        // A calendar already inside the ceiling is not laundered: it keeps its own saturation.
+        for hex in ["#4a9eff", "#ffc857"] {
+            let glyph = CadenceCalendarEventStyle.railTertiaryLabelColor(for: Color(hex: hex))
+            #expect(
+                abs(t853Saturation(glyph) - t853Saturation(Color(hex: hex))) < 1e-4,
+                "\(hex)'s tertiary glyph lost saturation to a cap it was never over"
+            )
+        }
+    }
+
     /// **Agent `calfixture`'s secondary finding, carried through a second change that could make
     /// it worse** ([[T-3168]]).
     ///
