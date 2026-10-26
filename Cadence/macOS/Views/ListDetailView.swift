@@ -489,7 +489,10 @@ private struct ListDetailTabBarView: View {
         if tab == .tasks, CadenceTaskSurfaceOptions.options(for: .listDetail).showsSort {
             HStack(spacing: 6) {
                 CadenceEnumPickerBadge(title: "Sort", selection: $taskSortField)
-                CadenceEnumPickerBadge(title: "Order", selection: $taskSortDirection)
+                // Custom is the drag order, which no direction reverses (T-7006).
+                if taskSortField.honorsDirection {
+                    CadenceEnumPickerBadge(title: "Order", selection: $taskSortDirection)
+                }
                 CadenceEnumPickerBadge(
                     title: "Group",
                     selection: $taskGroupingMode,
@@ -500,7 +503,10 @@ private struct ListDetailTabBarView: View {
         } else if tab == .kanban, allowsSectionEditing {
             HStack(spacing: 6) {
                 CadenceEnumPickerBadge(title: "Sort", selection: $kanbanSortField)
-                CadenceEnumPickerBadge(title: "Order", selection: $kanbanSortDirection)
+                // Custom is the drag order, which no direction reverses (T-7006).
+                if kanbanSortField.honorsDirection {
+                    CadenceEnumPickerBadge(title: "Order", selection: $kanbanSortDirection)
+                }
                 archivedColumnsButton
             }
             .padding(.trailing, 4)

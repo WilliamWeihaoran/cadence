@@ -18,6 +18,14 @@ nonisolated enum TaskSortField: String, CaseIterable, Identifiable, Sendable {
     case date = "Date"
     case priority = "Priority"
     var id: String { rawValue }
+
+    /// Whether `TaskSortDirection` changes anything under this field ([[T-7006]]).
+    ///
+    /// `.custom` is the user's own drag order: `TaskOrdering.sortKeyOrder` answers `.tie` for it
+    /// in both directions, so every pair falls through to `fallbackPrecedes`, which never reads a
+    /// direction. An "Order: Descending" pill beside "Sort: Custom" was a control that did nothing,
+    /// and Custom is the Inbox's default. Every macOS Order pill asks this before drawing.
+    var honorsDirection: Bool { self != .custom }
 }
 
 /// Orthogonal to `TaskSortField`, and deliberately so: `.priority` + `.ascending` means

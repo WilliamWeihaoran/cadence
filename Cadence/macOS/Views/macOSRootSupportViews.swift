@@ -908,7 +908,10 @@ struct TasksPageView: View {
                 // about the list mode it does name (T-290).
                 if mode == .kanban || CadenceTaskSurfaceOptions.options(for: scope.surface).showsSort {
                     CadenceEnumPickerBadge(title: "Sort", selection: sortField)
-                    CadenceEnumPickerBadge(title: "Order", selection: sortDirection)
+                    // Custom is the drag order, which no direction reverses (T-7006).
+                    if sortField.wrappedValue.honorsDirection {
+                        CadenceEnumPickerBadge(title: "Order", selection: sortDirection)
+                    }
                 }
                 if mode == .list {
                     CadenceEnumPickerBadge(title: "Group", selection: groupingMode)
