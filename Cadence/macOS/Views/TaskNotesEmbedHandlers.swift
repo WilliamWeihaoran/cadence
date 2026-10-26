@@ -47,22 +47,11 @@ struct TaskNotesEmbedScope {
     let referenceTasks: [AppTask]
     let embedTarget: TaskNotesEmbedTarget
     let modelContext: ModelContext
-    /// **[[T-6721]].** Whether a `[[task]]` link's id is also looked up in the creation-latency
-    /// cache (`embeddedTask(id:in:)`) rather than in `referenceTasks` alone. `NotePanel` always
-    /// did; the other four editors never have. Kept per host so moving onto this type changed
-    /// nothing; which is right is [[T-6781]].
-    var taskLinkIDsReadCreationCache = false
 
-    init(
-        referenceTasks: [AppTask],
-        embedTarget: TaskNotesEmbedTarget,
-        modelContext: ModelContext,
-        taskLinkIDsReadCreationCache: Bool = false
-    ) {
+    init(referenceTasks: [AppTask], embedTarget: TaskNotesEmbedTarget, modelContext: ModelContext) {
         self.referenceTasks = referenceTasks
         self.embedTarget = embedTarget
         self.modelContext = modelContext
-        self.taskLinkIDsReadCreationCache = taskLinkIDsReadCreationCache
     }
 
     /// A task's notes editor: new embeds go into the owner task's list and section.
@@ -81,8 +70,9 @@ struct TaskNotesEmbedScope {
 /// per host.
 ///
 /// [[T-6721]] moved the two note-owned editors, `NotePanel` and `NoteEditorPane`, onto it too.
-/// Their differences are host policy and arrive in the `scope`: where a new embed is filed
-/// (`TaskNotesEmbedTarget`), and whether a `[[task]]` link's id reads the creation cache.
+/// Their one difference is host policy and arrives in the `scope`: where a new embed is filed
+/// (`TaskNotesEmbedTarget`). A `[[task]]` link's id reads the creation cache in every host
+/// ([[T-6781]]); until then only `NotePanel` did.
 ///
 /// The host keeps one of these in `@State`, passes `callbacks(in:)`'s closures to
 /// `MarkdownEditor`, attaches `taskNotesEmbedPopovers(_:scope:)` where its popovers were, and draws
@@ -154,11 +144,12 @@ final class TaskNotesEmbedHandlers {
     // MARK: - Handlers
 
     /// A `[[task]]` link: by id, then by trimmed, case-insensitive title, against the host's tasks.
-    /// The id lookup also reads the creation cache when the scope says so ([[T-6721]]).
+    /// **[[T-6781]]: the id lookup reads the creation cache in every host,** as the card handlers
+    /// below always have — a task created from this note a moment ago opens from its link before the
+    /// host's query holds it. Safe everywhere because `embeddedTask(id:in:)` tries the live tasks
+    /// first and re-checks a cached task against the store ([[T-349]]), so a deleted one does not open.
     func openTaskReference(id: UUID?, title: String, in scope: TaskNotesEmbedScope) {
-        if let id, let linkedTask = scope.taskLinkIDsReadCreationCache
-            ? embeddedTask(id: id, in: scope)
-            : scope.referenceTasks.first(where: { $0.id == id }) {
+        if let id, let linkedTask = embeddedTask(id: id, in: scope) {
             linkedTaskForPopover = linkedTask
             return
         }

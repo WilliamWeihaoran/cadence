@@ -162,13 +162,12 @@ struct NotePanel: View {
     }
 
     /// The core notes' embed policy ([[T-6721]]): a card created here goes to the Inbox, default
-    /// section, and a `[[task]]` link's id also reads the creation cache, as this panel always did.
+    /// section.
     private var embedScope: TaskNotesEmbedScope {
         TaskNotesEmbedScope(
             referenceTasks: allTasks,
             embedTarget: .coreNotes,
-            modelContext: modelContext,
-            taskLinkIDsReadCreationCache: true
+            modelContext: modelContext
         )
     }
 

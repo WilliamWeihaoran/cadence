@@ -214,19 +214,11 @@ struct TaskNotesEmbedHandlersTests {
 
     // MARK: - [[T-6721]]: the two note-owned editors' host policy
 
-    /// `NotePanel`'s core notes file a new card into the Inbox, default section — and a `[[task]]`
-    /// link's id reads the creation cache there, so a card created moments ago opens from its link
-    /// before the host's query holds it. The other editors' scopes do not read the cache.
-    @Test func theCoreNotesFileIntoTheInboxAndTheirTaskLinkIDsReadTheCreationCache() throws {
+    /// `NotePanel`'s core notes file a new card into the Inbox, default section.
+    @Test func theCoreNotesFileIntoTheInbox() throws {
         let (_, modelContext) = try context()
         let handlers = TaskNotesEmbedHandlers(hoverIDPrefix: "note-embed-task-")
-        // The host's query has not caught up with anything yet.
-        let coreNotes = TaskNotesEmbedScope(
-            referenceTasks: [],
-            embedTarget: .coreNotes,
-            modelContext: modelContext,
-            taskLinkIDsReadCreationCache: true
-        )
+        let coreNotes = TaskNotesEmbedScope(referenceTasks: [], embedTarget: .coreNotes, modelContext: modelContext)
 
         let suggestion = try #require(handlers.createEmbeddedTask(title: "Call the venue", in: coreNotes))
         let created = try #require(
@@ -235,14 +227,42 @@ struct TaskNotesEmbedHandlersTests {
         #expect(created.area == nil)
         #expect(created.project == nil)
         #expect(created.sectionName == TaskSectionDefaults.defaultName)
+    }
 
-        handlers.openTaskReference(id: created.id, title: "", in: coreNotes)
-        #expect(handlers.linkedTaskForPopover?.id == created.id, "the core notes' link missed a just-created task")
+    // MARK: - [[T-6781]]: every host's task links read the creation cache
 
-        handlers.linkedTaskForPopover = nil
-        let liveOnly = TaskNotesEmbedScope(referenceTasks: [], embedTarget: .coreNotes, modelContext: modelContext)
-        handlers.openTaskReference(id: created.id, title: "", in: liveOnly)
-        #expect(handlers.linkedTaskForPopover == nil, "a live-tasks-only link read the creation cache")
+    /// **A `[[task]]` link to a task created from the same note a moment ago opens in every macOS
+    /// note editor**, not only `NotePanel` — the host's query (`referenceTasks: []` here) has not
+    /// caught up yet. Once the task is deleted from the store the same link opens nothing: the cache
+    /// is re-checked against the store ([[T-349]]), which is why reading it everywhere is safe.
+    @Test func everyHostsTaskLinkOpensAJustCreatedTaskAndNotADeletedOne() throws {
+        let (_, modelContext) = try context()
+        let owner = try seededTask("Owner", in: modelContext)
+        let listNote = Note(kind: .list, title: "Plans")
+        modelContext.insert(listNote)
+        try modelContext.save()
+
+        let targets: [(String, TaskNotesEmbedTarget)] = [
+            ("a task's notes", .ownerTask(owner)),
+            ("NotePanel's core notes", .coreNotes),
+            ("a NoteEditorPane note", .noteEditor(listNote, area: nil, project: nil))
+        ]
+        for (host, target) in targets {
+            let handlers = TaskNotesEmbedHandlers(hoverIDPrefix: "test-")
+            let scope = TaskNotesEmbedScope(referenceTasks: [], embedTarget: target, modelContext: modelContext)
+            let suggestion = try #require(handlers.createEmbeddedTask(title: "Fresh \(host)", in: scope), "\(host)")
+            let id = suggestion.targetID
+
+            handlers.openTaskReference(id: id, title: "", in: scope)
+            #expect(handlers.linkedTaskForPopover?.id == id, "\(host)'s link missed a just-created task")
+
+            handlers.linkedTaskForPopover = nil
+            let created = try #require(try modelContext.fetch(FetchDescriptor<AppTask>()).first { $0.id == id })
+            modelContext.delete(created)
+            try modelContext.save()
+            handlers.openTaskReference(id: id, title: "", in: scope)
+            #expect(handlers.linkedTaskForPopover == nil, "\(host)'s link opened a deleted task")
+        }
     }
 
     /// `NoteEditorPane`: a list note files into the list its host passes, else its own; a project
@@ -317,12 +337,12 @@ struct TaskNotesEmbedHandlersTests {
 
     /// **Source shape — the one part a test cannot drive without a window.** Each note-owned host
     /// builds its scope in a view, so which policy it picks is read from source: `NotePanel` takes
-    /// the core-notes target and reads the creation cache for link ids; `NoteEditorPane` takes its
-    /// note's target and does not. The behaviour each choice means is pinned above.
+    /// the core-notes target, `NoteEditorPane` its note's. The behaviour each choice means is pinned
+    /// above.
     @Test func eachNoteOwnedHostPassesItsOwnPolicy() throws {
-        for (path, target, readsCache) in [
-            ("Cadence/macOS/Views/NotePanel.swift", "embedTarget: .coreNotes,", true),
-            ("Cadence/macOS/Views/NoteEditorPane.swift", "embedTarget: .noteEditor(note, area: area, project: project),", false)
+        for (path, target) in [
+            ("Cadence/macOS/Views/NotePanel.swift", "embedTarget: .coreNotes,"),
+            ("Cadence/macOS/Views/NoteEditorPane.swift", "embedTarget: .noteEditor(note, area: area, project: project),")
         ] {
             let code = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile(path))
             let scope = try #require(
@@ -330,10 +350,6 @@ struct TaskNotesEmbedHandlersTests {
                 "\(path) builds no embed scope"
             )
             #expect(scope.contains(target), "\(path) files new cards somewhere else")
-            #expect(
-                scope.contains("taskLinkIDsReadCreationCache: true") == readsCache,
-                "\(path) changed whether its task links read the creation cache"
-            )
             #expect(code.contains(".taskNotesEmbedPopovers(embeds, scope: embedScope)"), "\(path)")
             #expect(
                 CadenceSourceScan.matchCount(#"func (createEmbeddedTask|toggleEmbeddedTask|openTaskReference)\("#, in: code) == 0,

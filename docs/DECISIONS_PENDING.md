@@ -41,8 +41,8 @@ means the cited symbol was read at HEAD and still says what the ticket says.
     **Yes, after T-1475's drag is seen on screen** — it is parity. [T-3207]
 11. **A `[[task]]` link to a just-created task** does nothing for a moment in every Mac note
     editor except `NotePanel`. Read the creation cache everywhere or keep. **Everywhere** — more
-    links open and the store re-check stops a deleted one. [T-6781] Code checked (flag true only
-    in `NotePanel.swift:171`).
+    links open and the store re-check stops a deleted one. [T-6781] **Done 2026-10-26: taken
+    as recommended; the flag is gone and every editor reads the cache (T-6781 CLOSED).**
 
 ## B. Data edges (rare, nothing lost today)
 
