@@ -20,7 +20,7 @@ struct FocusPickSessionCard: View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .top, spacing: 18) {
                 VStack(alignment: .leading, spacing: 6) {
-                    SectionEyebrowLabel(text: "Ready to focus")
+                    SectionEyebrowLabel(text: CadenceFocusSupport.pickListEyebrow)
 
                     Text(title)
                         .font(.system(size: 23, weight: .semibold))

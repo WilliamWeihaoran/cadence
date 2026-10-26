@@ -150,7 +150,11 @@ enum CadenceFocusSupport {
     /// What an undated, unfiled task says on a **Focus picker row**, on both platforms (T-7017).
     /// The sidebar's shorter "Ready" sits beside a status chip that already says the rest; a pick
     /// row has no chip, so it says what the task is ready for.
-    static let pickRowFallback = "Ready to focus"
+    static let pickRowFallback = pickListEyebrow
+
+    /// The heading over both platforms' Focus pick lists. The row fallback reads it, so an
+    /// undated row says the same thing as the list it sits in.
+    static let pickListEyebrow = "Ready to focus"
 
     /// The Focus picker row's detail line, as segments so the row can tint an overdue due date
     /// red through `CadenceTaskDetailLineLabel`. iOS printed `sidebarDetail`'s flat string in one
