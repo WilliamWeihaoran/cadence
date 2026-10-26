@@ -1,58 +1,126 @@
 # Decisions waiting on you
 
-Refreshed 2026-10-24 (later) by the coordinator. **Sections A and B are empty: every visible
-defect and every data-edge item on this list has been answered.** What is left is section C —
-three things only you can do, because they need your eyes or your hands, not a choice.
-
-The reasoning behind each answer is in that ticket's own ledger entry, not here. This file is a
-queue, not a record; `./scripts/ledger-view.sh head T-NNNN` is the record.
+Refreshed 2026-10-25 by agent `decisions2238` from `./scripts/ledger-view.sh brief` at `e084a8a7`.
+Every item is an OPEN or PARTIAL ticket whose only remainder is yours. Each line: the question,
+the options, **a recommendation**, the ticket. The reasoning is in the ticket
+(`./scripts/ledger-view.sh head T-NNNN`); this file is a queue, not a record. "Code checked"
+means the cited symbol was read at HEAD and still says what the ticket says.
 
 ---
 
-## A. Visible defects (ranked)
+## A. Things you would see in the app
 
-Empty. Twenty-two items, all answered on 2026-10-24.
+1. **Resumed iOS Focus after a long gap** offers to log the whole gap (force-quit at night, 11 h
+   in the morning). (a) pause when the gap passes a threshold, (b) cap the credited gap,
+   (c) leave it, user resets. **(a)** — it is the Mac's lid-close rule. [T-6223] Code checked.
+2. **Ends → After on a series past its 10th repeat**: the floor now seeds "15 of 15", which ends
+   the series on the next completion. Seed `n+1`, `max(10, n+1)`, or leave. **`max(10, n+1)`** —
+   keeps today's 10 for young series and never ends one by surprise. [T-6114] Code checked
+   (`seededEndCount = 10` untouched).
+3. **Old series still read "15 of 10"** (stored before the floor) in the Mac Repeat row and the
+   iOS Ends row. Show "Ended", repair the count on open, or leave. **Show "Ended"** — the series
+   has ended and the store stays untouched. [T-6191] Code checked (both rows pass the raw count).
+4. **Mac "+ Section" on a list with no tasks** makes a section that is never drawn. Hide the row
+   on an empty page, draw empty headings (and change iOS), or keep as parity. **Hide it** — same
+   rule T-5832(b) applied everywhere else. [T-6201] Code checked.
+5. **iPhone Tasks index can end up with no view rows** when the Mac hides both Today and All
+   Tasks and the layout syncs. (a) phone shows them anyway, (b) every floor requires one of the
+   two, (c) accept. **(a)** — phone-only and changes nothing on Mac or iPad. [T-6291]
+6. **Settings → Templates on the 11" iPad, docked landscape**, is one column by 4pt. You chose
+   "look first": one column reads fine → close; reads badly → trim 4pt. **Your look.** [T-4515]
+   Code checked (split still starts at a 950pt pane).
+7. **Mac Today inspector covers 10pt of the row's due chip** at the right of a wide window.
+   Cover the source row, cover the list to the left, or no popover at that width. **Accept
+   covering the row** — 10pt, cosmetic, and every other shape costs more. [T-1845]
+8. **iOS task row: notes preview line or the note glyph?** Today it draws the preview.
+   **Keep the preview** — it is what ships today and is more useful than a glyph. [T-2074]
+9. **iOS calendar-block glyph is now the loudest red** on a rail-treated block (252,0,0). Cap
+   the tertiary label tier's chroma like the rail, or leave. **Cap it** — the same re-solve keeps
+   every contrast ratio. [T-3232]
+10. **iOS timeline: drag a block sideways to another day** (the Mac can). Build or not.
+    **Yes, after T-1475's drag is seen on screen** — it is parity. [T-3207]
+11. **A `[[task]]` link to a just-created task** does nothing for a moment in every Mac note
+    editor except `NotePanel`. Read the creation cache everywhere or keep. **Everywhere** — more
+    links open and the store re-check stops a deleted one. [T-6781] Code checked (flag true only
+    in `NotePanel.swift:171`).
 
-## B. Rare, visible only on a data edge
+## B. Data edges (rare, nothing lost today)
 
-Empty. Four items, all answered on 2026-10-24.
+12. **Merge-mode import** keeps the store's note for a day it already has and skips the
+    archive's. Keep, or archive wins. **Keep** — it is what merge promises; overwrite takes the
+    archive's. [T-4721]
+13. **Two same-id tasks identical in every field** stay drawn twice. Add a per-row device token
+    (schema change), add a user "merge duplicates" action, or leave. **Leave until after the RC**,
+    then the user action — no migration. [T-6481]
+14. **A block (`TaskBundle`) arriving by sync mid-session** hides its tasks until relaunch. Run
+    retirement on sync, drop the `bundle == nil` filters, or document the window. **Document
+    it** — nothing creates blocks any more, only old archives. [T-3213]
+15. **Store backups inside iOS device backups**: exclude them or not. **Leave them included** —
+    costs backup space only, and they are a recovery path. [T-3116] Code checked (no
+    `isExcludedFromBackup` anywhere).
+16. **Launch-time backups** (`.startup`/`.preRestore`) are raw copies, not `VACUUM INTO`. Switch
+    or keep. **Keep** — they run before the store opens, and restores already check the SQLite
+    header. [T-3044]
+17. **The MCP write mode** opens the store with sync off. Mirror, refuse, or keep. **Keep** — it
+    only exists behind `CADENCE_MCP_ENABLE_WRITES`, and the risk measured is latency. [T-3018]
+18. **Widgets open the store with sync off.** Per-process mirroring, move the intents out of the
+    app, or leave. **Leave, and fix the false comment at `CadenceStoreSupport.swift:198`** — the
+    app mirrors the same store. [T-3227] Code checked: that comment says the widget has no
+    container id; the entitlement now has one.
+19. **Archive import field manifest** (format change). **After the RC.** [T-3019]
+20. **Local-store-only guard on the store id** (developer launches only). **Leave** — T-3013's
+    signing guard covers dev builds. [T-3015]
+21. **"Records are arriving" in the sync notice** needs new plumbing. **Skip unless a tester
+    asks.** [T-5500]
 
-## C. Older, still open — owner actions rather than choices
+## C. Things only you can do (hands, not choices)
 
-- **T-4515** — you decided "look first": view Settings → Templates on the 11" iPad, docked
-  landscape. One column reads fine → close as intended; reads badly → trim 4pt.
-- **T-1117** — the five-minute EventKit check on your own Mac + iPhone
-  (`docs/DECISIONS_CALENDAR_LINKS_AND_LIST_DELETION.md`).
-- **T-780** — the bare-commit hook is landed inert; arming it is
-  `git config core.hooksPath .githooks`. Optional.
+22. Five-minute EventKit check on your Mac + iPhone. [T-1117]
+    (`docs/DECISIONS_CALENDAR_LINKS_AND_LIST_DELETION.md`)
+23. Turn on 24-Hour Time on the Mac, relaunch, say whether Cadence follows. [T-1163]
+24. Restore a backup on a test account and see whether newer iCloud edits sync back in; that
+    decides the backup note's wording. [T-3226]
+25. `git config core.hooksPath .githooks`. Today it points at the deleted
+    `~/Desktop/Projects/Cadence/.git/hooks`, so no hook runs (checked). [T-4900]
+    **Ticket/code disagreement:** T-780 is CLOSED, but its own reopened text and the live
+    config show the hook is not armed.
+26. Fix your heartbeat task file `~/.claude/scheduled-tasks/cadence-heartbeat-resume/SKILL.md`:
+    `:45` tells agents to create simulators and calls `7B642065…` your phone; `:32` uses one
+    fixed xcb id for every run. Point both at `docs/AGENT_BRIEF.md`. [T-6351] [T-3071] [T-1920]
+27. App Store Connect privacy answers: Name, Email, User ID → not collected. Public release
+    only. [T-1424]
+28. Logo: supply concept-A artwork (never committed) or approve a redraw; no name survived the
+    screen. [T-16]
+29. Two-device archive comparison on your own iCloud account. [T-2053]
+30. Answer the per-session automation prompt when a UI run asks. [T-2049]
 
-## Answered on 2026-10-24 (one line each; full reasoning is in each ticket's entry)
+## D. Tooling and process (nothing a user sees)
 
-Implemented and closed the same day: T-5953 Cmd+N is New Task · T-5302 the capture panel keeps its
-draft · T-5300 Cmd+K scrolls to and highlights the task · T-5832(b) "+ Section" under By-grouping ·
-T-5882 the link key moves off Cmd+K · T-5883 the hotkey keeps ⌃Space and gets a name · T-5351 Month
-days click and accept drops · T-6002 the dead sidebar rows are hidden · T-5174(b) the iOS sheets
-refuse a swipe-down over typed text · T-6001 a Focus session survives eviction · T-5015(b) In
-Progress is removed everywhere and the Mac row gains the repeat picker.
+31. **Push the 66 local-only branches to `origin`?** **Yes** — reversible, and removes the
+    single-disk risk; delete nothing. [T-3275]
+32. **CI Xcode pin: major or exact minor?** Today it takes the oldest 26.x on the image.
+    **Exact minor** — the build is minor-sensitive and a loud red beats a silent toolchain
+    move. [T-4742] Code checked (`assert-toolchain.sh:20,53`).
+33. **Catching CI-only compile errors locally**: (b) install Xcode 26 beside 27, or (c) CI is
+    the gate, push small. **(c)** — the one seen shape already has a lint. [T-3277]
+34. **Unattributed commit: CI red or notice?** **Notice** — a red nobody can fix by editing is
+    a gate that gets switched off. [T-2050] (unblocks T-1950)
+35. **Refuse `--commits-stale` from agent ids?** **Yes** — the brief already forbids it; make
+    the script agree. [T-3173]
+36. **iOS-only unit suites run nowhere in CI.** (a) CI step on a simulator, (b) local rule,
+    (c) accept. **(a)** — CI is the declared real gate. Either way fix
+    `Cadence/iOS/AGENTS.md:23-24`, which still says `CadenceTests` cannot compile for iOS
+    (checked). [T-6541]
+37. **UI test for a deleted inspector header**: delete or repoint at the schedule panel.
+    **Delete** — the views are gone and a repoint is new test design. [T-6602]
+38. **Name every `Void`-returning `try?` save (47 sites)?** **No** — no defect behind it.
+    [T-1990]
+39. **Compile-time fingerprint for a sibling's mutation warning?** **No** — the two landed rules
+    cover it. [T-3092]
 
-Decided, not yet built: T-5013 iOS half in flight · T-5307 inline tag row editor · T-5370 clamp Mac
-task moves by duration · T-5151(b) the note link opens on the Notes page · T-5175 a typed tag is
-added on dismiss · T-5356 a Week-header all-day chip opens its event · T-5060(b) the iOS Focus
-checklist goes live, low priority · T-2090 drop the Completed toggle and port the Mac's foldable
-"Completed" heading · T-5522 and T-5521 US spelling everywhere · T-4910 restore under "Name (2)" ·
-T-4720 fix the weekly and meeting halves both.
+---
 
-Declined: T-5561 the Cmd+K ranking stays · T-3115 part (2), the tag slug stays as it is for v1 —
-the slug is tag identity and changing it needs a migration.
-
-Moot: T-5357, the "!" priority shortcut in an inspector title. `TaskDetailHeaderSection` has no
-callers left after the subtasks-inspector landing and the inspector draws a plain `Text`, so the
-bug is unreachable. The dead view and the two test suites still scanning it are T-6232.
-
-## Resolved before 2026-10-24 (kept as one line each)
-
-T-481 CLOSED declined (`7584c5f`, via T-1076) · T-352 `5ae916a` · T-487 `53e223c` · T-489 `2a8a70a` ·
-T-491 `dcd110c` · T-497 answered `ab9e513` · T-4501 decided 2026-10-22 (13" iPad low priority; no
-fix) · T-168 decided 2026-10-23 (Focus widget parked past RC) · T-5061's `.list` note link is no
-longer a decision: T-3084 added `ListNavigationManager.open(…, listNoteID:)`, so it is plain work
-(T-6092). Full reasoning for the closed ones is in this file's git history.
+Removed this pass because the ticket is CLOSED or the call is already made: every item in the
+2026-10-24 "Answered" and "Decided, not yet built" lists (all now CLOSED), T-780 (replaced by
+T-4900), T-4501 (you ranked 13" low priority; ships as is). Earlier history is in this file's
+git log.
