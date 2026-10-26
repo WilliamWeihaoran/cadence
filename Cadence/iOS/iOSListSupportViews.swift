@@ -317,7 +317,7 @@ struct iOSListDetailPagePicker: View {
                 }
                 .buttonStyle(.plain)
                 .id(item)
-                .accessibilityLabel(item.rawValue)
+                .accessibilityLabel(item.tabAccessibilityLabel(count: counts[item]))
                 .accessibilityAddTraits(isSelected ? .isSelected : [])
             }
         }

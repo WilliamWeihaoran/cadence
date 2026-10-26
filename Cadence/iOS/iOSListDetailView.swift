@@ -20,14 +20,21 @@ struct iOSListDetailView: View {
     /// looks wired and does nothing.
     let isPresentedModally: Bool
     @State private var editorMode: iOSListEditorMode?
-    /// `nil` until the reader taps a tab — the page they see before that is the one they chose in
-    /// Settings, read live rather than copied into `@State` in `onAppear`, so changing the
-    /// preference does not need a relaunch to take effect and a stale copy cannot outlive it.
+    /// `nil` until the reader taps a tab — the page they see before that is this list's remembered
+    /// tab, or failing that the one they chose in Settings, both read live rather than copied into
+    /// `@State` in `onAppear`, so changing the preference does not need a relaunch to take effect
+    /// and a stale copy cannot outlive it.
     ///
     /// A caller that opened this page *at* a particular tab seeds it here, which is why the seed is
     /// an `init` argument and not an `onAppear` write: the first render has to be the right page,
     /// or the board scroll below lands on a tab nobody is looking at.
+    ///
+    /// **Tagged with the list it was picked on** (`selectedPageListKey`). On iPad the sidebar
+    /// swaps lists under this one live view, so an untagged pick made on list A was still the
+    /// page when list B opened (T-7032). `ListDetailPage.displayedPage` honours it only on its own
+    /// list.
     @State private var selectedPage: ListDetailPage?
+    @State private var selectedPageListKey: String?
     @AppStorage(CadencePreferenceKeys.listDetailDefaultPage) private var defaultPageRaw = ListDetailPage.defaultPage.rawValue
 
     init(
@@ -41,6 +48,7 @@ struct iOSListDetailView: View {
         self.highlightedSectionName = highlightedSectionName
         self.isPresentedModally = isPresentedModally
         _selectedPage = State(initialValue: initialPage)
+        _selectedPageListKey = State(initialValue: ListDetailPage.rememberedPageDefaultsKey(areaID: area.id, projectID: nil))
     }
 
     init(
@@ -54,6 +62,7 @@ struct iOSListDetailView: View {
         self.highlightedSectionName = highlightedSectionName
         self.isPresentedModally = isPresentedModally
         _selectedPage = State(initialValue: initialPage)
+        _selectedPageListKey = State(initialValue: ListDetailPage.rememberedPageDefaultsKey(areaID: nil, projectID: project.id))
     }
 
     private var title: String {
@@ -70,15 +79,32 @@ struct iOSListDetailView: View {
         return ""
     }
 
-    /// The tab on screen. The stored preference is resolved rather than force-unwrapped from its
-    /// raw value: it can still read "Planning", a tab that no longer exists on either platform, and
-    /// `ListDetailPage.resolved(_:)` lands that on Tasks instead of on nothing.
-    private var page: ListDetailPage {
-        selectedPage ?? ListDetailPage.resolved(defaultPageRaw)
+    /// Where this list's tab is remembered — the key macOS uses for the same list.
+    private var rememberedPageKey: String {
+        ListDetailPage.rememberedPageDefaultsKey(areaID: area?.id, projectID: project?.id)
     }
 
+    /// The tab on screen. Stored values are resolved rather than force-unwrapped from their raw
+    /// value: either can still read "Planning", a tab that no longer exists on either platform, and
+    /// `ListDetailPage.resolved(_:)` lands that on Tasks instead of on nothing.
+    private var page: ListDetailPage {
+        ListDetailPage.displayedPage(
+            choice: selectedPage,
+            choiceListKey: selectedPageListKey,
+            listKey: rememberedPageKey,
+            storedRawValue: CadenceDefaults.store.string(forKey: rememberedPageKey),
+            defaultPageRawValue: defaultPageRaw
+        )
+    }
+
+    /// A tap records the pick against this list and remembers it, as macOS does on every change.
     private var pageBinding: Binding<ListDetailPage> {
-        Binding(get: { page }, set: { selectedPage = $0 })
+        Binding(get: { page }, set: { newPage in
+            let key = rememberedPageKey
+            selectedPage = newPage
+            selectedPageListKey = key
+            CadenceDefaults.store.set(newPage.rawValue, forKey: key)
+        })
     }
 
     /// Which list this page is showing, as a value SwiftUI can compare across an update.

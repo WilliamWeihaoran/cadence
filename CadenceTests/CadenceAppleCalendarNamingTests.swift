@@ -46,6 +46,9 @@ struct CadenceAppleCalendarNamingTests {
         ("Cadence/iOS/iOSSearchView.swift", "unnamedCalendarTitle", 1),
         // T-2052: was a bare `event.calendar.title` force-unwrap beside the other two.
         ("Cadence/iOS/iOSCalendarInspectorView.swift", "unnamedCalendarTitle", 1),
+        // T-7034(b): a read-only event's sheet said "Unknown calendar" where every other surface
+        // said "Apple Calendar".
+        ("Cadence/iOS/iOSCalendarEventEditSheet.swift", "unnamedCalendarTitle", 1),
         // The fallback for `calendar.source?.title`: which account, when the calendar names none.
         ("Cadence/iOS/iOSCalendarSettingsSection.swift", "unnamedAccountTitle", 1),
         ("Cadence/macOS/Views/SettingsListManagementSections.swift", "unnamedAccountTitle", 1),

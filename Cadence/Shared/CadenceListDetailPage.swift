@@ -50,6 +50,43 @@ enum ListDetailPage: String, CaseIterable, Identifiable, Hashable {
         return resolved(storedRawValue)
     }
 
+    /// The defaults key a list's remembered tab is stored under — one per area or project, the
+    /// same strings macOS has always written, so a list keeps its tab across the switch to Shared.
+    ///
+    /// T-7032: iOS had no per-list tab at all. Its `selectedPage` was one `@State` for the whole
+    /// detail view, and on iPad that view is *updated* rather than rebuilt when the sidebar moves
+    /// to another list, so list B opened on whatever tab list A was left on.
+    static func rememberedPageDefaultsKey(areaID: UUID?, projectID: UUID?) -> String {
+        if let areaID { return "listDetailTab.area.\(areaID.uuidString)" }
+        if let projectID { return "listDetailTab.project.\(projectID.uuidString)" }
+        return "listDetailTab.unknown"
+    }
+
+    /// The tab a detail page shows: the reader's own pick if it was made **on this list**, else the
+    /// list's remembered tab, else the global default.
+    ///
+    /// The pick is tagged with the list it was made on (`choiceListKey`) because the view that
+    /// holds it can outlive the list — iPad's sidebar swaps lists under one live view — and a pick
+    /// made on list A is not a pick for list B. T-7032.
+    static func displayedPage(
+        choice: ListDetailPage?,
+        choiceListKey: String?,
+        listKey: String,
+        storedRawValue: String?,
+        defaultPageRawValue: String
+    ) -> ListDetailPage {
+        if let choice, choiceListKey == listKey { return choice }
+        return rememberedPage(storedRawValue: storedRawValue, defaultPageRawValue: defaultPageRawValue)
+    }
+
+    /// What VoiceOver reads for a tab in the iOS strip: the name, and the count drawn beside it
+    /// when one is drawn. `.accessibilityLabel` replaces the label, so passing the bare name used
+    /// to drop the count (T-7032).
+    func tabAccessibilityLabel(count: Int?) -> String {
+        guard let count, count > 0 else { return rawValue }
+        return "\(rawValue), \(count)"
+    }
+
     /// The tab bars themselves are text-only; this is used by the Settings "default list page"
     /// picker.
     var icon: String {

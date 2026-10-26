@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 @testable import Cadence
 
@@ -101,6 +102,83 @@ struct ListDetailPageTests {
             CadenceSourceScan.matchCount("ListDetailPage\\(rawValue:", in: body) == 0,
             "the restore still parses the remembered value with the failable initialiser"
         )
+    }
+
+    // MARK: - T-7032: iPad kept the previous list's tab
+
+    /// The exact iPad report: Links picked on list A, the sidebar moves to list B — which remembers
+    /// Kanban — under the same live view. B must open on Kanban, not on A's Links.
+    @Test("A tab picked on one list does not carry to the next")
+    func pickOnListADoesNotCarryToListB() {
+        let listA = ListDetailPage.rememberedPageDefaultsKey(areaID: UUID(), projectID: nil)
+        let listB = ListDetailPage.rememberedPageDefaultsKey(areaID: nil, projectID: UUID())
+        #expect(listA != listB)
+
+        let onB = ListDetailPage.displayedPage(
+            choice: .links,
+            choiceListKey: listA,
+            listKey: listB,
+            storedRawValue: ListDetailPage.kanban.rawValue,
+            defaultPageRawValue: ListDetailPage.completed.rawValue
+        )
+        #expect(onB == .kanban)
+
+        // And a list with nothing remembered falls to the global default, still not A's pick.
+        let onFreshB = ListDetailPage.displayedPage(
+            choice: .links,
+            choiceListKey: listA,
+            listKey: listB,
+            storedRawValue: nil,
+            defaultPageRawValue: ListDetailPage.completed.rawValue
+        )
+        #expect(onFreshB == .completed)
+    }
+
+    @Test("A tab picked on this list wins over what it remembers")
+    func pickOnThisListWins() {
+        let list = ListDetailPage.rememberedPageDefaultsKey(areaID: UUID(), projectID: nil)
+        let page = ListDetailPage.displayedPage(
+            choice: .documents,
+            choiceListKey: list,
+            listKey: list,
+            storedRawValue: ListDetailPage.kanban.rawValue,
+            defaultPageRawValue: ListDetailPage.tasks.rawValue
+        )
+        #expect(page == .documents)
+    }
+
+    /// The key is the one macOS has always written, so a list's remembered tab survives the
+    /// builder moving to Shared.
+    @Test("The per-list key is macOS's existing spelling")
+    func rememberedKeyMatchesMacOS() throws {
+        let id = try #require(UUID(uuidString: "00000000-0000-0000-0000-000000000001"))
+        #expect(
+            ListDetailPage.rememberedPageDefaultsKey(areaID: id, projectID: nil)
+                == "listDetailTab.area.00000000-0000-0000-0000-000000000001"
+        )
+        #expect(
+            ListDetailPage.rememberedPageDefaultsKey(areaID: nil, projectID: id)
+                == "listDetailTab.project.00000000-0000-0000-0000-000000000001"
+        )
+        #expect(ListDetailPage.rememberedPageDefaultsKey(areaID: nil, projectID: nil) == "listDetailTab.unknown")
+    }
+
+    /// `Cadence/iOS/` is invisible to this target, so this reads that the iOS page goes through the
+    /// shared rule and writes the per-list key rather than holding one untagged `@State`.
+    @Test("iOS list detail resolves its tab through the per-list rule")
+    func iOSUsesThePerListRule() throws {
+        let raw = try CadenceSourceScan.sourceFile("Cadence/iOS/iOSListDetailView.swift")
+        let source = CadenceSourceScan.strippingComments(raw)
+        #expect(source.contains("ListDetailPage.displayedPage("))
+        #expect(source.contains("CadenceDefaults.store.set(newPage.rawValue, forKey: key)"))
+        #expect(!source.contains("selectedPage ?? ListDetailPage.resolved"))
+    }
+
+    @Test("A tab's spoken label keeps the count it draws")
+    func tabAccessibilityLabelKeepsCount() {
+        #expect(ListDetailPage.tasks.tabAccessibilityLabel(count: 4) == "Tasks, 4")
+        #expect(ListDetailPage.links.tabAccessibilityLabel(count: nil) == "Links")
+        #expect(ListDetailPage.completed.tabAccessibilityLabel(count: 0) == "Completed")
     }
 
     /// The Settings picker highlights by identity and labels by raw value, so two pages sharing

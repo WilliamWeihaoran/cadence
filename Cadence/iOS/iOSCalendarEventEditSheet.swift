@@ -249,7 +249,7 @@ struct iOSCalendarEventEditSheet: View {
             return [
                 CadenceSchedulePanelChoice(
                     id: draft.calendarID,
-                    name: CadenceTitleNormalization.display(eventCalendarName, fallback: "Unknown calendar"),
+                    name: CadenceTitleNormalization.display(eventCalendarName, fallback: CadenceAppleCalendarNaming.unnamedCalendarTitle),
                     color: Theme.dim
                 )
             ]
