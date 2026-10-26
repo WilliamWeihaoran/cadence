@@ -258,7 +258,9 @@ struct iOSListDetailView: View {
                 accent: accent,
                 container: containerSelection,
                 listName: title,
-                highlightedSectionName: highlightedSectionName
+                highlightedSectionName: highlightedSectionName,
+                area: area,
+                project: project
             )
         case .documents:
             // `iOSListNotesView`, not the old `iOSListNotesPanel`: this list may hold many notes,

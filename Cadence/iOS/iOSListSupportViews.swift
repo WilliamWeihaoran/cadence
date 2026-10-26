@@ -467,6 +467,11 @@ struct iOSListKanbanPanel: View {
     /// is the only caller so far — it names a column, and a board that opened at the far left would
     /// have answered a different question than the card asked.
     var highlightedSectionName: String?
+    /// The list itself, for the add-column control. A column is a `TaskSectionConfig` on the area or
+    /// project, so adding one is `CadenceSectionCreationRow`'s store write — the same control the
+    /// Tasks tab ends with and the Mac list draws — not a second path of this board's own.
+    var area: Area?
+    var project: Project?
 
     /// Which column the ring is currently on. Separate from `highlightedSectionName` because the
     /// request outlives the emphasis: the ring fades after a beat and the request is still the
@@ -475,32 +480,34 @@ struct iOSListKanbanPanel: View {
 
     /// **Every configured column, filled or not.** An unfilled column is the case the drop rule
     /// exists for, and it was the one case that could not happen here: `sectionGroups` discarded
-    /// the column before anything could offer it. The board's own empty state below still stands in
-    /// when the *list* has nothing in it, rather than a row of zeroes.
+    /// the column before anything could offer it. The board's own empty state below stands in only
+    /// when the list has no column at all — it used to stand in whenever there was no open task,
+    /// which hid every column a fresh list had ([[T-7033]]).
     private var columns: [CadenceTaskDisplayGroup] {
-        CadenceTaskQuerySupport.sectionGroups(
-            from: tasks,
-            sectionNames: sectionNames,
-            includingEmpty: true
-        )
+        ListDetailKanbanBoard.columns(tasks: tasks, sectionNames: sectionNames)
     }
 
     var body: some View {
         Group {
-            if tasks.isEmpty {
-                iOSEmptyPanel(
-                    systemImage: "square.grid.3x2",
-                    title: "No kanban cards",
-                    subtitle: "Tasks grouped by section will appear here."
-                )
-                // The list itself, for the same reason the Tasks tab's empty state takes it: with
-                // no columns drawn there is nothing narrower to point at.
-                .iOSNewTaskDropTarget(
-                    group: CadenceTaskDropSupport.groupIdentity(
-                        container: container,
-                        listName: listName
+            if !ListDetailKanbanBoard.drawsColumns(columns) {
+                VStack(spacing: 0) {
+                    iOSEmptyPanel(
+                        systemImage: "square.grid.3x2",
+                        title: CadenceEmptyStateCopy.listKanbanTitle,
+                        subtitle: CadenceEmptyStateCopy.listKanbanSubtitle
                     )
-                )
+                    // The list itself, for the same reason the Tasks tab's empty state takes it:
+                    // with no columns drawn there is nothing narrower to point at.
+                    .iOSNewTaskDropTarget(
+                        group: CadenceTaskDropSupport.groupIdentity(
+                            container: container,
+                            listName: listName
+                        )
+                    )
+                    CadenceSectionCreationRow(area: area, project: project)
+                        .frame(width: iOSBoardColumnWidth, alignment: .leading)
+                        .padding(.bottom, 16)
+                }
             } else {
                 ScrollViewReader { proxy in
                     ScrollView(.horizontal) {
@@ -520,6 +527,11 @@ struct iOSListKanbanPanel: View {
                                 )
                                 .id(column.title)
                             }
+                            // The trailing add-column rail macOS ends every list board with
+                            // (`ListSectionsKanbanView.addSectionRail`), at a column's width so the
+                            // name field has room. T-7033.
+                            CadenceSectionCreationRow(area: area, project: project)
+                                .frame(width: iOSBoardColumnWidth, alignment: .topLeading)
                         }
                         .padding(.horizontal, 14)
                         .padding(.vertical, 16)

@@ -188,4 +188,57 @@ struct ListDetailPageTests {
         #expect(Set(ListDetailPage.allCases.map(\.id)).count == ListDetailPage.allCases.count)
         #expect(Set(ListDetailPage.allCases.map(\.icon)).count == ListDetailPage.allCases.count)
     }
+
+    /// T-7033: the Kanban tab draws every configured column when the list has no open task. It
+    /// used to branch on `tasks.isEmpty` and show "No kanban cards", hiding the columns — and the
+    /// header drop targets on them — exactly when a fresh list needed them.
+    @Test("The Kanban tab draws every configured column when the list has no open task")
+    func kanbanDrawsEmptyColumns() {
+        let columns = ListDetailKanbanBoard.columns(tasks: [], sectionNames: ["Backlog", "Doing", "Done"])
+        #expect(columns.map(\.title) == ["Backlog", "Doing", "Done"])
+        #expect(columns.allSatisfy { $0.tasks.isEmpty })
+        #expect(ListDetailKanbanBoard.drawsColumns(columns))
+    }
+
+    /// A filled column sits beside its empty siblings rather than replacing them, and the empty
+    /// panel is left for the one case with nothing to draw: no column at all.
+    @Test("A filled column keeps its empty siblings; only a column-less list shows the empty panel")
+    func kanbanEmptyPanelOnlyWithoutColumns() {
+        let task = AppTask(title: "Card")
+        task.sectionName = "Doing"
+        let columns = ListDetailKanbanBoard.columns(tasks: [task], sectionNames: ["Backlog", "Doing"])
+        #expect(columns.map(\.tasks.count) == [0, 1])
+
+        let none = ListDetailKanbanBoard.columns(tasks: [], sectionNames: [])
+        #expect(none.isEmpty)
+        #expect(ListDetailKanbanBoard.drawsColumns(none) == false)
+    }
+
+    /// The iOS board reads the rule above rather than its own task count, ends with the shared
+    /// add-column control (the store write the Tasks tab and the Mac list already use), and keeps
+    /// its empty copy in `CadenceEmptyStateCopy`.
+    @Test("The iOS Kanban board reads the shared column rule and ends with the shared add-column row")
+    func iOSKanbanUsesTheSharedRuleAndCreationRow() throws {
+        let source = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/iOS/iOSListSupportViews.swift")
+        )
+        let body = try #require(
+            CadenceSourceScan.declarationBody("struct iOSListKanbanPanel: View", in: source),
+            "non-vacuity: the iOS Kanban panel is gone"
+        )
+        #expect(body.contains("ListDetailKanbanBoard.columns(tasks: tasks, sectionNames: sectionNames)"))
+        #expect(body.contains("if !ListDetailKanbanBoard.drawsColumns(columns)"))
+        #expect(!body.contains("tasks.isEmpty"), "the board branches on its open-task count again")
+        #expect(CadenceSourceScan.matchCount(#"CadenceSectionCreationRow\(area: area, project: project\)"#, in: body) == 2)
+        #expect(body.contains("CadenceEmptyStateCopy.listKanbanTitle"))
+        #expect(!source.contains("No kanban cards"))
+
+        let detail = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/iOS/iOSListDetailView.swift")
+        )
+        #expect(
+            detail.range(of: #"iOSListKanbanPanel\([^)]*area: area,\s*project: project\s*\)"#, options: .regularExpression) != nil,
+            "the list detail does not hand the board its list, so the add-column row is inert"
+        )
+    }
 }

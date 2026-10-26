@@ -67,6 +67,14 @@ nonisolated enum CadenceEmptyStateCopy {
     /// cannot see it: another device. "Deleted" on its own would be a guess about which.
     static let missingListSubtitle = "This list may have been archived, deleted, or changed on another device."
 
+    /// The iPad/iPhone list Kanban tab when the list has **no columns at all** — every section
+    /// archived. It used to read "No kanban cards" whenever the list had no open tasks, which hid
+    /// the configured columns (and their `+` drop targets) exactly when a fresh list needed them
+    /// ([[T-7033]]); columns are drawn now whenever there are any, as macOS always did. The
+    /// subtitle names the control under it, `CadenceSectionCreationRow`.
+    static let listKanbanTitle = "No columns"
+    static let listKanbanSubtitle = "Add a section below to start this board."
+
     // MARK: - Pages that exist at two widths
 
     /// A calendar day with nothing on it — the Board's day column and the day inspector, which are

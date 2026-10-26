@@ -134,3 +134,26 @@ enum ListDetailTabStripMetrics {
             + stripInset * 2
     }
 }
+
+/// The list Kanban tab's columns, decided where `CadenceTests` can see it ([[T-7033]]).
+///
+/// The iOS board used to branch on `tasks.isEmpty`, so a list whose tasks were all done (or that
+/// had none yet) showed an empty panel instead of its configured columns — and with them went the
+/// column headers, which are the `+` drop targets, and any way to start a board. macOS's
+/// `ListSectionsKanbanView` draws every configured column whatever it holds. This is that rule:
+/// every column, filled or not, and the board is drawn whenever there is a column to draw.
+enum ListDetailKanbanBoard {
+    static func columns(tasks: [AppTask], sectionNames: [String]) -> [CadenceTaskDisplayGroup] {
+        CadenceTaskQuerySupport.sectionGroups(
+            from: tasks,
+            sectionNames: sectionNames,
+            includingEmpty: true
+        )
+    }
+
+    /// The empty panel stands in only when the list has no column at all (every section archived).
+    /// An open-task count is not the question: an empty column is a place to put work.
+    static func drawsColumns(_ columns: [CadenceTaskDisplayGroup]) -> Bool {
+        !columns.isEmpty
+    }
+}
