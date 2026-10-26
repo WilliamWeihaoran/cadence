@@ -826,7 +826,9 @@ struct CadenceEventEditorPanelAdoptionTests {
         let actions = try #require(CadenceSourceScan.declarationBody("private var panelActions: CadenceSchedulePanelActions", in: editor))
         #expect(actions.contains("if isEditable {"))
         #expect(actions.contains("actions.delete = {"))
-        #expect(actions.contains("confirmDelete = true"), "Delete skipped its confirmation")
+        // T-7075: Delete enters the scope-then-confirm order; CadenceEventDeleteStepTests and
+        // CadenceIPhoneCalendarNotesSpeechTests pin that every path ends in the confirmation.
+        #expect(actions.contains("beginDelete()"), "Delete skipped its confirmation")
         #expect(editor.contains("readOnlyNotice: isEditable"))
 
         let panel = try code("Cadence/Shared/Components/CadenceSchedulePanel.swift")
