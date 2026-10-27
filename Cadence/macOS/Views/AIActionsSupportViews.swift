@@ -595,6 +595,8 @@ private struct NoteActionDestinationRow: View {
         ) {
             action()
         }
+        // T-7292: the circle, tint and checkmark draw which list holds the note; this says it.
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 }
 

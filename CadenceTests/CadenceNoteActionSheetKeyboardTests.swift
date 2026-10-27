@@ -14,6 +14,10 @@ import Testing
 /// sheets. Summary: Escape closes, Return appends. Drafts: Escape cancels, and Return is left off
 /// Create Selected on purpose (T-7290 is the owner call).
 ///
+/// T-7292: `NoteActionDestinationRow` drew the note's current list (filled circle, blue title,
+/// checkmark) and never told VoiceOver; it now carries `.isSelected` the way T-7267's list-sheet
+/// cells do.
+///
 /// Source reads in `CadenceListEditorSheetKeyboardTests`' style: no unit test can press a key in a
 /// sheet, and the move rows are private views inside a popover. Read from declaration bodies so a
 /// modifier elsewhere in the file cannot answer for these.
@@ -79,5 +83,14 @@ struct CadenceNoteActionSheetKeyboardTests {
         #expect(CadenceTitleNormalization.display("", fallback: CadenceTitleNormalization.defaultAreaName) == "Untitled Area")
         #expect(CadenceTitleNormalization.display("   ", fallback: CadenceTitleNormalization.defaultProjectName) == "Untitled Project")
         #expect(CadenceTitleNormalization.display("Home", fallback: CadenceTitleNormalization.defaultAreaName) == "Home")
+    }
+
+    @Test func moveDestinationRowSaysWhichListIsSelected() throws {
+        let row = try Self.compactBody("private struct NoteActionDestinationRow: View", in: Self.menuPath)
+
+        #expect(
+            row.contains("){action()}.accessibilityAddTraits(isSelected?.isSelected:[])"),
+            "VoiceOver must hear which Move Note destination holds the note, on the row's own button"
+        )
     }
 }
