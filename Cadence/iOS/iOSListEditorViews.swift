@@ -914,7 +914,7 @@ private struct iOSListIconStrip: View {
                             )
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel(icon)
+                    .accessibilityLabel(CadenceIconPalette.accessibilityName(for: icon))
                     .accessibilityAddTraits(isSelected ? .isSelected : [])
                 }
             }

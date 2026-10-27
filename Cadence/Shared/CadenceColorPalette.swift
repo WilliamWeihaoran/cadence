@@ -195,4 +195,49 @@ enum CadenceIconPalette {
         guard !stored.isEmpty, !icons.contains(stored) else { return icons }
         return icons + [stored]
     }
+
+    /// **T-7270.** The word VoiceOver says for each offered symbol. Every icon picker — the Mac
+    /// strip and grid, iOS's list strip and tracking grid — used to pass the raw symbol name as the
+    /// label, so a cell read "folder.fill". One table, beside the set it names, so all four read the
+    /// same words. The wording is a first pass the owner may override; the names describe what the
+    /// glyph DRAWS, never a guess at what the user means by it.
+    static let accessibilityNames: [String: String] = [
+        "square.stack.fill": "Stack", "folder.fill": "Folder", "tray.fill": "Tray",
+        "archivebox.fill": "Archive box", "doc.fill": "Document", "doc.text.fill": "Text document",
+        "checklist": "Checklist", "list.bullet.clipboard": "Clipboard",
+        "briefcase.fill": "Briefcase", "graduationcap.fill": "Graduation cap", "book.fill": "Book",
+        "pencil": "Pencil", "chart.bar.fill": "Bar chart", "chart.line.uptrend.xyaxis": "Line chart",
+        "lightbulb.fill": "Light bulb", "brain": "Brain",
+        "house.fill": "House", "heart.fill": "Heart", "person.fill": "Person",
+        "person.2.fill": "Two people", "star.fill": "Star", "bookmark.fill": "Bookmark",
+        "flag.fill": "Flag", "tag.fill": "Tag",
+        "dumbbell.fill": "Dumbbell", "flame.fill": "Flame", "leaf.fill": "Leaf", "drop.fill": "Drop",
+        "music.note": "Music note", "headphones": "Headphones", "gamecontroller.fill": "Game controller",
+        "paintbrush.fill": "Paintbrush",
+        "airplane": "Airplane", "car.fill": "Car", "map.fill": "Map", "globe": "Globe",
+        "bolt.fill": "Lightning bolt", "camera.fill": "Camera", "cart.fill": "Shopping cart",
+        "stethoscope": "Stethoscope", "trophy.fill": "Trophy", "medal.fill": "Medal",
+        "crown.fill": "Crown", "building.2.fill": "Buildings",
+    ]
+
+    /// The spoken name for `symbol`. A symbol outside the table — a stored icon the palette no
+    /// longer offers (`offeredIcons(for:)` keeps it), or one typed before the pickers existed — is
+    /// spelled out from its own parts rather than read raw: style suffixes (`fill`, `circle`, …)
+    /// dropped, dots and digits never spoken, so `dollarsign.circle.fill` reads "Dollarsign" and
+    /// never "dollarsign.circle.fill". A name with nothing left reads "Icon".
+    static func accessibilityName(for symbol: String) -> String {
+        let trimmed = symbol.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let name = accessibilityNames[trimmed] { return name }
+        let styleParts: Set<String> = [
+            "fill", "circle", "square", "rectangle", "slash", "inverse", "badge",
+        ]
+        let words = trimmed
+            .split(whereSeparator: { $0 == "." || $0 == "_" || $0 == "-" })
+            .map(String.init)
+            .filter { !styleParts.contains($0) && !$0.allSatisfy(\.isNumber) }
+        guard let first = words.first else { return "Icon" }
+        let spoken = ([first.prefix(1).uppercased() + first.dropFirst()] + words.dropFirst())
+            .joined(separator: " ")
+        return spoken
+    }
 }

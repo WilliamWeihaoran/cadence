@@ -204,7 +204,7 @@ struct iOSTrackingIconGrid: View {
                         .contentShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
                 }
                 .buttonStyle(.iosPressable)
-                .accessibilityLabel(icon)
+                .accessibilityLabel(CadenceIconPalette.accessibilityName(for: icon))
                 .accessibilityAddTraits(isOn ? .isSelected : [])
             }
         }

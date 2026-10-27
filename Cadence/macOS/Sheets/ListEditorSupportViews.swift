@@ -234,7 +234,7 @@ struct ListEditorIconStrip: View {
                     icon: icon,
                     isSelected: icon == selected,
                     tint: Color(hex: colorHex),
-                    accessibilityLabel: icon
+                    accessibilityLabel: CadenceIconPalette.accessibilityName(for: icon)
                 ) {
                     selected = icon
                 }

@@ -526,7 +526,9 @@ struct CadenceControlAccessibilityLabelTests {
                 #"Toggle(CadenceNotificationSettingsCopy.remindersToggleTitle, isOn: $notificationsEnabled)"#,
             // The habit reminder toggle left with [[T-5002]], which deleted
             // `HabitsFormSupportViews.swift` along with the rest of the Habits screen.
-            "Cadence/macOS/Views/NoteActionReviewSheets.swift": #"Toggle("Include this task", isOn: $isSelected)"#,
+            // T-7294: the AI draft checkbox names the draft it acts on, not a fixed "Include this task".
+            "Cadence/macOS/Views/NoteActionReviewSheets.swift":
+                #"Toggle(CadenceAIDraftReview.approvalAccessibilityLabel(forTitle: draft.title), isOn: $isSelected)"#,
             "Cadence/macOS/Views/SettingsSupportViews.swift": #"Toggle("Visible in Sidebar", isOn: $isVisible)"#,
         ]
         for (path, declaration) in expected {

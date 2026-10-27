@@ -216,10 +216,12 @@ private struct AITaskDraftRow: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .firstTextBaseline, spacing: 10) {
                 // The row has no static title to borrow — the text beside this checkbox is an
-                // editable `TextField` — so the name is stated here rather than inherited.
-                Toggle("Include this task", isOn: $isSelected)
+                // editable `TextField` — so the name is stated here rather than inherited, and it
+                // names the draft (T-7294): five drafts are no longer five "Include this task"s.
+                Toggle(CadenceAIDraftReview.approvalAccessibilityLabel(forTitle: draft.title), isOn: $isSelected)
                     .toggleStyle(.checkbox)
                     .labelsHidden()
+                    .accessibilityHint(CadenceAIDraftReview.approvalAccessibilityHint(isApproved: isSelected))
                 TextField("Task title", text: $draft.title)
                     .textFieldStyle(.plain)
                     .font(.system(size: 14, weight: .semibold))

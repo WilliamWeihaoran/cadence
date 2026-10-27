@@ -451,7 +451,11 @@ private struct iOSAITaskDraftCard: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.iosPressable)
-            .accessibilityLabel(isApproved ? "Approved, tap to reject" : "Rejected, tap to approve")
+            // T-7294: the label names the draft; the state is the value and the outcome the hint,
+            // where "Approved, tap to reject" had packed both into a label that named no draft.
+            .accessibilityLabel(CadenceAIDraftReview.approvalAccessibilityLabel(forTitle: draft.title))
+            .accessibilityValue(CadenceAIDraftReview.approvalAccessibilityValue(isApproved: isApproved))
+            .accessibilityHint(CadenceAIDraftReview.approvalAccessibilityHint(isApproved: isApproved))
 
             TextField("Task title", text: $draft.title, axis: .vertical)
                 .font(.system(size: 15, weight: .semibold))

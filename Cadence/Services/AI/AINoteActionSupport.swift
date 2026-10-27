@@ -133,6 +133,28 @@ struct CadenceAIDraftReview: Equatable, Sendable {
         drafts.filter { selectedIDs.contains($0.id) }
     }
 
+    /// **T-7294.** The spoken name of a draft's approve/reject control, on both surfaces. The
+    /// control sits beside an editable `TextField`, so it has no static title to inherit, and a
+    /// fixed "Include this task" made a sheet of five drafts five identical checkboxes. It names
+    /// the draft it acts on; a blank title (the user cleared the field) reads as "untitled draft"
+    /// rather than "Include " with nothing after it. The state is the control's VALUE, never part
+    /// of this label, and the outcome of activating it is the HINT.
+    static func approvalAccessibilityLabel(forTitle title: String) -> String {
+        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? "Include untitled draft" : "Include \(trimmed)"
+    }
+
+    /// The approval control's state, spoken as its value (iOS draws it as a plain button, so it
+    /// has no native toggle value to report; the Mac checkbox reports its own).
+    static func approvalAccessibilityValue(isApproved: Bool) -> String {
+        isApproved ? "Included" : "Not included"
+    }
+
+    /// What activating the control does, stated as an outcome rather than a gesture (T-521).
+    static func approvalAccessibilityHint(isApproved: Bool) -> String {
+        isApproved ? "Leaves this draft out of the tasks to create" : "Adds this draft to the tasks to create"
+    }
+
     func isSelected(_ draft: AITaskDraft) -> Bool {
         selectedIDs.contains(draft.id)
     }

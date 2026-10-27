@@ -172,7 +172,7 @@ struct IconGrid: View {
                     .frame(width: cellSize, height: cellSize)
                 }
                 .buttonStyle(.plain)
-                .cadenceControlLabel("Select \(icon) icon")
+                .cadenceControlLabel(CadenceIconPalette.accessibilityName(for: icon))
                 .accessibilityAddTraits(selected == icon ? .isSelected : [])
             }
         }
