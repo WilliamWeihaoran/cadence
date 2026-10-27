@@ -235,6 +235,33 @@ struct CadenceCodexWidgetFollowupTests {
         #expect(subtitle.contains(".lineLimit(1)"))
     }
 
+    /// T-7285: the large layout's `VStack` proposed the `Priority now` row an even split of the
+    /// tile, less than a two-line title needs, so the title drew one truncated line even though
+    /// the summary panel made the row taller anyway. The row asks for its own height instead.
+    /// Held here: exactly one vertical `fixedSize` in `largeLayout`, on the row (after the panel,
+    /// before the queue), and none in `extraLargeLayout`, which draws the same card in a tile
+    /// that has no height for a third title line.
+    @Test func todayLargePriorityRowTakesItsOwnHeightSoTheTitleWraps() throws {
+        let read = CadenceSourceScan.strippedSourceReader()
+        let view = CadenceSourceScan.codeOnly(try read("CadenceWidgets/TodayTasksWidgetView.swift"))
+        func block(from start: String, to end: String) throws -> String {
+            let lower = try #require(view.range(of: start))
+            let upper = try #require(view.range(of: end, range: lower.upperBound..<view.endIndex))
+            return String(view[lower.upperBound..<upper.lowerBound])
+        }
+        let verticalFit = "\\.fixedSize\\(horizontal: false, vertical: true\\)"
+        let large = try block(from: "private var largeLayout: some View {", to: "private var extraLargeLayout: some View {")
+        #expect(CadenceSourceScan.matchCount(verticalFit, in: large) == 1)
+        let panel = try #require(large.range(of: ".frame(width: 132)"))
+        let fit = try #require(large.range(of: ".fixedSize(horizontal: false, vertical: true)"))
+        let queue = try #require(large.range(of: "let queueTasks"))
+        #expect(panel.upperBound <= fit.lowerBound && fit.upperBound <= queue.lowerBound)
+        let extraLarge = try block(from: "private var extraLargeLayout: some View {", to: "private var summaryPanel: some View {")
+        #expect(CadenceSourceScan.matchCount(verticalFit, in: extraLarge) == 0)
+        let card = try block(from: "private func primaryTaskCard(", to: "private func taskStackCard(")
+        #expect(CadenceSourceScan.matchCount(verticalFit, in: card) == 0)
+    }
+
     @Test func codexHabitSnapshotRequestsOverridesForItsOwnDate() throws {
         let rule = try CadenceScanInstrument(
             "habit snapshot dated override",

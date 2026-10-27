@@ -142,6 +142,13 @@ struct TodayTasksWidgetView: View {
                     summaryPanel
                         .frame(width: 132)
                 }
+                // The row's own height, not the stack's share. The outer `VStack` proposes this
+                // row an even split of the tile (~100pt on the iPhone), the `HStack` passes that
+                // to the card, and a two-line title then no longer fits, so it drew one truncated
+                // line (`Finish widg...`) — while the 132pt panel, which ignores the proposal,
+                // made the row 132pt tall anyway. Asked for its ideal height the card wraps to
+                // three lines (~125pt) inside the panel's height, so the tile is no taller (T-7285).
+                .fixedSize(horizontal: false, vertical: true)
 
                 let queueTasks = Array(entry.snapshot.tasks.dropFirst().prefix(widgetFamily.cadenceLayout.todayTaskLimit - 1))
                 if !queueTasks.isEmpty {
