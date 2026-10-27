@@ -29,6 +29,12 @@ nonisolated enum CadenceWidgetFamilyLayout: CaseIterable, Sendable {
     /// truncates as it did before `eff2f35b` (T-7211 (b)).
     var todayRowDropsContainerNameThatDoesNotFit: Bool { self == .extraLarge }
 
+    /// The floor `countChip` may shrink a Calendar day's `d`/`p` chip to. `systemSmall` draws the
+    /// two chips side by side in one ~30pt line (iPhone; ~34pt on the iPad), and at 0.9 a two-digit
+    /// count truncated: `12d 3p` is ~35pt of 9pt glyphs, `12d 12p` ~40pt. 0.75 fits `12d 12p`.
+    /// Every other family stacks the chips, each needing at most ~17pt, so it keeps 0.9 (T-7211 (a)).
+    var calendarCountChipMinimumScaleFactor: Double { self == .small ? 0.75 : 0.9 }
+
     var habitLimit: Int {
         switch self {
         case .small: 2

@@ -54,11 +54,11 @@ struct TodayTasksWidgetProvider: AppIntentTimelineProvider {
         let placeholderTasks = [
             CadenceTodayWidgetTask(
                 id: UUID(),
-                title: "Finish widget pass",
+                title: "Book dentist appointment",
                 priorityRaw: TaskPriority.high.rawValue,
                 dueDate: todayKey,
                 scheduledDate: todayKey,
-                containerName: "Cadence"
+                containerName: "Personal"
             ),
             CadenceTodayWidgetTask(
                 id: UUID(),
@@ -94,11 +94,11 @@ struct TodayTasksWidgetProvider: AppIntentTimelineProvider {
             ),
             CadenceTodayWidgetTask(
                 id: UUID(),
-                title: "Refine backlog cuts",
+                title: "Draft weekly update",
                 priorityRaw: TaskPriority.low.rawValue,
                 dueDate: "",
                 scheduledDate: todayKey,
-                containerName: "Roadmap"
+                containerName: "Projects"
             ),
             CadenceTodayWidgetTask(
                 id: UUID(),
@@ -110,11 +110,11 @@ struct TodayTasksWidgetProvider: AppIntentTimelineProvider {
             ),
             CadenceTodayWidgetTask(
                 id: UUID(),
-                title: "Close remaining loose ends",
+                title: "Pick up groceries",
                 priorityRaw: TaskPriority.medium.rawValue,
                 dueDate: "",
                 scheduledDate: todayKey,
-                containerName: "Ops"
+                containerName: "Errands"
             ),
         ]
 

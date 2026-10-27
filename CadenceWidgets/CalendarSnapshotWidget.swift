@@ -337,8 +337,9 @@ struct CalendarSnapshotWidgetView: View {
                     .minimumScaleFactor(0.7)
             } else if widgetFamily == .systemSmall {
                 // Side by side rather than stacked: one caption line instead of two, which is
-                // ~14pt of the small tile's height (T-7163). `1d 2p` is ~24pt of glyphs against
-                // the ~30pt the narrowest (iPhone) cell leaves inside its inset.
+                // ~14pt of the small tile's height (T-7163). `1d 2p` is ~29pt of glyphs against
+                // the ~30pt the narrowest (iPhone) cell leaves inside its inset; a two-digit count
+                // fits only because `countChip` may shrink further at this family (T-7211 (a)).
                 HStack(spacing: 4) {
                     dayCountChips(day, labelSpacing: 1)
                 }
@@ -557,6 +558,6 @@ struct CalendarSnapshotWidgetView: View {
         }
         .foregroundStyle(tint)
         .lineLimit(1)
-        .minimumScaleFactor(0.9)
+        .minimumScaleFactor(widgetFamily.cadenceLayout.calendarCountChipMinimumScaleFactor)
     }
 }

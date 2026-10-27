@@ -212,6 +212,49 @@ struct CadenceCodexWidgetFollowupTests {
         #expect(view.contains(".fixedSize(horizontal: !truncates, vertical: false)"))
     }
 
+    /// T-7211 (a): the small Calendar tile draws its `d`/`p` chips side by side in ~30pt, so a
+    /// two-digit count needs a lower shrink floor there than the stacked families need. The floor
+    /// is the model's; the chip is held to reading it rather than a literal.
+    @Test func calendarCountChipsShrinkFurtherOnlyOnTheSmallTile() throws {
+        let floors = CadenceWidgetFamilyLayout.allCases.map(\.calendarCountChipMinimumScaleFactor)
+        let small = try #require(floors.first)
+        #expect(floors.dropFirst().allSatisfy { $0 == 0.9 })
+        #expect(small < 0.9)
+        #expect(small <= 0.75)
+        let read = CadenceSourceScan.strippedSourceReader()
+        let calendar = CadenceSourceScan.codeOnly(try read("CadenceWidgets/CalendarSnapshotWidget.swift"))
+        let chip = try #require(calendar.range(of: "private func countChip("))
+        let chipBody = String(calendar[chip.upperBound..<calendar.endIndex])
+        #expect(chipBody.contains(".minimumScaleFactor(widgetFamily.cadenceLayout.calendarCountChipMinimumScaleFactor)"))
+        #expect(CadenceSourceScan.matchCount("\\.minimumScaleFactor\\(0\\.", in: chipBody) == 0)
+    }
+
+    /// T-7211 (c): since T-7125 the widget gallery draws the Today placeholder for every user,
+    /// and its first task is the one the small and large tiles headline. The sample copy is user
+    /// copy: no task or list in it names the app or the widget work it was written during.
+    @Test func todayPlaceholderSampleTasksReadAsUserCopy() throws {
+        let read = CadenceSourceScan.strippedSourceReader()
+        let today = try read("CadenceWidgets/TodayTasksWidget.swift")
+        let start = try #require(today.range(of: "private func placeholderSnapshot(for family: WidgetFamily)"))
+        let end = try #require(today.range(of: "return CadenceTodayWidgetSnapshot(", range: start.upperBound..<today.endIndex))
+        let block = String(today[start.upperBound..<end.lowerBound])
+        func values(_ key: String) -> [String] {
+            let regex = try! NSRegularExpression(pattern: key + ": \"([^\"]*)\"")
+            let range = NSRange(block.startIndex..., in: block)
+            return regex.matches(in: block, range: range).compactMap { match in
+                Range(match.range(at: 1), in: block).map { String(block[$0]) }
+            }
+        }
+        let titles = values("title")
+        let lists = values("containerName")
+        #expect(titles.count >= 2)
+        #expect(lists.count == titles.count)
+        for text in titles + lists {
+            let lowered = text.lowercased()
+            #expect(!lowered.contains("cadence") && !lowered.contains("widget"), "\(text)")
+        }
+    }
+
     /// T-7195: the populated Today `systemLarge` layout wanted ~387pt of the 354pt an iPhone 15
     /// gives that family. Its middle row is as tall as the summary panel, so the panel's spacing
     /// and the queue card's subtitle are the budget; measured offscreen, they now sum to ~348pt.
