@@ -24,8 +24,9 @@ diverges, not an outage.
 | UI tests | never (T-531) | local only |
 
 Two details people get wrong. The image carries `Xcode_26.0.1` *through* `Xcode_26.6` and defaults
-to 26.6; `.github/scripts/assert-toolchain.sh:53` globs `/Applications/Xcode_26*.app` and takes the
-**first lexical match**, so CI runs the *oldest* 26 on the image. And the runner's local clock is
+to 26.6; `.github/scripts/assert-toolchain.sh` pins the exact minor **26.0** since [[T-4742]] (it
+used to take the first lexical `Xcode_26*.app`, which happened to be the oldest), so CI runs
+26.0.1 and an image that drops 26.0.x goes red at *Assert toolchain* rather than moving silently. And the runner's local clock is
 UTC — its `xcb.sh` log stamp `20261018-033216` sits against the `03:32:16Z` step timestamp.
 
 ## What actually went red
@@ -51,7 +52,11 @@ divergence: `scripts/xcb.sh:475-476` and `.github/scripts/check-log.sh` gate the
 (`\.swift:N:C: warning:` and `macro expansion …: warning:`). The *compiler* differs. **Live?** The
 instance is dead — `CadenceDeleteSurvivorMember` is the tree's only `nonisolated protocol` and all
 three conformances are `nonisolated`. The class is live and **not checkable here at all**: this Mac
-has one Xcode. Nearest local check, which is a smell test and not a proof:
+has one Xcode, and that is decided rather than pending -- [[T-3277]] option (c), owner ruling
+2026-10-26: no second Xcode beside 27; **CI is the gate, so push small** (one landing per push), so
+a red names its commit and is cheap to bisect. The one shape seen so far, an orphaned attribute,
+is linted locally by `CadenceOrphanedAttributeLintTests`. Nearest local check for the rest, which
+is a smell test and not a proof:
 
 ```bash
 rg -n '^\s*(public )?nonisolated protocol ' --glob '*.swift'   # every conformance must say nonisolated

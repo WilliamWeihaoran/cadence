@@ -91,9 +91,12 @@
 #
 # THE FAILURE MODE OF PINNING IS DRIFTING ONTO AN UNSUPPORTED IMAGE LATER. GitHub deprecates and
 # then removes runner images; a pin that nobody bumps eventually fails to schedule, or warns for
-# months before it does. Bumping this label is a DELIBERATE ACT with a commit behind it: raise the
-# new image's Xcode against REQUIRED_MAJOR in .github/scripts/assert-toolchain.sh FIRST, and move
+# months before it does. Bumping this label is a DELIBERATE ACT with a commit behind it: check the
+# new image's Xcode against REQUIRED_MINOR in .github/scripts/assert-toolchain.sh FIRST, and move
 # both together. Do not "fix" a scheduling failure here by reaching back for `macos-latest`.
+# Since T-4742 (owner ruling 2026-10-26) that script pins the exact Xcode MINOR (26.0), not the
+# major: an image that drops 26.0.x turns CI red at the Assert toolchain step instead of moving the
+# build silently onto the next Xcode 26 it carries.
 
 name: CI
 
@@ -635,3 +638,11 @@ jobs:
           zsh -f ./scripts/ci-run-coverage.sh push-attribution "$BEFORE" "$AFTER" || rc=$?
           echo "push-attribution exit: $rc  (0 = attributed, 1 = unattributed, 2 = nothing read)"
           echo "NOTICE ONLY: this step does not fail the job. See the comment in ci.yml."
+          # T-2050 (owner ruling 2026-10-26): a NOTICE, never a red -- but a notice nobody sees is
+          # the exit swallowed, not surfaced. A log line is only read by someone already looking,
+          # so a non-zero exit also becomes a run annotation on the summary page.
+          case "$rc" in
+            0) ;;
+            1) echo "::notice title=Push attribution (T-2050)::Some code commit in this push has no CI run of its own (a grouped push). Not a failure: the tip's tree carries its bytes. Push after each landing." ;;
+            *) echo "::notice title=Push attribution (T-2050)::ci-run-coverage.sh push-attribution exited $rc and read nothing for this push; the attribution is unknown, not clean." ;;
+          esac
