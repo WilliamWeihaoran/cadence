@@ -47,7 +47,11 @@ struct iOSMoreTabView: View {
                                         // the same destinations read alike. The hues encoded
                                         // nothing anyway: Notes and Calendar shared purple.
                                         color: Theme.dim,
-                                        detailTint: Theme.muted
+                                        detailTint: Theme.muted,
+                                        detailAccessibilityLabel: CadenceCompactShellSupport.countAccessibilityLabel(
+                                            for: destination,
+                                            badges: badges
+                                        )
                                     )
                                 }
                                 .buttonStyle(.iosPressable)

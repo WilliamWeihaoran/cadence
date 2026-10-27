@@ -69,6 +69,47 @@ struct CadenceCompactShellSupportTests {
         #expect(label(.focus) == nil)
     }
 
+    /// T-7295: VoiceOver hears what a More row's number counts, never the bare digits, and hears
+    /// nothing exactly where nothing is drawn.
+    @Test func aMoreRowCountIsSpokenWithWhatItCounts() throws {
+        let badges = CadenceFeatureBadgeSupport.Snapshot(
+            tasks: [task("open"), task("also open", due: todayKey)],
+            todayKey: todayKey,
+            activeListCount: 4
+        )
+        func spoken(_ destination: CadenceFeatureDestination) -> String? {
+            CadenceCompactShellSupport.countAccessibilityLabel(for: destination, badges: badges)
+        }
+        #expect(spoken(.lists) == "4 active lists")
+        #expect(spoken(.allTasks) == "2 open tasks")
+        #expect(CadenceCompactShellSupport.countAccessibilityLabel(
+            for: .lists,
+            badges: CadenceFeatureBadgeSupport.Snapshot(tasks: [], todayKey: todayKey, activeListCount: 1)
+        ) == "1 active list")
+
+        // Every row the More tab draws: a spoken count wherever a drawn one is, and never digits alone.
+        let drawn = CadenceFeatureDestination.compactMoreSections.flatMap(\.destinations)
+        #expect(drawn.contains(.lists), "non-vacuity: the More tab still draws a counted row")
+        for destination in drawn {
+            let label = CadenceCompactShellSupport.countLabel(for: destination, badges: badges)
+            let said = spoken(destination)
+            #expect((label == nil) == (said == nil), "\(destination): drawn \(String(describing: label)), spoken \(String(describing: said))")
+            if let said { #expect(Int(said) == nil, "\(destination) is spoken as a bare number: \(said)") }
+        }
+
+        // The row reads the spoken form, and the More tab hands it one (iOS is not compiled here).
+        let row = try #require(CadenceSourceScan.declarationBody(
+            "struct iOSFeatureSummaryRow: View",
+            in: try CadenceSourceScan.sourceFile("Cadence/iOS/iOSFeatureComponents.swift")
+        )).filter { !$0.isWhitespace }
+        #expect(row.contains("Text(detail)"), "non-vacuity: the row still draws its count")
+        #expect(row.contains(".accessibilityLabel(detailAccessibilityLabel??detail)"))
+        let more = CadenceSourceScan.codeOnly(
+            try CadenceSourceScan.sourceFile("Cadence/iOS/iOSMoreTabView.swift")
+        ).filter { !$0.isWhitespace }
+        #expect(more.contains("detailAccessibilityLabel:CadenceCompactShellSupport.countAccessibilityLabel(for:destination,badges:badges)"))
+    }
+
     /// A tally of zero draws nothing: the absence of a badge *is* the zero state, which is the
     /// half of the rule the row with no lists and no open tasks exercises.
     @Test func aRowWithNothingToCountShowsNoCountAtAll() {

@@ -554,6 +554,9 @@ struct iOSFeatureSummaryRow: View {
     /// `color` — its glyphs are navigation chrome — and a value rendered in `dim` would be the
     /// quietest thing in a row whose whole point is the number.
     var detailTint: Color? = nil
+    /// What VoiceOver reads in place of `detail` ([[T-7295]]): the row reads as one run, so a bare
+    /// "12" after the subtitle says nothing about what is twelve. `nil` reads `detail` as drawn.
+    var detailAccessibilityLabel: String? = nil
     var isSelected = false
 
     var body: some View {
@@ -578,6 +581,7 @@ struct iOSFeatureSummaryRow: View {
                     .font(.system(size: 12, weight: .bold))
                     .foregroundStyle(detailTint ?? color)
                     .lineLimit(1)
+                    .accessibilityLabel(detailAccessibilityLabel ?? detail)
             }
         }
         .frame(minHeight: 44)

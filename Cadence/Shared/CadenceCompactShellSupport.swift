@@ -80,4 +80,27 @@ enum CadenceCompactShellSupport {
     ) -> String? {
         badges.count(for: destination).map(String.init)
     }
+
+    /// What VoiceOver reads for the count `countLabel` draws ([[T-7295]]): "4 active lists", never
+    /// a bare "4". The row reads as one run — title, subtitle, number — so the digits alone named
+    /// nothing. The nouns are the ones the repo already counts these things in: T-1445's "open
+    /// tasks" for the sidebar's task tallies, `CadencePluralization`'s "list"/"lists" (T-4980),
+    /// qualified "active" because archived lists are not in the tally, as completed tasks are not
+    /// in "open". `nil` exactly where `countLabel` is.
+    static func countAccessibilityLabel(
+        for destination: CadenceFeatureDestination,
+        badges: CadenceFeatureBadgeSupport.Snapshot
+    ) -> String? {
+        guard let count = badges.count(for: destination) else { return nil }
+        switch destination {
+        case .lists:
+            return CadencePluralization.phrase(count, singular: "active list", plural: "active lists")
+        case .allTasks, .inbox:
+            return CadencePluralization.phrase(count, singular: "open task", plural: "open tasks")
+        case .today:
+            return CadencePluralization.phrase(count, singular: "task today", plural: "tasks today")
+        case .calendar, .notes, .focus, .search, .settings:
+            return String(count)
+        }
+    }
 }
