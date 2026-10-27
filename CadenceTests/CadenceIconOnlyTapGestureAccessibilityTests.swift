@@ -135,6 +135,7 @@ struct CadenceIconOnlyTapGestureAccessibilityTests {
     @Test func createContextSheetsIconGridNoLongerDrawsTheBannedShape() throws {
         let source = try CadenceSourceScan.sourceFile("Cadence/macOS/Sheets/CreateContextSheet.swift")
         #expect(Self.iconOnlyTapGestureCount(in: source) == 0)
-        #expect(source.contains(#".cadenceControlLabel("Select \(icon) icon")"#))
+        // T-7270 replaced "Select \(icon) icon" with the palette's spoken name (T-7501).
+        #expect(source.contains(".cadenceControlLabel(CadenceIconPalette.accessibilityName(for: icon))"))
     }
 }
