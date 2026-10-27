@@ -320,15 +320,31 @@ struct TodayTasksWidgetView: View {
                 }
             }
 
-            HStack(spacing: 6) {
-                statusPill(status)
-                if !task.containerName.isEmpty {
-                    containerPill(task.containerName)
-                }
-                Spacer(minLength: 8)
-                if compact {
+            if compact {
+                HStack(spacing: 6) {
+                    statusPill(status)
+                    if !task.containerName.isEmpty {
+                        containerPill(task.containerName)
+                    }
+                    Spacer(minLength: 8)
                     completeButton(taskID: task.id, size: scale.metricValueSize)
                 }
+            } else {
+                // Beside a dated status pill the container pill was left ~40pt on the iPhone's
+                // large tile and drew `[Sa...`, so here it rides only when it fits WHOLE, as the
+                // extra-large rows do (T-7126, T-7315). No `Spacer` in this row: an `HStack`
+                // would hand the choice only part of the width and drop names that fit.
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 6) {
+                        statusPill(status)
+                        if !task.containerName.isEmpty {
+                            containerPill(task.containerName)
+                                .fixedSize()
+                        }
+                    }
+                    statusPill(status)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
         .padding(compact ? scale.compactCardPadding : scale.cardPadding)

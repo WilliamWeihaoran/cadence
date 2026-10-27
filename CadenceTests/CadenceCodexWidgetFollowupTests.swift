@@ -202,9 +202,10 @@ struct CadenceCodexWidgetFollowupTests {
         #expect(families.map(\.todayRowDropsContainerNameThatDoesNotFit) == [false, false, false, true])
         let read = CadenceSourceScan.strippedSourceReader()
         let view = CadenceSourceScan.codeOnly(try read("CadenceWidgets/TodayTasksWidgetView.swift"))
-        #expect(CadenceSourceScan.matchCount("ViewThatFits\\(in: \\.horizontal\\)", in: view) == 1)
+        // Two in the file: this row's, and `primaryTaskCard`'s (T-7315, held by its own test).
+        #expect(CadenceSourceScan.matchCount("ViewThatFits\\(in: \\.horizontal\\)", in: view) == 2)
         let gate = try #require(view.range(of: "if widgetFamily.cadenceLayout.todayRowDropsContainerNameThatDoesNotFit {"))
-        let fits = try #require(view.range(of: "ViewThatFits(in: .horizontal)"))
+        let fits = try #require(view.range(of: "ViewThatFits(in: .horizontal)", range: gate.upperBound..<view.endIndex))
         let otherwise = try #require(view.range(of: "statusLine(status, containerName: task.containerName, truncates: true)"))
         #expect(gate.upperBound <= fits.lowerBound && fits.upperBound <= otherwise.lowerBound)
         #expect(view.contains("statusLine(status, containerName: task.containerName, truncates: false)"))
@@ -260,6 +261,30 @@ struct CadenceCodexWidgetFollowupTests {
         #expect(CadenceSourceScan.matchCount(verticalFit, in: extraLarge) == 0)
         let card = try block(from: "private func primaryTaskCard(", to: "private func taskStackCard(")
         #expect(CadenceSourceScan.matchCount(verticalFit, in: card) == 0)
+    }
+
+    /// T-7315: on the iPhone's large tile the `Priority now` card's container pill was left
+    /// ~40pt beside a `fixedSize` dated status pill and drew `[Sa...`. Beyond the compact card it
+    /// now rides only when it fits WHOLE, the choice T-7126 made for the extra-large rows: a
+    /// `ViewThatFits` whose first child is both pills, the name unsqueezable, and whose fallback
+    /// is the status pill alone. The compact card (small, medium) keeps truncating as before.
+    /// The row has no `Spacer`, which would make its `HStack` offer the choice only part of the
+    /// width. No WidgetKit host runs here; the harness renders are in the ledger entry.
+    @Test func todayPriorityCardDropsAContainerNameThatDoesNotFitWhole() throws {
+        let read = CadenceSourceScan.strippedSourceReader()
+        let view = CadenceSourceScan.codeOnly(try read("CadenceWidgets/TodayTasksWidgetView.swift"))
+        let start = try #require(view.range(of: "private func primaryTaskCard("))
+        let end = try #require(view.range(of: "private func taskStackCard(", range: start.upperBound..<view.endIndex))
+        let card = String(view[start.upperBound..<end.lowerBound])
+        #expect(CadenceSourceScan.matchCount("ViewThatFits\\(in: \\.horizontal\\)", in: card) == 1)
+        let compactBranch = try #require(card.range(of: "if compact {\n                HStack(spacing: 6) {"))
+        let fits = try #require(card.range(of: "ViewThatFits(in: .horizontal)"))
+        #expect(compactBranch.upperBound <= fits.lowerBound)
+        let choice = String(card[fits.upperBound...])
+        let whole = try #require(choice.range(of: "containerPill(task.containerName)\n                                .fixedSize()"))
+        let fallback = try #require(choice.range(of: "statusPill(status)\n                }\n                .frame(maxWidth: .infinity, alignment: .leading)"))
+        #expect(whole.upperBound <= fallback.lowerBound)
+        #expect(!String(choice[..<fallback.upperBound]).contains("Spacer("))
     }
 
     @Test func codexHabitSnapshotRequestsOverridesForItsOwnDate() throws {
