@@ -117,12 +117,19 @@
 #                        the SAME ticket, landed here from that ref with its first line changed.
 #   WORKTREE-BEHIND-HEAD a bare `<path>` whose worktree copy is built on a revision older than
 #                        HEAD's. Committing it writes the stale bytes into history, where no drift
-#                        check looks. Rebuild on `git show HEAD:<path>` and pass the `=` form, or
-#                        `--commits-stale <path>` if the old content really is what you mean.
+#                        check looks. Rebuild on `git show HEAD:<path>` and pass the `=` form.
+#                        There is no override flag any more: see COMMITS-STALE-REFUSED.
 #   REBUILD-BEHIND-HEAD  the same finding about a `<path>=<content-file>` reconstruction: the
-#                        content file itself was built on an older revision. Same escape hatch.
+#                        content file itself was built on an older revision. Same cure, no override.
 #                        This is the diagnosis for the count REMOVES-HEAD-LINES would otherwise
 #                        give you one step later, and it names the sha to rebuild on.
+#   COMMITS-STALE-REFUSED `--commits-stale <path>`, the old override for the two refusals above.
+#                        Every brief already forbade it and an agent still used it on its own
+#                        judgement (T-3173); the owner ruled 2026-10-26 that the script refuses it
+#                        outright rather than accept a claim it cannot check. Every caller of this
+#                        script is an agent id, so it is refused for every id. A deliberate revert
+#                        of a whole path still commits through the `=` form (a `stale copy` with
+#                        nothing on top is reported, not refused); anything else goes to the owner.
 #   SWEEP-MANIFEST-MISSING
 #                        a `CadenceTests/*.swift` this commit stages declares a `@Test` that walks
 #                        the real product tree and is not on `CadenceRealTreeSweepManifest.txt`, so
@@ -265,19 +272,16 @@
 # split on `-` because an id may itself contain one, and the id is quoted so it is matched literally.
 # There is still no flag escape, for the same reason as above: the cure is `mv`.
 
-# THE DELIBERATE OVERRIDE LEAVES A TRACE (T-991)
+# THERE IS NO DELIBERATE OVERRIDE FOR A PATH BEHIND HEAD (T-3173, formerly T-991)
 #
-# `--commits-stale <path>` says "the older content really is what I mean". It used to say it to
-# nobody: unlike a declined hunk, which writes a record under $TMPDIR that `check` fails over, it
-# wrote nothing at all, so a batch could not afterwards answer *did anyone knowingly commit a copy
-# behind HEAD, and on which path*. That question is how all four measured instances of T-975 were
-# found. Each overridden path now adds a `Commits-Stale: <path> built-on <sha>` trailer to the
-# commit message, immediately above the Co-Authored-By line: `git log --grep=Commits-Stale` answers
-# it from any clone, forever, and the base sha makes it answerable in detail rather than in the
-# abstract. It is not a declined-hunk record -- those mean somebody still has to act, and `check`
-# fails while one exists; this is a settled decision, and recording it as outstanding work would
-# make `check` fail over something already decided.
-#
+# `--commits-stale <path>` used to say "the older content really is what I mean", and T-991 made it
+# leave a `Commits-Stale: <path> built-on <sha>` trailer so `git log --grep=Commits-Stale` could
+# answer who did it afterwards (three commits carry one, newest `1f2bb793`). A trace is not a
+# guard: an agent passed it on its own judgement while every brief forbade it, and the script could
+# not check the claim. The owner ruled on 2026-10-26 that the script refuses the flag outright
+# (COMMITS-STALE-REFUSED), so the rule no longer depends on a brief being read. The trailer went
+# with it -- nothing can reach it now.
+
 # THE BACKSTOP, AND WHY IT IS NOT `status` (T-781)
 #
 # The check above fires on the NEXT commit of that path. If nobody ever commits that path again,
@@ -370,7 +374,7 @@ usage() {
     say "              --unfiled-ids <ids> --buried-closures <ids> --duplicate-ids <ids>"
     say "              --unfiled-links <ids> --not-an-id <T-n>"
     say "              --duplicated-entries <ids> --unclaimed-entries <ids> --claims-ids <ids>"
-    say "              --accept-declined <path> --commits-stale <path> --not-a-sweep <@Test name>"
+    say "              --accept-declined <path> --not-a-sweep <@Test name>"
     say "       ./scripts/agent-commit.sh <id> -F <message-file> <path>..."
     say "              the -F file's basename must contain <id> -- the scratchpad is shared (T-1222)"
     say "       ./scripts/agent-commit.sh status         # report outstanding declined hunks"
@@ -1476,8 +1480,8 @@ cmd_commit() {
     local declared_unfiled_ids="" declared_buried_ids="" declared_duplicate_ids=""
     local declared_duplicated_entries="" declared_unfiled_links=""
     local declared_unclaimed_entries="" declared_claimed_ids=""
-    local -a paths accepted stale_declared not_sweeps not_ids
-    paths=(); accepted=(); stale_declared=(); not_sweeps=(); not_ids=()
+    local -a paths accepted not_sweeps not_ids
+    paths=(); accepted=(); not_sweeps=(); not_ids=()
 
     while (( $# )); do
         case "$1" in
@@ -1526,8 +1530,14 @@ cmd_commit() {
                 declared_unclaimed_entries="$2"; shift 2 ;;
             --claims-ids) [[ $# -ge 2 ]] || refuse BAD-OPTION "--claims-ids needs a comma-separated id list"
                 declared_claimed_ids="$2"; shift 2 ;;
-            --commits-stale) [[ $# -ge 2 ]] || refuse BAD-OPTION "--commits-stale needs a path"
-                stale_declared+=("$2"); shift 2 ;;
+            # T-3173. Refused for every id, before anything is read: see the header.
+            --commits-stale) refuse COMMITS-STALE-REFUSED "--commits-stale is not accepted from any id (T-3173, owner ruling 2026-10-26).
+  It asked this script to commit a path behind HEAD on a claim it cannot check, and it was used on
+  an agent's own judgement while every brief forbade it. Nothing was committed.
+  Rebuild the path on \`git show HEAD:<path>\` plus only your own edits and pass it as
+  \`<path>=<content-file>\`. A deliberate revert of a whole path -- an older revision's bytes with
+  nothing of yours on top -- already commits through that form. If neither fits, stop and report
+  it: the owner commits it by hand." ;;
             --not-a-sweep) [[ $# -ge 2 ]] || refuse BAD-OPTION "--not-a-sweep needs a @Test name"
                 not_sweeps+=("$2"); shift 2 ;;
             --) shift; paths+=("$@"); break ;;
@@ -1657,8 +1667,8 @@ cmd_commit() {
     [[ -f "$drift_script" ]] || refuse DRIFT-CHECK-MISSING "$drift_script is not there, so the drift check cannot run.
   Skipping it silently is how a guard becomes decoration; restore the script. There is no path form
   that skips this check any more: both \`<path>\` and \`<path>=<content-file>\` are asked (T-992)."
-    local -a stale_found stale_report stale_recon stale_audit
-    stale_found=(); stale_report=(); stale_recon=(); stale_audit=()
+    local -a stale_found stale_report stale_recon
+    stale_found=(); stale_report=(); stale_recon=()
     # NOT `subject`: this function already declares one further down for the commit subject, and a
     # second bare `local subject` in the same scope makes zsh PRINT the parameter rather than
     # redeclare it -- `subject='worktree-drift.sh base-content ...'` on stdout, mid-commit.
@@ -1727,8 +1737,6 @@ cmd_commit() {
         fi
         stale_found+=("$name")
         stale_report+=("$name  [$kind]  $(print -r -- "$reading" | cut -f4)")
-        # The base sha, for T-991's trailer. Field 3 of the machine-readable reading.
-        stale_audit+=("$name built-on $(print -r -- "$reading" | cut -f3)")
         [[ -n "$src" ]] && stale_recon+=("$name")
     done
     [[ -n "$rewrite_scratch" ]] && rm -rf "$rewrite_scratch"
@@ -1739,11 +1747,9 @@ cmd_commit() {
         # parameter is already local prints `x=<value>` instead of redeclaring it, so with two
         # stale paths in one commit this put `spec2=<the second path>` on stdout above the
         # refusal. Measured 2026-09-06, in this exact loop.
-        local declaredp reconp spec2
+        local reconp spec2
         for name in "${stale_found[@]}"; do
-            declaredp=0; reconp=0
-            for spec2 in "${stale_declared[@]}"; do [[ "$spec2" == "$name" ]] && declaredp=1; done
-            (( declaredp )) && continue
+            reconp=0
             for spec2 in "${stale_recon[@]}"; do [[ "$spec2" == "$name" ]] && reconp=1; done
             if (( reconp )); then undeclared_recon+=("$name"); else undeclared+=("$name"); fi
         done
@@ -1758,13 +1764,13 @@ $(print -rl -- "${stale_report[@]}" | sed 's/^/    /')
   names a number, and invites you to type it. The number is the symptom.
   Rebuild the content file on \`git show ${headsha[1,8]}:<path>\` plus only your own edits.
   IF YOU ARE REWRITING THE NEWEST LINES rather than committing older ones -- closing the ticket
-  whose entry HEAD's last commit added is the common case -- then the content is not older, and
-  --commits-stale would record a claim that is false. Keep ONE line of what you are rewriting and
+  whose entry HEAD's last commit added is the common case -- then the content is not older.
+  Keep ONE line of what you are rewriting and
   this reading withdraws itself: a line ${headsha[1,8]} has that the revision above does not is
   proof the content was built on HEAD. A closure normally quotes the finding it closes anyway.
   On a ledger it withdraws itself further (T-1246): a rewrite that keeps a formal entry for every
   id HEAD filed since, and drops no line outside those entries, is not refused at all.
-  If the older content really is what you mean to commit: --commits-stale <path>"
+  There is no override flag (T-3173): if the older content really is meant, stop and report it."
         fi
         if (( ${#undeclared} )); then
             refuse WORKTREE-BEHIND-HEAD "these bare paths hold content HEAD has moved past: ${(j:, :)undeclared}
@@ -1776,9 +1782,8 @@ $(print -rl -- "${stale_report[@]}" | sed 's/^/    /')
   A [stale base] has your edits on an old one -- rebuild them on \`git show ${headsha[1,8]}:<path>\`
   and pass that file as \`<path>=<content-file>\`. That form is checked the same way (T-992), so
   rebuilding on the wrong sha is refused rather than accepted.
-  If the older content really is what you mean to commit: --commits-stale <path>"
+  There is no override flag (T-3173): if the older content really is meant, stop and report it."
         fi
-        say "note: committing a path that is behind HEAD at your request (--commits-stale): ${(j:, :)stale_found}"
     fi
 
     # 1d. T-1092. A `@Test` that walks the real product tree must be named in
@@ -1862,33 +1867,7 @@ $(print -r -- "$sweep_out" | sed 's/^/    /')
         fi
     fi
 
-    # 1c. T-991. `--commits-stale` is the one deliberate override in this script that discarded
-    #     something and left NOTHING to find afterwards. Every other one leaves a trace somebody has
-    #     to clear: a declined hunk writes a record under $TMPDIR and `check` fails while it is
-    #     outstanding; `--drops-ids` and `--reopens-ids` name their ids in the argv of a command
-    #     somebody typed and nowhere else. So a batch could not answer, after the fact, *did anyone
-    #     knowingly commit a copy behind HEAD, on which path, and how far behind* -- which is the
-    #     exact question all four measured instances of T-975 were found by asking.
-    #
-    #     The trace goes in the COMMIT MESSAGE, not in the $TMPDIR ledger, and that is the whole
-    #     point. The ledger is per-checkout, per-boot and cleared; the question is asked days later
-    #     and from a clone. `git log --grep=Commits-Stale` answers it forever, and the base sha
-    #     makes it answerable in detail: you can diff what was skipped.
-    #
-    #     It is NOT a declined-hunk record. Those mean "somebody still has to do something" and
-    #     `check` fails while one exists; this means "somebody deliberately did this and here is
-    #     what". Filing it as outstanding work would make `check` fail over a settled decision.
-    #
-    #     Inserted BEFORE the Co-Authored-By line, never after: that line has to stay last, because
-    #     NO-COAUTHOR-TRAILER is checked against the last non-blank line and every commit in this
-    #     repository ends with it.
-    if (( ${#stale_audit} )); then
-        local -a audit_lines
-        audit_lines=()
-        for reading in "${stale_audit[@]}"; do audit_lines+=("Commits-Stale: $reading") done
-        splice_trailers "${audit_lines[@]}"
-        say "note: recorded the override in the commit message: ${(j:; :)audit_lines}"
-    fi
+    # 1c. T-991's `Commits-Stale:` trailer was here; T-3173 refuses the flag that wrote it.
 
     local scratch
     scratch=$(mktemp -d "${TMP_BASE}cadence-agent-commit-${id}-XXXXXX") || refuse SCRATCH "cannot make a scratch directory"
@@ -3512,16 +3491,25 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
     check "and HEAD now has BOTH lines" \
         $( [[ $( cd "$ws" && git show HEAD:code.txt ) == *"sibling's landed line"* \
            && $( cd "$ws" && git show HEAD:code.txt ) == *"this agent's own new line"* ]] && print 1 || print 0 )
-    # --commits-stale is the deliberate escape, and it must be per-path and exact.
+    # T-3173: --commits-stale WAS the deliberate escape. It is now refused outright, for every id,
+    # naming the right path or not -- and the refusal it used to override no longer offers it.
     rm -f "$CADENCE_DECLINED_LEDGER"/*.declined(N)
     ( cd "$ws" && git show HEAD~1:code.txt > code.txt && print -r -- "a second line of this agent's" >> code.txt )
-    out=$( cd "$ws" && zsh "$here" f4 -m "$M" --commits-stale mine.txt --removes 1 code.txt 2>&1 ); rc=$?
-    check "naming the WRONG path in --commits-stale is still refused" \
+    local t3173_head; t3173_head=$( cd "$ws" && git rev-parse HEAD )
+    out=$( cd "$ws" && zsh "$here" f4 -m "$M" --removes 1 code.txt 2>&1 ); rc=$?
+    check "a stale bare path is still refused WORKTREE-BEHIND-HEAD" \
         $( [[ $rc == 3 && "$out" == *WORKTREE-BEHIND-HEAD* ]] && print 1 || print 0 ) "exit $rc: $out"
+    check "and the refusal no longer offers --commits-stale as the way out (T-3173)" \
+        $( [[ "$out" != *"--commits-stale"* ]] && print 1 || print 0 ) "$out"
     out=$( cd "$ws" && zsh "$here" f4 -m "$M" --commits-stale code.txt --removes 1 code.txt 2>&1 ); rc=$?
-    check "naming the right path lets it through deliberately" $(( rc == 0 )) "exit $rc: $out"
-    check "and it says out loud that it committed something behind HEAD" \
-        $( [[ "$out" == *"--commits-stale"* ]] && print 1 || print 0 ) "$out"
+    check "naming the right path in --commits-stale is refused COMMITS-STALE-REFUSED (T-3173)" \
+        $( [[ $rc == 3 && "$out" == *COMMITS-STALE-REFUSED* ]] && print 1 || print 0 ) "exit $rc: $out"
+    check "and nothing was committed" \
+        $( [[ "$( cd "$ws" && git rev-parse HEAD )" == "$t3173_head" ]] && print 1 || print 0 ) \
+        "HEAD moved from $t3173_head: $( cd "$ws" && git log --oneline -2 )"
+    out=$( cd "$ws" && zsh "$here" orchestrator -m "$M" --commits-stale code.txt --removes 1 code.txt 2>&1 ); rc=$?
+    check "it is refused for any id, not just a particular agent's" \
+        $( [[ $rc == 3 && "$out" == *COMMITS-STALE-REFUSED* ]] && print 1 || print 0 ) "exit $rc: $out"
     # The false-positive control that decides whether this guard can live in the commit path at
     # all: an ordinary bare-path commit of a file built on HEAD must not go near a refusal.
     ( cd "$ws" && git show HEAD:code.txt > code.txt && print -r -- "an ordinary edit on top of HEAD" >> code.txt )
@@ -3632,25 +3620,20 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
         $( [[ $rc == 3 && "$out" == *REMOVES-HEAD-LINES* ]] && print 1 || print 0 ) "exit $rc: $out"
 
     say ""
-    say " mode 4b4 (T-991) -- --commits-stale must leave something findable afterwards"
-    # Every other deliberate override here leaves a trace somebody has to clear. This one wrote
-    # nothing, so `did anyone knowingly commit a copy behind HEAD, and on which path` -- the
-    # question all four measured instances of T-975 were found by asking -- had no answer at all.
+    say " mode 4b4 (T-991, T-3173) -- the stale-rebuild override is gone, and so is its trailer"
+    # T-991 made --commits-stale leave a `Commits-Stale:` trailer. T-3173 refuses the flag, so the
+    # stale rebuild it used to let through is refused both ways, and nothing lands.
     rm -f "$CADENCE_DECLINED_LEDGER"/*.declined(N)
+    local g3_head; g3_head=$( cd "$ws" && git rev-parse HEAD )
     out=$( cd "$ws" && zsh "$here" g3 -m "$M" --commits-stale rebuild.txt --removes 2 rebuild.txt=recon-stale.txt 2>&1 ); rc=$?
-    check "naming the path in --commits-stale lets the stale rebuild through deliberately" $(( rc == 0 )) "exit $rc: $out"
-    local stale_msg; stale_msg=$( cd "$ws" && git log -1 --format=%B )
-    check "and the commit message carries a Commits-Stale trailer naming the path" \
-        $( [[ "$stale_msg" == *"Commits-Stale: rebuild.txt built-on "* ]] && print 1 || print 0 ) "$stale_msg"
-    check "the trailer carries the BASE sha, so what was skipped can be diffed later" \
-        $( [[ "$stale_msg" == *"built-on $( cd "$ws" && git rev-parse HEAD~3 )"* ]] && print 1 || print 0 ) \
-        "want $( cd "$ws" && git rev-parse HEAD~3 ), message was: $stale_msg"
-    # The trailer must go ABOVE the Co-Authored-By line: that one has to stay last or the script's
-    # own NO-COAUTHOR-TRAILER check would refuse the next commit built from this message.
-    check "the Co-Authored-By line is still the last non-blank line" \
-        $( [[ "$(print -r -- "$stale_msg" | grep -v '^[[:space:]]*$' | tail -1)" == Co-Authored-By:* ]] && print 1 || print 0 ) "$stale_msg"
-    check "git log --grep finds it, which is the question the ticket was about" \
-        $( [[ -n "$( cd "$ws" && git log --grep='^Commits-Stale:' --format=%h )" ]] && print 1 || print 0 )
+    check "naming the path in --commits-stale no longer lets a stale rebuild through" \
+        $( [[ $rc == 3 && "$out" == *COMMITS-STALE-REFUSED* ]] && print 1 || print 0 ) "exit $rc: $out"
+    out=$( cd "$ws" && zsh "$here" g3 -m "$M" --removes 2 rebuild.txt=recon-stale.txt 2>&1 ); rc=$?
+    check "without the flag it is REBUILD-BEHIND-HEAD, which no longer offers the flag" \
+        $( [[ $rc == 3 && "$out" == *REBUILD-BEHIND-HEAD* && "$out" != *"--commits-stale"* ]] && print 1 || print 0 ) "exit $rc: $out"
+    check "and neither attempt committed anything" \
+        $( [[ "$( cd "$ws" && git rev-parse HEAD )" == "$g3_head" ]] && print 1 || print 0 ) \
+        "HEAD moved from $g3_head: $( cd "$ws" && git log --oneline -2 )"
     # The control: an ordinary commit must not acquire the trailer, or `--grep` answers everything
     # and therefore nothing.
     ( cd "$ws" && print -r -- "an ordinary line" >> mine.txt )

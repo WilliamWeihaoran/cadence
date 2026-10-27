@@ -520,7 +520,9 @@ Which path form to use:
   instead: a commit whose staged content drops lines `HEAD` has is refused as `REMOVES-HEAD-LINES`
   until `--removes <exact count>` names how many. Re-read `git show HEAD:<path>` rather than raising
   the number. Measured twice in one hour on 2026-09-03, both on `docs/TODO.md` (`169d594`, `820aa98`).
-- **`--commits-stale <path>` now writes a `Commits-Stale: <path> built-on <sha>` trailer into the
+- **SUPERSEDED by [[T-3173]] (2026-10-26): `agent-commit.sh` now refuses `--commits-stale` outright
+  (`COMMITS-STALE-REFUSED`) and the trailer below is no longer written; the history stands.**
+  **`--commits-stale <path>` wrote a `Commits-Stale: <path> built-on <sha>` trailer into the
   commit message** (T-991), above the `Co-Authored-By:` line. It is the one deliberate override here
   that used to discard something and leave nothing to find, so *did anyone knowingly commit a copy
   behind HEAD, and on which path* had no answer after the fact — the exact question all four

@@ -144,6 +144,7 @@ struct CadenceGuardScriptSelftestTests {
         "HEAD-MOVED",
         "WORKTREE-BEHIND-HEAD",
         "REBUILD-BEHIND-HEAD",
+        "COMMITS-STALE-REFUSED",
         "DRIFT-CHECK-MISSING",
         "DRIFT-CHECK-FAILED",
         "SHARED-INDEX-DIRTY",

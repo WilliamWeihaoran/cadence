@@ -85,7 +85,7 @@ call -- it is a POST-RC fix with two technical shapes for the agent who takes it
 T-6191 repair the count on open (NOT the recommendation; writes to stores, repair-on-open only),
 T-3213 remove task bundles from the app (the CloudKit model type itself must stay),
 T-3227 leave and fix the comment, T-3275 push all (117, not 66), T-4742 exact minor,
-T-3277 (c), T-2050 notice, T-3173 refuse, T-6541 retry the CI step once T-6821 clears,
+T-3277 (c), T-2050 notice, T-6541 retry the CI step once T-6821 clears,
 T-6602 delete.
 
 Carried into the ledger 2026-10-26 by agent `decideclose2208` and removed from the list above:
