@@ -498,7 +498,7 @@ struct TaskDetailActionsSection: View {
         return iconButton(
             systemImage: action.systemImage(for: task.status),
             tint: isActive ? Theme.statusColor(action.status) : Theme.dim,
-            accessibilityLabel: action.title(for: task.status),
+            accessibilityLabel: Self.statusActionLabel(action, for: task.status),
             isActive: isActive
         ) {
             do {
@@ -508,6 +508,17 @@ struct TaskDetailActionsSection: View {
                 failureNotice = CadencePendingChangePersistence.editFailureNotice
             }
         }
+    }
+
+    /// [[T-7201]]: the icon button's name and tooltip — "Cancel task" / "Restore task", the shape
+    /// the Delete sibling in this row already reads ("Delete task"). The bare shared title said
+    /// "Cancel", and the schedule panel's footer button directly below is also "Cancel" (discard
+    /// edits), so VoiceOver and the tooltip offered two "Cancel" controls that do opposite things.
+    static func statusActionLabel(
+        _ action: CadenceTaskInspectorSupport.StatusAction,
+        for status: TaskStatus
+    ) -> String {
+        "\(action.title(for: status)) task"
     }
 
     /// One tap: the action's target from the current status, committed, then the notification

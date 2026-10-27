@@ -205,7 +205,9 @@ enum GlobalSearchIndexSupport {
             return GlobalSearchResult(
                 id: CadenceSearchIdentity.area(area.id),
                 category: .areas,
-                title: area.name,
+                // [[T-7202]]: a blank name drew a row with no title; iOS Search's list rows
+                // already say "Untitled Area" / "Untitled Project".
+                title: CadenceTitleNormalization.display(area.name, fallback: CadenceTitleNormalization.defaultAreaName),
                 subtitle: "\(contextName) • \(GoalLinkTarget.openTaskLabel(count: CadenceTaskQuerySupport.openTaskCount(for: area))) • \(CadenceListSearchSupport.lifecycle(of: area).statusLabel)",
                 icon: area.icon,
                 tintHex: area.colorHex,
@@ -225,7 +227,7 @@ enum GlobalSearchIndexSupport {
             return GlobalSearchResult(
                 id: CadenceSearchIdentity.project(project.id),
                 category: .projects,
-                title: project.name,
+                title: CadenceTitleNormalization.display(project.name, fallback: CadenceTitleNormalization.defaultProjectName),
                 subtitle: "\(summary) • \(GoalLinkTarget.openTaskLabel(count: CadenceTaskQuerySupport.openTaskCount(for: project))) • \(CadenceListSearchSupport.lifecycle(of: project).statusLabel)",
                 icon: project.icon,
                 tintHex: project.colorHex,

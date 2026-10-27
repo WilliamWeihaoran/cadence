@@ -97,4 +97,37 @@ struct CadenceSidebarObservedDayTests {
         #expect(!header.contains("greeting(for: Date())"), "the greeting goes stale within the day")
     }
 }
+
+/// **[[T-7202]] — the Mac sidebar's list rows: a blank name and the edit sheet.**
+///
+/// A blank or whitespace-only list name drew an empty row with only a count in it, where the iPad's
+/// `iOSSidebarListRow` already draws "Untitled". And the row's edit sheet was reachable only by a
+/// right-click or by Cmd+E over a hovered row, neither of which VoiceOver performs, so the row now
+/// carries an "Edit Area" / "Edit Project" action named for the sheet it opens.
+@MainActor
+struct MacSidebarListRowNamingTests {
+    @Test func aBlankListNameDrawsUntitledAsTheIPadRowDoes() {
+        #expect(SidebarListRow.displayLabel("") == "Untitled")
+        #expect(SidebarListRow.displayLabel("   ") == "Untitled")
+        #expect(SidebarListRow.displayLabel("Operations") == "Operations", "a real name is drawn as is")
+        #expect(SidebarListRow.displayLabel("") == CadenceTitleNormalization.defaultCompactTitle)
+    }
+
+    @Test func theRowDrawsTheNormalizedNameAndOffersTheEditSheetToVoiceOver() throws {
+        #expect(SidebarListRow.Kind.area.editActionName == "Edit Area")
+        #expect(SidebarListRow.Kind.project.editActionName == "Edit Project")
+        let source = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/macOS/Views/SidebarSupportViews.swift")
+        )
+        let row = try #require(CadenceSourceScan.declarationBody("struct SidebarListRow: View", in: source))
+        #expect(row.contains("Text(Self.displayLabel(label))"), "the row draws the raw name again (T-7202)")
+        #expect(!row.contains("Text(label)"))
+        #expect(row.contains(".accessibilityAction(named: kind.editActionName, onEdit)"),
+                "the row's edit sheet is unreachable without a pointer again (T-7202)")
+        // The sheets the action is named after still carry those titles.
+        let sheets = try CadenceSourceScan.sourceFile("Cadence/macOS/Sheets/EditListSheet.swift")
+        #expect(sheets.contains(#"title: "Edit Area""#))
+        #expect(sheets.contains(#"title: "Edit Project""#))
+    }
+}
 #endif

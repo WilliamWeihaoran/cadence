@@ -59,7 +59,7 @@ struct CadenceMacTaskInspectorStatusActionsTests {
     @Test func theInspectorHostsTheSharedStatusActionSet() throws {
         let section = try Self.actionsSection()
         #expect(section.contains("ForEach(CadenceTaskInspectorSupport.StatusAction.allCases"))
-        #expect(section.contains("action.title(for: task.status)"))
+        #expect(section.contains("action.title(for: status)"), "the label is built from the shared title (T-7201)")
         #expect(section.contains("action.systemImage(for: task.status)"))
         let host = CadenceSourceScan.strippingComments(
             try CadenceSourceScan.sourceFile("Cadence/macOS/Views/SchedulePanelComponents.swift")
@@ -90,6 +90,40 @@ struct CadenceMacTaskInspectorStatusActionsTests {
         // The old standalone row is gone rather than left beside the new button.
         let host = try CadenceSourceScan.sourceFile("Cadence/macOS/Views/SchedulePanelComponents.swift")
         #expect(!host.contains("TaskInspectorStatusActionsRow("))
+    }
+
+    /// **[[T-7201]]: the status icon button is named "Cancel task" / "Restore task".** The bare
+    /// shared title made it a second "Cancel" a few points above the schedule panel's footer
+    /// "Cancel", which discards the form's edits instead — to VoiceOver and in the tooltip, two
+    /// controls with one name and opposite effects. The sibling icon button already reads
+    /// "Delete task".
+    @Test func theStatusIconButtonNamesTheTaskSoItIsNotASecondCancel() throws {
+        #expect(TaskDetailActionsSection.statusActionLabel(.cancelled, for: .todo) == "Cancel task")
+        #expect(TaskDetailActionsSection.statusActionLabel(.cancelled, for: .cancelled) == "Restore task")
+        #expect(TaskDetailActionsSection.statusActionLabel(.cancelled, for: .todo) != "Cancel",
+                "the icon button reads the same as the panel footer's Cancel again")
+        let section = try Self.actionsSection()
+        let status = try #require(CadenceSourceScan.functionBody(named: "statusActionButton", in: section))
+        #expect(status.contains("accessibilityLabel: Self.statusActionLabel(action, for: task.status)"),
+                "the status icon button no longer takes its name from statusActionLabel (T-7201)")
+        #expect(section.contains(#"accessibilityLabel: "Delete task""#), "the sibling this copies is gone")
+    }
+
+    /// **[[T-7201]]: the series' "After N times" count field has a VoiceOver name.** It is a
+    /// `TextField("", …)` — a title would draw as a placeholder over the count — so without an
+    /// explicit label VoiceOver announced an unnamed text field.
+    @Test func theRecurrenceCountFieldIsNamed() throws {
+        #expect(TaskInspectorRecurrenceControl.endCountFieldAccessibilityLabel == "Number of times")
+        let source = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/macOS/Views/TaskInspectorWorkflowSupportViews.swift")
+        )
+        let untitledFields = CadenceSourceScan.matchCount(#"TextField\(""#, in: source)
+        #expect(untitledFields == 1, "non-vacuity: the one untitled count field is still here")
+        let named = CadenceSourceScan.matchCount(
+            #"TextField\("", text: \$countText\)\s*\.textFieldStyle\(\.plain\)\s*\.accessibilityLabel\(TaskInspectorRecurrenceControl\.endCountFieldAccessibilityLabel\)"#,
+            in: source
+        )
+        #expect(named == 1, "the untitled count field lost its accessibility label (T-7201)")
     }
 
     private static func actionsSection() throws -> String {

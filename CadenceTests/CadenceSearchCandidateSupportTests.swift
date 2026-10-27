@@ -290,6 +290,31 @@ struct CadenceSearchCandidateSupportTests {
         #expect(searched.map(\.id) == ["area-\(fixture.archivedArea.id.uuidString)"])
     }
 
+    /// **[[T-7202]]: a blank-named list in Cmd+K says "Untitled Area" / "Untitled Project".** The
+    /// palette drew `area.name` raw, so such a list was a row with a glyph and a subtitle and no
+    /// title; iOS Search's list rows already used these fallbacks. A named list keeps its name.
+    @Test func aBlankNamedListIsTitledUntitledInThePalette() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let modelContext = ModelContext(container)
+        let home = Context(name: "Home")
+        let blankArea = Area(name: "   ", context: home)
+        let namedArea = Area(name: "Operations", context: home)
+        let blankProject = Project(name: "", context: home)
+        modelContext.insert(home)
+        modelContext.insert(blankArea)
+        modelContext.insert(namedArea)
+        modelContext.insert(blankProject)
+        try modelContext.save()
+
+        let areas = GlobalSearchIndexSupport.areaResults(areas: [blankArea, namedArea], query: "home")
+        #expect(areas.count == 2, "non-vacuity: both areas answer to their context's name")
+        #expect(areas.first { $0.destination == .area(blankArea.id) }?.title == "Untitled Area")
+        #expect(areas.first { $0.destination == .area(namedArea.id) }?.title == "Operations")
+
+        let projects = GlobalSearchIndexSupport.projectResults(projects: [blankProject], query: "home")
+        #expect(projects.map(\.title) == ["Untitled Project"])
+    }
+
     @Test func aFinishedListAnswersToItsOwnLifecycleWords() throws {
         let fixture = try makeListFixture()
 

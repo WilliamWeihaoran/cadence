@@ -13,6 +13,9 @@ import SwiftData
 /// fields directly here would bypass both the series propagation and the off-mode normalization
 /// the workflow helpers do.
 struct TaskInspectorRecurrenceControl: View {
+    /// [[T-7201]]: the name of the series' "After N times" count field, which draws no title.
+    static let endCountFieldAccessibilityLabel = "Number of times"
+
     @Bindable var task: AppTask
     /// Where the recurrence panel opens relative to this row. Same rule as the Do/Due rows above
     /// it, and for the same reason: the panel is narrower than the inspector's content column, so
@@ -432,6 +435,9 @@ private struct TaskRecurrencePickerPanel: View {
                 HStack(spacing: 5) {
                     TextField("", text: $countText)
                         .textFieldStyle(.plain)
+                        // [[T-7201]]: the field has no title (a placeholder would draw over the
+                        // count), so VoiceOver announced an unnamed text field beside "times".
+                        .accessibilityLabel(TaskInspectorRecurrenceControl.endCountFieldAccessibilityLabel)
                         .font(.system(size: 11, weight: .medium))
                         .foregroundStyle(endMode == .afterCount ? Theme.text : Theme.dim)
                         .multilineTextAlignment(.center)

@@ -286,7 +286,8 @@ struct SidebarListRow: View {
         case area
         case project
 
-        /// Names the kind for the hover ID and the accessibility identifier, and nothing else.
+        /// Names the kind for the hover ID, the accessibility identifier and (since [[T-7202]]) the
+        /// "Edit Area" / "Edit Project" VoiceOver action.
         /// There is no tint here and there never was: when this row did draw a colour it was the
         /// list's own `colorHex`, never a per-kind hue, and since T-2084 it draws none at all.
         var label: String {
@@ -323,12 +324,18 @@ struct SidebarListRow: View {
 
     private var isSelected: Bool { selection == item }
 
+    /// [[T-7202]]: a blank or whitespace-only list name draws "Untitled", as the iPad's
+    /// `iOSSidebarListRow` already does, instead of an empty row with only a count in it.
+    static func displayLabel(_ raw: String) -> String {
+        CadenceTitleNormalization.display(raw, fallback: CadenceTitleNormalization.defaultCompactTitle)
+    }
+
     var body: some View {
         Button {
             selection = item
         } label: {
             HStack(spacing: SidebarMetrics.listTrailingItemSpacing) {
-                Text(label)
+                Text(Self.displayLabel(label))
                     .font(.system(size: SidebarMetrics.listLabelFontSize, weight: isSelected ? .semibold : .medium))
                     .foregroundStyle(isSelected ? Theme.text : Theme.muted)
                     .lineLimit(1)
@@ -362,6 +369,9 @@ struct SidebarListRow: View {
             RightClickActionTrigger(action: onEdit)
         }
         .accessibilityIdentifier("sidebar.list.\(kind.accessibilityFragment).\(accessibilitySlug(label))")
+        // [[T-7202]]: the edit sheet was reachable only by a right-click or by Cmd+E over a hovered
+        // row, neither of which VoiceOver can perform. Named for the sheet it opens.
+        .accessibilityAction(named: kind.editActionName, onEdit)
         .onHover { hovering in
             isHovered = hovering
             if hovering {
@@ -451,6 +461,12 @@ private extension SidebarListRow.Kind {
         case .project: return "project"
         }
     }
+}
+
+extension SidebarListRow.Kind {
+    /// [[T-7202]]: the VoiceOver action that opens the row's edit sheet, named as that sheet's own
+    /// title (`EditAreaSheet` / `EditProjectSheet` in `EditListSheet.swift`).
+    var editActionName: String { "Edit \(label)" }
 }
 
 private func accessibilitySlug(_ value: String) -> String {
