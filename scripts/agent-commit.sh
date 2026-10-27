@@ -603,13 +603,20 @@ ledger_ids() {  # $1 = file
 # outside inline code. Never the word loose in prose, and never the marker QUOTED, which is what
 # writing about the ledger format looks like and is the whole of T-1335.
 LEDGER_CLOSURE_READING='
-function closure_visible(s,   bq) {
+function closure_visible(s,   bq, i, j, out) {
     # A marker inside inline code is a QUOTATION, not a closure. The fence character is built with
     # sprintf rather than written, because two of the three copies of this reading are carried
     # inside a command substitution where an odd number of literal fences ends it early.
+    # Each span from one fence to the next becomes one space, left to right. That is exactly what
+    # a match loop over fence, non-fence run, fence produced, without compiling a dynamic regex for
+    # every span: that loop was most of each whole-ledger read, about 1 s a pass (T-7343).
     bq = sprintf("%c", 96)
-    while (match(s, bq "[^" bq "]*" bq)) s = substr(s, 1, RSTART - 1) " " substr(s, RSTART + RLENGTH)
-    return s
+    out = ""
+    while ((i = index(s, bq)) && (j = index(substr(s, i + 1), bq))) {
+        out = out substr(s, 1, i - 1) " "
+        s = substr(s, i + j + 1)
+    }
+    return out s
 }
 function first_line_closed(s) {
     return closure_visible(s) ~ /\*\*([A-Z]+ )?CLOSED([^A-Za-z]|$)/
@@ -3261,6 +3268,16 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
     out=$(lines_not_in "$ws/no-such-set" "$hin" 2>/dev/null); rc=$?
     check "an unreadable set prints nothing and exits 2, as grep -f does" \
         $( [[ -z "$out" && $rc == 2 ]] && print 1 || print 0 ) "exit $rc: $out"
+    # T-7343. `closure_visible` pairs fences by scanning rather than by a regex per span. These pin
+    # the pairing itself: text BETWEEN two spans is visible, a lone fence blanks nothing, an empty
+    # span is a span, and a marker inside the second of two adjacent spans stays a quotation.
+    local hcl="$ws/hclosure"
+    print -rl -- '- [T-1] `a` **CLOSED 2026-01-01 `b`.' '- [T-2] `a **CLOSED b` x' \
+        '- [T-3] one ` fence, then **CLOSED 2026-01-01' '- [T-4] ``**CLOSED 2026-01-01``' \
+        '- [T-5] `x``**CLOSED`' > "$hcl"
+    out=$(ledger_closed_ids "$hcl")
+    check "the closure reading pairs fences left to right: T-1, T-3 and T-4 closed, T-2 and T-5 quoted" \
+        $( [[ "$out" == $'T-1\nT-3\nT-4' ]] && print 1 || print 0 ) "$out"
     selftest_segment_close s0 ) > "$runs/s0.log" 2>&1 &
 
     segments+=(s1)

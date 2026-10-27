@@ -3177,8 +3177,12 @@ struct CadenceGuardScriptSelftestTests {
     @Test func theThreeLedgerScriptsStillReadClosureWithOneRule() throws {
         let expected = #"""
             bq = sprintf("%c", 96)
-            while (match(s, bq "[^" bq "]*" bq)) s = substr(s, 1, RSTART - 1) " " substr(s, RSTART + RLENGTH)
-            return s
+            out = ""
+            while ((i = index(s, bq)) && (j = index(substr(s, i + 1), bq))) {
+                out = out substr(s, 1, i - 1) " "
+                s = substr(s, i + j + 1)
+            }
+            return out s
         }
         function first_line_closed(s) {
             return closure_visible(s) ~ /\*\*([A-Z]+ )?CLOSED([^A-Za-z]|$)/
@@ -3200,7 +3204,7 @@ struct CadenceGuardScriptSelftestTests {
                 """
             )
             #expect(
-                text.contains("function closure_visible(s,   bq) {"),
+                text.contains("function closure_visible(s,   bq, i, j, out) {"),
                 "\(script) no longer defines closure_visible, so a QUOTED marker reads as a closure"
             )
         }

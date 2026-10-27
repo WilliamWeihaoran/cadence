@@ -474,13 +474,20 @@ function entry_id(line,   id) {
 }
 # The closure reading, character for character `agent-commit.sh`'s `$LEDGER_CLOSURE_READING` and
 # `scripts/ledger-view.sh`'s copy of it (T-1335). One rule, three files, pinned against each other.
-function closure_visible(s,   bq) {
+function closure_visible(s,   bq, i, j, out) {
     # A marker inside inline code is a QUOTATION, not a closure. The fence character is built with
     # sprintf rather than written, because two of the three copies of this reading are carried
     # inside a command substitution where an odd number of literal fences ends it early.
+    # Each span from one fence to the next becomes one space, left to right. That is exactly what
+    # a match loop over fence, non-fence run, fence produced, without compiling a dynamic regex for
+    # every span: that loop was most of each whole-ledger read, about 1 s a pass (T-7343).
     bq = sprintf("%c", 96)
-    while (match(s, bq "[^" bq "]*" bq)) s = substr(s, 1, RSTART - 1) " " substr(s, RSTART + RLENGTH)
-    return s
+    out = ""
+    while ((i = index(s, bq)) && (j = index(substr(s, i + 1), bq))) {
+        out = out substr(s, 1, i - 1) " "
+        s = substr(s, i + j + 1)
+    }
+    return out s
 }
 function first_line_closed(s) {
     return closure_visible(s) ~ /\*\*([A-Z]+ )?CLOSED([^A-Za-z]|$)/
