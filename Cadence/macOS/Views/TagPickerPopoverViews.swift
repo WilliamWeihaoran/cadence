@@ -213,7 +213,8 @@ struct TagPickerPopover: View {
             }
             .buttonStyle(.cadencePlain)
             .cadenceHoverHighlight(cornerRadius: 6)
-            .cadenceControlLabel("Edit tag")
+            // T-7337: one "Edit tag" per row named none of them.
+            .cadenceControlLabel(CadenceTagChipStyle.editControlLabel(for: tag))
         }
     }
 

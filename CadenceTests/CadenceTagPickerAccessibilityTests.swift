@@ -39,6 +39,19 @@ struct CadenceTagPickerAccessibilityTests {
         )
     }
 
+    /// T-7337: every row's edit control read "Edit tag", so a picker of eight tags was eight
+    /// identical buttons to VoiceOver and to the tooltip.
+    @Test func macPopoverEditControlIsNamedForItsTag() throws {
+        #expect(CadenceTagChipStyle.editControlLabel(name: "Work", slug: "work") == "Edit Work")
+        #expect(CadenceTagChipStyle.editControlLabel(name: "  ", slug: "deep-work") == "Edit deep-work",
+                "an unnamed tag falls back to its slug, as the chip does")
+        let row = try Self.compactBody("private func tagRow(_ tag: Tag) -> some View", in: Self.macPopoverPath)
+        #expect(row.contains("beginEditing(tag)"), "non-vacuity: the row still draws its edit control")
+        #expect(row.contains(".cadenceControlLabel(CadenceTagChipStyle.editControlLabel(for:tag))"),
+                "the Mac tag picker's edit control is not named for its tag")
+        #expect(!row.contains(#".cadenceControlLabel("Edittag")"#))
+    }
+
     @Test func macInlinePickerRowSaysWhichTagsAreOn() throws {
         let row = try Self.compactBody("private struct InlineTagPickerRow: View", in: Self.macInlinePath)
         #expect(

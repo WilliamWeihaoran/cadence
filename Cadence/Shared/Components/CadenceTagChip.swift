@@ -419,6 +419,17 @@ nonisolated struct CadenceTagChipStyle: Equatable {
         let resolved = displayName(name: name, slug: slug)
         return isArchived ? "\(resolved) (archived)" : resolved
     }
+
+    /// The name of a per-tag edit control: "Edit Work" ([[T-7337]]). A picker of eight tags drew
+    /// eight controls all named "Edit tag"; this is the repo's "<verb> <name>" spelling, as the
+    /// list header's `"Edit \(name)"` and the sidebar's `editActionName` already say it.
+    static func editControlLabel(for tag: Tag) -> String {
+        editControlLabel(name: tag.name, slug: tag.slug)
+    }
+
+    static func editControlLabel(name: String, slug: String) -> String {
+        "Edit \(displayName(name: name, slug: slug))"
+    }
 }
 
 // MARK: - The chip
