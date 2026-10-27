@@ -22,6 +22,8 @@
 #   ./scripts/xcb.sh selftest                                  # prove the refusals still fire
 #
 # `-project Cadence.xcodeproj` is supplied for you; pass `-scheme` and `-destination` yourself.
+# It is the project of the tree THIS FILE lives in, so run a tree's own copy from inside it: a run
+# from inside any other tree exits 16 WRONG-TREE unless CADENCE_ALLOW_OTHER_TREE=1 (T-7500).
 #
 # It exists because two hazards in this repository produce no diagnostic of their own, so both
 # get misread as broken code (docs/TODO.md T-86 and T-117).
@@ -2024,6 +2026,51 @@ dd_in_use_refusal() {
   return 0
 }
 
+# --- the wrong-tree guard (T-7500) -------------------------------------------
+# `-project` is `$ROOT_DIR/Cadence.xcodeproj`, and `$ROOT_DIR` comes from where THIS FILE lives, not
+# from where it was run. So `cd <frozen-export> && /Users/.../Cadence/scripts/xcb.sh <id> build ...`
+# compiled the SHARED checkout and printed a normal-looking green: exit 0, a non-vacuous compile
+# count, no drift warning. Measured by `mcpred1030` during T-7453, caught only because a baseline
+# that should have been red came back green. The right invocation is that tree's OWN copy.
+#
+# "The tree the caller is in" is the nearest ancestor of `$PWD` holding `scripts/xcb.sh` -- a
+# checkout, a worktree, or a `git archive` export, which has no `.git` to ask -- and failing that
+# the enclosing git toplevel. A cwd in neither (`$HOME`, a bare temp dir) names no other tree, so it
+# is not refused: there is nothing it could be confused with. Pure shell on the first branch, so the
+# App-Sandboxed test host, which cannot run `/usr/bin/git` (T-719), still gets an answer for a tree.
+# CADENCE_ALLOW_OTHER_TREE=1 is the deliberate opt-in, and the run then says which tree it built.
+WRONG_TREE_EXIT=16
+tree_of_dir() {
+  local d="${1:A}" top
+  while :; do
+    [[ -f "$d/scripts/xcb.sh" ]] && { print -r -- "$d"; return 0 }
+    [[ "$d" == "/" || -z "$d" ]] && break
+    d="${d:h}"
+  done
+  top="$(git -C "$1" rev-parse --show-toplevel 2>/dev/null)" || return 1
+  [[ -n "$top" ]] || return 1
+  print -r -- "${top:A}"
+}
+
+# 0 (refuse) when the caller's cwd is inside a tree other than `$ROOT_DIR` and did not opt in.
+wrong_tree_refusal() {
+  local caller_tree
+  caller_tree="$(tree_of_dir "$PWD")" || return 1
+  [[ "$caller_tree" == "${ROOT_DIR:A}" ]] && return 1
+  if [[ "${CADENCE_ALLOW_OTHER_TREE:-}" == "1" ]]; then
+    say "  !! OTHER-TREE (CADENCE_ALLOW_OTHER_TREE=1): cwd is in $caller_tree, but this run builds"
+    say "     $ROOT_DIR/Cadence.xcodeproj as asked."
+    return 1
+  fi
+  say ""
+  say "!! REFUSING: WRONG-TREE (T-7500): you are in $caller_tree,"
+  say "   but this script builds $ROOT_DIR/Cadence.xcodeproj -- the tree it LIVES in, not the one"
+  say "   you ran it from. A green here would be a verified result for a tree you never built."
+  say "   Run that tree's own copy instead:  cd $caller_tree && ./scripts/xcb.sh ..."
+  say "   (CADENCE_ALLOW_OTHER_TREE=1 builds $ROOT_DIR anyway, and says so.)"
+  return 0
+}
+
 # "<HEAD> <clean|hash of the tracked diff and the untracked files>" for the git checkout rooted at
 # $1, or return 1 when $1 is not the top of one (an archive tree has no .git, and a directory
 # inside some OTHER checkout must not borrow that one's HEAD).
@@ -2752,6 +2799,11 @@ selftest_only_testing() {
   say "== xcb.sh selftest (T-1076 -only-testing: resolver) =="
   local here="$SCRIPT_PATH"
   local ws; ws=$(mktemp -d "${TMP_BASE}cadence-xcb-selftest-XXXXXX")
+  # T-7500: every child below runs from a cwd that names NO tree. Several of them are copies of this
+  # script under `$ws/*/root`, and run from the caller's checkout those are exactly the wrong-tree
+  # shape the guard refuses; section 18 chooses each cwd it asserts about explicitly.
+  local selftest_cwd="$PWD"
+  cd -- "$ws" || return 1
   # AlphaTests.swift holds two suites; SoloTests.swift holds exactly one.
   print -rl -- $'AlphaTests\tAlphaTests.swift\t3' \
                $'AlphaHelperTests\tAlphaTests.swift\t7' \
@@ -4842,6 +4894,57 @@ selftest_only_testing() {
   check "too few arguments is a usage error (exit 2), not a half-run export" \
     $( [[ $ex_rc == 2 && "$ex_out" == *"usage: "* ]] && print 1 || print 0 ) "exit $ex_rc: $ex_out"
 
+  say ""
+  say " 18. a run from INSIDE another tree is refused, not silently built against this one (T-7500)"
+  # The production path, `build` and `raw` both, with a stub xcodebuild that records each call. The
+  # other trees are a `git archive`-shaped export (scripts/xcb.sh, no .git) and a git checkout that
+  # holds no xcb.sh at all, so each of `tree_of_dir`'s two readings is driven on its own.
+  local wt_out="" wt_calls="" wt_root="${ROOT_DIR:A}"
+  local -i wt_rc=0
+  mkdir -p "$ws/wt/export/scripts" "$ws/wt/export/Cadence.xcodeproj" "$ws/wt/export/Cadence/iOS" \
+    "$ws/wt/gitother/sub" "$ws/wt/tmp" "$ws/wt/state"
+  : > "$ws/wt/export/scripts/xcb.sh"
+  git -C "$ws/wt/gitother" init -q 2>/dev/null
+  print -rl -- '#!/bin/zsh' \
+    'print -r -- built >> "$FAKE_WT_CALLS"' \
+    'print -r -- "** BUILD SUCCEEDED **"' > "$ws/wt/xcodebuild"
+  chmod +x "$ws/wt/xcodebuild"
+  wt_run() {  # $1 = cwd, $2 = CADENCE_ALLOW_OTHER_TREE, $3 = action, $4... = the rest
+    : > "$ws/wt/calls"
+    wt_out=$(cd -- "$1" && XCODEBUILD="$ws/wt/xcodebuild" FAKE_WT_CALLS="$ws/wt/calls" TMPDIR="$ws/wt/tmp/" \
+      CADENCE_STALL_POLL=1 CADENCE_SKIP_IOS_LEG=1 CADENCE_XCB_STATE_DIR="$ws/wt/state" CADENCE_TREE_ROOT= \
+      CADENCE_ALLOW_LOCKED_SCREEN_UI_RUN=1 CADENCE_ALLOW_WARNINGS=1 CADENCE_ALLOW_OTHER_TREE="$2" \
+      zsh "$here" wtprobe "$3" "${@:4}" -scheme Cadence -destination 'platform=macOS' \
+      -derivedDataPath "$ws/wt/tmp/cadence-dd-wtprobe" 2>&1); wt_rc=$?
+    wt_calls=$(grep -c . "$ws/wt/calls" | tr -d ' ')
+  }
+  wt_run "$ws/wt/export/Cadence/iOS" "" build
+  check "WRONG-TREE: a build from inside a frozen export is REFUSED (exit $WRONG_TREE_EXIT)" \
+    $( [[ $wt_rc == $WRONG_TREE_EXIT && "$wt_out" == *"REFUSING: WRONG-TREE"* ]] && print 1 || print 0 ) "exit $wt_rc: $wt_out"
+  check "...naming both trees, and before anything is built: xcodebuild was never called" \
+    $( [[ "$wt_out" == *"you are in ${ws:A}/wt/export,"* && "$wt_out" == *"builds $ROOT_DIR/Cadence.xcodeproj"* \
+         && $wt_calls == 0 ]] && print 1 || print 0 ) "$wt_calls call(s): $wt_out"
+  wt_run "$ws/wt/gitother/sub" "" raw build
+  check "WRONG-TREE: raw from inside another git checkout is refused too (the git-toplevel reading)" \
+    $( [[ $wt_rc == $WRONG_TREE_EXIT && "$wt_out" == *"you are in ${ws:A}/wt/gitother,"* && $wt_calls == 0 ]] \
+         && print 1 || print 0 ) "exit $wt_rc, $wt_calls call(s): $wt_out"
+  wt_run "$ws/wt/export/Cadence/iOS" 1 raw build
+  check "CONTROL: CADENCE_ALLOW_OTHER_TREE=1 builds, and says which tree it built" \
+    $( [[ $wt_rc == 0 && $wt_calls == 1 && "$wt_out" != *"REFUSING: WRONG-TREE"* \
+         && "$wt_out" == *"OTHER-TREE (CADENCE_ALLOW_OTHER_TREE=1): cwd is in ${ws:A}/wt/export"* ]] \
+         && print 1 || print 0 ) "exit $wt_rc, $wt_calls call(s): $wt_out"
+  wt_run "$wt_root/scripts" "" raw build
+  check "CONTROL: a run from inside this script's own tree is silent" \
+    $( [[ $wt_rc == 0 && $wt_calls == 1 && "$wt_out" != *WRONG-TREE* && "$wt_out" != *OTHER-TREE* ]] \
+         && print 1 || print 0 ) "exit $wt_rc, $wt_calls call(s): $wt_out"
+  check "...and the result block names the project it built, not only the preflight" \
+    $( [[ "$wt_out" == *"== xcb result (wtprobe) =="*"project: $ROOT_DIR/Cadence.xcodeproj"* ]] \
+         && print 1 || print 0 ) "$wt_out"
+  wt_run "$ws/wt/tmp" "" raw build
+  check "CONTROL: a cwd in no tree at all names nothing to confuse, so it is not refused" \
+    $( [[ $wt_rc == 0 && $wt_calls == 1 && "$wt_out" != *WRONG-TREE* ]] && print 1 || print 0 ) "exit $wt_rc, $wt_calls call(s): $wt_out"
+
+  cd -- "$selftest_cwd" 2>/dev/null
   rm -rf "$ws"
   say ""
   # A tally derived from the checks that actually ran: a selftest gutted to `return 0` still exits
@@ -5149,6 +5252,9 @@ if [[ -z "$ID" || -z "$ACTION" ]]; then
   say "usage: ./scripts/xcb.sh <id> build|test|raw [args...]   |   ./scripts/xcb.sh audit"; exit 2
 fi
 shift 2
+# Before anything is paid for, and before the DerivedData default is derived from `$ID`: a build of
+# the wrong tree is wrong however well every later guard passes (T-7500).
+wrong_tree_refusal && exit $WRONG_TREE_EXIT
 
 # --- the DerivedData guard ---------------------------------------------------
 # A caller may supply its own path; it may not supply the shared one, and it may not omit one.
@@ -5188,6 +5294,7 @@ ln -sf "${LOG:t}" "$LOG_LATEST" 2>/dev/null
 
 # --- preflight ---------------------------------------------------------------
 say "== xcb preflight ($ID) =="
+say "  project:         $ROOT_DIR/Cadence.xcodeproj"
 say "  derivedDataPath: $DD"
 say "  log:             $LOG"
 say "  log (latest):    $LOG_LATEST -> ${LOG:t}"
@@ -5532,6 +5639,8 @@ give_back_test_host_lease; (( LOCK_HELD )) || trap - EXIT INT TERM
 say ""
 say "== xcb result ($ID) =="
 say "  XCODEBUILD_EXIT=$STATUS"
+# T-7500: the tree this result is ABOUT, in the block a skimming reader actually reads.
+say "  project: $ROOT_DIR/Cadence.xcodeproj"
 [[ -n "$LEASE_NOTE" ]] && say "  test-host lock: $LEASE_NOTE"
 # T-3060: the tree this run started compiling (after the lock when it took one) against the tree
 # now. A red with this line under it may be a sibling's half-landed edit rather than HEAD.
