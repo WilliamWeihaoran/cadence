@@ -8,6 +8,7 @@
 #   ./scripts/ledger-view.sh show T-1325    # the exact entry block(s) for one id, from both ledgers
 #   ./scripts/ledger-view.sh head T-1325    # the same entry's FIRST LINE only, with the addenda counted
 #   ./scripts/ledger-view.sh lint           # list every illegal lead token and exit 6 if any (T-4300)
+#   ./scripts/ledger-view.sh untriaged      # active entries carrying no RC-TRIAGE verdict (T-7296)
 #   ./scripts/ledger-view.sh selftest       # prove every refusal and every hard reading still fires
 #
 # WHY THIS EXISTS
@@ -177,7 +178,7 @@ resolve_source() {
 # file so no exit path has to remember to clean one up.
 # ---------------------------------------------------------------------------
 AWK_PROG=$(cat <<'AWK'
-BEGIN { BQ = sprintf("%c", 96) }
+BEGIN { BQ = sprintf("%c", 96); RP = sprintf("%c", 41) }   # RP: a literal close paren would end the command substitution
 # The closure reading, character for character `agent-commit.sh`'s `$LEDGER_CLOSURE_READING` and
 # `scripts/ledger-lag-check.sh`'s copy of it (T-1335). One rule, three files, pinned against each
 # other by `CadenceGuardScriptSelftestTests`. This file shipped the first half of it -- a bold run
@@ -340,6 +341,31 @@ function flags_of(i,   f) {
     if (e_buried[i]) f = f " BODY-CLOSURE"
     return f
 }
+# T-7296. Does the entry carry an RC-TRIAGE VERDICT, in either form the ledger writes one: the
+# sub-bullet "  - **RC-TRIAGE <date> (<who>): <VERDICT>**", or "RC-TRIAGE: <VERDICT>" inline on the
+# entry's own first line ([[T-6481]], [[T-6482]]; the first keeps it in the previous first line it
+# quotes after a rewrite, so the whole line is read, not only the first bold run). The bare word is
+# NOT a verdict: the lead of [[T-7278]] mentions it in prose and quotes the inline form in inline
+# code, and a naive substring test scored that entry triaged. So inline code is stripped first (a
+# quotation, as in closure_visible), the sub-bullet must carry its date, its author and its colon,
+# and the verdict must be one of the four the ledger uses; an unknown verdict reads UNTRIAGED, the
+# safe direction. No fence characters or apostrophes in this comment, and the close paren in the
+# author class is RP from BEGIN: all three would end the command substitution this program is in.
+function rc_verdict(s) { return s ~ /^(N\/A|POST-RC|RC-BLOCKING|SHIPS-AS-IS)([^A-Za-z0-9-]|$)/ }
+function triaged(i,   m, j, lines, t, lead) {
+    m = split(e_body[i], lines, "\n")
+    for (j = 2; j <= m; j++) {
+        t = closure_visible(lines[j])
+        if (match(t, "^[ \t]+- [*][*]RC-TRIAGE [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9] [(][^" RP "]*[)]: ") \
+            && rc_verdict(substr(t, RSTART + RLENGTH))) return 1
+    }
+    lead = closure_visible(e_first[i])
+    while (match(lead, /RC-TRIAGE: /)) {
+        if (rc_verdict(substr(lead, RSTART + RLENGTH))) return 1
+        lead = substr(lead, RSTART + RLENGTH)
+    }
+    return 0
+}
 function archived_count(   i, c) { for (i = 1; i <= n; i++) if (e_file[i] == done_label) c++; return c + 0 }
 
 END {
@@ -441,6 +467,9 @@ END {
         printf "  naive lexical reading (token anywhere on the first line, before ## Done): %d entries, %d closed, %d open\n",
             naive_total, naive_closed, naive_total - naive_closed
         printf "  illegal lead tokens: %d%s\n", n_bad, (n_bad ? " -- ledger-view.sh lint lists them (T-4300)" : "")
+        for (i = 1; i <= n; i++) if (active(st[i]) && !(e_id[i] in id_closed) && !triaged(i)) n_untriaged++
+        printf "  untriaged (active, no RC-TRIAGE verdict): %d%s\n", n_untriaged + 0,
+            (n_untriaged ? " -- ledger-view.sh untriaged lists them (T-7296)" : "")
         exit 0
     }
 
@@ -450,8 +479,9 @@ END {
             if (!active(st[i])) continue
             if (e_id[i] in id_closed) continue   # a closed twin closes the id
         }
+        if (mode == "untriaged") { n_active++; if (triaged(i)) continue }
         shown++
-        if (mode == "brief" || mode == "all") {
+        if (mode == "brief" || mode == "all" || mode == "untriaged") {
             printf "%-8s %-9s %-20s %s%s\n", e_id[i], st[i], e_file[i] ":" e_line[i],
                 trunc(headline_of(i), 96), flags_of(i)
             continue
@@ -461,8 +491,12 @@ END {
         nx = next_of(i); if (nx != "") printf "         next: %s\n", nx
         pk = park_of(i); if (pk != "") printf "         parked: %s\n", pk
     }
-    printf "\nledger-view: %d %s entr%s of %d read from %s and %s.\n",
-        shown, (mode == "all" ? "listed" : "active"), (shown == 1 ? "y" : "ies"), n, todo_label, done_label
+    if (mode == "untriaged")
+        printf "\nledger-view: %d untriaged entr%s (no RC-TRIAGE verdict) of %d active, of %d read from %s and %s.\n",
+            shown, (shown == 1 ? "y" : "ies"), n_active, n, todo_label, done_label
+    else
+        printf "\nledger-view: %d %s entr%s of %d read from %s and %s.\n",
+            shown, (mode == "all" ? "listed" : "active"), (shown == 1 ? "y" : "ies"), n, todo_label, done_label
     if (n_bad > 0)
         printf "ledger-view: WARNING %d entr%s carry an illegal lead token and may be read as the wrong state -- ledger-view.sh lint (T-4300).\n",
             n_bad, (n_bad == 1 ? "y" : "ies") > "/dev/stderr"
@@ -499,15 +533,15 @@ main() {
     mode=${1:-open}
     case "$mode" in
         selftest) cmd_selftest; exit $? ;;
-        -h|--help) sed -n '2,10p' "$SELF_PATH"; exit 0 ;;
+        -h|--help) sed -n '2,12p' "$SELF_PATH"; exit 0 ;;
         show|head)
             case "${2:-}" in
                 T-[0-9]*) run_view "$mode" "$2" ;;
                 *) refuse LEDGER-VIEW-BAD-ID "$mode takes one exact ticket id, spelled T-<number>; got '${2:-}'." 2 ;;
             esac
             ;;
-        open|brief|all|counts|lint) run_view "$mode" ;;
-        *) refuse LEDGER-VIEW-UNKNOWN-MODE "'$mode' is not a mode; use open, brief, all, counts, lint, show <id>, head <id> or selftest." 2 ;;
+        open|brief|all|counts|lint|untriaged) run_view "$mode" ;;
+        *) refuse LEDGER-VIEW-UNKNOWN-MODE "'$mode' is not a mode; use open, brief, all, counts, lint, untriaged, show <id>, head <id> or selftest." 2 ;;
     esac
 }
 
@@ -822,6 +856,45 @@ FIXTURE
     out=$(CADENCE_LEDGER_VIEW_TODO="$ws/lint.md" sh "$SELF_PATH" brief 2>&1); rc=$?
     check "$rc" 0 "$out" "brief still READS such an entry and warns, rather than refusing the whole ledger" \
         "T-50     OPEN" "T-54     OPEN" "WARNING 3 entries carry an illegal lead token"
+
+    # --- mode 6b: the RC-TRIAGE verdict (T-7296) ------------------------------
+    # Both verdict forms in use, and the shapes that only MENTION the word: T-73 is the lead of
+    # [[T-7278]] itself, prose plus the inline form quoted in code, which a substring test scored
+    # triaged. T-76 is a sub-bullet with no date, T-77 a verdict nobody defined.
+    echo; echo " mode 6b (untriaged) -- an active entry with no RC-TRIAGE verdict, in either form"
+    cat > "$ws/triage.md" <<'FIXTURE'
+# Ledger
+
+## Open — decided, not started
+
+- [T-70] **OPEN 2026-10-27 -- triaged by sub-bullet.**
+  - **RC-TRIAGE 2026-10-27 (agent `fixture`): POST-RC** -- the sub-bullet form.
+- [T-71] **OPEN 2026-10-27 (agent `fixture`) -- RC-TRIAGE: SHIPS-AS-IS -- the inline form in the lead.**
+- [T-72] **OPEN 2026-10-27 -- never triaged at all.**
+- [T-73] **OPEN 2026-10-27 -- NINE ACTIVE ENTRIES CARRY NO RC-TRIAGE FLAG; two carry it inline (`RC-TRIAGE: POST-RC`).**
+- [T-74] **PARTIAL 2026-10-27 -- a partial with an N/A verdict.**
+  - **RC-TRIAGE 2026-10-27 (agent `fixture`): N/A** -- ledger tooling.
+- [T-75] **A parked one.** **BLOCKED ON nothing real** -- and untriaged.
+- [T-76] **OPEN 2026-10-27 -- a sub-bullet with no date is not a verdict.**
+  - **RC-TRIAGE (agent `fixture`): POST-RC** -- malformed.
+- [T-77] **OPEN 2026-10-27 -- RC-TRIAGE: MAYBE -- a verdict the ledger does not define.**
+- [T-78] **CLOSED 2026-10-27 (`7777777`) -- closed, so never listed however untriaged.**
+
+## Done
+
+- [T-79] **Done, untriaged, not active.**
+FIXTURE
+    out=$(CADENCE_LEDGER_VIEW_TODO="$ws/triage.md" sh "$SELF_PATH" untriaged 2>&1); rc=$?
+    check "$rc" 0 "$out" "untriaged lists every active entry with no verdict, of each active status" \
+        "T-72     OPEN" "T-75     PARKED" "5 untriaged entries" "of 8 active"
+    check "$rc" 0 "$out" "a bare RC-TRIAGE in prose, or the inline form QUOTED in code, is no verdict ([[T-7278]])" \
+        "T-73     OPEN"
+    check "$rc" 0 "$out" "a dateless sub-bullet and an undefined verdict are no verdict either" \
+        "T-76     OPEN" "T-77     OPEN"
+    checkno "$rc" 0 "$out" "a sub-bullet verdict and an inline lead verdict are triaged, and closed entries are not active" \
+        "T-70 " "T-71 " "T-74 " "T-78 " "T-79 "
+    out=$(CADENCE_LEDGER_VIEW_TODO="$ws/triage.md" sh "$SELF_PATH" counts 2>&1); rc=$?
+    check "$rc" 0 "$out" "counts reports the untriaged tally" "untriaged (active, no RC-TRIAGE verdict): 5"
 
     # --- mode 7: the committed ledger, not the stale disk copy (T-6510) -----------
     # A real git fixture, because the defect IS the difference between a blob and a file: HEAD holds

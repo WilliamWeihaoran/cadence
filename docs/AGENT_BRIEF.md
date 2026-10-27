@@ -13,7 +13,8 @@ Read [AGENTS.md](../AGENTS.md) for the directory map and the non-negotiable UI p
 - **`./scripts/ledger-view.sh head T-NNNN` first** — the entry's first line and state, with the
   addenda counted rather than printed. Use `show T-NNNN` for the whole entry once you are
   working and need the history. On the largest ticket that is ~5k tokens instead of ~20k.
-- `brief` for the open list; `counts` for the census.
+- `brief` for the open list; `counts` for the census; `untriaged` for active entries with no
+  RC-TRIAGE verdict.
 - **Never read `docs/TODO.md` whole.** It is a multi-megabyte file and single entries reach tens
   of kilobytes, so a lexical `rg` for an id prints whole entries. Ask `ledger-view.sh`.
 - The lead token is the first word after `**`. Only `CLOSED`, `PARTIAL`, `OPEN`, `PARKED` are legal.

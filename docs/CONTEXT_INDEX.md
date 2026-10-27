@@ -77,6 +77,7 @@ which derives everything it prints from the two ledgers at the moment you ask:
 - `./scripts/ledger-view.sh brief` — every active entry, one line each; with no subcommand at all,
   the same list wrapped onto two lines per entry.
 - `./scripts/ledger-view.sh counts` — the census, beside the naive lexical count it corrects.
+- `./scripts/ledger-view.sh untriaged` — active entries carrying no RC-TRIAGE verdict ([[T-7296]]).
 
 Its closure reading is the narrow one `agent-commit.sh` already uses (a bold run opening the
 entry's own first line), so an entry that merely quotes the token stays open — the [[T-1335]] trap.
