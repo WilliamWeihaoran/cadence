@@ -216,13 +216,11 @@ struct ContextSection: View {
     /// different gesture from the contexts pane's, so it keeps its own arithmetic; what it shares
     /// is the commit.
     private func reorderList(dropped: SidebarListDragItem, target: SidebarListDragItem) {
-        var sorted = entries
-        guard let fromIndex = sorted.firstIndex(where: { $0.matches(dropped) }),
-              let toIndex = sorted.firstIndex(where: { $0.matches(target) }) else { return }
-        let element = sorted.remove(at: fromIndex)
+        guard let fromIndex = entries.firstIndex(where: { $0.matches(dropped) }),
+              let toIndex = entries.firstIndex(where: { $0.matches(target) }) else { return }
         // Treat the row we drop on as the destination row itself. This avoids the
         // "no-op" feeling when dragging onto the next item down in the list.
-        sorted.insert(element, at: min(toIndex, sorted.count))
+        let sorted = SidebarListDropPlacement.reordered(entries, moving: fromIndex, onto: toIndex)
         let reordered = withAnimation(.spring(response: 0.24, dampingFraction: 0.86, blendDuration: 0.08)) {
             CadenceOrderCommit.commit(
                 sorted,
@@ -263,6 +261,32 @@ struct ContextSection: View {
         }
     }
 
+    /// The 2pt insertion line over the row a list is being dragged onto, on the edge the drop
+    /// will actually land at.
+    ///
+    /// It used to be pinned to the row's TOP for every drag, while `reorderList` puts the row
+    /// where the target was — so a downward drag landed one row BELOW the line, and a drag onto
+    /// the next row down drew the line exactly where the row already sat and then moved it. A row
+    /// dragged in from another section draws no line, because the drop does nothing there.
+    @ViewBuilder
+    private func dropIndicator(for target: SidebarListDragItem) -> some View {
+        if dragOverListItem == target,
+           let toIndex = entries.firstIndex(where: { $0.matches(target) }),
+           let edge = SidebarListDropPlacement.indicatorEdge(
+               draggedIndex: SidebarDragContext.shared.draggedListItem.flatMap { dragged in
+                   entries.firstIndex(where: { $0.matches(dragged) })
+               },
+               targetIndex: toIndex
+           ) {
+            VStack(spacing: 0) {
+                if edge == .bottom { Spacer(minLength: 0) }
+                Rectangle().fill(Theme.blue).frame(height: 2)
+                if edge == .top { Spacer(minLength: 0) }
+            }
+            .transition(.opacity)
+        }
+    }
+
     private func areaRow(_ area: Area, target: SidebarListDragItem) -> some View {
         SidebarListRow(
             item: .area(area.id),
@@ -276,11 +300,7 @@ struct ContextSection: View {
             selection: $selection,
             onEdit: { areaForEdit = area }
         )
-        .overlay(alignment: .top) {
-            if dragOverListItem == target {
-                Rectangle().fill(Theme.blue).frame(height: 2).transition(.opacity)
-            }
-        }
+        .overlay { dropIndicator(for: target) }
         .animation(.easeInOut(duration: 0.15), value: dragOverListItem)
         .onDrag {
             SidebarDragContext.shared.draggedListItem = target
@@ -308,11 +328,7 @@ struct ContextSection: View {
             selection: $selection,
             onEdit: { projectForEdit = project }
         )
-        .overlay(alignment: .top) {
-            if dragOverListItem == target {
-                Rectangle().fill(Theme.blue).frame(height: 2).transition(.opacity)
-            }
-        }
+        .overlay { dropIndicator(for: target) }
         .animation(.easeInOut(duration: 0.15), value: dragOverListItem)
         .onDrag {
             SidebarDragContext.shared.draggedListItem = target
@@ -323,6 +339,35 @@ struct ContextSection: View {
             dragOverItem: $dragOverListItem,
             onDrop: reorderList
         ))
+    }
+}
+
+// MARK: - Drop placement
+
+/// Where a list dragged within one sidebar section lands, and which edge of the target row the
+/// insertion line is drawn on. One declaration for both, so the line cannot say one place while
+/// the drop writes another.
+nonisolated enum SidebarListDropPlacement {
+    enum Edge: Equatable {
+        case top
+        case bottom
+    }
+
+    /// `items` with the row at `from` moved to `onto`'s position: the dropped-on row is the
+    /// destination itself, so a downward drag lands after it and an upward drag before it.
+    static func reordered<Element>(_ items: [Element], moving from: Int, onto to: Int) -> [Element] {
+        guard items.indices.contains(from), items.indices.contains(to) else { return items }
+        var result = items
+        let element = result.remove(at: from)
+        result.insert(element, at: min(to, result.count))
+        return result
+    }
+
+    /// The edge of the target row the dragged row will sit against once dropped, or `nil` when
+    /// the drop moves nothing — the row itself, or a row from another section (`nil` index).
+    static func indicatorEdge(draggedIndex: Int?, targetIndex: Int) -> Edge? {
+        guard let draggedIndex, draggedIndex != targetIndex else { return nil }
+        return draggedIndex < targetIndex ? .bottom : .top
     }
 }
 

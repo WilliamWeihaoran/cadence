@@ -9,9 +9,7 @@ struct LinksView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(DeleteConfirmationManager.self) private var deleteConfirmationManager
     @Query(sort: \SavedLink.order) private var allLinks: [SavedLink]
-    @State private var showingAdd = false
-    @State private var newTitle = ""
-    @State private var newURL = ""
+    @State private var addForm = SavedLinkAddForm()
     @State private var actionError: String?
 
     private var links: [SavedLink] {
@@ -31,24 +29,28 @@ struct LinksView: View {
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(Theme.muted)
                 Spacer()
+                // The header button is the form's second Cancel while it is open, so it does what
+                // the form's own Cancel does and draws the same "x" iOS's toggle draws (T-7256).
+                // It used to stay a "+" and only hide the form, so reopening it brought back the
+                // abandoned title, URL and failure notice.
                 Button {
-                    showingAdd.toggle()
+                    if addForm.toggle() { actionError = nil }
                 } label: {
-                    Image(systemName: "plus")
+                    Image(systemName: addForm.headerSymbol)
                         .foregroundStyle(Theme.blue)
                 }
                 .buttonStyle(.cadencePlain)
-                .cadenceControlLabel(showingAdd ? "Cancel adding a link" : "Add link")
+                .cadenceControlLabel(addForm.headerLabel)
             }
             .padding(.horizontal, 20)
             .padding(.vertical, 12)
 
-            if showingAdd {
+            if addForm.isOpen {
                 AddLinkBar(
-                    title: $newTitle,
-                    url: $newURL,
+                    title: $addForm.title,
+                    url: $addForm.url,
                     onSave: { addLink() },
-                    onCancel: { showingAdd = false; newTitle = ""; newURL = ""; actionError = nil }
+                    onCancel: { addForm.cancel(); actionError = nil }
                 )
             }
 
@@ -94,11 +96,11 @@ struct LinksView: View {
     }
 
     private func addLink() {
-        let title = CadenceTitleNormalization.normalized(newTitle)
+        let title = CadenceTitleNormalization.normalized(addForm.title)
         // Trim, blank-check and scheme are one shared decision now: the inline version here and
         // the copy on iOS both read `hasPrefix` case-sensitively and turned `HTTPS://example.com`
         // into `https://HTTPS://example.com` (T-509).
-        guard let urlStr = CadenceSavedLinkURL.normalized(newURL) else { return }
+        guard let urlStr = CadenceSavedLinkURL.normalized(addForm.url) else { return }
         let link = SavedLink(title: CadenceTitleNormalization.display(title, fallback: urlStr), url: urlStr)
         link.area = area
         link.project = project
@@ -113,9 +115,7 @@ struct LinksView: View {
             return
         }
         actionError = nil
-        newTitle = ""
-        newURL = ""
-        showingAdd = false
+        addForm.cancel()
     }
 
     /// A delete with no commit is undone by the next launch, which is the one failure the user
@@ -129,6 +129,39 @@ struct LinksView: View {
             actionError = CadenceSavedLinkPersistence.deleteFailureNotice
         }
     }
+}
+
+// MARK: - Add Link Form State
+
+/// The Links tab's add form: whether it is open and what has been typed into it.
+///
+/// Closing it is one operation however it is closed — the form's Cancel, the header button, or a
+/// successful save — and every one of them discards the draft (T-7256).
+nonisolated struct SavedLinkAddForm: Equatable {
+    var isOpen = false
+    var title = ""
+    var url = ""
+
+    /// The header button's tap. Returns `true` when it closed the form, so the caller clears the
+    /// failure notice exactly as the form's own Cancel does.
+    @discardableResult
+    mutating func toggle() -> Bool {
+        if isOpen {
+            cancel()
+            return true
+        }
+        isOpen = true
+        return false
+    }
+
+    mutating func cancel() {
+        isOpen = false
+        title = ""
+        url = ""
+    }
+
+    var headerSymbol: String { isOpen ? "xmark" : "plus" }
+    var headerLabel: String { isOpen ? "Cancel adding a link" : "Add link" }
 }
 
 // MARK: - Add Link Bar
