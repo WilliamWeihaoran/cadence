@@ -65,7 +65,7 @@ struct iOSTodayView: View {
     /// deleted three-row schedule preview on the compact layout; its only remaining reader is the
     /// summary, which was therefore capping its own "timed" count at three.
     private var timedTodayTasks: [AppTask] {
-        CadenceScheduleSupport.scheduledTasks(on: todayKey, from: allTasks, includeCompleted: false, excludeBundled: false)
+        CadenceScheduleSupport.scheduledTasks(on: todayKey, from: allTasks, includeCompleted: false)
             .filter { $0.scheduledStartMin >= 0 }
     }
 

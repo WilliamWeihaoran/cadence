@@ -7,7 +7,7 @@ import Testing
 /// T-172: tasks are rendered by ~13 views doing ~5 jobs. Two of those jobs, unified.
 ///
 /// **Two kinds of test here, and the second kind is the point.** Pinning
-/// `CadenceBundleTaskRowMetrics.titleLineLimit == 2` proves the shared figure is right; it proves
+/// `CadenceTaskRowMetrics.titleLineLimit == 2` proves the shared figure is right; it proves
 /// nothing about anybody *using* it. T-161 is the standing example — a committed fix was reverted
 /// with the whole suite green, because the tests pinned a helper while nothing observed the call
 /// sites. So every decision below also gets a call-site test that reads the real source files and
@@ -443,87 +443,8 @@ struct CadenceSharedTaskRowJobsTests {
         #expect(declarations == ["Cadence/Shared/Components/CadenceTagChip.swift"])
     }
 
-    // MARK: - Bundle member row: the figures
-
-    /// 13pt, which all three rows already drew, and `.medium`, which two of the three did. A member
-    /// of a bundle is a row in a list; the bundle's own title is the heading above it, and the
-    /// timeline inspector's `.semibold` made every row compete with it.
-    @Test func theBundleRowsTitleIsARowNotAHeading() {
-        #expect(CadenceBundleTaskRowMetrics.titleSize == 13)
-        #expect(CadenceBundleTaskRowMetrics.titleWeight == .medium)
-    }
-
-    /// **Two, and iOS had it.** The two macOS rows clamped a bundle member's title to one line.
-    /// This is not a second opinion about line limits — it is the app's existing answer for a task
-    /// row, read from the same constant, so the two cannot drift apart again.
-    @Test func theBundleRowWrapsATitleLikeEveryOtherTaskRow() {
-        #expect(CadenceBundleTaskRowMetrics.titleLineLimit == 2)
-        #expect(CadenceBundleTaskRowMetrics.titleLineLimit == CadenceTaskRowMetrics.titleLineLimit)
-    }
-
-    // MARK: - Bundle member row: what the second line says
-
-    /// The estimate in the app's duration vocabulary, and **nothing** when there is no estimate.
-    /// The timeline inspector's row said `max(estimatedMinutes, 5)m`, which spelled a value the
-    /// rest of the app renders `1h 30m` in raw minutes and floored it at five — the exact spelling
-    /// `AppTask.timelineDurationMinutes` documents as rejected, because a floor "cannot tell 'no
-    /// estimate' from 'a deliberate short estimate'".
-    ///
-    /// `estimatedMinutes = 0` is written out rather than left to the initializer: the stored
-    /// default is **30**, and zero is the app's only "unset" sentinel. A fresh task has a real
-    /// half-hour estimate and the row states it.
-    @Test func theBundleRowStatesARealEstimateOrNone() {
-        let none = AppTask(title: "T")
-        none.estimatedMinutes = 0
-        #expect(CadenceBundleTaskRowSupport.leadLabel(for: none, includesLoggedTime: false) == nil)
-
-        let fresh = AppTask(title: "T")
-        #expect(fresh.estimatedMinutes == AppTask.defaultTimelineDurationMinutes)
-        #expect(CadenceBundleTaskRowSupport.leadLabel(for: fresh, includesLoggedTime: false) == "30m")
-
-        let ninety = AppTask(title: "T")
-        ninety.estimatedMinutes = 90
-        #expect(
-            CadenceBundleTaskRowSupport.leadLabel(for: ninety, includesLoggedTime: false)
-                == CadenceTaskPresentationSupport.estimateLabel(minutes: 90)
-        )
-        #expect(CadenceBundleTaskRowSupport.leadLabel(for: ninety, includesLoggedTime: false)?.contains("1h") == true)
-    }
-
-    /// The one difference that is earned: the Focus panel hands the session's minutes to the tasks
-    /// you tick, so logged-against-estimate is the number that panel is about.
-    @Test func onlyTheFocusPanelStatesLoggedTime() {
-        let task = AppTask(title: "T")
-        task.estimatedMinutes = 60
-        task.actualMinutes = 45
-
-        #expect(
-            CadenceBundleTaskRowSupport.leadLabel(for: task, includesLoggedTime: true)
-                == TimeFormatters.durationLabel(actual: 45, estimated: 60)
-        )
-        #expect(CadenceBundleTaskRowSupport.leadLabel(for: task, includesLoggedTime: false)?.contains("45") == false)
-    }
-
-    /// **The bug this unification closes.** iOS's bundle member row spent its second line on
-    /// priority and had nowhere left to say a task in the block was overdue. Every bundle member
-    /// row states the deadline now, and the overdue flag rides with it so the due segment can go
-    /// red without staining the estimate beside it.
-    @Test func everyBundleMemberRowCanSayTheWorkIsLate() {
-        let late = AppTask(title: "T")
-        late.dueDate = "2026-08-19"
-        late.estimatedMinutes = 30
-
-        let parts = CadenceBundleTaskRowSupport.detailParts(for: late, todayKey: "2026-08-20")
-
-        #expect(parts.due != nil)
-        #expect(parts.isOverdue)
-        #expect(parts.lead != nil)
-
-        let done = AppTask(title: "T")
-        done.dueDate = "2026-08-19"
-        done.status = .done
-        #expect(!CadenceBundleTaskRowSupport.detailParts(for: done, todayKey: "2026-08-20").isOverdue)
-    }
+    // [[T-3213]] deleted the bundle member row support file and the six tests that pinned its
+    // figures and its second line: no row in the app drew a bundle member any more.
 
     // MARK: - Bundle member row: the call sites
 
@@ -533,7 +454,7 @@ struct CadenceSharedTaskRowJobsTests {
     /// [[T-3170]] deleted the Focus panel's row with Block Focus, then
     /// `iOSCalendarBundleDetailSheet.swift` with the whole iOS Block surface, and its trio pass
     /// deleted the last two Mac files that drew a block member: `TimelineBundleBlockSupportViews`
-    /// (the only caller of `CadenceBundleTaskRowSupport.detailParts`) and
+    /// (the only caller of the bundle row's detail-parts helper, since deleted by [[T-3213]]) and
     /// `TaskBundlePickerSupportViews`. What survives is the shared label the iOS row forced out of
     /// `#if os(macOS)`, read by the two focus rows -- so this now pins those two call sites.
     @Test func theSurvivingDetailLineRowsReadTheSharedLabel() throws {
@@ -763,7 +684,6 @@ struct CadenceSharedTaskRowJobsTests {
         #expect(files.contains("Cadence/iOS/iOSBoardCards.swift"))
         #expect(files.contains("Cadence/iOS/iOSCalendarInspectorView.swift"))
         #expect(files.contains("Cadence/Shared/CadenceBoardCardMetadata.swift"))
-        #expect(files.contains("Cadence/Shared/CadenceBundleTaskRowSupport.swift"))
         #expect(files.contains("Cadence/Shared/Components/CadenceTaskDetailLineLabel.swift"))
         // T-173 / T-174 reach these four; a scan that cannot see them makes every absence
         // assertion above vacuous.

@@ -396,8 +396,7 @@ enum CadenceFocusSupport {
     ///
     /// **Not `private` (T-654).** `CadenceFocusBundleSupport.swift`'s `distributeMinutes` needs the
     /// identical snapshot-and-restore shape for the tasks a block session credits, and a second copy
-    /// of this struct would be the near-duplicate `CadenceBundleTaskRowSupport`'s own doc warns
-    /// against. Both files extend the same `CadenceFocusSupport`, so this is reached as
+    /// of this struct would be a near-duplicate of the kind [[T-172]]'s row unification removed. Both files extend the same `CadenceFocusSupport`, so this is reached as
     /// `CadenceFocusSupport.BankedMinutes` from either.
     struct BankedMinutes {
         private let task: AppTask

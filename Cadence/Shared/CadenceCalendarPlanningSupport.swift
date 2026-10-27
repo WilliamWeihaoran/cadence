@@ -242,10 +242,11 @@ enum CalendarBoardPlannerSupport {
         }
     }
 
-    /// The walk both bucketings above share. Three exclusions, and only two of them are mechanical:
-    /// a bundled task is drawn by its bundle's card, and a task with no key has no column to sit in.
+    /// The walk both bucketings above share. Two exclusions, and only one of them is mechanical: a
+    /// task with no key has no column to sit in. (A third, for a task inside a block, went with
+    /// [[T-3213]]: nothing draws a block, so it only hid the task.)
     ///
-    /// `!task.isCancelled` is the third, and it is a **policy, not an oversight**: the Board is what
+    /// `!task.isCancelled` is the second, and it is a **policy, not an oversight**: the Board is what
     /// the Planning page became, and work you have abandoned has no place on a plan. Cancelled tasks
     /// stay reachable in the Completed sections of the list surfaces (T-147) — being off the Board
     /// costs them nothing. Nor is this guard load-bearing for the day column's own active/completed
@@ -258,7 +259,7 @@ enum CalendarBoardPlannerSupport {
         var grouped: [String: [AppTask]] = [:]
 
         for task in allTasks {
-            guard !task.isCancelled, task.bundle == nil, let key = dateKey(task) else { continue }
+            guard !task.isCancelled, let key = dateKey(task) else { continue }
             grouped[key, default: []].append(task)
         }
 
@@ -283,7 +284,7 @@ enum CalendarBoardPlannerSupport {
 
     static func railTasks(from allTasks: [AppTask], todayKey: String) -> [CalendarBoardRail: [AppTask]] {
         var rails: [CalendarBoardRail: [AppTask]] = [:]
-        for task in CadenceTaskQuerySupport.openTasks(from: allTasks) where task.bundle == nil {
+        for task in CadenceTaskQuerySupport.openTasks(from: allTasks) {
             guard let rail = rail(for: task, todayKey: todayKey) else { continue }
             rails[rail, default: []].append(task)
         }
@@ -390,18 +391,6 @@ enum CalendarBoardPlannerSupport {
             order: task.order,
             createdAt: task.createdAt,
             id: task.id.uuidString
-        )
-    }
-
-    static func sortKey(for bundle: TaskBundle, kindRank: Int) -> CalendarBoardSortKey {
-        CalendarBoardSortKey(
-            startMinute: bundle.startMin,
-            kindRank: kindRank,
-            plannedRank: 0,
-            priorityRank: 0,
-            order: 0,
-            createdAt: bundle.createdAt,
-            id: bundle.id.uuidString
         )
     }
 

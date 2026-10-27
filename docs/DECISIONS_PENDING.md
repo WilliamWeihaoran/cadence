@@ -82,7 +82,8 @@ call -- it is a POST-RC fix with two technical shapes for the agent who takes it
 ---
 
 **Decided 2026-10-26, not yet built** (still OPEN/PARTIAL; listed so nobody asks again):
-T-3213 remove task bundles from the app (the CloudKit model type itself must stay),
+T-3213 remove task bundles from the app (the CloudKit model type itself must stay; slice 1, the
+queries and dead surface code, landed -- the remainder is T-7182),
 T-6541 retry the CI step once T-6821 clears.
 
 Built 2026-10-26 by agent `decideapp2208` and removed from the list above: T-6191 (count repaired

@@ -8,8 +8,7 @@ enum SchedulePanelDataSupport {
         CadenceScheduleSupport.scheduledTasks(
             on: todayKey,
             from: allTasks,
-            includeCompleted: true,
-            excludeBundled: true
+            includeCompleted: true
         )
     }
 

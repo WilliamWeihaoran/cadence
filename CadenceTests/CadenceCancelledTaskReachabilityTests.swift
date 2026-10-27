@@ -184,8 +184,7 @@ struct CadenceCancelledTaskReachabilityTests {
             CadenceScheduleSupport.scheduledTasks(
                 on: todayKey,
                 from: [scheduled],
-                includeCompleted: true,
-                excludeBundled: true
+                includeCompleted: true
             ).isEmpty
         )
         #expect(CalendarBoardPlannerSupport.railTasks(from: [scheduled], todayKey: todayKey).isEmpty)
@@ -993,7 +992,7 @@ struct CadenceCancelledTaskReachabilityTests {
         // And the upstream filter stays exactly where it was: the fix was the accident, not the
         // policy. Cancelled work is still off the Board.
         try expectOccurrences(
-            of: "guard !task.isCancelled, task.bundle == nil",
+            of: "guard !task.isCancelled, let key = dateKey(task)",
             at: ["Cadence/Shared/CadenceCalendarPlanningSupport.swift": 1]
         )
     }

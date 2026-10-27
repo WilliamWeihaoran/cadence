@@ -82,22 +82,6 @@ struct CadenceScheduleOrderingTests {
         ]
     }
 
-    /// Bundles sharing a start time, which nothing in the model prevents.
-    private func tiedBundles(in context: ModelContext) -> [TaskBundle] {
-        let specs: [(String, String, Int)] = [
-            ("Deep work", dayKey, 540),
-            ("Admin block", dayKey, 540),
-            ("Evening review", dayKey, 1_080),
-            ("Tomorrow prep", otherDayKey, 540),
-            ("Morning triage", otherDayKey, 540)
-        ]
-        return specs.map { title, date, startMin in
-            let bundle = TaskBundle(title: title, dateKey: date, startMin: startMin, durationMinutes: 30)
-            context.insert(bundle)
-            return bundle
-        }
-    }
-
     // MARK: - Helpers
 
     private func permutations<T>(_ items: [T]) -> [[T]] {
@@ -123,7 +107,7 @@ struct CadenceScheduleOrderingTests {
 
         let results = permutations(tasks).map { input in
             CadenceScheduleSupport
-                .scheduledTasks(on: dayKey, from: input, includeCompleted: true, excludeBundled: false)
+                .scheduledTasks(on: dayKey, from: input, includeCompleted: true)
                 .map(\.title)
         }
 
@@ -147,10 +131,10 @@ struct CadenceScheduleOrderingTests {
         }
 
         let forward = CadenceScheduleSupport
-            .scheduledTasks(on: dayKey, from: twins, includeCompleted: true, excludeBundled: false)
+            .scheduledTasks(on: dayKey, from: twins, includeCompleted: true)
             .map(\.id)
         let backward = CadenceScheduleSupport
-            .scheduledTasks(on: dayKey, from: twins.reversed(), includeCompleted: true, excludeBundled: false)
+            .scheduledTasks(on: dayKey, from: twins.reversed(), includeCompleted: true)
             .map(\.id)
 
         #expect(forward.count == 2)
@@ -182,7 +166,7 @@ struct CadenceScheduleOrderingTests {
         let tasks = crossContainerTasks(in: context)
 
         let direct = CadenceScheduleSupport
-            .scheduledTasks(on: dayKey, from: tasks, includeCompleted: true, excludeBundled: true)
+            .scheduledTasks(on: dayKey, from: tasks, includeCompleted: true)
             .map(\.id)
         let grouped = CadenceScheduleSupport
             .items(on: dayKey, in: CadenceScheduleSupport.tasksByScheduledDate(tasks, includeCompleted: true))
@@ -192,48 +176,37 @@ struct CadenceScheduleOrderingTests {
         #expect(direct == grouped)
     }
 
-    // MARK: - Bundles
+    // MARK: - [[T-3213]] a task inside a block is not hidden
 
+    /// The four lookups used to drop every member of a `TaskBundle`, because a block's card drew
+    /// them. Nothing draws a block any more, so the filter only hid the task; the owner ruled the
+    /// bundles out of the app on 2026-10-26. A member is listed like any other task.
     @Test
-    func bundlesOnADaySortTheSameFromEveryInputPermutation() throws {
+    func aTaskInsideABlockIsListedByEveryDayLookup() throws {
         let context = ModelContext(try makeContainer())
-        let bundles = tiedBundles(in: context)
-
-        // Non-vacuity: two bundles on the day really do share a start minute.
-        let onDay = bundles.filter { $0.dateKey == dayKey }
-        #expect(onDay.filter { $0.startMin == 540 }.count == 2)
-
-        let results = permutations(bundles).map { input in
-            CadenceScheduleSupport.bundles(on: dayKey, from: input, includeCompleted: true)
-                .map(\.displayTitle)
+        let block = TaskBundle(title: "Old block", dateKey: dayKey, startMin: 540, durationMinutes: 60)
+        context.insert(block)
+        let timed = AppTask(title: "Timed member")
+        timed.scheduledDate = dayKey
+        timed.scheduledStartMin = 600
+        let untimed = AppTask(title: "Untimed member")
+        untimed.scheduledDate = dayKey
+        untimed.scheduledStartMin = -1
+        for task in [timed, untimed] {
+            context.insert(task)
+            CadenceTestBundleFixture.place(task, in: block)
         }
+        // The fixture writes the block-era `-1`; one member has since been given its own time.
+        timed.scheduledStartMin = 600
+        // Non-vacuity: both really are members.
+        #expect(timed.bundle?.id == block.id && untimed.bundle?.id == block.id)
 
-        for (index, result) in results.enumerated() {
-            #expect(result == ["Admin block", "Deep work", "Evening review"], "permutation \(index) produced \(result)")
-        }
-    }
-
-    // bundlesGroupedByDateSortTheSameFromEveryInputPermutation and
-    // theDayLookupAndTheGroupedLookupAgreeOnBundleOrder were declared here. Both pinned the grouped
-    // bundle lookup, deleted by [[T-3170]] once the Mac calendar page stopped drawing Blocks.
-
-    @Test
-    func bundlesTiedOnDayStartAndTitleStillOrderTheSameWay() throws {
-        let context = ModelContext(try makeContainer())
-        let twins = (0..<2).map { _ -> TaskBundle in
-            let bundle = TaskBundle(title: "Standup", dateKey: dayKey, startMin: 540, durationMinutes: 30)
-            context.insert(bundle)
-            return bundle
-        }
-
-        let forward = CadenceScheduleSupport.bundles(on: dayKey, from: twins, includeCompleted: true).map(\.id)
-        let backward = CadenceScheduleSupport
-            .bundles(on: dayKey, from: twins.reversed(), includeCompleted: true)
-            .map(\.id)
-
-        #expect(forward.count == 2)
-        #expect(forward == backward)
-        #expect(forward.first == twins.min(by: { $0.id.uuidString < $1.id.uuidString })?.id)
+        let tasks = [timed, untimed]
+        #expect(CadenceScheduleSupport.scheduledTasks(on: dayKey, from: tasks, includeCompleted: true).map(\.id) == [timed.id])
+        #expect(CadenceScheduleSupport.tasksByScheduledDate(tasks, includeCompleted: true)[dayKey]?.map(\.id) == [timed.id])
+        #expect(CadenceScheduleSupport.unscheduledTasksByDate(tasks)[dayKey]?.map(\.id) == [untimed.id])
+        #expect(Set(CadenceScheduleSupport.monthTasksByDate(tasks)[dayKey]?.map(\.id) ?? []) == [timed.id, untimed.id])
+        #expect(Set(CalendarBoardPlannerSupport.tasksByBoardDate(from: tasks)[dayKey]?.map(\.id) ?? []) == [timed.id, untimed.id])
     }
 
     // MARK: - The comparators themselves
@@ -257,20 +230,5 @@ struct CadenceScheduleOrderingTests {
         }
     }
 
-    @Test
-    func everyDistinctPairOfBundlesOrdersInExactlyOneDirection() throws {
-        let context = ModelContext(try makeContainer())
-        let bundles = tiedBundles(in: context)
 
-        for lhs in bundles {
-            #expect(!CadenceScheduleSupport.bundlePrecedes(lhs, lhs))
-            for rhs in bundles where lhs.id != rhs.id {
-                #expect(
-                    CadenceScheduleSupport.bundlePrecedes(lhs, rhs)
-                        != CadenceScheduleSupport.bundlePrecedes(rhs, lhs),
-                    "'\(lhs.displayTitle)' ties with '\(rhs.displayTitle)'"
-                )
-            }
-        }
-    }
 }

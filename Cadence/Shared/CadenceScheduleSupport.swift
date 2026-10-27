@@ -82,43 +82,19 @@ enum CadenceScheduleSupport {
         return TaskOrdering.fallbackPrecedes(lhs, rhs)
     }
 
-    /// The one ordering for bundle rows: day, start minute, title, then id — **total**, for the
-    /// same reason. Nothing in `TaskBundle` stops two bundles sharing a `dateKey` and a
-    /// `startMin`, and `startMin` alone was the entire comparator at both call sites below.
-    ///
-    /// `displayTitle` rather than `title` because that is the string the row draws: an untitled
-    /// bundle reads "Block" on screen and should sort where it reads. (It read "Task Bundle" until
-    /// T-567 gave the noun one home in `TaskBundle.defaultDisplayTitle`; sorting on `title` would
-    /// have put every untitled bundle at the top under an empty string either way.)
-    nonisolated static func bundlePrecedes(_ lhs: TaskBundle, _ rhs: TaskBundle) -> Bool {
-        if lhs.dateKey != rhs.dateKey { return lhs.dateKey < rhs.dateKey }
-        if lhs.startMin != rhs.startMin { return lhs.startMin < rhs.startMin }
-        let titles = lhs.displayTitle.localizedCaseInsensitiveCompare(rhs.displayTitle)
-        if titles != .orderedSame { return titles == .orderedAscending }
-        return lhs.id.uuidString < rhs.id.uuidString
-    }
-
     static func scheduledTasks(
         on dateKey: String,
         from tasks: [AppTask],
-        includeCompleted: Bool,
-        excludeBundled: Bool
+        includeCompleted: Bool
     ) -> [AppTask] {
         tasks
             .filter {
                 !$0.isCancelled &&
                 (includeCompleted || !$0.isDone) &&
-                (!excludeBundled || $0.bundle == nil) &&
                 $0.scheduledDate == dateKey &&
                 $0.scheduledStartMin >= 0
             }
             .sorted(by: scheduledTaskPrecedes)
-    }
-
-    static func bundles(on dateKey: String, from bundles: [TaskBundle], includeCompleted: Bool) -> [TaskBundle] {
-        bundles
-            .filter { $0.dateKey == dateKey && (includeCompleted || !$0.isCompleted) }
-            .sorted(by: bundlePrecedes)
     }
 
     /// Which hour row of an hour-by-hour day list a scheduled minute belongs in.
@@ -136,7 +112,7 @@ enum CadenceScheduleSupport {
     /// unscheduled sentinel and nothing else, so clamping is what keeps an out-of-range minute
     /// visible in the first or last row — where it still prints its own real time range — instead
     /// of dropping it out of the pane silently, which is the failure this function exists to
-    /// prevent. ([[T-3170]] removed the `bundles(inHourRow:)` sibling this paragraph used to name;
+    /// prevent. ([[T-3170]] removed the bundles(inHourRow:) sibling this paragraph used to name;
     /// the reason is the task half's unchanged.)
     static func timelineHourRow(
         forMinute minute: Int,
@@ -405,10 +381,14 @@ enum CadenceScheduleSupport {
         }
     }
 
+    // **[[T-3213]]: no lookup here filters on `task.bundle` any more.** The three below used to
+    // drop every member of a `TaskBundle`, because a block's card drew its members; [[T-3170]]
+    // deleted every surface that draws a block, so the filter only hid the task. The owner ruled on
+    // 2026-10-26 to have no task bundles in the app at all, and a member now appears at its own
+    // date like any other task. `TaskBundle` stays in the schema only as dead CloudKit storage.
     static func tasksByScheduledDate(_ tasks: [AppTask], includeCompleted: Bool) -> [String: [AppTask]] {
         var result: [String: [AppTask]] = [:]
-        for task in tasks where task.bundle == nil &&
-            task.scheduledStartMin >= 0 &&
+        for task in tasks where task.scheduledStartMin >= 0 &&
             !task.scheduledDate.isEmpty &&
             !task.isCancelled &&
             (includeCompleted || !task.isDone) {
@@ -419,8 +399,7 @@ enum CadenceScheduleSupport {
 
     static func unscheduledTasksByDate(_ tasks: [AppTask]) -> [String: [AppTask]] {
         var result: [String: [AppTask]] = [:]
-        for task in tasks where task.bundle == nil &&
-            task.scheduledStartMin == -1 &&
+        for task in tasks where task.scheduledStartMin == -1 &&
             !task.scheduledDate.isEmpty &&
             !task.isCancelled &&
             !task.isDone {
@@ -431,7 +410,7 @@ enum CadenceScheduleSupport {
 
     static func monthTasksByDate(_ tasks: [AppTask]) -> [String: [AppTask]] {
         var result: [String: [AppTask]] = [:]
-        for task in tasks where task.bundle == nil && !task.isCancelled {
+        for task in tasks where !task.isCancelled {
             if !task.scheduledDate.isEmpty {
                 result[task.scheduledDate, default: []].append(task)
             } else if !task.dueDate.isEmpty {

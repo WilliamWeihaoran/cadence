@@ -614,12 +614,6 @@ struct CalendarBehaviorRegressionTests {
         laterTask.scheduledDate = "2026-06-02"
         laterTask.scheduledStartMin = 11 * 60
 
-        let bundle = TaskBundle(
-            title: "10 am bundle",
-            dateKey: "2026-06-02",
-            startMin: 10 * 60,
-            durationMinutes: 30
-        )
         let event = CalendarBoardPlannerSupport.sortKeyForCalendarEvent(
             id: "event-9-30",
             startMinute: 9 * 60 + 30,
@@ -632,7 +626,6 @@ struct CalendarBehaviorRegressionTests {
         let ordered = [
             CalendarBoardPlannerSupport.sortKey(for: untimedTask, kindRank: 2),
             CalendarBoardPlannerSupport.sortKey(for: laterTask, kindRank: 2),
-            CalendarBoardPlannerSupport.sortKey(for: bundle, kindRank: 1),
             event,
             CalendarBoardPlannerSupport.sortKey(for: earlyTask, kindRank: 2)
         ].sorted()
@@ -640,7 +633,6 @@ struct CalendarBehaviorRegressionTests {
         #expect(ordered == [
             CalendarBoardPlannerSupport.sortKey(for: earlyTask, kindRank: 2),
             event,
-            CalendarBoardPlannerSupport.sortKey(for: bundle, kindRank: 1),
             CalendarBoardPlannerSupport.sortKey(for: laterTask, kindRank: 2),
             CalendarBoardPlannerSupport.sortKey(for: untimedTask, kindRank: 2)
         ])
@@ -658,7 +650,9 @@ struct CalendarBehaviorRegressionTests {
         #expect(grouped["2026-06-02"]?.map(\.id) == [task.id])
     }
 
-    @Test func boardTaskLookupKeepsCompletedForFooterAndExcludesCancelledOrBundledTasks() {
+    /// [[T-3213]]: a block member is on the board like any other task now -- nothing draws a block,
+    /// so the filter that used to drop it only hid the task. Cancelled work is still off the board.
+    @Test func boardTaskLookupKeepsCompletedForFooterAndBlockMembersAndExcludesCancelledTasks() {
         let active = AppTask(title: "Active")
         active.scheduledDate = "2026-06-02"
 
@@ -685,7 +679,8 @@ struct CalendarBehaviorRegressionTests {
             from: [cancelled, bundled, completed, active]
         )
 
-        #expect(result["2026-06-02"]?.map(\.title) == ["Active", "Completed"])
+        #expect(Set(result["2026-06-02"]?.map(\.title) ?? []) == ["Active", "Bundled", "Completed"])
+        #expect(bundled.bundle?.id == bundle.id, "non-vacuity: the member really is in a block")
     }
 
     @Test func crossMidnightTimedEventSegmentsOnlyRenderOnTouchedDays() throws {

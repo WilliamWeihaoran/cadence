@@ -155,20 +155,8 @@ enum SchedulingActions {
         normalizeBundleOrder(bundle)
     }
 
-    static func moveTaskInBundle(_ task: AppTask, direction: Int) {
-        guard let bundle = task.bundle, direction != 0 else { return }
-        var tasks = bundle.sortedTasks
-        guard let index = tasks.firstIndex(where: { $0.id == task.id }) else { return }
-        let nextIndex = min(max(index + direction, 0), tasks.count - 1)
-        guard nextIndex != index else { return }
-        tasks.swapAt(index, nextIndex)
-        let hiddenMembers = orderedMemberTasks(in: bundle).filter { $0.isCancelled }
-        let ordered = tasks + hiddenMembers.filter { hidden in !tasks.contains(where: { $0.id == hidden.id }) }
-        for (offset, member) in ordered.enumerated() {
-            member.bundleOrder = offset
-        }
-        bundle.tasks = ordered
-    }
+    // moveTaskInBundle(_:direction:) was declared here -- reordering inside a block. It had no
+    // production caller after [[T-3170]]; [[T-3213]] deleted it.
 
     /// Today's rollover, in `SchedulingActions`' vocabulary.
     ///

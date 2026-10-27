@@ -81,7 +81,6 @@ struct CalendarBoardPlannerSupportTests {
             kindRank: 0
         )
 
-        let bundle = TaskBundle(title: "Bundle", dateKey: "2026-06-01", startMin: 9 * 60, durationMinutes: 60)
         let timedTask = AppTask(title: "Task")
         timedTask.scheduledDate = "2026-06-01"
         timedTask.scheduledStartMin = 9 * 60
@@ -91,7 +90,6 @@ struct CalendarBoardPlannerSupportTests {
         let ordered = [
             CalendarBoardPlannerSupport.sortKey(for: untimedTask, kindRank: 2),
             CalendarBoardPlannerSupport.sortKey(for: timedTask, kindRank: 2),
-            CalendarBoardPlannerSupport.sortKey(for: bundle, kindRank: 1),
             event,
             allDay
         ].sorted()
@@ -99,7 +97,6 @@ struct CalendarBoardPlannerSupportTests {
         #expect(ordered == [
             allDay,
             event,
-            CalendarBoardPlannerSupport.sortKey(for: bundle, kindRank: 1),
             CalendarBoardPlannerSupport.sortKey(for: timedTask, kindRank: 2),
             CalendarBoardPlannerSupport.sortKey(for: untimedTask, kindRank: 2)
         ])

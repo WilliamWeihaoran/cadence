@@ -119,22 +119,8 @@ struct TaskBundleTests {
         #expect(survivor.bundle === bundle)
     }
 
-    @Test func bundleOrderCanBeChangedManually() throws {
-        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
-        let context = ModelContext(container)
-        let first = AppTask(title: "First")
-        let second = AppTask(title: "Second")
-        let third = AppTask(title: "Third")
-        let bundle = TaskBundle(title: "Batch", dateKey: "2026-05-01", startMin: 600, durationMinutes: 30)
-        [first, second, third].forEach(context.insert)
-        context.insert(bundle)
-        [first, second, third].forEach { CadenceTestBundleFixture.place($0, in: bundle) }
-
-        SchedulingActions.moveTaskInBundle(third, direction: -1)
-
-        #expect(bundle.sortedTasks.map(\.title) == ["First", "Third", "Second"])
-        #expect(bundle.sortedTasks.map(\.bundleOrder) == [0, 1, 2])
-    }
+    // `bundleOrderCanBeChangedManually` was declared here. It pinned
+    // SchedulingActions.moveTaskInBundle, which [[T-3213]] deleted with no caller left.
 
     // `creatingBundleFromTwoTimedTasksUsesTargetSlotAndMembersLoseIndividualTimes` was declared
     // here. It pinned CadenceTaskMutationSupport.insertBundle(from:adding:), which [[T-3170]]

@@ -399,7 +399,7 @@ struct CalendarTimelineRangeTests {
     }
 
     // `bundlesTakeTheirOwnHourTheSameWay` was declared here. It pinned
-    // `CadenceScheduleSupport.bundles(inHourRow:from:)`, which [[T-3170]] deleted: no product
+    // CadenceScheduleSupport.bundles(inHourRow:from:), which [[T-3170]] deleted: no product
     // caller was left once both platforms stopped drawing Block rows, and this test was the only
     // thing holding it in the tree. The hour-row rule itself is unchanged and is pinned on the
     // surviving subject by `aTaskAtFiveAMOrHalfPastElevenLandsInItsOwnRow` above and by the clamp

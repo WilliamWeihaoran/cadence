@@ -364,8 +364,7 @@ struct TasksPanel: View {
             timedTasks: CadenceScheduleSupport.scheduledTasks(
                 on: todayKey,
                 from: allTasks,
-                includeCompleted: false,
-                excludeBundled: false
+                includeCompleted: false
             )
             .filter { $0.scheduledStartMin >= 0 },
             completedTasks: derived.doneTasks
