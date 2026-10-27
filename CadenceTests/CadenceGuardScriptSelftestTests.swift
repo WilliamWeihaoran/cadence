@@ -824,7 +824,85 @@ struct CadenceGuardScriptSelftestTests {
         "run-state: FINISHED",
         "run-state: ABANDONED",
         "run-state: NO-LOG",
+        // T-7275: the four refusals of `xcb.sh export-archive` (T-7103). EXPORT-UPLOAD-REFUSED is
+        // the one that matters -- it is what stands between an agent and an App Store Connect
+        // upload made from inside a build command -- and until this line nothing in the suite or
+        // in CI named it: section 17 induced it in a selftest that nothing invokes. The name pin
+        // proves the refusal still exists; `theExportArchiveGateStillRefusesEveryUploadShapedExport`
+        // below proves it is still CALLED, and still covers every upload-shaped method.
+        "EXPORT-UPLOAD-REFUSED",
+        "EXPORT-NO-ARCHIVE",
+        "EXPORT-NO-OPTIONS",
+        "EXPORT-FLAG-REFUSED",
     ]
+
+    /// T-7275. The name pin above is necessary and not sufficient for `export_archive_refusal`,
+    /// because the two edits that would quietly disarm it leave every name in place:
+    ///
+    /// - **dropping one alternative from the case arm.** `upload:*|*:app-store|*:app-store-connect|
+    ///   *:validation` is four doors, and removing `*:validation` still prints EXPORT-UPLOAD-REFUSED
+    ///   for the other three. So the arm is read as a SET, not matched as a string, and a fifth
+    ///   alternative added later does not redden this.
+    /// - **deleting the call.** The dispatch that invokes the refusal sits BELOW `# --- selftest`
+    ///   (see `everyRefusalTheScriptsMakeIsStillInducedByTheirOwnSelftest`), so the function and
+    ///   its message can survive while nothing runs them. The call must stay in the
+    ///   `export-archive` block, ahead of `export_archive_run`, and must exit with a non-zero code.
+    ///
+    /// Source-level, at the cost of one file read, rather than spawning `xcb.sh selftest`: the
+    /// suite is already known-slow, and the export half of the selftest needs no host to prove.
+    @Test func theExportArchiveGateStillRefusesEveryUploadShapedExport() throws {
+        let source = try String(
+            contentsOf: CadenceSelftestRun.repositoryRoot().appendingPathComponent("scripts/xcb.sh"),
+            encoding: .utf8
+        )
+        let function = try #require(
+            source.range(of: "\nexport_archive_refusal() {").flatMap { start in
+                source.range(of: "\n}\n", range: start.upperBound..<source.endIndex)
+                    .map { String(source[start.upperBound..<$0.lowerBound]) }
+            },
+            "scripts/xcb.sh no longer defines export_archive_refusal"
+        )
+        // The case-arm line is the one immediately above the EXPORT-UPLOAD-REFUSED message.
+        let lines = function.components(separatedBy: "\n")
+        let message = try #require(
+            lines.firstIndex { $0.contains("EXPORT-UPLOAD-REFUSED") },
+            "export_archive_refusal no longer prints EXPORT-UPLOAD-REFUSED"
+        )
+        let arm = lines[..<message].last { !$0.trimmingCharacters(in: .whitespaces).isEmpty } ?? ""
+        #expect(arm.trimmingCharacters(in: .whitespaces).hasSuffix(")"),
+                "the line above EXPORT-UPLOAD-REFUSED is not a case arm: \(arm)")
+        let alternatives = Set(
+            arm.trimmingCharacters(in: .whitespaces)
+                .dropLast()
+                .split(separator: "|")
+                .map { $0.trimmingCharacters(in: .whitespaces) }
+        )
+        for door in ["upload:*", "*:app-store", "*:app-store-connect", "*:validation"] {
+            #expect(alternatives.contains(door),
+                    "export_archive_refusal no longer refuses `\(door)`; the arm reads \(alternatives.sorted())")
+        }
+        #expect(function.contains("case \"${destination:-export}:${method:-}\" in"),
+                "the arm no longer matches destination:method, so its alternatives mean something else")
+
+        let dispatch = try #require(
+            source.range(of: "\nif [[ \"${1:-}\" == \"export-archive\" ]]; then").flatMap { start in
+                source.range(of: "\nfi\n", range: start.upperBound..<source.endIndex)
+                    .map { String(source[start.upperBound..<$0.lowerBound]) }
+            },
+            "scripts/xcb.sh no longer dispatches export-archive"
+        )
+        let call = dispatch.range(of: "export_archive_refusal \"${export_args[@]}\" || exit $EXPORT_GATE_EXIT")
+        let run = dispatch.range(of: "export_archive_run ")
+        #expect(call != nil, "the export-archive dispatch no longer calls export_archive_refusal")
+        if let call, let run {
+            #expect(call.lowerBound < run.lowerBound,
+                    "export_archive_refusal is called after export_archive_run, so the export runs first")
+        }
+        let exitCode = source.components(separatedBy: "\n")
+            .first { $0.hasPrefix("EXPORT_GATE_EXIT=") }
+            .flatMap { line in Int(line.dropFirst("EXPORT_GATE_EXIT=".count).prefix(while: \.isNumber)) }
+        #expect((exitCode ?? 0) != 0, "EXPORT_GATE_EXIT is unset or zero, so a refusal exits green")
+    }
 
     /// T-780. `.githooks/pre-commit` is the only guard in this family that is not a script anybody
     /// types: git runs it, with no arguments, or nothing runs it at all. That makes it the one most

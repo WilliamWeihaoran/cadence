@@ -4791,6 +4791,7 @@ selftest_only_testing() {
   ex_plist "$ex/upload.plist" method development destination upload
   ex_plist "$ex/appstore.plist" method app-store
   ex_plist "$ex/appstoreconnect.plist" method app-store-connect destination export
+  ex_plist "$ex/validation.plist" method validation
   local ex_out ex_rc
   ex_run() { ex_out=$(CADENCE_EXPORT_DRY_RUN=1 zsh "$here" export-archive "$@" 2>&1); ex_rc=$? }
 
@@ -4810,6 +4811,10 @@ selftest_only_testing() {
   ex_run "$ex/Fake.xcarchive" "$ex/appstoreconnect.plist" "$ex/out"
   check "...and its Xcode 16 spelling, app-store-connect, is not a way round that" \
     $( [[ $ex_rc == 15 && "$ex_out" == *EXPORT-UPLOAD-REFUSED* ]] && print 1 || print 0 ) "exit $ex_rc: $ex_out"
+  # T-7275: the case arm's fourth alternative, and until then the only one nothing here induced.
+  ex_run "$ex/Fake.xcarchive" "$ex/validation.plist" "$ex/out"
+  check "...and neither is method: validation, which exists only to feed an App Store Connect upload" \
+    $( [[ $ex_rc == 15 && "$ex_out" == *EXPORT-UPLOAD-REFUSED* && "$ex_out" != *-exportArchive* ]] && print 1 || print 0 ) "exit $ex_rc: $ex_out"
   ex_run "$ex/NotThere.xcarchive" "$ex/dev.plist" "$ex/out"
   check "a missing archive is EXPORT-NO-ARCHIVE, and the message says how to cut one" \
     $( [[ $ex_rc == 15 && "$ex_out" == *EXPORT-NO-ARCHIVE* && "$ex_out" == *"raw archive"* ]] && print 1 || print 0 ) "exit $ex_rc: $ex_out"
