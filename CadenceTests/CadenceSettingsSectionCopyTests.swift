@@ -1473,6 +1473,54 @@ struct CadenceSettingsSectionCopyTests {
         #expect(CadenceCalendarAccessNotice.connectOffer.actionTitle(on: .mobile) == "Allow Access")
     }
 
+    /// **[[T-7207]]: both delete-everything gates say the deletions reach the reader's other
+    /// devices.** The phone's did and the Mac's did not, over the same reset, which deletes
+    /// through the shared `ModelContext` and is therefore mirrored by CloudKit on both platforms.
+    /// Read as the shared constant on both gates, and the literal typed on neither.
+    @Test func bothDataResetGatesSayTheirDeletionsReachOtherDevices() throws {
+        #expect(
+            CadenceDataResetCopy.deletionsReachOtherDevices
+                == "Cadence syncs through your private iCloud database, so these deletions reach your other devices."
+        )
+        let gates: [(path: String, declaration: String)] = [
+            ("Cadence/macOS/Views/SettingsDataSafetySection.swift", "private struct SettingsDataResetConfirmationSheet: View"),
+            ("Cadence/iOS/iOSDataResetSettingsSection.swift", "struct iOSDataResetConfirmationSheet: View"),
+        ]
+        for gate in gates {
+            let code = try Self.strippedSource(at: gate.path)
+            let body = try #require(
+                CadenceSourceScan.declarationBody(gate.declaration, in: code),
+                "non-vacuity: \(gate.declaration) was not found in \(gate.path)"
+            )
+            #expect(body.contains("Delete Everything"), "non-vacuity: \(gate.path)'s body is not the gate")
+            #expect(
+                body.contains("CadenceDataResetCopy.deletionsReachOtherDevices"),
+                "\(gate.path)'s gate does not say its deletions reach other devices"
+            )
+            #expect(
+                code.contains("so these deletions reach your other devices") == false,
+                "\(gate.path) types the sync sentence beside the constant that holds it"
+            )
+        }
+    }
+
+    /// **[[T-7208]]: the Mac's Privacy card names what an AI action sends.** It said "selected
+    /// note content", the clause [[T-1322]] removed from the AI pane's disclosure because the
+    /// request carries the note's title, its whole text and its list's name.
+    @Test func theMacPrivacyCardNamesWhatAnAIActionSends() throws {
+        let code = try Self.strippedSource(at: "Cadence/macOS/Views/SettingsDataSafetySection.swift")
+        let card = try #require(
+            CadenceSourceScan.declarationBody("struct SettingsPrivacyStatementSection: View", in: code),
+            "non-vacuity: the Privacy card was not found"
+        )
+        #expect(card.contains("Cadence stores planning data locally"), "non-vacuity: wrong body")
+        #expect(card.contains("selected note content") == false, "the card still says \"selected note content\"")
+        #expect(
+            card.contains("AI actions send a note's title, full text, and list name to OpenAI only when you run one."),
+            "the card does not name the three fields an AI action sends"
+        )
+    }
+
     private static func strippedSource(at path: String) throws -> String {
         CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(path))
     }

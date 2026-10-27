@@ -410,6 +410,19 @@ nonisolated enum CadenceListLifecycleSectionCopy {
     static let cancelledProjects = "Canceled Projects"
 }
 
+/// Settings → Data Safety's delete-everything gate, on both surfaces.
+///
+/// **[[T-7207]].** The phone's gate said its deletions reach the reader's other devices and the
+/// Mac's said nothing about it, over the same `PrivacyDataResetService.deleteCadenceData`, which
+/// deletes through the shared `ModelContext` — so CloudKit mirrors every one of those deletions to
+/// every signed-in device on both platforms. The Mac's reset is the larger one (it also clears
+/// the account profile), and its last screen before an irreversible button left out the one
+/// consequence that reaches past the machine in front of the reader. One sentence, read by both.
+nonisolated enum CadenceDataResetCopy {
+    static let deletionsReachOtherDevices =
+        "Cadence syncs through your private iCloud database, so these deletions reach your other devices."
+}
+
 /// The sentences both platforms say about the store folders Cadence is **not** using, and the
 /// name of the section that lists them.
 ///

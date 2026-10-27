@@ -169,8 +169,14 @@ nonisolated enum CadenceEmptyStateCopy {
 
     /// The list-detail Notes tab when it has notes and its search or tag filter reaches none of
     /// them. Both platforms ([[T-7031]] gave iOS the filter).
+    ///
+    /// **[[T-7206]].** The subtitle said "Try a different search", with no full stop, and a tag
+    /// chip narrows this panel on both platforms with the search field empty: picking one tag
+    /// that no note carries told the reader to change a search they had never typed. It names
+    /// both controls now, and takes the full stop every other empty-state subtitle in this file
+    /// carries.
     static let listNotesNoMatchesTitle = "No matches"
-    static let listNotesNoMatchesSubtitle = "Try a different search"
+    static let listNotesNoMatchesSubtitle = "Try a different search or tag."
 
     /// The Log / Completed tab of a list detail page.
     ///

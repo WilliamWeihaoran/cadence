@@ -430,7 +430,11 @@ private struct SettingsPrivacyStatementSection: View {
                     Text("Privacy")
                         .font(.system(size: 15, weight: .semibold))
                         .foregroundStyle(Theme.text)
-                    Text("Cadence stores planning data locally and in your private iCloud database when sync is available. Calendar access is used for calendar features, and AI actions send selected note content only when you run them.")
+                    // [[T-7208]]: it said "selected note content", the clause [[T-1322]] took out
+                    // of the AI pane's disclosure as the one a reader could not check. An AI
+                    // action sends the note's title, whole text and list name, which is what the
+                    // AI pane (`CadenceAISettingsCopy.keyPrivacyDisclosure`) and privacy.html say.
+                    Text("Cadence stores planning data locally and in your private iCloud database when sync is available. Calendar access is used for calendar features, and AI actions send a note's title, full text, and list name to OpenAI only when you run one.")
                         .font(.system(size: 12))
                         .foregroundStyle(Theme.dim)
                         .fixedSize(horizontal: false, vertical: true)
@@ -582,8 +586,9 @@ private struct SettingsDataResetConfirmationSheet: View {
                                 // iOS's gate as well (T-1841). It used to be welded onto the
                                 // Calendar clause with "and neither are"; split into its own
                                 // sentence so one string can serve both platforms without either
-                                // depending on what precedes it.
-                                Text("This permanently deletes the local Cadence account profile, Cadence tasks, lists, notes, documents, tags, saved links, retained legacy records, local Cadence backups, pending restores, and the saved OpenAI key. Apple Calendar events that already exist in Calendar are not deleted. \(CadenceUnmanagedStoreCopy.resetGateLeavesThem)")
+                                // depending on what precedes it. [[T-7207]]: the sync sentence
+                                // is the phone gate's, so both say the deletions leave this Mac.
+                                Text("This permanently deletes the local Cadence account profile, Cadence tasks, lists, notes, documents, tags, saved links, retained legacy records, local Cadence backups, pending restores, and the saved OpenAI key. \(CadenceDataResetCopy.deletionsReachOtherDevices) Apple Calendar events that already exist in Calendar are not deleted. \(CadenceUnmanagedStoreCopy.resetGateLeavesThem)")
                                     .font(.system(size: 12))
                                     .foregroundStyle(Theme.dim)
                                     .fixedSize(horizontal: false, vertical: true)

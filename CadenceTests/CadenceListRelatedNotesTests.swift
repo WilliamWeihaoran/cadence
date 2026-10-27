@@ -180,4 +180,16 @@ struct CadenceListRelatedNotesTests {
         #expect(code.contains("TextField(\"Search notes\""))
         #expect(code.contains("CadenceEmptyStateCopy.listNotesNoMatchesTitle"))
     }
+
+    /// **[[T-7206]]: the Notes tab's no-match panel names the tag filter too.** A tag chip narrows
+    /// it on both platforms with the search field empty, and the subtitle said only "Try a
+    /// different search", with no full stop.
+    @Test func theNotesNoMatchesSubtitleNamesBothNarrowingControls() throws {
+        #expect(CadenceEmptyStateCopy.listNotesNoMatchesSubtitle == "Try a different search or tag.")
+        // Both surfaces that draw the panel narrow it by tag, so the word is true on each.
+        for path in ["Cadence/macOS/Views/ListNotesView.swift", "Cadence/iOS/iOSListNotesView.swift"] {
+            let code = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(path))
+            #expect(code.contains("requiredTagSlugs: selectedTagFilterSlugs"), "\(path) no longer narrows by tag")
+        }
+    }
 }
