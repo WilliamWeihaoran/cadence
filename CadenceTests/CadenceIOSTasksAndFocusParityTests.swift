@@ -184,3 +184,20 @@ struct CadenceFocusTimerPhaseTests {
         #expect(!macPanel.contains("\"Paused\""))
     }
 }
+
+/// T-7089: the iPhone Focus picker row lets a long task title take two lines, the task-row title
+/// rule, instead of cutting it at ~30 characters on a 393 pt phone.
+struct CadenceFocusPickRowTitleTests {
+    @Test func theIOSPickRowTitleWrapsToTwoLeadingLines() throws {
+        let ios = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile("Cadence/iOS/iOSFocusView.swift"))
+        let row = try #require(CadenceSourceScan.declarationBody("private struct iOSFocusPickRow: View", in: ios))
+        // Bounded by the detail label below it, not a character count: comments are blanked to
+        // equal-width spaces, so a prefix length would count the comment explaining the rule.
+        let title = try #require(row.range(of: "Text(title)"))
+        let detail = try #require(row.range(of: "CadenceTaskDetailLineLabel(", range: title.upperBound..<row.endIndex))
+        let afterTitle = String(row[title.upperBound..<detail.lowerBound])
+        #expect(afterTitle.contains(".lineLimit(2)"), "the pick row cuts a title at one line again")
+        #expect(afterTitle.contains(".multilineTextAlignment(.leading)"))
+        #expect(!afterTitle.contains(".lineLimit(1)"))
+    }
+}

@@ -906,7 +906,11 @@ private struct iOSFocusPickRow: View {
                         Text(title)
                             .font(.system(size: 14, weight: .semibold))
                             .foregroundStyle(Theme.text)
-                            .lineLimit(1)
+                            // Two lines, the task-row title rule (T-7089): one line cut a title at
+                            // ~30 characters on a 393 pt phone, and this list is where you choose.
+                            // The medallion and play control stay centred on the taller row.
+                            .lineLimit(2)
+                            .multilineTextAlignment(.leading)
                             .frame(maxWidth: .infinity, alignment: .leading)
 
                         // The shared label tints only the due segment, red when overdue — the
