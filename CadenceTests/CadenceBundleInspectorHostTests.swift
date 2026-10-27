@@ -225,7 +225,11 @@ struct CadenceBundleInspectorHostTests {
         // narrowed assertion.
         #expect(
             try presenterCounts(of: "CadenceDetailPanelPresentation.resolveHeldSubject(") == [
-                "Cadence/iOS/iOSTaskInspectorHost.swift": 1
+                "Cadence/iOS/iOSTaskInspectorHost.swift": 1,
+                // [[T-7540]]: the note half of the same guard, `iOSHeldNoteSheet`. A second
+                // *caller* of the one rule, not a second copy of it; its wiring is pinned by
+                // `CadenceHeldNoteSheetGuardTests`.
+                "Cadence/iOS/iOSMarkdownReferenceSupport.swift": 1
             ]
         )
         // Both signals, at that one call site. `isDeleted` on its own is the draft that did not work.

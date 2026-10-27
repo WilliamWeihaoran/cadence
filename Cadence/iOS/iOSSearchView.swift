@@ -425,8 +425,10 @@ struct iOSSearchView: View {
             iOSTaskInspectorSheet(task: task) { selectedTask = nil }
         }
         .sheet(item: $selectedNote) { note in
-            noteSheet(for: note)
-                .cadenceFixedTypography()
+            iOSHeldNoteSheet(note: note) { selectedNote = nil } content: { note in
+                noteSheet(for: note)
+            }
+            .cadenceFixedTypography()
         }
         .sheet(item: $selectedEvent) { selection in
             iOSCalendarEventEditSheet(event: selection.event)

@@ -11,11 +11,13 @@ struct iOSMarkdownReferenceSheetModifier: ViewModifier {
     func body(content: Content) -> some View {
         content
             .sheet(item: $selectedReferenceNote) { note in
-                iOSLinkedNoteEditorSheet(
-                    note: note,
-                    referenceNotes: referenceNotes,
-                    referenceTasks: referenceTasks
-                )
+                iOSHeldNoteSheet(note: note) { selectedReferenceNote = nil } content: { note in
+                    iOSLinkedNoteEditorSheet(
+                        note: note,
+                        referenceNotes: referenceNotes,
+                        referenceTasks: referenceTasks
+                    )
+                }
                 .cadenceFixedTypography()
             }
             .sheet(item: $selectedReferenceTask) { task in
@@ -37,6 +39,38 @@ extension View {
             referenceNotes: referenceNotes,
             referenceTasks: referenceTasks
         ))
+    }
+}
+
+/// [[T-7540]]. **The note half of the guard `iOSTaskInspectorSheet` gives a task.** Every route that
+/// holds a `Note` in a `.sheet(item:)` or `.fullScreenCover(item:)` keeps a strong reference to the
+/// model, so a delete landing from outside the editor — a CloudKit import of a delete made on the
+/// Mac, or a data reset — left the editor drawing a committed-deleted note: `isDeleted` reads
+/// `false` again after the save, `modelContext` is `nil`, the property snapshot stays readable, and
+/// typing went into a model with no context and was lost silently.
+///
+/// `CadenceDetailPanelPresentation.resolveHeldSubject` is the measured rule for exactly that, so
+/// this asks it rather than re-deciding. One wrapper reused by every note presenter beats a check
+/// per presenter, and it is generic over the editor because the note routes present four different
+/// editors. Like the task guard, it closes on the next re-render rather than instantly — neither
+/// signal is observable — and it can never *open* onto a note that is already gone.
+struct iOSHeldNoteSheet<Content: View>: View {
+    let note: Note
+    let close: () -> Void
+    @ViewBuilder let content: (Note) -> Content
+
+    var body: some View {
+        switch CadenceDetailPanelPresentation.resolveHeldSubject(
+            isDeleted: note.isDeleted,
+            hasNoModelContext: note.modelContext == nil
+        ) {
+        case .stay:
+            content(note)
+        case .close:
+            // Nothing to draw and nothing to bind to. `onAppear` rather than a synchronous clear:
+            // the selection cannot be written during the body evaluation that reads it.
+            Color.clear.onAppear(perform: close)
+        }
     }
 }
 

@@ -178,21 +178,25 @@ struct iOSListNotesView: View {
             selectedTagFilterSlugs.formIntersection(Set(slugs))
         }
         .sheet(item: $selectedEventNote) { note in
-            let event = calendarManager.event(for: note)
-            iOSEventNoteEditorSheet(
-                note: note,
-                eventTitle: event.map { iOSCalendarEventSupport.title(for: $0) } ?? note.displayTitle,
-                event: event
-            )
+            iOSHeldNoteSheet(note: note) { selectedEventNote = nil } content: { note in
+                let event = calendarManager.event(for: note)
+                iOSEventNoteEditorSheet(
+                    note: note,
+                    eventTitle: event.map { iOSCalendarEventSupport.title(for: $0) } ?? note.displayTitle,
+                    event: event
+                )
+            }
         }
         .fullScreenCover(item: $presentedNote) { note in
-            iOSNoteEditorCover(
-                note: note,
-                templateKind: .list,
-                title: note.displayTitle,
-                embeddedTaskArea: area,
-                embeddedTaskProject: project
-            )
+            iOSHeldNoteSheet(note: note) { presentedNote = nil } content: { note in
+                iOSNoteEditorCover(
+                    note: note,
+                    templateKind: .list,
+                    title: note.displayTitle,
+                    embeddedTaskArea: area,
+                    embeddedTaskProject: project
+                )
+            }
         }
         .sheet(item: $folderRequest) { request in
             iOSNoteFolderSheet(request: request, existingFolders: folderNames) { folderPath in

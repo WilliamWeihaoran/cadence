@@ -648,7 +648,9 @@ private struct iOSCaptureHostModifier: ViewModifier {
                 }
             }
             .fullScreenCover(item: $noteBeingCaptured) { note in
-                iOSNoteEditorCover(note: note, templateKind: .permanent, title: note.displayTitle)
+                iOSHeldNoteSheet(note: note) { noteBeingCaptured = nil } content: { note in
+                    iOSNoteEditorCover(note: note, templateKind: .permanent, title: note.displayTitle)
+                }
             }
             .onChange(of: interaction.pendingRequest?.id) { _, _ in
                 guard let request = interaction.consumeRequest() else { return }

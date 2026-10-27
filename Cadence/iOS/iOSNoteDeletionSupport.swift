@@ -29,12 +29,17 @@ private struct iOSNoteDeletionModifier: ViewModifier {
     @Environment(\.modelContext) private var modelContext
 
     func body(content: Content) -> some View {
+        // [[T-7540]]: behind the held-note guard like every other note presenter. A note deleted
+        // from outside while this confirmation is up — the Mac deleted it first — closes the sheet
+        // instead of offering to delete a model that has no context left.
         content.sheet(item: $note) { note in
-            iOSNoteDeleteConfirmationSheet(
-                note: note,
-                summary: CadenceNoteDeletionSummary.forNote(note, in: modelContext)
-            ) {
-                try perform(note)
+            iOSHeldNoteSheet(note: note) { self.note = nil } content: { note in
+                iOSNoteDeleteConfirmationSheet(
+                    note: note,
+                    summary: CadenceNoteDeletionSummary.forNote(note, in: modelContext)
+                ) {
+                    try perform(note)
+                }
             }
         }
     }

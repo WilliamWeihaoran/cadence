@@ -251,19 +251,23 @@ struct iOSNotesView: View {
             eventNoteCommitNotice = nil
         }
         .fullScreenCover(item: $presentedNote) { note in
-            iOSNoteEditorCover(
-                note: note,
-                templateKind: activeTab.coreTab?.noteKind,
-                title: coverTitle(for: note)
-            )
+            iOSHeldNoteSheet(note: note) { presentedNote = nil } content: { note in
+                iOSNoteEditorCover(
+                    note: note,
+                    templateKind: activeTab.coreTab?.noteKind,
+                    title: coverTitle(for: note)
+                )
+            }
         }
         .sheet(item: $selectedMeetingNote) { note in
-            let event = calendarManager.event(for: note)
-            iOSEventNoteEditorSheet(
-                note: note,
-                eventTitle: event.map { iOSCalendarEventSupport.title(for: $0) } ?? note.displayTitle,
-                event: event
-            )
+            iOSHeldNoteSheet(note: note) { selectedMeetingNote = nil } content: { note in
+                let event = calendarManager.event(for: note)
+                iOSEventNoteEditorSheet(
+                    note: note,
+                    eventTitle: event.map { iOSCalendarEventSupport.title(for: $0) } ?? note.displayTitle,
+                    event: event
+                )
+            }
         }
         .iOSMarkdownReferenceSheets(
             selectedNote: $selectedReferenceNote,

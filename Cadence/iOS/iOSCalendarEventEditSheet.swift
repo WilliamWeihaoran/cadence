@@ -226,8 +226,10 @@ struct iOSCalendarEventEditSheet: View {
             reloadEventNotesIfUntouched()
         }
         .sheet(item: $presentedEventNote) { note in
-            iOSEventNoteEditorSheet(note: note, eventTitle: draft.title, event: event)
-                .cadenceFixedTypography()
+            iOSHeldNoteSheet(note: note) { presentedEventNote = nil } content: { note in
+                iOSEventNoteEditorSheet(note: note, eventTitle: draft.title, event: event)
+            }
+            .cadenceFixedTypography()
         }
         .presentationBackground(.clear)
         .presentationDragIndicator(.hidden)
