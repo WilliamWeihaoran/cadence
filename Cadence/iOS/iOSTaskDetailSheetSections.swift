@@ -365,10 +365,11 @@ struct iOSTaskNotesSection: View {
 ///
 /// Every status value a control can produce has exactly one: **Complete** owns `done` (it was the
 /// title card's circle until [[T-3171]] gave the title row to the shared panel, which draws no
-/// platform completion control) and "Cancel" owns `cancelled`, each its own undo back to `todo` —
-/// on a cancelled task Complete restores rather than completes, T-344's rule. "Start" owned
-/// `inProgress` until [[T-5015]] (b) retired that status; it is gone from here because it is gone
-/// from `CadenceTaskInspectorSupport.StatusAction`, which this renders.
+/// platform completion control) and "Cancel Task" owns `cancelled` ([[T-7204]]: not a bare "Cancel"
+/// beside the panel footer's), each its own undo back to `todo`. On a cancelled task only "Restore
+/// Task" shows ([[T-7012]]), so there is one way back and none that completes it, T-344's rule.
+/// "Start" owned `inProgress` until [[T-5015]] (b) retired that status; it is gone from here
+/// because it is gone from `CadenceTaskInspectorSupport.StatusAction`, which this renders.
 /// They land the moment they are tapped, as they always did: a status change is an action on the
 /// record, not a field of the draft. Deleting is the panel's footer, and gains no second home here.
 struct iOSTaskStatusActionsSection: View {
@@ -383,27 +384,32 @@ struct iOSTaskStatusActionsSection: View {
     var body: some View {
         iOSEditorSection(title: nil, style: .ruled, contentSpacing: 10) {
             HStack(spacing: 10) {
-                iOSActionButton(
-                    title: isFinished ? "Reopen" : "Complete",
-                    systemImage: isFinished ? "arrow.uturn.backward.circle" : "checkmark.circle",
-                    role: task.isDone ? .primary : .secondary,
-                    size: .compact,
-                    tint: task.isDone ? CadenceTaskPresentationSupport.statusColor(.done) : Theme.muted,
-                    fullWidth: true,
-                    action: onToggleCompletion
-                )
-                // [[T-7010]]: the shared action-keyed name, as the row's circle has read since T-611.
-                // It spelled `isFinished ? "Mark task todo" : "Complete task"`, so VoiceOver said
-                // "Mark task todo" over a button whose visible word is "Reopen", and Voice Control's
-                // "Tap Reopen" matched nothing. `resolve(task:)` is `.done`/`.cancelled` exactly when
-                // `isFinished` is, so the name now says "Reopen task" wherever the button says Reopen.
-                .accessibilityLabel(CadenceTaskCompletionState.resolve(task: task).accessibilityActionLabel)
+                // [[T-7012]]: not on a cancelled task, where it said "Reopen" beside "Restore Task"
+                // and both returned the task to todo. `isFinished` is therefore `isDone` here; it
+                // keeps the shared finished predicate so the T-7010 name and the word cannot part.
+                if CadenceTaskInspectorSupport.offersCompletionAction(for: task.status) {
+                    iOSActionButton(
+                        title: isFinished ? "Reopen" : "Complete",
+                        systemImage: isFinished ? "arrow.uturn.backward.circle" : "checkmark.circle",
+                        role: task.isDone ? .primary : .secondary,
+                        size: .compact,
+                        tint: task.isDone ? CadenceTaskPresentationSupport.statusColor(.done) : Theme.muted,
+                        fullWidth: true,
+                        action: onToggleCompletion
+                    )
+                    // [[T-7010]]: the shared action-keyed name, as the row's circle has read since T-611.
+                    // It spelled `isFinished ? "Mark task todo" : "Complete task"`, so VoiceOver said
+                    // "Mark task todo" over a button whose visible word is "Reopen", and Voice Control's
+                    // "Tap Reopen" matched nothing. `resolve(task:)` is `.done`/`.cancelled` exactly when
+                    // `isFinished` is, so the name now says "Reopen task" wherever the button says Reopen.
+                    .accessibilityLabel(CadenceTaskCompletionState.resolve(task: task).accessibilityActionLabel)
+                }
 
                 ForEach(CadenceTaskInspectorSupport.StatusAction.allCases, id: \.self) { action in
                     let isActive = action.isActive(task.status)
 
                     iOSActionButton(
-                        title: action.title(for: task.status),
+                        title: action.buttonTitle(for: task.status),
                         systemImage: action.systemImage(for: task.status),
                         role: isActive ? .primary : .secondary,
                         size: .compact,

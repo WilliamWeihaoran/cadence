@@ -144,10 +144,34 @@ enum CadenceTaskInspectorSupport {
             }
         }
 
+        /// The iOS task sheet's VISIBLE button word — "Cancel Task" / "Restore Task" ([[T-7204]]).
+        ///
+        /// The bare `title(for:)` said "Cancel", and the shared `CadenceSchedulePanel` footer under
+        /// the status row also says "Cancel" and discards the edits instead, so the sheet showed two
+        /// "Cancel" buttons with opposite effects. The footer keeps the platform's sheet word; the
+        /// task action names its object. Same words as the Mac inspector's icon-button name
+        /// (`TaskDetailActionsSection.statusActionLabel`, "Cancel task" / "Restore task",
+        /// [[T-7201]]), in the iOS buttons' Title Case. The Mac embed popover keeps `title(for:)`.
+        func buttonTitle(for current: TaskStatus) -> String {
+            "\(title(for: current)) Task"
+        }
+
         func systemImage(for current: TaskStatus) -> String {
             switch self {
             case .cancelled: isActive(current) ? "arrow.uturn.backward.circle" : "xmark.circle"
             }
         }
+    }
+
+    /// Whether the iOS task sheet draws its Complete / Reopen button beside the status actions
+    /// ([[T-7012]]).
+    ///
+    /// On a cancelled task it said "Reopen" and the status action beside it said "Restore", and
+    /// both returned the task to todo (T-344: the completion control toggles *settled*). One way
+    /// back is enough, so a cancelled task shows only "Restore Task" — the Mac inspector's word for
+    /// that direction. Hiding the completion button rather than letting it complete a cancelled
+    /// task keeps T-344's rule: nothing on the sheet turns abandoned work into accomplished work.
+    static func offersCompletionAction(for status: TaskStatus) -> Bool {
+        status != .cancelled
     }
 }

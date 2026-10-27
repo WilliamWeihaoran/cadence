@@ -109,6 +109,22 @@ struct CadenceMacTaskInspectorStatusActionsTests {
         #expect(section.contains(#"accessibilityLabel: "Delete task""#), "the sibling this copies is gone")
     }
 
+    /// **[[T-7204]]: the iOS sheet's visible status word is the Mac's icon-button name**, in each
+    /// platform's own casing ("Cancel Task" / "Cancel task"). An equality, not two `contains`, so
+    /// respelling either side alone is caught.
+    @Test func theIOSStatusButtonSaysWhatTheMacStatusButtonIsNamed() {
+        var checked = 0
+        for action in CadenceTaskInspectorSupport.StatusAction.allCases {
+            for status in [TaskStatus.todo, .done, .cancelled] {
+                #expect(action.buttonTitle(for: status).lowercased()
+                        == TaskDetailActionsSection.statusActionLabel(action, for: status).lowercased(),
+                        "\(status): iOS and the Mac inspector name the status action differently")
+                checked += 1
+            }
+        }
+        #expect(checked >= 3)
+    }
+
     /// **[[T-7201]]: the series' "After N times" count field has a VoiceOver name.** It is a
     /// `TextField("", …)` — a title would draw as a placeholder over the count — so without an
     /// explicit label VoiceOver announced an unnamed text field.

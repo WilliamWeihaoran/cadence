@@ -1,4 +1,5 @@
 import Foundation
+import SwiftData
 import Testing
 @testable import Cadence
 
@@ -123,6 +124,92 @@ struct CadenceTaskInspectorSupportTests {
     func labelsDescribeTheTapRatherThanTheState() {
         #expect(CadenceTaskInspectorSupport.StatusAction.cancelled.title(for: .todo) == "Cancel")
         #expect(CadenceTaskInspectorSupport.StatusAction.cancelled.title(for: .cancelled) == "Restore")
+    }
+
+    /// **[[T-7204]]: the iOS sheet's visible status button is "Cancel Task" / "Restore Task".**
+    /// The shared `CadenceSchedulePanel` footer under it says "Cancel" and discards the edits; a
+    /// bare "Cancel" here was a second button with that word and the opposite effect. The footer's
+    /// literal is read from source so the collision this guards is the real one, not a copy.
+    @Test
+    func theIOSStatusButtonNamesTheTaskSoItIsNotASecondCancel() throws {
+        #expect(CadenceTaskInspectorSupport.StatusAction.cancelled.buttonTitle(for: .todo) == "Cancel Task")
+        #expect(CadenceTaskInspectorSupport.StatusAction.cancelled.buttonTitle(for: .cancelled) == "Restore Task")
+
+        let panel = try CadenceSourceScan.sourceFile("Cadence/Shared/Components/CadenceSchedulePanel.swift")
+        #expect(panel.contains(#"Text(isReadOnly ? "Done" : "Cancel")"#),
+                "non-vacuity: the panel footer no longer says Cancel; re-point this guard")
+        var checked = 0
+        for action in CadenceTaskInspectorSupport.StatusAction.allCases {
+            for status in TaskStatus.allCases {
+                #expect(action.buttonTitle(for: status) != "Cancel",
+                        "\(status): the status button reads the same as the panel footer's Cancel again")
+                checked += 1
+            }
+        }
+        #expect(checked >= TaskStatus.allCases.count)
+
+        let source = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/iOS/iOSTaskDetailSheetSections.swift")
+        )
+        let body = try #require(
+            CadenceSourceScan.declarationBody("struct iOSTaskStatusActionsSection: View", in: source)
+        )
+        #expect(body.contains("title: action.buttonTitle(for: task.status)"),
+                "the iOS status button no longer draws the task-naming title (T-7204)")
+        #expect(!body.contains("action.title(for:"), "the iOS status button is back on the bare shared word")
+    }
+
+    /// **[[T-7012]]: a cancelled task offers ONE way back to todo on the iOS sheet.** The completion
+    /// button said "Reopen" beside "Restore", and both restored (T-344). Behavioural half: for every
+    /// status, run each button the sheet draws on a real task and count the ones that land on
+    /// `.todo`; the source half pins that the sheet asks the shared predicate.
+    @Test
+    func aCancelledTaskOffersOneWayBackToTodo() throws {
+        var checked = 0
+        for status in TaskStatus.allCases {
+            var backToTodo = 0
+            var completes = 0
+            if CadenceTaskInspectorSupport.offersCompletionAction(for: status) {
+                let (context, task) = try Self.makeTask(status)
+                try CadenceTaskMutationSupport.toggleCompletion(task, modelContext: context, widgetEffects: CadenceTaskReopenWidgetEffects { _ in })
+                if task.status == .todo { backToTodo += 1 }
+                if task.status == .done { completes += 1 }
+            }
+            for action in CadenceTaskInspectorSupport.StatusAction.allCases
+                where action.target(from: status) == .todo {
+                backToTodo += 1
+            }
+            if status == .cancelled {
+                #expect(backToTodo == 1, "a cancelled task shows \(backToTodo) ways back to todo")
+                #expect(completes == 0, "a cancelled task can be completed from the sheet (T-344)")
+            }
+            if status == .done { #expect(backToTodo == 1) }
+            checked += 1
+        }
+        #expect(checked >= 3, "non-vacuity: todo, done and cancelled at least")
+        #expect(CadenceTaskInspectorSupport.offersCompletionAction(for: .todo))
+        #expect(CadenceTaskInspectorSupport.offersCompletionAction(for: .done))
+
+        let source = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/iOS/iOSTaskDetailSheetSections.swift")
+        )
+        let body = try #require(
+            CadenceSourceScan.declarationBody("struct iOSTaskStatusActionsSection: View", in: source)
+        )
+        let gate = try #require(body.range(of: "if CadenceTaskInspectorSupport.offersCompletionAction(for: task.status) {"),
+                                "the iOS completion button is no longer gated on the shared predicate (T-7012)")
+        let button = try #require(body.range(of: #"title: isFinished ? "Reopen" : "Complete""#))
+        #expect(gate.upperBound <= button.lowerBound, "the gate no longer encloses the completion button")
+    }
+
+    private static func makeTask(_ status: TaskStatus) throws -> (ModelContext, AppTask) {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let task = AppTask(title: "Status")
+        task.status = status
+        context.insert(task)
+        try context.save()
+        return (context, task)
     }
 
     @Test
