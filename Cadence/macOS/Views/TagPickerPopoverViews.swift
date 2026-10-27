@@ -412,10 +412,14 @@ private struct TagEditSheet: View {
             }
 
             HStack {
+                // T-7268: Escape cancels and Return saves (gated by the same `.disabled` as the
+                // click, and drawn as the default button). Archive is destructive and takes neither.
                 Button("Archive", role: .destructive, action: onArchive)
                 Spacer()
                 Button("Cancel", action: onCancel)
+                    .keyboardShortcut(.cancelAction)
                 Button("Save", action: onSave)
+                    .keyboardShortcut(.defaultAction)
                     .disabled(!canSave)
             }
         }

@@ -37,6 +37,47 @@ struct CadenceListEditorSheetKeyboardTests {
         )
     }
 
+    /// T-7268: the Notes folder sheet and the tag picker's edit sheet had the same gap.
+    @Test func noteFolderSheetCancelTakesEscapeAndConfirmTakesReturn() throws {
+        let sheet = try Self.body(
+            "struct NoteFolderSheet: View",
+            in: "Cadence/macOS/Views/ListNotesListSupportViews.swift"
+        )
+        let compact = sheet.filter { !$0.isWhitespace }
+
+        #expect(
+            compact.contains(".buttonStyle(.cadencePlain).keyboardShortcut(.cancelAction)Button(request.actionTitle){"),
+            "Escape must close the Mac note folder sheet, from its Cancel button"
+        )
+        #expect(
+            compact.contains(".keyboardShortcut(.defaultAction).disabled(normalizedFolderPath.isEmpty)"),
+            "Return must confirm the Mac note folder sheet, gated by the same disabled as the click"
+        )
+        #expect(compact.components(separatedBy: ".keyboardShortcut(").count - 1 == 2)
+    }
+
+    @Test func tagEditSheetCancelTakesEscapeSaveTakesReturnArchiveTakesNeither() throws {
+        let sheet = try Self.body(
+            "private struct TagEditSheet: View",
+            in: "Cadence/macOS/Views/TagPickerPopoverViews.swift"
+        )
+        let compact = sheet.filter { !$0.isWhitespace }
+
+        #expect(
+            compact.contains(#"Button("Cancel",action:onCancel).keyboardShortcut(.cancelAction)"#),
+            "Escape must close the Mac tag edit sheet"
+        )
+        #expect(
+            compact.contains(#"Button("Save",action:onSave).keyboardShortcut(.defaultAction).disabled(!canSave)"#),
+            "Return must save the Mac tag edit sheet, gated by the same disabled as the click"
+        )
+        #expect(
+            compact.contains(#"Button("Archive",role:.destructive,action:onArchive)Spacer()"#),
+            "Archive is destructive and must take neither Return nor Escape"
+        )
+        #expect(compact.components(separatedBy: ".keyboardShortcut(").count - 1 == 2)
+    }
+
     @Test func iconStripCellCarriesTheSelectedTrait() throws {
         let cell = try Self.body("private struct ListEditorIconCell: View", in: Self.supportPath)
         #expect(cell.contains(".accessibilityAddTraits(isSelected ? .isSelected : [])"))

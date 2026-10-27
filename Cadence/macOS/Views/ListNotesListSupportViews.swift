@@ -67,6 +67,8 @@ struct NoteFolderSheet: View {
                     .clipShape(RoundedRectangle(cornerRadius: 8))
             }
 
+            // T-7268: Escape cancels and Return confirms; Return is gated by the same `.disabled`
+            // as the click, so a folder path that normalizes to nothing does nothing.
             HStack {
                 Spacer()
                 Button("Cancel") {
@@ -79,6 +81,7 @@ struct NoteFolderSheet: View {
                 .background(Theme.surfaceElevated.opacity(0.8))
                 .clipShape(RoundedRectangle(cornerRadius: 8))
                 .buttonStyle(.cadencePlain)
+                .keyboardShortcut(.cancelAction)
 
                 Button(request.actionTitle) {
                     onSave(folderPath)
@@ -91,6 +94,7 @@ struct NoteFolderSheet: View {
                 .background(Theme.blue.opacity(normalizedFolderPath.isEmpty ? 0.35 : 0.95))
                 .clipShape(RoundedRectangle(cornerRadius: 8))
                 .buttonStyle(.cadencePlain)
+                .keyboardShortcut(.defaultAction)
                 .disabled(normalizedFolderPath.isEmpty)
             }
         }
