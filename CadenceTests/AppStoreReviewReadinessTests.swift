@@ -640,6 +640,72 @@ struct AppStoreReviewReadinessTests {
         #expect(reviewNotes.contains("iOS/iPadOS 26.1 or later"))
     }
 
+    /// **T-7276: the app and the widget extension it embeds must agree on both version keys.**
+    /// An extension whose `CFBundleVersion` or `CFBundleShortVersionString` differs from its host
+    /// app's is rejected at upload validation, and [[T-7100]] bumped 24 -> 25 by hand on four
+    /// configurations with nothing to catch a missed one.
+    ///
+    /// **A RELATION, not a figure,** so the next bump does not redden this -- and per TARGET, read
+    /// out of the parsed project rather than grepped, because the file legitimately carries three
+    /// different `CURRENT_PROJECT_VERSION`s: `CadenceTests`/`CadenceUITests` and `CadenceMCPServer`
+    /// ship nothing and are deliberately left behind. A whole-file count would either pin those
+    /// too or not notice the widget drifting away from the app.
+    ///
+    /// The Info.plist half is what makes the build-setting half mean something: a literal
+    /// `CFBundleVersion` written into either plist would ship whatever it says, whatever the
+    /// build settings agree on.
+    @Test func theAppAndItsWidgetExtensionShipTheSameVersionAndBuildNumber() throws {
+        let data = try Data(contentsOf: repositoryRoot().appendingPathComponent("Cadence.xcodeproj/project.pbxproj"))
+        let project = try #require(
+            try PropertyListSerialization.propertyList(from: data, options: [], format: nil) as? [String: Any]
+        )
+        let objects = try #require(project["objects"] as? [String: [String: Any]])
+        func settings(ofTarget name: String) throws -> [String: [String: Any]] {
+            let target = try #require(
+                objects.values.first { $0["isa"] as? String == "PBXNativeTarget" && $0["name"] as? String == name },
+                "project.pbxproj has no native target named \(name)"
+            )
+            let listID = try #require(target["buildConfigurationList"] as? String)
+            let configurationIDs = try #require(objects[listID]?["buildConfigurations"] as? [String])
+            var byConfiguration: [String: [String: Any]] = [:]
+            for id in configurationIDs {
+                let configuration = try #require(objects[id])
+                let configurationName = try #require(configuration["name"] as? String)
+                byConfiguration[configurationName] = configuration["buildSettings"] as? [String: Any] ?? [:]
+            }
+            return byConfiguration
+        }
+
+        let app = try settings(ofTarget: "Cadence")
+        let widget = try settings(ofTarget: "CadenceWidgets")
+        // Non-vacuity: both targets carry Debug AND Release, and nothing else, so a configuration
+        // added to one and not the other is a finding here rather than a silently skipped key.
+        #expect(Set(app.keys) == ["Debug", "Release"])
+        #expect(Set(widget.keys) == Set(app.keys))
+        for configuration in app.keys.sorted() {
+            for key in ["CURRENT_PROJECT_VERSION", "MARKETING_VERSION"] {
+                let appValue = app[configuration]?[key] as? String
+                let widgetValue = widget[configuration]?[key] as? String
+                #expect(appValue != nil, "Cadence \(configuration) sets no \(key)")
+                #expect(appValue == widgetValue,
+                        "Cadence \(configuration) \(key) = \(appValue ?? "nil") but CadenceWidgets reads \(widgetValue ?? "nil")")
+            }
+        }
+
+        let widgetPlist = try plistDictionary(at: "CadenceWidgets/Info.plist")
+        #expect(widgetPlist["CFBundleVersion"] as? String == "$(CURRENT_PROJECT_VERSION)")
+        #expect(widgetPlist["CFBundleShortVersionString"] as? String == "$(MARKETING_VERSION)")
+        // The app's plist is merged with a generated one (GENERATE_INFOPLIST_FILE = YES), which
+        // fills both keys from the build settings -- so it may omit them, but must not pin them.
+        let appPlist = try plistDictionary(at: "Cadence/Info.plist")
+        for (plistKey, setting) in [("CFBundleVersion", "CURRENT_PROJECT_VERSION"),
+                                    ("CFBundleShortVersionString", "MARKETING_VERSION")] {
+            if let literal = appPlist[plistKey] as? String {
+                #expect(literal == "$(\(setting))", "Cadence/Info.plist pins \(plistKey) to \(literal)")
+            }
+        }
+    }
+
     @Test func appTargetDoesNotEmbedMCPServerOrMCPPackage() throws {
         let project = try textFile(at: "Cadence.xcodeproj/project.pbxproj")
         let targetBlock = try #require(
