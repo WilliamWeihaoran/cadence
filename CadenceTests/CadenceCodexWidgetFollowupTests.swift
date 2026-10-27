@@ -193,6 +193,24 @@ struct CadenceCodexWidgetFollowupTests {
         #expect(CadenceSourceScan.matchCount("alignment: stateCardAlignment", in: calendar) == 2)
     }
 
+    /// T-7211 (b): T-7126's whole-or-nothing container name was meant for the iPad extra-large
+    /// columns only. The same `taskRow` draws the medium rows and the large queue card, where a
+    /// long list name used to truncate and, unscoped, vanished. The decision is the model's; the
+    /// view is held to reading it, and to truncating (no `fixedSize`) everywhere else.
+    @Test func todayRowDropsAnUnfittedContainerNameOnlyAtExtraLarge() throws {
+        let families = CadenceWidgetFamilyLayout.allCases
+        #expect(families.map(\.todayRowDropsContainerNameThatDoesNotFit) == [false, false, false, true])
+        let read = CadenceSourceScan.strippedSourceReader()
+        let view = CadenceSourceScan.codeOnly(try read("CadenceWidgets/TodayTasksWidgetView.swift"))
+        #expect(CadenceSourceScan.matchCount("ViewThatFits\\(in: \\.horizontal\\)", in: view) == 1)
+        let gate = try #require(view.range(of: "if widgetFamily.cadenceLayout.todayRowDropsContainerNameThatDoesNotFit {"))
+        let fits = try #require(view.range(of: "ViewThatFits(in: .horizontal)"))
+        let otherwise = try #require(view.range(of: "statusLine(status, containerName: task.containerName, truncates: true)"))
+        #expect(gate.upperBound <= fits.lowerBound && fits.upperBound <= otherwise.lowerBound)
+        #expect(view.contains("statusLine(status, containerName: task.containerName, truncates: false)"))
+        #expect(view.contains(".fixedSize(horizontal: !truncates, vertical: false)"))
+    }
+
     @Test func codexHabitSnapshotRequestsOverridesForItsOwnDate() throws {
         let rule = try CadenceScanInstrument(
             "habit snapshot dated override",

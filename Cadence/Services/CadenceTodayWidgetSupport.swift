@@ -22,6 +22,13 @@ nonisolated enum CadenceWidgetFamilyLayout: CaseIterable, Sendable {
         }
     }
 
+    /// Whether a Today task row drops a container name that does not fit WHOLE (pill alone)
+    /// rather than truncating it. Only the iPad extra-large columns: they are narrow enough that
+    /// truncation left a two-character stub, `[S` (T-7126). The medium rows and the large queue
+    /// card share the same row and are wide enough that a truncated name still reads, so there it
+    /// truncates as it did before `eff2f35b` (T-7211 (b)).
+    var todayRowDropsContainerNameThatDoesNotFit: Bool { self == .extraLarge }
+
     var habitLimit: Int {
         switch self {
         case .small: 2

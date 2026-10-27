@@ -404,22 +404,17 @@ struct TodayTasksWidgetView: View {
                         .lineLimit(titleLines)
                         .minimumScaleFactor(0.9)
 
-                    // The container name rides beside the status pill only when it fits WHOLE. The
-                    // pill is `fixedSize`, so a narrow row (the iPad extra-large columns) left the
-                    // name a two-character stub, `[S`, which is noise rather than information
-                    // (T-7126); a row that cannot hold the name now draws the pill alone.
-                    ViewThatFits(in: .horizontal) {
-                        HStack(spacing: 5) {
+                    // At extra-large the container name rides beside the status pill only when it
+                    // fits WHOLE: the pill is `fixedSize`, so the narrow iPad columns left the name
+                    // a two-character stub, `[S`, which is noise rather than information (T-7126).
+                    // Every other family truncates it, as before (T-7211 (b)).
+                    if widgetFamily.cadenceLayout.todayRowDropsContainerNameThatDoesNotFit {
+                        ViewThatFits(in: .horizontal) {
+                            statusLine(status, containerName: task.containerName, truncates: false)
                             statusPill(status)
-                            if !task.containerName.isEmpty {
-                                Text(task.containerName)
-                                    .font(.system(size: scale.captionFontSize, weight: .medium))
-                                    .foregroundStyle(Theme.subdued)
-                                    .lineLimit(1)
-                                    .fixedSize()
-                            }
                         }
-                        statusPill(status)
+                    } else {
+                        statusLine(status, containerName: task.containerName, truncates: true)
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -432,6 +427,23 @@ struct TodayTasksWidgetView: View {
         .background(Theme.surfaceElevated)
         .clipShape(RoundedRectangle(cornerRadius: scale.cardCornerRadius, style: .continuous))
         .cadenceWidgetElevation(scale)
+    }
+
+    private func statusLine(
+        _ status: CadenceTodayTaskStatusPresentation,
+        containerName: String,
+        truncates: Bool
+    ) -> some View {
+        HStack(spacing: 5) {
+            statusPill(status)
+            if !containerName.isEmpty {
+                Text(containerName)
+                    .font(.system(size: scale.captionFontSize, weight: .medium))
+                    .foregroundStyle(Theme.subdued)
+                    .lineLimit(1)
+                    .fixedSize(horizontal: !truncates, vertical: false)
+            }
+        }
     }
 
     private func footerBar(label: String) -> some View {
