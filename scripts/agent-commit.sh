@@ -869,8 +869,8 @@ ledger_entry_lines() {  # $1 = file; "<id>\t<line>" for every line inside a form
 # rather than an error -- i.e. a guard that finds nothing and says so confidently. Measured while
 # writing the replay script this rule's number came from.
 ledger_changed_entry_ids() {  # $1 = HEAD blob (/dev/null when the path is new), $2 = staged content, $3 = scratch prefix
-    ledger_entry_lines "$1" > "$3.old"
-    ledger_entry_lines "$2" > "$3.new"
+    ledger_memo ledger_entry_lines "$1" > "$3.old"
+    ledger_memo ledger_entry_lines "$2" > "$3.new"
     # The `;` before `}` is required: without it zsh reads the group's last command and the
     # pipeline after it as separate statements, and the result is empty (measured, same session).
     { comm -23 "$3.old" "$3.new"; comm -13 "$3.old" "$3.new"; } | cut -f1 | sort -u
@@ -1297,6 +1297,82 @@ ledger_crossref_refs() {  # $1 = head sha -> one tree-ish per line, none of them
         git merge-base --is-ancestor "$wsha" "$1" 2>/dev/null && continue
         print -r -- "$wsha"
     done
+}
+
+# T-7372. THE WHOLE-LEDGER READINGS, ASKED ONCE AND CONCURRENTLY. Every guard in section 3 reads
+# its own whole-ledger pass, in turn, and BSD awk 20200816 reads at about 50 MB/s whatever the
+# program -- `awk '{}'` alone is 0.12 s over a 6 MB `docs/TODO.md` -- so ten awk passes over HEAD's
+# and the staged ledger plus the lint were ~3 s of a ~4.4 s one-line commit, with no single pass
+# above 0.5 s. The passes are independent, so `ledger_prefetch` starts every one of them at once,
+# before the first ledger guard, and WAITS for all of them; each guard then asks `ledger_memo`
+# the same question it always asked and is handed that answer, output and exit status.
+#
+# Nothing a guard decides moved: the same functions read the same bytes, and a guard whose question
+# the prefetch did not ask -- or whose prefetched run left no exit status behind -- computes it
+# directly, exactly as before. The key is the function plus its arguments, file PATHS included,
+# which is only sound because nothing in this script rewrites a staged blob or a `.headcopy` after
+# it is written; `ledger_head_copy` is the one writer of the latter, once per path per commit.
+typeset -gA LEDGER_MEMO
+LEDGER_MEMO=()
+
+ledger_head_copy() {  # $1 = path -> a file holding HEAD's blob of it, written once; exit 1 when HEAD has none
+    # Reads `scratch` and `headsha` from cmd_commit's scope, as splice_trailers reads `message`.
+    local f="$scratch/$(ledger_key "$1").headcopy"
+    if [[ ! -f "$f" ]]; then
+        git cat-file -e "$headsha:$1" 2>/dev/null || return 1
+        { git cat-file -p "$headsha:$1" > "$f.tmp" && mv -f -- "$f.tmp" "$f" } || { rm -f -- "$f.tmp"; return 1 }
+    fi
+    print -r -- "$f"
+}
+
+ledger_lint_reading() {  # $1 = the staged docs/TODO.md, $2 = ledger-view.sh -> `lint`, stdout and stderr together
+    CADENCE_LEDGER_VIEW_TODO="$1" CADENCE_LEDGER_VIEW_DONE=/dev/null \
+        CADENCE_LEDGER_VIEW_MIN_ENTRIES=1 sh "$2" lint 2>&1
+}
+
+ledger_memo() {  # $1 = a reading, $2... = its arguments -> its output and exit status
+    local f="${LEDGER_MEMO[${(j: :)${(q)@}}]:-}"
+    if [[ -n "$f" && -f "$f.rc" ]]; then
+        cat -- "$f.out"
+        return "$(<"$f.rc")"
+    fi
+    "$@"
+}
+
+ledger_prefetch_spawn() {  # $@ = a reading and its arguments; appends to the caller's `prefetch_pids`
+    local key="${(j: :)${(q)@}}"
+    [[ -n "${LEDGER_MEMO[$key]+x}" ]] && return 0        # a path named twice asks once
+    local f="$scratch/memo.$(( ${#LEDGER_MEMO} + 1 ))"
+    LEDGER_MEMO[$key]="$f"
+    # The status file is written LAST and by rename, so its presence means the run finished.
+    { "$@" > "$f.out"; print -r -- $? > "$f.rc.tmp" && mv -f -- "$f.rc.tmp" "$f.rc" } &
+    prefetch_pids+=($!)
+}
+
+ledger_prefetch() {  # reads names, staged_content, scratch and headsha from cmd_commit's scope
+    local -a prefetch_pids
+    prefetch_pids=()
+    local pname pstaged phead
+    for pname in "${names[@]}"; do
+        is_any_ledger_path "$pname" || continue
+        [[ -n "${staged_content[$pname]+x}" ]] || continue
+        pstaged="${staged_content[$pname]}"
+        ledger_prefetch_spawn ledger_closed_ids "$pstaged"
+        ledger_prefetch_spawn ledger_buried_closure_ids "$pstaged"
+        ledger_prefetch_spawn ledger_selfduplicated_ids "$pstaged" "$LEDGER_DUP_MIN_RUN"
+        ledger_prefetch_spawn ledger_not_open_ids "$pstaged" "${pname:t}"
+        ledger_prefetch_spawn ledger_partial_first_lines "$pstaged"
+        ledger_prefetch_spawn ledger_entry_lines "$pstaged"
+        phead=$(ledger_head_copy "$pname") || continue
+        ledger_prefetch_spawn ledger_closed_ids "$phead"
+        ledger_prefetch_spawn ledger_selfduplicated_ids "$phead" 1
+        ledger_prefetch_spawn ledger_partial_first_lines "$phead"
+        ledger_prefetch_spawn ledger_entry_lines "$phead"
+    done
+    local lint_file="${staged_content[docs/TODO.md]:-}" lint_tool="${SCRIPT_PATH:h}/ledger-view.sh"
+    [[ -n "$lint_file" && -f "$lint_tool" ]] && ledger_prefetch_spawn ledger_lint_reading "$lint_file" "$lint_tool"
+    (( ${#prefetch_pids} )) && wait "${prefetch_pids[@]}"
+    return 0
 }
 
 STALE_MINUTES="${CADENCE_DECLINED_STALE_MINUTES:-30}"
@@ -2092,6 +2168,9 @@ $(print -rl -- "${stale[@]}" | sed 's/^/    /')
   -- clear it: ./scripts/agent-commit.sh accept <path>"
     fi
 
+    # 3-. T-7372: every whole-ledger reading section 3 asks, started at once and awaited here.
+    ledger_prefetch
+
     # 3a. A ledger entry HEAD has and your staged content does not is a LOST TICKET, and it hides
     #     inside any line count large enough to be worth reading past. Name the ids, not the lines.
     #
@@ -2122,8 +2201,7 @@ $(print -rl -- "${stale[@]}" | sed 's/^/    /')
         is_any_ledger_path "$name" || continue
         [[ -n "${staged_content[$name]+x}" ]] || continue
         git cat-file -e "$headsha:$name" 2>/dev/null || continue
-        local ledger_head="$scratch/$(ledger_key "$name").ledgerhead"
-        git cat-file -p "$headsha:$name" > "$ledger_head"
+        local ledger_head=""; ledger_head=$(ledger_head_copy "$name") || continue
         gone=$(comm -23 <(ledger_ids "$ledger_head") <(ledger_ids "${staged_content[$name]}"))
         [[ -n "$gone" ]] || continue
         lost_ids+=(${(f)gone})
@@ -2243,10 +2321,9 @@ $(print -rl -- "${stale[@]}" | sed 's/^/    /')
         is_any_ledger_path "$name" || continue
         [[ -n "${staged_content[$name]+x}" ]] || continue
         git cat-file -e "$headsha:$name" 2>/dev/null || continue
-        local closure_head="$scratch/$(ledger_key "$name").closurehead"
-        git cat-file -p "$headsha:$name" > "$closure_head"
+        local closure_head=""; closure_head=$(ledger_head_copy "$name") || continue
         reopened=$(comm -12 \
-            <(comm -23 <(ledger_closed_ids "$closure_head") <(ledger_closed_ids "${staged_content[$name]}")) \
+            <(comm -23 <(ledger_memo ledger_closed_ids "$closure_head") <(ledger_memo ledger_closed_ids "${staged_content[$name]}")) \
             <(ledger_ids "${staged_content[$name]}"))
         [[ -n "$reopened" ]] || continue
         reopened_ids+=(${(f)reopened}); reopened_in+=("$name")
@@ -2280,7 +2357,7 @@ $(print -rl -- "${stale[@]}" | sed 's/^/    /')
     for name in "${names[@]}"; do
         is_any_ledger_path "$name" || continue
         [[ -n "${staged_content[$name]+x}" ]] || continue
-        buried=$(ledger_buried_closure_ids "${staged_content[$name]}")
+        buried=$(ledger_memo ledger_buried_closure_ids "${staged_content[$name]}")
         [[ -n "$buried" ]] || continue
         buried_ids+=(${(f)buried}); buried_in="$name"
     done
@@ -2312,8 +2389,7 @@ $(print -rl -- "${stale[@]}" | sed 's/^/    /')
     local lint_name=docs/TODO.md lint_script="${SCRIPT_PATH:h}/ledger-view.sh" lint_out lint_rc
     if [[ -n "${staged_content[$lint_name]+x}" ]]; then
         [[ -f "$lint_script" ]] || { rm -rf "$scratch"; refuse LEDGER-LINT-FAILED "$lint_script is not there, so the staged docs/TODO.md cannot be linted for illegal lead tokens. Restore the script." }
-        lint_out=$(CADENCE_LEDGER_VIEW_TODO="${staged_content[$lint_name]}" CADENCE_LEDGER_VIEW_DONE=/dev/null \
-            CADENCE_LEDGER_VIEW_MIN_ENTRIES=1 sh "$lint_script" lint 2>&1); lint_rc=$?
+        lint_out=$(ledger_memo ledger_lint_reading "${staged_content[$lint_name]}" "$lint_script"); lint_rc=$?
         if (( lint_rc == 6 )); then
             rm -rf "$scratch"
             refuse LEDGER-ILLEGAL-LEAD "the docs/TODO.md this commit stages carries an illegal lead token:
@@ -2355,25 +2431,21 @@ $(print -r -- "$lint_out" | grep -v '^REFUSED' | sed "s|${staged_content[$lint_n
     for name in "${names[@]}"; do
         is_any_ledger_path "$name" || continue
         [[ -n "${staged_content[$name]+x}" ]] || continue
-        local dup_head="$scratch/$(ledger_key "$name").duphead"
-        if git cat-file -e "$headsha:$name" 2>/dev/null; then
-            git cat-file -p "$headsha:$name" > "$dup_head"
-        else
-            : > "$dup_head"
-        fi
+        local dup_head=""
+        dup_head=$(ledger_head_copy "$name") || { dup_head="$scratch/$(ledger_key "$name").duphead"; : > "$dup_head" }
         # HEAD is read with a threshold of 1, so the comparison is against its TRUE longest run
         # rather than against the refusal threshold: an entry already repeating three lines must
         # not be able to acquire a fourth for free.
         head_runs=()
         while IFS=$'\t' read -r dupid duprun; do
             [[ -n "$dupid" ]] && head_runs[$dupid]="$duprun"
-        done < <(ledger_selfduplicated_ids "$dup_head" 1)
+        done < <(ledger_memo ledger_selfduplicated_ids "$dup_head" 1)
         while IFS=$'\t' read -r dupid duprun; do
             [[ -n "$dupid" ]] || continue
             prevrun="${head_runs[$dupid]:-0}"
             (( duprun > prevrun )) || continue
             dup_entries+=("$dupid  [$duprun repeated lines, HEAD had $prevrun]"); dup_in="$name"
-        done < <(ledger_selfduplicated_ids "${staged_content[$name]}" "$LEDGER_DUP_MIN_RUN")
+        done < <(ledger_memo ledger_selfduplicated_ids "${staged_content[$name]}" "$LEDGER_DUP_MIN_RUN")
     done
     if (( ${#dup_entries} )); then
         local -a dup_ids_only
@@ -2426,18 +2498,13 @@ $(print -r -- "$lint_out" | grep -v '^REFUSED' | sed "s|${staged_content[$lint_n
         # ids its prose LINKS to (3a4b), and whether an id is named in it at all (3a4c).
         ledger_ids "$lcontent" >> "$filed_ids"
         ledger_link_ids "$lcontent" >> "$link_ids"
-        ledger_not_open_ids "$lcontent" "${lpath:t}" >> "$notopen_ids"   # T-1300
+        ledger_memo ledger_not_open_ids "$lcontent" "${lpath:t}" >> "$notopen_ids"   # T-1300
         # T-1359: a `**PARTIAL` first line this commit STAGED that HEAD does not already carry
         # verbatim. Only asked of a ledger this commit actually rewrites; an untouched ledger can
         # contribute nothing here by construction.
         if [[ -n "${staged_content[$lpath]+x}" ]]; then
-            lphead="$scratch/$(ledger_key "$lpath").partialhead"
-            if git cat-file -e "$headsha:$lpath" 2>/dev/null; then
-                git cat-file -p "$headsha:$lpath" > "$lphead"
-            else
-                : > "$lphead"
-            fi
-            comm -23 <(ledger_partial_first_lines "$lcontent") <(ledger_partial_first_lines "$lphead") \
+            lphead=$(ledger_head_copy "$lpath") || { lphead="$scratch/$(ledger_key "$lpath").partialhead"; : > "$lphead" }
+            comm -23 <(ledger_memo ledger_partial_first_lines "$lcontent") <(ledger_memo ledger_partial_first_lines "$lphead") \
                 | cut -f1 >> "$partialhere_ids"
         fi
         cat -- "$lcontent" >> "$ledger_text"
@@ -2489,8 +2556,7 @@ $(print -r -- "$lint_out" | grep -v '^REFUSED' | sed "s|${staged_content[$lint_n
         : > "$head_filed"; : > "$head_links"
         for hpath in ${(f)"$(git ls-tree -r --name-only "$headsha" 2>/dev/null | grep -E '(^|/)TODO(_DONE)?\.md$')"}; do
             [[ -n "$hpath" ]] || continue
-            hblob="$scratch/$(ledger_key "$hpath").headledger"
-            git cat-file -p "$headsha:$hpath" > "$hblob" 2>/dev/null || continue
+            hblob=$(ledger_head_copy "$hpath") || continue
             ledger_ids "$hblob" >> "$head_filed"
             ledger_link_ids "$hblob" >> "$head_links"
         done
@@ -2748,8 +2814,8 @@ ${(F)${(@)crossref_report/#/    }}
     for name in "${names[@]}"; do
         is_any_ledger_path "$name" || continue
         [[ -n "${staged_content[$name]+x}" ]] || continue
-        local changed_head="$scratch/$(ledger_key "$name").changedhead"
-        git cat-file -p "$headsha:$name" > "$changed_head" 2>/dev/null || : > "$changed_head"
+        local changed_head=""
+        changed_head=$(ledger_head_copy "$name") || { changed_head="$scratch/$(ledger_key "$name").changedhead"; : > "$changed_head" }
         ledger_changed_entry_ids "$changed_head" "${staged_content[$name]}" \
             "$scratch/$(ledger_key "$name").changed" >> "$changed_ids_file"
         unclaimed_in="$name"
