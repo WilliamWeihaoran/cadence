@@ -474,26 +474,95 @@ nonisolated enum NoteReferencePanelSupport {
     ///
     /// One separator for all three dated kinds. The row spelled the event's `·` and the search's
     /// `/`; two separators inside one list of results is a difference that means nothing.
-    static func noteKindDetail(_ note: Note) -> String {
+    static func noteKindDetail(_ note: Note, now: Date = Date()) -> String {
         switch note.kind {
         case .daily:
-            return datedDetail("Daily", key: note.dateKey, kind: .daily)
+            return datedDetail("Daily", key: note.dateKey, kind: .daily, now: now)
         case .weekly:
-            return datedDetail("Weekly", key: note.weekKey, kind: .weekly)
+            return datedDetail("Weekly", key: note.weekKey, kind: .weekly, now: now)
         case .permanent:
             return noteKindLabel(.permanent)
         case .list:
             return listContainerName(note) ?? noteKindLabel(.list)
         case .meeting:
-            return datedDetail("Event", key: note.eventDateKey, kind: .meeting)
+            return datedDetail("Event", key: note.eventDateKey, kind: .meeting, now: now)
         }
     }
 
     /// Falls back to the bare label rather than to an empty string, so a dated kind with no date
     /// still says which kind it is.
-    private static func datedDetail(_ prefix: String, key: String, kind: NoteKind) -> String {
+    ///
+    /// The date is the human one ([[T-7205]] (a)): `Daily / Oct 26`, `Weekly / Oct 26 – Nov 1`,
+    /// not the storage key. `datedName` says where the words come from.
+    private static func datedDetail(_ prefix: String, key: String, kind: NoteKind, now: Date) -> String {
         let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? noteKindLabel(kind) : "\(prefix) / \(trimmed)"
+        guard !trimmed.isEmpty else { return noteKindLabel(kind) }
+        let name = (kind == .weekly ? weekName(forWeekKey: trimmed, now: now) : dayName(forDateKey: trimmed, now: now)) ?? trimmed
+        return "\(prefix) / \(name)"
+    }
+
+    // MARK: - Dated notes by name, not by key (T-7205 (a))
+
+    /// **The day or week a dated note belongs to, in words** — or `nil` for a kind with no date,
+    /// or a dated note whose key is blank.
+    ///
+    /// [[T-7205]] (a): both search surfaces printed the storage key (`2026-10-26`, `2026-W43`),
+    /// which is a CloudKit-synced address, not a name. The words are the ones the iOS Notes
+    /// header already draws for the same note — `CadenceNoteDateNavigation.dayLabel` (`Oct 26`,
+    /// the spelling Cmd+K's Event Notes row uses through `DateFormatters.absoluteDay`) and
+    /// `weekRangeLabel` (`Oct 26 – Nov 1`) — so no new date style is invented here.
+    ///
+    /// **Display only.** `Note.displayTitle`, `dateKey` and `weekKey` are untouched: the keys
+    /// address stored notes, and `displayTitle` is matched by reference resolution and the MCP
+    /// layer. A key that does not parse comes back as itself, the rule `dayLabel` already follows.
+    static func datedName(_ note: Note, now: Date = Date()) -> String? {
+        switch note.kind {
+        case .daily: return dayName(forDateKey: note.dateKey, now: now)
+        case .weekly: return weekName(forWeekKey: note.weekKey, now: now)
+        case .meeting: return dayName(forDateKey: note.eventDateKey, now: now)
+        case .permanent, .list: return nil
+        }
+    }
+
+    static func dayName(forDateKey key: String, now: Date = Date()) -> String? {
+        let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        return CadenceNoteDateNavigation.dayLabel(forDayKey: trimmed, now: now)
+    }
+
+    /// Through the week's Monday, because `weekRangeLabel` takes a day key. Checked here rather than
+    /// left to it: given an unparseable day it falls back to *today's* week, which would name a
+    /// malformed key as a real week.
+    static func weekName(forWeekKey key: String, now: Date = Date()) -> String? {
+        let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return nil }
+        guard let monday = DateFormatters.weekStartDate(forWeekKey: trimmed) else { return trimmed }
+        return CadenceNoteDateNavigation.weekRangeLabel(forDayKey: DateFormatters.dateKey(from: monday), now: now)
+    }
+
+    /// **The title a search row draws for a note.** `displayTitle`, except for a daily or weekly
+    /// note still titled by its own key — every one `NoteMigrationService` creates is
+    /// (`title: dateKey`), and a blank title falls back to the key too — which reads as its
+    /// `datedName` instead. A title the user typed is shown as typed.
+    static func searchTitle(_ note: Note, now: Date = Date()) -> String {
+        let title = note.displayTitle
+        let key: String
+        switch note.kind {
+        case .daily: key = note.dateKey
+        case .weekly: key = note.weekKey
+        case .permanent, .list, .meeting: return title
+        }
+        let trimmedKey = key.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedKey.isEmpty, title == trimmedKey else { return title }
+        return datedName(note, now: now) ?? title
+    }
+
+    /// The storage key, kept as a search *field* so a query typed as `2026-10-26` or `W43` still
+    /// finds the note now that neither row line spells it.
+    static func searchKeyFields(_ note: Note) -> [String] {
+        [note.dateKey, note.weekKey, note.eventDateKey]
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
     }
 
     /// The list a `.list` note is filed under, trimmed and non-empty. `iOSSearchView` spelled this

@@ -301,11 +301,12 @@ struct CadenceNoteReferencePanelSurfaceTests {
     /// values here are the resolution — the *behaviour*, not a scan — so re-forking any of the
     /// three switches to its old string fails on a value.
     @Test func theNoteKindDetailNamesTheNoteAndNotJustItsKind() {
+        // The day and week in words, not the storage key ([[T-7205]] (a)).
         let daily = Note(kind: .daily, title: "2026-08-21", dateKey: "2026-08-21")
-        #expect(NoteReferencePanelSupport.noteKindDetail(daily) == "Daily / 2026-08-21")
+        #expect(NoteReferencePanelSupport.noteKindDetail(daily, now: Self.datedNow) == "Daily / Aug 21")
 
         let weekly = Note(kind: .weekly, title: "2026-W34", weekKey: "2026-W34")
-        #expect(NoteReferencePanelSupport.noteKindDetail(weekly) == "Weekly / 2026-W34")
+        #expect(NoteReferencePanelSupport.noteKindDetail(weekly, now: Self.datedNow) == "Weekly / Aug 17–23")
 
         // "Notepad", not "Permanent note". `iOSSearchView` said the latter while the tab, the
         // model's own `displayTitle` and `noteKindLabel` all said the former — and because search
@@ -319,7 +320,87 @@ struct CadenceNoteReferencePanelSurfaceTests {
         #expect(NoteReferencePanelSupport.noteKindDetail(filed) == "Documents")
 
         let event = Note(kind: .meeting, title: "Standup", eventDateKey: "2026-08-21")
-        #expect(NoteReferencePanelSupport.noteKindDetail(event) == "Event / 2026-08-21")
+        #expect(NoteReferencePanelSupport.noteKindDetail(event, now: Self.datedNow) == "Event / Aug 21")
+    }
+
+    // MARK: - Dated notes by name in search (T-7205 (a))
+
+    /// Midday, so no time zone the suite runs in moves it to another day.
+    static let datedNow = DateFormatters.ymd.date(from: "2026-10-27")!.addingTimeInterval(12 * 60 * 60)
+
+    /// The words are the iOS Notes header's own (`CadenceNoteDateNavigation`), not a new style:
+    /// `Oct 26` for a day, the tight `Oct 19–25` / spaced `Oct 26 – Nov 1` range for a week, and
+    /// a year only outside `now`'s.
+    @Test func aDatedNoteIsNamedByItsDayOrWeekNotItsKey() {
+        let daily = Note(kind: .daily, title: "2026-10-26", dateKey: "2026-10-26")
+        #expect(NoteReferencePanelSupport.datedName(daily, now: Self.datedNow) == "Oct 26")
+        #expect(NoteReferencePanelSupport.datedName(daily, now: Self.datedNow)
+            == CadenceNoteDateNavigation.dayLabel(forDayKey: "2026-10-26", now: Self.datedNow))
+
+        let straddling = Note(kind: .weekly, title: "2026-W44", weekKey: "2026-W44")
+        #expect(NoteReferencePanelSupport.datedName(straddling, now: Self.datedNow) == "Oct 26 – Nov 1")
+        let inMonth = Note(kind: .weekly, title: "2026-W43", weekKey: "2026-W43")
+        #expect(NoteReferencePanelSupport.datedName(inMonth, now: Self.datedNow) == "Oct 19–25")
+
+        let lastYear = Note(kind: .daily, title: "2025-10-26", dateKey: "2025-10-26")
+        #expect(NoteReferencePanelSupport.datedName(lastYear, now: Self.datedNow) == "Oct 26, 2025")
+
+        // A malformed week key is shown as itself, never as the current week's range.
+        let malformed = Note(kind: .weekly, title: "", weekKey: "W-bogus")
+        #expect(NoteReferencePanelSupport.datedName(malformed, now: Self.datedNow) == "W-bogus")
+        #expect(NoteReferencePanelSupport.datedName(Note(kind: .daily), now: Self.datedNow) == nil)
+        #expect(NoteReferencePanelSupport.datedName(Note(kind: .permanent, title: "Notepad")) == nil)
+    }
+
+    /// The row title: a dated note still titled by its key (or blank, which falls back to it) reads
+    /// as its day; a title somebody typed is left alone, and `displayTitle` itself never changes —
+    /// it is matched by reference resolution and MCP.
+    @Test func aSearchRowTitlesAnUntitledDatedNoteByItsDay() {
+        let keyed = Note(kind: .daily, title: "2026-10-26", dateKey: "2026-10-26")
+        #expect(NoteReferencePanelSupport.searchTitle(keyed, now: Self.datedNow) == "Oct 26")
+        #expect(keyed.displayTitle == "2026-10-26")
+
+        let blank = Note(kind: .weekly, title: "  ", weekKey: "2026-W43")
+        #expect(NoteReferencePanelSupport.searchTitle(blank, now: Self.datedNow) == "Oct 19–25")
+
+        let typed = Note(kind: .daily, title: "Offsite day", dateKey: "2026-10-26")
+        #expect(NoteReferencePanelSupport.searchTitle(typed, now: Self.datedNow) == "Offsite day")
+
+        let event = Note(kind: .meeting, title: "Standup", eventDateKey: "2026-10-26")
+        #expect(NoteReferencePanelSupport.searchTitle(event, now: Self.datedNow) == "Standup")
+        #expect(NoteReferencePanelSupport.searchTitle(Note(kind: .daily), now: Self.datedNow) == "Daily Note")
+    }
+
+    /// Neither row line spells the key any more, so the key is carried as a match field — a query
+    /// typed as the key still finds the note on both platforms.
+    @Test func theStorageKeyStaysSearchableAsAField() {
+        let daily = Note(kind: .daily, title: "2026-10-26", dateKey: "2026-10-26")
+        #expect(NoteReferencePanelSupport.searchKeyFields(daily) == ["2026-10-26"])
+        let weekly = Note(kind: .weekly, title: "2026-W43", weekKey: "2026-W43")
+        #expect(NoteReferencePanelSupport.searchKeyFields(weekly) == ["2026-W43"])
+        #expect(NoteReferencePanelSupport.searchKeyFields(Note(kind: .permanent, title: "Notepad")).isEmpty)
+    }
+
+    /// **Cmd+K and iOS Search say one date.** The Mac rows are built here; iOS is `#if os(iOS)` and
+    /// invisible to this target, so its two call sites are checked in source.
+    @Test func cmdKNamesTheDayAndStillMatchesTheKey() throws {
+        #if os(macOS)
+        let daily = Note(kind: .daily, title: "2026-10-26", dateKey: "2026-10-26")
+        let weekly = Note(kind: .weekly, title: "2026-W43", weekKey: "2026-W43")
+        #expect(GlobalSearchIndexSupport.noteSubtitle(for: daily) == "Daily • \(NoteReferencePanelSupport.datedName(daily)!)")
+        #expect(GlobalSearchIndexSupport.noteSubtitle(for: weekly) == "Weekly • \(NoteReferencePanelSupport.datedName(weekly)!)")
+
+        let byKey = GlobalSearchIndexSupport.noteResults(notes: [daily, weekly], query: "2026-10-26", taskTitles: [:])
+        #expect(byKey.map(\.title) == [NoteReferencePanelSupport.searchTitle(daily)])
+        #expect(byKey.allSatisfy { !$0.title.contains("2026-") && !$0.subtitle.contains("2026-") })
+        let byWeek = GlobalSearchIndexSupport.noteResults(notes: [daily, weekly], query: "W43", taskTitles: [:])
+        #expect(byWeek.map(\.title) == [NoteReferencePanelSupport.searchTitle(weekly)])
+        #endif
+
+        let search = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile("Cadence/iOS/iOSSearchView.swift"))
+        #expect(search.components(separatedBy: "NoteReferencePanelSupport.searchTitle(note)").count - 1 == 2)
+        #expect(search.components(separatedBy: "NoteReferencePanelSupport.searchKeyFields(note)").count - 1 == 1)
+        #expect(!search.contains("title: note.displayTitle,"))
     }
 
     /// **The live bug of the three, asserted as the property it violated rather than as a string.**

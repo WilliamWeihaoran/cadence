@@ -229,7 +229,8 @@ struct iOSSearchView: View {
                 let content = MarkdownTaskEmbedTitleCache.resolving(note.content, titles: taskTitles)
                 guard let score = CadenceSearchMatcher.matchScore(
                     query: trimmedQuery,
-                    fields: [note.displayTitle, content, noteSubtitle(note), tagText]
+                    fields: [NoteReferencePanelSupport.searchTitle(note), content, noteSubtitle(note), tagText]
+                        + NoteReferencePanelSupport.searchKeyFields(note)
                 ) else {
                     return nil
                 }
@@ -702,7 +703,7 @@ struct iOSSearchView: View {
     }
 
     /// The shared spelling, not one of three (T-239). This switch was the detail form's better
-    /// half — it is where "Daily / <key>" and the container name for a `.list` note come from —
+    /// half — it is where "Daily / <day>" and the container name for a `.list` note come from —
     /// but its `.permanent` said "Permanent note", the retired name of the Notepad tab, and this
     /// string is scored as a search *field*, so the notepad did not match the app's own word for
     /// it. See `NoteReferencePanelSupport.noteKindDetail`.
@@ -714,7 +715,7 @@ struct iOSSearchView: View {
         iOSSearchResult(
             id: CadenceSearchIdentity.note(note.id),
             destination: .note(note),
-            title: note.displayTitle,
+            title: NoteReferencePanelSupport.searchTitle(note),
             subtitle: noteSubtitle(note),
             detail: excerpt(MarkdownTaskEmbedTitleCache.resolving(note.content, titles: taskTitles)),
             icon: "doc.text",

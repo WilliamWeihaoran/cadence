@@ -430,10 +430,11 @@ enum GlobalSearchIndexSupport {
         let preparedQuery = CadenceSearchMatcher.PreparedQuery(query)
         return rankedResults(notes.compactMap { note -> GlobalSearchResult? in
             guard let subtitle = noteSubtitle(for: note) else { return nil }
-            let title = note.displayTitle
+            let title = NoteReferencePanelSupport.searchTitle(note)
             let content = MarkdownTaskEmbedTitleCache.resolving(note.content, titles: taskTitles)
             let tags = CadenceSearchTagSupport.text(for: note.sortedTags)
-            guard matches(query: preparedQuery, fields: [title, content, subtitle, tags]) else { return nil }
+            let fields = [title, content, subtitle, tags] + NoteReferencePanelSupport.searchKeyFields(note)
+            guard matches(query: preparedQuery, fields: fields) else { return nil }
             return GlobalSearchResult(
                 id: CadenceSearchIdentity.note(note.id), category: .notes,
                 title: title, subtitle: subtitle, icon: "doc.text",
@@ -450,11 +451,13 @@ enum GlobalSearchIndexSupport {
     /// has nowhere to open — `GlobalSearchListNoteRoute` is the only route to one — and the defect
     /// this ticket was reopened for is a hit that cannot be opened, so it is not offered.
     ///
-    /// The three dated spellings are unchanged from the kinds Codex's half of T-3084 landed.
+    /// The dated lines name the day or week in words ([[T-7205]] (a)) — `Daily • Oct 26`,
+    /// `Weekly • Oct 26 – Nov 1` — through the same `NoteReferencePanelSupport.datedName` iOS
+    /// Search reads, so the two platforms say one date. The storage key stays a match field.
     static func noteSubtitle(for note: Note) -> String? {
         switch note.kind {
-        case .daily: return "Daily • \(note.dateKey)"
-        case .weekly: return "Weekly • \(note.weekKey)"
+        case .daily: return "Daily • \(NoteReferencePanelSupport.datedName(note) ?? note.dateKey)"
+        case .weekly: return "Weekly • \(NoteReferencePanelSupport.datedName(note) ?? note.weekKey)"
         case .permanent: return "Notepad"
         case .list:
             guard GlobalSearchListNoteRoute.route(for: note) != nil else { return nil }

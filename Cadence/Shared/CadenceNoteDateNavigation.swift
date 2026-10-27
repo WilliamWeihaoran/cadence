@@ -39,7 +39,7 @@ enum CadenceNoteDateNavigation {
     /// parse, which is what the rest of the app does with a malformed key (see
     /// `DateFormatters.weekLabel`) — a visibly wrong label beats a crash or a silent substitution
     /// of today.
-    static func dayLabel(forDayKey dayKey: String, now: Date = Date()) -> String {
+    nonisolated static func dayLabel(forDayKey dayKey: String, now: Date = Date()) -> String {
         guard let date = DateFormatters.date(from: dayKey) else { return dayKey }
         return DateFormatters.absoluteDay(date, relativeTo: now)
     }
@@ -53,7 +53,7 @@ enum CadenceNoteDateNavigation {
     /// share it (`"Aug 17–23, 2025"`, `"Mar 30 – Apr 5, 2025"`); otherwise on each end that is
     /// outside it, through `DateFormatters.absoluteDay` (`"Dec 28 – Jan 3, 2027"`). Inside `now`'s
     /// year the output is unchanged.
-    static func weekRangeLabel(forDayKey dayKey: String, now: Date = Date(), calendar: Calendar = .current) -> String {
+    nonisolated static func weekRangeLabel(forDayKey dayKey: String, now: Date = Date(), calendar: Calendar = .current) -> String {
         let key = DateFormatters.weekKey(from: DateFormatters.date(from: dayKey) ?? Date())
         guard let monday = DateFormatters.weekStartDate(forWeekKey: key, calendar: calendar),
               let sunday = calendar.date(byAdding: .day, value: 6, to: monday) else {
