@@ -18,10 +18,14 @@ struct CalendarSnapshotWidgetProvider: TimelineProvider {
     }
 
     func getSnapshot(in context: TimelineProviderContext, completion: @escaping (CalendarSnapshotWidgetEntry) -> Void) {
+        // The widget gallery asks for a snapshot with `isPreview` set, and `placeholder(in:)` is
+        // only the redacted loading frame. Answering the gallery from the live store meant a new
+        // install advertised this widget as empty and the sample content below was shown to no
+        // one (T-7125); the gallery gets the sample, the home screen still gets the store.
         completion(
             CalendarSnapshotWidgetEntry(
                 date: Date(),
-                snapshot: currentSnapshot(for: context.family)
+                snapshot: context.isPreview ? placeholderSnapshot() : currentSnapshot(for: context.family)
             )
         )
     }
@@ -150,8 +154,16 @@ struct CalendarSnapshotWidgetView: View {
         .widgetURL(entry.snapshot.calendarURL)
     }
 
+    /// `systemSmall` gives this view 134pt of height on an iPhone 15 (158pt less the 12pt it pads
+    /// itself), and the ready layout used to want ~184pt of it: header, badge line, a day cell
+    /// with its `d`/`p` chips stacked, and a two-line next-up title. WidgetKit does not scroll, so
+    /// the next-up title was drawn off the bottom of the tile and, on the iPad where it wraps,
+    /// `Calendar` was sheared at the top too (T-7163). Three levers, all of them at this family
+    /// only: no badge line (`N next up` restated the count beside the title and the section under
+    /// it), the chips side by side in the cell, and one next-up title line; the compact section
+    /// spacing and a 7pt cell inset buy the few points of slack the three leave over.
     private var smallLayout: some View {
-        VStack(alignment: .leading, spacing: scale.sectionSpacing) {
+        VStack(alignment: .leading, spacing: scale.compactSectionSpacing) {
             header
             if entry.snapshot.isUnavailable {
                 unavailableState
@@ -159,7 +171,7 @@ struct CalendarSnapshotWidgetView: View {
                 emptyState
             } else {
                 dayStrip(days: visibleSpan.days, compact: true)
-                agendaLabel
+                nextUpSection(titleLineLimit: 1)
             }
         }
         .padding(scale.outerPadding)
@@ -218,14 +230,18 @@ struct CalendarSnapshotWidgetView: View {
             } else if entry.snapshot.state == .empty {
                 emptyState
             } else {
+                // `Open Calendar` sits under the grid, not under the agenda column. The agenda
+                // column is the tall one -- three metric cards and a next-up card -- and with the
+                // button at its foot it was the column that ran off the bottom of the iPad tile,
+                // slicing the button's lower third away; the grid's two rows leave room (T-7126).
                 HStack(alignment: .top, spacing: scale.sectionSpacing) {
-                    twoWeekGrid(days: visibleSpan.days)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    VStack(alignment: .leading, spacing: scale.compactSectionSpacing) {
-                        agendaPanel
+                    VStack(alignment: .leading, spacing: scale.sectionSpacing) {
+                        twoWeekGrid(days: visibleSpan.days)
                         footerLink
                     }
-                    .frame(width: 190, alignment: .topLeading)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    agendaPanel
+                        .frame(width: 190, alignment: .topLeading)
                 }
             }
         }
@@ -260,7 +276,7 @@ struct CalendarSnapshotWidgetView: View {
                     .minimumScaleFactor(0.8)
             }
 
-            if !usesInlineHeaderBadges {
+            if !usesInlineHeaderBadges && !headerBadges.isEmpty {
                 badgeRow
             }
         }
@@ -319,27 +335,25 @@ struct CalendarSnapshotWidgetView: View {
                     .foregroundStyle(Theme.subdued)
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
+            } else if widgetFamily == .systemSmall {
+                // Side by side rather than stacked: one caption line instead of two, which is
+                // ~14pt of the small tile's height (T-7163). `1d 2p` is ~24pt of glyphs against
+                // the ~30pt the narrowest (iPhone) cell leaves inside its inset.
+                HStack(spacing: 4) {
+                    dayCountChips(day, labelSpacing: 1)
+                }
             } else {
                 VStack(alignment: .leading, spacing: compact ? 3 : 4) {
-                    if day.dueCount > 0 {
-                        countChip(value: "\(day.dueCount)", label: "d", tint: Theme.amber)
-                    }
-                    if day.scheduledCount > 0 {
-                        countChip(value: "\(day.scheduledCount)", label: "p", tint: Theme.blueLight)
-                    }
+                    dayCountChips(day, labelSpacing: 3)
                 }
             }
         }
         .padding(.horizontal, dayCellHorizontalInset)
-        .padding(.vertical, compact ? max(scale.compactCardPadding - 1, 7) : scale.compactCardPadding)
-        .frame(maxWidth: .infinity, minHeight: compact ? 68 : 74, alignment: .topLeading)
+        .padding(.vertical, dayCellVerticalInset(compact: compact))
+        .frame(maxWidth: .infinity, minHeight: dayCellMinHeight(compact: compact), alignment: .topLeading)
         .background(dayBackground(for: day))
         .clipShape(RoundedRectangle(cornerRadius: scale.cardCornerRadius, style: .continuous))
         .cadenceWidgetElevation(scale)
-    }
-
-    private var agendaLabel: some View {
-        nextUpSection(titleLineLimit: 2)
     }
 
     /// The due label rides the caption row rather than sitting on its own line: these families are
@@ -392,7 +406,9 @@ struct CalendarSnapshotWidgetView: View {
             CadenceWidgetMetricCard(title: "Scheduled", value: "\(scheduledCount)")
             CadenceWidgetMetricCard(title: "Due", value: "\(dueCount)")
 
-            nextUpSection(titleLineLimit: 3)
+            // Two title lines, not three: this column is the tallest thing in the tile, and the
+            // third line was ~14pt it could not spend (T-7126).
+            nextUpSection(titleLineLimit: 2)
                 .padding(scale.panelPadding)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(Theme.surfaceElevated)
@@ -409,7 +425,8 @@ struct CalendarSnapshotWidgetView: View {
             title: "Schedule is clear",
             message: "There is no due or scheduled work in this stretch.",
             actionLabel: "Open Calendar",
-            actionURL: entry.snapshot.calendarURL
+            actionURL: entry.snapshot.calendarURL,
+            alignment: stateCardAlignment
         )
     }
 
@@ -418,8 +435,17 @@ struct CalendarSnapshotWidgetView: View {
             title: "Calendar widget needs Cadence",
             message: entry.snapshot.statusMessage,
             actionLabel: "Open Calendar",
-            actionURL: entry.snapshot.calendarURL
+            actionURL: entry.snapshot.calendarURL,
+            alignment: stateCardAlignment
         )
+    }
+
+    /// Leading only at `systemSmall`, centered everywhere else -- the same split
+    /// `TodayTasksWidgetView` makes. A leading card is pinned `.topLeading`, which on the 4x4
+    /// `systemLarge` tile left the bottom ~60% of it a blank rectangle under a band of text, and
+    /// the two shipped widgets disagreed with each other on one screen (T-7124).
+    private var stateCardAlignment: HorizontalAlignment {
+        widgetFamily == .systemSmall ? .leading : .center
     }
 
     private func dayBackground(for day: CadenceCalendarWidgetDay) -> some ShapeStyle {
@@ -468,13 +494,26 @@ struct CalendarSnapshotWidgetView: View {
         }
     }
 
+    /// `systemSmall` alone runs tighter than the other compact strip (medium): its single chip
+    /// line makes the cell ~14pt shorter, and the small tile has no height to spare (T-7163).
+    private func dayCellVerticalInset(compact: Bool) -> CGFloat {
+        if widgetFamily == .systemSmall { return 7 }
+        return compact ? max(scale.compactCardPadding - 1, 7) : scale.compactCardPadding
+    }
+
+    private func dayCellMinHeight(compact: Bool) -> CGFloat {
+        if widgetFamily == .systemSmall { return 0 }
+        return compact ? 68 : 74
+    }
+
     private var headerBadges: [WidgetHeaderBadge] {
         let overdueTint = Theme.red
         let upcomingTint = Theme.blueLight
         let upcomingCount = visibleSpan.totalCount
 
+        // No badge line at `systemSmall`: the tile has no 23pt for it (see `smallLayout`, T-7163).
         if widgetFamily == .systemSmall {
-            return [WidgetHeaderBadge(text: "\(upcomingCount) next up", tint: upcomingTint)]
+            return []
         }
 
         if widgetFamily == .systemMedium {
@@ -499,8 +538,18 @@ struct CalendarSnapshotWidgetView: View {
     /// ~67pt before its own inset. The long labels were truncating on the iPad's `systemLarge` and
     /// `systemExtraLarge` tiles (`1 du`, `3 pl`) exactly as they did on the small ones, so the
     /// strip speaks one vocabulary across families instead of spelling a word it cannot fit.
-    private func countChip(value: String, label: String, tint: Color) -> some View {
-        HStack(spacing: 3) {
+    @ViewBuilder
+    private func dayCountChips(_ day: CadenceCalendarWidgetDay, labelSpacing: CGFloat) -> some View {
+        if day.dueCount > 0 {
+            countChip(value: "\(day.dueCount)", label: "d", tint: Theme.amber, spacing: labelSpacing)
+        }
+        if day.scheduledCount > 0 {
+            countChip(value: "\(day.scheduledCount)", label: "p", tint: Theme.blueLight, spacing: labelSpacing)
+        }
+    }
+
+    private func countChip(value: String, label: String, tint: Color, spacing: CGFloat) -> some View {
+        HStack(spacing: spacing) {
             Text(value)
                 .font(.system(size: scale.captionFontSize, weight: .bold, design: .rounded))
             Text(label)

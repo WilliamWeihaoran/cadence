@@ -163,6 +163,36 @@ struct CadenceCodexWidgetFollowupTests {
         }
     }
 
+    /// T-7125: the widget gallery takes `snapshot`/`getSnapshot` with `isPreview` set, so a
+    /// provider that answers it from the live store advertises an empty widget on a new install.
+    /// What is held is the branch itself, in both providers; a WidgetKit host is what would show
+    /// the picture, and this test has none.
+    @Test func widgetGalleryPreviewsDrawThePlaceholderNotTheLiveStore() throws {
+        let read = CadenceSourceScan.strippedSourceReader()
+        let today = CadenceSourceScan.codeOnly(try read("CadenceWidgets/TodayTasksWidget.swift"))
+        let calendar = CadenceSourceScan.codeOnly(try read("CadenceWidgets/CalendarSnapshotWidget.swift"))
+        #expect(CadenceSourceScan.matchCount("context\\.isPreview\\s*\\?\\s*placeholderSnapshot\\(for: context\\.family\\)", in: today) == 1)
+        #expect(calendar.contains("context.isPreview ? placeholderSnapshot() : currentSnapshot(for: context.family)"))
+        // Non-vacuity: the live path is still what the timeline draws.
+        #expect(CadenceSourceScan.matchCount("currentSnapshot\\(for: context\\.family\\)", in: today) == 2)
+        #expect(CadenceSourceScan.matchCount("currentSnapshot\\(for: context\\.family\\)", in: calendar) == 2)
+    }
+
+    /// T-7123 / T-7124: the state card's title wraps and is laid out before its message, and the
+    /// Calendar widget centers its state card beyond `systemSmall` exactly as Today does.
+    @Test func widgetStateCardsKeepTheirTitleAndCenterBeyondSmall() throws {
+        let read = CadenceSourceScan.strippedSourceReader()
+        let chrome = CadenceSourceScan.codeOnly(try read("CadenceWidgets/WidgetChrome.swift"))
+        let calendar = CadenceSourceScan.codeOnly(try read("CadenceWidgets/CalendarSnapshotWidget.swift"))
+        let title = try #require(chrome.range(of: ".font(.system(size: scale.stateTitleSize, weight: .semibold))"))
+        let message = try #require(chrome.range(of: "if let message, !message.isEmpty"))
+        let titleBlock = String(chrome[title.upperBound..<message.lowerBound])
+        #expect(titleBlock.contains(".lineLimit(2)"))
+        #expect(titleBlock.contains(".layoutPriority(1)"))
+        #expect(calendar.contains("widgetFamily == .systemSmall ? .leading : .center"))
+        #expect(CadenceSourceScan.matchCount("alignment: stateCardAlignment", in: calendar) == 2)
+    }
+
     @Test func codexHabitSnapshotRequestsOverridesForItsOwnDate() throws {
         let rule = try CadenceScanInstrument(
             "habit snapshot dated override",

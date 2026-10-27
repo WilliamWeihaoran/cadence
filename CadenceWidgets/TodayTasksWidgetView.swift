@@ -216,6 +216,9 @@ struct TodayTasksWidgetView: View {
     }
 
     private var focusStrip: some View {
+        // `Visible` and `Total` are one- or two-digit counts and take only the width they draw;
+        // `Now` takes the rest. Three equal thirds left `Overdue Oct 23` a third of the row and
+        // it drew as `Overdue Oc...` on the iPad's extra-large tile (T-7126).
         HStack(spacing: scale.compactSectionSpacing) {
             focusTile(
                 title: "Now",
@@ -227,11 +230,13 @@ struct TodayTasksWidgetView: View {
                 value: "\(entry.snapshot.tasks.count)",
                 tint: Theme.text
             )
+            .fixedSize(horizontal: true, vertical: false)
             focusTile(
                 title: "Total",
                 value: "\(entry.snapshot.totalCount)",
                 tint: Theme.blueLight
             )
+            .fixedSize(horizontal: true, vertical: false)
         }
     }
 
@@ -399,14 +404,22 @@ struct TodayTasksWidgetView: View {
                         .lineLimit(titleLines)
                         .minimumScaleFactor(0.9)
 
-                    HStack(spacing: 5) {
-                        statusPill(status)
-                        if !task.containerName.isEmpty {
-                            Text(task.containerName)
-                                .font(.system(size: scale.captionFontSize, weight: .medium))
-                                .foregroundStyle(Theme.subdued)
-                                .lineLimit(1)
+                    // The container name rides beside the status pill only when it fits WHOLE. The
+                    // pill is `fixedSize`, so a narrow row (the iPad extra-large columns) left the
+                    // name a two-character stub, `[S`, which is noise rather than information
+                    // (T-7126); a row that cannot hold the name now draws the pill alone.
+                    ViewThatFits(in: .horizontal) {
+                        HStack(spacing: 5) {
+                            statusPill(status)
+                            if !task.containerName.isEmpty {
+                                Text(task.containerName)
+                                    .font(.system(size: scale.captionFontSize, weight: .medium))
+                                    .foregroundStyle(Theme.subdued)
+                                    .lineLimit(1)
+                                    .fixedSize()
+                            }
                         }
+                        statusPill(status)
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -469,7 +482,7 @@ struct TodayTasksWidgetView: View {
             actionURL: entry.snapshot.todayURL,
             alignment: alignment
         )
-        .padding(.vertical, 10)
+        .padding(.vertical, stateCardVerticalInset)
     }
 
     private func unavailableState(alignment: HorizontalAlignment) -> some View {
@@ -480,7 +493,13 @@ struct TodayTasksWidgetView: View {
             actionURL: entry.snapshot.todayURL,
             alignment: alignment
         )
-        .padding(.vertical, 10)
+        .padding(.vertical, stateCardVerticalInset)
+    }
+
+    /// None at `systemSmall`: the 20pt this inset spends is the height the state card's two-line
+    /// title and its message need on that tile (T-7123). The larger families keep it.
+    private var stateCardVerticalInset: CGFloat {
+        widgetFamily == .systemSmall ? 0 : 10
     }
 
     private func completeButton(taskID: UUID, size: CGFloat) -> some View {

@@ -23,9 +23,15 @@ struct TodayTasksWidgetProvider: AppIntentTimelineProvider {
         for configuration: CadenceTodayWidgetConfigurationIntent,
         in context: TimelineProviderContext
     ) async -> TodayTasksWidgetEntry {
+        // The widget gallery asks for a snapshot with `isPreview` set, and `placeholder(in:)` is
+        // only the redacted loading frame. Answering the gallery from the live store meant a new
+        // install advertised this widget as empty and the sample content below was shown to no
+        // one (T-7125); the gallery gets the sample, the home screen still gets the store.
         TodayTasksWidgetEntry(
             date: Date(),
-            snapshot: currentSnapshot(for: context.family)
+            snapshot: context.isPreview
+                ? placeholderSnapshot(for: context.family)
+                : currentSnapshot(for: context.family)
         )
     }
 

@@ -277,9 +277,18 @@ struct CadenceWidgetStateCard: View {
     var body: some View {
         let scale = CadenceWidgetScale.forFamily(widgetFamily)
         VStack(alignment: alignment, spacing: scale.compactSectionSpacing) {
+            // The title is the one sentence this card exists to say, so it wraps to a second line
+            // and is laid out before the message rather than competing with it: with no line limit
+            // and no priority it lost to the message and drew `Nothing planne...` on the
+            // `systemSmall` tile (T-7123). The message takes what is left and truncates instead.
             Text(title)
                 .font(.system(size: scale.stateTitleSize, weight: .semibold))
                 .foregroundStyle(Theme.text)
+                .multilineTextAlignment(alignment == .leading ? .leading : .center)
+                .lineLimit(2)
+                .minimumScaleFactor(0.9)
+                .fixedSize(horizontal: false, vertical: true)
+                .layoutPriority(1)
 
             if let message, !message.isEmpty {
                 Text(message)
