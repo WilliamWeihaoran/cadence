@@ -113,14 +113,17 @@ struct FocusSessionHeader: View {
 
 struct FocusTimerPanel<Controls: View>: View {
     let clockDisplay: String
-    let isRunning: Bool
+    /// Running, paused, or never started -- the iOS card's three words (T-7018).
+    let phase: CadenceFocusTimerPhase
     let accent: Color
     @ViewBuilder let controls: () -> Controls
+
+    private var isRunning: Bool { phase == .running }
 
     var body: some View {
         VStack(spacing: 10) {
             HStack {
-                Label(isRunning ? "Running" : "Paused", systemImage: isRunning ? "timer" : "pause.circle")
+                Label(phase.label, systemImage: phase.systemImage)
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(isRunning ? accent : Theme.dim)
                 Spacer()

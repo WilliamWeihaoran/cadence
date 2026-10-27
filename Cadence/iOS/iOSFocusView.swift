@@ -254,9 +254,11 @@ struct iOSFocusView: View {
     /// The eyebrow carries the session's state, because the title already says "Focus" and a
     /// header that describes the screen you are on twice tells the reader nothing.
     private var statusEyebrow: String {
-        if timerState.isRunning { return "Session running" }
-        if elapsedSeconds > 0 { return "Session paused" }
-        return pickItems.isEmpty ? "Nothing ready" : "\(pickItems.count) ready"
+        switch CadenceFocusTimerPhase(isRunning: timerState.isRunning, elapsedSeconds: elapsedSeconds) {
+        case .running: return "Session running"
+        case .paused: return "Session paused"
+        case .ready: return pickItems.isEmpty ? "Nothing ready" : "\(pickItems.count) ready"
+        }
     }
 
     private var compactLayout: some View {
@@ -479,7 +481,7 @@ struct iOSFocusView: View {
     ) -> some View {
         iOSFocusTimerPanel(
             accent: accent,
-            isRunning: timerState.isRunning,
+            phase: CadenceFocusTimerPhase(isRunning: timerState.isRunning, elapsedSeconds: elapsedSeconds),
             isCompact: isCompact,
             clock: {
                 sessionClock(fontSize: isCompact ? 56 : 66)
@@ -798,21 +800,25 @@ struct iOSFocusView: View {
 // MARK: - Focus chrome
 
 /// iOS counterpart of macOS's `FocusTimerPanel`: a `Theme.surface` panel with an accent rule
-/// across its top that brightens while the session runs, the running/paused state named in words,
+/// across its top that brightens while the session runs, the running/paused/ready state named in words,
 /// and the clock as the one large thing on the screen.
 private struct iOSFocusTimerPanel<Clock: View, Controls: View>: View {
     let accent: Color
-    let isRunning: Bool
+    /// Running, paused, or never started — a session over `00:00` that nobody has started is
+    /// "Ready", not "Paused" (T-7018).
+    let phase: CadenceFocusTimerPhase
     let isCompact: Bool
     @ViewBuilder let clock: () -> Clock
     @ViewBuilder let controls: () -> Controls
 
+    private var isRunning: Bool { phase == .running }
+
     var body: some View {
         VStack(spacing: 14) {
             HStack(spacing: 6) {
-                Image(systemName: isRunning ? "timer" : "pause.circle")
+                Image(systemName: phase.systemImage)
                     .font(.system(size: 11, weight: .semibold))
-                Text(isRunning ? "Running" : "Paused")
+                Text(phase.label)
                     .font(.system(size: 11, weight: .semibold))
                 Spacer(minLength: 0)
             }

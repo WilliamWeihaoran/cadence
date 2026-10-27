@@ -73,7 +73,10 @@ struct FocusView: View {
                     VStack(spacing: 14) {
                         FocusTimerPanel(
                             clockDisplay: clockDisplay,
-                            isRunning: focusManager.isRunning,
+                            phase: CadenceFocusTimerPhase(
+                                isRunning: focusManager.isRunning,
+                                elapsedSeconds: focusManager.elapsedSeconds(at: displayTick)
+                            ),
                             accent: Color(hex: task.containerColor),
                             controls: { timerControls(task: task) }
                         )

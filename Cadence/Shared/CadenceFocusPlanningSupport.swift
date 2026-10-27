@@ -109,6 +109,44 @@ struct CadenceTaskDetailLine: Hashable {
     }
 }
 
+/// What a Focus timer card says about its session, on both platforms ([[T-7018]]).
+///
+/// The card used to have two words, "Running" and "Paused", so a session that had never been
+/// started read "Paused" over `00:00` while the iPhone header above it said "6 ready". The page
+/// already drew the third state — `iOSFocusView.statusEyebrow` says "Session paused" only once the
+/// clock has counted — and this is that distinction given one home.
+nonisolated enum CadenceFocusTimerPhase: Equatable, Sendable {
+    case running
+    case paused
+    case ready
+
+    init(isRunning: Bool, elapsedSeconds: Int) {
+        if isRunning {
+            self = .running
+        } else if elapsedSeconds > 0 {
+            self = .paused
+        } else {
+            self = .ready
+        }
+    }
+
+    var label: String {
+        switch self {
+        case .running: "Running"
+        case .paused: "Paused"
+        case .ready: "Ready"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .running: "timer"
+        case .paused: "pause.circle"
+        case .ready: "play.circle"
+        }
+    }
+}
+
 enum CadenceFocusSupport {
 
     /// Whether a task can be the **subject** of a focus session at all.

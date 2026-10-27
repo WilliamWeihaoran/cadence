@@ -145,3 +145,42 @@ struct CadenceFocusPickRowDetailTests {
         #expect(mac.contains("CadenceTaskDetailLineLabel(task: task, fallback: CadenceFocusSupport.pickRowFallback, fontSize: 11)"))
     }
 }
+
+/// T-7018: the Focus timer card names three states, not two. A session nobody has started reads
+/// "Ready" over `00:00`, matching the "N ready" eyebrow above it, instead of "Paused".
+struct CadenceFocusTimerPhaseTests {
+    @Test func aNeverStartedSessionIsReadyNotPaused() {
+        let phase = CadenceFocusTimerPhase(isRunning: false, elapsedSeconds: 0)
+        #expect(phase == .ready)
+        #expect(phase.label == "Ready")
+        #expect(phase.systemImage == "play.circle")
+    }
+
+    @Test func aStoppedSessionThatHasCountedIsPaused() {
+        let phase = CadenceFocusTimerPhase(isRunning: false, elapsedSeconds: 1)
+        #expect(phase == .paused)
+        #expect(phase.label == "Paused")
+        #expect(phase.systemImage == "pause.circle")
+    }
+
+    @Test func aRunningSessionIsRunningEvenAtZero() {
+        #expect(CadenceFocusTimerPhase(isRunning: true, elapsedSeconds: 0) == .running)
+        #expect(CadenceFocusTimerPhase(isRunning: true, elapsedSeconds: 90).label == "Running")
+        #expect(CadenceFocusTimerPhase(isRunning: true, elapsedSeconds: 90).systemImage == "timer")
+    }
+
+    @Test func bothTimerCardsAndTheEyebrowReadTheSharedPhase() throws {
+        let ios = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile("Cadence/iOS/iOSFocusView.swift"))
+        let panel = try #require(CadenceSourceScan.declarationBody("private struct iOSFocusTimerPanel<Clock: View, Controls: View>: View", in: ios))
+        #expect(panel.contains("Text(phase.label)"), "the iOS card spells its own state words again")
+        #expect(!panel.contains("\"Paused\""))
+        let eyebrow = try #require(CadenceSourceScan.declarationBody("private var statusEyebrow: String", in: ios))
+        #expect(eyebrow.contains("CadenceFocusTimerPhase(isRunning: timerState.isRunning, elapsedSeconds: elapsedSeconds)"))
+        #expect(ios.contains("phase: CadenceFocusTimerPhase(isRunning: timerState.isRunning, elapsedSeconds: elapsedSeconds)"))
+
+        let mac = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile("Cadence/macOS/Views/FocusChromeSupportViews.swift"))
+        let macPanel = try #require(CadenceSourceScan.declarationBody("struct FocusTimerPanel<Controls: View>: View", in: mac))
+        #expect(macPanel.contains("Label(phase.label, systemImage: phase.systemImage)"))
+        #expect(!macPanel.contains("\"Paused\""))
+    }
+}
