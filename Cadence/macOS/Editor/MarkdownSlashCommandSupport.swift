@@ -45,7 +45,31 @@ private struct MarkdownSlashCommandPickerView: View {
     let onSelect: (MarkdownSlashCommand) -> Void
 
     var body: some View {
-        VStack(spacing: 2) {
+        // [[T-7233]]: a bare `/` lists every built-in plus the note's templates (~22 rows), and the
+        // uncapped stack drew a popover ~580pt tall that fit neither above nor below the caret on a
+        // 13-inch screen. The list now shows at most `visibleRowLimit` rows and scrolls the rest,
+        // keeping the keyboard-highlighted row in view as the arrow keys walk it.
+        ScrollViewReader { proxy in
+            ScrollView(.vertical) {
+                rows
+            }
+            .scrollIndicators(commands.count > MarkdownSlashCommandPickerMetrics.visibleRowLimit ? .automatic : .never)
+            .frame(height: MarkdownSlashCommandPickerMetrics.listHeight(forRowCount: commands.count))
+            .onAppear { scrollToHighlighted(proxy) }
+            .onChange(of: highlightedIndex) { _, _ in scrollToHighlighted(proxy) }
+        }
+        .padding(6)
+        .frame(width: MarkdownSlashCommandPickerMetrics.pickerWidth(for: commands))
+        .background(Color(nsColor: MarkdownStylist.bgColor))
+    }
+
+    private func scrollToHighlighted(_ proxy: ScrollViewProxy) {
+        guard commands.indices.contains(highlightedIndex) else { return }
+        proxy.scrollTo(commands[highlightedIndex].id)
+    }
+
+    private var rows: some View {
+        VStack(spacing: MarkdownSlashCommandPickerMetrics.rowSpacing) {
             ForEach(Array(commands.enumerated()), id: \.element.id) { index, command in
                 Button {
                     onSelect(command)
@@ -65,18 +89,16 @@ private struct MarkdownSlashCommandPickerView: View {
                         Spacer(minLength: 0)
                     }
                     .padding(.horizontal, 8)
-                    .padding(.vertical, 5)
+                    .frame(height: MarkdownSlashCommandPickerMetrics.rowHeight)
                     .background(
                         RoundedRectangle(cornerRadius: Theme.radiusControlCompact, style: .continuous)
                             .fill(index == highlightedIndex ? Color(nsColor: MarkdownStylist.blueColor).opacity(0.16) : Color.clear)
                     )
                 }
                 .buttonStyle(.plain)
+                .id(command.id)
             }
         }
-        .padding(6)
-        .frame(width: MarkdownSlashCommandPickerMetrics.pickerWidth(for: commands))
-        .background(Color(nsColor: MarkdownStylist.bgColor))
     }
 
     private var tokenColumnWidth: CGFloat {
@@ -111,6 +133,23 @@ enum MarkdownSlashCommandPickerMetrics {
 
     static func pickerWidth(for commands: [MarkdownSlashCommand]) -> CGFloat {
         minimumPickerWidth + (tokenColumnWidth(for: commands) - minimumTokenColumnWidth)
+    }
+
+    /// [[T-7233]] — the list's height cap. A row is a fixed `rowHeight` (the 11pt title line plus
+    /// the 5pt top and bottom padding it used to take), so the list's height is exact arithmetic
+    /// rather than a measurement, and `visibleRowLimit` rows is the most it ever shows at once.
+    static let visibleRowLimit = 9
+    static let rowHeight: CGFloat = 24
+    static let rowSpacing: CGFloat = 2
+
+    static func visibleRowCount(forRowCount count: Int) -> Int {
+        min(max(count, 0), visibleRowLimit)
+    }
+
+    static func listHeight(forRowCount count: Int) -> CGFloat {
+        let visible = visibleRowCount(forRowCount: count)
+        guard visible > 0 else { return 0 }
+        return CGFloat(visible) * rowHeight + CGFloat(visible - 1) * rowSpacing
     }
 }
 
