@@ -115,7 +115,8 @@ struct CadenceCodexInlineTagEditingTests {
             try CadenceSourceScan.sourceFile("Cadence/iOS/iOSSettingsTagsSection.swift"))
         #expect(source.contains("iOSTagList(tags: activeTags, allTags: tags,"))
         #expect(source.contains("iOSTagList(tags: archivedTags, allTags: tags,"))
-        #expect(source.contains("accessibilityLabel: \"Edit tag\""))
+        #expect(source.contains("accessibilityLabel: CadenceTagChipStyle.editControlLabel(for: tag)"),
+                "each row's edit button is named for its tag (T-7361)")
         #expect(source.contains("TextField(\"Tag name\", text: $draftName)"))
         #expect(source.contains("TextField(\"Optional description\", text: $draftDescription, axis: .vertical)"))
         #expect(source.contains("iOSSettingsColorSwatchRow(selectedHex: $draftColorHex, fallbackHex: tag.colorHex)"))

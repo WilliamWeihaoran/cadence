@@ -317,7 +317,8 @@ private struct SettingsTagRow: View {
                 Spacer(minLength: 8)
 
                 HStack(spacing: 6) {
-                    rowButton(icon: "pencil", accessibilityLabel: "Edit tag") {
+                    // T-7361: eight rows of "Edit tag" named none of them.
+                    rowButton(icon: "pencil", accessibilityLabel: CadenceTagChipStyle.editControlLabel(for: tag)) {
                         startEditing()
                     }
                     if isArchivedList {

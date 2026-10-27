@@ -23,6 +23,7 @@ struct CadenceTagPickerAccessibilityTests {
     private static let macInlinePath = "Cadence/macOS/Views/TaskTitleInlineTagPicker.swift"
     private static let iosPickerPath = "Cadence/iOS/iOSTaskDetailComponents.swift"
     private static let macSettingsPath = "Cadence/macOS/Views/SettingsTagsSection.swift"
+    private static let iosSettingsTagsPath = "Cadence/iOS/iOSSettingsTagsSection.swift"
     private static let iosSwatchPath = "Cadence/iOS/iOSSettingsComponents.swift"
 
     private static func compactBody(_ declaration: String, in path: String) throws -> String {
@@ -50,6 +51,21 @@ struct CadenceTagPickerAccessibilityTests {
         #expect(row.contains(".cadenceControlLabel(CadenceTagChipStyle.editControlLabel(for:tag))"),
                 "the Mac tag picker's edit control is not named for its tag")
         #expect(!row.contains(#".cadenceControlLabel("Edittag")"#))
+    }
+
+    /// T-7361: the T-7337 gap on both Settings tag lists, where every row's pencil read "Edit tag".
+    @Test func settingsTagListEditControlsAreNamedForTheirTag() throws {
+        let mac = try Self.compactBody("private var displayContent: some View", in: Self.macSettingsPath)
+        #expect(mac.contains("startEditing()"), "non-vacuity: the Mac Settings row still draws its edit control")
+        #expect(mac.contains(#"rowButton(icon:"pencil",accessibilityLabel:CadenceTagChipStyle.editControlLabel(for:tag))"#),
+                "the Mac Settings tag row's edit control is not named for its tag")
+        #expect(!mac.contains(#"accessibilityLabel:"Edittag""#))
+
+        let ios = try Self.compactBody("private var displayContent: some View", in: Self.iosSettingsTagsPath)
+        #expect(ios.contains("isEditing=true"), "non-vacuity: the iOS Settings row still draws its edit control")
+        #expect(ios.contains(#"iOSIconButton(systemImage:"pencil",accessibilityLabel:CadenceTagChipStyle.editControlLabel(for:tag))"#),
+                "the iOS Settings tag row's edit control is not named for its tag")
+        #expect(!ios.contains(#"accessibilityLabel:"Edittag""#))
     }
 
     @Test func macInlinePickerRowSaysWhichTagsAreOn() throws {

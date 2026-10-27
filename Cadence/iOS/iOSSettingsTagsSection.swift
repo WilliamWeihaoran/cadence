@@ -346,7 +346,8 @@ private struct iOSTagSettingsRow: View {
 
             Spacer(minLength: 8)
 
-            iOSIconButton(systemImage: "pencil", accessibilityLabel: "Edit tag") {
+            // T-7361: eight rows of "Edit tag" named none of them.
+            iOSIconButton(systemImage: "pencil", accessibilityLabel: CadenceTagChipStyle.editControlLabel(for: tag)) {
                 draftName = tag.name
                 draftDescription = tag.desc
                 draftColorHex = tag.colorHex
