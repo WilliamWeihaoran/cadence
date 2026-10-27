@@ -11,7 +11,7 @@ import XCTest
 ///
 /// ### The finding this was a follow-on to, and what happened to it
 ///
-/// `CadenceInspectorHeaderPanelPlacementUITests` measured five anchors inside the task inspector
+/// `CadenceInspectorHeaderPanelPlacementUITests` (deleted since with that header, [[T-6602]]) measured five anchors inside the task inspector
 /// and found every one of them opening off the edge **opposite** the one its `arrowEdge:` declared,
 /// with available space ruled out as the explanation. T-1740 generalised that into its own title —
 /// *every* `arrowEdge: .trailing` in the app opens on the leading side — and asked for the other

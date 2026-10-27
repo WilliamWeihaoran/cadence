@@ -47,7 +47,7 @@ times out after ~70s having run 0 tests.
 `escape2` executed five `CadenceUITests` sessions between **19:12 and 20:02 on 2026-10-04** with
 **zero** automation timeouts and zero hung-runner lines, and real bodies ran:
 `CadenceInspectorHeaderPanelPlacementUITests.testEscapeClosesEachInspectorChildPanelAndLeavesTheInspectorOpen`
-failed at 19:26 (29.4 s) and 19:36 (51.4 s), then **passed** at 19:39 (26.8 s) and 20:02 (26.6 s),
+(the suite was deleted on 2026-10-26, [[T-6602]]) failed at 19:26 (29.4 s) and 19:36 (51.4 s), then **passed** at 19:39 (26.8 s) and 20:02 (26.6 s),
 alongside `testEveryInspectorPanelOpensClearOfTheRowsItIsOpenedFrom` (34.4 s). So the grant *was*
 obtained that evening and the suite is live.
 

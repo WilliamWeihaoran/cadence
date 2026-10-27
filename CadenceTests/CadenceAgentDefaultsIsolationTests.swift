@@ -153,7 +153,7 @@ struct CadenceAgentDefaultsIsolationTests {
         // warning that "a list that is never extended turns that sentence into a count over the
         // files somebody remembered" — and that is exactly what it had become: the target holds
         // **nine** `XCUIApplication()` sites, and `CadenceBoardPopoverAnchorPlacementUITests`,
-        // `CadenceInspectorHeaderPanelPlacementUITests` and
+        // `CadenceInspectorHeaderPanelPlacementUITests` (deleted since, [[T-6602]]) and
         // `CadenceUnmeasuredTrailingPopoverPlacementUITests` were outside the census while
         // `constructions == 6` went on passing. A count whose denominator is a remembered list
         // cannot notice the file nobody remembered, so the denominator is read off disk now and

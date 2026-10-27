@@ -122,8 +122,10 @@ nonisolated enum TaskInspectorChildPanelEscapeKey {
 ///
 /// The two SwiftUI spellings stay. They cost nothing, `.onKeyPress` keeps working on the roller,
 /// and the dismissal is idempotent — whichever fires first closes the panel and the rest are
-/// no-ops. Pinned on the running app by
-/// `CadenceInspectorHeaderPanelPlacementUITests.testEscapeClosesEachInspectorChildPanelAndLeavesTheInspectorOpen`.
+/// no-ops. It was pinned on the running app by the Escape test of
+/// `CadenceInspectorHeaderPanelPlacementUITests` until [[T-6602]] deleted that suite with the
+/// inspector header it drove; nothing on the running app pins delivery now, and
+/// `CadenceTaskInspectorChildPanelEscapeKeyTests` holds the predicate.
 struct TaskInspectorChildPanelEscapeDismissal: ViewModifier {
     let dismiss: () -> Void
 
@@ -215,8 +217,8 @@ extension View {
 /// controls do not span it: a 28pt tile and a fixed-size chip sit at its two ends, and *that* is
 /// what had to change. They are presented from the title **row** now, which does span the column,
 /// so there is one placement again and no end to choose. `anchorSpansColumn(_:in:)` is that
-/// condition, and `CadenceInspectorHeaderPanelPlacementUITests` reads the resulting frames off the
-/// running app rather than off this file.
+/// condition. `CadenceInspectorHeaderPanelPlacementUITests` read the resulting frames off the
+/// running app until [[T-6602]] deleted it with the header controls it clicked.
 nonisolated enum TaskInspectorChildPopoverPlacement {
     /// Centred under the anchor row. Right when the host is wider than the panel — the list
     /// sheets present these same controls in a window that can absorb one — and wrong inside the

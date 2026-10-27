@@ -84,8 +84,7 @@ call -- it is a POST-RC fix with two technical shapes for the agent who takes it
 **Decided 2026-10-26, not yet built** (still OPEN/PARTIAL; listed so nobody asks again):
 T-3213 remove task bundles from the app (the CloudKit model type itself must stay),
 T-3275 push all (117, not 66), T-4742 exact minor,
-T-3277 (c), T-2050 notice, T-6541 retry the CI step once T-6821 clears,
-T-6602 delete.
+T-3277 (c), T-2050 notice, T-6541 retry the CI step once T-6821 clears.
 
 Built 2026-10-26 by agent `decideapp2208` and removed from the list above: T-6191 (count repaired
 on open), T-3227 (comment fixed).

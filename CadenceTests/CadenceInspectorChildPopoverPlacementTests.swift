@@ -31,8 +31,9 @@ import Testing
 /// having and it is not a reading of the running app: on a real Mac the side a popover opens on is
 /// `NSPopover`'s choice, and this suite was green — 14 tests — for the whole of the time the
 /// estimate chip's roller was opening across four of the inspector's rows. T-1510 closed on it.
-/// The reading of the surface is `CadenceInspectorHeaderPanelPlacementUITests`, which takes the
-/// frames off `app.popovers` after a real click, and **that** is the guard for where a panel lands.
+/// The reading of the surface was `CadenceInspectorHeaderPanelPlacementUITests`, which took the
+/// frames off `app.popovers` after a real click. [[T-6602]] deleted it with the inspector header it
+/// drove, so nothing on the running app guards where a panel lands now; this file still does not.
 ///
 /// So the claims below were rewritten to be ones a model can honestly make. The old header section
 /// asserted that a panel leaves by the end its anchor is pinned to; measured, it does not, and the

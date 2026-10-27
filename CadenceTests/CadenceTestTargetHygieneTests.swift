@@ -1655,7 +1655,8 @@ struct CadenceTestTargetHygieneTests {
 
     /// **[[T-2020]]: the four control sites did not ask the same question.**
     ///
-    /// `CadenceTodayRowCrushUITests` and `CadenceInspectorHeaderPanelPlacementUITests` scoped the
+    /// `CadenceTodayRowCrushUITests` and `CadenceInspectorHeaderPanelPlacementUITests` (deleted
+    /// since, [[T-6602]]) scoped the
     /// control to `app.buttons`, which is what the only measurement of it —
     /// `CadenceSeededSidebarTimingUITests.firstSeen` — does.
     /// `CadenceBoardPopoverAnchorPlacementUITests` (both sites) and
@@ -1679,9 +1680,10 @@ struct CadenceTestTargetHygieneTests {
         }
 
         // Non-vacuity: seven readings existed when this was written, and a sweep that found none
-        // would pass the emptiness check below by having read nothing.
+        // would pass the emptiness check below by having read nothing. Six since [[T-6602]]
+        // deleted `CadenceInspectorHeaderPanelPlacementUITests`, which held one of them.
         #expect(
-            readings.count >= 7,
+            readings.count >= 6,
             "the sweep found only \(readings.count) readings of the blank-launch control: \(readings)"
         )
         #expect(

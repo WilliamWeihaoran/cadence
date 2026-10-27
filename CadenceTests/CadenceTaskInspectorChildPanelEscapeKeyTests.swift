@@ -17,9 +17,8 @@ import AppKit
 /// **What this file does NOT claim.** It says nothing about delivery — which window AppKit hands
 /// a key-down to is not a thing a unit test can observe, and asserting it here would be the
 /// source-agreement-as-verification this ticket has already recorded three times. The delivery
-/// guard is
-/// `CadenceInspectorHeaderPanelPlacementUITests.testEscapeClosesEachInspectorChildPanelAndLeavesTheInspectorOpen`
-/// and nothing else.
+/// guard was the Escape test of `CadenceInspectorHeaderPanelPlacementUITests` and nothing else;
+/// [[T-6602]] deleted it with the inspector header it drove, so there is none now.
 ///
 /// **What it does claim** is the monitor's predicate: which of the key-downs the monitor sees —
 /// and while a panel is open it sees *every* key-down the app receives — it consumes. Getting that
