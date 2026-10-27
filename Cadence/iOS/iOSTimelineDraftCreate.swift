@@ -26,12 +26,20 @@ struct iOSTimelineDraftBlock: View {
     /// Points per hour on the canvas, so an edge drag becomes minutes without the block knowing
     /// anything else about the grid.
     let hourHeight: CGFloat
+    /// An edge handle finished a drag that actually moved its edge ([[T-7551]]).
+    ///
+    /// The column puts the draft's editor back on this, and on nothing else. It used to infer the
+    /// same fact from the outside, with a `DragGesture` over the whole block that captured the
+    /// range on touch-down and compared it on release — which could not watch a touch without
+    /// taking it from the scroll view. The handle is the one thing that knows, so the handle says.
+    let onAdjusted: () -> Void
 
     @Environment(iOSCalendarManager.self) private var calendarManager
     @Query(sort: \Area.order) private var areas: [Area]
     @Query(sort: \Project.order) private var projects: [Project]
-    /// Minute the live edge drag started from. `@State` rather than `@GestureState` because the
-    /// value has to survive the frame in which the gesture ends.
+    /// Minute the edge had when the hold completed, held for as long as the adjustment is down.
+    /// Every step is measured from it, a cancelled adjustment is put back to it, and it is `nil`
+    /// whenever no adjustment is in progress — which is what makes a stray callback a no-op.
     @State private var resizeAnchor: Int?
 
     private var tint: Color {
@@ -135,6 +143,30 @@ struct iOSTimelineDraftBlock: View {
     /// finger, so the hit area is hung *outside* the block with a negative offset — the same trade
     /// `iOSExpandedHitArea` makes for a 26pt control, done by hand because this target has to
     /// straddle the block's edge rather than surround its centre.
+    ///
+    /// **The band is why the hold is here** ([[T-7551]]). This was a
+    /// `DragGesture(minimumDistance: 1)`, and a SwiftUI drag takes the touch from the enclosing
+    /// `ScrollView` the moment it has it — so the band, which is most of a one-hour draft and
+    /// 14pt of plain canvas past each end, answered every finger that landed on it. Measured on
+    /// `Cadence-iPadPro11`: a 300pt upward swipe over a 4:45–5:45 PM draft scrolled the timeline
+    /// **zero points** and left the draft at **4:45–5:00 PM**, collapsed to the fifteen-minute
+    /// floor with its editor dismissed. The owner's verdict was that the collapse is the worse
+    /// half: *"the draft collapsing is worse than the scrolling."*
+    ///
+    /// **The hold, and not a direction test.** The usual way to separate a drag from a pan on this
+    /// canvas is the axis — `iOSRowHorizontalPanRecognizer` does exactly that for a task row — and
+    /// it cannot work here, because an edge adjustment is a *vertical* drag and so is the scroll
+    /// it is competing with. They are not separable by direction at all. They are separable in
+    /// TIME, which is how every other time edit on this canvas is already spelled:
+    /// `CadenceTimelineBlockEdit.liftPressDuration`, the same figure the press that drew this
+    /// draft used and the same figure a committed block is held for before it may be moved.
+    /// `minimumDistance` is not an option; [[T-2059]] measured it dead for this exact collision.
+    ///
+    /// **What it costs, stated rather than hidden.** An adjustment no longer begins the instant
+    /// the finger lands: the handle waits out the hold first. That is a real loss of immediacy on
+    /// a small target, and it is the price of the band never again eating a scroll or collapsing
+    /// a block the user just drew. The failure it replaces destroyed 45 minutes silently; the one
+    /// it introduces is that a flick aimed at the handle scrolls instead, which costs a second try.
     @ViewBuilder
     private func edgeHandle(isTop: Bool) -> some View {
         if !draft.isAllDay && !draft.spansMultipleDays {
@@ -144,24 +176,58 @@ struct iOSTimelineDraftBlock: View {
                 .frame(maxWidth: .infinity, minHeight: 32)
                 .contentShape(Rectangle())
                 .offset(y: isTop ? -14 : 14)
-                .gesture(edgeDrag(isTop: isTop))
+                .gesture(edgePressDrag(isTop: isTop))
                 .accessibilityLabel(isTop ? "Drag to move start" : "Drag to move end")
         }
     }
 
-    private func edgeDrag(isTop: Bool) -> some Gesture {
-        DragGesture(minimumDistance: 1)
-            .onChanged { value in
-                let anchor = resizeAnchor ?? (isTop ? draft.startMin : draft.endMin)
-                if resizeAnchor == nil { resizeAnchor = anchor }
-                let minutes = Int(((value.translation.height / max(hourHeight, 1)) * 60).rounded())
-                if isTop {
-                    draft.moveStartEdge(toMinute: anchor + minutes)
-                } else {
-                    draft.moveEndEdge(toMinute: anchor + minutes)
-                }
+    private func edgePressDrag(isTop: Bool) -> some UIGestureRecognizerRepresentable {
+        iOSTimelinePressDrag(
+            minimumPressDuration: CadenceTimelineBlockEdit.liftPressDuration,
+            onPressed: { _ in resizeAnchor = isTop ? draft.startMin : draft.endMin },
+            onChanged: { translation in moveEdge(isTop: isTop, translationY: translation.height) },
+            onEnded: { _ in finishEdgeAdjustment(isTop: isTop, reverting: false) },
+            onCancelled: { finishEdgeAdjustment(isTop: isTop, reverting: true) }
+        )
+    }
+
+    /// Measured from the minute the edge had when the hold completed, never from the previous
+    /// frame, so a slow drag cannot accumulate rounding.
+    private func moveEdge(isTop: Bool, translationY: CGFloat) {
+        guard let anchor = resizeAnchor else { return }
+        let minutes = Int(((translationY / max(hourHeight, 1)) * 60).rounded())
+        if isTop {
+            draft.moveStartEdge(toMinute: anchor + minutes)
+        } else {
+            draft.moveEndEdge(toMinute: anchor + minutes)
+        }
+    }
+
+    /// The finger is off the glass, or the system took the gesture away.
+    ///
+    /// **A cancelled adjustment puts the edge back**, which the `DragGesture` this replaces could
+    /// not do: a SwiftUI gesture the system cancels never reaches `onEnded`, so it left the edge
+    /// wherever the last callback had dragged it and the anchor standing for the next touch. A
+    /// half-finished resize nobody asked for is the small version of the defect this whole handle
+    /// was rewritten over.
+    ///
+    /// Only a touch that actually moved the edge reports an adjustment, so a hold that goes
+    /// nowhere raises no editor — the invariant [[T-3246]]'s range comparison existed for, now
+    /// stated by the one thing that knows it for certain rather than inferred from the outside.
+    private func finishEdgeAdjustment(isTop: Bool, reverting: Bool) {
+        guard let anchor = resizeAnchor else { return }
+        resizeAnchor = nil
+        let landed = isTop ? draft.startMin : draft.endMin
+        guard landed != anchor else { return }
+        if reverting {
+            if isTop {
+                draft.moveStartEdge(toMinute: anchor)
+            } else {
+                draft.moveEndEdge(toMinute: anchor)
             }
-            .onEnded { _ in resizeAnchor = nil }
+            return
+        }
+        onAdjusted()
     }
 }
 

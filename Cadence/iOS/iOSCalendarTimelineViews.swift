@@ -1272,19 +1272,19 @@ private struct iOSCalendarTimelineDayColumn: View {
     @State private var isDraftEditorPresented = false
     /// Why the editor is being presented, which the panel reads to decide whether its title takes
     /// focus ([[T-3252]]). `.returnedAfterAdjustment` is written by exactly one site,
-    /// `draftAdjustmentObserver`; every other presentation writes `.opened` first.
+    /// `restoreDraftEditorAfterAdjustment()`; every other presentation writes `.opened` first.
     @State private var draftEditorAppearance: CadenceSchedulePanelTitleFocus.Appearance = .opened
 
-    /// The draft's minute range as the touch now on the block found it, or `nil` when no touch is
-    /// on it — the one thing that tells an edge adjustment apart from a scroll that happened to
-    /// start on the block ([[T-3246]]). See `draftAdjustmentObserver`.
-    @State private var draftRangeUnderTouch: (start: Int, end: Int)?
+    // `draftRangeUnderTouch` used to be declared here: the draft's range as the touch now on the
+    // block found it, which is how [[T-3246]]'s observer *inferred* whether an edge had moved.
+    // **It is gone with the observer** ([[T-7551]]). The handle now says so itself, so there is
+    // nothing left to infer and no captured range to go stale.
 
     /// The draft's minute range **as the press left it**, held for as long as the press-drag that
     /// is sizing it is still down ([[T-3239]]).
     ///
     /// Every other resize on this canvas is measured from the range the block had when the finger
-    /// went down — `blockEditing` says so in as many words, and `iOSTimelineDraftBlock.edgeDrag`
+    /// went down — `blockEditing` says so in as many words, and `iOSTimelineDraftBlock.edgePressDrag`
     /// keeps its own `resizeAnchor` for it. The press-drag was the one that did not, and it is the
     /// reason a press-and-twitch collapsed a one-hour draft to fifteen minutes: it set the end to
     /// *the finger's own minute*, which at the moment of the press is the block's **start**, an
@@ -1617,14 +1617,14 @@ private struct iOSCalendarTimelineDayColumn: View {
         if drawsDraftBlocks, let current = draft, current.startDateKey == DateFormatters.dateKey(from: date) {
             iOSTimelineDraftBlock(
                 draft: draftBinding(fallingBackTo: current),
-                hourHeight: hourHeight
+                hourHeight: hourHeight,
+                onAdjusted: restoreDraftEditorAfterAdjustment
             )
             .frame(
                 width: colWidth - 18,
                 height: blockHeight(start: current.startMin, end: current.isAllDay ? current.startMin + 60 : current.endMin)
             )
             .offset(x: 9, y: yOffset(for: current.isAllDay ? CadenceScheduleSupport.calendarStartHour * 60 : current.startMin))
-            .simultaneousGesture(draftAdjustmentObserver)
             .popover(isPresented: $isDraftEditorPresented, arrowEdge: .trailing) {
                 iOSTimelineDraftPanelHost(
                     draft: draftBinding(fallingBackTo: current),
@@ -1655,51 +1655,42 @@ private struct iOSCalendarTimelineDayColumn: View {
                 //     down (2026-10-19). SwiftUI dismisses the presentation and then tells the
                 //     binding; the binding is a notification on the way out, not the decision.
                 //
-                // So the dismissal is left alone and `draftAdjustmentObserver` puts the editor
-                // back when the adjustment ends. Holding it open *through* the drag is a different
-                // presentation, not another flag or another binding on this one.
+                // So the dismissal is left alone and `restoreDraftEditorAfterAdjustment()` puts
+                // the editor back when the adjustment ends. Holding it open *through* the drag is
+                // a different presentation, not another flag or another binding on this one.
                 .presentationBackgroundInteraction(.enabled)
             }
         }
     }
 
-    /// Puts the editor back on the draft the touch just adjusted ([[T-3246]]).
-    ///
-    /// **It watches; it never moves anything.** `iOSTimelineDraftBlock.edgeHandle` owns the
-    /// adjustment and keeps every callback it had — this is `.simultaneousGesture`, so it
-    /// recognises *alongside* that drag rather than instead of it, and the only state it writes is
-    /// the range it found and the presentation it restores.
+    /// Puts the editor back on the draft whose edge was just adjusted ([[T-3246]]).
     ///
     /// **Why restoring, and not holding open.** The popover goes down on the touch that starts the
-    /// drag, and the two ways of stopping that are both measured dead ends — see the note at the
-    /// presentation. What is left is the owner-visible half of the defect: the editor was gone when
-    /// the finger lifted, and getting it back meant a second tap. It comes back by itself now, on
-    /// the block at its adjusted range.
+    /// adjustment, and the two ways of stopping that are both measured dead ends — see the note at
+    /// the presentation. What is left is the owner-visible half of the defect: the editor was gone
+    /// when the finger lifted, and getting it back meant a second tap. It comes back by itself
+    /// now, on the block at its adjusted range.
     ///
-    /// **Why the range comparison, and not simply "a drag on the block ended".** A vertical scroll
-    /// of the timeline can start on the block, and a drag of the block's body is not an adjustment
-    /// either; raising the editor for those would be a popover the user never asked for, on a
-    /// gesture aimed at something else. Only a touch that actually moved an edge gets the editor
-    /// back, and the range under the finger when it went down is how that is known.
+    /// **This used to be a `.simultaneousGesture(DragGesture(minimumDistance: 1))` on the whole
+    /// block, and that was the second half of [[T-7551]].** It never moved anything — it watched a
+    /// drag, captured the draft's range when the touch landed, and compared on release to tell an
+    /// edge adjustment apart from a scroll that happened to start on the block. But a SwiftUI drag
+    /// cannot watch without *taking*: it claimed every touch on the draft, so the timeline could
+    /// not be scrolled from a standing draft at all, and it inferred by comparison a thing the
+    /// handle already knew for certain.
     ///
-    /// `minimumDistance: 1` matches `edgeDrag`'s, so a tap is not a one-pixel adjustment; a tap on
-    /// the canvas already re-opens the editor through `createSurface`, which is the door taps use.
-    private var draftAdjustmentObserver: some Gesture {
-        DragGesture(minimumDistance: 1)
-            .onChanged { _ in
-                guard draftRangeUnderTouch == nil else { return }
-                draftRangeUnderTouch = draft.map { ($0.startMin, $0.endMin) }
-            }
-            .onEnded { _ in
-                let before = draftRangeUnderTouch
-                draftRangeUnderTouch = nil
-                guard let before, let adjusted = draft else { return }
-                guard adjusted.startMin != before.start || adjusted.endMin != before.end else { return }
-                // The editor comes back WITHOUT re-focusing its title, so the keyboard stays down
-                // ([[T-3252]]): the touch was about the block's range, not its name.
-                draftEditorAppearance = .returnedAfterAdjustment
-                isDraftEditorPresented = true
-            }
+    /// So the question is asked where it is answerable. `iOSTimelineDraftBlock.edgeHandle` owns
+    /// the adjustment and now reports one, once, when its own drag ends having actually moved the
+    /// edge. The old comparison's purpose survives exactly — only a touch that moved an edge gets
+    /// the editor back, so a scroll and a drag of the block's body still raise nothing — and it is
+    /// now a fact rather than an inference, with no captured range to go stale and no gesture of
+    /// its own standing between the canvas and the scroll view.
+    private func restoreDraftEditorAfterAdjustment() {
+        guard draft != nil else { return }
+        // The editor comes back WITHOUT re-focusing its title, so the keyboard stays down
+        // ([[T-3252]]): the touch was about the block's range, not its name.
+        draftEditorAppearance = .returnedAfterAdjustment
+        isDraftEditorPresented = true
     }
 
     /// The draft as the non-optional binding both the block and the editor take, with the drawn
@@ -1737,9 +1728,6 @@ private struct iOSCalendarTimelineDayColumn: View {
     /// commit, the cancel and nowhere else makes the teardown a decision rather than a side effect,
     /// and leaves the block adjustable while its editor is up.
     private func finishDraftCreation() {
-        // A gesture the system cancels never reaches `onEnded`, so the captured range is cleared
-        // here as well: a stale one would be compared against the *next* touch's draft.
-        draftRangeUnderTouch = nil
         draftEditorAppearance = .opened
         isDraftEditorPresented = false
         draft = nil
@@ -2536,7 +2524,10 @@ final class iOSTimelinePressDragRecognizer: UILongPressGestureRecognizer {
 
 /// Bridges `iOSTimelinePressDragRecognizer` into the canvas. `.gesture` is the only priority it
 /// offers and it is the right one: UIKit arbitration, not SwiftUI's, is what this is here for.
-private struct iOSTimelinePressDrag: UIGestureRecognizerRepresentable {
+///
+/// Not `private`: `iOSTimelineDraftBlock.edgeHandle` is in `iOSTimelineDraftCreate.swift` and takes
+/// the same recognizer, for the same reason ([[T-7551]]).
+struct iOSTimelinePressDrag: UIGestureRecognizerRepresentable {
     typealias UIGestureRecognizerType = iOSTimelinePressDragRecognizer
     typealias Coordinator = Void
 

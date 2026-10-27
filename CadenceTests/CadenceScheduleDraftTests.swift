@@ -494,11 +494,18 @@ struct CadenceTodayTimelineDraftCreationTests {
     /// SwiftUI dismisses first and tells the binding after. So the dismissal is left alone and the
     /// editor is put back when the adjustment ends.
     ///
-    /// **The range comparison is the load-bearing half, not the re-presentation.** "A drag on the
-    /// block ended" also describes a vertical scroll that started on the block, and raising a
-    /// popover on that is a worse defect than the one being fixed. Only a touch that moved an edge
-    /// gets the editor back. Both halves are pinned: a reader who keeps the gesture and drops the
-    /// comparison has swapped one bug for another.
+    /// **"Only a touch that moved an edge" is the load-bearing half, not the re-presentation.**
+    /// "A drag on the block ended" also describes a vertical scroll that started on the block, and
+    /// raising a popover on that is a worse defect than the one being fixed. Both halves are
+    /// pinned: a reader who keeps the re-presentation and drops that condition has swapped one bug
+    /// for another.
+    ///
+    /// **Where the condition lives moved with [[T-7551]].** It was a range comparison inside a
+    /// `.simultaneousGesture(DragGesture(minimumDistance: 1))` on the whole block, which captured
+    /// the draft's range on touch-down and compared it on release — inferring from the outside a
+    /// thing the handle knew for certain, and unable to watch a touch without taking it from the
+    /// scroll view. The handle reports its own adjustment now, behind its own
+    /// `guard landed != anchor`, and the column's restore is a plain function.
     ///
     /// Source text for the same reason the two pins above are: the column is `#if os(iOS)`, and no
     /// macOS test run can name its symbols. Measured on `Cadence-iPadPro11` — the editor returned
@@ -506,19 +513,21 @@ struct CadenceTodayTimelineDraftCreationTests {
     @Test("An adjusted draft gets its editor back without a second tap")
     func anAdjustedDraftGetsItsEditorBackWithoutASecondTap() {
         let timeline = timelineColumnCode()
-        #expect(timeline.contains(".simultaneousGesture(draftAdjustmentObserver)"))
-        #expect(timeline.contains("private var draftAdjustmentObserver: some Gesture"))
-        #expect(timeline.contains("@State private var draftRangeUnderTouch: (start: Int, end: Int)?"))
+        #expect(timeline.contains("onAdjusted: restoreDraftEditorAfterAdjustment"))
+        #expect(timeline.contains("private func restoreDraftEditorAfterAdjustment()"))
 
-        // The comparison, collapsed on whitespace so a reflow of the closure is not a failure.
-        // Without it the observer re-raises the editor for any drag that ends on the block, a
-        // vertical scroll of the timeline included.
-        let collapsed = timeline.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+        // The condition, collapsed on whitespace so a reflow of the function is not a failure, and
+        // read in the HANDLE's file because that is where it is now enforced. Without it the
+        // handle reports an adjustment for any hold that ends on it, having moved nothing.
+        let handle = source("Cadence/iOS/iOSTimelineDraftCreate.swift")
+        let collapsedHandle = handle.split(whereSeparator: \.isWhitespace).joined(separator: " ")
         #expect(
-            collapsed.contains(
-                "guard adjusted.startMin != before.start || adjusted.endMin != before.end else { return }"
-            ),
+            collapsedHandle.contains("let landed = isTop ? draft.startMin : draft.endMin guard landed != anchor else { return }"),
             "only a touch that moved an edge may put the editor back"
+        )
+        #expect(
+            CadenceSourceScan.matchCount(#"onAdjusted\(\)"#, in: handle) == 1,
+            "the handle reports an adjustment from somewhere other than the end of its own drag"
         )
 
         #expect(
@@ -556,20 +565,21 @@ struct CadenceTodayTimelineDraftCreationTests {
         let host = source("Cadence/iOS/iOSTimelineDraftCreate.swift")
         #expect(host.contains(".appearing(titleFocusAppearance)"), "the draft host drops the appearance")
 
-        // Exactly one site says the editor is returning, and it is the adjustment observer, after
-        // its range comparison — so a tap, a press and a fresh draft all still focus the title.
+        // Exactly one site says the editor is returning, and it is the restore the edge handle
+        // calls — so a tap, a press and a fresh draft all still focus the title.
         let timeline = timelineColumnCode()
         #expect(
             CadenceSourceScan.matchCount(#"draftEditorAppearance = \.returnedAfterAdjustment"#, in: timeline) == 1,
-            "the returning appearance is written from somewhere other than the adjustment observer"
+            "the returning appearance is written from somewhere other than the adjustment restore"
         )
-        let collapsed = timeline.split(whereSeparator: \.isWhitespace).joined(separator: " ")
+        let collapsed = CadenceSourceScan.strippingComments(timeline)
+            .split(whereSeparator: \.isWhitespace).joined(separator: " ")
         #expect(
             collapsed.contains(
-                "guard adjusted.startMin != before.start || adjusted.endMin != before.end else { return } "
-                    + "draftEditorAppearance = .returnedAfterAdjustment isDraftEditorPresented = true"
+                "private func restoreDraftEditorAfterAdjustment() { guard draft != nil else { return } "
+                    + "draftEditorAppearance = .returnedAfterAdjustment isDraftEditorPresented = true }"
             ),
-            "the returning appearance is not the adjustment observer's"
+            "the returning appearance is not the adjustment restore's"
         )
         #expect(timeline.contains("titleFocusAppearance: draftEditorAppearance"))
         // Every other presentation resets it, so a stale `.returnedAfterAdjustment` cannot leak

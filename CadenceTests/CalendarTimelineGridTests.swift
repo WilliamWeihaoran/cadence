@@ -1290,23 +1290,29 @@ struct CadenceTimelineDraftPressGestureTests {
         )
         // Four presentations and no fifth, and **every one of them is guarded** — that, not the
         // number, is what this pin is about. An UNGUARDED one is how this fired mid-gesture.
-        // `beginDraft`'s is behind `if presentingEditor`; the press's is in `onEnded`, after the
-        // finger is up; the tap's re-opens a draft an interrupted press left without an editor;
-        // and `draftAdjustmentObserver`'s ([[T-3246]]) is in `onEnded` too, behind a comparison
-        // that fires only when an edge actually moved — so a vertical scroll that started on the
-        // block raises nothing.
+        // `beginDraft`'s is behind `if presentingEditor`; the press's is in `endDraftPress`, after
+        // the finger is up; the tap's re-opens a draft an interrupted press left without an
+        // editor; and `restoreDraftEditorAfterAdjustment()`'s ([[T-3246]]) is called by the edge
+        // handle alone, and only when its own drag actually moved the edge — so a vertical scroll
+        // that started on the block raises nothing.
         #expect(
             CadenceSourceScan.matchCount(#"isDraftEditorPresented = true"#, in: grid) == 4,
             "the editor is presented from somewhere new, or no longer from all four"
         )
-        // The fourth one's guard, named rather than assumed: without it the observer re-raises the
-        // editor for any drag that ends on the block.
+        // The fourth one's guard. It used to be a range comparison inside an observer gesture on
+        // the block; since [[T-7551]] the handle reports the adjustment itself, so the guard is
+        // the handle's `guard landed != anchor else { return }` and the column's job is only to
+        // refuse a restore for a draft that is already gone.
         #expect(
             CadenceSourceScan.matchCount(
-                #"guard adjusted\.startMin != before\.start \|\| adjusted\.endMin != before\.end else \{ return \}"#,
+                #"private func restoreDraftEditorAfterAdjustment\(\) \{\s*guard draft != nil else \{ return \}"#,
                 in: grid
             ) == 1,
-            "the adjustment observer presents on any drag that ends on the block"
+            "the restore no longer checks that there is still a draft to restore onto"
+        )
+        #expect(
+            CadenceSourceScan.matchCount(#"\.simultaneousGesture\(draftAdjustmentObserver\)|DragGesture\(minimumDistance: 1\)"#, in: grid) == 0,
+            "a SwiftUI drag is back on the draft block, and it cannot watch a touch without taking it"
         )
     }
 
@@ -1424,11 +1430,67 @@ struct CadenceTimelinePressDragRecognizerTests {
             CadenceSourceScan.matchCount(#"\.sequenced\(before:"#, in: grid) == 0,
             "a SwiftUI long-press-then-drag is back on the timeline, and it cannot give the touch back"
         )
+        // **The draft block's half of [[T-7551]], asked HERE and not only in the draft suite.**
+        // The same negative sits in `CadenceTimelineDraftPressGestureTests`, and a mutation that
+        // put the observer back SURVIVED a run scoped to this suite until this line existed — a
+        // negative is only worth what the suite that can fail on it is worth. The observer was a
+        // `DragGesture(minimumDistance: 1)` over the whole draft block, watching for an edge
+        // adjustment it could not watch without taking the touch from the scroll view.
+        #expect(
+            CadenceSourceScan.matchCount(#"draftAdjustmentObserver|DragGesture\(minimumDistance: 1\)"#, in: grid) == 0,
+            "a SwiftUI drag is back on the draft block, and it cannot watch a touch without taking it"
+        )
+        // The zero-distance drag that IS allowed to stay: `resizeHandle`, drawn only on a lifted
+        // block, which is the one place this canvas accepts that a scroll may be claimed.
+        #expect(
+            CadenceSourceScan.matchCount(#"DragGesture\(minimumDistance: 0, coordinateSpace: \.global\)"#, in: grid) == 1,
+            "the lifted block's resize handle lost its drag, or grew a second one"
+        )
         // One length of press for the whole canvas, read rather than retyped.
         #expect(
             CadenceSourceScan.matchCount(#"minimumPressDuration: CadenceTimelineBlockEdit\.liftPressDuration"#, in: grid) == 2,
             "the two presses no longer agree on how long a hold is"
         )
+    }
+
+    /// **The draft block's edge handles take the same recognizer, and for the owner's reason**
+    /// ([[T-7551]]): *"the draft collapsing is worse than the scrolling."* The handle was a
+    /// `DragGesture(minimumDistance: 1)` over a 32pt band that is most of a one-hour draft plus
+    /// 14pt of plain canvas past each end, so it answered every finger that landed on it.
+    /// Measured on `Cadence-iPadPro11`: a 300pt upward swipe over a 4:45–5:45 PM draft scrolled
+    /// the timeline zero points and left the draft at 4:45–5:00 PM, collapsed to the fifteen-minute
+    /// floor with its editor dismissed.
+    ///
+    /// **Why the hold and not an axis test.** `iOSRowHorizontalPanRecognizer` separates a row swipe
+    /// from a scroll by DIRECTION, and that cannot work here: an edge adjustment is a vertical drag
+    /// and so is the scroll it competes with. They are separable in TIME, which is how every other
+    /// time edit on this canvas is already spelled. `minimumDistance` is not an option — [[T-2059]]
+    /// measured it dead for this exact collision.
+    ///
+    /// **The negative is asked over the comment-stripped file on purpose.** The handle's own prose
+    /// names the gesture it replaced, so a bare `contains` over the raw text would read that
+    /// sentence as the code and pass over a real regression — which is exactly how a mutation
+    /// survived a sibling suite while T-7550 was being landed.
+    @Test func theDraftsEdgeHandlesHoldBeforeTheyAdjustAndReportTheirOwnAdjustment() throws {
+        let handle = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/iOS/iOSTimelineDraftCreate.swift")
+        )
+        #expect(handle.contains("private func edgePressDrag(isTop: Bool) -> some UIGestureRecognizerRepresentable"))
+        #expect(
+            CadenceSourceScan.matchCount(#"minimumPressDuration: CadenceTimelineBlockEdit\.liftPressDuration"#, in: handle) == 1,
+            "the draft's handles no longer hold for the same length as every other time edit"
+        )
+        #expect(
+            CadenceSourceScan.matchCount(#"DragGesture|\.gesture\(edgeDrag"#, in: handle) == 0,
+            "a SwiftUI drag is back on the draft's edge handle, and it cannot give the touch back"
+        )
+        // The handle is the only thing that knows an edge moved, so it is the only thing that says
+        // so — once, at the end of its own drag, and never for a hold that moved nothing.
+        #expect(CadenceSourceScan.matchCount(#"onAdjusted\(\)"#, in: handle) == 1)
+        #expect(handle.contains("guard landed != anchor else { return }"))
+        // A cancelled adjustment puts the edge back. The `DragGesture` this replaced could not:
+        // a SwiftUI gesture the system cancels never reaches `onEnded`.
+        #expect(handle.contains("onCancelled: { finishEdgeAdjustment(isTop: isTop, reverting: true) }"))
     }
 }
 
