@@ -490,6 +490,15 @@ struct MonthDayCell: View {
         // click on a task chip still opens its inspector rather than leaving the grid.
         .contentShape(Rectangle())
         .onTapGesture { openDay() }
+        // [[T-7067]]. The cell published a loose "26", an optional "Aug" and its chips, and the
+        // click above had no accessibility path. `.contain` keeps every chip its own element under
+        // a cell that names its day; the action is the click's own `openDay()`, so a pointer and
+        // an assistive client leave the grid for the same timeline column. No `.isSelected`: the
+        // Mac grid has no selected day.
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(Self.accessibilityLabel(date: date, taskCount: tasks.count, visibleEventCount: events.count))
+        .accessibilityAction { openDay() }
+        .accessibilityAction(named: Self.openDayActionName, openDay)
         .dropDestination(for: String.self) { items, _ in
             handleTaskDrop(items)
         } isTargeted: { targeted in
@@ -503,6 +512,18 @@ struct MonthDayCell: View {
             }
         }
     }
+
+    /// [[T-7067]]. What VoiceOver calls this cell: iOS's month-cell wording ([[T-573]]'s
+    /// `countedDayLabel`) for parity, over the same sum iOS counts — every task plus every event
+    /// the cell would draw (`visibleEvents`, empty while calendar access is off). The Mac draws no
+    /// capsule, but every one of those items is on screen as a chip or inside the "+N more" line,
+    /// so the figure is one the cell shows, in pieces.
+    nonisolated static func accessibilityLabel(date: Date, taskCount: Int, visibleEventCount: Int) -> String {
+        CadenceCalendarDayAccessibility.countedDayLabel(date: date, itemCount: taskCount + visibleEventCount)
+    }
+
+    /// The named action beside the default one, so "Open day" is listed in VoiceOver's actions menu.
+    nonisolated static let openDayActionName = "Open day"
 
     /// T-5351. See `calendarNavigationManager` above for why this is a timeline jump rather than a
     /// Day mode: the Mac has no Day mode to switch to.

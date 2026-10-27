@@ -375,5 +375,112 @@ struct CadenceMacPageAccessibilityAuditTests {
         #expect(row.contains("openDetail:openDetail,"))
         #expect(row.contains("privatefuncopenDetail(){showTaskInspector=true}"))
     }
+    // MARK: - T-7067: a Mac month-grid cell names its day and opens it without a pointer
+
+    /// iOS's month-cell words ([[T-573]]), over the sum iOS counts: tasks plus the events the cell
+    /// would draw. The cell itself needs `CalendarManager`, the navigation manager and a store, so
+    /// the words are pinned as values here and the wiring by the scan below.
+    @Test func aMacMonthCellSaysTheIOSMonthCellsWords() throws {
+        let date = try #require(DateFormatters.date(from: "2026-08-31"))
+        let day = DateFormatters.longDate.string(from: date)
+        #expect(MonthDayCell.accessibilityLabel(date: date, taskCount: 2, visibleEventCount: 1) == "\(day), 3 scheduled items")
+        #expect(MonthDayCell.accessibilityLabel(date: date, taskCount: 0, visibleEventCount: 1) == "\(day), 1 scheduled item")
+        #expect(MonthDayCell.accessibilityLabel(date: date, taskCount: 1, visibleEventCount: 0) == "\(day), 1 scheduled item")
+        #expect(
+            MonthDayCell.accessibilityLabel(date: date, taskCount: 0, visibleEventCount: 0)
+                == "\(day), \(CadenceCalendarDayAccessibility.emptyPhrase)"
+        )
+        #expect(
+            MonthDayCell.accessibilityLabel(date: date, taskCount: 4, visibleEventCount: 2)
+                == CadenceCalendarDayAccessibility.countedDayLabel(date: date, itemCount: 6),
+            "the Mac month cell drifted from iOS's wording"
+        )
+    }
+
+    /// The cell's label reads the counts it draws chips from, and its accessibility actions are
+    /// the click's own `openDay()`, not a second path.
+    @Test func aMacMonthCellOpensItsDayThroughTheClicksOwnPath() throws {
+        let month = CadenceSourceScan.codeOnly(
+            try CadenceSourceScan.sourceFile("Cadence/macOS/Views/CalendarPageMonthSupportViews.swift")
+        )
+        let cell = try #require(CadenceSourceScan.declarationBody("struct MonthDayCell", in: month))
+            .filter { !$0.isWhitespace }
+        #expect(cell.contains(".onTapGesture{openDay()}"), "non-vacuity: the cell's click no longer opens the day")
+        #expect(cell.contains(".accessibilityElement(children:.contain)"), "the cell's chips are no longer their own elements")
+        #expect(
+            cell.contains(".accessibilityLabel(Self.accessibilityLabel(date:date,taskCount:tasks.count,visibleEventCount:events.count))"),
+            "the cell does not name its day from the counts its chips are drawn from"
+        )
+        #expect(cell.contains(".accessibilityAction{openDay()}"), "the cell has no default accessibility action to open its day")
+        #expect(cell.contains(".accessibilityAction(named:Self.openDayActionName,openDay)"), "the cell does not list Open day")
+        #expect(cell.contains("privatefuncopenDay(){"))
+        #expect(MonthDayCell.openDayActionName == "Open day")
+    }
+
+    // MARK: - T-7077: the list-detail Notes tab's folder-grouped rows
+
+    /// Hosted as `NoteFolderGroupList` hands them out: each row is one button, the open note reads
+    /// selected, and the double-click rename has a named action. Still a tap gesture underneath —
+    /// see `ListNoteRow.accessibilityTraits` for why a `Button` would break rename.
+    @Test func aFolderGroupedNoteRowIsAButtonThatSaysWhichNoteIsOpen() {
+        let closed = Note(kind: .permanent, title: "Grocery list")
+        let open = Note(kind: .permanent, title: "Trip plan")
+        func row(_ note: Note, _ isSelected: Bool) -> ListNoteFolderRow {
+            ListNoteFolderRow(
+                note: note, isSelected: isSelected, folderNames: [],
+                onSelect: { _ in }, onCopyLink: { _ in }, onMoveToFolder: { _ in },
+                onNewFolder: {}, onDelete: { _ in }
+            )
+        }
+        let nodes = allNodes(in: VStack(spacing: 0) {
+            row(closed, false)
+            row(open, true)
+        }, size: NSSize(width: 320, height: 160))
+        let rows = nodes.filter { $0.role == Self.buttonRole }
+        #expect(rows.count == 2, "a folder-grouped note row is not one button on the tree: \(nodes)")
+        let selected = rows.filter(\.isSelected)
+        #expect(selected.count == 1, "the open note is not the one selected row: \(rows)")
+        #expect(
+            selected.first.map { $0.label.contains("Trip plan") || $0.value.contains("Trip plan") } == true,
+            "the selected row is not the open note: \(rows)"
+        )
+        #expect(
+            rows.filter { $0.actions.contains(ListNoteRow.renameActionName) }.count == 2,
+            "a row does not offer its double-click rename as an action: \(rows)"
+        )
+    }
+
+    /// The renaming state, which the harness cannot reach without a double-click: the row stops
+    /// being a button so its text field is not folded into a button label.
+    @Test func aRenamingNoteRowIsNotAButton() {
+        typealias Row = ListNoteRow
+        #expect(Row.accessibilityTraits(isEditing: false, isSelected: false) == .isButton)
+        #expect(Row.accessibilityTraits(isEditing: false, isSelected: true) == [.isButton, .isSelected])
+        #expect(Row.accessibilityTraits(isEditing: true, isSelected: true) == .isSelected)
+        #expect(Row.accessibilityTraits(isEditing: true, isSelected: false) == [])
+    }
+
+    /// Pointer behaviour is the tap gestures it was; the accessibility action calls the same
+    /// `onSelect` the single click does, and the children fold only while not renaming.
+    @Test func aFolderGroupedNoteRowKeepsItsGesturesAndOpensThroughOnSelect() throws {
+        let folder = CadenceSourceScan.codeOnly(
+            try CadenceSourceScan.sourceFile("Cadence/macOS/Views/ListNotesViewSupportViews.swift")
+        )
+        let outer = try CadenceControlAccessibilityLabelTests.bodyOfStruct("ListNoteFolderRow", in: folder)
+            .filter { !$0.isWhitespace }
+        #expect(outer.contains("ListNoteRow(note:note,isSelected:isSelected,onOpen:{onSelect(note)})"))
+        #expect(outer.contains(".onTapGesture{onSelect(note)}"), "the row's single click no longer opens the note")
+        #expect(!outer.contains("NoteListRowButton("), "a Button wrapper takes the rename's clicks (T-7068)")
+
+        let list = CadenceSourceScan.codeOnly(
+            try CadenceSourceScan.sourceFile("Cadence/macOS/Views/ListNotesListSupportViews.swift")
+        )
+        let inner = try CadenceControlAccessibilityLabelTests.bodyOfStruct("ListNoteRow", in: list)
+            .filter { !$0.isWhitespace }
+        #expect(inner.contains(".onTapGesture(count:2){isEditingTitle=true}"), "the double-click rename is gone")
+        #expect(inner.contains(".accessibilityElement(children:isEditingTitle?.contain:.combine)"))
+        #expect(inner.contains(".accessibilityAction{onOpen()}"))
+        #expect(inner.contains(".accessibilityAction(named:Self.renameActionName){isEditingTitle=true}"))
+    }
 }
 #endif

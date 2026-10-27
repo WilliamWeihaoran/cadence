@@ -122,7 +122,7 @@ struct ListNoteFolderRow: View {
     let onDelete: (Note) -> Void
 
     var body: some View {
-        ListNoteRow(note: note, isSelected: isSelected)
+        ListNoteRow(note: note, isSelected: isSelected, onOpen: { onSelect(note) })
             .onTapGesture {
                 onSelect(note)
             }

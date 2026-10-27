@@ -189,7 +189,25 @@ struct TaskNoteListRow: View {
 struct ListNoteRow: View {
     @Bindable var note: Note
     let isSelected: Bool
+    /// [[T-7077]]. The accessibility path to the click `ListNoteFolderRow` puts on this row. Only
+    /// the assistive action calls it: the pointer still reaches `onSelect` through that outer tap
+    /// gesture, untouched, so single-click open and double-click rename keep their event routing.
+    var onOpen: () -> Void = {}
     @State private var isEditingTitle = false
+
+    /// [[T-7077]]. What the row is to assistive tech. A button, selected when it is the open note
+    /// — but **not while renaming**: then the row is a container and its `TextField` is the
+    /// element in focus, so it must not be folded into a button's label.
+    ///
+    /// Not a `Button` wrapper, which is what [[T-7068]] did for the other note lists: a `Button`
+    /// takes the clicks that the double-click rename and the in-row text field rely on.
+    nonisolated static func accessibilityTraits(isEditing: Bool, isSelected: Bool) -> AccessibilityTraits {
+        let button: AccessibilityTraits = isEditing ? [] : .isButton
+        return button.union(isSelected ? .isSelected : [])
+    }
+
+    /// The double-click rename's assistive path.
+    nonisolated static let renameActionName = "Rename note"
 
     var body: some View {
         NoteFolderListRow(
@@ -204,6 +222,10 @@ struct ListNoteRow: View {
         .onTapGesture(count: 2) {
             isEditingTitle = true
         }
+        .accessibilityElement(children: isEditingTitle ? .contain : .combine)
+        .accessibilityAddTraits(Self.accessibilityTraits(isEditing: isEditingTitle, isSelected: isSelected))
+        .accessibilityAction { onOpen() }
+        .accessibilityAction(named: Self.renameActionName) { isEditingTitle = true }
     }
 }
 #endif
