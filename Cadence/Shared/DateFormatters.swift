@@ -365,6 +365,38 @@ nonisolated enum DateFormatters {
         return fullShortDate.string(from: date)
     }
 
+    /// `CadenceNoteDateNavigation.dayLabel`'s body: `"Aug 17"`, `"Aug 17, 2025"` outside `now`'s
+    /// year, the key itself when it does not parse. Here rather than there because
+    /// `CadenceMCPServer` compiles this file and search names notes through it ([[T-7205]]).
+    static func noteDayLabel(forDayKey dayKey: String, now: Date = Date()) -> String {
+        guard let date = DateFormatters.date(from: dayKey) else { return dayKey }
+        return absoluteDay(date, relativeTo: now)
+    }
+
+    /// `CadenceNoteDateNavigation.weekRangeLabel`'s body: `"Aug 17–23"`, `"Aug 31 – Sep 6"`, with a
+    /// year outside `now`'s ([[T-6431]]). Here for the same reason as `noteDayLabel`.
+    static func noteWeekRangeLabel(forDayKey dayKey: String, now: Date = Date(), calendar: Calendar = .current) -> String {
+        let key = weekKey(from: DateFormatters.date(from: dayKey) ?? Date())
+        guard let monday = weekStartDate(forWeekKey: key, calendar: calendar),
+              let sunday = calendar.date(byAdding: .day, value: 6, to: monday) else {
+            return weekLabel(from: key, relativeTo: now)
+        }
+
+        let nowYear = calendar.component(.year, from: now)
+        let mondayYear = calendar.component(.year, from: monday)
+        let sundayYear = calendar.component(.year, from: sunday)
+        let sameMonth = calendar.isDate(monday, equalTo: sunday, toGranularity: .month)
+
+        if mondayYear == sundayYear {
+            let range = sameMonth
+                ? "\(shortDate.string(from: monday))–\(dayNumber.string(from: sunday))"
+                : "\(shortDate.string(from: monday)) – \(shortDate.string(from: sunday))"
+            return mondayYear == nowYear ? range : "\(range), \(mondayYear)"
+        }
+        // A week straddling New Year: the ends are in different years, so at least one carries its own.
+        return "\(absoluteDay(monday, relativeTo: now)) – \(absoluteDay(sunday, relativeTo: now))"
+    }
+
     /// `absoluteDay`'s long spelling: `longDate` ("Saturday, October 25") inside the reference
     /// date's year, `longDateWithYear` ("Saturday, October 25, 2025") outside it. The macOS note
     /// editor's daily header is the caller; the list's month heading, the only other year on that

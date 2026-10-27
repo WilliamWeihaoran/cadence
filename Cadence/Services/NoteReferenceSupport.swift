@@ -527,7 +527,7 @@ nonisolated enum NoteReferencePanelSupport {
     static func dayName(forDateKey key: String, now: Date = Date()) -> String? {
         let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
-        return CadenceNoteDateNavigation.dayLabel(forDayKey: trimmed, now: now)
+        return DateFormatters.noteDayLabel(forDayKey: trimmed, now: now)
     }
 
     /// Through the week's Monday, because `weekRangeLabel` takes a day key. Checked here rather than
@@ -537,7 +537,7 @@ nonisolated enum NoteReferencePanelSupport {
         let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return nil }
         guard let monday = DateFormatters.weekStartDate(forWeekKey: trimmed) else { return trimmed }
-        return CadenceNoteDateNavigation.weekRangeLabel(forDayKey: DateFormatters.dateKey(from: monday), now: now)
+        return DateFormatters.noteWeekRangeLabel(forDayKey: DateFormatters.dateKey(from: monday), now: now)
     }
 
     /// **The title a search row draws for a note.** `displayTitle`, except for a daily or weekly
