@@ -25,7 +25,7 @@ struct CreateListSheet: View {
     @State private var details = ""
     @State private var listType: ListType = .area
     @State private var selectedColor = ListType.area.defaultColor
-    @State private var selectedIcon = "folder.fill"
+    @State private var selectedIcon = ListType.area.defaultIcon
     @State private var dueDate: Date = Date()
     @State private var hasDueDate: Bool = false
     @State private var hideDueDateIfEmpty = true
@@ -68,6 +68,28 @@ struct CreateListSheet: View {
             case .project: return CadenceColorPalette.projectDefault
             }
         }
+
+        /// The icon and colour the sheet shows after switching from `old` to `new` ([[T-7269]]).
+        ///
+        /// The switch used to write `new`'s defaults unconditionally, so a colour and icon the
+        /// user had already picked snapped back with no word said. Now each field moves to the
+        /// new type's default only while it still holds the old type's default — the user has
+        /// not touched it, so the sheet's own suggestion follows the type — and a pick survives.
+        /// iOS's list editor keeps a pick too; it differs only in leaving an untouched default
+        /// where it is. Each field is decided on its own: picking a colour does not pin the icon.
+        static func identityAfterSwitch(
+            from old: ListType,
+            to new: ListType,
+            icon: String,
+            color: String
+        ) -> (icon: String, color: String) {
+            let iconIsOldDefault = icon == old.defaultIcon
+            let colorIsOldDefault = color.caseInsensitiveCompare(old.defaultColor) == .orderedSame
+            return (
+                icon: iconIsOldDefault ? new.defaultIcon : icon,
+                color: colorIsOldDefault ? new.defaultColor : color
+            )
+        }
     }
 
     var body: some View {
@@ -80,9 +102,15 @@ struct CreateListSheet: View {
             HStack(spacing: 8) {
                 ForEach(ListType.allCases, id: \.self) { type in
                     TypeButton(type: type, isSelected: listType == type) {
+                        let carried = ListType.identityAfterSwitch(
+                            from: listType,
+                            to: type,
+                            icon: selectedIcon,
+                            color: selectedColor
+                        )
                         listType = type
-                        selectedIcon = type.defaultIcon
-                        selectedColor = type.defaultColor
+                        selectedIcon = carried.icon
+                        selectedColor = carried.color
                     }
                 }
             }
