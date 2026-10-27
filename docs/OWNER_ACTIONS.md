@@ -90,55 +90,39 @@ once: that the sync arrived, and that the identifier did not resolve. It cannot 
 
 ---
 
-## 3. Create a Mac Installer Distribution certificate — T-7102
+## 3. ~~Create a Mac Installer Distribution certificate~~ — DONE, T-7102 CLOSED
 
-**This is the only RC blocker anything in this repository can see.** The Release archive was
-produced on 2026-10-26 on both platforms, signed, with zero warnings (T-7100) — that is real and
-re-confirmed. The careful version of the headline: a certificate is the only missing piece that a
-Mac and a git checkout can be asked about. The App Store Connect side of the upload cannot be
-checked from here at all, and "Before the upload" at the foot of this file says what that leaves
-open.
+**Resolved 2026-10-27. You are releasing both legs to internal TestFlight.** This section is kept
+rather than deleted because the diagnosis in it was wrong in a way worth remembering.
 
-**What is missing.** Re-measured on 2026-10-27: `security find-identity -v` on this Mac returns
-exactly two identities, unchanged —
-`Apple Development: Haoran Wei (789PA7K7WF)` and `Apple Distribution: Haoran Wei (SM6Y3D2D55)`.
-A search for "3rd Party Mac Developer Installer", "Mac Installer Distribution", "Developer ID
-Installer" and "Developer ID Application" returns **zero** certificates for each.
+**What this item used to say:** no Mac Installer Distribution certificate exists on this Mac, so
+the macOS leg archives but cannot be packaged for TestFlight. The measurements behind that were
+real — `productbuild --sign "3rd Party Mac Developer Installer: …"` genuinely failed, the same
+command without `--sign` genuinely wrote an 11.2 MB `.pkg`, and the keychain genuinely held zero
+installer certificates.
 
-A Mac App Store or macOS TestFlight upload is a `.pkg` signed with a **Mac Installer
-Distribution** certificate. `Apple Distribution` is a different certificate type and cannot
-substitute for it.
+**Why it was wrong anyway.** Hand-rolled `productbuild` is the Mac App Store / Developer ID route.
+It is not the route Xcode Organizer takes for an internal TestFlight upload — Organizer packages
+and signs for internal distribution itself once it holds an App Store Connect session. The
+certificate was never on your path. Re-measured at close: still **zero** installer certificates in
+either `login.keychain-db` or `System.keychain`, and the upload works.
 
-**iOS is unaffected.** An `.ipa` needs only `Apple Distribution`, which you have and which is
-valid. If you want to put a build in testers' hands first, the iPhone and iPad build can go
-without touching this.
+**What was actually blocking you.** Xcode 27.1 had no Apple Account signed in. Organizer stopped
+with *"App Store Connect access for 'Haoran Wei' is required"* over an empty **No Accounts** table.
+Confirmed on disk at the time: no account store under `~/Library/Developer/Xcode`, and
+`security find-generic-password -s Xcode-Token` found nothing.
 
-**Do this:** Xcode → Settings → Accounts → select your Apple ID → Manage Certificates → **+** →
-**Mac Installer Distribution**. The same certificate can be created on the developer portal if
-you prefer. Xcode Organizer's "Distribute App" flow will also offer to create it for you at the
-point it is needed, so doing nothing here and letting Organizer prompt you is a legitimate
-choice.
+Signing certificates live in the login keychain and survive an Xcode major-version upgrade. The
+**account** does not. This Mac had moved to Xcode 27.1 since the last successful uploads
+(1.0 (9), 2026-06-01), which is why something that had never happened before happened now.
 
-*That menu path is repeated on trust and is the one thing in this item nobody has confirmed.* No
-agent may drive your Xcode, and a search of Xcode 27.1's framework resources for the strings
-"Manage Certificates" and "Mac Installer Distribution" found neither, which is evidence about
-where Xcode keeps its menu strings and not about whether the path is right. If the wording has
-moved, the Organizer route above reaches the same certificate without needing it.
+**If it recurs after a future Xcode upgrade:** Xcode → Settings → Accounts → **+**, sign in, retry
+Distribute App. Nothing else is needed, and no certificate has to be created.
 
-**While you are in there, one thing that is now measured rather than guessed:** all 19 cached
-provisioning profiles were decoded on 2026-10-27. The two **Mac** Team Store profiles —
-`Mac Team Store Provisioning Profile: com.haoranwei.Cadence` and `…CadenceWidgets` — carry no
-`beta-reports-active` key, while both **iOS** Team Store profiles carry `beta-reports-active`
-`true`. `beta-reports-active` is the entitlement TestFlight uses. Xcode regenerates profiles at
-distribution time, so this may still resolve itself and nothing is known to be broken — but if a
-macOS upload is rejected for entitlements, this is the first place to look. Two things that
-looked like neighbouring risks were checked at the same time and are **fine**: every Team Store
-profile carries `com.apple.developer.icloud-container-identifiers` =
-`iCloud.com.haoranwei.Cadence` (so T-3152's widget portal step really is done, for the widget as
-well as the app), and the macOS app profile carries `com.apple.developer.applesignin`, which the
-binary asks for.
-
-**Tell me:** the output of `security find-identity -v | grep -i installer` once you are done.
+**The lesson, which is worth more than the item was.** A signing or packaging failure you reproduce
+by hand proves only that your hand-rolled command fails. Before treating it as a release blocker,
+check that the tool you will actually use takes the same path. The same shape caught us twice in
+one day — see T-7500, where a build was verified against a tree it never compiled.
 
 ---
 
