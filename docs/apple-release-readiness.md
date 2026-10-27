@@ -1,7 +1,10 @@
 # Cadence Apple Release Readiness
 
-Last updated: October 20, 2026. The CloudKit schema obligation and the entitlement rows were
-re-checked against the tree that day; see "Checked against the tree" at the foot.
+Last updated: October 27, 2026. The CloudKit schema obligation, the widget entitlement row and
+the version numbers were re-measured against HEAD that day; see "Checked Against The Tree" at the
+foot, which carries both readings and says which of the older ones were wrong. The document's
+**rewrite** for iOS becoming a shipping channel is a separate, larger job and is T-6410, which the
+owner has placed after the RC; this pass corrected facts and changed no scope.
 
 This checklist maps Cadence's current macOS app behavior to Apple's App Review, privacy, signing, sandboxing, and notarization expectations. Use it before every App Store Connect upload or direct Developer ID release.
 
@@ -154,25 +157,47 @@ them rather than as standing claims.
   or an `@Relationship` to a `@Model`. So nothing is owed, measured the way the paragraph above
   says to measure it — against the model's stored properties, not against a deployment diff.
   **This goes stale the moment someone adds a stored property.** Redo it, do not re-read it.
-- **The widget extension carries no iCloud container** *(true of the committed tree; there is
-  uncommitted work in flight — see the warning under this list)*.
-  `CadenceWidgets/CadenceWidgets.entitlements` holds the App Group and the sandbox flag and nothing
-  else. That is deliberate and is T-3152: the owner decided to add one, and it was measured to turn
-  every signed local build red because the `com.haoranwei.Cadence.CadenceWidgets` App ID has no
-  iCloud capability, which is an owner step in the developer portal. The "iCloud container" row in
-  the table above says "App" and means it — the extension is not covered by it.
+  **Redone 2026-10-27 at `d77ecc2b`, and still nothing is owed.** Measured as a diff of the tree
+  against the 2026-10-02 deploy rather than by re-reading the bullet above: `@Model` declarations
+  across `Cadence/` are identical at both ends (24 of them), `Cadence/Services/CadenceSchema.swift`
+  is byte-identical, and the only `var` added under `Cadence/Models/` in the whole range is
+  `honorsDirection`, a computed property on an enum — not a stored property and not on a `@Model`.
+  Five commits touched `Cadence/Models/` after the 2026-10-20 reading and none of them moved the
+  schema. This matters for an internal TestFlight RC specifically, because a TestFlight build
+  talks to **Production**: redo it again the day a stored property lands, which is the only event
+  that can change the answer.
+- **The widget extension now DOES carry the app's iCloud container** *(re-measured 2026-10-27;
+  this bullet said the opposite until then, and the opposite was true when it was written)*.
+  `CadenceWidgets/CadenceWidgets.entitlements` holds `com.apple.developer.icloud-services`
+  (`CloudKit`) with container `iCloud.com.haoranwei.Cadence`, beside the App Group and the sandbox
+  flag, and carries neither push spelling. That is T-3152 landing: the owner's developer-portal
+  step was taken, and it is visible from here without a portal session — all four cached Team
+  Store (distribution) profiles, Mac and iOS, app and widget, carry
+  `com.apple.developer.icloud-container-identifiers` = `iCloud.com.haoranwei.Cadence` with
+  `icloud-services` `*`. So the capability costs an archive nothing (T-7100 confirmed the same
+  thing from inside both real archives). Two things this does **not** change: the extension's
+  containers still do not mirror, which is T-3227 and still open, so a widget write reaches other
+  devices only when the app next runs an export pass; and the "iCloud container" row in the table
+  above still says "App", which is now understating the tree rather than describing it. The four
+  cached **development** profiles carry no container — that is a local signed-build question, not
+  a distribution one, and Xcode regenerates them.
 - The app's privacy manifest declares `NSPrivacyCollectedDataTypeOtherUserContent` and no other
   collected type, which is what the privacy-label table above claims.
 - `INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO` on both app configurations;
-  `MACOSX_DEPLOYMENT_TARGET = 26.1`; `MARKETING_VERSION = 1.0`; `CURRENT_PROJECT_VERSION = 23`.
+  `MACOSX_DEPLOYMENT_TARGET = 26.1`; `MARKETING_VERSION = 1.0`; **`CURRENT_PROJECT_VERSION = 25`**
+on the two shipping targets (re-read per target 2026-10-27; it said 23 here until then, and T-7100
+bumped 24 → 25 on 2026-10-26. `CadenceTests`/`CadenceUITests` still read 24 and `CadenceMCPServer`
+reads 1 — none of the three ships, so a whole-file grep of this key legitimately finds three
+different values and is not the check to write).
 
-**Before cutting an RC, read [[T-3152]]'s 2026-10-20 addendum.** The widget-entitlement owner
-step appears to have been taken, and the shared checkout has **uncommitted** entitlement changes
-that do not match what the ticket decided: an empty `icloud-container-identifiers` array rather
-than the named container, plus both push spellings, which
-`AppStoreReviewReadinessTests.widgetEntitlementsIncludeSandbox` asserts are absent. The committed
-tree is still clean; the working tree is not. Do not archive from a tree in that state without
-settling it.
+**The 2026-10-20 "do not archive" warning that stood here is DISCHARGED** (re-checked 2026-10-27).
+It said the shared checkout held uncommitted widget-entitlement changes that did not match what
+T-3152 decided — an empty `icloud-container-identifiers` array plus both push spellings, which
+`AppStoreReviewReadinessTests.widgetEntitlementsIncludeSandbox` asserts are absent. None of that
+is true of the tree any more: the committed `CadenceWidgets/CadenceWidgets.entitlements` holds the
+**named** container with CloudKit and **no** push key of either spelling, and
+`git status` shows the file clean. The condition the warning named no longer exists, so the
+warning is removed rather than left to stop an archive on a premise that has expired.
 
 **Not verified here:** nobody ran the verification commands above as part of this check, and
 nothing in a document can establish that they were run. Anything needing an archive, a signed

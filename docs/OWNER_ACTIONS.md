@@ -63,7 +63,8 @@ permission or opening a real event store. That click is yours.
 
 **You do not need a console. The app already displays the answer.**
 
-1. On your **iPhone**, open Settings → Calendar. Find an **iCloud** calendar — *not* an
+1. On your **iPhone**, open **Cadence's own** Settings → Calendar — the app's settings, not
+   iOS Settings. Find an **iCloud** calendar — *not* an
    "On My Mac" or "On My iPhone" one. A local calendar genuinely does not exist on the other
    device, which would give you a false answer. Use its link button and connect it to any area
    or project.
@@ -91,10 +92,15 @@ once: that the sync arrived, and that the identifier did not resolve. It cannot 
 
 ## 3. Create a Mac Installer Distribution certificate — T-7102
 
-**This is the only thing standing between the project and a macOS TestFlight build.** The Release
-archive was produced tonight on both platforms, signed, with zero warnings. It is real.
+**This is the only RC blocker anything in this repository can see.** The Release archive was
+produced on 2026-10-26 on both platforms, signed, with zero warnings (T-7100) — that is real and
+re-confirmed. The careful version of the headline: a certificate is the only missing piece that a
+Mac and a git checkout can be asked about. The App Store Connect side of the upload cannot be
+checked from here at all, and "Before the upload" at the foot of this file says what that leaves
+open.
 
-**What is missing.** `security find-identity -v` on this Mac returns exactly two identities:
+**What is missing.** Re-measured on 2026-10-27: `security find-identity -v` on this Mac returns
+exactly two identities, unchanged —
 `Apple Development: Haoran Wei (789PA7K7WF)` and `Apple Distribution: Haoran Wei (SM6Y3D2D55)`.
 A search for "3rd Party Mac Developer Installer", "Mac Installer Distribution", "Developer ID
 Installer" and "Developer ID Application" returns **zero** certificates for each.
@@ -104,7 +110,7 @@ Distribution** certificate. `Apple Distribution` is a different certificate type
 substitute for it.
 
 **iOS is unaffected.** An `.ipa` needs only `Apple Distribution`, which you have and which is
-valid. If you want to put a build in testers' hands tonight, the iPhone and iPad build can go
+valid. If you want to put a build in testers' hands first, the iPhone and iPad build can go
 without touching this.
 
 **Do this:** Xcode → Settings → Accounts → select your Apple ID → Manage Certificates → **+** →
@@ -113,11 +119,24 @@ you prefer. Xcode Organizer's "Distribute App" flow will also offer to create it
 point it is needed, so doing nothing here and letting Organizer prompt you is a legitimate
 choice.
 
-**While you are in there, one unverified thing worth a glance:** the two cached **Mac** Team
-Store provisioning profiles do not list `beta-reports-active`, while both **iOS** Team Store
-profiles do. `beta-reports-active` is the entitlement TestFlight uses. Xcode regenerates profiles
-at distribution time, so this may resolve itself and nothing is known to be broken — but if a
-macOS upload is rejected for entitlements, this is the first place to look.
+*That menu path is repeated on trust and is the one thing in this item nobody has confirmed.* No
+agent may drive your Xcode, and a search of Xcode 27.1's framework resources for the strings
+"Manage Certificates" and "Mac Installer Distribution" found neither, which is evidence about
+where Xcode keeps its menu strings and not about whether the path is right. If the wording has
+moved, the Organizer route above reaches the same certificate without needing it.
+
+**While you are in there, one thing that is now measured rather than guessed:** all 19 cached
+provisioning profiles were decoded on 2026-10-27. The two **Mac** Team Store profiles —
+`Mac Team Store Provisioning Profile: com.haoranwei.Cadence` and `…CadenceWidgets` — carry no
+`beta-reports-active` key, while both **iOS** Team Store profiles carry `beta-reports-active`
+`true`. `beta-reports-active` is the entitlement TestFlight uses. Xcode regenerates profiles at
+distribution time, so this may still resolve itself and nothing is known to be broken — but if a
+macOS upload is rejected for entitlements, this is the first place to look. Two things that
+looked like neighbouring risks were checked at the same time and are **fine**: every Team Store
+profile carries `com.apple.developer.icloud-container-identifiers` =
+`iCloud.com.haoranwei.Cadence` (so T-3152's widget portal step really is done, for the widget as
+well as the app), and the macOS app profile carries `com.apple.developer.applesignin`, which the
+binary asks for.
 
 **Tell me:** the output of `security find-identity -v | grep -i installer` once you are done.
 
@@ -164,8 +183,9 @@ and then free itself, that detail is worth having.
 ## 6. Two-device archive comparison — T-2053
 
 **What is already done.** The signing-environment guard is landed and covered by 11 tests
-(`CadenceSigningEnvironment` in `Cadence/Services/PersistenceController.swift:1195`, acted on at
-`:609`). It fails safe: anything it cannot read leaves CloudKit **on**. A distribution-signed
+(`CadenceSigningEnvironment` in `Cadence/Services/PersistenceController.swift:1196`, acted on at
+`:610` — both re-read at HEAD on 2026-10-27; the file has shifted by one line since this was
+written). It fails safe: anything it cannot read leaves CloudKit **on**. A distribution-signed
 TestFlight build will sync to the Production CloudKit environment, which is what you want.
 
 **What is left, and why it is yours.** Confirming the guard's behaviour across two real devices
@@ -267,6 +287,74 @@ archive does not depend on any of this.
 
 **Tell me:** whether you are supplying artwork or want a redraw, and whether you want another
 naming round.
+
+---
+
+## Before the upload: what the RC needs beyond item 3
+
+Not a tenth item and not a tenth ticket — there are still nine. Item 3 ends at "the certificate
+exists", and the upload is the step after it. No document in this repository describes that step:
+`docs/apple-release-readiness.md` and `docs/app-store-submission-packet.md` are written for the
+public Mac App Store release and `docs/direct-distribution-runbook.md` for Developer ID, and an
+internal TestFlight build is neither. This section is the gap, checked against HEAD on 2026-10-27.
+
+**Already handled — these need nothing from you, and are listed so you do not go looking.**
+
+- **Export compliance is answered in the bundle.** `INFOPLIST_KEY_ITSAppUsesNonExemptEncryption =
+  NO` is set on both of the app target's configurations, so App Store Connect will not ask you the
+  encryption question once per build.
+- **The app and its widget extension agree on everything an upload compares.** Read per target
+  rather than grepped: `MARKETING_VERSION` 1.0, `CURRENT_PROJECT_VERSION` 25, both deployment
+  targets 26.1, device family `1,2`, team `SM6Y3D2D55`, app group `group.com.haoranwei.Cadence`,
+  iCloud container `iCloud.com.haoranwei.Cadence`, and bundle ids `com.haoranwei.Cadence` and
+  `com.haoranwei.Cadence.CadenceWidgets`. A mismatch here is the classic rejection and there is
+  not one. (The test bundles still read 24 and the MCP server reads 1; none of the three ships.)
+- **Build 25 is higher than the shipped 24**, so the number is not a reason for a rejection —
+  subject to the App Store Connect check below, which is the half nobody here can run.
+- **Both binaries carry a privacy manifest**, app and widget, each declaring the UserDefaults and
+  file-timestamp reasons.
+- **Internal TestFlight needs no Beta App Review, no nutrition label and no test information.**
+  That is why item 8 is marked "public release only" — it is, and nothing about the internal RC
+  changes it.
+- **No new CloudKit schema obligation.** This is the one that would have been expensive to miss:
+  a TestFlight build talks to the **Production** CloudKit environment, and a record type or field
+  that exists only in Development can abort mirroring for the whole store. The readiness document
+  carries that rule with a measurement dated 2026-10-20 and says in terms "redo it, do not re-read
+  it". It was redone at HEAD on 2026-10-27, against the 2026-10-02 deploy you verified in the
+  Console: 24 `@Model` types, byte-identical `CadenceSchema.swift`, and not one stored property
+  added in between. **Nothing is owed and you do not need to press Deploy Schema Changes.**
+
+**What cannot be checked from here at all.** No agent has, or may seek, App Store Connect access,
+so these are yours and nothing in the repository can confirm or deny them. They are listed in the
+order Organizer will hit them:
+
+1. **An App Store Connect app record must exist for `com.haoranwei.Cadence`.** Strong indirect
+   evidence that it does: Apple has issued Team Store (distribution) profiles for both bundle ids,
+   and the iOS ones carry `beta-reports-active`, which is TestFlight's entitlement. That is
+   evidence, not the record.
+2. **That record must have the macOS platform enabled** if you want the Mac build in TestFlight.
+   An iOS-only record takes the `.ipa` and has nowhere to put the `.pkg`, and this is the failure
+   most likely to surprise you after item 3's certificate is finally in hand.
+3. **Build 25 must exceed the highest build already uploaded for version 1.0.** "Build 24 shipped"
+   in the handoff means archived here, not necessarily uploaded there.
+4. **Internal testers must be added**, which for internal testing means people who already hold a
+   role on the team.
+5. **The upload itself**, through Xcode Organizer. Agents are barred from it, and
+   `scripts/xcb.sh export-archive` refuses `destination: upload` and the `app-store` /
+   `app-store-connect` / `validation` methods before it reaches `xcodebuild` — re-read at HEAD on
+   2026-10-27 and still intact. That refusal is correct; it is not something to work around.
+
+**One repository-side thing to do in the same sitting as the archive, because it takes a second.**
+Every file under `Cadence/` or `CadenceWidgets/` that is not a known source type is copied into
+the shipped bundle as a resource, with nothing in the project file to notice — that is how 19 KB
+of macOS source shipped inside the iOS app (T-7101). The `.gitignore` rule added afterwards stops
+such a file reaching git but **not** the bundle, and it also means `git status` no longer shows
+one. The tree is clean as of 2026-10-27; a test to keep it that way is filed as T-7277. Until it
+lands, run this immediately before you archive and expect no output:
+
+```bash
+cd /Users/williamwei/Developer/Cadence && find Cadence CadenceWidgets -type f \( -name '*.orig' -o -name '*.rej' -o -name '*.bak' -o -name '*.swp' \)
+```
 
 ---
 
