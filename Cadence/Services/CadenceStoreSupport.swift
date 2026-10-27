@@ -193,9 +193,13 @@ nonisolated enum CadenceStoreSupport {
     ///
     /// **It opens a store the app has open with mirroring ON, and this one has mirroring OFF
     /// ([[T-3108]]).** The default is `cloudKitDatabase: .none` while `PersistenceController`
-    /// opens the same `default.store` with `.private("iCloud.com.haoranwei.Cadence")`, and the
-    /// widget extension could not do otherwise if it wanted to: `CadenceWidgets.entitlements`
-    /// carries no `icloud-container-identifiers`, so there is no container for it to mirror to.
+    /// opens the same `default.store` with `.private("iCloud.com.haoranwei.Cadence")`. **Mirroring
+    /// is off here on purpose, not because it is impossible:** `CadenceWidgets.entitlements` does
+    /// carry `iCloud.com.haoranwei.Cadence` ([[T-3152]]), but this function is compiled into the
+    /// app as well as the extension, so mirroring here would open a second mirroring container
+    /// over the store `PersistenceController` already mirrors. The owner ruled on 2026-10-26
+    /// ([[T-3227]]) to keep every widget-side container `.none` and let the app export the writes,
+    /// declining both a per-process switch and moving the intents out of the app target.
     ///
     /// **That does not mean the write is lost, and the sentence that said it might be named the
     /// wrong mechanism.** `CadenceModelContainerFactory.swift` argues, about the MCP server and
@@ -214,9 +218,8 @@ nonisolated enum CadenceStoreSupport {
     /// delegate still has to run the export, and this one holds none — so a widget write leaves on
     /// the app's next export pass rather than promptly. How long that is was not measured and
     /// cannot be from here: no CloudKit call may be made in this repository, and [[T-2010]]
-    /// records that even the *delivery* of a mirroring event needs a two-device run. Whether the
-    /// extension should carry its own iCloud entitlement instead is an owner decision, open
-    /// rather than settled in passing.
+    /// records that even the *delivery* of a mirroring event needs a two-device run. That latency
+    /// is the accepted cost of the [[T-3227]] ruling above.
     nonisolated static func makeSharedWriteContainer(
         cloudKitDatabase: ModelConfiguration.CloudKitDatabase = .none,
         storeDirectoryURL: URL? = nil,

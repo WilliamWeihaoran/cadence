@@ -644,6 +644,9 @@ struct TaskInspectorScheduleEditor<Content: View>: View {
         }
         .frame(maxHeight: 720)
         .cadenceFixedTypography()
+        // [[T-6191]]: an After count stored below this occurrence before [[T-6114]]'s floor is
+        // repaired when the task is opened, and only then. A coherent count is not written.
+        .onAppear { CadenceTaskRecurrenceWorkflowSupport.repairEndCountOnOpen(task, in: modelContext) }
         .onChange(of: task.statusRaw) { _, _ in draft.isDone = task.isDone }
         .onChange(of: draft.listToken) { _, _ in
             draft.sectionName = CadenceScheduleDraftChoices.normalizedSectionName(

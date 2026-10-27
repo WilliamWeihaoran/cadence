@@ -620,6 +620,26 @@ struct CadenceRecurrenceEndSurfaceTests {
     /// The helper is worth nothing if an editor still calls the unfloored one. Every After-count
     /// resolve / clamp in the two editors passes the occurrence number; the one exception is
     /// macOS's `selectEnd`, whose only caller is the picker panel that has already floored.
+    /// [[T-6191]]: the owner's ruling is to repair an After count stored below its occurrence
+    /// when the task is OPENED. The three task editors are the opens; each calls the one repair,
+    /// once, and nothing else in the app calls it -- it is never a sweep.
+    @Test func everyTaskEditorRepairsTheEndCountOnOpenAndNothingElseDoes() throws {
+        let call = #"\.onAppear \{ CadenceTaskRecurrenceWorkflowSupport\.repairEndCountOnOpen\(task, in: modelContext\) \}"#
+        let hosts = [
+            "Cadence/iOS/iOSTaskDetailSheet.swift",
+            "Cadence/Shared/Components/CadenceTaskInlinePanel.swift",
+            "Cadence/macOS/Views/TaskInspectorContentSupportViews.swift",
+        ]
+        for path in hosts {
+            let source = try strippingComments(sourceFile(path))
+            #expect(CadenceSourceScan.matchCount(call, in: source) == 1, "\(path) does not repair on open")
+        }
+        #expect(
+            try filesMentioning("repairEndCountOnOpen")
+                == (hosts + ["Cadence/Shared/CadenceTaskRecurrenceWorkflowSupport.swift"]).sorted()
+        )
+    }
+
     @Test func bothEditorsFloorTheAfterCountAtTheOccurrence() throws {
         let floored = #"(resolvedEndCount|normalizedEndCount)\([^\n]*occurrenceNumber:"#
         let unfloored = #"(resolvedEndCount|normalizedEndCount)\((?![^\n]*occurrenceNumber:)"#

@@ -100,6 +100,9 @@ struct CadenceTaskInlinePanel: View {
             CadenceSchedulePanelNotesRow(notes: $draft.notes)
         }
         .expanding(openingRow)
+        // [[T-6191]]: an After count stored below this occurrence before [[T-6114]]'s floor is
+        // repaired when the task is opened, and only then. A coherent count is not written.
+        .onAppear { CadenceTaskRecurrenceWorkflowSupport.repairEndCountOnOpen(task, in: modelContext) }
         .confirmationDialog(
             CadenceRecurrenceScopeCopy.taskScopeTitle,
             isPresented: $isAskingRecurrenceScope,

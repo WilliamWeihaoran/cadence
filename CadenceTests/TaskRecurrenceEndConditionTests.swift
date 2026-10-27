@@ -493,4 +493,108 @@ struct TaskRecurrenceEndConditionTests {
         #expect(labels.count == CadenceTaskRecurrenceEditScope.allCases.count)
         #expect(labels.contains(where: \.isEmpty) == false)
     }
+
+    // MARK: - [[T-6191]] an After count stored below its occurrence is repaired on open
+
+    private struct CommitRefused: Error {}
+
+    /// A series stored before [[T-6114]]'s floor: occurrence 15 of an After-10 series.
+    private func makeIncoherentSeries(in context: ModelContext) throws -> AppTask {
+        let task = makeRecurringTask(scheduledDate: "2026-08-04")
+        task.recurrenceEndMode = .afterCount
+        task.recurrenceEndCount = 10
+        task.recurrenceOccurrenceIndex = 14
+        context.insert(task)
+        try context.save()
+        return task
+    }
+
+    @Test func openingAnIncoherentSeriesRaisesItsCountToTheOccurrenceAndCommitsIt() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let task = try makeIncoherentSeries(in: context)
+        #expect(task.recurrenceHasEnded)
+
+        var commits = 0
+        let repaired = CadenceTaskRecurrenceWorkflowSupport.repairEndCountOnOpen(task, in: context) {
+            commits += 1
+            try $0.save()
+        }
+
+        #expect(repaired)
+        #expect(commits == 1)
+        #expect(task.recurrenceEndCount == 15)
+        #expect(task.recurrenceEndMode == .afterCount)
+        #expect(task.recurrenceHasEnded, "the repair must keep the series ended, not revive it")
+        let reread = try ModelContext(container).fetch(FetchDescriptor<AppTask>()).first { $0.id == task.id }
+        #expect(reread?.recurrenceEndCount == 15, "the repair is in the store, not only on the live object")
+
+        // Idempotent: a second open finds nothing to repair and commits nothing.
+        let again = CadenceTaskRecurrenceWorkflowSupport.repairEndCountOnOpen(task, in: context) {
+            commits += 1
+            try $0.save()
+        }
+        #expect(again == false)
+        #expect(commits == 1)
+    }
+
+    @Test func openingACoherentSeriesWritesNothing() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+
+        let counted = makeRecurringTask(scheduledDate: "2026-08-04")
+        counted.recurrenceEndMode = .afterCount
+        counted.recurrenceEndCount = 10
+        counted.recurrenceOccurrenceIndex = 2
+        let exact = makeRecurringTask(scheduledDate: "2026-08-04")
+        exact.recurrenceEndMode = .afterCount
+        exact.recurrenceEndCount = 15
+        exact.recurrenceOccurrenceIndex = 14
+        let dated = makeRecurringTask(scheduledDate: "2026-08-04")
+        dated.recurrenceEndMode = .onDate
+        dated.recurrenceEndDate = "2026-12-31"
+        dated.recurrenceOccurrenceIndex = 14
+        let unbounded = makeRecurringTask(scheduledDate: "2026-08-04")
+        unbounded.recurrenceOccurrenceIndex = 14
+        for task in [counted, exact, dated, unbounded] { context.insert(task) }
+        try context.save()
+
+        var commits = 0
+        for task in [counted, exact, dated, unbounded] {
+            let repaired = CadenceTaskRecurrenceWorkflowSupport.repairEndCountOnOpen(task, in: context) {
+                commits += 1
+                try $0.save()
+            }
+            #expect(repaired == false)
+        }
+        #expect(commits == 0)
+        #expect(counted.recurrenceEndCount == 10)
+        #expect(exact.recurrenceEndCount == 15)
+        #expect(dated.recurrenceEndCount == 0)
+        #expect(unbounded.recurrenceEndCount == 0)
+    }
+
+    @Test func aRefusedRepairPutsTheStoredCountBack() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let task = try makeIncoherentSeries(in: context)
+
+        let repaired = CadenceTaskRecurrenceWorkflowSupport.repairEndCountOnOpen(task, in: context) { _ in
+            throw CommitRefused()
+        }
+
+        #expect(repaired == false)
+        #expect(task.recurrenceEndCount == 10)
+    }
+
+    @Test func theDraftOpensAnIncoherentSeriesAtTheRepairedCount() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let task = try makeIncoherentSeries(in: context)
+
+        let draft = CadenceScheduleDraft(editing: task)
+
+        #expect(draft.seriesEndCount == 15)
+        #expect(task.recurrenceEndCount == 10, "building the draft is a read; the host commits the repair")
+    }
 }

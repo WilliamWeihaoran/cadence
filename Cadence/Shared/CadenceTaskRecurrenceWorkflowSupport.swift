@@ -471,6 +471,60 @@ nonisolated enum CadenceTaskRecurrenceWorkflowSupport {
         }
     }
 
+    // MARK: - [[T-6191]] repairing an After count stored below its occurrence
+
+    /// The After count a task's stored figure should read as: the stored count, raised to the
+    /// task's own occurrence number when an `.afterCount` series was stored below it.
+    ///
+    /// Before [[T-6114]]'s floor an editor could store a count under the occurrence already
+    /// reached, and such a series read "15 of 10". `recurrenceHasEnded` is already true for it, so
+    /// raising the count to the occurrence keeps the series exactly as ended while making the
+    /// figure true: "15 of 15". Anything else — a coherent count, another end mode, a count that
+    /// `effectiveRecurrenceEndMode` already degrades to `.never` — comes back unchanged.
+    static func coherentEndCount(
+        stored: Int,
+        effectiveMode: TaskRecurrenceEndMode,
+        occurrenceNumber: Int
+    ) -> Int {
+        guard effectiveMode == .afterCount, stored < occurrenceNumber else { return stored }
+        return occurrenceNumber
+    }
+
+    /// **The owner's 2026-10-26 ruling on [[T-6191]]: repair the stored count when the task is
+    /// OPENED, never in a sweep.** Raises an incoherent After count to the task's occurrence
+    /// number and commits that one field; a task whose count is already coherent is not written
+    /// at all, so calling this on every open is idempotent and costs nothing.
+    ///
+    /// Only the opened task is repaired — not the rest of its series, which each get the same
+    /// repair when they are opened themselves. A refused commit puts the stored count back, so the
+    /// task is exactly as it was and the next open tries again.
+    ///
+    /// - Returns: `true` when a repair was committed, `false` when nothing needed it or the store
+    ///   refused.
+    @discardableResult
+    static func repairEndCountOnOpen(
+        _ task: AppTask,
+        in modelContext: ModelContext,
+        commit: (ModelContext) throws -> Void = { try $0.save() }
+    ) -> Bool {
+        let stored = task.recurrenceEndCount
+        let coherent = coherentEndCount(
+            stored: stored,
+            effectiveMode: task.effectiveRecurrenceEndMode,
+            occurrenceNumber: task.recurrenceOccurrenceNumber
+        )
+        guard coherent != stored else { return false }
+        task.recurrenceEndCount = coherent
+        do {
+            try CadencePendingChangePersistence.commitEdit(in: modelContext, commit: commit) {
+                task.recurrenceEndCount = stored
+            }
+            return true
+        } catch {
+            return false
+        }
+    }
+
     static func recurrenceTargets(
         from task: AppTask,
         allTasks: [AppTask],

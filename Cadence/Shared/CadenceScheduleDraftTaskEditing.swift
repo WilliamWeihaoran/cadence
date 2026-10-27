@@ -44,7 +44,13 @@ extension CadenceScheduleDraft {
         estimateMinutes = max(0, task.estimatedMinutes)
         seriesEndMode = task.recurrenceEndMode
         seriesEndDateKey = task.recurrenceEndDate
-        seriesEndCount = task.recurrenceEndCount
+        // [[T-6191]]: the count the host's repair-on-open commits, so an old "15 of 10" series
+        // opens reading "15 of 15" here too. A pure read; the write is the host's.
+        seriesEndCount = CadenceTaskRecurrenceWorkflowSupport.coherentEndCount(
+            stored: task.recurrenceEndCount,
+            effectiveMode: task.effectiveRecurrenceEndMode,
+            occurrenceNumber: task.recurrenceOccurrenceNumber
+        )
         seriesOccurrenceNumber = task.recurrenceOccurrenceNumber
         isDone = task.isDone
 
