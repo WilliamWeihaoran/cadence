@@ -32,7 +32,13 @@ struct CadenceMacPageAccessibilityAuditTests {
         }
     }
 
-    private func allNodes<V: View>(in view: V, size: NSSize = NSSize(width: 900, height: 120)) -> [Node] {
+    /// `perform`, when given, runs the first custom action of that name while the window is still
+    /// up, so a test can watch what an assistive client's action does ([[T-7258]]).
+    private func allNodes<V: View>(
+        in view: V,
+        size: NSSize = NSSize(width: 900, height: 120),
+        perform actionName: String? = nil
+    ) -> [Node] {
         let app = NSApplication.shared
         let enhanced = NSSelectorFromString("accessibilitySetEnhancedUserInterfaceAttribute:")
         _ = app.perform(enhanced, with: NSNumber(value: true))
@@ -68,11 +74,20 @@ struct CadenceMacPageAccessibilityAuditTests {
                   node.responds(to: NSSelectorFromString("isAccessibilitySelected")) else { return false }
             return (node.value(forKey: "accessibilitySelected") as? NSNumber)?.boolValue ?? false
         }
+        var performed = false
         func customActionNames(_ object: AnyObject) -> [String] {
             let selector = NSSelectorFromString("accessibilityCustomActions")
             guard object.responds(to: selector),
                   let actions = object.perform(selector)?.takeUnretainedValue() as? [NSAccessibilityCustomAction]
             else { return [] }
+            if let actionName, !performed, let action = actions.first(where: { $0.name == actionName }) {
+                performed = true
+                if let handler = action.handler {
+                    _ = handler()
+                } else if let target = action.target as? NSObject, let selector = action.selector {
+                    _ = target.perform(selector, with: action)
+                }
+            }
             return actions.map(\.name)
         }
         func walk(_ element: Any, depth: Int) {
@@ -375,6 +390,88 @@ struct CadenceMacPageAccessibilityAuditTests {
         #expect(row.contains("openDetail:openDetail,"))
         #expect(row.contains("privatefuncopenDetail(){showTaskInspector=true}"))
     }
+    // MARK: - T-7258: a saved link opens, copies and deletes without hovering
+
+    private func hostedLinks(titled title: String, url: String) throws -> some View {
+        let container = try CadenceTestStore.container()
+        let context = ModelContext(container)
+        let area = Area(name: "Links area")
+        let link = SavedLink(title: title, url: url)
+        link.area = area
+        context.insert(area)
+        context.insert(link)
+        try context.save()
+        return LinksView(area: area)
+            .frame(width: 520, height: 300)
+            .retainingModelContainerForProcessLifetime(container)
+            .environment(DeleteConfirmationManager.shared)
+    }
+
+    /// The hover buttons are not built until the pointer is over the row, so with no pointer the
+    /// row's own actions are the only Open and Delete on the tree, and each is offered once.
+    @Test func aSavedLinkRowOffersOpenAndDeleteWithoutHovering() throws {
+        let nodes = allNodes(in: try hostedLinks(titled: "Roadmap doc", url: "https://example.com/roadmap"),
+                             size: NSSize(width: 560, height: 340))
+        #expect(nodes.contains { $0.label.contains("Roadmap doc") || $0.value.contains("Roadmap doc") },
+                "non-vacuity: the link row is not on the tree: \(nodes)")
+        #expect(nodes.filter { $0.actions.contains(MacSavedLinkRowActions.openActionName) }.count == 1,
+                "the row does not offer Open link exactly once: \(nodes)")
+        #expect(nodes.filter { $0.actions.contains(MacSavedLinkRowActions.deleteActionName) }.count == 1,
+                "the row does not offer Delete link exactly once: \(nodes)")
+    }
+
+    /// The Delete action asks first, through the same manager and the same words the hover
+    /// button uses; it does not delete on its own.
+    @Test func theDeleteLinkActionAsksThroughTheDeleteConfirmationManager() throws {
+        let manager = DeleteConfirmationManager.shared
+        manager.request = nil
+        defer { manager.request = nil }
+        let title = "Delete-action probe \(UUID().uuidString)"
+        _ = allNodes(in: try hostedLinks(titled: title, url: "https://example.com/probe"),
+                     size: NSSize(width: 560, height: 340),
+                     perform: MacSavedLinkRowActions.deleteActionName)
+        let request = try #require(manager.request, "the Delete link action presented no confirmation")
+        #expect(request.title == CadenceSavedLinkPersistence.deleteConfirmationTitle)
+        #expect(request.message == CadenceSavedLinkPersistence.deleteConfirmationMessage(title: title))
+    }
+
+    /// Copy Link puts the stored URL, as plain text, on the pasteboard it is given.
+    @Test func copyLinkPutsTheStoredURLOnThePasteboard() {
+        let pasteboard = NSPasteboard(name: NSPasteboard.Name("cadence.tests.links.\(UUID().uuidString)"))
+        defer { pasteboard.releaseGlobally() }
+        pasteboard.setString("stale", forType: .string)
+        MacSavedLinkRowActions.copy("https://example.com/a?b=c", to: pasteboard)
+        #expect(pasteboard.string(forType: .string) == "https://example.com/a?b=c")
+        #expect(pasteboard.pasteboardItems?.count == 1)
+    }
+
+    /// The menu is not on the accessibility tree until it opens, so its items are read off the
+    /// source: Open and Copy run the row's own functions, and Delete is the hover button's
+    /// `onDelete`, which `LinksView` wires to `deleteConfirmationManager.present`.
+    @Test func theLinkRowMenuOpensCopiesAndDeletesThroughTheHoverButtonsPaths() throws {
+        let source = CadenceSourceScan.codeOnly(
+            try CadenceSourceScan.sourceFile("Cadence/macOS/Views/LinksView.swift")
+        )
+        let row = try CadenceControlAccessibilityLabelTests.bodyOfStruct("LinkRow", in: source)
+            .filter { !$0.isWhitespace }
+        let menu = try #require(CadenceSourceScan.declarationBody(".contextMenu", in: row), "the link row has no context menu")
+        #expect(menu.contains("Button(MacSavedLinkRowActions.openMenuTitle,action:openLink)"))
+        #expect(menu.contains("Button(MacSavedLinkRowActions.copyMenuTitle,action:copyLink)"))
+        #expect(menu.contains("Button(role:.destructive){onDelete()}"))
+        #expect(menu.contains("Label(MacSavedLinkRowActions.deleteMenuTitle,systemImage:"))
+        #expect(row.contains(".onTapGesture(perform:openLink)"), "the row's click no longer opens the link")
+        #expect(row.contains("Button(action:openLink)"), "the hover Open button no longer runs openLink")
+        #expect(row.contains("Button(role:.destructive){onDelete()}label:"), "the hover Delete button is gone")
+        #expect(row.contains("privatefunccopyLink(){MacSavedLinkRowActions.copy(link.url)}"))
+        #expect(row.contains("privatefuncopenLink(){MacSavedLinkRowActions.open(link.url)}"))
+
+        let view = source.filter { !$0.isWhitespace }
+        #expect(view.contains("LinkRow(link:link){deleteConfirmationManager.present("),
+                "the row's onDelete no longer asks through deleteConfirmationManager")
+        #expect(MacSavedLinkRowActions.openMenuTitle == "Open Link")
+        #expect(MacSavedLinkRowActions.copyMenuTitle == "Copy Link")
+    }
+
     // MARK: - T-7067: a Mac month-grid cell names its day and opens it without a pointer
 
     /// iOS's month-cell words ([[T-573]]), over the sum iOS counts: tasks plus the events the cell

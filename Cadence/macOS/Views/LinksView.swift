@@ -216,6 +216,36 @@ private struct AddLinkBar: View {
     }
 }
 
+// MARK: - Link Row Actions
+
+/// What a saved link offers besides its hover buttons ([[T-7258]]).
+///
+/// The row's Open and Delete buttons are built only while the pointer is over it, so they were
+/// in neither the view tree nor the accessibility tree otherwise: right-click did nothing and
+/// VoiceOver could not delete a link. The row now carries a context menu and named accessibility
+/// actions that run the same three operations the hover buttons and the click run.
+enum MacSavedLinkRowActions {
+    static let openActionName = "Open link"
+    static let deleteActionName = "Delete link"
+
+    static let openMenuTitle = "Open Link"
+    static let copyMenuTitle = "Copy Link"
+    static let deleteMenuTitle = "Delete"
+
+    static func open(_ urlString: String) {
+        if let url = URL(string: urlString) {
+            NSWorkspace.shared.open(url)
+        }
+    }
+
+    /// The stored URL as plain text. The pasteboard is a parameter so a test can hand it a private
+    /// one instead of the user's clipboard.
+    static func copy(_ urlString: String, to pasteboard: NSPasteboard = .general) {
+        pasteboard.clearContents()
+        pasteboard.setString(urlString, forType: .string)
+    }
+}
+
 // MARK: - Link Row
 
 private struct LinkRow: View {
@@ -248,18 +278,16 @@ private struct LinkRow: View {
 
             Spacer()
 
+            // The sighted pointer shortcut. The context menu and the accessibility actions below
+            // are the paths that exist without hovering (T-7258).
             if isHovering {
-                Button {
-                    if let url = URL(string: link.url) {
-                        NSWorkspace.shared.open(url)
-                    }
-                } label: {
+                Button(action: openLink) {
                     Image(systemName: "arrow.up.right.square")
                         .font(.system(size: 13))
                         .foregroundStyle(Theme.blue)
                 }
                 .buttonStyle(.cadencePlain)
-                .cadenceControlLabel("Open link")
+                .cadenceControlLabel(MacSavedLinkRowActions.openActionName)
 
                 Button(role: .destructive) { onDelete() } label: {
                     Image(systemName: "trash")
@@ -267,7 +295,7 @@ private struct LinkRow: View {
                         .foregroundStyle(Theme.red)
                 }
                 .buttonStyle(.cadencePlain)
-                .cadenceControlLabel("Delete link")
+                .cadenceControlLabel(MacSavedLinkRowActions.deleteActionName)
             }
         }
         .padding(.horizontal, 16)
@@ -275,11 +303,28 @@ private struct LinkRow: View {
         .cadenceCard(background: Theme.surface, cornerRadius: Theme.radiusCard, shadowRadius: 10, shadowY: 4)
         .cadenceHoverHighlight(cornerRadius: Theme.radiusCard)
         .onHover { isHovering = $0 }
-        .onTapGesture {
-            if let url = URL(string: link.url) {
-                NSWorkspace.shared.open(url)
+        .onTapGesture(perform: openLink)
+        // Every other Mac row answers a right-click with a menu (`MacTaskRowContextMenu`, the note
+        // rows' "Copy Note Link" / Delete). Delete is `onDelete`, the hover button's own closure,
+        // so it asks through `deleteConfirmationManager` exactly as the button does.
+        .contextMenu {
+            Button(MacSavedLinkRowActions.openMenuTitle, action: openLink)
+            Button(MacSavedLinkRowActions.copyMenuTitle, action: copyLink)
+            Divider()
+            Button(role: .destructive) {
+                onDelete()
+            } label: {
+                Label(MacSavedLinkRowActions.deleteMenuTitle, systemImage: "trash")
             }
         }
+        // `.contain` makes the card one element without swallowing its texts, as the task row
+        // does, so the actions have a row to sit on while the hover buttons are absent.
+        .accessibilityElement(children: .contain)
+        .accessibilityAction(named: MacSavedLinkRowActions.openActionName, openLink)
+        .accessibilityAction(named: MacSavedLinkRowActions.deleteActionName, onDelete)
     }
+
+    private func openLink() { MacSavedLinkRowActions.open(link.url) }
+    private func copyLink() { MacSavedLinkRowActions.copy(link.url) }
 }
 #endif
