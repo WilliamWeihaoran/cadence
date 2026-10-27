@@ -168,7 +168,7 @@ private struct iOSRemindersListRow: View {
                 iconSize: 14
             )
 
-            Text(row.title)
+            Text(row.displayTitle)
                 .cadenceFont(.rowTitle, base: 15, weight: .medium)
                 .foregroundStyle(Theme.text)
                 .lineLimit(CadenceSettingsTypographyLayout.stacks(at: dynamicTypeSize, scaling: scaling) ? nil : 1)

@@ -132,7 +132,7 @@ private struct SettingsRemindersListRow: View {
                 .fill(Theme.purple)
                 .frame(width: 12, height: 12)
 
-            Text(row.title)
+            Text(row.displayTitle)
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(Theme.text)
                 .lineLimit(1)

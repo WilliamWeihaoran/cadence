@@ -199,13 +199,29 @@ enum RemindersAccessAction: Equatable {
 /// One Apple Reminders list and how many of the currently loaded reminders came from it.
 /// Purely a read-out of what `RemindersManager` already fetched — no extra fetching.
 struct RemindersListSummaryRow: Identifiable, Equatable {
+    /// The grouping key, exactly as `RemindersManager.makeItem` stored it — `""` for an untitled
+    /// list. Rows draw `displayTitle`, never this.
     let title: String
     let count: Int
 
     var id: String { title }
+
+    /// What the Settings row prints ([[T-7209]] (a)). An untitled list used to draw a blank row —
+    /// a dot, nothing, then "3 open" — on both platforms. Unlike the Inbox chip ([[T-7009]]) a row
+    /// cannot simply be hidden without losing its count, so a blank or whitespace-only title is
+    /// named here, once, for both. A named list keeps Apple Reminders' spelling untrimmed.
+    var displayTitle: String {
+        title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            ? RemindersSyncSummary.untitledListTitle
+            : title
+    }
 }
 
 enum RemindersSyncSummary {
+    /// The fallback name for an Apple Reminders list with no title, in the `"Untitled <noun>"`
+    /// family the rest of the app uses (`"Untitled Event"`, `"Untitled Column"`).
+    static let untitledListTitle = "Untitled List"
+
     static func listRows(from reminders: [AppleReminderItem]) -> [RemindersListSummaryRow] {
         Dictionary(grouping: reminders, by: \.listTitle)
             .map { RemindersListSummaryRow(title: $0.key, count: $0.value.count) }

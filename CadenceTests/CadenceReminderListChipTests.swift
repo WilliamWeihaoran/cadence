@@ -46,4 +46,35 @@ struct CadenceReminderListChipTests {
             )
         }
     }
+
+    /// [[T-7209]] (a): Settings > Reminders > Reminder Lists names an untitled list instead of
+    /// drawing a blank row, through one shared answer, while the grouping key stays raw.
+    @Test func anUntitledReminderListRowIsNamedAndANamedOneKeepsItsSpelling() {
+        let blank = RemindersListSummaryRow(title: "", count: 3)
+        let spaces = RemindersListSummaryRow(title: " \n\t ", count: 1)
+        let named = RemindersListSummaryRow(title: " Work ", count: 2)
+        #expect(blank.displayTitle == "Untitled List")
+        #expect(spaces.displayTitle == "Untitled List")
+        #expect(named.displayTitle == " Work ")
+        // The stored key is not rewritten: it is what `listRows` groups by and what `id` reads.
+        #expect(blank.title == "")
+        #expect(blank.id == "")
+    }
+
+    @Test func bothSettingsListRowsDrawTheSharedDisplayTitle() throws {
+        let rows: [(path: String, declaration: String)] = [
+            ("Cadence/macOS/Views/SettingsRemindersSection.swift", "private struct SettingsRemindersListRow: View"),
+            ("Cadence/iOS/iOSRemindersSettingsSection.swift", "private struct iOSRemindersListRow: View"),
+        ]
+        for row in rows {
+            let source = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(row.path))
+            guard let body = CadenceSourceScan.declarationBody(row.declaration, in: source) else {
+                Issue.record("\(row.path): \(row.declaration) not found")
+                continue
+            }
+            let dense = body.filter { !$0.isWhitespace }
+            #expect(dense.contains("Text(row.displayTitle)"), "\(row.path) no longer draws the shared display title")
+            #expect(!dense.contains("Text(row.title)"), "\(row.path) prints the raw list title again")
+        }
+    }
 }
