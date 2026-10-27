@@ -540,9 +540,10 @@ struct CadenceTodayTimelineDraftCreationTests {
         )
     }
 
-    /// **[[T-3252]], the keyboard half.** The editor that `draftAdjustmentObserver` puts back after
-    /// an edge drag is a fresh presentation, so the panel's `onAppear` ran again and focused the
-    /// title — the keyboard came back on a gesture that was about the block's range, not its name.
+    /// **[[T-3252]], the keyboard half.** The editor that `restoreDraftEditorAfterAdjustment()`
+    /// puts back when an edge handle's drag ends ([[T-7551]]) is a fresh presentation, so the
+    /// panel's `onAppear` ran again and focused the title — the keyboard came back on a gesture
+    /// that was about the block's range, not its name.
     ///
     /// Behavioural on the decision: a new draft focuses its title, an existing record does not,
     /// and a draft whose editor is RETURNING does not either. Then the wiring, as source text for

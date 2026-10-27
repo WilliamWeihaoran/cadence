@@ -1081,10 +1081,10 @@ struct CadenceScheduleKindSwitch: View {
 ///
 /// **A new draft focuses its title; an existing record does not; and neither does a draft whose
 /// editor is coming BACK.** The iPad timeline's draft editor is a popover that goes down while an
-/// edge handle is dragged and is put back when the finger lifts (`draftAdjustmentObserver`,
-/// [[T-3246]]). Every re-presentation is a fresh `onAppear`, so the focus a new draft rightly takes
-/// re-raised the keyboard on every adjustment — on a gesture that was about the block's range, not
-/// its name. The returning editor leaves the keyboard down; a tap on the title still raises it.
+/// edge handle is dragged and is put back when that handle's own drag ends having moved the edge
+/// (`restoreDraftEditorAfterAdjustment()`, [[T-3246]], [[T-7551]]). Every re-presentation is a
+/// fresh `onAppear`, so the focus a new draft rightly takes re-raised the keyboard on every
+/// adjustment — on a gesture that was about the block's range, not its name. The returning editor leaves the keyboard down; a tap on the title still raises it.
 enum CadenceSchedulePanelTitleFocus {
     enum Appearance: Equatable {
         /// The editor is opening on this draft: the first presentation, or one a tap asked for.
