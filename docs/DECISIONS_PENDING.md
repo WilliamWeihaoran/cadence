@@ -83,13 +83,16 @@ call -- it is a POST-RC fix with two technical shapes for the agent who takes it
 
 **Decided 2026-10-26, not yet built** (still OPEN/PARTIAL; listed so nobody asks again):
 T-6191 repair the count on open (NOT the recommendation; writes to stores, repair-on-open only),
-T-1845 accept, T-2074 keep the preview, T-3207 build after T-1475 is seen on screen,
-T-4721 keep, T-6481 after the RC as a user "merge duplicates" action, T-3213 remove task bundles
-from the app (the CloudKit model type itself must stay), T-3116 leave included, T-3044 keep,
-T-3018 keep, T-3227 leave and fix the comment, T-3019 after the RC, T-3015 leave, T-5500 skip,
-T-3275 push all (117, not 66), T-4742 exact minor, T-3277 (c), T-2050 notice,
-T-3173 refuse, T-6541 retry the CI step once T-6821 clears, T-6602 delete, T-1990 no,
-T-3092 no.
+T-3213 remove task bundles from the app (the CloudKit model type itself must stay),
+T-3227 leave and fix the comment, T-3275 push all (117, not 66), T-4742 exact minor,
+T-3277 (c), T-2050 notice, T-3173 refuse, T-6541 retry the CI step once T-6821 clears,
+T-6602 delete.
+
+Carried into the ledger 2026-10-26 by agent `decideclose2208` and removed from the list above:
+CLOSED on the ruling -- T-1845, T-2074, T-4721, T-3116, T-3044, T-3018, T-3015, T-5500, T-1990,
+T-3092; kept open with a SHIP-NOTE because the ruling defers them -- T-6481 and T-3019 (after the
+RC), T-3207 (after T-1475 is seen on screen). Stale "still open" comments those closes left in
+source are T-7186.
 
 Removed this pass because the ticket is CLOSED: T-6223, T-6114, T-6201, T-6291, T-4515,
 T-3232, T-6781, T-6351 (heartbeat task file fixed; T-3071 and T-1920 still read PARTIAL on that
