@@ -196,6 +196,8 @@ struct TagPickerPopover: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.cadencePlain)
+            // T-7334: the tint and checkmark draw which tags the item carries; this says it.
+            .accessibilityAddTraits(selected ? .isSelected : [])
             .background(selected ? Theme.blue.opacity(0.08) : Color.clear)
             .clipShape(RoundedRectangle(cornerRadius: 6))
             .cadenceHoverHighlight(cornerRadius: 6)

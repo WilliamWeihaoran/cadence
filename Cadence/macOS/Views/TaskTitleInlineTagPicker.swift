@@ -155,6 +155,8 @@ private struct InlineTagPickerRow: View {
             .clipShape(RoundedRectangle(cornerRadius: 6))
         }
         .buttonStyle(.cadencePlain)
+        // T-7334: the checkmark says which tags the title already carries; this says it aloud.
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
         .onHover { isHovered = $0 }
     }
 

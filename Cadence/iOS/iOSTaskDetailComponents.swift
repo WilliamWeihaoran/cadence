@@ -491,6 +491,8 @@ struct iOSTaskTagPickerPopover: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.iosPressable)
+        // T-7334: the tint and checkmark draw which tags the task carries; this says it.
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
     private func isSelected(_ tag: Tag) -> Bool {
