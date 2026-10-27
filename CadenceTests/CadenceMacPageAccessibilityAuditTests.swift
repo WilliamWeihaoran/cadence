@@ -320,6 +320,28 @@ struct CadenceMacPageAccessibilityAuditTests {
         #expect(ios.contains(".accessibilityLabel(NoteUnlinkedMentionCopy.linkControlLabel(noteTitle:note.displayTitle))"))
     }
 
+    // MARK: - T-7338: the note's "N mentions" disclosure says whether it is open
+
+    /// Hosted collapsed (its first state; opening it takes a click on a private view), so the
+    /// "Expanded" half is the source scan below.
+    @Test func theUnlinkedMentionsDisclosureStatesItsState() throws {
+        let nodes = allNodes(in: NoteUnlinkedMentionsFooter(
+            mentions: [Note(kind: .permanent, title: "Weekly Review"), Note(kind: .permanent, title: "Retro")],
+            onLink: { _ in }
+        ))
+        let toggle = nodes.filter { $0.label == "2 mentions" }
+        #expect(toggle.count == 1, "non-vacuity: the footer's disclosure is on the tree: \(nodes)")
+        #expect(toggle.first?.value == "Collapsed", "the disclosure states no Collapsed value: \(nodes)")
+
+        let mac = CadenceSourceScan.codeOnly(
+            try CadenceSourceScan.sourceFile("Cadence/macOS/Views/NoteEditorAccessoryViews.swift")
+        )
+        let body = try CadenceControlAccessibilityLabelTests.bodyOfStruct("NoteUnlinkedMentionsToggle", in: mac)
+            .filter { !$0.isWhitespace }
+        #expect(body.contains(".accessibilityValue(TaskListGroupHeaderAccessibility.value(isCollapsed:!isExpanded))"),
+                "the disclosure's value no longer follows isExpanded")
+    }
+
     // MARK: - T-7092: a board card and a list task row open their task without a pointer
 
     private static let openTask = CadenceTaskControlAccessibility.openTaskActionName

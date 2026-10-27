@@ -252,6 +252,8 @@ private struct NoteUnlinkedMentionsToggle: View {
             .contentShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
         }
         .buttonStyle(.plain)
+        // T-7338: the chevron draws open or shut; this says it, in the group header's words.
+        .accessibilityValue(TaskListGroupHeaderAccessibility.value(isCollapsed: !isExpanded))
         .onHover { isHovered = $0 }
     }
 }
