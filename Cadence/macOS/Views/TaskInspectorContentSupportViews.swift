@@ -402,13 +402,14 @@ struct TaskDetailSubtasksSection: View {
     }
 }
 
-/// The inspector's action row: one flexible primary ("Mark done") and square icon buttons for
+/// The inspector's action row: one flexible primary ("Complete" / "Reopen", [[T-7447]]; absent on
+/// a cancelled task) and square icon buttons for
 /// everything else.
 ///
 /// **Cancel/Restore is one of the icon buttons** ([[T-6231]]). [[T-5015]] (a) added it as its own
 /// `TaskInspectorStatusActionsRow` under this one, a Start/Stop + Cancel/Restore pair; (b) retired
 /// In Progress, and the pair became one button stretched across the inspector — a second wide
-/// control directly under "Mark done", with the weight of the action the panel is *for*. Cancelling
+/// control directly under the primary, with the weight of the action the panel is *for*. Cancelling
 /// a task is a secondary action, so it takes the secondary shape this row already had for
 /// Unschedule and Delete: a 32pt square with its glyph, its name as the label and tooltip, and the
 /// shared `StatusAction` copy and glyphs so it still cannot drift from iOS. The row's rule is that
@@ -428,7 +429,7 @@ struct TaskDetailActionsSection: View {
     private static let controlHeight: CGFloat = 32
     private static let cornerRadius: CGFloat = Theme.radiusControlCompact
 
-    /// Set when "Mark done" or a status action was refused and put back (T-628). The inspector is
+    /// Set when the primary (Complete / Reopen) or a status action was refused and put back (T-628). The inspector is
     /// the one surface that reaches the settle *without* going through
     /// `TaskCompletionAnimationManager`, so the root alert cannot speak for it and it says so where
     /// the button is. One notice for the row: both refusals read the same sentence.
@@ -447,24 +448,34 @@ struct TaskDetailActionsSection: View {
         // One row: a flexible primary action plus two square icon buttons. The old layout used
         // three equal-width text buttons, which forced "Unschedule" to wrap mid-word.
         HStack(spacing: 8) {
-            Button {
-                markDoneOrNotDone()
-            } label: {
-                HStack(spacing: 6) {
-                    Image(systemName: task.isDone ? "circle" : "checkmark.circle.fill")
-                        .font(.system(size: 12, weight: .semibold))
-                    Text(task.isDone ? "Mark not done" : "Mark done")
-                        .font(.system(size: 12, weight: .semibold))
-                        .lineLimit(1)
+            // [[T-7447]]: not on a cancelled task, where it said "Mark done" beside "Restore task"
+            // and completed it — abandoned work turned into accomplished work (T-344). iOS hides
+            // its button there too ([[T-7012]]); "Restore task" is the one way back.
+            if let primaryTitle = Self.primaryTitle(for: task.status) {
+                Button {
+                    markDoneOrNotDone()
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: task.isDone ? "arrow.uturn.backward.circle" : "checkmark.circle.fill")
+                            .font(.system(size: 12, weight: .semibold))
+                        Text(primaryTitle)
+                            .font(.system(size: 12, weight: .semibold))
+                            .lineLimit(1)
+                    }
+                    .foregroundStyle(task.isDone ? Theme.dim : Theme.green)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: Self.controlHeight)
+                    .background(task.isDone ? Theme.surfaceElevated : Theme.green.opacity(0.12))
+                    .clipShape(RoundedRectangle(cornerRadius: Self.cornerRadius))
+                    .contentShape(Rectangle())
                 }
-                .foregroundStyle(task.isDone ? Theme.dim : Theme.green)
-                .frame(maxWidth: .infinity)
-                .frame(height: Self.controlHeight)
-                .background(task.isDone ? Theme.surfaceElevated : Theme.green.opacity(0.12))
-                .clipShape(RoundedRectangle(cornerRadius: Self.cornerRadius))
-                .contentShape(Rectangle())
+                .buttonStyle(.cadencePlain)
+                .accessibilityLabel(CadenceTaskCompletionState.resolve(status: task.status).accessibilityActionLabel)
+                .help(CadenceTaskCompletionState.resolve(status: task.status).accessibilityActionLabel)
+            } else {
+                // Keeps the icon buttons right-aligned where the primary used to sit.
+                Spacer(minLength: 0)
             }
-            .buttonStyle(.cadencePlain)
 
             if offersUnschedule && task.scheduledStartMin >= 0 {
                 iconButton(
@@ -539,20 +550,39 @@ struct TaskDetailActionsSection: View {
         HabitNotificationReconcileSupport.scheduleReconcile(in: context)
     }
 
+    /// The primary's visible word, or `nil` where it is not drawn ([[T-7447]]).
+    ///
+    /// "Complete" / "Reopen" — the iOS sheet's words ([[T-7012]]) and the leading word of the
+    /// shared `CadenceTaskCompletionState.accessibilityActionLabel` ("Complete task" / "Reopen
+    /// task") every row's circle reads, which this button also takes as its name. It said "Mark
+    /// done" / "Mark not done". A cancelled task gets none: `offersCompletionAction` is the rule
+    /// iOS reads, so the two platforms cannot disagree about where the control exists.
+    static func primaryTitle(for status: TaskStatus) -> String? {
+        guard CadenceTaskInspectorSupport.offersCompletionAction(for: status) else { return nil }
+        return status == .done ? "Reopen" : "Complete"
+    }
+
     /// The settle, with a commit boundary and the failure named where the button is (T-628).
     ///
     /// Reopening commits before publishing its widget override reversal; finishing also owns
     /// the successor insertion's undo.
     private func markDoneOrNotDone() {
         do {
-            if task.isDone {
-                try TaskWorkflowService.commitMarkTodo(task, in: modelContext)
-            } else {
-                try TaskWorkflowService.commitMarkDone(task, in: modelContext)
-            }
+            try Self.settle(task, in: modelContext)
             failureNotice = nil
         } catch {
             failureNotice = CadencePendingChangePersistence.editFailureNotice
+        }
+    }
+
+    /// The primary's tap. A cancelled task is left alone ([[T-7447]], T-344): the button is not
+    /// drawn there, and this refuses as well, so a stale tap cannot complete abandoned work.
+    static func settle(_ task: AppTask, in context: ModelContext) throws {
+        guard CadenceTaskInspectorSupport.offersCompletionAction(for: task.status) else { return }
+        if task.isDone {
+            try TaskWorkflowService.commitMarkTodo(task, in: context)
+        } else {
+            try TaskWorkflowService.commitMarkDone(task, in: context)
         }
     }
 

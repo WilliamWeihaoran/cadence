@@ -69,8 +69,9 @@ struct CadenceMacTaskInspectorStatusActionsTests {
 
     /// **[[T-6231]]: Cancel/Restore is an icon button in the actions row, not a full-width row of
     /// its own.** After [[T-5015]] (b) the old status row drew one lone "Cancel" stretched across
-    /// the inspector under "Mark done" — the weight this app reserves for the action a panel is
-    /// for. The rule pinned here is the row's own: "Mark done" is the one control that takes the
+    /// the inspector under the primary ("Complete" / "Reopen" since [[T-7447]]) — the weight this
+    /// app reserves for the action a panel is for. The rule pinned here is the row's own: the
+    /// primary is the one control that takes the
     /// width, and the status action is drawn by the same square `iconButton` as Unschedule and
     /// Delete. A relation (one wide control, the status button routed through the square helper),
     /// never a point figure.
@@ -123,6 +124,49 @@ struct CadenceMacTaskInspectorStatusActionsTests {
             }
         }
         #expect(checked >= 3)
+    }
+
+    /// **[[T-7447]]: the primary says "Complete" / "Reopen" and is not drawn on a cancelled task.**
+    /// It said "Mark done" beside "Restore task" there and completed abandoned work (T-344). The
+    /// visible word is the leading word of the shared action name it is announced by, so the two
+    /// cannot part; and the rule for where it exists is the one iOS reads ([[T-7012]]).
+    @Test func thePrimaryIsCompleteOrReopenAndAbsentOnACancelledTask() throws {
+        #expect(TaskDetailActionsSection.primaryTitle(for: .todo) == "Complete")
+        #expect(TaskDetailActionsSection.primaryTitle(for: .done) == "Reopen")
+        #expect(TaskDetailActionsSection.primaryTitle(for: .cancelled) == nil)
+        var checked = 0
+        for status in [TaskStatus.todo, .done, .cancelled] {
+            #expect((TaskDetailActionsSection.primaryTitle(for: status) != nil)
+                    == CadenceTaskInspectorSupport.offersCompletionAction(for: status))
+            if let title = TaskDetailActionsSection.primaryTitle(for: status) {
+                #expect(CadenceTaskCompletionState.resolve(status: status).accessibilityActionLabel == "\(title) task")
+                checked += 1
+            }
+        }
+        #expect(checked == 2)
+        let section = try Self.actionsSection()
+        #expect(section.contains("if let primaryTitle = Self.primaryTitle(for: task.status)"))
+        #expect(section.contains(".accessibilityLabel(CadenceTaskCompletionState.resolve(status: task.status).accessibilityActionLabel)"))
+        #expect(!section.contains(#""Mark done""#), "the primary spells its own completion word again")
+        #expect(!section.contains(#""Mark not done""#), "the primary spells its own completion word again")
+    }
+
+    /// The tap itself refuses a cancelled task, so nothing in the row can complete it.
+    @Test func settlingLeavesACancelledTaskCancelled() throws {
+        let (context, task) = try makeTask()
+        try TaskDetailActionsSection.apply(.cancelled, to: task, in: context)
+        #expect(task.status == .cancelled)
+        try TaskDetailActionsSection.settle(task, in: context)
+        #expect(task.status == .cancelled, "the primary completed abandoned work (T-344)")
+    }
+
+    /// Non-vacuity for the refusal above: on an open task the same call completes, then reopens.
+    @Test func settlingCompletesThenReopensAnOpenTask() throws {
+        let (context, task) = try makeTask()
+        try TaskDetailActionsSection.settle(task, in: context)
+        #expect(task.status == .done)
+        try TaskDetailActionsSection.settle(task, in: context)
+        #expect(task.status == .todo)
     }
 
     /// **[[T-7201]]: the series' "After N times" count field has a VoiceOver name.** It is a
