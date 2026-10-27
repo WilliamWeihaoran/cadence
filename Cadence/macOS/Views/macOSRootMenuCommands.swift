@@ -33,6 +33,55 @@ struct macOSRootMenuCommands: Commands {
                 openWindow(id: CadenceWindowGroupID.main)
             }
         }
+
+        // T-7232. With no `Settings` scene SwiftUI leaves Cadence ▸ Settings… out and Cmd+, dead.
+        // The app's Settings is a page, not a window, so the item opens that page through the
+        // same command Cmd+K's "Settings" row runs.
+        CommandGroup(replacing: .appSettings) {
+            Button(CadenceAppSettingsMenu.settings.title) {
+                CadenceMenuCommandRoute.shared.send(CadenceAppSettingsMenu.command)
+            }
+            .keyboardShortcut(KeyEquivalent(CadenceAppSettingsMenu.settingsShortcut), modifiers: .command)
+        }
+    }
+}
+
+/// **[[T-7232]] — the Cadence ▸ Settings… item as data**, for the reason `CadenceNewItemMenu` is.
+nonisolated enum CadenceAppSettingsMenu {
+    /// Cmd+, — the shortcut every Mac app spends on its preferences. The root key monitor has no
+    /// arm for its keyCode (43), so the key reaches this item and nothing else.
+    static let settingsShortcut: Character = ","
+
+    static let settings = CadenceNewItemMenu.Item(title: "Settings…", commandShortcut: settingsShortcut)
+
+    /// The Cmd+K command the item runs, so the menu and the palette cannot open different pages.
+    static let command: GlobalSearchCommand = .settings
+}
+
+/// **[[T-7232]] — how a menu item reaches the root's page selection.**
+///
+/// A `Commands` value holds no handle on `macOSRootView`'s `selection`, the way it holds none on
+/// the New Task panel; `TaskCreationManager.shared.present()` answers that for New Task, and this
+/// answers it for page commands. The menu writes a request with a fresh token; the root observes
+/// the token and runs the request through `RootCommandActionSupport.handleMenuCommand`, the same
+/// arm Cmd+K's command rows use. A fresh token per send is what lets a second Cmd+, — after the
+/// user has left Settings — fire again when the command itself has not changed.
+@Observable
+final class CadenceMenuCommandRoute {
+    struct Request: Equatable {
+        let command: GlobalSearchCommand
+        let token: UUID
+    }
+
+    static let shared = CadenceMenuCommandRoute()
+
+    private(set) var request: Request?
+
+    /// Internal rather than private so a test can drive its own instance, not the app's.
+    init() {}
+
+    func send(_ command: GlobalSearchCommand) {
+        request = Request(command: command, token: UUID())
     }
 }
 

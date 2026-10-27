@@ -68,5 +68,9 @@ enum RootCommandHandler {
     static func handleSearchSelection(_ result: GlobalSearchResult, context: RootSearchSelectionContext) {
         RootCommandActionSupport.handleSearchSelection(result, context: context)
     }
+
+    static func handleMenuCommand(_ command: GlobalSearchCommand, context: RootSearchSelectionContext) {
+        RootCommandActionSupport.handleMenuCommand(command, context: context)
+    }
 }
 #endif

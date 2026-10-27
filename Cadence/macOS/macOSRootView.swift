@@ -64,6 +64,7 @@ struct macOSRootView: View {
     private let hoveredKanbanColumnManager = HoveredKanbanColumnManager.shared
     private let hoveredSectionManager = HoveredSectionManager.shared
     private let taskCompletionAnimationManager = TaskCompletionAnimationManager.shared
+    private let menuCommandRoute = CadenceMenuCommandRoute.shared
 
     /// The context every read and write in this view must go through.
     ///
@@ -173,6 +174,11 @@ struct macOSRootView: View {
         }
         .onChange(of: deepLinkManager.route?.token) { _, _ in
             handleDeepLinkRoute()
+        }
+        // T-7232. Cadence ▸ Settings… (Cmd+,) — a menu item has no handle on `selection`.
+        .onChange(of: menuCommandRoute.request?.token) { _, _ in
+            guard let request = menuCommandRoute.request else { return }
+            RootCommandHandler.handleMenuCommand(request.command, context: makeSearchSelectionContext())
         }
         .onChange(of: selection) { _, newValue in
             macOSRootLifecycleSupport.handleSelectionChange(

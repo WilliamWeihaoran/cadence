@@ -98,21 +98,12 @@ enum RootCommandActionSupport {
     static func handleSearchSelection(_ result: GlobalSearchResult, context: RootSearchSelectionContext) {
         switch result.destination {
         case .command(let command):
-            switch command {
-            case .newTask:
-                context.clearAppEditingFocus()
-                context.presentTaskCreation()
-            case .focus:
-                context.setSelection(.focus)
-            case .today:
-                context.setSelection(.today)
-            case .allTasks:
-                context.setSelection(.allTasks)
-            case .calendar:
-                context.setSelection(.calendar)
-            case .settings:
-                context.setSelection(.settings)
-            }
+            performCommand(
+                command,
+                clearAppEditingFocus: context.clearAppEditingFocus,
+                presentTaskCreation: context.presentTaskCreation,
+                setSelection: context.setSelection
+            )
         case .sidebar(let item):
             context.setSelection(item)
         case .area(let id):
@@ -158,6 +149,61 @@ enum RootCommandActionSupport {
         }
 
         context.globalSearchManager.dismiss()
+    }
+
+    /// **[[T-7232]] — a menu item running a Cmd+K command**, as `CadenceMenuCommandRoute` hands it
+    /// over. Dismisses the palette as a pick from it does, so Cmd+, with Cmd+K open does not leave
+    /// the palette standing over the page it just opened.
+    static func handleMenuCommand(_ command: GlobalSearchCommand, context: RootSearchSelectionContext) {
+        handleMenuCommand(
+            command,
+            clearAppEditingFocus: context.clearAppEditingFocus,
+            presentTaskCreation: context.presentTaskCreation,
+            setSelection: context.setSelection,
+            dismissSearch: { context.globalSearchManager.dismiss() }
+        )
+    }
+
+    /// The same, with its dependencies named rather than the whole context, so a test can drive it:
+    /// the context carries a `CalendarManager`, which owns a real `EKEventStore`.
+    static func handleMenuCommand(
+        _ command: GlobalSearchCommand,
+        clearAppEditingFocus: () -> Void,
+        presentTaskCreation: () -> Void,
+        setSelection: (SidebarItem) -> Void,
+        dismissSearch: () -> Void
+    ) {
+        performCommand(
+            command,
+            clearAppEditingFocus: clearAppEditingFocus,
+            presentTaskCreation: presentTaskCreation,
+            setSelection: setSelection
+        )
+        dismissSearch()
+    }
+
+    /// The one table of what each palette command does, shared by the palette's rows and the menu.
+    private static func performCommand(
+        _ command: GlobalSearchCommand,
+        clearAppEditingFocus: () -> Void,
+        presentTaskCreation: () -> Void,
+        setSelection: (SidebarItem) -> Void
+    ) {
+        switch command {
+        case .newTask:
+            clearAppEditingFocus()
+            presentTaskCreation()
+        case .focus:
+            setSelection(.focus)
+        case .today:
+            setSelection(.today)
+        case .allTasks:
+            setSelection(.allTasks)
+        case .calendar:
+            setSelection(.calendar)
+        case .settings:
+            setSelection(.settings)
+        }
     }
 
     /// **[[T-5300]] — picking a task in Cmd+K opens that task, not just its list.**
