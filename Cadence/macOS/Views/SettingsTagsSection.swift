@@ -322,9 +322,9 @@ private struct SettingsTagRow: View {
                         startEditing()
                     }
                     if isArchivedList {
-                        rowButton(icon: "arrow.uturn.backward", color: Theme.blue, accessibilityLabel: "Restore tag", action: onRestore)
+                        rowButton(icon: "arrow.uturn.backward", color: Theme.blue, accessibilityLabel: CadenceTagChipStyle.restoreControlLabel(for: tag), action: onRestore)
                     } else {
-                        rowButton(icon: "archivebox", color: Theme.amber, accessibilityLabel: "Archive tag", action: onArchive)
+                        rowButton(icon: "archivebox", color: Theme.amber, accessibilityLabel: CadenceTagChipStyle.archiveControlLabel(for: tag), action: onArchive)
                     }
                 }
             }

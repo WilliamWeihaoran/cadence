@@ -430,6 +430,24 @@ nonisolated struct CadenceTagChipStyle: Equatable {
     static func editControlLabel(name: String, slug: String) -> String {
         "Edit \(displayName(name: name, slug: slug))"
     }
+
+    /// The Archive / Restore siblings of `editControlLabel` ([[T-7382]]): the Settings tag lists'
+    /// rows each drew an "Archive tag" or "Restore tag" button that named none of them.
+    static func archiveControlLabel(for tag: Tag) -> String {
+        archiveControlLabel(name: tag.name, slug: tag.slug)
+    }
+
+    static func archiveControlLabel(name: String, slug: String) -> String {
+        "Archive \(displayName(name: name, slug: slug))"
+    }
+
+    static func restoreControlLabel(for tag: Tag) -> String {
+        restoreControlLabel(name: tag.name, slug: tag.slug)
+    }
+
+    static func restoreControlLabel(name: String, slug: String) -> String {
+        "Restore \(displayName(name: name, slug: slug))"
+    }
 }
 
 // MARK: - The chip

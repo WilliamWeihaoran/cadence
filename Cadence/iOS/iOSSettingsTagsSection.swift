@@ -357,7 +357,10 @@ private struct iOSTagSettingsRow: View {
 
             iOSIconButton(
                 systemImage: isArchivedList ? "arrow.uturn.backward" : "archivebox",
-                accessibilityLabel: isArchivedList ? "Restore tag" : "Archive tag",
+                // T-7382: named for the tag, as the pencil beside it is (T-7361).
+                accessibilityLabel: isArchivedList
+                    ? CadenceTagChipStyle.restoreControlLabel(for: tag)
+                    : CadenceTagChipStyle.archiveControlLabel(for: tag),
                 tint: isArchivedList ? Theme.blue : Theme.amber,
                 isSelected: true
             ) {
