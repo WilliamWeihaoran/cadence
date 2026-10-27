@@ -416,17 +416,20 @@ struct CadenceControlAccessibilityLabelTests {
 
         // The three buttons, by the symbol each draws and the name it now carries. Stated as pairs
         // rather than counted: a count stays green when two buttons share one name by accident.
+        // The header's add/cancel button takes both from `SavedLinkAddForm` (T-7256), whose
+        // values `CadenceSavedLinkAddFormTests` pins; this scan only proves the button reads them.
         for (symbol, label) in [
-            ("plus", #"showingAdd ? "Cancel adding a link" : "Add link""#),
-            ("arrow.up.right.square", #""Open link""#),
-            ("trash", #""Delete link""#),
+            ("addForm.headerSymbol", "addForm.headerLabel"),
+            (#""arrow.up.right.square""#, #""Open link""#),
+            (#""trash""#, #""Delete link""#),
         ] {
             #expect(
-                source.contains(#"Image(systemName: "\#(symbol)")"#),
+                source.contains("Image(systemName: \(symbol))"),
                 "LinksView no longer draws the \(symbol) button"
             )
             #expect(
-                source.contains(".cadenceControlLabel(\(label))"),
+                source.contains(".cadenceControlLabel(\(label))")
+                    || namedThroughRowActionConstant(label, in: source),
                 "the \(symbol) button in LinksView has no accessible name"
             )
         }
@@ -442,6 +445,20 @@ struct CadenceControlAccessibilityLabelTests {
             CadenceSourceScan.matchCount(#"\.cadenceControlLabel\("#, in: source) == 3,
             "a button in LinksView was added or unnamed"
         )
+    }
+
+    /// The row's Open and Delete buttons may take their names from `MacSavedLinkRowActions`, so the
+    /// visible button and its accessibility action share one string (T-7258). That counts only when
+    /// the file binds the constant to the very literal the pair above expects.
+    private func namedThroughRowActionConstant(_ literal: String, in source: String) -> Bool {
+        let constant: String
+        switch literal {
+        case #""Open link""#: constant = "openActionName"
+        case #""Delete link""#: constant = "deleteActionName"
+        default: return false
+        }
+        return source.contains(".cadenceControlLabel(MacSavedLinkRowActions.\(constant))")
+            && source.contains("static let \(constant) = \(literal)")
     }
 
     /// And the helper really does set both, from one string. Without this the test above pins a
