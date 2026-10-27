@@ -51,10 +51,11 @@ private struct MarkdownSlashCommandPickerView: View {
                     onSelect(command)
                 } label: {
                     HStack(spacing: 8) {
-                        Text("/\(command.id)")
-                            .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                        Text(MarkdownSlashCommandPickerMetrics.token(for: command))
+                            .font(Font(MarkdownSlashCommandPickerMetrics.tokenFont as CTFont))
                             .foregroundStyle(Color(nsColor: MarkdownStylist.blueColor))
-                            .frame(width: 54, alignment: .leading)
+                            .lineLimit(1)
+                            .frame(width: tokenColumnWidth, alignment: .leading)
 
                         Text(command.title)
                             .font(.system(size: 11, weight: .semibold))
@@ -74,8 +75,42 @@ private struct MarkdownSlashCommandPickerView: View {
             }
         }
         .padding(6)
-        .frame(width: 198)
+        .frame(width: MarkdownSlashCommandPickerMetrics.pickerWidth(for: commands))
         .background(Color(nsColor: MarkdownStylist.bgColor))
+    }
+
+    private var tokenColumnWidth: CGFloat {
+        MarkdownSlashCommandPickerMetrics.tokenColumnWidth(for: commands)
+    }
+}
+
+/// **[[T-7231]] — the `/` column is as wide as the longest token it is showing.** It was a fixed
+/// 54pt, which holds `/h1` through `/strike` and nothing longer: `/highlight` measures ~62pt in
+/// this face and every note-template token (`/meeting-notes`, `/weekly-review`, `/research-note`
+/// …, appended by `MarkdownEditorView`) ~80-87pt, so those rows wrapped their token onto a second
+/// line beside a one-line title. The column now grows to the widest token in the filtered list and
+/// the popover grows by the same amount, so the title column keeps exactly the room it had.
+/// 54pt stays the floor so a short list does not shrink the picker.
+enum MarkdownSlashCommandPickerMetrics {
+    static let tokenFont = NSFont.monospacedSystemFont(ofSize: 10, weight: .semibold)
+    static let minimumTokenColumnWidth: CGFloat = 54
+    static let minimumPickerWidth: CGFloat = 198
+
+    static func token(for command: MarkdownSlashCommand) -> String {
+        "/\(command.id)"
+    }
+
+    static func tokenWidth(_ token: String) -> CGFloat {
+        ceil((token as NSString).size(withAttributes: [.font: tokenFont]).width)
+    }
+
+    static func tokenColumnWidth(for commands: [MarkdownSlashCommand]) -> CGFloat {
+        let widest = commands.map { tokenWidth(token(for: $0)) }.max() ?? 0
+        return max(minimumTokenColumnWidth, widest)
+    }
+
+    static func pickerWidth(for commands: [MarkdownSlashCommand]) -> CGFloat {
+        minimumPickerWidth + (tokenColumnWidth(for: commands) - minimumTokenColumnWidth)
     }
 }
 
