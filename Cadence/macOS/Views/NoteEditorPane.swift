@@ -33,6 +33,11 @@ struct NoteEditorPane: View {
     /// back over the summary. Takes precedence over `headerAccessory`.
     var summaryHeaderAccessory: ((_ appendSummary: @escaping (String) -> Void) -> AnyView)?
     var headerStyle: HeaderStyle = .full
+    /// **[[T-7336]].** An Escape in the body that the editor declined (`MarkdownEditor.
+    /// onUnhandledEscape`). `nil` for the Notes page; the Mac event-note sheet passes its dismissal.
+    /// An open task popover or chip editor is closed first, so Escape never dismisses the sheet
+    /// out from under one.
+    var onUnhandledEscape: (() -> Void)?
     @Environment(\.modelContext) private var modelContext
     @Environment(HoveredTaskManager.self) private var hoveredTaskManager
     @Environment(HoveredEditableManager.self) private var hoveredEditableManager
@@ -305,7 +310,12 @@ struct NoteEditorPane: View {
                 onEditEmbeddedTask: embedCallbacks.editEmbeddedTask,
                 onHoverEmbeddedTask: embedCallbacks.hoverEmbeddedTask,
                 onEditingChanged: handleEditorFocusChange,
-                onTextViewChanged: embedCallbacks.textViewChanged
+                onTextViewChanged: embedCallbacks.textViewChanged,
+                onUnhandledEscape: onUnhandledEscape.map { hostEscape in
+                    { [embeds] in
+                        if !embeds.closeOpenPopover() { hostEscape() }
+                    }
+                }
             )
             .zIndex(0)
             .overlay(alignment: .topLeading) {

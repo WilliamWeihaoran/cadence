@@ -89,6 +89,15 @@ final class TaskNotesEmbedHandlers {
     var embeddedTaskFailureNotice: String?
 
     @ObservationIgnored var editorTextView: CadenceTextView?
+
+    /// **[[T-7336]].** Closes whichever of the two popovers is open and says whether one was, so an
+    /// Escape the host would spend on closing its sheet closes the popover instead.
+    func closeOpenPopover() -> Bool {
+        guard linkedTaskForPopover != nil || embeddedTaskEditRequest != nil else { return false }
+        linkedTaskForPopover = nil
+        embeddedTaskEditRequest = nil
+        return true
+    }
     /// Tasks created from this editor that the host's live query may not hold yet (T-349).
     @ObservationIgnored var recentEmbeddedTasks: [UUID: AppTask] = [:]
     @ObservationIgnored let hoverIDPrefix: String

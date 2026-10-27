@@ -53,6 +53,12 @@ struct MarkdownEditor: View {
     var onHoverEmbeddedTask: (UUID, Bool) -> Void = { _, _ in }
     var onEditingChanged: (Bool) -> Void = { _ in }
     var onTextViewChanged: (CadenceTextView) -> Void = { _ in }
+    /// **[[T-7336]].** What an Escape in the body does once every use the editor has for it — a
+    /// picker, the inline task panel, a table cell, an inline task title, an IME composition — has
+    /// declined it. `nil`, the default, leaves Escape to `NSTextView` as before; a sheet whose body
+    /// is this editor passes its dismissal, because a `.cancelAction` button there would be a key
+    /// equivalent and take every Escape ahead of the editor.
+    var onUnhandledEscape: (() -> Void)? = nil
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \MarkdownImageAsset.createdAt) private var imageAssets: [MarkdownImageAsset]
     @Query(sort: \Tag.order) private var tags: [Tag]
@@ -163,6 +169,7 @@ struct MarkdownEditor: View {
                     textView = $0
                     onTextViewChanged($0)
                 },
+                onUnhandledEscape: onUnhandledEscape,
                 allowsImageInsertion: allowsImageInsertion
             )
             .zIndex(0)
@@ -515,6 +522,8 @@ struct MarkdownEditorView: NSViewRepresentable {
     var onHoverEmbeddedTask: (UUID, Bool) -> Void = { _, _ in }
     var onEditingChanged: (Bool) -> Void = { _ in }
     var onTextViewChanged: (CadenceTextView) -> Void = { _ in }
+    /// `MarkdownEditor.onUnhandledEscape`, read by the coordinator.
+    var onUnhandledEscape: (() -> Void)? = nil
     /// `MarkdownEditor.allowsImageInsertion`, carried down to the text view so the drop path can
     /// refuse in the same breath as the toolbar button, the `/` menu and the paste (T-478).
     var allowsImageInsertion = true

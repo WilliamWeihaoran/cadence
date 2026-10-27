@@ -87,6 +87,16 @@ final class MarkdownEditorCoordinator: NSObject, NSTextViewDelegate {
            (textView as? CadenceTextView)?.cancelInlineTaskPanel() == true {
             return true
         }
+        // [[T-7336]]: an Escape every editor use above declined goes to the host, when it asked
+        // for one — the Mac event-note sheet closes on it. Last, so a picker, the inline task
+        // panel, an IME composition, and the table-cell and inline-title field editors (their own
+        // delegate, `CadenceTextView.control(_:textView:doCommandBy:)`) all keep it first.
+        if commandSelector == #selector(NSResponder.cancelOperation(_:)),
+           !textView.hasMarkedText(),
+           let onUnhandledEscape = parent.onUnhandledEscape {
+            onUnhandledEscape()
+            return true
+        }
         if let handled = handleCaretMovementCommand(commandSelector, in: textView) { return handled }
         if let handled = handleIndentationCommand(commandSelector, in: textView) { return handled }
         if let handled = handleDeletionCommand(commandSelector, in: textView) { return handled }

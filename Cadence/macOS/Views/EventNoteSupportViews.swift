@@ -107,11 +107,19 @@ struct EventNoteEditorSheet: View {
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(Theme.blue)
                     }
-                ) }
+                ) },
+                // **[[T-7336]].** Escape closes the sheet the way Done does, and through the same
+                // `dismiss()`, so the pane's `onDisappear` flush commits the text either way. Not a
+                // `.cancelAction` on Done: that is a key equivalent, offered every Escape before
+                // the editor's own uses (a picker, a table cell, an inline task title, the inline
+                // task panel), and it would close the sheet out from under each of them.
+                onUnhandledEscape: { dismiss() }
             )
 
             EventNoteCommitNoticeBanner(notice: commitNotice)
         }
+        // Escape with focus outside the body (the title field, the header's controls).
+        .onExitCommand { dismiss() }
         .frame(minWidth: 760, minHeight: 560)
         .background(Theme.bg)
     }
