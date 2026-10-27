@@ -888,7 +888,7 @@ nonisolated enum CadenceArchiveImportService {
     /// that day is not imported, where before it arrived stapled under a `---`. That is merge
     /// doing what its own sentence says and what it does for every other matched row, the preview
     /// counts the note as already here rather than as an insert, and overwrite is the mode that
-    /// takes the archive's copy. [[T-4721]] records it as a consequence the owner has not ruled on.
+    /// takes the archive's copy. The owner ruled KEEP on 2026-10-26 ([[T-4721]]): this is intended.
     ///
     /// The three limits are the tag ones, and for the same reasons: a row the archive also carries
     /// by id is never aliased onto (its own record is about to match it), no two archive records

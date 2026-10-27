@@ -590,8 +590,9 @@ struct PersistenceController {
     /// launch nobody asked anything of: Xcode's Run button sets none of those variables, so a
     /// development-signed debug build opened the signed-in person's real store with CloudKit on and
     /// mirrored it into the **Development** environment ([[T-2053]], [[T-3013]]). Keeping them
-    /// apart matters because [[T-3015]]'s product-level guard is a separate, still-open owner
-    /// decision over the same three conditions, and because the two have opposite fail directions:
+    /// apart matters because [[T-3015]]'s product-level guard was a separate owner decision over
+    /// the same three conditions (ruled LEAVE 2026-10-26: [[T-3013]]'s signing guard covers it, so
+    /// no store-id term is added), and because the two have opposite fail directions:
     /// an environment variable is read exactly, while the gate must refuse *only* on a positive
     /// identification. See `CadenceSigningEnvironment` for why.
     private static func makeContainer() throws -> ModelContainer {

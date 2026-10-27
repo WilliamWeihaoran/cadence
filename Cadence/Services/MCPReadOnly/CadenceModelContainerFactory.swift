@@ -25,15 +25,15 @@ import SwiftData
 /// `makeReadWriteContainer()` both resolve `CadenceStoreSupport.primaryStoreURL()` — the same file
 /// the running app has open with `.private("iCloud.com.haoranwei.Cadence")`
 /// (in `PersistenceController.makeContainer()`) — so the read-write one is one store open under
-/// two different configurations. What follows from that is not a sync *delay*: a container with
-/// mirroring off does not maintain the mirroring metadata the app's own container exports from, so
-/// a write that lands through this door may never reach the owner's other devices and may not
-/// register there as a change at all. `CADENCE_MCP_ENABLE_WRITES` gates the write container and
+/// two different configurations. Mirroring off does not by itself keep a write from the owner's
+/// other devices: a `cloudKitDatabase: .none` store still records the persistent history a CloudKit
+/// export reads (measured by `widgetmirror` in `58c648fe`, [[T-3108]]); what is left is latency,
+/// which is unmeasured. `CADENCE_MCP_ENABLE_WRITES` gates the write container and
 /// `CADENCE_MCP_STORE_URL` redirects both, which is why every repository script that sets the
 /// first pins the second before it — `CadenceTests/CadenceMCPWriteFenceTests` is what keeps that
 /// true. Whether an out-of-process writer should mirror, refuse, or keep running the repair in
-/// `prepare` is an owner decision about the sync contract, open in T-3018; it is written down here
-/// rather than settled in passing.
+/// `prepare` was an owner decision about the sync contract; the owner ruled KEEP on 2026-10-26
+/// (T-3018): mirroring stays off and the repair stays.
 nonisolated enum CadenceMCPStorePreparation {
     /// How many distinct operations `prepare(in:source:)` performs. The services report what they
     /// executed against this rather than against a literal.
@@ -54,8 +54,8 @@ nonisolated enum CadenceMCPStorePreparation {
     /// `DataIntegrityRepairService.repairAndRecordFailure` deletes duplicate `Context`, `Area`,
     /// `Project` and `Note` rows and saves — the same "this process has no user" that removed the
     /// seed, applied to a pass that *removes* rows rather than adding one. Whether an
-    /// out-of-process writer should keep running it is an owner decision, open in T-3018 and
-    /// recorded there rather than acted on here.
+    /// out-of-process writer should keep running it was an owner decision; the owner ruled KEEP
+    /// on 2026-10-26 (T-3018), so it stays.
     @discardableResult
     static func prepare(in context: ModelContext, source: String) -> Int {
         NoteMigrationService.migrateAndRecordFailure(in: context, source: source)

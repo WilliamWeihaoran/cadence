@@ -63,10 +63,10 @@ that it compiles here.
 - **Both containers open the owner's CloudKit-MIRRORED store with `cloudKitDatabase: .none`**
   ([[T-3018]]) -- `primaryStoreURL()` while the running app holds that same file open with
   `.private("iCloud.com.haoranwei.Cadence")`. The read-only one is `allowsSave: false` and
-  harmless; the read-write one is **one store under two configurations**, [[T-2053]]'s family, and
-  an MCP write may never reach the owner's other devices at all. Whether an out-of-process writer
-  should mirror, refuse, or keep running the repair named below is an **owner decision about the
-  sync contract**, open in [[T-3018]]; do not settle it as a side effect of a write-path change.
+  harmless; the read-write one is **one store under two configurations**, [[T-2053]]'s family. Sync
+  off does not strand an MCP write -- mirroring-off history is what export reads
+  ([[T-3108]]); latency is unmeasured. The owner ruled **KEEP** on 2026-10-26 ([[T-3018]]): sync
+  stays off and the repair named below stays; do not change either as a write-path side effect.
   Measurement and reasoning: `../docs/MCP_AGENTS_REFERENCE.md`, "Why The MCP Containers Open A
   Mirrored Store With Mirroring Off".
 - Opening the read-write container also runs `CadenceMCPStorePreparation.prepare` — note
