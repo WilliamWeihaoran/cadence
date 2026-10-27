@@ -2132,7 +2132,10 @@ struct iOSTimelineTaskBlock: View {
     /// reports its own cancellation (and its own refusal) rather than needing `@GestureState`'s
     /// automatic reset to stand in for one.
     @State private var isMovePressActive = false
-    @GestureState private var activeResize: CadenceTimelineBlockEdit.Kind?
+    /// The edge being held, from the hold completing until the finger lifts or the system cancels.
+    /// Plain `@State` since [[T-7601]], for `isMovePressActive`'s reason: the handle is a UIKit
+    /// recognizer now and reports its own cancellation.
+    @State private var activeResize: CadenceTimelineBlockEdit.Kind?
     @State private var liftCount = 0
     /// When the last hold ended. A finger lifted off a held block is not a tap, whichever order
     /// SwiftUI reports the hold's end and the tap's in; see `handleTap`.
@@ -2178,7 +2181,8 @@ struct iOSTimelineTaskBlock: View {
     /// - **A held block stays lifted** after the finger comes up, and only then shows top and
     ///   bottom handles, each a 44pt touch band hung across its edge rather than the edge's few
     ///   points of paint. They are absent on a resting block, so a scroll that starts on one cannot
-    ///   resize it. A tap on the canvas, or on the block, puts it down.
+    ///   resize it. A tap on the canvas, or on the block, puts it down. On a lifted block they are
+    ///   held before they adjust ([[T-7601]]), so a swipe begun on a band still scrolls.
     ///
     /// The block resolves nothing itself. It reports the finger's travel through `editing`, and
     /// the day column turns that into minutes (`CadenceTimelineBlockEdit.editedRange`), draws the
@@ -2320,14 +2324,46 @@ struct iOSTimelineTaskBlock: View {
                         .offset(y: isTop ? outside + 3 : -(outside + 3))
                 }
                 .offset(y: isTop ? -outside : outside)
-                .highPriorityGesture(
-                    DragGesture(minimumDistance: 0, coordinateSpace: .global)
-                        .updating($activeResize) { _, state, _ in state = kind }
-                        .onChanged { value in editing.onChanged(kind, value.translation.height) }
-                        .onEnded { value in editing.onEnded(kind, value.translation.height) }
-                )
+                .gesture(resizePressDrag(kind, editing: editing))
                 .accessibilityHidden(true)
         }
+    }
+
+    /// Hold the handle, then drag the edge — **the same recognizer, at the same hold, as the
+    /// block's move and the draft's edges** ([[T-7601]]).
+    ///
+    /// This was `.highPriorityGesture(DragGesture(minimumDistance: 0, coordinateSpace: .global))`,
+    /// left alone by [[T-7550]] because "a resting canvas never carries it". A lifted block is not
+    /// a resting canvas, though, and a block stays lifted after a long-press move until something
+    /// TAPS: nothing on the scroll path puts it down. Each band hangs at least 22pt of plain
+    /// canvas past the edge, so the owner's natural next move after a move — a swipe — landed on a
+    /// band, scrolled zero, and WROTE a new start or end to the task through `onEnded`.
+    ///
+    /// **Why the hold and not "put the block down when a scroll begins".** The scroll never began:
+    /// a zero-distance SwiftUI drag claims the touch before the scroll view sees it, so there was
+    /// no scroll to react to until the drag was gone anyway — and once it is gone, the hold alone
+    /// is the fix. An edge adjustment and a scroll are both vertical, so the axis test
+    /// (`iOSRowHorizontalPanRecognizer`) cannot tell them apart; only TIME can, which is
+    /// [[T-7551]]'s conclusion for the draft's edges, applied unchanged.
+    ///
+    /// **The cost, as T-7551 stated it:** an adjustment no longer begins the instant the finger
+    /// lands. **A cancelled adjustment puts the edge back:** `onCancelled` clears `activeResize`,
+    /// whose change reaches `editing.onSettled`, which drops the preview so the block is drawn at
+    /// its stored minute again — and nothing reaches `onEnded`, so nothing is written.
+    private func resizePressDrag(
+        _ kind: CadenceTimelineBlockEdit.Kind,
+        editing: iOSTimelineBlockEditing
+    ) -> some UIGestureRecognizerRepresentable {
+        iOSTimelinePressDrag(
+            minimumPressDuration: CadenceTimelineBlockEdit.liftPressDuration,
+            onPressed: { _ in activeResize = kind },
+            onChanged: { translation in editing.onChanged(kind, translation.height) },
+            onEnded: { translation in
+                activeResize = nil
+                editing.onEnded(kind, translation.height)
+            },
+            onCancelled: { activeResize = nil }
+        )
     }
 
     private var blockFace: some View {

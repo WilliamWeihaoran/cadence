@@ -237,9 +237,8 @@ struct CadenceTimelineBlockEditTests {
         // `ScrollView` whether or not the hold ever completes, and a swipe begun on a block
         // scrolled the day zero points for as long as this block spelled it that way.
         #expect(CadenceSourceScan.matchCount(#"iOSTimelinePressDrag\(\s*(//[^\n]*\n\s*)*isEnabled: editing != nil,\s*minimumPressDuration: CadenceTimelineBlockEdit\.liftPressDuration,"#, in: block) == 1)
-        // The negative is about the LONG PRESS, not about drags in general: `resizeHandle` keeps a
-        // zero-distance `DragGesture` on purpose, and it is drawn only on a lifted block, so a
-        // resting canvas never carries it.
+        // The negative is about the LONG PRESS. `resizeHandle`'s own hold is asked in
+        // `CadenceTimelinePressDragRecognizerTests` ([[T-7601]]).
         #expect(
             CadenceSourceScan.matchCount(#"LongPressGesture|\.sequenced\(before:"#, in: CadenceSourceScan.strippingComments(block)) == 0,
             "the block's move press is a SwiftUI long-press-then-drag again, which cannot give the touch back"

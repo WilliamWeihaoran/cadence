@@ -1370,9 +1370,10 @@ struct CadenceTimelineDraftPressGestureTests {
 /// `allowableMovement` before `minimumPressDuration`, and already prevents the pan when the hold
 /// wins. Neither half needs a delegate, which is why there is none.
 ///
-/// **NOT the cause**, against the first reading of this bug: the `.highPriorityGesture` on
-/// `resizeHandle` is a real zero-distance drag, but the handle is drawn only on a *lifted* block,
-/// so a resting canvas never carries it. It is left alone.
+/// **NOT the cause of T-7550**, against the first reading of this bug: the `.highPriorityGesture`
+/// on `resizeHandle` was a real zero-distance drag, but the handle is drawn only on a *lifted*
+/// block, so a resting canvas never carries it. It was a cause of [[T-7601]], though — a block
+/// stays lifted after a move, and the next swipe landed on a band — and it takes the recognizer now.
 struct CadenceTimelinePressDragRecognizerTests {
     private static let gridFile = "Cadence/iOS/iOSCalendarTimelineViews.swift"
 
@@ -1425,7 +1426,8 @@ struct CadenceTimelinePressDragRecognizerTests {
         let grid = try grid()
         #expect(grid.contains("private var draftPressGesture: some UIGestureRecognizerRepresentable"))
         #expect(grid.contains("private var movePressGesture: some UIGestureRecognizerRepresentable"))
-        #expect(CadenceSourceScan.matchCount(#"iOSTimelinePressDrag\("#, in: grid) == 2, "the two call sites, which is every construction of it")
+        #expect(grid.contains("private func resizePressDrag("))
+        #expect(CadenceSourceScan.matchCount(#"iOSTimelinePressDrag\("#, in: grid) == 3, "the three call sites -- draft press, block move, lifted edge -- which is every construction of it")
         #expect(
             CadenceSourceScan.matchCount(#"\.sequenced\(before:"#, in: grid) == 0,
             "a SwiftUI long-press-then-drag is back on the timeline, and it cannot give the touch back"
@@ -1440,16 +1442,17 @@ struct CadenceTimelinePressDragRecognizerTests {
             CadenceSourceScan.matchCount(#"draftAdjustmentObserver|DragGesture\(minimumDistance: 1\)"#, in: grid) == 0,
             "a SwiftUI drag is back on the draft block, and it cannot watch a touch without taking it"
         )
-        // The zero-distance drag that IS allowed to stay: `resizeHandle`, drawn only on a lifted
-        // block, which is the one place this canvas accepts that a scroll may be claimed.
+        // **No zero-distance drag is left on the canvas** ([[T-7601]]). The last one was the
+        // lifted block's `resizeHandle`, kept on the theory that a lifted block is rare; it is the
+        // block the owner just moved, and the next swipe landed on its band.
         #expect(
-            CadenceSourceScan.matchCount(#"DragGesture\(minimumDistance: 0, coordinateSpace: \.global\)"#, in: grid) == 1,
-            "the lifted block's resize handle lost its drag, or grew a second one"
+            CadenceSourceScan.matchCount(#"DragGesture\(minimumDistance: 0|\.highPriorityGesture\("#, in: grid) == 0,
+            "a zero-distance or high-priority SwiftUI drag is back on the timeline, and it cannot give the touch back"
         )
         // One length of press for the whole canvas, read rather than retyped.
         #expect(
-            CadenceSourceScan.matchCount(#"minimumPressDuration: CadenceTimelineBlockEdit\.liftPressDuration"#, in: grid) == 2,
-            "the two presses no longer agree on how long a hold is"
+            CadenceSourceScan.matchCount(#"minimumPressDuration: CadenceTimelineBlockEdit\.liftPressDuration"#, in: grid) == 3,
+            "the three presses no longer agree on how long a hold is"
         )
     }
 
@@ -1491,6 +1494,43 @@ struct CadenceTimelinePressDragRecognizerTests {
         // A cancelled adjustment puts the edge back. The `DragGesture` this replaced could not:
         // a SwiftUI gesture the system cancels never reaches `onEnded`.
         #expect(handle.contains("onCancelled: { finishEdgeAdjustment(isTop: isTop, reverting: true) }"))
+    }
+
+    /// **A lifted block's edge handles hold before they adjust** ([[T-7601]]). They were
+    /// `.highPriorityGesture(DragGesture(minimumDistance: 0, coordinateSpace: .global))`: a block
+    /// stays lifted after a long-press move until something taps, each 44pt band hangs at least
+    /// 22pt of plain canvas past the edge, and a swipe begun there scrolled zero and wrote a new
+    /// start or end to the task. Same answer as the draft's edges, for the same reason: an edge
+    /// adjustment and a scroll are both vertical, so only time separates them.
+    @Test func theLiftedBlocksEdgeHandlesHoldBeforeTheyAdjustAndACancelWritesNothing() throws {
+        let block = try #require(
+            CadenceSourceScan.declarationBody("struct iOSTimelineTaskBlock: View", in: try grid()),
+            "non-vacuity: the task block is not declared here"
+        )
+        let handle = try #require(
+            CadenceSourceScan.functionBody(named: "resizeHandle", in: block),
+            "the lifted block no longer has a resizeHandle"
+        )
+        #expect(handle.contains(".gesture(resizePressDrag(kind, editing: editing))"))
+        #expect(
+            CadenceSourceScan.matchCount(#"DragGesture|highPriorityGesture"#, in: handle) == 0,
+            "a SwiftUI drag is back on the lifted block's edge handle, and it claims the touch at touch-down"
+        )
+        let press = try #require(
+            CadenceSourceScan.functionBody(named: "resizePressDrag", in: block),
+            "the edge handle's press is not declared on the block"
+        )
+        #expect(press.contains("minimumPressDuration: CadenceTimelineBlockEdit.liftPressDuration"))
+        // Only the finger coming up commits; a cancel -- including every touch that scrolled
+        // instead, which `.failed` reports here -- only clears the held edge, whose change reaches
+        // `editing.onSettled` and puts the block back at its stored minute.
+        #expect(CadenceSourceScan.matchCount(#"editing\.onEnded\("#, in: press) == 1)
+        #expect(press.contains("onCancelled: { activeResize = nil }"))
+        #expect(block.contains("@State private var activeResize"))
+        #expect(
+            CadenceSourceScan.matchCount(#"\.onChange\(of: activeResize\) \{ _, kind in\s*if kind == nil \{ editing\?\.onSettled\(\) \}"#, in: block) == 1,
+            "a cleared edge no longer settles the edit, so a cancelled adjustment leaves the preview standing"
+        )
     }
 }
 
