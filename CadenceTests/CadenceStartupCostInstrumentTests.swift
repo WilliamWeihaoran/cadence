@@ -441,6 +441,38 @@ struct CadenceStartupCostInstrumentTests {
         }
     }
 
+    /// **[[T-7510]]: a repair that deferred its merges is not recorded as a clean store.** The
+    /// deferred report is `success: true` with every counter zero, identical to a store with
+    /// nothing wrong with it except for `duplicateMergesDeferred`; the ledger has to keep that bit.
+    /// The outcome is left alone — a deferral is neither a failure nor an unknown — and the
+    /// relation to the launch's save condition from the test above still holds.
+    @Test func aDeferredRepairIsRecordedApartFromACleanOne() {
+        func report(deferred: Bool, changed: Bool) -> DataIntegrityRepairReport {
+            var report = DataIntegrityRepairReport(
+                source: "test",
+                startedAt: Date(timeIntervalSince1970: 0),
+                finishedAt: Date(timeIntervalSince1970: 0),
+                success: true
+            )
+            report.duplicateMergesDeferred = deferred
+            if changed { report.duplicateNotesMerged = 1 }
+            return report
+        }
+
+        let clean = PersistenceController.integrityRepairVerdict(for: report(deferred: false, changed: false))
+        let deferred = PersistenceController.integrityRepairVerdict(for: report(deferred: true, changed: false))
+        #expect(clean.outcome == .noChange)
+        #expect(clean.note == nil, "a clean store is recorded with a note")
+        #expect(deferred.outcome == .noChange, "a deliberate deferral became a failure or an unknown")
+        #expect(deferred != clean, "a deferred repair and a clean store write the same ledger record")
+        #expect(deferred.note == PersistenceController.duplicateMergesDeferredNote)
+
+        let deferredAndChanged = PersistenceController.integrityRepairVerdict(for: report(deferred: true, changed: true))
+        #expect(deferredAndChanged.outcome == .changed, "a deferred run that fixed a row lost its change")
+        #expect(deferredAndChanged.note == PersistenceController.duplicateMergesDeferredNote)
+        #expect(PersistenceController.integrityRepairVerdict(for: report(deferred: false, changed: true)).note == nil)
+    }
+
     /// The launch classifies the repair through that verdict and not an inline copy of it. A
     /// source read, because no fixture can make the repair throw between passes on demand: the
     /// only `try` there is a task-table fetch, and an in-memory store does not refuse one.

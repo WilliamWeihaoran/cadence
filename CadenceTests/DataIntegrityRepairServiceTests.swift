@@ -2215,6 +2215,35 @@ struct DataIntegrityRepairServiceTests {
         #expect(try reread.fetch(FetchDescriptor<AppTask>()).map(\.id).contains(fork.higherID) == false)
     }
 
+    /// **[[T-7511]]: the MCP server's store preparation never merges a duplicate.** It opens the
+    /// app's mirrored file with `cloudKitDatabase: .none`, so it has no import event to gate on,
+    /// while the app process holding the same file can be importing a child of the very copy a
+    /// merge would delete. The fixture is the one `theSameStoreMergesWhenTheMergesAreNotDeferred`
+    /// proves holds four merges; here every duplicate survives the real `prepare` sequence, and
+    /// the report it records says it did not look rather than that it found nothing.
+    @Test func theMCPStorePreparationLeavesEveryDuplicateInPlace() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let modelContext = ModelContext(container)
+        _ = try oneDuplicateOfEveryKind(in: modelContext)
+
+        let steps = CadenceMCPStorePreparation.prepare(in: modelContext, source: "test-mcp-prepare")
+        #expect(steps == CadenceMCPStorePreparation.stepCount)
+        try modelContext.save()
+
+        let reread = ModelContext(container)
+        #expect(try reread.fetch(FetchDescriptor<Context>()).count == 2, "the MCP preparation merged a duplicate context")
+        #expect(try reread.fetch(FetchDescriptor<Note>()).count == 2, "the MCP preparation merged a duplicate note")
+        let tasks = try reread.fetch(FetchDescriptor<AppTask>())
+        #expect(
+            tasks.filter { $0.title == "Original" || $0.title == "Copy" }.count == 2,
+            "the MCP preparation merged a same-id task pair"
+        )
+
+        let recorded = try #require(DataIntegrityRepairService.lastReport())
+        #expect(recorded.source == "test-mcp-prepare", "non-vacuity: the report read back is this run's")
+        #expect(recorded.duplicateMergesDeferred, "the MCP preparation's report reads as a clean store")
+    }
+
     /// **Deferring the merges is not deferring the repair.** `repairStoredDefaultNoteTitles` reads
     /// one scalar on the row in front of it and writes another; no record arriving later can make a
     /// stored title stop being the retired default, so it stays outside the gate. A gate drawn

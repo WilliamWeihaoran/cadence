@@ -72,9 +72,10 @@ that it compiles here.
 - Opening the read-write container also runs `CadenceMCPStorePreparation.prepare` — note
   migration, tag **sync**, integrity repair — against live data. A migration bug reaches users
   through this door as much as through app launch. The tag **seed** was a fourth step until T-528
-  removed it, on the argument the bullet above restates; **the repair was left, and it is the
-  destructive one** — `DataIntegrityRepairService` deletes duplicate `Context`, `Area`, `Project`
-  and `Note` rows and saves, with no user in front of it, from a process that is not the app.
+  removed it, on the argument the bullet above restates; **the repair was left, and since
+  [[T-7511]] it runs with `deleting: .deferDuplicateMerges`** — this process opens the app's
+  mirrored file and has no import event to gate on, so it never merges (deletes) duplicates; the
+  app's launch does, behind [[T-6482]]'s gate.
 - **Nothing under `CadenceMCPServer/` is unit-*executed*.** `CadenceTests` covers the app-side half
   (`CadenceReadServiceTests`, `CadenceWriteServiceTests`, `CadenceSearchMatcherTests`); the router,
   the tool definitions and the argument parsing are *run* only by

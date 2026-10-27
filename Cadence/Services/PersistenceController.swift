@@ -445,21 +445,29 @@ struct PersistenceController {
     /// among its failures; the note says the finished passes were applied, and the
     /// `maintenanceSave` stage after it says whether they reached disk. Vocabulary, never content.
     ///
-    /// **[[T-6482]] gave this one more state it cannot yet name, and [[T-7510]] owns it.** A launch
-    /// that deferred the merges reports `success: true` with every counter at zero, which lands
-    /// here as `.noChange` — the verdict a clean store gets. The fact is in the report
-    /// (`duplicateMergesDeferred`) and not in the ledger, because `CadenceStartupStageVerdict` has
-    /// no case that means "deliberately did not look": `.refused` would list the stage among this
-    /// launch's failures on every launch of a syncing device, and `.indeterminate` means the pass
-    /// could not tell a no-op from a failure, which is the opposite of a deliberate deferral.
-    /// Inventing the vocabulary is a decision, not a fix, so this is left reading `.noChange`.
+    /// **A deferred repair carries `duplicateMergesDeferredNote` ([[T-7510]]).** [[T-6482]] lets a
+    /// launch over a mirroring store skip the merges, and that report is `success: true` with
+    /// every counter zero — the report a clean store writes. The outcome stays what the report
+    /// says (`.noChange`, or `.changed` when the stored-title pass outside the gate fixed a row);
+    /// the note is what tells "found nothing" from "did not look". Not a fifth outcome: `.refused`
+    /// would list the stage among the failures on every launch of a syncing device, and
+    /// `.indeterminate` means a no-op could not be told from a failure, which a deliberate
+    /// deferral is not. A note travels through the ledger's existing encoding unchanged.
     static func integrityRepairVerdict(for report: DataIntegrityRepairReport?) -> CadenceStartupStageVerdict {
         guard let report else { return .refused("noReport") }
         guard report.success else {
             return .refused(report.changed ? "passFailedAfterApplyingFinishedPasses" : "passReportedFailure")
         }
-        return report.changed ? .changed(nil) : .noChange
+        let note = report.duplicateMergesDeferred ? duplicateMergesDeferredNote : nil
+        return CadenceStartupStageVerdict(
+            outcome: report.changed ? .changed : .noChange,
+            note: note,
+            count: nil
+        )
     }
+
+    /// The note `integrityRepairVerdict(for:)` attaches to a repair that deferred its merges.
+    static let duplicateMergesDeferredNote = "duplicateMergesDeferred"
 
     /// Every pass a launch runs against the store it just opened.
     ///
@@ -2993,7 +3001,8 @@ nonisolated enum CadenceStartupStageOutcome: String, Hashable {
 /// A stage's verdict, built at the call site out of what that pass actually returns.
 nonisolated struct CadenceStartupStageVerdict: Hashable {
     let outcome: CadenceStartupStageOutcome
-    /// Why it refused, or why its outcome is indeterminate. Never user text: a refusal reason goes
+    /// Why it refused, or why its outcome is indeterminate — or, on a `changed`/`noChange`, what
+    /// the pass deliberately did not do ([[T-7510]]: `duplicateMergesDeferred`). Never user text: a refusal reason goes
     /// through `PersistenceController.instrumentReason(for:)`, which is built from an error's type
     /// and `NSError` domain and code alone.
     let note: String?

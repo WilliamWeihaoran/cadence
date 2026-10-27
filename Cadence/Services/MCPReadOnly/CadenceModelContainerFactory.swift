@@ -50,12 +50,12 @@ nonisolated enum CadenceMCPStorePreparation {
     /// when a write asks for one, so an MCP write that names a tag works against a store with no
     /// tags in it at all. Seeding is a user action now, and this process has no user.
     ///
-    /// **The repair step was left, and it is the destructive one (T-3018).**
-    /// `DataIntegrityRepairService.repairAndRecordFailure` deletes duplicate `Context`, `Area`,
-    /// `Project` and `Note` rows and saves — the same "this process has no user" that removed the
-    /// seed, applied to a pass that *removes* rows rather than adding one. Whether an
-    /// out-of-process writer should keep running it was an owner decision; the owner ruled KEEP
-    /// on 2026-10-26 (T-3018), so it stays.
+    /// **The repair step was left (T-3018), and since [[T-7511]] it no longer deletes.**
+    /// `DataIntegrityRepairService.repairAndRecordFailure` would delete duplicate `Context`,
+    /// `Area`, `Project` and `Note` rows and saves — the same "this process has no user" that
+    /// removed the seed, applied to a pass that *removes* rows rather than adding one. The owner
+    /// ruled KEEP on 2026-10-26 (T-3018), so it still runs, with its merges deferred: the app's
+    /// launch merges duplicates behind [[T-6482]]'s import gate, which this process cannot arm.
     @discardableResult
     static func prepare(in context: ModelContext, source: String) -> Int {
         NoteMigrationService.migrateAndRecordFailure(in: context, source: source)
@@ -65,12 +65,19 @@ nonisolated enum CadenceMCPStorePreparation {
         // and this target compiles neither the one spelling of the first nor a notification centre
         // to do the second. A fork it leaves alone is collapsed by the app's next startup repair;
         // a fork this process half-removed would not be.
-        // [[T-7511]]: this takes [[T-6482]]'s `.mergeDuplicates` default, and the default is
-        // right for this *process* — the container above opens `cloudKitDatabase: .none`, so
-        // nothing arrives behind it — while being the one place where that is not the same as
-        // "nothing is arriving". It is the same file on disk the app mirrors into. Left as it was
-        // rather than changed in passing: [[T-3018]] owns whether this call belongs here at all.
-        DataIntegrityRepairService.repairAndRecordFailure(in: context, source: source)
+        // [[T-7511]]: `.deferDuplicateMerges`, never the `.mergeDuplicates` default. This
+        // container opens `cloudKitDatabase: .none`, so nothing imports into *it* — but it is the
+        // same file on disk the app mirrors into, and the app process can be importing a child of
+        // the very duplicate this one would delete. [[T-6482]]'s gate is a property of the opening
+        // process, and this process has no import event to wait for, so there is no gate to arm:
+        // it never merges. The app's own launch does, behind the import gate, so a duplicate is
+        // still merged — by the one process that can tell when it is safe. The repair itself stays
+        // ([[T-3018]]): the stored-title pass still runs here.
+        DataIntegrityRepairService.repairAndRecordFailure(
+            in: context,
+            source: source,
+            deleting: .deferDuplicateMerges
+        )
         return stepCount
     }
 
