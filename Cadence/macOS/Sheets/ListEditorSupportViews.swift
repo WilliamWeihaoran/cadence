@@ -49,14 +49,24 @@ struct ListEditorSheetShell<Content: View, FooterLeading: View>: View {
             HStack(spacing: 8) {
                 footerLeading
                 Spacer(minLength: 12)
-                CadenceActionButton(title: "Cancel", role: .ghost, size: .compact) {
+                // T-7266: Escape closes and Return confirms, as in every other Mac sheet. Neither
+                // key did anything in the three list sheets: no button carried a shortcut and the
+                // name field has no submit handler, so typing a name and pressing Return was inert.
+                // `isDisabled` still gates Return, because a disabled button's shortcut is off too.
+                CadenceActionButton(
+                    title: "Cancel",
+                    role: .ghost,
+                    size: .compact,
+                    shortcut: .cancelAction
+                ) {
                     dismiss()
                 }
                 CadenceActionButton(
                     title: confirmTitle,
                     role: .primary,
                     size: .compact,
-                    isDisabled: isConfirmDisabled
+                    isDisabled: isConfirmDisabled,
+                    shortcut: .defaultAction
                 ) {
                     onConfirm()
                 }
@@ -282,6 +292,9 @@ private struct ListEditorIconCell: View {
         .buttonStyle(.plain)
         .onHover { isHovered = $0 }
         .cadenceControlLabel(accessibilityLabel)
+        // T-7267: the strip's ring is drawn, so VoiceOver must hear it too — the colour strip
+        // above and the full `IconGrid` behind "More icons" already say which one is chosen.
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
     private var fill: Color {

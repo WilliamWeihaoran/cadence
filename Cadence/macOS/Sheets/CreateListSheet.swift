@@ -223,6 +223,8 @@ private struct TypeButton: View {
             )
         }
         .buttonStyle(.cadencePlain)
+        // T-7267: the blue fill says which type is chosen; VoiceOver heard two identical buttons.
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 }
 #endif
