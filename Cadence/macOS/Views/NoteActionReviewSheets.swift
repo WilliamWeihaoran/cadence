@@ -41,6 +41,8 @@ struct AISummaryReviewSheet: View {
                     dismiss()
                 }
                 .buttonStyle(.cadencePlain)
+                // T-7289: Escape closes and Return appends; neither key did anything.
+                .keyboardShortcut(.cancelAction)
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(Theme.dim)
                 .padding(.horizontal, 12)
@@ -50,6 +52,7 @@ struct AISummaryReviewSheet: View {
                     append()
                 }
                 .buttonStyle(.cadencePlain)
+                .keyboardShortcut(.defaultAction)
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(Theme.onColor(for: Theme.blue))
                 .padding(.horizontal, 12)
@@ -152,8 +155,12 @@ struct AITaskDraftReviewSheet: View {
 
             HStack {
                 Spacer()
+                // T-7289: Escape cancels. Return is deliberately NOT bound to Create Selected:
+                // this sheet is a stack of editable fields, and T-7290 asks the owner whether a
+                // Return typed in one should create every approved task.
                 Button("Cancel") { dismiss() }
                     .buttonStyle(.cadencePlain)
+                    .keyboardShortcut(.cancelAction)
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(Theme.dim)
                     .padding(.horizontal, 12)

@@ -287,8 +287,9 @@ struct NoteActionMenu: View {
         if !areas.isEmpty {
             NoteActionSubsectionLabel(title: "Areas")
             ForEach(areas) { area in
+                // Blank names read "Untitled Area", as the sidebar and Cmd+K read them (T-7288).
                 NoteActionDestinationRow(
-                    title: area.name,
+                    title: CadenceTitleNormalization.display(area.name, fallback: CadenceTitleNormalization.defaultAreaName),
                     subtitle: "Area",
                     isSelected: note.area?.id == area.id
                 ) {
@@ -304,7 +305,7 @@ struct NoteActionMenu: View {
             NoteActionSubsectionLabel(title: "Projects")
             ForEach(projects) { project in
                 NoteActionDestinationRow(
-                    title: project.name,
+                    title: CadenceTitleNormalization.display(project.name, fallback: CadenceTitleNormalization.defaultProjectName),
                     subtitle: "Project",
                     isSelected: note.project?.id == project.id
                 ) {
