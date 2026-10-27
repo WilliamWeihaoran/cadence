@@ -97,5 +97,6 @@ RC), T-3207 (after T-1475 is seen on screen). Stale "still open" comments those 
 source are T-7186.
 
 Removed this pass because the ticket is CLOSED: T-6223, T-6114, T-6201, T-6291, T-4515,
-T-3232, T-6781, T-6351 (heartbeat task file fixed; T-3071 and T-1920 still read PARTIAL on that
-same file -- their prose is stale). Earlier history is in this file's git log.
+T-3232, T-6781, T-6351 (heartbeat task file fixed: one xcb id per run, so T-3071 is now CLOSED;
+T-1920 stays PARTIAL, as the file still calls neither `ci-run-coverage.sh report` nor
+`heartbeat-progress.sh report`). Earlier history is in this file's git log.
