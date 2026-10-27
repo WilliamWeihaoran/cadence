@@ -471,7 +471,9 @@ enum CadenceCommentSymbolClaim {
         "entitlements", "ts", "txt", "png", "xcassets",
         // [[T-3209]]: `SecTask.h`, `iPhoneOS.sdk`, `CoreBuildSystem.xcspec` became visible to the
         // root verdict once an undeclared root stopped being dropped, and are file names too.
-        "h", "sdk", "xcspec", "framework"
+        "h", "sdk", "xcspec", "framework",
+        // [[T-7381]]: `Assets.car` is the compiled asset catalog an app bundle carries.
+        "car"
     ]
 
     /// Every backticked span in `comments` that reads as `Type.member`.

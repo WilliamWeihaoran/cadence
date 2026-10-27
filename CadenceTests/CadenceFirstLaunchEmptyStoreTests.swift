@@ -431,7 +431,7 @@ struct CadenceFirstLaunchEmptyStoreTests {
 
     /// **A rename survives every later launch.** This is the replacement for
     /// `renamingADefaultTagBringsTheOriginalBackOnTheNextLaunch`, the half of T-528 that needed no
-    /// CloudKit at all: renaming rewrites the slug (`TagSupport.rename`, called by `SettingsTagsSection.saveEdits`, writes both),
+    /// CloudKit at all: renaming rewrites the slug (`TagSupport.rename`, called by `SettingsTagRow.saveEdits`, writes both),
     /// the seed found the old slug absent, and `bug` was back as an eighth tag on the next launch.
     /// Confirmed against the built macOS app before the fix — seven tags in, eight tags out.
     ///
@@ -446,7 +446,7 @@ struct CadenceFirstLaunchEmptyStoreTests {
         let bug = try #require(
             try context.fetch(FetchDescriptor<Cadence.Tag>()).first { $0.slug == "bug" }
         )
-        // Exactly what `SettingsTagsSection.saveEdits` writes, through the shared rename (T-6251).
+        // Exactly what `SettingsTagRow.saveEdits` writes, through the shared rename (T-6251).
         _ = TagSupport.rename(bug, to: "Defect")
         // Settings commits the rename before the window closes, so the launch below opens a store
         // that already holds it rather than a context with the edit still pending.

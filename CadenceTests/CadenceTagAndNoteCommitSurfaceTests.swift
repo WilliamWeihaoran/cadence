@@ -22,7 +22,7 @@ import Testing
 /// **Tier 2, the report half** — three inline row editors, where collapsing back to the display row
 /// is the dismissal:
 ///
-/// - `SettingsTagsSection.saveEdits` (the tag catalog card).
+/// - `SettingsTagRow.saveEdits` (the tag catalog card).
 /// - `TagPickerPopoverViews.saveEdits` and `.archive` (the picker's edit sheet).
 ///
 /// **T-652 added the third member of that set.** `TagPickerPopoverViews.restore` — the picker's

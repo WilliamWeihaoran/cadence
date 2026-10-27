@@ -1924,7 +1924,7 @@ enum CadenceSaveCommitRule {
     /// bound live to the model and still on screen. The answer was that they need no undo at all —
     /// see the note at the head of the list itself.
     ///
-    /// The three inline tag editors that used to sit beside them — `SettingsTagsSection.saveEdits`
+    /// The three inline tag editors that used to sit beside them — `SettingsTagRow.saveEdits`
     /// and `TagPickerPopoverViews.saveEdits`/`archive` — are fixed (T-497) and pinned by
     /// `CadenceTagAndNoteCommitSurfaceTests`. They were the easier half of the same sentence: an
     /// inline row editor collapsing is a dismissal, but its fields are drafts held in `@State`
