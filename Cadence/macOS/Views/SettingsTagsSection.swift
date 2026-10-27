@@ -491,7 +491,9 @@ private struct TagUsageBadge: View {
     }
 }
 
-private struct TagColorSwatches: View {
+/// One tag swatch strip on the Mac: Settings' tag editors and the tag picker's Edit tag sheet
+/// (T-7335), which drew its own copy with no name and no selected trait.
+struct TagColorSwatches: View {
     @Binding var selectedHex: String
 
     var body: some View {

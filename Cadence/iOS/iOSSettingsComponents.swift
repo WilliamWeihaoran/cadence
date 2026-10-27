@@ -179,7 +179,10 @@ struct iOSSettingsColorSwatchRow: View {
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(.iosPressable)
-                    .accessibilityLabel(option)
+                    // T-7335: named by what a tap does, as every other swatch strip is (T-5003's
+                    // words); VoiceOver read the bare hex and never which one was chosen.
+                    .accessibilityLabel(isSelected(option) ? "Selected color" : "Use this color")
+                    .accessibilityAddTraits(isSelected(option) ? .isSelected : [])
                 }
             }
         }

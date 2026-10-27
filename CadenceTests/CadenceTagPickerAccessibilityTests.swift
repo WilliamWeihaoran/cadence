@@ -22,6 +22,8 @@ struct CadenceTagPickerAccessibilityTests {
     private static let macPopoverPath = "Cadence/macOS/Views/TagPickerPopoverViews.swift"
     private static let macInlinePath = "Cadence/macOS/Views/TaskTitleInlineTagPicker.swift"
     private static let iosPickerPath = "Cadence/iOS/iOSTaskDetailComponents.swift"
+    private static let macSettingsPath = "Cadence/macOS/Views/SettingsTagsSection.swift"
+    private static let iosSwatchPath = "Cadence/iOS/iOSSettingsComponents.swift"
 
     private static func compactBody(_ declaration: String, in path: String) throws -> String {
         let source = try CadenceSourceScan.sourceFile(path)
@@ -51,5 +53,25 @@ struct CadenceTagPickerAccessibilityTests {
             row.contains(".buttonStyle(.iosPressable).accessibilityAddTraits(isSelected?.isSelected:[])"),
             "VoiceOver must hear which tags the iOS task tag picker has on"
         )
+    }
+
+    @Test func macEditTagSheetUsesTheNamedSettingsStrip() throws {
+        let sheet = try Self.compactBody("private struct TagEditSheet: View", in: Self.macPopoverPath)
+        #expect(sheet.contains("TagColorSwatches(selectedHex:$colorHex)"))
+        #expect(
+            !sheet.contains("ForEach(TagSupport.colorOptions"),
+            "The Edit tag sheet must not draw its own unnamed swatch copy again"
+        )
+
+        let strip = try Self.compactBody("struct TagColorSwatches: View", in: Self.macSettingsPath)
+        #expect(strip.contains(#".accessibilityLabel(isSelected?"Selectedcolor":"Usethiscolor")"#))
+        #expect(strip.contains(".accessibilityAddTraits(isSelected?.isSelected:[])"))
+    }
+
+    @Test func iosSettingsSwatchIsNamedByWhatATapDoes() throws {
+        let strip = try Self.compactBody("struct iOSSettingsColorSwatchRow: View", in: Self.iosSwatchPath)
+        #expect(strip.contains(#".accessibilityLabel(isSelected(option)?"Selectedcolor":"Usethiscolor")"#))
+        #expect(strip.contains(".accessibilityAddTraits(isSelected(option)?.isSelected:[])"))
+        #expect(!strip.contains(".accessibilityLabel(option)"), "VoiceOver must not read the bare hex")
     }
 }

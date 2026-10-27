@@ -384,24 +384,9 @@ private struct TagEditSheet: View {
                     .textFieldStyle(.roundedBorder)
             }
 
-            HStack(spacing: 8) {
-                ForEach(TagSupport.colorOptions, id: \.self) { option in
-                    Button {
-                        colorHex = option
-                    } label: {
-                        Circle()
-                            .fill(Color(hex: option))
-                            .frame(width: 18, height: 18)
-                            .overlay {
-                                if colorHex.caseInsensitiveCompare(option) == .orderedSame {
-                                    Circle()
-                                        .strokeBorder(Theme.text.opacity(0.8), lineWidth: 2)
-                                }
-                            }
-                    }
-                    .buttonStyle(.cadencePlain)
-                }
-            }
+            // T-7335: Settings' strip, not a copy of it — this one named no swatch to VoiceOver
+            // and never said which color was chosen.
+            TagColorSwatches(selectedHex: $colorHex)
 
             if hasDuplicateSlug {
                 Text("A tag with this name already exists.")
