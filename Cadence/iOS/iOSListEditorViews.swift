@@ -749,6 +749,9 @@ private struct iOSSectionDraftRow: View {
     /// State first, then only the transitions available from it. An archived column offers one
     /// button, because archiving it again is not a thing and completing it after the fact would be
     /// a second settle over work already cancelled.
+    ///
+    /// Every title here is a bare verb ([[T-6983]]): the editor is already about one column, and
+    /// macOS's "X Column" pair would not fit one `lineLimit(1)` row on a 393 pt iPhone.
     @ViewBuilder
     private func lifecycleControls(_ lifecycle: iOSSectionRowLifecycle) -> some View {
         HStack(spacing: 6) {
@@ -764,7 +767,7 @@ private struct iOSSectionDraftRow: View {
         HStack(spacing: 8) {
             if lifecycle.isArchived {
                 iOSActionButton(
-                    title: "Unarchive Column",
+                    title: "Unarchive",
                     systemImage: "tray.and.arrow.up.fill",
                     size: .compact,
                     action: lifecycle.reopen

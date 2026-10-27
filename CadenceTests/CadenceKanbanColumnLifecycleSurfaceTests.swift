@@ -1253,6 +1253,21 @@ struct CadenceKanbanColumnLifecycleSurfaceTests {
         }
     }
 
+    /// **T-6983: the iOS column editor's four lifecycle buttons are all bare verbs.** "Complete" /
+    /// "Reopen" / "Archive" sat beside "Unarchive Column". The bare verb, not macOS's "X Column",
+    /// because two noun-suffixed titles would not fit the one `lineLimit(1)` row on an iPhone.
+    @Test func theIOSColumnEditorLifecycleButtonsAreAllBareVerbs() throws {
+        let source = try strippingComments(sourceFile("Cadence/iOS/iOSListEditorViews.swift"))
+        let body = try #require(
+            CadenceSourceScan.declarationBody("private func lifecycleControls(", in: source),
+            "lifecycleControls(_:) is gone"
+        )
+        for verb in ["Unarchive", "Reopen", "Complete", "Archive"] {
+            #expect(body.contains("title: \"\(verb)\","), "the column editor no longer offers \(verb)")
+        }
+        #expect(!body.contains("Column\""), "a lifecycle title carries the noun again")
+    }
+
     // MARK: - The scans are real
 
     /// Every count and every regex above passes against an empty string, so this asserts the
