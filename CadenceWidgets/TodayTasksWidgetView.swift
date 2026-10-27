@@ -193,9 +193,15 @@ struct TodayTasksWidgetView: View {
         .padding(scale.outerPadding)
     }
 
+    /// The panel, not the `Priority now` card beside it, sets the height of the large layout's
+    /// middle row, so its spacing is the large tile's height budget. At 8pt between tiles, 4pt
+    /// inside each and 2pt above and below, the populated layout wanted ~387pt against the 354pt
+    /// an iPhone 15 gives `systemLarge`, and SwiftUI took the difference out of the flexible text
+    /// and the outer padding (T-7195). 4 / 2 / 0 here and a one-line queue subtitle bring it to
+    /// ~348pt; the iPad's 382pt tile had 8pt spare and now has ~34pt.
     private var summaryPanel: some View {
         CadenceWidgetPanel {
-            VStack(alignment: .leading, spacing: scale.compactSectionSpacing) {
+            VStack(alignment: .leading, spacing: 4) {
                 metricTile(
                     title: "Overdue",
                     value: entry.snapshot.overdueCount,
@@ -347,9 +353,12 @@ struct TodayTasksWidgetView: View {
                     Text(title)
                         .font(.system(size: scale.bodyFontSize + 1, weight: .bold))
                         .foregroundStyle(Theme.text)
+                    // One line: at the iPhone's 338pt width it wrapped to two and cost the 13pt
+                    // the large tile did not have (T-7195); the iPad already drew it on one.
                     Text(subtitle)
                         .font(.system(size: scale.bodyFontSize, weight: .medium))
                         .foregroundStyle(Theme.subdued)
+                        .lineLimit(1)
                 }
 
                 VStack(spacing: scale.compactSectionSpacing) {
@@ -457,7 +466,7 @@ struct TodayTasksWidgetView: View {
     }
 
     private func metricTile(title: String, value: Int, tint: Color) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 2) {
             Text(title)
                 .font(.system(size: scale.captionFontSize, weight: .semibold))
                 .foregroundStyle(Theme.subdued)
@@ -466,7 +475,6 @@ struct TodayTasksWidgetView: View {
                 .foregroundStyle(tint)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.vertical, 2)
     }
 
     private func focusTile(title: String, value: String, tint: Color) -> some View {

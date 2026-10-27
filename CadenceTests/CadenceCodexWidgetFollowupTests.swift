@@ -211,6 +211,30 @@ struct CadenceCodexWidgetFollowupTests {
         #expect(view.contains(".fixedSize(horizontal: !truncates, vertical: false)"))
     }
 
+    /// T-7195: the populated Today `systemLarge` layout wanted ~387pt of the 354pt an iPhone 15
+    /// gives that family. Its middle row is as tall as the summary panel, so the panel's spacing
+    /// and the queue card's subtitle are the budget; measured offscreen, they now sum to ~348pt.
+    /// What is held is each saving in its own block, since no WidgetKit host runs in this test.
+    @Test func todayLargeSummaryPanelAndQueueSubtitleStayInsideTheIPhoneTile() throws {
+        let read = CadenceSourceScan.strippedSourceReader()
+        let view = CadenceSourceScan.codeOnly(try read("CadenceWidgets/TodayTasksWidgetView.swift"))
+        func block(from start: String, to end: String) throws -> String {
+            let lower = try #require(view.range(of: start))
+            let upper = try #require(view.range(of: end, range: lower.upperBound..<view.endIndex))
+            return String(view[lower.upperBound..<upper.lowerBound])
+        }
+        let panel = try block(from: "private var summaryPanel: some View {", to: "private var focusStrip: some View {")
+        #expect(panel.contains("VStack(alignment: .leading, spacing: 4) {"))
+        #expect(CadenceSourceScan.matchCount("metricTile\\(", in: panel) == 3)
+        let tile = try block(from: "private func metricTile(", to: "private func focusTile(")
+        #expect(tile.contains("VStack(alignment: .leading, spacing: 2) {"))
+        #expect(!tile.contains(".padding(.vertical"))
+        let card = try block(from: "private func taskStackCard(", to: "private func taskColumnCard(")
+        let subtitle = try block(from: "Text(subtitle)", to: "ForEach(tasks)")
+        #expect(card.contains("Text(subtitle)"))
+        #expect(subtitle.contains(".lineLimit(1)"))
+    }
+
     @Test func codexHabitSnapshotRequestsOverridesForItsOwnDate() throws {
         let rule = try CadenceScanInstrument(
             "habit snapshot dated override",
