@@ -385,6 +385,24 @@ usage() {
 
 ledger_key() { print -r -- "${1//\//__}" }
 
+# Whole-line set membership -- the reading `grep -F -x [-v] -f <set> <input>` gives -- as one hash
+# lookup per line (T-7319). The system grep (BSD grep 2.6.0-FreeBSD) is quadratic in the pattern
+# count once both sides are large: on a 6.1 MB, 14.5k-line `docs/TODO.md`, ONE
+# `grep -F -x -v -f <staged> <worktree>` pass took 328 s of CPU, and `declined_lines` ran two of
+# them on every `docs/TODO.md=<file>` commit. This awk reading takes 0.27 s on the same two files.
+# Same answer by construction: a line of the input is kept (or dropped) when it is byte-for-byte a
+# whole line of the set, and an empty set excludes nothing. `FILENAME == ARGV[1]` rather than
+# `NR == FNR`, because an EMPTY set file makes `NR == FNR` true for the input too and swallows it.
+# An unreadable set file prints nothing and exits 2, as grep does.
+lines_not_in() {  # $1 = set file; $2 = input file (default stdin) -> input lines, in order, in no line of $1
+    [[ -r "$1" ]] || return 2
+    LC_ALL=C awk 'FILENAME == ARGV[1] { s[$0]; next } !($0 in s)' "$1" "${2:--}"
+}
+lines_in() {      # $1 = set file; $2 = input file (default stdin) -> input lines, in order, that ARE a line of $1
+    [[ -r "$1" ]] || return 2
+    LC_ALL=C awk 'FILENAME == ARGV[1] { s[$0]; next } ($0 in s)' "$1" "${2:--}"
+}
+
 # How many of $1's lines a change to $2 DELETES -- the number `git diff HEAD -- <path>` prints, and
 # the number every brief tells an agent to read before declaring `--removes` (T-1316).
 #
@@ -512,8 +530,8 @@ declined_lines() {  # $1 = staged content, $2 = worktree PATH, $3 = content bein
     (( stable )) || print -r -- 1 > "$sc/$key.wtunstable"
     awk '!seen[$0]++' "$union" > "$sc/$key.wtworktree"
     local candidates
-    candidates=$(grep -F -x -v -f "$staged" -- "$sc/$key.wtworktree" 2>/dev/null \
-        | { [[ -s "$previous" ]] && grep -F -x -v -f "$previous" || cat } \
+    candidates=$(lines_not_in "$staged" "$sc/$key.wtworktree" 2>/dev/null \
+        | { [[ -s "$previous" ]] && lines_not_in "$previous" || cat } \
         | awk '
         { t = $0; gsub(/^[ \t]+|[ \t]+$/, "", t)
           if (length(t) >= 4 && t !~ /^[][(){}.,;:+*&|<>=!?-]+$/) print }')
@@ -523,15 +541,15 @@ declined_lines() {  # $1 = staged content, $2 = worktree PATH, $3 = content bein
     for attempt in 1 2 3 4 5; do
         [[ -s "$pending" ]] || break
         cat -- "$wtpath" > "$one" 2>/dev/null || break
-        grep -F -x -f "$one" -- "$pending" >> "$survivors" 2>/dev/null
-        grep -F -x -v -f "$one" -- "$pending" > "$pending.next" 2>/dev/null
+        lines_in "$one" "$pending" >> "$survivors" 2>/dev/null
+        lines_not_in "$one" "$pending" > "$pending.next" 2>/dev/null
         mv -- "$pending.next" "$pending"
     done
     print -r -- "$(grep -c . -- "$pending")" > "$sc/$key.wtdropped"
     # In candidate order, not verification-round order: the record is read by a human comparing it
     # against the file.
     [[ -s "$survivors" ]] || return 0
-    grep -F -x -f "$survivors" -- "$sc/$key.wtworktree" 2>/dev/null | awk '!seen[$0]++'
+    lines_in "$survivors" "$sc/$key.wtworktree" 2>/dev/null | awk '!seen[$0]++'
     return 0
 }
 
@@ -2029,7 +2047,7 @@ ${(F)failed_parse}
         : > "$haystack"
         [[ -n "${staged_content[$name]+x}" ]] && cat "${staged_content[$name]}" >> "$haystack"
         git cat-file -p "$headsha:$name" >> "$haystack" 2>/dev/null
-        lost=$(grep -v '^# ' "$record" | grep -F -x -v -f "$haystack" 2>/dev/null)
+        lost=$(grep -v '^# ' "$record" | lines_not_in "$haystack" 2>/dev/null)
         if [[ -n "$lost" ]]; then
             rm -rf "$scratch"
             refuse DECLINED-HUNK-LOST "$name: $(sed -n 's/^# by: //p' "$record" | head -1) declined these lines at $(sed -n 's/^# commit: //p' "$record" | head -1), and they are in neither HEAD nor the content you are staging:
@@ -2996,7 +3014,7 @@ ${(F)${(@)crossref_report/#/    }}
         if [[ -n "$declined" ]]; then
             wt_historical=$(historical_revision_of "$headsha" "$name")
             if [[ -n "$wt_historical" ]] && git --literal-pathspecs show "$wt_historical:$name" > "$wt_hist_blob" 2>/dev/null; then
-                declined_kept=$(print -r -- "$declined" | grep -F -x -v -f "$wt_hist_blob")
+                declined_kept=$(print -r -- "$declined" | lines_not_in "$wt_hist_blob")
                 if [[ "$declined_kept" != "$declined" ]]; then
                     say "note: the worktree copy of $name is ${wt_historical[1,8]}'s committed revision of it, so"
                     say "      $(( $(print -r -- "$declined" | grep -c .) - $(print -r -- "$declined_kept" | grep -c .) )) of its line(s) absent from this commit are in history, not declined (T-6414)."
@@ -3216,6 +3234,34 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
     local -a segments; segments=()
 
     local M=$'msg\n\nCo-Authored-By: Claude Opus 5 <noreply@anthropic.com>'
+
+    # T-7319. The set-membership helpers every declined-hunk guard reads through. The modes below
+    # drive them only with non-empty sets, so the EMPTY set -- where the textbook `NR == FNR` awk
+    # idiom reads the input as the set and prints nothing -- is asserted here, by name.
+    segments+=(s0)
+    ( selftest_segment_open s0
+    say ""
+    say " mode 0 (T-7319) -- whole-line set membership, the reading the declined-hunk guards share"
+    local hset="$ws/hset" hin="$ws/hin" hempty="$ws/hempty"
+    print -rl -- "alpha" "a.c" "" > "$hset"
+    print -rl -- "alpha" "alphabet" "abc" "a.c" "" "beta" "beta" > "$hin"
+    : > "$hempty"
+    out=$(lines_not_in "$hset" "$hin")
+    check "lines_not_in keeps the input lines that are no WHOLE line of the set, in order, repeats kept" \
+        $( [[ "$out" == $'alphabet\nabc\nbeta\nbeta' ]] && print 1 || print 0 ) "$out"
+    out=$(lines_in "$hset" "$hin")
+    check "lines_in keeps the input lines that are, matched literally rather than as a pattern" \
+        $( [[ "$out" == $'alpha\na.c' ]] && print 1 || print 0 ) "$out"
+    out=$(lines_not_in "$hempty" "$hin")
+    check "an EMPTY set excludes nothing" $( [[ "$out" == "$(<"$hin")" ]] && print 1 || print 0 ) "$out"
+    out=$(lines_in "$hempty" "$hin")
+    check "and matches nothing" $( [[ -z "$out" ]] && print 1 || print 0 ) "$out"
+    out=$(print -rl -- "gamma" "alpha" | lines_not_in "$hset")
+    check "the input defaults to stdin" $( [[ "$out" == "gamma" ]] && print 1 || print 0 ) "$out"
+    out=$(lines_not_in "$ws/no-such-set" "$hin" 2>/dev/null); rc=$?
+    check "an unreadable set prints nothing and exits 2, as grep -f does" \
+        $( [[ -z "$out" && $rc == 2 ]] && print 1 || print 0 ) "exit $rc: $out"
+    selftest_segment_close s0 ) > "$runs/s0.log" 2>&1 &
 
     segments+=(s1)
     ( selftest_segment_open s1
