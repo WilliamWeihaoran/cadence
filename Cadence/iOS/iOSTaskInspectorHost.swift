@@ -95,10 +95,7 @@ struct iOSTaskInspectorSheet: View {
     let close: () -> Void
 
     var body: some View {
-        switch CadenceDetailPanelPresentation.resolveHeldSubject(
-            isDeleted: task.isDeleted,
-            hasNoModelContext: task.modelContext == nil
-        ) {
+        switch CadenceDetailPanelPresentation.resolveHeldSubject(heldModel: task) {
         case .stay:
             // [[T-642]]. Every route into the task sheet is this one expression, so the sheet owns
             // the refused-settle sentence from all five of them by construction rather than by

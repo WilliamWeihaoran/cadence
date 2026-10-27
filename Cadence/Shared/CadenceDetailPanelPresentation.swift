@@ -1,4 +1,5 @@
 import Foundation
+import SwiftData
 
 /// T-201, then T-217. **Whose lifetime a detail panel has, and when it closes on its own.**
 ///
@@ -57,7 +58,7 @@ nonisolated enum CadenceDetailPanelPresentation {
         subjectIsGone ? .close : .stay
     }
 
-    /// **Whether a held model is still real, and it takes two signals — measured, not assumed.**
+    /// **Whether a held model is still real, and it takes three signals — measured, not assumed.**
     ///
     /// Against a real in-memory store, measured on Xcode 27.0 / macOS 27.0 (arm64) on 2026-09-25
     /// by `CadenceTaskInspectorHostTests` for a task and `CadenceBundleInspectorHostTests` for a
@@ -70,13 +71,45 @@ nonisolated enum CadenceDetailPanelPresentation {
     ///   while the property snapshot stays readable, so a stale panel goes on looking perfectly
     ///   alive.
     ///
-    /// So a guard on `isDeleted` alone never fires for the committed delete, which is the only one
-    /// that reaches a panel from outside it. That is not a hypothetical: it is what the first draft
-    /// of this type did, and the test that caught it is the reason both signals are here — and it
-    /// still catches it, on either toolchain, because what those tests assert is that **at least
-    /// one** signal fires in each phase and that this predicate closes the panel.
-    static func heldSubjectIsGone(isDeleted: Bool, hasNoModelContext: Bool) -> Bool {
-        isDeleted || hasNoModelContext
+    /// So a guard on `isDeleted` alone never fires for the committed delete. That is what the first
+    /// draft of this type did, and the test that caught it is the reason the second signal is here.
+    ///
+    /// **The third signal is a delete made in a DIFFERENT context ([[T-7561]]).** Both signals above
+    /// describe the context that made the delete. The instance a host holds lives in the *main*
+    /// context, and a delete saved anywhere else — a second `ModelContext`, a `@ModelActor`, or a
+    /// second `ModelContainer` over the same store file, which are the shapes a CloudKit import or
+    /// another writer takes — leaves it reading `isDeleted == false` with its `modelContext` still
+    /// set, indefinitely: measured on Xcode 27 / macOS 27, 2026-10-27, through every one of those
+    /// shapes on an in-memory and an on-disk store, after a run-loop spin, a main-context fetch that
+    /// returned zero rows, and `processPendingChanges()`. Typing into it then saved "successfully"
+    /// and wrote nothing. Only the store knows, so `rowIsMissingFromItsContext` asks it.
+    static func heldSubjectIsGone(
+        isDeleted: Bool,
+        hasNoModelContext: Bool,
+        rowIsMissingFromItsContext: Bool
+    ) -> Bool {
+        isDeleted || hasNoModelContext || rowIsMissingFromItsContext
+    }
+
+    /// **The third signal's reading: does the held model's own context still have its row?**
+    ///
+    /// One `fetchCount` by `persistentModelID`, made when the host evaluates its body — a primary-key
+    /// lookup, not a live query. That distinction is T-201's: a `@Query` in the host would make the
+    /// page's filter the panel's lifetime again, while this asks only whether the subject *exists*,
+    /// which is the one fact the panel's lifetime is allowed to depend on.
+    ///
+    /// Pending changes are included, so a model inserted and not yet saved (a capture in progress)
+    /// counts as present — measured, it does, under its temporary identifier. No context answers
+    /// `false`: that case is the second signal's, not this one's. A fetch that throws also answers
+    /// `false`, because a panel that cannot prove its subject is gone keeps the user's typing.
+    static func heldRowIsMissingFromItsContext<Model: PersistentModel>(_ model: Model) -> Bool {
+        guard let context = model.modelContext else { return false }
+        let id = model.persistentModelID
+        var descriptor = FetchDescriptor<Model>(predicate: #Predicate<Model> { $0.persistentModelID == id })
+        descriptor.includePendingChanges = true
+        descriptor.fetchLimit = 1
+        guard let count = try? context.fetchCount(descriptor) else { return false }
+        return count == 0
     }
 
     /// The spelling a live host calls, and the only one it can: a host owns the model itself, so the
@@ -86,13 +119,31 @@ nonisolated enum CadenceDetailPanelPresentation {
     /// Evaluated whenever the host re-renders, which is what makes it reliable at the moment that
     /// matters: the panel cannot *open* onto a model that is already gone. A delete that lands from
     /// CloudKit while the panel is up closes it on the next re-render rather than instantly —
-    /// neither of these two signals is an observable property, so nothing publishes the change.
+    /// none of the three signals is an observable property, so nothing publishes the change.
     /// That is a bounded claim on purpose; the alternative is a live query in the host, which is the
     /// page's filter creeping back into the panel's lifetime by another route.
-    static func resolveHeldSubject(isDeleted: Bool, hasNoModelContext: Bool) -> Resolution {
+    static func resolveHeldSubject(
+        isDeleted: Bool,
+        hasNoModelContext: Bool,
+        rowIsMissingFromItsContext: Bool
+    ) -> Resolution {
         resolve(
-            subjectIsGone: heldSubjectIsGone(isDeleted: isDeleted, hasNoModelContext: hasNoModelContext),
+            subjectIsGone: heldSubjectIsGone(
+                isDeleted: isDeleted,
+                hasNoModelContext: hasNoModelContext,
+                rowIsMissingFromItsContext: rowIsMissingFromItsContext
+            ),
             subjectLeftThePageQuery: true
+        )
+    }
+
+    /// **The one spelling a host calls with its model** ([[T-7561]]): all three signals read here,
+    /// so no host can hand the rule two of them and forget the third.
+    static func resolveHeldSubject<Model: PersistentModel>(heldModel model: Model) -> Resolution {
+        resolveHeldSubject(
+            isDeleted: model.isDeleted,
+            hasNoModelContext: model.modelContext == nil,
+            rowIsMissingFromItsContext: heldRowIsMissingFromItsContext(model)
         )
     }
 }

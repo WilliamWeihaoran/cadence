@@ -60,10 +60,7 @@ struct iOSHeldNoteSheet<Content: View>: View {
     @ViewBuilder let content: (Note) -> Content
 
     var body: some View {
-        switch CadenceDetailPanelPresentation.resolveHeldSubject(
-            isDeleted: note.isDeleted,
-            hasNoModelContext: note.modelContext == nil
-        ) {
+        switch CadenceDetailPanelPresentation.resolveHeldSubject(heldModel: note) {
         case .stay:
             content(note)
         case .close:

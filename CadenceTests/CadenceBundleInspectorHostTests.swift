@@ -232,13 +232,10 @@ struct CadenceBundleInspectorHostTests {
                 "Cadence/iOS/iOSMarkdownReferenceSupport.swift": 1
             ]
         )
-        // Both signals, at that one call site. `isDeleted` on its own is the draft that did not work.
+        // The model spelling, which reads all three signals in `Shared/` ([[T-7561]]): a host
+        // handing over facts it picked itself is how `isDeleted` alone once shipped as a draft.
         try expectOccurrences(
-            of: "isDeleted: task.isDeleted",
-            at: ["Cadence/iOS/iOSTaskInspectorHost.swift": 1]
-        )
-        try expectOccurrences(
-            of: "hasNoModelContext: task.modelContext == nil",
+            of: "CadenceDetailPanelPresentation.resolveHeldSubject(heldModel: task)",
             at: ["Cadence/iOS/iOSTaskInspectorHost.swift": 1]
         )
         // The rule kept its old name in no file at all — a second copy under the old noun is the one

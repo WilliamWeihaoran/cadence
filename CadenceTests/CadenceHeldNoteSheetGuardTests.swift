@@ -34,10 +34,7 @@ struct CadenceHeldNoteSheetGuardTests {
         try context.save()
 
         #expect(
-            CadenceDetailPanelPresentation.resolveHeldSubject(
-                isDeleted: note.isDeleted,
-                hasNoModelContext: note.modelContext == nil
-            ) == .stay
+            CadenceDetailPanelPresentation.resolveHeldSubject(heldModel: note) == .stay
         )
 
         context.delete(note)
@@ -46,10 +43,7 @@ struct CadenceHeldNoteSheetGuardTests {
             "a pending note delete reported through neither of the two signals the guard reads"
         )
         #expect(
-            CadenceDetailPanelPresentation.resolveHeldSubject(
-                isDeleted: note.isDeleted,
-                hasNoModelContext: note.modelContext == nil
-            ) == .close
+            CadenceDetailPanelPresentation.resolveHeldSubject(heldModel: note) == .close
         )
 
         try context.save()
@@ -59,10 +53,96 @@ struct CadenceHeldNoteSheetGuardTests {
         )
         #expect(try context.fetch(FetchDescriptor<Note>()).isEmpty)
         #expect(
-            CadenceDetailPanelPresentation.resolveHeldSubject(
-                isDeleted: note.isDeleted,
-                hasNoModelContext: note.modelContext == nil
-            ) == .close
+            CadenceDetailPanelPresentation.resolveHeldSubject(heldModel: note) == .close
+        )
+    }
+
+    // MARK: - A delete saved in another context ([[T-7561]])
+
+    /// **The shape the two old signals cannot see.** The instance an editor holds lives in the main
+    /// context; a delete saved in a second `ModelContext` over the same container — the shape a
+    /// CloudKit import or another writer takes — left it reading `isDeleted == false` with its
+    /// context still set, so the editor stayed up and the user's typing saved into nothing. The
+    /// third signal asks the held model's context for the row, and the rule closes.
+    @Test func aNoteDeletedInAnotherContextClosesItsEditor() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        try expectTheHeldNoteClosesWhenAnotherWriterDeletesIt(
+            held: container.mainContext,
+            writer: ModelContext(container)
+        )
+    }
+
+    /// The same, with the writer in a **second container over the same store file**, in this test's
+    /// own temporary directory: the cross-coordinator shape, the nearest in-harness analogue of an
+    /// import that reaches the main context from outside it.
+    @Test func aNoteDeletedThroughASecondContainerOverTheSameStoreClosesItsEditor() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("CadenceHeldNoteSheetGuardTests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let storeURL = directory.appendingPathComponent("held.store")
+        func container() throws -> ModelContainer {
+            try ModelContainer(
+                for: CadenceSchema.schema,
+                configurations: [
+                    ModelConfiguration(schema: CadenceSchema.schema, url: storeURL, cloudKitDatabase: .none)
+                ]
+            )
+        }
+        let heldContainer = try container()
+        let writerContainer = try container()
+        try expectTheHeldNoteClosesWhenAnotherWriterDeletesIt(
+            held: heldContainer.mainContext,
+            writer: ModelContext(writerContainer)
+        )
+    }
+
+    /// The check is **by identity**, not "is there any row": a sibling deleted elsewhere leaves the
+    /// held note open, and a note inserted but not yet saved — a capture in progress, under a
+    /// temporary identifier — is present, not gone.
+    @Test func theExistenceCheckAsksAboutTheHeldNoteAloneAndCountsAnUnsavedInsert() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let held = container.mainContext
+
+        let unsaved = Note(kind: .permanent, title: "capturing", content: "not saved yet")
+        held.insert(unsaved)
+        #expect(!CadenceDetailPanelPresentation.heldRowIsMissingFromItsContext(unsaved))
+        #expect(CadenceDetailPanelPresentation.resolveHeldSubject(heldModel: unsaved) == .stay)
+        try held.save()
+
+        let sibling = Note(kind: .permanent, title: "sibling", content: "")
+        held.insert(sibling)
+        try held.save()
+        let writer = ModelContext(container)
+        writer.delete(try #require(writer.model(for: sibling.persistentModelID) as? Note))
+        try writer.save()
+
+        #expect(CadenceDetailPanelPresentation.heldRowIsMissingFromItsContext(sibling))
+        #expect(!CadenceDetailPanelPresentation.heldRowIsMissingFromItsContext(unsaved))
+        #expect(CadenceDetailPanelPresentation.resolveHeldSubject(heldModel: unsaved) == .stay)
+    }
+
+    private func expectTheHeldNoteClosesWhenAnotherWriterDeletesIt(
+        held: ModelContext,
+        writer: ModelContext
+    ) throws {
+        let note = Note(kind: .permanent, title: "deleted elsewhere", content: "open in the editor")
+        held.insert(note)
+        try held.save()
+        #expect(CadenceDetailPanelPresentation.resolveHeldSubject(heldModel: note) == .stay)
+
+        let remote = try #require(writer.fetch(FetchDescriptor<Note>()).first)
+        // By title, not `persistentModelID`: across two containers the identifiers do not compare
+        // equal even for the same row (measured), and the store holds exactly this one note.
+        #expect(remote.title == note.title)
+        writer.delete(remote)
+        try writer.save()
+
+        #expect(try held.fetchCount(FetchDescriptor<Note>()) == 0, "the row did not leave the store")
+        #expect(CadenceDetailPanelPresentation.heldRowIsMissingFromItsContext(note))
+        #expect(
+            CadenceDetailPanelPresentation.resolveHeldSubject(heldModel: note) == .close,
+            "a note deleted by another writer still reads as alive to the editor holding it"
         )
     }
 
@@ -80,9 +160,8 @@ struct CadenceHeldNoteSheetGuardTests {
             CadenceSourceScan.declarationBody("struct iOSHeldNoteSheet<Content: View>: View", in: file)
         )
 
-        #expect(wrapper.contains("CadenceDetailPanelPresentation.resolveHeldSubject("))
-        #expect(wrapper.contains("isDeleted: note.isDeleted"))
-        #expect(wrapper.contains("hasNoModelContext: note.modelContext == nil"))
+        // The model spelling, so all three signals are read in `Shared/` ([[T-7561]]).
+        #expect(wrapper.contains("CadenceDetailPanelPresentation.resolveHeldSubject(heldModel: note)"))
         #expect(
             CadenceSourceScan.matchCount(#"case \.stay:\s*content\(note\)"#, in: wrapper) == 1,
             "the note editor is not drawn in the .stay branch of resolveHeldSubject"

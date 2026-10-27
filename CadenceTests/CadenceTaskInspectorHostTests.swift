@@ -43,30 +43,37 @@ struct CadenceTaskInspectorHostTests {
         )
     }
 
-    /// Both signals, either of them sufficient. `isDeleted` catches the pending delete and a nil
-    /// `modelContext` catches the committed one; the next test is why it takes two.
+    /// Three signals, any one of them sufficient. `isDeleted` catches the pending delete, a nil
+    /// `modelContext` the committed one, and a missing row a delete saved in another context
+    /// ([[T-7561]]); the real-store tests below and in `CadenceHeldNoteSheetGuardTests` are why.
     ///
     /// The rule is `CadenceDetailPanelPresentation` rather than `CadenceTaskInspectorPresentation`
     /// since T-217: nothing in it is about an `AppTask`, and the bundle panel's host needed exactly
     /// it. `CadenceBundleInspectorHostTests` measures the same two phases against a `TaskBundle`.
-    @Test func aHeldTaskIsGoneIfEitherSignalSaysSo() {
-        #expect(!CadenceDetailPanelPresentation.heldSubjectIsGone(isDeleted: false, hasNoModelContext: false))
-        #expect(CadenceDetailPanelPresentation.heldSubjectIsGone(isDeleted: true, hasNoModelContext: false))
-        #expect(CadenceDetailPanelPresentation.heldSubjectIsGone(isDeleted: false, hasNoModelContext: true))
-        #expect(CadenceDetailPanelPresentation.heldSubjectIsGone(isDeleted: true, hasNoModelContext: true))
-
-        #expect(
-            CadenceDetailPanelPresentation.resolveHeldSubject(isDeleted: false, hasNoModelContext: false)
-                == .stay
-        )
-        #expect(
-            CadenceDetailPanelPresentation.resolveHeldSubject(isDeleted: true, hasNoModelContext: false)
-                == .close
-        )
-        #expect(
-            CadenceDetailPanelPresentation.resolveHeldSubject(isDeleted: false, hasNoModelContext: true)
-                == .close
-        )
+    @Test func aHeldTaskIsGoneIfAnySignalSaysSo() {
+        // Every combination of the three, so a mutation that drops any one of them is a named red.
+        for isDeleted in [false, true] {
+            for hasNoModelContext in [false, true] {
+                for rowIsMissing in [false, true] {
+                    let gone = isDeleted || hasNoModelContext || rowIsMissing
+                    #expect(
+                        CadenceDetailPanelPresentation.heldSubjectIsGone(
+                            isDeleted: isDeleted,
+                            hasNoModelContext: hasNoModelContext,
+                            rowIsMissingFromItsContext: rowIsMissing
+                        ) == gone,
+                        "isDeleted \(isDeleted), no context \(hasNoModelContext), row missing \(rowIsMissing)"
+                    )
+                    #expect(
+                        CadenceDetailPanelPresentation.resolveHeldSubject(
+                            isDeleted: isDeleted,
+                            hasNoModelContext: hasNoModelContext,
+                            rowIsMissingFromItsContext: rowIsMissing
+                        ) == (gone ? .close : .stay)
+                    )
+                }
+            }
+        }
     }
 
     /// The premise the ownership fix rests on, run against a real store rather than argued:
@@ -85,10 +92,7 @@ struct CadenceTaskInspectorHostTests {
 
         #expect(subject.isCancelled)
         #expect(
-            CadenceDetailPanelPresentation.resolveHeldSubject(
-                isDeleted: subject.isDeleted,
-                hasNoModelContext: subject.modelContext == nil
-            ) == .stay
+            CadenceDetailPanelPresentation.resolveHeldSubject(heldModel: subject) == .stay
         )
         #expect(
             CadenceTaskQuerySupport.activeTodayTasks(from: [subject], todayKey: todayKey, sortMode: .listOrder)
@@ -123,10 +127,7 @@ struct CadenceTaskInspectorHostTests {
         try context.save()
 
         #expect(
-            CadenceDetailPanelPresentation.resolveHeldSubject(
-                isDeleted: subject.isDeleted,
-                hasNoModelContext: subject.modelContext == nil
-            ) == .stay
+            CadenceDetailPanelPresentation.resolveHeldSubject(heldModel: subject) == .stay
         )
 
         context.delete(subject)
@@ -135,10 +136,7 @@ struct CadenceTaskInspectorHostTests {
             "a pending delete reported through neither of the two signals the guard reads"
         )
         #expect(
-            CadenceDetailPanelPresentation.resolveHeldSubject(
-                isDeleted: subject.isDeleted,
-                hasNoModelContext: subject.modelContext == nil
-            ) == .close
+            CadenceDetailPanelPresentation.resolveHeldSubject(heldModel: subject) == .close
         )
 
         try context.save()
@@ -149,10 +147,7 @@ struct CadenceTaskInspectorHostTests {
         // The store's own half, which is not an observation of anything: the row is gone.
         #expect(try context.fetch(FetchDescriptor<AppTask>()).isEmpty)
         #expect(
-            CadenceDetailPanelPresentation.resolveHeldSubject(
-                isDeleted: subject.isDeleted,
-                hasNoModelContext: subject.modelContext == nil
-            ) == .close
+            CadenceDetailPanelPresentation.resolveHeldSubject(heldModel: subject) == .close
         )
     }
 
@@ -408,13 +403,10 @@ struct CadenceTaskInspectorHostTests {
             of: "CadenceDetailPanelPresentation.resolveHeldSubject(",
             at: ["Cadence/iOS/iOSTaskInspectorHost.swift": 1]
         )
-        // Both signals, at the one call site. `isDeleted` on its own is the draft that did not work.
+        // The model spelling, which reads all three signals in `Shared/` ([[T-7561]]): a host
+        // handing over facts it picked itself is how `isDeleted` alone once shipped as a draft.
         try expectOccurrences(
-            of: "isDeleted: task.isDeleted",
-            at: ["Cadence/iOS/iOSTaskInspectorHost.swift": 1]
-        )
-        try expectOccurrences(
-            of: "hasNoModelContext: task.modelContext == nil",
+            of: "CadenceDetailPanelPresentation.resolveHeldSubject(heldModel: task)",
             at: ["Cadence/iOS/iOSTaskInspectorHost.swift": 1]
         )
         try expectOccurrences(
