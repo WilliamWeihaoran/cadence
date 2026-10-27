@@ -231,8 +231,19 @@ struct CadenceTimelineBlockEditTests {
         let block = try #require(CadenceSourceScan.declarationBody("struct iOSTimelineTaskBlock: View", in: source))
         #expect(block.count > 1_000, "non-vacuity: iOSTimelineTaskBlock read as \(block.count) characters")
 
-        // The hold comes first: a finger that moves before it is a scroll.
-        #expect(CadenceSourceScan.matchCount(#"LongPressGesture\(minimumDuration: CadenceTimelineBlockEdit\.liftPressDuration\)\s*(//[^\n]*\n\s*)*\.sequenced\(before: DragGesture"#, in: block) == 1)
+        // The hold comes first: a finger that moves before it is a scroll. **Through the UIKit
+        // recognizer, which is the half that makes that sentence true** ([[T-7550]]) — a SwiftUI
+        // `LongPressGesture.sequenced(before: DragGesture)` claims the touch from the enclosing
+        // `ScrollView` whether or not the hold ever completes, and a swipe begun on a block
+        // scrolled the day zero points for as long as this block spelled it that way.
+        #expect(CadenceSourceScan.matchCount(#"iOSTimelinePressDrag\(\s*(//[^\n]*\n\s*)*isEnabled: editing != nil,\s*minimumPressDuration: CadenceTimelineBlockEdit\.liftPressDuration,"#, in: block) == 1)
+        // The negative is about the LONG PRESS, not about drags in general: `resizeHandle` keeps a
+        // zero-distance `DragGesture` on purpose, and it is drawn only on a lifted block, so a
+        // resting canvas never carries it.
+        #expect(
+            CadenceSourceScan.matchCount(#"LongPressGesture|\.sequenced\(before:"#, in: CadenceSourceScan.strippingComments(block)) == 0,
+            "the block's move press is a SwiftUI long-press-then-drag again, which cannot give the touch back"
+        )
         // Both edges, each fitted to the 44pt band.
         #expect(CadenceSourceScan.matchCount(#"resizeHandle\(\.resize(Start|End)\)"#, in: block) == 2)
         #expect(CadenceSourceScan.matchCount(#"CadenceTimelineBlockEdit\.handleTouchTarget"#, in: block) == 1)

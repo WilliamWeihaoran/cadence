@@ -266,13 +266,25 @@ struct CadenceTodayTimelineDraftCreationTests {
         #expect(panel.contains("drawsDraftBlocks: true"))
     }
 
-    /// The press-and-hold the owner asked for, and the reason it is sequenced before a drag: the
-    /// long press alone carries no location, and the drag that follows it does.
+    /// The press-and-hold the owner asked for, and the reason it reports a location: the hold
+    /// alone carries none, and the draft has to open at the minute under the finger.
+    ///
+    /// **It is a UIKit recognizer since [[T-7550]].** It was
+    /// `LongPressGesture(minimumDuration:).sequenced(before: DragGesture(minimumDistance: 0))`,
+    /// and because `createSurface`'s drafting arm is the bottom layer of the column's `ZStack`
+    /// that gesture sat under every touch on Today's timeline and took all of them — a 400pt
+    /// finger swipe scrolled the pane zero points in either direction, while the same swipe on the
+    /// Calendar page's grid (`drawsDraftBlocks: false`, so this arm is not installed) scrolled it
+    /// nine hours.
     @Test("The timeline column answers a press-and-hold")
     func timelineColumnAnswersAPressAndHold() {
         let timeline = source("Cadence/iOS/iOSCalendarTimelineViews.swift")
-        #expect(timeline.contains("LongPressGesture(minimumDuration:"))
-        #expect(timeline.contains(".sequenced(before: DragGesture(minimumDistance: 0))"))
+        #expect(timeline.contains("iOSTimelinePressDrag("))
+        #expect(timeline.contains("final class iOSTimelinePressDragRecognizer: UILongPressGestureRecognizer"))
+        // The negative half — that no SwiftUI long-press-then-drag is left on this canvas — is
+        // pinned in `CadenceTimelinePressDragRecognizerTests`, which reads the file with its
+        // comments stripped. It cannot be asked here: this file's own prose names the gesture it
+        // replaced, and a bare `contains` over the raw text reads that sentence as the code.
         #expect(timeline.contains("iOSTimelineDraftBlock("))
         #expect(timeline.contains("iOSTimelineDraftPanelHost("))
     }

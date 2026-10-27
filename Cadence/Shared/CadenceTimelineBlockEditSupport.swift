@@ -37,9 +37,17 @@ enum CadenceTimelineBlockEdit {
     static let minimumDurationMinutes = CadenceScheduleSupport.touchTimeGridMinutes
 
     /// How long a finger must rest on a block before it lifts. The canvas's own press-and-hold
-    /// draft (`iOSCalendarTimelineDayColumn.draftPressGesture`) uses the same figure, so a press is
-    /// one length everywhere on the grid. A finger that moves first is a scroll, which the long
-    /// press fails on — that is the whole reason for the hold.
+    /// draft (`iOSCalendarTimelineDayColumn.draftPressGesture`) uses the same figure — it reads it
+    /// from here since [[T-7550]] rather than repeating the number — so a press is one length
+    /// everywhere on the grid. A finger that moves first is a scroll, which the hold fails on; that
+    /// is the whole reason for the hold.
+    ///
+    /// **That last sentence was a claim about the gesture, and for a while it was false**
+    /// ([[T-7550]]). It is true of UIKit's long press and not of SwiftUI's
+    /// `LongPressGesture.sequenced(before: DragGesture)`, which both call sites used: a finger
+    /// that moved first scrolled nothing at all, because the SwiftUI drag had already taken the
+    /// touch from the enclosing `ScrollView`. `iOSTimelinePressDragRecognizer` is what makes the
+    /// sentence true, and it is where the measurement lives.
     static let liftPressDuration: Double = 0.35
 
     /// The touch band each resize handle answers to: the 44pt minimum, not the 2–4pt of paint.

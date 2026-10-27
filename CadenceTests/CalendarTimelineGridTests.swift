@@ -1278,14 +1278,14 @@ struct CadenceTimelineDraftPressGestureTests {
     /// Non-vacuity, then the two halves of the fix.
     @Test func thePressDragDoesNotRaiseItsEditorWhileTheFingerIsStillDown() throws {
         let grid = try grid()
-        #expect(grid.contains("private var draftPressGesture: some Gesture"), "non-vacuity: wrong file")
+        #expect(grid.contains("private var draftPressGesture: some UIGestureRecognizerRepresentable"), "non-vacuity: wrong file")
 
         // The press arm asks for a draft WITHOUT an editor; the default, which the tap arm takes,
         // still opens one.
         #expect(grid.contains("private func beginDraft(atY yPosition: CGFloat, presentingEditor: Bool = true)"))
         #expect(grid.contains("if presentingEditor { isDraftEditorPresented = true }"))
         #expect(
-            CadenceSourceScan.matchCount(#"beginDraft\(atY: drag\.startLocation\.y, presentingEditor: false\)"#, in: grid) == 1,
+            CadenceSourceScan.matchCount(#"beginDraft\(atY: yPosition, presentingEditor: false\)"#, in: grid) == 1,
             "the press-drag opens its editor from inside the gesture again"
         )
         // Four presentations and no fifth, and **every one of them is guarded** — that, not the
@@ -1312,7 +1312,7 @@ struct CadenceTimelineDraftPressGestureTests {
 
     @Test func thePressDragSizesTheBlockFromAPressTimeAnchor() throws {
         let grid = try grid()
-        #expect(grid.contains("private var draftPressGesture: some Gesture"), "non-vacuity: wrong file")
+        #expect(grid.contains("private var draftPressGesture: some UIGestureRecognizerRepresentable"), "non-vacuity: wrong file")
 
         // The anchor is taken once, where the draft is made, and dropped when the finger lifts.
         #expect(grid.contains("@State private var draftPressAnchor: (start: Int, end: Int)?"))
@@ -1328,12 +1328,106 @@ struct CadenceTimelineDraftPressGestureTests {
         // Sized by the shared resize arithmetic, relative to that anchor.
         #expect(grid.contains("CadenceTimelineBlockEdit.editedRange("))
         #expect(grid.contains("kind: .resizeEnd,"))
-        #expect(grid.contains("translationY: drag.translation.height,"))
+        #expect(grid.contains("translationY: translationY,"))
 
         // And never again by the finger's own absolute minute, which is what collapsed the block.
         #expect(
             CadenceSourceScan.matchCount(#"moveEndEdge\(toMinute: minute\(for: drag"#, in: grid) == 0,
             "the press-drag sizes the block from the finger's absolute minute again"
+        )
+    }
+}
+
+/// **A finger could not scroll the iOS Today timeline, where a mouse on the same iPad could**
+/// ([[T-7550]], the owner, from the TestFlight build).
+///
+/// The asymmetry is the whole diagnosis: an indirect scroll event reaches a `ScrollView` with no
+/// arbitration, while a touch has to get past the recognizers above it. Two of them were taking
+/// it, and both were spelled
+/// `LongPressGesture(minimumDuration:).sequenced(before: DragGesture(minimumDistance: 0))` —
+/// `iOSCalendarTimelineDayColumn.draftPressGesture`, which is installed on `createSurface`, the
+/// bottom layer of the column's `ZStack`, and so sits under every touch on Today's canvas; and
+/// `iOSTimelineTaskBlock.movePressGesture`, which covers every task block on both timed surfaces.
+///
+/// **Measured by differential on `Cadence-iPadPro11`, 2026-10-27, before anything was changed.**
+/// A 400pt injected finger swipe on Today's timeline moved it zero points in both directions; the
+/// byte-identical swipe on the Calendar page's week grid — the same day column, differing in one
+/// argument, `drawsDraftBlocks` — scrolled it from 12 AM at the top to 9 AM. A third swipe begun
+/// *on a task block* on that Calendar grid scrolled zero too, and did not move the block either:
+/// the hold failed and so did the scroll.
+///
+/// **Why a UIKit recognizer and not another SwiftUI spelling.** [[T-2059]] settled that on the
+/// tasks page by refuting every SwiftUI-side lever with its own build — `minimumDistance: 30`,
+/// `.simultaneousGesture` and priority all stayed dead. A `UIGestureRecognizer` can fail itself
+/// while it is still `.possible`, which is before the scroll view is asked to stand down;
+/// `UILongPressGestureRecognizer` already does exactly that when the finger strays
+/// `allowableMovement` before `minimumPressDuration`, and already prevents the pan when the hold
+/// wins. Neither half needs a delegate, which is why there is none.
+///
+/// **NOT the cause**, against the first reading of this bug: the `.highPriorityGesture` on
+/// `resizeHandle` is a real zero-distance drag, but the handle is drawn only on a *lifted* block,
+/// so a resting canvas never carries it. It is left alone.
+struct CadenceTimelinePressDragRecognizerTests {
+    private static let gridFile = "Cadence/iOS/iOSCalendarTimelineViews.swift"
+
+    private func grid() throws -> String {
+        CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(Self.gridFile))
+    }
+
+    /// The recognizer exists, and is the UIKit kind that can decline a touch.
+    @Test func theTimelinePressIsAUIKitLongPressThatCanDeclineATouch() throws {
+        let grid = try grid()
+        #expect(grid.contains("final class iOSTimelinePressDragRecognizer: UILongPressGestureRecognizer"))
+        // No delegate, because the two relationships it needs — the pan keeps tracking while this
+        // is undecided, and the pan stands down once the hold wins — are UIKit's defaults between
+        // a long press and a pan. A delegate here would be a second, contradictable statement of
+        // them.
+        #expect(
+            CadenceSourceScan.matchCount(#"UIGestureRecognizerDelegate|shouldRecognizeSimultaneouslyWith|shouldBeRequiredToFailBy"#, in: grid) == 0,
+            "the timeline press grew a delegate; the arbitration it needs is already the default"
+        )
+        // One finger: the canvas's pinch is two, and a second finger mid-press is a zoom starting.
+        #expect(grid.contains("numberOfTouchesRequired = 1"))
+    }
+
+    /// **The travel is written before `super.touchesMoved`, and that ordering is the whole of it.**
+    /// `super` is what moves the state to `.changed`, and the action fires inside it — so a
+    /// translation written afterwards is one every handler has already run without, which is a
+    /// block that lags the finger by one callback.
+    @Test func theTravelIsWrittenBeforeTheStateChangeThatReportsIt() throws {
+        let recognizer = try #require(
+            CadenceSourceScan.declarationBody(
+                "final class iOSTimelinePressDragRecognizer: UILongPressGestureRecognizer",
+                in: try grid()
+            ),
+            "non-vacuity: the recognizer is not declared here"
+        )
+        let body = try #require(
+            CadenceSourceScan.functionBody(named: "touchesMoved", in: recognizer),
+            "the recognizer no longer overrides touchesMoved"
+        )
+        let write = try #require(body.range(of: "translation = CGSize("), "the recognizer no longer measures its own travel")
+        let superCall = try #require(body.range(of: "super.touchesMoved(touches, with: event)"))
+        #expect(
+            write.upperBound <= superCall.lowerBound,
+            "the travel is written after super.touchesMoved, so every callback reads the previous sample"
+        )
+    }
+
+    /// Both call sites take it, and neither has grown a SwiftUI press-drag back.
+    @Test func bothTimelinePressesGoThroughTheRecognizerAndNoneThroughASequencedDrag() throws {
+        let grid = try grid()
+        #expect(grid.contains("private var draftPressGesture: some UIGestureRecognizerRepresentable"))
+        #expect(grid.contains("private var movePressGesture: some UIGestureRecognizerRepresentable"))
+        #expect(CadenceSourceScan.matchCount(#"iOSTimelinePressDrag\("#, in: grid) == 2, "the two call sites, which is every construction of it")
+        #expect(
+            CadenceSourceScan.matchCount(#"\.sequenced\(before:"#, in: grid) == 0,
+            "a SwiftUI long-press-then-drag is back on the timeline, and it cannot give the touch back"
+        )
+        // One length of press for the whole canvas, read rather than retyped.
+        #expect(
+            CadenceSourceScan.matchCount(#"minimumPressDuration: CadenceTimelineBlockEdit\.liftPressDuration"#, in: grid) == 2,
+            "the two presses no longer agree on how long a hold is"
         )
     }
 }

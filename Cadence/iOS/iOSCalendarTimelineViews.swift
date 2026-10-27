@@ -2,6 +2,7 @@
 import EventKit
 import SwiftData
 import SwiftUI
+import UIKit
 
 /// The live vertical scroll offset of the hour canvas, so the time rail can follow it.
 ///
@@ -408,10 +409,17 @@ struct iOSCalendarTimelineGrid: View {
     /// -then-drag that opens the creation panel belongs to the page's floating `+`
     /// (`iOSFloatingCreateTaskButton`, which Today already installs): the finger starts on the
     /// button, not on this canvas, so what this pane has to supply is a *landing place*, and that
-    /// is `iOSNewTaskDropTarget` on the column — a drop destination, not a recognizer. So there is
-    /// no three-way conflict to arbitrate: one pan, one two-finger gesture, and a drop whose touch
-    /// was claimed somewhere else entirely. The column's own `SpatialTapGesture` is the fourth and
-    /// it is a tap, which a scroll view yields on anyway.
+    /// is `iOSNewTaskDropTarget` on the column — a drop destination, not a recognizer. The
+    /// column's own `SpatialTapGesture` is the fourth and it is a tap, which a scroll view yields
+    /// on anyway.
+    ///
+    /// **This paragraph used to end "so there is no three-way conflict to arbitrate", and that was
+    /// the defect** ([[T-7550]]). It counted the gestures declared *on this pane* and stopped. The
+    /// column inside it declares two more — `createSurface`'s press-and-hold draft and each task
+    /// block's press-and-hold move — and in SwiftUI form both took every touch that landed on
+    /// them, so this scroll view received a finger pan only where neither was drawn, which on
+    /// Today is nowhere. They are UIKit recognizers now and decline the touches they do not want;
+    /// see `iOSTimelinePressDragRecognizer`.
     ///
     /// **No `contentMargins` here, unlike `gridScroller`.** That restatement exists because the
     /// grid's vertical canvas is nested inside a *horizontal* scroller that eats the page-level
@@ -1393,15 +1401,21 @@ private struct iOSCalendarTimelineDayColumn: View {
     /// app's most repeated bug, so a recognizer is not installed where its gesture is not offered.
     /// `drawsDraftBlocks` is fixed per call site, so the branch never flips at runtime.
     ///
-    /// On the drafting arm the long press and the tap coexist: a `LongPressGesture` sequenced
-    /// before a zero-distance `DragGesture` is the only way SwiftUI reports **where** a press
-    /// happened — the press itself carries no location, and the drag that follows it does — and
-    /// continuing to drag sizes the block in the same gesture, which is Apple Calendar's own
-    /// behaviour. The tap is kept, and now opens the same draft rather than the docked bar: it is
-    /// what this canvas has always done, and removing it would be a behaviour the owner did not ask
-    /// to lose. `beginDraft` is idempotent, so a tap arriving at the end of a long press finds the
-    /// draft already there and makes no second one; it opens that draft's editor, which is what the
-    /// press's own `onEnded` is about to do anyway, so the two doors agree rather than race.
+    /// On the drafting arm the press and the tap coexist: `iOSTimelinePressDrag` reports **where**
+    /// the press landed and then how far the finger travels from it, and continuing to drag sizes
+    /// the block in the same gesture, which is Apple Calendar's own behaviour. The tap is kept, and
+    /// now opens the same draft rather than the docked bar: it is what this canvas has always done,
+    /// and removing it would be a behaviour the owner did not ask to lose. `beginDraft` is
+    /// idempotent, so a tap arriving at the end of a press finds the draft already there and makes
+    /// no second one; it opens that draft's editor, which is what the press's own end is about to
+    /// do anyway, so the two doors agree rather than race.
+    ///
+    /// **This arm used to be the reason a finger could not scroll Today's timeline at all**
+    /// ([[T-7550]]). It is the ZStack's bottom layer and it fills the column, so whatever it
+    /// installs is under every touch on the canvas; what it installed was a SwiftUI
+    /// `LongPressGesture.sequenced(before: DragGesture(minimumDistance: 0))`, which claims the
+    /// touch from the enclosing `ScrollView` whether or not the hold ever completes. See
+    /// `iOSTimelinePressDragRecognizer` for the measurement and the replacement.
     @ViewBuilder
     private var createSurface: some View {
         if drawsDraftBlocks {
@@ -1442,53 +1456,72 @@ private struct iOSCalendarTimelineDayColumn: View {
         }
     }
 
-    private var draftPressGesture: some Gesture {
-        LongPressGesture(minimumDuration: 0.35)
-            .sequenced(before: DragGesture(minimumDistance: 0))
-            .onChanged { value in
-                guard case .second(true, let drag?) = value else { return }
-                if draft == nil {
-                    onSelectForEditing(nil)
-                    // **The editor does not open here.** It opens when the finger lifts — see
-                    // `onEnded` — because a popover presented in the middle of the drag that is
-                    // still sizing the block is the whole of the owner's report ([[T-3239]]):
-                    // the presentation starved the drag of about 0.4s of touches on the way up,
-                    // and from then on the popover's own outside-tap dismissal owned every touch
-                    // on the canvas, so the block the user then reached for was torn down instead
-                    // of resized.
-                    beginDraft(atY: drag.startLocation.y, presentingEditor: false)
-                    draftPressAnchor = draft.map { ($0.startMin, $0.endMin) }
-                    return
-                }
-                // Still the same press: dragging away from the start sizes the block rather than
-                // moving it, which is what a user who presses and then pulls means by it.
-                //
-                // **Measured from the anchor, by the shared resize arithmetic.** This is
-                // `CadenceTimelineBlockEdit.editedRange(kind: .resizeEnd, …)` — the function whose
-                // own note already names this gesture — so the press-drag, the draft's bottom
-                // handle and a committed block's bottom handle are one rule, snapped to one grid,
-                // with one answer for the day's last minute. It is **relative**, so a press that
-                // has not travelled half a grid step leaves the default hour exactly as drawn
-                // instead of teleporting the end to the finger.
-                guard let anchor = draftPressAnchor else { return }
-                let resized = CadenceTimelineBlockEdit.editedRange(
-                    kind: .resizeEnd,
-                    start: anchor.start,
-                    end: anchor.end,
-                    translationY: drag.translation.height,
-                    hourHeight: hourHeight
-                )
-                // No step, no write. `draft` is `@State`, so an assignment that lands on the same
-                // minute still rebuilds the column and everything in it for nothing.
-                guard resized.end != draft?.endMin else { return }
-                draft?.moveEndEdge(toMinute: resized.end)
-            }
-            .onEnded { _ in
-                draftPressAnchor = nil
-                guard draft != nil else { return }
-                draftEditorAppearance = .opened
-                isDraftEditorPresented = true
-            }
+    /// Press-and-hold on empty canvas to draw a draft block, then keep dragging to size it.
+    ///
+    /// **A UIKit recognizer, because a SwiftUI one cannot decline a touch** ([[T-7550]]). This was
+    /// `LongPressGesture(minimumDuration: 0.35).sequenced(before: DragGesture(minimumDistance: 0))`
+    /// and it took every touch on Today's timeline, hold or no hold. `iOSTimelinePressDragRecognizer`
+    /// holds the measurement; the three callbacks below are the same three arms the sequence had.
+    private var draftPressGesture: some UIGestureRecognizerRepresentable {
+        iOSTimelinePressDrag(
+            minimumPressDuration: CadenceTimelineBlockEdit.liftPressDuration,
+            onPressed: { pressLocation in beginDraftPress(atY: pressLocation.y) },
+            onChanged: { translation in sizeDraftPress(translationY: translation.height) },
+            onEnded: { _ in endDraftPress(presentingEditor: true) },
+            onCancelled: { endDraftPress(presentingEditor: false) }
+        )
+    }
+
+    /// The press landed. `pressLocation` is in the column's own space, which is what the old
+    /// sequence's `DragGesture` had to exist to report at all — a `LongPressGesture` carries no
+    /// location of its own.
+    private func beginDraftPress(atY yPosition: CGFloat) {
+        guard draft == nil else { return }
+        onSelectForEditing(nil)
+        // **The editor does not open here.** It opens when the finger lifts — see
+        // `endDraftPress` — because a popover presented in the middle of the drag that is
+        // still sizing the block is the whole of the owner's report ([[T-3239]]):
+        // the presentation starved the drag of about 0.4s of touches on the way up,
+        // and from then on the popover's own outside-tap dismissal owned every touch
+        // on the canvas, so the block the user then reached for was torn down instead
+        // of resized.
+        beginDraft(atY: yPosition, presentingEditor: false)
+        draftPressAnchor = draft.map { ($0.startMin, $0.endMin) }
+    }
+
+    /// Still the same press: dragging away from the start sizes the block rather than
+    /// moving it, which is what a user who presses and then pulls means by it.
+    ///
+    /// **Measured from the anchor, by the shared resize arithmetic.** This is
+    /// `CadenceTimelineBlockEdit.editedRange(kind: .resizeEnd, …)` — the function whose
+    /// own note already names this gesture — so the press-drag, the draft's bottom
+    /// handle and a committed block's bottom handle are one rule, snapped to one grid,
+    /// with one answer for the day's last minute. It is **relative**, so a press that
+    /// has not travelled half a grid step leaves the default hour exactly as drawn
+    /// instead of teleporting the end to the finger.
+    private func sizeDraftPress(translationY: CGFloat) {
+        guard let anchor = draftPressAnchor else { return }
+        let resized = CadenceTimelineBlockEdit.editedRange(
+            kind: .resizeEnd,
+            start: anchor.start,
+            end: anchor.end,
+            translationY: translationY,
+            hourHeight: hourHeight
+        )
+        // No step, no write. `draft` is `@State`, so an assignment that lands on the same
+        // minute still rebuilds the column and everything in it for nothing.
+        guard resized.end != draft?.endMin else { return }
+        draft?.moveEndEdge(toMinute: resized.end)
+    }
+
+    /// The finger is off the glass, or the system took the gesture away. A cancellation drops the
+    /// anchor and raises nothing: the old sequence could not tell the two apart and simply left the
+    /// anchor standing, which is a stale range for whatever press came next.
+    private func endDraftPress(presentingEditor: Bool) {
+        draftPressAnchor = nil
+        guard presentingEditor, draft != nil else { return }
+        draftEditorAppearance = .opened
+        isDraftEditorPresented = true
     }
 
     /// Puts a lifted block down, answering whether there was one. A tap on empty canvas while a
@@ -2107,8 +2140,10 @@ struct iOSTimelineTaskBlock: View {
     // task from inside the panel dropped the block and the panel with it.
     @Environment(\.iOSTaskInspector) private var taskInspector
     /// True from the moment the hold completes until the finger lifts or the system cancels the
-    /// gesture — a `@GestureState`, so a cancelled press resets it without an `onEnded`.
-    @GestureState private var isMovePressActive = false
+    /// gesture. Plain `@State` since [[T-7550]]: the press is a UIKit recognizer now, and it
+    /// reports its own cancellation (and its own refusal) rather than needing `@GestureState`'s
+    /// automatic reset to stand in for one.
+    @State private var isMovePressActive = false
     @GestureState private var activeResize: CadenceTimelineBlockEdit.Kind?
     @State private var liftCount = 0
     /// When the last hold ended. A finger lifted off a held block is not a tap, whichever order
@@ -2149,8 +2184,9 @@ struct iOSTimelineTaskBlock: View {
     ///
     /// - **Tap** opens the task inspector, as before.
     /// - **Press and hold, then drag** moves the block in quarter hours. The hold is the point: a
-    ///   finger that moves before `liftPressDuration` is a scroll, the long press fails, and the
-    ///   day scrolls exactly as it did — Apple Calendar's own answer to the same collision.
+    ///   finger that moves before `liftPressDuration` is a scroll, the hold fails, and the day
+    ///   scrolls exactly as it did — Apple Calendar's own answer to the same collision. That last
+    ///   clause was aspirational until [[T-7550]]; `movePressGesture` says what makes it true.
     /// - **A held block stays lifted** after the finger comes up, and only then shows top and
     ///   bottom handles, each a 44pt touch band hung across its edge rather than the edge's few
     ///   points of paint. They are absent on a resting block, so a scroll that starts on one cannot
@@ -2197,7 +2233,7 @@ struct iOSTimelineTaskBlock: View {
             .animation(.easeOut(duration: 0.12), value: isMovePressActive)
             .contentShape(blockShape)
             .onTapGesture { handleTap() }
-            .gesture(movePressGesture, isEnabled: editing != nil)
+            .gesture(movePressGesture)
             .accessibilityElement(children: .combine)
             .accessibilityLabel(
                 CadenceCalendarDayAccessibility.timedTaskLabel(
@@ -2246,23 +2282,30 @@ struct iOSTimelineTaskBlock: View {
         taskInspector(task)
     }
 
-    private var movePressGesture: some Gesture {
-        LongPressGesture(minimumDuration: CadenceTimelineBlockEdit.liftPressDuration)
-            // `.global`, not the block's own space: the block is redrawn under the finger at the
-            // previewed minute on every step, and a translation read in a space that moves with it
-            // would chase itself.
-            .sequenced(before: DragGesture(minimumDistance: 0, coordinateSpace: .global))
-            .updating($isMovePressActive) { value, state, _ in
-                if case .second(true, _) = value { state = true }
-            }
-            .onChanged { value in
-                guard case .second(true, let drag?) = value else { return }
-                editing?.onChanged(.move, drag.translation.height)
-            }
-            .onEnded { value in
-                guard case .second(true, let drag) = value else { return }
-                editing?.onEnded(.move, drag?.translation.height ?? 0)
-            }
+    /// Hold the block, then drag it.
+    ///
+    /// **A UIKit recognizer, because a SwiftUI one cannot decline a touch** ([[T-7550]]). This was
+    /// `LongPressGesture(minimumDuration:).sequenced(before: DragGesture(minimumDistance: 0, …))`,
+    /// and a swipe begun on a block scrolled the day **zero points** on both timed surfaces —
+    /// measured on `Cadence-iPadPro11`, 2026-10-27, against the identical swipe on empty canvas
+    /// one column over, which scrolled nine hours. `iOSTimelinePressDragRecognizer` holds the rest.
+    ///
+    /// The travel it reports is in the **window's** space, not the block's own: the block is
+    /// redrawn under the finger at the previewed minute on every step, and a translation read in a
+    /// space that moves with it would chase itself. That is why the gesture this replaced asked
+    /// for `coordinateSpace: .global`.
+    private var movePressGesture: some UIGestureRecognizerRepresentable {
+        iOSTimelinePressDrag(
+            isEnabled: editing != nil,
+            minimumPressDuration: CadenceTimelineBlockEdit.liftPressDuration,
+            onPressed: { _ in isMovePressActive = true },
+            onChanged: { translation in editing?.onChanged(.move, translation.height) },
+            onEnded: { translation in
+                isMovePressActive = false
+                editing?.onEnded(.move, translation.height)
+            },
+            onCancelled: { isMovePressActive = false }
+        )
     }
 
     /// A grab handle at one end of a **lifted** block.
@@ -2409,5 +2452,146 @@ struct iOSTimelineBlockEditing {
 // now, tasks and Apple Calendar events, and `CadenceTaskBundleRetirement` has already pushed every
 // Block's day and time down onto its members — so the tasks a Block used to hold are drawn here
 // individually, each at its own minute, rather than inside a card that owned them.
+
+/// Press and hold, then drag — spelled so the enclosing `ScrollView` can still outvote it.
+///
+/// **The owner's report, from the TestFlight build** ([[T-7550]]): *"on the iOS Today timeline,
+/// swiping with a finger does not scroll; using a mouse on the iPad, it does scroll."* The
+/// asymmetry is the whole diagnosis. An indirect scroll event reaches the scroll view with no
+/// arbitration; a touch has to get past the recognizers above it, and two of them were taking it.
+///
+/// **Measured by differential on `Cadence-iPadPro11`, 2026-10-27, before anything was changed.**
+/// A 400pt injected finger swipe on Today's timeline moved it **zero points in both directions**.
+/// The byte-identical swipe on the **Calendar page's** week grid — the same
+/// `iOSCalendarTimelineDayColumn`, differing in one argument, `drawsDraftBlocks` — scrolled it
+/// from 12 AM at the top to 9 AM at the top. A third swipe, begun **on a task block** on that same
+/// Calendar grid, scrolled zero again, and did not move the block either: the hold failed, and so
+/// did the scroll. So the two offenders were `draftPressGesture`, which covers the whole of
+/// Today's canvas, and `movePressGesture`, which covers every block on both surfaces.
+///
+/// **What was wrong with the gesture it replaces.** `LongPressGesture.sequenced(before:
+/// DragGesture(minimumDistance: 0))` reads as "a finger that moves first is a scroll, which the
+/// long press fails on" — `CadenceTimelineBlockEdit.liftPressDuration` said exactly that in
+/// prose — and that is true of UIKit and false of SwiftUI. A SwiftUI drag cannot hand a touch
+/// back once it has it, which [[T-2059]] established on the tasks page by refuting every
+/// SwiftUI-side lever with its own build: `minimumDistance: 30`, `.simultaneousGesture` and
+/// priority all stayed dead, and the page scrolled again only when the drag was switched off.
+///
+/// **Why a `UILongPressGestureRecognizer` is the answer and not merely another spelling.** It
+/// fails itself while it is still `.possible` — before the scroll view is ever asked to stand
+/// down — so a finger that strays `allowableMovement` before the hold completes scrolls the day as
+/// if this gesture were not installed. And when the hold *does* complete first, UIKit's ordinary
+/// exclusivity prevents the scroll view's pan, so press-and-drag still moves the block. Neither
+/// half needs a delegate: both are the default relationship between a long press and a pan, which
+/// is why a long press has always behaved this way inside a table view.
+///
+/// It reports two things, and the split matters. The press **point** comes from SwiftUI's own
+/// coordinate-space converter in the view's `.local` space, because the draft has to open at the
+/// minute under the finger. The `translation` here is measured in the **window's** space, because
+/// a block being moved is redrawn under the finger on every step and a translation read in a space
+/// that moves with it would chase itself — which is what the gesture this replaced spelled as
+/// `coordinateSpace: .global`.
+final class iOSTimelinePressDragRecognizer: UILongPressGestureRecognizer {
+    /// Travel since the hold was recognised, in the window's coordinates.
+    private(set) var translation: CGSize = .zero
+
+    private var anchorInWindow: CGPoint = .zero
+
+    override init(target: Any?, action: Selector?) {
+        super.init(target: target, action: action)
+        // One finger. The canvas's pinch is two, and a second finger landing mid-press is a zoom
+        // starting, not a block being moved.
+        numberOfTouchesRequired = 1
+        // UIKit's own default, restated because it is the number the hold is declined at: a finger
+        // that strays this far before the hold completes is a scroll, and saying so here is what
+        // this whole type exists to make true.
+        allowableMovement = 10
+    }
+
+    /// Zeroes the travel. Called once, by the bridge, at the moment the hold is recognised — not
+    /// at touch-down, so the ≤`allowableMovement` of drift a finger is allowed during the hold is
+    /// not read as the drag's first step.
+    func anchor() {
+        anchorInWindow = location(in: nil)
+        translation = .zero
+    }
+
+    override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent) {
+        // **Before `super`, not after.** `super.touchesMoved` is what moves the state to
+        // `.changed`, and the action fires inside it — so a translation written afterwards is one
+        // the handler has already run without.
+        if let touch = touches.first, state == .began || state == .changed {
+            let here = touch.location(in: nil)
+            translation = CGSize(width: here.x - anchorInWindow.x, height: here.y - anchorInWindow.y)
+        }
+        super.touchesMoved(touches, with: event)
+    }
+
+    override func reset() {
+        super.reset()
+        translation = .zero
+        anchorInWindow = .zero
+    }
+}
+
+/// Bridges `iOSTimelinePressDragRecognizer` into the canvas. `.gesture` is the only priority it
+/// offers and it is the right one: UIKit arbitration, not SwiftUI's, is what this is here for.
+private struct iOSTimelinePressDrag: UIGestureRecognizerRepresentable {
+    typealias UIGestureRecognizerType = iOSTimelinePressDragRecognizer
+    typealias Coordinator = Void
+
+    /// `UIGestureRecognizer.isEnabled`, which is where `.gesture(_:isEnabled:)`'s job went: the
+    /// representable overload of `.gesture` takes no such argument, and a disabled recognizer
+    /// receives no touches at all, which is the same thing said one layer down.
+    var isEnabled: Bool = true
+    var minimumPressDuration: TimeInterval
+    /// The hold completed, at this point in the pressed view's own space.
+    var onPressed: (CGPoint) -> Void
+    var onChanged: (CGSize) -> Void
+    var onEnded: (CGSize) -> Void
+    /// The system took the gesture away — **or** the hold was never recognised, which is every
+    /// touch that scrolled instead. Both leave nothing of this gesture behind, which is the one
+    /// thing callers have to do about either.
+    var onCancelled: () -> Void
+
+    func makeUIGestureRecognizer(
+        context: UIGestureRecognizerRepresentableContext<iOSTimelinePressDrag>
+    ) -> iOSTimelinePressDragRecognizer {
+        let recognizer = iOSTimelinePressDragRecognizer()
+        recognizer.minimumPressDuration = minimumPressDuration
+        recognizer.isEnabled = isEnabled
+        return recognizer
+    }
+
+    func updateUIGestureRecognizer(
+        _ recognizer: iOSTimelinePressDragRecognizer,
+        context: UIGestureRecognizerRepresentableContext<iOSTimelinePressDrag>
+    ) {
+        recognizer.minimumPressDuration = minimumPressDuration
+        recognizer.isEnabled = isEnabled
+    }
+
+    func handleUIGestureRecognizerAction(
+        _ recognizer: iOSTimelinePressDragRecognizer,
+        context: UIGestureRecognizerRepresentableContext<iOSTimelinePressDrag>
+    ) {
+        switch recognizer.state {
+        case .began:
+            recognizer.anchor()
+            // **SwiftUI's own converter, not `location(in: view)`.** The recognizer is attached to
+            // a platform view SwiftUI chose; `.local` is the modified view's space, which is the
+            // column's, and that is the space the pressed minute is read in.
+            onPressed(context.converter.location(in: .local))
+        case .changed:
+            onChanged(recognizer.translation)
+        case .ended:
+            onEnded(recognizer.translation)
+        case .cancelled, .failed:
+            onCancelled()
+        default:
+            break
+        }
+    }
+}
 
 #endif
