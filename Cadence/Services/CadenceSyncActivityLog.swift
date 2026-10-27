@@ -43,6 +43,11 @@ final class CadenceSyncActivityLog {
     @ObservationIgnored private let stream: CadenceSyncActivityEventStream
     @ObservationIgnored private var hasStarted = false
 
+    /// [[T-6482]]. The one-shot waiting on the first import of this launch to finish, and whether
+    /// one already has. Both `@ObservationIgnored`: this is a latch, not something a view draws.
+    @ObservationIgnored private var pendingFirstCompletedImportWork: (@MainActor () -> Void)?
+    @ObservationIgnored private(set) var hasObservedCompletedImport = false
+
     init(stream: CadenceSyncActivityEventStream) {
         self.stream = stream
     }
@@ -62,10 +67,45 @@ final class CadenceSyncActivityLog {
         }
     }
 
+    /// Run `work` once, as soon as a mirroring **import** of this launch reports that it finished
+    /// successfully — immediately if one already has ([[T-6482]]).
+    ///
+    /// **The three conditions are each load-bearing and none of them is decoration.** `.import`
+    /// because an export says nothing about what is still coming down and a `.setup` happens before
+    /// any record is fetched. `endDate != nil` because `NSPersistentCloudKitContainer` posts a
+    /// begin half and an end half for the same pass, and the begin half is the moment this gate
+    /// exists to sit *behind*. `succeeded` because a failed import fetched nothing, so the records
+    /// it would have brought are still in flight — a device that is offline, or signed out, waits
+    /// rather than being handed a licence to delete on the strength of an import that did not
+    /// happen.
+    ///
+    /// **It is a one-shot by design, and the caller is expected to be the only one.** A second
+    /// `whenFirstImportCompletes` would overwrite the first, which is a bug this type cannot see;
+    /// there is exactly one caller (`PersistenceController`) and
+    /// `CadenceSyncActivityTests` holds the single-fire behaviour.
+    ///
+    /// **What this cannot promise.** "An import finished" is not "CloudKit has converged" — a
+    /// first sync arrives in batches and a push can bring more at any time, so this narrows the
+    /// window the merges run in rather than closing it ([[T-7512]]). And if no import ever
+    /// completes on this launch, `work` never runs: the merges are simply not done this time, which
+    /// is the direction [[T-6482]] asks to fail in.
+    func whenFirstImportCompletes(_ work: @escaping @MainActor () -> Void) {
+        guard !hasObservedCompletedImport else {
+            work()
+            return
+        }
+        pendingFirstCompletedImportWork = work
+    }
+
     /// The fold. `internal` rather than private so a test can drive the reader without a stream at
     /// all, which is the shape most of `CadenceSyncActivityTests` takes.
     func record(_ event: CadenceSyncActivityEvent) {
         summary = summary.applying(event)
+        guard event.phase == .import, event.endDate != nil, event.succeeded else { return }
+        hasObservedCompletedImport = true
+        guard let work = pendingFirstCompletedImportWork else { return }
+        pendingFirstCompletedImportWork = nil
+        work()
     }
 }
 

@@ -2114,6 +2114,217 @@ struct DataIntegrityRepairServiceTests {
         #expect(remaining.map(\.title) == ["Original"])
     }
 
+    // MARK: - [[T-6482]], the gate in front of every pass that deletes a row
+
+    /// One store holding a duplicate of every kind this service deletes: two same-named `Context`
+    /// rows (and the `Area`/`Project`/`AppTask` under them), a same-id `AppTask` pair, a same-id
+    /// `Note` pair, and a forked recurring successor.
+    ///
+    /// **Built as one fixture rather than four, because the claim is about the gate and not about
+    /// any one pass.** A gate that covered three of the four passes would pass three separate
+    /// tests and still delete rows on a launch that is racing an import.
+    @discardableResult
+    private func oneDuplicateOfEveryKind(in modelContext: ModelContext) throws -> ForkedSeries {
+        let first = Context(name: "Work", colorHex: "#4ECB71", icon: "briefcase.fill")
+        first.id = PinnedContextID.lower
+        let second = Context(name: "Work", colorHex: "#22c55e", icon: "briefcase.fill")
+        second.id = PinnedContextID.higher
+        modelContext.insert(first)
+        modelContext.insert(second)
+
+        _ = sameIDPair(in: modelContext)
+
+        let noteID = UUID()
+        modelContext.insert(Note(id: noteID, kind: .permanent, content: "First copy"))
+        modelContext.insert(Note(id: noteID, kind: .permanent, content: "Second copy"))
+
+        let fork = try forkedSeries(in: modelContext)
+        try modelContext.save()
+        return fork
+    }
+
+    /// **The whole of [[T-6482]] in one assertion: a deferred repair deletes nothing.**
+    ///
+    /// Every pass that merges ends in a delete, and a deleted row is the one edit a late-arriving
+    /// child cannot be re-pointed off — `Subtask.parentTask`, `FocusSessionLog.task/area/project`
+    /// and `AppTask.area/project/goal/context` are relationships with no stored id beside them, so
+    /// a child that arrives after its parent is gone carries no record of which parent it wanted.
+    /// On a store that can still be importing, the repair therefore has to leave the duplicates
+    /// alone, all four kinds of them.
+    ///
+    /// The row counts are asserted against the *same* fixture run both ways in
+    /// `theSameStoreMergesWhenTheMergesAreNotDeferred` below, which is what makes these numbers a
+    /// refusal to act rather than a fixture that had nothing to merge.
+    @Test func aDeferredRepairDeletesNoRowOfAnyKind() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let modelContext = ModelContext(container)
+        let fork = try oneDuplicateOfEveryKind(in: modelContext)
+
+        let report = try DataIntegrityRepairService.repairIfNeeded(
+            in: modelContext,
+            source: "test",
+            removingForkedOccurrences: CadenceForkedOccurrenceRemover.removeAndCancelReminders,
+            deleting: .deferDuplicateMerges
+        )
+
+        #expect(report.duplicateMergesDeferred)
+        #expect(report.success)
+        #expect(report.changed == false, "a repair that merged nothing asked the launch to save")
+        #expect(report.duplicateContextsMerged == 0)
+        #expect(report.duplicateTasksMerged == 0)
+        #expect(report.duplicateNotesMerged == 0)
+        #expect(report.duplicateRecurrenceOccurrencesRemoved == 0)
+
+        let reread = ModelContext(container)
+        #expect(try reread.fetch(FetchDescriptor<Context>()).count == 2, "a duplicate context was merged away")
+        #expect(try reread.fetch(FetchDescriptor<Note>()).count == 2, "a duplicate note was merged away")
+        let tasks = try reread.fetch(FetchDescriptor<AppTask>())
+        #expect(tasks.filter { $0.title == "Original" || $0.title == "Copy" }.count == 2, "a same-id task pair was merged")
+        #expect(tasks.map(\.id).contains(fork.higherID), "the forked successor was collapsed")
+
+        // [[T-1443]]'s two read counters: deferring is cheaper than the run it replaces, never
+        // dearer. Both stay `nil`, which is the answer a store with no duplicate container gives.
+        #expect(report.taskRowsFetched == nil)
+        #expect(report.taskIdentitiesScanned == nil)
+    }
+
+    /// The control, and the only reason the test above means anything: the identical fixture, with
+    /// the gate open, merges every one of the four. A `deleting:` that was ignored, or a fixture
+    /// that held no duplicates, fails here.
+    @Test func theSameStoreMergesWhenTheMergesAreNotDeferred() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let modelContext = ModelContext(container)
+        let fork = try oneDuplicateOfEveryKind(in: modelContext)
+
+        let report = try DataIntegrityRepairService.repairIfNeeded(
+            in: modelContext,
+            source: "test",
+            removingForkedOccurrences: CadenceForkedOccurrenceRemover.removeAndCancelReminders
+        )
+
+        #expect(report.duplicateMergesDeferred == false)
+        #expect(report.changed)
+        #expect(report.duplicateContextsMerged == 1)
+        #expect(report.duplicateTasksMerged == 1)
+        #expect(report.duplicateNotesMerged == 1)
+        #expect(report.duplicateRecurrenceOccurrencesRemoved == 1)
+
+        let reread = ModelContext(container)
+        #expect(try reread.fetch(FetchDescriptor<Context>()).count == 1)
+        #expect(try reread.fetch(FetchDescriptor<Note>()).count == 1)
+        #expect(try reread.fetch(FetchDescriptor<AppTask>()).map(\.id).contains(fork.higherID) == false)
+    }
+
+    /// **Deferring the merges is not deferring the repair.** `repairStoredDefaultNoteTitles` reads
+    /// one scalar on the row in front of it and writes another; no record arriving later can make a
+    /// stored title stop being the retired default, so it stays outside the gate. A gate drawn
+    /// around the whole function instead of around the deletes would leave this note named
+    /// `Untitled` on every launch of a syncing device.
+    @Test func aDeferredRepairStillClearsTheRetiredStoredNoteTitle() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let modelContext = ModelContext(container)
+        let note = Note(kind: .permanent, content: "# Untitled\n\nBody")
+        note.title = "Untitled"
+        modelContext.insert(note)
+        try modelContext.save()
+
+        let report = try DataIntegrityRepairService.repairIfNeeded(
+            in: modelContext,
+            source: "test",
+            deleting: .deferDuplicateMerges
+        )
+
+        #expect(report.duplicateMergesDeferred)
+        #expect(report.defaultNoteTitlesCleared == 1)
+        #expect(report.changed, "the pass that did run was not allowed to reach a save")
+        #expect(note.title == "")
+    }
+
+    /// **Which stores defer, stated as the pure function the launch calls.** A store that does not
+    /// mirror has nothing arriving behind the repair's back — the MCP tool's `cloudKitDatabase:
+    /// .none` open, the test host, a development-signed build, the recovery store — and a store
+    /// that does cannot tell a row that is absent from one that has not arrived yet.
+    @Test func onlyAMirroringStoreDefersItsMerges() {
+        #expect(
+            PersistenceController.repairDeletionPolicyForLaunch(storeMirrorsToCloudKit: true)
+                == .deferDuplicateMerges
+        )
+        #expect(
+            PersistenceController.repairDeletionPolicyForLaunch(storeMirrorsToCloudKit: false)
+                == .mergeDuplicates
+        )
+    }
+
+    /// The launch path's half, by effect rather than by reading the source: the parameter has to
+    /// reach `DataIntegrityRepairService` from `performStartupMaintenance`, or the gate is a
+    /// decision the launch makes and then throws away.
+    @Test func theAppStartupMaintenanceCanDeferItsMerges() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let modelContext = ModelContext(container)
+        _ = sameIDPair(in: modelContext)
+        try modelContext.save()
+
+        try withTemporaryDefaults("CadenceTests.startupDeferredSameIDTaskMerge") { defaults in
+            PersistenceController.performStartupMaintenance(
+                in: modelContext,
+                defaults: defaults,
+                deleting: .deferDuplicateMerges
+            )
+        }
+
+        let remaining = try ModelContext(container).fetch(FetchDescriptor<AppTask>())
+        #expect(
+            remaining.map(\.title).sorted() == ["Copy", "Original"],
+            "the launch merged a same-id pair it was told to leave alone"
+        )
+    }
+
+    /// **Waiting is not cancelling, and this is the only check that the other half exists.** The
+    /// deferred run cannot be driven here — it hangs off a real `NSPersistentCloudKitContainer`
+    /// event, which no test may provoke ([[T-2010]]) — so what is pinned is the wiring: the launch
+    /// arms it, the arming is refused for a store that does not mirror (which would otherwise run
+    /// the merges a second time for nothing), it waits on the import gate, and it runs on the
+    /// context the UI is reading rather than a second one ([[T-6451]]).
+    @Test func theLaunchArmsADeferredRunAndOnlyForAMirroringStore() throws {
+        let source = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/Services/PersistenceController.swift")
+        )
+        let arming = try #require(
+            CadenceSourceScan.functionBody(named: "armDeferredDuplicateMergesIfNeeded", in: source),
+            "the deferred run is not armed anywhere, so a mirroring launch never merges at all"
+        )
+        #expect(
+            arming.contains("guard openedStoreMirrorsToCloudKit else { return }"),
+            "the arming is not gated on the store that deferred, so a launch that merged merges again"
+        )
+        #expect(
+            arming.contains("whenFirstImportCompletes"),
+            "the deferred run does not wait on the import gate"
+        )
+        #expect(
+            arming.contains("container.mainContext"),
+            "the deferred run opens a second context over a live UI"
+        )
+
+        let initBody = try #require(CadenceSourceScan.declarationBody("init()", in: source))
+        #expect(
+            initBody.contains("Self.performStartupMaintenance("),
+            "non-vacuity: this is not the launch initialiser"
+        )
+        #expect(
+            initBody.contains("Self.armDeferredDuplicateMergesIfNeeded(for: c)"),
+            "nothing on the launch path arms the deferred run"
+        )
+
+        let deferred = try #require(
+            CadenceSourceScan.functionBody(named: "runDeferredDuplicateMerges", in: source)
+        )
+        #expect(
+            deferred.contains("deleting: .mergeDuplicates"),
+            "the deferred run defers again, so the merges never happen on a syncing device"
+        )
+    }
+
 }
 
 /// Two context ids whose `uuidString`s are ordered.

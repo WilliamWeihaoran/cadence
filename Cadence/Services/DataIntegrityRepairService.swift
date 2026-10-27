@@ -50,6 +50,16 @@ nonisolated struct DataIntegrityRepairReport: Codable, Equatable {
     /// `taskRowsFetched` it is the size of a read and not a term in `changed`.
     var taskIdentitiesScanned: Int?
 
+    /// **True when this repair deliberately did not look for duplicates at all** ([[T-6482]]).
+    ///
+    /// Not a counter and deliberately not a term in `changed`: nothing was repaired, so nothing
+    /// needs saving. It exists because without it a deferred repair and a store with nothing wrong
+    /// with it write the *same* report — `success: true`, every counter zero — and `lastReport()`
+    /// is read back by the next launch and by `repairAndRecordFailure`'s fallback. "I found nothing"
+    /// and "I did not look" are different facts about a launch and this is the one that tells them
+    /// apart.
+    var duplicateMergesDeferred: Bool = false
+
     var changed: Bool {
         duplicateContextsMerged > 0 ||
             duplicateAreasMerged > 0 ||
@@ -138,6 +148,7 @@ nonisolated extension DataIntegrityRepairReport {
         noteReferencesRedirected = try container.decodeIfPresent(Int.self, forKey: .noteReferencesRedirected) ?? 0
         taskRowsFetched = try container.decodeIfPresent(Int.self, forKey: .taskRowsFetched)
         taskIdentitiesScanned = try container.decodeIfPresent(Int.self, forKey: .taskIdentitiesScanned)
+        duplicateMergesDeferred = try container.decodeIfPresent(Bool.self, forKey: .duplicateMergesDeferred) ?? false
     }
 }
 
@@ -193,17 +204,50 @@ typealias CadenceForkedOccurrenceRemoval = ([AppTask], ModelContext) -> [UUID]
 /// A merge cannot fire unless it can see *both* rows, so a store that has only received half of
 /// CloudKit's records merges less; it never destroys something unique. An orphan sweep inverts
 /// exactly that. `PersistenceController.performStartupMaintenance` calls this immediately after the
-/// container opens, with no gate on sync state at all, so on a fresh device — or any launch that
-/// races the first sync — a `Subtask` with no `parentTask` is indistinguishable from one whose
-/// `AppTask` has not arrived yet. Deleting it is unrecoverable, and it is the *empty* store that
-/// would delete the most. "Repair found nothing to do" is the correct behaviour there; "repair
-/// deleted the rows whose owners were still in flight" is not.
+/// container opens, so on a fresh device — or any launch that races the first sync — a `Subtask`
+/// with no `parentTask` is indistinguishable from one whose `AppTask` has not arrived yet. Deleting
+/// it is unrecoverable, and it is the *empty* store that would delete the most. "Repair found
+/// nothing to do" is the correct behaviour there; "repair deleted the rows whose owners were still
+/// in flight" is not.
+///
+/// **[[T-6482]]: that argument covered the rows being merged and not their children, so the merges
+/// now have a gate of their own.** Seeing both rows makes a merge *correct about the pair*; it says
+/// nothing about a `Subtask`, a `FocusSessionLog`, or a task or note filed under the copy that is
+/// still in flight when the copy is deleted. `DataIntegrityRepairDeletionPolicy` is where a caller
+/// says whether its store can still be importing, and `.deferDuplicateMerges` leaves every
+/// duplicate alone until it cannot be.
 ///
 /// So a future orphan sweep is not a matter of adding four fetches. It needs a reason to believe
 /// the store is complete — a sync-state gate, a user-initiated entry point instead of startup, or a
 /// report-only pass that counts without deleting. Until one of those exists, the honest position is
 /// that this covers duplicates and says so. `DataIntegrityRepairServiceTests` pins the boundary by
 /// value so it cannot be crossed by accident.
+/// **Whether a repair is allowed to delete rows on this run** ([[T-6482]]).
+///
+/// Every pass that merges a duplicate ends by deleting the copy, and the forked-occurrence
+/// collapse deletes outright. `DataIntegrityRepairService`'s own doc comment argues that those
+/// passes are safe against a half-synced store because a merge has to *see both rows* — true of
+/// the rows being merged, and false of their children. A `Subtask` or `FocusSessionLog` of the
+/// deleted copy, or a task or note filed under a deleted duplicate `Context`/`Area`/`Project`,
+/// that is still in CloudKit flight when the delete lands arrives with its parent gone. The row
+/// survives and is unreachable, and nothing can re-point it afterwards: `Subtask.parentTask`,
+/// `FocusSessionLog.task/area/project` and `AppTask.area/project/goal/context` are relationships
+/// with **no stored id beside them**, so a child that arrives orphaned carries no record of which
+/// parent it wanted. That is why the fix is a gate in front of the delete rather than a repair
+/// behind it.
+///
+/// The caller decides, and nothing here guesses: a store that mirrors to CloudKit cannot tell a
+/// row that is absent from one that has not arrived, and a store that does not mirror has nothing
+/// in flight to wait for. `PersistenceController.repairDeletionPolicyForLaunch` is the one place
+/// the app answers it.
+nonisolated enum DataIntegrityRepairDeletionPolicy: Equatable {
+    /// Run every pass, including the four merges and the forked-occurrence collapse.
+    case mergeDuplicates
+    /// Run only the passes that edit fields on rows the store already holds, and leave every
+    /// duplicate exactly where it is. Strictly less repair, never more.
+    case deferDuplicateMerges
+}
+
 nonisolated enum DataIntegrityRepairService {
     private struct RepairState {
         var deletedAreas = Set<ObjectIdentifier>()
@@ -299,12 +343,19 @@ nonisolated enum DataIntegrityRepairService {
     private static let logger = Logger(subsystem: "com.haoranwei.Cadence", category: "DataIntegrity")
     private static let lastReportKey = "dataIntegrityRepair.lastReport.v1"
 
+    /// **`deleting:` defaults to today's behaviour on purpose** ([[T-6482]]). The gate is a
+    /// property of the *caller's* store — only a launch over a mirroring container has an import to
+    /// race — and every other call site here reaches a store that cannot import behind its back: a
+    /// test's own temp store, the MCP tool's `cloudKitDatabase: .none` open, an archive import that
+    /// just wrote the rows itself. Making the parameter required would have made ninety call sites
+    /// restate the safe answer and left the one unsafe one no more visible than it is now.
     @discardableResult
     static func repairIfNeeded(
         in context: ModelContext,
         source: String = "unknown",
         saveChanges: Bool = true,
-        removingForkedOccurrences remove: CadenceForkedOccurrenceRemoval? = nil
+        removingForkedOccurrences remove: CadenceForkedOccurrenceRemoval? = nil,
+        deleting policy: DataIntegrityRepairDeletionPolicy = .mergeDuplicates
     ) throws -> DataIntegrityRepairReport {
         var report = DataIntegrityRepairReport(
             source: source,
@@ -314,7 +365,7 @@ nonisolated enum DataIntegrityRepairService {
         )
 
         do {
-            try repair(in: context, remove: remove, report: &report)
+            try repair(in: context, remove: remove, deleting: policy, report: &report)
             if report.changed && saveChanges {
                 try context.save()
             }
@@ -338,14 +389,16 @@ nonisolated enum DataIntegrityRepairService {
         in context: ModelContext,
         source: String,
         saveChanges: Bool = true,
-        removingForkedOccurrences remove: CadenceForkedOccurrenceRemoval? = nil
+        removingForkedOccurrences remove: CadenceForkedOccurrenceRemoval? = nil,
+        deleting policy: DataIntegrityRepairDeletionPolicy = .mergeDuplicates
     ) -> DataIntegrityRepairReport? {
         do {
             return try repairIfNeeded(
                 in: context,
                 source: source,
                 saveChanges: saveChanges,
-                removingForkedOccurrences: remove
+                removingForkedOccurrences: remove,
+                deleting: policy
             )
         } catch {
             return lastReport()
@@ -357,9 +410,25 @@ nonisolated enum DataIntegrityRepairService {
         return try? JSONDecoder().decode(DataIntegrityRepairReport.self, from: data)
     }
 
+    /// **The four merges and the forked-occurrence collapse are behind `policy`; the stored-title
+    /// pass is not** ([[T-6482]]).
+    ///
+    /// The division is not "destructive vs harmless", it is **which pass can be made wrong by a
+    /// record that has not arrived yet**. Every pass in the gated block ends in a `delete`, and a
+    /// deleted row is the one thing a late child cannot be re-pointed onto, because the child
+    /// carries no id of the parent it wanted — see `DataIntegrityRepairDeletionPolicy`.
+    /// `repairStoredDefaultNoteTitles` reads one scalar on the row in front of it and writes
+    /// another, which its own doc comment already argues no later record can falsify, and it stays
+    /// outside the gate so a deferred launch is not a launch that repairs nothing at all.
+    ///
+    /// **Deferring costs a table read and nothing else.** The eight container tables are fetched
+    /// inside the gated block ([[T-1443]]), so a deferred repair leaves `taskRowsFetched` and
+    /// `taskIdentitiesScanned` `nil` exactly as a store with no duplicate container does; it is
+    /// cheaper than the run it replaces, never more expensive.
     private static func repair(
         in context: ModelContext,
         remove: CadenceForkedOccurrenceRemoval?,
+        deleting policy: DataIntegrityRepairDeletionPolicy,
         report: inout DataIntegrityRepairReport
     ) throws {
         let store = try RepairStore(
@@ -369,39 +438,46 @@ nonisolated enum DataIntegrityRepairService {
         )
         var state = RepairState()
 
-        let activeContexts = store.contexts.filter { !$0.isArchived && !normalizedName($0).isEmpty }
-        let duplicateContextGroups = Dictionary(grouping: activeContexts) { normalizedName($0) }
-            .values
-            .filter { $0.count > 1 }
+        switch policy {
+        case .deferDuplicateMerges:
+            report.duplicateMergesDeferred = true
+        case .mergeDuplicates:
+            let activeContexts = store.contexts.filter { !$0.isArchived && !normalizedName($0).isEmpty }
+            let duplicateContextGroups = Dictionary(grouping: activeContexts) { normalizedName($0) }
+                .values
+                .filter { $0.count > 1 }
 
-        // T-1443. The eight container tables are fetched here and nowhere else, because this branch
-        // is the only thing that reads them. The grouping above needs `contexts` alone, and the
-        // four passes below need none of the eight — so a store with no duplicate container never
-        // materialises its task table for this service at all.
-        if !duplicateContextGroups.isEmpty {
-            let tasks = try fetchTasks(FetchDescriptor<AppTask>(), in: context, report: &report)
-            let merging = try ContainerMergeStore(base: store, tasks: tasks, fetchedFrom: context)
-            for group in duplicateContextGroups {
-                guard let canonical = canonicalContext(among: group) else {
-                    continue
-                }
+            // T-1443. The eight container tables are fetched here and nowhere else, because this
+            // branch is the only thing that reads them. The grouping above needs `contexts` alone,
+            // and the four passes below need none of the eight — so a store with no duplicate
+            // container never materialises its task table for this service at all.
+            if !duplicateContextGroups.isEmpty {
+                let tasks = try fetchTasks(FetchDescriptor<AppTask>(), in: context, report: &report)
+                let merging = try ContainerMergeStore(base: store, tasks: tasks, fetchedFrom: context)
+                for group in duplicateContextGroups {
+                    guard let canonical = canonicalContext(among: group) else {
+                        continue
+                    }
 
-                for duplicate in group where duplicate !== canonical {
-                    mergeContext(duplicate, into: canonical, in: merging, modelContext: context, state: &state, report: &report)
+                    for duplicate in group where duplicate !== canonical {
+                        mergeContext(duplicate, into: canonical, in: merging, modelContext: context, state: &state, report: &report)
+                    }
                 }
             }
+
+            // T-6435. After the container merges, so a same-id pair they re-filed is merged where
+            // it now lives; before the forked-occurrence collapse, which groups by series slot and
+            // would otherwise see a same-id pair as a fork and cancel the survivor's reminders by
+            // its id.
+            try repairDuplicateTasks(modelContext: context, report: &report)
+            try repairDuplicateNotes(in: store, modelContext: context, state: &state, report: &report)
+            try repairDuplicateRecurrenceOccurrences(
+                modelContext: context,
+                remove: remove,
+                report: &report
+            )
         }
 
-        // T-6435. After the container merges, so a same-id pair they re-filed is merged where it
-        // now lives; before the forked-occurrence collapse, which groups by series slot and would
-        // otherwise see a same-id pair as a fork and cancel the survivor's reminders by its id.
-        try repairDuplicateTasks(modelContext: context, report: &report)
-        try repairDuplicateNotes(in: store, modelContext: context, state: &state, report: &report)
-        try repairDuplicateRecurrenceOccurrences(
-            modelContext: context,
-            remove: remove,
-            report: &report
-        )
         repairStoredDefaultNoteTitles(in: store, state: state, report: &report)
     }
 

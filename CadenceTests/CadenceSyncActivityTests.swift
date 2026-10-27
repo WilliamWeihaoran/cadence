@@ -488,6 +488,81 @@ struct CadenceSyncActivityTests {
                 == "Last import 3:25 PM · No export yet · Export failed: boom"
         )
     }
+
+    // MARK: - [[T-6482]], the gate the deferred duplicate merges wait behind
+
+    /// **The begin half of an import is the moment the gate exists to sit behind, so it must not
+    /// open it.** `NSPersistentCloudKitContainer` posts a begin event and an end event for one
+    /// pass; firing on the begin half would run the merges while the import that motivated
+    /// deferring them is still fetching, which is [[T-6482]] with extra steps.
+    ///
+    /// Also the single-fire property: a second completed import does not run the work again. There
+    /// is exactly one caller and it installs one repair; running it twice would be a second
+    /// unprompted sweep over the store per import for the life of the session.
+    @Test func theImportGateOpensOnlyWhenAnImportHasActuallyFinished() throws {
+        let log = CadenceSyncActivityLog(stream: CadenceSyncActivityTestStream())
+        var runs = 0
+        log.whenFirstImportCompletes { runs += 1 }
+
+        let identifier = UUID()
+        log.record(began(.import, at: try moment(9, 0), identifier: identifier))
+        #expect(runs == 0, "the gate opened on the begin half of an import")
+        #expect(log.hasObservedCompletedImport == false)
+
+        // The defensive half of the same guard, and the reason `endDate != nil` is a separate term
+        // from `succeeded`. `CadenceSyncActivityEvent.succeeded` is documented as meaningless until
+        // `endDate` is set, and the decoder leaves it `false` on a begin half — so this is an event
+        // the platform is not expected to produce. "Not expected to" is not "cannot", and a pass
+        // still in flight has brought nothing down whatever it says about itself.
+        log.record(CadenceSyncActivityEvent(phase: .import, startDate: try moment(9, 2), succeeded: true))
+        #expect(runs == 0, "an import still in flight opened the gate by claiming success")
+
+        log.record(finished(.import, endingAt: try moment(9, 1), identifier: identifier))
+        #expect(runs == 1, "a completed import did not open the gate")
+        #expect(log.hasObservedCompletedImport)
+
+        log.record(finished(.import, endingAt: try moment(9, 30)))
+        #expect(runs == 1, "a second completed import ran the deferred work again")
+    }
+
+    /// **The three things that look like a finished import and are not.** An export says nothing
+    /// about what is still coming down; a `.setup` happens before any record is fetched; a failed
+    /// import fetched nothing at all, so everything it would have brought is still in flight — a
+    /// device that is offline or signed out waits rather than being handed a licence to delete.
+    ///
+    /// The successful import at the end is the non-vacuity: this fixture can open the gate, so the
+    /// three zeros above it are refusals and not a gate that never fires.
+    @Test func noExportSetupOrFailedImportOpensTheGate() throws {
+        let log = CadenceSyncActivityLog(stream: CadenceSyncActivityTestStream())
+        var runs = 0
+        log.whenFirstImportCompletes { runs += 1 }
+
+        log.record(finished(.export, endingAt: try moment(10, 0)))
+        #expect(runs == 0, "a finished export opened the import gate")
+
+        log.record(finished(.setup, endingAt: try moment(10, 1)))
+        #expect(runs == 0, "a finished setup opened the import gate")
+
+        log.record(finished(.import, endingAt: try moment(10, 2), succeeded: false, error: "offline"))
+        #expect(runs == 0, "a failed import opened the gate, so an offline device would merge anyway")
+        #expect(log.hasObservedCompletedImport == false)
+
+        log.record(finished(.import, endingAt: try moment(10, 3)))
+        #expect(runs == 1, "the fixture cannot open the gate at all, so the refusals above say nothing")
+    }
+
+    /// The registration races the import and may lose: `PersistenceController` arms the gate from a
+    /// `Task { @MainActor }` while the app delegate has already started the log. Arming after the
+    /// import has landed must run the work at once rather than wait for an import that may not come
+    /// again this session.
+    @Test func aGateArmedAfterTheImportAlreadyLandedRunsAtOnce() throws {
+        let log = CadenceSyncActivityLog(stream: CadenceSyncActivityTestStream())
+        log.record(finished(.import, endingAt: try moment(11, 0)))
+
+        var runs = 0
+        log.whenFirstImportCompletes { runs += 1 }
+        #expect(runs == 1, "the gate made a caller wait for an import that had already finished")
+    }
 }
 
 /// A stream that delivers exactly what a test hands it, on the main actor, synchronously.

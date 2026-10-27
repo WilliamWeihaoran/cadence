@@ -65,6 +65,11 @@ nonisolated enum CadenceMCPStorePreparation {
         // and this target compiles neither the one spelling of the first nor a notification centre
         // to do the second. A fork it leaves alone is collapsed by the app's next startup repair;
         // a fork this process half-removed would not be.
+        // [[T-7511]]: this takes [[T-6482]]'s `.mergeDuplicates` default, and the default is
+        // right for this *process* — the container above opens `cloudKitDatabase: .none`, so
+        // nothing arrives behind it — while being the one place where that is not the same as
+        // "nothing is arriving". It is the same file on disk the app mirrors into. Left as it was
+        // rather than changed in passing: [[T-3018]] owns whether this call belongs here at all.
         DataIntegrityRepairService.repairAndRecordFailure(in: context, source: source)
         return stepCount
     }

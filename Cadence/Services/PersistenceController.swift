@@ -26,6 +26,20 @@ struct PersistenceController {
     /// invisible in the only case that motivated showing it.
     private(set) static var refusedStoreResetMessage: String?
 
+    /// **Whether the store this launch opened mirrors to CloudKit** ([[T-6482]]).
+    ///
+    /// `makeContainer()` picks between `cloudKitDatabase: .private(…)` and `.none` on three
+    /// separate conditions and then throws the answer away; this keeps it, because it is the only
+    /// thing that decides whether the integrity repair's merges may delete a row today. It is
+    /// written by `makeContainer()` alone and stays `false` for every store that is not the primary
+    /// one — the recovery store, the in-memory fallback, and a launch that never got that far.
+    ///
+    /// **`false` is the safe default in the direction that matters here**, which is the opposite of
+    /// how it reads: `false` means "nothing can arrive behind our back", so the merges run. That is
+    /// correct for every store that sets it — none of them mirrors — and a launch that fails before
+    /// `makeContainer()` returns has no container to repair at all.
+    private(set) static var openedStoreMirrorsToCloudKit = false
+
     /// What the banner and the sync pane are told about this launch.
     ///
     /// **Both halves, never one of them.** When something else claimed the slot, that issue keeps
@@ -220,8 +234,19 @@ struct PersistenceController {
                 Self.recordedStartupIssue = preflightIssue
             }
             let startupContext = ModelContext(c)
-            Self.performStartupMaintenance(in: startupContext, recorder: recorder)
+            // [[T-6482]]. Hoisted rather than spelled inline, so the call below stays the single
+            // line `CadenceFirstLaunchEmptyStoreTests.theLaunchNamesEveryPassItRunsAndSeedsNothing`
+            // reads to its first `)` when it checks that a launch names no `defaults:` of its own.
+            let repairPolicy = Self.repairDeletionPolicyForLaunch(
+                storeMirrorsToCloudKit: Self.openedStoreMirrorsToCloudKit
+            )
+            Self.performStartupMaintenance(in: startupContext, recorder: recorder, deleting: repairPolicy)
             recorder.commit()
+            // [[T-6482]]. Outside `performStartupMaintenance` and outside the recorder, in that
+            // order and for two different reasons: the deferred run is not a startup pass — it has
+            // not happened yet and may never happen — and the ledger this launch is about to commit
+            // measures what the launch did, not what it hopes to do later.
+            Self.armDeferredDuplicateMergesIfNeeded(for: c)
             return
         } catch {
             // T-1319. This was `if let c = try? makeContainer()`, and the discarded error was the
@@ -419,6 +444,15 @@ struct PersistenceController {
     /// idempotent and complete. The outcome stays `.refused`, so the launch still lists the stage
     /// among its failures; the note says the finished passes were applied, and the
     /// `maintenanceSave` stage after it says whether they reached disk. Vocabulary, never content.
+    ///
+    /// **[[T-6482]] gave this one more state it cannot yet name, and [[T-7510]] owns it.** A launch
+    /// that deferred the merges reports `success: true` with every counter at zero, which lands
+    /// here as `.noChange` — the verdict a clean store gets. The fact is in the report
+    /// (`duplicateMergesDeferred`) and not in the ledger, because `CadenceStartupStageVerdict` has
+    /// no case that means "deliberately did not look": `.refused` would list the stage among this
+    /// launch's failures on every launch of a syncing device, and `.indeterminate` means the pass
+    /// could not tell a no-op from a failure, which is the opposite of a deliberate deferral.
+    /// Inventing the vocabulary is a decision, not a fix, so this is left reading `.noChange`.
     static func integrityRepairVerdict(for report: DataIntegrityRepairReport?) -> CadenceStartupStageVerdict {
         guard let report else { return .refused("noReport") }
         guard report.success else {
@@ -457,10 +491,16 @@ struct PersistenceController {
     /// `CadenceMaintenancePassOutcome` now, and `CadenceStartupStageVerdict.forMaintenancePass`
     /// turns a `couldNotRead` into a `refused` rather than into a no-op. A launch that silently
     /// failed to repair no longer reads like a launch with nothing to repair.
+    /// **`deleting:` is [[T-6482]]'s gate and the launch is the one caller that does not take the
+    /// default.** It is a parameter rather than a read of `openedStoreMirrorsToCloudKit` inside the
+    /// body for the reason `defaults` is one: a test cannot set that flag — it is `private(set)`
+    /// and written only by `makeContainer()`, which reaches the real app-group store — so a body
+    /// that read it could only ever be exercised in whichever state the test host happens to be in.
     static func performStartupMaintenance(
         in context: ModelContext,
         defaults: UserDefaults = CadenceDefaults.store,
-        recorder: CadenceStartupCostRecorder? = nil
+        recorder: CadenceStartupCostRecorder? = nil,
+        deleting repairPolicy: DataIntegrityRepairDeletionPolicy = .mergeDuplicates
     ) {
         // Folds any surviving `Pursuit` rows into `Goal`. Self-guarding and idempotent, and
         // manages its own saves because it deletes rows rather than just inserting them.
@@ -542,7 +582,8 @@ struct PersistenceController {
                 in: context,
                 source: "app-startup",
                 saveChanges: false,
-                removingForkedOccurrences: CadenceForkedOccurrenceRemover.removeAndCancelReminders
+                removingForkedOccurrences: CadenceForkedOccurrenceRemover.removeAndCancelReminders,
+                deleting: repairPolicy
             )
         } classifying: { report in
             integrityRepairVerdict(for: report)
@@ -582,6 +623,66 @@ struct PersistenceController {
         }
     }
 
+    /// **Whether a launch over this store may let the integrity repair delete duplicate rows**
+    /// ([[T-6482]]).
+    ///
+    /// Pure and `static` so the decision can be read back without a container: the input is the one
+    /// fact `makeContainer()` knows and nothing else in the process does.
+    ///
+    /// A store that does not mirror has nothing arriving behind the repair's back — the MCP tool's
+    /// `cloudKitDatabase: .none` open, the test host, `scripts/run-macos-app.sh`'s redirected
+    /// store, a development-signed build, the recovery store — so it runs the passes exactly as it
+    /// always has. A store that *does* mirror cannot tell a row that is absent from one that has
+    /// not arrived, and the delete at the end of each merge is the one edit no later pass can undo,
+    /// so it waits. `armDeferredDuplicateMergesIfNeeded` is the other half: waiting is not
+    /// cancelling.
+    static func repairDeletionPolicyForLaunch(
+        storeMirrorsToCloudKit: Bool
+    ) -> DataIntegrityRepairDeletionPolicy {
+        storeMirrorsToCloudKit ? .deferDuplicateMerges : .mergeDuplicates
+    }
+
+    /// The deferred half of [[T-6482]]: run the passes the launch skipped, once this launch has
+    /// seen a mirroring import finish.
+    ///
+    /// **It runs on `mainContext` and not on a context of its own.** The launch's
+    /// `performStartupMaintenance` uses a private `ModelContext` safely because no view exists yet;
+    /// by the time an import completes the whole UI is reading `mainContext`, and deleting rows out
+    /// from under it through a second context is how [[T-6451]] happened. Same context, main actor,
+    /// ordinary SwiftData observation.
+    ///
+    /// **Nothing here is a no-op worth skipping.** `repairIfNeeded` saves only when the report says
+    /// something changed, so a store with no duplicates in it reaches no `save()` and leaves the
+    /// user's pending edits pending.
+    @MainActor
+    static func runDeferredDuplicateMerges(in context: ModelContext) {
+        _ = DataIntegrityRepairService.repairAndRecordFailure(
+            in: context,
+            source: "post-import",
+            removingForkedOccurrences: CadenceForkedOccurrenceRemover.removeAndCancelReminders,
+            deleting: .mergeDuplicates
+        )
+    }
+
+    /// Arm the deferred run, for a mirroring store only.
+    ///
+    /// The `guard` is the same condition `repairDeletionPolicyForLaunch` answered: a store whose
+    /// launch already ran the merges has nothing to defer, and arming it would run them a second
+    /// time for nothing.
+    ///
+    /// `Task { @MainActor }` rather than a direct call because `PersistenceController.init` is
+    /// nonisolated and `CadenceSyncActivityLog` is main-actor-isolated; the hop also puts the
+    /// registration *after* the app delegates' `startIfNeeded()` in the common case, which costs
+    /// nothing — `whenFirstImportCompletes` fires immediately for an import that already landed.
+    private static func armDeferredDuplicateMergesIfNeeded(for container: ModelContainer) {
+        guard openedStoreMirrorsToCloudKit else { return }
+        Task { @MainActor in
+            CadenceSyncActivityLog.shared.whenFirstImportCompletes {
+                runDeferredDuplicateMerges(in: container.mainContext)
+            }
+        }
+    }
+
     /// Open the store this launch resolved, with CloudKit behind it unless something says not to.
     ///
     /// **There are two separate reasons not to, and they are deliberately not folded together.**
@@ -597,6 +698,9 @@ struct PersistenceController {
     /// identification. See `CadenceSigningEnvironment` for why.
     private static func makeContainer() throws -> ModelContainer {
         let storeURL = try resolvedStoreURL()
+        // [[T-6482]]. Set on every path rather than only the mirroring one, so a second launch in
+        // one process — which is what a test host is — cannot inherit the previous answer.
+        openedStoreMirrorsToCloudKit = false
         if shouldUseLocalStoreOnly {
             let localConfig = ModelConfiguration(
                 "Cadence",
@@ -630,6 +734,7 @@ struct PersistenceController {
             url: storeURL,
             cloudKitDatabase: .private("iCloud.com.haoranwei.Cadence")
         )
+        openedStoreMirrorsToCloudKit = true
         return try ModelContainer(for: schema, configurations: [cloudConfig])
     }
 
