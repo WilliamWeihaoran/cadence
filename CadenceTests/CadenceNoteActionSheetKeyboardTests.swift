@@ -18,12 +18,17 @@ import Testing
 /// checkmark) and never told VoiceOver; it now carries `.isSelected` the way T-7267's list-sheet
 /// cells do.
 ///
+/// T-7293: iOS's `iOSNoteAIActionsMenu.label` named only the sparkles branch, so while an action ran
+/// the header control was an unnamed spinner. The name now sits outside the branch, the way the
+/// Mac pill's `cadenceControlLabel("Note actions")` covers both of its states.
+///
 /// Source reads in `CadenceListEditorSheetKeyboardTests`' style: no unit test can press a key in a
 /// sheet, and the move rows are private views inside a popover. Read from declaration bodies so a
 /// modifier elsewhere in the file cannot answer for these.
 struct CadenceNoteActionSheetKeyboardTests {
     private static let sheetsPath = "Cadence/macOS/Views/NoteActionReviewSheets.swift"
     private static let menuPath = "Cadence/macOS/Views/AIActionsSupportViews.swift"
+    private static let iosMenuPath = "Cadence/iOS/iOSAINoteActionsViews.swift"
 
     private static func compactBody(_ declaration: String, in path: String) throws -> String {
         let source = try CadenceSourceScan.sourceFile(path)
@@ -92,5 +97,19 @@ struct CadenceNoteActionSheetKeyboardTests {
             row.contains("){action()}.accessibilityAddTraits(isSelected?.isSelected:[])"),
             "VoiceOver must hear which Move Note destination holds the note, on the row's own button"
         )
+    }
+
+    /// The name is applied to the whole `@ViewBuilder`, not to one branch of it, so the running
+    /// spinner is named too — and exactly once, so a second per-branch label cannot drift from it.
+    @Test func iOSAIButtonKeepsItsNameWhileAnActionRuns() throws {
+        let label = try Self.compactBody("private var label: some View", in: Self.iosMenuPath)
+        let content = try Self.compactBody("private var labelContent: some View", in: Self.iosMenuPath)
+        let source = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(Self.iosMenuPath))
+            .filter { !$0.isWhitespace }
+
+        #expect(label.contains(#"labelContent.accessibilityLabel("AIactions")"#))
+        #expect(content.contains("ifrunningAction!=nil{ProgressView()"), "the running branch must still be in the content")
+        #expect(!content.contains(".accessibilityLabel("), "a per-branch label is the T-7293 shape")
+        #expect(source.components(separatedBy: #".accessibilityLabel("AIactions")"#).count - 1 == 1)
     }
 }

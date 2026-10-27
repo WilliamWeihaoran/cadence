@@ -71,8 +71,16 @@ struct iOSNoteAIActionsMenu: View {
     /// The same quiet tile `iOSNotesHeaderIconButton` and `iOSNoteTemplateMenu`'s label draw, at the
     /// same 34pt with the same 44pt hit area — these three controls sit in the same row and are the
     /// same kind of control. Blue is reserved for the thing you came to the note to do.
-    @ViewBuilder
+    ///
+    /// The name sits outside the branch (T-7293): while an action runs the spinner is still the AI
+    /// actions control, the way the Mac's "Actions" pill keeps "Note actions" across both states.
     private var label: some View {
+        labelContent
+            .accessibilityLabel("AI actions")
+    }
+
+    @ViewBuilder
+    private var labelContent: some View {
         if runningAction != nil {
             ProgressView()
                 .controlSize(.small)
@@ -82,7 +90,6 @@ struct iOSNoteAIActionsMenu: View {
             iOSIconTile(systemImage: "sparkles", color: Theme.muted, size: 34, iconSize: 13)
                 .frame(minWidth: 44, minHeight: 44)
                 .contentShape(Rectangle())
-                .accessibilityLabel("AI actions")
         }
     }
 
