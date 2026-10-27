@@ -4,14 +4,19 @@ import Testing
 /// **The sidebar rail is deleted, and this is what keeps it deleted (T-3079).**
 ///
 /// `iOSSidebarStyle` had two cases. `.rail` was an icon-rail spelling of the iPad column for a
-/// narrow window, and nothing could reach it: `iOSSidebar` is constructed in exactly one place and
-/// always with `.expanded`, `iOSTasksTabView` holds `private let style: iOSSidebarStyle =
-/// .expanded`, and the `style(for:)` that computed `.rail` below
+/// narrow window, and nothing could reach it: the column is constructed in exactly one place and
+/// always drew the expanded spelling, and the `style(for:)` that computed `.rail` below
 /// `CadenceRootShellLayout.expandedMinWindowWidth` had no callers at all. Reachable it would still
 /// not have drawn a rail: the narrow-window answer is a *drawer* whose width is
 /// `min(expandedWidth, width)`, so the column would have been 264pt wide with rail-width glyphs in
 /// it. The owner's decision was to delete rather than deprecate — a genuine icon rail gets designed
 /// against the real narrow-window layout if it is ever wanted.
+///
+/// **T-3090 then deleted the type itself.** One case is not a style: every construction site
+/// spelled it, every `style == .expanded` beside it was always true, and the only thing the case
+/// carried was a 10pt inset, now `iOSSidebarMetrics.columnHorizontalPadding`. The rail pins below
+/// are kept rather than deleted with it — they are what would catch the case *and the type* coming
+/// back together — and the positive pin at the end asserts the deletion instead of the survivor.
 ///
 /// So this is an **absence** pin, which is the kind that is worthless without a non-vacuity claim:
 /// "no file declares it" and "no file was read" look identical in a green run. Both halves are
@@ -102,31 +107,52 @@ struct CadenceSidebarRailRetirementTests {
         )
     }
 
-    /// The deletion's positive half, so the suite is not three absence assertions in a row: the
-    /// one surviving case is still spelled, still carries the padding the column draws with, and
-    /// the two hosts still hand it over.
+    /// The deletion's positive half (T-3090), and it now asserts the opposite of what it used to.
     ///
-    /// This is also what would notice the other way to make the pins above vacuous — deleting
-    /// `iOSSidebarStyle` outright, which would leave every needle with nothing to match and every
-    /// sweep green.
-    @Test func theSurvivingSidebarStyleIsStillTheOneBothTouchHostsPass() throws {
+    /// It read "the one surviving case is still spelled and both hosts still pass it", because the
+    /// absence pins above are worthless if the type they scan inside is simply deleted. T-3090
+    /// *did* delete it: a one-case enum is not a style, the six `style == .expanded` branches
+    /// beside it could never be false, and the only thing the case carried was a 10pt inset.
+    ///
+    /// So the non-vacuity claim moved rather than went. The two sweeps above are instrument-checked
+    /// against literal witnesses, which is what makes them non-vacuous whatever the tree holds; what
+    /// this test adds is that the collapse is *complete and stayed collapsed* — no declaration, no
+    /// call site and no guard anywhere in the touch surface — and that the padding landed somewhere
+    /// the column actually reads rather than being dropped on the way.
+    @Test func theOneCaseSidebarStyleIsGoneAndItsPaddingIsAColumnMetric() throws {
         let sidebar = try Self.codeReader()(Self.sidebarPath)
         #expect(sidebar.count > 400, "the sidebar read as \(sidebar.count) characters")
-        let body = try #require(
-            CadenceSourceScan.declarationBody("enum iOSSidebarStyle", in: sidebar),
-            "enum iOSSidebarStyle is gone, which would make every absence pin in this suite vacuous"
-        )
-        #expect(body.contains("case expanded"), "the one surviving style case is gone")
-        #expect(body.contains("var horizontalPadding: CGFloat"),
-                "the column's horizontal padding left the style, so the pins above guard a shell")
+        #expect(sidebar.contains("struct iOSSidebar: View"), "non-vacuity: wrong file")
 
-        #expect(sidebar.contains("let style: iOSSidebarStyle"),
-                "the iPad column stopped taking a style")
+        #expect(
+            CadenceSourceScan.declarationBody("enum iOSSidebarStyle", in: sidebar) == nil,
+            "the one-case sidebar style is back"
+        )
+        #expect(
+            CadenceSourceScan.matchCount(#"\bstyle\s*==\s*\.expanded\b"#, in: sidebar) == 0,
+            "an always-true style guard is back in the iPad column"
+        )
+
+        let metrics = try #require(
+            CadenceSourceScan.declarationBody("enum iOSSidebarMetrics", in: sidebar),
+            "iOSSidebarMetrics is gone, so the column's inset has no home"
+        )
+        #expect(metrics.contains("static let columnHorizontalPadding: CGFloat = 10"),
+                "the column's 10pt inset left the metrics without replacing the style's")
+        #expect(
+            CadenceSourceScan.matchCount(#"iOSSidebarMetrics\.columnHorizontalPadding"#, in: sidebar) >= 5,
+            "the column stopped reading its own inset, so the style's 10 went nowhere"
+        )
 
         let tasksTab = try Self.codeReader()("Cadence/iOS/iOSTasksTabView.swift")
         #expect(tasksTab.count > 400, "the Tasks index read as \(tasksTab.count) characters")
-        #expect(tasksTab.contains("private let style: iOSSidebarStyle = .expanded"),
-                "the phone's Tasks index stopped naming the expanded style")
+        #expect(tasksTab.contains("struct iOSTasksTabView: View"), "non-vacuity: wrong file")
+        #expect(
+            CadenceSourceScan.matchCount(#"\biOSSidebarStyle\b"#, in: tasksTab) == 0,
+            "the phone's Tasks index holds a sidebar style again"
+        )
+        #expect(tasksTab.contains("iOSSidebarMetrics.columnHorizontalPadding"),
+                "the phone's Tasks index stopped reading the column inset the style used to carry")
     }
 
     // MARK: - The walk

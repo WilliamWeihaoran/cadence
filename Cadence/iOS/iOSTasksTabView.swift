@@ -54,9 +54,6 @@ struct iOSTasksTabView: View {
     /// a day in their inputs a phone left on this tab kept yesterday's count and date.
     @State private var observedDay = CadenceObservedDay()
 
-    /// The column vocabulary, which since T-3079 is the only one `iOSSidebarStyle` has.
-    private let style: iOSSidebarStyle = .expanded
-
     var body: some View {
         VStack(spacing: 0) {
             // Argument label rather than a trailing closure, deliberately. This body's first
@@ -111,15 +108,14 @@ struct iOSTasksTabView: View {
             // handed one re-runs with its parent. Its `==` ignores the closure, so a pass here
             // leaves the whole-store count alone; the block still re-runs when its own `@Query` or
             // preference changes — or when the day turns, which is why `todayKey` is in its `==`.
-            iOSTasksIndexDestinationRows(style: style, todayKey: todayKey, onOpen: open)
+            iOSTasksIndexDestinationRows(todayKey: todayKey, onOpen: open)
                 .equatable()
 
             iOSSidebarRailDivider()
-                .padding(.horizontal, style.horizontalPadding)
+                .padding(.horizontal, iOSSidebarMetrics.columnHorizontalPadding)
 
             iOSSidebarListsRegion(
                 sections: listSections,
-                style: style,
                 todayKey: todayKey,
                 // Same reason as above: a pushed list is not a selection.
                 isSelected: { _ in false },
@@ -216,7 +212,6 @@ struct iOSTasksTabView: View {
 /// its section binding, both of which address state that outlives any one pass of the parent, so a
 /// closure kept from an earlier pass reaches the same storage as a fresh one.
 private struct iOSTasksIndexDestinationRows: View, Equatable {
-    let style: iOSSidebarStyle
     /// The tab's observed day ([[T-5011]]). Compared in `==`: it is the one input that changes at
     /// midnight, and leaving it out kept yesterday's overdue count until a task was edited.
     let todayKey: String
@@ -231,7 +226,7 @@ private struct iOSTasksIndexDestinationRows: View, Equatable {
     @AppStorage(CadencePreferenceKeys.sidebarTabColors) private var sidebarTabColorsRaw = CadencePreferenceKeys.emptySidebarPreference
 
     static func == (lhs: Self, rhs: Self) -> Bool {
-        lhs.style == rhs.style && lhs.todayKey == rhs.todayKey
+        lhs.todayKey == rhs.todayKey
     }
 
     var body: some View {
@@ -247,14 +242,13 @@ private struct iOSTasksIndexDestinationRows: View, Equatable {
                     // Nothing is ever "selected" here: this is an index of places to go, and
                     // the place you went is on top of the stack rather than highlighted
                     // underneath it.
-                    isSelected: false,
-                    style: style
+                    isSelected: false
                 ) {
                     onOpen(destination)
                 }
             }
         }
-        .padding(.horizontal, style.horizontalPadding)
+        .padding(.horizontal, iOSSidebarMetrics.columnHorizontalPadding)
         .padding(.top, iOSSidebarMetrics.groupSpacing)
         .padding(.bottom, iOSSidebarMetrics.groupSpacing)
     }

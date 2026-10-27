@@ -1121,8 +1121,6 @@ enum CadenceCommentSymbolClaim {
         "CadenceTests/CadenceSaveCommitDisciplineTests.swift `MigrationTracking.migrateIfNeeded`",
         "CadenceTests/CadenceSaveCommitDisciplineTests.swift `iOSFocusView.logBundleSession`",
         "CadenceTests/CadenceSaveCommitDisciplineTests.swift `iOSTaskDetailSheet.finishEditingAndDismiss`",
-        "CadenceTests/CadenceSidebarCountMetricsTests.swift `iOSSidebarStyle.rail`",
-        "CadenceTests/CadenceSidebarRailRetirementTests.swift `iOSSidebarStyle.rail`",
         "CadenceTests/CadenceTasksPanelMetricsTests.swift `TasksPanelCompletedSectionView.allTasks`",
         "CadenceTests/CadenceTodayUnificationTests.swift `CadenceTodayPresentationSupport.overdueSectionTitle`",
         "CadenceTests/CadenceTodayUnificationTests.swift `TasksPanel.taskSections`",
@@ -1198,6 +1196,16 @@ enum CadenceCommentSymbolClaim {
         "CadenceTests/CadenceIconOnlyHelperIdiomDuplicationTests.swift `TimelineBundleBlockSupportViews.rowIconButton`",
         "CadenceTests/CadenceSaveCommitDisciplineTests.swift `CadenceMCPRowOrderSnapshot.restore()`",
         "CadenceTests/CadenceSaveCommitDisciplineTests.swift `TimelineBundleBlock.body`",
+        // Both moved here from `deliberateTombstones` by [[T-3090]], which deleted the root
+        // rather than the member: the rail case went with [[T-3079]] and the one-case sidebar
+        // style enum that survived it went with T-3090, so the two memorials are now rooted on a
+        // type that is gone as well as naming a case that is. Both sentences are deliberate
+        // history -- the rail-retirement suite's statement of what it keeps deleted, and the
+        // count suite's note of why its figure read three. Spelled without backticks here for the
+        // same reason the empty-state memorial below the member ledger is: a qualified claim in
+        // the file that keeps the list of them would be one more dangling claim.
+        "CadenceTests/CadenceSidebarCountMetricsTests.swift `iOSSidebarStyle.rail`",
+        "CadenceTests/CadenceSidebarRailRetirementTests.swift `iOSSidebarStyle.rail`",
         // The "a caller that cannot say Copy.goalsTitle in one token" illustration left with
         // [[T-5002]]: goalsTitle is deleted, so the sentence names it without backticks now and
         // the scan no longer reads a claim there.
@@ -1253,7 +1261,11 @@ enum CadenceCommentSymbolClaim {
         // token" illustration in CadenceSharedConstantReuseSweepTests named a constant that
         // ticket deleted, so the sentence names it without backticks now and the scan reads
         // no claim there. Removed rather than struck off, as the estimate chip's row was.
-        #expect(Self.rootTombstones.count == 10)
+        // **12 since [[T-3090]]**, which collapsed the one-case iOS sidebar style enum away: the
+        // two rail memorials in the sidebar suites did not change a word, but their root stopped
+        // resolving, so they crossed from the member ledger to this one. The member ledger lost
+        // the same two, which is why its count moved by two in the opposite direction.
+        #expect(Self.rootTombstones.count == 12)
         #expect(Self.rootNonSymbols.count == 6)
         #expect(Self.rootStaleClaims.count == 0)
     }
@@ -1369,7 +1381,10 @@ enum CadenceCommentSymbolClaim {
         // **49 since [[T-5002]]**, which deleted CadenceEmptyStateCopy.goalsTitle: the
         // CadenceColorPaletteTests memorial naming Theme.neutralHex went with the test that
         // carried it, so the row is removed rather than struck off, as the estimate chip's was.
-        #expect(tombstones.count == 49)
+        // **47 since [[T-3090]]**: the two sidebar-rail memorials moved to `rootTombstones`
+        // unchanged when that ticket deleted the type they root on. Moved, not struck off --
+        // the sentences are still there and still deliberate.
+        #expect(tombstones.count == 47)
         // It was 1 while the Calendar Board's formBundle doc named a Mac spelling [[T-3170]] had
         // removed and the file was still Codex-leased; the grant `41ded784` unblocked it and
         // T-3170's Board pass deleted the function that comment documented, taking it to 0. It is

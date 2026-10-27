@@ -40,7 +40,7 @@ struct CadenceIOSTasksIndexCountScopeTests {
         // It draws the rows through the child, compared by `==` rather than field by field.
         #expect(
             CadenceSourceScan.matchCount(
-                #"iOSTasksIndexDestinationRows\(style: style, todayKey: todayKey, onOpen: open\)\s*\.equatable\(\)"#,
+                #"iOSTasksIndexDestinationRows\(todayKey: todayKey, onOpen: open\)\s*\.equatable\(\)"#,
                 in: tab
             ) == 1
         )
@@ -62,7 +62,7 @@ struct CadenceIOSTasksIndexCountScopeTests {
             CadenceSourceScan.declarationBody("static func == (lhs: Self, rhs: Self) -> Bool", in: rows),
             "iOSTasksIndexDestinationRows lost its own ==, so a parent pass re-runs it again"
         )
-        #expect(CadenceSourceScan.matchCount(#"lhs\.style == rhs\.style"#, in: equality) == 1)
+        #expect(CadenceSourceScan.matchCount(#"lhs\.todayKey == rhs\.todayKey"#, in: equality) == 1)
         #expect(
             CadenceSourceScan.matchCount(#"onOpen"#, in: equality) == 0,
             "== compares onOpen, a fresh closure on every parent pass, so it never reads equal"

@@ -51,7 +51,7 @@ struct CadenceSidebarObservedDayTests {
 
         let region = try #require(CadenceSourceScan.declarationBody("struct iOSSidebarListsRegion: View", in: source))
         #expect(region.contains("let todayKey: String"))
-        #expect(region.contains("style: style,\n                    todayKey: todayKey,"))
+        #expect(region.contains("isSelected: isSelected(item),\n                    todayKey: todayKey,"))
         #expect(!region.contains("DateFormatters.todayKey()"))
 
         let row = try #require(CadenceSourceScan.declarationBody("struct iOSSidebarListRow: View", in: source))
@@ -85,8 +85,8 @@ struct CadenceSidebarObservedDayTests {
         #expect(tab.contains("iOSTasksTabHeader(todayKey: observedDay.todayKey,"))
         let index = try #require(CadenceSourceScan.declarationBody("private var index: some View", in: tab))
         #expect(index.contains("let todayKey = observedDay.todayKey"))
-        #expect(index.contains("iOSTasksIndexDestinationRows(style: style, todayKey: todayKey, onOpen: open)"))
-        #expect(index.contains("style: style,\n                todayKey: todayKey,"))
+        #expect(index.contains("iOSTasksIndexDestinationRows(todayKey: todayKey, onOpen: open)"))
+        #expect(index.contains("sections: listSections,\n                todayKey: todayKey,"))
 
         let header = try #require(CadenceSourceScan.declarationBody("private struct iOSTasksTabHeader: View", in: source))
         #expect(header.contains("dateEyebrow(for: DateFormatters.date(from: todayKey) ?? Date())"))

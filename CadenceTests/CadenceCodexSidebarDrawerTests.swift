@@ -65,7 +65,6 @@ struct CadenceCodexSidebarDrawerTests {
         #expect(root.contains("@State private var isDrawerPresented = false"))
         #expect(root.contains("let isDrawerMode = !CadenceRootShellLayout.usesExpandedSidebar(windowWidth: proxy.size.width)"))
         #expect(root.contains("let isModal = isDrawerMode && isDrawerPresented"))
-        #expect(root.contains("style: .expanded"))
         #expect(root.contains("Theme.scrim"))
         #expect(root.contains(".keyboardShortcut(.escape, modifiers: [])"))
         #expect(root.contains(".accessibilityAction(.escape)"))

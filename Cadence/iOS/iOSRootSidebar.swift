@@ -42,7 +42,6 @@ struct iPadMacStyleRootShell<Content: View>: View {
             ZStack(alignment: .leading) {
                 iOSSidebar(
                     selection: navigationSelection(isDrawerMode: isDrawerMode),
-                    style: .expanded,
                     onCreateList: { listEditorRequest = $0 },
                     onCollapse: { setSidebarVisible(false, isDrawerMode: isDrawerMode) }
                 )
@@ -230,7 +229,6 @@ struct iOSSidebarListEditorRequest: Identifiable {
 /// so this file is a rendering of that layout rather than a second copy of it.
 struct iOSSidebar: View {
     @Binding var selection: iOSSidebarItem?
-    let style: iOSSidebarStyle
     let onCreateList: (iOSSidebarListEditorRequest) -> Void
     let onCollapse: () -> Void
 
@@ -343,11 +341,10 @@ struct iOSSidebar: View {
 
         VStack(alignment: .leading, spacing: 0) {
             iOSSidebarHeader(
-                style: style,
                 onSearch: { selection = .search },
                 onCollapse: onCollapse
             )
-            .padding(.horizontal, style.horizontalPadding)
+            .padding(.horizontal, iOSSidebarMetrics.columnHorizontalPadding)
             .padding(.top, 12)
             .padding(.bottom, 10)
 
@@ -355,12 +352,12 @@ struct iOSSidebar: View {
                 .padding(.bottom, iOSSidebarMetrics.groupSpacing)
 
             iOSSidebarRailDivider()
-                .padding(.horizontal, style.horizontalPadding)
+                .padding(.horizontal, iOSSidebarMetrics.columnHorizontalPadding)
 
             listsRegion
 
             iOSSidebarRailDivider()
-                .padding(.horizontal, style.horizontalPadding)
+                .padding(.horizontal, iOSSidebarMetrics.columnHorizontalPadding)
 
             // Settings and Focus collapse to one row of two glyphs, and since T-3073 there is
             // no labelled row left down here at all — Goals and Habits are nav rows in the group
@@ -370,19 +367,17 @@ struct iOSSidebar: View {
             // guards it: `navGroup` of nothing is still a padded stack, so an unguarded call
             // spends `groupSpacing` of dead height above the footer for a group that draws
             // nothing — and a future destination placed below the lists would find the row back.
-            if style == .expanded {
-                let secondaryRows = secondaryRowDestinations
+            let secondaryRows = secondaryRowDestinations
 
-                if !secondaryRows.isEmpty {
-                    navGroup(secondaryRows, counts: counts)
-                        .padding(.top, iOSSidebarMetrics.groupSpacing)
-                }
-
-                footerGlyphRow
-                    .padding(.horizontal, style.horizontalPadding)
-                    .padding(.top, iOSSidebarMetrics.rowSpacing)
-                    .padding(.bottom, 12)
+            if !secondaryRows.isEmpty {
+                navGroup(secondaryRows, counts: counts)
+                    .padding(.top, iOSSidebarMetrics.groupSpacing)
             }
+
+            footerGlyphRow
+                .padding(.horizontal, iOSSidebarMetrics.columnHorizontalPadding)
+                .padding(.top, iOSSidebarMetrics.rowSpacing)
+                .padding(.bottom, 12)
         }
         // Both halves, because the row under the selection can go away two ways: the user hides it
         // in Settings, or a sync brings a layout hiding it from another device.
@@ -471,14 +466,13 @@ struct iOSSidebar: View {
                     systemImage: destination.systemImage,
                     tint: tint(for: destination),
                     count: CadenceSidebarLayout.count(for: destination, counts: counts),
-                    isSelected: rowSelection == destination.item,
-                    style: style
+                    isSelected: rowSelection == destination.item
                 ) {
                     selection = destination.item
                 }
             }
         }
-        .padding(.horizontal, style.horizontalPadding)
+        .padding(.horizontal, iOSSidebarMetrics.columnHorizontalPadding)
     }
 
     // MARK: - Lists
@@ -487,7 +481,6 @@ struct iOSSidebar: View {
     private var listsRegion: some View {
         iOSSidebarListsRegion(
             sections: listSections,
-            style: style,
             todayKey: observedDay.todayKey,
             isSelected: { selection == $0.selectionItem },
             onSelect: { selection = $0.selectionItem },
@@ -548,7 +541,6 @@ struct iOSSidebar: View {
 /// draws it, and a second host is exactly what this struct exists for.
 struct iOSSidebarListsRegion: View {
     let sections: [CadenceSidebarLists.Section]
-    let style: iOSSidebarStyle
     /// The host's observed day ([[T-5011]]), handed to each row's due-date flag. A value rather
     /// than a clock read, so the region re-runs when the day turns even though its lists did not.
     let todayKey: String
@@ -582,7 +574,7 @@ struct iOSSidebarListsRegion: View {
                         emptyListsRow
                     }
                 }
-                .padding(.horizontal, style.horizontalPadding)
+                .padding(.horizontal, iOSSidebarMetrics.columnHorizontalPadding)
                 .padding(.vertical, iOSSidebarMetrics.groupSpacing)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -603,7 +595,7 @@ struct iOSSidebarListsRegion: View {
         // T-1113's shape exactly: a region that drew nothing on a fresh install took the only
         // route to a list sheet with it.
         .iOSNewTaskDropTarget(
-            horizontalInset: style.horizontalPadding,
+            horizontalInset: iOSSidebarMetrics.columnHorizontalPadding,
             ghost: .region,
             dropKey: { CadenceTaskDropSupport.newListDropKey(contextID: nil) }
         )
@@ -628,40 +620,37 @@ struct iOSSidebarListsRegion: View {
     @ViewBuilder
     private func listSection(_ section: CadenceSidebarLists.Section) -> some View {
         VStack(alignment: .leading, spacing: iOSSidebarMetrics.rowSpacing) {
-            if style == .expanded {
-                // `SectionEyebrowLabel` is already the app's one eyebrow, and macOS's own context
-                // header chains off the same `Size.standard` figures — so the glyphs were never the
-                // half that differed. What differed is the room: 14pt above and 7pt below, which
-                // with the stack's own `rowSpacing` is the Mac's 26 above and 9 below.
-                //
-                // **Label, spacer, `+` — `ContextSection`'s own line, now on both columns
-                // (T-3073).** The glyph is `iOSSidebarGlyphButton`, which is this column's
-                // existing 26pt plate with a 44pt hit area, so the header gains a touch target
-                // without gaining a touch target's *height*: none of
-                // `CadenceSidebarContextHeaderRhythm`'s four terms moves.
-                HStack(spacing: iOSSidebarMetrics.iconLabelSpacing) {
-                    SectionEyebrowLabel(text: section.title)
-                        .lineLimit(1)
+            // `SectionEyebrowLabel` is already the app's one eyebrow, and macOS's own context
+            // header chains off the same `Size.standard` figures — so the glyphs were never the
+            // half that differed. What differed is the room: 14pt above and 7pt below, which
+            // with the stack's own `rowSpacing` is the Mac's 26 above and 9 below.
+            //
+            // **Label, spacer, `+` — `ContextSection`'s own line, now on both columns
+            // (T-3073).** The glyph is `iOSSidebarGlyphButton`, which is this column's
+            // existing 26pt plate with a 44pt hit area, so the header gains a touch target
+            // without gaining a touch target's *height*: none of
+            // `CadenceSidebarContextHeaderRhythm`'s four terms moves.
+            HStack(spacing: iOSSidebarMetrics.iconLabelSpacing) {
+                SectionEyebrowLabel(text: section.title)
+                    .lineLimit(1)
 
-                    Spacer(minLength: iOSSidebarMetrics.listTrailingItemSpacing)
+                Spacer(minLength: iOSSidebarMetrics.listTrailingItemSpacing)
 
-                    iOSSidebarGlyphButton(
-                        systemImage: "plus",
-                        label: "Add list to \(section.title)"
-                    ) {
-                        onCreateList(section.contextID)
-                    }
+                iOSSidebarGlyphButton(
+                    systemImage: "plus",
+                    label: "Add list to \(section.title)"
+                ) {
+                    onCreateList(section.contextID)
                 }
-                .padding(.horizontal, iOSSidebarMetrics.rowHorizontalPadding)
-                .padding(.top, iOSSidebarMetrics.contextHeaderTopPadding)
-                .padding(.bottom, iOSSidebarMetrics.contextHeaderBottomPadding)
             }
+            .padding(.horizontal, iOSSidebarMetrics.rowHorizontalPadding)
+            .padding(.top, iOSSidebarMetrics.contextHeaderTopPadding)
+            .padding(.bottom, iOSSidebarMetrics.contextHeaderBottomPadding)
 
             ForEach(section.items) { item in
                 iOSSidebarListRow(
                     item: item,
                     isSelected: isSelected(item),
-                    style: style,
                     todayKey: todayKey,
                     onSelect: { onSelect(item) },
                     onEdit: { onEdit(item) }
@@ -708,19 +697,16 @@ struct iOSSidebarListsRegion: View {
     /// The statement stays above the button rather than being replaced by it, because it is
     /// `CadenceEmptyStateCopy`'s one spelling of *what is missing* and the button says only what
     /// to do about it.
-    @ViewBuilder
     private var emptyListsRow: some View {
-        if style == .expanded {
-            VStack(alignment: .leading, spacing: 6) {
-                Text(CadenceEmptyStateCopy.listsTitle(isNarrowed: false))
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(Theme.dim)
+        VStack(alignment: .leading, spacing: 6) {
+            Text(CadenceEmptyStateCopy.listsTitle(isNarrowed: false))
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(Theme.dim)
 
-                addFirstListButton
-            }
-            .padding(.horizontal, iOSSidebarMetrics.rowHorizontalPadding)
-            .padding(.vertical, 6)
+            addFirstListButton
         }
+        .padding(.horizontal, iOSSidebarMetrics.rowHorizontalPadding)
+        .padding(.vertical, 6)
     }
 
     /// The macOS column's "Add first list" row, in this column's vocabulary: an
@@ -810,27 +796,7 @@ extension CadenceFeatureDestination {
     }
 }
 
-// MARK: - Style and metrics
-
-/// **One case since T-3079**, and deliberately still an enum.
-///
-/// `.rail` was an icon-rail spelling of this column for a narrow window, and it was unreachable:
-/// every construction site hardcodes `.expanded`, and nothing called the `style(for:)` that
-/// computed it. Reachable it would still not have drawn a rail — `CadenceRootShellLayout`'s
-/// narrow-window answer is a *drawer* whose width is `min(expandedWidth, width)`, so the column
-/// would have been 264pt wide with rail-width glyphs in it. A genuine icon rail, if one is ever
-/// wanted, gets designed against that layout rather than resurrected from this.
-///
-/// Collapsing the remaining case away at every call site is a separate change, not this one.
-enum iOSSidebarStyle: Equatable {
-    case expanded
-
-    var horizontalPadding: CGFloat {
-        switch self {
-        case .expanded: return 10
-        }
-    }
-}
+// MARK: - Metrics
 
 /// The iPad column's spelling of `CadenceSidebarMetrics`.
 ///
@@ -855,6 +821,18 @@ enum iOSSidebarMetrics {
     static let selectedCornerRadius: CGFloat = shared.cornerRadius
     static let rowSpacing: CGFloat = shared.rowSpacing
     static let rowHorizontalPadding: CGFloat = shared.horizontalPadding
+    /// **The column's own inset, and the last of `iOSSidebarStyle` (T-3090).**
+    ///
+    /// T-3079 deleted `.rail` and left a one-case `enum iOSSidebarStyle` whose only remaining job
+    /// was to carry this 10 to the header, the dividers, the nav groups and the lists region;
+    /// every `style == .expanded` beside it was always true and every construction site spelled
+    /// `.expanded`. T-3090 dropped the enum and its guards, and the figure lives here.
+    ///
+    /// **A literal, not `shared.horizontalPadding`**, although the two agree at 10 today: what the
+    /// style stated was this column's outer inset, which is a different decision from the inset a
+    /// *row* draws inside it. Deriving it would silently move the column the day the shared row
+    /// metric changed, which is not what the enum did.
+    static let columnHorizontalPadding: CGFloat = 10
     static let iconSlotWidth: CGFloat = shared.iconSlotWidth
     static let iconLabelSpacing: CGFloat = shared.iconLabelSpacing
     static let labelFontSize: CGFloat = shared.labelFontSize
@@ -923,28 +901,25 @@ struct iOSSidebarRailDivider: View {
 /// Search lives here because the sidebar's two nav groups are `CadenceSidebarLayout`'s, and that
 /// layout deliberately leaves `.search` out of them — it is the header's button, on both platforms.
 struct iOSSidebarHeader: View {
-    let style: iOSSidebarStyle
     let onSearch: () -> Void
     let onCollapse: () -> Void
 
     var body: some View {
-        if style == .expanded {
-            HStack(spacing: 8) {
-                iOSIconTile(systemImage: "circle.hexagongrid.fill", color: Theme.blue, size: 28, iconSize: 14)
+        HStack(spacing: 8) {
+            iOSIconTile(systemImage: "circle.hexagongrid.fill", color: Theme.blue, size: 28, iconSize: 14)
 
-                Text("Cadence")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(Theme.text)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.8)
+            Text("Cadence")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(Theme.text)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
 
-                Spacer(minLength: 2)
+            Spacer(minLength: 2)
 
-                searchButton
-                collapseButton
-            }
-            .frame(minHeight: 44)
+            searchButton
+            collapseButton
         }
+        .frame(minHeight: 44)
     }
 
     private var searchButton: some View {
@@ -1080,7 +1055,6 @@ struct iOSSidebarButton: View {
     let tint: Color
     let count: CadenceSidebarCount?
     let isSelected: Bool
-    let style: iOSSidebarStyle
     let action: () -> Void
 
     /// The glyph keeps its destination tint selected or not, exactly as `SidebarNavRow` does:
@@ -1091,9 +1065,7 @@ struct iOSSidebarButton: View {
 
     var body: some View {
         Button(action: action) {
-            if style == .expanded {
-                expandedLabel
-            }
+            expandedLabel
         }
         .buttonStyle(.iosPressable)
         // T-1445, the same rule macOS's `SidebarNavRow` reads: the badge is drawn by the shared
@@ -1156,7 +1128,6 @@ struct iOSSidebarButton: View {
 struct iOSSidebarListRow: View {
     let item: CadenceSidebarLists.Item
     let isSelected: Bool
-    let style: iOSSidebarStyle
     /// The day the due-date flag is coloured against — the host's observed day ([[T-5011]]).
     let todayKey: String
     let onSelect: () -> Void
@@ -1172,11 +1143,7 @@ struct iOSSidebarListRow: View {
 
     var body: some View {
         Button(action: onSelect) {
-            Group {
-                if style == .expanded {
-                    expandedLabel
-                }
-            }
+            expandedLabel
             // A list row, not a nav row: `listRowHeight`, not `buttonHeight` (T-3072). The height
             // is still fixed and still the whole hit region — the row keeps one shape for its
             // selection fill, its `contentShape` and its `+`-drop frame, so nothing here is sized
