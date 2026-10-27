@@ -245,8 +245,9 @@ struct CadenceAgentDefaultsIsolationTests {
     ///
     /// Folding the store id into `shouldUseLocalStoreOnly` would be the mechanism, and it is **not
     /// this test's to make**: it changes what `scripts/run-macos-app.sh` and
-    /// `scripts/simulator-claim.sh` do today, so it is an owner decision ([[T-3015]], under
-    /// [[T-3013]]'s rule). Until then the convention is held as a *measurement*, and this is it.
+    /// `scripts/simulator-claim.sh` do today, so it was an owner decision ([[T-3015]]), ruled LEAVE
+    /// on 2026-10-26: [[T-3013]]'s signing guard covers it, so no store-id term is added. The
+    /// convention is therefore held as a *measurement*, and this is it.
     ///
     /// **The denominator is read off disk, roots included.** The sibling test above counts the
     /// UI target's launch sites the same way and for the same reason — it listed six paths while
