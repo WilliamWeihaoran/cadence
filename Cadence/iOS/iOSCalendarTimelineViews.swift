@@ -104,6 +104,16 @@ struct iOSCalendarTimelineGrid: View {
     /// `pinchZoom`.
     @Binding var zoom: Double
     let onCreateAt: (String, Int) -> Void
+    /// A task **dragged from a task surface and released on a day column** ([[T-8141]]): the id the
+    /// drag carried, the day it landed on and the minute inside it, answering whether the write
+    /// landed. The host resolves the id, because the host is what holds the task universe — this
+    /// grid is handed days, not a store.
+    ///
+    /// **Not optional, and it has no default.** [[T-8091]] is the same wiring one host short: a
+    /// drop target whose action is a `nil` closure still *accepts* the drop and still springs the
+    /// card back, which reads on screen as "it did nothing" with nothing to catch it. Both hosts
+    /// pass a real one, so the column can be a drop target on either.
+    let onDropTaskAtMinute: (UUID, String, Int) -> Bool
     /// Press-and-hold draws a DRAFT BLOCK on the column and hangs the shared schedule panel off it
     /// as a popover, instead of calling `onCreateAt` ([[T-3169]]).
     ///
@@ -351,7 +361,8 @@ struct iOSCalendarTimelineGrid: View {
             onClearTime: clearsTime,
             editingTaskID: editingTaskID,
             onSelectForEditing: { editingTaskID = $0 },
-            onCommitEdit: commitBlockEdit
+            onCommitEdit: commitBlockEdit,
+            onDropTaskAtMinute: { id, minute in onDropTaskAtMinute(id, key, minute) }
         )
     }
 
@@ -1252,6 +1263,9 @@ private struct iOSCalendarTimelineDayColumn: View {
     let editingTaskID: PersistentIdentifier?
     let onSelectForEditing: (PersistentIdentifier?) -> Void
     let onCommitEdit: (AppTask, CadenceTimelineBlockEdit.Kind, (start: Int, end: Int)) -> Void
+    /// See `iOSCalendarTimelineGrid.onDropTaskAtMinute`; the day is already bound by the time it
+    /// reaches here, so this column only has to say *which minute*.
+    let onDropTaskAtMinute: (UUID, Int) -> Bool
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.cadenceTypographyScaling) private var scaling
 
@@ -1393,6 +1407,29 @@ private struct iOSCalendarTimelineDayColumn: View {
             ),
             dropKey: { dropKey }
         )
+        // **The other drop, and the one a finger makes** ([[T-8141]]). `iOSNewTaskDropTarget` above
+        // is the capture palette's `+`, which is a SwiftUI-level drag resolved against published
+        // frames; this one is a real UIKit drag session carrying `TaskDragPayload`, the payload an
+        // `iOSTaskRow` now offers. They cannot be one target: the `+` is not a task and a task is
+        // not a seed.
+        //
+        // The minute is `CadenceScheduleSupport.timelineMinute`, the same call the column's tap and
+        // the dropped `+` already make, so the three cannot name different quarter-hours for one
+        // pixel. `location` is in this column's own space and the column is the whole drawn day, so
+        // `location.y` needs no correction for the scroll offset.
+        //
+        // `isTargeted` is deliberately not taken: the column already answers a hovering `+` with a
+        // ghost slot, and a second, differently-shaped highlight for a hovering task would be the
+        // canvas saying "here" in two voices.
+        .dropDestination(for: String.self) { items, location in
+            guard let payload = items.first,
+                  let id = TaskDragPayload.taskID(from: payload)
+            else { return false }
+            return onDropTaskAtMinute(
+                id,
+                CadenceScheduleSupport.timelineMinute(atY: location.y, hourHeight: hourHeight)
+            )
+        }
     }
 
     /// The empty-space gesture surface.

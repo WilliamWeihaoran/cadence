@@ -148,11 +148,23 @@ struct CadenceBundleCreationParityTests {
         }
     }
 
-    /// **The chosen behaviour on the iOS day timeline: the drop is not accepted.** The day column has
-    /// no `dropDestination` of its own, so with the block-forming drop gone there is nothing for a
-    /// lift to land on — and the block stops offering the lift rather than offering a drag that
-    /// does nothing.
-    @Test func theDayTimelineNoLongerFormsABlockAndAcceptsNoTaskDrop() throws {
+    /// **The iOS day timeline forms no block, and the one drop it now takes is a reschedule**
+    /// ([[T-3170]], amended by [[T-8141]]).
+    ///
+    /// This asserted `.dropDestination( == 0` outright, under the heading *"the drop is not
+    /// accepted"*. That was never T-3170's rule — T-3170 removed the drop that **formed a Block** —
+    /// it was a statement of what the surface happened to do afterwards, and the owner has since
+    /// reported the consequence as a defect: a task in iPad Today could not be dragged onto the
+    /// calendar because there was nothing on the calendar to drop it on. The column takes one drop
+    /// now, and it writes the task's own day and minute (`CadenceTimelineBlockEdit.commitDrop`) —
+    /// no bundle, no relationship, nothing joined to anything.
+    ///
+    /// The zeros that ARE T-3170's rule all stay, and so does `.draggable( == 0` in this file: the
+    /// lift the Block gesture needed is still not offered by a timeline *block*. That the one
+    /// `.dropDestination` is on the day COLUMN and not inside the block is asserted by
+    /// `CadenceTimelineBlockEditTests/theIOSBlockLiftsOnAHoldAndCarriesNoDragPayloadOrDropTarget`,
+    /// which scans the block's own declaration body.
+    @Test func theDayTimelineFormsNoBlockAndTakesOnlyTheRescheduleDrop() throws {
         let source = try strippingBundleTestComments(sourceFile("Cadence/iOS/iOSCalendarTimelineViews.swift"))
 
         #expect(occurrences(of: "CadenceTaskMutationSupport.insertBundle(", in: source) == 0)
@@ -163,7 +175,10 @@ struct CadenceBundleCreationParityTests {
         #expect(occurrences(of: "iOSBundleFormingDrop", in: source) == 0)
         #expect(occurrences(of: "bundleCreateFailed", in: source) == 0)
         #expect(occurrences(of: ".draggable(", in: source) == 0)
-        #expect(occurrences(of: ".dropDestination(", in: source) == 0)
+        // Exactly one, and it reschedules: the payload is decoded to a task id and handed to the
+        // host's `onDropTaskAtMinute`, which is the only thing this file does with a drop.
+        #expect(occurrences(of: ".dropDestination(", in: source) == 1)
+        #expect(occurrences(of: "onDropTaskAtMinute(", in: source) == 2)
         // Non-vacuity: the block and the column are still here, and still drawn.
         #expect(occurrences(of: "struct iOSTimelineTaskBlock: View", in: source) == 1)
         #expect(occurrences(of: "iOSTimelineTaskBlock(", in: source) == 1)
@@ -223,7 +238,9 @@ struct CadenceBundleCreationParityTests {
     /// pane now builds no block, installs no recognizer and makes no opt-in decision — the grid
     /// does, once, for both of its spans. The assertion is therefore the same three absences plus a
     /// fourth, and the non-vacuity moves to the grid the pane builds. Since [[T-3170]] the grid
-    /// installs no drag mesh either (`theDayTimelineNoLongerFormsABlockAndAcceptsNoTaskDrop`).
+    /// forms no block either (`theDayTimelineFormsNoBlockAndTakesOnlyTheRescheduleDrop`, which
+    /// since [[T-8141]] also states the one drop the grid DOES take — a reschedule, on the day
+    /// column rather than on a block).
     @Test func todaysSchedulePaneInstallsNoDragMeshOfItsOwn() throws {
         let source = try strippingBundleTestComments(sourceFile("Cadence/iOS/iOSTodaySchedulePanel.swift"))
 

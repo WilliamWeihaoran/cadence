@@ -118,6 +118,21 @@ struct iOSSchedulePanel: View {
                 // the closure stays part of the column's contract rather than becoming optional for
                 // one caller. Nothing here can reach it.
                 onCreateAt: { _, _ in },
+                // **Today's half of drag-to-schedule** ([[T-8141]]). The task column is one divider
+                // to the left of this pane, so this is the drop the owner reported missing: a row
+                // dragged out of Today and released on an hour here is written to that hour.
+                // `commitDrop` resolves the id against this pane's own `allTasks` — the same array
+                // the grid's blocks are read from — so a task that lands is a task this pane can
+                // immediately draw.
+                onDropTaskAtMinute: { id, dateKey, startMin in
+                    CadenceTimelineBlockEdit.commitDrop(
+                        taskID: id,
+                        among: allTasks,
+                        dateKey: dateKey,
+                        startMin: startMin,
+                        in: modelContext
+                    )
+                },
                 drawsDraftBlocks: true
             )
         }

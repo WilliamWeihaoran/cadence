@@ -10,6 +10,8 @@ struct iOSCalendarView: View {
     var isCompactTabRoot = false
     @Environment(iOSCalendarManager.self) private var calendarManager
     @Environment(CadenceDeepLinkManager.self) private var deepLinkManager
+    /// The grid's drop writes through this ([[T-8141]]); nothing else on this page needed it.
+    @Environment(\.modelContext) private var modelContext
     @Query(sort: \AppTask.order) private var allTasks: [AppTask]
     @AppStorage("ios.calendar.viewMode") private var viewModeRaw = CadenceCalendarViewMode.week.rawValue
     @AppStorage("ios.calendar.presentation") private var presentationRaw = CadenceCalendarPresentation.timeline.rawValue
@@ -381,7 +383,8 @@ struct iOSCalendarView: View {
                 eventsByDate: visibleEventsByDate,
                 todayKey: observedDay.todayKey,
                 zoom: $zoomLevel,
-                onCreateAt: openQuickCreate
+                onCreateAt: openQuickCreate,
+                onDropTaskAtMinute: dropTask
             )
         }
     }
@@ -517,6 +520,21 @@ struct iOSCalendarView: View {
             calendar: calendar
         ) else { return }
         selectedDate = moved
+    }
+
+    /// A task dropped on a day column of the scrolling grid ([[T-8141]]).
+    ///
+    /// The same call Today's pane makes — `CadenceTimelineBlockEdit.commitDrop` resolves the id
+    /// against this page's own task universe and writes the day and the minute in one transaction —
+    /// so a task dropped on Thursday here and one dropped on Today's pane land the same way.
+    private func dropTask(_ id: UUID, on dateKey: String, startMin: Int) -> Bool {
+        CadenceTimelineBlockEdit.commitDrop(
+            taskID: id,
+            among: allTasks,
+            dateKey: dateKey,
+            startMin: startMin,
+            in: modelContext
+        )
     }
 
     private func openQuickCreate(on dateKey: String) {

@@ -116,6 +116,21 @@ struct iOSTaskRow: View {
                     pendingRecurrenceRule: $pendingRecurrenceRule
                 )
             }
+            // **The source half of drag-to-schedule** ([[T-8141]]). A task row is the only thing on
+            // an iOS task surface that *is* a task, so it is what a calendar can be handed; the
+            // payload is `TaskDragPayload`'s prefixed string, the same wire format the iOS Calendar
+            // Board's card already offers (`iOSCalendarBoardView.columnItemView`) and the one the
+            // timeline day column now decodes. One payload spelling, not a second one per surface.
+            //
+            // `.draggable` and not a hand-rolled press-then-drag: UIKit's drag interaction and
+            // `UIContextMenuInteraction` negotiate the shared lift between themselves — hold still
+            // and the row's context menu opens, hold and move and the row lifts — which is exactly
+            // the handoff a pair of hand-written recognizers cannot do. What stopped BOTH of them
+            // firing was the swipe container below; see `iOSRowHorizontalPanRecognizer`.
+            //
+            // Declared **before** the swipe container so the lifted preview is the row, not the row
+            // stacked over its action tray.
+            .draggable(TaskDragPayload.string(for: task.id))
             // Not `.swipeActions`: that is a `List`-row modifier, and eight of this row's
             // eighteen call sites render it inside a `ScrollView`/`LazyVStack`, where SwiftUI
             // discards it without a word. The same row swiped on Today's iPad column and not on

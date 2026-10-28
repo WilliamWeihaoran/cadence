@@ -152,4 +152,67 @@ enum CadenceTimelineBlockEdit {
         }
         return landed
     }
+
+    /// A task **dropped onto a day column** — its day and its start minute together, in one field
+    /// transaction ([[T-8141]]).
+    ///
+    /// `commit(_:kind:range:in:)` above moves a block that is already on the column, so it writes
+    /// the minute alone. A dropped task may be arriving from another day entirely — Today's list
+    /// holds yesterday's overdue work as well as today's — so the day has to be written too, and it
+    /// has to be written in the *same* transaction: `CadenceTaskFieldEditCommit` restores every
+    /// field it snapshotted when the save is refused, so a day written by one commit and a minute
+    /// by another is a drop that can half-land where no undo reaches it (the rule T-1580 states for
+    /// a drop key that writes a list and a date).
+    ///
+    /// Day **and** minute, never one of them: a task given a minute but left on yesterday is drawn
+    /// nowhere the user dropped it, and a task given a day but no minute lands back in the untimed
+    /// column it was dragged out of — both read on screen as "the drop did nothing".
+    ///
+    /// `false` means the task is exactly where it was, so the list the row was dragged from is
+    /// already correct and the caller's only remaining job is to say so.
+    @MainActor
+    @discardableResult
+    static func commitDrop(
+        _ task: AppTask,
+        dateKey: String,
+        startMin: Int,
+        in context: ModelContext,
+        reconciler: CadenceWindDownReconciler? = nil,
+        commit: (ModelContext) throws -> Void = { try $0.save() }
+    ) -> Bool {
+        let minute = min(max(0, startMin), CadenceScheduleSupport.calendarEndHour * 60 - gridMinutes)
+        let landed = CadenceTaskFieldEditCommit.commit(
+            task,
+            in: context,
+            reconciler: reconciler,
+            commit: commit
+        ) {
+            task.scheduledDate = dateKey
+            task.scheduledStartMin = minute
+        }
+        if landed {
+            (reconciler ?? .default).run(in: context)
+        }
+        return landed
+    }
+
+    /// The drop as a *host* sees it: an id off the wire, resolved against the host's own task
+    /// universe, then committed ([[T-8141]]).
+    ///
+    /// Both iOS grid hosts — Today's schedule pane and the Calendar page — hand the grid the same
+    /// closure, and this is it, so neither can grow its own idea of what a dropped task does. An id
+    /// that names nothing in `tasks` answers `false`, which is also the right answer for a payload
+    /// from another app: the drop is refused rather than silently swallowed.
+    @MainActor
+    static func commitDrop(
+        taskID: UUID,
+        among tasks: [AppTask],
+        dateKey: String,
+        startMin: Int,
+        in context: ModelContext,
+        reconciler: CadenceWindDownReconciler? = nil
+    ) -> Bool {
+        guard let task = tasks.first(where: { $0.id == taskID }) else { return false }
+        return commitDrop(task, dateKey: dateKey, startMin: startMin, in: context, reconciler: reconciler)
+    }
 }

@@ -296,6 +296,45 @@ nonisolated enum CadenceSwipeActionSupport {
         return .undecided
     }
 
+    /// How long a row's undecided pan may keep a **still** finger before it gives the touch up.
+    ///
+    /// **This is the other half of T-2059's fix, and leaving it out shipped a second defect**
+    /// ([[T-8141]]). `iOSRowHorizontalPanRecognizer` is declared `shouldBeRequiredToFailBy` every
+    /// non-pan recognizer in the row, so that a swipe begun on a chip is a swipe and not the chip's
+    /// tap. A recognizer that is still `.possible` has not failed, and a finger that never moves
+    /// never makes it decide — so every press-and-hold interaction on a task row waited on a
+    /// recognizer that could not resolve until touch-up, by which point the hold was over. Measured
+    /// on `Cadence-iPadPro11` 2026-10-28: a 1.3 s press on a Today row opened **no context menu at
+    /// all**, and the same press with the swipe container removed opened it every time.
+    ///
+    /// So an undecided pan yields on a timer. It must be **shorter than the system's own press
+    /// duration** — `UILongPressGestureRecognizer.minimumPressDuration` defaults to 0.5 s, and the
+    /// lift that starts a drag and the one that opens a context menu are both built on it — or the
+    /// hold is already over when the row stands down. `yieldsStillPress` is the predicate; the
+    /// relation is asserted rather than the figure, per the brief's rule on pinned numbers.
+    ///
+    /// A finger that has already turned horizontal has claimed the row and is unaffected; a finger
+    /// that has turned vertical has already failed. This only resolves the third case — a finger
+    /// that is doing neither, which is exactly what a press is.
+    static let stillPressYieldSeconds: Double = 0.25
+
+    /// The system press duration this must stay under. Not read by the recognizer — UIKit owns the
+    /// real default — but named so the relation above can be asserted rather than assumed.
+    static let systemLongPressSeconds: Double = 0.5
+
+    /// Whether an undecided pan has held a still finger long enough that it must now fail.
+    ///
+    /// `.horizontal` and `.vertical` both answer `false`: the first has claimed the touch and the
+    /// second has already failed on its own, so neither is holding anything hostage.
+    static func yieldsStillPress(
+        claim: CadenceSwipeAxisClaim,
+        elapsed: Double,
+        yieldAfter: Double = stillPressYieldSeconds
+    ) -> Bool {
+        guard claim == .undecided else { return false }
+        return elapsed >= yieldAfter
+    }
+
     /// Whether a drag is horizontal enough for the row to claim it. Everything else is handed back
     /// to the enclosing `ScrollView`/`List`, which is what keeps vertical scrolling alive.
     static func isHorizontal(

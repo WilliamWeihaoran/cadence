@@ -335,6 +335,9 @@ final class iOSRowHorizontalPanRecognizer: UIGestureRecognizer, UIGestureRecogni
     private var startLocation: CGPoint = .zero
     private var lastLocation: CGPoint = .zero
     private var lastTimestamp: TimeInterval = 0
+    /// Identifies the touch a pending still-press yield was scheduled for. See
+    /// `scheduleStillPressYield()`.
+    private var yieldToken = 0
 
     override init(target: Any?, action: Selector?) {
         super.init(target: target, action: action)
@@ -361,6 +364,15 @@ final class iOSRowHorizontalPanRecognizer: UIGestureRecognizer, UIGestureRecogni
     /// movement, this fails at touch-up, and the control fires as it always did.
     ///
     /// The scroll view is exempt: making a vertical pan wait on a row would undo the fix above.
+    ///
+    /// **What this costs, and what pays for it** ([[T-8141]]). "Wait for me to fail" is only safe
+    /// from a recognizer that *will* fail; this one could not, because a still finger never reaches
+    /// the axis test, so a press-and-hold on a task row held the row's context menu and any drag
+    /// lift hostage until touch-up and neither ever fired. Narrowing the exemption by class does
+    /// not work and was measured not to: excluding `UILongPressGestureRecognizer` as well as
+    /// `UIPanGestureRecognizer` changed nothing on screen, because the lift and context-menu
+    /// recognizers SwiftUI installs are not that class. The fix is on this side — see
+    /// `scheduleStillPressYield()`, which makes the promise true by failing on a timer.
     func gestureRecognizer(
         _ gestureRecognizer: UIGestureRecognizer,
         shouldBeRequiredToFailBy other: UIGestureRecognizer
@@ -372,6 +384,31 @@ final class iOSRowHorizontalPanRecognizer: UIGestureRecognizer, UIGestureRecogni
         super.reset()
         translation = .zero
         horizontalVelocity = 0
+        yieldToken &+= 1
+    }
+
+    /// Fails this recognizer if a still finger has held it undecided past
+    /// `CadenceSwipeActionSupport.stillPressYieldSeconds`.
+    ///
+    /// The whole reason it exists is in `shouldBeRequiredToFailBy` above and in the support
+    /// constant's own doc. A token rather than a `Timer` the recognizer has to own and invalidate:
+    /// the only thing a late firing must not do is fail a *later* touch, and bumping the token in
+    /// `reset()` says that in one line.
+    private func scheduleStillPressYield() {
+        yieldToken &+= 1
+        let token = yieldToken
+        let delay = CadenceSwipeActionSupport.stillPressYieldSeconds
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self, self.yieldToken == token, self.state == .possible else { return }
+                let claim = CadenceSwipeActionSupport.axisClaim(
+                    translation: self.translation,
+                    metrics: self.metrics
+                )
+                guard CadenceSwipeActionSupport.yieldsStillPress(claim: claim, elapsed: delay) else { return }
+                self.state = .failed
+            }
+        }
     }
 
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent) {
@@ -386,6 +423,7 @@ final class iOSRowHorizontalPanRecognizer: UIGestureRecognizer, UIGestureRecogni
         lastTimestamp = touch.timestamp
         translation = .zero
         horizontalVelocity = 0
+        scheduleStillPressYield()
     }
 
     override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent) {
