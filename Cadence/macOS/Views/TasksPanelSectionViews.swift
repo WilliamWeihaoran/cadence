@@ -154,9 +154,9 @@ struct TasksPanelIntentSectionView: View {
 
             if !isCollapsed {
                 ForEach(tasks) { task in
-                    // `.standard`, not `.todayGrouped`: that style drops the do-date pill for the
-                    // whole section, and the do date is a thing Today's rows still have to say — a
-                    // list group holds work due today, work merely planned for it, and work planned
+                    // No section-wide suppression (the old `.todayGrouped`, deleted in T-7984): it
+                    // dropped the do-date pill for the whole section, and the do date is a thing
+                    // Today's rows still have to say — a list group holds work due today, work merely planned for it, and work planned
                     // for a day already gone, and the pill is the only thing that tells them apart.
                     //
                     // What Today withholds instead is **the one day it has already named**:
@@ -170,7 +170,6 @@ struct TasksPanelIntentSectionView: View {
                     // own heading rather than fail.
                     TaskListInteractiveRow(
                         task: task,
-                        style: .standard,
                         showsContainer: showsContainer,
                         dayAlreadyStatedBySurface: todayKey,
                         todayKey: todayKey,
@@ -274,7 +273,6 @@ struct TasksPanelCompletedSectionView: View {
                 ForEach(tasks) { task in
                     TaskListDisplayRow(
                         task: task,
-                        style: .standard,
                         showsContainer: showsContainer,
                         dayAlreadyStatedBySurface: todayKey,
                         todayKey: todayKey,

@@ -46,6 +46,8 @@ struct CadenceDayChangeAdoptionTests {
         // [[T-7031]]: the iPad list Notes tab's event-note section drops a meeting once its day
         // is past, the same rule `ListNotesView` reads its own observed day for.
         ("Cadence/iOS/iOSListNotesView.swift", "struct iOSListNotesView: View"),
+        // [[T-7983]]: Mac Today's Notes pane, whose Today and This Week tabs are day-keyed notes.
+        ("Cadence/macOS/Views/NotePanel.swift", "struct NotePanel: View"),
     ]
 
     private static let install = ".cadenceTracksDayChanges($observedDay)"
@@ -82,6 +84,27 @@ struct CadenceDayChangeAdoptionTests {
             let body = try #require(CadenceSourceScan.declarationBody("var body: some View", in: view), "\(path)")
             #expect(body.components(separatedBy: Self.install).count - 1 == 1, "\(path)")
         }
+    }
+
+    /// [[T-7983]]: observing the day is not enough for the Notes pane, whose body draws notes it
+    /// resolved once rather than a key it reads each pass. A day change must reload them — through
+    /// `refreshFromStore()`, which flushes the editor into the note it was typed into before
+    /// swapping — and the reload must resolve against the observed day.
+    @Test func theTodayNotesPaneReloadsItsNotesWhenTheDayTurns() throws {
+        let source = try CadenceSourceScan.strippedSourceReader()("Cadence/macOS/Views/NotePanel.swift")
+        let view = try #require(CadenceSourceScan.declarationBody("struct NotePanel: View", in: source))
+        let body = try #require(CadenceSourceScan.declarationBody("var body: some View", in: view))
+        let collapsed = body.filter { !$0.isWhitespace }
+        #expect(collapsed.contains(".onChange(of:observedDay){_,_inrefreshFromStore()}"))
+
+        let load = try #require(CadenceSourceScan.declarationBody("private func loadOrCreate()", in: view))
+        #expect(load.filter { !$0.isWhitespace }.contains("dayKey:observedDay.todayKey"))
+
+        // The reload flushes first, so the pending edit lands in the note it was typed into.
+        let refresh = try #require(CadenceSourceScan.declarationBody("private func refreshFromStore()", in: view))
+        let flush = try #require(refresh.range(of: "flushPendingEditorContent()"))
+        let reload = try #require(refresh.range(of: "loadOrCreate()"))
+        #expect(flush.lowerBound < reload.lowerBound)
     }
 }
 #endif

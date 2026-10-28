@@ -868,6 +868,34 @@ struct CadenceSharedTaskRowJobsTests {
         let iOSRow = try strippingComments(sourceFile("Cadence/iOS/iOSTaskViews.swift"))
         #expect(iOSRow.contains("if datePlan.drawsDueDateChip, let dueUrgency {"))
     }
+
+    /// [[T-7984]]: no Mac row drops its do-date pill for a whole section. `.todayGrouped` did, and
+    /// its last caller was All Tasks' Group: By List — sections that are lists, not days — so every
+    /// row there lost its do date and the picker it opens. The style is deleted; the one do-date
+    /// suppression left is `dayAlreadyStatedBySurface`, an equality with the surface's named day.
+    @Test func noMacRowDropsItsDoDateForAWholeSection() throws {
+        try expectOccurrences(
+            of: "todayGrouped",
+            at: [
+                "Cadence/macOS/Views/TasksListView.swift": 0,
+                "Cadence/macOS/Views/TasksPanelSectionViews.swift": 0,
+                "Cadence/macOS/Views/TasksPanelSupport.swift": 0,
+                "Cadence/macOS/Views/TasksPanelComponents.swift": 0,
+                "Cadence/macOS/Views/ListDetailSupportViews.swift": 0
+            ]
+        )
+        try expectOccurrences(of: "MacTaskRowStyle", at: ["Cadence/macOS/Views/TasksPanelSupport.swift": 0])
+        // Nor through the knob that is left: the Tasks page names no day, so it has none to withhold.
+        try expectOccurrences(of: "dayAlreadyStatedBySurface", at: ["Cadence/macOS/Views/TasksListView.swift": 0])
+
+        // Non-vacuity: the By List row is still the interactive row, and the row's do date still
+        // goes through the one suppression it has.
+        let page = try strippingComments(sourceFile("Cadence/macOS/Views/TasksListView.swift"))
+        #expect(page.contains("showsContainer: showsContainer && section.listGroup == nil"))
+        let row = try strippingComments(sourceFile("Cadence/macOS/Views/TasksPanelComponents.swift"))
+        #expect(row.contains("dayAlreadyStatedBySurface: dayAlreadyStatedBySurface"))
+        #expect(row.contains("return task.scheduledDate"))
+    }
 }
 
 // MARK: - Source-reading helpers

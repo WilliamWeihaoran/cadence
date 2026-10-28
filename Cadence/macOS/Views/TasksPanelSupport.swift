@@ -34,21 +34,12 @@ enum TaskGroupingMode: String, CaseIterable, Identifiable {
 // past-due cards on either platform (T-3076), so the shared derivation and this panel's two
 // `openOverdue…Summary` hops onto `ListNavigationManager` are gone too (T-3078).
 
-/// What a `MacTaskRow` suppresses, and it is down to one thing.
-///
-/// **`.list` is gone (T-290), because it had stopped meaning anything.** Its only effect was to
-/// hide the list chip on a list's own Tasks tab — a *surface* answer that
-/// `CadenceTaskSurfaceOptions.showsContainerChip(on: .listDetail)` now gives, through the row's
-/// `showsContainer`. With the chip moved off this axis, `.list` and `.standard` compiled to the
-/// same row, and a case that draws nothing is how the page header's `subtitle` parameter survived
-/// three deletions.
-///
-/// `.todayGrouped` earns its keep: it drops the **do-date pill**, because the section it appears in
-/// is the day.
-enum MacTaskRowStyle {
-    case standard
-    case todayGrouped
-}
+// `MacTaskRowStyle` was declared here. `.list` went in T-290 (the list chip became the surface's
+// `showsContainer` answer), and `.todayGrouped` — "drop the do-date pill, the section is the day" —
+// went in T-7984: its last caller was All Tasks' Group: By List, whose sections are lists, not
+// days, so every row there lost its do date. Today had already stopped using it for the same
+// reason, and a one-case enum is a parameter that draws nothing. What a row withholds about its
+// do date is now only `MacTaskRow.dayAlreadyStatedBySurface`, an equality with the named day.
 
 /// Shared, pure index math for the inline "picker badge" style controls
 /// (`ContainerPickerBadge`, `TaskSectionPickerBadge`, the CreateTaskSheet tilde

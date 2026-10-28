@@ -362,7 +362,6 @@ extension TaskListGroupHeader where LeadingContent == EmptyView {
 
 struct TaskListDisplayRow: View {
     let task: AppTask
-    var style: MacTaskRowStyle = .standard
     /// Forwarded to `MacTaskRow.showsContainer`. See there: the host asks
     /// `CadenceTaskSurfaceOptions.showsContainerChip(on:)` and this carries the answer down.
     var showsContainer: Bool = true
@@ -379,7 +378,6 @@ struct TaskListDisplayRow: View {
     var body: some View {
         MacTaskRow(
             task: task,
-            style: style,
             showsContainer: showsContainer,
             dayAlreadyStatedBySurface: dayAlreadyStatedBySurface,
             todayKey: todayKey,
@@ -415,7 +413,6 @@ struct TaskListDisplayRow: View {
 /// list detail's, so a caller that needs the other one has to say so.
 struct TaskListInteractiveRow: View {
     let task: AppTask
-    var style: MacTaskRowStyle = .standard
     /// See `TaskListDisplayRow.showsContainer`.
     var showsContainer: Bool = true
     /// See `MacTaskRow.dayAlreadyStatedBySurface`.
@@ -434,7 +431,6 @@ struct TaskListInteractiveRow: View {
     var body: some View {
         TaskListDisplayRow(
             task: task,
-            style: style,
             showsContainer: showsContainer,
             dayAlreadyStatedBySurface: dayAlreadyStatedBySurface,
             todayKey: todayKey,

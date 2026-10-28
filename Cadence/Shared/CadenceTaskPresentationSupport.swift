@@ -539,8 +539,8 @@ enum CadenceTaskPresentationSupport {
 
     /// The same question asked of two keys, so a surface that has already decided to suppress one
     /// field can pass `""` for it and get an answer that accounts for the suppression — macOS's
-    /// `.todayGrouped` row drops the do-date pill by section, and a row with no sun to draw has
-    /// nothing to merge.
+    /// row drops the do-date pill when it would repeat the surface's named day, and a row with no
+    /// sun to draw has nothing to merge.
     ///
     /// **Compared as days, not as strings.** The keys are `yyyy-MM-dd` and should be identical when
     /// they name one day, but `DateFormatter` is lenient enough to have stored `2026-8-20`

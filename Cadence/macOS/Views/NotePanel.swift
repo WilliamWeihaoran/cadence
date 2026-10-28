@@ -37,6 +37,11 @@ struct NotePanel: View {
     /// every tab starts in before the first load lands, which `ProgressView()` still correctly
     /// describes.
     @State private var failedNoteTabs: Set<CadenceCoreNoteTab> = []
+    /// [[T-7983]]: the day the Today and This Week tabs are resolved against. Every other pane on
+    /// Mac Today observes the day; this one resolved its notes only on appear, activation and a
+    /// tab switch, so a page left open overnight kept editing — and saving into — yesterday's
+    /// daily note (and last week's, once the week turned) while the task column moved on.
+    @State private var observedDay = CadenceObservedDay()
 
     /// The context this panel's notes are loaded into and written back through.
     ///
@@ -113,6 +118,13 @@ struct NotePanel: View {
             refreshFromStore()
         }
         .onChange(of: activeTab) { _, _ in
+            refreshFromStore()
+        }
+        // [[T-7983]]: midnight. `refreshFromStore()` flushes the editor's pending text into the
+        // note it was typed into — yesterday's, still the loaded one — before it reloads the three
+        // notes against the new day's key.
+        .cadenceTracksDayChanges($observedDay)
+        .onChange(of: observedDay) { _, _ in
             refreshFromStore()
         }
         .onDisappear {
@@ -214,7 +226,10 @@ struct NotePanel: View {
         let context = notesContext ?? makeNotesContext()
         notesContext = context
 
-        let snapshot = CadenceCoreNoteSupport.loadOrCreateCoreNotes(in: context)
+        let snapshot = CadenceCoreNoteSupport.loadOrCreateCoreNotes(
+            in: context,
+            dayKey: observedDay.todayKey
+        )
         todayNote = snapshot.today
         weekNote = snapshot.week
         permNote = snapshot.notepad

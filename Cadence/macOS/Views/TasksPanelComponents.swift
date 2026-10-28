@@ -5,7 +5,6 @@ import AppKit
 
 struct MacTaskRow: View {
     @Bindable var task: AppTask
-    var style: MacTaskRowStyle = .standard
     /// Whether this row names the list its task is in — the surface's answer, not the row's.
     ///
     /// Asked of `CadenceTaskSurfaceOptions.showsContainerChip(on:)` by whichever surface is
@@ -23,8 +22,8 @@ struct MacTaskRow: View {
     /// **An equality, not a surface flag**, which is what makes it safe here: a task do-dated
     /// *yesterday* on the Today page does not match, so it keeps its pill and keeps it red. That
     /// row's lateness is the only thing stating it once the Overdue section is gone, so a blunter
-    /// "Today hides the sun" — which is what `MacTaskRowStyle.todayGrouped` would have given — would
-    /// have hidden it. See `CadenceBoardCardMetadata.repeatsSurfaceDay`, which argues the same point
+    /// "Today hides the sun" — which is what the deleted `MacTaskRowStyle.todayGrouped` gave
+    /// (T-7984) — would have hidden it. See `CadenceBoardCardMetadata.repeatsSurfaceDay`, which argues the same point
     /// for the boards.
     var dayAlreadyStatedBySurface: String? = nil
     /// The day this row measures lateness against — the page host's observed day ([[T-5012]]).
@@ -672,11 +671,11 @@ struct MacTaskRow: View {
     /// because the sun and the flag were each drawn from their own `isEmpty` check with nothing
     /// between them; the flag survives the merge and the type says why.
     ///
-    /// Both suppressions go in as an **empty do date** rather than as a branch after the plan: a row
+    /// The suppression goes in as an **empty do date** rather than as a branch after the plan: a row
     /// with no sun to draw has nothing to merge, and the plan stays the only place that counts
-    /// chips. `.todayGrouped` drops the pill by section (`MacTaskRowStyle`);
-    /// `dayAlreadyStatedBySurface` drops it only when it would repeat the day the surface has
-    /// already named.
+    /// chips. `dayAlreadyStatedBySurface` drops it only when it would repeat the day the surface
+    /// has already named — the only suppression left since `.todayGrouped`, which dropped it for a
+    /// whole section, was deleted (T-7984).
     private var datePlan: CadenceTaskRowDatePlan {
         CadenceTaskPresentationSupport.rowDatePlan(
             scheduledDate: statedDoDate,
@@ -686,7 +685,6 @@ struct MacTaskRow: View {
 
     /// The do date this row still has something to say about — `""` when it does not.
     private var statedDoDate: String {
-        guard style != .todayGrouped else { return "" }
         guard !CadenceBoardCardMetadata.repeatsSurfaceDay(
             task.scheduledDate,
             dayAlreadyStatedBySurface: dayAlreadyStatedBySurface

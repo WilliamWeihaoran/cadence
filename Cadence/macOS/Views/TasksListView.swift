@@ -550,7 +550,8 @@ struct TasksListView: View {
 ///
 /// This replaced two structs — `AllTasksFlatSectionView` and `AllTasksListGroupView` — that
 /// differed in exactly two things: whether the header drew the list's icon pair, and which row
-/// style the tasks used. Both are now properties of the section.
+/// style the tasks used. Both became properties of the section; the second is gone since T-7984
+/// deleted the style that hid every By List row's do date.
 private struct TasksListSectionView: View {
     let section: TasksListSection
     /// The page's answer. Composed with the section's below: this surface mixes lists, but a
@@ -610,7 +611,9 @@ private struct TasksListSectionView: View {
                 ForEach(section.tasks) { task in
                     TaskListInteractiveRow(
                         task: task,
-                        style: section.listGroup == nil ? .standard : .todayGrouped,
+                        // No section-wide do-date suppression (T-7984): a By List section is a
+                        // list, not a day, so the pill is the only thing telling tomorrow's task
+                        // from next month's — and it is the click target for the do-date picker.
                         showsContainer: showsContainer && section.listGroup == nil,
                         todayKey: todayKey,
                         contexts: contexts,
@@ -653,7 +656,6 @@ private struct TasksListCompletedSectionView: View {
                 ForEach(tasks) { task in
                     TaskListDisplayRow(
                         task: task,
-                        style: .standard,
                         showsContainer: showsContainer,
                         todayKey: todayKey,
                         contexts: contexts,
