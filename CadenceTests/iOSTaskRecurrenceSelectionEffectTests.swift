@@ -53,7 +53,7 @@ struct iOSTaskRecurrenceSelectionEffectTests {
             pendingRecurrenceRule: Binding(get: { parked }, set: { parked = $0 })
         )
 
-        #expect(!landed, "the picker was told to stay open over a store that accepted the edit")
+        #expect(landed, "the picker was told to stay open over a store that accepted the edit")
         #expect(task.recurrenceRule == .weekly, "the rule never reached the task")
         #expect(parked == nil, "a standalone task armed the scope dialog it has no series for")
         #expect(context.hasChanges == false, "the edit was applied but never committed")
