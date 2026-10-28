@@ -534,18 +534,23 @@ struct CadenceAppearanceSettingsReachTests {
 private func t15RGB(_ color: Color) -> [Double] {
     let resolved = NSColor(color)
     let srgb = resolved.usingColorSpace(.sRGB) ?? resolved
-    return [
-        (srgb.redComponent * 10000).rounded() / 10000,
-        (srgb.greenComponent * 10000).rounded() / 10000,
-        (srgb.blueComponent * 10000).rounded() / 10000,
-    ]
+    return [t15Round(srgb.redComponent), t15Round(srgb.greenComponent), t15Round(srgb.blueComponent)]
+}
+
+/// One `CGFloat` component rounded to four places, as a `Double`. Converted to `Double` BEFORE the
+/// arithmetic on purpose: written inline as `(srgb.redComponent * 10000).rounded() / 10000` inside
+/// a `[Double]` literal, Xcode 26.0.1 (Swift 6.2, CI's pinned compiler) rejects the `/` as an
+/// ambiguous use of the operator -- CGFloat or Double -- while newer compilers accept it (T-7841,
+/// CI run 40644521083). The value is unchanged: `CGFloat` is a `Double` on every target here.
+private func t15Round(_ component: CGFloat) -> Double {
+    (Double(component) * 10000).rounded() / 10000
 }
 
 /// `t15RGB` plus alpha, for the overlay and shadow tokens, which differ only in opacity.
 private func t15RGBA(_ color: Color) -> [Double] {
     let resolved = NSColor(color)
     let srgb = resolved.usingColorSpace(.sRGB) ?? resolved
-    return t15RGB(color) + [(srgb.alphaComponent * 10000).rounded() / 10000]
+    return t15RGB(color) + [t15Round(srgb.alphaComponent)]
 }
 
 private func t15RelativeLuminance(_ color: Color) -> Double {

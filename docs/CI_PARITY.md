@@ -53,6 +53,27 @@ runs 40629814847 and 40632388234: rebuild 342 / 381 s (1282 compile tasks, 0 war
 336 s for 22 tests that take ~3 s (the rest is simulator boot and host launch), step 627 / 734 s.
 `ios-build` went to ~22.5 min against ~23 min for `macos-tests`, so the critical path is about even.
 
+**The iOS build is an exception to the pin ([[T-7841]], 2026-10-28).** Once T-7661 put `xcb.sh` on
+26.0.1, `Build iOS surface` could not build at all: actool's asset-catalog compile needs a simulator
+runtime matching the iphonesimulator SDK, and run 40644521083 failed with *No simulator runtime
+version from ["23C54", "23E254a", "23F77"] available to use with iphonesimulator SDK version
+23A339* -- 26.0.1's SDK has no runtime on this image (26.2, 26.4.1, 26.5 only). So `ios-build` now
+runs T-6821's picker in its own step, `Pick the iOS Xcode`, BEFORE its first compile, and exports
+`DEVELOPER_DIR`/`XCODEBUILD` through `$GITHUB_ENV`: both of its compiles run under the newest image
+Xcode with an eligible iPhone runtime (26.6 today), which is what that job compiled under before
+T-7661 anyway. `assert-toolchain.sh` is unchanged and still runs first in that job, so an image
+without 26.0.x is still red there; the macOS jobs (`macos-tests`, `mcp-server`) stay on 26.0.1. The
+consequence to keep in mind: **shared Swift is gated by 26.0.1 on the macOS leg, but `#if os(iOS)`
+code is compiled only by the newer Xcode.** The alternative that keeps iOS on the pin,
+`xcodebuild -downloadPlatform iOS` under 26.0.1 (a 26.0 runtime, several GB per run), was not
+measured.
+
+The same run's other red, `CadenceTests (macOS)`, was a real 26.0.1-only diagnostic of mode A below:
+*ambiguous use of operator '/'* at `CadenceAccentPaletteTests.swift:538` for
+`(srgb.redComponent * 10000).rounded() / 10000` inside a `[Double]` literal -- CGFloat or Double.
+Xcode 27 accepts it. Fixed by converting to `Double` before the arithmetic. Any `CGFloat`
+expression landing in a `Double` context is the shape to watch.
+
 ## What actually went red
 
 31 failing CI runs between `83479456` (2026-10-14 16:10) and `66a58761` (2026-10-18 10:41), while

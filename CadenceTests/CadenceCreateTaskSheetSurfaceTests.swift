@@ -155,7 +155,9 @@ struct CadenceCreateTaskSheetSurfaceTests {
     private func alpha(of colour: Color) -> Double {
         let resolved = NSColor(colour)
         let srgb = resolved.usingColorSpace(.sRGB) ?? resolved
-        return (srgb.alphaComponent * 10000).rounded() / 10000
+        // `Double(...)` first: the CGFloat-or-Double `/` is the shape Xcode 26.0.1 rejected as
+        // ambiguous in `CadenceAccentPaletteTests.t15RGB` (T-7841).
+        return (Double(srgb.alphaComponent) * 10000).rounded() / 10000
     }
 
     private func body(of declaration: String, inside type: String, of path: String) throws -> String {

@@ -504,6 +504,56 @@ jobs:
         with:
           path: ${{ runner.temp }}/dd-ios/SourcePackages
           key: ${{ steps.spm-cache.outputs.cache-primary-key }}
+      # T-7841: WHICH XCODE BUILDS iOS -- an iOS-only exception to T-4742's exact-minor pin, forced by
+      # the image, not chosen. Since [[T-7661]] `xcb.sh` really compiles under the pinned 26.0.1, and
+      # under 26.0.1 the iOS build cannot work on this image at all: actool's asset compile needs a
+      # simulator runtime matching the iphonesimulator SDK, and run 40644521083 failed with "No
+      # simulator runtime version from [23C54, 23E254a, 23F77] available to use with iphonesimulator
+      # SDK version 23A339" -- the image installs iOS runtimes 26.2, 26.4.1 and 26.5 only (T-6821).
+      # So this job picks the NEWEST image Xcode that lists an eligible iPhone simulator at iOS >=
+      # IPHONEOS_DEPLOYMENT_TARGET (the T-6821 rule, moved up from the simulator step) and exports
+      # DEVELOPER_DIR and XCODEBUILD through $GITHUB_ENV, so BOTH iOS compiles below run under it.
+      # That is what this job compiled under before T-7661 (`/Applications/Xcode.app`, 26.6). The
+      # macOS jobs stay on the pin, and `Assert toolchain` above still runs here unchanged, so an
+      # image that drops 26.0.x is still a loud red in this job too. Shared Swift is gated by 26.0.1
+      # on the macOS leg; only `#if os(iOS)` code is compiled by the newer Xcode alone.
+      # Not taken: `xcodebuild -downloadPlatform iOS` under 26.0.1 (a 26.0 runtime, several GB per run,
+      # unmeasured) -- it would keep the iOS compile on the pin at a cost nobody has weighed.
+      - name: Pick the iOS Xcode (newest image Xcode with an eligible iPhone runtime, T-6821, T-7841)
+        id: ios-xcode
+        run: |
+          deploy=$(grep -m1 -o 'IPHONEOS_DEPLOYMENT_TARGET = [0-9.]*' Cadence.xcodeproj/project.pbxproj | awk '{print $3}')
+          picked_app="" udid=""
+          for app in $(ls -d /Applications/Xcode_*.app | sort -t_ -k2 -V -r); do
+            DEVELOPER_DIR="$app/Contents/Developer" "$app/Contents/Developer/usr/bin/xcodebuild" \
+              -project Cadence.xcodeproj -scheme Cadence -showdestinations > "$RUNNER_TEMP/ios-destinations.txt" 2>&1 || true
+            udid=$(python3 -I -c '
+          import re, sys
+          text = open(sys.argv[1]).read().split("Ineligible destinations")[0]
+          floor = tuple(int(p) for p in sys.argv[2].split("."))
+          found = sorted(
+              (tuple(int(p) for p in m.group(2).split(".")), m.group(1), m.group(3))
+              for m in re.finditer(r"platform:iOS Simulator, arch:\w+, id:([0-9A-F-]{36}), OS:([0-9.]+), name:(iPhone[^}]*?)\s*\}", text)
+          )
+          found = [f for f in found if f[0] >= floor]
+          if found:
+              print(found[-1][1])
+              print("picked:", found[-1], file=sys.stderr)
+          ' "$RUNNER_TEMP/ios-destinations.txt" "$deploy")
+            if [ -n "$udid" ]; then picked_app="$app"; break; fi
+            echo "  $app: no eligible iPhone simulator at iOS >= $deploy"
+          done
+          if [ -z "$udid" ]; then
+            echo "::error::no image Xcode lists an eligible iPhone simulator at iOS >= $deploy for the Cadence scheme (T-6821, T-7841)."
+            xcrun simctl list runtimes || true
+            exit 1
+          fi
+          developer_dir="$picked_app/Contents/Developer"
+          "$developer_dir/usr/bin/xcodebuild" -version > "$RUNNER_TEMP/ios-test-xcode.txt" 2>&1 || true
+          echo "iOS Xcode: $picked_app ($(head -1 "$RUNNER_TEMP/ios-test-xcode.txt")), simulator $udid, deployment target $deploy"
+          echo "DEVELOPER_DIR=$developer_dir" >> "$GITHUB_ENV"
+          echo "XCODEBUILD=$developer_dir/usr/bin/xcodebuild" >> "$GITHUB_ENV"
+          echo "udid=$udid" >> "$GITHUB_OUTPUT"
       # T-3423 / T-5201: `build-for-testing`, not `build`. A plain `build` compiles the app (and
       # widgets) only, so an iOS-only compile break in `CadenceTests` -- a macOS-only symbol used
       # unfenced in a shared test -- stayed green here three times: `9aebf575` (17 errors), `42650535`
@@ -551,47 +601,20 @@ jobs:
       # suite (exit 8), and fails a run that executed none (exit 4).
       # None listed is a hard failure, never a skip: a quiet skip here is the T-535 shape.
       # Option (a), `-downloadPlatform iOS` under 26.0.1, was not taken: the runtime it would fetch is
-      # 26.0, below the 26.1 deployment target (reasoned, not run). `XCODEBUILD` and `DEVELOPER_DIR`
-      # are both set so this step's two `xcb.sh` runs use the PICKED Xcode, not the one
-      # `assert-toolchain.sh` selected: since [[T-7661]] `xcb.sh` with neither set runs
-      # `$(xcode-select -p)/usr/bin/xcodebuild` (the pinned 26.0.1), where it used to run
-      # `/Applications/Xcode.app`'s (26.6 on this image) whatever `xcode-select` said.
+      # 26.0, below the 26.1 deployment target (reasoned, not run). The pick itself now happens once,
+      # in `Pick the iOS Xcode` above ([[T-7841]]), which exports `XCODEBUILD` and `DEVELOPER_DIR`
+      # through $GITHUB_ENV so this step's two `xcb.sh` runs (and the generic build before them) use
+      # the PICKED Xcode, not the one `assert-toolchain.sh` selected: since [[T-7661]] `xcb.sh` with
+      # neither set runs `$(xcode-select -p)/usr/bin/xcodebuild` (the pinned 26.0.1).
       # Measured (runs 40629814847, 40632388234): rebuild 342-381 s, test 263-336 s, 22 tests.
       - name: Run the deliberately iOS-only CadenceTests suites on a simulator (T-6541, T-6821)
         id: ios-sim
         run: |
           export TMPDIR="$RUNNER_TEMP/"
           step_start=$SECONDS
-          deploy=$(grep -m1 -o 'IPHONEOS_DEPLOYMENT_TARGET = [0-9.]*' Cadence.xcodeproj/project.pbxproj | awk '{print $3}')
-          picked_app="" udid=""
-          for app in $(ls -d /Applications/Xcode_*.app | sort -t_ -k2 -V -r); do
-            DEVELOPER_DIR="$app/Contents/Developer" "$app/Contents/Developer/usr/bin/xcodebuild" \
-              -project Cadence.xcodeproj -scheme Cadence -showdestinations > "$RUNNER_TEMP/ios-destinations.txt" 2>&1 || true
-            udid=$(python3 -I -c '
-          import re, sys
-          text = open(sys.argv[1]).read().split("Ineligible destinations")[0]
-          floor = tuple(int(p) for p in sys.argv[2].split("."))
-          found = sorted(
-              (tuple(int(p) for p in m.group(2).split(".")), m.group(1), m.group(3))
-              for m in re.finditer(r"platform:iOS Simulator, arch:\w+, id:([0-9A-F-]{36}), OS:([0-9.]+), name:(iPhone[^}]*?)\s*\}", text)
-          )
-          found = [f for f in found if f[0] >= floor]
-          if found:
-              print(found[-1][1])
-              print("picked:", found[-1], file=sys.stderr)
-          ' "$RUNNER_TEMP/ios-destinations.txt" "$deploy")
-            if [ -n "$udid" ]; then picked_app="$app"; break; fi
-            echo "  $app: no eligible iPhone simulator at iOS >= $deploy"
-          done
-          if [ -z "$udid" ]; then
-            echo "::error::no image Xcode lists an eligible iPhone simulator at iOS >= $deploy for the Cadence scheme (T-6821)."
-            xcrun simctl list runtimes || true
-            exit 1
-          fi
-          export DEVELOPER_DIR="$picked_app/Contents/Developer"
-          export XCODEBUILD="$DEVELOPER_DIR/usr/bin/xcodebuild"
-          "$XCODEBUILD" -version > "$RUNNER_TEMP/ios-test-xcode.txt" 2>&1 || true
-          echo "test Xcode: $picked_app ($(head -1 "$RUNNER_TEMP/ios-test-xcode.txt")), simulator $udid, deployment target $deploy"
+          # DEVELOPER_DIR and XCODEBUILD come from `Pick the iOS Xcode` via $GITHUB_ENV (T-7841).
+          udid="${{ steps.ios-xcode.outputs.udid }}"
+          echo "test Xcode: $DEVELOPER_DIR ($(head -1 "$RUNNER_TEMP/ios-test-xcode.txt")), simulator $udid"
           build_start=$SECONDS
           ./scripts/xcb.sh ci-ios-sim-build raw \
             -scheme Cadence \
