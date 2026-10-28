@@ -139,7 +139,49 @@ extension TagSupport {
         }
         note.tags = resolution.tags
         note.updatedAt = Date()
+        // [[T-7882]]: what the PREVIOUS sync of this note minted and this one dropped is a
+        // half-typed `#pro` of `#project`; remove it before recording this sync's own mints.
+        removeProvisionalMintsDropped(by: note, keeping: resolution.tags, in: context, commit: commit)
+        TagProvisionalMints.shared.record(resolution.inserted, for: note.id)
         return true
+    }
+
+    /// **[[T-7882]].** An editor commits a note's body while the user is still typing — iOS after a
+    /// 2.5 s pause, macOS after 15 s, either on a focus loss — and the sync above mints a `Tag` for
+    /// every inline `#name` in it, so a caret inside `#pro` of `#project` mints `pro`, and the
+    /// finished word's commit used to leave that row behind for ever, in every tag picker and in
+    /// CloudKit.
+    ///
+    /// So a tag minted by one sync of a note is provisional until the next sync that CHANGES the
+    /// note's tags (one that changes nothing returns above and leaves it provisional). If that
+    /// sync no longer names it and nothing else holds it — no other note, no task — and nobody has
+    /// recoloured, renamed, described or archived it since, it was a half-word and is deleted.
+    /// Anything else keeps it: a tag that already existed was never provisional, a tag that
+    /// survives that sync stops being provisional, and the sync after it never looks. The
+    /// finished token of any commit, a quit's or a disappear's included, is minted as before.
+    ///
+    /// The delete is committed with `commitTypedContent`'s rule, not `commitDelete`'s: the context
+    /// holds the body being typed, and a rollback would take it. A refusal leaves the delete pending
+    /// beside that body, for the editor's next flush.
+    private static func removeProvisionalMintsDropped(
+        by note: Note,
+        keeping tags: [Tag],
+        in context: ModelContext,
+        commit: (ModelContext) throws -> Void
+    ) {
+        let kept = Set(tags.map(\.id))
+        let orphans = TagProvisionalMints.shared.take(for: note.id).compactMap { mint -> Tag? in
+            guard !kept.contains(mint.id) else { return nil }
+            let id = mint.id
+            guard let tag = try? context.fetch(FetchDescriptor<Tag>(predicate: #Predicate { $0.id == id })).first,
+                  mint.matches(tag),
+                  (tag.notes ?? []).allSatisfy({ $0.id == note.id }),
+                  (tag.tasks ?? []).isEmpty else { return nil }
+            return tag
+        }
+        guard !orphans.isEmpty else { return }
+        for tag in orphans { context.delete(tag) }
+        CadencePendingChangePersistence.commitTypedContent(in: context, commit: commit)
     }
 
     /// `TagSupport.setTags(named:on:in:writeFrontmatter:)` for a `Note`, plus the commit for the
@@ -217,5 +259,55 @@ extension TagSupport {
         guard changed else { return false }
         try CadencePendingChangePersistence.commitDelete(in: context, commit: commit)
         return changed
+    }
+}
+
+/// **[[T-7882]].** The tags each note's last tag sync minted, as they were minted, until the next
+/// sync of that note takes them (`TagSupport.syncNoteTagsFromMarkdownCommittingInsertions`).
+///
+/// In memory only, on purpose: an orphan needs the finished word's commit to drop the half-word,
+/// and that commit happens in the same session as the half-word's — after a relaunch the note
+/// still reads `#pro`, so the tag is the user's. Locked rather than actor-bound because
+/// `TagSupport` is `nonisolated`.
+nonisolated final class TagProvisionalMints: @unchecked Sendable {
+    struct Mint: Equatable {
+        let id: UUID
+        let name: String
+        let colorHex: String
+        let desc: String
+        let isArchived: Bool
+
+        init(_ tag: Tag) {
+            id = tag.id
+            name = tag.name
+            colorHex = tag.colorHex
+            desc = tag.desc
+            isArchived = tag.isArchived
+        }
+
+        /// Nobody has edited the row since it was minted.
+        func matches(_ tag: Tag) -> Bool {
+            self == Mint(tag)
+        }
+    }
+
+    static let shared = TagProvisionalMints()
+
+    private let lock = NSLock()
+    private var mintsByNoteID: [UUID: [Mint]] = [:]
+
+    /// Replaces the note's provisional set with what its latest sync minted.
+    func record(_ tags: [Tag], for noteID: UUID) {
+        let mints = tags.map(Mint.init)
+        lock.lock()
+        defer { lock.unlock() }
+        mintsByNoteID[noteID] = mints.isEmpty ? nil : mints
+    }
+
+    /// The note's provisional set, removed: only the next sync of the note may act on it.
+    func take(for noteID: UUID) -> [Mint] {
+        lock.lock()
+        defer { lock.unlock() }
+        return mintsByNoteID.removeValue(forKey: noteID) ?? []
     }
 }
