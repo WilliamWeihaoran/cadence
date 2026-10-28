@@ -153,6 +153,16 @@
 #                        set DEVELOPER_DIR authoritatively (as xcrun does), then `xcrun -f swiftc`,
 #                        then the real toolchain binaries -- which is what the App-Sandboxed test
 #                        host needs, since `xcrun` itself is refused in there.
+#   TEST-NAME-SHARED     the commit leaves a `@Test` name declared more than once in CadenceTests,
+#                        which `CadenceTestTargetHygieneTests` fails on in a full-target run nobody
+#                        makes before landing -- `830a428d` and `f574136c` ([[T-6650]]) reached main
+#                        red that way (T-3264). Read from the private index with
+#                        `test-suite-index.sh --shared-names`; only names this commit INTRODUCES are
+#                        refused, one HEAD already has is a note. No escape flag: the full target
+#                        is red on every one. Rename the copy you added.
+#   TEST-NAME-CHECK-MISSING / TEST-NAME-CHECK-FAILED
+#                        that census could not run -- the script is absent, or it exited non-zero
+#                        (including parsing no `@Test` at all). Refused rather than skipped.
 #   REMOVES-HEAD-LINES   the staged content drops lines HEAD has, and you did not say how many.
 #                        `--removes <exact count>` acknowledges them. A reconstruction built on a
 #                        stale HEAD reverts a sibling's landed work in exactly this shape. The
@@ -2104,6 +2114,80 @@ ${(F)failed_parse}
   braces proves nothing -- b0a7ebce's balanced, 87 and 87, and a spliced file's usually do.
   Re-read \`git show HEAD:<path>\`, re-apply your hunks to it, and check the result with the same
   command this used before running it again:  xcrun swiftc -parse <path>"
+        fi
+    fi
+
+    # 2c. TEST-NAME-SHARED (T-3264). No `@Test` name may be declared twice in the target this
+    #     commit leaves behind, which is `CadenceTestTargetHygieneTests.everyTestFunctionNameIn`
+    #     `TheTargetIsUniqueAcrossSuites` asked here instead of in a full-target run nobody makes.
+    #
+    #     The recurring red ([[T-3264]], `docs/CI_PARITY.md` mode B): the assertion lives in a file
+    #     the change never opened, so the change's own `-only-testing:` run is green over a red
+    #     tree. `830a428d` (T-3210) copied nine names from `MacTaskRowContextMenuEffectTests` into a
+    #     new iOS suite; `f574136c` added `removingOneOfTwoSameIDTasksFromABlockLeavesItsTwinThere`
+    #     to two suites at once and CI found it ([[T-6650]], `4e697f25`). Both were red on their own
+    #     sha, so a commit-time read of that sha catches both. The keeper ruled for this cheap form
+    #     over a mandatory full-target run before every landing.
+    #
+    #     The tree read is the PRIVATE INDEX, the exact bytes about to become the commit -- HEAD's
+    #     test sources with this commit's staged and deleted ones applied -- and the parser is
+    #     `test-suite-index.sh`'s, the same blanking and `@Test ... func` reading the Swift census
+    #     is pinned to. Only names this commit INTRODUCES are refused: a collision HEAD already has
+    #     is somebody else's red and is reported as a note, so a broken main cannot block the commit
+    #     that repairs an unrelated file. Asked only when a `CadenceTests/*.swift` path is staged; a
+    #     commit touching none cannot change the answer. Measured on this Mac: ~3-4 s, no build.
+    #     No escape flag, for the reason SWIFT-PARSE-FAILED has none: the full target goes red on
+    #     every shared name, so a flag here would only move the refusal onto main.
+    local -a census_names
+    census_names=()
+    for name in "${names[@]}"; do
+        [[ "$name" == CadenceTests/*.swift ]] && census_names+=("$name")
+    done
+    if (( ${#census_names} )); then
+        local census_script="${SCRIPT_PATH:h}/test-suite-index.sh"
+        [[ -f "$census_script" ]] || { rm -rf "$scratch"; refuse TEST-NAME-CHECK-MISSING "$census_script is not there, so
+  whether the ${#census_names} test source(s) this commit stages share a @Test name with another
+  suite cannot be asked. Skipping it silently is how a guard becomes decoration; restore the script." }
+        local census_tree="$scratch/census-staged" census_head="$scratch/census-head" census_out census_rc
+        mkdir -p "$census_tree/CadenceTests" "$census_head/CadenceTests" || { rm -rf "$scratch"; refuse SCRATCH "cannot make the test-name census trees" }
+        GIT_INDEX_FILE="$priv" git ls-files -z -- 'CadenceTests/*.swift' \
+            | GIT_INDEX_FILE="$priv" git checkout-index -z --stdin --prefix="$census_tree/" \
+            || { rm -rf "$scratch"; refuse SCRATCH "cannot export the staged test sources for the test-name census" }
+        census_out=$(zsh "$census_script" --shared-names "$census_tree" 2>"$scratch/census.err"); census_rc=$?
+        if (( census_rc != 0 )); then
+            local census_err; census_err=$(<"$scratch/census.err")
+            rm -rf "$scratch"
+            refuse TEST-NAME-CHECK-FAILED "\`test-suite-index.sh --shared-names\` exited $census_rc over the tree this commit would leave and said: ${census_err:-(nothing)}
+  Nothing was committed, because whether this commit makes two suites share a @Test name went
+  unanswered -- and that is the question a full-target run asks on main instead (T-3264)."
+        fi
+        if [[ -n "$census_out" ]]; then
+            # Only now pay for HEAD's reading: the common case is a clean tree and one parse.
+            local -a census_new census_old
+            local census_line census_head_out=""
+            census_new=(); census_old=()
+            if [[ -n "$(git ls-tree "$headsha" -- CadenceTests)" ]]; then
+                git archive "$headsha" CadenceTests | tar -x -C "$census_head" 2>/dev/null
+                census_head_out=$(zsh "$census_script" --shared-names "$census_head" 2>/dev/null) || census_head_out=""
+            fi
+            for census_line in "${(@f)census_out}"; do
+                if [[ -n "$census_head_out" && $'\n'"$census_head_out"$'\n' == *$'\n'"${census_line%%$'\t'*}"$'\t'* ]]; then
+                    census_old+=("${census_line%%$'\t'*}")
+                else
+                    census_new+=("    ${census_line/$'\t'/  <- }")
+                fi
+            done
+            if (( ${#census_new} )); then
+                rm -rf "$scratch"
+                refuse TEST-NAME-SHARED "this commit makes ${#census_new} @Test name(s) declared more than once in CadenceTests:
+${(F)census_new}
+  CadenceTestTargetHygieneTests.everyTestFunctionNameInTheTargetIsUniqueAcrossSuites fails on every one
+  of these, and your -only-testing: run never runs it -- this is how 830a428d and f574136c reached
+  main red (T-3264, T-6650). Rename the copy you added (a test name is a bare function name in the
+  log, so two suites sharing one makes mutation evidence ambiguous), restage, and commit again.
+  To see the collision yourself:  ./scripts/test-suite-index.sh <name>"
+            fi
+            say "note: HEAD already declares ${#census_old} @Test name(s) more than once, not introduced by this commit: ${(j:, :)census_old}"
         fi
     fi
 
@@ -5616,6 +5700,102 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>" ) >/dev/null 2>&1
     check "renumbering an id already in HEAD walks --drops-ids/--retires-ids, never --commits-stale" \
         $(( rc == 0 )) "exit $rc: $out"
     selftest_segment_close s14 ) > "$runs/s14.log" 2>&1 &
+    # T-3264. Its own segment and its own fixture: it builds a CadenceTests/ of its own, commits a
+    # collision straight through git to stand for a red HEAD, and reads nothing another mode leaves.
+    segments+=(s15)
+    ( selftest_segment_open s15
+    say ""
+    say " mode 12 (TEST-NAME-SHARED) -- T-3264: a commit that makes two suites share a @Test name is"
+    say "         refused at the commit, not found by a full-target run on main (830a428d, T-6650)"
+    say "         ...and the census cannot be disabled by its script being absent or not answering"
+    say "         (TEST-NAME-CHECK-MISSING / TEST-NAME-CHECK-FAILED)"
+    ( cd "$ws"
+      mkdir -p CadenceTests
+      print -r -- "NameSelftestSweeps/theListedSweep" > CadenceTests/CadenceRealTreeSweepManifest.txt
+      print -rl -- 'import Testing' '' 'struct NameSelftestAlpha {' \
+          '    @Test func theAlphaSuitesOwnName() {}' \
+          '    @Test func theNameBothSuitesWillWant() {}' '}' > CadenceTests/NameAlpha.swift
+      print -rl -- 'import Testing' '' 'struct NameSelftestBeta {' \
+          '    @Test func theBetaSuitesOwnName() {}' '}' > CadenceTests/NameBeta.swift
+      git add CadenceTests >/dev/null
+      git commit -qm "name census fixture
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>" ) >/dev/null 2>&1
+    # The mutation this mode kills: f574136c's shape, the same name added to a second suite.
+    ( cd "$ws" && print -rl -- 'import Testing' '' 'struct NameSelftestBeta {' \
+        '    @Test func theBetaSuitesOwnName() {}' \
+        '    @Test func theNameBothSuitesWillWant() {}' '}' > CadenceTests/NameBeta.swift )
+    prehead=$( cd "$ws" && git rev-parse HEAD )
+    out=$( cd "$ws" && zsh "$here" n12a -m "$M" CadenceTests/NameBeta.swift 2>&1 ); rc=$?
+    check "a @Test name another suite already declares is refused" \
+        $( [[ $rc == 3 && "$out" == *TEST-NAME-SHARED* ]] && print 1 || print 0 ) "exit $rc: $out"
+    check "and the name and BOTH suites are named" \
+        $( [[ "$out" == *theNameBothSuitesWillWant*"NameSelftestAlpha (NameAlpha.swift)"*"NameSelftestBeta (NameBeta.swift)"* ]] && print 1 || print 0 ) "$out"
+    check "the names that are unique are not dragged in" \
+        $( [[ "$out" != *theBetaSuitesOwnName* && "$out" != *theAlphaSuitesOwnName* ]] && print 1 || print 0 ) "$out"
+    check "nothing was committed" \
+        $( [[ $( cd "$ws" && git rev-parse HEAD ) == "$prehead" ]] && print 1 || print 0 ) "HEAD $prehead -> $( cd "$ws" && git rev-parse HEAD )"
+    # The other direction, so a census that flags everything fails too: the same name only in a
+    # comment and inside a string literal -- a fixture, as the hygiene suites' own are -- is not a
+    # declaration, and a renamed copy is not a collision.
+    ( cd "$ws" && print -rl -- 'import Testing' '' 'struct NameSelftestBeta {' \
+        '    @Test func theBetaSuitesOwnName() {}' \
+        '    // @Test func theNameBothSuitesWillWant() {}' \
+        '    @Test func theRenamedCopyIsItsOwnName() {' \
+        '        let fixture = "@Test func theNameBothSuitesWillWant() {}"' \
+        '        #expect(!fixture.isEmpty)' '    }' '}' > CadenceTests/NameBeta.swift )
+    out=$( cd "$ws" && zsh "$here" n12b -m "$M" CadenceTests/NameBeta.swift 2>&1 ); rc=$?
+    check "a renamed copy commits, with the old name left only in a comment and a literal" \
+        $(( rc == 0 )) "exit $rc: $out"
+    # It reads the STAGED tree, not the checkout: deleting the colliding suite in the same commit
+    # clears it, and a sibling's colliding file left unstaged in the worktree does not refuse you.
+    ( cd "$ws" && print -rl -- 'import Testing' '' 'struct NameSelftestGamma {' \
+        '    @Test func theNameBothSuitesWillWant() {}' '}' > CadenceTests/NameGamma.swift
+      rm CadenceTests/NameAlpha.swift )
+    out=$( cd "$ws" && zsh "$here" n12c -m "$M" --removes 6 CadenceTests/NameGamma.swift CadenceTests/NameAlpha.swift 2>&1 ); rc=$?
+    check "a name moved by deleting its old suite in the same commit is not a collision" \
+        $(( rc == 0 )) "exit $rc: $out"
+    ( cd "$ws" && print -rl -- 'import Testing' '' 'struct NameSelftestSibling {' \
+        '    @Test func theNameBothSuitesWillWant() {}' '}' > CadenceTests/NameSibling.swift
+      print -r -- "// mine, beside a sibling's file" >> CadenceTests/NameBeta.swift )
+    out=$( cd "$ws" && zsh "$here" n12d -m "$M" CadenceTests/NameBeta.swift 2>&1 ); rc=$?
+    check "an unstaged sibling's colliding file in the worktree does not refuse your commit" \
+        $(( rc == 0 )) "exit $rc: $out"
+    # A collision HEAD already has is somebody else's red: a note, never a block on an unrelated fix.
+    ( cd "$ws" && git add CadenceTests/NameSibling.swift && git commit -qm "a red HEAD, landed around the gate
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>" ) >/dev/null 2>&1
+    ( cd "$ws" && print -r -- "// touched" >> CadenceTests/NameBeta.swift )
+    out=$( cd "$ws" && zsh "$here" n12e -m "$M" CadenceTests/NameBeta.swift 2>&1 ); rc=$?
+    check "a collision HEAD already has does not block an unrelated test commit" \
+        $(( rc == 0 )) "exit $rc: $out"
+    check "and it is reported as HEAD's, by name" \
+        $( [[ "$out" == *"HEAD already declares 1"*theNameBothSuitesWillWant* ]] && print 1 || print 0 ) "$out"
+    # Missing and not answering. The two earlier guards' scripts are copied along so the run gets
+    # far enough to reach this one rather than stopping a guard earlier.
+    ( cd "$ws" && mkdir -p lonely12 && cp "$here" lonely12/agent-commit.sh
+      cp "${here:h}/worktree-drift.sh" lonely12/worktree-drift.sh
+      cp "${here:h}/real-tree-sweep-manifest.sh" lonely12/real-tree-sweep-manifest.sh
+      print -r -- "// committed with no census nearby" >> CadenceTests/NameBeta.swift )
+    prehead=$( cd "$ws" && git rev-parse HEAD )
+    out=$( cd "$ws" && zsh "$ws/lonely12/agent-commit.sh" n12f -m "$M" CadenceTests/NameBeta.swift 2>&1 ); rc=$?
+    check "a copy with no test-suite-index.sh beside it refuses rather than skipping" \
+        $( [[ $rc == 3 && "$out" == *TEST-NAME-CHECK-MISSING* ]] && print 1 || print 0 ) "exit $rc: $out"
+    check "and nothing was committed by it" \
+        $( [[ $( cd "$ws" && git rev-parse HEAD ) == "$prehead" ]] && print 1 || print 0 ) "HEAD $prehead -> $( cd "$ws" && git rev-parse HEAD )"
+    ( cd "$ws" && print -rl -- '#!/bin/zsh' 'print -r -- "something went wrong" >&2; exit 2' > lonely12/test-suite-index.sh )
+    out=$( cd "$ws" && zsh "$ws/lonely12/agent-commit.sh" n12g -m "$M" CadenceTests/NameBeta.swift 2>&1 ); rc=$?
+    check "a census that exits non-zero is refused, not read as a pass" \
+        $( [[ $rc == 3 && "$out" == *TEST-NAME-CHECK-FAILED*"something went wrong"* ]] && print 1 || print 0 ) "exit $rc: $out"
+    # The real parser's own vacuity end: a tree with no @Test at all is a refusal to answer.
+    out=$( zsh "${here:h}/test-suite-index.sh" --shared-names "$ws/lonely12" 2>&1 ); rc=$?
+    check "the census refuses a root with no CadenceTests/ rather than answering clean" \
+        $( (( rc == 2 )) && print 1 || print 0 ) "exit $rc: $out"
+    ( mkdir -p "$ws/empty12/CadenceTests" && print -r -- "struct NoTests {}" > "$ws/empty12/CadenceTests/None.swift" )
+    out=$( zsh "${here:h}/test-suite-index.sh" --shared-names "$ws/empty12" 2>&1 ); rc=$?
+    check "and one that parses no @Test at all" \
+        $( (( rc == 2 )) && [[ "$out" == *"parsed no @Test"* ]] && print 1 || print 0 ) "exit $rc: $out"
+    selftest_segment_close s15 ) > "$runs/s15.log" 2>&1 &
     wait
     performed=(); failures=()
     local seg segtally

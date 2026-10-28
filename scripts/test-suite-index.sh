@@ -8,6 +8,9 @@
 #   ./scripts/test-suite-index.sh --labels               # TypeName<TAB>label, every suite
 #   ./scripts/test-suite-index.sh --test-labels          # funcName<TAB>label ("" if unnamed), every @Test
 #   ./scripts/test-suite-index.sh --suite-files          # Suite<TAB>file<TAB>testCount, every suite
+#   ./scripts/test-suite-index.sh --shared-names [<root>] # name<TAB>Suite (file), ... for every @Test
+#                                                        # name declared more than once, read from
+#                                                        # <root>/CadenceTests (default: this repo)
 #
 # This exists for two of the five ways a test has looked like a guard while guaranteeing nothing
 # (docs/TODO.md T-161):
@@ -60,15 +63,44 @@
 set -uo pipefail
 ROOT="${0:A:h:h}"
 MODE=list
+# T-3264. `agent-commit.sh` runs `--shared-names` on every commit staging a test source, and its own
+# selftest runs that from inside the App-Sandboxed macOS test host (`CadenceGuardScriptSelftestTests`).
+# Two things a bare `python3 - <<'PY'` does not survive in there, handled exactly as
+# `real-tree-sweep-manifest.sh` handles them: `/usr/bin/python3` is an xcrun shim that the sandbox
+# refuses, and zsh writes here-document temp files under `$TMPPREFIX`, which it defaults to `/tmp/zsh`.
+_tmp_base="${TMPDIR:-/tmp/}"; [[ "$_tmp_base" != */ ]] && _tmp_base="$_tmp_base/"
+export TMPPREFIX="${CADENCE_TMPPREFIX:-${_tmp_base}zsh}"
+PYTHON_BIN="${CADENCE_PYTHON:-}"
+if [[ -z "$PYTHON_BIN" ]]; then
+    for _candidate in /usr/bin/python3 /Applications/Xcode.app/Contents/Developer/usr/bin/python3 \
+                      /opt/homebrew/bin/python3 /usr/local/bin/python3; do
+        [[ -x "$_candidate" ]] || continue
+        "$_candidate" -c '' >/dev/null 2>&1 || continue
+        PYTHON_BIN="$_candidate"; break
+    done
+fi
+if [[ -z "$PYTHON_BIN" ]]; then
+    print -r -- "test-suite-index.sh: no working python3 found, so the index cannot be read" >&2
+    exit 2
+fi
 if [[ "${1:-}" == "--scope" ]]; then MODE=scope; shift
 elif [[ "${1:-}" == "--label" ]]; then MODE=label; shift
 elif [[ "${1:-}" == "--labels" ]]; then MODE=labels; shift
 elif [[ "${1:-}" == "--test-labels" ]]; then MODE=test_labels; shift
 elif [[ "${1:-}" == "--suite-files" ]]; then MODE=suite_files; shift
+elif [[ "${1:-}" == "--shared-names" ]]; then
+    # The positional is a ROOT here, not a needle: the caller is asking about a tree it built (the
+    # commit as it would land), and a needle would filter away exactly the half of a collision that
+    # is not in the file it named.
+    MODE=shared_names; shift
+    if [[ -n "${1:-}" ]]; then
+        [[ -d "$1/CadenceTests" ]] || { print -r -- "test-suite-index.sh: no CadenceTests/ under '$1'" >&2; exit 2 }
+        ROOT="${1:A}"; shift
+    fi
 fi
 NEEDLE="${1:-}"
 
-python3 - "$ROOT" "$MODE" "$NEEDLE" <<'PY'
+"$PYTHON_BIN" -I - "$ROOT" "$MODE" "$NEEDLE" <<'PY'
 import os, re, sys
 
 root, mode, needle = sys.argv[1], sys.argv[2], sys.argv[3]
@@ -260,6 +292,26 @@ for dirpath, _, filenames in os.walk(os.path.join(root, 'CadenceTests')):
             test_label = leading_string(raw, m.start(), '@Test')
             rows.append((suite or '<file scope>', m.group(1), filename, test_label))
             suite_label.setdefault(suite or '<file scope>', None)
+
+if mode == 'shared_names':
+    # T-3264. The exact question `CadenceTestTargetHygieneTests.everyTestFunctionNameInTheTargetIsUniqueAcrossSuites`
+    # asks -- group every `@Test` declaration by its bare name, report each name with more than one
+    # -- asked of a tree without a build, so `agent-commit.sh` can refuse the collision at the
+    # commit instead of a full-target run finding it on main (`830a428d`, `f574136c`/[[T-6650]]).
+    # Same parser as every other mode here, and that parser is the one the Swift side is pinned to.
+    # Zero declarations is a refusal to answer, not a clean answer: a walk that found nothing
+    # satisfies "no duplicates" perfectly.
+    if not rows:
+        print(f'test-suite-index.sh: parsed no @Test under {os.path.join(root, "CadenceTests")}', file=sys.stderr)
+        sys.exit(2)
+    by_name = {}
+    for suite, name, filename, _label in rows:
+        by_name.setdefault(name, []).append(f'{suite} ({filename})')
+    for name in sorted(by_name):
+        if len(by_name[name]) > 1:
+            print(f'{name}\t{", ".join(sorted(by_name[name]))}')
+    print(f'-- {len(rows)} test(s) parsed', file=sys.stderr)
+    sys.exit(0)
 
 if mode == 'suite_files':
     # Suite<TAB>declaring file<TAB>test count, one line per suite. The caller that needs this is

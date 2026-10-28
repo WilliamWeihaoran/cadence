@@ -68,7 +68,11 @@ change never opened, so a `-only-testing:` run over a branch's own suites is gre
 broke `83479456` (comment-claim, typography and animation sweeps) and `e6a226b6`
 (`noSourceFileSpellsAClockWithoutAskingTheHourCycle`, whose offender arrived in a different
 agent's `f1fe7afc`). **Live? Yes — this is the mode that recurs.** Check: run the census suites
-against *what you are about to push*, not against your branch's own suites.
+against *what you are about to push*, not against your branch's own suites. One shape of it is
+now gated ([[T-3264]]): `agent-commit.sh` refuses `TEST-NAME-SHARED` when a commit staging a
+`CadenceTests/*.swift` leaves a `@Test` name declared twice (the `830a428d` / [[T-6650]] red),
+reading the private index with `test-suite-index.sh --shared-names` in a few seconds. The other
+census suites still need the run.
 
 **C. Host time zone.** CI is UTC, this Mac is America/New_York, and a test reading
 `Calendar.current` can only pass on one of them ([[T-3225]]). **Live? Guarded.** The guard runs
