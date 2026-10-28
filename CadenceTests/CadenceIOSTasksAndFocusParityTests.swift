@@ -183,6 +183,28 @@ struct CadenceFocusTimerPhaseTests {
         #expect(macPanel.contains("Label(phase.label, systemImage: phase.systemImage)"))
         #expect(!macPanel.contains("\"Paused\""))
     }
+
+    /// T-8011: the Mac Focus sidebar's Session chip was a hard-coded green "Ready" with a check
+    /// mark, so it said "Ready" beside a card reading "Running". Both now take one phase value.
+    @Test func theMacSidebarChipAndTimerCardAreFedOnePhase() throws {
+        let view = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile("Cadence/macOS/Views/FocusView.swift"))
+        let layout = try #require(CadenceSourceScan.declarationBody("private func activeLayout(task: AppTask) -> some View", in: view))
+        #expect(layout.components(separatedBy: "CadenceFocusTimerPhase(").count - 1 == 1, "the card and sidebar compute their phases separately")
+        let card = try #require(layout.range(of: "FocusTimerPanel("))
+        let sidebar = try #require(layout.range(of: "FocusSidebar("))
+        let cardArgs = String(layout[card.upperBound..<sidebar.lowerBound])
+        let sidebarArgs = String(layout[sidebar.upperBound...])
+        #expect(cardArgs.contains("phase: phase,"), "the timer card is not handed the shared phase")
+        #expect(sidebarArgs.contains("phase: phase,"), "the sidebar is not handed the timer card's phase")
+
+        let support = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile("Cadence/macOS/Views/FocusSidebarSupportViews.swift"))
+        let sidebarType = try #require(CadenceSourceScan.declarationBody("struct FocusSidebar: View", in: support))
+        #expect(sidebarType.contains("let phase: CadenceFocusTimerPhase"))
+        #expect(sidebarType.contains("FocusStatusChip(title: phase.label, color: phaseTint, icon: phase.systemImage)"), "the Session chip spells its own state again")
+        #expect(!sidebarType.contains("\"Ready\""), "the Session chip is hard-coded to Ready again")
+        #expect(!sidebarType.contains("Theme.green"), "the Session chip reads completed-green again")
+        #expect(!sidebarType.contains("checkmark.circle.fill"))
+    }
 }
 
 /// T-7089: the iPhone Focus picker row lets a long task title take two lines, the task-row title

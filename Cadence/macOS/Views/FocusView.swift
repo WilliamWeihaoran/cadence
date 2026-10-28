@@ -61,6 +61,11 @@ struct FocusView: View {
 
     @ViewBuilder
     private func activeLayout(task: AppTask) -> some View {
+        // T-8011: one phase, read by the timer card and the sidebar's Session chip alike.
+        let phase = CadenceFocusTimerPhase(
+            isRunning: focusManager.isRunning,
+            elapsedSeconds: focusManager.elapsedSeconds(at: displayTick)
+        )
         VStack(spacing: 0) {
             FocusSessionHeader(
                 task: task,
@@ -73,10 +78,7 @@ struct FocusView: View {
                     VStack(spacing: 14) {
                         FocusTimerPanel(
                             clockDisplay: clockDisplay,
-                            phase: CadenceFocusTimerPhase(
-                                isRunning: focusManager.isRunning,
-                                elapsedSeconds: focusManager.elapsedSeconds(at: displayTick)
-                            ),
+                            phase: phase,
                             accent: Color(hex: task.containerColor),
                             controls: { timerControls(task: task) }
                         )
@@ -95,6 +97,7 @@ struct FocusView: View {
                     if CadenceDesktopSplitLayout.focusShowsSidebar(paneWidth: proxy.size.width) {
                         FocusSidebar(
                             task: task,
+                            phase: phase,
                             nextTasks: Array(readyTasks.filter { $0.id != task.id }.prefix(4)),
                             onSelectTask: { task in reportingFocusFailure { try focusManager.startFocus(task: task, in: modelContext) } }
                         )

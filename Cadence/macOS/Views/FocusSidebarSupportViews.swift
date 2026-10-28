@@ -83,13 +83,22 @@ private struct FocusSidebarShell<SessionSummary: View>: View {
 
 struct FocusSidebar: View {
     let task: AppTask
+    /// T-8011: the same phase `FocusTimerPanel` is handed, so the Session chip and the timer card
+    /// cannot disagree. The chip used to be a hard-coded green "Ready" with a check mark, which
+    /// read "Ready" (and "done") beside a card saying "Running" or "Paused".
+    let phase: CadenceFocusTimerPhase
     let nextTasks: [AppTask]
     let onSelectTask: (AppTask) -> Void
+
+    /// The card's own rule: the task's accent while running, dim otherwise. Never completed-green.
+    private var phaseTint: Color {
+        phase == .running ? Color(hex: task.containerColor) : Theme.dim
+    }
 
     var body: some View {
         FocusSidebarShell(nextTasks: nextTasks, onSelectTask: onSelectTask) {
             HStack(spacing: 8) {
-                FocusStatusChip(title: "Ready", color: Theme.green, icon: "checkmark.circle.fill")
+                FocusStatusChip(title: phase.label, color: phaseTint, icon: phase.systemImage)
                 if task.isRecurring {
                     FocusStatusChip(title: task.recurrenceRule.label, color: Theme.blue, icon: "arrow.clockwise")
                 }
