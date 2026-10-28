@@ -1610,48 +1610,40 @@ enum CadenceCommentSymbolClaim {
     /// on [[T-7620]], not swept here.
     private static let bareSweepRoots = ["Cadence/", "CadenceWidgets/", "CadenceMCPServer/"]
 
-    /// **Grandfathered, NOT triaged ([[T-7620]]).** Every line is a backticked camelCase name in a
-    /// product comment that no code in the tree spells, as measured when this half landed on
-    /// 2026-10-27: 227 lines, from a population of 3,000+ bare spans. They are a mix the ticket
-    /// names -- memorials to deleted views and members, test names quoted in product prose,
-    /// framework members the app reads without spelling, and genuinely stale claims -- and nobody
-    /// has yet split them. **The count may only fall.** A line removed is a triage, or a comment
-    /// fixed; a new finding is a comment to fix or a deletion to finish, not a line to add here,
-    /// and `theBareLedgerIsWellFormedAndOnlyShrinks` fails on growth to say so.
-    static let bareLedger: [String] = [
+    /// **Triaged ([[T-7620]]).** Every line is a backticked camelCase name in a product comment
+    /// that no code in the tree spells. 227 were grandfathered untriaged when this half landed on
+    /// 2026-10-27; `cmtriage2238` read each one in place and split them the way the qualified
+    /// ledger above is split. **The count may only fall.** A new finding is a comment to fix or a
+    /// deletion to finish, not a line to add here, and `theBareLedgerIsWellFormedAndOnlyShrinks`
+    /// fails on growth to say so.
+    ///
+    /// Memorials: the sentence's subject is a symbol that is gone -- "was declared here", "used to",
+    /// "This replaces", "It was", a retired view named in a defect history -- or a counterfactual
+    /// naming one the repository decided not to add ("There is no `removeColumns`, deliberately").
+    /// The bare half cannot tell these from a stale claim by arithmetic, which is why they are read
+    /// and recorded rather than inferred.
+    static let bareMemorials: [String] = [
         "Cadence/Models/AppTask.swift `focusEyebrowTitle`",
         "Cadence/Models/AppTask.swift `logSessionTitle`",
         "Cadence/Models/AppTask.swift `tasksSectionLabel`",
         "Cadence/Models/GoalContributionSummary.swift `detachGoalListLink`",
         "Cadence/Models/Note.swift `canonicalNoteKey`",
-        "Cadence/Models/TaskOrdering.swift `_sortDir`",
-        "Cadence/Models/TaskOrdering.swift `_sortField`",
-        "Cadence/Services/CadenceDataExportService.swift `keyNotFound`",
-        "Cadence/Services/CadenceTaskBundleRetirement.swift `bundleClampsMatchTheTimelineDayRange`",
         "Cadence/Services/CadenceTaskContainerLifecycleService.swift `onDidSettle`",
         "Cadence/Services/CadenceWidgetRefreshCenter.swift `reloadTodayWidgets`",
         "Cadence/Services/DataIntegrityRepairService.swift `contextScore`",
-        "Cadence/Services/DataIntegrityRepairService.swift `keyNotFound`",
-        "Cadence/Services/DataIntegrityRepairService.swift `repairDuplicateContexts`",
         "Cadence/Services/DataIntegrityRepairService.swift `repairDuplicateHabitCompletions`",
         "Cadence/Services/DataIntegrityRepairService.swift `repairOutOfRangeHabitReminders`",
         "Cadence/Services/MCPReadOnly/CadenceMCPServiceSupport.swift `requestedSectionName`",
-        "Cadence/Services/MCPReadOnly/CadenceReadDTOs.swift `fetchOffset`",
         "Cadence/Services/MCPReadOnly/CadenceReadDTOs.swift `subGoalCount`",
         "Cadence/Services/MCPReadOnly/CadenceReadService.swift `getHabit`",
         "Cadence/Services/MCPReadOnly/CadenceReadService.swift `getTaskBundle`",
         "Cadence/Services/MCPReadOnly/CadenceReadService.swift `notesForContainer`",
         "Cadence/Services/MCPReadOnly/CadenceWriteService.swift `coreNoteCreatedButNotAppended`",
         "Cadence/Services/MCPReadOnly/CadenceWriteService.swift `removeColumns`",
-        "Cadence/Services/MarkdownImageAssetService.swift `validateUserInterfaceItem`",
         "Cadence/Services/MarkdownNoteSupport.swift `containsLoosePhrase`",
         "Cadence/Services/MarkdownNoteSupport.swift `tableLineIndexes`",
-        "Cadence/Services/MarkdownProgrammaticEditSupport.swift `smartInsertDeleteType`",
         "Cadence/Services/MarkdownTaskEmbedSupport.swift `isLegacyChecklistMarkerCharacter`",
         "Cadence/Services/MarkdownTaskEmbedSupport.swift `legacyChecklistMarkerRange`",
-        "Cadence/Services/NoteMigrationService.swift `keyNotFound`",
-        "Cadence/Services/PersistenceController.swift `_underlyingCocoaError`",
-        "Cadence/Services/TagSupport.swift `isInserted`",
         "Cadence/Services/TagSupport.swift `newSlug`",
         "Cadence/Services/TagSupport.swift `newTagSlug`",
         "Cadence/Services/TaskCreationService.swift `addTask`",
@@ -1671,20 +1663,15 @@ enum CadenceCommentSymbolClaim {
         "Cadence/Shared/CadenceFeatureDestination.swift `secondaryOrder`",
         "Cadence/Shared/CadenceFeatureDestination.swift `utilityOrder`",
         "Cadence/Shared/CadenceFeatureDestination.swift `workspaceDrawerSections`",
-        "Cadence/Shared/CadenceFocusPlanningSupport.swift `didWake`",
         "Cadence/Shared/CadenceListDetailPage.swift `iOSListDetailPage`",
         "Cadence/Shared/CadenceListNoteFiling.swift `defaultNoteContent`",
-        "Cadence/Shared/CadenceLookPreferenceStore.swift `_sortDir`",
-        "Cadence/Shared/CadenceLookPreferenceStore.swift `_sortField`",
         "Cadence/Shared/CadencePageHeaderMetrics.swift `iOSPageHeaderMetrics`",
         "Cadence/Shared/CadencePageHeaderMetrics.swift `tileSize`",
         "Cadence/Shared/CadencePluralization.swift `iOSFeatureViews`",
-        "Cadence/Shared/CadenceReorderVisibility.swift `_sortField`",
         "Cadence/Shared/CadenceScheduleSupport.swift `bundlesByDate`",
         "Cadence/Shared/CadenceSettingsSectionCopy.swift `cancelledAreas`",
         "Cadence/Shared/CadenceSettingsSectionCopy.swift `pausedAreas`",
         "Cadence/Shared/CadenceTaskBundleMutationSupport.swift `addTask`",
-        "Cadence/Shared/CadenceTaskBundleMutationSupport.swift `bundleClampsMatchTheTimelineDayRange`",
         "Cadence/Shared/CadenceTaskBundleMutationSupport.swift `insertBundle`",
         "Cadence/Shared/CadenceTaskMutationSupport.swift `bundleCreateFailureAlertTitle`",
         "Cadence/Shared/CadenceTaskMutationSupport.swift `bundleDeleteFailureAlertTitle`",
@@ -1693,7 +1680,6 @@ enum CadenceCommentSymbolClaim {
         "Cadence/Shared/CadenceTaskMutationSupport.swift `bundleSaveFailureNotice`",
         "Cadence/Shared/CadenceTaskMutationSupport.swift `detachGoalListLink`",
         "Cadence/Shared/CadenceTaskMutationSupport.swift `iOSCalendarBundleDetailSheet`",
-        "Cadence/Shared/CadenceTaskMutationSupport.swift `iOSTaskRowActions`",
         "Cadence/Shared/CadenceTaskMutationSupport.swift `moveBundle`",
         "Cadence/Shared/CadenceTaskMutationSupport.swift `updateBundle`",
         "Cadence/Shared/CadenceTaskPlanningSupport.swift `sortDateKey`",
@@ -1702,14 +1688,12 @@ enum CadenceCommentSymbolClaim {
         "Cadence/Shared/CadenceTaskQuerySupport.swift `planningDisplayGroups`",
         "Cadence/Shared/CadenceTaskQuerySupport.swift `sortDateKey`",
         "Cadence/Shared/CadenceTaskRowIndicators.swift `hasNotes`",
-        "Cadence/Shared/CadenceTaskStatusEditing.swift `iOSCalendarBundleDetailSheet`",
         "Cadence/Shared/CadenceTaskSurfaceOptions.swift `iOSCompactAllTasksView`",
         "Cadence/Shared/CadenceTodayLayoutSupport.swift `drawsCard`",
         "Cadence/Shared/CadenceTodayLayoutSupport.swift `iPadTodayLayoutMode`",
         "Cadence/Shared/CadenceTodayPresentationSupport.swift `iOSCompactTodayEmptyState`",
         "Cadence/Shared/CadenceTodayPresentationSupport.swift `overdueSectionAccent`",
         "Cadence/Shared/CadenceTodayPresentationSupport.swift `overdueSectionTitle`",
-        "Cadence/Shared/CadenceTodayRolloverSupport.swift `bundleDeleteFailureNotice`",
         "Cadence/Shared/CadenceTodayRolloverSupport.swift `claimedByDueDate`",
         "Cadence/Shared/CadenceTrackingMutationSupport.swift `goalDeleteConfirmationMessage`",
         "Cadence/Shared/CadenceTrackingMutationSupport.swift `goalDeleteFailureNotice`",
@@ -1731,7 +1715,6 @@ enum CadenceCommentSymbolClaim {
         "Cadence/Shared/Components/CadenceStartTimeFieldRow.swift `iOSCalendarBundleDetailSheet`",
         "Cadence/Shared/Components/CadenceTagChip.swift `iOSTagChip`",
         "Cadence/Shared/DateFormatters.swift `isLate`",
-        "Cadence/Shared/DateFormatters.swift `setLocalizedDateFormatFromTemplate`",
         "Cadence/Shared/GoalAssignmentRules.swift `iOSGoalEditorSheet`",
         "Cadence/Shared/GoalAssignmentRules.swift `saveGoal`",
         "Cadence/Shared/GoalListLinkHelpers.swift `attachList`",
@@ -1739,42 +1722,28 @@ enum CadenceCommentSymbolClaim {
         "Cadence/Shared/GoalListLinkHelpers.swift `iOSGoalAttachListsSheet`",
         "Cadence/Shared/GoalListLinkHelpers.swift `makeLink`",
         "Cadence/Shared/GoalListLinkHelpers.swift `toggleGoalListLink`",
-        "Cadence/Shared/HabitNotificationReconcileSupport.swift `reconcileInput`",
         "Cadence/iOS/iOSBoardCards.swift `iOSCalendarBoardMetadataChip`",
-        "Cadence/iOS/iOSCalendarMetrics.swift `dayEdge`",
-        "Cadence/iOS/iOSCalendarMetrics.swift `pinnedEdge`",
-        "Cadence/iOS/iOSCalendarMetrics.swift `theTodayTimelineReadsItsHourFiguresFromHere`",
-        "Cadence/iOS/iOSCalendarMonthViews.swift `iOSCalendarMonthCell`",
         "Cadence/iOS/iOSCalendarMonthViews.swift `isEventPlate`",
         "Cadence/iOS/iOSCalendarMonthViews.swift `weekdaySymbolSize`",
         "Cadence/iOS/iOSCalendarTimelineViews.swift `draftRangeUnderTouch`",
         "Cadence/iOS/iOSCalendarTimelineViews.swift `iOSCalendarBundleDetailSheet`",
         "Cadence/iOS/iOSCalendarTimelineViews.swift `iOSScheduleHourRow`",
         "Cadence/iOS/iOSCalendarTimelineViews.swift `iOSTimelineBundleBlock`",
-        "Cadence/iOS/iOSColumnWindDownSupport.swift `iOSBundleFormingDrop`",
         "Cadence/iOS/iOSCompactTabShell.swift `iOSCompactHomeView`",
         "Cadence/iOS/iOSDesignSystem.swift `iOSBoardColumnHeader`",
-        "Cadence/iOS/iOSDesignSystem.swift `iOSFoo`",
         "Cadence/iOS/iOSDesignSystem.swift `iOSInlineEmpty`",
         "Cadence/iOS/iOSDesignSystem.swift `showsPlate`",
-        "Cadence/iOS/iOSFocusView.swift `iOSHabitsView`",
         "Cadence/iOS/iOSInboxView.swift `iPadInboxView`",
         "Cadence/iOS/iOSListDetailView.swift `iOSListNotesPanel`",
-        "Cadence/iOS/iOSListEditorViews.swift `secondarySystemGroupedBackground`",
         "Cadence/iOS/iOSListNotesView.swift `iOSListNotesPanel`",
-        "Cadence/iOS/iOSListViews.swift `secondarySystemGroupedBackground`",
-        "Cadence/iOS/iOSMarkdownBlockCanvasRendering.swift `drawTaskEmbeds`",
         "Cadence/iOS/iOSMarkdownBlockCanvasSupport.swift `iOSMarkdownLiveTableLayoutInfo`",
-        "Cadence/iOS/iOSMarkdownEditor.swift `inputAccessoryView`",
         "Cadence/iOS/iOSMarkdownEditor.swift `pendingCommand`",
         "Cadence/iOS/iOSMarkdownImageLayoutInfo.swift `fittedImageSize`",
-        "Cadence/iOS/iOSMarkdownInlineTaskPanelSupport.swift `keyboardLayoutGuide`",
         "Cadence/iOS/iOSNotesView.swift `iOSCompactNotesView`",
         "Cadence/iOS/iOSNotesView.swift `iOSNotesPanel`",
         "Cadence/iOS/iOSNotesView.swift `showsEventsTab`",
         "Cadence/iOS/iOSRootSidebar.swift `iOSSidebarStyle`",
         "Cadence/iOS/iOSSearchSupportViews.swift `listRoute`",
-        "Cadence/iOS/iOSSearchView.swift `iOSCompactHomeView`",
         "Cadence/iOS/iOSSettingsComponents.swift `iOSSettingsEmptyRow`",
         "Cadence/iOS/iOSTaskCollectionPage.swift `iOSCompactAllTasksView`",
         "Cadence/iOS/iOSTaskCollectionPage.swift `iOSCompactInboxView`",
@@ -1791,7 +1760,6 @@ enum CadenceCommentSymbolClaim {
         "Cadence/iOS/iOSTimelineDraftCreate.swift `iOSScheduleQuickCreateBar`",
         "Cadence/iOS/iOSTodaySchedulePanel.swift `iOSScheduleHourRow`",
         "Cadence/iOS/iOSTodaySchedulePanel.swift `quickCreateComposer`",
-        "Cadence/iOS/iOSTodayTaskSections.swift `iOSBundleFormingDrop`",
         "Cadence/iOS/iOSTodayTaskSections.swift `iOSTodayOverdueListSheet`",
         "Cadence/iOS/iOSTodayTaskSections.swift `iOSTodayOverdueSummaries`",
         "Cadence/iOS/iOSTodayView.swift `iOSTaskRowDensity`",
@@ -1801,9 +1769,6 @@ enum CadenceCommentSymbolClaim {
         "Cadence/iOS/iPadTodaySupportViews.swift `iPadInboxView`",
         "Cadence/iOS/iPadTodaySupportViews.swift `iPadTodaySidePanel`",
         "Cadence/iOS/iPadTodaySupportViews.swift `iPadTodayView`",
-        "Cadence/iOS/iPadTodaySupportViews.swift `iPad`",
-        "Cadence/macOS/Editor/MarkdownEditorInteractionSupport.swift `updateDragTypeRegistration`",
-        "Cadence/macOS/Editor/MarkdownEditorLayoutManager.swift `drawTaskEmbeds`",
         "Cadence/macOS/Editor/MarkdownEditorSupport.swift `prefixLen`",
         "Cadence/macOS/Sheets/CreateTaskSheetSupportViews.swift `priorityMarkButton`",
         "Cadence/macOS/Views/CadenceContextPicker.swift `iOSTrackingEditorSheets`",
@@ -1814,16 +1779,12 @@ enum CadenceCommentSymbolClaim {
         "Cadence/macOS/Views/KanbanSectionColumnView.swift `unfrozenActiveTasks`",
         "Cadence/macOS/Views/ListDetailSupportViews.swift `showsCapsule`",
         "Cadence/macOS/Views/SchedulePanel.swift `todayBundles`",
-        "Cadence/macOS/Views/SchedulePanelShellViews.swift `onDropBundleAtMinute`",
-        "Cadence/macOS/Views/SchedulePanelShellViews.swift `onDropTaskOnBundle`",
         "Cadence/macOS/Views/SettingsCalendarWorkHoursSection.swift `readyScheduleSlots`",
         "Cadence/macOS/Views/SettingsSectionViews.swift `settingsField`",
         "Cadence/macOS/Views/TaskInspectorFieldSupportViews.swift `testEscapeClosesEachInspectorChildPanelAndLeavesTheInspectorOpen`",
         "Cadence/macOS/Views/TasksListView.swift `taskLookup`",
         "Cadence/macOS/Views/TasksPanel.swift `controlsBar`",
         "Cadence/macOS/Views/TasksPanel.swift `taskSortPrecedes`",
-        "Cadence/macOS/Views/TasksPanel.swift `todaySortDirection`",
-        "Cadence/macOS/Views/TasksPanel.swift `todaySortField`",
         "Cadence/macOS/Views/TasksPanelComponents.swift `metadataRow`",
         "Cadence/macOS/Views/TasksPanelDerivedState.swift `byDoDateBaseSortedTasks`",
         "Cadence/macOS/Views/TasksPanelDerivedState.swift `byDoDateBaseTasks`",
@@ -1843,10 +1804,52 @@ enum CadenceCommentSymbolClaim {
         "Cadence/macOS/Views/TimelineMetrics.swift `majorGridOpacity`",
         "Cadence/macOS/Views/TimelineMetrics.swift `resizeOriginEndMin`",
         "Cadence/macOS/Views/TimelineMetrics.swift `resizeOriginStartMin`",
-        "Cadence/macOS/Views/macOSRootLifecycleSupport.swift `setActionName`",
-        "Cadence/macOS/Views/macOSRootShellViews.swift `initialFirstResponder`",
         "CadenceMCPServer/CadenceMCPArgumentParsing.swift `intArray`"
     ]
+
+    /// Not this repository's symbols at all: framework members the app relies on without spelling
+    /// them (16 lines -- a `DecodingError` case, AppKit and UIKit members, private Foundation
+    /// storage), UserDefaults key fragments the code builds by interpolation rather than spells
+    /// whole (`_sortField`, `todaySortField`), and two illustrative names (`iOSFoo`, the bare
+    /// `iPad` prefix). A value or a vocabulary word, not a pointer into the tree.
+    static let bareNonSymbols: [String] = [
+        "Cadence/Models/TaskOrdering.swift `_sortDir`",
+        "Cadence/Models/TaskOrdering.swift `_sortField`",
+        "Cadence/Services/CadenceDataExportService.swift `keyNotFound`",
+        "Cadence/Services/DataIntegrityRepairService.swift `keyNotFound`",
+        "Cadence/Services/MCPReadOnly/CadenceReadDTOs.swift `fetchOffset`",
+        "Cadence/Services/MarkdownImageAssetService.swift `validateUserInterfaceItem`",
+        "Cadence/Services/MarkdownProgrammaticEditSupport.swift `smartInsertDeleteType`",
+        "Cadence/Services/NoteMigrationService.swift `keyNotFound`",
+        "Cadence/Services/PersistenceController.swift `_underlyingCocoaError`",
+        "Cadence/Services/TagSupport.swift `isInserted`",
+        "Cadence/Shared/CadenceLookPreferenceStore.swift `_sortDir`",
+        "Cadence/Shared/CadenceLookPreferenceStore.swift `_sortField`",
+        "Cadence/Shared/CadenceReorderVisibility.swift `_sortField`",
+        "Cadence/Shared/DateFormatters.swift `setLocalizedDateFormatFromTemplate`",
+        "Cadence/iOS/iOSDesignSystem.swift `iOSFoo`",
+        "Cadence/iOS/iOSListEditorViews.swift `secondarySystemGroupedBackground`",
+        "Cadence/iOS/iOSListViews.swift `secondarySystemGroupedBackground`",
+        "Cadence/iOS/iOSMarkdownEditor.swift `inputAccessoryView`",
+        "Cadence/iOS/iOSMarkdownInlineTaskPanelSupport.swift `keyboardLayoutGuide`",
+        "Cadence/iOS/iPadTodaySupportViews.swift `iPad`",
+        "Cadence/macOS/Editor/MarkdownEditorInteractionSupport.swift `updateDragTypeRegistration`",
+        "Cadence/macOS/Views/TasksPanel.swift `todaySortDirection`",
+        "Cadence/macOS/Views/TasksPanel.swift `todaySortField`",
+        "Cadence/macOS/Views/macOSRootLifecycleSupport.swift `setActionName`",
+        "Cadence/macOS/Views/macOSRootShellViews.swift `initialFirstResponder`"
+    ]
+
+    /// Present-tense claims naming something that is gone. **Empty since the triage**: the twenty
+    /// lines found stale were fixed in place in the same change -- repointed to the symbol that now
+    /// does the job (a renamed test, the `*Opacity` hairline constants, `handleSystemDidWake`,
+    /// `iOSTaskRowSwipeActions`, `drawMarkdownTaskEmbeds`, `iOSCompactTabShell`,
+    /// `iOSCalendarMonthDayCell`) or reworded where the thing they described had gone with
+    /// [[T-3170]]'s Block removal or the habits retirement. The list stays, empty, so the next held
+    /// claim has a home and a count to move.
+    static let bareStaleClaims: [String] = []
+
+    static var bareLedger: [String] { (bareMemorials + bareNonSymbols + bareStaleClaims).sorted() }
 
     /// The bare half ([[T-7620]]): a backticked camelCase identifier in a product comment is one
     /// some code in the tree spells, or it is ledgered. Exact set equality, both directions.
@@ -1913,9 +1916,21 @@ enum CadenceCommentSymbolClaim {
         #expect(Set(ledger).count == ledger.count)
         #expect(ledger == ledger.sorted())
         #expect(ledger.allSatisfy { line in Self.bareSweepRoots.contains { line.hasPrefix($0) } })
-        // 227 when [[T-7620]] landed the half. Lower this as lines are triaged away; never raise
-        // it -- a new unresolved bare name is a comment to fix, not a line to grandfather.
-        #expect(ledger.count <= 227, "the bare ledger grew to \(ledger.count); fix the comment instead")
+        // 227 when [[T-7620]] landed the half; 207 since its triage fixed twenty stale comments in
+        // place. Lower this as lines go; never raise it -- a new unresolved bare name is a comment
+        // to fix, not a line to grandfather.
+        #expect(ledger.count <= 207, "the bare ledger grew to \(ledger.count); fix the comment instead")
+        // The three groups are a partition: sorted, disjoint, and summing to the whole.
+        for group in [Self.bareMemorials, Self.bareNonSymbols, Self.bareStaleClaims] {
+            #expect(group == group.sorted())
+            #expect(Set(group).count == group.count)
+        }
+        #expect(Set(Self.bareMemorials).isDisjoint(with: Set(Self.bareNonSymbols)))
+        #expect(Set(Self.bareMemorials).isDisjoint(with: Set(Self.bareStaleClaims)))
+        #expect(Set(Self.bareNonSymbols).isDisjoint(with: Set(Self.bareStaleClaims)))
+        #expect(Self.bareMemorials.count == 182)
+        #expect(Self.bareNonSymbols.count == 25)
+        #expect(Self.bareStaleClaims.isEmpty, "a held stale claim is a comment to fix in place")
         // The grammar's two exclusions, pinned so a widening cannot happen silently.
         #expect(CadenceCommentSymbolClaim.bareClaims(inComments: "/// `en_US` and `count` and `self`").isEmpty)
         #expect(CadenceCommentSymbolClaim.bareClaims(inComments: "/// `draftRangeUnderTouch`").count == 1)

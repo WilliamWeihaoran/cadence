@@ -45,8 +45,10 @@ nonisolated enum iOSCalendarTimelineMetrics {
     /// **This used to say "58 is `iOSSchedulePanel.rowHeight`", and it was not (T-588.)** No such
     /// reference existed: `iOSSchedulePanel.rowHeight` was a second hand-typed `58` in
     /// `iOSTodaySchedulePanel.swift`, and the sentence here was an invariant with nothing enforcing
-    /// it. It is a real read now, and `theTodayTimelineReadsItsHourFiguresFromHere` fails the build
-    /// if a third copy appears.
+    /// it. Today's pane now draws this grid itself, so there is no second figure left to agree:
+    /// `anHourIsOneHeightOnEveryTimedSurface` pins the 58, and
+    /// `theTodayTimelineDrawsTheCalendarsOwnGridRatherThanItsOwnHours` fails if the pane grows an
+    /// hour figure of its own again.
     static let hourHeight: CGFloat = 58
 
     /// The `12 AM` labels down the rail. The larger of the two it was, because the rail is a fixed
@@ -199,9 +201,9 @@ nonisolated enum iOSCalendarTimelineMetrics {
 ///
 /// Three weights survive, and each answers a question the others do not:
 ///
-/// - **`dayEdge`** rules one day off from the next, inside a grid. The month cell's two edges and
+/// - **`dayEdgeOpacity`** rules one day off from the next, inside a grid. The month cell's two edges and
 ///   the timed canvas's column edge are the same line in two presentations of the same screen.
-/// - **`pinnedEdge`** closes the chrome that does *not* scroll — the day-header band along its
+/// - **`pinnedEdgeOpacity`** closes the chrome that does *not* scroll — the day-header band along its
 ///   bottom and its columns, the hour rail down its trailing side. Those two lines **meet**, at the
 ///   top-left corner of the canvas, which is why one of them being lighter than the other was
 ///   visible rather than merely inconsistent.

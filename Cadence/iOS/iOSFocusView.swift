@@ -879,12 +879,12 @@ private let iOSFocusTransportSize: CGFloat = 44
 /// kind of pick item.
 ///
 /// The two controls are **siblings in an `HStack`**, not a small button layered over a full-width
-/// one. Layering is how `iOSHabitsView` does its check-in circle and it works there, but this row
-/// declares a `contentShape` over its whole card, so an overlaid button on top of it ended up with
-/// the row swallowing the tap: pressing play selected the task and left the clock at 00:00 — the
-/// same dead affordance the play glyph was before it became a button at all. Side by side there is
-/// no overlap for the hit test to resolve, and no "reserve exactly N points" coupling between the
-/// row and the thing sitting on it.
+/// one. Layering is how the retired habits list drew its check-in circle, and it worked there,
+/// but this row declares a `contentShape` over its whole card, so an overlaid button on top of
+/// it ended up with the row swallowing the tap: pressing play selected the task and left the
+/// clock at 00:00 — the same dead affordance the play glyph was before it became a button at
+/// all. Side by side there is no overlap for the hit test to resolve, and no "reserve exactly N
+/// points" coupling between the row and the thing sitting on it.
 private struct iOSFocusPickRow: View {
     let title: String
     let detail: CadenceTaskDetailLine

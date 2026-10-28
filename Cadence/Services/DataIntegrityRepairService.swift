@@ -1499,8 +1499,8 @@ nonisolated enum DataIntegrityRepairService {
     /// **Why a suffix and not a refusal.** The three writers that un-archive a context — iOS
     /// `iOSSettingsView.restore`, macOS `SettingsView.restoreContext` and MCP `update_context` with
     /// `isArchived: false` — wrote `isArchived = false` unconditionally, so restoring a context
-    /// whose name an active row has since taken made exactly the pair `repairDuplicateNotes`'
-    /// sibling `repairDuplicateContexts` fuses on the next launch, with no undo. The owner's
+    /// whose name an active row has since taken made exactly the duplicate pair this
+    /// service's `mergeContext` fuses on the next launch, with no undo. The owner's
     /// decision of 2026-10-24 is to restore under a suffixed name rather than refuse: you cannot
     /// pick a name from a Restore button, so a refusal leaves the user at a dead end with no way
     /// forward from the control they pressed. A suffixed name is one they can then rename.

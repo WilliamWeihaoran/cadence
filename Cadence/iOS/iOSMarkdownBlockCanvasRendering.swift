@@ -55,7 +55,7 @@ final class iOSMarkdownBlockCanvas: NSObject {
     ///
     /// **The one definition of "where the card is".** The layout manager draws from it and
     /// `iOSMarkdownEditor` hit-tests against it, so the card you tap is the card you see — the same
-    /// arrangement the macOS editor already has, where `drawTaskEmbeds` and `taskEmbedHit` both go
+    /// arrangement the macOS editor already has, where `drawMarkdownTaskEmbeds` and `taskEmbedHit` both go
     /// through `MarkdownTaskEmbedDrawing.cardRect`.
     ///
     /// Hit testing used to derive its own rect from `boundingRect(forGlyphRange:in:)` over the

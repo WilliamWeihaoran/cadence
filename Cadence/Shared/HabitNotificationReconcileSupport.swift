@@ -94,9 +94,9 @@ extension HabitNotificationReconcileSupport {
     /// nothing until the app backgrounded, which reads as the setting doing nothing at all.
     ///
     /// Off does **not** route through `scheduleReconcile`. That path fetches first and skips the
-    /// pass when either fetch fails (see `reconcileInput`), which would make "the reminders you
-    /// just turned off go away" conditional on a store read succeeding. Cancelling is
-    /// unconditional; it needs no state to be correct.
+    /// pass when its fetch fails (see the `guard` in `scheduleReconcile`), which would make "the
+    /// reminders you just turned off go away" conditional on a store read succeeding. Cancelling
+    /// is unconditional; it needs no state to be correct.
     @MainActor
     static func applyNotificationsEnabledChange(
         _ enabled: Bool,

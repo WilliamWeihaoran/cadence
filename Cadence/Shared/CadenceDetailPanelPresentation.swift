@@ -9,7 +9,7 @@ import SwiftData
 /// called `dismiss()`; the control experiment was **Start**, which is the same `onSetStatus` path but
 /// keeps the row in ACTIVE, and left the sheet open. `iOSCalendarBundleDetailSheet` had the identical
 /// shape on a different subject (T-217): presented by `iOSCalendarBoardBundleCard` and
-/// `iOSTimelineBundleBlock`, both of which live in a `ForEach(bundles)` filtered by day — and on
+/// `iOSTimelineBundleBlock`, both of which lived in a `ForEach(bundles)` filtered by day — and on
 /// Today's schedule pane, by *hour* — so saving a new date or start time from inside the panel moved
 /// the card and tore the panel down at the moment the edit landed.
 ///

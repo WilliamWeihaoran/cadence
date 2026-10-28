@@ -217,10 +217,10 @@ final class CadenceTaskSettleFailureCenter {
     /// The surfaces standing between the shell and the user that have offered to say the sentence,
     /// outermost first (T-642).
     ///
-    /// A stack rather than a flag because these surfaces nest: `iOSCalendarBundleDetailSheet`
-    /// presents `iOSTaskInspectorSheet` over itself, and both are places a completion circle can be
-    /// tapped. The **innermost** one is the surface the user is looking at, so it is the one that
-    /// owes them the sentence.
+    /// A stack rather than a flag because these surfaces can nest: the Block detail sheet
+    /// [[T-3170]] retired presented `iOSTaskInspectorSheet` over itself, and both were places a
+    /// completion circle could be tapped. The **innermost** one is the surface the user is looking
+    /// at, so it is the one that owes them the sentence.
     private(set) var sentenceClaims: [UUID] = []
 
     private init() {}

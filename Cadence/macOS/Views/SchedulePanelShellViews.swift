@@ -99,25 +99,11 @@ struct SchedulePanelTimelineViewport: View {
             }
             .frame(width: blockInset)
 
-            // **[[T-3170]]: this timeline has no Block arm left.** The four block parameters below
-            // are starved rather than deleted, because `TimelineDayCanvas` is Codex-leased and
-            // still declares them for its other host, the Calendar page's `CalDayColumn`. Passing
-            // `bundles: []` is what takes the Block off the Today timeline: the canvas builds its
-            // `TimelineBundleLayout`s from that array alone, so no `TimelineBundleBlock` is
-            // constructed, nothing can be selected, resized, opened or dragged, and the block
-            // detail popover behind it is unreachable from here.
-            //
-            // The two closures follow from that rather than being separately disabled.
-            // `onDropTaskOnBundle` is only ever called by the block's own drop delegate, which no
-            // longer exists on this canvas. `onDropBundleAtMinute` fires only for a drag payload
-            // that only a `TimelineBundleBlock` could mint from its own drag, and with `allBundles: []`
-            // the canvas's drop delegate cannot resolve one anyway — so a Block dragged here from the
-            // Calendar page's day/week view is **ignored and keeps its slot**, rather than being quietly
-            // moved onto a day this panel no longer draws it on. Both are spelled as refusals, not as
-            // forwarding stubs, so neither can grow back into an edit path.
-            //
-            // The Calendar page still draws and edits Blocks; removing them there needs a grant on
-            // the leased calendar/timeline files.
+            // **[[T-3170]]: this timeline has no Block arm left.** The canvas used to take four
+            // block parameters, starved here with an empty bundle array and two refusing drop
+            // closures while the Calendar page still drew Blocks. T-3170's later passes deleted the
+            // Block from both timelines and the parameters with it, so the canvas below is handed
+            // tasks and events only: nothing on it can draw, select, open or accept a Block.
             TimelineDayCanvas(
                 date: Date(),
                 dateKey: todayKey,

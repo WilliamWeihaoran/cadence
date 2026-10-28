@@ -84,7 +84,7 @@ nonisolated enum TaskBundleRetirement {
     /// `SWIFT_DEFAULT_ACTOR_ISOLATION`, and this arithmetic has to be reachable from the
     /// `nonisolated` archive import. `theClampsMatchTheOnesThatSizedTheBlocks` in
     /// `CadenceTaskBundleRetirementTests` fails if either side moves — the same arrangement
-    /// `bundleClampsMatchTheTimelineDayRange` already holds between that type and
+    /// `theSharedBundleClampsMatchTheTimelineDayRange` already holds between that type and
     /// `TimelineDayRange`, for the same reason and with the same failure mode.
     static let minimumSlotMinutes = 5
     static let dayEndMin = 24 * 60

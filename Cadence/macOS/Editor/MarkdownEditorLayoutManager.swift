@@ -26,7 +26,7 @@ import UniformTypeIdentifiers
 ///   `nonisolated` too — every `MarkdownStylist` colour is `= Theme.ns*`, so a nonisolated
 ///   constant could not initialize until `Theme` was. Their measurements now live in
 ///   `MarkdownDecorationGeometry`, where the test target can run them.
-/// - `drawTaskEmbeds` and `drawMarkdownImages` read and write `CadenceTextView`'s hit-rect and
+/// - `drawMarkdownTaskEmbeds` and `drawMarkdownImages` read and write `CadenceTextView`'s hit-rect and
 ///   hover caches, and `CadenceTextView` is main-actor isolated by AppKit because `NSTextView` is.
 ///   Those two moved onto the view — see `MarkdownEditorTextViewDecorations.swift`, which also
 ///   records why the hook they run from is `drawBackground(in:)` and not `draw(_:)`.

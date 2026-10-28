@@ -37,7 +37,7 @@ extension CadenceTaskMutationSupport {
     ///   toggle-completion and delete; under the old rule a cancelled row's only un-cancel was the
     ///   Status row inside the detail sheet, while a done row un-did itself in one swipe.
     ///
-    /// The labels that describe this gesture read the same predicate — see `iOSTaskRowActions`,
+    /// The labels that describe this gesture read the same predicate — see `iOSTaskRowSwipeActions`,
     /// `iOSTaskRow`, `iOSTaskStatusActionsSection` and `iOSBoardTaskCard` — and
     /// `CadenceTaskStatusLifecycleSurfaceTests` pins that they do.
     ///
@@ -1236,7 +1236,7 @@ extension CadenceTaskMutationSupport {
     /// That is the shape `delete(_:modelContext:commit:)` two hundred lines above was already fixed
     /// into (T-365), and this is the sibling that was missed: the *other* way a block can end.
     ///
-    /// `commitDelete` rolls back, so `bundleDeleteFailureNotice` can say nothing was removed and be
+    /// `commitDelete` rolls back, so a caller's failure notice can say nothing was removed and be
     /// telling the truth — the block and its members are visible again, unbundling and all.
     ///
     /// **"Unbundling and all" is earned rather than assumed since [[T-1336]].** The member loop

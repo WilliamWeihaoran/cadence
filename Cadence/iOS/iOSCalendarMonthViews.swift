@@ -617,7 +617,7 @@ struct iOSCalendarMiniChip: View {
     ///    the app's word for a thing with nothing assigned to it — `HabitsView`'s "Unassigned",
     ///    `GoalPickerViews`' "None", `iOSTimelineDraftCreate`'s not-yet-created task — so this is a
     ///    vocabulary that exists rather than one invented at this size. The all-day event keeps
-    ///    `calendar`, which `iOSCalendarMonthCell` already uses to mean all-day against the
+    ///    `calendar`, which `iOSCalendarMonthDayCell` already uses to mean all-day against the
     ///    `calendar.badge.clock` it gives a timed one.
     /// 2. The chip's **own rim** goes dashed. This is the channel that survives the size: the chip
     ///    is a 10pt line plus 2.5pt of padding, about **17pt** tall against a `Theme.radiusControl`

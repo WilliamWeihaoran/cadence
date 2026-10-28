@@ -39,9 +39,10 @@ enum CadenceTaskMutationSupport {
     ///
     /// macOS spells the same two numbers as `TimelineDayRange` in `macOS/Views/TimelineMetrics.swift`,
     /// which this file cannot see — `Shared/` does not compile the timeline. They are deliberately
-    /// identical, and `bundleClampsMatchTheTimelineDayRange` in `TaskBundleTests` fails if one side
-    /// moves. Do not re-spell either literal at a call site; that is how the timeline clamp came to
-    /// exist four times with three different bounds.
+    /// identical, and `theSharedBundleClampsMatchTheTimelineDayRange` in
+    /// `CadenceBundleCreationParityTests` fails if one side moves. Do not re-spell either literal at
+    /// a call site; that is how the timeline clamp came to exist four times with three different
+    /// bounds.
     static let bundleDayEndMin = 24 * 60
     static let bundleMinimumDuration = 5
 

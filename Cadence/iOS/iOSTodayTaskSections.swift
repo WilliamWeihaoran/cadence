@@ -3,8 +3,7 @@ import SwiftData
 import SwiftUI
 
 /// Today's rollover notice, as a surface opts into it: the tasks the banner lists and the action
-/// its button runs, together, because the two are useless apart — the same shape as
-/// `iOSBundleFormingDrop`.
+/// its button runs, together, because the two are useless apart.
 struct iOSTodayRolloverNotice {
     let tasks: [AppTask]
     /// `CadenceTodayRolloverSupport.rollFailureNotice` when the last roll was refused (T-635).

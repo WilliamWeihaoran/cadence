@@ -55,7 +55,7 @@ struct CadenceFocusTimerState: Hashable {
 ///
 /// - **macOS** is told. `NSWorkspace.willSleepNotification` is an explicit "nobody is working",
 ///   so its threshold is zero — `FocusManager.handleSystemWillSleep` freezes the clock through
-///   `frozen(_:at:)` at the sleep instant, and wakes it again on `didWake` ([[T-1103]]).
+///   `frozen(_:at:)` at the sleep instant, and wakes it again in `handleSystemDidWake` ([[T-1103]]).
 /// - **iOS** is not. Going to the background is also a glance at another app or a locked phone
 ///   on the desk while the user works, which the owner declined to treat as the end of a session
 ///   ([[T-6001]]). So iOS measures the gap from the instant the screen was last seen and freezes

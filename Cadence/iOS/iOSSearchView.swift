@@ -391,7 +391,7 @@ struct iOSSearchView: View {
         }
         // `item:` rather than `for:`. Besides being what the button rows above need, this keeps
         // Search from registering a *second* destination for either type in the iPhone stack,
-        // where `iOSCompactHomeView` already registers `CadenceFeatureDestination` and a pushed
+        // where `iOSCompactTabShell` already registers `CadenceFeatureDestination` and a pushed
         // `iOSListsView` registers `iOSListRoute`. Two registrations for one type in one stack is
         // undefined behaviour in SwiftUI, and these were only ever duplicate clones of them.
         .navigationDestination(item: $pushedListRoute) { route in

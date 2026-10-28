@@ -98,10 +98,10 @@ enum CadenceTodayRolloverSupport {
 
     /// The sentence the banner shows when the roll was refused (T-635).
     ///
-    /// It carries the delete family's second clause — `CadenceTaskMutationSupport.deleteFailureNotice`,
-    /// `bundleDeleteFailureNotice` and `CadenceListDeletionKind.deleteFailureNotice` all promise the
-    /// same thing — because `rollOver` commits through `commitDelete`, whose `rollback()` puts the
-    /// emptied block and the tasks' own slots back. The promise is earned rather than claimed.
+    /// It carries the delete family's second clause — `CadenceTaskMutationSupport.deleteFailureNotice`
+    /// and `CadenceListDeletionKind.deleteFailureNotice` both promise the same thing — because
+    /// `rollOver` commits through `commitDelete`, whose `rollback()` puts the emptied block and the
+    /// tasks' own slots back. The promise is earned rather than claimed.
     ///
     /// It names the roll rather than saying "these changes", for the reason the other four notices
     /// name their own object: four screens, four nouns, one shape.

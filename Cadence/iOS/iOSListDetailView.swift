@@ -207,7 +207,7 @@ struct iOSListDetailView: View {
             //
             // On iPad this view is reached through a `@ViewBuilder switch` on the sidebar route,
             // which *updates* the subtree when you switch lists rather than rebuilding it — so
-            // every panel's `@State` survived the switch. `iOSListNotesPanel` seeds its note in
+            // every panel's `@State` survived the switch. `iOSListNotesPanel` seeded its note in
             // `onAppear` and only there, so switching area A → B while the Notes tab was open left
             // you typing into A's note under B's header, and a task created from inside it landed
             // in B. `iOSListViews`' own split view already does this with `.id(route)`; this is the
