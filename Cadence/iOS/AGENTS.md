@@ -38,7 +38,7 @@ compact. The full former guide is preserved at `../../docs/IOS_AGENTS_REFERENCE.
 - iPhone compact width uses a custom four-tab bottom bar, not `TabView`.
 - The compact tabs are Tasks, Calendar, Notes, More. The center `+` presents capture and is not a tab.
 - Each compact tab owns its own type-erased `NavigationPath`.
-- Tasks, Today, Calendar, Focus, Goals, Habits, Notes, Lists, Search, Settings, reminders, export,
+- Tasks, Today, Calendar, Focus, Notes, Lists, Search, Settings, reminders, export,
   reset, notifications, and note markdown are real surfaces.
 
 ## Task Inspector

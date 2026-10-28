@@ -2,7 +2,7 @@
 
 Use these notes as the starting point for the App Store Connect "Notes for Review" field.
 
-Cadence is a native productivity app for tasks, notes, calendars, goals, habits, and focus planning.
+Cadence is a native productivity app for tasks, notes, calendars, and focus planning.
 
 Platform:
 - Cadence targets macOS 26.1 or later and iOS/iPadOS 26.1 or later from a single app target.
@@ -48,7 +48,7 @@ Push notifications:
 - These pushes are silent. They carry no alert, sound, or badge; Cadence has no remote-notification payload handling of its own, and no Cadence-operated server sends anything — the only sender is Apple's CloudKit. There are no marketing or promotional push notifications.
 
 Local notifications:
-- Separately from push, and through a different mechanism, Cadence schedules local notifications with `UNUserNotificationCenter`: a reminder at a task's scheduled start time, a reminder on a task's due date, and a daily reminder for habits that have a reminder time set. These are planned on-device from the user's own Cadence data and are never sent from a server.
+- Separately from push, and through a different mechanism, Cadence schedules local notifications with `UNUserNotificationCenter`: a reminder at a task's scheduled start time and a reminder on a task's due date. These are planned on-device from the user's own Cadence data and are never sent from a server.
 - Apple Calendar events are deliberately excluded, because those already have their own alarms in Calendar.
 - Local notification authorization is requested in exactly one place — Settings > Notifications — and never at first launch. A single toggle in that section governs all Cadence reminders.
 
