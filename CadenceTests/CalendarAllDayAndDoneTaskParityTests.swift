@@ -375,6 +375,44 @@ private final class FixedEventDaySource: CalendarEventDaySource {
         }
     }
 
+    // MARK: - [[T-8042]], completed untimed tasks in the week band
+
+    /// A done task with a do date and no time stayed on the Month grid and the Board, and a done
+    /// TIMED task stayed on the Week canvas, but the untimed one left the Week band the moment it
+    /// was ticked. The band, the canvas and the Month cell now agree: done stays, cancelled leaves.
+    @Test func theWeekBandKeepsACompletedUntimedTaskAsTheCanvasAndMonthCellDo() throws {
+        let context = ModelContext(try CadenceTestStore.container())
+        let key = DateFormatters.dateKey(from: Self.day)
+        let timed = doneAndCancelledTasks(in: context)
+        func addUntimed(_ title: String, done: Bool = false, cancelled: Bool = false) -> AppTask {
+            let task = AppTask(title: title)
+            task.scheduledDate = key
+            task.scheduledStartMin = -1
+            if done { task.status = .done }
+            if cancelled { task.status = .cancelled }
+            context.insert(task)
+            return task
+        }
+        let untimed = [addUntimed("Open band"), addUntimed("Finished band", done: true), addUntimed("Dropped band", cancelled: true)]
+        let all = timed + untimed
+        // Non-vacuity: one done and one cancelled task in each half.
+        #expect(untimed.filter(\.isDone).count == 1)
+        #expect(untimed.filter(\.isCancelled).count == 1)
+
+        let band = Set((CalendarPageDataSupport.unscheduledTasksByDate(all)[key] ?? []).map(\.title))
+        #expect(band == ["Open band", "Finished band"])
+        // The Mac page and iOS read the one shared helper.
+        #expect(band == Set((CadenceScheduleSupport.unscheduledTasksByDate(all)[key] ?? []).map(\.title)))
+
+        let canvas = Set((CalendarPageDataSupport.tasksByScheduledDate(all)[key] ?? []).map(\.title))
+        #expect(canvas == ["Open", "Finished"])
+
+        // The Month cell holds exactly the union: what Week draws across band and canvas.
+        let month = Set((CadenceScheduleSupport.monthTasksByDate(all)[key] ?? []).map(\.title))
+        #expect(month == band.union(canvas))
+        #expect(band.isDisjoint(with: canvas))
+    }
+
     // MARK: - The single-day pane's all-day strip (T-3163, the Today half)
 
     /// **The strip costs nothing on a day with nothing all-day on it, and grows with the chips it

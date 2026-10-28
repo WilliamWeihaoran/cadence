@@ -397,12 +397,16 @@ enum CadenceScheduleSupport {
         return result.mapValues { $0.sorted(by: scheduledTaskPrecedes) }
     }
 
+    /// The week band's untimed lane: a do date and no start minute. **A done task stays**
+    /// ([[T-8042]]), exactly as the timed canvas keeps one (`tasksByScheduledDate(_:includeCompleted:
+    /// true)`, [[T-3164]]) and the Month cell and the Board do; dropping it here made a task vanish
+    /// from Week view the moment it was ticked, inspector and all. A cancelled task still leaves.
+    /// Both chips draw the done state: `AllDayTaskChip` (Mac) and the iOS band's mini chip.
     static func unscheduledTasksByDate(_ tasks: [AppTask]) -> [String: [AppTask]] {
         var result: [String: [AppTask]] = [:]
         for task in tasks where task.scheduledStartMin == -1 &&
             !task.scheduledDate.isEmpty &&
-            !task.isCancelled &&
-            !task.isDone {
+            !task.isCancelled {
             result[task.scheduledDate, default: []].append(task)
         }
         return result.mapValues { CadenceTaskQuerySupport.sortedTasks($0, sortMode: .priority) }

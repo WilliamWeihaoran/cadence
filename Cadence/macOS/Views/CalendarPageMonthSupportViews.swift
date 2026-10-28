@@ -692,8 +692,9 @@ struct CalDayHeaderView: View {
 
 struct AllDayTaskChip: View {
     let task: AppTask
-    /// Day column this chip is parked in. A task reaches the all-day lane by either its
-    /// scheduled date or its due date, so the chip cannot let its column stand in for a deadline.
+    /// Day column this chip is parked in. A task reaches the all-day lane by its do date
+    /// (`CadenceScheduleSupport.unscheduledTasksByDate`), never its due date, so the column is not
+    /// the deadline and the chip still marks a due date of its own.
     let dayKey: String
     var todayKey: String = DateFormatters.todayKey()
     @State private var showInspector = false

@@ -1049,9 +1049,11 @@ private struct iOSCalendarAllDayBandChips: View {
             // rail that already means "event". `iOSCalendarMiniChip.isUnscheduled` carries
             // the reasoning and the 17pt measurement the rail fails at.
             ForEach(unscheduledTasks.prefix(split.tasks)) { task in
+                // A done task stays in the band ([[T-8042]]) and wears the month cell's done
+                // glyph; the dashed rim still says "no time yet".
                 iOSCalendarMiniChip(
                     title: TaskTitleSupport.displayTitle(task.title, fallback: TaskTitleSupport.defaultCompactDisplayTitle),
-                    icon: "circle.dashed",
+                    icon: task.isDone ? "checkmark.circle.fill" : "circle.dashed",
                     color: Color(hex: task.containerColor),
                     isUnscheduled: true
                 )

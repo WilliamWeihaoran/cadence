@@ -562,7 +562,7 @@ struct CadenceCalendarChipTreatmentTests {
         let dense = header.filter { !$0.isWhitespace }
         // Channel one: the glyph. `circle.dashed` is the app's existing word for a thing with
         // nothing assigned to it, and the `circle.fill` it replaces said only "task".
-        #expect(dense.contains(#"icon:"circle.dashed""#), "the unscheduled chip lost its dashed glyph")
+        #expect(dense.contains(#":"circle.dashed",color:"#), "the unscheduled chip lost its dashed glyph")
         #expect(!dense.contains(#"icon:"circle.fill""#), "the unscheduled chip is back on the plain task dot")
         // The all-day event keeps the glyph the month cell already uses to mean all-day.
         #expect(dense.contains(#"icon:"calendar""#), "the all-day event chip lost its calendar glyph")
@@ -575,7 +575,7 @@ struct CadenceCalendarChipTreatmentTests {
         // And it is the TASK list that opts in, not the event list: dense, because the formatter
         // wraps the call and adjacency is the claim.
         #expect(
-            dense.contains(#"icon:"circle.dashed",color:Color(hex:task.containerColor),isUnscheduled:true"#),
+            dense.contains(#"icon:task.isDone?"checkmark.circle.fill":"circle.dashed",color:Color(hex:task.containerColor),isUnscheduled:true"#),
             "the dashed treatment is not on the unscheduled task chip"
         )
         #expect(!dense.contains("isEvent:true,isUnscheduled:true"), "an all-day event was marked unscheduled")
