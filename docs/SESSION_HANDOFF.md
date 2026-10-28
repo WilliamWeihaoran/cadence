@@ -1,10 +1,9 @@
 # Session Handoff
 
-Written 2026-10-22 at `9d1b0817`. **This file is point-in-time state and nothing else.** Every
-general rule it used to restate — build and test, the Codex lease, the commit gates, the safety
-constraints, how the owner wants work reported — now lives once in
-[docs/AGENT_BRIEF.md](AGENT_BRIEF.md), which is the first thing to read. Then this, then
-[AGENTS.md](../AGENTS.md) for the directory map and the UI patterns. Do not bulk-read the repo.
+Written 2026-10-27 at `c258c14f`. **This file is point-in-time state and nothing else.** Every
+general rule — build and test, the Codex lease, the commit gates, safety, how the owner wants work
+reported — lives once in [docs/AGENT_BRIEF.md](AGENT_BRIEF.md), which is the first thing to read.
+Then this, then [AGENTS.md](../AGENTS.md) for the directory map and the UI patterns.
 
 If a rule and this file disagree, the brief wins; this one is a snapshot and snapshots rot.
 
@@ -14,89 +13,105 @@ If a rule and this file disagree, the brief wins; this one is a snapshot and sna
 
 **Cadence** is a native SwiftUI + SwiftData productivity app: macOS primary, large iOS/iPadOS
 surface, CloudKit `.private("iCloud.com.haoranwei.Cadence")`, widgets, EventKit, and an MCP server
-boundary. Build 24 shipped 2026-10-21 on macOS and iOS (`961971ec` bumped
-`CURRENT_PROJECT_VERSION` to 24). **The next RC is due in 4-5 days and is judged by fewer visible
-defects**, so prefer on-screen fixes over ledger or tooling work. The owner does not write code — work is done by agents and verified
-against the tree, never against an agent's report.
+boundary. The owner does not write code — work is done by agents and verified against the tree,
+never against an agent's report.
 
-**The repo lives at `~/Developer/Cadence`.** It moved off `~/Desktop/Projects/Cadence` on
-2026-10-19 (see `T-3245`) because Desktop is iCloud-synced, which produced conflict copies compiled
-as real sources and `ETIMEDOUT` filesystem reads. If you see the old path anywhere outside
-`docs/audits/` and `docs/TODO.md`, it is stale and worth fixing; those two are historical record and
-are deliberately left alone.
+**Build 25 shipped 2026-10-27 to internal TestFlight, macOS and iOS.** The RC is an internal
+TestFlight build, not an App Store submission. `a749c0c2` (2026-10-26) bumped
+`CURRENT_PROJECT_VERSION` 24 -> 25 on the app and widget targets; the test bundles still read 24
+and the MCP server 1, and none of those ships. **The next upload needs a build number above 25.**
+The upload itself is the owner's (Xcode Organizer); nothing in the tree records it, so the
+shipped date is the owner's word, not a commit.
+
+**Zero ledger entries are RC-blocking** (`a49454de` gave every active entry an RC-TRIAGE verdict;
+`ledger-view.sh untriaged` lists the handful filed since). **POST-RC is now the live queue.** A
+defect the owner reports from the TestFlight build outranks anything an agent would pick itself:
+T-7550 (a finger could not scroll the iOS Today timeline) is the example, reported from build 25
+and CLOSED the same day, seen on screen.
+
+The repo lives at `~/Developer/Cadence` (moved off the iCloud-synced Desktop in T-3245). The old
+path outside `docs/audits/` and `docs/TODO.md` is stale — and the shared checkout's own
+`core.hooksPath` still points at it (T-4900).
 
 ## 2. Current state
 
-- `main` at `9d1b0817`, **0 unpushed** at this writing. Count your own rather than trusting this
-  line: `git rev-list --count origin/main..main`.
-- **Many worktrees and many local-only branches.** `git worktree list` and
-  `git for-each-ref refs/heads` give today's numbers; a count written here is wrong within the hour.
-  What does not change: **most branches here have no counterpart on `origin`** — 101 of 110 at this
-  writing, every `codex/*` and `post23/*` among them — so a destroyed one is gone permanently.
-  Check with `git show-ref --verify refs/remotes/origin/<branch>` before you assume otherwise.
-  Never reset, delete, rebase in place or force-push one, and **never delete a worktree** — each is
-  a live session holding uncommitted work.
-- `codex/unified-editors` still shows ahead of main even though T-3238 landed — its work was
-  brought over without mutating the branch. That is intentional, not an oversight.
-- **Work is scheduled by a single `cadence-keeper` routine.** It reserves an id range per agent
-  before handing it out (per `T-3320`; see the `T-33xx` keeper entries), so take ids only from a
-  range you were given.
+- `main` at `c258c14f`, 0 unpushed at this writing; count your own with
+  `git rev-list --count origin/main..main`. CI on `main` was green through `202cb725`.
+- Worktrees and local branches are many (`git worktree list`, `git for-each-ref refs/heads`). At
+  this writing all but one local branch has a remote-tracking counterpart — the exception is
+  `claude/t6821-ios-ci`, a live agent's — but check with
+  `git show-ref --verify refs/remotes/origin/<branch>` rather than trusting this line.
+- `git status` at this writing shows seven dirty `Cadence/` Swift files, four dirty
+  `CadenceTests/` files and the `CadenceWidgets` scheme. The iOS ones match T-2087's call sites
+  (the dead overflow-caption plumbing, assigned in T-7640). They are not yours; leave them.
+- Work is scheduled by the `cadence-keeper` routine, which reserves an id range per agent (latest:
+  T-7640, T-7660). Take ids only from a range you were given.
 
 ### Open work
 
-Read the live list with `./scripts/ledger-view.sh brief` (112 active entries at `9d1b0817`); the
-lead token on an entry's own first line is the only authority. For the RC, the entries that name a
-**visible** defect or an unseen fix are the ones to start from:
+`./scripts/ledger-view.sh brief` is the live list (97 active entries at `c258c14f`); an entry's own
+lead token is the only authority. Grouped by who can move it:
 
-| Ticket | State | What it is |
-|---|---|---|
-| `T-3259` | OPEN | No way to show the owner a macOS frame while his Cadence runs; several PARTIALs wait on it. |
-| `T-3325` | OPEN | `T-3310`'s iPad Month deep-link fix unseen: two SpringBoard alerts block `Cadence-iPadPro11`. |
-| `T-3207` | OPEN | Timeline hold/handle drag still not seen on screen, and needs the owner's yes. |
-| `T-3311`, `T-3295`, `T-3232` | OPEN | Look questions for the owner: iPad month chip titles, plate luminance, glyph red. |
-| `T-3252`, `T-3253`, `T-3160` | PARTIAL | Shippable per their SHIP-NOTEs; what remains is an on-screen look. |
-| `T-3244` | PARTIAL | iOS `CadenceTests` failing population is zero; the last step needs `project.pbxproj`. |
-| `T-3152` | PARTIAL | Widget iCloud entitlement landed; the readiness pin is the remainder. |
+**Owner calls — wording, look or scope.** None is a defect; each waits on a yes/no.
 
-**Closed since the last handoff** (a brief that still lists one is older than the tree): `T-3256`,
-`T-3250`, `T-3247`, `T-3237`, `T-3166`, `T-1364`, `T-3214`.
+| Ticket | What it is |
+|---|---|
+| `T-7290`, `T-7291` | AI draft sheet: should Return create; Mac and iOS AI sheets use different words. |
+| `T-7210`, `T-7209`(b) | AI disclosure row wording; Delete Account copy under-lists what goes. |
+| `T-7085`, `T-6984`, `T-7074` | Kanban "Column" vs "Section"; iOS Search "More" vs "Pages"; split Calendar setting. |
+| `T-7257`, `T-7259`, `T-7260` | Links tab header; links not editable or reorderable; list order is Mac-only. |
+| `T-7203`, `T-7182`(a) | Mac View-menu grouping and Cmd+O; the bundle-retirement slot hazard. |
+| `T-1840`, `T-3226`, `T-1424`, `T-16` | Delete-account scope; restore-string measurement; ASC privacy answers; logo artwork. |
 
-`T-3242` (sweeps timing out under load) now **has its formal entry on main**, OPEN, awaiting an
-owner decision on which half to change.
+**On-screen checks that need an ATTENDED simulator session.** Scheduled runs cannot drive the
+simulator, so these landed from source and wait for someone who can.
+
+| Ticket | What it is |
+|---|---|
+| `T-7613` | iPad: swipe on a lifted block's edge band scrolls, hold-then-drag still resizes; re-check T-7550/T-7551. |
+| `T-7163`, `T-7125`, `T-7195`, `T-7285`, `T-7315`, `T-7421` | Widget layout fixes, small and large tiles, not seen on a home screen. |
+| `T-7151`, `T-6700`, `T-6711`, `T-1463` | iPad Templates two-column pane; root-shell top reserve; two iPad sightings. |
+| `T-3325` | iPad Month deep link unseen: two SpringBoard alerts were blocking `Cadence-iPadPro11`. |
+| `T-3259` (+ `T-3160`, `T-3167`, `T-3253`) | No way to show a macOS frame while the owner's Cadence runs; those wait on it. |
+
+**Agent-actionable.**
+
+| Ticket | What it is |
+|---|---|
+| `T-7641` | Extend the bare comment-claim sweep to `CadenceTests/` and `CadenceUITests/` (343 spans). |
+| `T-2087` | Dead iOS overflow-caption plumbing — in flight (`deadplumb2238`). |
+| `T-6821` (+ `T-6541`) | CI runs no iOS simulator test under Xcode 26.0.1 — in flight (`iosci2338`). |
+| `T-7170` | `xcb.sh export-archive` never run with `release-testing`/ad-hoc. |
+| `T-6410` | `docs/apple-release-readiness.md:15` still says iOS is "built, not distributed". |
+| `T-4900`, `T-3264`, `T-3260` | Stale `core.hooksPath`; no full-target landing step; 337 view-body pins. |
+
+The rest of the active list is SHIP-NOTE PARTIALs whose remainder is parked past the RC, or
+long-lived owner questions; `ledger-view.sh head` says which.
+
+**Closed since the last handoff** (a brief that still lists one is older than the tree): `T-3311`,
+`T-3295`, `T-3232`, `T-3244`, `T-3242`, `T-7550`, `T-7551`, `T-7601`.
 
 ---
 
 ## 3. Known reds that are NOT yours
 
-- **`T-3256` is CLOSED** (2026-10-21) as a host kill under lock contention. For the record:
-  `CadenceCommentSymbolClaimTests` failed once in a full
-  `CadenceTests` run on the `Cadence-iPhone15` iOS destination and passed on rerun, scoped, on the
-  same simulator. The failing run also logged `Restarting after unexpected exit, crash, or test
-  timeout` and a 600 s simulator diagnostics timeout with four `xcb.sh` runs queued on the lock, so
-  it reads as a host kill under contention rather than an assertion. If you see it, re-run scoped
-  before filing anything; if it fails scoped on a quiet host, that is new and worth a ticket.
-- **Nested worktrees no longer redden the tree-walking suites.** `T-3241` closed that
-  (`CadenceSourceScan.isNestedCheckout`), and the four walks it fixed —
-  `AgentContextBudgetTests`, `CadenceMisfiledSurfaceTests`, `CadenceMCPWriteFenceTests`,
-  `CadenceBuildInvocationHygieneTests` — now prune `.claude/worktrees/`. **A red in one of these is
-  therefore evidence again.** Do not dismiss it as the old worktree symptom, and do not "fix" it by
-  editing `AGENTS.md`.
-- An untracked `Cadence/macOS/Views/CalendarPageView.swift.orig` is **back** in the checkout as of
-  2026-10-22 (the 10-20 handoff called it gone). It is not yours; leave it. Anything in
-  `git status` before you started is still somebody else's.
+- None open at this writing: CI on `main` is green and no flake is ticketed as live.
+- **A red in a tree-walking suite is evidence**, not the old nested-worktree symptom:
+  `CadenceSourceScan.isForeignTree` (`CadenceTests/CadenceSourceScanSupport.swift`; T-3241, renamed
+  and widened to scratch trees in T-3333) prunes any nested checkout. Do not "fix" one by editing
+  `AGENTS.md`.
+- Anything in `git status` before you started is somebody else's (see section 2).
 
 ---
 
 ## 4. The two things that bite hardest in a shared checkout
 
-Both are stated in full in [docs/AGENT_BRIEF.md](AGENT_BRIEF.md); they are repeated as *names*
-here only because every incident this week was one of them.
+Both are stated in full in [docs/AGENT_BRIEF.md](AGENT_BRIEF.md); they are named here only because
+most incidents are one of them.
 
-- **A grant is sub-file scoped** (the Codex lease), and the fenced block says what *Codex* may
-  write — admitting a local agent is prose beside it. Ask `./scripts/codex-land.sh lease`.
+- **A grant is sub-file scoped** (the Codex lease). Ask `./scripts/codex-land.sh held <path>`.
 - **`agent-commit.sh` stages whole files.** If it refuses because a sibling staged a path, wait or
   use the `<path>=<content-file>` form. Never reset a sibling's work, and never `--commits-stale`.
 
 Several sessions write this checkout at once, so re-read state rather than trusting a reading from
-earlier in your own turn — including a sibling's report about another agent's dirty file, which is
-a snapshot and not a current fact.
+earlier in your own turn.
