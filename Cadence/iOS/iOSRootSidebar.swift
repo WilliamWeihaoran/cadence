@@ -1065,7 +1065,7 @@ struct iOSSidebarButton: View {
 
     var body: some View {
         Button(action: action) {
-            expandedLabel
+            rowLabel
         }
         .buttonStyle(.iosPressable)
         // T-1445, the same rule macOS's `SidebarNavRow` reads: the badge is drawn by the shared
@@ -1076,7 +1076,7 @@ struct iOSSidebarButton: View {
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
-    private var expandedLabel: some View {
+    private var rowLabel: some View {
         HStack(spacing: iOSSidebarMetrics.iconLabelSpacing) {
             Image(systemName: systemImage)
                 .font(.system(size: iOSSidebarMetrics.iconSize, weight: .semibold))
@@ -1143,7 +1143,7 @@ struct iOSSidebarListRow: View {
 
     var body: some View {
         Button(action: onSelect) {
-            expandedLabel
+            rowLabel
             // A list row, not a nav row: `listRowHeight`, not `buttonHeight` (T-3072). The height
             // is still fixed and still the whole hit region — the row keeps one shape for its
             // selection fill, its `contentShape` and its `+`-drop frame, so nothing here is sized
@@ -1167,7 +1167,7 @@ struct iOSSidebarListRow: View {
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
-    private var expandedLabel: some View {
+    private var rowLabel: some View {
         HStack(spacing: iOSSidebarMetrics.listTrailingItemSpacing) {
             Text(displayName)
                 .font(.system(size: iOSSidebarMetrics.labelFontSize, weight: isSelected ? .semibold : .medium))

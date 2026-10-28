@@ -240,7 +240,7 @@ struct CadenceSidebarRailRetirementTests {
         var body: some View { Rectangle() }
     }
 
-    private var expandedLabel: some View {
+    private var rowLabel: some View {
         Text(title)
     }
     """

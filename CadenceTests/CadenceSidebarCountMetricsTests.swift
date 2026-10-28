@@ -388,7 +388,7 @@ struct CadenceSidebarMetricsTests {
             // while `iOSSidebarStyle.rail` existed: the expanded row, the rail's glyph frame and
             // the rail container. T-3079 deleted `.rail` and both `railLabel` bodies on the
             // owner's instruction, so two of the three went with the drawing they sized. The
-            // survivor is the expanded row's own `.frame(height:)` at the end of `expandedLabel`.
+            // survivor is the expanded row's own `.frame(height:)` at the end of `rowLabel`.
             // Do not "restore" the 3: a second one here would mean a rail branch came back.
             CadenceSourceScan.matchCount("iOSSidebarMetrics\\.buttonHeight", in: navRow) == 1,
             "the sidebar's nav row no longer spends buttonHeight on its expanded row's frame"
