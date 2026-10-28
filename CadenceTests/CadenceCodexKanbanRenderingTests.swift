@@ -264,9 +264,48 @@ struct CadenceCodexKanbanRenderingTests {
         return own + view.subviews.flatMap { descendants(in: $0, of: type) }
     }
 
-    private func nativeCardCount(in view: NSView) -> Int {
-        let own = view is RightClickActionTrigger.RightClickActionView ? 1 : 0
-        return own + view.subviews.reduce(0) { $0 + nativeCardCount(in: $1) }
+    /// **The probe is the card's own accessibility identifier, not an AppKit overlay ([[T-8062]]).**
+    ///
+    /// It counted `RightClickActionTrigger.RightClickActionView`, which `KanbanCard` carried only to
+    /// turn a right-click into the click's "open the inspector". [[T-8062]] replaced that overlay
+    /// with the task `.contextMenu`, exactly as [[T-1479]] did on `MacTaskRow`, and
+    /// `CadenceCodexTaskListVirtualizationTests` moved its row probe the same way for [[T-3201]].
+    /// `CadenceAccessibilityIdentifiers.boardCard(title:)` is on every card because T-1740's UI
+    /// tests read the card's frame by it; a chip's id extends it (`.control.<field>`), so only the
+    /// three-component ids are cards. The enhanced-user-interface dance is that test's, for the
+    /// same reason: SwiftUI builds no accessibility children until an assistive client asks.
+    private func nativeCardCount(in host: NSView) -> Int {
+        let app = NSApplication.shared
+        let enhanced = NSSelectorFromString("accessibilitySetEnhancedUserInterfaceAttribute:")
+        _ = app.perform(enhanced, with: NSNumber(value: true))
+        defer { _ = app.perform(enhanced, with: NSNumber(value: false)) }
+
+        host.window?.orderFrontRegardless()
+        defer { host.window?.orderOut(nil) }
+        host.layoutSubtreeIfNeeded()
+        _ = host.accessibilityChildren()
+        RunLoop.main.run(until: Date().addingTimeInterval(0.5))
+
+        var found = 0
+        let identifierSelector = NSSelectorFromString("accessibilityIdentifier")
+        let childrenSelector = NSSelectorFromString("accessibilityChildren")
+        func walk(_ element: Any, depth: Int) {
+            guard depth < 64 else { return }
+            let object = element as AnyObject
+            if object.responds(to: identifierSelector),
+               let raw = object.perform(identifierSelector)?.takeUnretainedValue() {
+                let identifier = "\(raw)"
+                if identifier.hasPrefix("board.card."),
+                   identifier.split(separator: ".").count == 3 {
+                    found += 1
+                }
+            }
+            guard object.responds(to: childrenSelector),
+                  let children = object.perform(childrenSelector)?.takeUnretainedValue() as? [Any] else { return }
+            for child in children { walk(child, depth: depth + 1) }
+        }
+        walk(host, depth: 0)
+        return found
     }
 }
 

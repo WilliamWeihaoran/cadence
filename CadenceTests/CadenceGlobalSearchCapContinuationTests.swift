@@ -294,6 +294,26 @@ struct CadenceGlobalSearchCapContinuationTests {
         #expect(row.contains("if hovering { onHover() }"))
     }
 
+    /// **[[T-8063]] — the list follows the keyboard highlight.** The palette is a fixed-height
+    /// card, so an arrow move past the rows that fit left the highlight off-screen. Pinned as wiring,
+    /// as `MarkdownSlashCommandPickerMetricsTests` pins the slash menu's: the list sits in a
+    /// `ScrollViewReader`, scrolls to the highlight on every change, and tags both kinds of row the
+    /// highlight can name with exactly that id.
+    @Test func theSectionsListScrollsTheHighlightedRowIntoView() throws {
+        let file = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile("Cadence/macOS/Views/GlobalSearchOverlayShellViews.swift"))
+        let list = try #require(
+            CadenceSourceScan.declarationBody("struct GlobalSearchSectionsList: View", in: file),
+            "could not read GlobalSearchSectionsList"
+        ).filter { !$0.isWhitespace }
+        #expect(list.contains("ScrollViewReader{proxyin"))
+        #expect(list.contains(".onChange(of:highlightedResultID){_,_inscrollToHighlighted(proxy)}"),
+                "an arrow move, hover or reveal must scroll the highlighted row into view")
+        #expect(list.contains(".onAppear{scrollToHighlighted(proxy)}"))
+        #expect(list.contains("proxy.scrollTo(highlightedResultID)"))
+        #expect(list.contains(".id(result.id)"), "scrollTo needs each result row tagged with its id")
+        #expect(list.contains(".id(continuationID)"), "scrollTo needs the continuation row tagged with its keyboard id")
+    }
+
     // MARK: - Where the numbers live
 
     @Test func everyCappedCategoryKeepsItsOwnIdleAndLiveNumbers() {

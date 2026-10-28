@@ -91,6 +91,39 @@ struct MacTaskRowContextMenuParityTests {
         #expect(CadenceSourceScan.matchCount(#"showTaskInspector = true"#, in: row) == 0)
     }
 
+    /// **[[T-8062]] — the board card is a task too.** `KanbanCard` is the card of a list's Kanban
+    /// tab, the Tasks page's Kanban mode and the Calendar Board's day columns and rails; its
+    /// right-click opened the inspector after T-1479 had ruled it a menu on the row.
+    @Test func theBoardCardRightClickPresentsTheSameMenuAndClickStillOpensTheInspector() throws {
+        let cardPath = "Cadence/macOS/Views/KanbanCardView.swift"
+        let card = try body("var body: some View", in: cardPath)
+        let cardFile = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(cardPath))
+        #expect(cardFile.contains("struct KanbanCard: View"), "non-vacuity: wrong file read")
+
+        // Click is unchanged: the tap goes through its chip guard to the one inspector function.
+        #expect(CadenceSourceScan.matchCount(#"\.onTapGesture \{\s*openTaskInspectorFromCardTap\(\)\s*\}"#, in: card) == 1)
+        #expect(CadenceSourceScan.matchCount(#"func openTaskInspector\(\) \{\s*showTaskInspector = true\s*\}"#, in: cardFile) == 1)
+
+        // Right-click is the row's menu with the row's outcome handling, and no AppKit overlay
+        // claims the gesture before the menu sees it.
+        #expect(CadenceSourceScan.matchCount(#"\.contextMenu \{"#, in: card) == 1)
+        #expect(CadenceSourceScan.matchCount(#"MacTaskRowContextMenu\("#, in: card) == 1)
+        #expect(CadenceSourceScan.matchCount(#"MacTaskRowMenuOutcomeModifier\("#, in: card) == 1)
+        #expect(CadenceSourceScan.matchCount("RightClickActionTrigger", in: cardFile) == 0,
+                "an AppKit right-click overlay on the card would take the click before the menu sees it")
+        #expect(CadenceSourceScan.matchCount(#"openDetail: openTaskInspector"#, in: card) == 1)
+        #expect(CadenceSourceScan.matchCount(#"startFocus: startFocus"#, in: card) == 1)
+        #expect(CadenceSourceScan.matchCount(#"requestDelete: presentDelete"#, in: card) == 1)
+        #expect(CadenceSourceScan.matchCount(#"focusManager\.startFocus\(task: task"#, in: cardFile) == 1)
+        #expect(CadenceSourceScan.matchCount(#"deleteConfirmationManager\.presentTaskDelete\(task"#, in: cardFile) == 1)
+
+        // All three boards still draw this one card, so each gains the menu with it.
+        for host in ["KanbanColumnSupportViews.swift", "CalendarBoardDayColumnSupportViews.swift", "CalendarBoardRailSupportViews.swift"] {
+            let code = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile("Cadence/macOS/Views/\(host)"))
+            #expect(CadenceSourceScan.matchCount(#"\bKanbanCard\("#, in: code) >= 1, "\(host) no longer draws KanbanCard")
+        }
+    }
+
     @Test func aRefusedMenuWriteIsTitledLikeIOSTitlesIt() {
         #expect(MacTaskRowMenuFailure.move.title == CadenceTaskMutationSupport.moveFailureAlertTitle)
         #expect(MacTaskRowMenuFailure.recurrence("x").title == CadenceTaskMutationSupport.recurrenceFailureAlertTitle)

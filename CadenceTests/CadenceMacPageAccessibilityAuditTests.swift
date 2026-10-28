@@ -401,7 +401,8 @@ struct CadenceMacPageAccessibilityAuditTests {
             try CadenceSourceScan.sourceFile("Cadence/macOS/Views/KanbanCardView.swift")
         ).filter { !$0.isWhitespace }
         #expect(card.contains(".accessibilityAction(named:CadenceTaskControlAccessibility.openTaskActionName,openTaskInspector)"))
-        #expect(card.contains("RightClickActionTrigger(action:openTaskInspector)"))
+        // [[T-8062]]: the card's right-click is the task menu now; its Edit is this same path.
+        #expect(card.contains("openDetail:openTaskInspector,"))
         #expect(card.contains("privatefuncopenTaskInspector(){showTaskInspector=true}"))
 
         let row = CadenceSourceScan.codeOnly(

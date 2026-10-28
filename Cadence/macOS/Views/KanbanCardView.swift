@@ -29,6 +29,7 @@ struct KanbanCard: View {
     @Environment(HoveredTaskManager.self) private var hoveredTaskManager
     @Environment(HoveredEditableManager.self) private var hoveredEditableManager
     @Environment(TaskCompletionAnimationManager.self) private var taskCompletionAnimationManager
+    @Environment(FocusManager.self) private var focusManager
     @State private var showDueDatePicker = false
     @State private var dueDatePickerDate: Date = Date()
     @State private var dueDateViewMonth: Date = Date()
@@ -42,6 +43,10 @@ struct KanbanCard: View {
     @State private var isPointerOverCard = false
     @State private var isAttributeFocused = false
     @State private var showTaskInspector = false
+    /// The context menu's after-the-click states, settled by `MacTaskRowMenuOutcomeModifier`
+    /// exactly as on `MacTaskRow` ([[T-8062]]).
+    @State private var pendingRecurrenceRule: TaskRecurrenceRule?
+    @State private var menuFailure: MacTaskRowMenuFailure?
 
     var body: some View {
         HStack(alignment: .top, spacing: 0) {
@@ -96,9 +101,26 @@ struct KanbanCard: View {
         .onTapGesture {
             openTaskInspectorFromCardTap()
         }
-        .overlay {
-            RightClickActionTrigger(action: openTaskInspector)
+        // **Right-click is the task menu, not a second tap ([[T-8062]]).** It was a
+        // `RightClickActionTrigger` overlay running `openTaskInspector`, the click's own path —
+        // the defect [[T-1479]] removed from `MacTaskRow` and left on the board card, so the same
+        // task offered its actions on the Tasks tab and the inspector on every board. The card now
+        // presents the row's menu with the row's outcome handling; click keeps the inspector.
+        .contextMenu {
+            MacTaskRowContextMenu(
+                task: task,
+                openDetail: openTaskInspector,
+                startFocus: startFocus,
+                requestDelete: presentDelete,
+                pendingRecurrenceRule: $pendingRecurrenceRule,
+                failure: $menuFailure
+            )
         }
+        .modifier(MacTaskRowMenuOutcomeModifier(
+            task: task,
+            pendingRecurrenceRule: $pendingRecurrenceRule,
+            failure: $menuFailure
+        ))
         .onHover { hovering in
             isPointerOverCard = hovering
             syncInteractiveHoverState()
@@ -141,7 +163,7 @@ struct KanbanCard: View {
         .accessibilityIdentifier(CadenceAccessibilityIdentifiers.boardCard(title: task.title))
         // [[T-7092]]: click and right-click were the card's only ways to its detail, and neither is
         // an accessibility action, so VoiceOver could reach the chips and never the task. The
-        // action runs the right-click's path — unconditionally, since no chip is under a pointer.
+        // action runs `openTaskInspector` unconditionally, since no chip is under a pointer.
         .accessibilityAction(named: CadenceTaskControlAccessibility.openTaskActionName, openTaskInspector)
         .popover(isPresented: $showTaskInspector, attachmentAnchor: .rect(.bounds), arrowEdge: .trailing) {
             TaskDetailPopover(task: task)
@@ -453,10 +475,31 @@ struct KanbanCard: View {
         openTaskInspector()
     }
 
-    /// The one way into this card's detail: the tap (past its chip guard), the right-click, and
-    /// the "Open task" accessibility action ([[T-7092]]).
+    /// The one way into this card's detail: the tap (past its chip guard), the context menu's
+    /// Edit, and the "Open task" accessibility action ([[T-7092]]).
     private func openTaskInspector() {
         showTaskInspector = true
+    }
+
+    /// The context menu's Focus — `MacTaskRow.startFocus`'s path. T-654: `startFocus` commits a
+    /// pending bank and can refuse.
+    private func startFocus() {
+        do {
+            try focusManager.startFocus(task: task, in: modelContext)
+        } catch {
+            taskCompletionAnimationManager.recordSettleFailure()
+        }
+    }
+
+    /// The context menu's Delete Task — the same refusable overlay as the card's Cmd+Delete
+    /// (`KanbanCardStateSupport.syncInteractiveHoverState`), with the same hover teardown.
+    private func presentDelete() {
+        deleteConfirmationManager.presentTaskDelete(task, in: modelContext) {
+            if hoveredTaskManager.hoveredTask?.id == task.id {
+                hoveredTaskManager.hoveredTask = nil
+            }
+            hoveredEditableManager.endHovering(id: KanbanCardStateSupport.editableID(for: task))
+        }
     }
 
     private func setAttributeFocused(_ focused: Bool) {

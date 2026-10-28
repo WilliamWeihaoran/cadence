@@ -16,46 +16,65 @@ struct GlobalSearchSectionsList: View {
         if sections.isEmpty {
             GlobalSearchEmptyState(query: query, withheldCompletedTaskCount: withheldCompletedTaskCount)
         } else {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 15) {
-                    ForEach(sections) { section in
-                        VStack(alignment: .leading, spacing: 6) {
-                            SectionEyebrowLabel(text: section.category.rawValue)
-                                .padding(.horizontal, 16)
+            // [[T-8063]]: the palette is a fixed 760x620 card and `onMoveCommand` only rewrites
+            // `highlightedResultID`, so Down walked the highlight off the bottom edge within about
+            // ten presses and Return opened a row the user never saw. The list now follows the
+            // highlight — every arrow move, hover and reveal (a reveal moves it to the section's
+            // first new row) — as the editor's slash-command menu does ([[T-7233]]). `scrollTo`
+            // with no anchor moves the least distance, so a row already on screen stays put.
+            ScrollViewReader { proxy in
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 15) {
+                        ForEach(sections) { section in
+                            VStack(alignment: .leading, spacing: 6) {
+                                SectionEyebrowLabel(text: section.category.rawValue)
+                                    .padding(.horizontal, 16)
 
-                            VStack(spacing: 4) {
-                                ForEach(section.results) { result in
-                                    GlobalSearchResultRow(
-                                        result: result,
-                                        isHighlighted: highlightedResultID == result.id,
-                                        onSelect: { onSelect(result) },
-                                        onHover: { onHover(result.id) }
-                                    )
-                                }
+                                VStack(spacing: 4) {
+                                    ForEach(section.results) { result in
+                                        GlobalSearchResultRow(
+                                            result: result,
+                                            isHighlighted: highlightedResultID == result.id,
+                                            onSelect: { onSelect(result) },
+                                            onHover: { onHover(result.id) }
+                                        )
+                                        .id(result.id)
+                                    }
 
-                                // No row when nothing is withheld: `continuationLabel` returns
-                                // `nil` at zero, so "0 more results" cannot be drawn.
-                                if let hidden = section.hidden,
-                                   let label = CadenceSearchResultCap.continuationLabel(hidden: hidden) {
-                                    let continuationID = GlobalSearchKeyboardRow.continuationID(forSection: section.id)
-                                    GlobalSearchMoreResultsRow(
-                                        continuation: GlobalSearchResultContinuation(
-                                            label: label,
-                                            reveal: { onReveal(section.id) }
-                                        ),
-                                        isHighlighted: highlightedResultID == continuationID,
-                                        onHover: { onHover(continuationID) }
-                                    )
+                                    // No row when nothing is withheld: `continuationLabel` returns
+                                    // `nil` at zero, so "0 more results" cannot be drawn.
+                                    if let hidden = section.hidden,
+                                       let label = CadenceSearchResultCap.continuationLabel(hidden: hidden) {
+                                        let continuationID = GlobalSearchKeyboardRow.continuationID(forSection: section.id)
+                                        GlobalSearchMoreResultsRow(
+                                            continuation: GlobalSearchResultContinuation(
+                                                label: label,
+                                                reveal: { onReveal(section.id) }
+                                            ),
+                                            isHighlighted: highlightedResultID == continuationID,
+                                            onHover: { onHover(continuationID) }
+                                        )
+                                        .id(continuationID)
+                                    }
                                 }
                             }
                         }
                     }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 14)
                 }
-                .padding(.horizontal, 10)
-                .padding(.vertical, 14)
+                .scrollIndicators(.hidden)
+                .onAppear { scrollToHighlighted(proxy) }
+                .onChange(of: highlightedResultID) { _, _ in scrollToHighlighted(proxy) }
             }
-            .scrollIndicators(.hidden)
         }
+    }
+
+    /// The highlight's id is a result's id or a section's continuation id
+    /// (`GlobalSearchKeyboardRow`), and each row is tagged with exactly that id above.
+    private func scrollToHighlighted(_ proxy: ScrollViewProxy) {
+        guard let highlightedResultID else { return }
+        proxy.scrollTo(highlightedResultID)
     }
 }
 
