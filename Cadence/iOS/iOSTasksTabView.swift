@@ -201,12 +201,14 @@ struct iOSTasksTabView: View {
 /// The index's destination rows — Today, Tasks, Inbox — with their counts and tints (T-3156).
 ///
 /// **This is the only view on the Tasks tab that fetches every task.** The counts are O(n) over the
-/// store, and they used to be computed in `iOSTasksTabView.body`, which re-runs once each way
-/// whenever the New task sheet is presented over the index or anything pushed on it: the shell
-/// rebuilds its `section` and `path` bindings from `Binding(get:set:)` closures on every pass, and
-/// SwiftUI cannot compare closure-backed bindings, so `Self._printChanges()` names them as changed
-/// although their values are not. That shell is not this file's to change, so the fetch moved
-/// here instead, behind an `==` that a parent pass cannot fail.
+/// store, and they used to be computed in `iOSTasksTabView.body`, which re-ran once each way
+/// whenever the New task sheet was presented over the index or anything pushed on it: the shell
+/// rebuilt its `section` and `path` bindings from `Binding(get:set:)` closures on every pass, and
+/// SwiftUI cannot compare closure-backed bindings, so `Self._printChanges()` named them as changed
+/// although their values were not. The fetch moved here, behind an `==` that a parent pass cannot
+/// fail (T-3156). T-3157 has since replaced both closures with projections of the shell's own
+/// state; whether that removed the extra parent passes is unmeasured, and a parent can still
+/// re-run for other reasons, so the wall stays.
 ///
 /// `onOpen` is excluded from `==` on purpose. It only appends to the tab's path binding and writes
 /// its section binding, both of which address state that outlives any one pass of the parent, so a
