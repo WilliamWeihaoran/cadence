@@ -82,6 +82,14 @@ Long references, searchable only when needed:
 - Use one hover/selection layer at one radius.
 - Prefer one shared component over near-copies.
 - iPhone and iPad share one style; they differ by layout, not by row/chip/header vocabulary.
+- **macOS and iOS are one app on two platforms** (owner ruling, [[T-8201]]). A surface may differ
+  between them ONLY where the difference is forced by hardware or input: screen width, pointer vs
+  touch, hover, right-click, keyboard shortcuts, or a presentation model one platform does not have.
+  Anything that is only UI -- a card's anatomy, how a completed task reads, what an editor's sections
+  look like, whether an animation plays -- is the SAME on both. Where the two have drifted, the fix is
+  one shared component, not a second copy nudged closer by hand. A platform difference must be
+  justifiable in one sentence naming the hardware or input constraint it answers; if it cannot be, it
+  is drift and it gets unified.
 - **v1 ships English-only** (T-1386). There is no `.strings`, `.xcstrings` or `.lproj` resource and
   `knownRegions` is `en`/`Base`; user-facing copy stays an English literal. T-18 is deferred scope,
   not an oversight. Pinned by `CadenceTests/CadenceAgentOperatingRuleTests`.
