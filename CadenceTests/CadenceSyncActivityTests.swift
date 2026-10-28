@@ -668,6 +668,35 @@ struct CadenceSyncActivitySurfaceParityTests {
         }
     }
 
+    /// [[T-7942]]: on a 393 pt iPhone the "Check iCloud Status" button and the "Last checked …"
+    /// stamp do not fit one row of the card (~375 pt of content in ~329 pt), so the stamp is drawn
+    /// on its own line under the button row — the shape macOS's `SettingsSyncSection` already has.
+    /// The read is every `HStack` body in the section; the one holding the button must not also
+    /// hold the stamp, and the stamp must still be drawn somewhere in the section.
+    @Test func iPhoneDrawsTheLastCheckedStampUnderTheButtonRowNotBesideIt() throws {
+        let path = "Cadence/iOS/iOSSettingsOverviewSections.swift"
+        let file = try stripped(path, containing: "struct iOSSyncSettingsSection")
+        let section = try #require(
+            CadenceSourceScan.declarationBody("struct iOSSyncSettingsSection", in: file),
+            "struct iOSSyncSettingsSection is gone from \(path)"
+        )
+        #expect(section.contains(#"Text("Last checked"#), "the iOS iCloud card no longer draws its stamp")
+
+        var stackBodies: [String] = []
+        var cursor = section.startIndex
+        while let found = section.range(of: "HStack", range: cursor..<section.endIndex) {
+            if let body = CadenceSourceScan.matchedBody(after: found.upperBound, in: section, open: "{", close: "}") {
+                stackBodies.append(body)
+            }
+            cursor = found.upperBound
+        }
+        let buttonRows = stackBodies.filter { $0.contains(#"title: "Check iCloud Status""#) }
+        #expect(!buttonRows.isEmpty, "no HStack in \(path) holds the Check iCloud Status button; \(stackBodies.count) read")
+        for row in buttonRows {
+            #expect(!row.contains("Last checked"), "the Last checked stamp is back beside the button in \(path)")
+        }
+    }
+
     /// **The one way this ticket fails.** There is no public API to force a
     /// `NSPersistentCloudKitContainer` sync. The two things that look like one are a nudge — touch
     /// a record so an export pass is scheduled, which pulls nothing down — and a destructive
