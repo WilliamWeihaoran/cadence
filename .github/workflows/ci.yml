@@ -550,8 +550,11 @@ jobs:
       # own exit status: `xcb.sh` fails a red test, refuses an `-only-testing:` name matching no
       # suite (exit 8), and fails a run that executed none (exit 4).
       # None listed is a hard failure, never a skip: a quiet skip here is the T-535 shape.
-      # Option (a), `-downloadPlatform iOS` under 26.0.1, was not taken: the runtime it fetches is
-      # 26.0, which the 26.1 deployment target makes ineligible.
+      # Option (a), `-downloadPlatform iOS` under 26.0.1, was not taken: the runtime it would fetch is
+      # 26.0, below the 26.1 deployment target (reasoned, not run). `XCODEBUILD` and `DEVELOPER_DIR`
+      # are both set because `xcb.sh` defaults to `/Applications/Xcode.app`'s binary whatever
+      # `xcode-select` says -- which is also why the step above compiles under 26.6 ([[T-7661]]).
+      # Measured (runs 40629814847, 40632388234): rebuild 342-381 s, test 263-336 s, 22 tests.
       - name: Run the deliberately iOS-only CadenceTests suites on a simulator (T-6541, T-6821)
         id: ios-sim
         run: |

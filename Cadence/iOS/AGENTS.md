@@ -23,7 +23,7 @@ compact. The full former guide is preserved at `../../docs/IOS_AGENTS_REFERENCE.
   `xcodebuild` builds every testable in the scheme whatever `-only-testing:` says. (The reason first
   given here, that `CadenceTests` cannot compile for iOS, ended with [[T-3244]]: it compiles, and its
   three whole-file `#if os(iOS)` suites run through `-scheme Cadence` on `Cadence-iPhone15` — 22
-  tests, measured 2026-10-25, [[T-6541]]. CI only compiles them; see [[T-6821]].) The shared
+  tests, measured 2026-10-25, [[T-6541]] -- and in CI's `ios-build` simulator step, [[T-6821]].) The shared
   `CadenceUITestsOnly` scheme holds `CadenceUITests` alone: `scripts/simulator-claim.sh claim <id>`,
   then `scripts/xcb.sh <id> test -scheme CadenceUITestsOnly -destination 'platform=iOS Simulator,id=<udid>'
   -only-testing:CadenceUITests/<Suite>`. Measured 2026-10-09: 2 tests, 0 failures, 27.9 s against

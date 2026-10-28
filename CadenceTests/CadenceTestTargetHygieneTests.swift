@@ -1725,7 +1725,8 @@ struct CadenceTestTargetHygieneTests {
     /// is refused outright, and a file compiled out on macOS alone must be NAMED below. The list is
     /// exact in both directions, so the next whole-file iOS suite is noticed the day it lands (and
     /// is listed on purpose, not by accident), and a listed file that stops being one fails too.
-    /// CI compiles those suites for iOS and runs them nowhere — [[T-6541]].
+    /// CI compiles those suites for iOS and runs them on a simulator in `ios-build`'s last step —
+    /// [[T-6541]], [[T-6821]]; `theIOSOnlySuitesAreTheOnesCIRunsOnASimulator` holds the two equal.
     ///
     /// A condition this reader cannot evaluate is reported, never passed, so a new directive
     /// spelling gets a decision instead of a blind spot.

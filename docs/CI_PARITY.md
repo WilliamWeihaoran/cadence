@@ -22,12 +22,31 @@ diverges, not an outage.
 | tree under test | `actions/checkout` of the pushed tip of `main` | a worktree or `git archive` at *your* base |
 | test scope | all of `CadenceTests`, serial, every push | usually `-only-testing:` a few suites |
 | UI tests | never (T-531) | local only |
+| iOS simulator tests | the three `deliberatelyIOSOnlyTestFiles` suites, 22 tests, on an iPhone 17 / iOS 26.5 simulator under the newest image Xcode with a runtime (26.6) -- [[T-6821]] | any suite, on `Cadence-iPhone15` |
 
 Two details people get wrong. The image carries `Xcode_26.0.1` *through* `Xcode_26.6` and defaults
 to 26.6; `.github/scripts/assert-toolchain.sh` pins the exact minor **26.0** since [[T-4742]] (it
 used to take the first lexical `Xcode_26*.app`, which happened to be the oldest), so CI runs
 26.0.1 and an image that drops 26.0.x goes red at *Assert toolchain* rather than moving silently. And the runner's local clock is
 UTC — its `xcb.sh` log stamp `20261018-033216` sits against the `03:32:16Z` step timestamp.
+
+**Correction, measured 2026-10-28 on hosted run 40628569258 ([[T-6821]]), filed as [[T-7661]]:** the
+pin above holds for bare `xcodebuild` calls only. `scripts/xcb.sh` defaults `XCODEBUILD` to
+`/Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild`, and on the image `Xcode.app ->
+Xcode_26.6.app`; that binary evidently does not follow `xcode-select`, since both `xcb.sh` compile
+logs read (`ci-ios`, and `ci-tests` on run 40629814847) name `Xcode_26.6.app` in its log and never `Xcode_26.0.1.app`. Until T-7661
+is settled, read "CI's compiler" as 26.6, not 26.0.1.
+
+**iOS simulator tests in CI ([[T-6821]]).** The image installs iOS Simulator runtimes 26.2, 26.4.1
+and 26.5 only. Xcode 26.0.1 and 26.1.1 list no eligible iOS Simulator destination (and with
+`IPHONEOS_DEPLOYMENT_TARGET = 26.1` a 26.0 runtime fetched by `-downloadPlatform` would be below the
+deployment target -- reasoned, not run); 26.2
+through 26.6 list 33. So `ios-build`'s last step picks the newest image Xcode listing an iPhone at
+iOS >= the deployment target, REBUILDS under it (`build-for-testing`, one arch, its own DerivedData,
+log gated by `check-log.sh`) and runs the iOS-only suites `test-without-building`. Measured on
+runs 40629814847 and 40632388234: rebuild 342 / 381 s (1282 compile tasks, 0 warnings), test 263 /
+336 s for 22 tests that take ~3 s (the rest is simulator boot and host launch), step 627 / 734 s.
+`ios-build` went to ~22.5 min against ~23 min for `macos-tests`, so the critical path is about even.
 
 ## What actually went red
 
