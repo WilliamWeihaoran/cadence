@@ -544,14 +544,16 @@ jobs:
       # app whose IPHONEOS_DEPLOYMENT_TARGET is 26.1 anyway); Xcode 26.2 through 26.6 list 33. So
       # this step picks the NEWEST image Xcode that lists an eligible iPhone whose OS is at least the
       # project's IPHONEOS_DEPLOYMENT_TARGET, and REBUILDS under it into its own DerivedData:
-      # products from another Xcode are not a sound input to `test-without-building`. It is a test
-      # run, not the compile gate -- warnings are gated by `check-log.sh` on the step above, not
-      # here -- so this step's own exit status is its gate: `xcb.sh` fails a red test, refuses an
-      # `-only-testing:` name matching no suite (exit 8), and fails a run that executed none (exit 4).
+      # products from another Xcode are not a sound input to `test-without-building`. That rebuild
+      # is a compile like any other, so its log goes through `check-log.sh` in the step after this
+      # one (T-1781's guard requires it). The test half compiles nothing, so its gate is this step's
+      # own exit status: `xcb.sh` fails a red test, refuses an `-only-testing:` name matching no
+      # suite (exit 8), and fails a run that executed none (exit 4).
       # None listed is a hard failure, never a skip: a quiet skip here is the T-535 shape.
       # Option (a), `-downloadPlatform iOS` under 26.0.1, was not taken: the runtime it fetches is
       # 26.0, which the 26.1 deployment target makes ineligible.
       - name: Run the deliberately iOS-only CadenceTests suites on a simulator (T-6541, T-6821)
+        id: ios-sim
         run: |
           export TMPDIR="$RUNNER_TEMP/"
           step_start=$SECONDS
@@ -583,7 +585,8 @@ jobs:
           fi
           export DEVELOPER_DIR="$picked_app/Contents/Developer"
           export XCODEBUILD="$DEVELOPER_DIR/usr/bin/xcodebuild"
-          echo "test Xcode: $picked_app ($("$XCODEBUILD" -version | head -1)), simulator $udid, deployment target $deploy"
+          "$XCODEBUILD" -version > "$RUNNER_TEMP/ios-test-xcode.txt" 2>&1 || true
+          echo "test Xcode: $picked_app ($(head -1 "$RUNNER_TEMP/ios-test-xcode.txt")), simulator $udid, deployment target $deploy"
           build_start=$SECONDS
           ./scripts/xcb.sh ci-ios-sim-build raw \
             -scheme Cadence \
@@ -607,7 +610,11 @@ jobs:
             -only-testing:CadenceTests/iOSTaskRecurrenceSelectionEffectTests \
             test-without-building
           echo "SIM-TEST-SECONDS=$(( SECONDS - test_start ))"
+          grep -E 'Test run with [0-9]+ tests? in [0-9]+ suites?|Executed [0-9]+ tests?' "$RUNNER_TEMP/cadence-xcb-ci-ios-tests.log" || true
           echo "SIM-STEP-SECONDS=$(( SECONDS - step_start ))"
+      - name: Gates (simulator rebuild, T-6821)
+        if: always() && steps.ios-sim.outcome != 'skipped'
+        run: ./.github/scripts/check-log.sh "$RUNNER_TEMP/cadence-xcb-ci-ios-sim-build.log" build
       - name: Upload the simulator test logs on failure (T-6821)
         if: failure()
         uses: actions/upload-artifact@v4
