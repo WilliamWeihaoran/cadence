@@ -27,6 +27,9 @@ struct NotePanel: View {
     /// [[T-7810]]: when the oldest edit the pending fallback commit carries was made; only
     /// meaningful while `pendingFallbackContentSyncTask` is non-nil.
     @State private var fallbackContentWindowStart: Date?
+    /// [[T-7891]]: the note whose body a ceiling commit wrote without its tag sync; the next true
+    /// flush point owes that sync even if the body has not changed since.
+    @State private var tagSyncDeferredNoteID: UUID?
     /// [[T-7811]]: this editor's key in `MarkdownEditorTerminationFlush`.
     @State private var terminationFlushID = UUID()
     /// Tabs whose note failed to load or create on the last `loadOrCreate()` (T-849). A tab in
@@ -284,8 +287,13 @@ struct NotePanel: View {
         pendingFallbackContentSyncTask = Task { @MainActor in
             try? await Task.sleep(nanoseconds: schedule.delay)
             guard !Task.isCancelled, loadedNoteID == noteID else { return }
-            persistEditorContentIfNeeded(content, noteID: noteID)
+            // T-7891: a commit the ceiling cut short fires mid-typing, so it must not mint the
+            // half-typed `#tag` under the caret; it writes the body and defers the tag sync.
+            let syncsTags = MarkdownEditorSyncTiming.fallbackCommitSyncsTags(delay: schedule.delay)
+            persistEditorContentIfNeeded(content, noteID: noteID, syncTags: syncsTags)
             pendingFallbackContentSyncTask = nil
+            // The deferred sync gets a true idle commit of its own, so a pause still mints it.
+            if tagSyncDeferredNoteID == noteID { scheduleFallbackContentSync(for: content, noteID: noteID) }
         }
     }
 
@@ -301,10 +309,12 @@ struct NotePanel: View {
         flushPendingEditorContent()
     }
 
-    private func persistEditorContentIfNeeded(_ content: String, noteID: UUID) {
+    private func persistEditorContentIfNeeded(_ content: String, noteID: UUID, syncTags: Bool = true) {
         guard let note = notesSnapshot.note(for: activeTab), note.id == noteID else { return }
-        guard note.content != content else { return }
-        CadenceCoreNoteSupport.update(note, content: content, in: currentNotesContext)
+        // T-7891: an unchanged body still goes through when a ceiling commit deferred its tag sync.
+        guard note.content != content || (syncTags && tagSyncDeferredNoteID == noteID) else { return }
+        CadenceCoreNoteSupport.update(note, content: content, in: currentNotesContext, syncTags: syncTags)
+        tagSyncDeferredNoteID = syncTags ? nil : noteID
     }
 
     /// [[T-5180]]: a `[[note]]` link opens the note where the rest of the Mac app opens it — the

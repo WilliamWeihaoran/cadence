@@ -55,6 +55,9 @@ struct NoteEditorPane: View {
     /// [[T-7810]]: when the oldest edit the pending fallback commit carries was made; only
     /// meaningful while `pendingFallbackContentSyncTask` is non-nil.
     @State private var fallbackContentWindowStart: Date?
+    /// [[T-7891]]: the note whose body a ceiling commit wrote without its tag sync; the next true
+    /// flush point owes that sync even if the body has not changed since.
+    @State private var tagSyncDeferredNoteID: UUID?
     /// [[T-7811]]: this editor's key in `MarkdownEditorTerminationFlush`.
     @State private var terminationFlushID = UUID()
     /// [[T-7832]]: the title field's key in `MarkdownEditorTerminationFlush`. Separate from the
@@ -421,8 +424,13 @@ struct NoteEditorPane: View {
         pendingFallbackContentSyncTask = Task { @MainActor in
             try? await Task.sleep(nanoseconds: schedule.delay)
             guard !Task.isCancelled else { return }
-            persistEditorContentIfNeeded(content, noteID: noteID)
+            // T-7891: a commit the ceiling cut short fires mid-typing, so it must not mint the
+            // half-typed `#tag` under the caret; it writes the body and defers the tag sync.
+            let syncsTags = MarkdownEditorSyncTiming.fallbackCommitSyncsTags(delay: schedule.delay)
+            persistEditorContentIfNeeded(content, noteID: noteID, syncTags: syncsTags)
             pendingFallbackContentSyncTask = nil
+            // The deferred sync gets a true idle commit of its own, so a pause still mints it.
+            if tagSyncDeferredNoteID == noteID { scheduleFallbackContentSync(for: content) }
         }
     }
 
@@ -451,9 +459,17 @@ struct NoteEditorPane: View {
     /// would rename the newly-opened note from the previous note's `# Heading`, and
     /// `onPersistContent` is wired to the event-note sheet, which pushes the body into the user's
     /// real Calendar event. `NotePanel` already threads an id through its debounce for this reason.
-    private func persistEditorContentIfNeeded(_ content: String, noteID: UUID) {
+    private func persistEditorContentIfNeeded(_ content: String, noteID: UUID, syncTags: Bool = true) {
         guard note.id == noteID else { return }
-        guard note.content != content else { return }
+        guard note.content != content else {
+            // T-7891: the body is already written, by a ceiling commit that deferred its tag
+            // sync. Owe nothing else -- `onPersistContent` already pushed this body.
+            guard syncTags, tagSyncDeferredNoteID == noteID else { return }
+            tagSyncDeferredNoteID = nil
+            TagSupport.syncNoteTagsFromMarkdownCommittingInsertions(note, in: modelContext)
+            CadencePendingChangePersistence.commitTypedContent(in: modelContext)
+            return
+        }
         note.content = content
         note.updatedAt = Date()
         // The `# H1` -> `note.title` rule. It was a private method here — a `hasPrefix` and a
@@ -468,7 +484,11 @@ struct NoteEditorPane: View {
         // mint is safely committed; a refusal here reads as "did not sync yet", silently, the same
         // as this call's other nine callers — there is no button to report through and no moment
         // the user is waiting for one.
-        TagSupport.syncNoteTagsFromMarkdownCommittingInsertions(note, in: modelContext)
+        // T-7891: not from a commit the ceiling cut short -- the next true flush point syncs.
+        if syncTags {
+            TagSupport.syncNoteTagsFromMarkdownCommittingInsertions(note, in: modelContext)
+        }
+        tagSyncDeferredNoteID = syncTags ? nil : noteID
         onPersistContent(note, content)
         loadedNoteID = note.id
         // T-4971: commit at the flush, not per keystroke. See `commitTypedContent`.

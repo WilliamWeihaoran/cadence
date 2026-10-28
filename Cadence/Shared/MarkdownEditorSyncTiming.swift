@@ -53,6 +53,21 @@ enum MarkdownEditorSyncTiming {
         let remainingBeforeCeiling = maxWait > elapsed ? maxWait - elapsed : 0
         return (windowStart, min(idleDelay, remainingBeforeCeiling))
     }
+
+    /// **[[T-7891]], the macOS half.** Whether a fallback commit armed with `delay` may sync the
+    /// note's tags — mint a `Tag` for every inline `#name` in the body.
+    ///
+    /// Only a true idle commit may. One cut short by the ceiling fires while the user may still be
+    /// typing, so a `#pro` of `#project` under the caret would be minted as a permanent orphan Tag.
+    /// The macOS editors do not see the caret, so such a commit writes the body and defers the
+    /// whole tag sync to the editor's next true flush point (idle, focus loss, switch, quit), which
+    /// `NoteEditorPane` and `NotePanel` run even when the body is unchanged by then.
+    static func fallbackCommitSyncsTags(
+        delay: UInt64,
+        idleDelay: UInt64 = fallbackContentCommitDelay
+    ) -> Bool {
+        delay >= idleDelay
+    }
 }
 
 /// **[[T-7873]].** The ceiling's window for an editor whose held write lives in a handle rather than

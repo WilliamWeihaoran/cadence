@@ -111,6 +111,95 @@ struct MarkdownEditorFallbackCommitTests {
         #expect(schedule.delay == 0)
     }
 
+    // MARK: - T-7891: a ceiling commit must not mint a half-typed #tag
+
+    @Test func onlyACommitTheCeilingDidNotCutShortSyncsTags() {
+        let start = Date(timeIntervalSinceReferenceDate: 1_000)
+        let idle = MarkdownEditorSyncTiming.fallbackContentCommitSchedule(pendingWindowStart: nil, now: start)
+        #expect(MarkdownEditorSyncTiming.fallbackCommitSyncsTags(delay: idle.delay))
+        let capped = MarkdownEditorSyncTiming.fallbackContentCommitSchedule(
+            pendingWindowStart: start,
+            now: start.addingTimeInterval(14)
+        )
+        #expect(capped.delay < MarkdownEditorSyncTiming.fallbackContentCommitDelay, "precondition: capped")
+        #expect(!MarkdownEditorSyncTiming.fallbackCommitSyncsTags(delay: capped.delay))
+        let due = MarkdownEditorSyncTiming.fallbackContentCommitSchedule(
+            pendingWindowStart: start,
+            now: start.addingTimeInterval(40)
+        )
+        #expect(!MarkdownEditorSyncTiming.fallbackCommitSyncsTags(delay: due.delay))
+    }
+
+    /// `"x #pro"` typed with the caret at the end, fourteen seconds into a window, so the ceiling
+    /// commits it one second later while `#project` is half typed. Through `NotePanel`'s write
+    /// (`CadenceCoreNoteSupport.update`) into an in-memory store: no `pro` Tag. The next true idle
+    /// commit, of the finished word, mints `project` only. Read from a second context.
+    @Test func aCeilingCommitOfAHalfTypedTagMintsNoTagAndTheNextIdleCommitMintsTheFinishedOne() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let editing = ModelContext(container)
+        let note = Note(kind: .list, title: "Note", content: "x")
+        editing.insert(note)
+        try editing.save()
+        func tagNames() throws -> [String] {
+            try ModelContext(container).fetch(FetchDescriptor<Cadence.Tag>()).map(\.name).sorted()
+        }
+
+        let start = Date(timeIntervalSinceReferenceDate: 1_000)
+        let ceiling = MarkdownEditorSyncTiming.fallbackContentCommitSchedule(
+            pendingWindowStart: start,
+            now: start.addingTimeInterval(14)
+        )
+        CadenceCoreNoteSupport.update(
+            note,
+            content: "x #pro",
+            in: editing,
+            syncTags: MarkdownEditorSyncTiming.fallbackCommitSyncsTags(delay: ceiling.delay)
+        )
+        let noteID = note.id
+        let stored = try #require(
+            try ModelContext(container).fetch(FetchDescriptor<Note>(predicate: #Predicate { $0.id == noteID })).first
+        )
+        #expect(stored.content == "x #pro", "the ceiling commit must still write the body")
+        #expect(try tagNames().isEmpty, "a ceiling commit minted the half-typed tag")
+
+        let idle = MarkdownEditorSyncTiming.fallbackContentCommitSchedule(pendingWindowStart: nil, now: start.addingTimeInterval(20))
+        CadenceCoreNoteSupport.update(
+            note,
+            content: "x #project",
+            in: editing,
+            syncTags: MarkdownEditorSyncTiming.fallbackCommitSyncsTags(delay: idle.delay)
+        )
+        #expect(try tagNames() == ["project"])
+        #expect(note.tags?.map(\.name) == ["project"])
+    }
+
+    /// Both tag-syncing editors gate the sync on the helper, write the body anyway, owe the sync to
+    /// the next flush point when the body is unchanged by then, and re-arm an idle commit for it.
+    @Test func bothNoteEditorsDeferTheTagSyncOfACeilingCommit() throws {
+        for editor in [
+            ("Cadence/macOS/Views/NoteEditorPane.swift", "struct NoteEditorPane"),
+            ("Cadence/macOS/Views/NotePanel.swift", "struct NotePanel: View"),
+        ] {
+            let source = CadenceSourceScan.codeOnly(try cadenceTestSource(editor.0))
+            let body = try #require(CadenceSourceScan.declarationBody(editor.1, in: source), "\(editor.0)")
+            let schedule = try #require(CadenceSourceScan.functionBody(named: "scheduleFallbackContentSync", in: body), "\(editor.0)")
+            #expect(schedule.contains("let syncsTags = MarkdownEditorSyncTiming.fallbackCommitSyncsTags(delay: schedule.delay)"), "\(editor.0)")
+            #expect(schedule.contains("syncTags: syncsTags)"), "\(editor.0)")
+            #expect(schedule.contains("if tagSyncDeferredNoteID == noteID { scheduleFallbackContentSync(for: content"), "\(editor.0)")
+            let persist = try #require(CadenceSourceScan.functionBody(named: "persistEditorContentIfNeeded", in: body), "\(editor.0)")
+            #expect(persist.contains("tagSyncDeferredNoteID = syncTags ? nil : noteID"), "\(editor.0)")
+            #expect(persist.contains("tagSyncDeferredNoteID == noteID"), "\(editor.0) never pays a deferred sync on an unchanged body")
+        }
+        let pane = CadenceSourceScan.codeOnly(try cadenceTestSource("Cadence/macOS/Views/NoteEditorPane.swift"))
+        let persist = try #require(CadenceSourceScan.functionBody(named: "persistEditorContentIfNeeded", in: pane))
+        #expect(persist.filter { !$0.isWhitespace }.contains(
+            "ifsyncTags{TagSupport.syncNoteTagsFromMarkdownCommittingInsertions(note,in:modelContext)}"
+        ))
+        let panel = CadenceSourceScan.codeOnly(try cadenceTestSource("Cadence/macOS/Views/NotePanel.swift"))
+        let panelPersist = try #require(CadenceSourceScan.functionBody(named: "persistEditorContentIfNeeded", in: panel))
+        #expect(panelPersist.contains("CadenceCoreNoteSupport.update(note, content: content, in: currentNotesContext, syncTags: syncTags)"))
+    }
+
     // MARK: - T-7811: the quit-time flush
 
     @Test func quittingRunsEveryRegisteredEditorFlushOnce() {

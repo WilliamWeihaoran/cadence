@@ -605,8 +605,8 @@ struct CadenceInlineTagCommitSurfaceTests {
             "the pane still calls the non-committing setTags somewhere"
         )
         #expect(
-            CadenceSourceScan.matchCount(#"TagSupport\.syncNoteTagsFromMarkdownCommittingInsertions\("#, in: pane) == 2,
-            "body's onAppear and persistEditorContentIfNeeded should both call the committing sync"
+            CadenceSourceScan.matchCount(#"TagSupport\.syncNoteTagsFromMarkdownCommittingInsertions\("#, in: pane) == 3,
+            "body's onAppear and persistEditorContentIfNeeded (twice since T-7891: the write, and the deferred sync a ceiling commit owes) should all call the committing sync"
         )
         #expect(
             CadenceSourceScan.matchCount(#"TagSupport\.setTagsCommittingInsertions\("#, in: pane) == 1,
