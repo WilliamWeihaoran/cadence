@@ -640,6 +640,78 @@ struct AppStoreReviewReadinessTests {
         #expect(all > 0)
         #expect(at261 == all)
         #expect(reviewNotes.contains("iOS/iPadOS 26.1 or later"))
+
+        // T-7681: the release documents carry the iOS floor too, not only the review notes. These
+        // were macOS-only ("Minimum OS: macOS 26.1", "Launch Cadence on macOS 26.1") while iOS was
+        // already a v1 channel.
+        let readiness = try textFile(at: "docs/apple-release-readiness.md")
+        let appStorePacket = try textFile(at: "docs/app-store-submission-packet.md")
+        #expect(appStorePacket.contains("Minimum OS: iOS/iPadOS 26.1"))
+        #expect(readiness.contains("Minimum iOS/iPadOS version: 26.1"))
+        #expect(readiness.contains("Launch Cadence on iPhone or iPad running iOS/iPadOS 26.1 or later."))
+    }
+
+    /// **T-7681: the App Store Connect fields name the platforms the project actually builds.**
+    ///
+    /// The packet used to read `Platforms: macOS` while the one app target built for iPhone and iPad
+    /// and shipped both to TestFlight. Each claim below is read out of the parsed project and then
+    /// required of the document, so the document cannot drift from the build in either direction:
+    ///
+    /// - the bundle identifier, from both configurations, with no `[sdk=…]` override — the fact
+    ///   that makes iOS a second platform on the same App Store Connect record rather than a second
+    ///   app. An SDK-conditional identifier would make the packet's single "Bundle ID" line false;
+    /// - the device families, as names, so a change to `TARGETED_DEVICE_FAMILY` changes the
+    ///   sentence this test demands;
+    /// - the widget extension's identifier, which App Store Connect also shows per platform.
+    ///
+    /// And the reviewer script, which must carry a run for each platform rather than one that
+    /// starts "Launch Cadence on macOS".
+    @Test func theAppStoreConnectFieldsAndReviewerScriptCoverEveryPlatformTheProjectBuilds() throws {
+        let packet = try textFile(at: "docs/app-store-submission-packet.md")
+        let readiness = try textFile(at: "docs/apple-release-readiness.md")
+        let app = try buildSettings(ofTarget: "Cadence")
+        let widget = try buildSettings(ofTarget: "CadenceWidgets")
+        #expect(Set(app.keys) == ["Debug", "Release"])
+
+        func single(_ key: String, in target: [String: [String: Any]], _ name: String) throws -> String {
+            let values = Set(target.values.compactMap { $0[key] as? String })
+            #expect(values.count == 1, "\(name) sets \(key) to \(values.sorted()) across its configurations")
+            return try #require(values.first, "\(name) sets no \(key)")
+        }
+
+        let appSDKOverrides = app.values.flatMap { $0.keys }.filter { $0.hasPrefix("PRODUCT_BUNDLE_IDENTIFIER[") }
+        #expect(appSDKOverrides.isEmpty, "the app's bundle identifier now varies by SDK: \(appSDKOverrides)")
+        let bundleID = try single("PRODUCT_BUNDLE_IDENTIFIER", in: app, "Cadence")
+        let widgetBundleID = try single("PRODUCT_BUNDLE_IDENTIFIER", in: widget, "CadenceWidgets")
+        #expect(packet.contains("- Bundle ID: `\(bundleID)` (macOS and iOS/iPadOS; widget extension\n  `\(widgetBundleID)` on both)"))
+
+        let platforms = try single("SUPPORTED_PLATFORMS", in: app, "Cadence").split(separator: " ").map(String.init)
+        #expect(platforms.contains("macosx") && platforms.contains("iphoneos"),
+                "the app no longer builds both platforms: \(platforms)")
+        #expect(packet.contains("- Platforms: macOS, iOS (iPhone and iPad)"))
+        #expect(!packet.contains("- Platforms: macOS\n"), "the packet names the Mac as the only platform again")
+
+        let family = try single("TARGETED_DEVICE_FAMILY", in: app, "Cadence")
+        let familyNames = ["1": "iPhone", "2": "iPad"]
+        let devices = try family.split(separator: ",").map { code in
+            try #require(familyNames[String(code)], "unrecognised TARGETED_DEVICE_FAMILY entry \(code)")
+        }
+        #expect(packet.contains("- Devices: \(devices.joined(separator: " and ")) (`TARGETED_DEVICE_FAMILY = \"\(family)\"`)"))
+
+        let script = try #require(
+            readiness.range(of: "## App Store Reviewer Script\n").map { start in
+                let rest = readiness[start.upperBound...]
+                return String(rest[..<(rest.range(of: "\n## ")?.lowerBound ?? rest.endIndex)])
+            },
+            "the readiness document has no App Store Reviewer Script"
+        )
+        #expect(script.contains("On macOS:\n\n1. Launch Cadence on macOS 26.1 or later."))
+        #expect(script.contains("On iPhone and iPad:\n\n1. Launch Cadence on iPhone or iPad running iOS/iPadOS 26.1 or later."))
+        // The iOS run must not inherit the macOS-only Account step: there is no Account category on
+        // iPhone or iPad (`iOSSettingsCategory.init?(kind:)` returns nil for `.account`).
+        let iosRun = try #require(script.range(of: "On iPhone and iPad:").map { String(script[$0.upperBound...]) })
+        #expect(!iosRun.contains("Open Settings, Account"))
+        #expect(iosRun.contains("Settings has no Account category"))
     }
 
     /// **T-7276: the app and the widget extension it embeds must agree on both version keys.**
@@ -657,29 +729,8 @@ struct AppStoreReviewReadinessTests {
     /// `CFBundleVersion` written into either plist would ship whatever it says, whatever the
     /// build settings agree on.
     @Test func theAppAndItsWidgetExtensionShipTheSameVersionAndBuildNumber() throws {
-        let data = try Data(contentsOf: repositoryRoot().appendingPathComponent("Cadence.xcodeproj/project.pbxproj"))
-        let project = try #require(
-            try PropertyListSerialization.propertyList(from: data, options: [], format: nil) as? [String: Any]
-        )
-        let objects = try #require(project["objects"] as? [String: [String: Any]])
-        func settings(ofTarget name: String) throws -> [String: [String: Any]] {
-            let target = try #require(
-                objects.values.first { $0["isa"] as? String == "PBXNativeTarget" && $0["name"] as? String == name },
-                "project.pbxproj has no native target named \(name)"
-            )
-            let listID = try #require(target["buildConfigurationList"] as? String)
-            let configurationIDs = try #require(objects[listID]?["buildConfigurations"] as? [String])
-            var byConfiguration: [String: [String: Any]] = [:]
-            for id in configurationIDs {
-                let configuration = try #require(objects[id])
-                let configurationName = try #require(configuration["name"] as? String)
-                byConfiguration[configurationName] = configuration["buildSettings"] as? [String: Any] ?? [:]
-            }
-            return byConfiguration
-        }
-
-        let app = try settings(ofTarget: "Cadence")
-        let widget = try settings(ofTarget: "CadenceWidgets")
+        let app = try buildSettings(ofTarget: "Cadence")
+        let widget = try buildSettings(ofTarget: "CadenceWidgets")
         // Non-vacuity: both targets carry Debug AND Release, and nothing else, so a configuration
         // added to one and not the other is a finding here rather than a silently skipped key.
         #expect(Set(app.keys) == ["Debug", "Release"])
@@ -869,6 +920,29 @@ struct AppStoreReviewReadinessTests {
             "/container/Library/Application Support/Cadence/Recovery",
             "/tmp/Cadence/Recovery",
         ])
+    }
+
+    /// One native target's build settings, keyed by configuration name, out of the parsed project
+    /// rather than grepped — the file carries several targets whose values legitimately differ.
+    private func buildSettings(ofTarget name: String) throws -> [String: [String: Any]] {
+        let data = try Data(contentsOf: repositoryRoot().appendingPathComponent("Cadence.xcodeproj/project.pbxproj"))
+        let project = try #require(
+            try PropertyListSerialization.propertyList(from: data, options: [], format: nil) as? [String: Any]
+        )
+        let objects = try #require(project["objects"] as? [String: [String: Any]])
+        let target = try #require(
+            objects.values.first { $0["isa"] as? String == "PBXNativeTarget" && $0["name"] as? String == name },
+            "project.pbxproj has no native target named \(name)"
+        )
+        let listID = try #require(target["buildConfigurationList"] as? String)
+        let configurationIDs = try #require(objects[listID]?["buildConfigurations"] as? [String])
+        var byConfiguration: [String: [String: Any]] = [:]
+        for id in configurationIDs {
+            let configuration = try #require(objects[id])
+            let configurationName = try #require(configuration["name"] as? String)
+            byConfiguration[configurationName] = configuration["buildSettings"] as? [String: Any] ?? [:]
+        }
+        return byConfiguration
     }
 
     private func plistDictionary(at relativePath: String) throws -> [String: Any] {

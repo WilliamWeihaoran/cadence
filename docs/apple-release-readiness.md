@@ -1,23 +1,24 @@
 # Cadence Apple Release Readiness
 
-Last updated: October 28, 2026 (release position corrected for build 25; see the iOS/iPadOS
-bullet). October 27, 2026: the CloudKit schema obligation, the widget entitlement row and
+Last updated: October 28, 2026 (T-7681: the reviewer script now runs on iPhone and iPad as well
+as the Mac, and the release position names the iOS App Store channel; earlier that day, the
+release position was corrected for build 25). October 27, 2026: the CloudKit schema obligation, the widget entitlement row and
 the version numbers were re-measured against HEAD that day; see "Checked Against The Tree" at the
-foot, which carries both readings and says which of the older ones were wrong. The document's
-**rewrite** for iOS becoming a public shipping channel — iOS reviewer script, iOS App Store
-Connect fields, iPhone and iPad screenshots — is a separate, larger job, tracked as T-7681 and
-public-release work; the internal RC it was sequenced behind has shipped (build 25, 2026-10-27).
-These passes corrected facts and changed no scope.
+foot, which carries both readings and says which of the older ones were wrong. Of T-7681's three
+parts — iOS reviewer script, iOS App Store Connect fields, iPhone and iPad screenshots — the first
+two are done (2026-10-28); the screenshots remain, and need an attended session with a simulator.
 
-This checklist maps Cadence's current macOS app behavior to Apple's App Review, privacy, signing, sandboxing, and notarization expectations. Use it before every App Store Connect upload or direct Developer ID release.
+This checklist maps Cadence's current macOS and iOS/iPadOS app behavior to Apple's App Review, privacy, signing, sandboxing, and notarization expectations. Use it before every App Store Connect upload or direct Developer ID release.
 
 ## Release Position
 
 - Primary channel: Mac App Store.
+- iOS/iPadOS channel: the App Store, for iPhone and iPad, as a second platform on the same App Store Connect record (one bundle identifier, `com.haoranwei.Cadence`, for both; `docs/app-store-submission-packet.md` carries the per-platform fields). There is no direct-distribution equivalent on iOS.
 - Secondary channel: direct Developer ID distribution with notarization.
 - Distributed today: **internal TestFlight only, macOS and iOS/iPadOS together.** Build 25 (`MARKETING_VERSION` 1.0) went to internal TestFlight on both platforms on 2026-10-27 — the owner's word, recorded in `docs/SESSION_HANDOFF.md`; the upload is done in Xcode Organizer and nothing in the tree records it. Nothing has been submitted to App Review on either platform, so the two channels above are the public-release plan, not a current fact. The next upload needs `CURRENT_PROJECT_VERSION` above 25; `docs/OWNER_ACTIONS.md` ("Before each upload") carries that checklist.
-- iOS/iPadOS: **a v1 shipping channel** (owner decision 2026-10-25, T-6410): iPhone and iPad (`TARGETED_DEVICE_FAMILY` `1,2`), `IPHONEOS_DEPLOYMENT_TARGET` 26.1 to match the Mac, and the Mac does not wait for iOS. `Cadence/iOS/` is a large real surface and the project builds `iphoneos iphonesimulator macosx`. **Not yet rewritten for it:** the App Store Connect fields in `docs/app-store-submission-packet.md` and the reviewer script below are still macOS-only, and no iPhone or iPad screenshots exist — public-release work, tracked as T-7681, none of it needed for internal TestFlight. The iOS build is in the verification commands below because the macOS test target never compiles `Cadence/iOS/`: without it, a break in half of this repository survives every check the release process runs.
+- iOS/iPadOS: **a v1 shipping channel** (owner decision 2026-10-25, T-6410): iPhone and iPad (`TARGETED_DEVICE_FAMILY` `1,2`), `IPHONEOS_DEPLOYMENT_TARGET` 26.1 to match the Mac, and the Mac does not wait for iOS. `Cadence/iOS/` is a large real surface and the project builds `iphoneos iphonesimulator macosx`. The App Store Connect fields in `docs/app-store-submission-packet.md` and the reviewer script below cover it (T-7681); **still missing:** iPhone and iPad screenshots — public-release work, tracked as T-7681, not needed for internal TestFlight. The iOS build is in the verification commands below because the macOS test target never compiles `Cadence/iOS/`: without it, a break in half of this repository survives every check the release process runs.
 - Minimum macOS version: 26.1. This is intentional for the current release and limits App Store availability to Macs that can run macOS 26.1 or later.
+- Minimum iOS/iPadOS version: 26.1 (`IPHONEOS_DEPLOYMENT_TARGET`), the same floor as the Mac.
 - Public category: Productivity.
 - Current monetization: none. Cadence has no in-app purchases, subscriptions, ads, paid unlocks, or external purchase links.
 - Current tracking posture: no tracking, no ad network, and no third-party analytics.
@@ -108,17 +109,41 @@ Current privacy manifest requirements:
 
 ## App Store Reviewer Script
 
-Use this as the human test script before upload and as the basis for App Review notes.
+Use this as the human test script before upload and as the basis for App Review notes. Run it on
+each platform submitted: the Mac, an iPhone, and an iPad. The two lists differ only where the apps
+do — Sign in with Apple and its Account category exist on macOS only, and the deletion control is
+named for what it deletes.
+
+On macOS:
 
 1. Launch Cadence on macOS 26.1 or later.
 2. Confirm the main window opens without requiring sign-in.
 3. Open Settings, Account. Verify Sign in with Apple is optional and that account deletion is available.
-4. Open Settings, Data Safety. Verify privacy/support links open and Delete Account & Data is available.
-5. Open Calendar settings. Deny Calendar access and verify the app remains usable; grant access and verify Calendar features can load.
-6. Create a task, note, habit, goal, and saved link. Verify they remain local app content.
+4. Open Settings, About. Verify the Privacy Policy and Support links open.
+5. Open Settings, Data Safety. Verify Delete Account & Data is available.
+6. Open Calendar settings. Deny Calendar access and verify the app remains usable; grant access and verify Calendar features can load.
+7. Create a task, note, list, and saved link. Verify they remain local app content.
+8. Save an OpenAI API key only on a test account if AI is being reviewed. Run an AI action from a selected note, then remove the key.
+9. Add Cadence widgets and verify they show Cadence data or a clear unavailable state.
+10. Delete account/data from Settings and verify local Cadence content, backups, pending restores, widget state, saved OpenAI key, and local Apple account profile are removed.
+
+On iPhone and iPad:
+
+1. Launch Cadence on iPhone or iPad running iOS/iPadOS 26.1 or later. Run the list on both devices: the iPhone build is portrait only, and the iPad build has a sidebar layout and rotates.
+2. Confirm the app opens without requiring sign-in, and that Settings has no Account category — there is no Cadence account on iPhone or iPad.
+3. Open Settings, About. Verify the Privacy Policy and Support links open.
+4. Open Settings, Data Safety. Verify Delete Cadence Data is available.
+5. Open Settings, Calendar. Deny Calendar access and verify the app remains usable; grant access and verify Calendar features can load.
+6. Create a task, note, list, and saved link. Verify they remain local app content.
 7. Save an OpenAI API key only on a test account if AI is being reviewed. Run an AI action from a selected note, then remove the key.
-8. Add Cadence widgets and verify they show Cadence data or a clear unavailable state.
-9. Delete account/data from Settings and verify local Cadence content, backups, pending restores, widget state, saved OpenAI key, and local Apple account profile are removed.
+8. Add Cadence widgets to the Home Screen and verify they show Cadence data or a clear unavailable state.
+9. Delete Cadence data from Settings, Data Safety and verify local Cadence content, backups, pending restores, widget state, and saved OpenAI key are removed.
+
+Corrected against the source for T-7681, where the old macOS-only script disagreed with it: the
+Privacy Policy and Support links are in Settings > About on both platforms (both About screens
+read `CadenceAppReferenceLink.all`), not in Data Safety; and habits and goals are no longer
+creatable (their screens were removed in T-2076 and deleted in T-5002), so the create step names
+lists instead.
 
 ## Verification Commands
 
