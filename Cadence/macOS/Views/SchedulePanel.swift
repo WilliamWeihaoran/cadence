@@ -177,6 +177,18 @@ struct SchedulePanel: View {
                             onDropTaskAtMinute: { task, startMin in
                                 SchedulingActions.commitDropTask(task, to: todayKey, startMin: startMin, in: modelContext)
                             },
+                            // A chip from the all-day band above converts on today's ladder
+                            // ([[T-8091]]), through the Calendar page's own rule.
+                            onDropAllDayEventAtMinute: { payload, startMin in
+                                CalendarAllDayEventDropSupport.convert(
+                                    payload,
+                                    startMin: startMin,
+                                    dateKey: todayKey,
+                                    fallbackDate: Date(),
+                                    eventCache: eventCache,
+                                    calendarManager: calendarManager
+                                )
+                            },
                             // The draft's own day, not today's ([[T-3171]] (iv)): the panel's
                             // Starts row can move the event off the timeline it was dragged on.
                             onCreateEvent: { draft in

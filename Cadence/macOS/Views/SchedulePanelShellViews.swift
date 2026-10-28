@@ -147,6 +147,10 @@ struct SchedulePanelTimelineViewport: View {
     let externalEventItems: [CalendarEventItem]
     let onCreateTask: (QuickCreateTaskDraft) -> Void
     let onDropTaskAtMinute: (AppTask, Int) -> Void
+    /// The all-day band's chips drag onto this ladder ([[T-8091]]). Required, not defaulted: the
+    /// canvas's own parameter is optional, and leaving it unset here is what made the drop land and
+    /// do nothing.
+    let onDropAllDayEventAtMinute: (CalendarAllDayEventDropPayload, Int) -> Void
     let onCreateEvent: (QuickCreateEventDraft) -> CalendarWriteFailure?
 
     var body: some View {
@@ -189,7 +193,8 @@ struct SchedulePanelTimelineViewport: View {
                 onCreateTask: onCreateTask,
                 onDropTaskAtMinute: onDropTaskAtMinute,
                 externalEvents: externalEventItems,
-                onCreateEvent: onCreateEvent
+                onCreateEvent: onCreateEvent,
+                onDropAllDayEventAtMinute: onDropAllDayEventAtMinute
             )
         }
         .frame(width: totalWidth, alignment: .leading)

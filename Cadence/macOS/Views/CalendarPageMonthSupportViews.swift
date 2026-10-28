@@ -882,15 +882,17 @@ struct CalDayColumn: View {
                 calendarManager.createStandaloneEvent(draft, hostDay: date)
             },
             prefersCalendarEventCreation: true,
+            // The resolution and the read-only refusal ([[T-5241]]) are shared with Mac Today's
+            // ladder ([[T-8091]]); see `CalendarAllDayEventDropSupport`.
             onDropAllDayEventAtMinute: { payload, startMin in
-                let sourceDate = DateFormatters.date(from: payload.sourceDateKey) ?? date
-                let event = eventCache.allDayEvents(for: sourceDate, calendarManager: calendarManager)
-                    .first { CalendarEventIdentity.matches($0, identifier: payload.eventIdentifier) }
-                    ?? calendarManager.event(withIdentifier: CalendarEventIdentity.lookupIdentifier(from: payload.eventIdentifier))
-                // The chip offers no drag for a read-only event; a payload from anywhere else is
-                // refused here rather than by EventKit after the fact ([[T-5241]]).
-                guard let event, CalendarEventEditPopover.isEditable(event) else { return }
-                calendarManager.convertAllDayEventToTimed(event, startMin: startMin, dateKey: dateKey)
+                CalendarAllDayEventDropSupport.convert(
+                    payload,
+                    startMin: startMin,
+                    dateKey: dateKey,
+                    fallbackDate: date,
+                    eventCache: eventCache,
+                    calendarManager: calendarManager
+                )
             }
         )
         .overlay(alignment: .trailing) {

@@ -328,6 +328,57 @@ enum CalendarEventDragPayload {
     }
 }
 
+/// **An all-day chip dropped on a timeline becomes a one-hour block there — one rule for every
+/// host ([[T-8091]]).**
+///
+/// The Calendar page's `CalDayColumn` was the only host that wired `TimelineDayCanvas`'s
+/// `onDropAllDayEventAtMinute`, with the resolution written inline. Mac Today's band
+/// (`SchedulePanelAllDayBand`, [[T-7982]]) reuses the same draggable chip over a ladder that passed
+/// nothing, so the drop was accepted and did nothing. Both hosts now call `convert` here rather than
+/// the Today host growing a second copy of the lookup and the editability guard.
+enum CalendarAllDayEventDropSupport {
+    /// The event the payload names, or `nil` when it cannot be found or cannot be written.
+    ///
+    /// Looks first in the source day's all-day list (the chip came from it), then asks the store by
+    /// the identifier's lookup form. A read-only event is refused here rather than by EventKit after
+    /// the fact ([[T-5241]]): the chip offers no drag for one, but a payload can come from anywhere.
+    static func resolveEditableEvent(
+        _ payload: CalendarAllDayEventDropPayload,
+        fallbackDate: Date,
+        allDayEvents: (Date) -> [EKEvent],
+        lookup: (String) -> EKEvent?,
+        isEditable: ((EKEvent) -> Bool)? = nil
+    ) -> EKEvent? {
+        let sourceDate = DateFormatters.date(from: payload.sourceDateKey) ?? fallbackDate
+        let event = allDayEvents(sourceDate)
+            .first { CalendarEventIdentity.matches($0, identifier: payload.eventIdentifier) }
+            ?? lookup(CalendarEventIdentity.lookupIdentifier(from: payload.eventIdentifier))
+        // `nil` is the editor's own gate; a default argument cannot name it without leaving the
+        // main actor.
+        let isEditable = isEditable ?? { CalendarEventEditPopover.isEditable($0) }
+        guard let event, isEditable(event) else { return nil }
+        return event
+    }
+
+    /// Resolves the payload and converts it to a timed event at `startMin` on `dateKey`.
+    static func convert(
+        _ payload: CalendarAllDayEventDropPayload,
+        startMin: Int,
+        dateKey: String,
+        fallbackDate: Date,
+        eventCache: CalendarEventDayCache,
+        calendarManager: CalendarManager
+    ) {
+        guard let event = resolveEditableEvent(
+            payload,
+            fallbackDate: fallbackDate,
+            allDayEvents: { eventCache.allDayEvents(for: $0, calendarManager: calendarManager) },
+            lookup: { calendarManager.event(withIdentifier: $0) }
+        ) else { return }
+        calendarManager.convertAllDayEventToTimed(event, startMin: startMin, dateKey: dateKey)
+    }
+}
+
 /// macOS's name for `CadenceCalendarEventStyle`.
 ///
 /// The luminance solve, the label tiers and the opacity ladders all live in

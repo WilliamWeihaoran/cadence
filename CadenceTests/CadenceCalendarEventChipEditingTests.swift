@@ -136,8 +136,9 @@ struct CadenceCalendarEventChipEditingTests {
             "the all-day chip's drag is not gated on the event being editable"
         )
         #expect(!allDay.contains(".draggable("), "the all-day chip drags unconditionally again")
-        // The drop that converts all-day to timed refuses a read-only event too.
-        #expect(code.contains("guard let event, CalendarEventEditPopover.isEditable(event) else { return }"))
+        // The drop that converts all-day to timed refuses a read-only event too: the column calls
+        // the shared rule, whose refusal `MacTodayAllDayDropTests` pins by behaviour ([[T-8091]]).
+        #expect(code.contains("CalendarAllDayEventDropSupport.convert("))
         // Non-vacuity: the task chips beside it still drag, so the ban above can see `.draggable(`.
         let task = try #require(CadenceSourceScan.functionBody(named: "calendarTaskChipInteractions", in: code))
         #expect(task.contains(".draggable("))
