@@ -164,9 +164,7 @@ enum KanbanBoardSupport {
                 tasks: inboxTasks(from: activeTasks, sortField: sortField, sortDirection: sortDirection),
                 container: .inbox,
                 onAssignTask: { task in
-                    task.area = nil
-                    task.project = nil
-                    task.context = nil
+                    assignContainer(task, area: nil, project: nil)
                 }
             )
         ]
@@ -174,14 +172,12 @@ enum KanbanBoardSupport {
         columns += areas.filter(\.isActive).map { area in
             KanbanListColumnModel(
                 id: "area-\(area.id.uuidString)",
-                title: area.name,
+                title: CadenceTitleNormalization.display(area.name, fallback: CadenceTitleNormalization.defaultAreaName),
                 color: Color(hex: area.colorHex),
                 tasks: groupedAreas[area.id] ?? [],
                 container: .area(area.id),
                 onAssignTask: { task in
-                    task.area = area
-                    task.project = nil
-                    task.context = area.context
+                    assignContainer(task, area: area, project: nil)
                 }
             )
         }
@@ -189,19 +185,33 @@ enum KanbanBoardSupport {
         columns += projects.filter(\.isActive).map { project in
             KanbanListColumnModel(
                 id: "project-\(project.id.uuidString)",
-                title: project.name,
+                title: CadenceTitleNormalization.display(project.name, fallback: CadenceTitleNormalization.defaultProjectName),
                 color: Color(hex: project.colorHex),
                 tasks: groupedProjects[project.id] ?? [],
                 container: .project(project.id),
                 onAssignTask: { task in
-                    task.project = project
-                    task.area = nil
-                    task.context = project.resolvedContext
+                    assignContainer(task, area: nil, project: project)
                 }
             )
         }
 
         return scope == .inbox ? Array(columns.prefix(1)) : columns
+    }
+
+    /// [[T-8061]]: a card dropped on another list's column is refiled through
+    /// `CadenceTaskMutationSupport.assignContainer` — the write [[T-5353]] gave the list-row drop —
+    /// so it takes a section the new list has (its own when the name matches, else the list's
+    /// first) instead of keeping one the list lacks and dropping out of that list's section board.
+    /// `updateOrder: false` because `reorder` numbers the card into the column itself.
+    private static func assignContainer(_ task: AppTask, area: Area?, project: Project?) {
+        CadenceTaskMutationSupport.assignContainer(
+            task,
+            area: area,
+            project: project,
+            sectionName: task.resolvedSectionName,
+            allTasks: [],
+            updateOrder: false
+        )
     }
 
     /// Reassigns `order` across a column after a card was dropped into it, **and commits it**.
