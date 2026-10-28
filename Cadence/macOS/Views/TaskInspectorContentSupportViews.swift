@@ -13,6 +13,11 @@ struct TaskDetailNotesSection: View {
     @State private var editorContent = ""
     @State private var loadedTaskID: UUID?
     @State private var pendingFallbackContentSyncTask: Task<Void, Never>?
+    /// [[T-7810]]: when the oldest edit the pending fallback commit carries was made; only
+    /// meaningful while `pendingFallbackContentSyncTask` is non-nil.
+    @State private var fallbackContentWindowStart: Date?
+    /// [[T-7811]]: this editor's key in `MarkdownEditorTerminationFlush`.
+    @State private var terminationFlushID = UUID()
     @Environment(\.modelContext) private var modelContext
     @Environment(HoveredTaskManager.self) private var hoveredTaskManager
     @Environment(HoveredEditableManager.self) private var hoveredEditableManager
@@ -102,6 +107,7 @@ struct TaskDetailNotesSection: View {
         }
         .onDisappear {
             flushPendingEditorContent()
+            MarkdownEditorTerminationFlush.shared.unregister(terminationFlushID)
             flush?.action = nil
             pendingFallbackContentSyncTask?.cancel()
             pendingFallbackContentSyncTask = nil
@@ -138,9 +144,23 @@ struct TaskDetailNotesSection: View {
     }
 
     private func scheduleFallbackContentSync(for content: String, taskID: UUID) {
+        // T-7810: re-armed on every keystroke, but never later than the ceiling after the
+        // first uncommitted one, so continuous typing still reaches the store.
+        let schedule = MarkdownEditorSyncTiming.fallbackContentCommitSchedule(
+            pendingWindowStart: pendingFallbackContentSyncTask == nil ? nil : fallbackContentWindowStart,
+            now: Date()
+        )
+        fallbackContentWindowStart = schedule.windowStart
         pendingFallbackContentSyncTask?.cancel()
+        // T-7811: something is pending now; a quit drains it through this editor's flush.
+        // Gated on the pending task: once a load or flush clears it, this closure's captured
+        // note/task may no longer be the one the buffer holds, and must write nothing.
+        MarkdownEditorTerminationFlush.shared.register(terminationFlushID) {
+            guard pendingFallbackContentSyncTask != nil else { return }
+            flushPendingEditorContent()
+        }
         pendingFallbackContentSyncTask = Task { @MainActor in
-            try? await Task.sleep(nanoseconds: MarkdownEditorSyncTiming.fallbackContentCommitDelay)
+            try? await Task.sleep(nanoseconds: schedule.delay)
             guard !Task.isCancelled, loadedTaskID == taskID else { return }
             persistEditorContentIfNeeded(content, taskID: taskID)
             pendingFallbackContentSyncTask = nil

@@ -52,6 +52,11 @@ struct NoteEditorPane: View {
     @State private var derivedState = NoteEditorDerivedState()
     @State private var pendingDerivedStateTask: Task<Void, Never>?
     @State private var pendingFallbackContentSyncTask: Task<Void, Never>?
+    /// [[T-7810]]: when the oldest edit the pending fallback commit carries was made; only
+    /// meaningful while `pendingFallbackContentSyncTask` is non-nil.
+    @State private var fallbackContentWindowStart: Date?
+    /// [[T-7811]]: this editor's key in `MarkdownEditorTerminationFlush`.
+    @State private var terminationFlushID = UUID()
     /// Set when the store refused a tag created from the chips. See `createTag(_:)`.
     @State private var tagFailureNotice: String?
     /// The title field's focus, read only so leaving it is a flush point (T-4971).
@@ -348,6 +353,7 @@ struct NoteEditorPane: View {
         }
         .onDisappear {
             flushPendingEditorContent()
+            MarkdownEditorTerminationFlush.shared.unregister(terminationFlushID)
             pendingDerivedStateTask?.cancel()
             pendingDerivedStateTask = nil
             pendingFallbackContentSyncTask?.cancel()
@@ -388,12 +394,26 @@ struct NoteEditorPane: View {
     }
 
     private func scheduleFallbackContentSync(for content: String) {
+        // T-7810: re-armed on every keystroke, but never later than the ceiling after the
+        // first uncommitted one, so continuous typing still reaches the store.
+        let schedule = MarkdownEditorSyncTiming.fallbackContentCommitSchedule(
+            pendingWindowStart: pendingFallbackContentSyncTask == nil ? nil : fallbackContentWindowStart,
+            now: Date()
+        )
+        fallbackContentWindowStart = schedule.windowStart
         pendingFallbackContentSyncTask?.cancel()
+        // T-7811: something is pending now; a quit drains it through this editor's flush.
+        // Gated on the pending task: once a load or flush clears it, this closure's captured
+        // note/task may no longer be the one the buffer holds, and must write nothing.
+        MarkdownEditorTerminationFlush.shared.register(terminationFlushID) {
+            guard pendingFallbackContentSyncTask != nil else { return }
+            flushPendingEditorContent()
+        }
         // The note this content belongs to, captured now. Fifteen seconds is long enough for the
         // pane to be looking at a different note by the time the task fires.
         let noteID = note.id
         pendingFallbackContentSyncTask = Task { @MainActor in
-            try? await Task.sleep(nanoseconds: MarkdownEditorSyncTiming.fallbackContentCommitDelay)
+            try? await Task.sleep(nanoseconds: schedule.delay)
             guard !Task.isCancelled else { return }
             persistEditorContentIfNeeded(content, noteID: noteID)
             pendingFallbackContentSyncTask = nil

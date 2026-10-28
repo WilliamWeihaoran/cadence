@@ -6,7 +6,8 @@ struct NoteEditorPerformanceRegressionTests {
         let source = try sourceFile("Cadence/macOS/Views/NotePanel.swift")
 
         #expect(source.contains("text: coreNoteContentBinding(for: note)"))
-        #expect(source.contains("fallbackContentCommitDelay: UInt64 = 15_000_000_000"))
+        // T-7810: NotePanel's private copy of the 15 s delay is gone; it arms the shared schedule.
+        #expect(source.contains("MarkdownEditorSyncTiming.fallbackContentCommitSchedule("))
         #expect(!source.matches(#"set:\s*\{\s*note\.content\s*=\s*\$0\s*\}"#))
         #expect(!source.matches(#"set:\s*\{\s*update\(note:\s*note,\s*content:\s*\$0\)\s*\}"#))
     }
@@ -19,8 +20,8 @@ struct NoteEditorPerformanceRegressionTests {
         #expect(taskInspectorSource.contains("text: taskNotesBinding"))
         #expect(focusSource.contains("text: taskNotesBinding"))
         #expect(timingSource.contains("fallbackContentCommitDelay: UInt64 = 15_000_000_000"))
-        #expect(taskInspectorSource.contains("MarkdownEditorSyncTiming.fallbackContentCommitDelay"))
-        #expect(focusSource.contains("MarkdownEditorSyncTiming.fallbackContentCommitDelay"))
+        #expect(taskInspectorSource.contains("MarkdownEditorSyncTiming.fallbackContentCommitSchedule("))
+        #expect(focusSource.contains("MarkdownEditorSyncTiming.fallbackContentCommitSchedule("))
         #expect(!taskInspectorSource.matches(#"set:\s*\{\s*task\.notes\s*=\s*\$0\s*\}"#))
         #expect(!focusSource.matches(#"set:\s*\{\s*task\.notes\s*=\s*\$0\s*\}"#))
     }
