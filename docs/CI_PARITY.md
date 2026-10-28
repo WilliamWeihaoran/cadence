@@ -34,8 +34,13 @@ UTC — its `xcb.sh` log stamp `20261018-033216` sits against the `03:32:16Z` st
 pin above holds for bare `xcodebuild` calls only. `scripts/xcb.sh` defaults `XCODEBUILD` to
 `/Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild`, and on the image `Xcode.app ->
 Xcode_26.6.app`; that binary evidently does not follow `xcode-select`, since both `xcb.sh` compile
-logs read (`ci-ios`, and `ci-tests` on run 40629814847) name `Xcode_26.6.app` in its log and never `Xcode_26.0.1.app`. Until T-7661
-is settled, read "CI's compiler" as 26.6, not 26.0.1.
+logs read (`ci-ios`, and `ci-tests` on run 40629814847) name `Xcode_26.6.app` in its log and never `Xcode_26.0.1.app`. Every
+CI compile before T-7661's fix was therefore 26.6. **Fixed by T-7661:** `xcb.sh` now resolves an
+unset `XCODEBUILD` to `$DEVELOPER_DIR/usr/bin/xcodebuild`, else `$(xcode-select -p)/usr/bin/xcodebuild`,
+else the old `/Applications/Xcode.app` path, so its compiles follow `assert-toolchain.sh`'s pin; the
+iOS-simulator step still sets both variables to the Xcode it picks. Pinned by `xcb.sh selftest`
+section 19 and `CadenceGuardScriptSelftestTests`. On this Mac `xcode-select -p` is
+`/Applications/Xcode.app/Contents/Developer`, so nothing changes locally.
 
 **iOS simulator tests in CI ([[T-6821]]).** The image installs iOS Simulator runtimes 26.2, 26.4.1
 and 26.5 only. Xcode 26.0.1 and 26.1.1 list no eligible iOS Simulator destination (and with

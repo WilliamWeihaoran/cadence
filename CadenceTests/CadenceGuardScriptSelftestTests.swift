@@ -850,6 +850,67 @@ struct CadenceGuardScriptSelftestTests {
         "EXPORT-FLAG-REFUSED",
     ]
 
+    /// T-7661. Which `xcodebuild` `scripts/xcb.sh` runs when the caller names none. It used to be
+    /// `/Applications/Xcode.app`'s binary outright -- a real binary, not the `/usr/bin` shim, so it
+    /// ignored `xcode-select` -- and on the hosted image `Xcode.app -> Xcode_26.6.app`, so every
+    /// gated CI compile ran 26.6 while `assert-toolchain.sh` had selected the pinned 26.0.1. The
+    /// order is now: explicit `XCODEBUILD`, then `DEVELOPER_DIR`, then `xcode-select -p`, then
+    /// `/Applications/Xcode.app`, each developer dir counting only if it holds an executable
+    /// `usr/bin/xcodebuild`. Driven through the script's own `resolve-xcodebuild` dispatch with
+    /// `xcode-select`'s answer supplied by `CADENCE_XCODE_SELECT_ANSWER` (this App-Sandboxed host
+    /// cannot run a script it wrote), and nothing is executed but the script itself.
+    @Test func theBuildRunnerCompilesWithTheSelectedXcodeNotTheImageDefault() throws {
+        let fm = FileManager.default
+        let ws = fm.temporaryDirectory.appendingPathComponent("cadence-t7661-\(UUID().uuidString)")
+        defer { try? fm.removeItem(at: ws) }
+        func developerDir(_ name: String, withXcodebuild: Bool) throws -> String {
+            let bin = ws.appendingPathComponent("\(name)/Contents/Developer/usr/bin")
+            try fm.createDirectory(at: bin, withIntermediateDirectories: true)
+            if withXcodebuild {
+                #expect(fm.createFile(atPath: bin.appendingPathComponent("xcodebuild").path,
+                                      contents: Data(), attributes: [.posixPermissions: 0o755]))
+            }
+            return ws.appendingPathComponent("\(name)/Contents/Developer").path
+        }
+        let pinned = try developerDir("Xcode_26.0.1.app", withXcodebuild: true)
+        let other = try developerDir("Xcode_other.app", withXcodebuild: true)
+        let empty = try developerDir("CommandLineTools", withXcodebuild: false)
+        let imageDefault = "/Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild"
+        let script = CadenceSelftestRun.repositoryRoot().appendingPathComponent("scripts/xcb.sh").path
+
+        func resolve(selected: String, developerDir: String? = nil, xcodebuild: String? = nil) throws -> String {
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/bin/zsh")
+            process.arguments = ["-f", script, "resolve-xcodebuild"]
+            var env = ProcessInfo.processInfo.environment
+            env["XCODEBUILD"] = xcodebuild
+            env["DEVELOPER_DIR"] = developerDir
+            env["CADENCE_XCODE_SELECT_ANSWER"] = selected
+            process.environment = env
+            let out = Pipe()
+            process.standardOutput = out
+            process.standardError = out
+            try process.run()
+            let data = out.fileHandleForReading.readDataToEndOfFile()
+            process.waitUntilExit()
+            #expect(process.terminationStatus == 0, "resolve-xcodebuild exited \(process.terminationStatus)")
+            return String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+
+        #expect(try resolve(selected: pinned) == pinned + "/usr/bin/xcodebuild",
+                "with nothing set, xcb.sh does not run the xcode-select'ed Xcode")
+        #expect(try resolve(selected: pinned + "/") == pinned + "/usr/bin/xcodebuild")
+        #expect(try resolve(selected: pinned, developerDir: other) == other + "/usr/bin/xcodebuild",
+                "DEVELOPER_DIR no longer outranks xcode-select")
+        #expect(try resolve(selected: pinned, developerDir: other, xcodebuild: "/explicit/xcodebuild")
+                == "/explicit/xcodebuild", "an explicit XCODEBUILD no longer wins")
+        #expect(try resolve(selected: pinned, developerDir: ws.appendingPathComponent("nope").path)
+                == pinned + "/usr/bin/xcodebuild", "a DEVELOPER_DIR with no xcodebuild does not fall through")
+        #expect(try resolve(selected: empty) == imageDefault,
+                "a developer dir with no xcodebuild (the Command Line Tools) does not fall back")
+        #expect(try resolve(selected: "") == imageDefault, "no xcode-select answer does not fall back")
+    }
+
     /// T-7275. The name pin above is necessary and not sufficient for `export_archive_refusal`,
     /// because the two edits that would quietly disarm it leave every name in place:
     ///

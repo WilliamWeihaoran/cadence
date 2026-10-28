@@ -112,7 +112,31 @@ ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 # Captured at top level: inside a function zsh rebinds $0 to the function's own name, so
 # `${0:A}` there resolves to `selftest_only_testing` rather than to this file.
 SCRIPT_PATH="${0:A}"
-XCODEBUILD="${XCODEBUILD:-/Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild}"
+# T-7661: WHICH xcodebuild. An explicit `XCODEBUILD` wins; else `DEVELOPER_DIR`'s; else the one
+# `xcode-select -p` names; else `/Applications/Xcode.app`'s. The old default was that last path
+# outright, and it is a REAL binary, not the `/usr/bin` shim, so it never follows `xcode-select`:
+# on the hosted image `Xcode.app -> Xcode_26.6.app`, and every gated CI compile ran 26.6 while
+# `.github/scripts/assert-toolchain.sh` had selected the pinned 26.0.1. A candidate counts only if
+# `usr/bin/xcodebuild` is executable under it, so the Command Line Tools dir (no xcodebuild) falls
+# through. On this Mac `xcode-select -p` IS `/Applications/Xcode.app/Contents/Developer`, so the
+# answer here is unchanged. `CADENCE_XCODE_SELECT_ANSWER`, when SET (even empty), stands in for
+# `xcode-select -p`'s output: the seam for selftest section 19 and for
+# `CadenceGuardScriptSelftestTests`, whose App-Sandboxed host cannot run a script it wrote.
+resolve_xcodebuild() {
+  local given=${1:-} devdir=${2:-} selected="" dir
+  if [[ -n "$given" ]]; then print -r -- "$given"; return 0; fi
+  if [[ -n "${CADENCE_XCODE_SELECT_ANSWER+set}" ]]; then selected=$CADENCE_XCODE_SELECT_ANSWER
+  else selected=$(xcode-select -p 2>/dev/null) || selected=""; fi
+  for dir in "$devdir" "$selected"; do
+    dir=${dir%/}
+    if [[ -n "$dir" && -x "$dir/usr/bin/xcodebuild" && ! -d "$dir/usr/bin/xcodebuild" ]]; then
+      print -r -- "$dir/usr/bin/xcodebuild"; return 0
+    fi
+  done
+  print -r -- /Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild
+}
+XCODEBUILD="$(resolve_xcodebuild "${XCODEBUILD:-}" "${DEVELOPER_DIR:-}")"
+if [[ "${1:-}" == "resolve-xcodebuild" ]]; then print -r -- "$XCODEBUILD"; exit 0; fi
 SHARED_DD="$HOME/Library/Developer/Xcode/DerivedData"
 # How long the log may stand still, with the process idle, before we call it a stall and sample.
 STALL_SECONDS=${CADENCE_STALL_SECONDS:-180}
@@ -5030,6 +5054,43 @@ selftest_only_testing() {
   wt_run "$ws/wt/tmp" "" raw build
   check "CONTROL: a cwd in no tree at all names nothing to confuse, so it is not refused" \
     $( [[ $wt_rc == 0 && $wt_calls == 1 && "$wt_out" != *WRONG-TREE* ]] && print 1 || print 0 ) "exit $wt_rc, $wt_calls call(s): $wt_out"
+
+  say ""
+  say " 19. the default xcodebuild is the SELECTED Xcode's, not /Applications/Xcode.app's (T-7661)"
+  # Two fake developer dirs, each with an executable `usr/bin/xcodebuild`, one without, and
+  # `xcode-select -p`'s answer supplied through the seam. Run through the real dispatch, in a child
+  # with `XCODEBUILD`/`DEVELOPER_DIR` set exactly as each case says and nothing inherited.
+  local xs_pinned="$ws/xs/Xcode_26.0.1.app/Contents/Developer" xs_dev="$ws/xs/Xcode_dev.app/Contents/Developer"
+  local xs_clt="$ws/xs/CommandLineTools" xs_out
+  mkdir -p "$xs_pinned/usr/bin" "$xs_dev/usr/bin" "$xs_clt/usr/bin"
+  : > "$xs_pinned/usr/bin/xcodebuild"; : > "$xs_dev/usr/bin/xcodebuild"
+  chmod +x "$xs_pinned/usr/bin/xcodebuild" "$xs_dev/usr/bin/xcodebuild"
+  xs_run() {  # $1 = xcode-select's answer, $2 = DEVELOPER_DIR, $3 = XCODEBUILD
+    xs_out=$(env -u XCODEBUILD -u DEVELOPER_DIR CADENCE_XCODE_SELECT_ANSWER="$1" \
+      ${2:+DEVELOPER_DIR=$2} ${3:+XCODEBUILD=$3} zsh "$here" resolve-xcodebuild 2>&1)
+  }
+  local xs_default=/Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild
+  xs_run "$xs_pinned" "" ""
+  check "xcode-select's choice is the default when nothing else is set" \
+    $( [[ "$xs_out" == "$xs_pinned/usr/bin/xcodebuild" ]] && print 1 || print 0 ) "got '$xs_out'"
+  xs_run "$xs_pinned/" "" ""
+  check "...with a trailing slash on its answer too" \
+    $( [[ "$xs_out" == "$xs_pinned/usr/bin/xcodebuild" ]] && print 1 || print 0 ) "got '$xs_out'"
+  xs_run "$xs_pinned" "$xs_dev" ""
+  check "DEVELOPER_DIR outranks xcode-select" \
+    $( [[ "$xs_out" == "$xs_dev/usr/bin/xcodebuild" ]] && print 1 || print 0 ) "got '$xs_out'"
+  xs_run "$xs_pinned" "$xs_dev" "$ws/xs/explicit-xcodebuild"
+  check "an explicit XCODEBUILD outranks both" \
+    $( [[ "$xs_out" == "$ws/xs/explicit-xcodebuild" ]] && print 1 || print 0 ) "got '$xs_out'"
+  xs_run "$xs_pinned" "$ws/xs/no-such-dir" ""
+  check "a DEVELOPER_DIR with no xcodebuild falls through to xcode-select" \
+    $( [[ "$xs_out" == "$xs_pinned/usr/bin/xcodebuild" ]] && print 1 || print 0 ) "got '$xs_out'"
+  xs_run "$xs_clt" "" ""
+  check "the Command Line Tools dir (no xcodebuild) falls back to /Applications/Xcode.app" \
+    $( [[ "$xs_out" == "$xs_default" ]] && print 1 || print 0 ) "got '$xs_out'"
+  xs_run "" "" ""
+  check "an xcode-select with no answer falls back to /Applications/Xcode.app" \
+    $( [[ "$xs_out" == "$xs_default" ]] && print 1 || print 0 ) "got '$xs_out'"
 
   cd -- "$selftest_cwd" 2>/dev/null
   rm -rf "$ws"

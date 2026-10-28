@@ -552,8 +552,10 @@ jobs:
       # None listed is a hard failure, never a skip: a quiet skip here is the T-535 shape.
       # Option (a), `-downloadPlatform iOS` under 26.0.1, was not taken: the runtime it would fetch is
       # 26.0, below the 26.1 deployment target (reasoned, not run). `XCODEBUILD` and `DEVELOPER_DIR`
-      # are both set because `xcb.sh` defaults to `/Applications/Xcode.app`'s binary whatever
-      # `xcode-select` says -- which is also why the step above compiles under 26.6 ([[T-7661]]).
+      # are both set so this step's two `xcb.sh` runs use the PICKED Xcode, not the one
+      # `assert-toolchain.sh` selected: since [[T-7661]] `xcb.sh` with neither set runs
+      # `$(xcode-select -p)/usr/bin/xcodebuild` (the pinned 26.0.1), where it used to run
+      # `/Applications/Xcode.app`'s (26.6 on this image) whatever `xcode-select` said.
       # Measured (runs 40629814847, 40632388234): rebuild 342-381 s, test 263-336 s, 22 tests.
       - name: Run the deliberately iOS-only CadenceTests suites on a simulator (T-6541, T-6821)
         id: ios-sim
