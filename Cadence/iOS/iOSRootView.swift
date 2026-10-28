@@ -182,6 +182,12 @@ struct iOSRootView: View {
             routeToFocus()
         }
         .onChange(of: scenePhase) { _, phase in
+            // [[T-7871]]: first, so the widgets and the reconcile below read the typing too. iOS
+            // kills a suspended app without notice; held editor text must be in the store now.
+            MarkdownEditorTerminationFlush.shared.flushPendingEditorContentOnLeavingActive(
+                phase,
+                committing: modelContext
+            )
             if phase != .active {
                 CadenceWidgetRefreshCenter.reloadAllWidgets()
             }

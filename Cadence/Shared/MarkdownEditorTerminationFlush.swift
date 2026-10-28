@@ -1,6 +1,6 @@
-#if os(macOS)
 import Foundation
 import SwiftData
+import SwiftUI
 
 /// **T-7811.** The markdown editors' uncommitted `@State` buffers, drained on quit.
 ///
@@ -17,6 +17,14 @@ import SwiftData
 /// or a flush clears it, the captured note or task may not be the one the buffer now belongs to,
 /// so a registration left behind writes nothing.
 /// Does not help an abrupt kill; that is what the fallback commit's ceiling bounds.
+///
+/// **[[T-7871]] — iOS drains it too, on leaving `.active`.** iOS sends no termination notice to a
+/// suspended app that is swiped away or jettisoned, so a quit hook is not enough there. The shared
+/// `iOSMarkdownEditingSurface` holds typing in `draftText` behind a 2.5 s pure debounce
+/// (`iOSMarkdownEditorFlush`), re-armed on every keystroke, and a scene entering the background
+/// moves no first responder, so nothing wrote the held text to its host before suspension. The
+/// surface now registers its held write here whenever it schedules one, and `iOSRootView` calls
+/// `flushPendingEditorContentOnLeavingActive(_:committing:)` from its `scenePhase` observer.
 @MainActor
 final class MarkdownEditorTerminationFlush {
     static let shared = MarkdownEditorTerminationFlush()
@@ -54,5 +62,23 @@ final class MarkdownEditorTerminationFlush {
             flush()
         }
     }
+
+    /// **[[T-7871]].** The iOS scene hook: on any phase other than `.active`, writes every held
+    /// editor buffer to its host and commits what that left pending in `modelContext`.
+    ///
+    /// `.inactive` counts, not only `.background`: a card swiped away in the app switcher was
+    /// inactive when it was killed and may never reach `.background`. A host binding that saves
+    /// itself has already committed by the time the commit runs, which then has nothing to do; one
+    /// that writes the model straight through (`$note.content`) is committed here. Returns whether
+    /// it ran.
+    @discardableResult
+    func flushPendingEditorContentOnLeavingActive(
+        _ phase: ScenePhase,
+        committing modelContext: ModelContext
+    ) -> Bool {
+        guard phase != .active else { return false }
+        flushAllBeforeTermination()
+        CadencePendingChangePersistence.commitTypedContent(in: modelContext)
+        return true
+    }
 }
-#endif

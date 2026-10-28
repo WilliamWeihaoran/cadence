@@ -59,6 +59,9 @@ struct iOSMarkdownEditingSurface: View {
     @State private var draftText = ""
     @State private var hasLoadedDraft = false
     @State private var ownFlush = iOSMarkdownEditorFlush()
+    /// [[T-7871]]: this surface's key in `MarkdownEditorTerminationFlush`, so leaving `.active`
+    /// writes the held typing before iOS can suspend and kill the app.
+    @State private var backgroundFlushID = UUID()
     @State private var referencePickerKind: iOSMarkdownReferencePickerKind?
     @State private var selectedRange = NSRange(location: 0, length: 0)
     @State private var scrollRequest: iOSMarkdownScrollRequest?
@@ -96,7 +99,10 @@ struct iOSMarkdownEditingSurface: View {
         .background(Theme.surface)
         .onAppear(perform: loadDraftIfNeeded)
         .onAppear(perform: refreshReferenceContents)
-        .onDisappear(perform: commitDraftImmediately)
+        .onDisappear {
+            commitDraftImmediately()
+            MarkdownEditorTerminationFlush.shared.unregister(backgroundFlushID)
+        }
         .onChange(of: text) { _, newValue in
             guard !isFocused, newValue != draftText else { return }
             draftText = newValue
@@ -845,6 +851,10 @@ struct iOSMarkdownEditingSurface: View {
                 text = nextText
             }
         }
+        let held = pendingCommit
+        // [[T-7871]]: re-registered with every held write, so the scene hook flushes the latest.
+        // A flush with nothing held writes nothing.
+        MarkdownEditorTerminationFlush.shared.register(backgroundFlushID) { held.flush() }
     }
 
     private func commitDraftImmediately() {
