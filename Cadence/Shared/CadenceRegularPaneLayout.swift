@@ -685,6 +685,13 @@ nonisolated enum CadenceDesktopSplitLayout {
         return paneWidth >= todayTwoPaneMinimumWidth ? .tasksAndSchedule : .tasksOnly
     }
 
+    /// Whether `layout` builds Today's Timeline pane. One spelling for both readers: `TodayView`
+    /// mounts the pane on it, and Cmd+\ decides from it whether there is a pane to focus
+    /// ([[T-7986]]).
+    static func todayLayoutMountsTimelinePane(_ layout: CadenceDesktopTodayLayout) -> Bool {
+        layout != .tasksOnly
+    }
+
     // MARK: - Goals — mission list │ inspector
 
     /// The mission column's declared minimum, as `GoalsView` already had it. It is a floor for the

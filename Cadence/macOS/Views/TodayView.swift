@@ -3,6 +3,7 @@ import SwiftUI
 
 struct TodayView: View {
     @Environment(TaskCreationManager.self) private var taskCreationManager
+    @Environment(TodayTimelineFocusManager.self) private var todayTimelineFocusManager
 
     var body: some View {
         // The pane width read here is the guarantee; the three `minWidth`s below are wishes an
@@ -12,8 +13,18 @@ struct TodayView: View {
         // fills its pane in both axes, so it takes the proposal instead of sizing from content —
         // and so there is no unmeasured first frame to guess a layout for.
         GeometryReader { proxy in
-            split(layout: CadenceDesktopSplitLayout.todayLayout(paneWidth: proxy.size.width))
+            let layout = CadenceDesktopSplitLayout.todayLayout(paneWidth: proxy.size.width)
+            split(layout: layout)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+                // [[T-7986]]: tells Cmd+\ whether this page's Timeline pane is on screen, so the
+                // tasks-only layout toggles the overlay instead of focusing a pane nobody built.
+                .onChange(of: layout, initial: true) { _, newLayout in
+                    todayTimelineFocusManager.isTodayTimelinePaneMounted =
+                        CadenceDesktopSplitLayout.todayLayoutMountsTimelinePane(newLayout)
+                }
+        }
+        .onDisappear {
+            todayTimelineFocusManager.isTodayTimelinePaneMounted = false
         }
         .background(Theme.bg)
         // **The page's corner, not the task column's (T-1503).** The owner asked for the `+` "at
@@ -63,7 +74,7 @@ struct TodayView: View {
             .frame(minWidth: CadenceDesktopSplitLayout.todayTaskPaneMinWidth, idealWidth: 440)
             .layoutPriority(0.43)
 
-            if layout != .tasksOnly {
+            if CadenceDesktopSplitLayout.todayLayoutMountsTimelinePane(layout) {
                 SchedulePanel(useStandardHeaderHeight: true)
                     .frame(minWidth: CadenceDesktopSplitLayout.todaySchedulePaneMinWidth, idealWidth: 406)
                     .layoutPriority(0.23)

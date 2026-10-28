@@ -36,6 +36,40 @@ enum SchedulePanelDataSupport {
         )
     }
 
+    /// **Today's all-day events, for the band above the hour ladder** ([[T-7982]]).
+    ///
+    /// `externalEventItems` above reads the timed half only, and the pane had no band, so a
+    /// holiday, a trip or an offsite was on no part of Mac Today while the Calendar page's day
+    /// header showed it across the top. This is that header's read — the same
+    /// `CalendarEventDayCache.allDayEvents` door, through the same cache the timed half uses —
+    /// so the two hosts of one day cannot disagree about what is on it. iOS Today got its strip
+    /// for exactly this in [[T-3163]].
+    static func allDayEvents(
+        calendarManager: any CalendarEventDaySource,
+        date: Date,
+        cache: CalendarEventDayCache
+    ) -> [EKEvent] {
+        cache.allDayEvents(for: date, calendarManager: calendarManager)
+    }
+
+    /// The schedule export's "Calendar Events" lines: all-day events first, spelled "All day",
+    /// then the timed ones in start order ([[T-7982]]). Pulled out of `exportTodayPlan` so the
+    /// export can be asserted without raising a file exporter.
+    static func exportEventLines(
+        allDayTitles: [String],
+        timedEvents: [CalendarEventItem]
+    ) -> [String] {
+        let allDay = allDayTitles.map { "- \(allDayExportLabel) • \($0)" }
+        let timed = timedEvents
+            .sorted { $0.startMin < $1.startMin }
+            .map { event in
+                "- \(TimeFormatters.timeRange(startMin: event.startMin, endMin: event.startMin + max(event.durationMinutes, 5))) • \(event.title)"
+            }
+        return allDay + timed
+    }
+
+    static let allDayExportLabel = "All day"
+
     static func syncLinkedTasks(
         allTasks: [AppTask],
         modelContext: ModelContext,

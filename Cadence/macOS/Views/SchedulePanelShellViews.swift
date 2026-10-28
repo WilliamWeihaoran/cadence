@@ -1,5 +1,6 @@
 #if os(macOS)
 import SwiftUI
+import EventKit
 
 struct SchedulePanelHeader: View {
     var presentation: SchedulePanelPresentation = .standard
@@ -64,6 +65,74 @@ struct SchedulePanelHeader: View {
         }
         .buttonStyle(.cadencePlain)
         .cadenceControlLabel("Export schedule")
+    }
+}
+
+/// **The day's all-day events, in a band above the hour ladder** ([[T-7982]]).
+///
+/// The pane drew timed events only, so a holiday, a trip or an offsite was on no part of Mac
+/// Today while the Calendar page's Day view showed it across the top. This is that page's band
+/// cut down for one day: the same `AllDayEventChip` (calendar hue, click opens the editor, drag
+/// onto the ladder converts it), the same lowercase `all-day` label in the rail column the
+/// Calendar corner draws, and no unscheduled tasks — the task column across the divider already
+/// lists those in full, the rule iOS Today's strip keeps for the same reason ([[T-3163]]).
+///
+/// Drawn only when the day has one, so an ordinary day leaves the ladder exactly where it was.
+/// Pinned outside the ladder's `ScrollView`, as the Calendar page's band is, so it stays on screen
+/// while the hours scroll. Three chips show before the band scrolls itself.
+struct SchedulePanelAllDayBand: View {
+    let events: [EKEvent]
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 0) {
+            Text("all-day")
+                .font(.system(size: 9, weight: .medium))
+                .foregroundStyle(Theme.dim)
+                .frame(width: timeLabelWidth, alignment: .trailing)
+                .padding(.trailing, timeLabelPad)
+                .padding(.top, 4)
+
+            ScrollView(.vertical, showsIndicators: false) {
+                VStack(alignment: .leading, spacing: SchedulePanelAllDayBandLayout.chipSpacing) {
+                    ForEach(events.map { CalendarAllDayEventItem(event: $0) }) { item in
+                        AllDayEventChip(event: item.event)
+                    }
+                }
+                .padding(.vertical, SchedulePanelAllDayBandLayout.verticalPadding)
+            }
+            .frame(height: SchedulePanelAllDayBandLayout.height(eventCount: events.count))
+        }
+        // The ladder's own right margin (`SchedulePanelTimelineViewport` pads 8 and draws 8
+        // short of the pane), so a chip ends where a block does.
+        .padding(.trailing, 16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Theme.bg)
+        .overlay(alignment: .bottom) {
+            Rectangle()
+                .fill(Theme.borderSubtle.opacity(CalendarVisualStyle.dividerOpacity))
+                .frame(height: 0.5)
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(
+            CadenceCalendarDayAccessibility.allDayStripLabel(allDayEventCount: events.count)
+        )
+    }
+}
+
+enum SchedulePanelAllDayBandLayout {
+    /// Chips shown before the band scrolls rather than grows: a conference week of five all-day
+    /// entries must not push the hour ladder off a short pane.
+    static let visibleChipLimit = 3
+    /// One `AllDayEventChip`: a 10pt line plus its 2pt vertical padding either side.
+    static let chipHeight: CGFloat = 17
+    static let chipSpacing: CGFloat = 2
+    static let verticalPadding: CGFloat = 4
+
+    /// Zero for a day with nothing all-day, so the band costs nothing on an ordinary day.
+    static func height(eventCount: Int) -> CGFloat {
+        let rows = min(max(eventCount, 0), visibleChipLimit)
+        guard rows > 0 else { return 0 }
+        return CGFloat(rows) * chipHeight + CGFloat(rows - 1) * chipSpacing + verticalPadding * 2
     }
 }
 

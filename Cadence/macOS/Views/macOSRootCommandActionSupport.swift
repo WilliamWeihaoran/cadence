@@ -61,17 +61,46 @@ enum RootCommandActionSupport {
         return nil
     }
 
+    /// What Cmd+\ does. Focusing Today's pane is only an answer while that pane is mounted
+    /// ([[T-7986]]): in the tasks-only layout `SchedulePanel` is not built, the focus request was
+    /// heard by nothing, and the key that opens the day's timeline on every other page was dead on
+    /// the one page named for the day. Without a pane it takes the other pages' arm.
+    enum TimelineShortcutAction: Equatable {
+        /// Focus Today's own Timeline pane, closing the overlay first when it is open.
+        case focusTodayPane(closeOverlay: Bool)
+        /// Show or hide the timeline overlay.
+        case setOverlay(Bool)
+    }
+
+    static func timelineShortcutAction(
+        selection: SidebarItem?,
+        showTimelineSidebar: Bool,
+        isTodayTimelinePaneMounted: Bool
+    ) -> TimelineShortcutAction {
+        let isToday = selection == .today || selection == nil
+        if isToday && isTodayTimelinePaneMounted {
+            return .focusTodayPane(closeOverlay: showTimelineSidebar)
+        }
+        return .setOverlay(!showTimelineSidebar)
+    }
+
     static func handleTimelineShortcut(context: RootCommandContext) {
-        if context.selection == .today || context.selection == nil {
-            if context.showTimelineSidebar {
+        let action = timelineShortcutAction(
+            selection: context.selection,
+            showTimelineSidebar: context.showTimelineSidebar,
+            isTodayTimelinePaneMounted: context.todayTimelineFocusManager.isTodayTimelinePaneMounted
+        )
+        switch action {
+        case .focusTodayPane(let closeOverlay):
+            if closeOverlay {
                 withAnimation(.easeInOut(duration: 0.2)) {
                     context.setShowTimelineSidebar(false)
                 }
             }
             context.todayTimelineFocusManager.requestFocus()
-        } else {
+        case .setOverlay(let isShown):
             withAnimation(.easeInOut(duration: 0.2)) {
-                context.setShowTimelineSidebar(!context.showTimelineSidebar)
+                context.setShowTimelineSidebar(isShown)
             }
         }
     }

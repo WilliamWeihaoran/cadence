@@ -122,7 +122,19 @@ struct SchedulePanel: View {
         )
     }
 
+    /// Today's all-day events ([[T-7982]]), from the same cache and the same store subscription
+    /// as the timed half above. See `SchedulePanelAllDayBand` for what draws them.
+    private var allDayEvents: [EKEvent] {
+        let _ = calendarManager.storeVersion  // subscribe to store change refreshes
+        return SchedulePanelDataSupport.allDayEvents(
+            calendarManager: calendarManager,
+            date: Date(),
+            cache: eventCache
+        )
+    }
+
     var body: some View {
+        let allDayEvents = allDayEvents
         VStack(alignment: .leading, spacing: 0) {
             if presentation.drawsOwnHeader {
                 SchedulePanelHeader(
@@ -133,6 +145,12 @@ struct SchedulePanel: View {
                 .frame(height: headerHeight, alignment: .top)
 
                 Divider().background(Theme.borderSubtle)
+            }
+
+            // Only on a day that has one ([[T-7982]]); an ordinary day's ladder starts where it
+            // always has.
+            if !allDayEvents.isEmpty {
+                SchedulePanelAllDayBand(events: allDayEvents)
             }
 
             GeometryReader { geo in
@@ -280,11 +298,11 @@ struct SchedulePanel: View {
                 "- \(TimeFormatters.timeRange(startMin: task.scheduledStartMin, endMin: task.scheduledEndMin)) • \(TaskTitleSupport.displayTitle(task.title))"
             }
 
-        let eventLines = externalEventItems
-            .sorted { $0.startMin < $1.startMin }
-            .map { event in
-                "- \(TimeFormatters.timeRange(startMin: event.startMin, endMin: event.startMin + max(event.durationMinutes, 5))) • \(event.title)"
-            }
+        // All-day events lead, as "All day" ([[T-7982]]); they used to be left out entirely.
+        let eventLines = SchedulePanelDataSupport.exportEventLines(
+            allDayTitles: allDayEvents.map { CadenceEventTitleSupport.displayTitle($0.title) },
+            timedEvents: externalEventItems
+        )
 
         let markdown = """
         # Schedule for \(todayKey)
