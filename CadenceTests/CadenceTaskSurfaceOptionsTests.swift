@@ -134,45 +134,16 @@ struct CadenceTaskSurfaceOptionsTests {
 
     /// **Nothing withheld, on either tier, however long the logbook (T-2057).** This was T-386's
     /// "the touch cap names the rows it withholds", 24 shown and 16 hidden out of 40. With the cap
-    /// gone the remainder is `nil` — not `0`, there is no "+0 more" line — at every length.
+    /// gone every row is listed at every length, and T-2087 deleted the remainder and its caption.
     @Test func aSectionThatListsEverythingHidesNothing() {
         for tier in CadenceTaskSurfaceTier.allCases {
             for length in [0, 3, 24, 25, 40, 2_000] {
                 let tasks = Array(0..<length)
                 #expect(
-                    CadenceTaskSurfaceOptions.hiddenCompletedCount(from: tasks, tier: tier) == nil,
+                    CadenceTaskSurfaceOptions.completedRows(from: tasks, tier: tier).count == length,
                     "\(tier.rawValue) withholds rows from a \(length)-task section"
                 )
-                #expect(CadenceTaskSurfaceOptions.completedRows(from: tasks, tier: tier).count == length)
             }
-        }
-    }
-
-    /// The caption states both numbers, so the header's total and the rows you can count are
-    /// reconciled on screen rather than left to disagree. A pure function of its two counts; that
-    /// no surface reaches it any more is the next test's point.
-    @Test func theOverflowCaptionSaysHowManyOfHowManyAreShown() {
-        #expect(CadenceTaskSurfaceOptions.overflowCaption(shown: 24, total: 40) == "Showing 24 of 40")
-
-        // Nothing hidden, nothing said — including the equal case, which is where a `>=`/`>` slip
-        // would print "Showing 24 of 24".
-        #expect(CadenceTaskSurfaceOptions.overflowCaption(shown: 24, total: 24) == nil)
-        #expect(CadenceTaskSurfaceOptions.overflowCaption(shown: 0, total: 0) == nil)
-        #expect(CadenceTaskSurfaceOptions.overflowCaption(shown: 40, total: 24) == nil)
-    }
-
-    /// Neither tier draws an overflow caption any more: the rows it shows are the rows it has, so
-    /// the end-to-end reading `iOSTaskGroupSection` does — shown, plus hidden, into the caption —
-    /// comes out `nil` on both. This was the touch tier's "Showing 24 of 40" until T-2057.
-    @Test func neitherTierEverDrawsAnOverflowCaption() {
-        let manyFinishedTasks = Array(0..<200)
-        for tier in CadenceTaskSurfaceTier.allCases {
-            let rows = CadenceTaskSurfaceOptions.completedRows(from: manyFinishedTasks, tier: tier)
-            let hidden = CadenceTaskSurfaceOptions.hiddenCompletedCount(from: manyFinishedTasks, tier: tier) ?? 0
-
-            #expect(rows.count == manyFinishedTasks.count)
-            #expect(hidden == 0)
-            #expect(CadenceTaskSurfaceOptions.overflowCaption(shown: rows.count, total: rows.count + hidden) == nil)
         }
     }
 
@@ -461,58 +432,46 @@ private func desktopSurfaceCollapsingWhitespace(_ source: String) -> String {
     source.split(whereSeparator: { $0.isWhitespace }).joined(separator: " ")
 }
 
-// MARK: - T-386: the touch half
+// MARK: - T-386: the touch half, and T-2087's deletion of its disclosure
 
 /// **The iOS half of T-386, which no value can reach.**
 ///
-/// `Cadence/iOS/` is inside `#if os(iOS)` and invisible to this macOS-built target, so "the header
-/// counts the whole section and the rows say how many of it they are" is only assertable as source.
-/// The values behind it — `hiddenCompletedCount(from:tier:)` and `overflowCaption(shown:total:)` —
-/// are pinned as values in `CadenceTaskSurfaceOptionsTests` above; what is left here is that the
-/// three phone surfaces and the component actually ask for them.
+/// `Cadence/iOS/` is inside `#if os(iOS)` and invisible to this macOS-built target, so what the
+/// phone's completed sections draw is only assertable as source. T-386 made a capped section say
+/// how much it cut; T-2057 removed the cap; T-2087 removed the disclosure that could then never
+/// fire — a hidden-row count, the section's "true size", and a "Showing N of M" caption, threaded
+/// from three call sites into two components. What is pinned here is that the chain stays gone
+/// and the rows stay uncapped, so a cap cannot come back without its disclosure coming back too.
 ///
 /// Each scan is scoped to **one declaration**, and every one of them asserts the stripper ran, so a
 /// renamed or emptied file cannot report agreement by finding nothing.
 struct CadenceTouchCompletedSectionTests {
 
-    /// The group counts what the section holds, not what it drew, and draws the caption that
-    /// explains the difference. `count: tasks.count` is the exact spelling that made the header
-    /// disagree with the options bar above it.
-    ///
-    /// **The header no longer draws that total, and the caption is what carries it now (T-2056).**
-    /// The owner had the per-section count capsule removed on both platforms, so `totalCount` has
-    /// exactly one reader left: `overflowCaption`. That makes this test the *only* thing standing
-    /// between a capped section and silence about the cap, which is why the capsule's departure
-    /// tightened these assertions rather than loosening them.
-    @Test func theTouchGroupCountsTheWholeSectionAndSaysWhatItIsShowing() throws {
+    /// Neither iOS task-group component carries a remainder or a caption any more (T-2087), and
+    /// neither header draws a count (T-2056). `count: tasks.count` is the exact spelling that made
+    /// the header disagree with the options bar above it, back when the rows were capped.
+    @Test func theTouchGroupsCarryNoCapDisclosure() throws {
         let raw = try desktopSurfaceSourceFile("Cadence/iOS/iOSTaskGroupSection.swift")
         let code = try desktopSurfaceStrippingComments(raw)
         // The stripper ran, and it blanks rather than deletes.
         #expect(code != raw)
         #expect(code.count == raw.count)
 
-        let section = try cadenceFunctionBody("struct iOSTaskGroupSection: View", in: code)
-        let normalized = desktopSurfaceCollapsingWhitespace(section)
+        for declaration in ["struct iOSTaskGroupSection: View", "struct iOSCompletedTasksSection: View"] {
+            let section = try cadenceFunctionBody(declaration, in: code)
+            // Non-vacuity: this is a component that draws the rows.
+            #expect(section.contains("ForEach(tasks) { task in"), "\(declaration): wrong body read")
 
-        // The remainder arrives from the call site rather than being re-derived here.
-        #expect(normalized.contains("var hiddenCount: Int?"))
-        #expect(normalized.contains("private var totalCount: Int { tasks.count + (hiddenCount ?? 0) }"))
-
-        // The header draws no count at all, and the old spelling that counted the capped array is
-        // still gone.
-        #expect(!normalized.contains("count: totalCount"), "the group header draws a count again")
-        #expect(section.contains("count: tasks.count") == false, "the header counts the capped array again")
-
-        // And the difference is stated on screen, in the shared wording.
-        #expect(normalized.contains("CadenceTaskSurfaceOptions.overflowCaption( shown: tasks.count, total: totalCount )"))
-        // Non-vacuity: this is the component that draws the rows the caption is about.
-        #expect(normalized.contains("ForEach(tasks) { task in"))
+            #expect(!section.contains("hiddenCount"), "\(declaration) takes a remainder again")
+            #expect(!section.contains("totalCount"), "\(declaration) derives a true size again")
+            #expect(!section.contains("Showing"), "\(declaration) spells a cap caption again")
+            #expect(!section.contains("count: tasks.count"), "\(declaration) counts its rows in a header")
+        }
     }
 
-    /// All three phone surfaces hand the group the remainder, and each one derives it from the
-    /// **same uncapped array** it passes to `completedRows`. A site that capped first and counted
-    /// second would report zero hidden rows on every screen.
-    @Test func everyTouchCompletedSectionPassesTheRemainderFromTheSameList() throws {
+    /// All three phone surfaces ask for their completed rows from the **same uncapped array**, and
+    /// hand the section nothing else about them. A site that capped on its own would be T-290.
+    @Test func everyTouchCompletedSectionAsksForItsRowsFromTheWholeList() throws {
         let sites: [(path: String, declaration: String)] = [
             ("Cadence/iOS/iOSTodayTaskSections.swift", "private var groupStack: some View"),
             ("Cadence/iOS/iOSTaskCollectionPage.swift", "private var groupStack: some View"),
@@ -528,20 +487,15 @@ struct CadenceTouchCompletedSectionTests {
             let body = try cadenceFunctionBody(site.declaration, in: code)
 
             // Two spellings are allowed: the plain overload, and the `revealing:` one T-375 added
-            // so a deep-linked row survives the cap. Both must derive from the *same* uncapped
-            // `completedTasks` this site also counts, which is the property this test is about —
-            // pinning the one-line form instead would fail the moment a second caller needs an
-            // argument, which is exactly what happened when T-375 and T-386 landed together.
-            let asksForCappedRows =
+            // so a deep-linked row is guaranteed listed.
+            let asksForRows =
                 body.contains("CadenceTaskSurfaceOptions.completedRows(from: completedTasks, tier: .touch)")
                 || (body.contains("CadenceTaskSurfaceOptions.completedRows(")
                     && body.contains("from: completedTasks")
                     && body.contains("tier: .touch"))
-            #expect(asksForCappedRows, "\(site.path) stopped asking for the capped rows")
-            #expect(
-                body.contains("hiddenCount: CadenceTaskSurfaceOptions.hiddenCompletedCount(from: completedTasks, tier: .touch)"),
-                "\(site.path) draws a capped list without saying how much it cut"
-            )
+            #expect(asksForRows, "\(site.path) stopped asking for its completed rows")
+            #expect(body.contains("iOSCompletedTasksSection("), "\(site.path): non-vacuity")
+            #expect(!body.contains("hiddenCount:"), "\(site.path) hands the section a remainder again")
             #expect(body.contains(".prefix(") == false, "\(site.path) re-rolls a cap of its own")
         }
     }

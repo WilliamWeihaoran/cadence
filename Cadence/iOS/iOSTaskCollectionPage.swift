@@ -341,14 +341,14 @@ struct iOSTaskCollectionSections: View {
                 tint: Theme.green,
                 // **T-375: the reveal had to survive the cap.** Since T-2057 there is no cap on
                 // either tier, so every completed task is listed and `revealing:` returns
-                // `completedTasks` unchanged; it stays until T-2087 removes the overload. A
-                // long-ago row is listed at its true place, far down; scrolling to it is T-2088.
+                // `completedTasks` unchanged. It stays anyway (T-2087 kept it): it is the deep link's
+                // one statement of "this row must be listed". A long-ago row is listed at its true
+                // place, far down; scrolling to it is T-2088.
                 tasks: CadenceTaskSurfaceOptions.completedRows(
                     from: completedTasks,
                     tier: .touch,
                     revealing: deepLinkManager.revealedCompletedTaskID
                 ),
-                hiddenCount: CadenceTaskSurfaceOptions.hiddenCompletedCount(from: completedTasks, tier: .touch),
                 showsContainer: showsContainer,
                 accessibilityNoun: "the tasks you have finished",
                 isExpanded: $showsCompleted

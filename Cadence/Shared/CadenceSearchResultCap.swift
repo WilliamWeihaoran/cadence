@@ -18,10 +18,10 @@ import Foundation
 ///
 /// **Why its own type rather than another `prefix` at the call site.** The three numbers — rows
 /// drawn, rows withheld, and the sentence naming the second — have to be derived from one list in
-/// one place or they drift, which is the exact failure `CadenceTaskSurfaceOptions.overflowCaption`
-/// records for the completed sections ("N rows under a count of M"). It lives in `Shared/` because
-/// the Mac's global search needs the same three numbers; its own cap lives inside
-/// `GlobalSearchIndexSupport`, which is why only the mobile surface could adopt this first.
+/// one place or they drift, which is the exact failure T-386 recorded for the capped completed
+/// sections ("N rows under a count of M"). It lives in `Shared/` because the Mac's global search
+/// needs the same three numbers; its own cap lives inside `GlobalSearchIndexSupport`, which is why
+/// only the mobile surface could adopt this first.
 enum CadenceSearchResultCap {
     /// How many rows a section draws, given everything it matched.
     ///
@@ -36,9 +36,10 @@ enum CadenceSearchResultCap {
 
     /// How many matches the section is withholding, or `nil` when it is listing all of them.
     ///
-    /// `nil` rather than `0` for the same reason `hiddenCompletedCount` uses it: there is no
-    /// "0 more results" row, and an optional makes the no-row case unspellable at the call site
-    /// instead of merely unlikely.
+    /// `nil` rather than `0` for the same reason
+    /// `CadenceTaskPresentationSupport.hiddenSubtaskCount(for:)` uses it: there is no "0 more
+    /// results" row, and an optional makes the no-row case unspellable at the call site instead of
+    /// merely unlikely.
     static func hiddenCount(total: Int, cap: Int, isExpanded: Bool) -> Int? {
         let hidden = max(0, total) - visibleCount(total: total, cap: cap, isExpanded: isExpanded)
         return hidden > 0 ? hidden : nil
@@ -46,11 +47,11 @@ enum CadenceSearchResultCap {
 
     /// What the continuation row reads.
     ///
-    /// **It names the remainder, not both numbers**, which is the opposite of
-    /// `CadenceTaskSurfaceOptions.overflowCaption`'s "Showing 24 of 62" — and the difference is
-    /// the same one that file already draws between its two lines. "Showing 24 of 62" is a
-    /// *statement*, for a list where nothing can be done about it. This row is a *control*: it is
-    /// tapped, and what it promises is what arrives, so it is phrased as the thing you get.
+    /// **It names the remainder, not both numbers**, which is the opposite of the "Showing 24 of
+    /// 62" caption the capped completed sections drew until T-2087 deleted it with their cap.
+    /// "Showing 24 of 62" was a *statement*, for a list where nothing can be done about it. This
+    /// row is a *control*: it is tapped, and what it promises is what arrives, so it is phrased as
+    /// the thing you get.
     ///
     /// It is deliberately not `CadenceTaskSurfaceOptions.moreLabel(hidden:)`'s "+38 more" either.
     /// That line sits beside a strip of chips in a calendar cell with no room for a word; this one

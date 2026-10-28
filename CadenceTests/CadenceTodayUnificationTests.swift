@@ -1099,9 +1099,9 @@ struct CadenceTodayUnificationTests {
         // them: this is a local fold, not a local row vocabulary.
         #expect(section.contains("iOSTaskRow("))
         #expect(section.contains(".opacity(0.62)"))
-        // And the cap disclosure `iOSTaskGroupSection` carried comes with it, so T-2087 still has
-        // one chain to delete rather than two.
-        #expect(section.contains("CadenceTaskSurfaceOptions.overflowCaption("))
+        // The cap disclosure `iOSTaskGroupSection` carried came with it, and T-2087 deleted both
+        // copies together: nothing caps these rows, so there is nothing to disclose.
+        #expect(!section.contains("hiddenCount"), "the completed section takes a remainder again")
     }
 
     /// **Folded is the default, and the default is one stored bit.** `isExpanded` is bound to the

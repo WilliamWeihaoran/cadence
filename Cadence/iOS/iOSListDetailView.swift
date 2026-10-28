@@ -404,7 +404,6 @@ struct iOSListDetailView: View {
                     title: "Completed",
                     tint: Theme.green,
                     tasks: CadenceTaskSurfaceOptions.completedRows(from: completedTasks, tier: .touch),
-                    hiddenCount: CadenceTaskSurfaceOptions.hiddenCompletedCount(from: completedTasks, tier: .touch),
                     // Scoped to one list already — the chip would name the page you are on.
                     showsContainer: false,
                     accessibilityNoun: "the tasks you have finished",

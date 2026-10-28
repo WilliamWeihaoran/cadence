@@ -85,22 +85,6 @@ struct iOSTaskGroupSection: View {
     /// See `iOSTaskGroupHeader.dropIdentity`. It also decides whether an *empty* group renders at
     /// all — `CadenceTaskDropSupport.showsWhenEmpty(_:)`.
     var dropIdentity: CadenceTaskGroupDropIdentity?
-    /// Rows the caller capped away, from
-    /// `CadenceTaskSurfaceOptions.hiddenCompletedCount(from:tier:)`. `nil` is the ordinary case: a
-    /// group that lists everything it has.
-    ///
-    /// **Since T-2057 it is the only case.** No tier caps its completed rows, so every caller passes
-    /// `nil` and the caption below never draws. It stays only because one host outside this
-    /// change's reach still passes it; removing it, `totalCount` and the caption is T-2087.
-    ///
-    /// When it was live (T-386): `tasks` arrived already capped, so counting it made the section
-    /// disagree with the options bar above it, and the remainder added back gave the true size.
-    var hiddenCount: Int?
-
-    /// The section's true size: the rows drawn plus the rows the cap withheld.
-    private var totalCount: Int {
-        tasks.count + (hiddenCount ?? 0)
-    }
 
     /// **A group you can still add to does not vanish when it empties; a group you cannot does.**
     /// The call sites used to each guard `if !tasks.isEmpty` before drawing this, which is right for
@@ -130,22 +114,6 @@ struct iOSTaskGroupSection: View {
                                 dayAlreadyStatedBySurface: dayAlreadyStatedBySurface
                             )
                             .opacity(opacity)
-                        }
-
-                        // The line that made a cap disclosed rather than silent. No group is capped
-                        // since T-2057, so this never draws; its removal is T-2087. See
-                        // `CadenceTaskSurfaceOptions.overflowCaption(shown:total:)`.
-                        if let caption = CadenceTaskSurfaceOptions.overflowCaption(
-                            shown: tasks.count,
-                            total: totalCount
-                        ) {
-                            Text(caption)
-                                .cadenceFont(.metadata)
-                                .fixedSize(horizontal: false, vertical: true)
-                                .foregroundStyle(Theme.dim)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .padding(.top, 2)
-                                .accessibilityLabel("\(title): \(caption)")
                         }
                     }
                 }
@@ -200,10 +168,6 @@ struct iOSCompletedTasksSection: View {
     /// `completedSectionAccent`, and `Theme.green` on the surfaces whose group carried it inline.
     let tint: Color
     let tasks: [AppTask]
-    /// Rows the caller capped away. Carried through unchanged from the call sites that used to
-    /// hand it to `iOSTaskGroupSection`: no tier caps completed rows since T-2057, so this is
-    /// `nil` on every call and the caption below never draws. Removing it is T-2087's.
-    let hiddenCount: Int?
     /// Asked of `CadenceTaskSurfaceOptions` by the caller, never decided here — this section is
     /// flat, so its rows are the only thing that can say which list a finished task came from.
     let showsContainer: Bool
@@ -214,11 +178,6 @@ struct iOSCompletedTasksSection: View {
     /// wrong span is the only thing a shared disclosure could get wrong per surface.
     let accessibilityNoun: String
     @Binding var isExpanded: Bool
-
-    /// The section's true size: the rows drawn plus the rows the cap withheld.
-    private var totalCount: Int {
-        tasks.count + (hiddenCount ?? 0)
-    }
 
     var body: some View {
         // Nothing finished is not "a closed section with nothing in it" — it is no section. The
@@ -275,19 +234,6 @@ struct iOSCompletedTasksSection: View {
                     dayAlreadyStatedBySurface: dayAlreadyStatedBySurface
                 )
                 .opacity(0.62)
-            }
-
-            if let caption = CadenceTaskSurfaceOptions.overflowCaption(
-                shown: tasks.count,
-                total: totalCount
-            ) {
-                Text(caption)
-                    .cadenceFont(.metadata)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .foregroundStyle(Theme.dim)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.top, 2)
-                    .accessibilityLabel("\(title): \(caption)")
             }
         }
         .transition(.opacity.combined(with: .move(edge: .top)))

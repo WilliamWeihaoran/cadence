@@ -128,12 +128,12 @@ enum CadenceTaskSurfaceOptions {
     /// mounted all 2,005 rows eagerly and 7 lazily (T-2057's ledger entry has the measurement). The "there is no show more anywhere in this app" argument above
     /// was always true of the phone as well.
     ///
-    /// **What the touch tier used to carry, and why it is still here** (T-386). The phone's options
-    /// bar read the true count while its section header counted the capped array, so
-    /// `hiddenCompletedCount(from:tier:)` and the caption below it made the cap disclosed rather
-    /// than silent. With no tier capped, both now return their "nothing hidden" answers on every
-    /// call. Removing them, and the `revealing:` overload, waits on a host file outside this
-    /// change's reach; see T-2087.
+    /// **What the touch tier used to carry, and why it is gone** (T-386, T-2087). The phone's
+    /// options bar read the true count while its section header counted the capped array, so a
+    /// hidden-row count and a "Showing 24 of 40" caption made the cap disclosed rather than
+    /// silent. With no tier capped both could only ever answer "nothing hidden", and T-2087
+    /// deleted them with the iOS plumbing that fed them. Re-introducing a cap means
+    /// re-introducing its disclosure in the same change: a silent cap is T-386's defect.
     static func completedRowLimit(for tier: CadenceTaskSurfaceTier) -> Int? {
         switch tier {
         case .touch, .desktop:
@@ -179,44 +179,7 @@ enum CadenceTaskSurfaceOptions {
         return rows + [revealed]
     }
 
-    /// How many completed rows the tier's cap is **not** drawing, or `nil` when it draws them all.
-    /// Since T-2057 no tier caps, so this is `nil` on every call; see T-2087.
-    ///
-    /// The denominator half of `completedRows(from:tier:)`, deliberately taking the same uncapped
-    /// array so the two cannot disagree about what "more" means — the shape
-    /// `CadenceTaskPresentationSupport.hiddenSubtaskCount(for:)` already uses for the row's
-    /// "+N more". `nil` rather than `0` for the same reason it does: there is no "+0 more" line.
-    static func hiddenCompletedCount<Task>(from tasks: [Task], tier: CadenceTaskSurfaceTier) -> Int? {
-        let hidden = tasks.count - completedRows(from: tasks, tier: tier).count
-        return hidden > 0 ? hidden : nil
-    }
-
-    /// What a capped section says under its rows, or `nil` when it is drawing all of them.
-    /// Since T-2057 no completed section is capped, so `iOSTaskGroupSection` never draws it; see
-    /// T-2087.
-    ///
-    /// **It names both numbers rather than only the remainder.** "+16 more" is the right line for a
-    /// task row's subtasks, where tapping the row opens the rest; there is no "show more" anywhere
-    /// in this app, so on a completed section the same words would promise an affordance that does
-    /// not exist. "Showing 24 of 40" states what the screen *is* instead, and it is the line that
-    /// reconciles the two numbers T-386 found disagreeing: the options bar's 40 and the rows you
-    /// can count.
-    ///
-    /// Takes the two counts rather than the array so the caption cannot be computed from a
-    /// different list than the one that was capped.
-    ///
-    /// **There is a third line in this family since T-3089**, and it is the one the first
-    /// paragraph above says did not exist: `CadenceSearchResultCap.continuationLabel(hidden:)`'s
-    /// "38 more results". A capped *search* section now does have a show-more, so it gets neither
-    /// of these two — not "+38 more", which is a chip strip's shorthand, and not "Showing 24 of
-    /// 62", which is what a list says when nothing can be done about it.
-    static func overflowCaption(shown: Int, total: Int) -> String? {
-        guard total > shown else { return nil }
-        return "Showing \(shown) of \(total)"
-    }
-
-    /// The **other** line the paragraph above contrasts itself with: what a capped *row* or *cell*
-    /// says about the items it is not drawing.
+    /// What a capped *row* or *cell* says about the items it is not drawing.
     ///
     /// **T-598(c). It is `"+3 more"`, with no space after the plus.** Twelve sites in the app draw
     /// this line and they had split nine to three. The unspaced nine are the board cards, the
@@ -231,9 +194,10 @@ enum CadenceTaskSurfaceOptions {
     /// the state a line is in right before someone edits one copy — so those eight read this
     /// function now too, and every one of the twelve is one call.
     ///
-    /// It lives next to `overflowCaption` because the two lines are one decision seen twice, and
-    /// the paragraph above is where the app already explains which of them a surface gets: this one
-    /// where opening the thing reveals the rest, that one where nothing does.
+    /// It is for a surface where opening the thing reveals the rest. A list where nothing reveals
+    /// the rest had its own line, "Showing 24 of 40", until T-2087 deleted it with the completed
+    /// cap it disclosed; `CadenceSearchResultCap.continuationLabel(hidden:)` is the third member,
+    /// for a section whose show-more is a control.
     ///
     /// `MarkdownRenderedBlockTruncation.overflowLabel(unit:)` is deliberately **not** folded in
     /// here. It says "+ 4 more rows" — a different sentence, naming what was cut and pluralising

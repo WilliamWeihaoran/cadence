@@ -297,8 +297,7 @@ struct CadenceInboxRemindersSurfaceTests {
         #expect(heading.contains("struct CadenceTaskGroupHeading: View"), "non-vacuity")
         #expect(!heading.contains("count"), "CadenceTaskGroupHeading takes a count again")
 
-        // The iOS file still counts rows — `hiddenCount` feeds the overflow caption — so what is
-        // pinned here is the one line that could hand a count to a heading.
+        // What is pinned for the iOS file is the one line that could hand a count to a heading.
         let iosHeader = try strippingComments(sourceFile("Cadence/iOS/iOSTaskGroupSection.swift"))
         #expect(iosHeader.contains("struct iOSTaskGroupHeader: View"), "non-vacuity")
         #expect(

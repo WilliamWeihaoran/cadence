@@ -503,10 +503,6 @@ struct CadenceCalendarConsistencySurfaceTests {
         #expect(CadenceTaskSurfaceOptions.moreLabel(hidden: 3) != "+ 3 more")
         #expect(CadenceTaskSurfaceOptions.moreLabel(hidden: 1) == "+1 more")
 
-        // It is not `overflowCaption`, which is the other answer to the same question and says
-        // both numbers because nothing on that surface reveals the rest.
-        #expect(CadenceTaskSurfaceOptions.overflowCaption(shown: 24, total: 40) == "Showing 24 of 40")
-
         // The timeline read **2** until [[T-3170]]: the all-day band's "+N more" and the Block
         // card's "+N more" over its members past the second. The Block card is deleted.
         for (path, count) in [

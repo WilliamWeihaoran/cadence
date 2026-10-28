@@ -237,7 +237,6 @@ struct iOSTodayTaskSections: View {
                 title: CadenceTodayPresentationSupport.completedSectionTitle,
                 tint: CadenceTodayPresentationSupport.completedSectionAccent,
                 tasks: CadenceTaskSurfaceOptions.completedRows(from: completedTasks, tier: .touch),
-                hiddenCount: CadenceTaskSurfaceOptions.hiddenCompletedCount(from: completedTasks, tier: .touch),
                 showsContainer: showsContainer,
                 dayAlreadyStatedBySurface: todayKey,
                 accessibilityNoun: "the tasks you finished today",
