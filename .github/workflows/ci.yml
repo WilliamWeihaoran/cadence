@@ -532,6 +532,102 @@ jobs:
       - name: Gates
         if: always()
         run: ./.github/scripts/check-log.sh "$RUNNER_TEMP/cadence-xcb-ci-ios.log" build
+      # T-6541 / T-6821: RUN the CadenceTests suites that are whole-file `#if os(iOS)` on purpose.
+      # On the macOS leg they compile to nothing and the step above only compiles them, so without
+      # this step a red in any of them reaches no gate. The list is exactly
+      # `CadenceTestTargetHygieneTests.deliberatelyIOSOnlyTestFiles`, and
+      # `theIOSOnlySuitesAreTheOnesCIRunsOnASimulator` holds the two equal both ways.
+      #
+      # WHICH XCODE (T-6821, measured on hosted run 40628569258, image macos-26): the image installs
+      # iOS Simulator runtimes 26.2, 26.4.1 and 26.5 only. Xcode 26.0.1 and 26.1.1 list NO eligible
+      # iOS Simulator destination (there is no 26.0 or 26.1 runtime, and a 26.0 one could not run an
+      # app whose IPHONEOS_DEPLOYMENT_TARGET is 26.1 anyway); Xcode 26.2 through 26.6 list 33. So
+      # this step picks the NEWEST image Xcode that lists an eligible iPhone whose OS is at least the
+      # project's IPHONEOS_DEPLOYMENT_TARGET, and REBUILDS under it into its own DerivedData:
+      # products from another Xcode are not a sound input to `test-without-building`. That rebuild
+      # is a compile like any other, so its log goes through `check-log.sh` in the step after this
+      # one (T-1781's guard requires it). The test half compiles nothing, so its gate is this step's
+      # own exit status: `xcb.sh` fails a red test, refuses an `-only-testing:` name matching no
+      # suite (exit 8), and fails a run that executed none (exit 4).
+      # None listed is a hard failure, never a skip: a quiet skip here is the T-535 shape.
+      # Option (a), `-downloadPlatform iOS` under 26.0.1, was not taken: the runtime it would fetch is
+      # 26.0, below the 26.1 deployment target (reasoned, not run). `XCODEBUILD` and `DEVELOPER_DIR`
+      # are both set because `xcb.sh` defaults to `/Applications/Xcode.app`'s binary whatever
+      # `xcode-select` says -- which is also why the step above compiles under 26.6 ([[T-7661]]).
+      # Measured (runs 40629814847, 40632388234): rebuild 342-381 s, test 263-336 s, 22 tests.
+      - name: Run the deliberately iOS-only CadenceTests suites on a simulator (T-6541, T-6821)
+        id: ios-sim
+        run: |
+          export TMPDIR="$RUNNER_TEMP/"
+          step_start=$SECONDS
+          deploy=$(grep -m1 -o 'IPHONEOS_DEPLOYMENT_TARGET = [0-9.]*' Cadence.xcodeproj/project.pbxproj | awk '{print $3}')
+          picked_app="" udid=""
+          for app in $(ls -d /Applications/Xcode_*.app | sort -t_ -k2 -V -r); do
+            DEVELOPER_DIR="$app/Contents/Developer" "$app/Contents/Developer/usr/bin/xcodebuild" \
+              -project Cadence.xcodeproj -scheme Cadence -showdestinations > "$RUNNER_TEMP/ios-destinations.txt" 2>&1 || true
+            udid=$(python3 -I -c '
+          import re, sys
+          text = open(sys.argv[1]).read().split("Ineligible destinations")[0]
+          floor = tuple(int(p) for p in sys.argv[2].split("."))
+          found = sorted(
+              (tuple(int(p) for p in m.group(2).split(".")), m.group(1), m.group(3))
+              for m in re.finditer(r"platform:iOS Simulator, arch:\w+, id:([0-9A-F-]{36}), OS:([0-9.]+), name:(iPhone[^}]*?)\s*\}", text)
+          )
+          found = [f for f in found if f[0] >= floor]
+          if found:
+              print(found[-1][1])
+              print("picked:", found[-1], file=sys.stderr)
+          ' "$RUNNER_TEMP/ios-destinations.txt" "$deploy")
+            if [ -n "$udid" ]; then picked_app="$app"; break; fi
+            echo "  $app: no eligible iPhone simulator at iOS >= $deploy"
+          done
+          if [ -z "$udid" ]; then
+            echo "::error::no image Xcode lists an eligible iPhone simulator at iOS >= $deploy for the Cadence scheme (T-6821)."
+            xcrun simctl list runtimes || true
+            exit 1
+          fi
+          export DEVELOPER_DIR="$picked_app/Contents/Developer"
+          export XCODEBUILD="$DEVELOPER_DIR/usr/bin/xcodebuild"
+          "$XCODEBUILD" -version > "$RUNNER_TEMP/ios-test-xcode.txt" 2>&1 || true
+          echo "test Xcode: $picked_app ($(head -1 "$RUNNER_TEMP/ios-test-xcode.txt")), simulator $udid, deployment target $deploy"
+          build_start=$SECONDS
+          ./scripts/xcb.sh ci-ios-sim-build raw \
+            -scheme Cadence \
+            -destination "platform=iOS Simulator,id=$udid" \
+            -derivedDataPath "$RUNNER_TEMP/dd-ios-sim" \
+            CODE_SIGN_IDENTITY="-" CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM="" \
+            PROVISIONING_PROFILE_SPECIFIER="" \
+            CODE_SIGN_ENTITLEMENTS=.github/ci.entitlements \
+            build-for-testing
+          echo "SIM-BUILD-SECONDS=$(( SECONDS - build_start ))"
+          test_start=$SECONDS
+          ./scripts/xcb.sh ci-ios-tests raw \
+            -scheme Cadence \
+            -destination "platform=iOS Simulator,id=$udid" \
+            -derivedDataPath "$RUNNER_TEMP/dd-ios-sim" \
+            CODE_SIGN_IDENTITY="-" CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM="" \
+            PROVISIONING_PROFILE_SPECIFIER="" \
+            CODE_SIGN_ENTITLEMENTS=.github/ci.entitlements \
+            -only-testing:CadenceTests/iOSMarkdownEditorFlushTests \
+            -only-testing:CadenceTests/iOSMarkdownInlineTaskPanelEffectTests \
+            -only-testing:CadenceTests/iOSTaskRecurrenceSelectionEffectTests \
+            test-without-building
+          echo "SIM-TEST-SECONDS=$(( SECONDS - test_start ))"
+          grep -E 'Test run with [0-9]+ tests? in [0-9]+ suites?|Executed [0-9]+ tests?' "$RUNNER_TEMP/cadence-xcb-ci-ios-tests.log" || true
+          echo "SIM-STEP-SECONDS=$(( SECONDS - step_start ))"
+      - name: Gates (simulator rebuild, T-6821)
+        if: always() && steps.ios-sim.outcome != 'skipped'
+        run: ./.github/scripts/check-log.sh "$RUNNER_TEMP/cadence-xcb-ci-ios-sim-build.log" build
+      - name: Upload the simulator test logs on failure (T-6821)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-sim-test-logs
+          path: |
+            ${{ runner.temp }}/cadence-xcb-ci-ios-sim-build.log
+            ${{ runner.temp }}/cadence-xcb-ci-ios-tests.log
+            ${{ runner.temp }}/ios-destinations.txt
+          if-no-files-found: ignore
 
   # ---------------------------------------------------------------------------
   # T-1641: the one lock property that NOTHING has ever run on a schedule.
