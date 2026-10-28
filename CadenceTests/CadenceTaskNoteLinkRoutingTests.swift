@@ -154,6 +154,119 @@ struct CadenceTaskNoteLinkRoutingTests {
         #expect(TaskNoteLinkRouting.note(id: nil, title: "  ", in: notes) == nil)
     }
 
+    // MARK: - [[T-8041]]: links opened from the Notes page's own four editors
+
+    /// A link to a note this tab lists selects it in place and raises no navigation request.
+    @Test func aNotesPageLinkToANoteThisTabListsSelectsItInPlace() {
+        let notes = NotesNavigationManager.shared
+        let lists = ListNavigationManager.shared
+        notes.clear()
+        lists.request = nil
+        defer {
+            notes.clear()
+            lists.request = nil
+        }
+        let monday = Note(kind: .daily, dateKey: "2026-10-26")
+        let tuesday = Note(kind: .daily, dateKey: "2026-10-27")
+        var selection: UUID? = monday.id
+        NotesView.EditorLinkRouting.open(tuesday, tabNotes: [monday, tuesday], selection: &selection)
+        #expect(selection == tuesday.id)
+        #expect(notes.request == nil)
+        #expect(lists.request == nil)
+    }
+
+    /// The defect: on the Notepad tab a link to a daily note set `selectedNoteID` to an id the tab
+    /// does not list, so the editor fell to "Select a note". Now the selection is left alone and
+    /// the request names the target's own tab, whose `RequestedSelection.apply` then selects it.
+    @Test func aNotesPageLinkToAnotherKindSwitchesToThatNotesTabAndSelectsIt() {
+        let notes = NotesNavigationManager.shared
+        let lists = ListNavigationManager.shared
+        notes.clear()
+        lists.request = nil
+        defer {
+            notes.clear()
+            lists.request = nil
+        }
+        let daily = Note(kind: .daily, dateKey: "2026-10-27")
+        let weekly = Note(kind: .weekly, title: "Week 44")
+        let notepad = Note(kind: .permanent, title: "Ideas")
+        let meeting = Note(kind: .meeting, title: "Standup")
+        let all = [daily, weekly, notepad, meeting]
+        let cases: [(Note, NotesView.NotesPage)] = [(daily, .daily), (weekly, .weekly), (notepad, .notepad), (meeting, .meeting)]
+        var crossKindOpens = 0
+        for (source, _) in cases {
+            for (target, targetPage) in cases where target.kind != source.kind {
+                let tabNotes = all.filter { $0.kind == source.kind }
+                var selection: UUID? = source.id
+                NotesView.EditorLinkRouting.open(target, tabNotes: tabNotes, selection: &selection)
+                // The tab the link was clicked in keeps its editor; it never selects an id it cannot show.
+                #expect(selection == source.id)
+                #expect(notes.request?.page == targetPage)
+                #expect(notes.request?.noteID == target.id)
+                #expect(lists.request == nil)
+
+                // The target tab answers the request by selecting the linked note.
+                var requested = notes.request?.noteID
+                var targetSelection: UUID?
+                let applied = NotesView.RequestedSelection.apply(
+                    &requested,
+                    selection: &targetSelection,
+                    notes: all.filter { $0.kind == target.kind }
+                )
+                #expect(applied)
+                #expect(targetSelection == target.id)
+                notes.clear()
+                crossKindOpens += 1
+            }
+        }
+        #expect(crossKindOpens == 12)
+    }
+
+    @Test func aNotesPageLinkToAListNoteOpensItsList() throws {
+        let notes = NotesNavigationManager.shared
+        let lists = ListNavigationManager.shared
+        notes.clear()
+        lists.request = nil
+        defer {
+            notes.clear()
+            lists.request = nil
+        }
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let project = Project(name: "Home")
+        let listNote = Note(kind: .list, title: "Punch list", project: project)
+        context.insert(project)
+        context.insert(listNote)
+        let daily = Note(kind: .daily, dateKey: "2026-10-27")
+        var selection: UUID? = daily.id
+        NotesView.EditorLinkRouting.open(listNote, tabNotes: [daily], selection: &selection)
+        #expect(selection == daily.id)
+        #expect(lists.request?.projectID == project.id)
+        #expect(lists.request?.listNoteID == listNote.id)
+        #expect(notes.request == nil)
+    }
+
+    /// Every tab's editor is handed every note -- its `[[` picker, Linked/Backlinks chips and
+    /// unlinked-mention footer all read `relatedNotes` -- and opens links through the router.
+    @Test func everyNotesPageEditorSeesAllNotesAndRoutesItsLinks() throws {
+        let source = CadenceSourceScan.codeOnly(
+            try CadenceSourceScan.sourceFile("Cadence/macOS/Views/NotesView.swift")
+        )
+        var checked = 0
+        for page in ["DailyNotesPage", "WeeklyNotesPage", "NotepadPage", "MeetingNotesPage"] {
+            let body = try #require(CadenceSourceScan.declarationBody("struct \(page)", in: source), "\(page)")
+            #expect(body.contains("@Query(sort: \\Note.updatedAt, order: .reverse) private var allNotes: [Note]"), "\(page)")
+            let pane = try Self.arguments(ofFirst: "NoteEditorPane(", in: body)
+            #expect(pane.contains("relatedNotes: allNotes"), "\(page)")
+            #expect(
+                pane.contains("onOpenNote: { NotesView.EditorLinkRouting.open($0, tabNotes: notes, selection: &selectedNoteID) }"),
+                "\(page)"
+            )
+            checked += 1
+        }
+        #expect(checked == 4)
+    }
+
     @Test func theRootSelectsTheNotesPageForANotesRequest() {
         var selection: SidebarItem? = .today
         macOSRootLifecycleSupport.handleNotesNavigationRequest(request: nil, selection: &selection)

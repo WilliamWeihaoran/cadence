@@ -47,6 +47,29 @@ struct NotesView: View {
         }
     }
 
+    /// [[T-8041]]: where a `[[note]]` link opened from one of this page's four editors goes. Every
+    /// tab's editor is handed **every** note as `relatedNotes` (so its `[[` picker, Linked and
+    /// Backlinks chips see notes of other kinds, as iOS's Notes tabs and the event-note sheet
+    /// already did), which means a link can name a note this tab does not list. Selecting that id
+    /// in place left `selectedNote` nil and the editor on "Select a note". A target this tab lists
+    /// is selected in place; anything else takes `TaskNoteLinkRouting.open` -- the route search and
+    /// the task inspector take -- which switches to that note's tab (or a list note's list).
+    enum EditorLinkRouting {
+        static func open(
+            _ note: Note,
+            tabNotes: [Note],
+            selection: inout UUID?,
+            notesNavigation: NotesNavigationManager = .shared,
+            listNavigation: ListNavigationManager = .shared
+        ) {
+            if tabNotes.contains(where: { $0.id == note.id }) {
+                selection = note.id
+                return
+            }
+            TaskNoteLinkRouting.open(note, notesNavigation: notesNavigation, listNavigation: listNavigation)
+        }
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             // The app's one tab-bar control. This used to be a bespoke blue-underline bar; blue is
@@ -108,8 +131,8 @@ private struct DailyNotesPage: View {
     /// A refused note ([[T-5301]]), named above the list column; the Notepad page's create says why.
     @State private var createFailureNotice: String?
 
-    /// Every daily note, in date order. Selection and the editor's reference set resolve against
-    /// this, not against `listedNotes` — a day you jumped to from the header picker but have not
+    /// Every daily note, in date order. Selection resolves against this, not against
+    /// `listedNotes` — a day you jumped to from the header picker but have not
     /// written in yet has no row, and must still stay open in the editor.
     private var notes: [Note] {
         allNotes
@@ -164,9 +187,9 @@ private struct DailyNotesPage: View {
             if let note = selectedNote {
                 NoteEditorPane(
                     note: note,
-                    relatedNotes: notes,
+                    relatedNotes: allNotes,
                     relatedTasks: allTasks,
-                    onOpenNote: { selectedNoteID = $0.id }
+                    onOpenNote: { NotesView.EditorLinkRouting.open($0, tabNotes: notes, selection: &selectedNoteID) }
                 )
                 // Per-note editor, matching the Notepad tab. Without it the pane is reused
                 // across a note switch: `.onChange(of: note.id)` then cancels the pending
@@ -297,9 +320,9 @@ private struct WeeklyNotesPage: View {
             if let note = selectedNote {
                 NoteEditorPane(
                     note: note,
-                    relatedNotes: notes,
+                    relatedNotes: allNotes,
                     relatedTasks: allTasks,
-                    onOpenNote: { selectedNoteID = $0.id }
+                    onOpenNote: { NotesView.EditorLinkRouting.open($0, tabNotes: notes, selection: &selectedNoteID) }
                 )
                 // Per-note editor, matching the Notepad tab. Without it the pane is reused
                 // across a note switch: `.onChange(of: note.id)` then cancels the pending
@@ -443,7 +466,7 @@ private struct NotepadPage: View {
                     note: note,
                     relatedNotes: allNotes,
                     relatedTasks: allTasks,
-                    onOpenNote: { selectedNoteID = $0.id },
+                    onOpenNote: { NotesView.EditorLinkRouting.open($0, tabNotes: notes, selection: &selectedNoteID) },
                     onDelete: { deleteNote(note) }
                 )
                 // Per-note text view, so undo history does not leak between notes.
@@ -585,9 +608,9 @@ private struct MeetingNotesPage: View {
                 VStack(spacing: 0) {
                     NoteEditorPane(
                         note: note,
-                        relatedNotes: notes,
+                        relatedNotes: allNotes,
                         relatedTasks: allTasks,
-                        onOpenNote: { selectedNoteID = $0.id },
+                        onOpenNote: { NotesView.EditorLinkRouting.open($0, tabNotes: notes, selection: &selectedNoteID) },
                         onPersistContent: commitEventNote
                     )
                     // Per-note editor, matching the Notepad tab. Without it the pane is reused
