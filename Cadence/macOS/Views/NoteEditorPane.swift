@@ -57,6 +57,9 @@ struct NoteEditorPane: View {
     @State private var fallbackContentWindowStart: Date?
     /// [[T-7811]]: this editor's key in `MarkdownEditorTerminationFlush`.
     @State private var terminationFlushID = UUID()
+    /// [[T-7832]]: the title field's key in `MarkdownEditorTerminationFlush`. Separate from the
+    /// body's, so a title keystroke never replaces the body's pending flush.
+    @State private var titleTerminationFlushID = UUID()
     /// Set when the store refused a tag created from the chips. See `createTag(_:)`.
     @State private var tagFailureNotice: String?
     /// The title field's focus, read only so leaving it is a flush point (T-4971).
@@ -68,6 +71,8 @@ struct NoteEditorPane: View {
             set: {
                 note.title = $0
                 note.updatedAt = Date()
+                // T-7832: typed straight into the model, so a quit before Return or blur commits it.
+                MarkdownEditorTerminationFlush.shared.registerCommit(titleTerminationFlushID, in: modelContext)
             }
         )
     }
@@ -354,6 +359,7 @@ struct NoteEditorPane: View {
         .onDisappear {
             flushPendingEditorContent()
             MarkdownEditorTerminationFlush.shared.unregister(terminationFlushID)
+            MarkdownEditorTerminationFlush.shared.unregister(titleTerminationFlushID)
             pendingDerivedStateTask?.cancel()
             pendingDerivedStateTask = nil
             pendingFallbackContentSyncTask?.cancel()

@@ -1,5 +1,6 @@
 #if os(macOS)
 import Foundation
+import SwiftData
 
 /// **T-7811.** The markdown editors' uncommitted `@State` buffers, drained on quit.
 ///
@@ -26,6 +27,19 @@ final class MarkdownEditorTerminationFlush {
 
     func register(_ id: UUID, flush: @escaping @MainActor () -> Void) {
         flushes[id] = flush
+    }
+
+    /// **T-7832.** Registers a flush that only commits what `modelContext` already holds.
+    ///
+    /// For a field typed straight into the model — `NoteEditorPane`'s title — rather than into a
+    /// `@State` buffer: there is nothing to write back, only an uncommitted change that Return or
+    /// blur would have committed ([[T-4971]]) and a Cmd-Q reaches neither. It writes no buffer, so
+    /// unlike the body's flush it needs no gate against a note switch: committing the context is
+    /// right whichever note is on screen, and a no-op when nothing is pending.
+    func registerCommit(_ id: UUID, in modelContext: ModelContext) {
+        register(id) {
+            _ = CadencePendingChangePersistence.commitTypedContent(in: modelContext)
+        }
     }
 
     func unregister(_ id: UUID) {

@@ -1,6 +1,7 @@
 #if os(macOS)
 import AppKit
 import Foundation
+import SwiftData
 import Testing
 @testable import Cadence
 
@@ -136,6 +137,54 @@ struct MarkdownEditorFallbackCommitTests {
         // Drained: a second pass runs nothing.
         registry.flushAllBeforeTermination()
         #expect(flushed.count == 2)
+    }
+
+    // MARK: - T-7832: the note title on quit
+
+    /// The note title is typed straight into the model and committed only at Return or blur
+    /// ([[T-4971]]). A title typed and then quit is committed by the quit hook. Read from a second
+    /// context, because only the store answers whether it survived. In-memory store, built here.
+    @Test func quittingCommitsANoteTitleTypedButNotYetSubmitted() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let editing = ModelContext(container)
+        let note = Note(kind: .list, title: "Old", content: "body")
+        editing.insert(note)
+        try editing.save()
+
+        let titleFlushID = UUID()
+        note.title = "Typed, never submitted"
+        MarkdownEditorTerminationFlush.shared.registerCommit(titleFlushID, in: editing)
+        #expect(editing.hasChanges, "precondition: the title is pending, not committed")
+
+        CadenceAppDelegate().applicationWillTerminate(
+            Notification(name: NSApplication.willTerminateNotification)
+        )
+
+        let noteID = note.id
+        let reader = ModelContext(container)
+        let stored = try #require(
+            try reader.fetch(FetchDescriptor<Note>(predicate: #Predicate { $0.id == noteID })).first
+        )
+        #expect(stored.title == "Typed, never submitted", "a title typed before Cmd-Q was not committed")
+        #expect(!editing.hasChanges)
+    }
+
+    /// The title setter registers that commit under its own key — not the body's, which it would
+    /// replace — and the pane drops it when it goes.
+    @Test func theNoteTitleSetterRegistersItsOwnQuitCommit() throws {
+        let path = "Cadence/macOS/Views/NoteEditorPane.swift"
+        let source = CadenceSourceScan.codeOnly(try cadenceTestSource(path))
+        let binding = try #require(CadenceSourceScan.declarationBody("private var titleBinding", in: source))
+        #expect(binding.contains(
+            "MarkdownEditorTerminationFlush.shared.registerCommit(titleTerminationFlushID, in: modelContext)"
+        ))
+        let body = try #require(CadenceSourceScan.declarationBody("struct NoteEditorPane", in: source))
+        let disappear = try #require(body.range(of: ".onDisappear {"))
+        #expect(
+            String(body[disappear.upperBound...].prefix(400))
+                .contains("MarkdownEditorTerminationFlush.shared.unregister(titleTerminationFlushID)"),
+            "the title's quit commit is never unregistered"
+        )
     }
 
     // MARK: - Every editor uses both
