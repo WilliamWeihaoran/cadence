@@ -6,18 +6,43 @@ import UniformTypeIdentifiers
 // Non-SwiftUI storage for the currently-dragged sidebar row ID.
 // Using a plain class instead of @State/@Binding so it's never nil'd by
 // SwiftUI view updates between onDrag and performDrop.
-private final class SidebarDragContext {
+//
+// **SwiftUI never says when a drag ENDS** ([[T-7701]]). `.onDrag` sets the item, but a list
+// released over empty sidebar gets no callback at all, so the item can outlive its drag. It is
+// therefore only ever a hint: a drop counts as a list reorder only when the drag's own payload
+// names the same list (`SidebarListDropPlacement.confirmedListDrag`), every drop on a list row
+// ends the drag whatever it carried (`endDrag(onto:)`), and a row that sees a payload which is
+// not that list clears it. Before that a task dragged onto a list row after an abandoned list
+// drag drew the insertion line and reordered the old list.
+final class SidebarDragContext {
     static let shared = SidebarDragContext()
     var draggedListItem: SidebarListDragItem?
-    private init() {}
+    init() {}
+
+    /// The synchronous half of a drop on a list row: ends the drag in flight on EVERY path —
+    /// dropped on its own row, on a row of another section, or with nothing in flight — and
+    /// returns the list to move onto `target`, or `nil` when the drop moves nothing.
+    func endDrag(onto target: SidebarListDragItem) -> SidebarListDragItem? {
+        let dragged = draggedListItem
+        draggedListItem = nil
+        guard let dragged, dragged != target else { return nil }
+        return dragged
+    }
+
+    /// A row saw a drag whose payload is not the list this context thinks is in flight, so that
+    /// list's drag ended without a drop on any row. Forget it, unless a newer list drag has
+    /// already replaced it.
+    func forgetStale(_ stale: SidebarListDragItem) {
+        if draggedListItem == stale { draggedListItem = nil }
+    }
 }
 
-private enum SidebarListKind: String {
+nonisolated enum SidebarListKind: String {
     case area
     case project
 }
 
-private struct SidebarListDragItem: Equatable {
+nonisolated struct SidebarListDragItem: Equatable {
     let kind: SidebarListKind
     let id: UUID
 
@@ -369,6 +394,14 @@ nonisolated enum SidebarListDropPlacement {
         guard let draggedIndex, draggedIndex != targetIndex else { return nil }
         return draggedIndex < targetIndex ? .bottom : .top
     }
+
+    /// `dragged` when the drag's payload is that list's own `providerText`, otherwise `nil`: a
+    /// task (`TaskDragPayload`), foreign text, or a payload that never loaded is not a list drag,
+    /// whatever `SidebarDragContext` still holds from an earlier one ([[T-7701]]).
+    static func confirmedListDrag(payload: String?, dragged: SidebarListDragItem?) -> SidebarListDragItem? {
+        guard let dragged, let payload, payload == dragged.providerText as String else { return nil }
+        return dragged
+    }
 }
 
 // MARK: - First list
@@ -420,9 +453,26 @@ private struct SidebarListDropDelegate: DropDelegate {
     @Binding var dragOverItem: SidebarListDragItem?
     let onDrop: (SidebarListDragItem, SidebarListDragItem) -> Void
 
-    func validateDrop(info: DropInfo) -> Bool { true }
+    /// Refused outright when no list drag is in flight, so a task hovering a list row draws no
+    /// line and its drop is not taken for a reorder ([[T-7701]]).
+    func validateDrop(info: DropInfo) -> Bool {
+        SidebarDragContext.shared.draggedListItem != nil && info.hasItemsConforming(to: [UTType.text])
+    }
 
-    func dropEntered(info: DropInfo) { dragOverItem = target }
+    /// Draws the line at once, then checks the payload: one that is not the in-flight list means
+    /// that list's drag was abandoned, so the line comes down and the stale item is forgotten.
+    /// The late answer can only take the line away, never put it up after the drag has left.
+    func dropEntered(info: DropInfo) {
+        guard let inFlight = SidebarDragContext.shared.draggedListItem else { return }
+        dragOverItem = target
+        let target = target
+        let dragOverItem = $dragOverItem
+        loadPayload(from: info) { payload in
+            guard SidebarListDropPlacement.confirmedListDrag(payload: payload, dragged: inFlight) == nil else { return }
+            SidebarDragContext.shared.forgetStale(inFlight)
+            if dragOverItem.wrappedValue == target { dragOverItem.wrappedValue = nil }
+        }
+    }
 
     func dropExited(info: DropInfo) {
         if dragOverItem == target { dragOverItem = nil }
@@ -430,11 +480,28 @@ private struct SidebarListDropDelegate: DropDelegate {
 
     func performDrop(info: DropInfo) -> Bool {
         if dragOverItem == target { dragOverItem = nil }
-        guard let dropped = SidebarDragContext.shared.draggedListItem,
-              dropped != target else { return false }
-        SidebarDragContext.shared.draggedListItem = nil
-        onDrop(dropped, target)
+        // Ends the drag before anything can return early: a list dropped back on its own row
+        // used to keep it in flight ([[T-7701]]).
+        guard let dropped = SidebarDragContext.shared.endDrag(onto: target) else { return false }
+        let target = target
+        let onDrop = onDrop
+        loadPayload(from: info) { payload in
+            guard let confirmed = SidebarListDropPlacement.confirmedListDrag(payload: payload, dragged: dropped) else { return }
+            onDrop(confirmed, target)
+        }
         return true
+    }
+
+    /// The drag's plain-text payload, delivered on the main actor (`nil` when there is none).
+    private func loadPayload(from info: DropInfo, then deliver: @escaping @MainActor (String?) -> Void) {
+        guard let provider = info.itemProviders(for: [UTType.text]).first else {
+            deliver(nil)
+            return
+        }
+        _ = provider.loadObject(ofClass: NSString.self) { object, _ in
+            let payload = (object as? NSString).map { $0 as String }
+            Task { @MainActor in deliver(payload) }
+        }
     }
 }
 #endif
