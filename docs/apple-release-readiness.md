@@ -1,10 +1,13 @@
 # Cadence Apple Release Readiness
 
-Last updated: October 27, 2026. The CloudKit schema obligation, the widget entitlement row and
+Last updated: October 28, 2026 (release position corrected for build 25; see the iOS/iPadOS
+bullet). October 27, 2026: the CloudKit schema obligation, the widget entitlement row and
 the version numbers were re-measured against HEAD that day; see "Checked Against The Tree" at the
 foot, which carries both readings and says which of the older ones were wrong. The document's
-**rewrite** for iOS becoming a shipping channel is a separate, larger job and is T-6410, which the
-owner has placed after the RC; this pass corrected facts and changed no scope.
+**rewrite** for iOS becoming a public shipping channel — iOS reviewer script, iOS App Store
+Connect fields, iPhone and iPad screenshots — is a separate, larger job, tracked as T-7681 and
+public-release work; the internal RC it was sequenced behind has shipped (build 25, 2026-10-27).
+These passes corrected facts and changed no scope.
 
 This checklist maps Cadence's current macOS app behavior to Apple's App Review, privacy, signing, sandboxing, and notarization expectations. Use it before every App Store Connect upload or direct Developer ID release.
 
@@ -12,7 +15,8 @@ This checklist maps Cadence's current macOS app behavior to Apple's App Review, 
 
 - Primary channel: Mac App Store.
 - Secondary channel: direct Developer ID distribution with notarization.
-- iOS/iPadOS: built, not distributed. `Cadence/iOS/` is a large real surface rather than a stub and the project builds `iphoneos iphonesimulator macosx`, but no iOS build is submitted to any channel today, and the App Store Connect fields in `docs/app-store-submission-packet.md` are macOS-only on purpose. The iOS build is in the verification commands below regardless, because the macOS test target never compiles `Cadence/iOS/`: without it, a break in half of this repository survives every check the release process runs. Revisit the whole document, not just this bullet, the day iOS becomes a channel.
+- Distributed today: **internal TestFlight only, macOS and iOS/iPadOS together.** Build 25 (`MARKETING_VERSION` 1.0) went to internal TestFlight on both platforms on 2026-10-27 — the owner's word, recorded in `docs/SESSION_HANDOFF.md`; the upload is done in Xcode Organizer and nothing in the tree records it. Nothing has been submitted to App Review on either platform, so the two channels above are the public-release plan, not a current fact. The next upload needs `CURRENT_PROJECT_VERSION` above 25; `docs/OWNER_ACTIONS.md` ("Before each upload") carries that checklist.
+- iOS/iPadOS: **a v1 shipping channel** (owner decision 2026-10-25, T-6410): iPhone and iPad (`TARGETED_DEVICE_FAMILY` `1,2`), `IPHONEOS_DEPLOYMENT_TARGET` 26.1 to match the Mac, and the Mac does not wait for iOS. `Cadence/iOS/` is a large real surface and the project builds `iphoneos iphonesimulator macosx`. **Not yet rewritten for it:** the App Store Connect fields in `docs/app-store-submission-packet.md` and the reviewer script below are still macOS-only, and no iPhone or iPad screenshots exist — public-release work, tracked as T-7681, none of it needed for internal TestFlight. The iOS build is in the verification commands below because the macOS test target never compiles `Cadence/iOS/`: without it, a break in half of this repository survives every check the release process runs.
 - Minimum macOS version: 26.1. This is intentional for the current release and limits App Store availability to Macs that can run macOS 26.1 or later.
 - Public category: Productivity.
 - Current monetization: none. Cadence has no in-app purchases, subscriptions, ads, paid unlocks, or external purchase links.
@@ -185,8 +189,10 @@ them rather than as standing claims.
   collected type, which is what the privacy-label table above claims.
 - `INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO` on both app configurations;
   `MACOSX_DEPLOYMENT_TARGET = 26.1`; `MARKETING_VERSION = 1.0`; **`CURRENT_PROJECT_VERSION = 25`**
-on the two shipping targets (re-read per target 2026-10-27; it said 23 here until then, and T-7100
-bumped 24 → 25 on 2026-10-26. `CadenceTests`/`CadenceUITests` still read 24 and `CadenceMCPServer`
+on the two shipping targets (re-read per target 2026-10-27, and again 2026-10-28 unchanged; it said
+23 here until then, and T-7100 bumped 24 → 25 on 2026-10-26. **25 is the build that shipped to
+internal TestFlight on 2026-10-27, so it is now spent: the next upload must raise both shipping
+targets above 25.** `CadenceTests`/`CadenceUITests` still read 24 and `CadenceMCPServer`
 reads 1 — none of the three ships, so a whole-file grep of this key legitimately finds three
 different values and is not the check to write).
 

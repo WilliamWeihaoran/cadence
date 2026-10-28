@@ -304,8 +304,9 @@ struct AppStoreReviewReadinessTests {
     ///
     /// `docs/apple-release-readiness.md` is the stated readiness source of truth, and until this
     /// ticket it mentioned iOS zero times and both of its verification commands were
-    /// `-destination 'platform=macOS'`. That is not "the gate forgot to ship iOS" — iOS is
-    /// deliberately built and not distributed — it is that **the gate could not tell you the iOS
+    /// `-destination 'platform=macOS'`. That was not "the gate forgot to ship iOS" — iOS was then
+    /// deliberately built and not distributed (it became a v1 channel in T-6410 and shipped to
+    /// internal TestFlight in build 25) — it is that **the gate could not tell you the iOS
     /// tree still compiles.** `CadenceTests` builds for macOS, so it never compiles `Cadence/iOS/`
     /// at all; a break in that tree survives every check the release process runs, and that tree is
     /// roughly half of this repository.
@@ -357,9 +358,10 @@ struct AppStoreReviewReadinessTests {
             "the gate no longer runs the suite that pins it"
         )
 
-        // And the prose, so the command cannot be read as a fourth distribution channel by whoever
-        // finds it next.
-        #expect(readiness.contains("iOS/iPadOS: built, not distributed."))
+        // And the prose, so whoever finds the command next reads iOS's channel status from the
+        // document rather than guessing it. Was "built, not distributed." until T-6410 made iOS a
+        // v1 channel and build 25 shipped it to internal TestFlight.
+        #expect(readiness.contains("iOS/iPadOS: **a v1 shipping channel**"))
         #expect(readiness.contains("the macOS test target never compiles `Cadence/iOS/`"))
         // The lock question, answered rather than assumed: the `test` action is the only one of the
         // three that launches a host against the app-group container.

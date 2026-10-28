@@ -5,7 +5,8 @@ judgement, not on engineering effort. Agents have done the half that could be do
 at the boundary; each section below says exactly where that boundary is and why.
 
 **Read this way:** do items 1–3 first. Two of them take about two minutes each and unblock other
-work; the third is the only thing standing between the project and a macOS TestFlight build.
+work; the third was the last thing standing between the project and a macOS TestFlight build,
+and is done — build 25 went to internal TestFlight on both platforms on 2026-10-27.
 Items 4–6 are short but need a second device or a spare moment during a run. Items 7–9 are
 larger, and two of them are explicitly *not* needed for the internal release candidate.
 
@@ -15,7 +16,7 @@ After each item there is a **Tell me** line. That is what to paste back; the tic
 |---|---|---|---|---|
 | 1 | Unset the stale git hooks path | 2 min | T-4900 | No, but cheap |
 | 2 | Calendar identifier check | 5 min | T-1117 | No — unblocks a parked decision |
-| 3 | Create a Mac Installer Distribution certificate | 5 min | T-7102 | **Yes, for macOS** |
+| 3 | ~~Create a Mac Installer Distribution certificate~~ — done | — | T-7102 | Was yes; build 25 shipped |
 | 4 | 24-hour time check | 2 min | T-1163 | No |
 | 5 | Answer the automation prompt when it appears | seconds | T-2049 | No |
 | 6 | Two-device archive comparison | 15 min | T-2053 | No |
@@ -274,7 +275,13 @@ naming round.
 
 ---
 
-## Before the upload: what the RC needs beyond item 3
+## Before each upload: what a TestFlight build needs beyond item 3
+
+**Build 25: DONE.** It went to internal TestFlight, macOS and iOS, on 2026-10-27. That date is
+your word, recorded in `docs/SESSION_HANDOFF.md`; the upload happens in Organizer and nothing in
+the tree records it. Everything below is restated for **the next upload**, which must carry a
+`CURRENT_PROJECT_VERSION` **above 25**. Re-read 2026-10-28: the tree still reads 25 on the app and
+widget targets, so the bump is the first step of that upload and has not been taken.
 
 Not a tenth item and not a tenth ticket — there are still nine. Item 3 ends at "the certificate
 exists", and the upload is the step after it. No document in this repository describes that step:
@@ -291,10 +298,12 @@ internal TestFlight build is neither. This section is the gap, checked against H
   rather than grepped: `MARKETING_VERSION` 1.0, `CURRENT_PROJECT_VERSION` 25, both deployment
   targets 26.1, device family `1,2`, team `SM6Y3D2D55`, app group `group.com.haoranwei.Cadence`,
   iCloud container `iCloud.com.haoranwei.Cadence`, and bundle ids `com.haoranwei.Cadence` and
-  `com.haoranwei.Cadence.CadenceWidgets`. A mismatch here is the classic rejection and there is
-  not one. (The test bundles still read 24 and the MCP server reads 1; none of the three ships.)
-- **Build 25 is higher than the shipped 24**, so the number is not a reason for a rejection —
-  subject to the App Store Connect check below, which is the half nobody here can run.
+  `com.haoranwei.Cadence.CadenceWidgets`. A mismatch here is the classic rejection and there was
+  not one for build 25. (The test bundles still read 24 and the MCP server reads 1; none of the
+  three ships.) **When the number is bumped for the next upload, bump the app and the widget
+  together** — four `CURRENT_PROJECT_VERSION` lines, two configurations each — or this check fails.
+- **Build 25 is now the highest uploaded build**, so 25 itself would be rejected as a duplicate.
+  The next upload needs 26 or higher.
 - **Both binaries carry a privacy manifest**, app and widget, each declaring the UserDefaults and
   file-timestamp reasons.
 - **Internal TestFlight needs no Beta App Review, no nutrition label and no test information.**
@@ -306,24 +315,25 @@ internal TestFlight build is neither. This section is the gap, checked against H
   carries that rule with a measurement dated 2026-10-20 and says in terms "redo it, do not re-read
   it". It was redone at HEAD on 2026-10-27, against the 2026-10-02 deploy you verified in the
   Console: 24 `@Model` types, byte-identical `CadenceSchema.swift`, and not one stored property
-  added in between. **Nothing is owed and you do not need to press Deploy Schema Changes.**
+  added in between. **Nothing was owed for build 25.** For the next upload this is a measurement
+  to redo against that build's HEAD, not a standing answer: a stored property added since
+  2026-10-27 changes it.
 
 **What cannot be checked from here at all.** No agent has, or may seek, App Store Connect access,
 so these are yours and nothing in the repository can confirm or deny them. They are listed in the
-order Organizer will hit them:
+order Organizer will hit them. Items 1, 2 and 4 were one-time setup and build 25 reaching
+TestFlight on both platforms is the evidence they are done; 3 and 5 recur every upload.
 
-1. **An App Store Connect app record must exist for `com.haoranwei.Cadence`.** Strong indirect
-   evidence that it does: Apple has issued Team Store (distribution) profiles for both bundle ids,
-   and the iOS ones carry `beta-reports-active`, which is TestFlight's entitlement. That is
-   evidence, not the record.
-2. **That record must have the macOS platform enabled** if you want the Mac build in TestFlight.
-   An iOS-only record takes the `.ipa` and has nowhere to put the `.pkg`, and this is the failure
-   most likely to surprise you after item 3's certificate is finally in hand.
-3. **Build 25 must exceed the highest build already uploaded for version 1.0.** "Build 24 shipped"
-   in the handoff means archived here, not necessarily uploaded there.
-4. **Internal testers must be added**, which for internal testing means people who already hold a
-   role on the team.
-5. **The upload itself**, through Xcode Organizer. Agents are barred from it, and
+1. ~~**An App Store Connect app record must exist for `com.haoranwei.Cadence`.**~~ Done — build 25
+   was accepted into it.
+2. ~~**That record must have the macOS platform enabled.**~~ Done — the Mac leg of build 25 is in
+   TestFlight. It stays relevant only if the record is ever recreated.
+3. **The build number must exceed the highest build already uploaded for version 1.0** — 25 as of
+   2026-10-27, so the next upload needs `CURRENT_PROJECT_VERSION` 26 or higher. (If
+   `MARKETING_VERSION` moves past 1.0, this compares against that version's builds instead.)
+4. ~~**Internal testers must be added.**~~ Done for build 25 — it was installed and tested from
+   TestFlight (T-7550 was reported from it). New testers still need a role on the team first.
+5. **The upload itself**, through Xcode Organizer, every time. Agents are barred from it, and
    `scripts/xcb.sh export-archive` refuses `destination: upload` and the `app-store` /
    `app-store-connect` / `validation` methods before it reaches `xcodebuild` — re-read at HEAD on
    2026-10-27 and still intact. That refusal is correct; it is not something to work around.
