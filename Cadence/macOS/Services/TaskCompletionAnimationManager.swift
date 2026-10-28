@@ -7,7 +7,10 @@ import SwiftData
 @Observable
 final class TaskCompletionAnimationManager {
     static let shared = TaskCompletionAnimationManager()
-    static let animationDuration: TimeInterval = 2.5
+
+    // The deferral, and therefore the undo window, is `CadenceTaskCompletionTiming`'s and is read
+    // from there at each use ([[T-8202]]). This manager deliberately keeps no constant of its own:
+    // the section manager and the drawing read the same number, and [[T-8203]] ports it to iOS.
 
     /// The **last-resort** context for a settle, and nothing more (T-3098).
     ///
@@ -51,7 +54,7 @@ final class TaskCompletionAnimationManager {
     func progress(for task: AppTask, now: Date = Date()) -> Double {
         guard let start = pendingStartTimes[task.id] else { return 0 }
         let elapsed = now.timeIntervalSince(start)
-        return min(max(elapsed / Self.animationDuration, 0), 1)
+        return min(max(elapsed / CadenceTaskCompletionTiming.animationDuration, 0), 1)
     }
 
     /// **T-344, decided: the completion control toggles *settled*, not *done*.** A cancelled task is
@@ -96,7 +99,7 @@ final class TaskCompletionAnimationManager {
         pendingStartTimes[id] = Date()
         pendingTargets[id] = task
         pendingTasks[id] = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: UInt64(Self.animationDuration * 1_000_000_000))
+            try? await Task.sleep(nanoseconds: UInt64(CadenceTaskCompletionTiming.animationDuration * 1_000_000_000))
             guard !Task.isCancelled else { return }
             await MainActor.run {
                 guard let self, self.pendingStartTimes[id] != nil else { return }
@@ -117,7 +120,7 @@ final class TaskCompletionAnimationManager {
     func cancelProgress(for task: AppTask, now: Date = Date()) -> Double {
         guard let start = pendingCancelStartTimes[task.id] else { return 0 }
         let elapsed = now.timeIntervalSince(start)
-        return min(max(elapsed / Self.animationDuration, 0), 1)
+        return min(max(elapsed / CadenceTaskCompletionTiming.animationDuration, 0), 1)
     }
 
     func toggleCancellation(for task: AppTask) {
@@ -149,7 +152,7 @@ final class TaskCompletionAnimationManager {
         pendingCancelStartTimes[id] = Date()
         pendingCancelTargets[id] = task
         pendingCancelTasks[id] = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: UInt64(Self.animationDuration * 1_000_000_000))
+            try? await Task.sleep(nanoseconds: UInt64(CadenceTaskCompletionTiming.animationDuration * 1_000_000_000))
             guard !Task.isCancelled else { return }
             await MainActor.run {
                 guard let self, self.pendingCancelStartTimes[id] != nil else { return }
@@ -165,7 +168,7 @@ final class TaskCompletionAnimationManager {
 
     /// **T-5360.** Settle every fill still running, now, before the app quits.
     ///
-    /// The 2.5s fill holds the `.done` (or `.cancelled`) write behind an in-memory sleep, so a
+    /// The fill holds the `.done` (or `.cancelled`) write behind an in-memory sleep, so a
     /// Cmd+Q inside that window used to drop the tick: the task came back open on next launch.
     /// The user's intent was already expressed — the fill is a grace period for an undo, not a
     /// confirmation step — so quitting finishes it exactly as the timer would have, through the
@@ -245,7 +248,7 @@ final class TaskCompletionAnimationManager {
     ///
     /// Asking the task where it lives makes the rule "write the object in the context that owns
     /// it", which holds whatever `refreshAppData()` did and *whenever* it did it — including a
-    /// swap that lands midway through the 2.5s fill, where re-seeding this property would instead
+    /// swap that lands midway through the fill, where re-seeding this property would instead
     /// pair a freshly-swapped context with a task from the outgoing one. The injected context
     /// stays as the fallback for the only case it can still answer: a task registered nowhere, so
     /// `modelContext` is nil (T-357's branch keeps its own `else` below for when both are nil).

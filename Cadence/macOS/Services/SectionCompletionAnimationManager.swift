@@ -6,7 +6,10 @@ import Observation
 @Observable
 final class SectionCompletionAnimationManager {
     static let shared = SectionCompletionAnimationManager()
-    static let animationDuration: TimeInterval = 2.5
+
+    // One number for both managers ([[T-8202]]): a column's sweep and a task's fill are the same
+    // gesture on the same board, so they read `CadenceTaskCompletionTiming.animationDuration`
+    // rather than each holding a literal that the next retune would move one of.
 
     private(set) var pendingStartTimes: [UUID: Date] = [:]
     @ObservationIgnored private var pendingTasks: [UUID: Task<Void, Never>] = [:]
@@ -20,7 +23,7 @@ final class SectionCompletionAnimationManager {
     func progress(for section: TaskSectionConfig, now: Date = Date()) -> Double {
         guard let start = pendingStartTimes[section.id] else { return 0 }
         let elapsed = now.timeIntervalSince(start)
-        return min(max(elapsed / Self.animationDuration, 0), 1)
+        return min(max(elapsed / CadenceTaskCompletionTiming.animationDuration, 0), 1)
     }
 
     func toggleCompletion(
@@ -58,7 +61,7 @@ final class SectionCompletionAnimationManager {
         cancelPending(for: sectionID)
         pendingStartTimes[sectionID] = Date()
         pendingTasks[sectionID] = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: UInt64(Self.animationDuration * 1_000_000_000))
+            try? await Task.sleep(nanoseconds: UInt64(CadenceTaskCompletionTiming.animationDuration * 1_000_000_000))
             guard !Task.isCancelled else { return }
             await MainActor.run {
                 guard let self, self.pendingStartTimes[sectionID] != nil, var current = getCurrent() else { return }

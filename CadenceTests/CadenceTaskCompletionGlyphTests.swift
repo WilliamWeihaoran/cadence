@@ -159,4 +159,42 @@ struct CadenceTaskCompletionGlyphTests {
         #expect(ticked.mark == .checkmark)
         #expect(ticked.isFilled)
     }
+
+    // MARK: - T-8202: the window the control is drawing
+
+    /// **The owner's ruling, as two numbers and the sentence that ties them together.**
+    ///
+    /// "1.2s total with the check mark at halfway." These are not cosmetic: `animationDuration`
+    /// gates the `.done` write itself, so it is the undo window a mis-tap can be withdrawn inside,
+    /// and `confirmationThreshold` is the fraction of it after which the control admits what it is
+    /// about to do. The old pair, 2.5 and 0.7, put the confirmation 1.75s in — which is the part
+    /// that read as slow — so both move or neither does.
+    @Test func theCompletionWindowIsTwelveHundredMillisecondsWithConfirmationAtItsMidpoint() {
+        #expect(CadenceTaskCompletionTiming.animationDuration == 1.2)
+        #expect(CadenceTaskCompletionTiming.confirmationThreshold == 0.5)
+
+        // Derived, not restated: the delay is what the two numbers mean together.
+        #expect(abs(CadenceTaskCompletionTiming.confirmationDelay - 0.6) < 0.000_001)
+        #expect(CadenceTaskCompletionTiming.confirmationDelay < CadenceTaskCompletionTiming.animationDuration)
+    }
+
+    /// Halfway means *at* halfway. A strict `>` would hold the mark back to the first frame past
+    /// the midpoint, which is a different rule from the one the owner stated even though it looks
+    /// the same written down.
+    @Test func theConfirmationMarkAppearsFromTheMidpointOnwardAndNotBefore() {
+        #expect(CadenceTaskCompletionTiming.showsConfirmation(at: 0.5))
+        #expect(CadenceTaskCompletionTiming.showsConfirmation(at: 0.5000001))
+        #expect(CadenceTaskCompletionTiming.showsConfirmation(at: 1))
+        #expect(!CadenceTaskCompletionTiming.showsConfirmation(at: 0.4999))
+        #expect(!CadenceTaskCompletionTiming.showsConfirmation(at: 0))
+
+        // The old threshold must no longer be the one in force: progress of 0.6 is past halfway
+        // and short of 0.7, so this single reading separates the two rules.
+        #expect(CadenceTaskCompletionTiming.showsConfirmation(at: 0.6))
+
+        // Callers hand it raw `elapsed / duration`, which runs past 1 and can arrive negative from
+        // a clock that moved; clamping is the helper's job so no call site has to remember it.
+        #expect(CadenceTaskCompletionTiming.showsConfirmation(at: 4.2))
+        #expect(!CadenceTaskCompletionTiming.showsConfirmation(at: -3))
+    }
 }

@@ -28,7 +28,7 @@ struct TaskCompletionAnimationManagerTests {
 
     @Test func statusStaysUnchangedPartwayThroughTheCompletionAnimation() {
         // Simulates a hovered row, grouped by e.g. priority, partway through the
-        // 2.5s completion animation: the task must still read as "not done" so it
+        // completion animation: the task must still read as "not done" so it
         // does not jump to a different grouped section before the fill finishes.
         let manager = TaskCompletionAnimationManager.shared
         let task = AppTask(title: "a")
@@ -124,7 +124,7 @@ struct TaskCompletionAnimationManagerTests {
     /// last occurrence of its series.
     ///
     /// The fix is not "assume a context": it falls back to the task's own
-    /// `modelContext`, which any task the manager can see has. This waits out the real 2.5s fill
+    /// `modelContext`, which any task the manager can see has. This waits out the real fill
     /// on purpose — the write happens in the timer's continuation, and that continuation is the
     /// code under test.
     @Test func theContextlessCompletionPathStillSpawnsTheNextOccurrence() async throws {
@@ -337,7 +337,7 @@ struct TaskCompletionAnimationManagerTests {
 
     // MARK: - T-5360: a quit inside the fill must not lose the tick
 
-    /// **The bug, stated:** the `.done` write waited behind the fill's 2.5s in-memory sleep and
+    /// **The bug, stated:** the `.done` write waited behind the fill's in-memory sleep and
     /// nothing settled it on quit, so a Cmd+Q inside that window brought the task back open on the
     /// next launch. Driven through the real quit hook, so a delegate that stops calling the settle
     /// fails here too; `audit` can only see what was committed.
@@ -393,7 +393,7 @@ struct TaskCompletionAnimationManagerTests {
         manager.settleAllPendingBeforeTermination()
         #expect(task.status == .done)
 
-        let deadline = Date().addingTimeInterval(TaskCompletionAnimationManager.animationDuration + 1)
+        let deadline = Date().addingTimeInterval(CadenceTaskCompletionTiming.animationDuration + 1)
         while Date() < deadline { try await Task.sleep(nanoseconds: 100_000_000) }
 
         let all = try context.fetch(FetchDescriptor<AppTask>())
@@ -417,7 +417,7 @@ struct TaskCompletionAnimationManagerTests {
     /// that genuinely never runs still fails on the caller's own `#expect`s, naming the property
     /// that is wrong — a timeout that swallowed that would be a worse test than the flaky one.
     private func waitOutTheFill(until isDone: () -> Bool) async throws {
-        let deadline = Date().addingTimeInterval(TaskCompletionAnimationManager.animationDuration + 30)
+        let deadline = Date().addingTimeInterval(CadenceTaskCompletionTiming.animationDuration + 30)
         while !isDone() {
             if Date() >= deadline { return }
             try await Task.sleep(nanoseconds: 50_000_000)
@@ -457,6 +457,115 @@ struct TaskCompletionAnimationManagerTests {
 
         #expect(task.status == .todo)
         #expect(!manager.isPendingCancel(task))
+    }
+
+    // MARK: - T-8202: where the fill is at a given moment
+
+    /// **The fill reaches its confirmation point at half the window, measured not slept.**
+    ///
+    /// [[T-268]] rules out driving this delay with a sleep: a margin over `animationDuration`
+    /// failed here under parallel load, and the clock it was reading was the distorted one, not
+    /// the product's. `progress(for:now:)` takes the moment as an argument, so the whole question
+    /// — is the ring half full when the owner says the check should appear — is answerable with
+    /// arithmetic against the start the manager actually recorded.
+    @Test func theCompletionFillIsHalfwayWhenTheConfirmationMarkIsDue() throws {
+        let manager = TaskCompletionAnimationManager.shared
+        let task = AppTask(title: "a")
+        defer { manager.cancelPending(for: task.id) }
+
+        manager.toggleCompletion(for: task)
+        let start = try #require(manager.pendingStartTimes[task.id], "the tap recorded no start time")
+
+        let due = manager.progress(for: task, now: start.addingTimeInterval(CadenceTaskCompletionTiming.confirmationDelay))
+        #expect(abs(due - 0.5) < 0.000_001)
+        #expect(CadenceTaskCompletionTiming.showsConfirmation(at: due))
+
+        // A tenth of a second earlier it is still only a ring.
+        let early = manager.progress(for: task, now: start.addingTimeInterval(CadenceTaskCompletionTiming.confirmationDelay - 0.1))
+        #expect(!CadenceTaskCompletionTiming.showsConfirmation(at: early))
+
+        // And the fill is still short of full right up to the end, then clamps.
+        //
+        // The full reading is taken a hair PAST the duration on purpose. `Date` carries ~7.9e8
+        // seconds, so its ULP here is ~1.2e-7: `start.addingTimeInterval(1.2)` rounds, and the
+        // elapsed time read back lands a few tens of nanoseconds either side of 1.2. Asking for
+        // exactly 1 at exactly the duration is therefore a coin flip against the representation,
+        // not an assertion about the product.
+        #expect(manager.progress(for: task, now: start.addingTimeInterval(CadenceTaskCompletionTiming.animationDuration - 0.01)) < 1)
+        #expect(manager.progress(for: task, now: start.addingTimeInterval(CadenceTaskCompletionTiming.animationDuration + 0.05)) == 1)
+
+        // The deferral is intact through all of it: nothing has been written yet.
+        #expect(task.status == .todo)
+        #expect(manager.isPending(task))
+    }
+
+    /// The same clock for a column as for a card. Shortening one and leaving the other is a
+    /// visible inconsistency on the same board, which is why [[T-8202]] moved the number out of
+    /// both managers rather than editing two literals.
+    @Test func aColumnSweepRunsOnTheSameWindowAsATaskFill() throws {
+        let manager = SectionCompletionAnimationManager.shared
+        let section = TaskSectionConfig(name: "Shipping")
+        defer { manager.cancelPending(for: section.id) }
+
+        manager.toggleCompletion(for: section, getCurrent: { section }, save: { _ in })
+        let start = try #require(manager.pendingStartTimes[section.id], "the column control recorded no start time")
+
+        let due = manager.progress(for: section, now: start.addingTimeInterval(CadenceTaskCompletionTiming.confirmationDelay))
+        #expect(abs(due - 0.5) < 0.000_001)
+        #expect(manager.progress(for: section, now: start.addingTimeInterval(CadenceTaskCompletionTiming.animationDuration - 0.01)) < 1)
+        #expect(manager.progress(for: section, now: start.addingTimeInterval(CadenceTaskCompletionTiming.animationDuration + 0.05)) == 1)
+
+        // Still deferred: the column has not been completed or archived by starting the sweep.
+        #expect(manager.isPending(section))
+        #expect(!section.isCompleted)
+    }
+
+    /// The shortened window is still a window: a second tap inside it is the free take-back, and
+    /// the column's control behaves the same way. The task side of this is
+    /// `tappingCompleteAgainWhilePendingCancelsTheAnimationInstead`; this is its column half.
+    @Test func aSecondTapOnAColumnInsideTheWindowTakesTheCompletionBack() {
+        let manager = SectionCompletionAnimationManager.shared
+        let section = TaskSectionConfig(name: "Shipping")
+        var saved: [TaskSectionConfig] = []
+
+        manager.toggleCompletion(for: section, getCurrent: { section }, save: { saved.append($0) })
+        #expect(manager.isPending(section))
+
+        manager.toggleCompletion(for: section, getCurrent: { section }, save: { saved.append($0) })
+
+        #expect(!manager.isPending(section))
+        #expect(saved.isEmpty, "the take-back wrote the column anyway")
+        #expect(!section.isCompleted)
+    }
+
+    /// **The drawing reads the shared threshold; it does not keep one of its own ([[T-8202]]).**
+    ///
+    /// The confirmation mark's cue is a *fraction of the window*, so a literal in the view is a
+    /// number that silently stops meaning "halfway" the next time the window moves — which is
+    /// exactly how a 2.5s fill ended up confirming at 1.75s. This is a source scan because the
+    /// comparison lives inside a `body`, which a unit test cannot reach.
+    @Test func theCompletionGlyphAsksTheSharedTimingWhenToShowItsMark() throws {
+        let raw = try CadenceSourceScan.sourceFile("Cadence/macOS/Views/TaskCompletionAnimationViews.swift")
+        let code = CadenceSourceScan.codeOnly(raw)
+
+        // Non-vacuity: the read found the right file, and the stripper ran without shortening it.
+        #expect(code.contains("struct TaskCompletionProgressGlyph"), "the scan did not read the glyph's file")
+        #expect(code != raw, "nothing was stripped, so the scan is reading prose as code")
+        #expect(code.count == raw.count, "the stripper changed the length, so offsets no longer hold")
+
+        #expect(
+            CadenceSourceScan.matchCount(#"CadenceTaskCompletionTiming\.showsConfirmation\(at: clampedProgress\)"#, in: code) == 1,
+            "the glyph no longer asks the shared timing when to show its mark"
+        )
+
+        // And it decides nothing itself. The needle is a comparison against the progress value, so
+        // `0.75` on the spring's damping and the `0`/`1` of the clamp are left alone by design.
+        let comparison = #"clampedProgress\s*[<>]=?\s*[0-9.]+"#
+        #expect(CadenceSourceScan.matchCount(comparison, in: code) == 0, "the glyph spells its own threshold again")
+
+        // The needle really would see one. Without this the assertion above passes on a typo.
+        #expect(CadenceSourceScan.matchCount(comparison, in: "let shown = clampedProgress > 0.7") == 1)
+        #expect(CadenceSourceScan.matchCount(comparison, in: "let shown = somethingElse > 0.7") == 0)
     }
 }
 #endif

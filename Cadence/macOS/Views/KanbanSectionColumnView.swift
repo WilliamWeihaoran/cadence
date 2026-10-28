@@ -786,9 +786,9 @@ struct ListSectionKanbanColumn: View {
     /// two of the three routes into `toggleSectionCompletion` never open a popover at all (the
     /// header glyph and Cmd+Return over the hovered column), and the third *closes* it before the
     /// write happens. `SectionCompletionAnimationManager` writes a **reopen** synchronously and
-    /// defers a **completion** behind a 2.5-second countdown on a detached `Task`, so a completion
+    /// defers a **completion** behind a 1.2-second countdown on a detached `Task`, so a completion
     /// the store refuses is undone correctly — the column visibly stays active — and announced into
-    /// a popover that went away two and a half seconds earlier. A notice drawn on a surface that is
+    /// a popover that went away when the countdown started. A notice drawn on a surface that is
     /// gone is not a report.
     ///
     /// So the column header draws the same notice while the editor is closed. **One flag and one
@@ -935,7 +935,7 @@ struct ListSectionKanbanColumn: View {
     ///
     /// **Reopening is synchronous; completing is not.** `SectionCompletionAnimationManager` writes
     /// a reopen immediately, straight through `saveSection`, and defers a *completion* behind a
-    /// 2.5-second countdown drawn on the column itself. So a refused reopen is exactly the T-632
+    /// 1.2-second countdown drawn on the column itself. So a refused reopen is exactly the T-632
     /// defect — the column stayed completed with the editor gone and nothing on screen saying why —
     /// while a completion has nothing to have failed at yet by the time this returns. One flag
     /// covers both: it is set only when a commit was actually attempted and refused.

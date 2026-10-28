@@ -127,7 +127,7 @@ struct CadenceKanbanColumnLifecycleSurfaceTests {
     /// cannot be passing against flags this repo does not really write.
     ///
     /// The **reopen** direction is asserted as behaviour, because it is synchronous. The
-    /// **complete** direction is a 2.5s sweep on a detached `Task`, and a test that slept for it
+    /// **complete** direction is a deferred sweep on a detached `Task`, and a test that slept for it
     /// failed once here under the suite's own parallel load rather than because anything was
     /// wrong — so it is asserted as source text instead of as a race. What is asserted about it
     /// behaviourally is the part that does not need a clock: pressing the control puts the column
@@ -1134,10 +1134,10 @@ struct CadenceKanbanColumnLifecycleSurfaceTests {
     /// (T-646).**
     ///
     /// `SectionCompletionAnimationManager` writes a *reopen* synchronously and defers a
-    /// *completion* behind a 2.5-second sweep on a detached `Task`. `toggleCompletionFromEditor`
+    /// *completion* behind a 1.2-second sweep on a detached `Task`. `toggleCompletionFromEditor`
     /// closes the popover as soon as the synchronous half comes back clean — so when the deferred
     /// write is refused, `saveSection` sets `saveFailureNotice` into a surface that has been gone
-    /// for two and a half seconds. The undo is correct and the column visibly stays active; the
+    /// for the length of the sweep. The undo is correct and the column visibly stays active; the
     /// report reaches nobody. And two of the three routes into `toggleSectionCompletion` — the
     /// header glyph and Cmd+Return over the hovered column — never open a popover at all, so their
     /// refusals had nowhere to appear either.
@@ -1149,8 +1149,9 @@ struct CadenceKanbanColumnLifecycleSurfaceTests {
         let column = try strippingComments(sourceFile("Cadence/macOS/Views/KanbanSectionColumnView.swift"))
         let support = try strippingComments(sourceFile("Cadence/macOS/Views/KanbanColumnSupportViews.swift"))
 
-        // The deferral that makes this necessary, as a value rather than as prose.
-        #expect(SectionCompletionAnimationManager.animationDuration == 2.5)
+        // The deferral that makes this necessary, as a value rather than as prose. Since
+        // [[T-8202]] it is one number for both managers, stated in `CadenceTaskCompletionTiming`.
+        #expect(CadenceTaskCompletionTiming.animationDuration == 1.2)
         let toggle = try #require(CadenceSourceScan.functionBody(named: "toggleCompletionFromEditor", in: column))
         #expect(toggle.contains("showEditor = false"), "the editor no longer closes ahead of the sweep")
 
