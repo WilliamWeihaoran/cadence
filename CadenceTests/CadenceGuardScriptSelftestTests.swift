@@ -813,6 +813,13 @@ struct CadenceGuardScriptSelftestTests {
         // collapses "a prompt is standing" into "someone ran a UI test earlier", which is the
         // false positive that would refuse every macOS run on this Mac for six hours.
         "AUTOMATION-PROMPT-UNMATCHED",
+        // T-7711: on a nearly full disk, CacheDelete purges app container caches and RunningBoard
+        // TERMINATES com.haoranwei.Cadence first -- and the macOS unit-test host is that app. All
+        // xcodebuild prints is "Restarting after unexpected exit, crash, or test timeout" and a
+        // red on whichever test was running; no crash report, nothing in the .xcresult. Section
+        // 8d2 induces the name over a fixture log, keeps before/after/widget/exit-0 CONTROLS
+        // silent, and checks the postflight still makes the call.
+        "HOST-PURGED",
         // T-2071 / T-1920: the seven verdicts of `xcb.sh run-state`, and they are pinned as a SET
         // because the instrument's whole value is that they are distinguishable. Deleting any one
         // of them does not break the others -- it quietly collapses two states into one, which is

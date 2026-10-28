@@ -1625,6 +1625,49 @@ system_sleep_report() {  # $1 = run start (epoch s), $2 = run end (epoch s), $3 
   return 0
 }
 
+# --- a test host the system purged to free disk space (T-7711) ----------------
+# Measured 2026-10-28: four "Restarting after unexpected exit, crash, or test timeout" in two
+# `CadenceGuardScriptSelftestTests` runs, each killing whichever test was running, were all ONE
+# thing. At each kill the unified log has launchd's line for the host's pid: `exited with exit
+# reason (namespace: 15 code: 0xbaddd15c) - OS_REASON_RUNNINGBOARD | ... CacheDeleteAppContainerCaches
+# requesting termination assertion for com.haoranwei.Cadence`. The disk had 7-10 GB free; a purge
+# request (suhelperd, Podcasts, Finder; ~2.3 GB at urgency 4) makes `deleted` clear app container
+# caches, and RunningBoard TERMINATES the app first. The macOS unit-test host IS that app, so the
+# suite dies wherever it is; no crash report is written and the .xcresult does not say why.
+# This counts those lines whose timestamps fall inside [start, end] and names the COUNT. It matches
+# the app's bundle id followed by a space, so the widget extension's id is not counted for it. Never
+# gates; a green run is not read. `CADENCE_HOST_PURGE_LOG_FIXTURE` is the testing seam (a file in
+# the format `log show --style compact` prints); the live read is ~3 s over a five-minute window.
+HOST_PURGE_NEEDLE='CacheDeleteAppContainerCaches requesting termination assertion for com.haoranwei.Cadence '
+host_purge_log() {  # $1 = from, $2 = to, both local 'YYYY-MM-DD HH:MM:SS'
+  if [[ -n "${CADENCE_HOST_PURGE_LOG_FIXTURE:-}" ]]; then
+    cat -- "$CADENCE_HOST_PURGE_LOG_FIXTURE" 2>/dev/null
+    return 0
+  fi
+  /usr/bin/log show --style compact --start "$1" --end "$2" \
+    --predicate 'process == "launchd" AND eventMessage CONTAINS "CacheDeleteAppContainerCaches"' 2>/dev/null
+}
+host_purge_report() {  # $1 = run start (epoch s), $2 = run end (epoch s), $3 = xcodebuild's exit ("" when unknown)
+  local -i start=${1:-0} end=${2:-0}
+  local xstatus=${3:-}
+  [[ "$xstatus" == "0" ]] && return 0   # a green run has no red to explain
+  (( start > 0 && end >= start )) || return 0
+  local from to
+  from=$(date -r "$start" '+%Y-%m-%d %H:%M:%S') || return 0
+  to=$(date -r "$end" '+%Y-%m-%d %H:%M:%S') || return 0
+  # Compact stamps are local `YYYY-MM-DD HH:MM:SS.mmm`; the first 19 characters compare lexically.
+  local -i purged
+  purged=$(host_purge_log "$from" "$to" | awk -v from="$from" -v to="$to" -v needle="$HOST_PURGE_NEEDLE" '
+    /exited with exit reason/ && index($0, needle) { t = substr($0, 1, 19); if (t >= from && t <= to) n++ }
+    END { print n + 0 }')
+  (( purged > 0 )) || return 0
+  local free
+  free=$(df -g "${TMP_BASE:-/private/tmp/}" 2>/dev/null | awk 'NR == 2 { print $4 }')
+  say ""
+  say "!! HOST-PURGED (T-7711): the unified log shows $purged com.haoranwei.Cadence process$( (( purged == 1 )) || print -n es) terminated by CacheDelete (OS_REASON_RUNNINGBOARD, 0xbaddd15c) between this run's start ($from) and end ($to). The macOS test host IS that app, so a \"Restarting after unexpected exit, crash, or test timeout\" and the test it killed are the disk running short (${free:-?} GB free now), not evidence about the code. Free disk space and re-run."
+  return 0
+}
+
 
 # --- the iOS Simulator destination guard (T-1282) ----------------------------
 # The zero-test guard above refuses a run that executed nothing. This refuses a run that COMPILED
@@ -3593,6 +3636,50 @@ selftest_only_testing() {
     $( (( slrc == 0 )) && [[ -z "$slout" ]] && print 1 || print 0 ) "exit $slrc: $slout"
 
   say ""
+  say " 8d2. a test host CacheDelete terminated to free disk space is named, not read as a crash (T-7711)"
+  # Fixture lines in `log show --style compact` format, stamped from the same epochs as 8d. The
+  # launchd line is the real one's shape (2026-10-28). One fixture per bound and one per near miss,
+  # so ignoring either bound, the bundle id's end, or the `exited` half turns a specific check red.
+  hp_line() {  # $1 = epoch, $2 = bundle id as the explanation names it
+    print -r -- "$(date -r "$1" '+%Y-%m-%d %H:%M:%S').225 Df launchd[1:4abd75a] [gui/501/application.com.haoranwei.Cadence.362938469.362963674.47AED0B8 [3918]:] exited with exit reason (namespace: 15 code: 0xbaddd15c) - OS_REASON_RUNNINGBOARD | <RBSTerminateContext| code:0xBADDD15C explanation:CacheDeleteAppContainerCaches requesting termination assertion for $2 reportType:None maxTerminationResistance:N"
+  }
+  {
+    print -r -- "Timestamp               Ty Process[PID:TID]"
+    hp_line $(( s0 - 600 )) com.haoranwei.Cadence
+    hp_line $(( s0 + 600 )) com.haoranwei.Cadence
+    print -r -- "$(date -r $(( s0 + 650 )) '+%Y-%m-%d %H:%M:%S').001 Df launchd[1:4abd75a] [gui/501/x [3918]:] CacheDeleteAppContainerCaches requesting termination assertion for com.haoranwei.Cadence (not an exit line)"
+    hp_line $(( s0 + 1800 )) com.haoranwei.Cadence
+    hp_line $(( s0 + 3000 )) com.haoranwei.Cadence
+    hp_line $(( s1 + 600 )) com.haoranwei.Cadence
+  } > "$ws/hp-three-inside.log"
+  hp_line $(( s0 - 60 )) com.haoranwei.Cadence > "$ws/hp-before.log"
+  hp_line $(( s1 + 60 )) com.haoranwei.Cadence > "$ws/hp-after.log"
+  hp_line $(( s0 + 60 )) com.haoranwei.Cadence.CadenceWidgets > "$ws/hp-widget.log"
+  local hpout hprc
+  run_purge() { local f=$1; shift; hpout=$(CADENCE_HOST_PURGE_LOG_FIXTURE="$f" zsh "$here" check-host-purge "$@" 2>&1); hprc=$?; }
+  run_purge "$ws/hp-three-inside.log" $s0 $s1 65
+  check "three purge exits inside the window (two outside, one non-exit line) say HOST-PURGED with a count of 3" \
+    $( [[ "$hpout" == *"!! HOST-PURGED (T-7711): the unified log shows 3 com.haoranwei.Cadence processes terminated by CacheDelete"* ]] && print 1 || print 0 ) "exit $hprc: $hpout"
+  check "...and never gates (exit 0)" $( (( hprc == 0 )) && print 1 || print 0 ) "exit $hprc: $hpout"
+  run_purge "$ws/hp-before.log" $s0 $s1 65
+  check "CONTROL: a purge exit only BEFORE the run's start is silent" \
+    $( (( hprc == 0 )) && [[ -z "$hpout" ]] && print 1 || print 0 ) "exit $hprc: $hpout"
+  run_purge "$ws/hp-after.log" $s0 $s1 65
+  check "CONTROL: a purge exit only AFTER the run's end is silent" \
+    $( (( hprc == 0 )) && [[ -z "$hpout" ]] && print 1 || print 0 ) "exit $hprc: $hpout"
+  run_purge "$ws/hp-widget.log" $s0 $s1 65
+  check "CONTROL: the widget extension's purge exit is not counted as the host's" \
+    $( (( hprc == 0 )) && [[ -z "$hpout" ]] && print 1 || print 0 ) "exit $hprc: $hpout"
+  run_purge "$ws/hp-three-inside.log" $s0 $s1 0
+  check "CONTROL: purge exits under exit 0 (nothing red to explain) are silent" \
+    $( (( hprc == 0 )) && [[ -z "$hpout" ]] && print 1 || print 0 ) "exit $hprc: $hpout"
+  # The reading is worthless unless a real run asks it, and nothing above would notice the call
+  # going: so the postflight's call, with the primary run's own bounds and exit, is read from here.
+  check "the postflight asks it with the primary run's start, end and exit" \
+    $( grep -qxF '  host_purge_report "$RUN_START_EPOCH" "$RUN_END_EPOCH" "$XCODEBUILD_STATUS"' "$here" && print 1 || print 0 ) \
+    "no \`host_purge_report \"\$RUN_START_EPOCH\" \"\$RUN_END_EPOCH\" \"\$XCODEBUILD_STATUS\"\` line in $here"
+
+  say ""
   say " 8e. an unanswered \"Enable UI Automation\" prompt is named, and the probe cannot be dragged to zero by its own noise (T-2070)"
   # The live condition cannot be induced (it needs this Mac's authentication stack to stop
   # answering), so these drive `check-automation` through CADENCE_AUTOMATION_LOG_FIXTURE in the
@@ -5087,6 +5174,17 @@ if [[ "${1:-}" == "check-sleep" ]]; then
   exit 0
 fi
 
+# The purged-host report on its own (T-7711): what `selftest` drives (with
+# CADENCE_HOST_PURGE_LOG_FIXTURE), and how anyone holding a red run's start/end asks whether the
+# system terminated the test host to free disk space in between. Never gates; exits 0.
+if [[ "${1:-}" == "check-host-purge" ]]; then
+  if [[ "${2:-}" != <-> || "${3:-}" != <-> ]]; then
+    say "usage: ./scripts/xcb.sh check-host-purge <start-epoch> <end-epoch> [xcodebuild-exit]"; exit 2
+  fi
+  host_purge_report "$2" "$3" "${4:-}"
+  exit 0
+fi
+
 # The resolver on its own, the way `check-test-log` exposes the zero-test guard: it is what
 # `selftest` drives, and what a caller can point at a filter it is unsure of without paying for a
 # build. Accepts the value with or without the `-only-testing:` prefix.
@@ -5689,6 +5787,8 @@ if (( IS_TEST_RUN )); then
   # be the only explanation offered for it (T-1992).
   host_launch_refusal_report "$LOG" "$XCODEBUILD_STATUS"
   screen_lock_report "$RUN_START_EPOCH" "${run_args[@]}"
+  # A host the system terminated to free disk space (T-7711): one ~3 s log read, red runs only.
+  host_purge_report "$RUN_START_EPOCH" "$RUN_END_EPOCH" "$XCODEBUILD_STATUS"
 fi
 # Outside the test-run branch: a `build` dies the same way (T-2046). Last of the primary-run
 # reports, so it sits below the VACUOUS-COUNT and 0-tests readings it explains.
