@@ -22,7 +22,7 @@ diverges, not an outage.
 | tree under test | `actions/checkout` of the pushed tip of `main` | a worktree or `git archive` at *your* base |
 | test scope | all of `CadenceTests`, serial, every push | usually `-only-testing:` a few suites |
 | UI tests | never (T-531) | local only |
-| iOS simulator tests | the three `deliberatelyIOSOnlyTestFiles` suites, 22 tests, on an iPhone 17 / iOS 26.5 simulator under the newest image Xcode with a runtime (26.6) -- [[T-6821]] | any suite, on `Cadence-iPhone15` |
+| iOS simulator tests | the three `deliberatelyIOSOnlyTestFiles` suites, 22 tests, on an iPhone 17 / iOS 26.5 simulator under the newest image Xcode that lists one (picked each run: 26.6 in [[T-6821]]'s runs, 26.4.1 in run 40650042891) -- [[T-6821]] | any suite, on `Cadence-iPhone15` |
 
 Two details people get wrong. The image carries `Xcode_26.0.1` *through* `Xcode_26.6` and defaults
 to 26.6; `.github/scripts/assert-toolchain.sh` pins the exact minor **26.0** since [[T-4742]] (it
@@ -60,8 +60,10 @@ version from ["23C54", "23E254a", "23F77"] available to use with iphonesimulator
 23A339* -- 26.0.1's SDK has no runtime on this image (26.2, 26.4.1, 26.5 only). So `ios-build` now
 runs T-6821's picker in its own step, `Pick the iOS Xcode`, BEFORE its first compile, and exports
 `DEVELOPER_DIR`/`XCODEBUILD` through `$GITHUB_ENV`: both of its compiles run under the newest image
-Xcode with an eligible iPhone runtime (26.6 today), which is what that job compiled under before
-T-7661 anyway. `assert-toolchain.sh` is unchanged and still runs first in that job, so an image
+Xcode with an eligible iPhone runtime -- picked per run, not fixed: [[T-6821]]'s runs got 26.6, but
+first green run 40650042891 found 26.6 and 26.5 listing no eligible iPhone and took 26.4.1 (iPhone 17,
+iOS 26.5). Before T-7661 that job compiled under `/Applications/Xcode.app` (26.6), so either way it was
+never 26.0.1. `assert-toolchain.sh` is unchanged and still runs first in that job, so an image
 without 26.0.x is still red there; the macOS jobs (`macos-tests`, `mcp-server`) stay on 26.0.1. The
 consequence to keep in mind: **shared Swift is gated by 26.0.1 on the macOS leg, but `#if os(iOS)`
 code is compiled only by the newer Xcode.** The alternative that keeps iOS on the pin,
