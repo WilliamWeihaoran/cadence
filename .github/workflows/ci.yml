@@ -532,6 +532,34 @@ jobs:
       - name: Gates
         if: always()
         run: ./.github/scripts/check-log.sh "$RUNNER_TEMP/cadence-xcb-ci-ios.log" build
+      # T-6541 / T-6821: RUN the CadenceTests suites that are whole-file `#if os(iOS)` on purpose.
+      # On the macOS leg they compile to nothing and the step above only compiles them, so without
+      # this step a red in any of them reaches no gate. The list is exactly
+      # `CadenceTestTargetHygieneTests.deliberatelyIOSOnlyTestFiles`, and
+      # `theIOSOnlySuitesAreTheOnesCIRunsOnASimulator` holds the two equal both ways.
+      #
+      # PROBE (T-6821, branch only): which image Xcode has a usable iOS simulator runtime.
+      - name: Run the deliberately iOS-only CadenceTests suites on a simulator (T-6541, T-6821)
+        run: |
+          export TMPDIR="$RUNNER_TEMP/"
+          step_start=$SECONDS
+          echo "== probe: Xcode.app =="; ls -ld /Applications/Xcode.app || true
+          echo "xcb.sh default binary says: $(/Applications/Xcode.app/Contents/Developer/usr/bin/xcodebuild -version 2>&1 | head -1)"
+          echo "toolchains named in the ci-ios build log:"
+          grep -o '/Applications/Xcode[^/ ]*\.app' "$RUNNER_TEMP/cadence-xcb-ci-ios.log" | sort | uniq -c || true
+          echo "== probe: simctl runtimes =="; xcrun simctl list runtimes 2>&1 || true
+          deploy=$(grep -m1 -o 'IPHONEOS_DEPLOYMENT_TARGET = [0-9.]*' Cadence.xcodeproj/project.pbxproj | awk '{print $3}')
+          echo "IPHONEOS_DEPLOYMENT_TARGET=$deploy"
+          for app in /Applications/Xcode_26.*.app; do
+            v=$(DEVELOPER_DIR="$app/Contents/Developer" "$app/Contents/Developer/usr/bin/xcodebuild" -version 2>/dev/null | head -1 | awk '{print $2}')
+            t0=$SECONDS
+            DEVELOPER_DIR="$app/Contents/Developer" "$app/Contents/Developer/usr/bin/xcodebuild" -project Cadence.xcodeproj -scheme Cadence \
+              -showdestinations > "$RUNNER_TEMP/dest-$v.txt" 2>&1 || true
+            n=$(sed '/Ineligible destinations/,$d' "$RUNNER_TEMP/dest-$v.txt" | grep -c 'platform:iOS Simulator, arch' || true)
+            echo "  $app ($v): eligible iOS Simulator destinations=$n ($(( SECONDS - t0 ))s)"
+            grep -m3 'iOS Simulator' "$RUNNER_TEMP/dest-$v.txt" | sed 's/^/      /' || true
+          done
+          echo "PROBE-SECONDS=$(( SECONDS - step_start ))"
 
   # ---------------------------------------------------------------------------
   # T-1641: the one lock property that NOTHING has ever run on a schedule.
