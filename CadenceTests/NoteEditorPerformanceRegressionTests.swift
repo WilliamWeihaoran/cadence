@@ -15,7 +15,7 @@ struct NoteEditorPerformanceRegressionTests {
     @Test func taskNoteEditorsDoNotPersistEveryEditorChange() throws {
         let taskInspectorSource = try sourceFile("Cadence/macOS/Views/TaskInspectorContentSupportViews.swift")
         let focusSource = try sourceFile("Cadence/macOS/Views/FocusNotesPanel.swift")
-        let timingSource = try sourceFile("Cadence/macOS/Views/MarkdownEditorSyncTiming.swift")
+        let timingSource = try sourceFile("Cadence/Shared/MarkdownEditorSyncTiming.swift")
 
         #expect(taskInspectorSource.contains("text: taskNotesBinding"))
         #expect(focusSource.contains("text: taskNotesBinding"))

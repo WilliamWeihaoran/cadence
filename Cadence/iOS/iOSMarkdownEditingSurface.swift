@@ -846,7 +846,17 @@ struct iOSMarkdownEditingSurface: View {
     private var pendingCommit: iOSMarkdownEditorFlush { flush ?? ownFlush }
 
     private func scheduleCommit(_ nextText: String) {
-        pendingCommit.schedule(after: 2.5) {
+        // [[T-7873]]: the ceiling, so unbroken typing still reaches the binding every 10 s and a
+        // crash while the app is active loses at most that window. [[T-7891]]: never while the caret
+        // is in a `#tag` being typed, or a note host's tag sync would mint the half-word.
+        pendingCommit.schedule(
+            after: MarkdownEditorSyncTiming.iOSContentCommitDelay,
+            ceiling: MarkdownEditorSyncTiming.iOSContentCommitMaxWait,
+            deferringCeiling: MarkdownInlineTagCaret.isTypingInlineTag(
+                in: nextText,
+                caret: NSMaxRange(selectedRange)
+            )
+        ) {
             if text != nextText {
                 text = nextText
             }
@@ -866,7 +876,8 @@ struct iOSMarkdownEditingSurface: View {
 
 /// **[[T-5170]] — the typing `iOSMarkdownEditingSurface` has not yet written to its host.**
 ///
-/// The surface writes its `text` binding 2.5 s after the last keystroke, on focus loss or on
+/// The surface writes its `text` binding 2.5 s after the last keystroke — and, [[T-7873]], no
+/// later than 10 s after the first keystroke it is still holding — on focus loss or on
 /// disappear — some hosts' bindings save the store, so per keystroke is too often. But a SwiftUI
 /// button does not take first responder from the `UITextView`, so a Save or Done tapped inside that
 /// window read the binding without the sentence just typed: the task and event sheets saved the
@@ -885,17 +896,44 @@ final class iOSMarkdownEditorFlush {
     private(set) var hasPendingEdit = false
     @ObservationIgnored private var pendingWrite: (() -> Void)?
     @ObservationIgnored private var pendingWorkItem: DispatchWorkItem?
+    /// [[T-7873]]: open from the first held keystroke until the held write runs or is dropped.
+    @ObservationIgnored private var window = MarkdownEditorCommitWindow()
+    @ObservationIgnored private let now: () -> Date
+
+    /// `now` is the clock the ceiling is measured on; tests inject one.
+    init(now: @escaping () -> Date = Date.init) {
+        self.now = now
+    }
+
+    /// The window's start, for tests: when the oldest held keystroke was typed.
+    var heldSince: Date? { window.start }
 
     /// Holds `write` to run after `delay`, replacing any write already held.
-    func schedule(after delay: TimeInterval, _ write: @escaping () -> Void) {
+    ///
+    /// With a `ceiling` ([[T-7873]]), `delay` is an idle delay that cannot push the write later
+    /// than `ceiling` after the FIRST keystroke still held, so typing that never pauses is written
+    /// at least once per ceiling. Without one it is a pure debounce. `deferringCeiling` keeps the
+    /// window but arms only `delay`, for a keystroke inside a `#tag` still being typed ([[T-7891]]).
+    /// Returns the delay it armed.
+    @discardableResult
+    func schedule(
+        after delay: TimeInterval,
+        ceiling: TimeInterval? = nil,
+        deferringCeiling: Bool = false,
+        _ write: @escaping () -> Void
+    ) -> TimeInterval {
         pendingWorkItem?.cancel()
         pendingWrite = write
+        let fireDelay = ceiling.map {
+            window.delay(forEditAt: now(), idleDelay: delay, maxWait: $0, deferringCeiling: deferringCeiling)
+        } ?? delay
         let workItem = DispatchWorkItem { [weak self] in
             MainActor.assumeIsolated { self?.flush() }
         }
         pendingWorkItem = workItem
         if !hasPendingEdit { hasPendingEdit = true }
-        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: workItem)
+        DispatchQueue.main.asyncAfter(deadline: .now() + fireDelay, execute: workItem)
+        return fireDelay
     }
 
     /// Runs the held write now, once. Nothing held, nothing runs.
@@ -911,6 +949,7 @@ final class iOSMarkdownEditorFlush {
         pendingWorkItem?.cancel()
         pendingWorkItem = nil
         pendingWrite = nil
+        window.close()
         if hasPendingEdit { hasPendingEdit = false }
     }
 }

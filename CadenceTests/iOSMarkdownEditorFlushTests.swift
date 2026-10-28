@@ -66,6 +66,31 @@ struct iOSMarkdownEditorFlushTests {
         #expect(binding.writes == ["Buy milk"])
     }
 
+    /// [[T-7873]]: the handle's ceiling, on an injected clock. Unbroken typing gets ever shorter
+    /// delays measured from the first held keystroke; the write running reopens the window.
+    @Test func theCeilingIsMeasuredFromTheFirstHeldKeystrokeOnTheInjectedClock() {
+        var clock = Date(timeIntervalSinceReferenceDate: 1_000)
+        let first = clock
+        let flush = iOSMarkdownEditorFlush(now: { clock })
+        let binding = Binding()
+        #expect(flush.schedule(after: 2.5, ceiling: 10) { binding.writes.append("a") } == 2.5)
+        #expect(flush.heldSince == first)
+        clock = first.addingTimeInterval(9)
+        #expect(flush.schedule(after: 2.5, ceiling: 10) { binding.writes.append("ab") } == 1)
+        #expect(flush.heldSince == first, "a re-armed write keeps the window")
+        flush.flush()
+        #expect(binding.writes == ["ab"])
+        #expect(flush.heldSince == nil, "the write closes the window")
+        clock = first.addingTimeInterval(9.5)
+        #expect(flush.schedule(after: 2.5, ceiling: 10) { binding.writes.append("abc") } == 2.5)
+        flush.cancel()
+        #expect(flush.heldSince == nil, "dropping the write closes the window too")
+        // Without a ceiling it is still the pure debounce.
+        #expect(flush.schedule(after: 2.5) { binding.writes.append("x") } == 2.5)
+        #expect(flush.heldSince == nil)
+        flush.cancel()
+    }
+
     @Test func aCancelledWriteNeverRunsAndAFlushWithNothingHeldWritesNothing() {
         let flush = iOSMarkdownEditorFlush()
         let binding = Binding()

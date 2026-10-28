@@ -18,7 +18,7 @@ struct iOSMarkdownEditorFlushWiringTests {
     @Test func theSurfaceHoldsItsDebouncedWriteInTheFlushHandle() throws {
         let source = try CadenceCommitSurfaceScan.scanned("Cadence/iOS/iOSMarkdownEditingSurface.swift")
         let schedule = try #require(CadenceSourceScan.functionBody(named: "scheduleCommit", in: source))
-        #expect(schedule.contains("pendingCommit.schedule(after:"))
+        #expect(schedule.contains("pendingCommit.schedule("), "[[T-7873]]: its arguments are pinned in iOSMarkdownEditorCommitCeilingTests")
         #expect(!schedule.contains("DispatchQueue"), "a private timer is one no host can flush")
         let immediate = try #require(CadenceSourceScan.functionBody(named: "commitDraftImmediately", in: source))
         #expect(immediate.contains("pendingCommit.cancel()"))
