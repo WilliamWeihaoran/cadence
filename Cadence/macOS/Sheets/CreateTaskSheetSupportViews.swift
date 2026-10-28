@@ -164,6 +164,17 @@ struct TildeContainerPickerRow: View {
     }
 }
 
+/// The month a date chip's grid opens on: the chip's own date when it has one, otherwise today's.
+///
+/// **T-8105.** `TaskDateChip` and the inspector's `TaskInspectorDateControl` each computed this in
+/// `onAppear` only, so once the date moved to another month the grid kept opening on the old one
+/// with no day highlighted. Both now ask this on appear *and* every time the panel opens.
+enum TaskDateChipMonthSupport {
+    static func viewMonth(isOn: Bool, date: Date, now: Date = Date(), calendar: Calendar = .current) -> Date {
+        monthStart(for: isOn ? date : now, calendar: calendar)
+    }
+}
+
 struct TaskDateChip: View {
     let label: String
     let icon: String
@@ -227,10 +238,11 @@ struct TaskDateChip: View {
             .onHover { isHovered = $0 }
             .popover(isPresented: $showPicker, arrowEdge: .top) { pickerPopover }
         }
-        .onAppear {
-            var comps = cal.dateComponents([.year, .month], from: isOn ? date : Date())
-            comps.day = 1
-            viewMonth = cal.date(from: comps) ?? Date()
+        .onAppear { viewMonth = TaskDateChipMonthSupport.viewMonth(isOn: isOn, date: date) }
+        // T-8105: the pills, Cmd+T / Cmd+D and the Cmd+Shift+= nudge all move `date` without the
+        // grid, so re-anchor every time the panel opens rather than only when the chip appeared.
+        .onChange(of: showPicker) {
+            if showPicker { viewMonth = TaskDateChipMonthSupport.viewMonth(isOn: isOn, date: date) }
         }
     }
 

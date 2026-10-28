@@ -505,10 +505,10 @@ struct TaskInspectorDateControl: View {
             pickerPopover
                 .taskInspectorChildPanelDismissesOnEscape { showPicker = false }
         }
-        .onAppear {
-            var comps = cal.dateComponents([.year, .month], from: isOn ? date : Date())
-            comps.day = 1
-            viewMonth = cal.date(from: comps) ?? Date()
+        .onAppear { viewMonth = TaskDateChipMonthSupport.viewMonth(isOn: isOn, date: date) }
+        // T-8105: re-anchor on every open; the date can move months while the field stays mounted.
+        .onChange(of: showPicker) {
+            if showPicker { viewMonth = TaskDateChipMonthSupport.viewMonth(isOn: isOn, date: date) }
         }
     }
 
