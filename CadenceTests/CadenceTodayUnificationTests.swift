@@ -1647,8 +1647,8 @@ struct CadenceTodayListGroupingTests {
     /// The suppression is an **equality** (`CadenceBoardCardMetadata.repeatsSurfaceDay`), not a
     /// surface flag, and the four cases below are why that distinction is load-bearing rather than
     /// stylistic: with the Overdue section gone, a task planned for a day already past has nothing
-    /// but its own red pill to say so, and `MacTaskRowStyle.todayGrouped` — the blunt "this section
-    /// drops the sun" alternative already in the file — would have taken it.
+    /// but its own red pill to say so, and the `.todayGrouped` row style (deleted in T-7984) — the blunt "this section
+    /// drops the sun" alternative the file once had — would have taken it.
     @Test func todaysRowsDropTheDoDateChipOnlyWhenItWouldSayToday() {
         let todayKey = "2026-09-05"
 

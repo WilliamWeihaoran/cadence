@@ -22,7 +22,7 @@ struct MacTaskRow: View {
     /// **An equality, not a surface flag**, which is what makes it safe here: a task do-dated
     /// *yesterday* on the Today page does not match, so it keeps its pill and keeps it red. That
     /// row's lateness is the only thing stating it once the Overdue section is gone, so a blunter
-    /// "Today hides the sun" — which is what the deleted `MacTaskRowStyle.todayGrouped` gave
+    /// "Today hides the sun" — which is what the deleted `.todayGrouped` row style gave
     /// (T-7984) — would have hidden it. See `CadenceBoardCardMetadata.repeatsSurfaceDay`, which argues the same point
     /// for the boards.
     var dayAlreadyStatedBySurface: String? = nil
