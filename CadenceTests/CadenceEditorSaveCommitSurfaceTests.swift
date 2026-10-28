@@ -1372,7 +1372,7 @@ struct CadenceEditorSaveCommitSurfaceTests {
         }
 
         // No editor rolls the app's single context back to undo an edit. See
-        // `rollbackUndoesADeleteButNotAnEdit`.
+        // `rollbackUndoesAnEditInTheStoreAndTheSingleContextObjectionStillStands`.
         for path in [
             "Cadence/iOS/iOSSettingsContextSection.swift",
             "Cadence/iOS/iOSListEditorViews.swift",

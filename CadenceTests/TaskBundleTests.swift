@@ -321,8 +321,8 @@ struct TaskBundleTests {
     /// required a title, so two taps on an empty slot made a block the user had not named. The
     /// `.bundle` arm is gone ([[T-3170]]); what is left is that both remaining arms ask.
     ///
-    /// Scoped to the `canCreate` body rather than the file: `showsTimedControls` below has its own
-    /// `case .task: return hasTime`, which is correct and must stay outside this read.
+    /// Scoped to the `canCreate` body rather than the file: the two writes in `create()` switch on
+    /// the same `draft.kind`, which is correct and must stay outside this read.
     @Test func theIOSQuickCreateSheetAsksForATitleForEveryKindItCreates() throws {
         let source = try CadenceCommitSurfaceScan.scanned("Cadence/iOS/iOSCalendarQuickCreateSheet.swift")
         let anchor = try #require(source.range(of: "var canCreate: Bool"))

@@ -398,7 +398,7 @@ struct CadenceRowReorderSliceSpanTests {
     /// **The answer to the question this file's measurements raised**, asked of the repository
     /// owner and answered verbatim: *"Reorder within its own list only."*
     ///
-    /// The same shape as `atodayDropMovesARowOnTheListsTasksTabThatTodayNeverShowed` above, one
+    /// The same shape as `atodayDropLeavesTheRowsItsOwnGroupNeverHeld` above, one
     /// list further out: All Tasks with the grouping chip on **By Date**, so the Do Today section
     /// is drawn from two lists at once and a drag inside it names a row in each. Under the
     /// cross-list renumber this section was renumbered whole, so the other list's row took a new
@@ -691,7 +691,7 @@ struct CadenceRowReorderSliceSpanTests {
 
     /// The other four surfaces are one container each, so the rule above is the identity on them —
     /// which is what lets it live in one place. Measured here on the smallest such surface rather
-    /// than asserted: the same two-row drop as `therenumberWritesNoRowOutsideTheSliceItWasHanded`,
+    /// than asserted: the same two-row drop as `therenumberSpansTheWholeListAndStopsAtItsEdge`,
     /// read through `CadenceRowReorderSpan` directly.
     @Test func thespanRuleIsTheIdentityOnASliceThatIsAlreadyOneList() throws {
         let modelContext = ModelContext(try container())

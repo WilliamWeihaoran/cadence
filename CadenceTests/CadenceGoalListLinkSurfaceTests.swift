@@ -175,7 +175,8 @@ struct CadenceGoalListLinkSurfaceTests {
     /// `GoalContributionResolver` walks `goal.listLinks` **raw** — once for the tasks the goal
     /// counts and once for the "N lists" chip — so a link the store is about to drop moved the
     /// goal's *progress bar*, which is the part of this no inspector-side filter can protect. It
-    /// is also what makes it safe for `detachGoalListLink` to stop severing the link's references
+    /// is also what made it safe for `detachGoalListLink` (retired with [[T-2079]]) to stop
+    /// severing the link's references
     /// before deleting it: the reading that matters no longer depends on the inverse array having
     /// caught up, only on the object's own `isDeleted`.
     ///

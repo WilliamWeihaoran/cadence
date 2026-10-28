@@ -64,7 +64,8 @@ struct CadenceIconOnlyButtonAccessibilityTests {
     /// - **T-674 — icon-only helpers and chrome, 10 sites in 9 files. CLOSED.** Steppers, timeline
     ///   navigation, and four private `iconButton`-shaped helpers that took a symbol and no name.
     ///   Four helpers (`stepButton`, `timelineNavButton`, `actionButton`, `focusRowIconButton`) and
-    ///   `ListEditorIconCell` now take the name as a `let` with no default — T-611's compile gate,
+    ///   `ListEditorIconCell` took the name as a `let` with no default (three of the four helpers
+    ///   have since gone, with [[T-3170]] and [[T-5002]]) — T-611's compile gate,
     ///   not a label at each call site, so the next caller fails to build rather than fails a
     ///   sweep. `TimelineZoomControl`'s two inline buttons and the picker's back chevron carry
     ///   `.cadenceControlLabel(…)` directly, having no shared helper to carry it for them.
@@ -451,7 +452,8 @@ struct CadenceIconOnlyButtonAccessibilityTests {
     ///
     /// It errs towards silence in three places, deliberately — a rule that over-fires gets a
     /// ledger entry added instead of a label. A label attached further down the chain than
-    /// `chainWindow`, a label body that opens with anything other than `Image(`, and a `Button`
+    /// the 1,200 characters `tail` reads, a label body that opens with anything other than
+    /// `Image(`, and a `Button`
     /// with an explicit title argument are all read as named.
     static func unnamedIconButtonCount(in source: String) -> Int {
         guard source.contains("Button") else { return 0 }

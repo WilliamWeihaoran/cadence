@@ -210,7 +210,7 @@ struct CadenceBundleInspectorHostTests {
     // per-file count cannot see. The second pinned that `.iOSBundleInspectorHost()` was applied to
     // the `Group` rather than inside one of its two shell branches. [[T-3170]] deleted the panel
     // and emptied the host, so there is no branch to be in and no selection to place; the
-    // `iOSRootView` residue is held instead by `theBundleHostIsANoOpStubHeldOpenByOneLeasedCallSite`
+    // `iOSRootView` residue is gone too, pinned by `theBlockPanelsLastLineIsGoneFromTheTreeEntirely`
     // above. The equivalent placement pin for the surviving subject is
     // `CadenceTaskInspectorHostTests`'.
 

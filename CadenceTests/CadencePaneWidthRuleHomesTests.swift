@@ -207,7 +207,7 @@ struct CadencePaneWidthRuleHomesTests {
     ///
     /// One occurrence each, in live code. The comment in `CadenceTodayLayoutSupport.swift` that
     /// quotes its own sum is stripped before counting — which is also what
-    /// `theCommentStrippingIsActuallyStripping` uses to prove the stripper runs.
+    /// `theCommentStrippingIsActuallyStrippingInPaneWidthRuleHomes` uses to prove the stripper runs.
     @Test func everyRegisteredFloorIsStillSpelledAsASumRatherThanTyped() throws {
         // An array rather than a dictionary: the house file states two of them now, and a map
         // keyed on the path can only hold one sum per file.

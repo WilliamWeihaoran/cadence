@@ -296,10 +296,10 @@ struct CadenceSaveCommitDisciplineTests {
     /// `Cadence/` at `454e778`: **ten** `try?` call sites reached such a helper.
     ///
     /// **"Any callee that commits" is the wrong widening**, which is what T-1299 was filed to say.
-    /// CadenceTaskMutationSupport.moveBundle and `addTask` are swallowed on purpose and are
-    /// correct: neither changes existence, so a refusal leaves nothing but field edits pending —
-    /// the case the rule has always allowed. A half that cried wolf on them would be suppressed,
-    /// and then it would guard nothing.
+    /// CadenceTaskMutationSupport.moveBundle and `addTask` were swallowed on purpose and were
+    /// correct (both went with [[T-3170]]): neither changed existence, so a refusal left nothing
+    /// but field edits pending — the case the rule has always allowed. A half that cried wolf on
+    /// them would have been suppressed, and then it would have guarded nothing.
     ///
     /// **The distinction that separates them is decidable and this is it:** a `try?` over a callee
     /// is safe when the callee either changes no existence at all, or makes every commit it
@@ -2082,7 +2082,8 @@ enum CadenceSaveCommitRule {
         // nothing — correctly. Its `createTask` sibling was deleted outright by [[T-759]], having
         // had no production caller left. `SchedulePanel.body`, `CalDayColumn.body` and
         // `TimelineDayCanvas.body` each committed nothing either. All three own their unit of work
-        // now, through `SchedulingActions.insertTask` / `insertBundle`, and each names its refusal
+        // now, through `SchedulingActions.insertTask` (its `insertBundle` sibling left with
+        // [[T-3170]]), and each names its refusal
         // in an alert. **The siblings stayed** rather than growing a commit: the index vouches for
         // a name only when every overload of it commits, so a commit added to one `createBundle`
         // would have silenced nothing while the other still inserted and returned. Pinned by
@@ -2091,8 +2092,9 @@ enum CadenceSaveCommitRule {
         // that used to sit here. Both controls now reach `FocusManager.commitElapsed`/`endSession`/
         // `startFocus`, which commit for real (they used to write the pending bank and stop, with
         // no `save()` of any kind — the reason this half, rather than half 1 or 2, was the one that
-        // could see them at all), and `FocusSessionSupport.logSession`/`logBundleSession` commit
-        // their own writes the same way. `FocusView.reportingFocusFailure` names a refusal on
+        // could see them at all), and `FocusSessionSupport.logSession` commits
+        // its own writes the same way (its Block sibling left with [[T-3170]]).
+        // `FocusView.reportingFocusFailure` names a refusal on
         // `TaskCompletionAnimationManager.settleFailed`, the alert `macOSRootView` already shows.
         // **Not a defect, and the one entry here that is a limit of the scan rather than a
         // finding.** `CadenceWriteService.resolvedTags` reaches for the service's own stored

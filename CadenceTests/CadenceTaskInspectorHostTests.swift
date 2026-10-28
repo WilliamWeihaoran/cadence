@@ -15,7 +15,7 @@ import Testing
 /// decision — what a host does with a selection the page can no longer see — is a value type in
 /// `Shared/` and is tested directly. The *ownership*, which is the actual fix, cannot be: all of
 /// `Cadence/iOS/` is inside `#if os(iOS)` and this target builds for macOS. So it is pinned as
-/// source text with exact per-file counts, and `theSourceScanIsNotVacuous` stops a broken reader
+/// source text with exact per-file counts, and `theSourceScanIsNotVacuousInTaskInspectorHost` stops a broken reader
 /// making every zero pass silently.
 @MainActor
 struct CadenceTaskInspectorHostTests {
@@ -492,7 +492,7 @@ private func expectOccurrences(
 }
 
 /// Occurrence count for a regular expression. Returns `-1` on a malformed pattern so a typo reads
-/// as a failure rather than as zero matches — `thePatternHelperMatchesWhatItLooksLike` is the
+/// as a failure rather than as zero matches — `thePatternHelperAndTheSlicerBothDoWhatTheyLookLike` is the
 /// self-check the guide asks for.
 private func matches(_ pattern: String, in text: String) -> Int {
     guard let regex = try? NSRegularExpression(pattern: pattern) else { return -1 }

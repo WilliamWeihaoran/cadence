@@ -1605,15 +1605,25 @@ enum CadenceCommentSymbolClaim {
         #expect(found == Self.unqualifiedLedger)
     }
 
-    /// The roots the bare half reads ([[T-7620]]): the shipping targets. A product comment is the
-    /// one a reader takes as a description of the app; the test roots are the residual recorded
-    /// on [[T-7620]], not swept here.
-    private static let bareSweepRoots = ["Cadence/", "CadenceWidgets/", "CadenceMCPServer/"]
+    /// The roots the bare half reads: the shipping targets since [[T-7620]], and the two test
+    /// targets since [[T-7641]]. A test comment is read as a description of the tree as much as a
+    /// product one is -- "pinned by X below", "the same shape as Y above" -- and when X is renamed
+    /// the pointer goes stale exactly the way a product claim does. Of the 343 test-root lines
+    /// first measured, 25 were that alone and left the ledger when their sentences were fixed.
+    private static let bareSweepRoots = [
+        "Cadence/", "CadenceWidgets/", "CadenceMCPServer/", "CadenceTests/", "CadenceUITests/"
+    ]
 
-    /// **Triaged ([[T-7620]]).** Every line is a backticked camelCase name in a product comment
-    /// that no code in the tree spells. 227 were grandfathered untriaged when this half landed on
-    /// 2026-10-27; `cmtriage2238` read each one in place and split them the way the qualified
-    /// ledger above is split. **The count may only fall.** A new finding is a comment to fix or a
+    /// The two test roots, which the needle group below is confined to.
+    private static let bareTestRoots = ["CadenceTests/", "CadenceUITests/"]
+
+    /// **Triaged ([[T-7620]], [[T-7641]]).** Every line is a backticked camelCase name in a comment
+    /// that no code in the tree spells. 227 product lines were grandfathered untriaged when this
+    /// half landed on 2026-10-27; `cmtriage2238` read each one in place and split them the way the
+    /// qualified ledger above is split. The test roots joined on 2026-10-28 with 343 more, read the
+    /// same way by `cmtests0408`: 34 stale sentences fixed in place (renamed tests, mostly the
+    /// suite-suffixed self-checks; 25 lines left the ledger), 232 memorials, 30 non-symbols and 56
+    /// needles. **The count may only fall.** A new finding is a comment to fix or a
     /// deletion to finish, not a line to add here, and `theBareLedgerIsWellFormedAndOnlyShrinks`
     /// fails on growth to say so.
     ///
@@ -1621,7 +1631,8 @@ enum CadenceCommentSymbolClaim {
     /// "This replaces", "It was", a retired view named in a defect history -- or a counterfactual
     /// naming one the repository decided not to add ("There is no `removeColumns`, deliberately").
     /// The bare half cannot tell these from a stale claim by arithmetic, which is why they are read
-    /// and recorded rather than inferred.
+    /// and recorded rather than inferred. In the test roots the common shape is a retired test's
+    /// tombstone ("was declared here", "left with [[T-5002]]", "[[T-3170]] retired ...").
     static let bareMemorials: [String] = [
         "Cadence/Models/AppTask.swift `focusEyebrowTitle`",
         "Cadence/Models/AppTask.swift `logSessionTitle`",
@@ -1804,14 +1815,249 @@ enum CadenceCommentSymbolClaim {
         "Cadence/macOS/Views/TimelineMetrics.swift `majorGridOpacity`",
         "Cadence/macOS/Views/TimelineMetrics.swift `resizeOriginEndMin`",
         "Cadence/macOS/Views/TimelineMetrics.swift `resizeOriginStartMin`",
-        "CadenceMCPServer/CadenceMCPArgumentParsing.swift `intArray`"
+        "CadenceMCPServer/CadenceMCPArgumentParsing.swift `intArray`",
+        "CadenceTests/CadenceBundleCreationParityTests.swift `aDropThatCannotBecomeABlockIsRefusedRatherThanGuessedAt`",
+        "CadenceTests/CadenceBundleCreationParityTests.swift `aTaskCardClaimingADragSuppressesTheDayDropTheSameWayABundleCardDoes`",
+        "CadenceTests/CadenceBundleCreationParityTests.swift `droppingATaskOnAScheduledTaskFormsABlockHoldingBoth`",
+        "CadenceTests/CadenceBundleCreationParityTests.swift `formingABlockClampsAStartMinuteThatWouldOverflowTheDay`",
+        "CadenceTests/CadenceBundleCreationParityTests.swift `formingABlockClearsStaleCalendarLinksOnBothMembers`",
+        "CadenceTests/CadenceBundleInspectorHostTests.swift `deletingTheBundleUnderneathThePanelClosesItInBothPhasesOfTheDelete`",
+        "CadenceTests/CadenceBundleInspectorHostTests.swift `reschedulingABundleOutOfTheDayAndHourQueriesKeepsThePanelOpen`",
+        "CadenceTests/CadenceBundleInspectorHostTests.swift `theBundleHostDrawsThePanelOnlyInTheStayBranchOfTheSharedRule`",
+        "CadenceTests/CadenceBundleInspectorHostTests.swift `theBundleHostIsANoOpStubHeldOpenByOneLeasedCallSite`",
+        "CadenceTests/CadenceBundleInspectorHostTests.swift `thePatternHelperMatchesWhatItLooksLike`",
+        "CadenceTests/CadenceBundleInspectorHostTests.swift `theRootAppliesTheBundleHostAboveBothShellsRatherThanInsideOne`",
+        "CadenceTests/CadenceCalendarConsistencySurfaceTests.swift `iOSCalendarBundleDetailSheet`",
+        "CadenceTests/CadenceCalendarConsistencySurfaceTests.swift `startMinuteBinding`",
+        "CadenceTests/CadenceCalendarEventTimingTests.swift `theBundleEditSheetSeedsItsPickerBySettingTheClock`",
+        "CadenceTests/CadenceCalendarEventTimingTests.swift `timeDate`",
+        "CadenceTests/CadenceCalendarOverlapLayoutTests.swift `aCompactIOSColumnCascadesBundlesOnTheSameRuleAsTasks`",
+        "CadenceTests/CadenceCalendarOverlapLayoutTests.swift `theIOSDayColumnPutsAnEventBesideTheBundleItOverlaps`",
+        "CadenceTests/CadenceCancelledTaskReachabilityTests.swift `finishRemainingActiveTasks`",
+        "CadenceTests/CadenceCancelledTaskReachabilityTests.swift `sortedTasksForSection`",
+        "CadenceTests/CadenceCodexTaskSummaryTypographyTests.swift `showsCapsule`",
+        "CadenceTests/CadenceCodexTrackingUIRetirementTests.swift `codexRetiredTrackingViewsStayOutsideTheLiveViewGraph`",
+        "CadenceTests/CadenceCodexWidgetFollowupTests.swift `summaryRail`",
+        "CadenceTests/CadenceColorPaletteTests.swift `theUnassignedHabitGroupReadsTheAppsOneNeutral`",
+        "CadenceTests/CadenceCommentSymbolClaimTests.swift `iOSTaskRowEstimateChip`",
+        "CadenceTests/CadenceCommentSymbolClaimTests.swift `theClaimGrammarCannotSeeALowercaseRootedTypeAndThatIsThisManyTypes`",
+        "CadenceTests/CadenceContrastFloorTests.swift `theChromaCeilingBindsOnlyOnHuesOutsideTheOrdinaryBand`",
+        "CadenceTests/CadenceContrastFloorTests.swift `theRailIsTheTitlesColourAndClearsTheNonTextFloorByConstruction`",
+        "CadenceTests/CadenceCreateSheetCommitSurfaceTests.swift `theHabitCreatorReconcilesAndClosesOnlyOnACommittedInsert`",
+        "CadenceTests/CadenceCreateTaskCommitSurfaceTests.swift `cancelQuickCreate`",
+        "CadenceTests/CadenceCreateTaskCommitSurfaceTests.swift `selectQuickCreateStart`",
+        "CadenceTests/CadenceCreateTaskCommitSurfaceTests.swift `theBlockCreationFailureNoticeNamesTheBlockRatherThanATask`",
+        "CadenceTests/CadenceDeletedSelectionGuardTests.swift `emptyStateDuplicateAllowance`",
+        "CadenceTests/CadenceDeletedSelectionGuardTests.swift `goalsNoLongerLetsAnEmptySearchBoxExcuseAMissingGoal`",
+        "CadenceTests/CadenceDeletedSelectionGuardTests.swift `selectedBundle`",
+        "CadenceTests/CadenceDesktopSplitLayoutTests.swift `goalsKeepsARouteToItsInspectorAtTheWidthsThatDropTheColumn`",
+        "CadenceTests/CadenceEmptyStateAuditTests.swift `anUndatedGoalIsEnoughToLeaveTheRoadmapEmptyState`",
+        "CadenceTests/CadenceEmptyStateAuditTests.swift `eachFilteredDesktopPageAnswersHasCandidatesFromItsWholeCollection`",
+        "CadenceTests/CadenceEmptyStateAuditTests.swift `everyDesktopFilterKnowsWhetherItHidesAnything`",
+        "CadenceTests/CadenceEmptyStateAuditTests.swift `goalsTitle`",
+        "CadenceTests/CadenceEmptyStateAuditTests.swift `habitsTitle`",
+        "CadenceTests/CadenceEmptyStateAuditTests.swift `iOSGoalAttachListsSheet`",
+        "CadenceTests/CadenceEmptyStateAuditTests.swift `iOSGoalsView`",
+        "CadenceTests/CadenceEmptyStateAuditTests.swift `iOSHabitsView`",
+        "CadenceTests/CadenceEmptyStateAuditTests.swift `iOSSettingsEmptyRow`",
+        "CadenceTests/CadenceEmptyStateAuditTests.swift `theAttachListsSheetAsksTheSharedNarrowingRule`",
+        "CadenceTests/CadenceEmptyStateAuditTests.swift `theDuplicateSweepReachesAFilterAwarePageInTheTree`",
+        "CadenceTests/CadenceEmptyStateAuditTests.swift `theGoalPickerListReadsGoalsTitleRatherThanTypingEitherAnswer`",
+        "CadenceTests/CadenceEmptyStateAuditTests.swift `theGoalsAndHabitsDetailPanesNeverNameAListWithNoItems`",
+        "CadenceTests/CadenceEmptyStateAuditTests.swift `theRoadmapFirstRunCopyAsksForAGoalAndNotForADateRange`",
+        "CadenceTests/CadenceEmptyStateAuditTests.swift `theThreeFilteredDesktopPagesAskTheFilterAndNotJustTheSearchField`",
+        "CadenceTests/CadenceEmptyStateAuditTests.swift `theTwoGoalsViewModesShareOneTitleAndKeepTheirOwnSubtitles`",
+        "CadenceTests/CadenceEmptyTitleFallbackSweepTests.swift `noGoalPickerCallSiteRepeatsTheEmptyTextDefault`",
+        "CadenceTests/CadenceFirstLaunchEmptyStoreTests.swift `renamingADefaultTagBringsTheOriginalBackOnTheNextLaunch`",
+        "CadenceTests/CadenceFirstLaunchEmptyStoreTests.swift `theTagSeedCannotTellAnEmptyStoreFromOneCloudKitHasNotFilledYet`",
+        "CadenceTests/CadenceFocusSessionAndBlockCommitTests.swift `adropOfATaskOnItselfMakesNoBlockAndRaisesNoRefusal`",
+        "CadenceTests/CadenceFocusSessionAndBlockCommitTests.swift `anAcceptedDropOfATaskOnATaskCommitsTheBlockAndBothMembers`",
+        "CadenceTests/CadenceFocusSessionAndBlockCommitTests.swift `arefusedDropOfATaskOnATaskLeavesNoBlockAndBothTasksWhereTheyWere`",
+        "CadenceTests/CadenceFocusSessionAndBlockCommitTests.swift `arefusedSharedTwoTaskBlockMutationLeavesTheStoreUntouched`",
+        "CadenceTests/CadenceFocusSessionAndBlockCommitTests.swift `bundleDeleteFailureNotice`",
+        "CadenceTests/CadenceFocusSessionAndBlockCommitTests.swift `bundleSaveFailureNotice`",
+        "CadenceTests/CadenceFocusSessionAndBlockCommitTests.swift `theSharedTwoTaskBlockMutationNoLongerCommitsThroughASwallowedSaveOfItsOwn`",
+        "CadenceTests/CadenceFocusSessionAndBlockCommitTests.swift `theblockCreateFailureTitleIsItsOwnAndItsSentenceMakesNoPromise`",
+        "CadenceTests/CadenceFocusTeardownDeferralTests.swift `arefusedDeleteOfASelectedBundleMemberKeepsItSelected`",
+        "CadenceTests/CadenceGoalListLinkSurfaceTests.swift `attachList`",
+        "CadenceTests/CadenceGoalListLinkSurfaceTests.swift `bothPlatformsReadTheSharedLinkPresentation`",
+        "CadenceTests/CadenceGoalListLinkSurfaceTests.swift `detachGoalListLink`",
+        "CadenceTests/CadenceGoalListLinkSurfaceTests.swift `existingLink`",
+        "CadenceTests/CadenceGoalListLinkSurfaceTests.swift `makeLink`",
+        "CadenceTests/CadenceGoalListLinkSurfaceTests.swift `onlyTheSharedHelperConstructsALink`",
+        "CadenceTests/CadenceGoalListLinkSurfaceTests.swift `theIOSGoalDetailShowsTheLinkedListsSectionAndTheAttribution`",
+        "CadenceTests/CadenceGoalListLinkSurfaceTests.swift `toggleGoalListLink`",
+        "CadenceTests/CadenceGoalsObservedDayTests.swift `iOSGoalDetail`",
+        "CadenceTests/CadenceGoalsObservedDayTests.swift `iOSGoalsView`",
+        "CadenceTests/CadenceHabitCompletionDuplicateTests.swift `everyHabitToggleCallSiteNamesTheSharedStore`",
+        "CadenceTests/CadenceHabitCompletionDuplicateTests.swift `onlyTheHabitCompletionStoreConstructsAHabitCompletion`",
+        "CadenceTests/CadenceHabitsObservedDayTests.swift `rowsAndDetailsAskTheObservedDayWhetherTheHabitIsDue`",
+        "CadenceTests/CadenceHabitsObservedDayTests.swift `theIOSPageHandsItsObservedDayToItsRows`",
+        "CadenceTests/CadenceHabitsObservedDayTests.swift `theMacPageFiltersAndRendersAgainstItsObservedDay`",
+        "CadenceTests/CadenceIconOnlyButtonAccessibilityTests.swift `focusRowIconButton`",
+        "CadenceTests/CadenceIconOnlyButtonAccessibilityTests.swift `stepButton`",
+        "CadenceTests/CadenceIconOnlyButtonAccessibilityTests.swift `timelineNavButton`",
+        "CadenceTests/CadenceIconOnlyHelperIdiomDuplicationTests.swift `focusRowIconButton`",
+        "CadenceTests/CadenceIconOnlyHelperIdiomDuplicationTests.swift `rowIconButton`",
+        "CadenceTests/CadenceIconOnlyHelperIdiomDuplicationTests.swift `stepButton`",
+        "CadenceTests/CadenceIconOnlyHelperIdiomDuplicationTests.swift `timelineNavButton`",
+        "CadenceTests/CadenceIconOnlyTapGestureAccessibilityTests.swift `iOSCalendarBundleDetailSheet`",
+        "CadenceTests/CadenceInboxRemindersSurfaceTests.swift `showsCapsule`",
+        "CadenceTests/CadenceInspectorChildPopoverPlacementTests.swift `theHeaderPanelsArePresentedFromTheTitleRow`",
+        "CadenceTests/CadenceListPagesObservedDayTests.swift `theGoalsPageHandsItsObservedDayToEveryDueFlag`",
+        "CadenceTests/CadenceMCPToolContractTests.swift `listTaskBundles`",
+        "CadenceTests/CadenceMacTaskInspectorStatusActionsTests.swift `startThenStopRoundTripsThroughInProgress`",
+        "CadenceTests/CadenceMarkdownImageCommitSurfaceTests.swift `detachGoalListLink`",
+        "CadenceTests/CadenceMarkdownImageInsertionScopeTests.swift `quickCreateRefusesImagesOnlyInEventMode`",
+        "CadenceTests/CadenceNotesEditorPreferencesTests.swift `iOSCompactNotesView`",
+        "CadenceTests/CadenceNotesEditorPreferencesTests.swift `iOSNotesPanel`",
+        "CadenceTests/CadenceOrphanRowInertnessTests.swift `repairDuplicateHabitCompletions`",
+        "CadenceTests/CadencePageHeaderMetricsTests.swift `tileSize`",
+        "CadenceTests/CadencePluralizationTests.swift `iOSFeatureViews`",
+        "CadenceTests/CadencePluralizationTests.swift `iOSGoalDetail`",
+        "CadenceTests/CadenceRadiusControlCompactSweepTests.swift `iOSScheduleHourRow`",
+        "CadenceTests/CadenceRecurrenceEndAndSyncSurfaceTests.swift `thePhonesPrivateCalendarScopeEnumMatchesTheMacOne`",
+        "CadenceTests/CadenceRecurrenceScopeCommitTests.swift `applyPendingRecurrenceChange`",
+        "CadenceTests/CadenceResidueBatchTests.swift `goalTimelineMonthHeaderRuleIsUnrelatedAndUnchanged`",
+        "CadenceTests/CadenceResidueBatchTests.swift `goalTimelineRowRulesReadTheNamedSeparator`",
+        "CadenceTests/CadenceRootContextSwapAdoptionTests.swift `aRunningBundleSessionIsRepointedToo`",
+        "CadenceTests/CadenceRowSubjectAccessibilityTests.swift `goalLinkedListVisibleTitleMatchesTheAnnouncedNormalisedTitle`",
+        "CadenceTests/CadenceRowSubjectAccessibilityTests.swift `goalTaskContributorDetachButtonNamesTheTaskItDetaches`",
+        "CadenceTests/CadenceRowSubjectAccessibilityTests.swift `goalTaskContributorVisibleTitleMatchesTheAnnouncedDisplayTitle`",
+        "CadenceTests/CadenceRowSubjectAccessibilityTests.swift `habitToggleCircleReadsTheSharedCompletionStateLabelAndNamesTheHabit`",
+        "CadenceTests/CadenceRowSubjectAccessibilityTests.swift `quickCreateDraftSubtaskRemoveButtonNamesTheDraftItRemoves`",
+        "CadenceTests/CadenceRowSubjectAccessibilityTests.swift `quickCreateSelectedTaskRemoveButtonNamesTheTaskItRemoves`",
+        "CadenceTests/CadenceRowSubjectAccessibilityTests.swift `selectedTaskRow`",
+        "CadenceTests/CadenceSaveCommitDisciplineTests.swift `addTask`",
+        "CadenceTests/CadenceSaveCommitDisciplineTests.swift `saveGoal`",
+        "CadenceTests/CadenceSectionLabelGroupingTests.swift `fieldGroup`",
+        "CadenceTests/CadenceSectionLabelGroupingTests.swift `theGoalSheetGroupsEveryLabelWithTheControlItNames`",
+        "CadenceTests/CadenceSharedBoardChromeTests.swift `sectionDueDateIsOverdue`",
+        "CadenceTests/CadenceSharedBoardChromeTests.swift `weekdaySymbolSizeZZZ`",
+        "CadenceTests/CadenceSharedConstantReuseSweepTests.swift `iOSGoalDetail`",
+        "CadenceTests/CadenceSharedConstantReuseSweepTests.swift `theMilestoneRowsAllNameAMilestone`",
+        "CadenceTests/CadenceSharedTaskRowJobsTests.swift `doDateMetaItem`",
+        "CadenceTests/CadenceSharedTaskRowJobsTests.swift `iOSPageHeaderMetrics`",
+        "CadenceTests/CadenceSharedTaskRowJobsTests.swift `theFocusPanelsSelectionControlDoesNotWearTheCompletionGlyph`",
+        "CadenceTests/CadenceSidebarCountMetricsTests.swift `iOSSidebarCountLabel`",
+        "CadenceTests/CadenceSidebarCountMetricsTests.swift `listColorBarHeight`",
+        "CadenceTests/CadenceSidebarCountMetricsTests.swift `listColorBarLeadingInset`",
+        "CadenceTests/CadenceSidebarCountMetricsTests.swift `listColorBarWidth`",
+        "CadenceTests/CadenceSidebarCountMetricsTests.swift `railLabel`",
+        "CadenceTests/CadenceTaskComposerSupportTests.swift `doDatePickLabel`",
+        "CadenceTests/CadenceTaskComposerSupportTests.swift `isCustomDoDate`",
+        "CadenceTests/CadenceTaskComposerSupportTests.swift `toggledDoDateKey`",
+        "CadenceTests/CadenceTaskInspectorHostTests.swift `iOSScheduleReadyTaskRow`",
+        "CadenceTests/CadenceTaskPresentationSupportTests.swift `iOSTaskRowDensity`",
+        "CadenceTests/CadenceTaskRowIndicatorTests.swift `hasNotes`",
+        "CadenceTests/CadenceTaskStatusLifecycleSurfaceTests.swift `resolvedFrozenFlatSections`",
+        "CadenceTests/CadenceTaskStatusLifecycleSurfaceTests.swift `resolvedFrozenListGroups`",
+        "CadenceTests/CadenceTestTargetHygieneTests.swift `requireInteractiveUITestsEnabled`",
+        "CadenceTests/CadenceTestTargetHygieneTests.swift `theCommentStrippingIsActuallyStripping`",
+        "CadenceTests/CadenceTestTargetHygieneTests.swift `theSourceScanActuallyReachesBothPlatformsSource`",
+        "CadenceTests/CadenceTestTargetHygieneTests.swift `theSourceScanActuallyReadsTheseFiles`",
+        "CadenceTests/CadenceTestTargetHygieneTests.swift `theSourceScanIsNotVacuous`",
+        "CadenceTests/CadenceTimelineNowLineTests.swift `iOSScheduleHourRow`",
+        "CadenceTests/CadenceTodayLayoutSupportTests.swift `threePaneMinimumWidth`",
+        "CadenceTests/CadenceTodayUnificationTests.swift `bothRowsCarryAnEstimateChipOverTheSharedPicker`",
+        "CadenceTests/CadenceTodayUnificationTests.swift `currentFrozenFlatSectionSnapshot`",
+        "CadenceTests/CadenceTodayUnificationTests.swift `currentFrozenListGroupSnapshot`",
+        "CadenceTests/CadenceTodayUnificationTests.swift `iOSTodayCompletedSection`",
+        "CadenceTests/CadenceTodayUnificationTests.swift `liveFlatSection`",
+        "CadenceTests/CadenceTrackingEditorSaveCommitTests.swift `arefusedBlockEditPutsTheBlockAndItsMembersBack`",
+        "CadenceTests/CadenceTrackingEditorSaveCommitTests.swift `bundleDeleteFailureNotice`",
+        "CadenceTests/CadenceTrackingEditorSaveCommitTests.swift `bundleSaveFailureNotice`",
+        "CadenceTests/CadenceTrackingEditorSaveCommitTests.swift `eachRefusalNamesItsOwnObjectAndOnlyTheDeleteClaimsNothingWasRemoved`",
+        "CadenceTests/CadenceTrackingEditorSaveCommitTests.swift `iOSGoalEditorSheet`",
+        "CadenceTests/CadenceTrackingEditorSaveCommitTests.swift `iOSHabitEditorSheet`",
+        "CadenceTests/CadenceTrackingEditorSaveCommitTests.swift `moveBundle`",
+        "CadenceTests/CadenceTrackingEditorSaveCommitTests.swift `saveGoal`",
+        "CadenceTests/CadenceTrackingEditorSaveCommitTests.swift `saveHabit`",
+        "CadenceTests/CadenceTrackingEditorSaveCommitTests.swift `theIOSBlockSheetSaveDismissesOnlyThroughASuccessfulTry`",
+        "CadenceTests/CadenceTrackingEditorSaveCommitTests.swift `theIOSTrackingEditorsAndBlockDeleteDismissOnlyThroughASuccessfulTry`",
+        "CadenceTests/CadenceTrackingEditorSaveCommitTests.swift `updateBundle`",
+        "CadenceTests/CadenceTrackingWriteRetirementTests.swift `saveGoal`",
+        "CadenceTests/CadenceWriteServiceTests.swift `aRefusedAddToBundlePutsBackBothTheTaskAndTheBlocksMemberList`",
+        "CadenceTests/CadenceWriteServiceTests.swift `aRefusedBlockCreateLeavesNoRowForTheNextCallsSave`",
+        "CadenceTests/CadenceWriteServiceTests.swift `addTaskToBundleRefusesARepeatAndACancelledTask`",
+        "CadenceTests/CadenceWriteServiceTests.swift `addTaskToBundleWritesEveryFieldOfTheSharedMembershipRule`",
+        "CadenceTests/CadenceWriteServiceTests.swift `coreNoteCreatedButNotAppended`",
+        "CadenceTests/CadenceWriteServiceTests.swift `createTaskBundleMintsThroughTheSharedConstructorAndItsClamps`",
+        "CadenceTests/CadenceWriteServiceTests.swift `createTaskBundleRefusesAPlacementItWasNotGiven`",
+        "CadenceTests/CalendarBoardPlannerSupportTests.swift `aFrameLeftBehindByABundleThatMovedAwayCannotClaimADrop`",
+        "CadenceTests/CalendarBoardPlannerSupportTests.swift `aReleaseInsideABundleCardBelongsToThatCardNotToTheDayColumn`",
+        "CadenceTests/CalendarBoardPlannerSupportTests.swift `aReleaseOnBareColumnBackgroundBelongsToTheDayEvenBetweenTwoCards`",
+        "CadenceTests/CalendarMonthAgendaTests.swift `agendaListsDaysWhateverTheyHold`",
+        "CadenceTests/CalendarMonthCellPriorityTests.swift `bundlesOutrankBothAndEventsStillOutrankTasksBelowThem`",
+        "CadenceTests/CalendarTimelineGridTests.swift `iOSScheduleHourRow`",
+        "CadenceTests/CalendarTimelineRangeTests.swift `bundlesTakeTheirOwnHourTheSameWay`",
+        "CadenceTests/CrossPlatformParityTests.swift `bothHabitEditorsOpenACorruptReminderTimeAsUnsetRatherThanInventingOne`",
+        "CadenceTests/DataIntegrityRepairServiceTests.swift `contextScore`",
+        "CadenceTests/DataIntegrityRepairServiceTests.swift `repairOutOfRangeHabitReminders`",
+        "CadenceTests/EstimateRollerMetricsTests.swift `startIsStillReachableAsTheSoleMacOSWriterOfInProgress`",
+        "CadenceTests/FocusPickerPlayControlTests.swift `aBlockWithNothingLeftInItCannotBeTheSubjectOfASession`",
+        "CadenceTests/FocusPickerPlayControlTests.swift `aBundleAndItsMemberAreDifferentSubjectsEvenWithTheSameID`",
+        "CadenceTests/FocusPickerPlayControlTests.swift `anEmptyBlockCannotBeTheSubjectEvenThoughItIsNotCompleted`",
+        "CadenceTests/FocusPickerPlayControlTests.swift `bothAffordancesRequestAHandoff`",
+        "CadenceTests/FocusPickerPlayControlTests.swift `endingABundleSessionCreditsOnlyTheTickedMembers`",
+        "CadenceTests/FocusPickerPlayControlTests.swift `theBlockInspectorsFocusSectionIsGatedOnTheBundlePredicate`",
+        "CadenceTests/FocusPickerPlayControlTests.swift `theMacBlockInspectorsStartFocusReadsTheSharedPredicate`",
+        "CadenceTests/FocusSessionAuditTests.swift `bundleRanksOrderTodayThenUpcomingThenUndatedThenPast`",
+        "CadenceTests/FocusSessionAuditTests.swift `closingABundleSessionDistributesTimeAndClearsSelection`",
+        "CadenceTests/FocusSessionAuditTests.swift `reSelectingTheBundleAlreadyFocusedResumesInsteadOfDiscarding`",
+        "CadenceTests/FocusSessionAuditTests.swift `upcomingBundlesSortByDayThenStartTime`",
+        "CadenceTests/GoalPresentationTests.swift `bothGoalEditorsRefuseToNestAGoalThatOwnsMilestones`",
+        "CadenceTests/GoalPresentationTests.swift `saveGoal`",
+        "CadenceTests/GoalPresentationTests.swift `theIOSGoalsListDrawsTheFlattenedSubtree`",
+        "CadenceTests/ListTasksSectionGroupsTests.swift `aPageWithNoTasksDrawsNoEmptyHeadings`",
+        "CadenceTests/MarkdownInlineSpanSupportTests.swift `iOSMarkdownStylingSupportTests`",
+        "CadenceTests/MarkdownStyleSignatureTests.swift `iOSMarkdownStyleSignature`",
+        "CadenceTests/MarkdownTaskEmbedPreviewTitleTests.swift `iOSMeetingNoteRow`",
+        "CadenceTests/MarkdownTaskEmbedRenameSupportTests.swift `sanitizedReferenceTitle`",
+        "CadenceTests/PursuitToGoalMigrationTests.swift `runIfNeededSeparatesAFoldFromAStoreWithNothingLeftToFold`",
+        "CadenceTests/SettingsCategoryReachTests.swift `theMacOSHabitDetailDrawsBestStreakAndTheSevenDayStrip`",
+        "CadenceTests/SettingsSharedVocabularyTests.swift `noSettingsPaneStillPaintsUnderTheSystemSeparator`",
+        "CadenceTests/TagSupportTests.swift `renamingATagLeavesInlineMentionsInTheBodyAlone`",
+        "CadenceTests/TaskBundleTests.swift `addingTaskToBundleUsesBundleDateWithoutTaskTime`",
+        "CadenceTests/TaskBundleTests.swift `bundleFocusLoggingDistributesByEstimate`",
+        "CadenceTests/TaskBundleTests.swift `bundleOrderCanBeChangedManually`",
+        "CadenceTests/TaskBundleTests.swift `bundleTimesAreClampedInsideOneDay`",
+        "CadenceTests/TaskBundleTests.swift `creatingBundleFromTwoTimedTasksUsesTargetSlotAndMembersLoseIndividualTimes`",
+        "CadenceTests/TaskBundleTests.swift `everyKnownBundleSiteReadsTheSharedVocabulary`",
+        "CadenceTests/TaskBundleTests.swift `existingBundle`",
+        "CadenceTests/TaskBundleTests.swift `focusEyebrowTitle`",
+        "CadenceTests/TaskBundleTests.swift `insertBundle`",
+        "CadenceTests/TaskBundleTests.swift `isTimed`",
+        "CadenceTests/TaskBundleTests.swift `logSessionTitle`",
+        "CadenceTests/TaskBundleTests.swift `reassigningTaskBetweenBundlesRemovesOldMembership`",
+        "CadenceTests/TaskBundleTests.swift `showsTimedControls`",
+        "CadenceTests/TaskBundleTests.swift `tasksSectionLabel`",
+        "CadenceTests/TaskDeleteHelpersScenarioTests.swift `deletingAllMembersOfActiveFocusBundleClearsFocusManagerSession`",
+        "CadenceTests/TaskDeleteHelpersScenarioTests.swift `deletingOneMemberOfActiveFocusBundleKeepsSessionWhenBundleStillHasTasks`",
+        "CadenceTests/TaskOverdueSupportTests.swift `regularCount`",
+        "CadenceTests/TimelineDraftAndResizeTests.swift `aDropOnTheShelfIsInsideItAndADropBelowTheShelfIsNot`",
+        "CadenceTests/TimelineDraftAndResizeTests.swift `pendingEndMin`",
+        "CadenceTests/TimelineDraftAndResizeTests.swift `pendingStartMin`",
+        "CadenceTests/TimelineDraftAndResizeTests.swift `theBundleShelfRectIsTheRegionTheShelfActuallyDraws`",
+        "CadenceTests/TimelineMetricsTests.swift `overlappingBundleAndTaskShareColumnsWithoutCollision`",
+        "CadenceTests/TrackingDeleteHelpersTests.swift `deletingAGoalTakesAMilestoneWhoseOwnContextIsElsewhere`",
+        "CadenceTests/TrackingDeleteHelpersTests.swift `taskPriorityRank`",
+        "CadenceTests/TrackingDeleteHelpersTests.swift `taskSortPrecedes`",
+        "CadenceTests/iOSCalendarMetricsTests.swift `iOSScheduleReadyTaskRow`",
+        "CadenceTests/iOSCalendarMetricsTests.swift `quickCreateStartMin`",
+        "CadenceTests/iOSCalendarMetricsTests.swift `tileSize`",
+        "CadenceTests/iOSEditorSheetMetricsTests.swift `theBlockSheetsTitleFieldJoinedTheSharedSubjectSize`",
+        "CadenceUITests/CadenceUITests.swift `requireInteractiveUITestsEnabled`"
     ]
 
     /// Not this repository's symbols at all: framework members the app relies on without spelling
     /// them (16 lines -- a `DecodingError` case, AppKit and UIKit members, private Foundation
     /// storage), UserDefaults key fragments the code builds by interpolation rather than spells
     /// whole (`_sortField`, `todaySortField`), and two illustrative names (`iOSFoo`, the bare
-    /// `iPad` prefix). A value or a vocabulary word, not a pointer into the tree.
+    /// `iPad` prefix). A value or a vocabulary word, not a pointer into the tree. The test roots
+    /// add 30 of the same kinds: AppKit and Foundation members the tests measure, SwiftData's
+    /// in-memory store names, a scheme key, a shell variable suffix, and the hypothetical names
+    /// an instrument's doc says it does or does not match.
     static let bareNonSymbols: [String] = [
         "Cadence/Models/TaskOrdering.swift `_sortDir`",
         "Cadence/Models/TaskOrdering.swift `_sortField`",
@@ -1837,7 +2083,37 @@ enum CadenceCommentSymbolClaim {
         "Cadence/macOS/Views/TasksPanel.swift `todaySortDirection`",
         "Cadence/macOS/Views/TasksPanel.swift `todaySortField`",
         "Cadence/macOS/Views/macOSRootLifecycleSupport.swift `setActionName`",
-        "Cadence/macOS/Views/macOSRootShellViews.swift `initialFirstResponder`"
+        "Cadence/macOS/Views/macOSRootShellViews.swift `initialFirstResponder`",
+        "CadenceTests/CadenceArchiveImportSurfaceTests.swift `keyNotFound`",
+        "CadenceTests/CadenceEmptyTitleFallbackSweepTests.swift `nilTitle`",
+        "CadenceTests/CadenceGuardScriptSelftestTests.swift `_WHY`",
+        "CadenceTests/CadenceIOSAllTasksSortBindingTests.swift `_sortMode`",
+        "CadenceTests/CadenceIconOnlyMenuAccessibilityTests.swift `fooMenu`",
+        "CadenceTests/CadenceInMemoryStoreHygieneTests.swift `inMemory_store`",
+        "CadenceTests/CadenceMCPToolContractTests.swift `encodeIfPresent`",
+        "CadenceTests/CadenceMacPageAccessibilityAuditTests.swift `accessibilityCustomActions`",
+        "CadenceTests/CadenceMacPageAccessibilityAuditTests.swift `isAccessibilitySelected`",
+        "CadenceTests/CadenceMisfiledSurfaceTests.swift `iPadTodayCompactViewsSomething`",
+        "CadenceTests/CadenceMisfiledSurfaceTests.swift `iPadTodayViewModel`",
+        "CadenceTests/CadenceMisfiledSurfaceTests.swift `iPad`",
+        "CadenceTests/CadenceRecurrenceEndAndSyncSurfaceTests.swift `eventScopeTitleShort`",
+        "CadenceTests/CadenceRecurrenceEndAndSyncSurfaceTests.swift `macCalendarRecurrenceEditScope`",
+        "CadenceTests/CadenceSidebarResizeHandleTests.swift `focusRingMaskBounds`",
+        "CadenceTests/CadenceStartupRecoveryReasonTests.swift `_underlyingCocoaError`",
+        "CadenceTests/CadenceTestHostEnvironmentPinTests.swift `shouldUseLaunchSchemeArgsEnv`",
+        "CadenceTests/CadenceTestStoreSupport.swift `inMemory_store_ckAssets`",
+        "CadenceTests/CadenceTestStoreSupport.swift `inMemory_store`",
+        "CadenceTests/CadenceTimeZoneIndependenceTests.swift `autoupdatingCurrent`",
+        "CadenceTests/CadenceTimeZoneIndependenceTests.swift `minimumDaysInFirstWeek`",
+        "CadenceTests/CadenceTodayUnificationTests.swift `todaySortDirection`",
+        "CadenceTests/CadenceTodayUnificationTests.swift `todaySortField`",
+        "CadenceTests/DataIntegrityRepairServiceTests.swift `keyNotFound`",
+        "CadenceTests/MarkdownImageDropAffordanceTests.swift `acceptableDragTypes`",
+        "CadenceTests/MarkdownImageDropAffordanceTests.swift `orderFront`",
+        "CadenceTests/MarkdownImageDropAffordanceTests.swift `unregisterDraggedTypes`",
+        "CadenceTests/MarkdownImageDropAffordanceTests.swift `updateDragTypeRegistration`",
+        "CadenceTests/MarkdownImagePasteTests.swift `validateUserInterfaceItem`",
+        "CadenceTests/NoteMigrationServiceTests.swift `keyNotFound`"
     ]
 
     /// Present-tense claims naming something that is gone. **Empty since the triage**: the twenty
@@ -1849,7 +2125,75 @@ enum CadenceCommentSymbolClaim {
     /// claim has a home and a count to move.
     static let bareStaleClaims: [String] = []
 
-    static var bareLedger: [String] { (bareMemorials + bareNonSymbols + bareStaleClaims).sorted() }
+    /// **Test roots only ([[T-7641]]).** A name a test comment quotes because the test's own code
+    /// searches for it: the needle a pin-it-absent test counts to zero, a fixture an instrument is
+    /// run against, or a line of this file's own ledgers. Test literals do not vouch
+    /// (`SymbolIndex.literalExcludedRoots`), so each of these is unresolved by construction, and
+    /// the group is the one place that is SAID rather than read: every line's name occurs in the
+    /// string half of its own file, and no test-root memorial's does, this file excepted because
+    /// its ledgers are themselves literals (`theBareLedgerIsWellFormedAndOnlyShrinks`).
+    static let bareNeedles: [String] = [
+        "CadenceTests/CadenceBundleCreationParityTests.swift `bundleFormingDrop`",
+        "CadenceTests/CadenceBundleCreationParityTests.swift `landedOnBundleShelf`",
+        "CadenceTests/CadenceBundleInspectorHostTests.swift `iOSCalendarBundleDetailSheet`",
+        "CadenceTests/CadenceBundleInspectorHostTests.swift `iOSTimelineBundleBlock`",
+        "CadenceTests/CadenceCalendarChipTreatmentTests.swift `isEventPlate`",
+        "CadenceTests/CadenceCapturePaletteTests.swift `baseSeed`",
+        "CadenceTests/CadenceCodexFunctionalParityTests.swift `showsCompletedControl`",
+        "CadenceTests/CadenceCodexTrackingUIRetirementTests.swift `iOSHabitDetail`",
+        "CadenceTests/CadenceCommentSymbolClaimTests.swift `_sortField`",
+        "CadenceTests/CadenceCommentSymbolClaimTests.swift `formBundle`",
+        "CadenceTests/CadenceCommentSymbolClaimTests.swift `iOSFoo`",
+        "CadenceTests/CadenceCommentSymbolClaimTests.swift `iPad`",
+        "CadenceTests/CadenceCommentSymbolClaimTests.swift `removeColumns`",
+        "CadenceTests/CadenceCommentSymbolClaimTests.swift `todaySortField`",
+        "CadenceTests/CadenceCreateTaskCommitSurfaceTests.swift `iOSScheduleQuickCreateBar`",
+        "CadenceTests/CadenceCreateTaskCommitSurfaceTests.swift `quickCreateError`",
+        "CadenceTests/CadenceCreateTaskCommitSurfaceTests.swift `quickCreateTitle`",
+        "CadenceTests/CadenceEmptyTitleFallbackSweepTests.swift `iOSTaskRowGoalChip`",
+        "CadenceTests/CadenceEventSeriesEndCarryTests.swift `eventRecurrenceRule`",
+        "CadenceTests/CadenceFocusSessionAndBlockCommitTests.swift `addTask`",
+        "CadenceTests/CadenceFocusSessionAndBlockCommitTests.swift `bundleCreateFailureAlertTitle`",
+        "CadenceTests/CadenceFocusSessionAndBlockCommitTests.swift `createBundle`",
+        "CadenceTests/CadenceFocusSessionAndBlockCommitTests.swift `formBundle`",
+        "CadenceTests/CadenceFocusSessionAndBlockCommitTests.swift `insertBundle`",
+        "CadenceTests/CadenceKanbanColumnLifecycleSurfaceTests.swift `onNameChanged`",
+        "CadenceTests/CadenceMCPToolContractTests.swift `stringArray`",
+        "CadenceTests/CadenceMisfiledSurfaceTests.swift `iPadInboxView`",
+        "CadenceTests/CadenceMisfiledSurfaceTests.swift `iPadTodayCompactViews`",
+        "CadenceTests/CadenceMisfiledSurfaceTests.swift `iPadTodaySidePanel`",
+        "CadenceTests/CadenceMisfiledSurfaceTests.swift `iPadTodayView`",
+        "CadenceTests/CadenceNoteFolderSurfaceTests.swift `iOSListNotesPanel`",
+        "CadenceTests/CadenceQuickCreateTaskInspectorTests.swift `droppingTaskOnlyFields`",
+        "CadenceTests/CadenceQuickCreateTaskInspectorTests.swift `priorityMarkButton`",
+        "CadenceTests/CadenceReadServiceTests.swift `subGoalCount`",
+        "CadenceTests/CadenceRecurrenceEndAndSyncSurfaceTests.swift `iOSCalendarRecurrenceEditScope`",
+        "CadenceTests/CadenceSaveCommitDisciplineTests.swift `createBundle`",
+        "CadenceTests/CadenceSaveCommitDisciplineTests.swift `insertBundle`",
+        "CadenceTests/CadenceScheduleDraftTests.swift `eventIsAllDay`",
+        "CadenceTests/CadenceSearchCandidateSupportTests.swift `progressResults`",
+        "CadenceTests/CadenceSettingsSectionCopyTests.swift `iOSSettingsEmptyRow`",
+        "CadenceTests/CadenceSharedBoardChromeTests.swift `iOSBoardColumnHeader`",
+        "CadenceTests/CadenceSharedBoardChromeTests.swift `weekdaySymbolSize`",
+        "CadenceTests/CadenceSidebarRailRetirementTests.swift `iOSSidebarStyle`",
+        "CadenceTests/CadenceSidebarRailRetirementTests.swift `railLabel`",
+        "CadenceTests/CadenceTildeContainerPickerTests.swift `tildeFlatContainers`",
+        "CadenceTests/CadenceTodayOverdueSummarySurfaceTests.swift `openRequest`",
+        "CadenceTests/CadenceTodaySectionMetricsTests.swift `drawsCard`",
+        "CadenceTests/CadenceTodayUnificationTests.swift `todayDateSections`",
+        "CadenceTests/CadenceTrackingEditorSaveCommitTests.swift `iOSCalendarBundleDetailSheet`",
+        "CadenceTests/CalendarBoardDayDropCommitTests.swift `onDropBundleOnDay`",
+        "CadenceTests/CalendarTimelineRangeTests.swift `iOSScheduleHourRow`",
+        "CadenceTests/MarkdownHeadingRampTests.swift `headingSize`",
+        "CadenceTests/MarkdownHeadingRampTests.swift `prefixLen`",
+        "CadenceTests/SettingsCategoryReachTests.swift `iOSSettingsInfoRow`",
+        "CadenceTests/TaskSurfaceRenderPassCensusTests.swift `sortedTasksForSection`",
+        "CadenceTests/iOSCalendarMetricsTests.swift `iOSScheduleHourRow`"
+    ]
+
+    static var bareLedger: [String] {
+        (bareMemorials + bareNonSymbols + bareStaleClaims + bareNeedles).sorted()
+    }
 
     /// The bare half ([[T-7620]]): a backticked camelCase identifier in a product comment is one
     /// some code in the tree spells, or it is ledgered. Exact set equality, both directions.
@@ -1871,12 +2215,20 @@ enum CadenceCommentSymbolClaim {
             Self.bareSweepRoots.contains { source.path.hasPrefix($0) }
         }
         // Non-vacuity for the grammar: a bare-span population of zero would leave this green.
-        let population = product.reduce(0) { total, source in
-            total + CadenceCommentSymbolClaim.bareClaims(
-                inComments: CadenceCommentSymbolClaim.partition(source.text).comments
-            ).count
+        // Counted per half, so narrowing the roots back to the product cannot pass on the
+        // product's spans alone ([[T-7641]]: ~5,600 product, ~4,500 test when the roots widened).
+        func population(_ roots: [String]) -> Int {
+            product.filter { source in roots.contains { source.path.hasPrefix($0) } }
+                .reduce(0) { total, source in
+                    total + CadenceCommentSymbolClaim.bareClaims(
+                        inComments: CadenceCommentSymbolClaim.partition(source.text).comments
+                    ).count
+                }
         }
-        #expect(population >= 3000, "the bare grammar read \(population) spans in product comments")
+        let productPopulation = population(["Cadence/", "CadenceWidgets/", "CadenceMCPServer/"])
+        let testPopulation = population(Self.bareTestRoots)
+        #expect(productPopulation >= 3000, "the bare grammar read \(productPopulation) spans in product comments")
+        #expect(testPopulation >= 2500, "the bare grammar read \(testPopulation) spans in test comments")
 
         let instrument = try CadenceScanInstrument(
             "comment names a bare identifier no code spells",
@@ -1888,7 +2240,7 @@ enum CadenceCommentSymbolClaim {
 
         let offendingPaths = try instrument.sweep(
             product.map(\.path),
-            atLeast: 600,
+            atLeast: 1100,
             including: "Cadence/Shared/Theme.swift",
             read: { path in try Self.source(path, in: text) }
         )
@@ -1910,27 +2262,57 @@ enum CadenceCommentSymbolClaim {
         #expect(found == Self.bareLedger)
     }
 
-    /// The bare ledger is sorted, unique, product-only, and no larger than when it was measured.
-    @Test func theBareLedgerIsWellFormedAndOnlyShrinks() {
+    /// The bare ledger is sorted, unique, inside the swept roots, and no larger than when it was
+    /// measured; the needle group is checked against the source it claims to quote.
+    @Test func theBareLedgerIsWellFormedAndOnlyShrinks() throws {
         let ledger = Self.bareLedger
         #expect(Set(ledger).count == ledger.count)
         #expect(ledger == ledger.sorted())
         #expect(ledger.allSatisfy { line in Self.bareSweepRoots.contains { line.hasPrefix($0) } })
         // 227 when [[T-7620]] landed the half; 207 since its triage fixed twenty stale comments in
-        // place. Lower this as lines go; never raise it -- a new unresolved bare name is a comment
-        // to fix, not a line to grandfather.
-        #expect(ledger.count <= 207, "the bare ledger grew to \(ledger.count); fix the comment instead")
-        // The three groups are a partition: sorted, disjoint, and summing to the whole.
-        for group in [Self.bareMemorials, Self.bareNonSymbols, Self.bareStaleClaims] {
+        // place; 207 + 318 = 525 since [[T-7641]] widened the roots to the tests (343 measured, 25
+        // fixed in place). Lower this as lines go; never raise it -- a new unresolved bare name is
+        // a comment to fix, not a line to grandfather.
+        #expect(ledger.count <= 525, "the bare ledger grew to \(ledger.count); fix the comment instead")
+        // The four groups are a partition: sorted, disjoint, and summing to the whole.
+        let groups = [Self.bareMemorials, Self.bareNonSymbols, Self.bareStaleClaims, Self.bareNeedles]
+        for group in groups {
             #expect(group == group.sorted())
             #expect(Set(group).count == group.count)
         }
-        #expect(Set(Self.bareMemorials).isDisjoint(with: Set(Self.bareNonSymbols)))
-        #expect(Set(Self.bareMemorials).isDisjoint(with: Set(Self.bareStaleClaims)))
-        #expect(Set(Self.bareNonSymbols).isDisjoint(with: Set(Self.bareStaleClaims)))
-        #expect(Self.bareMemorials.count == 182)
-        #expect(Self.bareNonSymbols.count == 25)
+        for (index, group) in groups.enumerated() {
+            for other in groups[(index + 1)...] {
+                #expect(Set(group).isDisjoint(with: Set(other)))
+            }
+        }
+        #expect(groups.map(\.count).reduce(0, +) == ledger.count)
+        // 182 + 232 test-root memorials, 25 + 30 non-symbols, 56 needles ([[T-7641]]).
+        #expect(Self.bareMemorials.count == 414)
+        #expect(Self.bareNonSymbols.count == 55)
+        #expect(Self.bareNeedles.count == 56)
         #expect(Self.bareStaleClaims.isEmpty, "a held stale claim is a comment to fix in place")
+        // The needle group is the test roots' own, and is what it says: each name is in the string
+        // half of its file. The converse holds for the test-root memorials, so the boundary between
+        // the two is measured rather than asserted.
+        #expect(Self.bareNeedles.allSatisfy { line in Self.bareTestRoots.contains { line.hasPrefix($0) } })
+        func quotedInItsOwnStrings(_ line: String) throws -> Bool {
+            let parts = line.components(separatedBy: " `")
+            let path = try #require(parts.first)
+            let name = String(try #require(parts.last).dropLast())
+            let strings = CadenceCommentSymbolClaim.partition(try CadenceSourceScan.sourceFile(path)).strings
+            return strings.contains(name)
+        }
+        // This file is the exception both ways: its own ledger lines are string literals, so every
+        // name it ledgers is quoted in it. Its needles are lines of its other ledgers, quoted before
+        // this one existed; its memorials are read, not measured.
+        let ownPath = "CadenceTests/CadenceCommentSymbolClaimTests.swift"
+        for line in Self.bareNeedles where !line.hasPrefix(ownPath) {
+            #expect(try quotedInItsOwnStrings(line), "a needle its file never quotes: \(line)")
+        }
+        for line in Self.bareMemorials
+        where Self.bareTestRoots.contains(where: { line.hasPrefix($0) }) && !line.hasPrefix(ownPath) {
+            #expect(try !quotedInItsOwnStrings(line), "a memorial its file also quotes is a needle: \(line)")
+        }
         // The grammar's two exclusions, pinned so a widening cannot happen silently.
         #expect(CadenceCommentSymbolClaim.bareClaims(inComments: "/// `en_US` and `count` and `self`").isEmpty)
         #expect(CadenceCommentSymbolClaim.bareClaims(inComments: "/// `draftRangeUnderTouch`").count == 1)

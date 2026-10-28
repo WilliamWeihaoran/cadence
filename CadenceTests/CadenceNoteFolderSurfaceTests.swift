@@ -596,7 +596,7 @@ struct CadenceNoteFolderSurfaceTests {
         }
 
         // The needle is not vacuous. A regex typo here would silently pass all three checks above,
-        // which is the same failure mode `theSourceScanActuallyReachesBothPlatformsSource` guards
+        // which is the same failure mode `theSourceScanActuallyReachesBothPlatformsSourceInNoteFolderSurface` guards
         // for the file reader.
         let pattern = unqualifiedFloorPattern("MinimumWidth")
         #expect("private let paneMinimumWidth: CGFloat = 601".folderMatchCount(ofPattern: pattern) == 1)

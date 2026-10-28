@@ -283,7 +283,7 @@ struct CadenceTaskBundleRetirementTests {
     /// is taking apart. They are re-spelled rather than read because
     /// `CadenceTaskMutationSupport`'s copies are `MainActor`-isolated and the archive import that
     /// shares this arithmetic is not — the same arrangement, and the same failure mode, as
-    /// `bundleClampsMatchTheTimelineDayRange` between that type and `TimelineDayRange`.
+    /// `theSharedBundleClampsMatchTheTimelineDayRange` between that type and `TimelineDayRange`.
     @Test func theClampsMatchTheOnesThatSizedTheBlocks() {
         #expect(TaskBundleRetirement.minimumSlotMinutes == CadenceTaskMutationSupport.bundleMinimumDuration)
         #expect(TaskBundleRetirement.dayEndMin == CadenceTaskMutationSupport.bundleDayEndMin)

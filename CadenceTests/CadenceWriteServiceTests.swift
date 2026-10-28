@@ -928,7 +928,7 @@ struct CadenceWriteServiceTests {
     /// `iOSSettingsView.restore` and `SettingsView.restoreContext`, held in order by
     /// `CadenceEditorSaveCommitSurfaceTests.everyRestoreSurfaceSuffixesATakenNameBeforeUnarchiving`
     /// over the same shared function. All three wrote `isArchived = false` unconditionally, so the
-    /// restore made exactly the pair `repairDuplicateContexts` fuses with no undo.
+    /// restore made exactly the pair `DataIntegrityRepairService`'s duplicate-context merge fuses with no undo.
     ///
     /// The owner's decision of 2026-10-24 is (b), suffix rather than refuse: you cannot pick a name
     /// from a Restore button, so a refusal leaves the user at a dead end with no way forward from

@@ -27,7 +27,7 @@ import Testing
 /// here too, over the same fixtures, with the store on screen deliberately holding *different*
 /// rows from the one on disk.
 ///
-/// **Isolation.** Every path in this file is inside the suite's own temporary root. `storeStub`
+/// **Isolation.** Every path in this file is inside the suite's own temporary root. `RecoveryExportFileManagerStub`
 /// below stubs both halves of the resolution the search uses — the app-group container *and*
 /// `.applicationSupportDirectory` — because `PersistenceController.recoveryStoreDirectoryCandidates`
 /// reads the latter straight off the `FileManager` it is handed, and left real it names a

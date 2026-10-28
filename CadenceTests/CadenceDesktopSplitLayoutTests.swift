@@ -245,8 +245,8 @@ struct CadenceDesktopSplitLayoutTests {
     // is dropped, by presenting the same `GoalInspectorView` in a sheet. The page, the sheet and
     // the inspector are all deleted, so there is no route to keep. The RULE the ticket was an
     // instance of — a pane a width drops must still be reachable — is held for the surviving
-    // pages by `noWidthEverChoosesMorePanesThanItCanPayFor` and by
-    // `theRegularPanePagesEachDeclareTheirNarrowFallback` below.
+    // pages by `noWidthEverChoosesMorePanesThanItCanPayFor` and by the fallback tests above it
+    // (`anUnmeasuredWidthDrawsTheFallbackRatherThanTheSplit`).
 
     @Test
     func theSourceScanActuallyReadsTheViewsItIsCounting() throws {

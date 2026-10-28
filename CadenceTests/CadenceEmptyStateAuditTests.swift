@@ -1246,8 +1246,8 @@ struct CadenceEmptyStateAuditTests {
 
     /// **T-699.** `listsTitle(isNarrowed:)`'s own two answers, and that the other two call sites —
     /// `CadenceListsSummary.eyebrow`'s fallback and `iOSRootSidebar.emptyListsRow` — read it rather
-    /// than typing either branch, the way `theAttachListsSheetAsksTheSharedNarrowingRule` already
-    /// pins for the sheet. All three used to spell "No lists yet" themselves; only the sheet also
+    /// than typing either branch, the way the attach-lists sheet's own test did until [[T-2079]]
+    /// deleted both. All three used to spell "No lists yet" themselves; only the sheet also
     /// knew about "No matching lists".
     // **`theGoalPickerListReadsGoalsTitleRatherThanTypingEitherAnswer` left with [[T-5002]].**
     // T-698's subject was `GoalLinkPickerList` in `GoalPickerViews.swift`, deleted with the

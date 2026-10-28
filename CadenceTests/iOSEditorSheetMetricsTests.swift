@@ -278,7 +278,7 @@ struct iOSEditorSheetMetricsTests {
     // the group sat on a card, and that became the plate on itself once the group sat on the
     // sheet's own elevated plate. [[T-3170]] deleted the sheet, so the field has no subject. The
     // shared figure it joined, `iOSEditorSheetMetrics.titleSize`, is still read by its two
-    // siblings and is pinned by `theThreeCalendarSheetsShareOneSubjectSize` style assertions on
+    // siblings and is pinned by `everyEditorSheetNamesItsSubjectAtOneSize` and by assertions on
     // those files.
 
 

@@ -438,7 +438,7 @@ struct CadenceListWindDownSurfaceTests {
         ])
 
         // And nothing reroutes a bulk settle through the single-task transitions, which would
-        // refill the list it just closed. This is the invariant `aListWindDownDoesNotRefillTheList`
+        // refill the list it just closed. This is the invariant `aListCompletionDoesNotRefillTheListItJustFinished`
         // proves behaviourally; here it is as an absence, because the shape is what a future agent
         // reaches for.
         for path in ["Cadence/iOS/iOSListWindDownSupport.swift", "Cadence/iOS/iOSListViews.swift"] {

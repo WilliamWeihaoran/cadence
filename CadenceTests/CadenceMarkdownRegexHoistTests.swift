@@ -1205,11 +1205,13 @@ struct CadenceMarkdownRegexHoistTests {
     ///
     /// Both differences were invisible, and both for one reason: `[^`\n]` cannot contain a
     /// backtick, so the first backtick after the opener is the only place *either* quantifier can
-    /// stop, and a bare LF inside a class is exactly what `\n` means there. `theSpellingsAgree`
-    /// below is that, as a corpus rather than as an argument — two spans on one line, two spans
+    /// stop, and a bare LF inside a class is exactly what `\n` means there. The first half of
+    /// `theInlineCodePatternIsOneSpellingThreeReadersShare` below is that, as a corpus rather than
+    /// as an argument — two spans on one line, two spans
     /// sharing a backtick, a span that straddles a newline, an unterminated opener.
     ///
-    /// **And `theClassIsWhyTheyAgree` is why one spelling had to go.** The same two quantifiers
+    /// **And its last half, the class that admits the delimiter, is why one spelling had to go.**
+    /// The same two quantifiers
     /// over a body class that *admits* the delimiter disagree on the very first row: greedy
     /// swallows the gap between two spans. [[T-1520]] widened the image label class from
     /// `[^\]\n]` to `(?:[^\]\n\\]|\\.)*` for exactly the reason someone would widen this one — to

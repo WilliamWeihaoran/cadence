@@ -804,7 +804,7 @@ struct CadenceFirstLaunchEmptyStoreTests {
     /// list is deliberately this short — a longer one of plausible-looking hooks would widen a
     /// 200-character lookbehind into false positives on dense SwiftUI, and two other checks in the
     /// same test cover what it leaves out: the caller-set pin catches a seed appearing in any new
-    /// file, and `theLaunchRunsItsFivePassesInThisOrderAndSeedsNothing` reads the launch
+    /// file, and `theLaunchNamesEveryPassItRunsAndSeedsNothing` reads the launch
     /// pass's own body directly.
     ///
     /// **`"performStartupMaintenance"` was in this list and could never have fired.** Comments are

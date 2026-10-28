@@ -529,8 +529,8 @@ struct CadenceNoteTemplatePreferenceTests {
     /// **The guard `publish` already has, read the other way round.**
     ///
     /// `publish` refuses to turn a local string it cannot parse into a reset inside the record, so
-    /// one device's corruption cannot become every device's — `anUnreadableLocalDefaultIsRepaired`
-    /// `NotPropagated` pins that. The record→device direction had no matching rule: `adopt` passed
+    /// one device's corruption cannot become every device's —
+    /// `anUnreadableLocalDefaultIsRepairedNotPropagated` pins that. The record→device direction had no matching rule: `adopt` passed
     /// `overridesRaw` straight into `writeLocal`, which canonicalises a string it cannot read to
     /// `{}`. So a row this build could not read **erased the templates on every device that
     /// received it** — the [[T-2076]] shape (a record naming things this build has no reading for)

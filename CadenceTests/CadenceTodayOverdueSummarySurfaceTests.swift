@@ -23,7 +23,7 @@ import Testing
 struct CadenceTodayOverdueSummarySurfaceTests {
 
     /// **The Mac no longer draws them at all** — see
-    /// `theMacTodayHasNoPastDueCardsLeftToGuardAgainst`, which is where that absence is pinned. What
+    /// `neitherTodayHasPastDueCardsLeftToGuardAgainst` below, which is where that absence is pinned. What
     /// survives here is the other half of T-195's claim: the cards macOS *did* draw were the shared
     /// ones, so its own near-copies must still be gone rather than having come back to fill the gap.
     @Test func theMacPanelHasNoPrivateCopiesOfTheSharedCards() throws {

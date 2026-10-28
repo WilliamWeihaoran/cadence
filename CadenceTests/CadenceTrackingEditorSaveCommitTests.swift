@@ -143,7 +143,7 @@ struct CadenceTrackingEditorSaveCommitTests {
     //
     // **The rule itself is not retired**, only this surface's instance of it:
     // `CadenceSaveCommitDisciplineTests` holds the repo-wide `try? save()` census, and
-    // `arefusedBlockDeletePutsEveryMemberBack` below still pins the mutation the deleted button
+    // `arefusedBlockDeleteMakesTheBlockAndItsMembersVisibleAgain` above still pins the mutation the deleted button
     // called.
 
     // MARK: - Blocks

@@ -24,7 +24,7 @@ import Testing
 /// nothing observed the call sites. So the behavioural tests below run the real queries, and the
 /// source-scanning tests read the real files with exact per-file counts. The iOS half has no other
 /// option — `Cadence/iOS/` is entirely inside `#if os(iOS)` and this target builds for macOS —
-/// which is why `iOSTaskRow`'s share is asserted as source text and `theSourceScanIsNotVacuous`
+/// which is why `iOSTaskRow`'s share is asserted as source text and `theSourceScanIsNotVacuousInCancelledTaskReachability`
 /// exists to stop a broken reader making the absence assertions pass silently.
 @MainActor
 struct CadenceCancelledTaskReachabilityTests {
@@ -1097,7 +1097,7 @@ struct CadenceCancelledTaskReachabilityTests {
     /// should have to say so.
     @Test func theKanbanBoardsStillKeepCancelledWorkOffTheColumnsUpstream() throws {
         // T-3020: the per-column filter became one grouping pass, and it drops cancelled work as
-        // the first thing it does; `aSectionBoardColumnNeverDrawsCancelledWork` in
+        // the first thing it does; `caseOnlyColumnsShareTheirCardsAndCancelledWorkReachesNoColumn` in
         // `ListSectionBoardColumnCardsParityTests` is the behavioural half.
         try expectOccurrences(
             of: "for task in tasks where !task.isCancelled",

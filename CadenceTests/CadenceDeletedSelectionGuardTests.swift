@@ -21,7 +21,7 @@ import Testing
 /// guard read `visibleGoals.contains(selected) || trimmedQuery.isEmpty`, so it retargeted a stale
 /// selection *while you were searching* and left one in place the moment you cleared the box. Any
 /// test that types a search passes against the bug. The empty-search path is the one that has to be
-/// asserted, and `aDeletedGoalIsRetargetedWithTheSearchBoxEmpty` is that test.
+/// asserted, and the last two cases of `aMissingIDIsRetargetedWhateverTheFilterSays` assert it.
 @MainActor
 struct CadenceDeletedSelectionGuardTests {
 

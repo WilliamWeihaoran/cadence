@@ -8,7 +8,8 @@ import Testing
 /// **The bug this suite exists over was silence, not a crash.** `CadenceScheduleCaptureCard` draws
 /// `Frequency` and `Ends` with no `kind` guard, so a user could switch the card to Event, choose
 /// *"ends after 10 occurrences"*, watch the card accept it — and get an endless series, because
-/// the iOS manager's recurrence builder (`eventRecurrenceRule`, since moved to `Shared/`) built
+/// the iOS manager's recurrence builder (`eventRecurrenceRule`, since moved to `Shared/` as
+/// `CadenceEventCreationSupport.recurrenceRule`) built
 /// every rule with `end: nil` and `createEvent` took a bare `repeatRule` with nowhere to put a
 /// bound. Nothing anywhere said the limit was dropped.
 /// On the Task side the same three draft fields persist correctly, which is exactly what made the

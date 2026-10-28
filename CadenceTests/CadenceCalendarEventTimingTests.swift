@@ -346,11 +346,11 @@ struct CadenceCalendarEventTimingTests {
     //  commits through `CadencePendingChangePersistence` — so on a transition day, *opening the
     //  sheet and tapping Save moved the block an hour with no user edit at all*.
     //
-    //  The sheet is behind `#if os(iOS)` and `timeDate` is `private static`, so `CadenceTests`
-    //  (a macOS target) cannot call it. It is pinned the way the iOS quick-create site is: the
-    //  behaviour is asserted on the shared helper the sheet now delegates to — which, after the
-    //  fix, *is* the sheet's arithmetic — and the delegation itself is asserted in source by
-    //  `theBundleEditSheetSeedsItsPickerBySettingTheClock` below.
+    //  The sheet was behind `#if os(iOS)` and `timeDate` was `private static`, so `CadenceTests`
+    //  (a macOS target) could not call it. It was pinned the way the iOS quick-create site is: the
+    //  behaviour asserted on the shared helper the sheet delegated to — which, after the fix, *was*
+    //  the sheet's arithmetic — and the delegation asserted in source by a test [[T-3170]] deleted
+    //  with the sheet (its note is below).
 
     /// The headline: a block stored at `startMin = 540` must seed 09:00 and read back **540**, on
     /// a 23-hour day, a 25-hour day and an ordinary one alike. The old
@@ -458,8 +458,8 @@ struct CadenceCalendarEventTimingTests {
     ///
     /// The old code clamped the floor (`max(0, minute)`) and had **no ceiling**, so a stored 1500
     /// rolled the seed onto the *next calendar day* at 01:00 and `startMinute` read it back as 60 —
-    /// the block jumped a day as well as an hour. The ceiling is now the one `startMinute` and
-    /// `updateBundle` already impose, so an out-of-range minute lands at 23:55 on the block's own
+    /// the block jumped a day as well as an hour. The ceiling is now the one `startMinute` already
+    /// imposes, so an out-of-range minute lands at 23:55 on the block's own
     /// day. Both halves are asserted: the old roll-off, so "it used to be worse" is a measurement,
     /// and the new clamp.
     @Test func anOutOfRangeBundleStartMinuteClampsToTheBlocksOwnDayInsteadOfRollingOntoTheNext() throws {
