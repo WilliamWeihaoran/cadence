@@ -76,7 +76,7 @@ enum TildeContainerPickerSupport {
             TildeContainerItem(
                 tag: .area(area.id),
                 icon: area.icon,
-                name: area.name,
+                name: ContainerPickerFilterSupport.rowName(for: area),
                 color: Color(hex: area.colorHex)
             )
         }
@@ -84,7 +84,7 @@ enum TildeContainerPickerSupport {
             TildeContainerItem(
                 tag: .project(project.id),
                 icon: project.icon,
-                name: project.name,
+                name: ContainerPickerFilterSupport.rowName(for: project),
                 color: Color(hex: project.colorHex)
             )
         }
@@ -97,13 +97,13 @@ enum TildeContainerPickerSupport {
                 areas,
                 selectedID: selection.flatMap { CadenceTaskComposerSupport.selectedAreaID($0) }
             )
-            .filter { matches($0.name) }
+            .filter { matches(ContainerPickerFilterSupport.rowName(for: $0)) }
         let offerableProjects = CadenceTaskComposerSupport
             .pickableProjects(
                 projects,
                 selectedID: selection.flatMap { CadenceTaskComposerSupport.selectedProjectID($0) }
             )
-            .filter { matches($0.name) }
+            .filter { matches(ContainerPickerFilterSupport.rowName(for: $0)) }
         let offered = Set(contexts.map(\.id))
 
         var result: [TildeContainerItem] = []

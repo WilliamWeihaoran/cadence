@@ -46,6 +46,24 @@ enum ContainerPickerFilterSupport {
         matches("Inbox", query: query)
     }
 
+    /// What a row is titled — and so what the search matches. A blank-named list reads
+    /// "Untitled Area" / "Untitled Project", as the badge that opened the picker
+    /// (`CadenceTaskComposerSupport.containerName`), the sidebar and Cmd+K ([[T-7202]]) and the
+    /// Kanban list board ([[T-8064]]) already say; before [[T-8102]] the row was a bare glyph.
+    static func rowName(for area: Area) -> String {
+        CadenceTitleNormalization.display(area.name, fallback: CadenceTitleNormalization.defaultAreaName)
+    }
+
+    static func rowName(for project: Project) -> String {
+        CadenceTitleNormalization.display(project.name, fallback: CadenceTitleNormalization.defaultProjectName)
+    }
+
+    /// A blank-named context's heading reads "Untitled Context" rather than an empty eyebrow
+    /// ([[T-8102]]).
+    static func headingTitle(for context: Context) -> String {
+        CadenceTitleNormalization.display(context.name, fallback: CadenceTitleNormalization.defaultContextName)
+    }
+
     /// The rows the picker offers, grouped by context.
     ///
     /// **`selection` is the whole of T-534.** "Which lists may I offer" is a rule about *fresh*
@@ -70,10 +88,10 @@ enum ContainerPickerFilterSupport {
     ) -> [Group] {
         let offerableAreas = CadenceTaskComposerSupport
             .pickableAreas(areas, selectedID: CadenceTaskComposerSupport.selectedAreaID(selection))
-            .filter { matches($0.name, query: query) }
+            .filter { matches(rowName(for: $0), query: query) }
         let offerableProjects = CadenceTaskComposerSupport
             .pickableProjects(projects, selectedID: CadenceTaskComposerSupport.selectedProjectID(selection))
-            .filter { matches($0.name, query: query) }
+            .filter { matches(rowName(for: $0), query: query) }
 
         let offered = Set(contexts.map(\.id))
         var groups = contexts.compactMap { context -> Group? in
@@ -82,7 +100,7 @@ enum ContainerPickerFilterSupport {
             guard !ownedAreas.isEmpty || !ownedProjects.isEmpty else { return nil }
             return Group(
                 contextID: context.id,
-                title: context.name,
+                title: headingTitle(for: context),
                 colorHex: context.colorHex,
                 areas: ownedAreas,
                 projects: ownedProjects
@@ -203,7 +221,7 @@ struct ContainerPickerPopoverContent: View {
                             ForEach(group.areas) { area in
                                 ContainerPickerRow(
                                     icon: area.icon,
-                                    name: area.name,
+                                    name: ContainerPickerFilterSupport.rowName(for: area),
                                     color: Color(hex: area.colorHex),
                                     isHighlighted: highlighted == .area(area.id),
                                     action: { onSelect(.area(area.id)) }
@@ -213,7 +231,7 @@ struct ContainerPickerPopoverContent: View {
                             ForEach(group.projects) { project in
                                 ContainerPickerRow(
                                     icon: project.icon,
-                                    name: project.name,
+                                    name: ContainerPickerFilterSupport.rowName(for: project),
                                     color: Color(hex: project.colorHex),
                                     isHighlighted: highlighted == .project(project.id),
                                     action: { onSelect(.project(project.id)) }
