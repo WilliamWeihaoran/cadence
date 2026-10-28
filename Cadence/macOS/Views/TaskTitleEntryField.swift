@@ -5,6 +5,10 @@ import SwiftUI
 struct TaskTitleEntryField: View {
     @Binding var title: String
     let priority: Binding<TaskPriority>?
+    /// Whether a trailing or leading `!`/`!!`/`!!!` is drawn as the coloured marker. Always true
+    /// with a `priority` binding; a host without one (the board's inline composer, whose priority
+    /// is read back off the title by `TaskCreationDraft.resolvedPriority`) asks for it explicitly.
+    let previewsPriorityShortcut: Bool
     let placeholder: String
     let font: Font
     let previewFont: Font
@@ -30,8 +34,15 @@ struct TaskTitleEntryField: View {
     @State private var shouldSuppressInitialTitleSelection = false
     @FocusState private var isTitleFocused: Bool
 
+    /// **T-8106.** The preview used to be gated on the binding alone, so the inline composer —
+    /// which has none, and keeps the marks in the title — showed the raw `!!` where the sheet
+    /// showed the marker.
+    static func previewsPriorityShortcut(hasPriorityBinding: Bool, requested: Bool) -> Bool {
+        hasPriorityBinding || requested
+    }
+
     private var priorityShortcutSegments: TaskTitlePriorityShortcutSegments? {
-        guard priority != nil else { return nil }
+        guard previewsPriorityShortcut else { return nil }
         return TaskTitleSupport.priorityShortcutSegments(in: title)
     }
 
@@ -42,6 +53,7 @@ struct TaskTitleEntryField: View {
     init(
         title: Binding<String>,
         priority: Binding<TaskPriority>? = nil,
+        previewsPriorityShortcut: Bool = false,
         placeholder: String,
         font: Font,
         previewFont: Font? = nil,
@@ -61,6 +73,10 @@ struct TaskTitleEntryField: View {
     ) {
         self._title = title
         self.priority = priority
+        self.previewsPriorityShortcut = Self.previewsPriorityShortcut(
+            hasPriorityBinding: priority != nil,
+            requested: previewsPriorityShortcut
+        )
         self.placeholder = placeholder
         self.font = font
         self.previewFont = previewFont ?? font

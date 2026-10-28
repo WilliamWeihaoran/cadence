@@ -89,6 +89,10 @@ struct InlineTaskComposer: View {
     private var titleField: some View {
         TaskTitleEntryField(
             title: $title,
+            // No binding on purpose: the marks stay in the title and `TaskCreationService` reads
+            // the priority back off it, so blurring cannot strip a priority this row has no chip
+            // to show. Only the sheet's marker preview is borrowed ([[T-8106]]).
+            previewsPriorityShortcut: true,
             placeholder: "Task name",
             font: .system(size: 12),
             lineLimit: 1...3,
