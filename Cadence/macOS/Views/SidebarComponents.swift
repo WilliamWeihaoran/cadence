@@ -395,12 +395,18 @@ nonisolated enum SidebarListDropPlacement {
         return draggedIndex < targetIndex ? .bottom : .top
     }
 
-    /// `dragged` when the drag's payload is that list's own `providerText`, otherwise `nil`: a
-    /// task (`TaskDragPayload`), foreign text, or a payload that never loaded is not a list drag,
-    /// whatever `SidebarDragContext` still holds from an earlier one ([[T-7701]]).
+    /// The list a drag over a list row moves, or `nil` when it is not a list reorder.
+    ///
+    /// A payload that LOADED decides it: only that list's own `providerText` confirms `dragged`;
+    /// a task (`TaskDragPayload`) or foreign text is not a list drag, whatever
+    /// `SidebarDragContext` still holds from an earlier one ([[T-7701]]). A payload that did NOT
+    /// load (no provider, or `loadObject` failed) is no evidence either way, so the in-flight
+    /// `dragged` stands: treating it as a refusal made every reorder hang on an async load that
+    /// AppKit need not serve mid-drag, and a failed load then forgot the list ([[T-7892]]).
     static func confirmedListDrag(payload: String?, dragged: SidebarListDragItem?) -> SidebarListDragItem? {
-        guard let dragged, let payload, payload == dragged.providerText as String else { return nil }
-        return dragged
+        guard let dragged else { return nil }
+        guard let payload else { return dragged }
+        return payload == dragged.providerText as String ? dragged : nil
     }
 }
 
@@ -459,9 +465,10 @@ private struct SidebarListDropDelegate: DropDelegate {
         SidebarDragContext.shared.draggedListItem != nil && info.hasItemsConforming(to: [UTType.text])
     }
 
-    /// Draws the line at once, then checks the payload: one that is not the in-flight list means
-    /// that list's drag was abandoned, so the line comes down and the stale item is forgotten.
-    /// The late answer can only take the line away, never put it up after the drag has left.
+    /// Draws the line at once, then checks the payload: one that loads and is not the in-flight
+    /// list means that list's drag was abandoned, so the line comes down and the stale item is
+    /// forgotten. One that does not load keeps the list ([[T-7892]]). The late answer can only
+    /// take the line away, never put it up after the drag has left.
     func dropEntered(info: DropInfo) {
         guard let inFlight = SidebarDragContext.shared.draggedListItem else { return }
         dragOverItem = target
@@ -492,7 +499,8 @@ private struct SidebarListDropDelegate: DropDelegate {
         return true
     }
 
-    /// The drag's plain-text payload, delivered on the main actor (`nil` when there is none).
+    /// The drag's plain-text payload, delivered on the main actor (`nil` when there is no text
+    /// provider or it failed to load, which `confirmedListDrag` treats as no evidence).
     private func loadPayload(from info: DropInfo, then deliver: @escaping @MainActor (String?) -> Void) {
         guard let provider = info.itemProviders(for: [UTType.text]).first else {
             deliver(nil)

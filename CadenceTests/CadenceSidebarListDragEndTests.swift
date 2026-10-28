@@ -30,16 +30,25 @@ struct CadenceSidebarListDragEndTests {
         #expect(context.draggedListItem == nil)
     }
 
-    /// Only the list's own payload confirms a reorder: a task's payload, foreign text, or a
-    /// payload that never loaded is refused even while a stale list is held.
+    /// Among payloads that loaded, only the list's own confirms a reorder: a task's payload or
+    /// foreign text is refused even while a stale list is held.
     @Test func onlyTheListsOwnPayloadConfirmsAReorder() {
         let taskPayload = TaskDragPayload.string(for: UUID())
         #expect(SidebarListDropPlacement.confirmedListDrag(payload: first.providerText as String, dragged: first) == first)
         #expect(SidebarListDropPlacement.confirmedListDrag(payload: taskPayload, dragged: first) == nil)
         #expect(SidebarListDropPlacement.confirmedListDrag(payload: second.providerText as String, dragged: first) == nil)
         #expect(SidebarListDropPlacement.confirmedListDrag(payload: "plain text", dragged: first) == nil)
-        #expect(SidebarListDropPlacement.confirmedListDrag(payload: nil, dragged: first) == nil)
+        #expect(SidebarListDropPlacement.confirmedListDrag(payload: "", dragged: first) == nil)
         #expect(SidebarListDropPlacement.confirmedListDrag(payload: first.providerText as String, dragged: nil) == nil)
+    }
+
+    /// A payload that never loaded (no provider, or `loadObject` failed mid-drag) is no evidence
+    /// against the list in flight, so the reorder falls back to it instead of forgetting it and
+    /// failing every Mac list reorder (T-7892). With nothing in flight it is still no reorder.
+    @Test func aPayloadThatNeverLoadedFallsBackToTheListInFlight() {
+        #expect(SidebarListDropPlacement.confirmedListDrag(payload: nil, dragged: first) == first)
+        #expect(SidebarListDropPlacement.confirmedListDrag(payload: nil, dragged: second) == second)
+        #expect(SidebarListDropPlacement.confirmedListDrag(payload: nil, dragged: nil) == nil)
     }
 
     /// A row that sees a non-list payload forgets the stale list, but never a newer list drag
