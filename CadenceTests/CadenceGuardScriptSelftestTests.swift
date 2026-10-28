@@ -265,13 +265,6 @@ struct CadenceGuardScriptSelftestTests {
         // ran, so an illegal lead token -- read as OPEN everywhere -- was refused nowhere. Naming it
         // here means deleting mode 11 goes red rather than quietly un-wiring the gate.
         "LEDGER-ILLEGAL-LEAD",
-        // T-3264: the test-name census asked of the private index, so a commit that makes two
-        // suites share a `@Test` name (`830a428d`, `f574136c`/T-6650) is refused at the commit
-        // rather than by a full-target run on main. Naming all three means deleting mode 12 goes
-        // red rather than quietly un-wiring the census or its can't-run refusals.
-        "TEST-NAME-SHARED",
-        "TEST-NAME-CHECK-MISSING",
-        "TEST-NAME-CHECK-FAILED",
     ]
 
     /// Every refusal `scripts/agent-scratch.sh` makes (T-1094). The ticket was filed over work that
