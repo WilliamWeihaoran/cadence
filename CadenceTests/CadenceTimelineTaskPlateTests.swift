@@ -286,6 +286,39 @@ struct CadenceTimelineTaskPlateTests {
         #expect(plain >= 4.5)
         #expect(struck < plain, "non-vacuity: the stripe overlay did not change the title's contrast at all")
     }
+
+    // MARK: - The completion circle ([[T-8393]])
+
+    /// The block's circle asks the manager the same three questions the task row and the Kanban
+    /// card do — what to draw, how far it has filled, what a click does — so a cancellation
+    /// started on the row draws on the block, and a second click mid-fill starts a cancellation
+    /// instead of taking the fill back.
+    @Test func theTimelineBlockCircleRunsTheSharedThreeTapWalk() throws {
+        let block = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile("Cadence/macOS/Views/TimelineTaskBlock.swift"))
+        let content = try #require(CadenceSourceScan.functionBody(named: "blockContent", in: block), "non-vacuity: blockContent moved")
+        #expect(content.contains("onToggleDone: { taskCompletionAnimationManager.advanceCompletionControl(for: task) }"),
+                "the block's circle is not on the three-tap walk")
+        #expect(!block.contains("toggleCompletion(for: task)"), "the block still calls the two-state toggle")
+        #expect(content.contains("completionGlyph: taskCompletionAnimationManager.glyph(for: task)"),
+                "the block's glyph cannot see a pending cancellation")
+        #expect(content.contains("completionProgress: now.flatMap { taskCompletionAnimationManager.pendingProgress(for: task, now: $0) } ?? 0"),
+                "the block's fill cannot run a cancellation's progress")
+        let gate = try #require(CadenceSourceScan.declarationBody("private var hasPendingFill: Bool", in: block))
+        #expect(gate.contains("isPendingCompletion || taskCompletionAnimationManager.isPendingCancel(task)"),
+                "the block animates only a completion's fill")
+        let core = try #require(CadenceSourceScan.declarationBody("private var coreBlock: some View", in: block))
+        #expect(core.contains("if hasPendingFill {"), "the block's TimelineView is not gated on either pending state")
+
+        let body = try t3160TaskBlockBody()
+        #expect(body.contains("let glyph = completionGlyph ?? CadenceTaskCompletionGlyph.resolve(task: task)"))
+        #expect(body.contains("progress: isPendingCompletion || isPendingCancellation ? clampedProgress : nil"),
+                "the ring draws only a completion's fill")
+        #expect(content.contains("isPendingCancellation: taskCompletionAnimationManager.isPendingCancel(task)"),
+                "the block's sweep cannot see a pending cancellation")
+        #expect(body.contains("if isPendingCompletion || isPendingCancellation {"), "a cancellation draws no sweep on the block")
+        #expect(body.contains("tint: isPendingCompletion ? Theme.green : secondaryInk"),
+                "the cancellation sweep is not the plate's neutral ink")
+    }
 }
 
 // MARK: - Fixtures

@@ -178,6 +178,24 @@ struct TaskNotesEmbedHandlersTests {
         #expect(handlers.embeddedTaskFailureNotice == CadenceTaskFieldEditCommit.saveFailureNotice)
     }
 
+    /// [[T-8394]]: a cancelled card's circle restores it to todo, as iOS's embed card and every
+    /// other circle do (T-344) — it never completes it (which would also mint a recurring task's successor).
+    @Test func aCancelledCardsTickRestoresItAndDoesNotCompleteIt() throws {
+        let (container, modelContext) = try context()
+        let owner = try seededTask("Owner", in: modelContext)
+        let embedded = try seededTask("Embedded", in: modelContext)
+        embedded.status = .cancelled
+        try modelContext.save()
+        let handlers = TaskNotesEmbedHandlers(hoverIDPrefix: "test-")
+
+        handlers.toggleEmbeddedTask(id: embedded.id, in: scope([owner, embedded], owner: owner, modelContext))
+
+        #expect(embedded.status == .todo, "a cancelled card's tick did not restore it")
+        #expect(handlers.embeddedTaskFailureNotice == nil)
+        let stored = try ModelContext(container).fetch(FetchDescriptor<AppTask>())
+        #expect(stored.first { $0.id == embedded.id }?.status == .todo, "the store does not hold the restore")
+    }
+
     @Test func aRefusedSubtaskTickOrRenameIsNamedAndUndone() throws {
         let (_, modelContext) = try context()
         let owner = try seededTask("Owner", in: modelContext)

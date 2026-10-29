@@ -236,12 +236,15 @@ final class TaskNotesEmbedHandlers {
         return .task(embeddedTask)
     }
 
+    /// The card's circle toggles *settled*, not *done* ([[T-8394]], the rule T-344 decided): it
+    /// asks the shared `CadenceTaskMutationSupport.toggleCompletion`, which reads `isFinishedTask`,
+    /// so a cancelled card restores to todo as iOS's embed card already did. Reading `isDone` here
+    /// completed a cancelled task on one click, minting the successor of a recurring one.
     func toggleEmbeddedTask(id: UUID, in scope: TaskNotesEmbedScope) {
         guard let embeddedTask = embeddedTask(id: id, in: scope) else { return }
         do {
-            try CadenceTaskMutationSupport.setStatus(
-                embeddedTask.isDone ? .todo : .done,
-                for: embeddedTask,
+            try CadenceTaskMutationSupport.toggleCompletion(
+                embeddedTask,
                 modelContext: scope.modelContext,
                 commit: commit
             )

@@ -128,7 +128,9 @@ func timelineBlockBody(
     showSelection: Bool,
     showHover: Bool = false,
     isPendingCompletion: Bool = false,
+    isPendingCancellation: Bool = false,
     completionProgress: Double = 0,
+    completionGlyph: CadenceTaskCompletionGlyph? = nil,
     onToggleDone: (() -> Void)? = nil
 ) -> some View {
     let taskColor = Color(hex: task.containerColor)
@@ -181,15 +183,14 @@ func timelineBlockBody(
                 // Two states before: a cancelled task scheduled onto the timeline drew the same
                 // plain circle as an open one. `CadenceTaskCompletionGlyph` is the same decision
                 // the task row and the kanban card make.
-                let glyph = CadenceTaskCompletionGlyph.resolve(
-                    task: task,
-                    isPendingCompletion: isPendingCompletion
-                )
+                // [[T-8393]]: the live block passes the manager's glyph, which sees a pending
+                // cancellation too, and either deferral's fill; the stored status is the fallback.
+                let glyph = completionGlyph ?? CadenceTaskCompletionGlyph.resolve(task: task)
                 Button(action: onToggleDone) {
                     TaskCompletionProgressGlyph(
                         icon: glyph.symbolName,
                         color: glyph.tint,
-                        progress: isPendingCompletion ? clampedProgress : nil,
+                        progress: isPendingCompletion || isPendingCancellation ? clampedProgress : nil,
                         size: 13,
                         lineWidth: 1.6
                     )
@@ -280,7 +281,7 @@ func timelineBlockBody(
                         isActive: showHover
                     )
                 )
-            if isPendingCompletion {
+            if isPendingCompletion || isPendingCancellation {
                 // The second, list-coloured wash that used to ride on top of the fill here
                 // (`taskColor.opacity(0.06 + 0.06 * completedTransitionOpacity)`) is gone rather
                 // than re-tinted. It warmed a neutral surface toward the list colour as the
@@ -289,9 +290,12 @@ func timelineBlockBody(
                 // pretending to animate. The animation itself is untouched —
                 // `TaskCompletionPendingOverlay` is the sweeping glow, the progress capsule and
                 // the rim, and the glyph still fills on its own ring.
+                // [[T-8393]]: a cancellation sweeps too, as it does over the task row. The row's
+                // neutral is `Theme.dim`, which was never measured on this plate (T-3160), so the
+                // block's neutral is the plate's own secondary ink.
                 TaskCompletionPendingOverlay(
                     progress: clampedProgress,
-                    tint: Theme.green,
+                    tint: isPendingCompletion ? Theme.green : secondaryInk,
                     cornerRadius: style.cornerRadius
                 )
                 .opacity(pendingOverlayOpacity)

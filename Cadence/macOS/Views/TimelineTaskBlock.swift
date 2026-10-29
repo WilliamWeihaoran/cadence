@@ -44,9 +44,15 @@ struct TimelineTaskBlock: View {
         taskCompletionAnimationManager.isPending(task)
     }
 
+    /// Either deferral is running, so the circle has a fill to animate ([[T-8393]]). Gating on the
+    /// completion alone left a cancellation started on the row frozen on the block.
+    private var hasPendingFill: Bool {
+        isPendingCompletion || taskCompletionAnimationManager.isPendingCancel(task)
+    }
+
     @ViewBuilder
     private var coreBlock: some View {
-        if isPendingCompletion {
+        if hasPendingFill {
             TimelineView(.animation) { context in
                 blockContent(now: context.date)
             }
@@ -66,8 +72,12 @@ struct TimelineTaskBlock: View {
             showSelection: selectedTaskID == task.id,
             showHover: isHovered,
             isPendingCompletion: isPendingCompletion,
-            completionProgress: now.map { taskCompletionAnimationManager.progress(for: task, now: $0) } ?? 0,
-            onToggleDone: { taskCompletionAnimationManager.toggleCompletion(for: task) }
+            // [[T-8393]]: the same pending states, fill, glyph and three-tap walk the task row and
+            // the Kanban card ask the manager for, so the block cannot disagree with them.
+            isPendingCancellation: taskCompletionAnimationManager.isPendingCancel(task),
+            completionProgress: now.flatMap { taskCompletionAnimationManager.pendingProgress(for: task, now: $0) } ?? 0,
+            completionGlyph: taskCompletionAnimationManager.glyph(for: task),
+            onToggleDone: { taskCompletionAnimationManager.advanceCompletionControl(for: task) }
         )
         .frame(width: frame.width, height: frame.height)
         .contentShape(Rectangle())
