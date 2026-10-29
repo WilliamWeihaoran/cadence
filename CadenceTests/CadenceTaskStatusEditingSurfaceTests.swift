@@ -154,7 +154,19 @@ struct CadenceTaskStatusEditingSurfaceTests {
         "Cadence/iOS/iOSBoardCards.swift",
         "Cadence/iOS/iOSMarkdownEditingSurface.swift",
         "Cadence/iOS/iOSFocusView.swift",
-        "Cadence/iOS/iOSTaskDetailSheet.swift"
+        "Cadence/iOS/iOSTaskDetailSheet.swift",
+        // [[T-8203]]: the deferred completion's own funnel. Its iOS hop is the wrapper, so it is
+        // held to the same three bans as every surface that reaches it.
+        "Cadence/Shared/TaskCompletionAnimationManager.swift"
+    ]
+
+    /// [[T-8203]]: the surfaces whose completion circle or swipe now starts the shared deferred
+    /// fill, and so reach the wrapper one hop later, through `TaskCompletionAnimationManager`'s
+    /// iOS `commit`, rather than by naming it.
+    private static let deferredCompletionSurfaces: Set<String> = [
+        "Cadence/iOS/iOSTaskRowActionViews.swift",
+        "Cadence/iOS/iOSTaskViews.swift",
+        "Cadence/iOS/iOSBoardCards.swift"
     ]
 
     /// The pure mutation layer's status entry points, called directly. Correct for a service or an
@@ -187,7 +199,9 @@ struct CadenceTaskStatusEditingSurfaceTests {
             // Positive first: the file names the wrapper. This doubles as the non-vacuity check —
             // an empty or wrong file cannot satisfy it.
             #expect(
-                stripped.contains("CadenceTaskStatusEditing."),
+                stripped.contains("CadenceTaskStatusEditing.")
+                    || (Self.deferredCompletionSurfaces.contains(path)
+                        && stripped.contains("TaskCompletionAnimationManager.shared.")),
                 "\(path) no longer routes any status change through CadenceTaskStatusEditing"
             )
             #expect(

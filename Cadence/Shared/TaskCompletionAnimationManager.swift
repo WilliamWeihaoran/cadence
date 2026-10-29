@@ -1,8 +1,19 @@
-#if os(macOS)
 import SwiftUI
 import Observation
 import SwiftData
 
+/// The deferred completion: the tap starts a fill, the `.done` write waits it out, and a tap
+/// inside it takes the completion back.
+///
+/// **One manager for both platforms ([[T-8203]]).** It lived in `macOS/Services/` while iOS wrote
+/// completion synchronously, so the two platforms disagreed about whether an animation plays and
+/// whether a mis-tap can be withdrawn — a UI difference no hardware constraint answers, which is
+/// drift under [[T-8201]]. Nothing in it was AppKit; it moved here whole rather than being copied,
+/// so the clock, the undo rule and the termination settle are the same object on both. The only
+/// platform split is the last hop of `write`, and it is plumbing rather than UI: macOS reconciles
+/// through `TaskWorkflowService` and names a refusal on `settleFailed`, iOS through
+/// `CadenceTaskStatusEditing`, which names it on `CadenceTaskSettleFailureCenter` — each
+/// platform's existing one place, so a refused tick is said where that shell already says it.
 @MainActor
 @Observable
 final class TaskCompletionAnimationManager {
@@ -10,7 +21,7 @@ final class TaskCompletionAnimationManager {
 
     // The deferral, and therefore the undo window, is `CadenceTaskCompletionTiming`'s and is read
     // from there at each use ([[T-8202]]). This manager deliberately keeps no constant of its own:
-    // the section manager and the drawing read the same number, and [[T-8203]] ports it to iOS.
+    // the section manager and the drawing read the same number on both platforms.
 
     /// The **last-resort** context for a settle, and nothing more (T-3098).
     ///
@@ -86,6 +97,39 @@ final class TaskCompletionAnimationManager {
         }
     }
 
+    /// **What a tap on a task's completion circle does, as one decision ([[T-8203]]).**
+    ///
+    /// Three taps walk the control: open → completing; completing → cancelling (the fill turns
+    /// grey and a cross replaces the dot); cancelling → open again. A settled task reopens. These
+    /// are exactly the five names `CadenceTaskCompletionState.accessibilityActionLabel` already
+    /// announces — "Cancel task" mid-fill, "Stop canceling task" mid-cancel — so the label and the
+    /// gesture are one rule. macOS spelled this as a three-branch `handleTap()` in the task row and
+    /// again in the Kanban card; iOS, which had no pending state at all, called the synchronous
+    /// toggle. Every circle on both platforms now asks this.
+    func advanceCompletionControl(for task: AppTask) {
+        if isPending(task) {
+            cancelPending(for: task.id)
+            toggleCancellation(for: task)
+        } else if isPendingCancel(task) {
+            cancelCancelPending(for: task.id)
+        } else {
+            toggleCompletion(for: task)
+        }
+    }
+
+    /// The glyph a completion circle should draw for `task` right now, pending states included.
+    func glyph(for task: AppTask) -> CadenceTaskCompletionGlyph {
+        .resolve(task: task, isPendingCompletion: isPending(task), isPendingCancellation: isPendingCancel(task))
+    }
+
+    /// The running fill for whichever deferral `task` is in — completion first, as the glyph's
+    /// own order has it — or `nil` when there is none to draw.
+    func pendingProgress(for task: AppTask, now: Date = Date()) -> Double? {
+        if isPending(task) { return progress(for: task, now: now) }
+        if isPendingCancel(task) { return cancelProgress(for: task, now: now) }
+        return nil
+    }
+
     func cancelPending(for taskID: UUID) {
         pendingTasks[taskID]?.cancel()
         pendingTasks[taskID] = nil
@@ -101,14 +145,20 @@ final class TaskCompletionAnimationManager {
         pendingTasks[id] = Task { [weak self] in
             try? await Task.sleep(nanoseconds: UInt64(CadenceTaskCompletionTiming.animationDuration * 1_000_000_000))
             guard !Task.isCancelled else { return }
-            await MainActor.run {
-                guard let self, self.pendingStartTimes[id] != nil else { return }
-                self.pendingTasks[id] = nil
-                self.pendingStartTimes[id] = nil
-                self.pendingTargets[id] = nil
-                self.write(.done, to: task)
-            }
+            await MainActor.run { self?.windowClosed(onCompletionOf: id) }
         }
+    }
+
+    /// What the completion timer does when the window closes, as a method of its own so a test
+    /// can close the window without sleeping through it ([[T-268]] forbids sleep-and-assert).
+    /// A no-op unless a fill is still recorded for `id` — a take-back inside the window cleared it.
+    func windowClosed(onCompletionOf id: UUID) {
+        guard pendingStartTimes[id] != nil, let task = pendingTargets[id] else { return }
+        pendingTasks[id] = nil
+        pendingStartTimes[id] = nil
+        pendingTargets[id] = nil
+        guard !wasSettledElsewhere(task) else { return }
+        self.write(.done, to: task)
     }
 
     // MARK: - Cancellation
@@ -154,14 +204,18 @@ final class TaskCompletionAnimationManager {
         pendingCancelTasks[id] = Task { [weak self] in
             try? await Task.sleep(nanoseconds: UInt64(CadenceTaskCompletionTiming.animationDuration * 1_000_000_000))
             guard !Task.isCancelled else { return }
-            await MainActor.run {
-                guard let self, self.pendingCancelStartTimes[id] != nil else { return }
-                self.pendingCancelTasks[id] = nil
-                self.pendingCancelStartTimes[id] = nil
-                self.pendingCancelTargets[id] = nil
-                self.write(.cancelled, to: task)
-            }
+            await MainActor.run { self?.windowClosed(onCancellationOf: id) }
         }
+    }
+
+    /// The cancellation twin of `windowClosed(onCompletionOf:)`.
+    func windowClosed(onCancellationOf id: UUID) {
+        guard pendingCancelStartTimes[id] != nil, let task = pendingCancelTargets[id] else { return }
+        pendingCancelTasks[id] = nil
+        pendingCancelStartTimes[id] = nil
+        pendingCancelTargets[id] = nil
+        guard !wasSettledElsewhere(task) else { return }
+        self.write(.cancelled, to: task)
     }
 
     // MARK: - Termination
@@ -181,8 +235,34 @@ final class TaskCompletionAnimationManager {
         let cancellations = pendingCancelTargets
         for id in completions.keys { cancelPending(for: id) }
         for id in cancellations.keys { cancelCancelPending(for: id) }
-        for task in completions.values { write(.done, to: task) }
-        for task in cancellations.values { write(.cancelled, to: task) }
+        for task in completions.values where !wasSettledElsewhere(task) { write(.done, to: task) }
+        for task in cancellations.values where !wasSettledElsewhere(task) { write(.cancelled, to: task) }
+    }
+
+    /// **The iOS spelling of termination ([[T-8203]], hazard 1).** iOS has no Cmd-Q to hear: it
+    /// suspends a backgrounded app and kills it later without notice, so a fill still running when
+    /// the user swipes home is the same dropped tick [[T-5360]] fixed on macOS, re-introduced. The
+    /// root's `scenePhase` observer calls this on every phase change; it settles on leaving
+    /// `.active` — the same edge `MarkdownEditorTerminationFlush` uses for held editor text — and
+    /// does nothing on returning, so coming back to the app cannot complete a task nobody tapped.
+    /// Settling on `.inactive` too (Control Centre, the app switcher) shortens an undo window the
+    /// user has already walked away from; waiting for `.background` would bet the write on a
+    /// suspension that may never deliver it.
+    func settleAllPending(onLeaving phase: ScenePhase) {
+        guard phase != .active else { return }
+        settleAllPendingBeforeTermination()
+    }
+
+    /// **A task settled by someone else mid-fill is left as they settled it ([[T-8203]], hazard 4).**
+    ///
+    /// `CompleteTaskIntent` completes a task from a widget out of process, and MCP and a second
+    /// device can do the same; any of them can land inside the 1.2s window. Writing `.done` over a
+    /// task that is already done re-stamps `completedAt` with a later time, and writing
+    /// `.cancelled` over a completed one turns finished work into abandoned work — in both cases
+    /// overwriting a decision with an older one. The user's intent ("this is over") has already
+    /// been met, so the fill just ends.
+    private func wasSettledElsewhere(_ task: AppTask) -> Bool {
+        CadenceTaskQuerySupport.isFinishedTask(task)
     }
 
     // MARK: - Status writes
@@ -193,6 +273,14 @@ final class TaskCompletionAnimationManager {
         case done
         case cancelled
         case restored
+
+        var status: TaskStatus {
+            switch self {
+            case .done: .done
+            case .cancelled: .cancelled
+            case .restored: .todo
+            }
+        }
     }
 
     /// **Every** status write in this manager goes through here, and none of them spell
@@ -260,27 +348,37 @@ final class TaskCompletionAnimationManager {
         var transaction = Transaction()
         transaction.disablesAnimations = true
         withTransaction(transaction) {
-            switch transition {
-            case .restored:
-                if let context = settleContext(for: task) {
-                    settle(in: context) { try TaskWorkflowService.commitMarkTodo(task, in: $0) }
-                } else {
-                    CadenceTaskRecurrenceWorkflowSupport.settleWithoutAdvancingSeries(task, as: .todo)
-                }
-            case .done:
-                if let context = settleContext(for: task) {
-                    settle(in: context) { try TaskWorkflowService.commitMarkDone(task, in: $0) }
-                } else {
-                    CadenceTaskRecurrenceWorkflowSupport.settleWithoutAdvancingSeries(task, as: .done)
-                }
-            case .cancelled:
-                if let context = settleContext(for: task) {
-                    settle(in: context) { try TaskWorkflowService.commitMarkCancelled(task, in: $0) }
-                } else {
-                    CadenceTaskRecurrenceWorkflowSupport.settleWithoutAdvancingSeries(task, as: .cancelled)
-                }
+            guard let context = settleContext(for: task) else {
+                CadenceTaskRecurrenceWorkflowSupport.settleWithoutAdvancingSeries(task, as: transition.status)
+                return
             }
+            commit(transition, to: task, in: context)
         }
     }
-}
+
+    /// The one platform split in this manager, and it is plumbing, not UI ([[T-8203]]).
+    ///
+    /// Both spellings reach the same committing shared transition (`CadenceTaskMutationSupport`'s
+    /// `commitSettle` / `setStatus`); they differ in the app-side hop around it. macOS's
+    /// `TaskWorkflowService` reconciles through `HabitNotificationReconcileSupport` and reports a
+    /// refusal to this manager's `settleFailed`, which `macOSRootView` reads. iOS has no
+    /// `TaskWorkflowService`: its status wrapper is `CadenceTaskStatusEditing`, which reconciles
+    /// through `CadenceWindDownReconciler` and records a refusal on
+    /// `CadenceTaskSettleFailureCenter`, the iOS shell's one place for that sentence (T-636/T-642).
+    /// Routing iOS through it is what keeps a deferred tick reconciling and reporting exactly as
+    /// the synchronous one it replaced did.
+    private func commit(_ transition: StatusWrite, to task: AppTask, in context: ModelContext) {
+#if os(macOS)
+        switch transition {
+        case .restored:
+            settle(in: context) { try TaskWorkflowService.commitMarkTodo(task, in: $0) }
+        case .done:
+            settle(in: context) { try TaskWorkflowService.commitMarkDone(task, in: $0) }
+        case .cancelled:
+            settle(in: context) { try TaskWorkflowService.commitMarkCancelled(task, in: $0) }
+        }
+#else
+        CadenceTaskStatusEditing.setStatus(transition.status, for: task, in: context)
 #endif
+    }
+}

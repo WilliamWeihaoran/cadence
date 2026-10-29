@@ -16,9 +16,9 @@ import Foundation
 ///
 /// It lives in `Shared/` beside `CadenceTaskCompletionGlyph` because [[T-8203]] ports the deferred
 /// completion to iOS; a second copy of these two numbers is the drift that was already worth a
-/// ticket when the two *managers* held one number each. The managers themselves stay macOS-only —
-/// iOS completes immediately today, and `CadenceTaskCompletionState.pendingCompletion` is
-/// documented as macOS's alone until that port lands.
+/// ticket when the two *managers* held one number each. `TaskCompletionAnimationManager` is now in
+/// `Shared/` beside it and drives the iOS rows, board cards and swipe as well ([[T-8203]]); the
+/// Kanban column sweep (`SectionCompletionAnimationManager`) stays macOS's.
 nonisolated enum CadenceTaskCompletionTiming {
     /// The whole deferral, and therefore the whole undo window.
     static let animationDuration: TimeInterval = 1.2

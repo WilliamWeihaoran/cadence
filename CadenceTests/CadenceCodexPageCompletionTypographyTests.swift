@@ -42,7 +42,8 @@ struct CadenceCodexPageCompletionTypographyTests {
         // the macOS card, which had NO Dynamic Type at all (a wall of `.font(.system(size: 13.5))`
         // literals), gets that spelling for free.
         #expect(card.contains("CadenceTypeScale.size(.rowTitle, base: CadenceLedgerCardMetrics.ringBase, at: dynamicTypeSize, scaling: scaling)"))
-        #expect(card.contains("iOSTaskCompletionCircle(glyph: completionGlyph, diameter: completionDiameter)"))
+        // [[T-8203]]: the live host of the same circle, which draws the deferred fill.
+        #expect(card.contains("iOSTaskCompletionFill(task: task, glyph: completionGlyph, diameter: completionDiameter)"))
         #expect(card.contains(".frame(width: gutterWidth, height: completionDiameter)"))
         #expect(card.contains(".iOSExpandedHitArea(max(0, (44 - gutterWidth) / 2))"))
         #expect(card.contains(".cadenceFont(.metadata, base: 12, weight: .medium)"))

@@ -2,6 +2,7 @@
 import AppKit
 import Foundation
 import SwiftData
+import SwiftUI
 import Testing
 @testable import Cadence
 
@@ -566,6 +567,171 @@ struct TaskCompletionAnimationManagerTests {
         // The needle really would see one. Without this the assertion above passes on a typo.
         #expect(CadenceSourceScan.matchCount(comparison, in: "let shown = clampedProgress > 0.7") == 1)
         #expect(CadenceSourceScan.matchCount(comparison, in: "let shown = somethingElse > 0.7") == 0)
+    }
+
+    // MARK: - T-8203: the same deferred completion on iOS
+
+    /// **The circle's three-tap walk is one decision, on the manager.** It was spelled twice on
+    /// macOS (`TaskCompletionButton.handleTap`, `KanbanCardComputedSupport.handleCompletionTap`)
+    /// and not at all on iOS, which wrote `.done` on the first tap. Every step keeps the stored
+    /// status open: only the window closing writes.
+    @Test func theCircleWalksFromOpenToCompletingToCancellingAndBackToOpen() {
+        let manager = TaskCompletionAnimationManager.shared
+        let task = AppTask(title: "a")
+        defer {
+            manager.cancelPending(for: task.id)
+            manager.cancelCancelPending(for: task.id)
+        }
+        #expect(manager.glyph(for: task).state == .todo)
+        #expect(manager.pendingProgress(for: task) == nil)
+
+        manager.advanceCompletionControl(for: task)
+        #expect(manager.isPending(task))
+        #expect(!manager.isPendingCancel(task))
+        #expect(manager.glyph(for: task).state == .pendingCompletion)
+        #expect(manager.pendingProgress(for: task) != nil)
+
+        manager.advanceCompletionControl(for: task)
+        #expect(!manager.isPending(task), "a second tap left the completion running")
+        #expect(manager.isPendingCancel(task), "a second tap mid-fill must turn into a cancellation, as on macOS")
+        #expect(manager.glyph(for: task).state == .pendingCancellation)
+
+        manager.advanceCompletionControl(for: task)
+        #expect(!manager.isPending(task))
+        #expect(!manager.isPendingCancel(task))
+        #expect(manager.glyph(for: task).state == .todo)
+        #expect(task.status == .todo, "a tap wrote the status before any window closed")
+    }
+
+    /// The timer's own body, driven without sleeping through it ([[T-268]]): closing the window
+    /// commits `.done`, and a take-back inside the window leaves it nothing to close.
+    @Test func closingTheWindowCommitsTheCompletionUnlessItWasTakenBack() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let manager = TaskCompletionAnimationManager.shared
+        let ticked = AppTask(title: "ticked")
+        let withdrawn = AppTask(title: "withdrawn")
+        context.insert(ticked)
+        context.insert(withdrawn)
+        try context.save()
+
+        manager.toggleCompletion(for: ticked)
+        manager.toggleCompletion(for: withdrawn)
+        manager.toggleCompletion(for: withdrawn)
+        manager.windowClosed(onCompletionOf: ticked.id)
+        manager.windowClosed(onCompletionOf: withdrawn.id)
+
+        #expect(!manager.isPending(ticked))
+        let audit = try ModelContext(container).fetch(FetchDescriptor<AppTask>())
+        #expect(audit.first { $0.id == ticked.id }?.status == .done)
+        #expect(audit.first { $0.id == withdrawn.id }?.status == .todo, "a take-back still completed the task")
+    }
+
+    /// **Hazard 4: a task settled out of process mid-window keeps the settle it was given.**
+    /// `CompleteTaskIntent` (a widget), MCP or a second device can finish the task inside the
+    /// 1.2s; the window closing afterwards must not re-stamp `completedAt`, and a pending
+    /// *cancellation* must not turn finished work into abandoned work.
+    @Test func aTaskSettledElsewhereInsideTheWindowKeepsTheSettleItWasGiven() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let manager = TaskCompletionAnimationManager.shared
+        let earlier = Date(timeIntervalSince1970: 1_800_000_000)
+        let completing = AppTask(title: "completing")
+        let cancelling = AppTask(title: "cancelling")
+        let quitting = AppTask(title: "quitting")
+        for task in [completing, cancelling, quitting] { context.insert(task) }
+        try context.save()
+
+        manager.toggleCompletion(for: completing)
+        manager.toggleCancellation(for: cancelling)
+        manager.toggleCompletion(for: quitting)
+        for task in [completing, cancelling, quitting] {
+            CadenceTaskRecurrenceWorkflowSupport.settleWithoutAdvancingSeries(task, as: .done, now: earlier)
+        }
+        try context.save()
+
+        manager.windowClosed(onCompletionOf: completing.id)
+        manager.windowClosed(onCancellationOf: cancelling.id)
+        manager.settleAllPendingBeforeTermination()
+
+        #expect(completing.completedAt == earlier, "the window re-stamped a completion made elsewhere")
+        #expect(cancelling.status == .done, "a pending cancellation overwrote a completion made elsewhere")
+        #expect(cancelling.completedAt == earlier)
+        #expect(quitting.completedAt == earlier, "the termination settle re-stamped a completion made elsewhere")
+        #expect(!manager.isPending(completing) && !manager.isPendingCancel(cancelling) && !manager.isPending(quitting))
+    }
+
+    /// **Hazard 1: iOS has no Cmd-Q, it has backgrounding.** Leaving `.active` settles the fill as
+    /// the macOS quit does; becoming active again settles nothing.
+    @Test func leavingTheActivePhaseSettlesTheFillAndReturningToItDoesNot() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let manager = TaskCompletionAnimationManager.shared
+        let resumed = AppTask(title: "resumed")
+        let switched = AppTask(title: "app switcher")
+        let backgrounded = AppTask(title: "home")
+        for task in [resumed, switched, backgrounded] { context.insert(task) }
+        try context.save()
+
+        manager.toggleCompletion(for: resumed)
+        manager.settleAllPending(onLeaving: .active)
+        #expect(manager.isPending(resumed), "returning to the app settled a fill the user can still take back")
+        #expect(resumed.status == .todo)
+        manager.cancelPending(for: resumed.id)
+
+        manager.toggleCompletion(for: switched)
+        manager.settleAllPending(onLeaving: .inactive)
+        #expect(switched.status == .done, "going inactive left the tick in memory")
+
+        manager.toggleCompletion(for: backgrounded)
+        manager.settleAllPending(onLeaving: .background)
+        #expect(backgrounded.status == .done, "backgrounding left the tick in memory")
+        let audit = try ModelContext(container).fetch(FetchDescriptor<AppTask>())
+        #expect(audit.filter { $0.status == .done }.count == 2)
+    }
+
+    /// The iOS wiring, which no macOS test host can run: the three surfaces in scope start the
+    /// shared fill rather than writing synchronously, the root settles it on leaving active, and the
+    /// circle draws the fill only while one runs and asks the shared timing when to show its mark.
+    @Test func theIOSRowCardSwipeAndRootAreWiredToTheSharedDeferredCompletion() throws {
+        let row = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile("Cadence/iOS/iOSTaskViews.swift"))
+        let card = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile("Cadence/iOS/iOSBoardCards.swift"))
+        let swipe = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile("Cadence/iOS/iOSTaskRowActionViews.swift"))
+        let root = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile("Cadence/iOS/iOSRootView.swift"))
+        let circle = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile("Cadence/iOS/iOSFeatureComponents.swift"))
+        let manager = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile("Cadence/Shared/TaskCompletionAnimationManager.swift"))
+        #expect(row.contains("struct iOSTaskRow"), "non-vacuity: wrong file read")
+        #expect(circle.contains("struct iOSTaskCompletionCircle"), "non-vacuity: wrong file read")
+
+        for (name, code) in [("row", row), ("card", card)] {
+            let toggle = try #require(CadenceSourceScan.functionBody(named: "toggleCompletion", in: code), "\(name) has no toggleCompletion()")
+            #expect(toggle.contains("TaskCompletionAnimationManager.shared.advanceCompletionControl(for: task)"), "the \(name)'s circle does not start the shared fill")
+            #expect(!code.contains("CadenceTaskStatusEditing.toggleCompletion("), "the \(name) writes completion synchronously again")
+            #expect(code.contains("iOSTaskCompletionFill(task: task") || code.contains("iOSTaskCompletionFill(\n"), "the \(name) draws a still circle")
+            #expect(code.contains("TaskCompletionAnimationManager.shared.glyph(for: task)"), "the \(name)'s glyph cannot see the pending states")
+        }
+        #expect(swipe.contains("TaskCompletionAnimationManager.shared.toggleCompletion(for: task)"))
+        #expect(!swipe.contains("CadenceTaskStatusEditing.toggleCompletion("), "the swipe writes completion synchronously again")
+
+        let phaseObserver = try #require(
+            CadenceSourceScan.declarationBody(".onChange(of: scenePhase)", in: root),
+            "the root lost its scene-phase observer"
+        )
+        #expect(
+            phaseObserver.contains("TaskCompletionAnimationManager.shared.settleAllPending(onLeaving: phase)"),
+            "the iOS root does not settle a running fill on leaving active, so a killed app drops the tick"
+        )
+
+        // Hazard 5: the display-link redraw exists only for a pending glyph, and Reduce Motion stops it.
+        #expect(circle.contains("!reduceMotion && (glyph.state == .pendingCompletion || glyph.state == .pendingCancellation)"))
+        #expect(circle.contains("CadenceTaskCompletionTiming.showsConfirmation(at: fill)"))
+        let comparison = #"\bfill\s*[<>]=?\s*[0-9.]+"#
+        #expect(CadenceSourceScan.matchCount(comparison, in: circle) == 0, "the iOS circle spells its own confirmation threshold")
+        #expect(CadenceSourceScan.matchCount(comparison, in: "let shown = fill > 0.7") == 1)
+
+        // The manager's iOS hop is the iOS status wrapper, so a deferred tick reconciles and
+        // reports a refusal exactly as the synchronous one did.
+        #expect(manager.contains("CadenceTaskStatusEditing.setStatus(transition.status, for: task, in: context)"))
     }
 }
 #endif

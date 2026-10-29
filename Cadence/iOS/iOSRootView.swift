@@ -188,6 +188,8 @@ struct iOSRootView: View {
                 phase,
                 committing: modelContext
             )
+            // [[T-8203]]: settle a running completion fill before the widgets reload.
+            TaskCompletionAnimationManager.shared.settleAllPending(onLeaving: phase)
             if phase != .active {
                 CadenceWidgetRefreshCenter.reloadAllWidgets()
             }

@@ -796,15 +796,10 @@ private struct TaskCompletionButton: View {
 
     private var color: Color { glyph.tint }
 
+    /// The manager's one decision for the three-tap walk ([[T-8203]]), shared with the Kanban card
+    /// and every iOS circle rather than spelled here a third time.
     private func handleTap() {
-        if isPendingCompletion {
-            manager.cancelPending(for: task.id)
-            manager.toggleCancellation(for: task)
-        } else if isPendingCancel {
-            manager.cancelCancelPending(for: task.id)
-        } else {
-            manager.toggleCompletion(for: task)
-        }
+        manager.advanceCompletionControl(for: task)
     }
 
     private func pendingProgress(now: Date) -> Double? {

@@ -20,10 +20,10 @@ import SwiftUI
 /// keep doing while `CadenceInProgressStatusRetirement` has not yet run on that store.
 nonisolated enum CadenceTaskCompletionState: String, CaseIterable, Equatable, Hashable {
     case todo
-    /// Mid-animation on macOS only: the completion ring is filling and the tap can still be taken
-    /// back. iOS completes immediately and never produces this.
+    /// Mid-animation: the completion ring is filling and the tap can still be taken back. Both
+    /// platforms produce it since [[T-8203]] moved `TaskCompletionAnimationManager` to `Shared/`.
     case pendingCompletion
-    /// Mid-animation on macOS only, as above, for a cancellation.
+    /// Mid-animation, as above, for a cancellation.
     case pendingCancellation
     case done
     case cancelled

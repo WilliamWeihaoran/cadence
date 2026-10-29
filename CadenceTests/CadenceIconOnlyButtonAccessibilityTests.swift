@@ -377,10 +377,10 @@ struct CadenceIconOnlyButtonAccessibilityTests {
             !row.contains(#""Mark task todo""#),
             "the row is spelling the completion circle's name for itself again"
         )
-        // iOS resolves the glyph with neither pending flag, so its circle only ever reaches three
-        // of the five states — and all three are answered by the shared property.
-        #expect(row.contains("CadenceTaskCompletionGlyph.resolve(task: task)"))
-        for state in [CadenceTaskCompletionState.todo, .done, .cancelled] {
+        // [[T-8203]]: iOS resolves the glyph through the shared deferred completion now, so its
+        // circle reaches all five states — and all five are answered by the shared property.
+        #expect(row.contains("TaskCompletionAnimationManager.shared.glyph(for: task)"))
+        for state in CadenceTaskCompletionState.allCases {
             #expect(!state.accessibilityActionLabel.isEmpty, "\(state)")
         }
     }

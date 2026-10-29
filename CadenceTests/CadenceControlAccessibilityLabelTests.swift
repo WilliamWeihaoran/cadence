@@ -306,7 +306,8 @@ struct CadenceControlAccessibilityLabelTests {
             CadenceSourceScan.matchCount(#"\.accessibilityLabel\(completionGlyph\.state\.accessibilityActionLabel\)"#, in: code) == 1,
             "the board card's completion circle does not read the shared action name"
         )
-        #expect(code.contains("iOSTaskCompletionCircle(glyph: completionGlyph"), "the circle and its name resolve separately")
+        // [[T-8203]]: `iOSTaskCompletionFill` is the circle's live host; it is handed the same glyph.
+        #expect(code.contains("iOSTaskCompletionFill(task: task, glyph: completionGlyph"), "the circle and its name resolve separately")
         #expect(code.contains("\"Mark done\"") == false, "the board card spells its own completion name again")
         #expect(code.contains("\"Mark not done\"") == false, "the board card spells its own completion name again")
     }

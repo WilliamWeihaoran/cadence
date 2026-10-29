@@ -68,14 +68,9 @@ enum KanbanCardComputedSupport {
         isPendingCancel: Bool,
         manager: TaskCompletionAnimationManager
     ) {
-        if isPendingCompletion {
-            manager.cancelPending(for: task.id)
-            manager.toggleCancellation(for: task)
-        } else if isPendingCancel {
-            manager.cancelCancelPending(for: task.id)
-        } else {
-            manager.toggleCompletion(for: task)
-        }
+        // The three-tap walk is the manager's one decision now ([[T-8203]]), shared with the task
+        // row and every iOS circle; the pending flags this takes are the manager's own answers.
+        manager.advanceCompletionControl(for: task)
     }
 
 }

@@ -226,11 +226,15 @@ struct iOSTaskRow: View {
         // glyph's own state also closes the wording gap: a settled task now says "Reopen task" on
         // both platforms, and the five branches stay in one place, which matters because on macOS
         // the mid-fill states genuinely change what a second tap does.
-        let glyph = CadenceTaskCompletionGlyph.resolve(task: task)
+        //
+        // [[T-8203]]: the glyph now carries the pending states, because iOS has them — a tap
+        // starts the shared deferred fill instead of writing `.done` on the spot.
+        let glyph = TaskCompletionAnimationManager.shared.glyph(for: task)
         return Button {
             toggleCompletion()
         } label: {
-            iOSTaskCompletionCircle(
+            iOSTaskCompletionFill(
+                task: task,
                 glyph: glyph,
                 diameter: completionDiameter
             )
@@ -548,8 +552,11 @@ struct iOSTaskRow: View {
         CadenceDueUrgency.evaluate(dueDateKey: task.dueDate, isDone: task.isDone)
     }
 
+    /// The circle's tap is the shared deferred completion ([[T-8203]]): it starts the 1.2s fill,
+    /// and the `.done` write — through `CadenceTaskStatusEditing`, as it always was — lands when
+    /// the fill ends, so a second tap inside it is a free take-back, exactly as on macOS.
     private func toggleCompletion() {
-        CadenceTaskStatusEditing.toggleCompletion(task, in: modelContext)
+        TaskCompletionAnimationManager.shared.advanceCompletionControl(for: task)
     }
 
     /// Attempt, then decide — the shape `iOSNoteDeleteConfirmationSheet.confirm()` uses. The

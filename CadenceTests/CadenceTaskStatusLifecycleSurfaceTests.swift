@@ -725,14 +725,14 @@ struct CadenceTaskStatusLifecycleSurfaceTests {
             of: "if CadenceTaskQuerySupport.isFinishedTask(task)",
             at: [
                 "Cadence/Shared/CadenceTaskMutationSupport.swift": 1,
-                "Cadence/macOS/Services/TaskCompletionAnimationManager.swift": 1
+                "Cadence/Shared/TaskCompletionAnimationManager.swift": 1
             ]
         )
         try expectOccurrences(
             of: "if task.isDone {",
             at: [
                 "Cadence/Shared/CadenceTaskMutationSupport.swift": 0,
-                "Cadence/macOS/Services/TaskCompletionAnimationManager.swift": 0
+                "Cadence/Shared/TaskCompletionAnimationManager.swift": 0
             ]
         )
     }
@@ -747,7 +747,7 @@ struct CadenceTaskStatusLifecycleSurfaceTests {
     /// app — the manager's context is injected on root appear — so a *new* direct assignment added
     /// beside the funnel would break no behaviour anyone could observe until it did.
     @Test func noStatusIsAssignedDirectlyInTheAnimationManager() throws {
-        let path = "Cadence/macOS/Services/TaskCompletionAnimationManager.swift"
+        let path = "Cadence/Shared/TaskCompletionAnimationManager.swift"
         let code = try strippingComments(sourceFile(path))
 
         #expect(code.matchCount(ofPattern: directStatusAssignment) == 0, "\(path) assigns a task's status directly")
@@ -833,7 +833,7 @@ struct CadenceTaskStatusLifecycleSurfaceTests {
 
         let scanned = [
             "Cadence/Shared/CadenceTaskMutationSupport.swift",
-            "Cadence/macOS/Services/TaskCompletionAnimationManager.swift",
+            "Cadence/Shared/TaskCompletionAnimationManager.swift",
             "Cadence/macOS/Views/TaskSurfaceFreezeModels.swift",
             "Cadence/macOS/Views/TasksPanel.swift",
             "Cadence/iOS/iOSTaskRowActionViews.swift",
@@ -845,7 +845,7 @@ struct CadenceTaskStatusLifecycleSurfaceTests {
             #expect(files.contains(path), "\(path) is not among the files the scan enumerated")
         }
 
-        let manager = try strippingComments(sourceFile("Cadence/macOS/Services/TaskCompletionAnimationManager.swift"))
+        let manager = try strippingComments(sourceFile("Cadence/Shared/TaskCompletionAnimationManager.swift"))
         #expect(manager.contains("final class TaskCompletionAnimationManager"))
         let mutation = try strippingComments(sourceFile("Cadence/Shared/CadenceTaskMutationSupport.swift"))
         #expect(mutation.contains("static func toggleCompletion"))

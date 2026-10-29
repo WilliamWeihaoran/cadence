@@ -51,7 +51,12 @@ enum iOSTaskRowSwipeActions {
                 systemImage: isFinished ? "circle" : "checkmark.circle.fill",
                 tint: isFinished ? Theme.blue : Theme.green
             ) {
-                CadenceTaskStatusEditing.toggleCompletion(task, in: modelContext)
+                // [[T-8203]]: the swipe starts the same deferred fill the circle does, so the row
+                // the tray springs closed over shows the ring running rather than sitting unchanged
+                // until a write that already happened removes it. It is the *toggle*, not the
+                // circle's three-tap walk: a swipe that says "Done" on a row already filling takes
+                // the completion back rather than turning it into a cancellation.
+                TaskCompletionAnimationManager.shared.toggleCompletion(for: task)
             },
             CadenceSwipeAction(
                 id: "delete",

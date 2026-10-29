@@ -13,10 +13,15 @@ import SwiftUI
 struct iOSTaskCompletionCircle: View {
     let glyph: CadenceTaskCompletionGlyph
     var diameter: CGFloat = 13
+    /// How far a deferred completion (or cancellation) has run, `0...1`, or `nil` for a still
+    /// circle ([[T-8203]]). Only a pending glyph reads it; see `iOSTaskCompletionFill`, the one
+    /// host that supplies it.
+    var progress: Double? = nil
 
-    init(glyph: CadenceTaskCompletionGlyph, diameter: CGFloat = 13) {
+    init(glyph: CadenceTaskCompletionGlyph, diameter: CGFloat = 13, progress: Double? = nil) {
         self.glyph = glyph
         self.diameter = diameter
+        self.progress = progress
     }
 
     /// For the controls with no `AppTask` behind them — a `Subtask`'s tick, and the decorative
@@ -27,15 +32,49 @@ struct iOSTaskCompletionCircle: View {
 
     var body: some View {
         ZStack {
-            Circle()
-                .fill(glyph.isFilled ? glyph.tint : Color.clear)
-            if !glyph.isFilled {
+            if let fill = pendingFill {
+                fillingRing(fill)
+            } else {
                 Circle()
-                    .strokeBorder(glyph.tint, lineWidth: 1.6)
+                    .fill(glyph.isFilled ? glyph.tint : Color.clear)
+                if !glyph.isFilled {
+                    Circle()
+                        .strokeBorder(glyph.tint, lineWidth: 1.6)
+                }
+                mark
             }
-            mark
         }
         .frame(width: diameter, height: diameter)
+    }
+
+    /// The progress to draw, when there is a fill to draw: a pending glyph that was handed one.
+    private var pendingFill: Double? {
+        guard let progress,
+              glyph.state == .pendingCompletion || glyph.state == .pendingCancellation
+        else { return nil }
+        return min(max(progress, 0), 1)
+    }
+
+    /// macOS's `TaskCompletionProgressGlyph` fill, in this circle's own drawn primitives: a faint
+    /// track, the tint trimmed clockwise from twelve o'clock, and the mark landing when
+    /// `CadenceTaskCompletionTiming` says it does — halfway ([[T-8202]]). The threshold is asked,
+    /// never spelled, so the two platforms cannot disagree about when the check appears.
+    private func fillingRing(_ fill: Double) -> some View {
+        let confirmed = CadenceTaskCompletionTiming.showsConfirmation(at: fill)
+        return ZStack {
+            Circle()
+                .strokeBorder(glyph.tint.opacity(0.18), lineWidth: 1.6)
+            // The arc is the ring masked by a wedge rather than a trimmed `.stroke`, so it is the
+            // same inset `strokeBorder` ring the open circle draws ([[T-489]]) and simply reveals
+            // itself clockwise — it cannot sit half a line outside the track it traces.
+            Circle()
+                .strokeBorder(glyph.tint, lineWidth: 1.6)
+                .mask(iOSTaskCompletionWedge(fraction: fill))
+            markSymbol(glyph.state == .pendingCancellation ? "xmark" : "checkmark", scale: 0.55)
+                .opacity(confirmed ? 1 : 0)
+                .scaleEffect(confirmed ? 1 : 0.65)
+                .animation(.spring(response: 0.22, dampingFraction: 0.75), value: confirmed)
+        }
     }
 
     /// macOS gets its mark free, as the knockout inside an SF Symbol; here it is drawn. On a
@@ -62,6 +101,66 @@ struct iOSTaskCompletionCircle: View {
         Image(systemName: name)
             .font(.system(size: diameter * scale, weight: .bold))
             .foregroundStyle(glyph.isFilled ? Theme.onColor(for: glyph.tint) : glyph.tint)
+    }
+}
+
+/// The swept part of a completion fill: a pie slice from twelve o'clock, clockwise, `fraction` of
+/// the way round. Used only as a mask over `iOSTaskCompletionCircle`'s ring.
+private struct iOSTaskCompletionWedge: Shape {
+    var fraction: Double
+
+    func path(in rect: CGRect) -> Path {
+        let center = CGPoint(x: rect.midX, y: rect.midY)
+        let radius = max(rect.width, rect.height)
+        var path = Path()
+        path.move(to: center)
+        path.addArc(
+            center: center,
+            radius: radius,
+            startAngle: .degrees(-90),
+            endAngle: .degrees(-90 + 360 * min(max(fraction, 0), 1)),
+            clockwise: false
+        )
+        path.closeSubpath()
+        return path
+    }
+}
+
+/// A task's completion circle, live: it reads the deferred completion off
+/// `TaskCompletionAnimationManager` and redraws the fill while one runs ([[T-8203]]).
+///
+/// **`TimelineView(.animation)` is in the hierarchy only while this task is pending** (hazard 5).
+/// It is a display-link redraw for as long as it exists, so an ungated one would repaint every
+/// visible row's circle at screen rate for ever — the cost macOS's `TaskCompletionButton` gates
+/// for the same reason. Gated, the cost is one circle for 1.2s per tap.
+///
+/// **Reduce Motion draws the pending state still** — the green ring and dot (or grey cross) the
+/// glyph already describes — rather than a sweeping trim. The undo window is unchanged; only the
+/// motion goes. This is the first surface in the app to read `accessibilityReduceMotion`, so the
+/// port does not widen the gap [[T-8203]] measured.
+struct iOSTaskCompletionFill: View {
+    let task: AppTask
+    let glyph: CadenceTaskCompletionGlyph
+    var diameter: CGFloat = 13
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        if animatesFill {
+            TimelineView(.animation) { context in
+                iOSTaskCompletionCircle(
+                    glyph: glyph,
+                    diameter: diameter,
+                    progress: TaskCompletionAnimationManager.shared.pendingProgress(for: task, now: context.date)
+                )
+            }
+        } else {
+            iOSTaskCompletionCircle(glyph: glyph, diameter: diameter)
+        }
+    }
+
+    private var animatesFill: Bool {
+        !reduceMotion && (glyph.state == .pendingCompletion || glyph.state == .pendingCancellation)
     }
 }
 

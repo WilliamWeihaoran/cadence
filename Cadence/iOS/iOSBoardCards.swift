@@ -259,9 +259,10 @@ struct iOSBoardTaskCard: View {
         Color(hex: task.containerColor)
     }
 
-    /// One resolve for the circle and its name, so the two cannot read different states.
+    /// One resolve for the circle and its name, so the two cannot read different states — and it
+    /// is the manager's, so the pending states a tap now produces are among them ([[T-8203]]).
     private var completionGlyph: CadenceTaskCompletionGlyph {
-        CadenceTaskCompletionGlyph.resolve(task: task)
+        TaskCompletionAnimationManager.shared.glyph(for: task)
     }
 
     /// The card's metadata run, from the shared builder.
@@ -352,7 +353,7 @@ struct iOSBoardTaskCard: View {
     /// the colour strip the ring already occupies instead of out over the title beside it.
     private var completionRing: some View {
         Button(action: toggleCompletion) {
-            iOSTaskCompletionCircle(glyph: completionGlyph, diameter: completionDiameter)
+            iOSTaskCompletionFill(task: task, glyph: completionGlyph, diameter: completionDiameter)
                 .frame(width: gutterWidth, height: completionDiameter)
                 .iOSExpandedHitArea(max(0, (44 - gutterWidth) / 2))
         }
@@ -393,8 +394,9 @@ struct iOSBoardTaskCard: View {
         }
     }
 
+    /// The shared deferred completion, as the list row's circle has it ([[T-8203]]).
     private func toggleCompletion() {
-        CadenceTaskStatusEditing.toggleCompletion(task, in: modelContext)
+        TaskCompletionAnimationManager.shared.advanceCompletionControl(for: task)
     }
 }
 
