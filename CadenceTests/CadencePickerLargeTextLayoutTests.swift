@@ -358,9 +358,15 @@ struct EstimatePickerLargeTextLayoutTests {
     /// screenshot would have been used for.
     ///
     /// 667pt is an iPhone SE in portrait, the shortest screen this app runs on. The panel is an
-    /// anchored popover, so it is inset from that by an amount only UIKit knows — the margin
-    /// asserted is therefore generous, and what is being pinned is that the panel's height is a
-    /// derived sum rather than a constant, and that the sum lands nearer 500 than 1,000.
+    /// anchored overlay wherever the size class is regular, so it is inset from that by an amount
+    /// only UIKit knows — the margin asserted is therefore generous, and what is being pinned is
+    /// that the panel's height is a derived sum rather than a constant, and that the sum lands
+    /// nearer 500 than 1,000.
+    ///
+    /// **Fitting the screen was never the whole question, which is [[T-8466]].** A popover is
+    /// given the room beside its ANCHOR, not the room on the screen, and a panel can clear this
+    /// margin and still be squeezed to a third of itself. That is why the sibling test below
+    /// exists and why at phone width this panel is a sheet.
     @Test("The duration editor still fits a phone at every text size")
     func theEstimatePanelHeightStaysInsideAPhone() {
         let shortestPhoneHeight: CGFloat = 667
@@ -385,6 +391,78 @@ struct EstimatePickerLargeTextLayoutTests {
         #expect(largest > atDefault, "the panel does not follow the reader at all")
         #expect(largest < atDefault * 2.5,
                 "the panel grew like a multiplier, which is the growth rule being rejected")
+    }
+
+    /// **[[T-8466]] — at phone width the duration editor is a sheet, not a forced popover.**
+    ///
+    /// Seen on `Cadence-iPhone15` (393x852): the Estimate row of the inline task panel in a note,
+    /// with the Due row expanded so the anchor sat low in the scroll view. The forced popover was
+    /// given 83pt and drew only the tail of the two roller columns — `2h`/`3h` beside `5m`/`10m`.
+    /// The heading, the live total, the selected values, the presets, Clear and Done were all
+    /// outside it, so the duration could neither be read nor committed.
+    ///
+    /// **Two halves, because either alone is weak.**
+    ///
+    /// The first is the rule, and it is a rule about THIS panel rather than about the modifier.
+    /// A compact popover is squeezed into the room beside its anchor, so it is safe exactly where
+    /// the panel can give ground. `CadenceChoicePicker` can — `CadenceFittedPopover` takes the
+    /// unscrolled stack when it fits and `ScrollView { content }` when it does not — and so can
+    /// `CadenceQuickDatePopover`. Both were driven at 393pt from low anchors inside
+    /// near-full-height sheets and both drew correctly, so both keep the popover they had: this
+    /// is not a blanket conversion, and the two assertions that they still say `.popover` are
+    /// what stops it becoming one. This panel cannot give ground by design —
+    /// `theRollerShowsFewerRowsRatherThanGrowingItsViewport` above records why a scroll here
+    /// would nest a scroll inside the scroll the reader is dragging — so it is the one that moves.
+    ///
+    /// The second is the arithmetic that says the popover could not have held it, read off the
+    /// app's own metrics against the sliver the squeezed panel actually got. The wheel alone is
+    /// taller than that sliver, which is why no selected value was on screen; and the footer
+    /// begins further down still, which is why Done was not reachable — the two things the
+    /// screenshot showed, stated as sums rather than as an eye.
+    ///
+    /// **Failing-first:** putting `.popover` back fails the first half; narrowing the wheel to
+    /// three rows — the count this panel already uses at accessibility sizes — makes it fit the
+    /// sliver and fails the second.
+    @Test("The duration editor is a sheet at phone width because it cannot give ground")
+    func theDurationEditorIsASheetBecauseItCannotGiveGround() throws {
+        let read = CadenceSourceScan.strippedSourceReader()
+        let source = try read(path)
+        #expect(CadenceSourceScan.matchCount(#"\.presentationCompactAdaptation\("#, in: source) == 1)
+        #expect(source.contains(".presentationCompactAdaptation(.sheet)"))
+        #expect(!source.contains(".presentationCompactAdaptation(.popover)"))
+
+        // The two that were driven and found sound keep theirs, and the reason they are sound is
+        // the fallback scroll — asserted rather than asserted about, so a panel that quietly loses
+        // it stops reading as a panel that may stay a popover.
+        let choicePicker = try read("Cadence/Shared/Components/CadenceChoicePicker.swift")
+        #expect(choicePicker.contains(".presentationCompactAdaptation(.popover)"))
+        #expect(choicePicker.contains("ScrollView { content }"))
+        let datePicker = try read("Cadence/Shared/Components/CadenceDatePicker.swift")
+        #expect(datePicker.contains(".presentationCompactAdaptation(.popover)"))
+
+        // What UIKit left of the panel, measured off the sighting: the squeezed popover's top and
+        // bottom edges on the owner's handset ([[T-3147]], 393x852), the bottom one sitting on the
+        // home indicator's inset rather than on the screen edge.
+        let squeezedTop: CGFloat = 734
+        let squeezedBottom: CGFloat = 817
+        let sliver = squeezedBottom - squeezedTop
+
+        let viewport = EstimateRollerMetrics.viewportHeight(at: .large, scaling: .enabled)
+        let panel = EstimateRollerMetrics.panelHeight(at: .large, scaling: .enabled)
+        let footerTop = panel
+            - EstimateRollerMetrics.panelPadding
+            - EstimateRollerMetrics.footerPlateHeight(at: .large, scaling: .enabled)
+
+        #expect(sliver > 0)
+        #expect(viewport > sliver,
+                "the wheel is \(viewport) in a \(sliver) sliver, so a selected value would have shown")
+        #expect(footerTop > sliver,
+                "the footer starts at \(footerTop), so Clear and Done would have been reachable")
+        #expect(panel > sliver * 2, "the panel is \(panel), which is not the squeeze that was seen")
+
+        // Non-vacuity: the squeeze is a property of the anchor, not of the screen, so the panel
+        // clears the screen-height margin its sibling test asserts and is clipped anyway.
+        #expect(panel < 667 * 0.8)
     }
 }
 

@@ -41,10 +41,30 @@ struct EstimatePickerControl: View {
             EstimatePickerPopoverContent(value: $value, title: pickerTitle) {
                 showPicker = false
             }
-            // Same reason as `CadenceDatePicker`: compact width otherwise promotes this to a
-            // full-height sheet wrapped around a 260pt panel, so a two-tap duration edit took over
-            // the whole screen while every neighbouring picker stayed an anchored overlay.
-            .presentationCompactAdaptation(.popover)
+            // **`.sheet`, not `.popover`, and only in a COMPACT size class** ([[T-8466]]).
+            //
+            // This modifier does nothing outside a compact horizontal size class, so the iPad and
+            // the Mac keep the anchored overlay they have always had. iPhone is the only surface
+            // this moves, and it is the only one where the overlay could not be drawn.
+            //
+            // **Why this panel and not its neighbours.** A compact popover is squeezed into
+            // whatever room UIKit finds beside its anchor, so it is safe exactly where the panel
+            // can give ground. `CadenceChoicePicker` can — `CadenceFittedPopover` falls back to
+            // `ScrollView { content }` past its cap — and so can `CadenceQuickDatePopover`; both
+            // were driven at 393pt from low anchors inside near-full-height sheets and both drew
+            // correctly. This one cannot, and deliberately: the note on `panelHeight` says a
+            // scroll here would nest a vertical scroll inside the vertical scroll the reader is
+            // dragging, so the height is bounded by showing FEWER roller rows instead. A panel
+            // that cannot scroll and cannot shrink has nothing to give.
+            //
+            // Measured on `Cadence-iPhone15` (393x852) from the Estimate row of the note's inline
+            // task panel, with the Due row expanded so the anchor sat low: UIKit gave the popover
+            // 83pt — roughly a third of the panel — and drew only the tail of the two roller
+            // columns (`2h`/`3h`, `5m`/`10m`). The heading, the live total, the SELECTED values,
+            // the presets, Clear and Done were all outside it. The duration could not be read or
+            // committed. The arithmetic is in
+            // `EstimatePickerLargeTextLayoutTests.theDurationEditorIsASheetBecauseItCannotGiveGround`.
+            .presentationCompactAdaptation(.sheet)
         }
     }
 
