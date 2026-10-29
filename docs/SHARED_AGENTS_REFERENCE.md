@@ -355,8 +355,8 @@ the enum to two cases and do not average those two figures.
   height is fixed; iOS's is a `VStack` built to grow.
 - `completionGlyphSize` / `completionCircleDiameter` — **not the same measurement.** iOS draws a
   16pt disc and ramps a *frame* around it to reach 44pt, so the number is a layout box. macOS passes
-  an SF Symbol **point size** to `TaskCompletionProgressGlyph`, which is also its frame, and whose
-  four macOS call sites already use it as a per-surface type ramp (12 / 13 / 15 / 18). This is
+  `CadenceTaskCompletionCircle` (shared since T-8411) a diameter that is also its frame, and its
+  four macOS call sites use it as a per-surface type ramp (12 / 13 / 13 / 18). This is
   `cdf0896`'s finding again: an apparent fork that is two different jobs under one name.
 - The badge/chip geometry — iOS's row chips are `iOSTaskAttributeChipSize.row`, 30pt plates
   hit-expanded to 44pt; macOS's are bare text with a hover underline and a radius-4 wash. Same

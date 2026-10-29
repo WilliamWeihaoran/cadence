@@ -187,12 +187,11 @@ func timelineBlockBody(
                 // cancellation too, and either deferral's fill; the stored status is the fallback.
                 let glyph = completionGlyph ?? CadenceTaskCompletionGlyph.resolve(task: task)
                 Button(action: onToggleDone) {
-                    TaskCompletionProgressGlyph(
-                        icon: glyph.symbolName,
-                        color: glyph.tint,
-                        progress: isPendingCompletion || isPendingCancellation ? clampedProgress : nil,
-                        size: 13,
-                        lineWidth: 1.6
+                    // [[T-8411]]: the circle iOS's timed block draws, at the same 13pt.
+                    CadenceTaskCompletionCircle(
+                        glyph: glyph,
+                        diameter: 13,
+                        progress: isPendingCompletion || isPendingCancellation ? clampedProgress : nil
                     )
                 }
                 .buttonStyle(.cadencePlain)

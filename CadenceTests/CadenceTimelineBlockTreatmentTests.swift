@@ -377,13 +377,13 @@ struct CadenceTimelineBlockTreatmentTests {
         let iosEvent = try t3160IOSEventBlock()
         #expect(CadenceSourceScan.matchCount(#"Image\(systemName: "calendar"\)"#, in: iosEvent) == 1)
         #expect(
-            CadenceSourceScan.matchCount(#"iOSTaskCompletionCircle"#, in: iosEvent) == 0,
+            CadenceSourceScan.matchCount(#"TaskCompletion(Circle|Fill)"#, in: iosEvent) == 0,
             "the event block grew a completion circle, which is the task's affordance"
         )
 
         let iosTask = try t3160IOSTaskBlock()
         // [[T-8352]]: the circle is drawn through `iOSTaskCompletionFill`, the live host over
-        // `iOSTaskCompletionCircle`, so a fill started anywhere shows on the block too.
+        // `CadenceTaskCompletionCircle`, so a fill started anywhere shows on the block too.
         #expect(
             CadenceSourceScan.matchCount(#"iOSTaskCompletion(Circle|Fill)\("#, in: iosTask) == 1,
             "the task block lost its completion circle"

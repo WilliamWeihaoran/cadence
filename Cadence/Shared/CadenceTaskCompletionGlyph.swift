@@ -58,10 +58,10 @@ nonisolated enum CadenceTaskCompletionState: String, CaseIterable, Equatable, Ha
 
 /// What the completion control looks like for one state — the decision, with no view attached.
 ///
-/// It is described twice over, once per platform's drawing primitive, because the two surfaces
-/// genuinely render differently and always have: macOS stamps an SF Symbol (`symbolName`), iOS
-/// draws a ring and fills it (`isFilled` + `mark`). Sharing the *decision* rather than the drawing
-/// is the point — the thing that drifted was which states exist, not how a circle is stroked.
+/// It is described twice over: `isFilled` + `mark` are what `CadenceTaskCompletionCircle` draws on
+/// both platforms since [[T-8411]], including macOS's Completed-tab log rows. `symbolName` is the SF
+/// Symbol spelling of the same state; no view stamps it as a completion glyph any more, and it is
+/// kept because the glyph tables pin each state's identity through it.
 nonisolated struct CadenceTaskCompletionGlyph: Equatable {
     /// What sits inside the ring.
     enum Mark: Equatable {
@@ -113,6 +113,16 @@ nonisolated struct CadenceTaskCompletionGlyph: Equatable {
     /// placeholder row.
     static func binary(isDone: Bool, tint: Color) -> Self {
         isDone ? Self(state: .done, priority: .none) : Self(state: .todo, priorityTint: tint)
+    }
+
+    /// A board column's completion control ([[T-8411]]): a column has no priority and no
+    /// cancellation, so it is open (in `Theme.dim`), completing, or completed. It spelled these
+    /// three as SF Symbol names inline in the macOS column header; it now draws the same circle a
+    /// task does, from the same table.
+    static func column(isCompleted: Bool, isPendingCompletion: Bool) -> Self {
+        if isCompleted { return Self(state: .done, priority: .none) }
+        if isPendingCompletion { return Self(state: .pendingCompletion, priority: .none) }
+        return Self(state: .todo, priorityTint: Theme.dim)
     }
 
     private init(state: CadenceTaskCompletionState, priority: TaskPriority) {

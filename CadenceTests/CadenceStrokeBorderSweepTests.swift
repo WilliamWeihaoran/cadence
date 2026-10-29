@@ -15,10 +15,9 @@ import Testing
 /// is "not the same case" even when it happens to be expressed as a `Circle`/`RoundedRectangle`.
 ///
 /// **Failing-first.** Reverting any one of the 83 sites this sweep converted back to `.stroke(`
-/// turns `everyRemainingShapeStrokeCallIsOneOfTheTwoDocumentedExceptions` red — it is swept over
+/// turns `noShapeStrokeCallRemainsOutsideTheBezierPathFiles` red — it is swept over
 /// the whole tree, not a fixed file list, so a reverted site is caught regardless of which file it
-/// lives in. Converting either of the two documented exceptions to `.strokeBorder(` turns the same
-/// test red the other way (the exact-count and exact-line assertions no longer hold).
+/// lives in. There are no exceptions left to convert since [[T-8411]].
 struct CadenceStrokeBorderSweepTests {
 
     // MARK: - The two carve-outs the ticket names
@@ -40,14 +39,11 @@ struct CadenceStrokeBorderSweepTests {
         "Cadence/iOS/iOSMarkdownTableGridRendering.swift",
     ]
 
-    /// T-489's other carve-out: two `Circle()` progress-ring strokes in
-    /// `TaskCompletionAnimationViews.swift` — a static track (`color.opacity(0.18)`, line 34) and
-    /// a `.trim`-ed progress arc (line 38) — neither has a companion `.fill`. There is no filled
-    /// shape here for `.strokeBorder` to preserve the measured size of; insetting the ring would
-    /// draw it inside the track it is supposed to trace, which is a different picture, not the
-    /// same picture fixed.
-    static let strokeOnlyDecorationFile = "Cadence/macOS/Views/TaskCompletionAnimationViews.swift"
-    static let strokeOnlyDecorationLines: Set<Int> = [34, 38]
+    /// T-489's other carve-out — two `Circle()` progress-ring `.stroke`s in macOS's
+    /// `TaskCompletionAnimationViews.swift`, a track and a `.trim`-ed arc with no companion fill —
+    /// is retired ([[T-8411]]). That glyph is gone: both platforms draw
+    /// `CadenceTaskCompletionCircle`, whose fill is the inset `strokeBorder` ring masked by a wedge,
+    /// so it traces its own resting ring exactly and there is no stroke-only exception left.
 
     // MARK: - The sweep
 
@@ -93,24 +89,17 @@ struct CadenceStrokeBorderSweepTests {
     }
 
     @Test
-    func everyRemainingShapeStrokeCallIsOneOfTheTwoDocumentedExceptions() throws {
+    func noShapeStrokeCallRemainsOutsideTheBezierPathFiles() throws {
         let hits = try Self.remainingShapeStrokeSites()
+        #expect(hits.isEmpty, "unconverted .stroke( site(s): \(hits)")
 
-        let unexpected = hits.filter { $0.file != Self.strokeOnlyDecorationFile }
-        #expect(
-            unexpected.isEmpty,
-            "unconverted .stroke( site(s) outside the documented exception file: \(unexpected)"
+        // Non-vacuity: the sweep read the shared completion circle, and that file's fill is the
+        // converted spelling rather than a trimmed stroke.
+        let circle = CadenceSourceScan.codeOnly(
+            try CadenceSourceScan.sourceFile("Cadence/Shared/Components/CadenceTaskCompletionCircle.swift")
         )
-
-        let exceptionHits = hits.filter { $0.file == Self.strokeOnlyDecorationFile }
-        #expect(
-            Set(exceptionHits.map(\.line)) == Self.strokeOnlyDecorationLines,
-            "expected exactly lines \(Self.strokeOnlyDecorationLines) in \(Self.strokeOnlyDecorationFile) to remain unconverted, found lines: \(exceptionHits.map(\.line).sorted())"
-        )
-        #expect(
-            exceptionHits.count == 2,
-            "expected exactly 2 documented exception sites, found \(exceptionHits.count): \(exceptionHits)"
-        )
+        #expect(circle.contains(".mask(CadenceTaskCompletionWedge(fraction: fill))"), "non-vacuity: the circle's fill moved")
+        #expect(!Self.unconvertedStrokeInstrument.fires(on: circle), "the completion circle strokes a shape again")
     }
 
     /// Named spot-pins on a handful of the 83 converted sites — including the ticket's own
@@ -134,7 +123,7 @@ struct CadenceStrokeBorderSweepTests {
         // SettingsTagsSection.swift:485 — a Circle() selection ring drawn on top of a filled
         // Circle() swatch. No `.fill` on the ring itself, but it overlays a filled sibling shape
         // of the same size, which is the case the ticket's "wherever the shape is filled" covers
-        // — distinct from the stroke-only progress ring above, which has no filled sibling at all.
+        // — distinct from the stroke-only progress ring T-8411 retired, which had no filled sibling at all.
         let source = try CadenceSourceScan.sourceFile("Cadence/macOS/Views/SettingsTagsSection.swift")
         #expect(CadenceSourceScan.matchCount("Circle\\(\\)\\s*\\.strokeBorder\\(Theme\\.text\\.opacity\\(0\\.78\\), lineWidth: 2\\)", in: source) == 1)
     }

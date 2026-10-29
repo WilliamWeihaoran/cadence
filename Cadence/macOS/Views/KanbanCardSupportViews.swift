@@ -99,8 +99,7 @@ struct KanbanStartTimePickerPopover: View {
 }
 
 struct KanbanCompletionButton: View {
-    let icon: String
-    let color: Color
+    let glyph: CadenceTaskCompletionGlyph
     var progress: Double?
     /// The drawn diameter, from `CadenceLedgerCardMetrics` so the two platforms' rings are one
     /// size. This was a local `15` against iOS's `13`; nothing about a pointer needs a bigger
@@ -112,13 +111,8 @@ struct KanbanCompletionButton: View {
 
     var body: some View {
         Button(action: action) {
-            TaskCompletionProgressGlyph(
-                icon: icon,
-                color: color,
-                progress: progress,
-                size: diameter,
-                lineWidth: 1.8
-            )
+            // [[T-8411]]: the circle iOS's board card draws, not an SF Symbol of its own.
+            CadenceTaskCompletionCircle(glyph: glyph, diameter: diameter, progress: progress)
         }
         .buttonStyle(.cadencePlain)
         // T-7083: the list row's circle has said "Complete task" since T-594, and iOS's board card

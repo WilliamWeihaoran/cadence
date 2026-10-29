@@ -761,19 +761,22 @@ private struct TaskCompletionButton: View {
             // even though `pendingProgress` returns nil unless the task is mid-completion.
             //
             // **Reduce Motion draws the pending state still ([[T-8412]])**: with no progress the
-            // glyph stamps the glyph's own pending symbol (`circle.inset.filled` green, or the grey
+            // circle draws the glyph's own pending face (the green ring and dot, or the grey
             // cross), which is what iOS's `iOSTaskCompletionFill` draws under the same setting.
             // The undo window is unchanged; only the motion goes.
+            //
+            // [[T-8411]]: the same drawn circle iOS draws, at the row's 18pt — the macOS row title
+            // is 15pt against iOS's 13, and the circle sits on that title line.
             if !reduceMotion && (isPendingCompletion || isPendingCancel) {
                 TimelineView(.animation) { context in
-                    TaskCompletionProgressGlyph(
-                        icon: icon,
-                        color: color,
+                    CadenceTaskCompletionCircle(
+                        glyph: glyph,
+                        diameter: Self.diameter,
                         progress: pendingProgress(now: context.date)
                     )
                 }
             } else {
-                TaskCompletionProgressGlyph(icon: icon, color: color, progress: nil)
+                CadenceTaskCompletionCircle(glyph: glyph, diameter: Self.diameter)
             }
         }
         .buttonStyle(.cadencePlain)
@@ -798,9 +801,9 @@ private struct TaskCompletionButton: View {
         )
     }
 
-    private var icon: String { glyph.symbolName }
-
-    private var color: Color { glyph.tint }
+    /// `CadenceTaskRowMetrics.desktop.completionGlyphSize`'s 18, the frame the SF Symbol glyph
+    /// this replaced was drawn in.
+    private static let diameter: CGFloat = 18
 
     /// The manager's one decision for the three-tap walk ([[T-8203]]), shared with the Kanban card
     /// and every iOS circle rather than spelled here a third time.

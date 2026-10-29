@@ -322,8 +322,7 @@ struct KanbanCard: View {
         if !reduceMotion && (isPendingCompletion || isPendingCancel) {
             TimelineView(.animation) { context in
                 KanbanCompletionButton(
-                    icon: completionButtonIcon,
-                    color: completionButtonColor,
+                    glyph: completionGlyph,
                     progress: pendingCompletionProgress(now: context.date),
                     accessibilityLabel: completionAccessibilityLabel,
                     action: handleCompletionTap
@@ -331,8 +330,7 @@ struct KanbanCard: View {
             }
         } else {
             KanbanCompletionButton(
-                icon: completionButtonIcon,
-                color: completionButtonColor,
+                glyph: completionGlyph,
                 progress: nil,
                 accessibilityLabel: completionAccessibilityLabel,
                 action: handleCompletionTap
@@ -551,8 +549,8 @@ struct KanbanCard: View {
         taskCompletionAnimationManager.isPendingCancel(task)
     }
 
-    private var completionButtonIcon: String {
-        KanbanCardComputedSupport.completionButtonIcon(
+    private var completionGlyph: CadenceTaskCompletionGlyph {
+        KanbanCardComputedSupport.completionGlyph(
             task: task,
             isPendingCompletion: isPendingCompletion,
             isPendingCancel: isPendingCancel
@@ -560,19 +558,7 @@ struct KanbanCard: View {
     }
 
     private var completionAccessibilityLabel: String {
-        KanbanCardComputedSupport.completionGlyph(
-            task: task,
-            isPendingCompletion: isPendingCompletion,
-            isPendingCancel: isPendingCancel
-        ).state.accessibilityActionLabel
-    }
-
-    private var completionButtonColor: Color {
-        KanbanCardComputedSupport.completionButtonColor(
-            task: task,
-            isPendingCompletion: isPendingCompletion,
-            isPendingCancel: isPendingCancel
-        )
+        completionGlyph.state.accessibilityActionLabel
     }
 
     private func handleCompletionTap() {

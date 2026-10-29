@@ -61,7 +61,7 @@ struct CadenceMacTaskBoardAccessibilityTests {
     @Test func theCardCompletionCircleIsNamedForItsState() throws {
         let support = try source("Cadence/macOS/Views/KanbanCardSupportViews.swift")
         let button = try #require(CadenceSourceScan.declarationBody("struct KanbanCompletionButton: View", in: support))
-        #expect(button.contains("TaskCompletionProgressGlyph("), "non-vacuity: still the card's completion circle")
+        #expect(button.contains("CadenceTaskCompletionCircle("), "non-vacuity: still the card's completion circle")
         #expect(button.contains(".accessibilityLabel(accessibilityLabel)"), "the card's completion circle is unnamed again")
 
         let card = try source("Cadence/macOS/Views/KanbanCardView.swift")
@@ -137,7 +137,7 @@ struct CadenceMacTaskBoardAccessibilityTests {
         #expect(ListLogRowPresentation.statusLabel(for: cancelled) == "Canceled")
 
         let file = try source("Cadence/macOS/Views/ListDetailSupportViews.swift")
-        #expect(file.contains("Image(systemName: glyph.symbolName)"), "non-vacuity: the Completed tab row glyph")
+        #expect(file.contains("CadenceTaskCompletionCircle(glyph: glyph, diameter: 14)"), "non-vacuity: the Completed tab row glyph")
         #expect(file.contains(".accessibilityLabel(ListLogRowPresentation.statusLabel(for: task))"),
                 "the Completed tab's glyph reads as nothing again")
     }

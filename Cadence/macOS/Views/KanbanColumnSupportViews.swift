@@ -393,14 +393,14 @@ struct KanbanColumnHeader<DueDatePopover: View, EditorPopover: View>: View {
             // `TaskSectionConfig.supportsLifecycle`.
             if section.supportsLifecycle {
                 Button(action: onToggleCompletion) {
-                    TaskCompletionProgressGlyph(
-                        icon: section.isCompleted
-                            ? "checkmark.circle.fill"
-                            : (isPendingCompletion ? "circle.inset.filled" : "circle"),
-                        color: section.isCompleted || isPendingCompletion ? Theme.green : Theme.dim,
-                        progress: isPendingCompletion ? completionProgress : nil,
-                        size: 12,
-                        lineWidth: 1.5
+                    // [[T-8411]]: the task's drawn circle, from the shared table's column row.
+                    CadenceTaskCompletionCircle(
+                        glyph: .column(
+                            isCompleted: section.isCompleted,
+                            isPendingCompletion: isPendingCompletion
+                        ),
+                        diameter: 12,
+                        progress: isPendingCompletion ? completionProgress : nil
                     )
                     .frame(width: 18, height: 18)
                     .contentShape(Rectangle())

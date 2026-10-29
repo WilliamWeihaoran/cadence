@@ -441,7 +441,7 @@ struct iOSTaskRowSubtaskRow: View {
             try? modelContext.save()
         } label: {
             HStack(spacing: 8) {
-                iOSTaskCompletionCircle(isDone: false, tint: Theme.dim, diameter: CadenceTypeScale.size(.metadata, at: dynamicTypeSize, scaling: scaling))
+                CadenceTaskCompletionCircle(isDone: false, tint: Theme.dim, diameter: CadenceTypeScale.size(.metadata, at: dynamicTypeSize, scaling: scaling))
                 Text(TaskTitleSupport.displayTitle(subtask.title, fallback: TaskTitleSupport.defaultCompactDisplayTitle))
                     .cadenceFont(.metadata)
                     .foregroundStyle(Theme.muted)

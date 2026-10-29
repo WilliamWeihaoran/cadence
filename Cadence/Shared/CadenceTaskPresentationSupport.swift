@@ -54,9 +54,9 @@ nonisolated enum CadenceTaskRowSurface: String, CaseIterable, Sendable {
 ///   stacks. `MacTaskRow` is the exception it never named, so it is named here.
 /// - **`completionGlyphSize` and `completionCircleDiameter`.** Not shared because they are not the
 ///   same measurement. iOS draws a real 16pt disc and ramps a *frame* around it to reach a 44pt
-///   touch target, so the number is a layout box. macOS passes an SF Symbol **point size** to
-///   `TaskCompletionProgressGlyph` — which is also its frame, and which its four macOS call sites
-///   already set to 12 / 13 / 15 / 18 as a type ramp per surface. Folding them would push an iOS
+///   touch target, so the number is a layout box. macOS passes `CadenceTaskCompletionCircle` (the
+///   one drawn circle both platforms share since [[T-8411]]) a diameter that is also its frame, and
+///   its four macOS call sites set it to 12 / 13 / 13 / 18 as a type ramp per surface. Folding them would push an iOS
 ///   touch-target ramp into a macOS type ramp and quietly resize four other controls. This is the
 ///   `cdf0896` pattern: an apparent fork that is two different jobs wearing one name.
 ///
@@ -78,9 +78,9 @@ nonisolated struct CadenceTaskRowMetrics: Equatable, Sendable {
 
     /// The completion circle's drawn diameter. Constant: only its 44pt-reaching *frame* ramps.
     ///
-    /// iOS only, and not because macOS was overlooked — macOS has no equivalent number to share.
-    /// `TaskCompletionProgressGlyph` draws an SF Symbol, so the disc's diameter is a property of
-    /// the glyph rather than a figure anybody sets.
+    /// iOS only, and not because macOS was overlooked: macOS's row draws the same
+    /// `CadenceTaskCompletionCircle` ([[T-8411]]) at 18, on a 15pt title line against iOS's 13pt
+    /// one, and with no touch-target frame to ramp around it.
     static let completionCircleDiameter: CGFloat = 16
 
     let horizontalPadding: CGFloat
@@ -170,9 +170,9 @@ nonisolated struct CadenceTaskRowMetrics: Equatable, Sendable {
         // Read since [[T-1467]] gave the macOS row a notes line and subtask rows.
         summarySpacing: 6,
         badgeSpacing: 6,
-        // Stated, not read either, and for a sharper reason — on macOS this same number would also
-        // be an SF Symbol point size. `MacTaskRow` leaves `TaskCompletionProgressGlyph`'s own
-        // default alone, and a test pins that it keeps doing so.
+        // Stated, not read either: on macOS this number is the drawn circle's frame with no touch
+        // target around it. `MacTaskRow`'s `TaskCompletionButton` states its own 18, and a test
+        // pins that it keeps not reading this.
         completionGlyphSize: 18,
         titleFontSize: 15,
         secondaryFontSize: 11,

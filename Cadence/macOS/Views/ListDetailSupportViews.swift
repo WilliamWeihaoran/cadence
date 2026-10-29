@@ -536,9 +536,9 @@ struct ListLogView: View {
                         ForEach(doneTasks) { task in
                             let glyph = ListLogRowPresentation.glyph(for: task)
                             HStack(spacing: 10) {
-                                Image(systemName: glyph.symbolName)
-                                    .font(.system(size: 14))
-                                    .foregroundStyle(glyph.tint)
+                                // [[T-8411]]: the drawn circle every completion control uses,
+                                // not an SF Symbol stamp of the same state.
+                                CadenceTaskCompletionCircle(glyph: glyph, diameter: 14)
                                     .accessibilityLabel(ListLogRowPresentation.statusLabel(for: task))
 
                                 VStack(alignment: .leading, spacing: 2) {

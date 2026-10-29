@@ -583,7 +583,7 @@ struct iOSSubtaskRow: View {
     var body: some View {
         HStack(spacing: 9) {
             Button(action: toggle) {
-                iOSTaskCompletionCircle(isDone: subtask.isDone, tint: Theme.dim, diameter: 16)
+                CadenceTaskCompletionCircle(isDone: subtask.isDone, tint: Theme.dim, diameter: 16)
                     .frame(width: 20, height: 20)
                     .iOSExpandedHitArea(12)
             }

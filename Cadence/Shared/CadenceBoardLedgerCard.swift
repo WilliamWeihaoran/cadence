@@ -260,10 +260,10 @@ nonisolated enum CadenceLedgerCardSupport {
 /// fixed-width strip washed in the list's colour, so the three **states** scan as one vertical
 /// column instead of being spread across a card as three unrelated marks.
 ///
-/// The ring is a slot rather than a drawn view because it is the one piece that is genuinely
-/// per-platform: macOS's is a `Button` wrapping `TaskCompletionProgressGlyph` with a pending-settle
-/// progress arc, iOS's is an `iOSTaskCompletionCircle` with a 44pt expanded hit area. Those are
-/// interaction, not geometry; the drawn diameter is `CadenceLedgerCardMetrics.ringBase` on both.
+/// The ring is a slot rather than a drawn view because its **control** is genuinely per-platform:
+/// macOS's is a `Button` under a pointer, iOS's has a 44pt expanded hit area for a finger. Those are
+/// interaction, not geometry; the drawing inside both is `CadenceTaskCompletionCircle` ([[T-8411]])
+/// at `CadenceLedgerCardMetrics.ringBase`.
 ///
 /// Priority and recurrence appear on **neither** board card today; this gutter is where they land,
 /// and they are new on both platforms.

@@ -211,7 +211,7 @@ private struct iOSInboxReminderRow: View {
     private var completionButton: some View {
         let frame = CadenceTypeScale.height(metrics.completionGlyphSize, holding: .rowTitle, textBase: CadenceTaskRowMetrics.completionCircleDiameter, at: dynamicTypeSize, scaling: scaling)
         return Button(action: complete) {
-            iOSTaskCompletionCircle(
+            CadenceTaskCompletionCircle(
                 glyph: .binary(
                     isDone: rowState.isCompleting,
                     tint: AppleReminderRowPresentation.priorityTint(reminder.priority)

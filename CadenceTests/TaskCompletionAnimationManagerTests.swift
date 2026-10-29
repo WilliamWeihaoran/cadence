@@ -563,35 +563,8 @@ struct TaskCompletionAnimationManagerTests {
         #expect(!section.isCompleted)
     }
 
-    /// **The drawing reads the shared threshold; it does not keep one of its own ([[T-8202]]).**
-    ///
-    /// The confirmation mark's cue is a *fraction of the window*, so a literal in the view is a
-    /// number that silently stops meaning "halfway" the next time the window moves — which is
-    /// exactly how a 2.5s fill ended up confirming at 1.75s. This is a source scan because the
-    /// comparison lives inside a `body`, which a unit test cannot reach.
-    @Test func theCompletionGlyphAsksTheSharedTimingWhenToShowItsMark() throws {
-        let raw = try CadenceSourceScan.sourceFile("Cadence/macOS/Views/TaskCompletionAnimationViews.swift")
-        let code = CadenceSourceScan.codeOnly(raw)
-
-        // Non-vacuity: the read found the right file, and the stripper ran without shortening it.
-        #expect(code.contains("struct TaskCompletionProgressGlyph"), "the scan did not read the glyph's file")
-        #expect(code != raw, "nothing was stripped, so the scan is reading prose as code")
-        #expect(code.count == raw.count, "the stripper changed the length, so offsets no longer hold")
-
-        #expect(
-            CadenceSourceScan.matchCount(#"CadenceTaskCompletionTiming\.showsConfirmation\(at: clampedProgress\)"#, in: code) == 1,
-            "the glyph no longer asks the shared timing when to show its mark"
-        )
-
-        // And it decides nothing itself. The needle is a comparison against the progress value, so
-        // `0.75` on the spring's damping and the `0`/`1` of the clamp are left alone by design.
-        let comparison = #"clampedProgress\s*[<>]=?\s*[0-9.]+"#
-        #expect(CadenceSourceScan.matchCount(comparison, in: code) == 0, "the glyph spells its own threshold again")
-
-        // The needle really would see one. Without this the assertion above passes on a typo.
-        #expect(CadenceSourceScan.matchCount(comparison, in: "let shown = clampedProgress > 0.7") == 1)
-        #expect(CadenceSourceScan.matchCount(comparison, in: "let shown = somethingElse > 0.7") == 0)
-    }
+    // `theCompletionGlyphAsksTheSharedTimingWhenToShowItsMark` moved to
+    // `CadenceTaskCompletionGlyphTests` with the circle it reads ([[T-8411]]).
 
     // MARK: - T-8203: the same deferred completion on iOS
 
@@ -723,9 +696,12 @@ struct TaskCompletionAnimationManagerTests {
         let swipe = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile("Cadence/iOS/iOSTaskRowActionViews.swift"))
         let root = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile("Cadence/iOS/iOSRootView.swift"))
         let circle = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile("Cadence/iOS/iOSFeatureComponents.swift"))
+        // [[T-8411]]: the drawing is the shared circle's; the iOS file keeps only the live host.
+        let drawing = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile("Cadence/Shared/Components/CadenceTaskCompletionCircle.swift"))
         let manager = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile("Cadence/Shared/TaskCompletionAnimationManager.swift"))
         #expect(row.contains("struct iOSTaskRow"), "non-vacuity: wrong file read")
-        #expect(circle.contains("struct iOSTaskCompletionCircle"), "non-vacuity: wrong file read")
+        #expect(circle.contains("struct iOSTaskCompletionFill"), "non-vacuity: wrong file read")
+        #expect(drawing.contains("struct CadenceTaskCompletionCircle"), "non-vacuity: wrong file read")
 
         for (name, code) in [("row", row), ("card", card)] {
             let toggle = try #require(CadenceSourceScan.functionBody(named: "toggleCompletion", in: code), "\(name) has no toggleCompletion()")
@@ -748,9 +724,9 @@ struct TaskCompletionAnimationManagerTests {
 
         // Hazard 5: the display-link redraw exists only for a pending glyph, and Reduce Motion stops it.
         #expect(circle.contains("!reduceMotion && (glyph.state == .pendingCompletion || glyph.state == .pendingCancellation)"))
-        #expect(circle.contains("CadenceTaskCompletionTiming.showsConfirmation(at: fill)"))
+        #expect(drawing.contains("CadenceTaskCompletionTiming.showsConfirmation(at: fill)"))
         let comparison = #"\bfill\s*[<>]=?\s*[0-9.]+"#
-        #expect(CadenceSourceScan.matchCount(comparison, in: circle) == 0, "the iOS circle spells its own confirmation threshold")
+        #expect(CadenceSourceScan.matchCount(comparison, in: drawing) == 0, "the circle spells its own confirmation threshold")
         #expect(CadenceSourceScan.matchCount(comparison, in: "let shown = fill > 0.7") == 1)
 
         // The manager's iOS hop is the iOS status wrapper, so a deferred tick reconciles and
@@ -775,7 +751,7 @@ struct TaskCompletionAnimationManagerTests {
 
         #expect(block.contains("iOSTaskCompletionFill("), "the block draws a still circle")
         #expect(block.contains("TaskCompletionAnimationManager.shared.glyph(for: task)"), "the block's glyph cannot see the pending states")
-        #expect(!block.contains("iOSTaskCompletionCircle(glyph: .resolve(task: task)"), "the block still draws the circle from the stored status alone")
+        #expect(!block.contains("CadenceTaskCompletionCircle(glyph: .resolve(task: task)"), "the block still draws the circle from the stored status alone")
         #expect(!block.contains("CadenceTaskStatusEditing.toggleCompletion("), "the block writes completion synchronously")
         #expect(block.contains(".accessibilityAction(named: Text(completionGlyph.state.accessibilityActionLabel))"), "VoiceOver cannot reach the block's circle")
     }
@@ -812,9 +788,13 @@ struct TaskCompletionAnimationManagerTests {
         let card = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile("Cadence/iOS/iOSBoardCards.swift"))
         let timeline = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile("Cadence/iOS/iOSCalendarTimelineViews.swift"))
         let shared = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile("Cadence/Shared/Components/TaskCompletionPendingOverlay.swift"))
-        let mac = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile("Cadence/macOS/Views/TaskCompletionAnimationViews.swift"))
+        // [[T-8411]] deleted the macOS glyph file the sweep once lived in; the macOS views as a
+        // whole must still declare no sweep of their own.
+        let macPaths = try CadenceSourceScan.swiftFiles(under: "Cadence/macOS")
+        #expect(macPaths.count > 10, "non-vacuity: the macOS sources were not listed")
+        let mac = try macPaths.map { CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile($0)) }.joined(separator: "\n")
         #expect(row.contains("struct iOSTaskRow"), "non-vacuity: wrong row file read")
-        #expect(mac.contains("struct TaskCompletionProgressGlyph"), "non-vacuity: wrong macOS file read")
+        #expect(mac.contains("struct TaskCompletionButton"), "non-vacuity: wrong macOS files read")
 
         let rowStart = try #require(row.range(of: "struct iOSTaskRow: View"))
         let rowEnd = try #require(row.range(of: "struct iOSTaskMetaLabel", range: rowStart.upperBound..<row.endIndex))
@@ -888,7 +868,10 @@ struct TaskCompletionAnimationManagerTests {
         // Still, the header ring stamps a pending glyph rather than an empty track.
         #expect(column.contains("header(activeCount: activeCount, completionProgress: nil)"), "the still header draws a zero-length fill")
         let controls = try #require(CadenceSourceScan.declarationBody("private var headerControls: some View", in: header), "non-vacuity: the header ring moved")
-        #expect(controls.contains(#"(isPendingCompletion ? "circle.inset.filled" : "circle")"#), "a still completing column's ring looks idle")
+        // [[T-8411]]: the ring is the shared circle fed the column glyph, whose still pending face
+        // is the green ring and dot (pinned on `CadenceTaskCompletionCircleFace` itself).
+        #expect(controls.contains("glyph: .column("), "the column header picks its own glyph again")
+        #expect(controls.contains("isPendingCompletion: isPendingCompletion"), "a still completing column's ring looks idle")
     }
 }
 #endif

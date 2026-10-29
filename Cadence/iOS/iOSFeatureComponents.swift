@@ -2,129 +2,8 @@
 import SwiftData
 import SwiftUI
 
-/// Shared 13pt completion circle used by task rows across iOS: a 1.6pt ring in the task's
-/// priority tint while it is open, a solid fill with a knocked-out mark once it is settled.
-///
-/// It drew **two** states — done and not-done — against macOS's five, so a cancelled task was
-/// pixel-identical to an open one on every iOS row, board card, timeline block and inspector,
-/// even though the swipe tray, the context menu and the inspector's Cancel button all set that
-/// status. `CadenceTaskCompletionGlyph` is now the single decision behind both platforms; this
-/// view only draws what it is told.
-struct iOSTaskCompletionCircle: View {
-    let glyph: CadenceTaskCompletionGlyph
-    var diameter: CGFloat = 13
-    /// How far a deferred completion (or cancellation) has run, `0...1`, or `nil` for a still
-    /// circle ([[T-8203]]). Only a pending glyph reads it; see `iOSTaskCompletionFill`, the one
-    /// host that supplies it.
-    var progress: Double? = nil
-
-    init(glyph: CadenceTaskCompletionGlyph, diameter: CGFloat = 13, progress: Double? = nil) {
-        self.glyph = glyph
-        self.diameter = diameter
-        self.progress = progress
-    }
-
-    /// For the controls with no `AppTask` behind them — a `Subtask`'s tick, and the decorative
-    /// circles in the swipe tray and the schedule placeholder row.
-    init(isDone: Bool, tint: Color, diameter: CGFloat = 13) {
-        self.init(glyph: .binary(isDone: isDone, tint: tint), diameter: diameter)
-    }
-
-    var body: some View {
-        ZStack {
-            if let fill = pendingFill {
-                fillingRing(fill)
-            } else {
-                Circle()
-                    .fill(glyph.isFilled ? glyph.tint : Color.clear)
-                if !glyph.isFilled {
-                    Circle()
-                        .strokeBorder(glyph.tint, lineWidth: 1.6)
-                }
-                mark
-            }
-        }
-        .frame(width: diameter, height: diameter)
-    }
-
-    /// The progress to draw, when there is a fill to draw: a pending glyph that was handed one.
-    private var pendingFill: Double? {
-        guard let progress,
-              glyph.state == .pendingCompletion || glyph.state == .pendingCancellation
-        else { return nil }
-        return min(max(progress, 0), 1)
-    }
-
-    /// macOS's `TaskCompletionProgressGlyph` fill, in this circle's own drawn primitives: a faint
-    /// track, the tint trimmed clockwise from twelve o'clock, and the mark landing when
-    /// `CadenceTaskCompletionTiming` says it does — halfway ([[T-8202]]). The threshold is asked,
-    /// never spelled, so the two platforms cannot disagree about when the check appears.
-    private func fillingRing(_ fill: Double) -> some View {
-        let confirmed = CadenceTaskCompletionTiming.showsConfirmation(at: fill)
-        return ZStack {
-            Circle()
-                .strokeBorder(glyph.tint.opacity(0.18), lineWidth: 1.6)
-            // The arc is the ring masked by a wedge rather than a trimmed `.stroke`, so it is the
-            // same inset `strokeBorder` ring the open circle draws ([[T-489]]) and simply reveals
-            // itself clockwise — it cannot sit half a line outside the track it traces.
-            Circle()
-                .strokeBorder(glyph.tint, lineWidth: 1.6)
-                .mask(iOSTaskCompletionWedge(fraction: fill))
-            markSymbol(glyph.state == .pendingCancellation ? "xmark" : "checkmark", scale: 0.55)
-                .opacity(confirmed ? 1 : 0)
-                .scaleEffect(confirmed ? 1 : 0.65)
-                .animation(.spring(response: 0.22, dampingFraction: 0.75), value: confirmed)
-        }
-    }
-
-    /// macOS gets its mark free, as the knockout inside an SF Symbol; here it is drawn. On a
-    /// filled disc that means `Theme.onColor(for:)` against the tint that fills it — the cancelled
-    /// cross is the same treatment, not a new one. It was plain `Theme.onColor` until T-855: white
-    /// on a `Theme.green` disc reads 2.08:1, which is under even the 3:1 non-text floor.
-    @ViewBuilder
-    private var mark: some View {
-        switch glyph.mark {
-        case .none:
-            EmptyView()
-        case .dot:
-            Circle()
-                .fill(glyph.tint)
-                .frame(width: diameter * 0.44, height: diameter * 0.44)
-        case .checkmark:
-            markSymbol("checkmark", scale: 0.6)
-        case .cross:
-            markSymbol("xmark", scale: 0.55)
-        }
-    }
-
-    private func markSymbol(_ name: String, scale: CGFloat) -> some View {
-        Image(systemName: name)
-            .font(.system(size: diameter * scale, weight: .bold))
-            .foregroundStyle(glyph.isFilled ? Theme.onColor(for: glyph.tint) : glyph.tint)
-    }
-}
-
-/// The swept part of a completion fill: a pie slice from twelve o'clock, clockwise, `fraction` of
-/// the way round. Used only as a mask over `iOSTaskCompletionCircle`'s ring.
-private struct iOSTaskCompletionWedge: Shape {
-    var fraction: Double
-
-    func path(in rect: CGRect) -> Path {
-        let center = CGPoint(x: rect.midX, y: rect.midY)
-        let radius = max(rect.width, rect.height)
-        var path = Path()
-        path.move(to: center)
-        path.addArc(
-            center: center,
-            radius: radius,
-            startAngle: .degrees(-90),
-            endAngle: .degrees(-90 + 360 * min(max(fraction, 0), 1)),
-            clockwise: false
-        )
-        path.closeSubpath()
-        return path
-    }
-}
+// The circle this file drew, and its wedge, moved to `Shared/Components/CadenceTaskCompletionCircle.swift`
+// as `CadenceTaskCompletionCircle` ([[T-8411]]), so macOS draws the same circle.
 
 /// A task's completion circle, live: it reads the deferred completion off
 /// `TaskCompletionAnimationManager` and redraws the fill while one runs ([[T-8203]]).
@@ -148,14 +27,14 @@ struct iOSTaskCompletionFill: View {
     var body: some View {
         if animatesFill {
             TimelineView(.animation) { context in
-                iOSTaskCompletionCircle(
+                CadenceTaskCompletionCircle(
                     glyph: glyph,
                     diameter: diameter,
                     progress: TaskCompletionAnimationManager.shared.pendingProgress(for: task, now: context.date)
                 )
             }
         } else {
-            iOSTaskCompletionCircle(glyph: glyph, diameter: diameter)
+            CadenceTaskCompletionCircle(glyph: glyph, diameter: diameter)
         }
     }
 

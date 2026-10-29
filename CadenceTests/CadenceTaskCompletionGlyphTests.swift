@@ -197,4 +197,100 @@ struct CadenceTaskCompletionGlyphTests {
         #expect(CadenceTaskCompletionTiming.showsConfirmation(at: 4.2))
         #expect(!CadenceTaskCompletionTiming.showsConfirmation(at: -3))
     }
+
+    // MARK: - T-8411: one drawn circle for both platforms
+
+    /// **The drawing reads the shared threshold; it does not keep one of its own ([[T-8202]]).**
+    /// Moved here from `TaskCompletionAnimationManagerTests` with the circle it reads ([[T-8411]]).
+    ///
+    /// The confirmation mark's cue is a *fraction of the window*, so a literal in the view is a
+    /// number that silently stops meaning "halfway" the next time the window moves — which is
+    /// exactly how a 2.5s fill ended up confirming at 1.75s.
+    @Test func theCompletionGlyphAsksTheSharedTimingWhenToShowItsMark() throws {
+        let raw = try CadenceSourceScan.sourceFile("Cadence/Shared/Components/CadenceTaskCompletionCircle.swift")
+        let code = CadenceSourceScan.codeOnly(raw)
+
+        // Non-vacuity: the read found the right file, and the stripper ran without shortening it.
+        #expect(code.contains("struct CadenceTaskCompletionCircleFace"), "the scan did not read the circle's file")
+        #expect(code != raw, "nothing was stripped, so the scan is reading prose as code")
+        #expect(code.count == raw.count, "the stripper changed the length, so offsets no longer hold")
+
+        #expect(
+            CadenceSourceScan.matchCount(#"CadenceTaskCompletionTiming\.showsConfirmation\(at: fill\)"#, in: code) == 1,
+            "the circle no longer asks the shared timing when to show its mark"
+        )
+        let comparison = #"\b(fill|progress)\s*[<>]=?\s*[0-9.]+"#
+        #expect(CadenceSourceScan.matchCount(comparison, in: code) == 0, "the circle spells its own threshold again")
+        #expect(CadenceSourceScan.matchCount(comparison, in: "let shown = fill > 0.7") == 1)
+        #expect(CadenceSourceScan.matchCount(comparison, in: "let shown = somethingElse > 0.7") == 0)
+    }
+
+    /// The face each state draws, which is the same on both platforms because there is one table.
+    /// Resting: open ring for open and pending glyphs, a disc for settled ones. A pending glyph with
+    /// no progress — Reduce Motion ([[T-8412]]) — keeps its own still mark rather than a bare track.
+    @Test func eachStateDrawsOneFaceWhetherStillOrFilling() {
+        func glyph(_ status: TaskStatus, completing: Bool = false, cancelling: Bool = false) -> CadenceTaskCompletionGlyph {
+            .resolve(status: status, priority: .high, isPendingCompletion: completing, isPendingCancellation: cancelling)
+        }
+        typealias Face = CadenceTaskCompletionCircleFace
+
+        #expect(Face.resolve(glyph: glyph(.todo), progress: nil) == Face(ring: .open, mark: .none, showsMark: true))
+        #expect(Face.resolve(glyph: glyph(.done), progress: nil) == Face(ring: .filled, mark: .checkmark, showsMark: true))
+        #expect(Face.resolve(glyph: glyph(.cancelled), progress: nil) == Face(ring: .filled, mark: .cross, showsMark: true))
+        #expect(Face.resolve(glyph: glyph(.todo, completing: true), progress: nil) == Face(ring: .open, mark: .dot, showsMark: true))
+        #expect(Face.resolve(glyph: glyph(.todo, cancelling: true), progress: nil) == Face(ring: .open, mark: .cross, showsMark: true))
+
+        // Filling: the ring sweeps, and the mark lands at the shared midpoint.
+        #expect(Face.resolve(glyph: glyph(.todo, completing: true), progress: 0.25) == Face(ring: .filling(0.25), mark: .checkmark, showsMark: false))
+        #expect(Face.resolve(glyph: glyph(.todo, completing: true), progress: 0.5) == Face(ring: .filling(0.5), mark: .checkmark, showsMark: true))
+        #expect(Face.resolve(glyph: glyph(.todo, cancelling: true), progress: 0.75) == Face(ring: .filling(0.75), mark: .cross, showsMark: true))
+        // Clamped, so a raw `elapsed / duration` cannot draw past a full ring.
+        #expect(Face.resolve(glyph: glyph(.todo, completing: true), progress: 3) == Face(ring: .filling(1), mark: .checkmark, showsMark: true))
+
+        // A settled or open glyph ignores a progress reading: only a pending one fills.
+        #expect(Face.resolve(glyph: glyph(.done), progress: 0.3) == Face(ring: .filled, mark: .checkmark, showsMark: true))
+        #expect(Face.resolve(glyph: glyph(.todo), progress: 0.3) == Face(ring: .open, mark: .none, showsMark: true))
+    }
+
+    /// The board column's circle is three rows of the same table: open in dim, completing green,
+    /// completed as a done disc. It spelled these as three SF Symbol names inline before [[T-8411]].
+    @Test func aColumnCircleIsOpenCompletingOrCompleted() {
+        let open = CadenceTaskCompletionGlyph.column(isCompleted: false, isPendingCompletion: false)
+        let completing = CadenceTaskCompletionGlyph.column(isCompleted: false, isPendingCompletion: true)
+        let completed = CadenceTaskCompletionGlyph.column(isCompleted: true, isPendingCompletion: true)
+        #expect(open.state == .todo)
+        #expect(open.tint == Theme.dim)
+        #expect(completing.state == .pendingCompletion)
+        #expect(completing.tint == Theme.green)
+        #expect(completed.state == .done, "a settled column must not read as still completing")
+        #expect(completed.tint == Theme.green)
+    }
+
+    /// One drawing: declared once, in `Shared/`, and every completion control on both platforms
+    /// draws it. The SF Symbol glyph macOS drew is gone rather than kept beside it.
+    @Test func everyCompletionControlDrawsTheOneSharedCircle() throws {
+        let shared = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile("Cadence/Shared/Components/CadenceTaskCompletionCircle.swift"))
+        #expect(CadenceSourceScan.matchCount(#"struct CadenceTaskCompletionCircle\b"#, in: shared) == 1)
+
+        let hosts = [
+            "Cadence/macOS/Views/TasksPanelComponents.swift",
+            "Cadence/macOS/Views/KanbanCardSupportViews.swift",
+            "Cadence/macOS/Views/KanbanColumnSupportViews.swift",
+            "Cadence/macOS/Views/TimelineTaskBlockSupportViews.swift",
+            "Cadence/macOS/Views/ListDetailSupportViews.swift",
+            "Cadence/iOS/iOSFeatureComponents.swift",
+        ]
+        for path in hosts {
+            let code = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile(path))
+            #expect(code.contains("CadenceTaskCompletionCircle("), "\(path) no longer draws the shared circle")
+        }
+
+        var everything = ""
+        for path in try CadenceSourceScan.swiftFiles(under: "Cadence") {
+            everything += CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile(path))
+        }
+        #expect(everything.contains("struct CadenceTaskCompletionCircle"), "non-vacuity: the sweep did not read Shared")
+        #expect(!everything.contains("TaskCompletionProgressGlyph"), "macOS draws its own completion glyph again")
+        #expect(!everything.contains("struct iOSTaskCompletionCircle"), "iOS draws its own completion circle again")
+    }
 }
