@@ -467,8 +467,9 @@ private struct iOSCalendarMonthDayCell: View {
                     ForEach(visibleTasks) { task in
                         iOSCalendarMiniChip(
                             title: TaskTitleSupport.displayTitle(task.title, fallback: TaskTitleSupport.defaultCompactDisplayTitle),
-                            icon: task.isDone ? "checkmark.circle.fill" : "circle.fill",
-                            color: Color(hex: task.containerColor)
+                            icon: "circle.fill",
+                            color: Color(hex: task.containerColor),
+                            completion: .resolve(task: task)
                         )
                     }
                     if overflow > 0 {
@@ -627,6 +628,14 @@ struct iOSCalendarMiniChip: View {
     ///    line and tens of dash periods. It also says the same thing the glyph says, which is what
     ///    makes the pair read as one idea rather than two decorations.
     var isUnscheduled = false
+    /// **A task's completion, which the chip used to be handed only as an icon** ([[T-8241]]).
+    ///
+    /// Before this the chip had no done input at all: the caller swapped `icon` to a check and the
+    /// chip drew it grey, at full title weight, where macOS's chips draw a green check and drop the
+    /// title one tier. `icon` is now the OPEN glyph; the settled glyph, its tint and the title tier
+    /// are `CadenceCalendarTaskDoneStyle`'s, the same decision macOS's `MonthTaskChip` and
+    /// `AllDayTaskChip` read. `nil` is an event, or a task chip drawn without a state.
+    var completion: CadenceTaskCompletionState? = nil
 
     private var shape: RoundedRectangle {
         RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous)
@@ -666,14 +675,25 @@ struct iOSCalendarMiniChip: View {
     /// cannot also move how far the row's text starts from its icon.
     private static let glyphSpacing: CGFloat = 4
 
+    private var openGlyphTint: Color {
+        isEvent
+            ? CadenceCalendarEventStyle.railTertiaryLabelColor(for: color)
+            : CadenceCalendarEventStyle.plateTertiaryLabelColor()
+    }
+
     private var glyph: some View {
-        Image(systemName: icon)
+        Image(systemName: completion.map { CadenceCalendarTaskDoneStyle.chipGlyphSymbol(for: $0, open: icon) } ?? icon)
             .cadenceFont(.metadata, base: 8, weight: .semibold)
-            .foregroundStyle(
-                isEvent
-                    ? CadenceCalendarEventStyle.railTertiaryLabelColor(for: color)
-                    : CadenceCalendarEventStyle.plateTertiaryLabelColor()
-            )
+            .foregroundStyle(completion.flatMap { CadenceCalendarTaskDoneStyle.chipGlyphTint(for: $0) } ?? openGlyphTint)
+    }
+
+    private var titleInk: Color {
+        if let completion, CadenceCalendarTaskDoneStyle.dimsTitle(for: completion) {
+            return CadenceCalendarEventStyle.plateSecondaryLabelColor()
+        }
+        return isEvent
+            ? CadenceCalendarEventStyle.railTitleColor(for: color)
+            : CadenceCalendarEventStyle.platePrimaryLabelColor
     }
 
     var body: some View {
@@ -712,11 +732,7 @@ struct iOSCalendarMiniChip: View {
             if glyphRow == .title { glyph }
             Text(title)
                 .cadenceFont(.metadata, base: 10, weight: .medium)
-                .foregroundStyle(
-                    isEvent
-                        ? CadenceCalendarEventStyle.railTitleColor(for: color)
-                        : CadenceCalendarEventStyle.platePrimaryLabelColor
-                )
+                .foregroundStyle(titleInk)
                 .lineLimit(1)
         }
     }

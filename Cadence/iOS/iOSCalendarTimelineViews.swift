@@ -1061,12 +1061,13 @@ private struct iOSCalendarAllDayBandChips: View {
             // the reasoning and the 17pt measurement the rail fails at.
             ForEach(unscheduledTasks.prefix(split.tasks)) { task in
                 // A done task stays in the band ([[T-8042]]) and wears the month cell's done
-                // glyph; the dashed rim still says "no time yet".
+                // glyph, green as on macOS ([[T-8241]]); the dashed rim still says "no time yet".
                 iOSCalendarMiniChip(
                     title: TaskTitleSupport.displayTitle(task.title, fallback: TaskTitleSupport.defaultCompactDisplayTitle),
-                    icon: task.isDone ? "checkmark.circle.fill" : "circle.dashed",
+                    icon: "circle.dashed",
                     color: Color(hex: task.containerColor),
-                    isUnscheduled: true
+                    isUnscheduled: true,
+                    completion: .resolve(task: task)
                 )
                 // Nothing opens from an unscheduled chip, so it takes no hit ([[T-5356]]): in the
                 // week header this stack is drawn ABOVE the select-the-day button, and a chip
@@ -2230,8 +2231,7 @@ struct iOSTimelineTaskBlock: View {
     private var titleLabel: some View {
         Text(displayTitle)
             .cadenceFont(.metadata, base: 11, weight: .semibold)
-            .foregroundStyle(task.isDone ? secondaryInk : primaryInk)
-            .strikethrough(task.isDone, color: secondaryInk)
+            .foregroundStyle(CadenceCalendarTaskDoneStyle.dimsTitle(for: .resolve(task: task)) ? secondaryInk : primaryInk)
     }
 
     /// T-3323: a word too wide for the title's line ends the title in an ellipsis on one line
@@ -2415,7 +2415,8 @@ struct iOSTimelineTaskBlock: View {
                 VStack(alignment: .leading, spacing: 3) {
                     // A finished task drops one ink tier rather than going grey. `Theme.dim` was
                     // chosen for a near-black surface and this surface is no longer near-black —
-                    // it reads about 2:1 on the plate. The strikethrough is what still says done.
+                    // it reads about 2:1 on the plate. The diagonal stripes and the filled green
+                    // check are what still say done, as on macOS ([[T-8241]]).
                     titleLabel
                         .lineLimit(titleLineLimit)
                         .truncationMode(.tail)
@@ -2438,12 +2439,20 @@ struct iOSTimelineTaskBlock: View {
         // are gone: a wash says the hue with luminance it has to borrow from the surface, and
         // the ink above is solved against `plateLuminance` rather than against whatever that
         // borrowing happened to composite to. The done state is carried by the ink tier and
-        // the strikethrough, not by a second fill at a second opacity. A lifted block reads the
+        // the diagonal stripes, not by a second fill at a second opacity. A lifted block reads the
         // plate's own selected rung rather than a fill invented for it.
         .background {
             blockShape.fill(CadenceCalendarEventStyle.plateFill(for: listColor, isSelected: isLifted))
         }
         .clipShape(blockShape)
+        // macOS's stripes, not a strikethrough ([[T-8241]]): one `DiagonalStripeOverlay` in
+        // Shared, drawn over the whole block, under the rim, exactly where macOS draws it.
+        .overlay {
+            if task.isDone {
+                DiagonalStripeOverlay()
+                    .clipShape(blockShape)
+            }
+        }
         // The resting edge is the list colour's own lit rim at `chipBorderOpacity`, which is
         // the edge a solved plate asks for. `Theme.borderSubtle` is a near-black hairline; it
         // was the right edge for the near-black surface this plate replaced and is invisible

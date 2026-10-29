@@ -142,10 +142,10 @@ struct MonthTaskChip: View {
     var todayKey: String = DateFormatters.todayKey()
     @State private var showInspector = false
 
+    /// The settled states are `CadenceCalendarTaskDoneStyle`'s, which the iOS chips read too
+    /// ([[T-8241]]).
     private var glyph: String {
-        if task.isCancelled { return "xmark.circle.fill" }
-        if task.isDone { return "checkmark.circle.fill" }
-        return "circle"
+        CadenceCalendarTaskDoneStyle.chipGlyphSymbol(for: .resolve(task: task), open: "circle")
     }
 
     /// The urgency tints and `Theme.green` stay — they are information, and they are bright enough
@@ -154,8 +154,7 @@ struct MonthTaskChip: View {
     /// has no contrast budget at all. It becomes the plate's own tertiary tier, which is solved
     /// against the fill the glyph actually lands on.
     private var glyphTint: Color {
-        if task.isCancelled { return CadenceCalendarEventStyle.plateTertiaryLabelColor() }
-        if task.isDone { return Theme.green }
+        if let settled = CadenceCalendarTaskDoneStyle.chipGlyphTint(for: .resolve(task: task)) { return settled }
         // No due date is not urgency-free noise: it collapses to the same neutral `.later`
         // tint, so only a real deadline ever colours the circle.
         return CadenceDueUrgency.evaluate(dueDateKey: task.dueDate, isDone: task.isDone, todayKey: todayKey)?.tint
@@ -703,15 +702,14 @@ struct AllDayTaskChip: View {
     /// information that survives the plate, `Theme.dim` is a grey solved against `Theme.bg` that
     /// does not.
     private var allDayGlyphTint: Color {
-        if task.isCancelled { return CadenceCalendarEventStyle.plateTertiaryLabelColor() }
-        if task.isDone { return Theme.green }
+        if let settled = CadenceCalendarTaskDoneStyle.chipGlyphTint(for: .resolve(task: task)) { return settled }
         return CadenceDueUrgency.evaluate(dueDateKey: task.dueDate, isDone: task.isDone, todayKey: todayKey)?.tint
             ?? CadenceCalendarEventStyle.plateTertiaryLabelColor()
     }
 
     var body: some View {
         HStack(spacing: 4) {
-            Image(systemName: task.isCancelled ? "xmark.circle.fill" : (task.isDone ? "checkmark.circle.fill" : "circle"))
+            Image(systemName: CadenceCalendarTaskDoneStyle.chipGlyphSymbol(for: .resolve(task: task), open: "circle"))
                 .font(.system(size: CalendarMonthCellLayout.completionGlyphSize, weight: .semibold))
                 .foregroundStyle(allDayGlyphTint)
             Text(TaskTitleSupport.displayTitle(task.title, fallback: TaskTitleSupport.defaultCompactDisplayTitle))

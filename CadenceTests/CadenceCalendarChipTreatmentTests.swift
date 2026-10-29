@@ -476,10 +476,19 @@ struct CadenceCalendarChipTreatmentTests {
             "non-vacuity: codeOnly no longer blanks SF Symbol names, so this reader can go back to it"
         )
 
+        // The settled glyphs moved into `CadenceCalendarTaskDoneStyle` so iOS reads the same
+        // decision ([[T-8241]]); the chips must still ask it, and it must still hold both states.
+        let doneStyle = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/Shared/CadenceCalendarTaskDoneStyle.swift")
+        )
+        #expect(doneStyle.contains("checkmark.circle.fill"), "the shared done style lost its completion state")
+        #expect(doneStyle.contains("xmark.circle.fill"), "the shared done style lost its cancelled state")
         for declaration in ["struct MonthTaskChip: View", "struct AllDayTaskChip: View"] {
             let body = try #require(CadenceSourceScan.declarationBody(declaration, in: macOS))
-            #expect(body.contains("checkmark.circle.fill"), "\(declaration) lost its completion state")
-            #expect(body.contains("xmark.circle.fill"), "\(declaration) lost its cancelled state")
+            #expect(
+                body.contains("CadenceCalendarTaskDoneStyle.chipGlyphSymbol(for: .resolve(task: task)"),
+                "\(declaration) no longer draws the shared completion glyph"
+            )
             #expect(
                 body.contains("CalendarChipDueMarker"),
                 "\(declaration) lost the deadline marker its grid position cannot state"
@@ -518,7 +527,8 @@ struct CadenceCalendarChipTreatmentTests {
             CadenceSourceScan.matchCount(#"Theme\.dim"#, in: macOS) > 0,
             "non-vacuity: Theme.dim is gone from the file entirely, so the scoped zeros say nothing"
         )
-        #expect(macOS.contains("Theme.green"), "non-vacuity: the done glyph's tint went with it")
+        // The done tint moved into the shared decision both platforms read ([[T-8241]]).
+        #expect(doneStyle.contains("Theme.green"), "non-vacuity: the done glyph's tint went with it")
     }
 
     // MARK: - T-3185: "no time yet" is not "all day"
@@ -575,7 +585,7 @@ struct CadenceCalendarChipTreatmentTests {
         // And it is the TASK list that opts in, not the event list: dense, because the formatter
         // wraps the call and adjacency is the claim.
         #expect(
-            dense.contains(#"icon:task.isDone?"checkmark.circle.fill":"circle.dashed",color:Color(hex:task.containerColor),isUnscheduled:true"#),
+            dense.contains(#"icon:"circle.dashed",color:Color(hex:task.containerColor),isUnscheduled:true,completion:.resolve(task:task)"#),
             "the dashed treatment is not on the unscheduled task chip"
         )
         #expect(!dense.contains("isEvent:true,isUnscheduled:true"), "an all-day event was marked unscheduled")

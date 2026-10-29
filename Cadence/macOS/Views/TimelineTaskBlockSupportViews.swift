@@ -112,23 +112,8 @@ struct TimelineCurrentTimeOverlay: View {
     }
 }
 
-private struct DiagonalStripeOverlay: View {
-    var body: some View {
-        Canvas { context, size in
-            let spacing: CGFloat = 10
-            let lineWidth: CGFloat = 3
-            let totalLines = Int((size.width + size.height) / spacing) + 2
-            for i in 0..<totalLines {
-                let offset = CGFloat(i) * spacing
-                var path = Path()
-                path.move(to: CGPoint(x: offset - size.height, y: 0))
-                path.addLine(to: CGPoint(x: offset, y: size.height))
-                context.stroke(path, with: .color(Theme.onColorBorder), lineWidth: lineWidth)
-            }
-        }
-        .allowsHitTesting(false)
-    }
-}
+// `DiagonalStripeOverlay` lives in `Cadence/Shared/CadenceCalendarTaskDoneStyle.swift` since
+// [[T-8241]], so the iOS timed block draws the same stripes.
 
 @ViewBuilder
 func timelineBlockBody(

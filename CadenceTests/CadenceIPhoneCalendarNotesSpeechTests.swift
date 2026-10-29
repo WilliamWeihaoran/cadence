@@ -120,12 +120,14 @@ struct CadenceTimelineTaskBlockSpeechTests {
         )
     }
 
-    /// The block is drawn struck through on `task.isDone`; the label must read the same flag.
+    /// The block is drawn striped on `task.isDone` (no longer struck through, [[T-8241]]); the
+    /// label must read the same flag.
     @Test func theIOSTimelineBlockPassesTheDoneFlagItDrawsWith() throws {
         let source = CadenceSourceScan.strippingComments(
             try CadenceSourceScan.sourceFile("Cadence/iOS/iOSCalendarTimelineViews.swift")
         )
-        #expect(CadenceSourceScan.matchCount(#"\.strikethrough\(task\.isDone"#, in: source) == 1)
+        #expect(CadenceSourceScan.matchCount(#"if task\.isDone \{\s*DiagonalStripeOverlay\(\)"#, in: source) == 1)
+        #expect(CadenceSourceScan.matchCount(#"\.strikethrough\("#, in: source) == 0)
         #expect(
             CadenceSourceScan.matchCount(
                 #"CadenceCalendarDayAccessibility\.timedTaskLabel\([\s\S]{0,400}?isDone: task\.isDone"#,
