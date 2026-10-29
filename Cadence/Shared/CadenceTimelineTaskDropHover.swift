@@ -70,3 +70,65 @@ struct CadenceTimelineTaskDropHover: Equatable, Sendable {
         return CadenceScheduleSupport.timelineVisibleRange(start: startMinute, end: startMinute + length)
     }
 }
+
+extension CadenceTimelineTaskDropHover {
+
+    /// How the plate arranges the two things it says — the hovering task's title, and the range
+    /// the release will write ([[T-8455]]).
+    enum LabelLayout: Equatable, Sendable {
+        /// The title over the range. The plate's shape wherever there is room for two rows.
+        case stacked
+        /// The title and the range on one row, for a plate with room for only one.
+        case inline
+    }
+
+    /// What two stacked rows cost: the padding above and below them, both line heights, and the
+    /// gap between them. `CadenceCalendarOverlapLayout.lineHeight(forSystemFontSize:)` is the
+    /// measured table the timed blocks already derive their own header heights from; a font size
+    /// off that table takes its documented 1.2x fallback, which is what this decision wants —
+    /// it chooses between two arrangements rather than protecting a header from a cascade.
+    static func stackedLabelHeight(
+        verticalPadding: CGFloat,
+        rowSpacing: CGFloat,
+        titleFontSize: CGFloat,
+        timeFontSize: CGFloat
+    ) -> CGFloat {
+        verticalPadding * 2
+            + CadenceCalendarOverlapLayout.lineHeight(forSystemFontSize: titleFontSize)
+            + rowSpacing
+            + CadenceCalendarOverlapLayout.lineHeight(forSystemFontSize: timeFontSize)
+    }
+
+    /// The arrangement a plate `plateHeight` points tall can carry.
+    ///
+    /// **Why the plate needs this and the block under it does not** ([[T-8455]]). A block drawn on
+    /// the canvas says its title and nothing else, so a one-grid-step block has room for what it
+    /// says. The plate says one more thing — *where this lands* — and [[T-8451]] gave it the title
+    /// as well, which at one grid step took the only row there was: a 15-minute task hovered
+    /// reading its own name and no time at all, where before it read `4 PM - 4:15 PM`. A plate
+    /// that cannot stack them puts them on one row instead, so neither height drops either.
+    ///
+    /// **This is not the Mac preview's capsule, and the Mac is not the model here.**
+    /// `TimelineDraggedTaskPreview` hangs a *duration* capsule — "1h" — outside its block's
+    /// top-trailing corner, which does survive any height but says a different fact: at one grid
+    /// step the Mac plate states its duration and, its body being under both of
+    /// `timelineBlockBody`'s height gates, neither its title nor its clock range. Porting the
+    /// capsule would restore neither of the two things this plate is for. What the two platforms
+    /// should agree on is *what the plate says at a given height*, which is why that decision is
+    /// here rather than in either view. The Mac half is [[T-8456]].
+    static func labelLayout(
+        plateHeight: CGFloat,
+        verticalPadding: CGFloat,
+        rowSpacing: CGFloat,
+        titleFontSize: CGFloat,
+        timeFontSize: CGFloat
+    ) -> LabelLayout {
+        let stacked = stackedLabelHeight(
+            verticalPadding: verticalPadding,
+            rowSpacing: rowSpacing,
+            titleFontSize: titleFontSize,
+            timeFontSize: timeFontSize
+        )
+        return plateHeight >= stacked ? .stacked : .inline
+    }
+}

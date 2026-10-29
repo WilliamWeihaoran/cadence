@@ -1534,7 +1534,8 @@ private struct iOSCalendarTimelineDayColumn: View {
     }
 
     /// The plate a hovering task is drawn in: the Mac preview's tint and outline at the column's
-    /// block inset, titled once the payload names a task this host holds ([[T-8142]]).
+    /// block inset, titled once the payload names a task this host holds ([[T-8142]]), and stating
+    /// the range it will land at, at every height it can be drawn ([[T-8455]]).
     @ViewBuilder
     private var taskDropHoverLayer: some View {
         if let taskDropHover {
@@ -1545,27 +1546,39 @@ private struct iOSCalendarTimelineDayColumn: View {
             // only thing at that minute, which is what the Mac preview does without a layout of its
             // own to read.
             let slot = horizontalFrame(nil, kind: .task)
-            VStack(alignment: .leading, spacing: 2) {
-                if let task {
-                    Text(TaskTitleSupport.displayTitle(task.title, fallback: TaskTitleSupport.defaultCompactDisplayTitle))
-                        .cadenceFont(.metadata, base: 12, weight: .semibold)
-                        .foregroundStyle(Theme.text)
-                        .lineLimit(1)
+            let plateHeight = blockHeight(start: drawn.start, end: drawn.end)
+            // [[T-8455]]: a plate one grid step tall has room for one row, and [[T-8451]]'s title
+            // took it, so a 15-minute task hovered stating no time at all. Which arrangement a
+            // given height can carry is Shared, beside the plate's other figures, because it is a
+            // decision about what the plate SAYS rather than about this column's paint.
+            let labels = CadenceTimelineTaskDropHover.labelLayout(
+                plateHeight: plateHeight,
+                verticalPadding: 4,
+                rowSpacing: 2,
+                titleFontSize: CadenceTypeScale.size(.metadata, base: 12, at: dynamicTypeSize, scaling: scaling),
+                timeFontSize: CadenceTypeScale.size(.metadata, base: 11, at: dynamicTypeSize, scaling: scaling)
+            )
+            Group {
+                switch labels {
+                case .stacked:
+                    VStack(alignment: .leading, spacing: 2) {
+                        taskDropHoverTitle(task)
+                        taskDropHoverTime(taskDropHover)
+                    }
+                case .inline:
+                    // The range keeps its width and the title gives way, because a truncated name
+                    // still names the task and a truncated clock reading names nothing.
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        taskDropHoverTitle(task)
+                            .layoutPriority(0)
+                        taskDropHoverTime(taskDropHover)
+                            .layoutPriority(1)
+                    }
                 }
-                Text(
-                    TimeFormatters.timeRange(
-                        startMin: taskDropHover.startMinute,
-                        endMin: taskDropHover.startMinute + (taskDropHover.durationMinutes ?? CadenceTimelineBlockEdit.gridMinutes)
-                    )
-                )
-                .cadenceFont(.metadata, base: 11, weight: .medium)
-                .monospacedDigit()
-                .foregroundStyle(Theme.dim)
-                .lineLimit(1)
             }
             .padding(.horizontal, 8)
             .padding(.vertical, 4)
-            .frame(width: slot.width, height: blockHeight(start: drawn.start, end: drawn.end), alignment: .topLeading)
+            .frame(width: slot.width, height: plateHeight, alignment: .topLeading)
             .background(shape.fill(Theme.blue.opacity(CadenceTimelineTaskDropHover.fillOpacity)))
             .overlay(shape.strokeBorder(Theme.blue.opacity(CadenceTimelineTaskDropHover.strokeOpacity), lineWidth: 1))
             .clipShape(shape)
@@ -1573,6 +1586,33 @@ private struct iOSCalendarTimelineDayColumn: View {
             .allowsHitTesting(false)
             .accessibilityHidden(true)
         }
+    }
+
+    /// The hovering task's name, once the drag has named a task this host holds.
+    @ViewBuilder
+    private func taskDropHoverTitle(_ task: AppTask?) -> some View {
+        if let task {
+            Text(TaskTitleSupport.displayTitle(task.title, fallback: TaskTitleSupport.defaultCompactDisplayTitle))
+                .cadenceFont(.metadata, base: 12, weight: .semibold)
+                .foregroundStyle(Theme.text)
+                .lineLimit(1)
+        }
+    }
+
+    /// The range the release will write. Drawn at every plate height, which is the whole of
+    /// [[T-8455]].
+    private func taskDropHoverTime(_ hover: CadenceTimelineTaskDropHover) -> some View {
+        Text(
+            TimeFormatters.timeRange(
+                startMin: hover.startMinute,
+                endMin: hover.startMinute + (hover.durationMinutes ?? CadenceTimelineBlockEdit.gridMinutes)
+            )
+        )
+        .cadenceFont(.metadata, base: 11, weight: .medium)
+        .monospacedDigit()
+        .foregroundStyle(Theme.dim)
+        .lineLimit(1)
+        .fixedSize(horizontal: true, vertical: false)
     }
 
     /// The empty-space gesture surface.

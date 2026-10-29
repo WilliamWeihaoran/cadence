@@ -321,5 +321,137 @@ struct CadenceTimelineTaskDropHoverTests {
         #expect(CadenceSourceScan.matchCount(#"onSelectDay: action"#, in: header) == 1,
                 "the week header no longer hands its select-the-day action to the chips it draws over")
     }
+
+    // MARK: - [[T-8455]]: at one grid step the plate still states its time
+
+    /// **The defect.** [[T-8451]] gave the plate the dragged task's title, and a plate one grid
+    /// step tall has room for exactly one row, so the title took it: a 15-minute task hovered down
+    /// `Cadence-iPadPro11`'s timeline read `[Sample] Completed sync smoke test` and no time at all,
+    /// where before it read `4 PM - 4:15 PM`. The fix is one row carrying both when two will not
+    /// fit, and the decision is `CadenceTimelineTaskDropHover.labelLayout`.
+    ///
+    /// Pinned at a 15-minute length, which is the only height where the two cannot both fit, and
+    /// asked as a RELATION against the rows' own cost rather than against a remembered threshold.
+    @Test func atOneGridStepThePlatePutsItsTitleAndItsTimeOnOneRow() {
+        let step = CadenceScheduleSupport.touchTimeGridMinutes
+        let stacked = CadenceTimelineTaskDropHover.stackedLabelHeight(
+            verticalPadding: plateVerticalPadding,
+            rowSpacing: plateRowSpacing,
+            titleFontSize: plateTitleFontSize,
+            timeFontSize: plateTimeFontSize
+        )
+
+        // One grid step: two rows do not fit, one row does, so the plate says both on that row
+        // rather than dropping either.
+        let oneStep = plateHeight(forMinutes: step)
+        #expect(oneStep < stacked, "non-vacuity: a one-grid-step plate now has room for two rows")
+        #expect(
+            oneStep >= plateVerticalPadding * 2
+                + CadenceCalendarOverlapLayout.lineHeight(forSystemFontSize: plateTitleFontSize),
+            "the inline row does not fit either, so the plate is clipped whichever way it is drawn"
+        )
+        #expect(plateLabelLayout(forMinutes: step) == .inline)
+
+        // An hour: unchanged, the two stacked rows [[T-8451]] was verified with.
+        #expect(plateHeight(forMinutes: 60) >= stacked, "non-vacuity: an hour lost room for two rows")
+        #expect(plateLabelLayout(forMinutes: 60) == .stacked)
+
+        // Across every length the column draws, the arrangement is exactly "do two rows fit", and
+        // it never goes back to one once it has room for two.
+        var sawInline = 0
+        var sawStacked = 0
+        var lastStacked = false
+        for minutes in stride(from: step, through: 8 * 60, by: step) {
+            let height = plateHeight(forMinutes: minutes)
+            let layout = plateLabelLayout(forMinutes: minutes)
+            #expect(layout == (height >= stacked ? .stacked : .inline),
+                    "a \(minutes)-minute plate chose an arrangement its height does not justify")
+            if layout == .stacked { sawStacked += 1; lastStacked = true } else {
+                sawInline += 1
+                #expect(!lastStacked, "a \(minutes)-minute plate dropped back to one row after gaining two")
+            }
+        }
+        #expect(sawInline > 0 && sawStacked > 0, "non-vacuity: \(sawInline) inline, \(sawStacked) stacked")
+    }
+
+    /// The column draws the time in BOTH arrangements, and takes the arrangement from the shared
+    /// decision rather than from a height gate of its own.
+    @Test func theColumnDrawsThePlatesTimeAtEveryHeight() throws {
+        let code = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(timelineFile))
+        let column = try #require(
+            CadenceSourceScan.declarationBody("private struct iOSCalendarTimelineDayColumn: View", in: code)
+        )
+        let layer = try #require(
+            CadenceSourceScan.declarationBody("private var taskDropHoverLayer: some View", in: column)
+        )
+        #expect(layer.count > 400, "non-vacuity: the plate layer read as \(layer.count) characters")
+        #expect(
+            CadenceSourceScan.matchCount(#"CadenceTimelineTaskDropHover\.labelLayout\("#, in: layer) == 1,
+            "the plate picks its arrangement somewhere other than the shared decision"
+        )
+        #expect(CadenceSourceScan.matchCount(#"case \.stacked:"#, in: layer) == 1)
+        #expect(CadenceSourceScan.matchCount(#"case \.inline:"#, in: layer) == 1)
+        // The time is drawn in both arms. If it were gated on height here instead, this is the
+        // count that would be 1.
+        #expect(CadenceSourceScan.matchCount(#"taskDropHoverTime\(taskDropHover\)"#, in: layer) == 2,
+                "the plate's time is not drawn in both arrangements")
+        #expect(CadenceSourceScan.matchCount(#"taskDropHoverTitle\(task\)"#, in: layer) == 2,
+                "the plate's title is not drawn in both arrangements")
+        // And it is the CLOCK RANGE. The Mac preview's always-visible label is a *duration*
+        // capsule -- "1h" -- which says a different fact from the one this plate lost ([[T-8456]]).
+        let time = try #require(
+            CadenceSourceScan.declarationBody("private func taskDropHoverTime(_ hover: CadenceTimelineTaskDropHover) -> some View", in: column)
+        )
+        #expect(CadenceSourceScan.matchCount(#"TimeFormatters\.timeRange\("#, in: time) == 1,
+                "the plate's time label no longer states the range the release will write")
+    }
+
+    // The plate's own figures, mirrored from `iOSCalendarTimelineDayColumn` because a
+    // macOS-built target cannot call into `Cadence/iOS/`, and pinned to that file by
+    // `thePlateFiguresMirrorTheColumnsOwn` below.
+    private var plateVerticalPadding: CGFloat { 4 }
+    private var plateRowSpacing: CGFloat { 2 }
+    private var plateTitleFontSize: CGFloat { 12 }
+    private var plateTimeFontSize: CGFloat { 11 }
+
+    private func plateHeight(forMinutes minutes: Int) -> CGFloat {
+        max(24, CGFloat(minutes) / 60.0 * hourHeight - 4)
+    }
+
+    private func plateLabelLayout(forMinutes minutes: Int) -> CadenceTimelineTaskDropHover.LabelLayout {
+        CadenceTimelineTaskDropHover.labelLayout(
+            plateHeight: plateHeight(forMinutes: minutes),
+            verticalPadding: plateVerticalPadding,
+            rowSpacing: plateRowSpacing,
+            titleFontSize: plateTitleFontSize,
+            timeFontSize: plateTimeFontSize
+        )
+    }
+
+    /// The mirror above is only worth anything while it still matches the column. Each figure is
+    /// pinned to the literal in the view file, so a column that repaints its plate fails here
+    /// rather than leaving the 15-minute reading measured against a plate that no longer exists.
+    @Test func thePlateFiguresMirrorTheColumnsOwn() throws {
+        let code = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(timelineFile))
+        let column = try #require(
+            CadenceSourceScan.declarationBody("private struct iOSCalendarTimelineDayColumn: View", in: code)
+        )
+        let height = try #require(
+            CadenceSourceScan.declarationBody("private func blockHeight(start: Int, end: Int) -> CGFloat", in: column)
+        )
+        #expect(
+            CadenceSourceScan.matchCount(#"max\(24, CGFloat\(end - start\) / 60\.0 \* hourHeight - 4\)"#, in: height) == 1,
+            "the column's block height is no longer the arithmetic this suite measures the plate with"
+        )
+        let layer = try #require(
+            CadenceSourceScan.declarationBody("private var taskDropHoverLayer: some View", in: column)
+        )
+        #expect(CadenceSourceScan.matchCount(#"verticalPadding: 4,"#, in: layer) == 1)
+        #expect(CadenceSourceScan.matchCount(#"rowSpacing: 2,"#, in: layer) == 1)
+        #expect(CadenceSourceScan.matchCount(#"base: 12, at: dynamicTypeSize, scaling: scaling\)"#, in: layer) == 1)
+        #expect(CadenceSourceScan.matchCount(#"base: 11, at: dynamicTypeSize, scaling: scaling\)"#, in: layer) == 1)
+        #expect(CadenceSourceScan.matchCount(#"\.padding\(\.vertical, 4\)"#, in: layer) == 1)
+        #expect(CadenceSourceScan.matchCount(#"VStack\(alignment: \.leading, spacing: 2\)"#, in: layer) == 1)
+    }
 }
 #endif
