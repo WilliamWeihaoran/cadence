@@ -41,13 +41,13 @@ struct CadenceStrokeBorderSweepTests {
     ]
 
     /// T-489's other carve-out: two `Circle()` progress-ring strokes in
-    /// `TaskCompletionAnimationViews.swift` — a static track (`color.opacity(0.18)`, line 23) and
-    /// a `.trim`-ed progress arc (line 27) — neither has a companion `.fill`. There is no filled
+    /// `TaskCompletionAnimationViews.swift` — a static track (`color.opacity(0.18)`, line 34) and
+    /// a `.trim`-ed progress arc (line 38) — neither has a companion `.fill`. There is no filled
     /// shape here for `.strokeBorder` to preserve the measured size of; insetting the ring would
     /// draw it inside the track it is supposed to trace, which is a different picture, not the
     /// same picture fixed.
     static let strokeOnlyDecorationFile = "Cadence/macOS/Views/TaskCompletionAnimationViews.swift"
-    static let strokeOnlyDecorationLines: Set<Int> = [23, 27]
+    static let strokeOnlyDecorationLines: Set<Int> = [34, 38]
 
     // MARK: - The sweep
 
