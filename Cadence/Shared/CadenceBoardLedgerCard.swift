@@ -380,8 +380,9 @@ struct CadenceLedgerTokenLabel: View {
 ///   but not under a pointer.
 /// - `subtasks` — each platform's own subtask row, because ticking a subtask off is a hit target
 ///   sized for its input device.
-/// - `settlingOverlay` — the pending-completion wash, which exists only where there is a
-///   press-and-hold to be pending *about*.
+/// - `settlingOverlay` — the pending-completion wash. Both platforms pass the one shared
+///   `TaskCompletionPendingOverlay` drawing ([[T-8354]]); it stays a slot because each
+///   platform's card owns the gate around it.
 ///
 /// `isHovered` is the same thing: a board card has no hover state on a touch device.
 struct CadenceLedgerCard<Ring: View, TokenView: View, Subtasks: View, SettlingOverlay: View>: View {

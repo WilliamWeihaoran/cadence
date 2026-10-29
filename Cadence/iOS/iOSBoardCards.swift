@@ -299,7 +299,11 @@ struct iOSBoardTaskCard: View {
             // are labels. Every field they state is edited in the sheet this card's tap opens.
             tokenView: { CadenceLedgerTokenLabel(token: $0) },
             subtasks: { subtaskRows },
-            settlingOverlay: { EmptyView() }
+            // The same settle sweep the Mac's card lays in this slot ([[T-8354]]); it was
+            // `EmptyView()` while iOS had no deferred completion to sweep.
+            settlingOverlay: {
+                TaskCompletionPendingSweep(task: task, cornerRadius: CadenceLedgerCardMetrics.cornerRadius)
+            }
         )
         .contentShape(Rectangle())
         .onTapGesture(perform: openDetail)

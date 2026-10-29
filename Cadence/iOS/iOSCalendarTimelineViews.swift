@@ -2682,6 +2682,10 @@ struct iOSTimelineTaskBlock: View {
                     .clipShape(blockShape)
             }
         }
+        // macOS's `TimelineTaskBlock` sweep, the one shared drawing, under the rim ([[T-8354]]).
+        .overlay {
+            TaskCompletionPendingSweep(task: task, cornerRadius: Theme.radiusControl)
+        }
         // The resting edge is the list colour's own lit rim at `chipBorderOpacity`, which is
         // the edge a solved plate asks for. `Theme.borderSubtle` is a near-black hairline; it
         // was the right edge for the near-black surface this plate replaced and is invisible

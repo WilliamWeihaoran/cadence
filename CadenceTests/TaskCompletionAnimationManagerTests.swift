@@ -779,5 +779,72 @@ struct TaskCompletionAnimationManagerTests {
         #expect(!block.contains("CadenceTaskStatusEditing.toggleCompletion("), "the block writes completion synchronously")
         #expect(block.contains(".accessibilityAction(named: Text(completionGlyph.state.accessibilityActionLabel))"), "VoiceOver cannot reach the block's circle")
     }
+
+    // MARK: - T-8354: the row-wide pending sweep, one drawing on both platforms
+
+    /// The sweep names the deferral the ring names: green while a completion runs, grey once the
+    /// second tap turns it into a cancellation, and nothing at all on an idle task.
+    @Test func thePendingSweepFollowsTheDeferralTheRingIsDrawing() {
+        let manager = TaskCompletionAnimationManager.shared
+        let task = AppTask(title: "sweep")
+        #expect(CadenceTaskCompletionSweepFrame.resolve(for: task, in: manager) == nil, "an idle task swept")
+
+        manager.advanceCompletionControl(for: task)
+        let completing = CadenceTaskCompletionSweepFrame.resolve(for: task, in: manager, now: Date().addingTimeInterval(0.3))
+        #expect(completing?.isCancellation == false, "a running completion did not sweep green")
+        #expect((completing?.progress ?? 0) > 0, "the sweep did not read the running fill's clock")
+        #expect((completing?.progress ?? 1) < 1)
+
+        manager.advanceCompletionControl(for: task)
+        #expect(manager.isPendingCancel(task), "non-vacuity: the second tap did not start a cancellation")
+        #expect(CadenceTaskCompletionSweepFrame.resolve(for: task, in: manager)?.isCancellation == true, "a running cancellation did not sweep grey")
+
+        manager.advanceCompletionControl(for: task)
+        #expect(CadenceTaskCompletionSweepFrame.resolve(for: task, in: manager) == nil, "the take-back left the row sweeping")
+        #expect(task.status == .todo)
+    }
+
+    /// The iOS row, board card and Calendar timed block lay the shared sweep over themselves, the
+    /// drawing lives once in `Shared/`, and the host gates its display-link redraw on a pending
+    /// task and on Reduce Motion — none of which a macOS test host can render.
+    @Test func theIOSRowCardAndBlockLayTheSharedPendingSweep() throws {
+        let row = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile("Cadence/iOS/iOSTaskViews.swift"))
+        let card = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile("Cadence/iOS/iOSBoardCards.swift"))
+        let timeline = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile("Cadence/iOS/iOSCalendarTimelineViews.swift"))
+        let shared = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile("Cadence/Shared/Components/TaskCompletionPendingOverlay.swift"))
+        let mac = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile("Cadence/macOS/Views/TaskCompletionAnimationViews.swift"))
+        #expect(row.contains("struct iOSTaskRow"), "non-vacuity: wrong row file read")
+        #expect(mac.contains("struct TaskCompletionProgressGlyph"), "non-vacuity: wrong macOS file read")
+
+        let rowStart = try #require(row.range(of: "struct iOSTaskRow: View"))
+        let rowEnd = try #require(row.range(of: "struct iOSTaskMetaLabel", range: rowStart.upperBound..<row.endIndex))
+        #expect(
+            row[rowStart.lowerBound..<rowEnd.lowerBound].contains("TaskCompletionPendingSweep(task: task, cornerRadius: Theme.radiusCard)"),
+            "the iOS task row shows only the ring while its fill runs"
+        )
+
+        let cardStart = try #require(card.range(of: "struct iOSBoardTaskCard: View"))
+        let cardBody = String(card[cardStart.lowerBound...])
+        #expect(!cardBody.contains("settlingOverlay: { EmptyView() }"), "the iOS board card's settle slot is empty again")
+        #expect(cardBody.contains("TaskCompletionPendingSweep(task: task, cornerRadius: CadenceLedgerCardMetrics.cornerRadius)"), "the iOS board card does not sweep")
+
+        let blockStart = try #require(timeline.range(of: "struct iOSTimelineTaskBlock: View"))
+        let blockEnd = try #require(timeline.range(of: "struct iOSTimelineBlockEditing", range: blockStart.upperBound..<timeline.endIndex))
+        #expect(
+            timeline[blockStart.lowerBound..<blockEnd.lowerBound].contains("TaskCompletionPendingSweep(task: task, cornerRadius: Theme.radiusControl)"),
+            "the iOS Calendar timed block does not sweep"
+        )
+
+        // One drawing: declared in Shared, not in the macOS views any more.
+        #expect(CadenceSourceScan.matchCount(#"struct TaskCompletionPendingOverlay\b"#, in: shared) == 1)
+        #expect(CadenceSourceScan.matchCount(#"struct TaskCompletionPendingOverlay\b"#, in: mac) == 0, "the macOS file draws its own sweep again")
+
+        // The host: no display link unless pending, none under Reduce Motion, and the overlay is fed
+        // from the shared decision rather than a second reading of the manager.
+        let host = try #require(CadenceSourceScan.declarationBody("struct TaskCompletionPendingSweep", in: shared), "the sweep host moved")
+        #expect(host.contains("if !reduceMotion, CadenceTaskCompletionSweepFrame.resolve(for: task) != nil {"), "the sweep redraws at screen rate when nothing is pending, or under Reduce Motion")
+        #expect(host.contains("TimelineView(.animation)"), "non-vacuity: the host no longer animates at all")
+        #expect(host.contains("tint: frame.tint"), "the host picks its own tint")
+    }
 }
 #endif

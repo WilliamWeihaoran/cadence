@@ -94,6 +94,11 @@ struct iOSTaskRow: View {
             .padding(.horizontal, metrics.horizontalPadding)
             .padding(.vertical, metrics.verticalPadding)
             .frame(minHeight: 44)
+            // macOS's row-wide pending sweep, the same shared drawing at `MacTaskRow`'s radius
+            // ([[T-8354]]): while the circle fills, the whole row says so, as it does on the Mac.
+            .background {
+                TaskCompletionPendingSweep(task: task, cornerRadius: Theme.radiusCard)
+            }
             // One layer, one radius: the divider is the row's only chrome, at the same weight
             // `MacTaskRow` draws its bottom hairline.
             .overlay(alignment: .bottom) {
