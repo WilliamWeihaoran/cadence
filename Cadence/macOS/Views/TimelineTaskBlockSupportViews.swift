@@ -35,11 +35,13 @@ struct TimelineDraggedTaskPreview: View {
     var body: some View {
         ZStack(alignment: .topTrailing) {
             ZStack {
+                // The hovering-task plate's two figures live in Shared, because the iOS day column
+                // draws the same plate for the same question ([[T-8142]], [[T-8201]]).
                 RoundedRectangle(cornerRadius: style.cornerRadius)
-                    .fill(Theme.blue.opacity(0.16))
+                    .fill(Theme.blue.opacity(CadenceTimelineTaskDropHover.fillOpacity))
                     .overlay(
                         RoundedRectangle(cornerRadius: style.cornerRadius)
-                            .strokeBorder(Theme.blue.opacity(0.55), lineWidth: 1)
+                            .strokeBorder(Theme.blue.opacity(CadenceTimelineTaskDropHover.strokeOpacity), lineWidth: 1)
                     )
                     .frame(width: frame.width, height: frame.height)
 

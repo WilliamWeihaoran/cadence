@@ -219,11 +219,17 @@ struct CadenceIOSTaskRowDragLiftTests {
             CadenceSourceScan.declarationBody("private struct iOSCalendarTimelineDayColumn: View", in: source)
         )
         #expect(column.count > 1_000, "non-vacuity: the day column read as \(column.count) characters")
-        #expect(CadenceSourceScan.matchCount(#"\.dropDestination\(for: String\.self\)"#, in: column) == 1)
-        #expect(CadenceSourceScan.matchCount(#"TaskDragPayload\.taskID\(from: payload\)"#, in: column) == 1)
-        // The same minute arithmetic the column's tap and the dropped `+` already use, so the three
-        // cannot name different quarter-hours for one pixel.
-        #expect(CadenceSourceScan.matchCount(#"CadenceScheduleSupport\.timelineMinute\(atY: location\.y"#, in: column) == 1)
+        // Since [[T-8142]] the drop is a delegate, so the column can answer while the finger is
+        // still over it; the payload decode and the minute moved into that delegate with it.
+        #expect(CadenceSourceScan.matchCount(#"\.onDrop\(\s*of: \[UTType\.text\],\s*delegate: iOSTimelineTaskDropDelegate\("#, in: column) == 1)
+        let delegate = try #require(
+            CadenceSourceScan.declarationBody("private struct iOSTimelineTaskDropDelegate: DropDelegate", in: source)
+        )
+        #expect(CadenceSourceScan.matchCount(#"TaskDragPayload\.taskID\(from: payload as String\)"#, in: delegate) == 2)
+        // The same minute arithmetic the column's tap and the dropped `+` already use, reached
+        // through the hover's resolve, so the three cannot name different quarter-hours for one
+        // pixel -- and the release and the hover cannot name different minutes either.
+        #expect(CadenceSourceScan.matchCount(#"CadenceTimelineTaskDropHover\.resolve\(\s*atY: (y|info\.location\.y),"#, in: delegate) == 2)
     }
 
     /// **Both hosts pass a real action.** [[T-8091]] is this wiring one host short: a drop target

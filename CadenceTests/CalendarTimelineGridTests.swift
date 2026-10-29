@@ -1691,14 +1691,16 @@ struct CadenceTimelineEventOpenTests {
                 "a combined header folds the chip buttons into one element VoiceOver cannot open")
         #expect(!header.contains("children: .combine"))
 
-        // The chips that open nothing let the tap through to the day button beneath them.
+        // The overflow line lets the tap through to the day button beneath it. The unscheduled
+        // chip takes the hit since [[T-8143]] -- it drags as its task -- and hands the tap on to
+        // the same select-the-day action instead of swallowing it.
         let taskChip = try #require(chips.range(of: "isUnscheduled: true"))
-        let passthrough = try #require(
-            chips.range(of: ".allowsHitTesting(false)", range: taskChip.upperBound..<chips.endIndex),
+        let handedOn = try #require(
+            chips.range(of: ".onTapGesture { onSelectDay?() }", range: taskChip.upperBound..<chips.endIndex),
             "the unscheduled chip swallows the week header's select-the-day tap without acting on it"
         )
-        #expect(passthrough.lowerBound > taskChip.upperBound)
-        #expect(CadenceSourceScan.matchCount(#"\.allowsHitTesting\(false\)"#, in: chips) == 2,
-                "the band's two non-openable rows — the unscheduled chip and the overflow line — do not both pass the tap through")
+        #expect(handedOn.lowerBound > taskChip.upperBound)
+        #expect(CadenceSourceScan.matchCount(#"\.allowsHitTesting\(false\)"#, in: chips) == 1,
+                "the overflow line no longer passes the tap through")
     }
 }

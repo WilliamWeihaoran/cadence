@@ -174,11 +174,21 @@ struct CadenceBundleCreationParityTests {
         #expect(occurrences(of: "bundleFormingDrop", in: source) == 0)
         #expect(occurrences(of: "iOSBundleFormingDrop", in: source) == 0)
         #expect(occurrences(of: "bundleCreateFailed", in: source) == 0)
-        #expect(occurrences(of: ".draggable(", in: source) == 0)
-        // Exactly one, and it reschedules: the payload is decoded to a task id and handed to the
-        // host's `onDropTaskAtMinute`, which is the only thing this file does with a drop.
-        #expect(occurrences(of: ".dropDestination(", in: source) == 1)
-        #expect(occurrences(of: "onDropTaskAtMinute(", in: source) == 2)
+        // One `.draggable(`, and it is the unscheduled band chip's ([[T-8143]]): a task with no
+        // time, offered to the grid below it, which is a reschedule like the drop that takes it --
+        // not a lift onto another block. That it is not on a block is asserted by
+        // `CadenceTimelineBlockEditTests/theIOSBlockLiftsOnAHoldAndCarriesNoDragPayloadOrDropTarget`.
+        #expect(occurrences(of: ".draggable(", in: source) == 1)
+        #expect(occurrences(of: ".draggable(TaskDragPayload.string(for: task.id))", in: source) == 1)
+        // Exactly one drop, and it reschedules: the payload is decoded to a task id and handed to
+        // the host's `onDropTaskAtMinute`, which is the only thing this file does with a drop. A
+        // delegate since [[T-8142]], so the column answers while the finger is over it.
+        #expect(occurrences(of: ".dropDestination(", in: source) == 0)
+        #expect(occurrences(of: ".onDrop(", in: source) == 1)
+        // The grid's call into the host, and -- since the delegate took the release -- the column
+        // handing the same closure to it rather than calling it itself.
+        #expect(occurrences(of: "onDropTaskAtMinute(", in: source) == 1)
+        #expect(occurrences(of: "onDrop: onDropTaskAtMinute", in: source) == 1)
         // Non-vacuity: the block and the column are still here, and still drawn.
         #expect(occurrences(of: "struct iOSTimelineTaskBlock: View", in: source) == 1)
         #expect(occurrences(of: "iOSTimelineTaskBlock(", in: source) == 1)

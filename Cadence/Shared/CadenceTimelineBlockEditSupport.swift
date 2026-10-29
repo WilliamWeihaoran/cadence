@@ -212,7 +212,16 @@ enum CadenceTimelineBlockEdit {
         in context: ModelContext,
         reconciler: CadenceWindDownReconciler? = nil
     ) -> Bool {
-        guard let task = tasks.first(where: { $0.id == taskID }) else { return false }
+        guard let task = droppedTask(taskID, among: tasks) else { return false }
         return commitDrop(task, dateKey: dateKey, startMin: startMin, in: context, reconciler: reconciler)
+    }
+
+    /// The task a drag's id names in a host's universe, or `nil` for one it does not hold.
+    ///
+    /// One lookup for the drop's commit above AND for the hover that precedes it ([[T-8142]]): the
+    /// column asks it for the hovering task's length, and a hover that resolved a task the commit
+    /// then could not find would preview a block the release refuses.
+    static func droppedTask(_ taskID: UUID, among tasks: [AppTask]) -> AppTask? {
+        tasks.first(where: { $0.id == taskID })
     }
 }

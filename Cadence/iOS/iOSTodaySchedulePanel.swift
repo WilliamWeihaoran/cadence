@@ -133,6 +133,7 @@ struct iOSSchedulePanel: View {
                         in: modelContext
                     )
                 },
+                resolveDroppedTask: { CadenceTimelineBlockEdit.droppedTask($0, among: allTasks) },
                 drawsDraftBlocks: true
             )
         }

@@ -325,9 +325,10 @@ struct CadenceCalendarConsistencySurfaceTests {
         #expect(TaskTitleSupport.defaultCompactDisplayTitle == "Untitled", "the copy changed")
 
         // The timeline read **3** until [[T-3170]]: the day column's task block, its all-day
-        // band chip, and the Block card's member rows. The Block card is deleted.
+        // band chip, and the Block card's member rows. The Block card is deleted. It reads 3 again
+        // since [[T-8142]]: the plate a hovering task is drawn in names the task it previews.
         for (path, count) in [
-            ("Cadence/iOS/iOSCalendarTimelineViews.swift", 2),
+            ("Cadence/iOS/iOSCalendarTimelineViews.swift", 3),
             ("Cadence/iOS/iOSCalendarMonthViews.swift", 1),
         ] {
             let source = try scannedSource(path)

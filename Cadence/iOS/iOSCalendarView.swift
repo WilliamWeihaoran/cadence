@@ -384,7 +384,8 @@ struct iOSCalendarView: View {
                 todayKey: observedDay.todayKey,
                 zoom: $zoomLevel,
                 onCreateAt: openQuickCreate,
-                onDropTaskAtMinute: dropTask
+                onDropTaskAtMinute: dropTask,
+                resolveDroppedTask: { CadenceTimelineBlockEdit.droppedTask($0, among: allTasks) }
             )
         }
     }

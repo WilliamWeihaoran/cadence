@@ -3,6 +3,7 @@ import EventKit
 import SwiftData
 import SwiftUI
 import UIKit
+import UniformTypeIdentifiers
 
 /// The live vertical scroll offset of the hour canvas, so the time rail can follow it.
 ///
@@ -114,6 +115,11 @@ struct iOSCalendarTimelineGrid: View {
     /// card back, which reads on screen as "it did nothing" with nothing to catch it. Both hosts
     /// pass a real one, so the column can be a drop target on either.
     let onDropTaskAtMinute: (UUID, String, Int) -> Bool
+    /// The task a hovering drag's id names, so the column can draw it at its own length before the
+    /// release ([[T-8142]]). Both hosts answer through `CadenceTimelineBlockEdit.droppedTask`,
+    /// the same lookup their commit makes, so the plate never previews a task the drop refuses.
+    /// No default, for `onDropTaskAtMinute`'s reason.
+    let resolveDroppedTask: (UUID) -> AppTask?
     /// Press-and-hold draws a DRAFT BLOCK on the column and hangs the shared schedule panel off it
     /// as a popover, instead of calling `onCreateAt` ([[T-3169]]).
     ///
@@ -362,7 +368,8 @@ struct iOSCalendarTimelineGrid: View {
             editingTaskID: editingTaskID,
             onSelectForEditing: { editingTaskID = $0 },
             onCommitEdit: commitBlockEdit,
-            onDropTaskAtMinute: { id, minute in onDropTaskAtMinute(id, key, minute) }
+            onDropTaskAtMinute: { id, minute in onDropTaskAtMinute(id, key, minute) },
+            resolveDroppedTask: resolveDroppedTask
         )
     }
 
@@ -888,8 +895,9 @@ private struct iOSCalendarTimelineDayHeader: View {
     /// inside a button's label is arbitrated against the button's own, and which one wins is not
     /// this view's to choose; a chip drawn above the button is simply the topmost hit-testable
     /// thing at that point, and everything the chips do not cover falls through to the button
-    /// beneath. The chips that are not openable — the unscheduled tasks and the "+N more" line —
-    /// take no hit at all, so the day is still selectable through them.
+    /// beneath. The "+N more" line takes no hit at all, so the day is still selectable through it;
+    /// an unscheduled task chip takes the hit because it is a drag source ([[T-8143]]) and hands
+    /// its tap on to `action`, so the day is selectable through it too.
     let onOpenEvent: (EKEvent) -> Void
     /// Selects the day. Last, because the grid passes it as a trailing closure.
     let action: () -> Void
@@ -998,7 +1006,8 @@ private struct iOSCalendarTimelineDayHeader: View {
                 allDayEvents: allDayEvents,
                 unscheduledTasks: unscheduledTasks,
                 split: split,
-                onOpenEvent: onOpenEvent
+                onOpenEvent: onOpenEvent,
+                onSelectDay: action
             )
             .frame(
                 maxWidth: .infinity,
@@ -1042,6 +1051,10 @@ private struct iOSCalendarAllDayBandChips: View {
     /// a chip that opens nothing is still a legal thing to draw, and a caller that passes nothing
     /// should get the chip it always got rather than a dead button.
     var onOpenEvent: ((EKEvent) -> Void)? = nil
+    /// What a tap on an unscheduled task chip does: selects the day, exactly as a tap on the band
+    /// around it does. The chip takes the hit now -- it is a drag source ([[T-8143]]) -- so the tap
+    /// it used to let fall through to the header's `Button` is handed on here instead.
+    var onSelectDay: (() -> Void)? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: iOSCalendarTimelineMetrics.bandLineSpacing) {
@@ -1069,10 +1082,17 @@ private struct iOSCalendarAllDayBandChips: View {
                     isUnscheduled: true,
                     completion: .resolve(task: task)
                 )
-                // Nothing opens from an unscheduled chip, so it takes no hit ([[T-5356]]): in the
-                // week header this stack is drawn ABOVE the select-the-day button, and a chip
-                // that swallowed the tap without acting on it would make part of the band dead.
-                .allowsHitTesting(false)
+                // **It drags as its task, onto the grid below** ([[T-8143]]) -- the Mac's all-day
+                // lane chip does (`calendarTaskChipInteractions`, `.draggable(task.id.uuidString)`)
+                // and nothing about a finger says otherwise ([[T-8201]]). Without it the Calendar
+                // page's day columns accepted a dropped task that nothing on the page could start.
+                // It used to take no hit at all ([[T-5356]]), because in the week header this stack
+                // is drawn ABOVE the select-the-day button and a chip that swallowed the tap would
+                // make part of the band dead -- so the tap is handed on to `onSelectDay`, and the
+                // band selects its day through the chip exactly as it did around it.
+                .contentShape(Rectangle())
+                .onTapGesture { onSelectDay?() }
+                .draggable(TaskDragPayload.string(for: task.id))
             }
 
             if split.hidden > 0 {
@@ -1267,6 +1287,8 @@ private struct iOSCalendarTimelineDayColumn: View {
     /// See `iOSCalendarTimelineGrid.onDropTaskAtMinute`; the day is already bound by the time it
     /// reaches here, so this column only has to say *which minute*.
     let onDropTaskAtMinute: (UUID, Int) -> Bool
+    /// See `iOSCalendarTimelineGrid.resolveDroppedTask`.
+    let resolveDroppedTask: (UUID) -> AppTask?
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.cadenceTypographyScaling) private var scaling
 
@@ -1275,6 +1297,12 @@ private struct iOSCalendarTimelineDayColumn: View {
     /// here, the commit happens once, and a refused commit leaves nothing to undo on screen
     /// because the block was only ever drawn here at the new minute.
     @State private var editPreview: BlockEditPreview?
+
+    /// Where a task dragged over this column would land, while it is over it ([[T-8142]]); `nil`
+    /// whenever no task drag is over this column. See `CadenceTimelineTaskDropHover`.
+    @State private var taskDropHover: CadenceTimelineTaskDropHover?
+    /// The id the hovering drag carries, once its payload has been read.
+    @State private var taskDropHoverID: UUID?
 
     private struct BlockEditPreview: Equatable {
         let taskID: PersistentIdentifier
@@ -1376,6 +1404,10 @@ private struct iOSCalendarTimelineDayColumn: View {
                 .zIndex(isLifted ? iOSCalendarTimelineBlockLayout.overlayZIndex : (solved.zIndexes[key] ?? 1))
             }
 
+            // The hovering task's plate, over the blocks it may land beside ([[T-8142]]).
+            taskDropHoverLayer
+                .zIndex(iOSCalendarTimelineBlockLayout.overlayZIndex)
+
             // Above every block, which is where these two were by declaration order until the
             // blocks were given a `zIndex` of their own.
             draftLayer
@@ -1414,22 +1446,71 @@ private struct iOSCalendarTimelineDayColumn: View {
         // `iOSTaskRow` now offers. They cannot be one target: the `+` is not a task and a task is
         // not a seed.
         //
-        // The minute is `CadenceScheduleSupport.timelineMinute`, the same call the column's tap and
+        // The minute is `CadenceScheduleSupport.timelineMinute` -- the same call the column's tap and
         // the dropped `+` already make, so the three cannot name different quarter-hours for one
-        // pixel. `location` is in this column's own space and the column is the whole drawn day, so
-        // `location.y` needs no correction for the scroll offset.
+        // pixel -- reached through `CadenceTimelineTaskDropHover.resolve`, which adds only macOS's
+        // keep-the-whole-block-on-the-day clamp once the task's length is known. `location` is in
+        // this column's own space and the column is the whole drawn day, so `location.y` needs no
+        // correction for the scroll offset.
         //
-        // `isTargeted` is deliberately not taken: the column already answers a hovering `+` with a
-        // ghost slot, and a second, differently-shaped highlight for a hovering task would be the
-        // canvas saying "here" in two voices.
-        .dropDestination(for: String.self) { items, location in
-            guard let payload = items.first,
-                  let id = TaskDragPayload.taskID(from: payload)
-            else { return false }
-            return onDropTaskAtMinute(
-                id,
-                CadenceScheduleSupport.timelineMinute(atY: location.y, hourHeight: hourHeight)
+        // **It answers while the finger is still over it, as the Mac canvas does** ([[T-8142]]).
+        // This used to be `.dropDestination(for: String.self)` with no `isTargeted:`, so the only
+        // confirmation was the block appearing after the release. A delegate rather than that
+        // modifier because the plate needs the finger's position on every update, which
+        // `.dropDestination` reports only at the release on this deployment target. The plate is
+        // `CadenceTimelineTaskDropHover`, which says why it is macOS's plate and not the `+`'s
+        // ghost slot.
+        .onDrop(
+            of: [UTType.text],
+            delegate: iOSTimelineTaskDropDelegate(
+                hourHeight: hourHeight,
+                resolveTask: resolveDroppedTask,
+                onDrop: onDropTaskAtMinute,
+                hover: $taskDropHover,
+                hoverTaskID: $taskDropHoverID
             )
+        )
+    }
+
+    /// The plate a hovering task is drawn in: the Mac preview's tint and outline at the column's
+    /// block inset, titled once the payload names a task this host holds ([[T-8142]]).
+    @ViewBuilder
+    private var taskDropHoverLayer: some View {
+        if let taskDropHover {
+            let drawn = taskDropHover.drawnRange
+            let task = taskDropHoverID.flatMap(resolveDroppedTask)
+            let shape = RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous)
+            // A lone block's solved frame: the plate stands where the block would if it were the
+            // only thing at that minute, which is what the Mac preview does without a layout of its
+            // own to read.
+            let slot = horizontalFrame(nil, kind: .task)
+            VStack(alignment: .leading, spacing: 2) {
+                if let task {
+                    Text(TaskTitleSupport.displayTitle(task.title, fallback: TaskTitleSupport.defaultCompactDisplayTitle))
+                        .cadenceFont(.metadata, base: 12, weight: .semibold)
+                        .foregroundStyle(Theme.text)
+                        .lineLimit(1)
+                }
+                Text(
+                    TimeFormatters.timeRange(
+                        startMin: taskDropHover.startMinute,
+                        endMin: taskDropHover.startMinute + (taskDropHover.durationMinutes ?? CadenceTimelineBlockEdit.gridMinutes)
+                    )
+                )
+                .cadenceFont(.metadata, base: 11, weight: .medium)
+                .monospacedDigit()
+                .foregroundStyle(Theme.dim)
+                .lineLimit(1)
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .frame(width: slot.width, height: blockHeight(start: drawn.start, end: drawn.end), alignment: .topLeading)
+            .background(shape.fill(Theme.blue.opacity(CadenceTimelineTaskDropHover.fillOpacity)))
+            .overlay(shape.strokeBorder(Theme.blue.opacity(CadenceTimelineTaskDropHover.strokeOpacity), lineWidth: 1))
+            .clipShape(shape)
+            .offset(x: slot.x, y: yOffset(for: drawn.start))
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
         }
     }
 
@@ -2503,6 +2584,94 @@ struct iOSTimelineTaskBlock: View {
 /// The block reports **finger travel in points** and nothing else; the column owns the minutes,
 /// the preview and the commit. Keeping the arithmetic out of the block is what lets the one
 /// stored range every edit is measured from live in one place.
+/// The day column's task drop, hover included ([[T-8142]]) -- the touch twin of macOS's
+/// `TimelineDropDelegate`, minus the Mac's block-drag session: a block on this canvas moves through
+/// its own press-drag ([[T-1475]]), never through a system drag, so every task that arrives here is
+/// a row or a card from another surface and its top sits under the finger.
+///
+/// The payload is read when the drag enters, the way the Mac delegate reads it, so the plate can
+/// take the task's own length. Until that read answers -- or if the system holds the data back
+/// until the release -- the plate claims only the start minute (`CadenceTimelineTaskDropHover`).
+/// The release recomputes the minute through the same `resolve` with the task the host now
+/// names, so what the finger saw last is what is written.
+private struct iOSTimelineTaskDropDelegate: DropDelegate {
+    let hourHeight: CGFloat
+    let resolveTask: (UUID) -> AppTask?
+    let onDrop: (UUID, Int) -> Bool
+    @Binding var hover: CadenceTimelineTaskDropHover?
+    @Binding var hoverTaskID: UUID?
+
+    func validateDrop(info: DropInfo) -> Bool {
+        info.hasItemsConforming(to: [UTType.text])
+    }
+
+    func dropEntered(info: DropInfo) {
+        updateHover(with: info)
+        resolveTaskID(from: info)
+    }
+
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        updateHover(with: info)
+        resolveTaskID(from: info)
+        return DropProposal(operation: .move)
+    }
+
+    func dropExited(info: DropInfo) {
+        hover = nil
+        hoverTaskID = nil
+    }
+
+    func performDrop(info: DropInfo) -> Bool {
+        let y = info.location.y
+        let hourHeight = hourHeight
+        let resolveTask = resolveTask
+        let onDrop = onDrop
+        hover = nil
+        hoverTaskID = nil
+        guard let provider = info.itemProviders(for: [UTType.text]).first else { return false }
+        _ = provider.loadObject(ofClass: NSString.self) { object, _ in
+            guard let payload = object as? NSString,
+                  let id = TaskDragPayload.taskID(from: payload as String)
+            else { return }
+            Task { @MainActor in
+                let minute = CadenceTimelineTaskDropHover.resolve(
+                    atY: y,
+                    hourHeight: hourHeight,
+                    durationMinutes: resolveTask(id)?.timelineDurationMinutes
+                ).startMinute
+                _ = onDrop(id, minute)
+            }
+        }
+        return true
+    }
+
+    private func updateHover(with info: DropInfo) {
+        hover = CadenceTimelineTaskDropHover.resolve(
+            atY: info.location.y,
+            hourHeight: hourHeight,
+            durationMinutes: hoverTaskID.flatMap(resolveTask)?.timelineDurationMinutes
+        )
+    }
+
+    private func resolveTaskID(from info: DropInfo) {
+        guard hoverTaskID == nil,
+              let provider = info.itemProviders(for: [UTType.text]).first
+        else { return }
+        let hover = $hover
+        let hoverTaskID = $hoverTaskID
+        _ = provider.loadObject(ofClass: NSString.self) { object, _ in
+            guard let payload = object as? NSString,
+                  let id = TaskDragPayload.taskID(from: payload as String)
+            else { return }
+            Task { @MainActor in
+                // A read that answers after the finger has left names nothing on this column.
+                guard hover.wrappedValue != nil else { return }
+                hoverTaskID.wrappedValue = id
+            }
+        }
+    }
+}
+
 struct iOSTimelineBlockEditing {
     /// Lifted: drawn on the selected plate rung and carrying its resize handles.
     let isSelected: Bool

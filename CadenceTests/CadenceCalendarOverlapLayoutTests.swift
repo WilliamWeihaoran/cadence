@@ -1351,8 +1351,9 @@ struct CadenceCalendarOverlapLayoutTests {
             "the day column does not z-order both of its block kinds"
         )
         #expect(
-            CadenceSourceScan.matchCount(#"\.zIndex\(iOSCalendarTimelineBlockLayout\.overlayZIndex\)"#, in: column) == 2,
-            "the draft layer and the now-line are no longer held above the blocks"
+            // Three since [[T-8142]]: the hovering task's plate rides with them.
+            CadenceSourceScan.matchCount(#"\.zIndex\(iOSCalendarTimelineBlockLayout\.overlayZIndex\)"#, in: column) == 3,
+            "the draft layer, the hover plate and the now-line are no longer held above the blocks"
         )
         // The size class is resolved once by the grid and handed down, not re-read per column.
         #expect(
