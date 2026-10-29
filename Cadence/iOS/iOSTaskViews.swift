@@ -34,7 +34,8 @@ struct iOSTaskRow: View {
     // task/area/project query per row meant twenty live fetches plus twenty observation
     // registrations re-firing on any write — for data only the context menu and the recurrence
     // dialog ever read. The queries now live in the context-menu *content* (only instantiated
-    // when the menu is presented), the same trick `KanbanContainerMetaButton` documents.
+    // when the menu is presented), the same trick `KanbanCard.tokenControl` documents on its
+    // `.list` case.
     //
     // T-201: **the row does not present the inspector.** It used to carry `@State showDetail` and a
     // `.sheet(isPresented:)`, which tied the panel's lifetime to this row's — and this row lives

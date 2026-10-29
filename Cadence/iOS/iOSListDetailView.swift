@@ -260,7 +260,8 @@ struct iOSListDetailView: View {
                 listName: title,
                 highlightedSectionName: highlightedSectionName,
                 area: area,
-                project: project
+                project: project,
+                spanTasks: filteredTasks
             )
         case .documents:
             // `iOSListNotesView`, not the old `iOSListNotesPanel`: this list may hold many notes,

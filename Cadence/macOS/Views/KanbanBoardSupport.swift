@@ -274,32 +274,19 @@ enum KanbanBoardSupport {
         commit: (ModelContext) throws -> Void = { try $0.save() },
         assigning assign: () -> Void = {}
     ) -> Bool {
-        var ordered = columnTasks
-        ordered.removeAll { $0.id == task.id }
-        if let target, let targetIndex = ordered.firstIndex(where: { $0.id == target.id }) {
-            ordered.insert(task, at: targetIndex)
-        } else {
-            ordered.append(task)
-        }
-        let sequence = CadenceRowReorderSpan.wholeSequence(
-            resequencing: ordered,
-            within: spanTasks,
-            ofList: listKey
-        )
-        return withAnimation(kanbanCardReorderAnimation) {
-            CadenceTaskFieldEditCommit.commit(
-                task,
-                // The whole sequence, not the column: the undo has to put back every card the
-                // renumber below writes, and since T-1175 that is the list rather than the column.
-                alsoRestoring: sequence,
+        // The write is `CadenceKanbanCardDrop.reorder`, in `Shared/`, so the iOS list board makes
+        // this same one ([[T-8183]]); only the animation, a macOS constant, is this board's.
+        withAnimation(kanbanCardReorderAnimation) {
+            CadenceKanbanCardDrop.reorder(
+                columnTasks,
+                moving: task,
+                before: target,
+                spanning: spanTasks,
+                ofList: listKey,
                 in: modelContext,
-                commit: commit
-            ) {
-                assign()
-                for (index, item) in sequence.enumerated() {
-                    item.order = index
-                }
-            }
+                commit: commit,
+                assigning: assign
+            )
         }
     }
 

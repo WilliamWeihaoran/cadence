@@ -245,6 +245,15 @@ struct iOSBoardTaskCard: View {
     // most of what the inspector is *for* — so a card-owned sheet closed itself on the same writes
     // `iOSTaskRow`'s did.
     @Environment(\.iOSTaskInspector) private var taskInspector
+    /// The task action menu's four pieces of state, the row's own four (`iOSTaskRow`), because the
+    /// menu is the row's own `iOSTaskRowContextMenu` and each of them is something that menu can
+    /// only ask for and not show: the delete confirmation, and the three refusals a `Menu` closes
+    /// over before it could say them ([[T-8182]]).
+    @State private var showDeleteConfirmation = false
+    @State private var deleteFailed = false
+    @State private var moveFailed = false
+    @State private var recurrenceFailed = false
+    @State private var pendingRecurrenceRule: TaskRecurrenceRule?
 
     private var listColor: Color {
         Color(hex: task.containerColor)
@@ -292,9 +301,48 @@ struct iOSBoardTaskCard: View {
             settlingOverlay: { EmptyView() }
         )
         .contentShape(Rectangle())
-        .onTapGesture {
-            taskInspector(task)
+        .onTapGesture(perform: openDetail)
+        // **[[T-8182]]: the task action menu, on a long press.** The menu is the task row's own
+        // `iOSTaskRowContextMenu`, not a board copy of it — the same parity macOS's `KanbanCard`
+        // keeps with `MacTaskRow` by hosting `MacTaskRowContextMenu`. One modifier answers both
+        // inputs: a right-click on an iPad with a pointer and a still long press on glass.
+        //
+        // **The drag is not given up for it.** Both boards put `.draggable` on this card at the
+        // call site, outside this modifier — the order `iOSTaskRow` uses — and UIKit's drag
+        // interaction and `UIContextMenuInteraction` share the lift between them: hold still and the
+        // menu opens, hold and move and the card lifts. Nothing here sits between the two the way
+        // the row's swipe container once did ([[T-8141]]), which is why the card needs no yield.
+        .contextMenu {
+            iOSTaskRowContextMenu(
+                task: task,
+                openDetail: openDetail,
+                showDeleteConfirmation: $showDeleteConfirmation,
+                moveFailed: $moveFailed,
+                recurrenceFailed: $recurrenceFailed,
+                pendingRecurrenceRule: $pendingRecurrenceRule
+            )
         }
+        // The menu's other halves, the same modifiers in the same roles `iOSTaskRow` applies them:
+        // the repeat-scope question, the delete confirmation and its failure, and the move and
+        // repeat refusals.
+        .iOSTaskRowRecurrenceScopeDialog(
+            task: task,
+            pendingRecurrenceRule: $pendingRecurrenceRule
+        )
+        .iOSTaskDeleteConfirmation(task: task, isPresented: $showDeleteConfirmation) { scope in
+            deleteFailed = !CadenceTaskMutationSupport.delete(
+                task,
+                modelContext: modelContext,
+                recurrenceScope: scope
+            )
+        }
+        .iOSTaskDeleteFailureAlert(isPresented: $deleteFailed)
+        .iOSTaskMoveFailureAlert(isPresented: $moveFailed)
+        .iOSTaskRowRecurrenceFailureAlert(isPresented: $recurrenceFailed)
+    }
+
+    private func openDetail() {
+        taskInspector(task)
     }
 
     /// The gutter's completion control. Drawn at the shared ring size; the 44pt target around it is

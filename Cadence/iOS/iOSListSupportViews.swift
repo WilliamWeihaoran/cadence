@@ -472,6 +472,12 @@ struct iOSListKanbanPanel: View {
     /// Tasks tab ends with and the Mac list draws — not a second path of this board's own.
     var area: Area?
     var project: Project?
+    /// The list's tasks from the store, finished ones included: the sequence a card drop
+    /// renumbers, which `tasks` (the open cards only) is not. The same array macOS's list board
+    /// hands its columns as `spanTasks` ([[T-1175]], [[T-8183]]).
+    var spanTasks: [AppTask]?
+
+    @Environment(\.modelContext) private var modelContext
 
     /// Which column the ring is currently on. Separate from `highlightedSectionName` because the
     /// request outlives the emphasis: the ring fades after a beat and the request is still the
@@ -523,7 +529,18 @@ struct iOSListKanbanPanel: View {
                                         container: container,
                                         listName: listName,
                                         sectionName: column.title
-                                    )
+                                    ),
+                                    onDropCard: { items in
+                                        CadenceKanbanCardDrop.drop(
+                                            items,
+                                            intoColumn: column.title,
+                                            columnTasks: column.tasks,
+                                            among: tasks,
+                                            spanning: spanTasks ?? tasks,
+                                            ofList: CadenceTaskDropSupport.containerKey(for: container),
+                                            in: modelContext
+                                        )
+                                    }
                                 )
                                 .id(column.title)
                             }
@@ -626,6 +643,12 @@ private struct iOSListKanbanColumn: View {
     /// See `iOSTaskGroupHeader.dropIdentity` — the header is the drop target here for the same
     /// reason, and reaches the same place a card cannot: a column with nothing in it.
     var dropIdentity: CadenceTaskGroupDropIdentity?
+    /// **[[T-8183]]: the column takes a card.** Its only drop target used to be the header's `+`
+    /// ghost, so a card could not change column by touch at all. The board answers, not the column:
+    /// the board holds the task list a payload is checked against, and the write is
+    /// `CadenceKanbanCardDrop`'s, the one macOS's columns make.
+    var onDropCard: ([String]) -> Bool = { _ in false }
+    @State private var isCardDropTargeted = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -654,6 +677,11 @@ private struct iOSListKanbanColumn: View {
                         // Scoped to one list already — the same reason `iOSTaskListRow` drops its
                         // container, and the same knob macOS's `KanbanCard` uses.
                         iOSBoardTaskCard(task: task, showsContainerChip: false)
+                            // The source half of [[T-8183]]: the payload the Calendar Board's card
+                            // and the task row already offer (`TaskDragPayload`), not a board-own
+                            // spelling. Outside the card, after its context menu, as both of those
+                            // put it — see `iOSBoardTaskCard`'s note on how the two share a press.
+                            .draggable(TaskDragPayload.string(for: task.id))
                     }
                 }
                 .padding(.horizontal, 4)
@@ -666,11 +694,19 @@ private struct iOSListKanbanColumn: View {
         .frame(width: iOSBoardColumnWidth, alignment: .topLeading)
         // One layer at one radius. The ring is an overlay on the column itself rather than a second
         // background under the header, which is the stacked-hover shape the standing rule rules out.
+        // A card held over the column draws the same ring: it is the one emphasis this column has,
+        // and a second treatment for "this is where it lands" would be a second layer.
         .overlay {
             RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous)
-                .strokeBorder(isHighlighted ? dotColor : Color.clear, lineWidth: 2)
+                .strokeBorder(isHighlighted || isCardDropTargeted ? dotColor : Color.clear, lineWidth: 2)
                 .allowsHitTesting(false)
         }
+        // The whole column, header to foot, so an empty column — the one a move most often wants —
+        // is a target and not only the space under its cards.
+        .contentShape(Rectangle())
+        .dropDestination(for: String.self) { items, _ in
+            onDropCard(items)
+        } isTargeted: { isCardDropTargeted = $0 }
     }
 }
 
