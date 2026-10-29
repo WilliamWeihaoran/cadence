@@ -299,6 +299,51 @@ live_simctl_for() {   # 0 = the count in $LIVE_SIMCTL_COUNT is trustworthy, 4 = 
   return 0
 }
 
+# A READ-ONLY OBSERVER IS NOT WORK IN PROGRESS (T-8188). A Claude Code simulator panel attached to
+# a device holds `simctl spawn <udid> log stream ...` (its orientation watcher, under a
+# `disclaimer -- xcrun simctl spawn <udid> log stream ...` parent: two processes) for as long as
+# the panel is open, which is indefinitely. Counted as live ops, they pinned an expired claim
+# forever: measured 2026-10-28, `Cadence-iPadPro11` sat ~4000s past its lease with that watcher as
+# the only "op", and the waiter timed out never offered the device. So the reclaim asks
+# `live_simctl_for` twice -- once for every simctl aimed at the udid, once for the observers -- and
+# counts the difference. Everything that is not `simctl ... spawn <udid> log stream` (install,
+# launch, boot, a --console launch, any other spawn) still counts and still blocks the reclaim
+# T-1384 protects.
+#
+# `live_simctl_for` itself is unchanged and is called with a longer "$1" for the observer half
+# ("simctl .*spawn <udid> log stream" -- a strict subset of "simctl .*<udid>"), because its body is
+# pinned byte-for-byte to the lock's `live_test_hosts` (T-1396,
+# everyThreeWayProbeInTheGuardScriptsSpellsOneRule); a second probe body would be a fifth copy.
+# Counts, not pid sets, so the WHOLE probe is taken a second time after the observer probe: if the
+# two broad counts differ, something started or exited in between and the difference cannot be
+# trusted -- an observer exiting mid-reading would otherwise subtract an install. That reads as
+# "cannot tell" (return 4), the conservative answer; the next poll asks again. A compound agent
+# shell whose own argv mentions both a log stream and an install is subtracted with the
+# observers, but the `simctl install` it starts is its own process and is counted regardless.
+#
+# Sets LIVE_SIMCTL_BUSY (ops that are real work) and LIVE_SIMCTL_OBSERVERS; 0 = trustworthy,
+# 4 = cannot tell (reason in LIVE_SIMCTL_WHY).
+LIVE_SIMCTL_BUSY=0
+LIVE_SIMCTL_OBSERVERS=0
+busy_simctl_for() {
+  local all again observers
+  LIVE_SIMCTL_BUSY=0; LIVE_SIMCTL_OBSERVERS=0
+  live_simctl_for "$1" || return 4
+  all=$LIVE_SIMCTL_COUNT
+  (( all )) || return 0
+  live_simctl_for "spawn $1 log stream" || return 4
+  observers=$LIVE_SIMCTL_COUNT
+  live_simctl_for "$1" || return 4
+  again=$LIVE_SIMCTL_COUNT
+  if (( again != all || observers > all )); then
+    LIVE_SIMCTL_WHY="the simctl count moved while it was read ($all, then $again; $observers observer(s)), so the observer subtraction is unsafe this pass"
+    return 4
+  fi
+  LIVE_SIMCTL_OBSERVERS=$observers
+  LIVE_SIMCTL_BUSY=$(( all - observers ))
+  return 0
+}
+
 claim_udid_for_id() {
   local c u
   for c in "$CLAIMS"/*.claim(N/); do
@@ -564,18 +609,22 @@ case "$CMD" in
             # because ONE claimed device cannot be judged would give up free devices too. The wait
             # still ends -- at $TIMEOUT, saying it did not claim -- and an owner's ordinary
             # `release` still frees the device without anyone reclaiming anything.
-            if ! live_simctl_for "$u"; then
+            if ! busy_simctl_for "$u"; then
               say "  $u: lease expired (${age}s) but I cannot read the process list, so \"no live"
               say "     simctl op\" is UNKNOWN here, not false ($LIVE_SIMCTL_WHY);"
               say "     NOT reclaiming -- that would take a device a sibling may be installing to (T-1384)."
               continue
             fi
-            live=$LIVE_SIMCTL_COUNT
+            live=$LIVE_SIMCTL_BUSY
             if (( live > 0 )); then
               say "  $u: lease expired (${age}s) but ${live} live simctl op(s); NOT reclaiming"
               continue
             fi
-            say "  $u: reclaiming from '$owner' (lease ${age}s > ${LEASE}s, no live simctl)"
+            if (( LIVE_SIMCTL_OBSERVERS > 0 )); then
+              say "  $u: reclaiming from '$owner' (lease ${age}s > ${LEASE}s, no live simctl; ${LIVE_SIMCTL_OBSERVERS} read-only \`log stream\` observer(s) not counted, T-8188)"
+            else
+              say "  $u: reclaiming from '$owner' (lease ${age}s > ${LEASE}s, no live simctl)"
+            fi
             rm -rf "$CLAIMS/$u.claim"
           fi
         done
@@ -935,10 +984,38 @@ print -u2 -- "pgrep: Cannot get process list"
 exit 3' > "$root/blindpgrep"
     print -r -- '#!/bin/zsh
 exit 1' > "$root/idlepgrep"
+    # busy answers only the broad `simctl .*<udid>` probe: its op is an install, not a `log stream`,
+    # so the T-8188 observer probe finds nothing to subtract and the op still counts.
     print -r -- '#!/bin/zsh
+[[ "$2" == *"log stream"* ]] && exit 1
 print -r -- 4242
 exit 0' > "$root/busypgrep"
-    chmod +x "$root/blindpgrep" "$root/idlepgrep" "$root/busypgrep"
+    # T-8188's three: a panel's `log stream` alone (both probes name it); the panel AND an install
+    # (only the install survives the subtraction); and the panel with an observer probe that
+    # cannot answer, which must read as "cannot tell", never as "nothing to subtract from".
+    print -r -- '#!/bin/zsh
+print -r -- 4243
+exit 0' > "$root/panelpgrep"
+    print -r -- '#!/bin/zsh
+print -r -- 4243
+[[ "$2" == *"log stream"* ]] || print -r -- 4242
+exit 0' > "$root/panelbusypgrep"
+    print -r -- '#!/bin/zsh
+[[ "$2" == *"log stream"* ]] && { print -u2 -- "pgrep: Cannot get process list"; exit 3 }
+print -r -- 4243
+exit 0' > "$root/panelblindpgrep"
+    # And the race the re-read exists for: an install is running, and a panel attaches between the
+    # broad probe and the observer probe. Subtracting that late observer from a count that never
+    # held it would read the install as idle. Odd broad calls see the install alone, even ones see
+    # install + panel, so every reading moves under it -- MUST NOT reclaim. The counter lives in a
+    # per-run file because each probe is a fresh process.
+    print -r -- '#!/bin/zsh
+[[ "$2" == *"log stream"* ]] && { print -r -- 4243; exit 0 }
+n=$(( $(cat "'"$root"'/moving.n" 2>/dev/null || print 0) + 1 )); print -r -- $n > "'"$root"'/moving.n"
+print -r -- 4242
+(( n % 2 )) || print -r -- 4243
+exit 0' > "$root/panelmovingpgrep"
+    chmod +x "$root/blindpgrep" "$root/idlepgrep" "$root/busypgrep" "$root/panelpgrep" "$root/panelbusypgrep" "$root/panelblindpgrep" "$root/panelmovingpgrep"
     # An expired claim held by a stranger, rebuilt before each stub. LEASE is 4s here, so 600s of
     # age puts every run squarely in the reclaim branch and none of the three gets there by timing.
     stale_stranger_claim() {
@@ -979,6 +1056,67 @@ exit 0' > "$root/busypgrep"
       fi
     }
 
+    # 5. A READ-ONLY `log stream` IS NOT WORK IN PROGRESS (T-8188). A simulator panel attached to
+    #    the device holds `simctl spawn <udid> log stream` forever; counted as a live op it pinned
+    #    an expired claim for ~4000s. Four stubs, a DISCRIMINATION again: subtracting EVERYTHING
+    #    would pass the panel-alone half while reopening T-1384, so the panel-plus-install half
+    #    must still keep the claim, and a blind observer probe -- or a count that moved between the
+    #    probes -- must still read as cannot-tell.
+    #    The second fake is held FRESH before each half (a lease younger than LEASE, so never a
+    #    reclaim candidate itself): left free, every waiter would simply take it and the "reclaimed"
+    #    half would read the wrong device.
+    fresh_second_claim() {
+      rm -rf "$CLAIMS/$FAKE_SECOND_UDID.claim"
+      mkdir -p "$CLAIMS/$FAKE_SECOND_UDID.claim"
+      print -r -- secondholder > "$CLAIMS/$FAKE_SECOND_UDID.claim/id"
+      print -r -- 1            > "$CLAIMS/$FAKE_SECOND_UDID.claim/pid"
+      date +%s                 > "$CLAIMS/$FAKE_SECOND_UDID.claim/since"
+    }
+    trial_keepsobserver() {
+      stale_stranger_claim; fresh_second_claim
+      export CADENCE_SIM_PGREP_CMD="/bin/zsh -f $root/panelpgrep"
+      panel_out=$("$SELF" claim panelwaiter 12 2>&1)
+      unset CADENCE_SIM_PGREP_CMD
+      panel_took=0; [[ "$(claim_field "$FAKE_UDID" id)" == panelwaiter ]] && panel_took=1
+      panel_said=0; [[ "$panel_out" == *"observer(s) not counted"* ]] && panel_said=1
+      "$SELF" release panelwaiter >/dev/null 2>&1
+
+      stale_stranger_claim; fresh_second_claim
+      export CADENCE_SIM_PGREP_CMD="/bin/zsh -f $root/panelbusypgrep"
+      pbusy_out=$("$SELF" claim panelbusy 2 2>&1)
+      unset CADENCE_SIM_PGREP_CMD
+      pbusy_kept=0; [[ "$(claim_field "$FAKE_UDID" id)" == stranger ]] && pbusy_kept=1
+      pbusy_said=0; [[ "$pbusy_out" == *"1 live simctl op(s)"* ]] && pbusy_said=1
+
+      if (( panel_took && panel_said && pbusy_kept && pbusy_said )); then
+        print -r -- "PASS observer-not-busy: an expired claim whose only simctl op was a panel's \`log stream\` was reclaimed; the same panel beside an install still kept it (1 op counted)"
+      else
+        print -r -- "FAIL observer-not-busy: panel-alone reclaimed=$panel_took said=$panel_said, panel+install kept=$pbusy_kept said=$pbusy_said; the device is now held by '$(claim_field "$FAKE_UDID" id)'"; (( fails++ ))
+      fi
+    }
+    # The two cannot-tell halves, a trial of their own so they run beside the two above (T-3287).
+    trial_keepsobserverrace() {
+      stale_stranger_claim; fresh_second_claim
+      export CADENCE_SIM_PGREP_CMD="/bin/zsh -f $root/panelblindpgrep"
+      pblind_out=$("$SELF" claim panelblind 2 2>&1)
+      unset CADENCE_SIM_PGREP_CMD
+      pblind_kept=0; [[ "$(claim_field "$FAKE_UDID" id)" == stranger ]] && pblind_kept=1
+      pblind_said=0; [[ "$pblind_out" == *"cannot read the process list"* ]] && pblind_said=1
+
+      stale_stranger_claim; fresh_second_claim
+      export CADENCE_SIM_PGREP_CMD="/bin/zsh -f $root/panelmovingpgrep"
+      pmove_out=$("$SELF" claim panelmoving 2 2>&1)
+      unset CADENCE_SIM_PGREP_CMD
+      pmove_kept=0; [[ "$(claim_field "$FAKE_UDID" id)" == stranger ]] && pmove_kept=1
+      pmove_said=0; [[ "$pmove_out" == *"moved while it was read"* ]] && pmove_said=1
+
+      if (( pblind_kept && pblind_said && pmove_kept && pmove_said )); then
+        print -r -- "PASS observer-cannot-tell-keeps-claim: beside a panel's \`log stream\`, a blind observer probe and a count that moved under the observer probe both kept the stranger's expired claim"
+      else
+        print -r -- "FAIL observer-cannot-tell-keeps-claim: blind-observer kept=$pblind_kept said=$pblind_said, moving-count kept=$pmove_kept said=$pmove_said; the device is now held by '$(claim_field "$FAKE_UDID" id)'"; (( fails++ ))
+      fi
+    }
+
     # --- running the trials (T-3287) -------------------------------------------------------------
     # Same shape as test-host-lock.sh's runner: each trial writes its lines to its own file and
     # leaves its failure count beside it; the files are printed in the fixed order below once every
@@ -991,7 +1129,7 @@ exit 0' > "$root/busypgrep"
     started=$EPOCHREALTIME
     # `trial`, never `t`: trial_keepsqueue loops `for t in "$QUEUE"/*`, and in this subshell the
     # name it clobbered was the one the count file is written under.
-    for trial in ordering killedwaiter denylist keepsqueue keepsclaim; do
+    for trial in ordering killedwaiter denylist keepsqueue keepsclaim keepsobserver keepsobserverrace; do
       ( troot="$root/trial-$trial"
         trial_env "$troot" || { print -r -- "selftest: could not set up trial $trial"; exit 2 }
         fails=0; kids=()

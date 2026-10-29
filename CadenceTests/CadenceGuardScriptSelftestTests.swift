@@ -622,11 +622,18 @@ struct CadenceGuardScriptSelftestTests {
     /// discrimination rather than a refusal: a blind `pgrep` must not reclaim, an idle one still
     /// must, and one naming a live op still must not — a `live_simctl_for` hard-wired to "cannot
     /// tell" would pass a one-stub version of this while pinning the fleet behind any stale claim.
+    ///
+    /// `observer-not-busy` and `observer-cannot-tell-keeps-claim` are [[T-8188]]'s: a simulator
+    /// panel's permanent `simctl spawn <udid> log stream` is subtracted from the live-op count, so
+    /// an expired claim under an attached panel is reclaimable again -- while the same panel beside
+    /// an install still keeps it, and a blind or moving observer reading is still "cannot tell".
     static let simulatorClaimProperties = [
         "ordering",
         "killed-waiter",
         "cannot-tell-keeps-queue",
         "cannot-tell-keeps-claim",
+        "observer-not-busy",
+        "observer-cannot-tell-keeps-claim",
     ]
 
     /// **Empty, as of [[T-1382]], and the emptiness is the finding.** `ordering` was tolerated
