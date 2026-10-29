@@ -226,4 +226,55 @@ struct CadenceCaptureEditorTests {
         #expect(carries.contains("case .doDate, .dueDate, .tags, .priority: return false"))
         #expect(carries.contains("case .estimate: return isSet(.estimate) && !isSet(.doDate)"))
     }
+
+    /// **[[T-8463]] — at phone width the field editor is a sheet, not a forced popover.**
+    ///
+    /// Seen on `Cadence-iPhone15` (393x852): opening the schedule chip on the iOS task inspector
+    /// drew the Do panel with its LEFT edge at x≈210 and the rest off the right of the screen —
+    /// `er 2026` for the month heading, `sday, October 1` for a day row, `ut time` for the
+    /// `Without time` toggle. The card carried `.presentationCompactAdaptation(.popover)`, which
+    /// overrides the adaptation SwiftUI would otherwise make in a compact horizontal size class,
+    /// and the inspector's host sheet sits at a detent tall enough that UIKit had no room above or
+    /// below the full-width card to put a 320pt panel. The same card inside quick-add escaped it
+    /// only because that host's `.height(cardHeight)` detent is short.
+    ///
+    /// **Two halves, because either alone is weak.**
+    ///
+    /// The first is the rule itself: one adaptation in the file, and it is `.sheet`. One, because
+    /// the inspector and quick-add share this card — a second adaptation would be the two hosts
+    /// diverging again, which is the shape the defect had. `.sheet` rather than no modifier at
+    /// all, so the intent is legible at the call site and a later `.popover` is a diff, not a
+    /// deletion. The modifier does nothing outside a compact size class, so the iPad and the Mac
+    /// are untouched by it.
+    ///
+    /// The second is the arithmetic that says a popover could not have fitted, read off the app's
+    /// own `gridWidth`: a full-width sheet on the owner's phone ([[T-3147]], 393pt) clears the
+    /// grid, and the sliver the clipped popover left on screen does not — which is why the grid
+    /// had already fallen back to its narrow row layout in the screenshot, and why that fallback
+    /// is evidence of the placement rather than a second defect.
+    ///
+    /// **Failing-first:** putting `.popover` back fails the first half; narrowing the sheet to the
+    /// sliver, or widening the grid past the phone, fails the second.
+    @Test func theCapturePanelIsASheetWhereThereIsNoRoomForAPopover() throws {
+        let card = try source("Cadence/Shared/Components/CadenceScheduleCaptureCard.swift")
+        #expect(CadenceSourceScan.matchCount(#"\.presentationCompactAdaptation\("#, in: card) == 1)
+        #expect(card.contains(".presentationCompactAdaptation(.sheet)"))
+        #expect(!card.contains(".presentationCompactAdaptation(.popover)"))
+
+        // The owner's handset, and the card's own horizontal padding either side of the panel.
+        let phoneWidth: CGFloat = 393
+        let cardPadding: CGFloat = 12
+        // Where the clipped panel's left edge landed, so `phoneWidth - clippedLeftEdge` is the
+        // width the grid actually had to draw itself in.
+        let clippedLeftEdge: CGFloat = 210
+        let grid = CadenceDateSelectionMetrics.gridWidth(at: .large)
+        #expect(grid <= phoneWidth - cardPadding * 2)
+        #expect(grid > phoneWidth - clippedLeftEdge)
+        #expect(!CadenceDateSelectionMetrics.usesDateRows(
+            at: .large, availableWidth: phoneWidth - cardPadding * 2
+        ))
+        #expect(CadenceDateSelectionMetrics.usesDateRows(
+            at: .large, availableWidth: phoneWidth - clippedLeftEdge
+        ))
+    }
 }

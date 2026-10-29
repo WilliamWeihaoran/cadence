@@ -292,7 +292,14 @@ struct CadencePresentedTypographyBoundaryTests {
                     #expect(path == "Cadence/Shared/Components/CadenceScheduleCaptureCard.swift")
                     let source = try read(path)
                     #expect(line.contains("$activeField"))
-                    #expect(source.contains(".background(Theme.surfaceElevated)\n            .cadenceScaledTypography()\n            .presentationCompactAdaptation(.popover)"))
+                    #expect(source.contains(".background(Theme.surfaceElevated)\n            .cadenceScaledTypography()"))
+                    // [[T-8463]]: the scope is still declared on the presented content, but the
+                    // adaptation under it is `.sheet`. A forced popover at phone width put the
+                    // panel's left edge off the right of the screen. The rule itself, with the
+                    // reading that produced it, is
+                    // `CadenceCaptureEditorTests.theCapturePanelIsASheetWhereThereIsNoRoomForAPopover`.
+                    #expect(source.contains(".presentationCompactAdaptation(.sheet)"))
+                    #expect(!source.contains(".presentationCompactAdaptation(.popover)"))
                     let editor = try #require(CadenceSourceScan.functionBody(named: "editor", in: source))
                     for name in ["CadenceChoicePopoverList", "CadenceQuickDatePopover", "CadenceTimeRoller", "EstimatePickerPopoverContent"] {
                         #expect(editor.contains("\(name)("), "capture's editor lost \(name)")

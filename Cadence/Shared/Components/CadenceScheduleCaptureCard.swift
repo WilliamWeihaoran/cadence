@@ -385,7 +385,27 @@ struct CadenceScheduleCaptureCard<NotesField: View>: View {
             .frame(idealWidth: 320, maxHeight: 520)
             .background(Theme.surfaceElevated)
             .cadenceScaledTypography()
-            .presentationCompactAdaptation(.popover)
+            // **`.sheet`, not `.popover`, and only in a COMPACT size class** ([[T-8463]]).
+            //
+            // This modifier does nothing outside a compact horizontal size class, so the iPad and
+            // the Mac keep the popover they have always had: the panel hangs off the card, the
+            // card stays readable behind it, and nothing below changes. iPhone is the only
+            // surface this moves, and it is the only one where the popover could not be drawn.
+            //
+            // Forcing `.popover` at 393pt gave UIKit a source rect as wide as the card and no room
+            // above or below it inside a near-full-height inspector sheet, so it placed a 320pt
+            // panel with its LEFT edge at x≈210 and let the rest run off the screen -- the month
+            // heading reading `er 2026`, the day rows `sday, October 1`, the `Without time` toggle
+            // cut to `ut time`. The grid had already fallen back to its narrow row layout, because
+            // the width it was handed was not a width this panel can be drawn at. Measured on
+            // `Cadence-iPhone15` (393x852), and NOT reproducible on the iPad, which is the whole
+            // reason the rule is a size-class rule rather than a platform one.
+            //
+            // The quick-add card escaped it only by luck of geometry: its host sheet sits at a
+            // `.height(cardHeight)` detent short enough to leave room above, so the same forced
+            // popover found somewhere legal to go. A fix that only moved the inspector would have
+            // left that luck load-bearing.
+            .presentationCompactAdaptation(.sheet)
         }
         .onAppear { titleIsFocused = !draft.subject.isEditing && !isReadOnly }
         .onChange(of: activeField) { _, field in if field == nil { titleIsFocused = !draft.subject.isEditing && !isReadOnly } }
