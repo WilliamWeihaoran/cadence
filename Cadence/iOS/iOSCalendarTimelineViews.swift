@@ -1134,7 +1134,9 @@ private struct iOSCalendarAllDayBandChips: View {
                 // band selects its day through the chip exactly as it did around it.
                 .contentShape(Rectangle())
                 .onTapGesture { onSelectDay?() }
-                .draggable(TaskDragPayload.string(for: task.id))
+                // Same payload, plus the chip's task NAMED on the item it hands over, so the
+                // column below can draw it at its own length ([[T-8451]]).
+                .timelineTaskDragSource(taskID: task.id)
             }
 
             if split.hidden > 0 {
@@ -1351,7 +1353,8 @@ private struct iOSCalendarTimelineDayColumn: View {
     /// Where a task dragged over this column would land, while it is over it ([[T-8142]]); `nil`
     /// whenever no task drag is over this column. See `CadenceTimelineTaskDropHover`.
     @State private var taskDropHover: CadenceTimelineTaskDropHover?
-    /// The id the hovering drag carries, once its payload has been read.
+    /// The id the hovering drag carries: read synchronously off the item the lift named
+    /// ([[T-8451]]), or off the payload once that asynchronous read answers.
     @State private var taskDropHoverID: UUID?
 
     private struct BlockEditPreview: Equatable {
@@ -2741,9 +2744,18 @@ struct iOSTimelineTaskBlock: View {
 /// its own press-drag ([[T-1475]]), never through a system drag, so every task that arrives here is
 /// a row or a card from another surface and its top sits under the finger.
 ///
-/// The payload is read when the drag enters, the way the Mac delegate reads it, so the plate can
-/// take the task's own length. Until that read answers -- or if the system holds the data back
-/// until the release -- the plate claims only the start minute (`CadenceTimelineTaskDropHover`).
+/// **The hovering task is named by the ITEM, not by the payload** ([[T-8451]]). The payload read is
+/// still asked for -- it is what names the task on the release -- but UIKit withholds the data for
+/// the WHOLE hover on this surface, so for every task longer than one grid step the plate named an
+/// end the drop would not produce: a 60-minute task hovered `7 PM - 7:15 PM` and landed `7 PM - 8
+/// PM` ([[T-8302]], on `Cadence-iPadPro11`). The lift names its task on the item provider instead
+/// (`CadenceTimelineTaskDrag`), which is metadata and reads **synchronously**, so the plate is the
+/// task's own length and titled from the first frame. That file also records why this is not macOS's
+/// drag session: a registry has to be written on every lift, and SwiftUI caches a view's drag item.
+///
+/// An item that names no task -- text dragged in from another app -- leaves `hoverTaskID` `nil`
+/// until the payload answers, and the plate claims only the start minute, one grid step tall
+/// (`CadenceTimelineTaskDropHover`): the pre-[[T-8451]] behaviour, kept as the floor.
 /// The release recomputes the minute through the same `resolve` with the task the host now
 /// names, so what the finger saw last is what is written.
 private struct iOSTimelineTaskDropDelegate: DropDelegate {
@@ -2758,11 +2770,13 @@ private struct iOSTimelineTaskDropDelegate: DropDelegate {
     }
 
     func dropEntered(info: DropInfo) {
+        adoptNamedTaskID(from: info)
         updateHover(with: info)
         resolveTaskID(from: info)
     }
 
     func dropUpdated(info: DropInfo) -> DropProposal? {
+        adoptNamedTaskID(from: info)
         updateHover(with: info)
         resolveTaskID(from: info)
         return DropProposal(operation: .move)
@@ -2803,6 +2817,18 @@ private struct iOSTimelineTaskDropDelegate: DropDelegate {
             hourHeight: hourHeight,
             durationMinutes: hoverTaskID.flatMap(resolveTask)?.timelineDurationMinutes
         )
+    }
+
+    /// The task the hovering item names, taken synchronously so the FIRST plate is already the
+    /// right size and titled; `CadenceTimelineTaskDrag` argues the name rather than the payload.
+    /// Only a task this host actually holds is adopted: an item from a surface whose tasks this
+    /// column cannot resolve would otherwise give the plate a title with nothing behind it.
+    private func adoptNamedTaskID(from info: DropInfo) {
+        guard hoverTaskID == nil,
+              let taskID = CadenceTimelineTaskDrag.hoveringTaskID(in: info.itemProviders(for: [UTType.text])),
+              resolveTask(taskID) != nil
+        else { return }
+        hoverTaskID = taskID
     }
 
     private func resolveTaskID(from info: DropInfo) {

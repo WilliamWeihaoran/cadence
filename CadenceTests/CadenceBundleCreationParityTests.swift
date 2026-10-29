@@ -174,12 +174,16 @@ struct CadenceBundleCreationParityTests {
         #expect(occurrences(of: "bundleFormingDrop", in: source) == 0)
         #expect(occurrences(of: "iOSBundleFormingDrop", in: source) == 0)
         #expect(occurrences(of: "bundleCreateFailed", in: source) == 0)
-        // One `.draggable(`, and it is the unscheduled band chip's ([[T-8143]]): a task with no
-        // time, offered to the grid below it, which is a reschedule like the drop that takes it --
-        // not a lift onto another block. That it is not on a block is asserted by
+        // One lift, and it is the unscheduled band chip's ([[T-8143]]): a task with no time,
+        // offered to the grid below it, which is a reschedule like the drop that takes it -- not a
+        // lift onto another block. That it is not on a block is asserted by
         // `CadenceTimelineBlockEditTests/theIOSBlockLiftsOnAHoldAndCarriesNoDragPayloadOrDropTarget`.
-        #expect(occurrences(of: ".draggable(", in: source) == 1)
-        #expect(occurrences(of: ".draggable(TaskDragPayload.string(for: task.id))", in: source) == 1)
+        //
+        // Spelled `.timelineTaskDragSource(` since [[T-8451]]: the same `TaskDragPayload` string,
+        // plus the lift recorded on the shared drag session the hover plate reads. A bare
+        // `.draggable(` here would be a lift the column cannot size its plate from.
+        #expect(occurrences(of: ".draggable(", in: source) == 0)
+        #expect(occurrences(of: ".timelineTaskDragSource(taskID: task.id)", in: source) == 1)
         // Exactly one drop, and it reschedules: the payload is decoded to a task id and handed to
         // the host's `onDropTaskAtMinute`, which is the only thing this file does with a drop. A
         // delegate since [[T-8142]], so the column answers while the finger is over it.

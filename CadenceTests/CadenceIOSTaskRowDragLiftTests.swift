@@ -184,9 +184,17 @@ struct CadenceIOSTaskRowDragLiftTests {
         let source = try CadenceSourceScan.sourceFile(rowFile)
         let row = try #require(CadenceSourceScan.declarationBody("struct iOSTaskRow: View", in: source))
         #expect(row.count > 1_000, "non-vacuity: iOSTaskRow read as \(row.count) characters")
+        // `.timelineTaskDragSource` since [[T-8451]]: it offers the same `TaskDragPayload` string
+        // and additionally records the lift on the shared `TimelineTaskDragSession`, which is the
+        // only thing that tells a timeline day column WHICH task is over it while the finger is
+        // still down.
         #expect(
-            CadenceSourceScan.matchCount(#"\.draggable\(TaskDragPayload\.string\(for: task\.id\)\)"#, in: row) == 1,
+            CadenceSourceScan.matchCount(#"\.timelineTaskDragSource\(taskID: task\.id\)"#, in: row) == 1,
             "the row stopped offering a drag payload, so nothing it is dragged onto can be handed a task"
+        )
+        #expect(
+            CadenceSourceScan.matchCount(#"\.draggable\("#, in: row) == 0,
+            "the row lifts through a bare .draggable again, so the hover plate cannot be its length"
         )
     }
 
