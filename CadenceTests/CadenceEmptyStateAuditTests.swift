@@ -933,7 +933,17 @@ struct CadenceEmptyStateAuditTests {
         // which deleted the four screens that read them.
         #expect(CadenceEmptyStateCopy.selectNoteTitle == "Select a note")
         #expect(CadenceEmptyStateCopy.selectWeekTitle == "Select a week")
-        #expect(CadenceEmptyStateCopy.selectMeetingNoteTitle == "Select a meeting note")
+        #expect(CadenceEmptyStateCopy.selectMeetingNoteTitle == "Select an event note")
+
+        // [[T-8043]]: the Event Notes tab's empty state and placeholder name the tab's own noun.
+        // "Meeting" is a persisted case name, never an on-screen word.
+        #expect(CadenceEmptyStateCopy.meetingNotesTitle == "No event notes yet")
+        let tabNoun = CadenceNotesTabVocabulary.events.label.lowercased()
+        #expect(tabNoun == "event notes", "non-vacuity: the tab label moved")
+        for copy in [CadenceEmptyStateCopy.meetingNotesTitle, CadenceEmptyStateCopy.selectMeetingNoteTitle] {
+            #expect(copy.lowercased().contains("event note"), "\"\(copy)\" does not use the tab's noun")
+            #expect(!copy.lowercased().contains("meeting"), "\"\(copy)\" says meeting under an Event Notes tab")
+        }
 
         // T-689's third case, goalsTitle(isNarrowed:allComplete:), left with [[T-5002]].
 

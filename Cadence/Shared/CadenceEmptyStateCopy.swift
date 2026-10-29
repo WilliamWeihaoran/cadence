@@ -234,7 +234,13 @@ nonisolated enum CadenceEmptyStateCopy {
     static let notepadSubtitle = "Notepad holds notes that belong to no particular day."
     /// The one tab with no control of its own — `NotesListHeader(title: "Event Notes")` takes
     /// neither `onCreate` nor `onPickDate` — so this points at the screen that does have one.
-    static let meetingNotesTitle = "No meeting notes yet"
+    ///
+    /// **"Event", not "meeting"** ([[T-8043]]): the tab above this reads
+    /// `CadenceNotesTabVocabulary.events.label` and its column heading `columnTitle`, both
+    /// "Event Notes", and that type is "the words". "Meeting" survives only in the persisted
+    /// `NoteKind.meeting` case name, which is not a word anybody reads on screen; the constant
+    /// names keep it for the same reason.
+    static let meetingNotesTitle = "No event notes yet"
     static let meetingNotesSubtitle = "Create one from a calendar event."
 
     /// **"Nothing selected" is not "nothing exists", so these three carry no subtitle** (T-548).
@@ -249,7 +255,7 @@ nonisolated enum CadenceEmptyStateCopy {
     /// would have drifted the same way.
     static let selectNoteTitle = "Select a note"
     static let selectWeekTitle = "Select a week"
-    static let selectMeetingNoteTitle = "Select a meeting note"
+    static let selectMeetingNoteTitle = "Select an event note"
 
     // MARK: - "You have nothing" is not "your filter matched nothing"
 
