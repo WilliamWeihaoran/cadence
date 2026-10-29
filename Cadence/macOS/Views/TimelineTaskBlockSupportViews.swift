@@ -32,6 +32,31 @@ struct TimelineDraggedTaskPreview: View {
         return CadenceTaskPresentationSupport.estimateLabel(minutes: durationMinutes)
     }
 
+    // [[T-8456]]: the plate's two labels -- the task's title and the range the drop will write --
+    // in the figures both the decision below and `timelineBlockBody`'s plate arm draw with, so the
+    // arrangement is costed against the rows that are actually drawn.
+    static let plateTitleFontSize: CGFloat = 11
+    static let plateTimeFontSize: CGFloat = 9
+    static let plateRowSpacing: CGFloat = 2
+
+    /// How a plate `frameHeight` points tall arranges its title and its range.
+    ///
+    /// **The same decision the iOS day column's plate makes** (`CadenceTimelineTaskDropHover
+    /// .labelLayout`, [[T-8455]], [[T-8201]]). This preview used to draw the live block's body,
+    /// whose two height gates hide the range below 58 pt and shrink everything to a title row below
+    /// 38 pt, so a 15-minute task dragged down the Mac canvas -- a 24 pt plate at every zoom -- said
+    /// its name and its duration capsule and never *where it would land*. A plate that cannot stack
+    /// the two rows now puts them on one row, the range keeping its width and the title giving way.
+    static func labelLayout(frameHeight: CGFloat, style: TimelineBlockStyle) -> CadenceTimelineTaskDropHover.LabelLayout {
+        CadenceTimelineTaskDropHover.labelLayout(
+            plateHeight: frameHeight,
+            verticalPadding: style.verticalPadding,
+            rowSpacing: plateRowSpacing,
+            titleFontSize: plateTitleFontSize,
+            timeFontSize: plateTimeFontSize
+        )
+    }
+
     var body: some View {
         ZStack(alignment: .topTrailing) {
             ZStack {
@@ -51,7 +76,8 @@ struct TimelineDraggedTaskPreview: View {
                     timeRangeLabel: timeRangeLabel,
                     frame: frame,
                     style: style,
-                    showSelection: true
+                    showSelection: true,
+                    dropPlateLabels: Self.labelLayout(frameHeight: frame.height, style: style)
                 )
                 .opacity(0.92)
             }
@@ -131,6 +157,10 @@ func timelineBlockBody(
     isPendingCancellation: Bool = false,
     completionProgress: Double = 0,
     completionGlyph: CadenceTaskCompletionGlyph? = nil,
+    // [[T-8456]]: set only by `TimelineDraggedTaskPreview`. The plate states its title and the
+    // range it will land at, in the arrangement the Shared decision picks, instead of the live
+    // block's height-gated rows.
+    dropPlateLabels: CadenceTimelineTaskDropHover.LabelLayout? = nil,
     onToggleDone: (() -> Void)? = nil
 ) -> some View {
     let taskColor = Color(hex: task.containerColor)
@@ -199,60 +229,81 @@ func timelineBlockBody(
             }
 
             VStack(alignment: .leading, spacing: 2) {
-                if frame.height >= 58 {
-                    Text(timeRangeLabel)
-                        .font(.system(size: 9, weight: .semibold))
+                if let dropPlateLabels {
+                    let plateTitle = Text(TaskTitleSupport.displayTitle(task.title, fallback: TaskTitleSupport.defaultCompactDisplayTitle))
+                        .font(.system(size: TimelineDraggedTaskPreview.plateTitleFontSize, weight: .semibold))
+                        .foregroundStyle(titleInk)
+                        .lineLimit(1)
+                    let plateRange = Text(timeRangeLabel)
+                        .font(.system(size: TimelineDraggedTaskPreview.plateTimeFontSize, weight: .semibold))
+                        .monospacedDigit()
                         .foregroundStyle(secondaryInk)
                         .lineLimit(1)
-                }
-                if frame.height >= 38 {
-                    Text(TaskTitleSupport.displayTitle(task.title, fallback: TaskTitleSupport.defaultCompactDisplayTitle))
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(titleInk)
-                        .lineLimit(2)
-                    let label = TimeFormatters.durationLabel(actual: task.actualMinutes, estimated: durationMinutes)
-                    if label != "-/-" || dueLabel != nil {
-                        HStack(spacing: 5) {
-                            if label != "-/-" {
-                                // The block is hard-clipped to a fixed frame, so a wrapped label would
-                                // lose its second line and silently report a shorter duration.
-                                Text(label)
-                                    .font(.system(size: 10))
-                                    .foregroundStyle(secondaryInk)
-                                    .lineLimit(1)
-                            }
+                        .fixedSize(horizontal: true, vertical: false)
+                    switch dropPlateLabels {
+                    case .stacked:
+                        VStack(alignment: .leading, spacing: TimelineDraggedTaskPreview.plateRowSpacing) {
+                            plateTitle
+                            plateRange
+                        }
+                        timelineBlockDetailsRow(
+                            durationLabel: TimeFormatters.durationLabel(actual: task.actualMinutes, estimated: durationMinutes),
+                            dueLabel: dueLabel,
+                            secondaryInk: secondaryInk,
+                            dueInk: dueInk
+                        )
+                    case .inline:
+                        // The range keeps its width and the title gives way, because a truncated
+                        // name still names the task and a truncated clock reading names nothing.
+                        HStack(alignment: .firstTextBaseline, spacing: 6) {
+                            plateTitle
+                                .layoutPriority(0)
+                            plateRange
+                                .layoutPriority(1)
+                        }
+                    }
+                } else {
+                    if frame.height >= 58 {
+                        Text(timeRangeLabel)
+                            .font(.system(size: 9, weight: .semibold))
+                            .foregroundStyle(secondaryInk)
+                            .lineLimit(1)
+                    }
+                    if frame.height >= 38 {
+                        Text(TaskTitleSupport.displayTitle(task.title, fallback: TaskTitleSupport.defaultCompactDisplayTitle))
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(titleInk)
+                            .lineLimit(2)
+                        timelineBlockDetailsRow(
+                            durationLabel: TimeFormatters.durationLabel(actual: task.actualMinutes, estimated: durationMinutes),
+                            dueLabel: dueLabel,
+                            secondaryInk: secondaryInk,
+                            dueInk: dueInk
+                        )
+                    } else {
+                        // The shortest block that still draws text gets one clipped line for title,
+                        // duration, and deadline. A due date is a commitment and an estimate is not, so
+                        // the duration label is what yields when there is a deadline to print, and the
+                        // deadline outranks the title for width so the title truncates first.
+                        let label = TimeFormatters.durationLabel(actual: task.actualMinutes, estimated: durationMinutes)
+                        HStack(spacing: 4) {
+                            Text(TaskTitleSupport.displayTitle(task.title, fallback: TaskTitleSupport.defaultCompactDisplayTitle))
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundStyle(titleInk)
+                                .lineLimit(1)
+                            Spacer(minLength: 0)
                             if let dueLabel {
                                 Text(dueLabel)
                                     .font(.system(size: 9, weight: .semibold))
                                     .foregroundStyle(dueInk)
                                     .lineLimit(1)
                                     .layoutPriority(1)
+                            } else if label != "-/-" {
+                                Text(label)
+                                    .font(.system(size: 9))
+                                    .foregroundStyle(secondaryInk)
+                                    .lineLimit(1)
                             }
-                        }
-                    }
-                } else {
-                    // The shortest block that still draws text gets one clipped line for title,
-                    // duration, and deadline. A due date is a commitment and an estimate is not, so
-                    // the duration label is what yields when there is a deadline to print, and the
-                    // deadline outranks the title for width so the title truncates first.
-                    let label = TimeFormatters.durationLabel(actual: task.actualMinutes, estimated: durationMinutes)
-                    HStack(spacing: 4) {
-                        Text(TaskTitleSupport.displayTitle(task.title, fallback: TaskTitleSupport.defaultCompactDisplayTitle))
-                            .font(.system(size: 11, weight: .semibold))
-                            .foregroundStyle(titleInk)
-                            .lineLimit(1)
-                        Spacer(minLength: 0)
-                        if let dueLabel {
-                            Text(dueLabel)
-                                .font(.system(size: 9, weight: .semibold))
-                                .foregroundStyle(dueInk)
-                                .lineLimit(1)
-                                .layoutPriority(1)
-                        } else if label != "-/-" {
-                            Text(label)
-                                .font(.system(size: 9))
-                                .foregroundStyle(secondaryInk)
-                                .lineLimit(1)
                         }
                     }
                 }
@@ -332,5 +383,35 @@ func timelineBlockBody(
         x: 0,
         y: TimelineHoverVisuals.shadowY(isActive: showHover || showSelection)
     )
+}
+
+/// The live block's duration and deadline row, which the dragged plate's stacked arm draws under
+/// its title and range as well ([[T-8456]]).
+@ViewBuilder
+private func timelineBlockDetailsRow(
+    durationLabel label: String,
+    dueLabel: String?,
+    secondaryInk: Color,
+    dueInk: Color
+) -> some View {
+    if label != "-/-" || dueLabel != nil {
+        HStack(spacing: 5) {
+            if label != "-/-" {
+                // The block is hard-clipped to a fixed frame, so a wrapped label would
+                // lose its second line and silently report a shorter duration.
+                Text(label)
+                    .font(.system(size: 10))
+                    .foregroundStyle(secondaryInk)
+                    .lineLimit(1)
+            }
+            if let dueLabel {
+                Text(dueLabel)
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundStyle(dueInk)
+                    .lineLimit(1)
+                    .layoutPriority(1)
+            }
+        }
+    }
 }
 #endif

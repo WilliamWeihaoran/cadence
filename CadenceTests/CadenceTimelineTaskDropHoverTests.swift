@@ -453,5 +453,112 @@ struct CadenceTimelineTaskDropHoverTests {
         #expect(CadenceSourceScan.matchCount(#"\.padding\(\.vertical, 4\)"#, in: layer) == 1)
         #expect(CadenceSourceScan.matchCount(#"VStack\(alignment: \.leading, spacing: 2\)"#, in: layer) == 1)
     }
+
+    // MARK: - [[T-8456]]: the Mac's dragged plate says what the iOS plate says
+
+    /// **The defect.** `TimelineDraggedTaskPreview` drew the live block's body, whose height gates
+    /// hide the clock range below 58 pt, so a 15-minute task dragged down the Mac canvas -- a plate
+    /// floored at `minHeight` at every zoom -- stated its title and its duration capsule and never
+    /// the range the drop would write. It now asks `CadenceTimelineTaskDropHover.labelLayout`, the
+    /// decision the iOS plate asks ([[T-8455]]), so both platforms say the same thing at a height.
+    ///
+    /// Measured with the canvas's own `TimelineMetrics` and frame arithmetic at every zoom level,
+    /// for both block styles, as a RELATION against the rows' own cost.
+    @Test func atFifteenMinutesTheMacPlatePutsItsTitleAndItsTimeOnOneRow() {
+        var sawInline = 0
+        var sawStacked = 0
+        for style in [TimelineBlockStyle.schedule, TimelineBlockStyle.calendar] {
+            let stacked = CadenceTimelineTaskDropHover.stackedLabelHeight(
+                verticalPadding: style.verticalPadding,
+                rowSpacing: TimelineDraggedTaskPreview.plateRowSpacing,
+                titleFontSize: TimelineDraggedTaskPreview.plateTitleFontSize,
+                timeFontSize: TimelineDraggedTaskPreview.plateTimeFontSize
+            )
+            for viewport: CGFloat in [600, 900] {
+                for level in TimelineZoom.levels {
+                    let metrics = TimelineMetrics(
+                        startHour: 0,
+                        endHour: 24,
+                        hourHeight: TimelineZoom.hourHeight(viewportHeight: viewport, level: level)
+                    )
+                    func frameHeight(_ minutes: Int) -> CGFloat {
+                        computeTimelineBlockFrame(
+                            startMinute: 9 * 60, durationMinutes: minutes, column: 0, totalColumns: 1,
+                            totalWidth: 600, metrics: metrics, style: style
+                        ).height
+                    }
+                    func layout(_ minutes: Int) -> CadenceTimelineTaskDropHover.LabelLayout {
+                        TimelineDraggedTaskPreview.labelLayout(frameHeight: frameHeight(minutes), style: style)
+                    }
+                    let label = "viewport \(viewport), zoom \(level), hour \(metrics.hourHeight)"
+                    if frameHeight(15) < stacked {
+                        // The ticket's height: under the old 58 pt gate, and under two rows.
+                        #expect(frameHeight(15) < 58, "non-vacuity: \(label)")
+                        #expect(layout(15) == .inline, "a 15-minute plate dropped a row at \(label)")
+                        #expect(
+                            frameHeight(15) >= style.verticalPadding * 2
+                                + CadenceCalendarOverlapLayout.lineHeight(forSystemFontSize: TimelineDraggedTaskPreview.plateTitleFontSize),
+                            "the inline row does not fit a 15-minute plate either at \(label)"
+                        )
+                    }
+                    var lastStacked = false
+                    for minutes in stride(from: CadenceScheduleSupport.pointerTimeGridMinutes, through: 8 * 60, by: CadenceScheduleSupport.pointerTimeGridMinutes) {
+                        let height = frameHeight(minutes)
+                        let chosen = layout(minutes)
+                        #expect(chosen == (height >= stacked ? .stacked : .inline),
+                                "a \(minutes)-minute plate chose an arrangement its height does not justify at \(label)")
+                        if chosen == .stacked { sawStacked += 1; lastStacked = true } else {
+                            sawInline += 1
+                            #expect(!lastStacked, "a \(minutes)-minute plate went back to one row at \(label)")
+                        }
+                    }
+                }
+            }
+            // The ticket's own reading: at the deepest-out zoom on a short window a 15-minute
+            // plate is the 24 pt floor, which cannot stack.
+            let floor = TimelineMetrics(startHour: 0, endHour: 24, hourHeight: TimelineZoom.hourHeight(viewportHeight: 600, level: 1))
+            let fifteen = computeTimelineBlockFrame(
+                startMinute: 9 * 60, durationMinutes: 15, column: 0, totalColumns: 1,
+                totalWidth: 600, metrics: floor, style: style
+            )
+            #expect(fifteen.height < stacked, "non-vacuity: a 15-minute plate now has room for two rows")
+            #expect(TimelineDraggedTaskPreview.labelLayout(frameHeight: fifteen.height, style: style) == .inline)
+        }
+        #expect(sawInline > 0 && sawStacked > 0, "non-vacuity: \(sawInline) inline, \(sawStacked) stacked")
+    }
+
+    /// The preview hands the body the Shared decision, and the body's plate arm draws the title and
+    /// the clock range in BOTH arrangements, with no height gate of its own.
+    @Test func theMacPlateDrawsItsTitleAndRangeThroughTheSharedDecision() throws {
+        let mac = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/macOS/Views/TimelineTaskBlockSupportViews.swift")
+        )
+        let preview = try #require(CadenceSourceScan.declarationBody("struct TimelineDraggedTaskPreview: View", in: mac))
+        #expect(CadenceSourceScan.matchCount(#"CadenceTimelineTaskDropHover\.labelLayout\("#, in: preview) == 1)
+        #expect(CadenceSourceScan.matchCount(#"dropPlateLabels: Self\.labelLayout\(frameHeight: frame\.height, style: style\)"#, in: preview) == 1,
+                "the preview no longer hands its body the Shared arrangement")
+        #expect(CadenceSourceScan.matchCount(#"verticalPadding: style\.verticalPadding,"#, in: preview) == 1)
+
+        let body = try #require(CadenceSourceScan.functionBody(named: "timelineBlockBody", in: mac))
+        let start = try #require(body.range(of: "if let dropPlateLabels {"), "the body has no plate arm")
+        let end = try #require(body.range(of: "} else {", range: start.upperBound..<body.endIndex))
+        let arm = String(body[start.lowerBound..<end.lowerBound])
+        #expect(arm.count > 400, "non-vacuity: the plate arm read as \(arm.count) characters")
+        #expect(CadenceSourceScan.matchCount(#"let plateRange = Text\(timeRangeLabel\)"#, in: arm) == 1,
+                "the plate's time label no longer states the range the drop will write")
+        #expect(CadenceSourceScan.matchCount(#"case \.stacked:"#, in: arm) == 1)
+        #expect(CadenceSourceScan.matchCount(#"case \.inline:"#, in: arm) == 1)
+        // Drawn in both arms. Gated on height here instead, these would be 1.
+        #expect(CadenceSourceScan.matchCount(#"\bplateRange\b"#, in: arm) == 3,
+                "the plate's range is not drawn in both arrangements")
+        #expect(CadenceSourceScan.matchCount(#"\bplateTitle\b"#, in: arm) == 3,
+                "the plate's title is not drawn in both arrangements")
+        #expect(CadenceSourceScan.matchCount(#"frame\.height"#, in: arm) == 0,
+                "the plate arm gates a label on height instead of on the Shared decision")
+        // The rows drawn are the rows the decision costs.
+        #expect(CadenceSourceScan.matchCount(#"TimelineDraggedTaskPreview\.plateTitleFontSize"#, in: arm) == 1)
+        #expect(CadenceSourceScan.matchCount(#"TimelineDraggedTaskPreview\.plateTimeFontSize"#, in: arm) == 1)
+        #expect(CadenceSourceScan.matchCount(#"spacing: TimelineDraggedTaskPreview\.plateRowSpacing"#, in: arm) == 1)
+    }
 }
 #endif
