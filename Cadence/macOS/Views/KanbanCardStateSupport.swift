@@ -17,6 +17,26 @@ enum KanbanCardStateSupport {
         setPresented(true)
     }
 
+    /// What the card's start-time roller writes when it closes ([[T-8185]]).
+    ///
+    /// **Once, at the close, and only if the minute moved.** `CadenceTimeRoller` reports its
+    /// centred row continuously while a column scrolls, and bound straight to
+    /// `task.scheduledStartMin` that would be one store write — and one invalidation of every view
+    /// observing the task — per row a fling crosses, the defect [[T-1431]] fixed on the estimate
+    /// roller. The inspector's roller writes to a draft for the same reason; the card's popover
+    /// holds its own and lands it here. An unchanged minute writes nothing, so merely opening and
+    /// closing the picker is not an edit.
+    @discardableResult
+    static func commitStartMinute(
+        _ minutes: Int,
+        for task: AppTask,
+        in context: ModelContext,
+        reconciler: CadenceWindDownReconciler? = nil
+    ) -> Bool {
+        guard minutes != task.scheduledStartMin else { return false }
+        return CadenceTaskDateEditing.setScheduledTime(minutes, for: task, in: context, reconciler: reconciler)
+    }
+
     static func syncInteractiveHoverState(
         task: AppTask,
         isPointerOverCard: Bool,

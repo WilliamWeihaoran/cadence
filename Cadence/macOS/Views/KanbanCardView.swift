@@ -37,6 +37,7 @@ struct KanbanCard: View {
     @State private var doDatePickerDate: Date = Date()
     @State private var doDateViewMonth: Date = Date()
     @State private var showDurationPicker = false
+    @State private var showStartTimePicker = false
     @State private var showContainerPicker = false
     @State private var showTagPicker = false
     @State private var isHovered = false
@@ -200,14 +201,27 @@ struct KanbanCard: View {
     ///
     /// **Which tokens are pickers is what the pills could edit, not a new inventory.** The do, due
     /// and list chips and the estimate badge were `Button`s opening popovers, and the tag strip
-    /// opened the tag editor; all five keep working, now as hover-underlined text. The slot is the
-    /// one token that was never editable from a card — it has no picker to open, and inventing one
-    /// is a different ticket — so it draws as a plain label.
+    /// opened the tag editor; all five keep working, now as hover-underlined text. The slot was the
+    /// one token a card could not edit, and [[T-8185]] gave it the inspector's own start-time
+    /// roller rather than a control of its own, so every token in the run is now a hit target.
     @ViewBuilder
     private func tokenControl(_ token: CadenceLedgerToken) -> some View {
         switch token.kind {
         case .time:
-            CadenceLedgerTokenLabel(token: token)
+            KanbanLedgerTokenButton(
+                token: token,
+                isActive: showStartTimePicker,
+                accessibilityLabel: CadenceStartTimeFieldRow.label,
+                help: "Set start time",
+                onHoverChanged: setAttributeFocused,
+                action: openStartTimePicker
+            )
+            // Anchored on the token, as do, due and list are: a fourth chained `.popover` on the
+            // card's own box is a configuration nobody has measured presenting (see the note on
+            // the tag picker above), and a token anchor is one this card already proves works.
+            .popover(isPresented: $showStartTimePicker, arrowEdge: .trailing) {
+                KanbanStartTimePickerPopover(task: task, isPresented: $showStartTimePicker)
+            }
         case .duration:
             KanbanLedgerTokenButton(
                 token: token,
@@ -455,6 +469,12 @@ struct KanbanCard: View {
         syncInteractiveHoverState()
     }
 
+    private func openStartTimePicker() {
+        showStartTimePicker = true
+        setAttributeFocused(true)
+        syncInteractiveHoverState()
+    }
+
     private func openDurationPicker() {
         showDurationPicker = true
         setAttributeFocused(true)
@@ -580,7 +600,8 @@ struct KanbanCard: View {
     }
 
     private var isPresentingInlinePopover: Bool {
-        showDueDatePicker || showDoDatePicker || showDurationPicker || showContainerPicker || showTagPicker
+        showDueDatePicker || showDoDatePicker || showStartTimePicker || showDurationPicker
+            || showContainerPicker || showTagPicker
     }
 
     /// Merely hovering a chip no longer cancels the card's own hover — the two coexist, so the

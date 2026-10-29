@@ -1,6 +1,7 @@
 // macOS only: the Kanban board, list header and Completed tab are macOS app types.
 #if os(macOS)
 import Foundation
+import SwiftData
 import Testing
 @testable import Cadence
 
@@ -73,6 +74,56 @@ struct CadenceMacTaskBoardAccessibilityTests {
         let ring = try #require(CadenceSourceScan.declarationBody("private var completionRing: some View", in: card))
         #expect(ring.components(separatedBy: "accessibilityLabel: completionAccessibilityLabel").count - 1 == 2,
                 "both arms of the card's completion ring must pass the label")
+    }
+
+    // MARK: T-8185
+
+    /// The slot token was the one token in the Ledger run that was not a picker. It is now a
+    /// `KanbanLedgerTokenButton` opening the inspector's own `CadenceTimeRoller`, held in a draft
+    /// so a fling does not write once per row ([[T-1431]]'s shape).
+    @Test func theSlotTokenIsAPickerOverTheInspectorsTimeRoller() throws {
+        let card = try source("Cadence/macOS/Views/KanbanCardView.swift")
+        let control = try #require(CadenceSourceScan.declarationBody("private func tokenControl(", in: card))
+        let timeStart = try #require(control.range(of: "case .time:"), "non-vacuity: the slot arm is still here")
+        let timeEnd = try #require(control.range(of: "case .duration:", range: timeStart.upperBound..<control.endIndex))
+        let timeArm = String(control[timeStart.upperBound..<timeEnd.lowerBound])
+        #expect(timeArm.contains("KanbanLedgerTokenButton("), "the slot token is a plain label again")
+        #expect(timeArm.contains("action: openStartTimePicker"))
+        #expect(timeArm.contains("KanbanStartTimePickerPopover(task: task, isPresented: $showStartTimePicker)"),
+                "the slot token no longer opens the start-time picker")
+        #expect(!control.contains("CadenceLedgerTokenLabel("), "a token in the run is drawn as a dead label again")
+        let presenting = try #require(CadenceSourceScan.declarationBody("private var isPresentingInlinePopover: Bool", in: card))
+        #expect(presenting.contains("showStartTimePicker"),
+                "an open start-time picker no longer counts as an inline popover, so a click through it opens the inspector")
+
+        let support = try source("Cadence/macOS/Views/KanbanCardSupportViews.swift")
+        let popover = try #require(CadenceSourceScan.declarationBody("struct KanbanStartTimePickerPopover: View", in: support))
+        #expect(popover.contains("CadenceTimeRoller(minutes: $draftMinutes)"),
+                "the card's picker is not the inspector's roller over its own draft")
+        #expect(!popover.contains("$task."), "the roller is bound straight to the task, one write per row crossed")
+        #expect(popover.contains("KanbanCardStateSupport.commitStartMinute(draftMinutes, for: task, in: modelContext)"))
+        #expect(popover.contains("CadenceTaskDateEditing.clearScheduledTime(task, in: modelContext)"))
+    }
+
+    @Test func theCardsStartTimeLandsOnceAndOnlyWhenItMoved() throws {
+        let context = ModelContext(try CadenceModelContainerFactory.makeInMemoryContainer())
+        let task = AppTask(title: "Slot")
+        task.scheduledDate = "2026-03-01"
+        task.scheduledStartMin = 9 * 60
+        context.insert(task)
+        try context.save()
+
+        var reconciles = 0
+        let reconciler = CadenceWindDownReconciler { _ in reconciles += 1 }
+
+        #expect(!KanbanCardStateSupport.commitStartMinute(9 * 60, for: task, in: context, reconciler: reconciler),
+                "opening and closing the picker on the same minute wrote anyway")
+        #expect(reconciles == 0)
+        #expect(task.scheduledStartMin == 9 * 60)
+
+        #expect(KanbanCardStateSupport.commitStartMinute(10 * 60 + 5, for: task, in: context, reconciler: reconciler))
+        #expect(task.scheduledStartMin == 10 * 60 + 5, "the picked minute did not land")
+        #expect(reconciles == 1, "the start-time write skipped the wind-down reconcile (T-362)")
     }
 
     // MARK: T-7084

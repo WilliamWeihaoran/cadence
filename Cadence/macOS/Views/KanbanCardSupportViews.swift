@@ -1,5 +1,6 @@
 #if os(macOS)
 import SwiftUI
+import SwiftData
 
 /// One token of a Ledger card's metadata run, as a macOS picker.
 ///
@@ -42,6 +43,57 @@ struct KanbanLedgerTokenButton: View {
         .onHover { hovering in
             isHovered = hovering
             onHoverChanged(hovering)
+        }
+    }
+}
+
+/// The card's start-time picker ([[T-8185]]): the inspector's `CadenceTimeRoller`, in the same
+/// padded panel `CadenceTimeRollerFieldRow` presents it in, with the inspector's "Clear time" under
+/// it. Not a new control — the slot token was the one token on the card with nothing to open, and
+/// this is what the task's own editor already uses for the same field.
+///
+/// The roller edits `draftMinutes`, not the task; the minute lands once, in `onDisappear`, through
+/// `KanbanCardStateSupport.commitStartMinute`. See that function for why a live binding is wrong.
+struct KanbanStartTimePickerPopover: View {
+    let task: AppTask
+    @Binding var isPresented: Bool
+
+    @Environment(\.modelContext) private var modelContext
+    @State private var draftMinutes: Int
+    /// Set by Clear, so the close that follows does not write the draft back over the cleared time.
+    @State private var didClear = false
+
+    init(task: AppTask, isPresented: Binding<Bool>) {
+        self.task = task
+        self._isPresented = isPresented
+        self._draftMinutes = State(initialValue: max(0, task.scheduledStartMin))
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            CadenceTimeRoller(minutes: $draftMinutes) {
+                isPresented = false
+            }
+
+            Button {
+                didClear = true
+                CadenceTaskDateEditing.clearScheduledTime(task, in: modelContext)
+                isPresented = false
+            } label: {
+                Text("Clear time")
+                    .cadenceFont(.metadata, weight: .semibold)
+                    .foregroundStyle(Theme.red)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .frame(minHeight: 28)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.cadencePlain)
+        }
+        .padding(CadenceRollerMetrics.panelPadding)
+        .background(Theme.surfaceElevated)
+        .onDisappear {
+            guard !didClear else { return }
+            KanbanCardStateSupport.commitStartMinute(draftMinutes, for: task, in: modelContext)
         }
     }
 }
