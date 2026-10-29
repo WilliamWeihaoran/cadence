@@ -1025,24 +1025,27 @@ exit 0' > "$root/panelmovingpgrep"
       print -r -- 1                        > "$CLAIMS/$FAKE_UDID.claim/pid"
       print -r -- $(( $(date +%s) - 600 )) > "$CLAIMS/$FAKE_UDID.claim/since"
     }
+    # The second fake is held FRESH before each half, as in trial_keepsobserver below (T-8311):
+    # left free, the blind and busy halves each simply took it instead of waiting, and the idle
+    # half's reclaim landed on FAKE_UDID only because the blind half's claim still held the second.
     trial_keepsclaim() {
       old_answer=$(/bin/zsh -f "$root/blindpgrep" -f "simctl .*$FAKE_UDID" 2>/dev/null | wc -l | tr -d ' ')
 
-      stale_stranger_claim
+      stale_stranger_claim; fresh_second_claim
       export CADENCE_SIM_PGREP_CMD="/bin/zsh -f $root/blindpgrep"
       blind_out=$("$SELF" claim cannottell 3 2>&1)
       unset CADENCE_SIM_PGREP_CMD
       blind_kept=0; [[ "$(claim_field "$FAKE_UDID" id)" == stranger ]] && blind_kept=1
       blind_said=0; [[ "$blind_out" == *"cannot read the process list"* ]] && blind_said=1
 
-      stale_stranger_claim
+      stale_stranger_claim; fresh_second_claim
       export CADENCE_SIM_PGREP_CMD="/bin/zsh -f $root/idlepgrep"
       "$SELF" claim reclaimer 12 >/dev/null 2>&1
       unset CADENCE_SIM_PGREP_CMD
       idle_took=0; [[ "$(claim_field "$FAKE_UDID" id)" == reclaimer ]] && idle_took=1
       "$SELF" release reclaimer >/dev/null 2>&1
 
-      stale_stranger_claim
+      stale_stranger_claim; fresh_second_claim
       export CADENCE_SIM_PGREP_CMD="/bin/zsh -f $root/busypgrep"
       busy_out=$("$SELF" claim busyprobe 3 2>&1)
       unset CADENCE_SIM_PGREP_CMD
