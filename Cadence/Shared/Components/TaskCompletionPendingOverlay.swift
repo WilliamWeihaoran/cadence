@@ -27,7 +27,13 @@ struct TaskCompletionPendingOverlay: View {
         GeometryReader { proxy in
             let width = proxy.size.width
             let height = proxy.size.height
-            let progressWidth = max(12, width * CGFloat(clampedProgress))
+            // The capsule runs inside the 6pt inset at each end, so progress is measured against
+            // that inset TRACK rather than against the block ([[T-8457]]): `width * progress` plus
+            // the 12pt of padding below is wider than the block itself at a full fill, and a ZStack
+            // child wider than the proposal widens the ZStack, which the centring `.frame` below
+            // then shifts sideways — taking the wash and the border with it.
+            let trackWidth = max(0, width - 12)
+            let progressWidth = min(trackWidth, max(12, trackWidth * CGFloat(clampedProgress)))
             let glowWidth = min(86, max(34, width * 0.18))
             ZStack(alignment: .leading) {
                 RoundedRectangle(cornerRadius: cornerRadius)
@@ -37,6 +43,18 @@ struct TaskCompletionPendingOverlay: View {
                     .fill(tint.opacity(0.18))
                     .frame(width: glowWidth, height: height * 1.35)
                     .blur(radius: 16)
+                    // The oversized blurred capsule above is what the EYE sees; this frame is what
+                    // the LAYOUT sees, and the two must be separated ([[T-8457]]). Without it the
+                    // glow's `height * 1.35` is the tallest child, so the ZStack resolves to 1.35h
+                    // — and a ZStack re-proposes its own resolved height to a flexible child, so
+                    // the `Spacer`-driven VStack below became 1.35h too and pinned the progress
+                    // capsule 0.175h BELOW the block's foot, where the `.clipShape` removed it at
+                    // every height, on both platforms. Measured, not argued: an `ImageRenderer`
+                    // probe reported the VStack at 75.6pt inside a 56pt block. Reporting `height`
+                    // here leaves the glow drawn exactly where it was (the blurred content is
+                    // centred in this frame, so it still overhangs by 0.175h top and bottom and is
+                    // still clipped below) while leaving the ZStack the size it was proposed.
+                    .frame(width: glowWidth, height: height)
                     .offset(x: (width + glowWidth) * CGFloat(clampedProgress) - glowWidth)
 
                 VStack(spacing: 0) {
@@ -52,13 +70,13 @@ struct TaskCompletionPendingOverlay: View {
                     .strokeBorder(tint.opacity(0.12), lineWidth: 1)
             }
             // The sweeping glow capsule is deliberately TALLER than the host view
-            // (height * 1.35) and blurred, so the ZStack's own layout size grows past
-            // the geometry proposal. `.clipShape` clips to the view's own bounds, so
-            // clipping the raw ZStack clips to that oversized box — and since
-            // GeometryReader never clips its content, the green sweep painted outside
-            // the host block. Pin back to the proposed size FIRST, then clip, so the
-            // fill/border sit exactly on the block's rounded rect and nothing can
-            // escape it in any direction.
+            // (height * 1.35) and blurred, so it PAINTS outside the proposed box even
+            // now that it no longer MEASURES outside it. `.clipShape` clips to the
+            // view's own bounds, so clipping a ZStack that resolved larger than the
+            // proposal clips to that larger box — and since GeometryReader never clips
+            // its content, the green sweep painted outside the host block. Pin back to
+            // the proposed size FIRST, then clip, so the fill/border sit exactly on the
+            // block's rounded rect and nothing can escape it in any direction.
             .frame(width: width, height: height)
             .clipShape(RoundedRectangle(cornerRadius: cornerRadius))
         }

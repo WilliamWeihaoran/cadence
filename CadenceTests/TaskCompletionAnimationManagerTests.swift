@@ -873,5 +873,169 @@ struct TaskCompletionAnimationManagerTests {
         #expect(controls.contains("glyph: .column("), "the column header picks its own glyph again")
         #expect(controls.contains("isPendingCompletion: isPendingCompletion"), "a still completing column's ring looks idle")
     }
+    // MARK: - T-8457: the progress capsule draws at the foot of the block, inside it
+
+    /// The overlay **rasterised**, because this defect was invisible to every source scan it
+    /// already had: the progress capsule was *written* exactly as intended and never *drawn*.
+    ///
+    /// `TaskCompletionPendingOverlay`'s travelling glow is deliberately `height * 1.35`, which made
+    /// it the ZStack's tallest child. A ZStack re-proposes its own *resolved* height to a flexible
+    /// child, so the `Spacer`-driven VStack holding the progress capsule resolved to 1.35h as well
+    /// and pinned the capsule `0.175 * height` below the block's foot, where the `.clipShape`
+    /// removed it. The geometry is proportional, so it failed at every height and on both
+    /// platforms: the iPad measurement in [[T-8457]] and this macOS raster are one defect.
+    ///
+    /// Everything below is a POSITION or a RELATION, never a colour figure — the accent palette is
+    /// user-selectable and `Theme.green` is three different greens across the three palettes.
+    @Test func theSweepDrawsItsProgressCapsuleAtTheFootOfTheBlockAndNothingOutsideIt() throws {
+        for blockHeight in [28, 44, 56, 120] as [CGFloat] {
+            let raster = try Self.rasterisedSweep(blockWidth: 300, blockHeight: blockHeight, progress: 0.78)
+            let middleRow = (raster.top + raster.bottom) / 2
+
+            // Non-vacuity, both halves. A raster of an empty canvas would satisfy "nothing escaped"
+            // and every "brighter than the wash" relation below, so prove the backdrop really is
+            // black and that the overlay really did paint a wash on the block.
+            #expect(raster.peakGreen(onRow: raster.top - 10) == 0, "non-vacuity: the backdrop is not black, so nothing can be measured against it")
+            let wash = raster.peakGreen(onRow: middleRow)
+            #expect(wash > 0, "non-vacuity: at \(blockHeight)pt the overlay drew no wash at all, so this raster says nothing about the capsule")
+
+            // The capsule. `padding(.bottom, 4)` over a 2.5pt capsule can only put it in the
+            // block's bottom 8pt, and nothing else the overlay draws is anywhere near as opaque.
+            let peaks = (raster.top..<raster.bottom).map { raster.peakGreen(onRow: $0) }
+            let brightest = peaks.max() ?? 0
+            let brightestRow = raster.top + (peaks.firstIndex(of: brightest) ?? 0)
+            #expect(
+                brightestRow >= raster.bottom - 8,
+                "at \(blockHeight)pt the brightest green sits \(raster.bottom - brightestRow)pt above the block's foot, not in its bottom 8pt"
+            )
+            // 0.62 against a wash and a blurred glow that cannot exceed 0.075 + 0.18 together.
+            #expect(
+                brightest > wash * 2,
+                "at \(blockHeight)pt the foot reads \(brightest) against a \(wash) wash: the 0.62-opacity capsule is not drawing"
+            )
+
+            #expect(
+                raster.pixelsPaintedOutsideTheBlock() == 0,
+                "at \(blockHeight)pt the sweep painted \(raster.pixelsPaintedOutsideTheBlock()) px outside the block's rounded rect"
+            )
+        }
+    }
+
+    /// The capsule is a *progress* capsule: it grows with the fill, and at a full fill it stops at
+    /// the block's own edge rather than running past it. The second half is the horizontal twin of
+    /// the bug above — `width * progress` plus 12pt of padding is wider than the block, and a
+    /// ZStack child wider than the proposal drags the whole stack sideways under the centring
+    /// `.frame`.
+    @Test func theSweepsProgressCapsuleGrowsWithTheFillAndStopsInsideTheBlock() throws {
+        let quarter = try Self.footBand(progress: 0.25)
+        let most = try Self.footBand(progress: 0.6)
+        let full = try Self.footBand(progress: 1.0)
+
+        #expect(quarter.width > 0, "the capsule does not draw at a quarter fill")
+        #expect(quarter.width < most.width, "the capsule did not grow between a quarter fill and a two-thirds fill (\(quarter.width) -> \(most.width))")
+        #expect(most.width < full.width, "the capsule did not grow between a two-thirds fill and a full one (\(most.width) -> \(full.width))")
+
+        // Only the FAR end moves. The near end is anchored on the 6pt inset at every fill, so a
+        // near end that moves means the whole stack was dragged sideways — which is what a child
+        // wider than the proposal does under the centring `.frame`, and what a full fill measured
+        // against the block instead of the track makes it do. An "is it inside the block" test
+        // cannot see that: the overflow is clipped, and `blockRight - 1` is still inside.
+        #expect(quarter.left == most.left, "the capsule's near end moved between a quarter fill and a two-thirds fill (\(quarter.left) -> \(most.left))")
+        #expect(most.left == full.left, "the capsule's near end moved between a two-thirds fill and a full one (\(most.left) -> \(full.left))")
+        #expect(
+            full.left >= full.blockLeft + 4,
+            "at a full fill the capsule starts \(full.left - full.blockLeft)px from the block's left edge, not on the 6pt inset"
+        )
+        #expect(
+            full.right <= full.blockRight - 4,
+            "at a full fill the capsule ends \(full.blockRight - full.right)px from the block's right edge, not on the 6pt inset"
+        )
+        #expect(full.width < full.blockRight - full.blockLeft, "non-vacuity: a full fill is supposed to be inset, not block-wide")
+    }
+
+    // MARK: Rasterising helper (T-8457)
+
+    /// One rendered frame of the overlay over an opaque black canvas, plus where the block sits in
+    /// it. `ImageRenderer` hosts a view graph, so this is the only honest way a macOS unit test can
+    /// ask "did that layer draw, and where".
+    struct SweepRaster {
+        let pixels: [UInt8]
+        let width: Int
+        let height: Int
+        let left: Int
+        let right: Int
+        let top: Int
+        let bottom: Int
+
+        func green(_ x: Int, _ y: Int) -> Int { Int(pixels[(y * width + x) * 4 + 1]) }
+
+        /// The brightest green anywhere on `row`, between the block's own left and right edges.
+        func peakGreen(onRow row: Int) -> Int {
+            (left..<right).map { green($0, row) }.max() ?? 0
+        }
+
+        /// How many pixels the overlay painted outside the block's rect, in any direction.
+        func pixelsPaintedOutsideTheBlock() -> Int {
+            var escaped = 0
+            for y in 0..<height {
+                for x in 0..<width where y < top || y >= bottom || x < left || x >= right {
+                    if green(x, y) > 4 { escaped += 1 }
+                }
+            }
+            return escaped
+        }
+    }
+
+    @MainActor
+    static func rasterisedSweep(blockWidth: CGFloat, blockHeight: CGFloat, progress: Double) throws -> SweepRaster {
+        let canvasWidth = blockWidth + 100
+        let canvasHeight = blockHeight + 100
+        let content = ZStack {
+            Rectangle().fill(Color.black).frame(width: canvasWidth, height: canvasHeight)
+            TaskCompletionPendingOverlay(progress: progress, tint: Theme.green, cornerRadius: 8)
+                .frame(width: blockWidth, height: blockHeight)
+        }
+        .frame(width: canvasWidth, height: canvasHeight)
+
+        let renderer = ImageRenderer(content: content)
+        renderer.scale = 1
+        let image = try #require(renderer.cgImage, "the overlay did not rasterise")
+        let w = image.width
+        let h = image.height
+        let bytes = UnsafeMutablePointer<UInt8>.allocate(capacity: w * h * 4)
+        defer { bytes.deallocate() }
+        bytes.initialize(repeating: 0, count: w * h * 4)
+        let context = try #require(
+            CGContext(
+                data: bytes, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4,
+                space: CGColorSpaceCreateDeviceRGB(),
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            )
+        )
+        context.draw(image, in: CGRect(x: 0, y: 0, width: w, height: h))
+        return SweepRaster(
+            pixels: Array(UnsafeBufferPointer(start: bytes, count: w * h * 4)),
+            width: w,
+            height: h,
+            left: Int((CGFloat(w) - blockWidth) / 2),
+            right: Int((CGFloat(w) + blockWidth) / 2),
+            top: Int((CGFloat(h) - blockHeight) / 2),
+            bottom: Int((CGFloat(h) + blockHeight) / 2)
+        )
+    }
+
+    /// The run of capsule pixels on a row inside the block's bottom 8pt, with the threshold
+    /// calibrated from the raster itself — halfway between the wash's brightest green and the
+    /// foot's — so no colour figure is written down.
+    @MainActor
+    static func footBand(progress: Double) throws -> (width: Int, left: Int, right: Int, blockLeft: Int, blockRight: Int) {
+        let raster = try rasterisedSweep(blockWidth: 300, blockHeight: 56, progress: progress)
+        let wash = raster.peakGreen(onRow: (raster.top + raster.bottom) / 2)
+        let footRow = raster.bottom - 5
+        let greens = (0..<raster.width).map { raster.green($0, footRow) }
+        let cut = ((greens.max() ?? 0) + wash) / 2
+        let hits = (0..<raster.width).filter { greens[$0] > cut }
+        return (hits.count, hits.min() ?? -1, hits.max() ?? -1, raster.left, raster.right)
+    }
 }
 #endif
