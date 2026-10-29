@@ -121,6 +121,25 @@ enum CadenceTimelineBlockEdit {
         return min(lower, 0)...max(upper, 0)
     }
 
+    /// The overlap slot a moved block is drawn in while it is carried ([[T-8452]]).
+    ///
+    /// Over its own day (`dayDelta == 0`) it keeps the slot its day solved for it, so its neighbours
+    /// hold still under it. Over **any other day** it is a lone block (`.single`): the full slot of
+    /// that column, in front of whatever is there, with the target day's blocks not re-solved
+    /// around it. That is the Mac's rule, not a new one: `TimelineDropPreviewOverlay` draws the
+    /// dragged task at its own layout in the column that holds it and at column 0 of 1 in every
+    /// other column (`previewLayout?.column ?? 0`), and iOS's own drop plate is the same lone
+    /// block (`horizontalFrame(nil, kind: .task)`). Keeping the SOURCE day's split slot, which is
+    /// what the carry did before this, drew a narrow block at the source's offset over the target's
+    /// full-width ones. No hardware reason separates the two platforms here ([[T-8201]]).
+    static func carriedPlacement(
+        own: CadenceCalendarOverlapPlacement?,
+        dayDelta: Int
+    ) -> CadenceCalendarOverlapPlacement {
+        guard dayDelta == 0, let own else { return .single }
+        return own
+    }
+
     /// The day a block moved `dayDelta` columns from `date` lands on, or `nil` for a move that
     /// stayed on its own day — which writes no day at all, exactly as before [[T-8301]].
     static func movedDateKey(from date: Date, dayDelta: Int, calendar: Calendar = .current) -> String? {

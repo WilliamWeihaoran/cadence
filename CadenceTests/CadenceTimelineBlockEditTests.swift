@@ -360,6 +360,46 @@ struct CadenceTimelineBlockEditTests {
         #expect(CadenceSourceScan.matchCount(#"\|\| edit\.dayDelta != 0 else \{ return \}"#, in: column) == 1)
     }
 
+    // MARK: - [[T-8452]]: the slot a carried block is drawn in
+
+    /// Over its own day a moved block keeps the slot its day solved; over any other day it is a
+    /// lone block there, never the source day's split slot.
+    @Test func aBlockCarriedOntoAnotherDayIsALoneBlockThereAndKeepsItsSlotAtHome() {
+        let split = CadenceCalendarOverlapPlacement(column: 1, totalColumns: 2, cascadeDepth: 0)
+        let cascaded = CadenceCalendarOverlapPlacement(column: 0, totalColumns: 3, cascadeDepth: 1)
+        #expect(split != .single && cascaded != .single, "non-vacuity: the slots differ from a lone block")
+        for own in [split, cascaded] {
+            #expect(CadenceTimelineBlockEdit.carriedPlacement(own: own, dayDelta: 0) == own)
+            for dayDelta in [-3, -1, 1, 2] {
+                #expect(CadenceTimelineBlockEdit.carriedPlacement(own: own, dayDelta: dayDelta) == .single)
+            }
+        }
+        // A block the solver never saw is a lone block wherever it is.
+        #expect(CadenceTimelineBlockEdit.carriedPlacement(own: nil, dayDelta: 0) == .single)
+        #expect(CadenceTimelineBlockEdit.carriedPlacement(own: nil, dayDelta: 1) == .single)
+    }
+
+    /// The iOS column draws its blocks through that rule with the live carry, and the Mac's drag
+    /// preview still makes the same call — its own slot in its own column, column 0 of 1 in any
+    /// other — so the two platforms cannot drift apart unnoticed ([[T-8201]]).
+    @Test func theIOSColumnAndTheMacPreviewDrawACarriedBlockTheSameWay() throws {
+        let source = try CadenceSourceScan.sourceFile(timelineFile)
+        let column = try #require(CadenceSourceScan.declarationBody("private struct iOSCalendarTimelineDayColumn: View", in: source))
+        #expect(column.count > 1_000, "non-vacuity: the day column read as \(column.count) characters")
+        #expect(CadenceSourceScan.matchCount(
+            #"horizontalFrame\(CadenceTimelineBlockEdit\.carriedPlacement\(own: placements\[\.task\(task\.persistentModelID\)\], dayDelta: carriedDays\(for: task\)\), kind: \.task\)"#,
+            in: column
+        ) == 1)
+        // Its horizontal offset still moves it the whole columns it was carried, from that slot.
+        #expect(CadenceSourceScan.matchCount(#"slot\.x \+ CGFloat\(carriedDays\(for: task\)\) \* colWidth"#, in: column) == 1)
+
+        let mac = try CadenceSourceScan.sourceFile("Cadence/macOS/Views/TimelineDayCanvasOverlaySupport.swift")
+        let overlay = try #require(CadenceSourceScan.declarationBody("struct TimelineDropPreviewOverlay: View", in: mac))
+        #expect(CadenceSourceScan.matchCount(#"layouts\.first\(where: \{ \$0\.task\.id == previewTask\.id \}\)"#, in: overlay) == 1)
+        #expect(CadenceSourceScan.matchCount(#"column: previewLayout\?\.column \?\? 0"#, in: overlay) == 1)
+        #expect(CadenceSourceScan.matchCount(#"totalColumns: previewLayout\?\.totalColumns \?\? 1"#, in: overlay) == 1)
+    }
+
     // MARK: - The iOS surface's wiring, read from source
 
     private let timelineFile = "Cadence/iOS/iOSCalendarTimelineViews.swift"

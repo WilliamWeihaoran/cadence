@@ -1443,7 +1443,9 @@ private struct iOSCalendarTimelineDayColumn: View {
                 let range = drawnRange(for: task, stored: stored)
                 let drawn = CadenceScheduleSupport.timelineVisibleRange(start: range.start, end: range.end)
                 let key = BlockKey.task(task.persistentModelID)
-                let slot = horizontalFrame(placements[.task(task.persistentModelID)], kind: .task)
+                // Carried onto another day it is a lone block there, not its source day's slot
+                // ([[T-8452]]), the way the Mac's drag preview is.
+                let slot = horizontalFrame(CadenceTimelineBlockEdit.carriedPlacement(own: placements[.task(task.persistentModelID)], dayDelta: carriedDays(for: task)), kind: .task)
                 let height = blockHeight(start: drawn.start, end: drawn.end)
                 let isLifted = editingTaskID == task.persistentModelID
                     || editPreview?.taskID == task.persistentModelID

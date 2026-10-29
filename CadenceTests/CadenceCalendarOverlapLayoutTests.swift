@@ -1082,8 +1082,13 @@ struct CadenceCalendarOverlapLayoutTests {
                 CadenceSourceScan.matchCount(#"key: \.\#(kind)\("#, in: column) == 1,
                 "the day column does not hand its \(kind) blocks to the solver"
             )
+            // A task reads its solved slot through `carriedPlacement`, which hands it back
+            // unchanged unless a move has carried the block onto another day ([[T-8452]]).
+            let solvedFrame = kind == "task"
+                ? #"horizontalFrame\(CadenceTimelineBlockEdit\.carriedPlacement\(own: placements\[\.task\("#
+                : #"horizontalFrame\(placements\[\.event\("#
             #expect(
-                CadenceSourceScan.matchCount(#"horizontalFrame\(placements\[\.\#(kind)\("#, in: column) == 1,
+                CadenceSourceScan.matchCount(solvedFrame, in: column) == 1,
                 "the day column does not draw its \(kind) blocks at their solved frame"
             )
         }
