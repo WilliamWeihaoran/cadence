@@ -310,12 +310,14 @@ struct CadenceTagChipScaleTests {
             including: "Cadence/Shared/Components/CadenceTagChip.swift",
             read: read
         )
-        // **Nine, down from ten, and the two that left are named.** T-2058 took the tag chips off
-        // both task ROWS — `TasksPanelComponents` and `iOSTaskViews` — and put a single `tag` glyph
-        // beside the title instead, at the owner's request. The floor is not the claim this test
+        // **Seven, down from nine, and the files that left are named each time.** T-2058 took the
+        // tag chips off both task ROWS — `TasksPanelComponents` and `iOSTaskViews` — and put a
+        // single `tag` glyph beside the title instead, at the owner's request. [[T-8181]] took them
+        // off both board CARDS: a Ledger card states a tag as a `#deep-work` token in its one text
+        // run, so neither card draws chrome for it any more. The floor is not the claim this test
         // makes; it only rules out a walk that found one folder and called it the app, and the
         // claim itself (which surfaces opted into scaling) is asserted exactly, below.
-        #expect(drawSites.count >= 9,
+        #expect(drawSites.count >= 7,
                 "the chip is drawn by \(drawSites.count) files, so this is not the component T-1412 is about")
 
         let optedIn = try declaresScaled.sweep(

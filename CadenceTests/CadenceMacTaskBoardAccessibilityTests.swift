@@ -67,9 +67,12 @@ struct CadenceMacTaskBoardAccessibilityTests {
         let label = try #require(CadenceSourceScan.declarationBody("private var completionAccessibilityLabel: String", in: card))
         #expect(label.contains(".state.accessibilityActionLabel"),
                 "the card no longer reads the list row's shared action phrase")
-        let header = try #require(CadenceSourceScan.declarationBody("private var cardHeader: some View", in: card))
-        #expect(header.components(separatedBy: "completionAccessibilityLabel: completionAccessibilityLabel").count - 1 == 2,
-                "both arms of the card header must pass the label")
+        // [[T-8181]]: the circle moved out of the card header and into the Ledger card's state
+        // gutter, so the two arms — settling and not — live in `completionRing`. Both must still
+        // pass the label, which is the whole of what T-7083 asked for.
+        let ring = try #require(CadenceSourceScan.declarationBody("private var completionRing: some View", in: card))
+        #expect(ring.components(separatedBy: "accessibilityLabel: completionAccessibilityLabel").count - 1 == 2,
+                "both arms of the card's completion ring must pass the label")
     }
 
     // MARK: T-7084

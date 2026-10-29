@@ -158,10 +158,16 @@ struct KanbanColumnScroll<Content: View>: View {
         }
     }
 
+    /// **The add affordance sits directly under the column header** ([[T-8181]]), above the cards
+    /// rather than below them. It used to close the stack, which put "add a task here" at the
+    /// bottom of however many cards the column happened to hold — reachable only by scrolling past
+    /// all of them, and in a different place in every column. The iOS Calendar Board column already
+    /// drew it here; this is the Mac catching up, not a second arrangement.
+    ///
+    /// The add row and the composer that replaces it share one slot under either realization
+    /// policy, as before.
     @ViewBuilder
     private var columnContents: some View {
-        content()
-        // The add row and composer share the same final slot under either realization policy.
         if case .compose(let surface) = add, isComposing.wrappedValue {
             InlineTaskComposer(surface: surface) {
                 isComposing.wrappedValue = false
@@ -176,6 +182,7 @@ struct KanbanColumnScroll<Content: View>: View {
                 }
             }
         }
+        content()
     }
 }
 

@@ -44,10 +44,13 @@ import XCTest
 /// where it asked to go. The anchor was the wrong shape, so `KanbanCard` presents that picker from
 /// its own bounds now and the panel moved to (846, 209, 266, 111), clear of everything.
 ///
-/// **The list chip is clear, and structurally rather than by luck.** `KanbanCard.metadataRows`
-/// puts the list chip **alone on its own row**, so it spans the card's content column and both of
-/// its ends are the column's ends. That is the same property the fix gives the tag picker; if the
-/// chip is ever packed beside another, this suite goes red.
+/// **The list target is clear, and structurally rather than by luck.** The card used to put the
+/// list chip **alone on its own row**, so it spanned the content column and both of its ends were
+/// the column's ends. [[T-8181]] replaced the chip rows with one text run, in which the list is a
+/// token packed beside its neighbours, and presents its picker from the token — so the property
+/// this paragraph relied on is gone and the measurement has to be re-taken rather than assumed.
+/// That re-take is [[T-8186]]; nothing in this suite's assertions was changed on the strength of a
+/// reading nobody has made.
 ///
 /// **Today's row covers 10pt, and no anchor can undo it.** The row spans its column and the panel
 /// still laps its due chip, because a flush placement would have ended at x = 1488 on a 1512pt

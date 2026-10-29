@@ -188,10 +188,19 @@ struct iOSCalendarBoardEventCard: View {
 /// sizes a column to one screen with the next one peeking.
 let iOSBoardColumnWidth: CGFloat = 300
 
-/// The **one** task card used by every board surface: the list/section kanban board and the
-/// Calendar Board's day columns. Density is fixed and identical on both — completion circle, title,
-/// tags, a two-column grid of time / date / list chips, then the unfinished subtasks — so the boards
-/// cannot drift apart again, which is the rule `KanbanCard` already enforces on macOS.
+/// The task card used by every iOS board surface: the list/section kanban board and the Calendar
+/// Board's day columns.
+///
+/// **Its anatomy is `CadenceLedgerCard`'s, not this file's** ([[T-8181]]). The card is a fixed state
+/// gutter washed in the list colour — completion ring, priority mark, recurrence glyph stacked so
+/// the three states scan vertically — a title, and one dim 11pt run of the form
+/// `9:00a · 45m · Tue · #deep-work`. There is no pill chrome, and a completed card collapses to a
+/// struck line. The Mac board draws the same view; what this file supplies is the four things a
+/// touch device forces, each argued at the call site: the ring's 44pt target, inert tokens, the
+/// iOS subtask row, and no settling overlay.
+///
+/// This replaced a tinted 2×2 `LazyVGrid` of chips. That grid and the Mac's grey 50/50 chip split
+/// were the same facts in two costumes, which is why the two boards looked unrelated.
 ///
 /// **Tags and subtasks arrived here under T-173**, when macOS's card had both and this one neither.
 /// Neither was added because macOS had it: tags are identity the user chose and a card that omits
@@ -218,33 +227,24 @@ struct iOSBoardTaskCard: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.cadenceTypographyScaling) private var scaling
 
-    private var wraps: Bool {
-        iOSTaskPageTypographyMetrics.stacksControls(at: dynamicTypeSize, scaling: scaling)
-    }
-
     private var completionDiameter: CGFloat {
-        CadenceTypeScale.size(.rowTitle, base: 13, at: dynamicTypeSize, scaling: scaling)
+        CadenceTypeScale.size(.rowTitle, base: CadenceLedgerCardMetrics.ringBase, at: dynamicTypeSize, scaling: scaling)
     }
 
     private var isSettled: Bool {
         CadenceTaskCompletionState.resolve(task: task).isSettled
     }
 
-    private var completionFrame: CGFloat {
-        CadenceTypeScale.height(30, holding: .rowTitle, textBase: 13, at: dynamicTypeSize, scaling: scaling)
+    private var gutterWidth: CGFloat {
+        CadenceLedgerCardMetrics.gutterWidth(at: dynamicTypeSize, scaling: scaling)
     }
 
     @Environment(\.modelContext) private var modelContext
-    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     // T-201: presented by the page's `iOSTaskInspectorHost`, not by this card. A board column is a
     // filtered `ForEach` like any task list — moving a card's task out of the column it is in is
     // most of what the inspector is *for* — so a card-owned sheet closed itself on the same writes
     // `iOSTaskRow`'s did.
     @Environment(\.iOSTaskInspector) private var taskInspector
-
-    private var isRegularWidth: Bool {
-        horizontalSizeClass == .regular
-    }
 
     private var listColor: Color {
         Color(hex: task.containerColor)
@@ -255,92 +255,64 @@ struct iOSBoardTaskCard: View {
         CadenceTaskCompletionGlyph.resolve(task: task)
     }
 
-    /// Square on the leading edge so the list colour strip reads as a strip, rounded elsewhere.
-    private var cardShape: UnevenRoundedRectangle {
-        UnevenRoundedRectangle(
-            topLeadingRadius: 0,
-            bottomLeadingRadius: 0,
-            bottomTrailingRadius: Theme.radiusCard,
-            topTrailingRadius: Theme.radiusCard,
-            style: .continuous
+    /// The card's metadata run, from the shared builder.
+    ///
+    /// `placeholders` is left off, which is the one content difference between this card and the
+    /// Mac's and is forced by input rather than chosen: every token there is a picker, so an empty
+    /// field still needs something under the pointer; here the card's own tap opens the inspector,
+    /// so a token standing for nothing would say nothing and do nothing.
+    private var tokens: [CadenceLedgerToken] {
+        CadenceLedgerCardSupport.tokens(
+            startMinute: task.scheduledStartMin,
+            estimatedMinutes: task.estimatedMinutes,
+            chips: CadenceBoardCardMetadata.chips(
+                for: task,
+                showsContainer: showsContainerChip,
+                dayAlreadyStatedBySurface: dayAlreadyStatedBySurface
+            ),
+            tagNames: CadenceLedgerTagTokens.names(for: task)
         )
     }
 
     var body: some View {
-        card
-    }
-
-    private var card: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .top, spacing: 8) {
-                Button(action: toggleCompletion) {
-                    iOSTaskCompletionCircle(glyph: completionGlyph, diameter: completionDiameter)
-                        .frame(width: completionFrame, height: completionFrame)
-                        .iOSExpandedHitArea(max(0, (44 - completionFrame) / 2))
-                }
-                .buttonStyle(.iosPressable)
-                // Named for what the tap does, off the glyph's own state — the row's rule since
-                // T-611. This card kept a "Mark done" / "Mark not done" pair of its own, so a
-                // task mid-completion, where the tap cancels it, was announced "Mark done".
-                .accessibilityLabel(completionGlyph.state.accessibilityActionLabel)
-
-                Text(TaskTitleSupport.displayTitle(task.title, fallback: TaskTitleSupport.defaultCompactDisplayTitle))
-                    .cadenceFont(.rowTitle, base: isRegularWidth ? 15 : 14, weight: .medium)
-                    .foregroundStyle(isSettled ? Theme.dim : Theme.text)
-                    .strikethrough(isSettled, color: Theme.dim)
-                    .lineLimit(wraps ? nil : 2)
-                    .fixedSize(horizontal: false, vertical: scaling == .enabled)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-
-            // Read-only, unlike macOS's strip, which is a button opening the tag picker: a card
-            // here is opened by tapping it, so a tappable region inside it that does something
-            // else is a target competing with its own container. Tags are edited in the detail
-            // sheet that tap opens.
-            CompactTagStrip(tags: task.sortedTags, limit: CadenceTaskPresentationSupport.rowTagLimit)
-
-            // Guarded, because the grid is no longer guaranteed non-empty: a kanban card suppresses
-            // its list chip, so an undated task on the list board has nothing to show, and an
-            // unguarded `LazyVGrid` would still charge the `VStack` its 10pt of spacing.
-            if !metadataChips.isEmpty {
-                LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: wraps ? 1 : 2), spacing: 6) {
-                    ForEach(metadataChips, id: \.id) { chip in
-                        CadenceBoardMetadataChip(
-                            title: chip.title,
-                            systemImage: chip.icon,
-                            tint: chip.color,
-                            cardCornerRadius: Theme.radiusCard,
-                            fillsWidth: true
-                        )
-                    }
-                }
-            }
-
-            subtaskRows
-        }
-        .padding(.leading, 12)
-        .padding(.trailing, 12)
-        .padding(.vertical, 12)
-        .background {
-            ZStack {
-                cardShape.fill(Theme.surfaceElevated.opacity(0.82))
-                cardShape.fill(listColor.opacity(isSettled ? 0.05 : 0.12))
-            }
-        }
-        .clipShape(cardShape)
-        // One layer, one radius.
-        .overlay {
-            cardShape.strokeBorder(Theme.borderSubtle, lineWidth: 1)
-        }
-        .overlay(alignment: .leading) {
-            Rectangle()
-                .fill(listColor)
-                .frame(width: 3)
-        }
+        CadenceLedgerCard(
+            title: TaskTitleSupport.displayTitle(task.title, fallback: TaskTitleSupport.defaultCompactDisplayTitle),
+            isSettled: isSettled,
+            isStruckThrough: isSettled,
+            listColor: listColor,
+            priority: task.priority,
+            isRecurring: task.isRecurring,
+            tokens: tokens,
+            ring: { completionRing },
+            // Inert. A tappable region inside a tappable card competes with its own container on
+            // touch, which is not true under a pointer — so the Mac's tokens are pickers and these
+            // are labels. Every field they state is edited in the sheet this card's tap opens.
+            tokenView: { CadenceLedgerTokenLabel(token: $0) },
+            subtasks: { subtaskRows },
+            settlingOverlay: { EmptyView() }
+        )
         .contentShape(Rectangle())
         .onTapGesture {
             taskInspector(task)
         }
+    }
+
+    /// The gutter's completion control. Drawn at the shared ring size; the 44pt target around it is
+    /// the part a fingertip forces and a pointer does not.
+    ///
+    /// The expansion is measured off the **gutter**, not off the circle, so the target grows into
+    /// the colour strip the ring already occupies instead of out over the title beside it.
+    private var completionRing: some View {
+        Button(action: toggleCompletion) {
+            iOSTaskCompletionCircle(glyph: completionGlyph, diameter: completionDiameter)
+                .frame(width: gutterWidth, height: completionDiameter)
+                .iOSExpandedHitArea(max(0, (44 - gutterWidth) / 2))
+        }
+        .buttonStyle(.iosPressable)
+        // Named for what the tap does, off the glyph's own state — the row's rule since
+        // T-611. This card kept a "Mark done" / "Mark not done" pair of its own, so a
+        // task mid-completion, where the tap cancels it, was announced "Mark done".
+        .accessibilityLabel(completionGlyph.state.accessibilityActionLabel)
     }
 
     /// The unfinished subtasks, capped, with a line saying how many are left over — the same shape
@@ -373,72 +345,16 @@ struct iOSBoardTaskCard: View {
         }
     }
 
-    /// **What the card states is `CadenceBoardCardMetadata`'s decision, not this file's.** This card
-    /// used to build its own list and had quietly dropped the **do date** from it: the same task
-    /// read as planned-for-today on a Mac board and as undated here. The do, due and list chips now
-    /// come from the one descriptor macOS's `KanbanCard.metadataRows` reads.
-    ///
-    /// The **time** chip stays local, and it is the one genuine arrangement difference between the
-    /// two cards. macOS states the slot as a start (`9am`) in a top row beside an *editable*
-    /// duration badge; this card has no pointer to hover a badge with, so it states the whole range
-    /// in a chip and reaches the estimate through the detail sheet. Same fact, two shapes.
-    private var metadataChips: [iOSCalendarBoardMetadataItem] {
-        var chips: [iOSCalendarBoardMetadataItem] = []
-
-        if task.scheduledStartMin >= 0 {
-            chips.append(
-                .init(
-                    id: "time",
-                    icon: "clock.fill",
-                    // Neutral. A card in a day column having a time is the ordinary case, not the
-                    // exceptional one — blue here fired on nearly every card and left the due chip,
-                    // which does go red when it means something, no louder than its neighbour.
-                    title: TimeFormatters.timeRange(startMin: task.scheduledStartMin, endMin: task.scheduledEndMin),
-                    color: Theme.dim
-                )
-            )
-        }
-
-        // One colour per chip rather than macOS's identity/label pair: this chip is inert, and a
-        // tinted glyph beside grey text on a grey pill reads as disabled — the reason
-        // `CadenceBoardMetadataChip` tints both. `labelColor` is the loud half of the pair, so an
-        // ordinary date stays `Theme.dim` here and an overdue one goes red exactly as it does on
-        // the Mac.
-        let boardChips = CadenceBoardCardMetadata.chips(
-            for: task,
-            showsContainer: showsContainerChip,
-            dayAlreadyStatedBySurface: dayAlreadyStatedBySurface
-        )
-        for chip in boardChips {
-            chips.append(
-                .init(
-                    id: chip.id,
-                    icon: chip.icon,
-                    title: chip.text,
-                    color: chip.kind == .list ? chip.identityColor : chip.labelColor
-                )
-            )
-        }
-
-        return chips
-    }
-
     private func toggleCompletion() {
         CadenceTaskStatusEditing.toggleCompletion(task, in: modelContext)
     }
 }
 
-private struct iOSCalendarBoardMetadataItem: Identifiable {
-    let id: String
-    let icon: String
-    let title: String
-    let color: Color
-}
-
-// The chip itself is `CadenceBoardMetadataChip` in
-// `Shared/Components/CadenceBoardMetadataChip.swift`. `iOSCalendarBoardMetadataChip` was declared
-// here and its doc comment opened "Matches macOS's `CalendarBoardMetadataChip`" — an obligation
-// written down with nothing to enforce it. `iOSCalendarBoardMetadataItem` above stays: it is this
-// board's display model, not a second copy of the chip.
+// The event card's chip is `CadenceBoardMetadataChip` in
+// `Shared/Components/CadenceBoardMetadataChip.swift`. A private copy was declared here and its doc
+// comment opened "Matches macOS's `CalendarBoardMetadataChip`" — an obligation written down with
+// nothing to enforce it. This board's own display model went with the task card's chip grid in
+// [[T-8181]]: a Ledger run is `[CadenceLedgerToken]`, which is shared, so there is nothing left
+// here for a per-board model to hold.
 
 #endif

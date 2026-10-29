@@ -35,18 +35,33 @@ struct CadenceCodexPageCompletionTypographyTests {
         let read = CadenceSourceScan.strippedSourceReader()
         let cards = try read("Cadence/iOS/iOSBoardCards.swift")
         let card = try #require(CadenceSourceScan.declarationBody("struct iOSBoardTaskCard: View", in: cards))
-        #expect(card.contains("CadenceTypeScale.size(.rowTitle, base: 13, at: dynamicTypeSize, scaling: scaling)"))
-        #expect(card.contains("CadenceTypeScale.height(30, holding: .rowTitle, textBase: 13, at: dynamicTypeSize, scaling: scaling)"))
+        // **[[T-8181]] moved the card's anatomy into `CadenceLedgerCard`, which both boards draw.**
+        // What stays here is the half a touch device forces: the ring's drawn size and its 44pt
+        // target, and the subtask overflow line. The title, its line limit and the metadata run are
+        // asserted on the shared card below, where there is now one spelling instead of two — and
+        // the macOS card, which had NO Dynamic Type at all (a wall of `.font(.system(size: 13.5))`
+        // literals), gets that spelling for free.
+        #expect(card.contains("CadenceTypeScale.size(.rowTitle, base: CadenceLedgerCardMetrics.ringBase, at: dynamicTypeSize, scaling: scaling)"))
         #expect(card.contains("iOSTaskCompletionCircle(glyph: completionGlyph, diameter: completionDiameter)"))
-        #expect(card.contains(".frame(width: completionFrame, height: completionFrame)"))
-        #expect(card.contains(".iOSExpandedHitArea(max(0, (44 - completionFrame) / 2))"))
-        #expect(card.contains(".cadenceFont(.rowTitle, base: isRegularWidth ? 15 : 14, weight: .medium)"))
-        #expect(card.contains(".lineLimit(wraps ? nil : 2)"))
-        #expect(card.contains("Array(repeating: GridItem(.flexible()), count: wraps ? 1 : 2)"))
+        #expect(card.contains(".frame(width: gutterWidth, height: completionDiameter)"))
+        #expect(card.contains(".iOSExpandedHitArea(max(0, (44 - gutterWidth) / 2))"))
         #expect(card.contains(".cadenceFont(.metadata, base: 12, weight: .medium)"))
         #expect(card.contains(".frame(minHeight: CadenceTypeScale.height(30, holding: .metadata, at: dynamicTypeSize, scaling: scaling))"))
         #expect(!card.contains(".font(.system(size:"))
         #expect(!card.contains(".cadenceScaledTypography()"))
+
+        // The shared card. Every point size it draws comes from `CadenceLedgerCardMetrics` and is
+        // read through `cadenceFont`, so the two boards cannot drift into two type scales again.
+        let ledger = try read("Cadence/Shared/CadenceBoardLedgerCard.swift")
+        #expect(ledger.contains(".cadenceFont(.rowTitle, base: CadenceLedgerCardMetrics.titleBase, weight: .semibold)"))
+        #expect(ledger.contains(".cadenceFont(.metadata, base: CadenceLedgerCardMetrics.runBase, weight: .medium)"))
+        #expect(ledger.contains("scaling == .enabled && CadenceTypeScale.isAccessibilitySize(dynamicTypeSize)"))
+        #expect(!ledger.contains(".font(.system(size:"))
+        #expect(!ledger.contains(".cadenceScaledTypography()"))
+
+        // And the macOS card, which is the half that had none of this before.
+        let mac = try read("Cadence/macOS/Views/KanbanCardView.swift")
+        #expect(!mac.contains(".font(.system(size:"))
 
         let column = try read("Cadence/Shared/Components/CadenceBoardColumnHeader.swift")
         #expect(column.contains("struct CadenceBoardColumnTitleRow<Trailing: View>"))

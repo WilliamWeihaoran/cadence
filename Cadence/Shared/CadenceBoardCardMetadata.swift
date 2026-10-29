@@ -5,7 +5,7 @@ import SwiftUI
 ///
 /// **The description, not the drawing.** `CadenceBoardMetadataChip` (shared since `7e5459c`) is how
 /// a chip *looks*; this is what the card decides to put in one. The two boards had the second half
-/// forked — macOS's `KanbanCard.metadataRows` and iOS's `iOSBoardTaskCard.metadataChips` each built
+/// forked — `KanbanCard` and `iOSBoardTaskCard` each built
 /// their own list from the same `AppTask` and did not agree on what was in it, which is how the iOS
 /// card ended up stating a **due** date and never a **do** date. The same task read as undated on
 /// iPad and as planned for today on the Mac.
@@ -23,9 +23,13 @@ nonisolated struct CadenceBoardCardChip: Identifiable, Equatable, Sendable {
     }
 
     /// How loud the chip's **label** is. Identity — the glyph's colour — never varies with this;
-    /// only the text does. macOS already drew it that way (`KanbanMetaItem` carries `tint` and
-    /// `textColor` separately) and it is the better of the two spellings: a due chip whose flag
+    /// only the text does. macOS already drew it that way — its chip model carried `tint` and
+    /// `textColor` separately — and it is the better of the two spellings: a due chip whose flag
     /// stops being red when the date is comfortable stops being identifiable as the due chip.
+    ///
+    /// [[T-8181]]'s Ledger card keeps the distinction and spends it differently: the run carries no
+    /// glyphs at all, so identity is the token's position and its wording, and emphasis is the only
+    /// thing colour is left to say.
     enum Emphasis: String, Sendable {
         /// The ordinary case. A date the card is merely recording.
         case neutral
@@ -52,11 +56,11 @@ nonisolated struct CadenceBoardCardChip: Identifiable, Equatable, Sendable {
 /// **Deliberately not the whole card.** Three things stay outside it, and each is an argued
 /// arrangement difference rather than drift:
 ///
-/// - *The timeline slot and the estimate.* macOS pairs them in `KanbanCardScheduleTopRow` —
-///   `9am` beside an editable duration badge — because every element on a macOS board card is a
-///   picker. iOS has no pointer to hover a badge with, so it states the whole range in a chip and
-///   reaches the estimate through the detail sheet. Same two facts, two shapes; folding them here
-///   would force one platform's layout onto the other for no gain.
+/// - *The timeline slot and the estimate.* Both are now tokens in the Ledger card's one text run
+///   ([[T-8181]]), built by `CadenceLedgerCardSupport.tokens` from the chips below plus those two
+///   facts. They stay outside this descriptor because the run also decides what a token is *for*:
+///   under a pointer each one is a picker, so macOS asks for an empty-field token and a touch card
+///   does not. That is an interaction difference, which is not this type's business.
 /// - *Empty-field affordances.* macOS draws a `Due` chip with no date on it when the list does not
 ///   hide empty due dates, because that chip **is** the due-date picker. An empty chip states
 ///   nothing, so it is not metadata; it stays where it belongs, in the interaction shell.

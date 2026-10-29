@@ -49,54 +49,20 @@ struct KanbanCard: View {
     @State private var menuFailure: MacTaskRowMenuFailure?
 
     var body: some View {
-        HStack(alignment: .top, spacing: 0) {
-            VStack(alignment: .leading, spacing: hasScheduleTopRow ? 7 : 10) {
-                if hasScheduleTopRow {
-                    KanbanCardScheduleTopRow(
-                        startTime: scheduleStartLabel,
-                        duration: estimateLabel,
-                        onDurationTap: openDurationPicker,
-                        isDurationFocused: showDurationPicker,
-                        onDurationHoverChanged: setAttributeFocused,
-                        durationAccessibilityIdentifier: CadenceAccessibilityIdentifiers.boardCardControl(
-                            title: task.title,
-                            field: CadenceTaskControlAccessibility.estimate
-                        )
-                    )
-                }
-
-                cardHeader
-
-                KanbanCardTagStrip(
-                    task: task,
-                    isPresented: showTagPicker,
-                    onOpen: openTagPicker,
-                    onHoverChanged: setAttributeFocused
-                )
-
-                if !metadataRows.isEmpty {
-                    KanbanMetadataRows(
-                        rows: metadataRows,
-                        chipContent: { item in AnyView(metaChip(item)) }
-                    )
-                }
-
-                subtaskRows
-            }
-            .padding(.leading, 14)
-            .padding(.trailing, 16)
-            .padding(.vertical, 10)
-        }
-        .background(cardBackground)
-        .overlay {
-            RoundedRectangle(cornerRadius: kanbanCardCornerRadius, style: .continuous)
-                .strokeBorder(
-                    Theme.borderSubtle,
-                    lineWidth: 1
-                )
-        }
-        .clipShape(RoundedRectangle(cornerRadius: kanbanCardCornerRadius, style: .continuous))
-        .contentShape(RoundedRectangle(cornerRadius: kanbanCardCornerRadius, style: .continuous))
+        CadenceLedgerCard(
+            title: TaskTitleSupport.displayTitle(task.title, fallback: TaskTitleSupport.defaultCompactDisplayTitle),
+            isSettled: isSettled,
+            isStruckThrough: task.isDone || isPendingCancel,
+            listColor: listColor,
+            priority: task.priority,
+            isRecurring: task.isRecurring,
+            tokens: tokens,
+            isHovered: isCardVisuallyFocused,
+            ring: { completionRing },
+            tokenView: { token in tokenControl(token) },
+            subtasks: { subtaskRows },
+            settlingOverlay: { settlingOverlay }
+        )
         .animation(nil, value: isHovered)
         .onTapGesture {
             openTaskInspectorFromCardTap()
@@ -148,17 +114,13 @@ struct KanbanCard: View {
             if !isPresented {
                 setAttributeFocused(false)
             }
-            if isPresented {
-                syncInteractiveHoverState()
-            } else {
-                syncInteractiveHoverState()
-            }
+            syncInteractiveHoverState()
         }
-        // **`.contain`, so the card becomes one element without swallowing its chips.** T-1740
-        // measures where the three popovers below land, and all three are anchored to
-        // `.rect(.bounds)` — the card's own box — so a test needs that box as an element and not
-        // merely a point inside it. `.combine` would take the list chip, the tag strip and the
-        // duration badge with it, and the first of those is a popover anchor of its own.
+        // **`.contain`, so the card becomes one element without swallowing its tokens.** T-1740
+        // measures where the popovers below land, and they are anchored to `.rect(.bounds)` — the
+        // card's own box — so a test needs that box as an element and not merely a point inside it.
+        // `.combine` would take the run's tokens with it, and the list token is a popover anchor of
+        // its own.
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier(CadenceAccessibilityIdentifiers.boardCard(title: task.title))
         // [[T-7092]]: click and right-click were the card's only ways to its detail, and neither is
@@ -168,15 +130,15 @@ struct KanbanCard: View {
         .popover(isPresented: $showTaskInspector, attachmentAnchor: .rect(.bounds), arrowEdge: .trailing) {
             TaskDetailPopover(task: task)
         }
-        // **The tag picker is presented here, from the card, and not from the strip that opens it**
-        // (T-1740). Measured on this Mac at Xcode 27.0: presented from the strip — 57pt wide at the
-        // leading end of the card — the picker opened at x ∈ [636, 902] against card content of
+        // **The tag picker is presented here, from the card, and not from the token that opens it**
+        // (T-1740). Measured on this Mac at Xcode 27.0: presented from the old 57pt tag strip at the
+        // leading end of the card, the picker opened at x in [636, 902] against card content of
         // [578, 830] and covered 194pt of the card. It went to the side its `arrowEdge: .trailing`
         // asked for; the side was never the problem. An anchor that **spans** the content is, as
         // T-1722 established for the inspector, the only shape whose placement does not depend on
         // a choice this repository does not make: when both of an anchor's ends are the content's
-        // ends, either end the platform picks is clear of it. The card's `.rect(.bounds)` is that
-        // anchor, and the inspector above and the roller below already use it.
+        // ends, either end the platform picks is clear of it. A Ledger token is far smaller than
+        // that strip was, so the argument only got stronger.
         //
         // **Three chained `.popover` modifiers on one view, and all three present.** That is worth
         // stating, because T-1722 measured the opposite on the inspector's title row: two chained
@@ -196,6 +158,194 @@ struct KanbanCard: View {
                 showDurationPicker = false
             }
         }
+    }
+
+    // MARK: - The Ledger run
+
+    /// The card's metadata run, built by the shared `CadenceLedgerCardSupport` from the shared
+    /// `CadenceBoardCardMetadata` descriptor.
+    ///
+    /// `placeholders: true` is the macOS half of the one difference the two cards keep here, and it
+    /// is forced by input rather than chosen: every token on this card is a **picker**, so a field
+    /// with no value still needs something under the pointer to click. A touch card reaches the same
+    /// fields by tapping the card, so an empty token there would say nothing and do nothing.
+    private var tokens: [CadenceLedgerToken] {
+        CadenceLedgerCardSupport.tokens(
+            startMinute: task.scheduledStartMin,
+            estimatedMinutes: task.estimatedMinutes,
+            chips: CadenceBoardCardMetadata.chips(
+                for: task,
+                showsContainer: showsContainerChip,
+                dayAlreadyStatedBySurface: dayAlreadyStatedBySurface,
+                todayKey: todayKey
+            ),
+            tagNames: tagTokenNames,
+            placeholders: true,
+            showsEmptyDueDate: task.shouldShowDueDateField
+        )
+    }
+
+    /// `CadenceTaskPresentationSupport.rowTagLimit`, the same cap the task rows and the iOS card
+    /// use, so no surface decides for itself how much of a task fits.
+    private var tagTokenNames: [String] {
+        CadenceLedgerTagTokens.names(for: task)
+    }
+
+    /// Which tag token carries the card's `Tags` accessibility identifier. See `tokenControl`.
+    private var firstTagTokenID: String? {
+        tokens.first { $0.kind == .tag }?.id
+    }
+
+    /// One token, as a control.
+    ///
+    /// **Which tokens are pickers is what the pills could edit, not a new inventory.** The do, due
+    /// and list chips and the estimate badge were `Button`s opening popovers, and the tag strip
+    /// opened the tag editor; all five keep working, now as hover-underlined text. The slot is the
+    /// one token that was never editable from a card — it has no picker to open, and inventing one
+    /// is a different ticket — so it draws as a plain label.
+    @ViewBuilder
+    private func tokenControl(_ token: CadenceLedgerToken) -> some View {
+        switch token.kind {
+        case .time:
+            CadenceLedgerTokenLabel(token: token)
+        case .duration:
+            KanbanLedgerTokenButton(
+                token: token,
+                isActive: showDurationPicker,
+                accessibilityLabel: CadenceTaskControlAccessibility.estimate,
+                accessibilityIdentifier: CadenceAccessibilityIdentifiers.boardCardControl(
+                    title: task.title,
+                    field: CadenceTaskControlAccessibility.estimate
+                ),
+                help: "Set duration",
+                onHoverChanged: setAttributeFocused,
+                action: openDurationPicker
+            )
+        case .doDay:
+            KanbanLedgerTokenButton(
+                token: token,
+                isActive: showDoDatePicker,
+                accessibilityLabel: CadenceTaskControlAccessibility.doDate,
+                help: "Set do date",
+                onHoverChanged: { hovering in
+                    setAttributeFocused(hovering)
+                    if hovering {
+                        hoveredTaskManager.beginHoveringDate(.doDate, for: task)
+                    } else {
+                        hoveredTaskManager.endHoveringDate(for: task)
+                    }
+                },
+                action: openDoDatePicker
+            )
+            .popover(isPresented: $showDoDatePicker, arrowEdge: .trailing) {
+                doDatePickerPopover
+            }
+        case .dueDay:
+            KanbanLedgerTokenButton(
+                token: token,
+                isActive: showDueDatePicker,
+                accessibilityLabel: CadenceTaskControlAccessibility.dueDate,
+                help: "Set due date",
+                onHoverChanged: { hovering in
+                    setAttributeFocused(hovering)
+                    if hovering {
+                        hoveredTaskManager.beginHoveringDate(.dueDate, for: task)
+                    } else {
+                        hoveredTaskManager.endHoveringDate(for: task)
+                    }
+                },
+                action: openDueDatePicker
+            )
+            .popover(isPresented: $showDueDatePicker, arrowEdge: .trailing) {
+                dueDatePickerPopover
+            }
+        case .list:
+            KanbanLedgerTokenButton(
+                token: token,
+                isActive: showContainerPicker,
+                accessibilityLabel: CadenceTaskControlAccessibility.list,
+                accessibilityIdentifier: CadenceAccessibilityIdentifiers.boardCardControl(
+                    title: task.title,
+                    field: CadenceTaskControlAccessibility.list
+                ),
+                help: "Move to another list",
+                onHoverChanged: setAttributeFocused,
+                action: openContainerPicker
+            )
+            // The picker's `@Query`s live in the popover *content*: a board can have a hundred
+            // cards alive at once, and a query per card would mean a hundred fetches for a picker
+            // almost none of them will ever open.
+            .popover(isPresented: $showContainerPicker, arrowEdge: .trailing) {
+                KanbanContainerPickerPopover(task: task, isPresented: $showContainerPicker)
+            }
+        case .tag:
+            KanbanLedgerTokenButton(
+                token: token,
+                isActive: showTagPicker,
+                accessibilityLabel: "Edit tags",
+                // **The FIRST tag token only.** A card states up to `rowTagLimit` tags and each one
+                // opens the same editor, so giving them all the identifier would publish the same
+                // address two or three times — and an identifier that matches several elements is
+                // not an address. The old tag STRIP was one control and carried it once; the run
+                // has to say which token stands in for it.
+                accessibilityIdentifier: token.id == firstTagTokenID
+                    ? CadenceAccessibilityIdentifiers.boardCardControl(title: task.title, field: "Tags")
+                    : nil,
+                help: "Edit tags",
+                onHoverChanged: setAttributeFocused,
+                action: openTagPicker
+            )
+        }
+    }
+
+    /// The gutter's completion control. macOS's is a `Button` over a hold-to-settle progress arc,
+    /// which is the one thing about this card a fingertip cannot do on a 13pt target.
+    @ViewBuilder
+    private var completionRing: some View {
+        if isPendingCompletion || isPendingCancel {
+            TimelineView(.animation) { context in
+                KanbanCompletionButton(
+                    icon: completionButtonIcon,
+                    color: completionButtonColor,
+                    progress: pendingCompletionProgress(now: context.date),
+                    accessibilityLabel: completionAccessibilityLabel,
+                    action: handleCompletionTap
+                )
+            }
+        } else {
+            KanbanCompletionButton(
+                icon: completionButtonIcon,
+                color: completionButtonColor,
+                progress: nil,
+                accessibilityLabel: completionAccessibilityLabel,
+                action: handleCompletionTap
+            )
+        }
+    }
+
+    /// The press-and-hold settle wash. It exists only where there is a press-and-hold to be
+    /// pending about.
+    @ViewBuilder
+    private var settlingOverlay: some View {
+        if isPendingCompletion || isPendingCancel {
+            TimelineView(.animation) { context in
+                TaskCompletionPendingOverlay(
+                    progress: isPendingCompletion
+                        ? taskCompletionAnimationManager.progress(for: task, now: context.date)
+                        : taskCompletionAnimationManager.cancelProgress(for: task, now: context.date),
+                    tint: isPendingCompletion ? Theme.green : Theme.dim,
+                    cornerRadius: CadenceLedgerCardMetrics.cornerRadius
+                )
+            }
+        }
+    }
+
+    private var isSettled: Bool {
+        CadenceTaskCompletionState.resolve(task: task).isSettled
+    }
+
+    private var listColor: Color {
+        Color(hex: task.containerColor)
     }
 
     /// The unfinished subtasks, capped, with a line saying how many are left over.
@@ -237,153 +387,6 @@ struct KanbanCard: View {
                 try? modelContext.save()
             }
         )
-    }
-
-    /// One layout for every board. Row 1 is the date pair, row 2 the list chip when the board
-    /// isn't already scoped to a single list.
-    ///
-    /// **What is in the strip is `CadenceBoardCardMetadata`'s decision, not this file's.** The
-    /// arrangement below — two rows, dates then list — stays here, and so does everything that
-    /// makes each chip a picker. The iOS card builds its grid from the same three descriptors; it
-    /// used to build its own list and had quietly dropped the do date from it.
-    private var metadataRows: [[KanbanMetaItem]] {
-        var rows: [[KanbanMetaItem]] = []
-        let chips = CadenceBoardCardMetadata.chips(
-            for: task,
-            showsContainer: showsContainerChip,
-            dayAlreadyStatedBySurface: dayAlreadyStatedBySurface,
-            todayKey: todayKey
-        )
-
-        var dateRow: [KanbanMetaItem] = chips
-            .filter { $0.kind != .list }
-            .map(dateMetaItem)
-        // The empty-due affordance, and only macOS has one: this chip *is* the due-date picker, so
-        // a card in a list that does not hide empty due dates keeps a `Due` chip with no date on
-        // it. An empty chip states nothing, which is why the shared descriptor does not produce it.
-        if !chips.contains(where: { $0.kind == .dueDate }), task.shouldShowDueDateField {
-            dateRow.append(emptyDueDateMetaItem)
-        }
-        if !dateRow.isEmpty { rows.append(dateRow) }
-
-        if let listChip = chips.first(where: { $0.kind == .list }) {
-            rows.append([listMetaItem(listChip)])
-        }
-
-        return rows
-    }
-
-    private func dateMetaItem(_ chip: CadenceBoardCardChip) -> KanbanMetaItem {
-        // Amber and red are semantic here — they mean "do date" and "due date", not "this task's
-        // list". The identity tint never varies with urgency; only the label's colour does.
-        let tint = chip.identityColor
-        return KanbanMetaItem(
-            id: chip.kind == .doDate ? "do-date" : "due-date",
-            icon: chip.icon,
-            text: chip.text,
-            tint: tint,
-            textColor: chip.labelColor,
-            hoverStyle: .semantic(tint),
-            action: chip.kind == .doDate ? .doDate : .dueDate
-        )
-    }
-
-    private var emptyDueDateMetaItem: KanbanMetaItem {
-        KanbanMetaItem(
-            id: "due-date",
-            icon: CadenceBoardCardMetadata.dueDateIcon,
-            text: "Due",
-            tint: Theme.dim,
-            textColor: Theme.dim,
-            hoverStyle: .semantic(Theme.dim),
-            action: .dueDate
-        )
-    }
-
-    private func listMetaItem(_ chip: CadenceBoardCardChip) -> KanbanMetaItem {
-        KanbanMetaItem(
-            id: "list",
-            icon: chip.icon,
-            text: chip.text,
-            // The container color stays on the icon — that is the list's identity. It must not
-            // become the hover color, or the chip hovers in whatever hue this list happens to be,
-            // which is the container-color bleed already removed from the row hover.
-            tint: chip.identityColor,
-            textColor: Theme.dim,
-            hoverStyle: .neutral,
-            action: .container
-        )
-    }
-
-    private var hasScheduleTopRow: Bool {
-        scheduleStartLabel != nil
-    }
-
-    private var headerDurationBadge: String? {
-        scheduleStartLabel == nil ? estimateLabel : nil
-    }
-
-    private var scheduleStartLabel: String? {
-        guard task.scheduledStartMin >= 0 else { return nil }
-        return TimeFormatters.timeString(from: task.scheduledStartMin).lowercased()
-    }
-
-    /// Always rendered, even with no estimate set — the badge *is* the estimate picker, so
-    /// hiding it when the value is empty would leave the field unreachable from the card.
-    /// Uses the app-wide duration vocabulary. This used to format `"H:MM"` — 90 minutes as
-    /// `"1:30"` — which is a sixth format for a field every other surface renders as `1h 30m`,
-    /// and worse, `KanbanCardScheduleTopRow` draws this badge immediately beside a real clock
-    /// time like `9am`. A duration written `1:30` next to `9am` reads as a time of day. The badge
-    /// has no width constraint (a `Spacer(minLength: 8)` pushes it to the trailing edge), so the
-    /// longer string fits.
-    private var estimateLabel: String {
-        CadenceTaskPresentationSupport.estimateLabel(minutes: task.estimatedMinutes, emptyPlaceholder: "—")
-    }
-
-    @ViewBuilder
-    private func metaChip(_ item: KanbanMetaItem) -> some View {
-        switch item.action {
-        case .container:
-            KanbanContainerMetaButton(
-                item: item,
-                task: task,
-                isPresented: $showContainerPicker,
-                onOpen: openContainerPicker,
-                onHoverChanged: setAttributeFocused
-            )
-        case .doDate:
-            KanbanDateMetaButton(
-                item: item,
-                isPresented: $showDoDatePicker,
-                onOpen: openDoDatePicker,
-                onHoverChanged: { hovering in
-                    setAttributeFocused(hovering)
-                    if hovering {
-                        hoveredTaskManager.beginHoveringDate(.doDate, for: task)
-                    } else {
-                        hoveredTaskManager.endHoveringDate(for: task)
-                    }
-                }
-            ) {
-                doDatePickerPopover
-            }
-        case .dueDate:
-            KanbanDateMetaButton(
-                item: item,
-                isPresented: $showDueDatePicker,
-                onOpen: openDueDatePicker,
-                onHoverChanged: { hovering in
-                    setAttributeFocused(hovering)
-                    if hovering {
-                        hoveredTaskManager.beginHoveringDate(.dueDate, for: task)
-                    } else {
-                        hoveredTaskManager.endHoveringDate(for: task)
-                    }
-                }
-            ) {
-                dueDatePickerPopover
-            }
-        }
     }
 
     private var dueDatePickerPopover: some View {
@@ -589,68 +592,6 @@ struct KanbanCard: View {
     /// pointer has left the card for the picker.
     private var isCardVisuallyFocused: Bool {
         isHovered && !isPresentingInlinePopover
-    }
-
-    @ViewBuilder
-    private var cardHeader: some View {
-        if isPendingCompletion || isPendingCancel {
-            TimelineView(.animation) { context in
-                KanbanCardHeader(
-                    title: task.title,
-                    titleColor: task.isDone || task.isCancelled ? Theme.dim : Theme.text,
-                    isStruckThrough: task.isDone || isPendingCancel,
-                    durationBadge: headerDurationBadge,
-                    onDurationTap: openDurationPicker,
-                    isDurationFocused: showDurationPicker,
-                    onDurationHoverChanged: setAttributeFocused,
-                    completionButtonIcon: completionButtonIcon,
-                    completionButtonColor: completionButtonColor,
-                    completionProgress: pendingCompletionProgress(now: context.date),
-                    completionAccessibilityLabel: completionAccessibilityLabel,
-                    onCompletionTap: handleCompletionTap
-                )
-            }
-        } else {
-            KanbanCardHeader(
-                title: task.title,
-                titleColor: task.isDone || task.isCancelled ? Theme.dim : Theme.text,
-                isStruckThrough: task.isDone || isPendingCancel,
-                durationBadge: headerDurationBadge,
-                onDurationTap: openDurationPicker,
-                isDurationFocused: showDurationPicker,
-                onDurationHoverChanged: setAttributeFocused,
-                completionButtonIcon: completionButtonIcon,
-                completionButtonColor: completionButtonColor,
-                completionProgress: nil,
-                completionAccessibilityLabel: completionAccessibilityLabel,
-                onCompletionTap: handleCompletionTap
-            )
-        }
-    }
-
-    @ViewBuilder
-    private var cardBackground: some View {
-        if isPendingCompletion || isPendingCancel {
-            TimelineView(.animation) { context in
-                KanbanCardBackground(
-                    isHovered: isCardVisuallyFocused,
-                    isDone: task.isDone,
-                    isPendingCompletion: isPendingCompletion,
-                    isPendingCancel: isPendingCancel,
-                    completionProgress: taskCompletionAnimationManager.progress(for: task, now: context.date),
-                    cancelProgress: taskCompletionAnimationManager.cancelProgress(for: task, now: context.date)
-                )
-            }
-        } else {
-            KanbanCardBackground(
-                isHovered: isCardVisuallyFocused,
-                isDone: task.isDone,
-                isPendingCompletion: false,
-                isPendingCancel: false,
-                completionProgress: 0,
-                cancelProgress: 0
-            )
-        }
     }
 }
 #endif

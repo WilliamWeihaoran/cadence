@@ -51,7 +51,7 @@ nonisolated struct CadenceBoardMetadataChipMetrics: Sendable {
 /// The board card's read-only metadata chip: a glyph and a label, both in the chip's own tint, over
 /// a wash of the same colour.
 ///
-/// Deliberately **not** a `KanbanMetaChip`: an event or a bundle has no completion circle, no list
+/// Deliberately **not** a task card's metadata: an event or a bundle has no completion circle, no list
 /// and no estimate, and cannot be edited field-by-field from the card, so its chips stay read-only
 /// and carry the calendar's own colour. It borrows the task chip's geometry — same padding, same
 /// icon and label sizes — so the two read as one family without pretending an event is a task.

@@ -1733,7 +1733,6 @@ enum CadenceCommentSymbolClaim {
         "Cadence/Shared/GoalListLinkHelpers.swift `iOSGoalAttachListsSheet`",
         "Cadence/Shared/GoalListLinkHelpers.swift `makeLink`",
         "Cadence/Shared/GoalListLinkHelpers.swift `toggleGoalListLink`",
-        "Cadence/iOS/iOSBoardCards.swift `iOSCalendarBoardMetadataChip`",
         "Cadence/iOS/iOSCalendarMonthViews.swift `isEventPlate`",
         "Cadence/iOS/iOSCalendarMonthViews.swift `weekdaySymbolSize`",
         "Cadence/iOS/iOSCalendarTimelineViews.swift `draftRangeUnderTouch`",
@@ -2286,8 +2285,10 @@ enum CadenceCommentSymbolClaim {
             }
         }
         #expect(groups.map(\.count).reduce(0, +) == ledger.count)
-        // 182 + 232 test-root memorials, 25 + 30 non-symbols, 56 needles ([[T-7641]]).
-        #expect(Self.bareMemorials.count == 414)
+        // 182 + 231 test-root memorials, 25 + 30 non-symbols, 56 needles ([[T-7641]]; 414 before
+        // [[T-8181]] rewrote the `iOSBoardCards` tombstone the 414th covered — the list only ever
+        // shrinks, which is what this count is here to make visible).
+        #expect(Self.bareMemorials.count == 413)
         #expect(Self.bareNonSymbols.count == 55)
         #expect(Self.bareNeedles.count == 56)
         #expect(Self.bareStaleClaims.isEmpty, "a held stale claim is a comment to fix in place")

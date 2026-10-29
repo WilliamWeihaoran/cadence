@@ -239,10 +239,14 @@ struct CadenceSharedBoardChromeTests {
     /// **The T-161 test for the chip.** Both boards' cards must reach the shared chip.
     @Test func bothBoardsDrawTheSharedMetadataChip() throws {
         // Both boards were 4 until [[T-3170]] deleted their Block cards: the iOS card drew one
-        // chip, the macOS one drew two.
+        // chip, the macOS one drew two. [[T-8181]] took the third iOS one — the **task** card's
+        // metadata grid, which is now the Ledger card's chrome-free text run. What is left on both
+        // sides is the **event** card, which is what this test has always really been about: an
+        // event is not a task, cannot be edited field by field from a card, and keeps its
+        // read-only tinted chips on both platforms.
         let callSites = [
             "Cadence/macOS/Views/CalendarBoardItemSupportViews.swift": 2,
-            "Cadence/iOS/iOSBoardCards.swift": 3,
+            "Cadence/iOS/iOSBoardCards.swift": 2,
         ]
         try expectCallSites(of: "CadenceBoardMetadataChip", at: callSites)
 

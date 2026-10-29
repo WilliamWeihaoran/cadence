@@ -94,7 +94,7 @@ struct CadenceCodexKanbanRenderingTests {
         #expect(mounted < 10, "horizontal board mounted \(mounted) / 21 columns' cards")
     }
 
-    @Test func sharedScrollerOptInKeepsGeometryAndTheFinalComposerSlot() throws {
+    @Test func sharedScrollerOptInKeepsGeometryAndTheComposerSlotUnderTheHeader() throws {
         let source = try code("KanbanColumnSupportViews.swift")
         let scroll = try #require(CadenceSourceScan.declarationBody("struct KanbanColumnScroll", in: source))
         #expect(scroll.contains("var defersOffscreenCards = false"))
@@ -107,7 +107,15 @@ struct CadenceCodexKanbanRenderingTests {
         #expect(scroll.contains(".frame(minHeight: 200)"))
         #expect(scroll.components(separatedBy: ".contentShape(Rectangle())").count - 1 == 2)
         let contents = try #require(CadenceSourceScan.declarationBody("private var columnContents: some View", in: scroll))
-        #expect(contents.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("content()"))
+        // **[[T-8181]] moved the slot from the foot of the stack to the head of it.** The add row
+        // used to close the column, which put "add a task here" below however many cards it held —
+        // reachable only by scrolling past all of them, and in a different place in every column.
+        // The iOS Calendar Board column already drew it directly under the header. The assertion
+        // keeps its shape: one slot, shared by the row and the composer, in a structural position
+        // no board gets to choose.
+        let trimmedContents = contents.trimmingCharacters(in: .whitespacesAndNewlines)
+        #expect(trimmedContents.hasPrefix("if case .compose(let surface) = add, isComposing.wrappedValue"))
+        #expect(trimmedContents.hasSuffix("content()"))
         #expect(contents.contains("if case .compose(let surface) = add, isComposing.wrappedValue"))
         #expect(contents.contains("InlineTaskComposer(surface: surface)"))
         #expect(contents.contains("isComposing.wrappedValue = false"))

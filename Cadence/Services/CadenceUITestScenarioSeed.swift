@@ -111,7 +111,7 @@ enum CadenceUITestScenarioSeed {
         /// addresses it by an identifier derived from this string.
         static let boardCardTitle = "Board Anchor Card"
 
-        /// The tag on it. `KanbanCardTagStrip` renders **nothing** for a task with no tags, so
+        /// The tag on it. A board card states **no** tag token for a task with no tags, so
         /// without this the tag anchor would silently not exist and the sweep would report four
         /// readings where it meant five — the exact reporting failure T-1722 was written against.
         static let boardCardTagName = "Anchor"
@@ -120,7 +120,7 @@ enum CadenceUITestScenarioSeed {
         /// column beside the card.
         static let boardBundleTitle = "Anchor Block"
 
-        /// 9:00. Any scheduled start does; `KanbanCard.hasScheduleTopRow` is `scheduledStartMin >= 0`.
+        /// 9:00. Any scheduled start does: the Ledger run's slot token is `scheduledStartMin >= 0`.
         static let boardCardStartMinute = 9 * 60
 
         /// Minutes, so the duration badge reads a real value rather than the em dash placeholder.
@@ -370,12 +370,14 @@ enum CadenceUITestScenarioSeed {
         // another day was meant to put a second chip beside it.
         //
         // **It does not, and the reason is better than the fixture.** Measured 2026-09-30: the card
-        // was unchanged, 146pt tall with content still ending at x = 830, because
-        // `KanbanCard.metadataRows` appends the list chip **alone on its own row** whatever else is
-        // on the card. The list chip spans the content column structurally, not by luck, and no
-        // fixture can make it not. The deadline stays: it is what puts a due chip on the *Today*
-        // row, which is what extended that row's content to x = 1106 and produced the 10pt reading
-        // filed as T-1845.
+        // was unchanged, 146pt tall with content still ending at x = 830, because the Mac card then
+        // appended the list chip **alone on its own row** whatever else was on the card. The chip
+        // spanned the content column structurally, not by luck, and no fixture could make it not.
+        // ([[T-8181]] has since replaced the chip rows with one text run, so the card's height is
+        // content-proportional rather than row-counted; the fixture below is unaffected, because
+        // what it is for is which POPOVER ANCHORS are on screen at once.) The deadline stays: it is
+        // what puts a due token on the *Today* row, which is what extended that row's content to
+        // x = 1106 and produced the 10pt reading filed as T-1845.
         let tomorrowKey = DateFormatters.ymd.string(
             from: Calendar.current.date(byAdding: .day, value: 1, to: Date()) ?? Date()
         )

@@ -387,17 +387,32 @@ struct CadenceSharedTaskRowJobsTests {
     /// answer — which is the state this ticket existed to close, in the direction of iOS having
     /// neither and macOS having an uncapped one.
     @Test func bothBoardCardsListTagsAndSubtasksFromTheSharedFigures() throws {
+        // **[[T-8181]] moved the tag half up a level rather than away.** Neither card draws a
+        // `CompactTagStrip` any more: a tag is a `#deep-work` token in the Ledger card's one text
+        // run, and the run is built by `CadenceLedgerTagTokens` — which is shared, so the cap is
+        // now spelled ONCE for both boards instead of once per card. That is the same claim this
+        // test has always made, made somewhere stronger, which is why the expectation moves
+        // instead of relaxing.
         try expectCallSites(
             of: "CompactTagStrip",
             at: [
-                "Cadence/macOS/Views/KanbanCardMetaSupportViews.swift": 1,
-                "Cadence/iOS/iOSBoardCards.swift": 1,
+                "Cadence/macOS/Views/KanbanCardMetaSupportViews.swift": 0,
+                "Cadence/iOS/iOSBoardCards.swift": 0,
             ]
         )
         try expectOccurrences(
             of: "CadenceTaskPresentationSupport.rowTagLimit",
             at: [
-                "Cadence/macOS/Views/KanbanCardMetaSupportViews.swift": 1,
+                "Cadence/Shared/CadenceBoardLedgerCard.swift": 1,
+                "Cadence/macOS/Views/KanbanCardMetaSupportViews.swift": 0,
+                "Cadence/iOS/iOSBoardCards.swift": 0,
+            ]
+        )
+        // And both cards reach it, so a card cannot quietly stop listing tags at all.
+        try expectCallSites(
+            of: "CadenceLedgerTagTokens.names",
+            at: [
+                "Cadence/macOS/Views/KanbanCardView.swift": 1,
                 "Cadence/iOS/iOSBoardCards.swift": 1,
             ]
         )

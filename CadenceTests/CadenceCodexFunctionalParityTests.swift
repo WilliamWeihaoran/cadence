@@ -78,18 +78,37 @@ struct CadenceCodexFunctionalParityTests {
         #expect(board.contains(".sheet(item: $selectedEvent) { selection in\n            iOSCalendarEventEditSheet(event: selection.event)"))
         #expect(editor.contains("struct iOSCalendarEventEditSheet: View"))
         #expect(editor.contains("if isEditable {"))
-        #expect(editor.contains(".disabled(!isEditable)"))
+        // [[T-8161]]: the one Notes field is the Cadence note, so a read-only calendar no longer
+        // disables it — it refuses the mirror and the field says so. `isEditable` still decides
+        // Delete, the calendar picker and whether a flattened copy is offered to Apple Calendar.
+        #expect(editor.contains("mirrorsToCalendar: isEditable"))
+        #expect(!editor.contains(".disabled(!isEditable)"))
     }
 
+    /// **The three styles are one view's now** ([[T-8181]]). The settled title colour, the
+    /// strikethrough and the list-colour wash were spelled in the iOS card and, in a second
+    /// spelling, in the Mac's; they are `CadenceLedgerCard`'s, which both boards draw. So the scan
+    /// follows them there — and still asks each card for the half it owns, which is that it
+    /// resolves the state through the row's shared predicate rather than off `isDone`.
     @MainActor @Test func boardCardsUseTheRowsSettledStateForAllThreeStyles() throws {
         let read = CadenceSourceScan.strippedSourceReader()
-        let source = try read("Cadence/iOS/iOSBoardCards.swift")
-        let card = try #require(CadenceSourceScan.declarationBody("struct iOSBoardTaskCard: View", in: source))
-        #expect(card.contains("CadenceTaskCompletionState.resolve(task: task).isSettled"))
-        #expect(card.contains(".foregroundStyle(isSettled ? Theme.dim : Theme.text)"))
-        #expect(card.contains(".strikethrough(isSettled, color: Theme.dim)"))
-        #expect(card.contains("listColor.opacity(isSettled ? 0.05 : 0.12)"))
-        #expect(!card.contains(".strikethrough(task.isDone"))
+        let ledger = try read("Cadence/Shared/CadenceBoardLedgerCard.swift")
+        let shared = try #require(
+            CadenceSourceScan.declarationBody(
+                "struct CadenceLedgerCard<Ring: View, TokenView: View, Subtasks: View, SettlingOverlay: View>: View",
+                in: ledger
+            )
+        )
+        #expect(shared.contains(".foregroundStyle(isSettled ? Theme.dim : Theme.text)"))
+        #expect(shared.contains(".strikethrough(isStruckThrough, color: Theme.dim)"))
+        #expect(ledger.contains("listColor.opacity(CadenceLedgerCardMetrics.gutterWashOpacity(isSettled: isSettled))"))
+        #expect(!shared.contains(".strikethrough(task.isDone"))
+
+        for path in ["Cadence/iOS/iOSBoardCards.swift", "Cadence/macOS/Views/KanbanCardView.swift"] {
+            let card = try read(path)
+            #expect(card.contains("CadenceTaskCompletionState.resolve(task: task).isSettled"), "\(path) stopped reading the row's settled predicate")
+            #expect(!card.contains(".strikethrough(task.isDone"), "\(path) went back to striking on isDone alone")
+        }
         let task = AppTask(title: "Cancelled card")
         #expect(!CadenceTaskCompletionState.resolve(task: task).isSettled)
         task.status = .cancelled

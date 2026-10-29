@@ -84,7 +84,10 @@ struct CadenceListPagesObservedDayTests {
         let source = try Self.code("Cadence/macOS/Views/KanbanCardView.swift")
         let card = try #require(CadenceSourceScan.declarationBody("struct KanbanCard: View", in: source))
         #expect(card.contains("let todayKey: String"))
-        #expect(card.contains("dayAlreadyStatedBySurface: dayAlreadyStatedBySurface,\n            todayKey: todayKey\n"))
+        // [[T-8181]]: the chips are read inside the card's Ledger run now, not in a metadata-row
+        // builder of their own, so the call sits one level deeper. What is pinned is unchanged —
+        // the card hands its HOST's observed day to the shared descriptor and never reads the clock.
+        #expect(card.contains("dayAlreadyStatedBySurface: dayAlreadyStatedBySurface,\n                todayKey: todayKey\n"))
         #expect(!card.contains("DateFormatters.todayKey()"))
     }
 
