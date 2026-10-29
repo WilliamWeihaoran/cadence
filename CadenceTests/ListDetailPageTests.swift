@@ -248,7 +248,9 @@ struct ListDetailPageTests {
             try CadenceSourceScan.sourceFile("Cadence/iOS/iOSListDetailView.swift")
         )
         #expect(
-            detail.range(of: #"iOSListKanbanPanel\([^)]*area: area,\s*project: project\s*\)"#, options: .regularExpression) != nil,
+            // `project: project` may be followed by further arguments (T-8183 added `spanTasks:`),
+            // so the pin ends at the comma or the closing paren, not at the paren alone (T-8331).
+            detail.range(of: #"iOSListKanbanPanel\([^)]*area: area,\s*project: project\s*[,)]"#, options: .regularExpression) != nil,
             "the list detail does not hand the board its list, so the add-column row is inert"
         )
     }
