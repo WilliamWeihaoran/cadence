@@ -2451,6 +2451,8 @@ struct iOSTimelineTaskBlock: View {
             )
             .accessibilityAddTraits(.isButton)
             .accessibilityAction { openInspector() }
+            // The combined element would otherwise hide the circle's button from VoiceOver.
+            .accessibilityAction(named: Text(completionGlyph.state.accessibilityActionLabel)) { handleCompletionTap() }
             .overlay(alignment: .top) { resizeHandle(.resizeStart) }
             .overlay(alignment: .bottom) { resizeHandle(.resizeEnd) }
             .overlay(alignment: .topTrailing) { clearTimeControl }
@@ -2477,9 +2479,56 @@ struct iOSTimelineTaskBlock: View {
     /// A tap that is really the end of a hold is dropped: either the hold is still active when
     /// the tap reports, or it settled a moment before. Anything else opens the inspector.
     private func handleTap() {
-        if isMovePressActive { return }
-        if let pressSettledAt, Date().timeIntervalSince(pressSettledAt) < 0.3 { return }
+        if isTapTheEndOfAHold { return }
         openInspector()
+    }
+
+    /// The one test both taps on this block ask, so a hold begun on the circle and lifted there
+    /// moves the block without also completing the task.
+    private var isTapTheEndOfAHold: Bool {
+        if isMovePressActive { return true }
+        if let pressSettledAt, Date().timeIntervalSince(pressSettledAt) < 0.3 { return true }
+        return false
+    }
+
+    /// One resolve for the circle and its name, and the manager's, so a fill started on this
+    /// block, on the task's row or on its board card draws here too ([[T-8352]]).
+    private var completionGlyph: CadenceTaskCompletionGlyph {
+        TaskCompletionAnimationManager.shared.glyph(for: task)
+    }
+
+    /// **The block's circle is the shared deferred completion, as macOS's `TimelineTaskBlock`'s
+    /// is ([[T-8352]], [[T-8203]]).** A tap starts the 1.2s fill and a second tap inside it walks
+    /// the same three states the row and the board card walk (`advanceCompletionControl`).
+    ///
+    /// **The one difference from the row, and the input constraint behind it ([[T-8201]]).** The
+    /// row and the card grow their circle to a 44pt fingertip target. This block cannot: the rest
+    /// of its face is already a tap (open the inspector) and a hold (move it), a 15-minute block is
+    /// shorter than 44pt, and a 44pt square on its leading edge would swallow both on exactly the
+    /// blocks where there is least face left to hold. So the target is the circle's slot plus
+    /// `completionHitInset` — the block's own leading and top padding, not the title beside it.
+    /// macOS needs none of this: a pointer hits a 13pt circle.
+    private var completionControl: some View {
+        Button(action: handleCompletionTap) {
+            iOSTaskCompletionFill(
+                task: task,
+                glyph: completionGlyph,
+                diameter: CadenceTypeScale.size(.metadata, base: 13, at: dynamicTypeSize, scaling: scaling)
+            )
+            .frame(width: CadenceTypeScale.size(.metadata, base: 11, at: dynamicTypeSize, scaling: scaling), height: CadenceTypeScale.size(.metadata, base: 11, at: dynamicTypeSize, scaling: scaling))
+            .iOSExpandedHitArea(Self.completionHitInset)
+        }
+        .buttonStyle(.iosPressable)
+        .accessibilityLabel(completionGlyph.state.accessibilityActionLabel)
+    }
+
+    /// Reaches into the block's 7pt leading padding and its top padding, and stops at the 6pt gap
+    /// before the title.
+    private static let completionHitInset: CGFloat = 6
+
+    private func handleCompletionTap() {
+        if isTapTheEndOfAHold { return }
+        TaskCompletionAnimationManager.shared.advanceCompletionControl(for: task)
     }
 
     /// The one route to the inspector, for the tap and for VoiceOver's activate alike. Opening it
@@ -2588,8 +2637,7 @@ struct iOSTimelineTaskBlock: View {
 
     private var blockFace: some View {
         HStack(alignment: .top, spacing: 6) {
-            iOSTaskCompletionCircle(glyph: .resolve(task: task), diameter: CadenceTypeScale.size(.metadata, base: 13, at: dynamicTypeSize, scaling: scaling))
-                .frame(width: CadenceTypeScale.size(.metadata, base: 11, at: dynamicTypeSize, scaling: scaling), height: CadenceTypeScale.size(.metadata, base: 11, at: dynamicTypeSize, scaling: scaling))
+            completionControl
                 .padding(.top, 2)
 
             ViewThatFits(in: .vertical) {

@@ -449,6 +449,30 @@ struct TaskCompletionAnimationManagerTests {
         manager.cancelCancelPending(for: task.id)
     }
 
+    /// [[T-8392]]: the reverse of the test above. A completion started while a cancellation is
+    /// filling — the swipe's Done, macOS's timeline block — replaces it, so the cancellation's
+    /// window has nothing left to close and the task ends done, not cancelled.
+    @Test func startingCompletionAbortsAnInFlightCancellationPending() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let manager = TaskCompletionAnimationManager.shared
+        let task = AppTask(title: "a")
+        context.insert(task)
+        try context.save()
+
+        manager.toggleCancellation(for: task)
+        #expect(manager.isPendingCancel(task))
+
+        manager.toggleCompletion(for: task)
+
+        #expect(manager.isPending(task))
+        #expect(!manager.isPendingCancel(task), "both fills are running at once")
+        manager.windowClosed(onCancellationOf: task.id)
+        manager.windowClosed(onCompletionOf: task.id)
+        let audit = try ModelContext(container).fetch(FetchDescriptor<AppTask>())
+        #expect(audit.first { $0.id == task.id }?.status == .done, "the earlier cancellation overrode the completion")
+    }
+
     @Test func togglingCancellationOnAnAlreadyCancelledTaskRevertsItSynchronously() {
         let manager = TaskCompletionAnimationManager.shared
         let task = AppTask(title: "a")
@@ -732,6 +756,28 @@ struct TaskCompletionAnimationManagerTests {
         // The manager's iOS hop is the iOS status wrapper, so a deferred tick reconciles and
         // reports a refusal exactly as the synchronous one did.
         #expect(manager.contains("CadenceTaskStatusEditing.setStatus(transition.status, for: task, in: context)"))
+    }
+
+    /// [[T-8352]]: the iOS Calendar timed block's circle is a tap target on the shared deferred
+    /// completion, draws whatever fill the manager is running, and a hold that ends on the circle
+    /// moves the block without completing the task.
+    @Test func theIOSTimelineBlockCircleIsWiredToTheSharedDeferredCompletion() throws {
+        let file = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile("Cadence/iOS/iOSCalendarTimelineViews.swift"))
+        let start = try #require(file.range(of: "struct iOSTimelineTaskBlock: View"), "non-vacuity: the block moved")
+        let end = try #require(file.range(of: "struct iOSTimelineBlockEditing", range: start.upperBound..<file.endIndex))
+        let block = String(file[start.lowerBound..<end.lowerBound])
+
+        let tap = try #require(CadenceSourceScan.functionBody(named: "handleCompletionTap", in: block), "the block's circle is not a tap target")
+        #expect(tap.contains("TaskCompletionAnimationManager.shared.advanceCompletionControl(for: task)"), "the block's circle does not start the shared fill")
+        #expect(tap.contains("if isTapTheEndOfAHold { return }"), "a hold lifted on the circle would complete the task")
+        let blockTap = try #require(CadenceSourceScan.functionBody(named: "handleTap", in: block))
+        #expect(blockTap.contains("if isTapTheEndOfAHold { return }"), "the block's own tap stopped asking the shared hold test")
+
+        #expect(block.contains("iOSTaskCompletionFill("), "the block draws a still circle")
+        #expect(block.contains("TaskCompletionAnimationManager.shared.glyph(for: task)"), "the block's glyph cannot see the pending states")
+        #expect(!block.contains("iOSTaskCompletionCircle(glyph: .resolve(task: task)"), "the block still draws the circle from the stored status alone")
+        #expect(!block.contains("CadenceTaskStatusEditing.toggleCompletion("), "the block writes completion synchronously")
+        #expect(block.contains(".accessibilityAction(named: Text(completionGlyph.state.accessibilityActionLabel))"), "VoiceOver cannot reach the block's circle")
     }
 }
 #endif

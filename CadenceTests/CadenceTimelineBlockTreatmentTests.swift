@@ -382,8 +382,10 @@ struct CadenceTimelineBlockTreatmentTests {
         )
 
         let iosTask = try t3160IOSTaskBlock()
+        // [[T-8352]]: the circle is drawn through `iOSTaskCompletionFill`, the live host over
+        // `iOSTaskCompletionCircle`, so a fill started anywhere shows on the block too.
         #expect(
-            CadenceSourceScan.matchCount(#"iOSTaskCompletionCircle"#, in: iosTask) == 1,
+            CadenceSourceScan.matchCount(#"iOSTaskCompletion(Circle|Fill)\("#, in: iosTask) == 1,
             "the task block lost its completion circle"
         )
         // [[T-3170]] took the block-forming drag and drop off this block on purpose — that is the

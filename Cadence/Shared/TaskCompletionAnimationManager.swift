@@ -139,6 +139,11 @@ final class TaskCompletionAnimationManager {
 
     private func beginCompletion(for task: AppTask) {
         let id = task.id
+        // The twin of `beginCancellation`'s first line ([[T-8392]]). Without it a completion started
+        // over a running cancellation — the swipe's Done, macOS's timeline block, the Cmd key —
+        // left both fills pending, and the cancellation, having started first, closed first and
+        // settled the task as cancelled after the user had asked for done.
+        cancelCancelPending(for: id)
         cancelPending(for: id)
         pendingStartTimes[id] = Date()
         pendingTargets[id] = task
