@@ -119,7 +119,12 @@ against *what you are about to push*, not against your branch's own suites. One 
 now gated ([[T-3264]]): `agent-commit.sh` refuses `TEST-NAME-SHARED` when a commit staging a
 `CadenceTests/*.swift` leaves a `@Test` name declared twice (the `830a428d` / [[T-6650]] red),
 reading the private index with `test-suite-index.sh --shared-names` in a few seconds. The other
-census suites still need the run.
+three measured shapes (a source spelling asserted by a suite in a file the change never opened)
+are not gated -- no build-free check can tell which assertion an edit moves -- but every one of them
+quoted the changed file's repo path, so `./scripts/test-suite-index.sh --readers <changed
+product files>` prints the `-only-testing:` arguments that would have caught each ([[T-7710]]).
+Add them to your scoped run. It cannot see a directory walk or an assembled path, so the census
+suites still need the full run before you push `main`.
 
 **C. Host time zone.** CI is UTC, this Mac is America/New_York, and a test reading
 `Calendar.current` can only pass on one of them ([[T-3225]]). **Live? Guarded.** The guard runs

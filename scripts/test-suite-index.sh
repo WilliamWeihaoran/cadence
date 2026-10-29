@@ -11,6 +11,9 @@
 #   ./scripts/test-suite-index.sh --shared-names [<root>] # name<TAB>Suite (file), ... for every @Test
 #                                                        # name declared more than once, read from
 #                                                        # <root>/CadenceTests (default: this repo)
+#   ./scripts/test-suite-index.sh --readers <path>...    # -only-testing: args for every suite whose
+#                                                        # source names one of these repo paths as a
+#                                                        # string literal (T-7710); detail on stderr
 #
 # This exists for two of the five ways a test has looked like a guard while guaranteeing nothing
 # (docs/TODO.md T-161):
@@ -98,7 +101,15 @@ elif [[ "${1:-}" == "--shared-names" ]]; then
         ROOT="${1:A}"; shift
     fi
 fi
-NEEDLE="${1:-}"
+# T-7710. `--readers` takes SEVERAL paths, so they travel to the parser as one newline-joined
+# needle; no repository path holds a newline.
+if [[ "${1:-}" == "--readers" ]]; then
+    MODE=readers; shift
+    (( $# )) || { print -r -- "test-suite-index.sh: --readers needs at least one repo-relative path" >&2; exit 2 }
+    NEEDLE="${(pj:\n:)@}"
+else
+    NEEDLE="${1:-}"
+fi
 
 "$PYTHON_BIN" -I - "$ROOT" "$MODE" "$NEEDLE" <<'PY'
 import os, re, sys
@@ -250,6 +261,7 @@ def leading_string(raw, pos, keyword):
     return m.group(1) if m else None
 
 rows = []            # (suite, testname, filename, test_label_or_None)
+files = []           # (filename, raw, code, types) -- kept for `--readers` (T-7710)
 suite_label = {}      # suite name -> display name string, or None if unnamed
 
 for dirpath, _, filenames in os.walk(os.path.join(root, 'CadenceTests')):
@@ -292,6 +304,49 @@ for dirpath, _, filenames in os.walk(os.path.join(root, 'CadenceTests')):
             test_label = leading_string(raw, m.start(), '@Test')
             rows.append((suite or '<file scope>', m.group(1), filename, test_label))
             suite_label.setdefault(suite or '<file scope>', None)
+        files.append((filename, raw, code, types))
+
+if mode == 'readers':
+    # T-7710. Which suites read a product file AS SOURCE: every suite whose file spells the path as
+    # a string literal in CODE (`sourceFile("Cadence/iOS/X.swift")`, a `read("...")` helper, an
+    # inventory array). This is the one link the three spelling-census reds T-3264 measured had in
+    # common -- `587f2e3c`, `db2b561e` and `e711077c` each changed a file that a suite in a file the
+    # change never opened named by exactly this literal -- and it is a fact read off the source,
+    # not a guess about which assertion will move. The quoted path inside a COMMENT counts too, on
+    # purpose: `blank` spaces out a literal's quotes along with a comment's text, so the two cannot
+    # be told apart from the blanked copy without a second scanner, and a suite whose comment
+    # quotes a path is near-always one that reads it. Over-inclusion costs a few seconds of run.
+    #
+    # Attributed to the top-level type whose braces enclose the literal when that type holds tests;
+    # otherwise (a file-scope helper, an `extension`, a fixture struct) to EVERY suite in that file,
+    # because running one suite too many costs seconds and one too few is the red this is for.
+    #
+    # WHAT IT DOES NOT SEE, said plainly so nobody reads its silence as "nothing reads this": a
+    # directory walk (`Cadence/**/*.swift` swept for a spelling), a path assembled at runtime, a
+    # basename-only reference. Those suites still need the full-target run CI_PARITY.md mode B asks
+    # for. Paths match exactly as given, repo-relative.
+    paths = [p for p in needle.split('\n') if p]
+    suites_by_file = {}
+    for suite, _name, filename, _label in rows:
+        suites_by_file.setdefault(filename, set()).add(suite)
+    picked = set()
+    for p in paths:
+        literal = '"' + p + '"'
+        hits = set()
+        for filename, raw, _code, types in files:
+            start = raw.find(literal)
+            while start >= 0:
+                owner = None
+                for t_start, open_brace, close, name in types:
+                    if open_brace < start < close and name in suites_by_file.get(filename, ()):
+                        owner = name
+                hits |= {owner} if owner else suites_by_file.get(filename, set())
+                start = raw.find(literal, start + 1)
+        hits.discard('<file scope>')
+        picked |= hits
+        print(f'{p}: {len(hits)} suite(s) read it by literal path' + (f' -- {", ".join(sorted(hits))}' if hits else ''), file=sys.stderr)
+    print(' '.join(f'-only-testing:CadenceTests/{s}' for s in sorted(picked)))
+    sys.exit(0)
 
 if mode == 'shared_names':
     # T-3264. The exact question `CadenceTestTargetHygieneTests.everyTestFunctionNameInTheTargetIsUniqueAcrossSuites`

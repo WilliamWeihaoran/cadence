@@ -3801,6 +3801,40 @@ struct CadenceGuardScriptSelftestTests {
                 "a function with no probe in it read as a probe")
     }
 
+    /// [[T-7710]]. `test-suite-index.sh --readers <path>…` names every suite whose source quotes a
+    /// changed product file's repo path -- the one link the three spelling-census reds [[T-3264]]
+    /// measured shared (`587f2e3c`, `db2b561e`, `e711077c`: each asserting suite lived in a file
+    /// the change never opened, and each named the product file by exactly that literal). Replayed
+    /// on each red's parent tree, the lister named the suite that went red every time.
+    ///
+    /// Pinned over the live tree with the `e711077c` and `db2b561e` shapes: the two suites that
+    /// read `iOSCalendarTimelineViews.swift`'s spellings, and `CadenceTagChipScaleTests`, which
+    /// shares a file with `CadenceTagChipStyleTests` -- attribution is by the suite whose braces
+    /// enclose the literal, so the sibling that never names `TasksPanel.swift` must not be listed.
+    /// A path nothing quotes must list nothing, or the lister is just "every suite".
+    @Test func theReadersListerNamesTheSuitesThatQuoteAChangedFile() throws {
+        let script = CadenceSelftestRun.repositoryRoot().appendingPathComponent("scripts/test-suite-index.sh").path
+        let run = try CadenceSelftestRun.run("/bin/zsh", [
+            "-f", script, "--readers",
+            "Cadence/iOS/iOSCalendarTimelineViews.swift",
+            "Cadence/macOS/Views/TasksPanel.swift",
+        ])
+        #expect(run.status == 0, "--readers exited \(run.status)\n\(run.output)")
+        for suite in ["CadenceCalendarOverlapLayoutTests", "CalendarAllDayAndDoneTaskParityTests", "CadenceTagChipScaleTests"] {
+            #expect(run.output.contains("-only-testing:CadenceTests/\(suite)"),
+                    "--readers did not name \(suite), which quotes a path it was asked about\n\(run.output)")
+        }
+        #expect(!run.output.contains("-only-testing:CadenceTests/CadenceTagChipStyleTests"),
+                "--readers listed every suite in CadenceTagChipStyleTests.swift instead of the one quoting the path\n\(run.output)")
+
+        let nobody = try CadenceSelftestRun.run("/bin/zsh", [
+            // Assembled, so this file does not itself quote the path it asks about.
+            "-f", script, "--readers", "Cadence/NoSuchDirectory/" + "NothingQuotesThis.swift",
+        ])
+        #expect(nobody.status == 0 && !nobody.output.contains("-only-testing:"),
+                "a path no suite quotes still listed suites: \(nobody.output)")
+    }
+
 }
 
 /// Reads a zsh script for the T-1074 shape: a bare `local`/`typeset`/`declare` declaration that one
