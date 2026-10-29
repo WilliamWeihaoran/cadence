@@ -139,4 +139,42 @@ enum GlobalSearchKeyboardRow: Identifiable, Equatable {
         }
     }
 }
+
+/// **[[T-8092]] — a resting pointer does not take the highlight back from the keyboard.**
+///
+/// Each row writes the highlight from a hover-enter, and since [[T-8063]] the list scrolls to
+/// follow the keyboard highlight. So with the pointer resting over the list, Down past the bottom
+/// edge scrolls a different row under the pointer; if that row's hover-enter fires, the highlight
+/// jumps back up to it, the next Down walks from there, and Return can open a row the user never
+/// walked to. Typing a query swaps the rows under the pointer the same way.
+///
+/// The usual list-picker rule: once the keyboard has moved the highlight, a hover only counts
+/// after the pointer has actually moved. The gate remembers where the pointer was, in screen
+/// coordinates, when the keyboard last took the highlight — a row's local hover location cannot
+/// say this, because scrolling moves the row under a pointer that stayed put. A hover from that
+/// same spot is the list moving, not the user; a hover from anywhere else is the user, and it
+/// hands the highlight back to the pointer until the keyboard takes it again.
+nonisolated struct GlobalSearchHoverGate: Equatable {
+    /// How far the pointer must have travelled, in points, to count as having moved.
+    static let movementTolerance: CGFloat = 0.5
+
+    /// Where the pointer was when the keyboard last took the highlight; `nil` while the pointer
+    /// owns it.
+    private(set) var keyboardPointerAnchor: CGPoint?
+
+    /// The keyboard moved the highlight, or replaced the rows under it.
+    mutating func keyboardTookHighlight(pointerAt location: CGPoint) {
+        keyboardPointerAnchor = location
+    }
+
+    /// Whether a row's hover-enter, with the pointer at `location`, may move the highlight.
+    mutating func admitsHover(pointerAt location: CGPoint) -> Bool {
+        guard let anchor = keyboardPointerAnchor else { return true }
+        let moved = abs(location.x - anchor.x) > Self.movementTolerance
+            || abs(location.y - anchor.y) > Self.movementTolerance
+        guard moved else { return false }
+        keyboardPointerAnchor = nil
+        return true
+    }
+}
 #endif

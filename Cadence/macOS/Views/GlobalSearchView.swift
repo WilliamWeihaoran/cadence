@@ -1,4 +1,5 @@
 #if os(macOS)
+import AppKit
 import SwiftUI
 import SwiftData
 import EventKit
@@ -31,6 +32,8 @@ struct GlobalSearchOverlay: View {
 
     @State private var eventResults: [GlobalSearchResult] = []
     @State private var highlightedResultID: String?
+    /// [[T-8092]]: keeps a resting pointer from taking the highlight back from the keyboard.
+    @State private var hoverGate = GlobalSearchHoverGate()
     @State private var pendingEventSearch: DispatchWorkItem?
     @State private var pendingQueryCommit: DispatchWorkItem?
     @State private var draftQuery: String = ""
@@ -115,11 +118,15 @@ struct GlobalSearchOverlay: View {
                     query: query,
                     withheldCompletedTaskCount: withheldCompletedTaskCount,
                     highlightedResultID: $highlightedResultID,
+                    hoverGate: $hoverGate,
                     onSelect: onSelect,
                     onReveal: revealSection
                 )
             }
             .onAppear {
+                // The palette opens under a pointer that is usually resting over the list, and
+                // the first row is the keyboard's until the pointer moves ([[T-8092]]).
+                keyboardTookHighlight()
                 GlobalSearchInteractionSupport.handleAppear(
                     searchManager: searchManager,
                     setDraftQuery: { draftQuery = $0 },
@@ -133,6 +140,8 @@ struct GlobalSearchOverlay: View {
                 scheduleQueryCommit(newValue)
             }
             .onChange(of: committedQuery) { _, _ in
+                // Typing swaps the rows under a resting pointer, like scrolling does.
+                keyboardTookHighlight()
                 expandedCategories.removeAll()
                 runEventSearch()
                 syncHighlightToAvailableResults()
@@ -145,6 +154,7 @@ struct GlobalSearchOverlay: View {
                 syncHighlightToAvailableResults()
             }
             .onMoveCommand { direction in
+                keyboardTookHighlight()
                 highlightedResultID = GlobalSearchOverlayStateSupport.moveHighlight(
                     direction: direction,
                     currentID: highlightedResultID,
@@ -152,6 +162,10 @@ struct GlobalSearchOverlay: View {
                 )
             }
         }
+    }
+
+    private func keyboardTookHighlight() {
+        hoverGate.keyboardTookHighlight(pointerAt: NSEvent.mouseLocation)
     }
 
     private func runEventSearch() {
@@ -228,6 +242,7 @@ struct GlobalSearchHighlightList: View {
     let query: String
     var withheldCompletedTaskCount: Int = 0
     @Binding var highlightedResultID: String?
+    @Binding var hoverGate: GlobalSearchHoverGate
     let onSelect: (GlobalSearchResult) -> Void
     let onReveal: (String) -> Void
 
@@ -238,9 +253,19 @@ struct GlobalSearchHighlightList: View {
             withheldCompletedTaskCount: withheldCompletedTaskCount,
             highlightedResultID: highlightedResultID,
             onSelect: onSelect,
-            onHover: { highlightedResultID = $0 },
+            onHover: hover,
             onReveal: onReveal
         )
+    }
+
+    /// [[T-8092]]: a hover-enter moves the highlight only once the pointer has moved since the
+    /// keyboard last took it — not when the list scrolled a row under a pointer that stayed put.
+    /// The gate is written only when its answer changes it, so a plain hover costs no state write.
+    private func hover(_ id: String) {
+        var gate = hoverGate
+        guard gate.admitsHover(pointerAt: NSEvent.mouseLocation) else { return }
+        if gate != hoverGate { hoverGate = gate }
+        highlightedResultID = id
     }
 }
 #endif

@@ -273,6 +273,14 @@ struct CreateTaskSheet: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.cadencePlain)
+            // [[T-8103]] (a): Escape closes the sheet the way this ✕ does. The in-window host
+            // (`TaskCreationLayerView`) had no Escape at all, so the key fell through to the main
+            // window's `cancelOperation` and did nothing. The quick-capture panel already answered
+            // Escape from its `NSPanel.cancelOperation`, and its `dismissAction` is that same
+            // `closeDiscardingDraft`, so the key means the same there. The `~`, `#`, date and tag
+            // pickers are popovers — their own windows — so this window's key equivalent does not
+            // take Escape from them.
+            .keyboardShortcut(.cancelAction)
             .accessibilityLabel("Cancel")
 
             Button(action: createTask) {

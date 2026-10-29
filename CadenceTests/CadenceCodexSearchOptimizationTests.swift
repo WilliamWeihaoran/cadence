@@ -158,7 +158,10 @@ struct CadenceCodexSearchOptimizationTests {
         #expect(parent.contains("sections: sections"))
         let child = try #require(CadenceSourceScan.declarationBody("struct GlobalSearchHighlightList: View", in: code))
         #expect(child.contains("@Binding var highlightedResultID"))
-        #expect(child.contains("onHover: { highlightedResultID = $0 }"))
+        // T-8092: the child's hover goes through the pointer gate before it writes the highlight,
+        // and it is still the child — not the parent — that writes it.
+        #expect(child.contains("onHover: hover,"))
+        #expect(child.contains("highlightedResultID = id"))
     }
 }
 
@@ -183,7 +186,7 @@ private struct CodexSearchDerivationHost: View {
     var body: some View {
         Group {
             if isolated {
-                GlobalSearchHighlightList(sections: sections, query: probe.query, highlightedResultID: $highlightedResultID, onSelect: { _ in }, onReveal: { _ in })
+                GlobalSearchHighlightList(sections: sections, query: probe.query, highlightedResultID: $highlightedResultID, hoverGate: .constant(GlobalSearchHoverGate()), onSelect: { _ in }, onReveal: { _ in })
             } else {
                 GlobalSearchSectionsList(sections: sections, query: probe.query, highlightedResultID: highlightedResultID, onSelect: { _ in }, onHover: { highlightedResultID = $0 }, onReveal: { _ in })
             }
