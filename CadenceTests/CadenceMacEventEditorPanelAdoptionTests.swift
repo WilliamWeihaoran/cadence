@@ -219,9 +219,13 @@ struct CadenceMacEventEditorPanelAdoptionTests {
         #expect(popover.contains("offersEventRepeat: offersRepeat"))
         #expect(popover.contains("readOnlyNotice: isEditable"))
         #expect(popover.contains("canCommit: canSave"))
-        // The Apple Calendar notes field is the panel's own spelling, and inert on a read-only
-        // event while the Cadence note card beside it is not.
-        #expect(CadenceSourceScan.matchCount(#"CadenceSchedulePanelNotesRow\(notes: \$draft\.notes\)\s*\.disabled\(!isEditable\)"#, in: popover) == 1)
+        // **[[T-8161]]: one Notes field, and it is the rich Cadence note.** The panel's plain
+        // notes row and the Create/Open card above it were two surfaces for one thing; the popover
+        // hands the panel's notes slot the shared `CadenceEventNotesField` instead. It is not
+        // disabled on a read-only event — that calendar refuses the *mirror*, not the note.
+        #expect(CadenceSourceScan.matchCount(#"CadenceEventNotesField\("#, in: popover) == 1)
+        #expect(!popover.contains("CadenceSchedulePanelNotesRow("), "the popover draws a second notes surface")
+        #expect(!popover.contains(".disabled(!isEditable)"), "the read-only carve-out disables the note again")
     }
 
     /// Delete only on an event that can be written, and both Save and Delete still stop at the

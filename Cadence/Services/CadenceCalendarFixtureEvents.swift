@@ -79,6 +79,13 @@ enum CadenceCalendarFixtureEvents {
         /// Minutes from midnight. `nil` on the all-day entry, which has no time of day.
         let startMinute: Int?
         let durationMinutes: Int
+        /// **[[T-8161]].** The event's `EKEvent.notes` — text that exists in Apple Calendar and
+        /// in no Cadence note. Defaulted to `nil`, so every fixture written before this reads
+        /// exactly as it did; the one spec that sets it is the only way to *look at* the merged
+        /// Notes field doing the two things that cannot be faked from inside the app: showing an
+        /// event's existing Apple Calendar text (rule 4), and appending it under a divider beside
+        /// a Cadence note that says something else (rule 6).
+        var nativeNotes: String? = nil
     }
 
     /// **The `calendar-hues` fixture: the two pathological hues [[T-3168]] is about, a pale
@@ -206,13 +213,19 @@ enum CadenceCalendarFixtureEvents {
         /// How far into the lunch the seeded task starts. See the note above for why it is 50.
         static let cascadeTaskGapMinutes = 50
 
+        /// The Apple Calendar text on `Lunch with Sam`, and the sentence [[T-8161]]'s rule (6) is
+        /// about: it must survive beside a Cadence note that says something else, under a divider.
+        /// Read back by `CadenceCalendarFixtureEventsTests` rather than typed twice.
+        static let lunchNativeNotes = "Moved to the room on the fourth floor."
+
         static let timed: [Spec] = [
             Spec(
                 title: "Lunch with Sam",
                 calendarTitle: "Personal",
                 hue: lunchHue,
                 startMinute: lunchStartMinute,
-                durationMinutes: lunchDurationMinutes
+                durationMinutes: lunchDurationMinutes,
+                nativeNotes: lunchNativeNotes
             )
         ]
 
@@ -340,6 +353,7 @@ enum CadenceCalendarFixtureEvents {
         eventCalendar.cgColor = spec.hue.cgColor
         event.calendar = eventCalendar
         event.title = spec.title
+        event.notes = spec.nativeNotes
         let dayStart = calendar.startOfDay(for: date)
         if let startMinute = spec.startMinute {
             // Set on the wall clock, not added to midnight ([[T-4220]]); the end stays a duration.

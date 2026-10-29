@@ -226,15 +226,23 @@ struct iOSEditorSheetMetricsTests {
             )
         }
 
-        // The event editor: two groups of its own (the Cadence event note and the Apple Calendar
-        // note it hands the panel's notes slot), both ruled, inside the shared gutter and radius.
+        // The event editor: **one** group of its own since [[T-8161]] — the merged Notes field,
+        // which replaced the Cadence-note card and the Apple Calendar note beside it. The group is
+        // drawn by `CadenceEventNotesField`, shared with the Mac's event popover so the two cannot
+        // give one field two labels, and it is still ruled and still inside the shared gutter and
+        // radius. So the ruled-group assertion follows it into that file.
         let editor = CadenceSourceScan.strippingComments(
             try CadenceSourceScan.sourceFile("Cadence/iOS/iOSCalendarEventEditSheet.swift")
         )
         #expect(editor.contains("CadenceSchedulePanel("), "the event editor no longer hosts the shared panel")
-        #expect(CadenceSourceScan.matchCount(#"iOSEditorSection\("#, in: editor) == 2)
-        #expect(CadenceSourceScan.matchCount(#"style: \.ruled"#, in: editor) == 2)
+        #expect(CadenceSourceScan.matchCount(#"CadenceEventNotesField\("#, in: editor) == 1)
+        #expect(CadenceSourceScan.matchCount(#"iOSEditorSection\("#, in: editor) == 0)
         #expect(CadenceSourceScan.matchCount(#"style: \.card"#, in: editor) == 0)
+        let notesField = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/Shared/Components/CadenceEventNotesField.swift")
+        )
+        #expect(CadenceSourceScan.matchCount(#"style: \.ruled"#, in: notesField) == 1)
+        #expect(CadenceSourceScan.matchCount(#"style: \.card"#, in: notesField) == 0)
         // [[T-3238]] moved the event editor onto the capture presentation, so the two sheet
         // assertions that stood here (`cornerRadius: Theme.radiusPanel` and the gutter) have no
         // subject left in that file; these two pin where it went instead.

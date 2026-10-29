@@ -22,9 +22,23 @@ struct CadenceCodexCalendarTypographyTests {
         let hits = try instrument.sweep(Self.calendarFiles, atLeast: Self.calendarFiles.count,
                                        including: "Cadence/iOS/iOSCalendarTimelineViews.swift", read: read)
         #expect(hits.isEmpty, "Calendar font literals remain: \(hits)")
-        for path in Self.calendarFiles where !path.hasSuffix("iOSCalendarInspectorView.swift") && !path.hasSuffix("iOSCalendarQuickCreateSheet.swift") {
+        // `iOSCalendarEventEditSheet.swift` joined the two exclusions with [[T-8161]]: its two
+        // notes surfaces became one `CadenceEventNotesField`, and the last text it drew itself —
+        // the Create/Open card's title and subtitle — went with the card. Every word on that sheet
+        // is now drawn by a shared component, so the role adapter is asserted where it lives
+        // rather than on a file that no longer has a `Text` of its own. The sheet's own
+        // `.cadenceScaledTypography()` scope is still asserted below, which is the half that
+        // cannot move.
+        for path in Self.calendarFiles
+        where !path.hasSuffix("iOSCalendarInspectorView.swift")
+            && !path.hasSuffix("iOSCalendarQuickCreateSheet.swift")
+            && !path.hasSuffix("iOSCalendarEventEditSheet.swift") {
             #expect(try read(path).contains(".cadenceFont("), "Calendar text lost its role adapter: \(path)")
         }
+        #expect(
+            try read("Cadence/Shared/Components/CadenceEventNotesField.swift").contains(".cadenceFont("),
+            "the merged Notes field lost its role adapter"
+        )
         for path in ["iOSCalendarView.swift", "iOSCalendarEventEditSheet.swift", "iOSCalendarQuickCreateSheet.swift", "iOSDateJumpTitle.swift"] {
             let source = CadenceSourceScan.codeOnly(try read("Cadence/iOS/" + path))
             #expect(source.contains(".cadenceScaledTypography()"), "Missing independent calendar scope: \(path)")

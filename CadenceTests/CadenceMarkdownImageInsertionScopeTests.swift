@@ -12,7 +12,13 @@ import Testing
 ///
 /// - the note **template** body, then a JSON string in `UserDefaults` under
 ///   `NoteTemplateLibrary.storageKey`;
-/// - the calendar sheets' **Apple Calendar note**, which is `EKEvent.notes` in EventKit.
+/// - the calendar sheets' **Apple Calendar note**, which was `EKEvent.notes` in EventKit.
+///
+/// **[[T-8161]] moved the second one into the store too, and that door *did* open.** The event
+/// editor has one Notes field now and it edits the Cadence `Note`; only the flattened mirror
+/// reaches `EKEvent.notes`, and a mirror carries no image references at all. So the refusal there
+/// was retired rather than extended — the inventory can see the asset through `Note.content`,
+/// which is the whole test this suite applies.
 ///
 /// **T-1346 moved the first one into the store.** The override map is now
 /// `NoteTemplatePreference.overridesRaw`, so the templates the owner wrote follow them between
@@ -344,21 +350,30 @@ struct CadenceMarkdownImageInsertionScopeTests {
         #expect(CadenceMarkdownSourceInventory.Source.noteContent.propertyName == "content")
     }
 
-    // MARK: - T-422: the Apple Calendar note
+    // MARK: - T-422 is retired: the event editor's notes field is a Note row now
 
-    /// The event editor is always an event, so its Apple Calendar note is always `EKEvent.notes`
-    /// and always outside the store. A flat refusal is correct here.
-    @Test func theCalendarEventEditorRefusesImageInsertion() throws {
+    /// **[[T-8161]] retired T-422 rather than extending it.** The event editor used to carry two
+    /// notes surfaces: the Cadence `Note`, and a markdown well bound straight to `EKEvent.notes`.
+    /// The second one was outside the store, which is what the flat refusal was for. There is one
+    /// field now and it edits the `Note` — `CadenceMarkdownSourceInventory.Source.noteContent`,
+    /// which the sweep reads — so an image inserted there is seen, and the door closes on nothing.
+    ///
+    /// The refusal that stayed is `allowsEmbeddedTaskCreation`: a compact field inside an event
+    /// sheet still does not mint tasks. That is a scope decision, not a sweep one, which is why
+    /// the two were entangled here and are now separate — the same split
+    /// `theTemplateBodyIsNowInTheInventoryAndTheDoorIsStillShut` records for the template body.
+    @Test func theCalendarEventEditorAcceptsImagesBecauseItsNotesFieldIsANoteRow() throws {
         let code = try strippedSource("Cadence/iOS/iOSCalendarEventEditSheet.swift")
 
-        #expect(code.contains("allowsImageInsertion: false"))
+        #expect(code.contains("iOSMarkdownEditingSurface("), "the sheet presents no editor; this scan measures nothing")
+        #expect(!code.contains("allowsImageInsertion"), "the merged Notes field refuses images again")
         #expect(code.contains("allowsEmbeddedTaskCreation: false"))
 
-        // Same relation as the template file: this sheet's one editor refuses both, so a second
-        // editor arriving with one guard and not the other fails here.
-        let tasksRefused = CadenceSourceScan.matchCount("allowsEmbeddedTaskCreation: false", in: code)
-        #expect(tasksRefused > 0, "this file presents no guarded editor; the scan is measuring nothing")
-        #expect(tasksRefused == CadenceSourceScan.matchCount("allowsImageInsertion: false", in: code))
+        // The premise, asserted rather than assumed: the field's binding reaches `Note.content`,
+        // and that property is in the inventory the image sweep reads.
+        #expect(code.contains("CadenceEventNotesMerge.displayText("))
+        #expect(CadenceMarkdownSourceInventory.Source.noteContent.propertyName == "content")
+        #expect(CadenceMarkdownSourceInventory.Source.noteContent.entityName == "Note")
     }
 
     // `quickCreateRefusesImagesOnlyInEventMode` lived here. Its host — the calendar quick-create
@@ -379,7 +394,10 @@ struct CadenceMarkdownImageInsertionScopeTests {
     @Test func everyOutOfStoreEditorHostPassesTheFlagAndNoOtherHostNeedsTo() throws {
         let outOfStore = [
             "Cadence/iOS/iOSSettingsTemplateAndListSections.swift",
-            "Cadence/iOS/iOSCalendarEventEditSheet.swift",
+            // `iOSCalendarEventEditSheet.swift` was the second entry until [[T-8161]] merged the
+            // event editor's two notes surfaces into one field backed by the `Note` row. Its text
+            // is in the inventory now, so it passes no flag and belongs in neither list — exactly
+            // like the sixth host below, whose well went with its sheet.
             // `iOSCalendarQuickCreateSheet.swift` was the third entry until [[T-3171]]'s seventh
             // adoption slice put the calendar's drag-create on the capture presentation: the card
             // draws the plain Notes field, the sheet presents no markdown editor at all, and a host

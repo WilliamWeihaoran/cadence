@@ -18,8 +18,9 @@ struct iOSCalendarEventSelection: Identifiable {
 /// The form itself is `CadenceSchedulePanel`, the same view the iPad timeline creates with — so
 /// editing an event and creating one are the same screen, differing by `CadenceScheduleDraft`'s
 /// subject and by the Delete control. This file is what cannot be shared: the `EKEvent`, the
-/// manager's writes, the recurrence-scope question, the delete confirmation, the Cadence event note
-/// and the platform's markdown well for the Apple Calendar note.
+/// manager's writes, the recurrence-scope question, the delete confirmation, and the one Notes
+/// field — the rich Cadence event note, which mirrors a flattened copy into `EKEvent.notes`
+/// ([[T-8161]]); there is no separate "Apple Calendar note" well any more.
 ///
 /// **What it gained by adopting the panel**: a separate end DATE, so a timed event can be moved
 /// across a midnight and an all-day one given any number of days (the old Days list stopped at
@@ -51,6 +52,11 @@ struct iOSCalendarEventEditSheet: View {
     /// through the scope dialog ([[T-7075]]); see `CadenceEventDeleteStep`.
     @State private var deleteConfirmationScope: CalendarRecurrenceEditScope?
     @State private var actionError: String?
+    /// What the Notes field's last commit could not do, drawn under the field itself.
+    @State private var noteCommitNotice: String?
+    /// The note's content as Apple Calendar last took it — `nil` until the sheet appears. Rule (1)
+    /// of [[T-8161]]: the mirror fires only when the Cadence note has moved away from this.
+    @State private var mirroredNoteContent: String?
     @State private var pendingAction: PendingAction?
 
     /// The draft as the sheet opened it. A save whose schedule still matches it writes the event's
@@ -159,7 +165,6 @@ struct iOSCalendarEventEditSheet: View {
                 offersEventRepeat: offersRepeat,
                 actions: panelActions
             ) {
-                eventNoteSection
                 notesSection
             }
             .capturePresentation(CadenceScheduleCaptureOptions())
@@ -222,6 +227,7 @@ struct iOSCalendarEventEditSheet: View {
             )
         }
         .onAppear(perform: ensureWritableCalendar)
+        .onAppear(perform: loadMirrorBaseline)
         .onChange(of: calendarManager.storeVersion) { _, _ in
             reloadEventNotesIfUntouched()
         }
@@ -289,66 +295,118 @@ struct iOSCalendarEventEditSheet: View {
         return "No writable calendars are available."
     }
 
-    private var eventNoteSection: some View {
-        iOSEditorSection(title: "Event Note", style: .ruled) {
-            HStack(alignment: .center, spacing: 12) {
-                // 34/15, the tile size the app's other editor rows draw.
-                iOSIconTile(systemImage: "doc.text", color: Theme.purple, size: 34, iconSize: 15)
-
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(linkedEventNote?.displayTitle ?? "No linked note yet")
-                        .cadenceFont(.rowTitle, base: 14, weight: .semibold)
-                        .foregroundStyle(linkedEventNote == nil ? Theme.dim : Theme.text)
-                        .lineLimit(1)
-                    Text(linkedEventNote == nil ? "Create a markdown note for this event." : "Open the note linked to this event.")
-                        .cadenceFont(.metadata, base: 12, weight: .regular)
-                        .foregroundStyle(Theme.subdued)
-                        .lineLimit(2)
-                }
-
-                Spacer(minLength: 8)
-
-                iOSActionButton(
-                    title: linkedEventNote == nil ? "Create" : "Open",
-                    role: .secondary,
-                    size: .compact,
-                    action: openEventNote
-                )
-            }
+    /// **[[T-8161]] — the one Notes field.** It replaced two: the "Event Note" Create/Open card
+    /// and the "Apple Calendar note" markdown well that bound straight to `EKEvent.notes`. The
+    /// field is the rich Cadence `Note`; Apple Calendar gets a flattened copy of it
+    /// (`CadenceEventNotesMerge`), and images stay Cadence-only because only the *mirror* drops
+    /// them — the text they sit in is a `Note` row, which is what `CadenceMarkdownSourceInventory`
+    /// reads, so [[T-422]]'s `allowsImageInsertion: false` is retired here rather than extended.
+    ///
+    /// Not `.disabled(!isEditable)` any more, which is rule (5): a read-only calendar refuses the
+    /// *mirror*, not the note, and the field says which of the two in one quiet line.
+    private var notesSection: some View {
+        CadenceEventNotesField(
+            mirrorsToCalendar: isEditable,
+            failureNotice: noteCommitNotice,
+            onOpenFullEditor: openEventNote
+        ) {
+            iOSMarkdownEditingSurface(
+                text: notesBinding,
+                isFocused: $notesEditorFocused,
+                placeholder: "Add notes\u{2026}",
+                referenceNotes: allNotes,
+                referenceTasks: allTasks,
+                onOpenReference: openMarkdownReference,
+                allowsEmbeddedTaskCreation: false,
+                flush: notesFlush
+            )
+            .iOSMarkdownWell()
         }
     }
 
-    private var notesSection: some View {
-        iOSEditorSection(title: "Notes", style: .ruled) {
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Apple Calendar note")
-                    .cadenceFont(.metadata, base: 12, weight: .semibold)
-                    .foregroundStyle(Theme.subdued)
-
-                iOSMarkdownEditingSurface(
-                    text: $draft.notes,
-                    isFocused: $notesEditorFocused,
-                    placeholder: "Add markdown notes…",
-                    referenceNotes: allNotes,
-                    referenceTasks: allTasks,
-                    onOpenReference: openMarkdownReference,
-                    allowsEmbeddedTaskCreation: false,
-                    // **T-422.** This binding is `EKEvent.notes` in EventKit, not a row in the
-                    // store, so an image pasted here would be referenced by nothing
-                    // `CadenceMarkdownSourceInventory` can read and the next sweep would collect
-                    // its `.externalStorage` bytes. Widening the inventory was never an option:
-                    // EventKit has no unbounded "every event" query, so there is no way to ask the
-                    // calendar store the question the sweep asks the model store.
-                    allowsImageInsertion: false,
-                    flush: notesFlush
+    /// What the field shows, and what typing in it does.
+    ///
+    /// `get` is `CadenceEventNotesMerge.displayText`: the event's own `EKEvent.notes` when no
+    /// Cadence note exists yet (rule 4), and otherwise the note with any Apple Calendar text it
+    /// does not already carry appended under a divider (rule 6). `set` seeds the note on the first
+    /// edit — `initialContent(eventTitle:nativeNotes:)` gives it the native text — and then writes
+    /// what the user is looking at, which is why the merged text persists the moment it is touched
+    /// and is never silently dropped.
+    private var notesBinding: Binding<String> {
+        Binding(
+            get: {
+                CadenceEventNotesMerge.displayText(
+                    noteContent: linkedEventNote?.content,
+                    nativeNotes: event.notes
                 )
-                .iOSMarkdownWell()
-            }
+            },
+            set: { applyNotesEdit($0) }
+        )
+    }
+
+    /// The text Save writes into `EKEvent.notes`.
+    ///
+    /// **Rule (1), on the path that is easiest to miss.** Save has always written `draft.notes`
+    /// back, and that draft is `EKEvent.notes` as the sheet *opened* it — so a Save with the notes
+    /// untouched re-wrote an edit made in Apple Calendar since. The mirror is now the note's
+    /// flattened copy and only when that note changed; otherwise the event keeps the notes it
+    /// already has.
+    private var savedEventNotes: String {
+        guard isEditable,
+              let note = linkedEventNote,
+              CadenceEventNotesMerge.shouldMirror(content: note.content, lastMirrored: mirroredNoteContent ?? "")
+        else { return event.notes ?? "" }
+        return CadenceEventNotesMerge.mirrorText(noteContent: note.content)
+    }
+
+    /// Writes an edit made in the Notes field, creating the note on the first one.
+    ///
+    /// The guard is what keeps an untouched sheet from minting a `Note`: the editing surface
+    /// writes its binding back as it loads and as it normalises, and only text that differs from
+    /// what the field was showing is an edit.
+    private func applyNotesEdit(_ newValue: String) {
+        guard CadenceEventNotesMerge.isEdit(
+            newValue,
+            noteContent: linkedEventNote?.content,
+            nativeNotes: event.notes
+        ) else { return }
+        guard let note = ensureEventNote() else { return }
+        // Through `applyContent`, never a bare `note.content =`: the body of a note is also where
+        // its title and its inline `#tags` come from, and iOS has no surface that writes one
+        // without the other (`CadenceNoteTitleSyncSurfaceTests`). The save is deliberately left
+        // out of it — [[T-5804]]'s split — because an event note's save belongs to `commitNote`,
+        // which orders it before the Apple Calendar mirror.
+        CadenceCoreNoteSupport.applyContent(note, content: newValue, in: modelContext)
+        commitNotes(note)
+    }
+
+    /// Commits the note, and mirrors a flattened copy only when rule (1) allows it.
+    ///
+    /// `mirroredNoteContent` is the note as this sheet opened it, advanced **only** on a mirror
+    /// Apple Calendar accepted — so a refused mirror is retried on the next keystroke rather than
+    /// being recorded as done.
+    private func commitNotes(_ note: Note) {
+        let mirrors = isEditable
+            && CadenceEventNotesMerge.shouldMirror(content: note.content, lastMirrored: mirroredNoteContent ?? "")
+        let outcome = iOSEventNoteCommit.commitEventNote(
+            note,
+            event: event,
+            syncToCalendar: mirrors,
+            in: modelContext,
+            calendarManager: calendarManager
+        )
+        if outcome == .saved {
+            mirroredNoteContent = note.content
         }
-        // The Apple Calendar note is written back through EventKit on save, which a read-only
-        // calendar refuses. The *Cadence* event note above stays editable — it is our own data,
-        // which is why the panel leaves its notes slot to the host rather than disabling it.
-        .disabled(!isEditable)
+        noteCommitNotice = outcome.notice
+    }
+
+    /// The baseline rule (1) compares against: the note as the sheet opened it. Read once, on
+    /// appear, because every later read would be the content the user has just typed — which would
+    /// make the gate unconditionally closed.
+    private func loadMirrorBaseline() {
+        guard mirroredNoteContent == nil else { return }
+        mirroredNoteContent = linkedEventNote?.content ?? ""
     }
 
     /// T-497, the existence half of the `try? save()` rule — and the sharpest instance of it,
@@ -363,6 +421,12 @@ struct iOSCalendarEventEditSheet: View {
     /// edit the next open recomputes, so it needs no undo, but its failure still stops the sheet
     /// from opening on it.
     private func openEventNote() {
+        guard let note = ensureEventNote() else { return }
+        presentedEventNote = note
+    }
+
+    /// The note this event's Notes field edits, created and committed if it does not exist yet.
+    private func ensureEventNote() -> Note? {
         var inserted: [any PersistentModel] = []
         guard let note = CadenceEventNoteSupport.noteForEditing(
             calendarEventID: eventNoteID,
@@ -377,16 +441,26 @@ struct iOSCalendarEventEditSheet: View {
                 modelContext.insert($0)
                 inserted.append($0)
             }
-        ) else { return }
+        ) else { return nil }
+
+        // **[[T-8161]] rule (6), and the only place this change could lose the owner's data.** A
+        // note that predates the merge can hold one thing while `EKEvent.notes` holds another; the
+        // field *shows* both, but the stored note does not carry the Apple half until something
+        // writes it. So it is written here — the moment the note is handed to an editor or to a
+        // keystroke, and before any mirror can run — because the full note editor does not merge
+        // and its next commit would otherwise push the Cadence half over the Apple one.
+        if let merged = CadenceEventNotesMerge.mergedContent(noteContent: note.content, nativeNotes: event.notes) {
+            CadenceCoreNoteSupport.applyContent(note, content: merged, in: modelContext)
+        }
 
         do {
             try CadencePendingChangePersistence.commitInsert(of: inserted, in: modelContext)
         } catch {
-            actionError = CadencePendingChangePersistence.editFailureNotice
-            return
+            noteCommitNotice = CadencePendingChangePersistence.editFailureNotice
+            return nil
         }
-        actionError = nil
-        presentedEventNote = note
+        noteCommitNotice = nil
+        return note
     }
 
     private func openMarkdownReference(_ target: MarkdownReferenceDisplayTarget) {
@@ -484,7 +558,7 @@ struct iOSCalendarEventEditSheet: View {
             startDate: range.start,
             endDate: range.end,
             calendarID: draft.calendarID,
-            notes: draft.notes,
+            notes: savedEventNotes,
             span: CadenceEventCreationSupport.editSpan(for: scope, changesRecurrence: recurrence != nil),
             isAllDay: draft.isAllDay,
             location: draft.location,

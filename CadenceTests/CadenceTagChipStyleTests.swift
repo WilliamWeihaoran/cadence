@@ -509,7 +509,12 @@ struct CadenceTagChipScaleTests {
             "Cadence/iOS/iOSListDeletionSupport.swift",
             // [[T-6986]]: the note delete sheet declares its scope like its list sibling above.
             "Cadence/iOS/iOSNoteDeletionSupport.swift",
-            "Cadence/iOS/iOSCalendarEventEditSheet.swift",
+            // `iOSCalendarEventEditSheet.swift` was here until [[T-8161]]. It drew an
+            // `iOSIconTile` and a compact `iOSActionButton` in the "Event Note" Create/Open card;
+            // that card and the Apple Calendar note beside it became one `CadenceEventNotesField`,
+            // which draws neither, so the sheet is no longer a control caller at all and belongs
+            // in neither list. Its `.cadenceScaledTypography()` scope is unchanged and is still
+            // pinned by `CadenceCodexCalendarTypographyTests`.
             "Cadence/iOS/iOSCalendarQuickCreateSheet.swift",
             "Cadence/iOS/iOSTaskDetailSheet.swift",
             "Cadence/iOS/iOSSearchView.swift",

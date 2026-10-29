@@ -24,7 +24,7 @@ import Testing
 /// - `CreateContextSheet.create` — `insert(ctx); dismiss()`.
 /// - `CreateListSheet.create` — the same, over whichever of `Area`/`Project` the switch took.
 /// - `CreateHabitSheet.create` — `insert(habit)`, then a notification reconcile *and* a dismiss.
-/// - `CalendarEventEditPopover.openEventNote` — the macOS twin of the site T-497 fixed on iOS, one
+/// - `CalendarEventEditPopover.ensureEventNote` — the macOS twin of the site T-497 fixed on iOS, one
 ///   platform behind and worse: iOS at least attempted a save. Presenting the editor is itself the
 ///   report that the note exists.
 ///
@@ -104,18 +104,33 @@ struct CadenceCreateSheetCommitSurfaceTests {
     /// and it applies unchanged here: both platforms call the same shared function.
     @Test func theTimelineEventNoteButtonOpensTheEditorOnlyOnACommittedInsert() throws {
         let views = try CadenceCommitSurfaceScan.scanned("Cadence/macOS/Views/TimelineEventBlockSupportViews.swift")
-        let open = try CadenceCommitSurfaceScan.declarationBody(named: "openEventNote", in: views)
+        // [[T-8161]] split the site: the note is the popover's one Notes field now, so it is
+        // created by the first keystroke as well as by Open. `ensureEventNote` owns the insert and
+        // the commit and answers `nil` on a refusal; both callers are behind that `nil`.
+        let open = try CadenceCommitSurfaceScan.declarationBody(named: "ensureEventNote", in: views)
 
-        #expect(CadenceSourceScan.matchCount(#"try\?"#, in: open) == 0, "openEventNote still swallows its commit")
+        #expect(CadenceSourceScan.matchCount(#"try\?"#, in: open) == 0, "ensureEventNote still swallows its commit")
         #expect(open.contains("var inserted: [any PersistentModel] = []"))
         #expect(open.contains("inserted.append($0)"), "the undo would reach a note it did not insert")
         #expect(open.contains("CadencePendingChangePersistence.commitInsert(of: inserted, in: modelContext)"))
         #expect(open.contains("noteFailureNotice = CadencePendingChangePersistence.editFailureNotice"))
         #expect(
-            CadenceCommitSurfaceScan.reportFollowsTheCatch("presentedEventNote = note", in: open),
-            "the popover presents the note above its failure branch"
+            CadenceCommitSurfaceScan.reportFollowsTheCatch("return note", in: open),
+            "the popover hands back the note above its failure branch"
         )
-        #expect(views.contains("CadenceInlineFailureNotice(text: noteFailureNotice)"))
+        #expect(views.contains("guard let note = ensureEventNote() else { return }\n        presentedEventNote = note"))
+        #expect(
+            CadenceSourceScan.matchCount(#"guard let note = ensureEventNote\(\) else \{ return \}"#, in: views) == 2,
+            "a caller reaches the note without the commit's refusal in front of it"
+        )
+        // [[T-8161]]: the notice is drawn by the shared `CadenceEventNotesField`, under the field
+        // that failed, rather than by this file — so the popover hands it over and the component
+        // draws it. Both halves are asserted, because either one alone is a notice nobody sees.
+        #expect(views.contains("failureNotice: noteFailureNotice"))
+        #expect(
+            try CadenceCommitSurfaceScan.scanned("Cadence/Shared/Components/CadenceEventNotesField.swift")
+                .contains("CadenceInlineFailureNotice(text: failureNotice)")
+        )
     }
 
     /// **Behavioural**, and the reason the scan above insists on `inserted.append($0)`: reopening

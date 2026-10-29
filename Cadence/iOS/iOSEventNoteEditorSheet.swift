@@ -18,6 +18,10 @@ struct iOSEventNoteEditorSheet: View {
     /// The well's held-back typing, flushed before Done saves the note ([[T-5170]]).
     @State private var editorFlush = iOSMarkdownEditorFlush()
     @State private var commitNotice: String?
+    /// The content Apple Calendar last took, or the note as this sheet opened it. [[T-8161]] rule
+    /// (1): Done and a swipe-dismiss both commit, and without this they mirror an untouched note
+    /// over an edit made in Apple Calendar since it was written.
+    @State private var mirroredContent: String?
     @State private var selectedReferenceNote: Note?
     @State private var selectedReferenceTask: AppTask?
 
@@ -73,6 +77,7 @@ struct iOSEventNoteEditorSheet: View {
             }
             .onAppear {
                 refreshEventMetadata()
+                if mirroredContent == nil { mirroredContent = note.content }
                 persistNote(syncToCalendar: false)
             }
             .onChange(of: note.content) { _, _ in
@@ -182,13 +187,21 @@ struct iOSEventNoteEditorSheet: View {
     /// pane in `iOSNotesView`, which used to save the same note without ever mirroring it.
     @discardableResult
     private func persistNote(syncToCalendar: Bool = true) -> CadenceEventNoteCommitOutcome {
+        // [[T-8161]] rule (1). Done, and the swipe's tail write, commit whether or not anything was
+        // typed; mirroring on those pushed the note as it was *loaded* over whatever Apple Calendar
+        // holds now. The gate closes only while the note still matches what was last mirrored.
+        let mirrors = syncToCalendar
+            && CadenceEventNotesMerge.shouldMirror(content: note.content, lastMirrored: mirroredContent ?? "")
         let outcome = iOSEventNoteCommit.commitEventNote(
             note,
             event: event,
-            syncToCalendar: syncToCalendar,
+            syncToCalendar: mirrors,
             in: modelContext,
             calendarManager: calendarManager
         )
+        if outcome == .saved {
+            mirroredContent = note.content
+        }
         commitNotice = outcome.notice
         return outcome
     }
@@ -253,12 +266,18 @@ enum iOSEventNoteCommit {
     /// did. Which EventKit rejection it was does not change either of those, and this editor's
     /// banner is a debounced flush that fires while someone types.
     static func syncNoteToNativeEvent(_ note: Note, event: EKEvent?, calendarManager: iOSCalendarManager) -> Bool {
+        // [[T-8161]] rule (2): Apple Calendar is given the markdown source minus its image
+        // references. The pictures are `MarkdownImageAsset` rows that only Cadence can resolve;
+        // `[[note]]` and `[[task:…]]` spans go across as written.
+        let mirrored = CadenceEventNotesMerge.mirrorText(noteContent: note.content)
         if let event, CadenceEventNoteSupport.matches(event, identifier: note.calendarEventID) {
-            return calendarManager.updateEventNotes(event, notes: note.content) == nil
+            guard CadenceEventNoteSupport.canMirrorNotes(to: event) else { return true }
+            return calendarManager.updateEventNotes(event, notes: mirrored) == nil
         }
         if !note.calendarEventID.isEmpty {
             guard let resolved = calendarManager.event(for: note) else { return false }
-            return calendarManager.updateEventNotes(resolved, notes: note.content) == nil
+            guard CadenceEventNoteSupport.canMirrorNotes(to: resolved) else { return true }
+            return calendarManager.updateEventNotes(resolved, notes: mirrored) == nil
         }
         return true
     }

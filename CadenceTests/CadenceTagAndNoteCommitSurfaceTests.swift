@@ -16,8 +16,9 @@ import Testing
 /// - `CadenceListNoteFiling.createNote` — both note columns then *select* what it returned.
 /// - `SettingsTagsSection.createTag` and `iOSSettingsTagsSection.createTag`, one function on two
 ///   platforms, fixed as a pair.
-/// - `iOSCalendarEventEditSheet.openEventNote`, the sharpest of the four: it inserts a note **and
-///   presents it**, so the screen the user lands on is itself the report that the note exists.
+/// - `iOSCalendarEventEditSheet.ensureEventNote` (`openEventNote`'s insert half until [[T-8161]]),
+///   the sharpest of the four: it inserts a note **and hands it straight to the editor the user is
+///   looking at**, so the screen they land on is itself the report that the note exists.
 ///
 /// **Tier 2, the report half** — three inline row editors, where collapsing back to the display row
 /// is the dismissal:
@@ -290,25 +291,38 @@ struct CadenceTagAndNoteCommitSurfaceTests {
         )
     }
 
-    /// **Source shape, and iOS-only — this file is behind `#if os(iOS)`.** The event-note button
-    /// inserts a note and opens it, so presenting the editor *is* the success report and has to sit
-    /// below the `catch`.
+    /// **Source shape, and iOS-only — this file is behind `#if os(iOS)`.** Creating the event note
+    /// and reporting that it exists are the same act here, so the report has to sit below the
+    /// `catch`.
     ///
     /// The insert closure records what it inserted rather than assuming: `noteForEditing` returns
     /// an existing note as often as it makes one, and un-inserting an existing note on a refused
     /// commit would delete a note the user already had.
+    ///
+    /// **[[T-8161]] split the site in two and kept the rule.** The note is now the sheet's one
+    /// Notes field, so it is created by the first keystroke as well as by Open: `ensureEventNote`
+    /// owns the insert and the commit and answers `nil` when the commit was refused, and every
+    /// caller — the binding's setter and `openEventNote` — is unreachable past that `nil`. So the
+    /// scan follows the commit into `ensureEventNote` and asks its two callers for the guard.
     @Test func theEventNoteButtonOpensTheEditorOnlyOnACommittedInsert() throws {
         let sheet = try scanned("Cadence/iOS/iOSCalendarEventEditSheet.swift")
-        let open = try declarationBody(named: "openEventNote", in: sheet)
+        let open = try declarationBody(named: "ensureEventNote", in: sheet)
 
-        #expect(CadenceSourceScan.matchCount(#"try\?"#, in: open) == 0, "openEventNote still swallows its save")
+        #expect(CadenceSourceScan.matchCount(#"try\?"#, in: open) == 0, "ensureEventNote still swallows its save")
         #expect(open.contains("var inserted: [any PersistentModel] = []"))
         #expect(open.contains("inserted.append($0)"), "the undo would reach a note it did not insert")
         #expect(open.contains("CadencePendingChangePersistence.commitInsert(of: inserted, in: modelContext)"))
-        #expect(open.contains("actionError = CadencePendingChangePersistence.editFailureNotice"))
+        #expect(open.contains("noteCommitNotice = CadencePendingChangePersistence.editFailureNotice"))
         #expect(
-            reportFollowsTheCatch("presentedEventNote = note", in: open),
-            "the sheet presents the note above its failure branch"
+            reportFollowsTheCatch("return note", in: open),
+            "the sheet hands back the note above its failure branch"
+        )
+        // Both callers are behind the `nil`: nothing is presented, and nothing is typed into, over
+        // a row the store refused.
+        #expect(sheet.contains("guard let note = ensureEventNote() else { return }\n        presentedEventNote = note"))
+        #expect(
+            CadenceSourceScan.matchCount(#"guard let note = ensureEventNote\(\) else \{ return \}"#, in: sheet) == 2,
+            "a caller reaches the note without the commit's refusal in front of it"
         )
 
         // The notice this failure is reported through has to be drawn at every width. It used to
@@ -475,7 +489,7 @@ struct CadenceTagAndNoteCommitSurfaceTests {
             ("Cadence/macOS/Views/SettingsTagsSection.swift", "struct SettingsTagsSection: View"),
             ("Cadence/iOS/iOSSettingsTagsSection.swift", "struct iOSTagsSettingsSection: View"),
             ("Cadence/macOS/Views/TagPickerPopoverViews.swift", "struct TagPickerPopover: View"),
-            ("Cadence/iOS/iOSCalendarEventEditSheet.swift", "private func openEventNote()")
+            ("Cadence/iOS/iOSCalendarEventEditSheet.swift", "private func ensureEventNote() -> Note?")
         ] {
             #expect(try scanned(path).contains(marker), "\(path) did not read as itself")
         }

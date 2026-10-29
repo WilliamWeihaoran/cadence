@@ -139,6 +139,18 @@ enum CadenceEventNoteSupport {
         event.calendar?.calendarIdentifier ?? ""
     }
 
+    /// **Rule (5) of [[T-8161]].** Whether Apple Calendar will take a mirror of this event's note
+    /// at all.
+    ///
+    /// A read-only calendar — Birthdays, Holidays, a subscribed feed — refuses the write, and a
+    /// refusal the user can do nothing about is not a failure worth a red line: the note is saved,
+    /// it stays editable because it is Cadence's own row, and the Notes field says quietly that it
+    /// lives here. So the mirror is *skipped* rather than attempted and reported, which is why
+    /// this is asked before the write rather than read off its result.
+    static func canMirrorNotes(to event: EKEvent) -> Bool {
+        event.calendar?.allowsContentModifications ?? false
+    }
+
     static func matches(_ event: EKEvent, identifier: String) -> Bool {
         identifier == self.identifier(for: event) || identifier == rawIdentifier(for: event)
     }
