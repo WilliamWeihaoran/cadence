@@ -10,6 +10,8 @@ import SwiftUI
 /// sit under a grid cell that is already lit up.
 ///
 /// One row rather than two near-copies, because the two surfaces open the same quick-create sheet.
+/// The list board's columns draw it too ([[T-8184]]), under each header, opening the capture
+/// composer seeded with the column's list and section — the same row, a different destination.
 struct iOSCalendarAddItemRow: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.cadenceTypographyScaling) private var scaling

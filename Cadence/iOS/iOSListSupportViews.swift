@@ -483,6 +483,11 @@ struct iOSListKanbanPanel: View {
     /// request outlives the emphasis: the ring fades after a beat and the request is still the
     /// reason this board is on screen, so clearing one must not clear the other.
     @State private var activeHighlightName: String?
+    /// The composer a column's "Add task" row asked for ([[T-8184]]). The same `iOSCreateTaskSheet`
+    /// the capture `+` opens, seeded rather than reimplemented: a board column on iOS opens the
+    /// sheet, as the Calendar Board's day columns do, where macOS composes inline — a touch
+    /// keyboard rises over the column an inline field would sit in.
+    @State private var addRequest: iOSListKanbanAddRequest?
 
     /// **Every configured column, filled or not.** An unfilled column is the case the drop rule
     /// exists for, and it was the one case that could not happen here: `sectionGroups` discarded
@@ -519,17 +524,25 @@ struct iOSListKanbanPanel: View {
                     ScrollView(.horizontal) {
                         HStack(alignment: .top, spacing: 14) {
                             ForEach(columns) { column in
+                                let identity = CadenceTaskDropSupport.groupIdentity(
+                                    container: container,
+                                    listName: listName,
+                                    sectionName: column.title
+                                )
                                 iOSListKanbanColumn(
                                     title: column.title,
                                     dotColor: dotColor(for: column.title),
                                     dueDatePlan: dueDatePlan(for: column.title),
                                     tasks: column.tasks,
                                     isHighlighted: isHighlighted(column.title),
-                                    dropIdentity: CadenceTaskDropSupport.groupIdentity(
-                                        container: container,
-                                        listName: listName,
-                                        sectionName: column.title
-                                    ),
+                                    dropIdentity: identity,
+                                    // [[T-8184]]: the header's drop identity, so a tap on the row
+                                    // and a `+` dropped on the header seed the same list and section.
+                                    onAddTask: {
+                                        addRequest = iOSListKanbanAddRequest(
+                                            seed: ListDetailKanbanBoard.addTaskSeed(for: identity)
+                                        )
+                                    },
                                     onDropCard: { items, target in
                                         CadenceKanbanCardDrop.drop(
                                             items,
@@ -568,6 +581,9 @@ struct iOSListKanbanPanel: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Theme.bg)
+        .sheet(item: $addRequest) { request in
+            iOSCreateTaskSheet(seed: request.seed)
+        }
     }
 
     private func isHighlighted(_ name: String) -> Bool {
@@ -629,6 +645,13 @@ struct iOSListKanbanPanel: View {
     }
 }
 
+/// One press of a column's "Add task" row: the seed the composer opens with. Identified per press
+/// so a second press on the same column presents again rather than matching the last one.
+private struct iOSListKanbanAddRequest: Identifiable {
+    let id = UUID()
+    let seed: CadenceTaskComposerSeed
+}
+
 private struct iOSListKanbanColumn: View {
     let title: String
     let dotColor: Color
@@ -644,6 +667,10 @@ private struct iOSListKanbanColumn: View {
     /// See `iOSTaskGroupHeader.dropIdentity` — the header is the drop target here for the same
     /// reason, and reaches the same place a card cannot: a column with nothing in it.
     var dropIdentity: CadenceTaskGroupDropIdentity?
+    /// **[[T-8184]]: the column's new-task row**, directly under the header as the Calendar Board's
+    /// day column and all three macOS hosts (`KanbanColumnScroll`) draw theirs. The board answers,
+    /// not the column, for the reason it answers a card drop: the board holds the composer.
+    var onAddTask: () -> Void = {}
     /// **[[T-8183]]: the column takes a card.** Its only drop target used to be the header's `+`
     /// ghost, so a card could not change column by touch at all. The board answers, not the column:
     /// the board holds the task list a payload is checked against, and the write is
@@ -676,6 +703,14 @@ private struct iOSListKanbanColumn: View {
                 }
             )
             .iOSNewTaskDropTarget(group: dropIdentity)
+
+            // The Calendar Board's row, not a second ghost row of this board's own.
+            iOSCalendarAddItemRow(
+                accessibilityLabel: "Add task to \(title)",
+                action: onAddTask
+            )
+            .padding(.horizontal, 4)
+            .padding(.top, 10)
 
             // The card stack scrolls inside the column, as `KanbanColumnScroll` does on macOS. The
             // board only scrolled horizontally before, so anything past the bottom of a tall column

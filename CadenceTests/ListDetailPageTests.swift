@@ -254,4 +254,60 @@ struct ListDetailPageTests {
             "the list detail does not hand the board its list, so the add-column row is inert"
         )
     }
+
+    /// [[T-8184]]: a column's "Add task" row opens the composer on the column's list AND section —
+    /// the seed a `+` dropped on that column's header commits, not a second resolution.
+    @Test("A list board column's add row seeds the column's list and section")
+    func columnAddRowSeedsListAndSection() {
+        let areaID = UUID()
+        let projectID = UUID()
+        let inArea = ListDetailKanbanBoard.addTaskSeed(
+            for: CadenceTaskDropSupport.groupIdentity(container: .area(areaID), listName: "Home", sectionName: "Doing"),
+            todayKey: "2026-10-29"
+        )
+        #expect(inArea.container == .area(areaID))
+        #expect(inArea.sectionName == "Doing")
+        #expect(inArea.doDateKey.isEmpty, "a column names no day, so the composer must not invent one")
+
+        let inProject = ListDetailKanbanBoard.addTaskSeed(
+            for: CadenceTaskDropSupport.groupIdentity(container: .project(projectID), listName: "Launch", sectionName: "Review"),
+            todayKey: "2026-10-29"
+        )
+        #expect(inProject.container == .project(projectID))
+        #expect(inProject.sectionName == "Review")
+
+        // Two columns of one list differ only by section, so the section must actually travel.
+        let other = ListDetailKanbanBoard.addTaskSeed(
+            for: CadenceTaskDropSupport.groupIdentity(container: .area(areaID), listName: "Home", sectionName: "Done soon"),
+            todayKey: "2026-10-29"
+        )
+        #expect(other.sectionName == "Done soon")
+        #expect(other.sectionName != inArea.sectionName)
+    }
+
+    /// [[T-8184]]: the iOS column draws the shared add row directly under its header, and the board
+    /// answers it with the shared composer seeded from the header's own drop identity.
+    @Test("The iOS list board column draws the shared add row under its header")
+    func iOSKanbanColumnDrawsTheSharedAddRowUnderItsHeader() throws {
+        let source = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/iOS/iOSListSupportViews.swift")
+        )
+        let column = try #require(
+            CadenceSourceScan.declarationBody("private struct iOSListKanbanColumn: View", in: source),
+            "non-vacuity: the iOS list board column is gone"
+        )
+        let header = try #require(column.range(of: "CadenceBoardColumnHeader("), "non-vacuity: no column header")
+        let row = try #require(column.range(of: "iOSCalendarAddItemRow("), "the column has no add row")
+        let cards = try #require(column.range(of: "ScrollView {"), "non-vacuity: no card stack")
+        #expect(header.lowerBound < row.lowerBound && row.lowerBound < cards.lowerBound,
+                "the add row is not directly under the header, above the cards")
+        #expect(CadenceSourceScan.matchCount(#"action: onAddTask"#, in: column) == 1)
+
+        let panel = try #require(
+            CadenceSourceScan.declarationBody("struct iOSListKanbanPanel: View", in: source)
+        )
+        #expect(panel.contains("dropIdentity: identity"), "the header and the add row no longer share one identity")
+        #expect(panel.contains("ListDetailKanbanBoard.addTaskSeed(for: identity)"))
+        #expect(panel.contains("iOSCreateTaskSheet(seed: request.seed)"), "the row opens no shared composer")
+    }
 }

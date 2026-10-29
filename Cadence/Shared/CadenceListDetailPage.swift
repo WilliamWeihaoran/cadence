@@ -156,6 +156,21 @@ enum ListDetailKanbanBoard {
     static func drawsColumns(_ columns: [CadenceTaskDisplayGroup]) -> Bool {
         !columns.isEmpty
     }
+
+    /// What a column's "Add task" row opens the composer with: the column's list **and** section
+    /// ([[T-8184]]). It is the seed a `+` dragged onto the same column's header commits — the
+    /// column's own drop identity resolved through `CadenceTaskDropSupport` — so the two ways of
+    /// adding to a column cannot file the task in different places. macOS's section columns seed
+    /// the same pair through `InlineTaskComposerSurface.column(container:sectionName:)`.
+    static func addTaskSeed(
+        for identity: CadenceTaskGroupDropIdentity,
+        todayKey: String = DateFormatters.todayKey()
+    ) -> CadenceTaskComposerSeed {
+        CadenceTaskDropSupport.seed(
+            forDropKey: CadenceTaskDropSupport.dropKey(forGroup: identity) ?? "",
+            todayKey: todayKey
+        )
+    }
 }
 
 /// What a list page's header chips say to VoiceOver ([[T-7080]]).
