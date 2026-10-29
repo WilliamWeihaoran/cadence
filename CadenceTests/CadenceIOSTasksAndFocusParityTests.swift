@@ -31,15 +31,39 @@ struct CadenceTasksPageHeaderCountTests {
     }
 
     @Test func allTasksCountsOpenWorkInActiveListsAndIgnoresReminders() {
-        let count = CadenceTaskQuerySupport.tasksPageHeaderCount(scope: .all, tasks: fixture, reminderCount: 5)
+        let count = CadenceTaskQuerySupport.tasksPageHeaderCount(scope: .all, tasks: fixture, reminderCount: 5, drawsReminders: true)
         // Two open inbox tasks and the one in the active area; the archived area's is not counted,
         // and Apple Reminders belong to the Inbox only.
         #expect(count == 3)
     }
 
     @Test func inboxCountsOpenUnfiledTasksPlusTheAppleReminders() {
-        #expect(CadenceTaskQuerySupport.tasksPageHeaderCount(scope: .inbox, tasks: fixture, reminderCount: 0) == 2)
-        #expect(CadenceTaskQuerySupport.tasksPageHeaderCount(scope: .inbox, tasks: fixture, reminderCount: 4) == 6)
+        #expect(CadenceTaskQuerySupport.tasksPageHeaderCount(scope: .inbox, tasks: fixture, reminderCount: 0, drawsReminders: true) == 2)
+        #expect(CadenceTaskQuerySupport.tasksPageHeaderCount(scope: .inbox, tasks: fixture, reminderCount: 4, drawsReminders: true) == 6)
+    }
+
+    /// [[T-8065]]: the Mac's Kanban Inbox draws no Reminders strip, so its header counts none —
+    /// the number is the one column's, not three higher with nothing on the page to account for it.
+    @Test func inboxCountsNoRemindersOnAPageThatDoesNotDrawThem() {
+        let drawn = CadenceTaskQuerySupport.tasksPageHeaderCount(scope: .inbox, tasks: fixture, reminderCount: 4, drawsReminders: true)
+        let undrawn = CadenceTaskQuerySupport.tasksPageHeaderCount(scope: .inbox, tasks: fixture, reminderCount: 4, drawsReminders: false)
+        #expect(undrawn == 2)
+        // The relation is the claim: the only difference is exactly the reminders not drawn.
+        #expect(drawn - undrawn == 4)
+    }
+
+    /// The Mac's header asks the mode, and only List mode draws the strip.
+    @Test func theMacHeaderCountsRemindersOnlyInListMode() throws {
+        let source = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/macOS/Views/macOSRootSupportViews.swift")
+        )
+        let count = try #require(
+            CadenceSourceScan.declarationBody("private var headerCount: Int", in: source),
+            "the Mac header count has moved — this pin is unanchored"
+        )
+        #expect(count.contains("drawsReminders: mode == .list"), "got: \(count)")
+        // Non-vacuity: Kanban really is the branch that draws the board without the strip.
+        #expect(source.contains("case .kanban:") && source.contains("TaskListsKanbanView("))
     }
 
     @Test func theIOSTasksPageHeaderPassesTheSharedCount() throws {

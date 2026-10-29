@@ -129,7 +129,9 @@ private struct iOSTasksPageHeaderCount<Content: View>: View {
             CadenceTaskQuerySupport.tasksPageHeaderCount(
                 scope: scope,
                 tasks: allTasks,
-                reminderCount: remindersManager.reminders.count
+                reminderCount: remindersManager.reminders.count,
+                // iOS has no Kanban mode: its Inbox is always the list that draws the strip.
+                drawsReminders: true
             )
         )
     }

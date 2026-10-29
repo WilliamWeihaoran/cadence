@@ -860,11 +860,14 @@ struct TasksPageView: View {
     /// Reminders the strip below is about to draw. Inbox's header has always counted those; they
     /// are items in the inbox whether or not Cadence owns them.
     /// The shared rule iOS's header reads too (T-7014, T-7021), so the two badges cannot drift.
+    /// Only List mode draws that strip; Kanban's board has no reminders, so it counts none
+    /// ([[T-8065]]).
     private var headerCount: Int {
         CadenceTaskQuerySupport.tasksPageHeaderCount(
             scope: scope,
             tasks: allTasks,
-            reminderCount: remindersManager.reminders.count
+            reminderCount: remindersManager.reminders.count,
+            drawsReminders: mode == .list
         )
     }
 

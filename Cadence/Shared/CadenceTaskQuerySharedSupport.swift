@@ -99,16 +99,23 @@ nonisolated extension CadenceTaskQuerySupport {
     /// items in the inbox whether or not Cadence owns them. macOS's `TasksPageView.headerCount`
     /// spelled this inline; the iOS header passed no count at all, so the same page carried a
     /// badge on one platform and none on the other. One function is what stops them drifting.
+    ///
+    /// **The reminders count only when the page draws them** ([[T-8065]]). The strip is
+    /// `TasksListView`'s; the Mac's Kanban mode renders `TaskListsKanbanView`, which draws no
+    /// reminders at all, so counting them there put "Inbox 7" over one column of 4 with nothing on
+    /// the page accounting for the other three. A header states a number the page shows. Required,
+    /// not defaulted, so a new caller has to say which page it heads.
     static func tasksPageHeaderCount(
         scope: CadenceTasksPageScope,
         tasks: [AppTask],
-        reminderCount: Int
+        reminderCount: Int,
+        drawsReminders: Bool
     ) -> Int {
         switch scope {
         case .all:
             return openTaskCount(from: tasks.filter(\.isInActiveContainer))
         case .inbox:
-            return openTaskCount(from: inboxTasks(from: tasks)) + reminderCount
+            return openTaskCount(from: inboxTasks(from: tasks)) + (drawsReminders ? reminderCount : 0)
         }
     }
 
