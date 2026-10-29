@@ -668,7 +668,9 @@ struct CadenceSharedTaskRowJobsTests {
         // `CadenceTodayUnificationTests`.
         let observers = [
             "struct TaskCompletionButton: View": 1,
-            "struct TaskRowBackground: View": 1,
+            // [[T-8412]]: the background lays the shared `TaskCompletionPendingSweep`, which observes
+            // the manager inside its own body -- still off the row, one level further down.
+            "struct TaskRowBackground: View": 0,
             "struct MacTaskRow: View": 0
         ]
         for (declaration, expected) in observers {
@@ -680,9 +682,12 @@ struct CadenceSharedTaskRowJobsTests {
             )
         }
 
-        // And nowhere else in the file: a third reader would be a third view re-rendering on every
-        // display-link tick, and every count above would still hold.
-        #expect(code.components(separatedBy: "@Environment(TaskCompletionAnimationManager.self)").count - 1 == 2)
+        let background = try cadenceFunctionBody("struct TaskRowBackground: View", in: code)
+        #expect(background.contains("TaskCompletionPendingSweep(task: task"), "the row's sweep is no longer extracted into the shared host")
+
+        // And nowhere else in the file: a second reader would be a second view re-rendering on
+        // every display-link tick, and every count above would still hold.
+        #expect(code.components(separatedBy: "@Environment(TaskCompletionAnimationManager.self)").count - 1 == 1)
     }
 
     // MARK: - The scan itself

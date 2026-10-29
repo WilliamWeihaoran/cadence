@@ -652,14 +652,16 @@ struct CadenceTodayUnificationTests {
     /// own `View` struct rather than three lines inline: the row itself must **not** observe
     /// `TaskCompletionAnimationManager`, because that manager ticks at display-link rate during a
     /// completion animation and an observation on the row re-renders every visible row's whole
-    /// content. Only `TaskCompletionButton` and `TaskRowBackground` may hold it.
+    /// content. Only `TaskCompletionButton` may hold it: `TaskRowBackground` held it too until
+    /// [[T-8412]] gave it the shared `TaskCompletionPendingSweep`, which reads the manager inside its
+    /// own body, so the observation stays off the row either way.
     ///
     /// Same shape as `NoteEditorPerformanceRegressionTests`: a constraint nothing else can express,
     /// pinned by reading the file.
     @Test func theTaskRowStillDoesNotObserveTheCompletionAnimationManager() throws {
         let source = try strippingComments(sourceFile("Cadence/macOS/Views/TasksPanelComponents.swift"))
         let environments = source.components(separatedBy: "@Environment(TaskCompletionAnimationManager.self)").count - 1
-        #expect(environments == 2, "expected exactly the two extracted sub-views to observe the animation manager")
+        #expect(environments == 1, "expected exactly the one extracted sub-view to observe the animation manager")
 
         // `MacTaskRowEstimateChip` was asked for its own zero here until [[T-3196]] deleted it. The
         // file-wide count above is what refuses a third observer whatever it is named, so the

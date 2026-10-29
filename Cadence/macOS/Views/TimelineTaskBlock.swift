@@ -15,6 +15,7 @@ struct TimelineTaskBlock: View {
     @Environment(HoveredTaskManager.self) private var hoveredTaskManager
     @Environment(HoveredEditableManager.self) private var hoveredEditableManager
     @Environment(TaskCompletionAnimationManager.self) private var taskCompletionAnimationManager
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Binding var selectedTaskID: UUID?
     @Binding var activeDragTaskID: UUID?
     let onSelect: () -> Void
@@ -50,9 +51,18 @@ struct TimelineTaskBlock: View {
         isPendingCompletion || taskCompletionAnimationManager.isPendingCancel(task)
     }
 
+    /// The display-link redraw's one gate ([[T-8412]]): a deferral is running and Reduce Motion is
+    /// off. Under Reduce Motion the block draws the pending state still, as the task row, the
+    /// Kanban card and every iOS surface do: the body is handed no running fill, so its circle
+    /// stamps the manager's pending glyph (`circle.inset.filled` green, or the grey cross) and no
+    /// sweep is laid. The undo window is unchanged; only the motion goes.
+    private var animatesPendingFill: Bool {
+        !reduceMotion && hasPendingFill
+    }
+
     @ViewBuilder
     private var coreBlock: some View {
-        if hasPendingFill {
+        if animatesPendingFill {
             TimelineView(.animation) { context in
                 blockContent(now: context.date)
             }
@@ -71,10 +81,13 @@ struct TimelineTaskBlock: View {
             style: style,
             showSelection: selectedTaskID == task.id,
             showHover: isHovered,
-            isPendingCompletion: isPendingCompletion,
+            // [[T-8412]]: these two say whether the body draws a running fill and sweep, so they are
+            // false under Reduce Motion even mid-deferral; the glyph below still names the pending
+            // state, which is what the still circle draws.
+            isPendingCompletion: animatesPendingFill && isPendingCompletion,
             // [[T-8393]]: the same pending states, fill, glyph and three-tap walk the task row and
             // the Kanban card ask the manager for, so the block cannot disagree with them.
-            isPendingCancellation: taskCompletionAnimationManager.isPendingCancel(task),
+            isPendingCancellation: animatesPendingFill && taskCompletionAnimationManager.isPendingCancel(task),
             completionProgress: now.flatMap { taskCompletionAnimationManager.pendingProgress(for: task, now: $0) } ?? 0,
             completionGlyph: taskCompletionAnimationManager.glyph(for: task),
             onToggleDone: { taskCompletionAnimationManager.advanceCompletionControl(for: task) }

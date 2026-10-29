@@ -306,7 +306,9 @@ struct KanbanColumnHeader<DueDatePopover: View, EditorPopover: View>: View {
     let columnColor: Color
     let hideColumnDueDateIfEmpty: Bool
     let isPendingCompletion: Bool
-    let completionProgress: Double
+    /// The running settle's fill, or `nil` for a column not animating one -- idle, or completing
+    /// under Reduce Motion, where the ring stamps its still pending glyph instead ([[T-8412]]).
+    let completionProgress: Double?
     /// The red line a refused column write leaves on the **column** rather than in the editor
     /// popover (T-646). `nil` while the popover is up, because it is showing the same sentence.
     let failureNotice: String?
@@ -392,7 +394,9 @@ struct KanbanColumnHeader<DueDatePopover: View, EditorPopover: View>: View {
             if section.supportsLifecycle {
                 Button(action: onToggleCompletion) {
                     TaskCompletionProgressGlyph(
-                        icon: section.isCompleted ? "checkmark.circle.fill" : "circle",
+                        icon: section.isCompleted
+                            ? "checkmark.circle.fill"
+                            : (isPendingCompletion ? "circle.inset.filled" : "circle"),
                         color: section.isCompleted || isPendingCompletion ? Theme.green : Theme.dim,
                         progress: isPendingCompletion ? completionProgress : nil,
                         size: 12,

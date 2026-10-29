@@ -751,14 +751,20 @@ struct MacTaskRow: View {
 private struct TaskCompletionButton: View {
     @Bindable var task: AppTask
     @Environment(TaskCompletionAnimationManager.self) private var manager
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         Button { handleTap() } label: {
-            // Gated exactly like `TaskRowBackground` below: `TimelineView(.animation)` drives a
+            // Gated exactly like `TaskCompletionPendingSweep`: `TimelineView(.animation)` drives a
             // display-link redraw for as long as it is in the hierarchy, so an ungated one here
             // re-evaluated every visible row's completion glyph at screen refresh rate forever,
             // even though `pendingProgress` returns nil unless the task is mid-completion.
-            if isPendingCompletion || isPendingCancel {
+            //
+            // **Reduce Motion draws the pending state still ([[T-8412]])**: with no progress the
+            // glyph stamps the glyph's own pending symbol (`circle.inset.filled` green, or the grey
+            // cross), which is what iOS's `iOSTaskCompletionFill` draws under the same setting.
+            // The undo window is unchanged; only the motion goes.
+            if !reduceMotion && (isPendingCompletion || isPendingCancel) {
                 TimelineView(.animation) { context in
                     TaskCompletionProgressGlyph(
                         icon: icon,
@@ -817,7 +823,6 @@ private struct TaskRowBackground: View {
     let task: AppTask
     let isHovered: Bool
     let hoverFill: Color
-    @Environment(TaskCompletionAnimationManager.self) private var manager
 
     var body: some View {
         RoundedRectangle(cornerRadius: Theme.radiusCard)
@@ -827,24 +832,11 @@ private struct TaskRowBackground: View {
                     RoundedRectangle(cornerRadius: Theme.radiusCard).fill(hoverFill)
                 }
             }
+            // The shared host iOS's task row lays ([[T-8412]]): gated on a pending task, and absent
+            // under Reduce Motion, where the ring beside it already says "pending" still. This was
+            // a second copy of that host that read neither the shared decision nor the setting.
             .overlay {
-                if manager.isPending(task) {
-                    TimelineView(.animation) { context in
-                        TaskCompletionPendingOverlay(
-                            progress: manager.progress(for: task, now: context.date),
-                            tint: Theme.green,
-                            cornerRadius: Theme.radiusCard
-                        )
-                    }
-                } else if manager.isPendingCancel(task) {
-                    TimelineView(.animation) { context in
-                        TaskCompletionPendingOverlay(
-                            progress: manager.cancelProgress(for: task, now: context.date),
-                            tint: Theme.dim,
-                            cornerRadius: Theme.radiusCard
-                        )
-                    }
-                }
+                TaskCompletionPendingSweep(task: task, cornerRadius: Theme.radiusCard)
             }
     }
 }

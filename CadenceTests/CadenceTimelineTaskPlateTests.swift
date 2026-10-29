@@ -307,13 +307,19 @@ struct CadenceTimelineTaskPlateTests {
         #expect(gate.contains("isPendingCompletion || taskCompletionAnimationManager.isPendingCancel(task)"),
                 "the block animates only a completion's fill")
         let core = try #require(CadenceSourceScan.declarationBody("private var coreBlock: some View", in: block))
-        #expect(core.contains("if hasPendingFill {"), "the block's TimelineView is not gated on either pending state")
+        // [[T-8412]]: the gate is both pending states AND Reduce Motion off.
+        let motion = try #require(CadenceSourceScan.declarationBody("private var animatesPendingFill: Bool", in: block), "the block lost its motion gate")
+        #expect(motion.contains("!reduceMotion && hasPendingFill"), "the block animates under Reduce Motion")
+        #expect(block.contains("@Environment(\\.accessibilityReduceMotion) private var reduceMotion"), "the block does not read Reduce Motion")
+        #expect(core.contains("if animatesPendingFill {"), "the block's TimelineView is not gated on either pending state and Reduce Motion")
+        #expect(content.contains("isPendingCompletion: animatesPendingFill && isPendingCompletion"),
+                "the still block draws a frozen fill and sweep instead of the pending glyph")
 
         let body = try t3160TaskBlockBody()
         #expect(body.contains("let glyph = completionGlyph ?? CadenceTaskCompletionGlyph.resolve(task: task)"))
         #expect(body.contains("progress: isPendingCompletion || isPendingCancellation ? clampedProgress : nil"),
                 "the ring draws only a completion's fill")
-        #expect(content.contains("isPendingCancellation: taskCompletionAnimationManager.isPendingCancel(task)"),
+        #expect(content.contains("isPendingCancellation: animatesPendingFill && taskCompletionAnimationManager.isPendingCancel(task)"),
                 "the block's sweep cannot see a pending cancellation")
         #expect(body.contains("if isPendingCompletion || isPendingCancellation {"), "a cancellation draws no sweep on the block")
         #expect(body.contains("tint: isPendingCompletion ? Theme.green : secondaryInk"),

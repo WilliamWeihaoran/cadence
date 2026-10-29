@@ -42,6 +42,10 @@ struct ListSectionKanbanColumn: View {
     @Environment(HoveredEditableManager.self) private var hoveredEditableManager
     @Environment(HoveredSectionManager.self) private var hoveredSectionManager
     @Environment(SectionCompletionAnimationManager.self) private var sectionCompletionAnimationManager
+    /// Under Reduce Motion a completing column draws its pending state still -- the green dot and
+    /// "Completing…" line, the ring's still pending glyph, and no sweep -- as a completing task
+    /// does on both platforms ([[T-8412]]). The settle window is unchanged; only the motion goes.
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var isTargeted = false
     @State private var isComposing = false
     @State private var dragOverTaskID: UUID? = nil
@@ -151,7 +155,7 @@ struct ListSectionKanbanColumn: View {
         .kanbanColumnChrome(tint: columnColor, isTargeted: isTargeted) {
             // Section columns can be "completing…" — that sweep layers on top of the shared
             // drag-over wash.
-            if isPendingCompletion {
+            if animatesPendingCompletion {
                 TimelineView(.animation) { context in
                     TaskCompletionPendingOverlay(
                         progress: sectionCompletionAnimationManager.progress(for: section, now: context.date),
@@ -226,7 +230,7 @@ struct ListSectionKanbanColumn: View {
     /// visible column on every display frame, forever.
     @ViewBuilder
     private func columnHeader(activeCount: Int) -> some View {
-        if isPendingCompletion {
+        if animatesPendingCompletion {
             TimelineView(.animation) { context in
                 header(
                     activeCount: activeCount,
@@ -234,11 +238,11 @@ struct ListSectionKanbanColumn: View {
                 )
             }
         } else {
-            header(activeCount: activeCount, completionProgress: 0)
+            header(activeCount: activeCount, completionProgress: nil)
         }
     }
 
-    private func header(activeCount: Int, completionProgress: Double) -> some View {
+    private func header(activeCount: Int, completionProgress: Double?) -> some View {
         KanbanColumnHeader(
             section: section,
             displayName: headerDisplayName,
@@ -943,6 +947,11 @@ struct ListSectionKanbanColumn: View {
         toggleSectionCompletion()
         guard saveFailureNotice == nil else { return }
         showEditor = false
+    }
+
+    /// The display-link redraw's one gate: a completing column, and Reduce Motion off.
+    private var animatesPendingCompletion: Bool {
+        !reduceMotion && isPendingCompletion
     }
 
     private var isPendingCompletion: Bool {

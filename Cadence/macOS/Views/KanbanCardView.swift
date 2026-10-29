@@ -29,6 +29,9 @@ struct KanbanCard: View {
     @Environment(HoveredTaskManager.self) private var hoveredTaskManager
     @Environment(HoveredEditableManager.self) private var hoveredEditableManager
     @Environment(TaskCompletionAnimationManager.self) private var taskCompletionAnimationManager
+    /// Read by `completionRing`: under Reduce Motion the ring draws the pending state still, as
+    /// iOS's board card does ([[T-8412]]).
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(FocusManager.self) private var focusManager
     @State private var showDueDatePicker = false
     @State private var dueDatePickerDate: Date = Date()
@@ -316,7 +319,7 @@ struct KanbanCard: View {
     /// which is the one thing about this card a fingertip cannot do on a 13pt target.
     @ViewBuilder
     private var completionRing: some View {
-        if isPendingCompletion || isPendingCancel {
+        if !reduceMotion && (isPendingCompletion || isPendingCancel) {
             TimelineView(.animation) { context in
                 KanbanCompletionButton(
                     icon: completionButtonIcon,
@@ -339,19 +342,11 @@ struct KanbanCard: View {
 
     /// The press-and-hold settle wash. It exists only where there is a press-and-hold to be
     /// pending about.
-    @ViewBuilder
+    ///
+    /// The shared host iOS's board card lays ([[T-8412]]), so it reads the shared decision and
+    /// draws nothing under Reduce Motion, where the ring already says "pending" still.
     private var settlingOverlay: some View {
-        if isPendingCompletion || isPendingCancel {
-            TimelineView(.animation) { context in
-                TaskCompletionPendingOverlay(
-                    progress: isPendingCompletion
-                        ? taskCompletionAnimationManager.progress(for: task, now: context.date)
-                        : taskCompletionAnimationManager.cancelProgress(for: task, now: context.date),
-                    tint: isPendingCompletion ? Theme.green : Theme.dim,
-                    cornerRadius: CadenceLedgerCardMetrics.cornerRadius
-                )
-            }
-        }
+        TaskCompletionPendingSweep(task: task, cornerRadius: CadenceLedgerCardMetrics.cornerRadius)
     }
 
     private var isSettled: Bool {

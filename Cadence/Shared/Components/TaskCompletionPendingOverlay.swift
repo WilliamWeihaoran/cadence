@@ -110,8 +110,9 @@ struct CadenceTaskCompletionSweepFrame: Equatable {
 ///
 /// **Reduce Motion draws no sweep.** The sweep is nothing but motion, and the ring beside it already
 /// draws the pending state still under that setting (`iOSTaskCompletionFill`), so the row says
-/// "pending" without anything moving. macOS's ring and sweep do not read the setting yet; that gap
-/// is [[T-8412]], not a reason to animate here.
+/// "pending" without anything moving. Since [[T-8412]] macOS's task row and Kanban card lay this
+/// host too, and macOS's rings, its Kanban column and its timeline block read the setting the same
+/// way, so neither platform animates a pending task under it.
 struct TaskCompletionPendingSweep: View {
     let task: AppTask
     var cornerRadius: CGFloat

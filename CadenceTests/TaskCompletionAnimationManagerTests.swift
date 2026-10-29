@@ -846,5 +846,49 @@ struct TaskCompletionAnimationManagerTests {
         #expect(host.contains("TimelineView(.animation)"), "non-vacuity: the host no longer animates at all")
         #expect(host.contains("tint: frame.tint"), "the host picks its own tint")
     }
+
+    // MARK: - T-8412: macOS draws the pending state still under Reduce Motion
+
+    /// macOS's task row, Kanban card and Kanban column read `accessibilityReduceMotion` the way iOS
+    /// does: the ring's display-link redraw is gated on it, and the row-wide sweep is the shared
+    /// host (which draws nothing under it) rather than a second ungated copy. A macOS test host
+    /// cannot toggle the setting and render, so the pin reads the source, scoped per declaration.
+    @Test func theMacOSRingAndSweepDrawThePendingStateStillUnderReduceMotion() throws {
+        let tasks = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile("Cadence/macOS/Views/TasksPanelComponents.swift"))
+        let card = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile("Cadence/macOS/Views/KanbanCardView.swift"))
+        let column = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile("Cadence/macOS/Views/KanbanSectionColumnView.swift"))
+        // Comment-stripped, not `codeOnly`: the header pin reads a symbol name, which is a literal.
+        let header = try CadenceSourceScan.sourceFile("Cadence/macOS/Views/KanbanColumnSupportViews.swift")
+
+        // The list row's ring and sweep.
+        let button = try #require(CadenceSourceScan.declarationBody("private struct TaskCompletionButton", in: tasks), "non-vacuity: the row's ring moved")
+        #expect(button.contains("@Environment(\\.accessibilityReduceMotion) private var reduceMotion"), "the row's ring does not read Reduce Motion")
+        #expect(button.contains("if !reduceMotion && (isPendingCompletion || isPendingCancel) {"), "the row's ring animates under Reduce Motion")
+        #expect(button.contains("TimelineView(.animation)"), "non-vacuity: the row's ring no longer animates at all")
+        let background = try #require(CadenceSourceScan.declarationBody("private struct TaskRowBackground", in: tasks), "non-vacuity: the row background moved")
+        #expect(background.contains("TaskCompletionPendingSweep(task: task, cornerRadius: Theme.radiusCard)"), "the row does not lay the shared sweep")
+        #expect(!background.contains("TimelineView("), "the row runs its own ungated sweep again")
+
+        // The Kanban card's ring and settle wash.
+        let ring = try #require(CadenceSourceScan.declarationBody("private var completionRing: some View", in: card), "non-vacuity: the card's ring moved")
+        #expect(card.contains("@Environment(\\.accessibilityReduceMotion) private var reduceMotion"), "the card does not read Reduce Motion")
+        #expect(ring.contains("if !reduceMotion && (isPendingCompletion || isPendingCancel) {"), "the card's ring animates under Reduce Motion")
+        let wash = try #require(CadenceSourceScan.declarationBody("private var settlingOverlay: some View", in: card), "non-vacuity: the card's wash moved")
+        #expect(wash.contains("TaskCompletionPendingSweep(task: task, cornerRadius: CadenceLedgerCardMetrics.cornerRadius)"), "the card does not lay the shared sweep")
+        #expect(!wash.contains("TimelineView("), "the card runs its own ungated sweep again")
+
+        // The Kanban column: one gate for its sweep and its header ring, and no other display link.
+        let gate = try #require(CadenceSourceScan.declarationBody("private var animatesPendingCompletion: Bool", in: column), "the column lost its motion gate")
+        #expect(gate.contains("!reduceMotion && isPendingCompletion"), "the column animates under Reduce Motion")
+        #expect(column.contains("@Environment(\\.accessibilityReduceMotion) private var reduceMotion"))
+        let displayLinks = CadenceSourceScan.matchCount(#"TimelineView\(\.animation\)"#, in: column)
+        let gatedLinks = CadenceSourceScan.matchCount(#"if animatesPendingCompletion \{\s*TimelineView\(\.animation\)"#, in: column)
+        #expect(displayLinks == 2, "non-vacuity: the column's sweep and header ring")
+        #expect(gatedLinks == displayLinks, "a column display link is not behind the Reduce Motion gate")
+        // Still, the header ring stamps a pending glyph rather than an empty track.
+        #expect(column.contains("header(activeCount: activeCount, completionProgress: nil)"), "the still header draws a zero-length fill")
+        let controls = try #require(CadenceSourceScan.declarationBody("private var headerControls: some View", in: header), "non-vacuity: the header ring moved")
+        #expect(controls.contains(#"(isPendingCompletion ? "circle.inset.filled" : "circle")"#), "a still completing column's ring looks idle")
+    }
 }
 #endif
