@@ -222,6 +222,144 @@ struct CadenceTimelineBlockEditTests {
         }
     }
 
+    // MARK: - A move onto another day ([[T-8301]])
+
+    /// Column width for the arithmetic; any positive value gives the same relations.
+    private let columnWidth: CGFloat = 120
+
+    @Test func theFingerIsOverTheColumnItIsInFromEdgeToEdge() {
+        let wide = -5...5
+        // Grabbed a third of the way across its own column: it stays there until the finger
+        // crosses the trailing edge, then it is the next day for the whole of that column.
+        let grab = columnWidth / 3
+        let toTrailingEdge = columnWidth - grab
+        #expect(CadenceTimelineBlockEdit.dayDelta(grabX: grab, translationX: 0, columnWidth: columnWidth, allowed: wide) == 0)
+        #expect(CadenceTimelineBlockEdit.dayDelta(grabX: grab, translationX: toTrailingEdge - 1, columnWidth: columnWidth, allowed: wide) == 0)
+        #expect(CadenceTimelineBlockEdit.dayDelta(grabX: grab, translationX: toTrailingEdge + 1, columnWidth: columnWidth, allowed: wide) == 1)
+        #expect(CadenceTimelineBlockEdit.dayDelta(grabX: grab, translationX: toTrailingEdge + columnWidth - 1, columnWidth: columnWidth, allowed: wide) == 1)
+        #expect(CadenceTimelineBlockEdit.dayDelta(grabX: grab, translationX: toTrailingEdge + columnWidth + 1, columnWidth: columnWidth, allowed: wide) == 2)
+        // Leftward: one point past the leading edge is the day before, not "half a column away".
+        #expect(CadenceTimelineBlockEdit.dayDelta(grabX: grab, translationX: -grab + 1, columnWidth: columnWidth, allowed: wide) == 0)
+        #expect(CadenceTimelineBlockEdit.dayDelta(grabX: grab, translationX: -grab - 1, columnWidth: columnWidth, allowed: wide) == -1)
+        #expect(CadenceTimelineBlockEdit.dayDelta(grabX: grab, translationX: -grab - columnWidth - 1, columnWidth: columnWidth, allowed: wide) == -2)
+    }
+
+    @Test func aMoveLandsOnlyOnADayInViewAndASingleDayPaneNeverLeavesItsDay() {
+        let grab = columnWidth / 2
+        let farRight = columnWidth * 10
+        // Clamped to the run in view, both ways.
+        #expect(CadenceTimelineBlockEdit.dayDelta(grabX: grab, translationX: farRight, columnWidth: columnWidth, allowed: -1...2) == 2)
+        #expect(CadenceTimelineBlockEdit.dayDelta(grabX: grab, translationX: -farRight, columnWidth: columnWidth, allowed: -1...2) == -1)
+        // The single-day pane's range.
+        #expect(CadenceTimelineBlockEdit.dayDelta(grabX: grab, translationX: farRight, columnWidth: columnWidth, allowed: 0...0) == 0)
+        #expect(CadenceTimelineBlockEdit.dayDelta(grabX: grab, translationX: -farRight, columnWidth: columnWidth, allowed: 0...0) == 0)
+        // No width, no crossing.
+        #expect(CadenceTimelineBlockEdit.dayDelta(grabX: grab, translationX: farRight, columnWidth: 0, allowed: -5...5) == 0)
+    }
+
+    @Test func theDaysInViewAreTheLeadingColumnThroughTheLastOneOnScreen() {
+        let count = 7
+        let leading = 20
+        for column in leading..<(leading + count) {
+            let range = CadenceTimelineBlockEdit.visibleDayDeltaRange(columnIndex: column, leadingIndex: leading, visibleDayCount: count)
+            #expect(column + range.lowerBound == leading, "column \(column)")
+            #expect(column + range.upperBound == leading + count - 1, "column \(column)")
+            #expect(range.upperBound - range.lowerBound == count - 1, "column \(column)")
+        }
+        // A column only half on screen can still move within its own day.
+        let offLeading = CadenceTimelineBlockEdit.visibleDayDeltaRange(columnIndex: leading - 1, leadingIndex: leading, visibleDayCount: count)
+        let offTrailing = CadenceTimelineBlockEdit.visibleDayDeltaRange(columnIndex: leading + count, leadingIndex: leading, visibleDayCount: count)
+        #expect(offLeading.contains(0) && offTrailing.contains(0))
+    }
+
+    @Test func aMoveThatStaysOnItsColumnNamesNoDayAndOneThatLeavesNamesTheDayItReached() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = try #require(TimeZone(identifier: "UTC"))
+        let monthEnd = try #require(calendar.date(from: DateComponents(year: 2026, month: 6, day: 30, hour: 12)))
+        #expect(CadenceTimelineBlockEdit.movedDateKey(from: monthEnd, dayDelta: 0, calendar: calendar) == nil)
+        #expect(CadenceTimelineBlockEdit.movedDateKey(from: monthEnd, dayDelta: 1, calendar: calendar) == "2026-07-01")
+        #expect(CadenceTimelineBlockEdit.movedDateKey(from: monthEnd, dayDelta: -1, calendar: calendar) == "2026-06-29")
+    }
+
+    @Test func aMoveOntoAnotherDayWritesTheDayAndTheMinuteInOneCommit() throws {
+        let modelContext = ModelContext(try CadenceModelContainerFactory.makeInMemoryContainer())
+        let task = try scheduledTask(in: modelContext)
+        let seam = CountingCommit()
+
+        let landed = CadenceTimelineBlockEdit.commit(
+            task, kind: .move, range: (start: 690, end: 750), onDay: "2026-06-02",
+            in: modelContext, reconciler: .inert, commit: seam.commit
+        )
+
+        #expect(landed)
+        #expect(seam.commitCount == 1, "the day and the minute were written by separate saves")
+        #expect(task.scheduledDate == "2026-06-02")
+        #expect(task.scheduledStartMin == 690)
+        #expect(task.estimatedMinutes == 60, "a cross-day move changed the duration")
+    }
+
+    @Test func aResizeNeverChangesTheDayEvenIfOneIsNamed() throws {
+        let modelContext = ModelContext(try CadenceModelContainerFactory.makeInMemoryContainer())
+        let task = try scheduledTask(in: modelContext)
+
+        let landed = CadenceTimelineBlockEdit.commit(
+            task, kind: .resizeEnd, range: (start: 600, end: 690), onDay: "2026-06-02",
+            in: modelContext, reconciler: .inert, commit: CountingCommit().commit
+        )
+
+        #expect(landed)
+        #expect(task.scheduledDate == "2026-06-01")
+        #expect(task.scheduledStartMin + task.estimatedMinutes == 690)
+    }
+
+    @Test func aRefusedCrossDayMovePutsTheBlockBackOnItsOwnDayAndMinute() throws {
+        let modelContext = ModelContext(try CadenceModelContainerFactory.makeInMemoryContainer())
+        let task = try scheduledTask(in: modelContext)
+        let seam = CountingCommit()
+        seam.refuses = true
+
+        let landed = CadenceTimelineBlockEdit.commit(
+            task, kind: .move, range: (start: 690, end: 750), onDay: "2026-06-02",
+            in: modelContext, reconciler: .inert, commit: seam.commit
+        )
+
+        #expect(!landed)
+        #expect(task.scheduledDate == "2026-06-01", "a refused move left the block on the new day")
+        #expect(task.scheduledStartMin == 600)
+    }
+
+    /// The iOS grid's wiring of the cross-day move, read from source ([[T-8301]]): the scrolling
+    /// grid hands each column the days in view, the single-day pane hands it none, the block
+    /// reports its whole travel for a move, and the one commit names the day.
+    @Test func theScrollingGridCarriesABlockAcrossTheDaysInViewAndTheSingleDayPaneDoesNot() throws {
+        let source = try CadenceSourceScan.sourceFile(timelineFile)
+        let grid = try #require(CadenceSourceScan.declarationBody("struct iOSCalendarTimelineGrid: View", in: source))
+        let block = try #require(CadenceSourceScan.declarationBody("struct iOSTimelineTaskBlock: View", in: source))
+        let column = try #require(CadenceSourceScan.declarationBody("private struct iOSCalendarTimelineDayColumn: View", in: source))
+        #expect(column.count > 1_000, "non-vacuity: the day column read as \(column.count) characters")
+
+        // The one column builder hands every column its range, and the range is the visible
+        // window on a scrolling grid and `0...0` on the single-day pane.
+        let ranges = try #require(CadenceSourceScan.declarationBody("private func dayDeltaRange(for date: Date)", in: grid))
+        #expect(CadenceSourceScan.matchCount(#"dayDeltaRange: dayDeltaRange\(for: date\)"#, in: grid) == 1)
+        #expect(CadenceSourceScan.matchCount(#"guard !isSingleDay else \{ return 0\.\.\.0 \}"#, in: ranges) == 1)
+        #expect(CadenceSourceScan.matchCount(#"CadenceTimelineBlockEdit\.visibleDayDeltaRange\("#, in: ranges) == 1)
+        #expect(CadenceSourceScan.matchCount(#"visibleDayCount: visibleDayCount"#, in: ranges) == 1)
+        // The commit names the day the move reached.
+        #expect(CadenceSourceScan.matchCount(#"CadenceTimelineBlockEdit\.commit\(task, kind: kind, range: range, onDay: dateKey,"#, in: grid) == 1)
+        #expect(CadenceSourceScan.matchCount(#"onDay: CadenceTimelineBlockEdit\.movedDateKey\(from: date, dayDelta: dayDelta"#, in: grid) == 1)
+        // The move reports the whole travel, not its height alone.
+        #expect(CadenceSourceScan.matchCount(#"editing\?\.onChanged\(\.move, translation\)"#, in: block) == 1)
+        #expect(CadenceSourceScan.matchCount(#"editing\?\.onEnded\(\.move, translation\)"#, in: block) == 1)
+        #expect(CadenceSourceScan.matchCount(#"editing\?\.onMovePressed\(point\)"#, in: block) == 1)
+        // The column resolves the day through the shared rule and draws the carried block there.
+        #expect(CadenceSourceScan.matchCount(#"CadenceTimelineBlockEdit\.dayDelta\("#, in: column) == 1)
+        #expect(CadenceSourceScan.matchCount(#"allowed: dayDeltaRange"#, in: column) == 1)
+        #expect(CadenceSourceScan.matchCount(#"slot\.x \+ CGFloat\(carriedDays\(for: task\)\) \* colWidth"#, in: column) == 1)
+        // A move that only changed day still commits.
+        #expect(CadenceSourceScan.matchCount(#"\|\| edit\.dayDelta != 0 else \{ return \}"#, in: column) == 1)
+    }
+
     // MARK: - The iOS surface's wiring, read from source
 
     private let timelineFile = "Cadence/iOS/iOSCalendarTimelineViews.swift"

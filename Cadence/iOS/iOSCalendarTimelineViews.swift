@@ -166,6 +166,10 @@ struct iOSCalendarTimelineGrid: View {
     /// until a tap anywhere on the canvas or on the block puts it down. Grid-wide rather than per
     /// column, so lifting a block on Tuesday puts Monday's down.
     @State private var editingTaskID: PersistentIdentifier?
+    /// The day key of the column whose block is being carried onto another day ([[T-8301]]), so
+    /// that column is drawn over its neighbours for as long as its block is drawn over them. `nil`
+    /// whenever no move has left its own column.
+    @State private var crossDayCarrierKey: String?
     /// Set when a move or resize was refused by the store. The block is already back at its
     /// stored minute by then (`CadenceTimelineBlockEdit.commit`); this is the sentence saying so.
     @State private var blockEditFailureNotice: String?
@@ -367,9 +371,37 @@ struct iOSCalendarTimelineGrid: View {
             onClearTime: clearsTime,
             editingTaskID: editingTaskID,
             onSelectForEditing: { editingTaskID = $0 },
-            onCommitEdit: commitBlockEdit,
+            dayDeltaRange: dayDeltaRange(for: date),
+            onCarryAcrossDays: { carrying in
+                if carrying {
+                    crossDayCarrierKey = key
+                } else if crossDayCarrierKey == key {
+                    crossDayCarrierKey = nil
+                }
+            },
+            onCommitEdit: { task, kind, range, dayDelta in
+                commitBlockEdit(
+                    task,
+                    kind: kind,
+                    range: range,
+                    onDay: CadenceTimelineBlockEdit.movedDateKey(from: date, dayDelta: dayDelta, calendar: calendar)
+                )
+            },
             onDropTaskAtMinute: { id, minute in onDropTaskAtMinute(id, key, minute) },
             resolveDroppedTask: resolveDroppedTask
+        )
+    }
+
+    /// The day offsets a block in `date`'s column may be carried by ([[T-8301]]): every column on
+    /// screen on a scrolling grid, none on the single-day pane, which has no other day to move to.
+    private func dayDeltaRange(for date: Date) -> ClosedRange<Int> {
+        guard !isSingleDay else { return 0...0 }
+        let leading = calendar.startOfDay(for: self.date(at: leadingIndex))
+        let offset = calendar.dateComponents([.day], from: leading, to: calendar.startOfDay(for: date)).day ?? 0
+        return CadenceTimelineBlockEdit.visibleDayDeltaRange(
+            columnIndex: offset,
+            leadingIndex: 0,
+            visibleDayCount: visibleDayCount
         )
     }
 
@@ -390,12 +422,16 @@ struct iOSCalendarTimelineGrid: View {
     /// [[T-1470]]): the commit answers, a refusal has already put the task's fields back — so the
     /// block, which draws the stored minute, snaps to where it started — and the answer is mapped
     /// onto the shared edit-failure sentence.
+    ///
+    /// `dateKey` is the day a move was carried onto ([[T-8301]]), `nil` for one that stayed on its
+    /// own column; the same commit writes it, in the same transaction as the minute.
     private func commitBlockEdit(
         _ task: AppTask,
         kind: CadenceTimelineBlockEdit.Kind,
-        range: (start: Int, end: Int)
+        range: (start: Int, end: Int),
+        onDay dateKey: String?
     ) {
-        let landed = CadenceTimelineBlockEdit.commit(task, kind: kind, range: range, in: modelContext)
+        let landed = CadenceTimelineBlockEdit.commit(task, kind: kind, range: range, onDay: dateKey, in: modelContext)
         blockEditFailureNotice = landed ? nil : CadencePendingChangePersistence.editFailureNotice
     }
 
@@ -517,8 +553,14 @@ struct iOSCalendarTimelineGrid: View {
                 ScrollView(.vertical) {
                     ZStack(alignment: .topLeading) {
                         ForEach(range, id: \.self) { index in
-                            dayColumn(for: date(at: index), colWidth: colWidth)
+                            let date = date(at: index)
+                            // **A block may be carried onto any day in view** ([[T-8301]]) — the
+                            // Mac Week canvas's cross-day move — and its column is lifted over
+                            // its neighbours while it is, or the later-declared columns would be
+                            // painted over the block they are receiving.
+                            dayColumn(for: date, colWidth: colWidth)
                                 .offset(x: CGFloat(index) * colWidth)
+                                .zIndex(crossDayCarrierKey == DateFormatters.dateKey(from: date) ? 1 : 0)
                         }
                     }
                     .frame(width: contentWidth, height: timelineHeight, alignment: .topLeading)
@@ -1283,7 +1325,15 @@ private struct iOSCalendarTimelineDayColumn: View {
     /// See `iOSCalendarTimelineGrid.editingTaskID`.
     let editingTaskID: PersistentIdentifier?
     let onSelectForEditing: (PersistentIdentifier?) -> Void
-    let onCommitEdit: (AppTask, CadenceTimelineBlockEdit.Kind, (start: Int, end: Int)) -> Void
+    /// The day offsets a moved block may land on: the columns in view on a scrolling grid,
+    /// `0...0` on a single-day pane ([[T-8301]]). See `CadenceTimelineBlockEdit.dayDelta`.
+    let dayDeltaRange: ClosedRange<Int>
+    /// This column's block has left (`true`) or come back to (`false`) its own column mid-move,
+    /// so the grid can draw this column over the ones the block is crossing.
+    let onCarryAcrossDays: (Bool) -> Void
+    /// A finished edit and the whole days a move was carried across (`0` for a resize, and for a
+    /// move that stayed on its own column). The grid turns the days into a day key.
+    let onCommitEdit: (AppTask, CadenceTimelineBlockEdit.Kind, (start: Int, end: Int), Int) -> Void
     /// See `iOSCalendarTimelineGrid.onDropTaskAtMinute`; the day is already bound by the time it
     /// reaches here, so this column only has to say *which minute*.
     let onDropTaskAtMinute: (UUID, Int) -> Bool
@@ -1308,7 +1358,13 @@ private struct iOSCalendarTimelineDayColumn: View {
         let taskID: PersistentIdentifier
         let start: Int
         let end: Int
+        /// Whole columns the block is drawn away from its own ([[T-8301]]); `0` for a resize.
+        var dayDelta: Int = 0
     }
+
+    /// Where, in this column's own space, the finger took hold of the block being moved — the
+    /// `grabX` `CadenceTimelineBlockEdit.dayDelta` measures the crossing from ([[T-8301]]).
+    @State private var moveGrabX: CGFloat?
 
     /// The in-place draft, owned by the column that drew it. One column, one draft: a press lands
     /// on exactly one day, and a grid that windows a scrolling range would otherwise need a rule
@@ -1394,10 +1450,12 @@ private struct iOSCalendarTimelineDayColumn: View {
                     endMin: range.end,
                     blockWidth: slot.width,
                     onClearTime: onClearTime.map { clear in { clear(task) } },
-                    editing: blockEditing(for: task, stored: stored, drawnHeight: height)
+                    editing: blockEditing(for: task, stored: stored, drawnHeight: height, slotX: slot.x)
                 )
                 .frame(width: slot.width, height: height)
-                .offset(x: slot.x, y: yOffset(for: drawn.start))
+                // A block carried onto another day is drawn over that day's column, a whole
+                // number of column widths from its own ([[T-8301]]).
+                .offset(x: slot.x + CGFloat(carriedDays(for: task)) * colWidth, y: yOffset(for: drawn.start))
                 // A lifted block is drawn over its neighbours, so the handle bands it hangs past
                 // its own edges are not under the block it is being dragged across. Still below
                 // the draft and the now-line, which are declared after it at the same index.
@@ -1668,47 +1726,83 @@ private struct iOSCalendarTimelineDayColumn: View {
         return (editPreview.start, editPreview.end)
     }
 
+    /// The columns a task block is drawn away from its own: the live move's, `0` otherwise.
+    private func carriedDays(for task: AppTask) -> Int {
+        guard let editPreview, editPreview.taskID == task.persistentModelID else { return 0 }
+        return editPreview.dayDelta
+    }
+
     /// The move and resize hooks for one block ([[T-1475]]).
     ///
     /// Every edit is measured from `stored`, the range the block had when the finger went down,
     /// by `CadenceTimelineBlockEdit.editedRange` — never from the previous frame's preview, so a
     /// slow drag cannot accumulate rounding. Overlap columns are still solved over the stored
     /// ranges (`blockPlacements`), so neighbours hold still under a block being dragged past them.
+    ///
+    /// **A move also crosses days** ([[T-8301]]): the finger's sideways travel, from where it took
+    /// hold (`slotX` plus the press point, in this column's space), is resolved to the column it is
+    /// over by `CadenceTimelineBlockEdit.dayDelta`, clamped to `dayDeltaRange`. A resize reads the
+    /// vertical travel alone and never leaves its day.
     private func blockEditing(
         for task: AppTask,
         stored: (start: Int, end: Int),
-        drawnHeight: CGFloat
+        drawnHeight: CGFloat,
+        slotX: CGFloat
     ) -> iOSTimelineBlockEditing {
         let taskID = task.persistentModelID
-        let resolve: (CadenceTimelineBlockEdit.Kind, CGFloat) -> (start: Int, end: Int) = { kind, translationY in
-            CadenceTimelineBlockEdit.editedRange(
+        let resolve: (CadenceTimelineBlockEdit.Kind, CGSize) -> (range: (start: Int, end: Int), dayDelta: Int) = { kind, translation in
+            let range = CadenceTimelineBlockEdit.editedRange(
                 kind: kind,
                 start: stored.start,
                 end: stored.end,
-                translationY: translationY,
+                translationY: translation.height,
                 hourHeight: hourHeight
             )
+            guard kind == .move, let moveGrabX else { return (range, 0) }
+            let dayDelta = CadenceTimelineBlockEdit.dayDelta(
+                grabX: moveGrabX,
+                translationX: translation.width,
+                columnWidth: colWidth,
+                allowed: dayDeltaRange
+            )
+            return (range, dayDelta)
         }
         return iOSTimelineBlockEditing(
             isSelected: editingTaskID == taskID,
             drawnHeight: drawnHeight,
             onLift: { onSelectForEditing(taskID) },
-            onChanged: { kind, translationY in
-                let range = resolve(kind, translationY)
-                editPreview = BlockEditPreview(taskID: taskID, start: range.start, end: range.end)
+            onMovePressed: { point in moveGrabX = slotX + point.x },
+            onChanged: { kind, translation in
+                let edit = resolve(kind, translation)
+                let wasCarried = (editPreview?.dayDelta ?? 0) != 0
+                editPreview = BlockEditPreview(
+                    taskID: taskID,
+                    start: edit.range.start,
+                    end: edit.range.end,
+                    dayDelta: edit.dayDelta
+                )
+                if wasCarried != (edit.dayDelta != 0) { onCarryAcrossDays(edit.dayDelta != 0) }
             },
-            onEnded: { kind, translationY in
-                let range = resolve(kind, translationY)
+            onEnded: { kind, translation in
+                let edit = resolve(kind, translation)
                 editPreview = nil
+                moveGrabX = nil
+                onCarryAcrossDays(false)
                 // A lift-and-release, or a drag that came back to where it began, writes nothing.
-                guard range.start != stored.start || range.end != stored.end else { return }
-                onCommitEdit(task, kind, range)
+                guard edit.range.start != stored.start
+                    || edit.range.end != stored.end
+                    || edit.dayDelta != 0 else { return }
+                onCommitEdit(task, kind, edit.range, edit.dayDelta)
             },
             onSettled: {
                 // A gesture the system cancelled — a scroll, a second finger, an incoming call —
                 // never reaches `onEnded`. Drop its preview so the block goes back to the stored
-                // minute rather than staying drawn where the finger was.
-                if editPreview?.taskID == taskID { editPreview = nil }
+                // minute (and its own day) rather than staying drawn where the finger was.
+                if editPreview?.taskID == taskID {
+                    editPreview = nil
+                    moveGrabX = nil
+                    onCarryAcrossDays(false)
+                }
             },
             onPutDown: { onSelectForEditing(nil) }
         )
@@ -2295,8 +2389,9 @@ struct iOSTimelineTaskBlock: View {
     /// canvas's block has always had — moving and edge-resizing the task's **own** time:
     ///
     /// - **Tap** opens the task inspector, as before.
-    /// - **Press and hold, then drag** moves the block in quarter hours. The hold is the point: a
-    ///   finger that moves before `liftPressDuration` is a scroll, the hold fails, and the day
+    /// - **Press and hold, then drag** moves the block in quarter hours, and on a scrolling grid onto
+    ///   whichever day in view it is released over, as the Mac Week canvas does ([[T-8301]]). The
+    ///   hold is the point: a finger that moves before `liftPressDuration` is a scroll, the hold fails, and the day
     ///   scrolls exactly as it did — Apple Calendar's own answer to the same collision. That last
     ///   clause was aspirational until [[T-7550]]; `movePressGesture` says what makes it true.
     /// - **A held block stays lifted** after the finger comes up, and only then shows top and
@@ -2410,11 +2505,16 @@ struct iOSTimelineTaskBlock: View {
         iOSTimelinePressDrag(
             isEnabled: editing != nil,
             minimumPressDuration: CadenceTimelineBlockEdit.liftPressDuration,
-            onPressed: { _ in isMovePressActive = true },
-            onChanged: { translation in editing?.onChanged(.move, translation.height) },
+            onPressed: { point in
+                editing?.onMovePressed(point)
+                isMovePressActive = true
+            },
+            // The whole travel, not its height: the column reads the sideways half as the day the
+            // block is carried onto ([[T-8301]]).
+            onChanged: { translation in editing?.onChanged(.move, translation) },
             onEnded: { translation in
                 isMovePressActive = false
-                editing?.onEnded(.move, translation.height)
+                editing?.onEnded(.move, translation)
             },
             onCancelled: { isMovePressActive = false }
         )
@@ -2477,10 +2577,10 @@ struct iOSTimelineTaskBlock: View {
         iOSTimelinePressDrag(
             minimumPressDuration: CadenceTimelineBlockEdit.liftPressDuration,
             onPressed: { _ in activeResize = kind },
-            onChanged: { translation in editing.onChanged(kind, translation.height) },
+            onChanged: { translation in editing.onChanged(kind, translation) },
             onEnded: { translation in
                 activeResize = nil
-                editing.onEnded(kind, translation.height)
+                editing.onEnded(kind, translation)
             },
             onCancelled: { activeResize = nil }
         )
@@ -2678,8 +2778,13 @@ struct iOSTimelineBlockEditing {
     /// The height the column drew the block at, which the handle bands are fitted to.
     let drawnHeight: CGFloat
     let onLift: () -> Void
-    let onChanged: (CadenceTimelineBlockEdit.Kind, CGFloat) -> Void
-    let onEnded: (CadenceTimelineBlockEdit.Kind, CGFloat) -> Void
+    /// The move's hold completed at this point in the block's own space — where the finger took
+    /// hold, which the column measures a cross-day carry from ([[T-8301]]).
+    let onMovePressed: (CGPoint) -> Void
+    /// The finger's travel in the window's space. A resize reads only its height; a move reads
+    /// both, the width as the columns crossed ([[T-8301]]).
+    let onChanged: (CadenceTimelineBlockEdit.Kind, CGSize) -> Void
+    let onEnded: (CadenceTimelineBlockEdit.Kind, CGSize) -> Void
     /// The gesture is over, whether it ended or was cancelled.
     let onSettled: () -> Void
     let onPutDown: () -> Void
