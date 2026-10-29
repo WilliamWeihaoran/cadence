@@ -530,10 +530,11 @@ struct iOSListKanbanPanel: View {
                                         listName: listName,
                                         sectionName: column.title
                                     ),
-                                    onDropCard: { items in
+                                    onDropCard: { items, target in
                                         CadenceKanbanCardDrop.drop(
                                             items,
                                             intoColumn: column.title,
+                                            before: target,
                                             columnTasks: column.tasks,
                                             among: tasks,
                                             spanning: spanTasks ?? tasks,
@@ -647,8 +648,16 @@ private struct iOSListKanbanColumn: View {
     /// ghost, so a card could not change column by touch at all. The board answers, not the column:
     /// the board holds the task list a payload is checked against, and the write is
     /// `CadenceKanbanCardDrop`'s, the one macOS's columns make.
-    var onDropCard: ([String]) -> Bool = { _ in false }
+    ///
+    /// **[[T-8271]]: and so does each card**, the target macOS's `KanbanDraggableCard` is
+    /// (`onDropBefore`). The second argument is the card dropped on — the card lands in front of
+    /// it, in this column or from another — or `nil` for the column body, which files it at the end.
+    /// Without it a card could change column and never move within one.
+    var onDropCard: ([String], AppTask?) -> Bool = { _, _ in false }
     @State private var isCardDropTargeted = false
+    /// The card a held card is over, for macOS's insertion line (`KanbanDraggableCard`'s 2pt top
+    /// rule): where the drop will land, drawn on the card rather than as a second column layer.
+    @State private var dropTargetTaskID: UUID?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -682,6 +691,22 @@ private struct iOSListKanbanColumn: View {
                             // spelling. Outside the card, after its context menu, as both of those
                             // put it — see `iOSBoardTaskCard`'s note on how the two share a press.
                             .draggable(TaskDragPayload.string(for: task.id))
+                            // [[T-8271]]: the card is a drop target too, so a card set down on it
+                            // lands in front of it — macOS's `onDropBefore`, through the same write.
+                            .overlay(alignment: .top) {
+                                if dropTargetTaskID == task.id {
+                                    Rectangle()
+                                        .fill(Theme.blue)
+                                        .frame(height: 2)
+                                        .allowsHitTesting(false)
+                                }
+                            }
+                            .dropDestination(for: String.self) { items, _ in
+                                onDropCard(items, task)
+                            } isTargeted: { isOver in
+                                if isOver { dropTargetTaskID = task.id }
+                                else if dropTargetTaskID == task.id { dropTargetTaskID = nil }
+                            }
                     }
                 }
                 .padding(.horizontal, 4)
@@ -705,7 +730,7 @@ private struct iOSListKanbanColumn: View {
         // is a target and not only the space under its cards.
         .contentShape(Rectangle())
         .dropDestination(for: String.self) { items, _ in
-            onDropCard(items)
+            onDropCard(items, nil)
         } isTargeted: { isCardDropTargeted = $0 }
     }
 }

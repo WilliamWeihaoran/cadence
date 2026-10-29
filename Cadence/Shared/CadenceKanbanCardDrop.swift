@@ -8,16 +8,18 @@ import SwiftData
 /// two platforms, [[T-8201]]). `KanbanBoardSupport.reorder` still owns the argument for every
 /// parameter and now only wraps this in its card animation, which is a macOS constant.
 ///
-/// **The iOS column drop (`drop`) is that write with `before: nil`**, the same call macOS's column
-/// body makes: the card is refiled under the column's section and goes to the column's end, and the
-/// list is renumbered `0…n` in the same commit, so a refused save puts every card back. Two things
-/// are iOS's own, each answering the input rather than the look:
+/// **The iOS list board's drop (`drop`) is that write, with the two targets macOS's columns have.**
+/// The card is refiled under the column's section and the list is renumbered `0…n` in the same
+/// commit, so a refused save puts every card back. Where it lands depends on what it was dropped
+/// on, exactly as on macOS:
 ///
-/// - **A drop on the card's own column writes nothing and answers `false`.** On macOS a card is
-///   also a drop target (`onDropBefore`), so a drop on the column body is a deliberate "to the end".
-///   The iOS column is one target from header to foot, so a card lifted and set down where it was
-///   would otherwise jump to the bottom of its column. Reordering inside an iOS column is
-///   [[T-8271]].
+/// - **On a card (`before: card`)** it goes in front of that card, in its own column or another —
+///   macOS's `onDropBefore` ([[T-8271]]). A card dropped on itself writes nothing and answers
+///   `false`, the same refusal macOS's `handleTaskDrop` makes (`droppedID != target.id`).
+/// - **On the column (`before: nil`)** it goes to the column's end, macOS's column-body drop. A
+///   drop there on the card's OWN column writes nothing and answers `false`: the iOS column is one
+///   target from header to foot, so a card lifted and set down in the gap between cards would
+///   otherwise jump to the bottom of a column it never left.
 /// - **Only a card of this board is accepted.** The payload decode is lenient by design (a bare
 ///   UUID passes, see `TaskDragPayload.taskID(from:)`), and an iPad shell can drag a task in from
 ///   another pane; refiling that one would be a container move this write does not make.
@@ -72,10 +74,12 @@ enum CadenceKanbanCardDrop {
         return boardTasks.first { $0.id == taskID }
     }
 
-    /// An iOS list-board column's whole drop: decode, check the card is on this board, and file it
-    /// at the end of the column `sectionName` through `reorder`.
+    /// An iOS list-board drop: decode, check the card is on this board, and file it in the column
+    /// `sectionName` through `reorder` — in front of `target` when it was dropped on a card, at the
+    /// column's end when it was dropped on the column itself.
     ///
     /// - Parameters:
+    ///   - target: the card it was dropped on, or `nil` for the column body.
     ///   - columnTasks: the destination column's cards, in any order; they are put in `order`
     ///     order here, as macOS's column does, because the display sort is not what gets written.
     ///   - boardTasks: every card the board draws — the set a payload must name one of.
@@ -85,6 +89,7 @@ enum CadenceKanbanCardDrop {
     static func drop(
         _ items: [String],
         intoColumn sectionName: String,
+        before target: AppTask? = nil,
         columnTasks: [AppTask],
         among boardTasks: [AppTask],
         spanning spanTasks: [AppTask],
@@ -92,14 +97,18 @@ enum CadenceKanbanCardDrop {
         in modelContext: ModelContext,
         commit: (ModelContext) throws -> Void = { try $0.save() }
     ) -> Bool {
-        guard let task = droppedCard(from: items, among: boardTasks),
-              task.resolvedSectionName.caseInsensitiveCompare(sectionName) != .orderedSame else {
-            return false
+        guard let task = droppedCard(from: items, among: boardTasks) else { return false }
+        if let target {
+            guard task.id != target.id else { return false }
+        } else {
+            guard task.resolvedSectionName.caseInsensitiveCompare(sectionName) != .orderedSame else {
+                return false
+            }
         }
         return reorder(
             columnTasks.sorted { $0.order < $1.order },
             moving: task,
-            before: nil,
+            before: target,
             spanning: spanTasks,
             ofList: listKey,
             in: modelContext,

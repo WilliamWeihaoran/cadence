@@ -10,6 +10,8 @@ import Testing
 ///   card had no context menu at all, so neither a long press nor a right-click opened anything.
 /// - [[T-8183]]: a card on the list Kanban tab moves between columns by touch. The card offered no
 ///   drag and its column took no card.
+/// - [[T-8271]]: and within one. A card dropped on a card lands in front of it, as on macOS; the
+///   column was the only target, so a card could never move inside its own column.
 ///
 /// The write is asked directly, because it lives in `Shared/` (`CadenceKanbanCardDrop`, the write macOS's
 /// columns make too). The wiring is read from source,
@@ -51,6 +53,7 @@ struct CadenceIPadBoardCardGestureTests {
     private func drop(
         _ items: [String],
         into section: String,
+        before target: AppTask? = nil,
         board: [AppTask],
         span: [AppTask]? = nil,
         in modelContext: ModelContext,
@@ -59,6 +62,7 @@ struct CadenceIPadBoardCardGestureTests {
         CadenceKanbanCardDrop.drop(
             items,
             intoColumn: section,
+            before: target,
             columnTasks: board.filter { $0.resolvedSectionName.caseInsensitiveCompare(section) == .orderedSame },
             among: board,
             spanning: span ?? board,
@@ -128,6 +132,53 @@ struct CadenceIPadBoardCardGestureTests {
         #expect(seam.commitCount == 0, "a drop on the card's own column committed")
         #expect(task.sectionName == "Doing")
         #expect(task.order == 0, "a drop on the card's own column moved it to the end")
+    }
+
+    // MARK: - What a card dropped on a card writes ([[T-8271]])
+
+    /// The ticket's case: a card dropped on a card ABOVE it in its own column lands in front of
+    /// that card, in one commit. The column-only drop refused this outright.
+    @Test func aCardDroppedOnACardInItsOwnColumnLandsInFrontOfIt() throws {
+        let modelContext = ModelContext(try CadenceModelContainerFactory.makeInMemoryContainer())
+        let first = try boardTask("First", section: "Doing", order: 0, in: modelContext)
+        let second = try boardTask("Second", section: "Doing", order: 1, in: modelContext)
+        let third = try boardTask("Third", section: "Doing", order: 2, in: modelContext)
+        let seam = CountingCommit()
+        let board = [first, second, third]
+
+        #expect(drop([TaskDragPayload.string(for: third.id)], into: "Doing", before: first, board: board, in: modelContext, commit: seam.commit))
+
+        #expect(seam.commitCount == 1)
+        #expect(third.sectionName == "Doing")
+        let column = board.sorted { $0.order < $1.order }.map(\.title)
+        #expect(column == ["Third", "First", "Second"], "the card did not land in front of the one it was dropped on: \(column)")
+    }
+
+    /// From another column, onto a card in the middle: refiled AND placed, not sent to the end.
+    @Test func aCardDroppedOnACardInAnotherColumnIsFiledInFrontOfIt() throws {
+        let modelContext = ModelContext(try CadenceModelContainerFactory.makeInMemoryContainer())
+        let moved = try boardTask("Moved", section: "Backlog", order: 0, in: modelContext)
+        let doingA = try boardTask("Doing A", section: "Doing", order: 1, in: modelContext)
+        let doingB = try boardTask("Doing B", section: "Doing", order: 2, in: modelContext)
+        let board = [moved, doingA, doingB]
+
+        #expect(drop([TaskDragPayload.string(for: moved.id)], into: "Doing", before: doingB, board: board, in: modelContext))
+
+        #expect(moved.sectionName == "Doing")
+        #expect(doingA.order < moved.order && moved.order < doingB.order, "the card did not land between the two it was dropped among")
+        #expect(board.map(\.order).sorted() == Array(0..<3))
+    }
+
+    /// A card set down on itself writes nothing — macOS's `droppedID != target.id`.
+    @Test func aCardDroppedOnItselfWritesNothing() throws {
+        let modelContext = ModelContext(try CadenceModelContainerFactory.makeInMemoryContainer())
+        let above = try boardTask("Above", section: "Doing", order: 0, in: modelContext)
+        let task = try boardTask("Self", section: "Doing", order: 1, in: modelContext)
+        let seam = CountingCommit()
+
+        #expect(!drop([TaskDragPayload.string(for: task.id)], into: "Doing", before: task, board: [above, task], in: modelContext, commit: seam.commit))
+        #expect(seam.commitCount == 0, "a card dropped on itself committed")
+        #expect(task.order == 1)
     }
 
     /// Only a card of this board. A task from another list is refused rather than half-moved, and
@@ -228,15 +279,21 @@ struct CadenceIPadBoardCardGestureTests {
             CadenceSourceScan.declarationBody("private struct iOSListKanbanColumn: View", in: source)
         )
         #expect(column.count > 1_000, "non-vacuity: the column read as \(column.count) characters")
-        #expect(CadenceSourceScan.matchCount(#"\.dropDestination\(for: String\.self\)"#, in: column) == 1)
-        #expect(CadenceSourceScan.matchCount(#"onDropCard\(items\)"#, in: column) == 1)
+        #expect(CadenceSourceScan.matchCount(#"\.dropDestination\(for: String\.self\)"#, in: column) == 2,
+                "the column and each card are the two drop targets ([[T-8271]])")
+        #expect(CadenceSourceScan.matchCount(#"onDropCard\(items, nil\)"#, in: column) == 1, "the column body drops to the end")
+        #expect(CadenceSourceScan.matchCount(#"onDropCard\(items, task\)"#, in: column) == 1, "a card is not a drop target")
 
         let panel = try #require(
             CadenceSourceScan.declarationBody("struct iOSListKanbanPanel: View", in: source)
         )
         #expect(
-            CadenceSourceScan.matchCount(#"onDropCard:\s*\{\s*items in\s*CadenceKanbanCardDrop\.drop\("#, in: panel) == 1,
+            CadenceSourceScan.matchCount(#"onDropCard:\s*\{\s*items, target in\s*CadenceKanbanCardDrop\.drop\("#, in: panel) == 1,
             "the board builds its columns without wiring their drop to the shared write"
+        )
+        #expect(
+            CadenceSourceScan.matchCount(#"intoColumn: column\.title,\s*before: target,"#, in: panel) == 1,
+            "the board drops every card at the column's end whatever card it was set down on"
         )
     }
 }
