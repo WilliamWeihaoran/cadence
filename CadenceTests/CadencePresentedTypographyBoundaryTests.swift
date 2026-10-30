@@ -327,7 +327,9 @@ struct CadencePresentedTypographyBoundaryTests {
         // T-3195 removes the tiles' five, walks the shared panel's four, and adds the card's one
         // item-backed editor: still nine, with all four of its picker branches explicitly pinned.
         // [[T-6901]] adds the shared panel's Ends picker, a `CadenceChoicePopoverList`: ten.
-        #expect(popoverCount == 10, "the workflows' popover count moved; re-derive the list")
+        // [[T-8593]] makes the iOS task sheet's occurrence count the panel's Stepper, so its
+        // Occurrences popover list goes: nine.
+        #expect(popoverCount == 9, "the workflows' popover count moved; re-derive the list")
         #expect(Set(found).count >= 4, "the sweep matched one type thirteen times, which proves nothing")
     }
 

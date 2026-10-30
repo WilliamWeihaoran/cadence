@@ -8,21 +8,30 @@ import SwiftUI
 /// It was the inspector's whole field list (T-1278: labelled rows on the sheet's plate with a
 /// hairline between them and no box around them, chosen by the owner from three mockups). When the
 /// inspector became `CadenceSchedulePanel` in edit mode, the panel took Do, Due, the time and the
-/// estimate; what is left here is what the panel has no row for. **The end condition** is an edit
-/// only an existing series has — a creating panel offers Repeat and stops — and it shares the one
-/// scope question with the rule, so the two stay together with the Repeat row rather than splitting
-/// across the panel and its host (`offersTaskRepeat: false` is how the panel is told). **Logged**
-/// is the one figure in the sheet nobody sets.
+/// estimate; what is left here is what the panel has no row for in this sheet. The sheet draws the
+/// panel in its capture presentation with `offersTaskRepeat: false`, because the capture card's
+/// Repeat lives in its `…` menu and this sheet keeps Repeat and Ends on the plate, under the
+/// fields, where an existing series is read. **Logged** is the one figure in the sheet nobody sets.
+///
+/// **One look and one behaviour with the standard panel's Repeat / Ends rows** ([[T-8593]]).
+/// `iOSEditorFieldRow` is `CadenceFieldRow`, the panel's own row; these rows take the panel's
+/// purple, its After `Stepper` over `seriesEndCountRange`, and every write goes through the draft's
+/// `selectSeriesEnd(_:)` / `setSeriesEndDate(_:)` / `setSeriesEndCount(_:)`, which own the seeds and
+/// the T-6114 floor — this view seeds nothing. The one thing an existing series adds is the Ends
+/// value: `valueLabel`'s "3 of 5" names where the series is, which a new series has no answer to.
+/// (The old justification — "an end condition is an edit only an existing series has" — stopped
+/// being true when [[T-6901]] gave the creating panel its Ends rows.)
 ///
 /// Every control writes the **draft**: the rule and the bound reach the store on Save, through
-/// `CadenceTaskEditDraftCommit`, after the series-scope question when the task has a series.
+/// `CadenceTaskEditDraftCommit`, after the series-scope question when the task has a series. The
+/// draft keeps the off-mode value (a count while On Date is chosen) so switching back finds it;
+/// `applyRecurrenceEnd` drops it on the way to the store.
 struct iOSTaskFieldListSection: View {
     @Binding var draft: CadenceScheduleDraft
     let loggedMinutes: Int
 
     @State private var showRepeatPicker = false
     @State private var showEndModePicker = false
-    @State private var showEndCountPicker = false
 
     var body: some View {
         // Divider-separated rows, so no `contentSpacing`: `iOSEditorDivider` already pads itself by
@@ -32,7 +41,7 @@ struct iOSTaskFieldListSection: View {
 
             // The rows are hidden outright for a one-off task: an end condition on something that
             // does not repeat has nothing to end (T-188).
-            if CadenceTaskRecurrenceEndPresentation.showsEndControls(rule: draft.repeatRule) {
+            if draft.showsSeriesEndRows {
                 iOSEditorDivider()
                 endsRow
 
@@ -55,7 +64,7 @@ struct iOSTaskFieldListSection: View {
     // MARK: - Repeat
 
     private var repeatRow: some View {
-        iOSEditorFieldRow(label: "Repeat", systemImage: draft.repeatRule.systemImage, color: Theme.dim) {
+        iOSEditorFieldRow(label: "Repeat", systemImage: draft.repeatRule.systemImage, color: Theme.purple) {
             iOSChoiceValueButton(
                 title: draft.repeatRule.label,
                 color: draft.repeatRule == .none ? Theme.dim : Theme.text,
@@ -66,7 +75,7 @@ struct iOSTaskFieldListSection: View {
             .popover(isPresented: $showRepeatPicker) {
                 iOSChoicePopoverList(
                     rows: TaskRecurrenceRule.allCases.map { rule in
-                        iOSChoiceRow(value: rule, title: rule.label, systemImage: rule.systemImage, color: Theme.dim)
+                        iOSChoiceRow(value: rule, title: rule.label, systemImage: rule.systemImage, color: Theme.purple)
                     },
                     selection: $draft.repeatRule,
                     isPresented: $showRepeatPicker
@@ -89,7 +98,7 @@ struct iOSTaskFieldListSection: View {
         iOSEditorFieldRow(
             label: "Ends",
             systemImage: draft.effectiveSeriesEndMode.systemImage,
-            color: Theme.dim
+            color: Theme.purple
         ) {
             iOSChoiceValueButton(
                 title: CadenceTaskRecurrenceEndPresentation.valueLabel(
@@ -110,7 +119,7 @@ struct iOSTaskFieldListSection: View {
                             value: mode,
                             title: mode.label,
                             systemImage: mode.systemImage,
-                            color: Theme.dim
+                            color: Theme.purple
                         )
                     },
                     selection: endModeSelection,
@@ -121,83 +130,37 @@ struct iOSTaskFieldListSection: View {
     }
 
     private var endDateRow: some View {
-        iOSEditorFieldRow(label: "End date", systemImage: "calendar", color: Theme.dim) {
+        iOSEditorFieldRow(label: "End date", systemImage: "calendar", color: Theme.purple) {
             CadenceDatePicker(selection: endDateSelection, minHeight: 44)
         }
     }
 
+    /// The panel's After stepper: the same bounds (`seriesEndCountRange`, floored at the
+    /// occurrence already reached and never capping a larger stored count) and the same label.
     private var endCountRow: some View {
-        iOSEditorFieldRow(label: "Occurrences", systemImage: "number", color: Theme.dim) {
-            iOSChoiceValueButton(
-                title: "\(CadenceTaskRecurrenceEndPresentation.resolvedEndCount(draft.seriesEndCount, occurrenceNumber: draft.seriesOccurrenceNumber))",
-                color: Theme.text,
-                minHeight: 44
-            ) {
-                showEndCountPicker = true
-            }
-            .popover(isPresented: $showEndCountPicker) {
-                iOSChoicePopoverList(
-                    rows: CadenceTaskRecurrenceEndPresentation.endCountChoices(
-                        from: draft.seriesOccurrenceNumber,
-                        including: endCountSelection.wrappedValue
-                    ).map { count in
-                        iOSChoiceRow(value: count, title: "\(count)", color: Theme.blue)
-                    },
-                    selection: endCountSelection,
-                    isPresented: $showEndCountPicker
-                )
-            }
+        Stepper(value: endCountSelection, in: draft.seriesEndCountRange) {
+            iOSEditorInlineLabel(
+                label: CadenceTaskRecurrenceEndPresentation.endCountStepperLabel(draft.seriesEndCount),
+                systemImage: "number",
+                color: Theme.purple
+            )
         }
+        .frame(minHeight: 44)
     }
 
-    /// Selecting a mode has to arrive with that mode's value already usable.
-    ///
-    /// `.onDate` with an empty key and `.afterCount` with a stored `0` both degrade straight back
-    /// to `.never` in `effectiveSeriesEndMode`, so writing the bare mode would look like the
-    /// picker refusing the tap. Seeding here is the same fix macOS's `selectOnDate` makes, from the
-    /// same two constants.
     private var endModeSelection: Binding<TaskRecurrenceEndMode> {
-        Binding(
-            get: { draft.effectiveSeriesEndMode },
-            set: { mode in
-                switch CadenceTaskRecurrenceEndPresentation.detail(for: mode) {
-                case .none:
-                    setEnd(mode, "", 0)
-                case .date:
-                    let key = draft.seriesEndDateKey.isEmpty
-                        ? CadenceTaskRecurrenceEndPresentation.defaultEndDateKey()
-                        : draft.seriesEndDateKey
-                    setEnd(mode, key, 0)
-                case .count:
-                    setEnd(mode, "", CadenceTaskRecurrenceEndPresentation.resolvedEndCount(draft.seriesEndCount, occurrenceNumber: draft.seriesOccurrenceNumber))
-                }
-            }
-        )
+        Binding(get: { draft.effectiveSeriesEndMode }, set: { draft.selectSeriesEnd($0) })
     }
 
     private var endDateSelection: Binding<Date> {
         Binding(
             get: { CadenceTaskRecurrenceEndPresentation.resolvedEndDate(draft.seriesEndDateKey) },
-            set: { setEnd(.onDate, DateFormatters.dateKey(from: $0), 0) }
+            set: { draft.setSeriesEndDate($0) }
         )
     }
 
     private var endCountSelection: Binding<Int> {
-        Binding(
-            get: { CadenceTaskRecurrenceEndPresentation.resolvedEndCount(draft.seriesEndCount, occurrenceNumber: draft.seriesOccurrenceNumber) },
-            set: { setEnd(.afterCount, "", $0) }
-        )
-    }
-
-    /// The Ends rows' one write, normalized the way `applyRecurrenceEnd` will store it — values
-    /// that do not belong to the chosen mode are dropped, so the draft and the saved series cannot
-    /// disagree about what was chosen.
-    private func setEnd(_ mode: TaskRecurrenceEndMode, _ dateKey: String, _ count: Int) {
-        draft.seriesEndMode = mode
-        draft.seriesEndDateKey = mode == .onDate ? dateKey : ""
-        draft.seriesEndCount = mode == .afterCount
-            ? CadenceTaskRecurrenceEndPresentation.normalizedEndCount(count, occurrenceNumber: draft.seriesOccurrenceNumber)
-            : 0
+        Binding(get: { draft.seriesEndCount }, set: { draft.setSeriesEndCount($0) })
     }
 
     // MARK: - Logged

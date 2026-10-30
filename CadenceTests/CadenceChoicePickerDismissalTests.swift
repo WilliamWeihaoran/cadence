@@ -128,9 +128,10 @@ struct CadenceChoicePickerDismissalTests {
             // [[T-3171]]: the task inspector is the shared schedule panel. The components file's
             // three — the title card's priority, the breadcrumb's list and section — went with the
             // two views, onto the panel's own rows, so the file holds no picker. The sections
-            // file keeps the series' three draft pickers (Repeat, Ends, Occurrences), and none
-            // commits: they write the draft, which Save commits once.
-            "Cadence/iOS/iOSTaskDetailSheetSections.swift": (3, 0),
+            // file keeps the series' draft pickers (Repeat, Ends), and none commits: they write
+            // the draft, which Save commits once. [[T-8593]] made the occurrence count the standard
+            // panel's Stepper, so the third (Occurrences) is no longer a popover list.
+            "Cadence/iOS/iOSTaskDetailSheetSections.swift": (2, 0),
             "Cadence/iOS/iOSTaskRowActionViews.swift": (2, 2),
             "Cadence/iOS/iOSTaskViews.swift": (1, 0),
             "Cadence/iOS/iOSTrackingEditorComponents.swift": (2, 0),
@@ -190,7 +191,8 @@ struct CadenceChoicePickerDismissalTests {
         // committing count to move since T-1466, because this is a picker whose write reaches the
         // store from a row rather than a draft a Save commits later.
         // [[T-6901]] adds the standard panel's Ends picker: 33, still 3 committing.
-        #expect(found.values.map(\.calls).reduce(0, +) == 33)
+        // [[T-8593]] makes the iOS task sheet's occurrence count the panel's Stepper: 32, still 3.
+        #expect(found.values.map(\.calls).reduce(0, +) == 32)
         #expect(found.values.map(\.committing).reduce(0, +) == 3)
     }
 

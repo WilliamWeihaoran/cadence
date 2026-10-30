@@ -90,35 +90,6 @@ nonisolated enum CadenceTaskRecurrenceEndPresentation {
             ?? TaskRecurrenceEndMode.never.label
     }
 
-    /// The counts an `.afterCount` picker offers.
-    ///
-    /// A list rather than macOS's free text field, because that field's whole design — commit on
-    /// blur, snapshot at focus, never per keystroke — exists to keep a typed number from raising
-    /// the series-scope question once per digit, and a touch keyboard over a sheet would have the
-    /// same problem with none of the same escape hatches. `1` is offered because
-    /// `applyRecurrenceEnd` accepts it: it means "this occurrence and no more", which is a real
-    /// thing to want and is exactly what the clamp already allows.
-    ///
-    /// **T-6114:** the list starts at the task's current occurrence number, not at `1`. A count
-    /// below the occurrence already reached cannot be honoured — `recurrenceHasEnded` is
-    /// `occurrenceNumber >= recurrenceEndCount`, so offering it would offer "end this series now,
-    /// and read 15 of 10". The list keeps its sixty entries, shifted up with the floor.
-    ///
-    /// **T-6192:** `selected` is the count the control currently resolves to, and it is always
-    /// offered. The Mac's field has no ceiling, so a series can arrive with a count past the
-    /// window (100 typed on the Mac, read on the phone); without it the list showed no selected
-    /// row at all. It is appended alone rather than widening the window to reach it, so a count
-    /// of 10 000 adds one row, not ten thousand.
-    static func endCountChoices(from occurrenceNumber: Int, including selected: Int? = nil) -> [Int] {
-        let lower = max(1, occurrenceNumber)
-        let window = Array(lower...(lower + endCountChoiceSpan - 1))
-        guard let selected, selected > window[window.count - 1] else { return window }
-        return window + [selected]
-    }
-
-    /// How many counts `endCountChoices(from:)` offers.
-    static let endCountChoiceSpan = 60
-
     /// The day a fresh `.onDate` selection is seeded with. Selecting the mode has to store a real
     /// key: an empty one degrades straight back to `.never`.
     static func defaultEndDateKey(from reference: Date = Date(), calendar: Calendar = .current) -> String {

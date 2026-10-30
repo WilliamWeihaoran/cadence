@@ -535,10 +535,6 @@ struct CadenceRecurrenceEndSurfaceTests {
         #expect(CadenceTaskRecurrenceEndPresentation.normalizedEndCount(-9) == 1)
         #expect(CadenceTaskRecurrenceEndPresentation.normalizedEndCount(7) == 7)
 
-        // The offered list has to contain both ends of that story: the honest minimum and the seed.
-        #expect(CadenceTaskRecurrenceEndPresentation.endCountChoices(from: 1).first == 1)
-        #expect(CadenceTaskRecurrenceEndPresentation.endCountChoices(from: 1).contains(10))
-        #expect(CadenceTaskRecurrenceEndPresentation.endCountChoices(from: 1) == Array(1...60))
     }
 
     // MARK: - T-6114: the After count floors at the current occurrence
@@ -589,34 +585,6 @@ struct CadenceRecurrenceEndSurfaceTests {
         #expect(CadenceTaskRecurrenceEndPresentation.resolvedEndCount(3, occurrenceNumber: 15) == 15)
     }
 
-    @Test func theCountChoicesStartAtTheCurrentOccurrence() {
-        let choices = CadenceTaskRecurrenceEndPresentation.endCountChoices(from: 15)
-        #expect(choices.first == 15)
-        #expect(!choices.contains(14))
-        #expect(choices.count == CadenceTaskRecurrenceEndPresentation.endCountChoiceSpan)
-        #expect(choices == Array(15...74))
-        // A nonsense occurrence number still offers the honest minimum, never zero.
-        #expect(CadenceTaskRecurrenceEndPresentation.endCountChoices(from: 0).first == 1)
-    }
-
-    /// **T-6192.** A count past the sixty-entry window — 100 typed in the Mac's ceiling-less
-    /// field — used to be missing from the list, so the popover showed no selected row.
-    @Test func aStoredCountPastTheWindowIsStillOffered() {
-        let present = CadenceTaskRecurrenceEndPresentation.endCountChoices
-        let span = CadenceTaskRecurrenceEndPresentation.endCountChoiceSpan
-
-        #expect(present(1, 100).contains(100))
-        #expect(present(1, 100) == Array(1...60) + [100])
-        #expect(present(15, 200).last == 200)
-        // One row appended, never the gap filled.
-        #expect(present(1, 10_000).count == span + 1)
-        // Inside the window, or below it (resolvedEndCount already floors it), nothing changes.
-        #expect(present(1, 60) == Array(1...60))
-        #expect(present(15, 20) == Array(15...74))
-        #expect(present(15, 3) == Array(15...74))
-        #expect(present(1, nil) == Array(1...60))
-    }
-
     /// The helper is worth nothing if an editor still calls the unfloored one. Every After-count
     /// resolve / clamp in the two editors passes the occurrence number; the one exception is
     /// macOS's `selectEnd`, whose only caller is the picker panel that has already floored.
@@ -646,16 +614,13 @@ struct CadenceRecurrenceEndSurfaceTests {
         let ios = try strippingComments(sourceFile("Cadence/iOS/iOSTaskDetailSheetSections.swift"))
         let mac = try strippingComments(sourceFile("Cadence/macOS/Views/TaskInspectorWorkflowSupportViews.swift"))
 
-        #expect(CadenceSourceScan.matchCount(floored, in: ios) == 4)
+        // [[T-8593]]: the iOS sheet floors nothing itself any more. Its Ends rows write through the
+        // draft's `selectSeriesEnd` / `setSeriesEndCount`, which floor at the occurrence
+        // (`CadenceSchedulePanelSeriesEndRowTests`), and its stepper is bounded by the same
+        // `seriesEndCountRange` the standard panel uses -- so a resolve or clamp here is a second copy.
+        #expect(CadenceSourceScan.matchCount(floored, in: ios) == 0)
         #expect(CadenceSourceScan.matchCount(unfloored, in: ios) == 0)
-        // T-6192: the list is handed the count the row resolves to, so a stored count past the
-        // window is still offered and shown selected.
-        #expect(
-            CadenceSourceScan.matchCount(
-                #"endCountChoices\(\s*from: draft\.seriesOccurrenceNumber,\s*including: endCountSelection\.wrappedValue\s*\)"#,
-                in: ios
-            ) == 1
-        )
+        #expect(ios.contains("in: draft.seriesEndCountRange"))
 
         #expect(CadenceSourceScan.matchCount(floored, in: mac) == 2)
         #expect(CadenceSourceScan.matchCount(unfloored, in: mac) == 1)

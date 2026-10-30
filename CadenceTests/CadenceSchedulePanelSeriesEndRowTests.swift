@@ -1,4 +1,5 @@
 import Foundation
+import SwiftData
 import Testing
 @testable import Cadence
 
@@ -119,6 +120,79 @@ struct CadenceSchedulePanelSeriesEndRowTests {
         #expect(saved.endMode == .onDate)
         #expect(saved.endDateKey == "2027-02-01")
         #expect(saved.endCount == 0)
+    }
+
+    // MARK: The existing-task editor ([[T-8593]])
+
+    /// The iOS task sheet's Ends rows write through these same draft methods, which keep the
+    /// off-mode value in the draft (so a return to After finds the count). That is only safe because
+    /// the commit drops it: an opened counted series switched to On Date must reach the store as a
+    /// date and no count, on this task and on the later occurrence the scope reaches.
+    @Test func anExistingCountedSeriesSwitchedToOnDateSavesTheDateAndDropsTheCount() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let seriesID = UUID()
+        let tasks = (0..<2).map { index -> AppTask in
+            let task = AppTask(title: "Water the plants")
+            task.recurrenceRule = .weekly
+            task.recurrenceSeriesIDRaw = seriesID.uuidString
+            task.recurrenceOccurrenceIndex = index + 2
+            task.scheduledDate = "2026-10-2\(index + 1)"
+            context.insert(task)
+            return task
+        }
+        tasks[0].recurrenceSpawnedTaskID = tasks[1].id
+        for task in tasks {
+            CadenceTaskRecurrenceWorkflowSupport.applyRecurrenceEnd(
+                mode: .afterCount, endCount: 5, to: task, allTasks: [task], scope: .thisTask
+            )
+        }
+        try context.save()
+
+        let opened = CadenceScheduleDraft(editing: tasks[0])
+        #expect(opened.effectiveSeriesEndMode == .afterCount)
+        var draft = opened
+        draft.selectSeriesEnd(.onDate, reference: try Self.day("2026-10-21"), calendar: Self.calendar)
+        #expect(draft.seriesEndCount == 5, "the draft keeps the count for a return to After")
+        #expect(draft.changesRecurrence(from: opened))
+
+        let landed = CadenceTaskEditDraftCommit.save(
+            draft, opened: opened, to: tasks[0], area: nil, project: nil,
+            allTasks: tasks, scope: .thisAndFuture, in: context, reconciler: .inert
+        )
+        #expect(landed)
+
+        let stored = try ModelContext(container).fetch(FetchDescriptor<AppTask>())
+        #expect(stored.count == 2)
+        for task in stored {
+            #expect(task.recurrenceEndMode == .onDate)
+            #expect(task.recurrenceEndDate == "2026-11-21")
+            #expect(task.recurrenceEndCount == 0, "the off-mode count reached the store")
+        }
+    }
+
+    /// The sheet's rows are the panel's: the same draft writes and stepper bounds, no seeding or
+    /// normalizing of their own, and no field of the series end assigned by the view.
+    @Test func theIOSTaskSheetSeriesRowsBindTheSameDraftWritesAsThePanel() throws {
+        let sheet = CadenceSourceScan.codeOnly(
+            try CadenceSourceScan.sourceFile("Cadence/iOS/iOSTaskDetailSheetSections.swift")
+        )
+        #expect(sheet.contains("set: { draft.selectSeriesEnd($0) }"))
+        #expect(sheet.contains("set: { draft.setSeriesEndDate($0) }"))
+        #expect(sheet.contains("set: { draft.setSeriesEndCount($0) }"))
+        #expect(sheet.contains("in: draft.seriesEndCountRange"))
+        #expect(sheet.contains("draft.showsSeriesEndRows"))
+        for copy in ["defaultEndDateKey", "resolvedEndCount", "normalizedEndCount", "seedSeriesEnd", "endCountChoices"] {
+            #expect(!sheet.contains(copy), "the iOS task sheet keeps its own \(copy)")
+        }
+        for field in ["seriesEndMode", "seriesEndDateKey", "seriesEndCount"] {
+            #expect(
+                sheet.range(of: "draft\\.\(field)\\s*=[^=]", options: .regularExpression) == nil,
+                "the iOS task sheet assigns draft.\(field) itself"
+            )
+        }
+        // One look: the series rows take the panel's purple, not the sheet's old grey.
+        #expect(CadenceSourceScan.matchCount(#"color: Theme\.purple"#, in: sheet) == 6)
     }
 
     // MARK: Wiring
