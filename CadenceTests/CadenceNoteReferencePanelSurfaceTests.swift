@@ -626,6 +626,7 @@ struct CadenceNoteReferencePanelSurfaceTests {
         ])
         try expectOccurrences(of: "NoteReferencePanelSupport.noteKindLabel(", at: [
             "Cadence/iOS/iOSMarkdownAccessoryViews.swift": 1,
+            "Cadence/macOS/Editor/MarkdownEditorSupport.swift": 1,
             "Cadence/iOS/iOSMarkdownEditingSurface.swift": 1,
             "Cadence/iOS/iOSMarkdownReferenceSupport.swift": 1
         ])
@@ -876,6 +877,23 @@ struct CadenceNoteReferenceDisplayTitleTests {
 
         let typed = MarkdownReferenceSuggestion.note(Note(kind: .daily, title: "Offsite day", dateKey: "2026-10-30"))
         #expect(typed.title == "Offsite day")
+        #endif
+    }
+
+    /// [[T-8691]]: the Mac `[[` picker's subtitle is the shared kind label, the one iOS's strip
+    /// draws, so an event note reads "Event note" and not `rawValue.capitalized`'s "Meeting" (the
+    /// retired tab name). The subtitle is also a match field, so "event note" finds it; "meeting"
+    /// no longer does, which is the point -- the app no longer calls these notes that.
+    @Test func theMacSuggestionSubtitleIsTheSharedKindLabel() {
+        #if os(macOS)
+        for kind in [NoteKind.daily, .weekly, .permanent, .list, .meeting] {
+            let suggestion = MarkdownReferenceSuggestion.note(Note(kind: kind, title: "Offsite"))
+            #expect(suggestion.subtitle == NoteReferencePanelSupport.noteKindLabel(kind))
+        }
+        let event = MarkdownReferenceSuggestion.note(Note(kind: .meeting, title: "Offsite"))
+        #expect(event.subtitle == "Event note")
+        #expect(event.subtitle != NoteKind.meeting.rawValue.capitalized)
+        #expect(event.matches(query: "event note"))
         #endif
     }
 

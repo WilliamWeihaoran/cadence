@@ -40,7 +40,9 @@ struct MarkdownReferenceSuggestion: Identifiable, Hashable {
             targetID: note.id,
             title: NoteReferencePanelSupport.searchTitle(note),
             matchTitle: note.displayTitle,
-            subtitle: note.kind.rawValue.capitalized,
+            // [[T-8691]]: the shared kind label, so an event note reads "Event note" as it does
+            // on iOS's `[[` strip, not the retired tab name `rawValue.capitalized` gave ("Meeting").
+            subtitle: NoteReferencePanelSupport.noteKindLabel(note.kind),
             markdown: NoteReferenceParser.noteReferenceMarkdown(for: note)
         )
     }
