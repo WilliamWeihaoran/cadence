@@ -1,3 +1,7 @@
+// [[T-8630]]: compiled for macOS only, as T-3244's gated suites are. `CadenceTests` also builds for
+// an iOS destination, and this suite reads `ListEditorContextRow.noneTitle`, which lives in
+// `Cadence/macOS/` and does not exist there -- CI's iOS build-for-testing failed on it at `ce2e821c`.
+#if os(macOS)
 import Foundation
 import Testing
 @testable import Cadence
@@ -53,3 +57,5 @@ struct CadenceiOSListEditorCopyTests {
         #expect(!contextTitle.contains("\"None\""))
     }
 }
+
+#endif
