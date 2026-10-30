@@ -14,6 +14,8 @@ import SwiftUI
 struct iOSMarkdownEditingSurface: View {
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \MarkdownImageAsset.createdAt) private var imageAssets: [MarkdownImageAsset]
+    /// What a `#` offers ([[T-8761]]), read the way the macOS editor reads it.
+    @Query(sort: \Tag.order) private var tags: [Tag]
     @Binding var text: String
     @Binding var isFocused: Bool
     let placeholder: String
@@ -243,6 +245,19 @@ struct iOSMarkdownEditingSurface: View {
                 }
 
                 Divider().background(Theme.borderSubtle)
+            } else if let context = tagCompletionContext,
+                      let choices = tagCompletionChoices(for: context) {
+                // The `#` picker the Mac opens as a caret popover ([[T-8761]]): same rows from
+                // `MarkdownTagPickerChoice.choices`, drawn as a strip because touch has no caret
+                // anchor to hang a popover from while the keyboard is up.
+                iOSMarkdownTagCompletionStrip(
+                    context: context,
+                    choices: choices
+                ) { choice in
+                    applyTagCompletion(choice, context: context)
+                }
+
+                Divider().background(Theme.borderSubtle)
             }
 
             // One hairline colour for every rule in the editor. These three were 0.52, 0.62 and
@@ -430,6 +445,32 @@ struct iOSMarkdownEditingSurface: View {
     private var slashCommandContext: MarkdownSlashCommandContext? {
         guard isFocused else { return nil }
         return MarkdownSlashCommandTokenSupport.context(in: draftText, selection: selectedRange)
+    }
+
+    private var tagCompletionContext: MarkdownTagCompletionContext? {
+        guard isFocused else { return nil }
+        return MarkdownTagCompletionTokenSupport.context(in: draftText, selection: selectedRange)
+    }
+
+    /// Nil when a `#query` offers nothing, so no strip shows -- the macOS popover closes on the
+    /// same empty list rather than drawing an empty frame.
+    private func tagCompletionChoices(for context: MarkdownTagCompletionContext) -> [MarkdownTagPickerChoice]? {
+        let choices = MarkdownTagPickerChoice.choices(
+            query: context.query,
+            suggestions: MarkdownTagSuggestion.suggestions(from: tags)
+        )
+        return choices.isEmpty ? nil : choices
+    }
+
+    private func applyTagCompletion(_ choice: MarkdownTagPickerChoice, context: MarkdownTagCompletionContext) {
+        guard let suggestion = choice.resolve(create: { name in
+            MarkdownInlineTagCommit.commit(named: name, in: modelContext)
+        }) else { return }
+        applyCommandToDraft(.replaceMarkdown(
+            location: context.range.location,
+            length: context.range.length,
+            markdown: MarkdownTagCompletionTokenSupport.replacement(for: suggestion)
+        ))
     }
 
     /// What a `[[` may complete to and the Insert Note Link sheet may offer: every reference note

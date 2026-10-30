@@ -618,31 +618,16 @@ extension MarkdownEditorCoordinator {
     }
 
     private func currentTagCompletionContext(in textView: NSTextView) -> MarkdownTagCompletionContext? {
-        let selection = textView.selectedRange()
-        guard selection.length == 0 else { return nil }
-        let nsText = textView.string as NSString
-        let safeCursor = min(max(selection.location, 0), nsText.length)
-        return MarkdownTagCompletionTokenSupport.token(in: nsText, cursor: safeCursor)
+        MarkdownTagCompletionTokenSupport.context(in: textView.string, selection: textView.selectedRange())
     }
 
     private func applyTagCompletion(_ choice: MarkdownTagPickerChoice, context: MarkdownTagCompletionContext, in textView: NSTextView) {
-        let suggestion: MarkdownTagSuggestion
-        switch choice {
-        case .existing(let existing):
-            if existing.isArchived, let restored = parent.onCreateTag(existing.name) {
-                suggestion = restored
-            } else {
-                suggestion = existing
-            }
-        case .create(let name):
-            guard let created = parent.onCreateTag(name) else {
-                tagPicker.close()
-                return
-            }
-            suggestion = created
+        guard let suggestion = choice.resolve(create: parent.onCreateTag) else {
+            tagPicker.close()
+            return
         }
 
-        let replacement = "#\(suggestion.slug)"
+        let replacement = MarkdownTagCompletionTokenSupport.replacement(for: suggestion)
         guard textView.shouldChangeText(in: context.range, replacementString: replacement) else {
             tagPicker.close()
             return

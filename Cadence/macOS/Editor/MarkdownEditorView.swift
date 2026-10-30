@@ -105,7 +105,7 @@ struct MarkdownEditor: View {
     }
 
     @MainActor private var tagSuggestions: [MarkdownTagSuggestion] {
-        TagSupport.uniqueBySlug(tags).map(MarkdownTagSuggestion.tag)
+        MarkdownTagSuggestion.suggestions(from: tags)
     }
 
     @MainActor private var taskEmbedInfos: [UUID: MarkdownTaskEmbedRenderInfo] {
@@ -277,20 +277,7 @@ struct MarkdownEditor: View {
     }
 
     private func createInlineTag(_ name: String) -> MarkdownTagSuggestion? {
-        guard let tag = TagSupport.committedTag(named: name, in: modelContext) else { return nil }
-        let wasArchived = tag.isArchived
-        let previousUpdatedAt = tag.updatedAt
-        tag.isArchived = false
-        tag.updatedAt = Date()
-        do {
-            try CadencePendingChangePersistence.commitEdit(in: modelContext, undo: {
-                tag.isArchived = wasArchived
-                tag.updatedAt = previousUpdatedAt
-            })
-        } catch {
-            return nil
-        }
-        return .tag(tag)
+        MarkdownInlineTagCommit.commit(named: name, in: modelContext)
     }
 }
 

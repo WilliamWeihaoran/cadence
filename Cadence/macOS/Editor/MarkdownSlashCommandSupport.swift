@@ -396,63 +396,6 @@ final class MarkdownReferencePickerController {
     }
 }
 
-struct MarkdownTagCompletionContext {
-    let range: NSRange
-    let query: String
-    let cursorLocation: Int
-}
-
-enum MarkdownTagCompletionTokenSupport {
-    static func token(in text: NSString, cursor: Int) -> MarkdownTagCompletionContext? {
-        let safeCursor = min(max(cursor, 0), text.length)
-        let lineRange = text.lineRange(for: NSRange(location: max(0, safeCursor - 1), length: 0))
-        guard safeCursor >= lineRange.location else { return nil }
-
-        var queryStart = safeCursor
-        while queryStart > lineRange.location {
-            let previous = text.character(at: queryStart - 1)
-            if isTagBodyCharacter(previous) {
-                queryStart -= 1
-            } else {
-                break
-            }
-        }
-
-        let hashLocation = queryStart - 1
-        guard hashLocation >= lineRange.location,
-              hashLocation < text.length,
-              text.character(at: hashLocation) == 35 else { return nil }
-
-        if hashLocation > lineRange.location {
-            let beforeHash = text.character(at: hashLocation - 1)
-            guard beforeHash != 35, !isTagBodyCharacter(beforeHash) else { return nil }
-        }
-
-        let queryRange = NSRange(location: hashLocation + 1, length: safeCursor - hashLocation - 1)
-        let query = text.substring(with: queryRange)
-        guard query.count <= 64 else { return nil }
-
-        return MarkdownTagCompletionContext(
-            range: NSRange(location: hashLocation, length: safeCursor - hashLocation),
-            query: query,
-            cursorLocation: safeCursor
-        )
-    }
-
-    private static func isTagBodyCharacter(_ character: unichar) -> Bool {
-        (character >= 48 && character <= 57) ||
-        (character >= 65 && character <= 90) ||
-        (character >= 97 && character <= 122) ||
-        character == 45 ||
-        character == 95
-    }
-}
-
-enum MarkdownTagPickerChoice: Hashable {
-    case existing(MarkdownTagSuggestion)
-    case create(String)
-}
-
 private struct MarkdownTagPickerView: View {
     let query: String
     let choices: [MarkdownTagPickerChoice]
@@ -578,24 +521,7 @@ final class MarkdownTagPickerController {
         }
 
         let query = context.query.trimmingCharacters(in: .whitespacesAndNewlines)
-        let querySlug = TagSupport.slug(for: query)
-        let matches = allSuggestions
-            .filter { suggestion in
-                if query.isEmpty {
-                    return !suggestion.isArchived
-                }
-                return suggestion.name.localizedCaseInsensitiveContains(query) ||
-                    suggestion.slug.localizedCaseInsensitiveContains(querySlug)
-            }
-            .prefix(8)
-            .map(MarkdownTagPickerChoice.existing)
-
-        var nextChoices = Array(matches)
-        if nextChoices.isEmpty,
-           !query.isEmpty,
-           TagSupport.displayName(for: query).rangeOfCharacter(from: .alphanumerics) != nil {
-            nextChoices.append(.create(TagSupport.displayName(for: query)))
-        }
+        let nextChoices = MarkdownTagPickerChoice.choices(query: query, suggestions: allSuggestions)
 
         guard !nextChoices.isEmpty else {
             close()

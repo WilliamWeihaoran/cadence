@@ -59,26 +59,6 @@ struct MarkdownReferenceSuggestion: Identifiable, Hashable {
     }
 }
 
-struct MarkdownTagSuggestion: Identifiable, Hashable {
-    let name: String
-    let slug: String
-    let desc: String
-    let colorHex: String
-    let isArchived: Bool
-
-    var id: String { slug }
-
-    static func tag(_ tag: Tag) -> MarkdownTagSuggestion {
-        MarkdownTagSuggestion(
-            name: tag.name,
-            slug: tag.slug,
-            desc: tag.desc,
-            colorHex: tag.colorHex,
-            isArchived: tag.isArchived
-        )
-    }
-}
-
 struct MarkdownImageLayoutInfo {
     let id: UUID
     let altText: String

@@ -500,6 +500,54 @@ struct iOSMarkdownSlashCommandStrip: View {
     }
 }
 
+/// The `#` strip ([[T-8761]]): existing tags by their colour, or one Create row. Its rows come
+/// from `MarkdownTagPickerChoice.choices`, the list the macOS `#` popover draws.
+struct iOSMarkdownTagCompletionStrip: View {
+    let context: MarkdownTagCompletionContext
+    let choices: [MarkdownTagPickerChoice]
+    let apply: (MarkdownTagPickerChoice) -> Void
+
+    var body: some View {
+        iOSMarkdownSuggestionStrip(
+            label: "Tags",
+            query: context.query.isEmpty ? "" : "#\(TagSupport.slug(for: context.query))",
+            emptyText: "No matching tags",
+            isEmpty: choices.isEmpty
+        ) {
+            ForEach(choices, id: \.self) { choice in
+                switch choice {
+                case .existing(let tag):
+                    iOSMarkdownSuggestionPill(
+                        title: tag.name,
+                        subtitle: tag.isArchived ? "Restore archived tag" : "#\(tag.slug)",
+                        action: { apply(choice) }
+                    ) {
+                        Circle()
+                            .fill(Color(hex: tag.colorHex))
+                            .frame(width: 10, height: 10)
+                            .opacity(tag.isArchived ? 0.55 : 1)
+                            .frame(width: 26, height: 26)
+                    }
+                case .create(let name):
+                    iOSMarkdownSuggestionPill(
+                        title: "Create #\(TagSupport.slug(for: name))",
+                        subtitle: "Add a new global tag",
+                        action: { apply(choice) }
+                    ) {
+                        iOSIconTile(
+                            systemImage: "plus",
+                            color: Theme.blue,
+                            size: 26,
+                            iconSize: 12,
+                            bordered: false
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
 // MARK: - Format toolbar
 
 struct iOSMarkdownFormatToolbar: View {
