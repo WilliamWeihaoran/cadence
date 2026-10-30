@@ -110,6 +110,13 @@ parameterised test, so use a non-parameterised sibling to prove the scope ran an
   model, 393x852**, which is the size `Cadence-iPhone15` already simulates ([[T-3147]]);
   `53EC6A90-D767-45DE-8EAC-53B8E1673B1D` is BLIND and denied. Verify iOS only through Claude Code's
   simulator tools, never the host Simulator app.
+- **Claiming a standing simulator is MANDATORY (T-225, T-8462).** An on-screen agent's first
+  command is `./scripts/simulator-claim.sh status`. Before touching either device:
+  `claim <id> [timeout] [iphone|ipad]`, `eval "$(./scripts/simulator-claim.sh env <id>)"`,
+  then `install <id> <app> --apply` and `launch <id> --apply` through the script, not the MCP
+  `launch` (private store and defaults suite; the MCP tools attach, look and tap), and `release <id>` in the same turn, via a trap. A brief that names the
+  two devices without the claim is wrong; an unclaimed install takes a sibling's foreground and
+  reads exactly like store corruption.
 - Launch the macOS app **only** via `scripts/run-macos-app.sh` — **never the shipping
   configuration**, which opens the owner's real CloudKit-backed app-group store as a second writer.
 - Never point anything at `~/Library/Containers/com.haoranwei.Cadence/Data/`, the real app group, or
