@@ -358,7 +358,7 @@ nonisolated enum TagSupport {
     /// The macOS editor's 15 s ceiling commit saves a body mid-word, `x #pro` of `#project`, and
     /// defers that note's tag sync to its next flush ([[T-7891]]). The sweep has no editor and no
     /// caret, and it runs in another process -- the iPhone/iPad app's launch, or the MCP server's
-    /// (`CadenceModelContainerFactory.prepare`) -- so it minted `pro`, and [[T-7882]]'s cleanup
+    /// (`CadenceMCPStorePreparation.prepare`) -- so it minted `pro`, and [[T-7882]]'s cleanup
     /// could not remove it: that provisional set lives in memory in the process that minted, and
     /// the finished word's commit is the Mac's. Not minting it is the fix that works across
     /// processes and devices without a model field. Nothing is lost: the editor's next flush mints

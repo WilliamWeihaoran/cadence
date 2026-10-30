@@ -148,7 +148,7 @@ struct CadenceHalfTypedTagMintTests {
     // MARK: - T-7931
 
     /// The launch sweep's run over a store, at `now`, as the iPhone/iPad app's launch and the MCP
-    /// server's (`CadenceModelContainerFactory.prepare`) both call it.
+    /// server's (`CadenceMCPStorePreparation.prepare`) both call it.
     private func launchSweep(_ store: Store, now: Date = Date()) throws -> CadenceMaintenancePassOutcome {
         let outcome = TagSupport.syncAllNoteTagsFromMarkdown(in: store.editing, saveChanges: false, now: now)
         try store.editing.save()
