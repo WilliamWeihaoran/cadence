@@ -41,6 +41,36 @@ struct CalendarTimelineRangeTests {
         #expect(range.end - range.start == 60)
     }
 
+    /// T-8574: the iOS day list's event row read `minuteRange` with no day, so a 10 PM -> 2 AM
+    /// event said "10 PM – 12 AM" under BOTH days. A list row now names the whole event, and the
+    /// end's weekday when it is a later day -- the same string under every day it is listed on.
+    @Test func aListRowForAMidnightCrossingEventNamesItsTrueEndAndItsDay() throws {
+        let english = Locale(identifier: "en_US")
+        let start = try date("2026-06-18", hour: 22)   // a Thursday
+        let end = try date("2026-06-19", hour: 2)
+
+        #expect(CadenceScheduleSupport.eventListTimeRangeLabel(
+            from: start, to: end, calendar: calendar, locale: english
+        ) == "10 PM – 2 AM Fri")
+
+        // Ending exactly at midnight closes the start day: no day is named.
+        let atMidnight = try date("2026-06-19", hour: 0)
+        #expect(CadenceScheduleSupport.eventListTimeRangeLabel(
+            from: try date("2026-06-18", hour: 23), to: atMidnight, calendar: calendar, locale: english
+        ) == "11 PM – 12 AM")
+
+        // An ordinary same-day event is unchanged.
+        #expect(CadenceScheduleSupport.eventListTimeRangeLabel(
+            from: try date("2026-06-18", hour: 9, minute: 15), to: try date("2026-06-18", hour: 10),
+            calendar: calendar, locale: english
+        ) == "9:15 AM – 10 AM")
+
+        // Beyond six days a weekday is ambiguous; the end reads as a month and day.
+        #expect(CadenceScheduleSupport.eventListTimeRangeLabel(
+            from: start, to: try date("2026-06-27", hour: 2), calendar: calendar, locale: english
+        ) == "10 PM – 2 AM Jun 27")
+    }
+
     /// Every column of a multi-day timed event drew the same sliver. Each column now shows the
     /// part of the event that belongs to it, and a day fully inside the event spans it.
     @Test func aMultiDayEventFillsTheColumnsItCovers() throws {

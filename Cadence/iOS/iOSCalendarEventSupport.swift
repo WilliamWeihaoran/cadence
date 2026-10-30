@@ -32,8 +32,11 @@ enum iOSCalendarEventSupport {
         if event.isAllDay {
             return "All day"
         }
-        let range = minuteRange(for: event)
-        return CadenceScheduleSupport.timeRangeLabel(startMinute: range.start, endMinute: range.end)
+        // A list row names the whole event, not one day of it ([[T-8574]]): `minuteRange` clamps
+        // to the start day and printed "10 PM – 12 AM" under both days of a 10 PM -> 2 AM event.
+        let startDate = event.startDate ?? Date()
+        let endDate = event.endDate ?? startDate.addingTimeInterval(30 * 60)
+        return CadenceScheduleSupport.eventListTimeRangeLabel(from: startDate, to: endDate)
     }
 
     /// The event's span on `day`, in minutes from that day's midnight.
@@ -41,7 +44,7 @@ enum iOSCalendarEventSupport {
     /// The day matters: this used to read only the hour/minute of each end, so a 23:00 → 00:00
     /// event produced `end < start` and fell through to the 15-minute floor, and every column of
     /// a multi-day timed event drew the same 15-minute sliver. Defaults to the event's own start
-    /// day, which is what a label with no column context wants.
+    /// day. A list row's label does not read this -- it is `timeRangeLabel(for:)`, the whole span.
     static func minuteRange(for event: EKEvent, on day: Date? = nil) -> (start: Int, end: Int) {
         let calendar = Calendar.current
         let startDate = event.startDate ?? Date()

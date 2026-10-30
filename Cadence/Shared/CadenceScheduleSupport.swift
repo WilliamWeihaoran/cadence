@@ -566,4 +566,49 @@ enum CadenceScheduleSupport {
     static func timeRangeLabel(startMinute: Int, endMinute: Int) -> String {
         TimeFormatters.timeRange(startMin: startMinute, endMin: endMinute)
     }
+
+    /// A timed event's range as a LIST row spells it: the event's true start and end, the same on
+    /// every day the row is listed under, with the end's day named when it is a later day than the
+    /// start ("10 PM – 2 AM Fri").
+    ///
+    /// A list row names the whole event, not one column of it, so it must not read `minuteRange`,
+    /// which clamps to a single day: [[T-8574]] -- a 10 PM -> 2 AM event read "10 PM – 12 AM" under
+    /// both of its days. The bare true range was not enough either, because "9 AM – 5 PM" for a
+    /// Monday-to-Tuesday event reads as an eight-hour day. An end at exactly midnight belongs to
+    /// the day it closes, so 11 PM -> 12 AM keeps its plain "11 PM – 12 AM". Beyond six days a
+    /// weekday is ambiguous and the end reads as a month and day instead ("Nov 9").
+    static func eventListTimeRangeLabel(
+        from startDate: Date,
+        to endDate: Date,
+        calendar: Calendar = .current,
+        locale: Locale = .current
+    ) -> String {
+        let end = max(endDate, startDate)
+        let range = TimeFormatters.timeRange(
+            startMin: listMinuteOfDay(startDate, calendar: calendar),
+            endMin: listMinuteOfDay(end, calendar: calendar),
+            locale: locale
+        )
+        let startDay = calendar.startOfDay(for: startDate)
+        let lastInstant = end > startDate ? end.addingTimeInterval(-1) : end
+        let endDay = calendar.startOfDay(for: lastInstant)
+        let dayGap = calendar.dateComponents([.day], from: startDay, to: endDay).day ?? 0
+        guard dayGap > 0 else { return range }
+
+        var english = calendar
+        english.locale = Locale(identifier: "en_US_POSIX")
+        let endDayLabel: String
+        if dayGap <= 6 {
+            endDayLabel = english.shortWeekdaySymbols[calendar.component(.weekday, from: end) - 1]
+        } else {
+            let month = english.shortMonthSymbols[calendar.component(.month, from: end) - 1]
+            endDayLabel = "\(month) \(calendar.component(.day, from: end))"
+        }
+        return "\(range) \(endDayLabel)"
+    }
+
+    private static func listMinuteOfDay(_ instant: Date, calendar: Calendar) -> Int {
+        let parts = calendar.dateComponents([.hour, .minute], from: instant)
+        return (parts.hour ?? 0) * 60 + (parts.minute ?? 0)
+    }
 }
