@@ -387,7 +387,14 @@ extension CadenceTaskMutationSupport {
     }
 
     static func normalizedSectionName(_ sectionName: String, area: Area?, project: Project?) -> String {
-        let names = sectionNames(forArea: area, project: project)
+        normalizedSectionName(sectionName, among: sectionNames(forArea: area, project: project))
+    }
+
+    /// The same normalization over a list's section names alone, for a caller that holds names and
+    /// no model -- `CadenceSchedulePanel`, which is handed `sectionChoices` ([[T-8591]]). An empty
+    /// list is the Inbox (the panel's choices are empty there) and answers the default section,
+    /// which is what `sectionNames` hands back for no list.
+    static func normalizedSectionName(_ sectionName: String, among names: [String]) -> String {
         if let matched = names.first(where: { $0.caseInsensitiveCompare(sectionName) == .orderedSame }) {
             return matched
         }

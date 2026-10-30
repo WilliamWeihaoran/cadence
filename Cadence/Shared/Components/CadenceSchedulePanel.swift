@@ -244,27 +244,40 @@ struct CadenceSchedulePanel<NotesField: View>: View {
 
     private var isReadOnly: Bool { readOnlyNotice != nil }
 
-    @ViewBuilder
     var body: some View {
-        if let captureOptions {
-            CadenceScheduleCaptureCard(
-                draft: $draft,
-                listChoices: listChoices,
-                sectionChoices: sectionChoices,
-                calendarChoices: calendarChoices,
-                calendarUnavailableNotice: calendarUnavailableNotice,
-                failureNotice: failureNotice,
-                canCommit: canCommit,
-                readOnlyNotice: readOnlyNotice,
-                titleStatus: titleStatus,
-                offersTaskRepeat: offersTaskRepeat,
-                offersEventRepeat: offersEventRepeat,
-                options: captureOptions,
-                actions: actions,
-                notesField: notesField
+        Group {
+            if let captureOptions {
+                CadenceScheduleCaptureCard(
+                    draft: $draft,
+                    listChoices: listChoices,
+                    sectionChoices: sectionChoices,
+                    calendarChoices: calendarChoices,
+                    calendarUnavailableNotice: calendarUnavailableNotice,
+                    failureNotice: failureNotice,
+                    canCommit: canCommit,
+                    readOnlyNotice: readOnlyNotice,
+                    titleStatus: titleStatus,
+                    offersTaskRepeat: offersTaskRepeat,
+                    offersEventRepeat: offersEventRepeat,
+                    options: captureOptions,
+                    actions: actions,
+                    notesField: notesField
+                )
+            } else {
+                standardPanel
+            }
+        }
+        // **The Section row follows the List row** ([[T-8591]]). A list change leaves
+        // `draft.sectionName` naming the old list's section unless something reconciles it, and
+        // the iOS task sheet and the inline task panel had nothing: the row went on reading the
+        // old section while Save, which re-normalizes, filed the task somewhere else. Done once
+        // here, over the `sectionChoices` the host already computes for the new list, so no host
+        // has to remember it. Empty choices are the Inbox and answer the default section.
+        .onChange(of: draft.listToken) { _, _ in
+            draft.sectionName = CadenceTaskMutationSupport.normalizedSectionName(
+                draft.sectionName,
+                among: sectionChoices
             )
-        } else {
-            standardPanel
         }
     }
 
