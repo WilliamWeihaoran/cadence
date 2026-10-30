@@ -941,6 +941,77 @@ struct CadenceSearchCandidateSupportTests {
         #expect(flatCounter.contains("guardshowsTaskselse{return0}"), "the hint can name a Completed toggle the scope hides")
         #expect(flatCounter.contains("CadenceTaskSearchSupport.withheldCompletedMatchCount(tasks:tasks,query:trimmedQuery,includingCompleted:includeCompletedTasks)"))
     }
+
+    // MARK: - T-8524, T-8525: the iOS Lists row
+
+    /// **[[T-8524]].** A list named only spaces draws "Untitled Area" / "Untitled Project", and a
+    /// project under a blank-named area does not end its container line on a bare separator.
+    @Test func anIOSListRowIsNeverBlankAndDropsBlankContainerNames() {
+        let work = Context(name: "Work")
+        let blankArea = Area(name: "   ", context: work)
+        let blankProject = Project(name: " \n ", context: work, area: blankArea)
+        let named = Project(name: "Launch", context: work, area: Area(name: "Ops"))
+        let bare = Project(name: "Loose")
+
+        #expect(CadenceListSearchSupport.resultTitle(for: blankArea) == CadenceTitleNormalization.defaultAreaName)
+        #expect(CadenceListSearchSupport.resultTitle(for: blankProject) == CadenceTitleNormalization.defaultProjectName)
+        // Non-vacuity: a real name is kept as typed.
+        #expect(CadenceListSearchSupport.resultTitle(for: named) == "Launch")
+        #expect(CadenceListSearchSupport.resultTitle(for: Area(name: "Ops")) == "Ops")
+
+        #expect(CadenceListSearchSupport.containerNames(for: blankProject) == ["Work"])
+        #expect(CadenceListSearchSupport.containerNames(for: named) == ["Work", "Ops"])
+        #expect(CadenceListSearchSupport.containerNames(for: bare).isEmpty)
+    }
+
+    /// **[[T-8525]].** The iOS row's count is the open count in Cmd+K's words, and a finished list
+    /// still says what it is instead of a count.
+    @Test func anIOSListRowCountsActiveTasksInCmdKsWords() {
+        #expect(CadenceListSearchSupport.rowDetail(lifecycle: .active, openTaskCount: 1) == "1 active task")
+        #expect(CadenceListSearchSupport.rowDetail(lifecycle: .active, openTaskCount: 3) == "3 active tasks")
+        #expect(CadenceListSearchSupport.rowDetail(lifecycle: .active, openTaskCount: 3) == GoalLinkTarget.openTaskLabel(count: 3))
+        #expect(CadenceListSearchSupport.rowDetail(lifecycle: .archived, openTaskCount: 3) == "Archived")
+        #expect(CadenceListSearchSupport.rowDetail(lifecycle: .completed, openTaskCount: 0) == "Completed")
+    }
+
+    /// The iOS view reads the three helpers above and no longer spells any of them. Source-scanned
+    /// because `Cadence/iOS/` does not compile into this macOS bundle.
+    @Test func theIOSListRowReadsTheSharedTitleContainerAndCount() throws {
+        let raw = try CadenceSourceScan.sourceFile(Self.iOSSearchViewPath)
+        let stripped = CadenceSourceScan.strippingComments(raw)
+        #expect(raw.contains("struct iOSSearchView"))
+        #expect(stripped.contains("private var listResults"))
+
+        #expect(stripped.contains("title: CadenceListSearchSupport.resultTitle(for: area)"))
+        #expect(stripped.contains("title: CadenceListSearchSupport.resultTitle(for: project)"))
+        #expect(stripped.contains("subtitle: CadenceListSearchSupport.containerNames(for: project).joined(separator: \" / \")"))
+        #expect(stripped.components(separatedBy: "detail: CadenceListSearchSupport.rowDetail(").count - 1 == 2)
+
+        #expect(!stripped.contains("name.isEmpty ? CadenceTitleNormalization"))
+        #expect(!stripped.contains("compactMap { $0 }.joined(separator: \" / \")"))
+        #expect(!stripped.contains("\"1 task\""))
+    }
+
+    /// **[[T-8523]].** A note opened from a Search row, or from a `[[link]]`, is titled by the name
+    /// that row drew. `searchTitle` itself is pinned in `CadenceNoteReferencePanelSurfaceTests`; this
+    /// is the two sheets reading it, and the relation that makes it matter.
+    @Test func aNoteSheetOpenedFromSearchTitlesItselfAsTheRowDid() throws {
+        let daily = Note(kind: .daily, title: "2026-10-26", dateKey: "2026-10-26")
+        // The relation: the storage key is what `displayTitle` would have put in the title bar.
+        #expect(daily.displayTitle == "2026-10-26")
+        #expect(NoteReferencePanelSupport.searchTitle(daily) != daily.displayTitle)
+
+        let support = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(Self.iOSSearchSupportPath))
+        let sheet = try #require(CadenceSourceScan.declarationBody("struct iOSNoteDetailSheet: View", in: support))
+        #expect(sheet.contains(".navigationTitle(NoteReferencePanelSupport.searchTitle(note))"))
+        #expect(!sheet.contains(".navigationTitle(note.displayTitle)"))
+
+        let linked = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile("Cadence/iOS/iOSMarkdownReferenceSupport.swift"))
+        let linkedSheet = try #require(CadenceSourceScan.declarationBody("struct iOSLinkedNoteEditorSheet: View", in: linked))
+        #expect(linkedSheet.contains(".navigationTitle(NoteReferencePanelSupport.searchTitle(note))"))
+        #expect(linkedSheet.contains("iOSNoteEditorSheetHeader(eyebrow: subtitle, title: NoteReferencePanelSupport.searchTitle(note))"))
+        #expect(!linkedSheet.contains("note.displayTitle)"))
+    }
 }
 
 #endif

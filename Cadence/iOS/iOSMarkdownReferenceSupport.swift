@@ -102,7 +102,8 @@ struct iOSLinkedNoteEditorSheet: View {
         NavigationStack {
             editorLayout
                 .background(Theme.surface.ignoresSafeArea())
-                .navigationTitle(note.displayTitle)
+                // [[T-8523]]: a dated note by its day or week, not by its storage key.
+                .navigationTitle(NoteReferencePanelSupport.searchTitle(note))
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) {
@@ -157,7 +158,7 @@ struct iOSLinkedNoteEditorSheet: View {
     // otherwise say. Everything else about the block is `iOSNoteEditorSheetHeader`'s, shared with
     // `iOSEventNoteEditorSheet` (T-281).
     private var header: some View {
-        iOSNoteEditorSheetHeader(eyebrow: subtitle, title: note.displayTitle)
+        iOSNoteEditorSheetHeader(eyebrow: subtitle, title: NoteReferencePanelSupport.searchTitle(note))
     }
 
     /// The notice sits here rather than in `editorLayout`, because the layout is drawn twice — the

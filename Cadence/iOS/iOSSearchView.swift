@@ -171,9 +171,9 @@ struct iOSSearchView: View {
         let listItems = areas.filter { CadenceListSearchSupport.isSearchable($0, query: trimmedQuery) }.map { area in
             let count = CadenceTaskQuerySupport.openTaskCount(for: area)
             return iOSSearchListCandidate(
-                title: area.name.isEmpty ? CadenceTitleNormalization.defaultAreaName : area.name,
+                title: CadenceListSearchSupport.resultTitle(for: area),
                 subtitle: area.context?.name ?? "Area",
-                detail: listDetail(lifecycle: CadenceListSearchSupport.lifecycle(of: area), openTaskCount: count),
+                detail: CadenceListSearchSupport.rowDetail(lifecycle: CadenceListSearchSupport.lifecycle(of: area), openTaskCount: count),
                 icon: area.icon,
                 color: Color(hex: area.colorHex),
                 route: .area(area.id),
@@ -183,9 +183,9 @@ struct iOSSearchView: View {
         } + projects.filter { CadenceListSearchSupport.isSearchable($0, query: trimmedQuery) }.map { project in
             let count = CadenceTaskQuerySupport.openTaskCount(for: project)
             return iOSSearchListCandidate(
-                title: project.name.isEmpty ? CadenceTitleNormalization.defaultProjectName : project.name,
-                subtitle: [project.context?.name, project.area?.name].compactMap { $0 }.joined(separator: " / "),
-                detail: listDetail(lifecycle: CadenceListSearchSupport.lifecycle(of: project), openTaskCount: count),
+                title: CadenceListSearchSupport.resultTitle(for: project),
+                subtitle: CadenceListSearchSupport.containerNames(for: project).joined(separator: " / "),
+                detail: CadenceListSearchSupport.rowDetail(lifecycle: CadenceListSearchSupport.lifecycle(of: project), openTaskCount: count),
                 icon: project.icon,
                 color: Color(hex: project.colorHex),
                 route: .project(project.id),
@@ -298,13 +298,6 @@ struct iOSSearchView: View {
         case .completed: "checkmark.circle.fill"
         case .active: "circle"
         }
-    }
-
-    /// A finished list says so where an active one shows its open-task count: the count is zero or
-    /// stale on a list nobody is working, and "Archived" is what the row needs to say instead.
-    private func listDetail(lifecycle: CadenceListSearchLifecycle, openTaskCount: Int) -> String {
-        guard lifecycle.isActive else { return lifecycle.statusLabel }
-        return openTaskCount == 1 ? "1 task" : "\(openTaskCount) tasks"
     }
 
     var body: some View {

@@ -263,6 +263,40 @@ nonisolated enum CadenceListSearchSupport {
     static func matchScore(query: String, project: Project) -> Int? {
         CadenceSearchMatcher.matchScore(query: query, fields: searchFields(for: project))
     }
+
+    /// A list row's title, never blank ([[T-8524]]). iOS Search tested `name.isEmpty`, so a list
+    /// named only spaces drew a row with a glyph and nothing beside it, where Cmd+K's
+    /// `CadenceTitleNormalization.display` already said "Untitled Area" / "Untitled Project".
+    static func resultTitle(for area: Area) -> String {
+        CadenceTitleNormalization.display(area.name, fallback: CadenceTitleNormalization.defaultAreaName)
+    }
+
+    static func resultTitle(for project: Project) -> String {
+        CadenceTitleNormalization.display(project.name, fallback: CadenceTitleNormalization.defaultProjectName)
+    }
+
+    /// The names a project row sits under — its context, then its area — with blank ones dropped
+    /// ([[T-8524]]). iOS joined `[context?.name, area?.name].compactMap { $0 }`, which drops a
+    /// missing container but keeps one named `""`, so a project in an untitled area read
+    /// "Work / " with nothing after the separator.
+    static func containerNames(for project: Project) -> [String] {
+        [project.context?.name, project.area?.name]
+            .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+    }
+}
+
+extension CadenceListSearchSupport {
+    /// The iOS Lists row's detail line: the open count in Cmd+K's words, or the lifecycle word on a
+    /// finished list ([[T-8525]]). iOS said "3 tasks" for what macOS's row calls "3 active tasks",
+    /// and the number is the *open* count (`CadenceTaskQuerySupport.openTaskCount`), so a list
+    /// holding ten tasks with seven done read "3 tasks". Wording is not a hardware difference
+    /// ([[T-8201]]); `GoalLinkTarget.openTaskLabel` is the one spelling.
+    @MainActor
+    static func rowDetail(lifecycle: CadenceListSearchLifecycle, openTaskCount: Int) -> String {
+        guard lifecycle.isActive else { return lifecycle.statusLabel }
+        return GoalLinkTarget.openTaskLabel(count: openTaskCount)
+    }
 }
 
 // MARK: - Identity

@@ -437,7 +437,9 @@ struct iOSNoteDetailSheet: View {
                 )
             }
             .background(Theme.surface.ignoresSafeArea())
-            .navigationTitle(note.displayTitle)
+            // [[T-8523]]: the name the Search row that opened this sheet drew. An untitled daily
+            // note's row said "Oct 26" and the sheet it opened said "2026-10-26".
+            .navigationTitle(NoteReferencePanelSupport.searchTitle(note))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
