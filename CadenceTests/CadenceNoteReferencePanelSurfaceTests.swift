@@ -606,11 +606,12 @@ struct CadenceNoteReferencePanelSurfaceTests {
     @Test func thePanelIsBuiltFromTheStripThatAlreadyResetsItsScrollMargins() throws {
         let accessories = try strippingComments(sourceFile("Cadence/iOS/iOSMarkdownAccessoryViews.swift"))
 
-        // One strip type, one margin reset, and the panel is one of the strip's three callers.
+        // One strip type, one margin reset, and the panel is one of the strip's four callers (the
+        // `#` tag strip, [[T-8761]], is the fourth; its existing and Create rows are two more pills).
         #expect(accessories.components(separatedBy: "struct iOSMarkdownSuggestionStrip").count - 1 == 1)
         #expect(accessories.components(separatedBy: ".contentMargins(.vertical, 0, for: .scrollContent)").count - 1 == 2)
-        #expect(accessories.components(separatedBy: "iOSMarkdownSuggestionStrip(").count - 1 == 3)
-        #expect(accessories.components(separatedBy: "iOSMarkdownSuggestionPill(").count - 1 == 4)
+        #expect(accessories.components(separatedBy: "iOSMarkdownSuggestionStrip(").count - 1 == 4)
+        #expect(accessories.components(separatedBy: "iOSMarkdownSuggestionPill(").count - 1 == 6)
 
         // No second horizontal scroll view smuggled in beside them: the two `ScrollView(` in this
         // file are the picker sheet's vertical list and the strip's own row.
@@ -635,7 +636,9 @@ struct CadenceNoteReferencePanelSurfaceTests {
         ])
 
         let accessories = try strippingComments(sourceFile("Cadence/iOS/iOSMarkdownAccessoryViews.swift"))
-        #expect(!accessories.contains("Color(hex:"))
+        // No literal hex. `Color(hex: tag.colorHex)` in the `#` strip draws the user's own tag
+        // colour, which is data, not a colour this file spells.
+        #expect(accessories.matchCount(ofPattern: "Color\\(hex: *\"") == 0)
 
         // Word boundaries, not substrings. A bare `.contains(".white")` fires on
         // `.whitespacesAndNewlines`, of which this file has four — the check would have failed
