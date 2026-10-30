@@ -37,7 +37,32 @@ struct EstimatePickerControl: View {
             .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl))
         }
         .buttonStyle(.cadencePlain)
-        .popover(isPresented: $showPicker, arrowEdge: .top) {
+        // **`arrowEdge: nil`, so UIKit may put the panel on a side that can hold it** ([[T-8473]]).
+        //
+        // A named `arrowEdge:` is not a preference, it is UIKit's permitted arrow directions with one
+        // direction in it: `.top` meant the panel could ONLY hang below its anchor, and when the
+        // room below ran out UIKit compressed it there instead of flipping. Measured on
+        // `Cadence-iPadPro11` (834x1210) from the Estimate row of a note's inline task panel, at
+        // build `3505a4df` + `arrowEdge: .top`: with the chip at y=1095 the panel kept its full
+        // 260pt width and lost its HEIGHT — the heading, the live total and the top half of both
+        // roller columns were gone above the chrome's top edge, and Clear and Done were below the
+        // screen. The same panel from the same row at y=452, where the room below is 736pt, drew
+        // whole with its heading clear of the corners.
+        //
+        // **Which is also what [[T-8473]] was filed as, and the filed cause was not the cause.**
+        // It read as `panelPadding` (10) failing to clear the chrome's rounded top corners. It is
+        // not: with room to spare the heading's first glyph sits ~15pt below the panel's top edge
+        // and ~8pt inside its left edge, measured, and clears the corner. What puts it INTO the
+        // corner is the compression above — a few points short of its intrinsic height and the
+        // header's own band is squeezed up under the curve, which slices the `E` and the total
+        // diagonally. So the fix is the placement, not an inset: a panel that is never compressed
+        // never meets its own corners.
+        //
+        // The height is not bounded here on purpose — see `panelHeight`'s note: this panel cannot
+        // scroll (it would nest a scroll inside the one the reader is dragging) and bounds itself
+        // by showing fewer roller rows instead. A panel that cannot give ground has to be put
+        // where there is ground, which is the one thing a pinned arrow edge forbids.
+        .popover(isPresented: $showPicker, arrowEdge: nil) {
             EstimatePickerPopoverContent(value: $value, title: pickerTitle) {
                 showPicker = false
             }

@@ -464,6 +464,73 @@ struct EstimatePickerLargeTextLayoutTests {
         // clears the screen-height margin its sibling test asserts and is clipped anyway.
         #expect(panel < 667 * 0.8)
     }
+
+    /// **[[T-8473]] — the duration editor does not pin the side its popover opens on.**
+    ///
+    /// The ticket read as a padding shortfall: `panelPadding` (10) failing to clear the popover
+    /// chrome's rounded top corners, so the heading and the live total were sliced along them.
+    /// Driven on `Cadence-iPadPro11` (834x1210) from the Estimate row of a note's inline task
+    /// panel, that is not what it is. With room below the anchor the heading's first glyph sits
+    /// about 15pt below the panel's top edge and about 8pt inside its left edge and clears the
+    /// corner with room; nothing was clipped. What puts the header into the corner is the panel
+    /// being given LESS HEIGHT than it needs, which compresses its topmost band up under the
+    /// curve.
+    ///
+    /// And it was given less height because `arrowEdge:` is not a preference. A named edge is
+    /// UIKit's permitted arrow directions with one direction in it, so `arrowEdge: .top` let the panel
+    /// hang only BELOW its anchor; with the chip at y=1095 the room below is 115pt against a
+    /// panel that wants its whole intrinsic height, and UIKit compressed it there rather than
+    /// flipping to a side that could hold it. `arrowEdge: nil` lets it choose, and the same row
+    /// at the same anchor then drew whole.
+    ///
+    /// **Two halves, because either alone is weak.** The first is that the edge is not pinned —
+    /// the shipped spelling, and no second `arrowEdge: .<edge>` anywhere in the file, so a panel
+    /// that quietly gets one back stops reading as a panel that may choose. The second is the
+    /// arithmetic that says a pinned-below panel could not have been drawn whole at that anchor,
+    /// read off the app's own metrics rather than off the screenshot.
+    ///
+    /// **Failing-first:** putting `arrowEdge: .top` back fails the first half; narrowing the
+    /// wheel to the three rows this panel already uses at accessibility sizes makes it fit the
+    /// room below the low anchor and fails the second.
+    @Test("The duration editor lets its popover choose a side that can hold it")
+    func theDurationEditorDoesNotPinTheSideItsPopoverOpensOn() throws {
+        let read = CadenceSourceScan.strippedSourceReader()
+        let source = try read(path)
+        #expect(source.contains("arrowEdge: nil"),
+                "the duration editor pins the side its popover opens on again")
+        #expect(CadenceSourceScan.matchCount(#"arrowEdge:\s*\.[a-z]"#, in: source) == 0,
+                "a named arrow edge is permittedArrowDirections with one direction in it")
+
+        // The sighting, as points on `Cadence-iPadPro11` in portrait: the Estimate chip's bottom
+        // edge at the anchor that was compressed, and at the anchor that was not.
+        let screenHeight: CGFloat = 1210
+        let compressedAnchorBottom: CGFloat = 1095
+        let roomyAnchorBottom: CGFloat = 474
+
+        let roomBelowCompressed = screenHeight - compressedAnchorBottom
+        let roomBelowRoomy = screenHeight - roomyAnchorBottom
+        #expect(roomBelowCompressed > 0)
+
+        let panelHeight = EstimateRollerMetrics.panelHeight(at: .large, scaling: .enabled)
+        let viewport = EstimateRollerMetrics.viewportHeight(at: .large, scaling: .enabled)
+        #expect(panelHeight > roomBelowCompressed,
+                "the panel is \(panelHeight) and the room below that anchor is \(roomBelowCompressed)")
+        #expect(viewport > roomBelowCompressed,
+                "the wheel alone is \(viewport), so no selected value could have been drawn whole")
+
+        // The other half of the same sighting, and what makes the first non-vacuous: at the high
+        // anchor the room below holds the panel outright, and that is the reading in which the
+        // heading was clear of the corners. A padding shortfall would not have cared which.
+        #expect(panelHeight < roomBelowRoomy,
+                "the panel is \(panelHeight) against \(roomBelowRoomy) of room, so it was not compressed there")
+
+        // It is not one text size: the panel only grows, so a pinned-below placement is short of
+        // room at that anchor at every size the reader can choose.
+        for size in everySize {
+            #expect(EstimateRollerMetrics.panelHeight(at: size, scaling: .enabled) > roomBelowCompressed,
+                    "a pinned-below panel would have fitted at \(size)")
+        }
+    }
 }
 
 /// **Why T-1413 needs date rows, not seven enlarged columns.**
