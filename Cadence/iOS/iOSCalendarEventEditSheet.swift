@@ -330,7 +330,11 @@ struct iOSCalendarEventEditSheet: View {
                 text: notesBinding,
                 isFocused: $notesEditorFocused,
                 placeholder: "Add notes\u{2026}",
-                referenceNotes: allNotes,
+                // Not the event's own note ([[T-8751]], the T-8582 rule): the field IS that note.
+                // Filtered here rather than passed as `editingNote:`, which would also draw the
+                // full editor's reference panel and navigation in this field; `openMarkdownReference`
+                // still resolves against every note.
+                referenceNotes: MarkdownReferenceCompletionSupport.linkableNotes(allNotes, excludingNoteID: linkedEventNote?.id),
                 referenceTasks: allTasks,
                 onOpenReference: openMarkdownReference,
                 allowsEmbeddedTaskCreation: false,

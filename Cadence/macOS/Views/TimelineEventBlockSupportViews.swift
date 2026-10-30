@@ -440,7 +440,9 @@ struct CalendarEventEditPopover: View {
             MarkdownEditor(
                 text: notesBinding,
                 showsToolbar: false,
-                referenceNotes: allNotes,
+                // Not the event's own note ([[T-8751]], the T-8583 rule): the field IS that note.
+                // `openNoteReference` still resolves against every note.
+                referenceNotes: MarkdownReferenceCompletionSupport.linkableNotes(allNotes, excludingNoteID: linkedEventNote?.id),
                 onOpenNoteReference: openNoteReference,
                 onEditingChanged: { isEditing in
                     if !isEditing { flushPendingNotes() }

@@ -134,4 +134,38 @@ struct MarkdownEditorOfferedChoicesTests {
         #expect(code.contains("kind: kind,\n                notes: linkableNotes,"))
         #expect(code.contains("kind: kind,\n                notes: referenceNotes,") == false)
     }
+
+    // MARK: - T-8751, the event editors
+
+    /// **The event editor's Notes field offered its own note as a `[[` target**, on both platforms.
+    /// Since [[T-8161]] that field writes the event's `Note` itself, so it is a note host like any
+    /// other and the T-8582/T-8583 rule applies. Each host filters at the call site (not
+    /// `editingNote:` on iOS, which would also draw the full editor's reference panel here), and a
+    /// tapped link still resolves against every note.
+    @Test func theMacEventPopoverNotesFieldDoesNotOfferTheEventsOwnNote() throws {
+        try expectEventNotesFieldExcludesItsOwnNote(
+            path: "Cadence/macOS/Views/TimelineEventBlockSupportViews.swift",
+            declaration: "private var notesField: some View",
+            opener: "TaskNoteLinkRouting.note(id: id, title: title, in: allNotes)"
+        )
+    }
+
+    @Test func theIOSEventEditSheetNotesFieldDoesNotOfferTheEventsOwnNote() throws {
+        try expectEventNotesFieldExcludesItsOwnNote(
+            path: "Cadence/iOS/iOSCalendarEventEditSheet.swift",
+            declaration: "private var notesSection: some View",
+            opener: "iOSMarkdownReferenceResolver.note(for: target, in: allNotes)"
+        )
+    }
+
+    private func expectEventNotesFieldExcludesItsOwnNote(path: String, declaration: String, opener: String) throws {
+        let code = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(path))
+        let field = try #require(CadenceSourceScan.declarationBody(declaration, in: code), "\(declaration) could not be read")
+        #expect(field.contains("CadenceEventNotesField("), "non-vacuity: wrong body read")
+        #expect(field.contains(
+            "referenceNotes: MarkdownReferenceCompletionSupport.linkableNotes(allNotes, excludingNoteID: linkedEventNote?.id),"
+        ))
+        #expect(!field.contains("referenceNotes: allNotes,"), "the event field offers its own note again")
+        #expect(code.contains(opener), "opening a link must still read every note")
+    }
 }
