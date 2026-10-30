@@ -810,19 +810,19 @@ struct CadenceControlAccessibilityLabelTests {
         (
             "Cadence/iOS/iOSCalendarMonthViews.swift",
             "struct iOSCalendarMonthDayCell: View {",
-            "CadenceCalendarDayAccessibility.countedDayLabel(date:date,itemCount:itemCount)",
+            "CadenceCalendarDayAccessibility.countedDayLabel(date:date,isToday:isToday,itemCount:itemCount)",
             true
         ),
         (
             "Cadence/iOS/iOSCalendarMonthAgendaViews.swift",
             "struct iOSCalendarMonthCompactDayCell: View {",
-            "CadenceCalendarDayAccessibility.markedDayLabel(date:date,hasItems:hasItems)",
+            "CadenceCalendarDayAccessibility.markedDayLabel(date:date,isToday:isToday,hasItems:hasItems)",
             true
         ),
         (
             "Cadence/iOS/iOSCalendarTimelineViews.swift",
             "struct iOSCalendarTimelineDayHeader: View {",
-            "CadenceCalendarDayAccessibility.timelineDayLabel(date:date,allDayEventCount:allDayEvents.count,unscheduledCount:unscheduledTasks.count)",
+            "CadenceCalendarDayAccessibility.timelineDayLabel(date:date,isToday:isToday,allDayEventCount:allDayEvents.count,unscheduledCount:unscheduledTasks.count)",
             false
         ),
     ]
@@ -835,18 +835,18 @@ struct CadenceControlAccessibilityLabelTests {
 
         // The full month grid draws a count capsule, so it announces the count.
         #expect(
-            CadenceCalendarDayAccessibility.countedDayLabel(date: date, itemCount: 3)
+            CadenceCalendarDayAccessibility.countedDayLabel(date: date, isToday: false, itemCount: 3)
                 == "\(day), 3 scheduled items"
         )
         #expect(
-            CadenceCalendarDayAccessibility.countedDayLabel(date: date, itemCount: 1)
+            CadenceCalendarDayAccessibility.countedDayLabel(date: date, isToday: false, itemCount: 1)
                 == "\(day), 1 scheduled item"
         )
 
         // The compact agenda grid draws a binary dot, so it announces presence and not a figure it
         // does not show.
         #expect(
-            CadenceCalendarDayAccessibility.markedDayLabel(date: date, hasItems: true)
+            CadenceCalendarDayAccessibility.markedDayLabel(date: date, isToday: false, hasItems: true)
                 == "\(day), has scheduled items"
         )
 
@@ -854,34 +854,66 @@ struct CadenceControlAccessibilityLabelTests {
         // and nothing else. The "N timed" chip it used to carry is gone from the band, so the
         // count is gone from the label with it.
         #expect(
-            CadenceCalendarDayAccessibility.timelineDayLabel(date: date, allDayEventCount: 0, unscheduledCount: 2)
+            CadenceCalendarDayAccessibility.timelineDayLabel(date: date, isToday: false, allDayEventCount: 0, unscheduledCount: 2)
                 == "\(day), 2 unscheduled"
         )
         // T-3163: the band draws the day's all-day events too, ahead of the tasks, and says so in
         // the same order.
         #expect(
-            CadenceCalendarDayAccessibility.timelineDayLabel(date: date, allDayEventCount: 1, unscheduledCount: 2)
+            CadenceCalendarDayAccessibility.timelineDayLabel(date: date, isToday: false, allDayEventCount: 1, unscheduledCount: 2)
                 == "\(day), 1 all-day event, 2 unscheduled"
         )
         #expect(
-            CadenceCalendarDayAccessibility.timelineDayLabel(date: date, allDayEventCount: 2, unscheduledCount: 0)
+            CadenceCalendarDayAccessibility.timelineDayLabel(date: date, isToday: false, allDayEventCount: 2, unscheduledCount: 0)
                 == "\(day), 2 all-day events"
         )
         // And a band with no chips is the bare date. Not `emptyPhrase`: the column under this
         // header can be full of blocks, so "no scheduled items" would be a claim about the day
         // that the day contradicts. The other two cells *do* summarise their day, which is why
         // they keep it.
-        #expect(CadenceCalendarDayAccessibility.timelineDayLabel(date: date, allDayEventCount: 0, unscheduledCount: 0) == day)
+        #expect(CadenceCalendarDayAccessibility.timelineDayLabel(date: date, isToday: false, allDayEventCount: 0, unscheduledCount: 0) == day)
 
         // One wording for an empty day across the two cells that summarise one, by construction
         // rather than by two literals happening to match.
         let empty = "\(day), \(CadenceCalendarDayAccessibility.emptyPhrase)"
-        #expect(CadenceCalendarDayAccessibility.countedDayLabel(date: date, itemCount: 0) == empty)
-        #expect(CadenceCalendarDayAccessibility.markedDayLabel(date: date, hasItems: false) == empty)
+        #expect(CadenceCalendarDayAccessibility.countedDayLabel(date: date, isToday: false, itemCount: 0) == empty)
+        #expect(CadenceCalendarDayAccessibility.markedDayLabel(date: date, isToday: false, hasItems: false) == empty)
 
         // And the date really is the long form the cells used to announce alone — so this suite
         // records that the fix *added* to the label rather than replacing it.
         #expect(empty.hasPrefix(day))
+    }
+
+    /// **[[T-8722]]: today says it is today.** Every one of these cells draws a today marker and
+    /// none said so. The word leads, once, on all three builders, and only when the flag is set --
+    /// so the scan below, which pins each caller passing its own `isToday`, is what makes it reach
+    /// the screen.
+    @Test func everyCalendarDayLabelLeadsWithTodayOnTodayAndOnlyThen() throws {
+        typealias Say = CadenceCalendarDayAccessibility
+        let date = try #require(DateFormatters.date(from: "2026-08-31"))
+        let day = DateFormatters.longDate.string(from: date)
+        let today = "\(Say.todayPhrase), \(day)"
+        #expect(Say.todayPhrase == "Today")
+
+        #expect(Say.countedDayLabel(date: date, isToday: true, itemCount: 3) == "\(today), 3 scheduled items")
+        #expect(Say.countedDayLabel(date: date, isToday: true, itemCount: 0) == "\(today), \(Say.emptyPhrase)")
+        #expect(Say.markedDayLabel(date: date, isToday: true, hasItems: true) == "\(today), has scheduled items")
+        #expect(Say.markedDayLabel(date: date, isToday: true, hasItems: false) == "\(today), \(Say.emptyPhrase)")
+        #expect(Say.timelineDayLabel(date: date, isToday: true, allDayEventCount: 0, unscheduledCount: 0) == today)
+        #expect(
+            Say.timelineDayLabel(date: date, isToday: true, allDayEventCount: 1, unscheduledCount: 2)
+                == "\(today), 1 all-day event, 2 unscheduled"
+        )
+
+        // Not today: no word at all, so a week reads one "Today" and six dates.
+        for label in [
+            Say.countedDayLabel(date: date, isToday: false, itemCount: 3),
+            Say.markedDayLabel(date: date, isToday: false, hasItems: true),
+            Say.timelineDayLabel(date: date, isToday: false, allDayEventCount: 1, unscheduledCount: 2),
+        ] {
+            #expect(label.hasPrefix(day), "\(label)")
+            #expect(!label.contains(Say.todayPhrase), "a day that is not today says Today: \(label)")
+        }
     }
 
     /// **The call sites**, including the one that must *not* claim selection.

@@ -225,6 +225,9 @@ func timelineBlockBody(
                     )
                 }
                 .buttonStyle(.cadencePlain)
+                // [[T-8721]]: it read as an unnamed button. The state's action phrase, as iOS's
+                // circle (`iOSTimelineTaskBlock.completionControl`) and the board card name it.
+                .accessibilityLabel(glyph.state.accessibilityActionLabel)
                 .padding(.top, 1)
             }
 

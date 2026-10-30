@@ -122,6 +122,22 @@ struct TimelineTaskBlock: View {
         .onTapGesture {
             handleBlockTap()
         }
+        // [[T-8721]]: iOS's `iOSTimelineTaskBlock` shape ([[T-7072]]) -- one element named by the
+        // shared `timedTaskLabel`, a button whose default action is the click's own
+        // `handleBlockTap()`, and "Open task" listed as the Mac's other task surfaces list it
+        // ([[T-7092]]). `.combine` folds the nested completion button into this element as its
+        // own named action (it is labelled in `timelineBlockBody`), so it stays reachable.
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(
+            CadenceCalendarDayAccessibility.timedTaskLabel(
+                title: TaskTitleSupport.displayTitle(task.title),
+                timeRange: timeRangeLabel,
+                isDone: task.isDone
+            )
+        )
+        .accessibilityAddTraits(.isButton)
+        .accessibilityAction { handleBlockTap() }
+        .accessibilityAction(named: CadenceTaskControlAccessibility.openTaskActionName, handleBlockTap)
         .overlay {
             RightClickActionTrigger {
                 activeDragTaskID = nil

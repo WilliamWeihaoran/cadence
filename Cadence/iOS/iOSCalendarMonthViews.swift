@@ -507,7 +507,7 @@ private struct iOSCalendarMonthDayCell: View {
         // reached VoiceOver: the sibling agenda cell had the trait and this one did not, in the
         // same grid, off the same tap (T-573).
         .accessibilityLabel(
-            CadenceCalendarDayAccessibility.countedDayLabel(date: date, itemCount: itemCount)
+            CadenceCalendarDayAccessibility.countedDayLabel(date: date, isToday: isToday, itemCount: itemCount)
         )
         .accessibilityAddTraits(isSelected ? [.isSelected] : [])
     }

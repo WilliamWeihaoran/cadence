@@ -1022,6 +1022,7 @@ private struct iOSCalendarTimelineDayHeader: View {
         .accessibilityLabel(
             CadenceCalendarDayAccessibility.timelineDayLabel(
                 date: date,
+                isToday: isToday,
                 allDayEventCount: allDayEvents.count,
                 unscheduledCount: unscheduledTasks.count
             )
@@ -2354,7 +2355,12 @@ private struct iOSCalendarEventBlock: View {
         .contentShape(blockShape)
         .onTapGesture { onOpen() }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(iOSCalendarEventSupport.title(for: event) + ", " + CadenceScheduleSupport.timeRangeLabel(startMinute: startMin, endMinute: endMin))
+        .accessibilityLabel(
+            CadenceCalendarDayAccessibility.timedEventLabel(
+                title: iOSCalendarEventSupport.title(for: event),
+                timeRange: CadenceScheduleSupport.timeRangeLabel(startMinute: startMin, endMinute: endMin)
+            )
+        )
         .accessibilityAddTraits(.isButton)
         .accessibilityAction { onOpen() }
     }

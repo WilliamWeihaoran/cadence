@@ -169,7 +169,7 @@ struct CadenceMacPageAccessibilityAuditTests {
     @Test func theTimelineDayHeaderNamesItsDay() throws {
         let date = try #require(DateFormatters.date(from: "2026-08-31"))
         let nodes = allNodes(in: CalDayHeaderView(date: date, todayKey: "2026-10-26"), size: NSSize(width: 160, height: 120))
-        let expected = CadenceCalendarDayAccessibility.timelineDayLabel(date: date, allDayEventCount: 0, unscheduledCount: 0)
+        let expected = CadenceCalendarDayAccessibility.timelineDayLabel(date: date, isToday: false, allDayEventCount: 0, unscheduledCount: 0)
         #expect(expected == DateFormatters.longDate.string(from: date), "non-vacuity: the shared label changed shape")
         #expect(
             nodes.contains { $0.label == expected },
@@ -179,6 +179,19 @@ struct CadenceMacPageAccessibilityAuditTests {
             nodes.contains { $0.value == DateFormatters.dayOfWeek.string(from: date) },
             "the header's weekday is no longer its own element: \(nodes)"
         )
+    }
+
+    /// [[T-8722]]: the header on today's column draws the filled disc and now says "Today" too,
+    /// read off the tree; the same header on any other day does not.
+    @Test func theTimelineDayHeaderOnTodaySaysToday() throws {
+        let date = try #require(DateFormatters.date(from: "2026-08-31"))
+        let today = CadenceCalendarDayAccessibility.timelineDayLabel(date: date, isToday: true, allDayEventCount: 0, unscheduledCount: 0)
+        #expect(today == "Today, \(DateFormatters.longDate.string(from: date))")
+        let onToday = allNodes(in: CalDayHeaderView(date: date, todayKey: "2026-08-31"), size: NSSize(width: 160, height: 120))
+        #expect(onToday.contains { $0.label == today }, "today's header does not say Today: \(onToday)")
+        let elsewhere = allNodes(in: CalDayHeaderView(date: date, todayKey: "2026-10-26"), size: NSSize(width: 160, height: 120))
+        #expect(!elsewhere.contains { $0.label.hasPrefix("Today") }, "a header that is not today's says Today: \(elsewhere)")
+        #expect(!elsewhere.isEmpty, "non-vacuity: the header is not on the tree")
     }
 
     /// The Board's collapsed rail is one button, "Expand Overdue". The column around it carries
@@ -503,17 +516,28 @@ struct CadenceMacPageAccessibilityAuditTests {
     @Test func aMacMonthCellSaysTheIOSMonthCellsWords() throws {
         let date = try #require(DateFormatters.date(from: "2026-08-31"))
         let day = DateFormatters.longDate.string(from: date)
-        #expect(MonthDayCell.accessibilityLabel(date: date, taskCount: 2, visibleEventCount: 1) == "\(day), 3 scheduled items")
-        #expect(MonthDayCell.accessibilityLabel(date: date, taskCount: 0, visibleEventCount: 1) == "\(day), 1 scheduled item")
-        #expect(MonthDayCell.accessibilityLabel(date: date, taskCount: 1, visibleEventCount: 0) == "\(day), 1 scheduled item")
+        #expect(MonthDayCell.accessibilityLabel(date: date, isToday: false, taskCount: 2, visibleEventCount: 1) == "\(day), 3 scheduled items")
+        #expect(MonthDayCell.accessibilityLabel(date: date, isToday: false, taskCount: 0, visibleEventCount: 1) == "\(day), 1 scheduled item")
+        #expect(MonthDayCell.accessibilityLabel(date: date, isToday: false, taskCount: 1, visibleEventCount: 0) == "\(day), 1 scheduled item")
         #expect(
-            MonthDayCell.accessibilityLabel(date: date, taskCount: 0, visibleEventCount: 0)
+            MonthDayCell.accessibilityLabel(date: date, isToday: false, taskCount: 0, visibleEventCount: 0)
                 == "\(day), \(CadenceCalendarDayAccessibility.emptyPhrase)"
         )
         #expect(
-            MonthDayCell.accessibilityLabel(date: date, taskCount: 4, visibleEventCount: 2)
-                == CadenceCalendarDayAccessibility.countedDayLabel(date: date, itemCount: 6),
+            MonthDayCell.accessibilityLabel(date: date, isToday: false, taskCount: 4, visibleEventCount: 2)
+                == CadenceCalendarDayAccessibility.countedDayLabel(date: date, isToday: false, itemCount: 6),
             "the Mac month cell drifted from iOS's wording"
+        )
+    }
+
+    /// [[T-8722]]: the cell under the today disc leads with "Today", from the shared builder.
+    @Test func aMacMonthCellOnTodaySaysToday() throws {
+        let date = try #require(DateFormatters.date(from: "2026-08-31"))
+        let day = DateFormatters.longDate.string(from: date)
+        #expect(MonthDayCell.accessibilityLabel(date: date, isToday: true, taskCount: 2, visibleEventCount: 1) == "Today, \(day), 3 scheduled items")
+        #expect(
+            MonthDayCell.accessibilityLabel(date: date, isToday: true, taskCount: 0, visibleEventCount: 0)
+                == CadenceCalendarDayAccessibility.countedDayLabel(date: date, isToday: true, itemCount: 0)
         )
     }
 
@@ -528,7 +552,7 @@ struct CadenceMacPageAccessibilityAuditTests {
         #expect(cell.contains(".onTapGesture{openDay()}"), "non-vacuity: the cell's click no longer opens the day")
         #expect(cell.contains(".accessibilityElement(children:.contain)"), "the cell's chips are no longer their own elements")
         #expect(
-            cell.contains(".accessibilityLabel(Self.accessibilityLabel(date:date,taskCount:tasks.count,visibleEventCount:events.count))"),
+            cell.contains(".accessibilityLabel(Self.accessibilityLabel(date:date,isToday:dateKey==todayKey,taskCount:tasks.count,visibleEventCount:events.count))"),
             "the cell does not name its day from the counts its chips are drawn from"
         )
         #expect(cell.contains(".accessibilityAction{openDay()}"), "the cell has no default accessibility action to open its day")
@@ -635,6 +659,112 @@ struct CadenceMacPageAccessibilityAuditTests {
 
         let area = row(.area, openTasks: 0, dueDateKey: nil).filter { $0.role == Self.buttonRole }
         #expect(area.map(\.label) == ["Launch"], "an empty area should read its name alone: \(area)")
+    }
+
+    // MARK: - T-8721: the Mac Calendar page's timed blocks and chips open without a pointer
+
+    /// A timed task on the timeline, at 9:00 for 30 minutes, hosted bare.
+    private func timelineTaskBlockNodes(isDone: Bool) throws -> (nodes: [Node], task: AppTask) {
+        let container = try CadenceTestStore.container()
+        let task = AppTask(title: "Timed block task")
+        task.scheduledStartMin = 9 * 60
+        task.estimatedMinutes = 30
+        if isDone { task.status = .done }
+        ModelContext(container).insert(task)
+        let block = TimelineTaskBlock(
+            task: task,
+            column: 0,
+            totalColumns: 1,
+            totalWidth: 300,
+            metrics: TimelineMetrics(startHour: 8, endHour: 12, hourHeight: 60),
+            style: .calendar,
+            selectedTaskID: .constant(nil),
+            activeDragTaskID: .constant(nil),
+            onSelect: {}
+        )
+        let nodes = allNodes(
+            in: hostedTaskSurface(block.frame(width: 300, height: 260), container: container),
+            size: NSSize(width: 340, height: 300)
+        )
+        return (nodes, task)
+    }
+
+    /// iOS's `iOSTimelineTaskBlock` words ([[T-7072]]) on one button, which lists "Open task" and
+    /// keeps the completion circle reachable under its state's name -- folded into the block by
+    /// `.combine`, not a second unnamed button beside it.
+    @Test func aMacTimelineTaskBlockIsOneNamedButtonWithItsCompletionAction() throws {
+        for isDone in [false, true] {
+            let (nodes, task) = try timelineTaskBlockNodes(isDone: isDone)
+            let expected = CadenceCalendarDayAccessibility.timedTaskLabel(
+                title: "Timed block task",
+                timeRange: TimelineTaskBlockInteractionSupport.timeRangeLabel(for: task),
+                isDone: isDone
+            )
+            let buttons = nodes.filter { $0.role == Self.buttonRole }
+            #expect(buttons.count == 1, "the block is not exactly one button: \(nodes)")
+            let block = buttons.first
+            #expect(block?.label == expected, "\(nodes)")
+            #expect(block?.actions.filter { $0 == Self.openTask }.count == 1, "Open task is not listed once: \(nodes)")
+            let circle = CadenceTaskCompletionGlyph.resolve(task: task).state.accessibilityActionLabel
+            #expect(block?.actions.filter { $0 == circle }.count == 1, "the completion circle is unreachable or doubled: \(nodes)")
+            #expect(!nodes.contains { $0.role == Self.buttonRole && $0.label.isEmpty }, "an unnamed button is on the tree: \(nodes)")
+        }
+    }
+
+    /// The two task chips: one button each, reading the title it draws, opened by the click's path.
+    @Test func aMacCalendarTaskChipIsOneButton() throws {
+        let container = try CadenceTestStore.container()
+        let task = AppTask(title: "Chip task")
+        ModelContext(container).insert(task)
+        let key = DateFormatters.todayKey()
+        for chip in [
+            AnyView(MonthTaskChip(task: task, dayKey: key, todayKey: key)),
+            AnyView(AllDayTaskChip(task: task, dayKey: key, todayKey: key)),
+        ] {
+            let nodes = allNodes(in: hostedTaskSurface(chip.frame(width: 200), container: container), size: NSSize(width: 240, height: 60))
+            let buttons = nodes.filter { $0.role == Self.buttonRole }
+            #expect(buttons.count == 1, "the chip is not exactly one button: \(nodes)")
+            #expect(buttons.first?.label.contains("Chip task") == true, "the chip's button does not read its title: \(nodes)")
+        }
+    }
+
+    /// Wiring, by source: the event block and the event chips need an `EKEvent`, which this suite
+    /// does not open. Each action is the click's own path, not a second one.
+    @Test func theMacCalendarBlocksAndChipsActThroughTheClicksOwnPath() throws {
+        func dense(_ path: String, _ declaration: String) throws -> String {
+            let source = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile(path))
+            return try #require(CadenceSourceScan.declarationBody(declaration, in: source), "\(declaration)")
+                .filter { !$0.isWhitespace }
+        }
+        let event = try dense("Cadence/macOS/Views/TimelineEventBlock.swift", "struct TimelineEventBlock")
+        #expect(event.contains(".onTapGesture{handleBlockTap()}"), "non-vacuity: the event block's click moved")
+        #expect(event.contains(
+            ".accessibilityElement(children:.ignore).accessibilityLabel(CadenceCalendarDayAccessibility.timedEventLabel(title:item.title,timeRange:timeRangeLabel)).accessibilityAddTraits(.isButton).accessibilityAction{handleBlockTap()}"
+        ), "the Mac event block is not one named button acting through handleBlockTap")
+
+        let task = try dense("Cadence/macOS/Views/TimelineTaskBlock.swift", "struct TimelineTaskBlock")
+        #expect(task.contains(".accessibilityAction{handleBlockTap()}.accessibilityAction(named:CadenceTaskControlAccessibility.openTaskActionName,handleBlockTap)"),
+                "the Mac task block's actions are not the click's handleBlockTap")
+
+        let month = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile("Cadence/macOS/Views/CalendarPageMonthSupportViews.swift"))
+            .filter { !$0.isWhitespace }
+        #expect(month.contains(
+            ".onTapGesture{showInspector.wrappedValue=true}.accessibilityElement(children:.combine).accessibilityAddTraits(.isButton).accessibilityAction{showInspector.wrappedValue=true}"
+        ), "calendarTaskChipInteractions gives its chips no button trait or action")
+        let chips = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile("Cadence/macOS/Views/CalendarEventChipPopoverSupport.swift"))
+            .filter { !$0.isWhitespace }
+        #expect(chips.contains(
+            ".onTapGesture{isPresented.wrappedValue=true}.accessibilityElement(children:.combine).accessibilityAddTraits(.isButton).accessibilityAction{isPresented.wrappedValue=true}"
+        ), "calendarEventChipEditor gives its chips no button trait or action")
+        // Both event chips reach the modifier.
+        #expect(CadenceSourceScan.matchCount(#"\.calendarEventChipEditor\(isPresented: \$showEditor\)"#,
+                in: CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile("Cadence/macOS/Views/CalendarPageMonthSupportViews.swift"))) == 2)
+
+        // One spelling of an event block on both platforms.
+        let ios = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile("Cadence/iOS/iOSCalendarTimelineViews.swift"))
+        #expect(CadenceSourceScan.matchCount(#"CadenceCalendarDayAccessibility\.timedEventLabel\("#, in: ios) == 1,
+                "iOS's event block no longer reads the shared event label")
+        #expect(CadenceCalendarDayAccessibility.timedEventLabel(title: "Standup", timeRange: "9:00 – 9:30 AM") == "Standup, 9:00 – 9:30 AM")
     }
 }
 #endif

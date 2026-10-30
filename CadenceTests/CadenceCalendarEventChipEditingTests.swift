@@ -185,7 +185,9 @@ struct CadenceCalendarEventChipEditingTests {
         #expect(code.contains("if outcome == .deleted { isPresented = false }"))
         #expect(code.contains("actionFailureNotice: $actionFailureNotice"))
         #expect(
-            CadenceSourceScan.matchCount(#"\.onTapGesture \{ isPresented\.wrappedValue = true \}\s*\.popover\(isPresented: isPresented"#, in: code) == 1,
+            // [[T-8721]]: only `.accessibility…` modifiers (the chip's button trait and action) may sit
+            // between the click and the popover it opens.
+            CadenceSourceScan.matchCount(#"\.onTapGesture \{ isPresented\.wrappedValue = true \}(?:\s*\.accessibility[A-Za-z]*(?:\([^)]*\))?(?:\s*\{[^}]*\})?)*\s*\.popover\(isPresented: isPresented"#, in: code) == 1,
             "the chip modifier does not open its popover on click"
         )
         #expect(

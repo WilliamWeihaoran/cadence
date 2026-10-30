@@ -473,7 +473,7 @@ private final class FixedEventDaySource: CalendarEventDaySource {
         #expect(Say.allDayStripLabel(allDayEventCount: 2) == "2 all-day events")
         #expect(Say.allDayStripLabel(allDayEventCount: 0) == "0 all-day events")
 
-        let week = Say.timelineDayLabel(date: Date(), allDayEventCount: 2, unscheduledCount: 3)
+        let week = Say.timelineDayLabel(date: Date(), isToday: false, allDayEventCount: 2, unscheduledCount: 3)
         #expect(week.contains(Say.allDayStripLabel(allDayEventCount: 2)),
                 "the week header and the Today strip count all-day events in two different sentences")
         #expect(!Say.allDayStripLabel(allDayEventCount: 2).contains("unscheduled"))

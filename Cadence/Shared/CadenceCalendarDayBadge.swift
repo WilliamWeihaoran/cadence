@@ -121,13 +121,19 @@ enum CadenceCalendarDayBadge: Hashable, CaseIterable {
 ///
 /// A value type outside every platform conditional, so `CadenceTests` — which builds for macOS and
 /// cannot see `Cadence/iOS/` — can pin the words themselves rather than only the call sites.
+///
+/// **Every day builder takes `isToday`, with no default** ([[T-8722]]). Every one of these cells
+/// and headers draws a today marker — a wash, a disc, a ring — and none of them said it, so a
+/// VoiceOver user swiping a week heard seven dates and had to know today's already. The flag is
+/// required so a new caller cannot forget it; the word leads, as the system Calendar's does.
 nonisolated enum CadenceCalendarDayAccessibility {
     /// For a cell that draws the number: the full month grid's count capsule.
     ///
     /// `"Monday, 31 August 2026, 3 scheduled items"`.
-    static func countedDayLabel(date: Date, itemCount: Int) -> String {
-        guard itemCount > 0 else { return "\(dayName(date)), \(emptyPhrase)" }
-        return "\(dayName(date)), \(itemCount) scheduled item\(itemCount == 1 ? "" : "s")"
+    static func countedDayLabel(date: Date, isToday: Bool, itemCount: Int) -> String {
+        let day = dayName(date, isToday: isToday)
+        guard itemCount > 0 else { return "\(day), \(emptyPhrase)" }
+        return "\(day), \(itemCount) scheduled item\(itemCount == 1 ? "" : "s")"
     }
 
     /// For a cell that draws only presence: the compact agenda grid's dot, which is binary.
@@ -136,8 +142,8 @@ nonisolated enum CadenceCalendarDayAccessibility {
     /// the call site — the parent already buckets the day to decide whether to draw the dot at all
     /// — but the cell does not show it, and inventing a figure that is nowhere on screen is the
     /// mirror of the mismatch [[T-571]] left behind.
-    static func markedDayLabel(date: Date, hasItems: Bool) -> String {
-        "\(dayName(date)), \(hasItems ? "has scheduled items" : emptyPhrase)"
+    static func markedDayLabel(date: Date, isToday: Bool, hasItems: Bool) -> String {
+        "\(dayName(date, isToday: isToday)), \(hasItems ? "has scheduled items" : emptyPhrase)"
     }
 
     /// For the timeline's day header, which since **T-1271** draws **one** figure: up to two
@@ -158,8 +164,8 @@ nonisolated enum CadenceCalendarDayAccessibility {
     /// **All-day events join it since T-3163**, because the band draws them now:
     /// `"Monday, 31 August 2026, 1 all-day event, 2 unscheduled"`. Each count is spoken only when
     /// it is non-zero, in the order the band stacks them.
-    static func timelineDayLabel(date: Date, allDayEventCount: Int, unscheduledCount: Int) -> String {
-        var parts = [dayName(date)]
+    static func timelineDayLabel(date: Date, isToday: Bool, allDayEventCount: Int, unscheduledCount: Int) -> String {
+        var parts = [dayName(date, isToday: isToday)]
         if allDayEventCount > 0 {
             parts.append("\(allDayEventCount) all-day event\(allDayEventCount == 1 ? "" : "s")")
         }
@@ -189,6 +195,13 @@ nonisolated enum CadenceCalendarDayAccessibility {
         return isDone ? "\(label), \(completedPhrase)" : label
     }
 
+    /// **A timed event's block** — iOS's `iOSCalendarEventBlock` spelling since [[T-5356]], and the
+    /// Mac `TimelineEventBlock`'s since [[T-8721]]: `"Standup, 9:00 – 9:30 AM"`. The same shape as
+    /// `timedTaskLabel` without the state word, because an event has no done state to announce.
+    static func timedEventLabel(title: String, timeRange: String) -> String {
+        "\(title), \(timeRange)"
+    }
+
     /// The state word `timedTaskLabel` appends. Lowercase because it is spoken after a comma.
     static let completedPhrase = "completed"
 
@@ -197,7 +210,11 @@ nonisolated enum CadenceCalendarDayAccessibility {
     /// sentence by construction.
     static let emptyPhrase = "no scheduled items"
 
-    private static func dayName(_ date: Date) -> String {
-        DateFormatters.longDate.string(from: date)
+    /// The word that leads today's label ([[T-8722]]). Capitalised because it opens the sentence.
+    static let todayPhrase = "Today"
+
+    private static func dayName(_ date: Date, isToday: Bool) -> String {
+        let day = DateFormatters.longDate.string(from: date)
+        return isToday ? "\(todayPhrase), \(day)" : day
     }
 }

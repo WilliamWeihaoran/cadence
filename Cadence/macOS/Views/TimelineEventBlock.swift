@@ -82,6 +82,16 @@ struct TimelineEventBlock: View {
             .onTapGesture {
                 handleBlockTap()
             }
+            // [[T-8721]]: the block was pointer-only -- VoiceOver got its loose time, title and
+            // calendar texts and nothing to press. iOS's `iOSCalendarEventBlock` shape ([[T-5356]]):
+            // one element, the shared "title, time range" words, a button, and the click's own
+            // `handleBlockTap()` as its action. Before the overlays, so the resize strips stay out.
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(
+                CadenceCalendarDayAccessibility.timedEventLabel(title: item.title, timeRange: timeRangeLabel)
+            )
+            .accessibilityAddTraits(.isButton)
+            .accessibilityAction { handleBlockTap() }
             // MARK: Move gesture — uses named canvas coordinate space so drag speed
             // is 1:1 with cursor even as the block repositions during the gesture.
             .gesture(

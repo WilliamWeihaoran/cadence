@@ -495,7 +495,7 @@ struct MonthDayCell: View {
         // an assistive client leave the grid for the same timeline column. No `.isSelected`: the
         // Mac grid has no selected day.
         .accessibilityElement(children: .contain)
-        .accessibilityLabel(Self.accessibilityLabel(date: date, taskCount: tasks.count, visibleEventCount: events.count))
+        .accessibilityLabel(Self.accessibilityLabel(date: date, isToday: dateKey == todayKey, taskCount: tasks.count, visibleEventCount: events.count))
         .accessibilityAction { openDay() }
         .accessibilityAction(named: Self.openDayActionName, openDay)
         .dropDestination(for: String.self) { items, _ in
@@ -517,8 +517,9 @@ struct MonthDayCell: View {
     /// the cell would draw (`visibleEvents`, empty while calendar access is off). The Mac draws no
     /// capsule, but every one of those items is on screen as a chip or inside the "+N more" line,
     /// so the figure is one the cell shows, in pieces.
-    nonisolated static func accessibilityLabel(date: Date, taskCount: Int, visibleEventCount: Int) -> String {
-        CadenceCalendarDayAccessibility.countedDayLabel(date: date, itemCount: taskCount + visibleEventCount)
+    /// `isToday` is the same `todayKey` comparison the today disc is drawn from ([[T-8722]]).
+    nonisolated static func accessibilityLabel(date: Date, isToday: Bool, taskCount: Int, visibleEventCount: Int) -> String {
+        CadenceCalendarDayAccessibility.countedDayLabel(date: date, isToday: isToday, itemCount: taskCount + visibleEventCount)
     }
 
     /// The named action beside the default one, so "Open day" is listed in VoiceOver's actions menu.
@@ -667,6 +668,7 @@ struct CalDayHeaderView: View {
         .accessibilityLabel(
             CadenceCalendarDayAccessibility.timelineDayLabel(
                 date: date,
+                isToday: isToday,
                 allDayEventCount: allDayEventItems.count,
                 unscheduledCount: unscheduledTasks.count
             )
@@ -760,6 +762,13 @@ extension View {
     func calendarTaskChipInteractions(task: AppTask, showInspector: Binding<Bool>) -> some View {
         contentShape(Rectangle())
             .onTapGesture { showInspector.wrappedValue = true }
+            // [[T-8721]]: a pointer-only control until now. One element reading what the chip
+            // draws, a button, and the click's own path as its action -- the trait and action
+            // iOS's band chips take (`iOSCalendarAllDayChipOpen`, [[T-5356]]). Before the
+            // right-click overlay, so that trigger is not folded in.
+            .accessibilityElement(children: .combine)
+            .accessibilityAddTraits(.isButton)
+            .accessibilityAction { showInspector.wrappedValue = true }
             .overlay {
                 RightClickActionTrigger {
                     showInspector.wrappedValue = true

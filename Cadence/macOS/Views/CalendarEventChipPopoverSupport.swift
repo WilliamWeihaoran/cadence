@@ -77,6 +77,11 @@ extension View {
     ) -> some View {
         contentShape(Rectangle())
             .onTapGesture { isPresented.wrappedValue = true }
+            // [[T-8721]]: the same trait and action as `calendarTaskChipInteractions`, for the
+            // same reason -- the click was the only way in.
+            .accessibilityElement(children: .combine)
+            .accessibilityAddTraits(.isButton)
+            .accessibilityAction { isPresented.wrappedValue = true }
             .popover(isPresented: isPresented, arrowEdge: .bottom) {
                 CalendarEventChipEditPopover(item: item(), isPresented: isPresented)
             }
