@@ -193,7 +193,8 @@ extension CadenceSchedulePanelChoice {
         ).map {
             CadenceSchedulePanelChoice(
                 id: CadenceTaskComposerSupport.token(for: .area($0.id)),
-                name: $0.name,
+                // [[T-8551]]: the picker's own fallback, so a blank-named list is never a blank row.
+                name: CadenceAreaPickerSupport.title(for: $0),
                 color: Color(hex: $0.colorHex),
                 systemImage: "tray.full.fill"
             )
@@ -204,7 +205,7 @@ extension CadenceSchedulePanelChoice {
         ).map {
             CadenceSchedulePanelChoice(
                 id: CadenceTaskComposerSupport.token(for: .project($0.id)),
-                name: $0.name,
+                name: CadenceProjectPickerSupport.title(for: $0),
                 color: Color(hex: $0.colorHex),
                 systemImage: "checklist"
             )

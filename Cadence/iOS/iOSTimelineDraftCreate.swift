@@ -287,11 +287,13 @@ enum iOSScheduleDraftCreation {
         }
     }
 
-    /// An event draft names a calendar the user can write to, the first one when it names none.
+    /// An event draft names a calendar the user can write to: the one it names, else the default
+    /// calendar for new events ([[T-8552]] -- it took the alphabetically first writable calendar,
+    /// while macOS's drag-create popover asks for the default). Every iOS creating host calls this.
     static func resolveCalendarSelection(_ draft: inout CadenceScheduleDraft, calendarManager: iOSCalendarManager) {
         guard draft.kind == .event else { return }
         if !calendarManager.writableCalendars.contains(where: { $0.calendarIdentifier == draft.calendarID }) {
-            draft.calendarID = calendarManager.writableCalendars.first?.calendarIdentifier ?? ""
+            draft.calendarID = calendarManager.defaultWritableCalendar?.calendarIdentifier ?? ""
         }
     }
 

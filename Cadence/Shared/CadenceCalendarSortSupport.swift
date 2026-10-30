@@ -52,4 +52,19 @@ nonisolated enum CadenceCalendarSorting {
     static func sorted(_ calendars: [EKCalendar]) -> [EKCalendar] {
         sorted(calendars, title: \.title, identifier: \.calendarIdentifier)
     }
+
+    /// The calendar a new event goes to when the person has not picked one, on both platforms
+    /// ([[T-8552]]): the system's default calendar for new events when Cadence may write to it,
+    /// otherwise the first writable calendar in the shared order.
+    ///
+    /// macOS always asked EventKit's `defaultCalendarForNewEvents` first, while every iOS creation
+    /// surface took `writableCalendars.first` -- the alphabetically first calendar -- so the same
+    /// "new event" landed in the person's default calendar on the Mac and in whichever of their
+    /// calendars sorted first on the phone. Nothing about a touchscreen forces that.
+    ///
+    /// Over identifiers rather than `EKCalendar`, so a test can pin it without an `EKEventStore`.
+    static func defaultWritableID(writableIDs: [String], systemDefaultID: String?) -> String? {
+        if let systemDefaultID, writableIDs.contains(systemDefaultID) { return systemDefaultID }
+        return writableIDs.first
+    }
 }

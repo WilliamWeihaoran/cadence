@@ -43,6 +43,22 @@ final class iOSCalendarManager {
         availableCalendars.filter(\.allowsContentModifications)
     }
 
+    /// Where a new event goes when nothing has picked a calendar ([[T-8552]]): the system's
+    /// default calendar for new events when it is writable and shown, else the first writable one
+    /// -- `CadenceCalendarSorting.defaultWritableID`, the rule macOS's `CalendarManager` reads.
+    /// Every iOS creation surface took `writableCalendars.first` before, so a new event landed in
+    /// the alphabetically first calendar rather than the person's default.
+    var defaultWritableCalendar: EKCalendar? {
+        let writable = writableCalendars
+        // Empty whenever access is missing or EventKit is disarmed, so the store is not asked.
+        guard !writable.isEmpty else { return nil }
+        guard let id = CadenceCalendarSorting.defaultWritableID(
+            writableIDs: writable.map(\.calendarIdentifier),
+            systemDefaultID: store.defaultCalendarForNewEvents?.calendarIdentifier
+        ) else { return nil }
+        return writable.first { $0.calendarIdentifier == id }
+    }
+
     /// Whether EventKit will accept writes to this event. Birthdays, Holidays and subscribed
     /// feeds are visible but read-only, and `fetchEvents` deliberately returns them, so every
     /// mutation below has to ask before it tries.
@@ -169,7 +185,7 @@ final class iOSCalendarManager {
     ) -> CalendarWriteFailure? {
         guard isAuthorized, !isEventKitDisarmed else { return .notAuthorized }
         guard endDate > startDate else { return .invalidRange }
-        guard let calendar = writableCalendar(with: calendarID) ?? writableCalendars.first else {
+        guard let calendar = writableCalendar(with: calendarID) ?? defaultWritableCalendar else {
             return .noWritableCalendar
         }
 

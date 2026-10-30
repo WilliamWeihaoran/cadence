@@ -266,14 +266,17 @@ final class CalendarManager {
         )
     }
 
+    /// [[T-8552]]: the one rule, shared with `iOSCalendarManager.defaultWritableCalendar`.
+    /// `writableCalendars` is already active and writable, so membership in it is the old
+    /// `allowsContentModifications && isActiveCalendar` test on the system default.
     var defaultWritableCalendar: EKCalendar? {
         guard isAuthorized else { return nil }
-        if let calendar = store.defaultCalendarForNewEvents,
-           calendar.allowsContentModifications,
-           isActiveCalendar(calendar) {
-            return calendar
-        }
-        return writableCalendars.first
+        let writable = writableCalendars
+        guard let id = CadenceCalendarSorting.defaultWritableID(
+            writableIDs: writable.map(\.calendarIdentifier),
+            systemDefaultID: store.defaultCalendarForNewEvents?.calendarIdentifier
+        ) else { return nil }
+        return writable.first { $0.calendarIdentifier == id }
     }
 
     // MARK: - Create Standalone Event (direct iCal event, not linked to a task)

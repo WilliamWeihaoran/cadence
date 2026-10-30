@@ -170,11 +170,10 @@ struct iOSCreateTaskSheet: View {
     private func normalizeSection() {
         draft.sectionName = resolver.normalizedSectionName(draft.sectionName, for: selection)
     }
+    /// The shared resolution, not a copy of it ([[T-8552]]): this sheet's own copy took the first
+    /// writable calendar after the shared one had learned to prefer the default.
     private func normalizeCalendar() {
-        guard draft.kind == .event else { return }
-        if !calendarManager.writableCalendars.contains(where: { $0.calendarIdentifier == draft.calendarID }) {
-            draft.calendarID = calendarManager.writableCalendars.first?.calendarIdentifier ?? ""
-        }
+        iOSScheduleDraftCreation.resolveCalendarSelection(&draft, calendarManager: calendarManager)
     }
     @discardableResult
     private func reconcileContainer() -> Bool {

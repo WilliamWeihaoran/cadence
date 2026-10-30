@@ -40,7 +40,9 @@ enum CadenceScheduleDraftChoices {
         ).map {
             CadenceSchedulePanelChoice(
                 id: CadenceTaskComposerSupport.token(for: .area($0.id)),
-                name: $0.name,
+                // [[T-8551]]: a blank-named list reads "Untitled Area", not an empty row and an
+                // empty List chip -- the fallback every other list picker already draws.
+                name: CadenceAreaPickerSupport.title(for: $0),
                 color: Color(hex: $0.colorHex),
                 systemImage: "folder.fill"
             )
@@ -51,7 +53,7 @@ enum CadenceScheduleDraftChoices {
         ).map {
             CadenceSchedulePanelChoice(
                 id: CadenceTaskComposerSupport.token(for: .project($0.id)),
-                name: $0.name,
+                name: CadenceProjectPickerSupport.title(for: $0),
                 color: Color(hex: $0.colorHex),
                 systemImage: "square.stack.3d.up.fill"
             )

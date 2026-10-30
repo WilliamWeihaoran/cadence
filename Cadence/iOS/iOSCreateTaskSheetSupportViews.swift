@@ -41,12 +41,13 @@ struct iOSTaskComposerMarkerSuggestions: View {
 
     private var matchingAreas: [Area] {
         CadenceTaskComposerSupport.pickableAreas(areas)
-            .filter { CadenceTaskComposerSupport.matchesQuery($0.name, query: shortcut.query) }
+            // [[T-8551]]: matched on the name the chip draws, so `~untitled` finds a blank list.
+            .filter { CadenceTaskComposerSupport.matchesQuery(CadenceAreaPickerSupport.title(for: $0), query: shortcut.query) }
     }
 
     private var matchingProjects: [Project] {
         CadenceTaskComposerSupport.pickableProjects(projects)
-            .filter { CadenceTaskComposerSupport.matchesQuery($0.name, query: shortcut.query) }
+            .filter { CadenceTaskComposerSupport.matchesQuery(CadenceProjectPickerSupport.title(for: $0), query: shortcut.query) }
     }
 
     private var matchingTags: [Tag] {
@@ -92,7 +93,7 @@ struct iOSTaskComposerMarkerSuggestions: View {
 
         ForEach(matchingAreas) { area in
             suggestion(
-                title: area.name.isEmpty ? CadenceTitleNormalization.defaultAreaName : area.name,
+                title: CadenceAreaPickerSupport.title(for: area),
                 systemImage: "tray.full.fill",
                 tint: Color(hex: area.colorHex)
             ) {
@@ -102,7 +103,7 @@ struct iOSTaskComposerMarkerSuggestions: View {
 
         ForEach(matchingProjects) { project in
             suggestion(
-                title: project.name.isEmpty ? CadenceTitleNormalization.defaultProjectName : project.name,
+                title: CadenceProjectPickerSupport.title(for: project),
                 systemImage: "checklist",
                 tint: Color(hex: project.colorHex)
             ) {
