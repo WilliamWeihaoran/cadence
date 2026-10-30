@@ -187,7 +187,7 @@ struct FocusView: View {
             HSplitView {
                 VStack(alignment: .leading, spacing: 0) {
                     FocusPickSessionCard(
-                        title: "Pick a task",
+                        title: CadenceFocusSupport.pickListTitle,
                         subtitle: "Search your ready tasks, then start the cleanest next session.",
                         clockDisplay: clockDisplay,
                         searchText: $idleSearchText,

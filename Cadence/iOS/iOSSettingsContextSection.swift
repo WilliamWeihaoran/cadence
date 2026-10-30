@@ -67,10 +67,12 @@ struct iOSContextEditorSheet: View {
                                 )
                             }
 
-                            iOSSettingsField(title: "Icon") {
-                                TextField("SF Symbol name", text: $icon)
-                                    .textInputAutocapitalization(.never)
-                                    .autocorrectionDisabled()
+                            // [[T-8541]]: the shared palette, not a typed SF Symbol name -- a
+                            // developer's input, where a typo saved a name that draws nothing.
+                            // The list editor and macOS's `CreateContextSheet` offer the same set.
+                            VStack(alignment: .leading, spacing: 7) {
+                                SectionEyebrowLabel(text: "Icon")
+                                iOSListIconStrip(selected: $icon, colorHex: normalizedColor)
                             }
                         }
                     }

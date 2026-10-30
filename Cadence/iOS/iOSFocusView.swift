@@ -310,7 +310,7 @@ struct iOSFocusView: View {
 
     private var taskListPane: some View {
         VStack(alignment: .leading, spacing: 0) {
-            iOSPanelHeader(eyebrow: CadenceFocusSupport.pickListEyebrow, title: "Pick a session", count: pickItems.count)
+            iOSPanelHeader(eyebrow: CadenceFocusSupport.pickListEyebrow, title: CadenceFocusSupport.pickListTitle, count: pickItems.count)
             Divider().background(Theme.borderSubtle)
 
             if pickItems.isEmpty {

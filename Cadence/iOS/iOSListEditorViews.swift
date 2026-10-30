@@ -889,7 +889,9 @@ private struct iOSListColorSwatch: View {
 
 /// Same idea for the glyph: the field used to want a raw SF Symbol name typed in, which is a
 /// developer's input, and a typo silently fell back to the default icon on save.
-private struct iOSListIconStrip: View {
+/// Not `private`: the context editor in Settings had the same typed field and draws this strip
+/// now ([[T-8541]]), as macOS's `CreateContextSheet` draws the same palette as its list editors.
+struct iOSListIconStrip: View {
     @Binding var selected: String
     let colorHex: String
 

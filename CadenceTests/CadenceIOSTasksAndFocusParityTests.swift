@@ -247,3 +247,41 @@ struct CadenceFocusPickRowTitleTests {
         #expect(!afterTitle.contains(".lineLimit(1)"))
     }
 }
+
+/// T-8540: both Focus pick lists carry one title, the Mac's "Pick a task". iOS said "Pick a
+/// session" from T-242's block-era picker, and T-3170 left every iOS row a task.
+struct CadenceFocusPickListTitleTests {
+    @Test func theSharedTitleNamesATask() {
+        #expect(CadenceFocusSupport.pickListTitle == "Pick a task")
+    }
+
+    @Test func bothPickListsReadTheSharedTitle() throws {
+        let ios = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile("Cadence/iOS/iOSFocusView.swift"))
+        let pane = try #require(CadenceSourceScan.declarationBody("private var taskListPane: some View", in: ios))
+        #expect(pane.contains("title: CadenceFocusSupport.pickListTitle"), "the iOS pick list spells its own title again")
+        #expect(!ios.contains("\"Pick a session\""))
+
+        let mac = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile("Cadence/macOS/Views/FocusView.swift"))
+        let idle = try #require(CadenceSourceScan.declarationBody("private var idleLayout: some View", in: mac))
+        #expect(idle.contains("title: CadenceFocusSupport.pickListTitle"), "the Mac pick card spells its own title again")
+    }
+}
+
+/// T-8541: the iOS context editor picks its icon from the shared palette strip, as the iOS list
+/// editor and macOS's `CreateContextSheet` do, instead of asking for a typed SF Symbol name.
+struct CadenceIOSContextEditorIconPickerTests {
+    @Test func theContextEditorDrawsTheSharedIconStripAndNoTypedSymbolField() throws {
+        let source = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/iOS/iOSSettingsContextSection.swift")
+        )
+        let sheet = try #require(CadenceSourceScan.declarationBody("struct iOSContextEditorSheet: View", in: source))
+        #expect(sheet.contains("iOSListIconStrip(selected: $icon"), "the context editor lost the icon strip")
+        #expect(!sheet.contains("TextField(\"SF Symbol name\""), "the context editor asks for a typed SF Symbol name again")
+        #expect(!sheet.contains("text: $icon"), "a free-text field writes the context icon again")
+
+        // The strip it draws is the palette one, so the editor cannot offer a symbol the Mac lacks.
+        let editors = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile("Cadence/iOS/iOSListEditorViews.swift"))
+        let strip = try #require(CadenceSourceScan.declarationBody("struct iOSListIconStrip: View", in: editors))
+        #expect(strip.contains("CadenceIconPalette.offeredIcons(for: selected)"))
+    }
+}

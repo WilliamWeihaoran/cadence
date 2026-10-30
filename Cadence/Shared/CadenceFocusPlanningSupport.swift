@@ -266,6 +266,11 @@ enum CadenceFocusSupport {
     /// undated row says the same thing as the list it sits in.
     static let pickListEyebrow = "Ready to focus"
 
+    /// The title under that heading, on both platforms ([[T-8540]]). iOS said "Pick a session"
+    /// from [[T-242]], when its picker listed blocks beside tasks; [[T-3170]] took blocks off iOS,
+    /// so every row is a task again and the Mac's words are the true ones.
+    static let pickListTitle = "Pick a task"
+
     /// The Focus picker row's detail line, as segments so the row can tint an overdue due date
     /// red through `CadenceTaskDetailLineLabel`. iOS printed `sidebarDetail`'s flat string in one
     /// colour with the sidebar's fallback, so a week-late task read the same as one due next month.
