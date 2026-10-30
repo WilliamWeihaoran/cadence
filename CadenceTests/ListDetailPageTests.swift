@@ -310,4 +310,40 @@ struct ListDetailPageTests {
         #expect(panel.contains("ListDetailKanbanBoard.addTaskSeed(for: identity)"))
         #expect(panel.contains("iOSCreateTaskSheet(seed: request.seed)"), "the row opens no shared composer")
     }
+
+    /// [[T-8460]]: the add row's spoken label names the column it sits in. VoiceOver cannot be
+    /// driven through the simulator tools, so the half an agent can hold is held here: the label is
+    /// "Add task to <title>" built from the column's OWN `title` -- the same value its header draws --
+    /// and the board hands each column its own section's title. A label built from the list's name,
+    /// a fixed string, or a neighbour's title would read every column's row the same.
+    @Test("The iOS list board column's add row speaks its own column's title")
+    func iOSKanbanColumnAddRowLabelNamesItsOwnColumn() throws {
+        let source = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/iOS/iOSListSupportViews.swift")
+        )
+        let column = try #require(
+            CadenceSourceScan.declarationBody("private struct iOSListKanbanColumn: View", in: source),
+            "non-vacuity: the iOS list board column is gone"
+        )
+        #expect(CadenceSourceScan.matchCount(#"\n\s*let title: String\n"#, in: column) == 1,
+                "the column no longer owns a title of its own")
+        let rowStart = try #require(column.range(of: "iOSCalendarAddItemRow("), "the column has no add row")
+        let rowEnd = try #require(column.range(of: "action: onAddTask", range: rowStart.upperBound..<column.endIndex),
+                                  "non-vacuity: the add row's call has no action")
+        let row = String(column[rowStart.lowerBound..<rowEnd.upperBound])
+        #expect(CadenceSourceScan.matchCount(#"accessibilityLabel: "Add task to \\\(title\)","#, in: row) == 1,
+                "the add row's spoken label is not \"Add task to <this column's title>\"")
+        #expect(CadenceSourceScan.matchCount(#"accessibilityLabel:"#, in: row) == 1)
+        // The header draws the same `title`, so what is spoken and what is seen cannot drift.
+        #expect(CadenceSourceScan.matchCount(#"\n\s*title: title,\n"#, in: column) == 1,
+                "the header no longer draws the title the add row speaks")
+
+        let panel = try #require(
+            CadenceSourceScan.declarationBody("struct iOSListKanbanPanel: View", in: source)
+        )
+        let call = try #require(panel.range(of: "iOSListKanbanColumn("), "non-vacuity: the board builds no column")
+        let callHead = String(panel[call.lowerBound...].prefix(200))
+        #expect(CadenceSourceScan.matchCount(#"iOSListKanbanColumn\(\s*title: column\.title,"#, in: callHead) == 1,
+                "the board hands a column some title other than its own section's")
+    }
 }

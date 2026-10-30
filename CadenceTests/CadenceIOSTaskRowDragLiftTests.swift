@@ -240,6 +240,50 @@ struct CadenceIOSTaskRowDragLiftTests {
         #expect(CadenceSourceScan.matchCount(#"CadenceTimelineTaskDropHover\.resolve\(\s*atY: (y|info\.location\.y),"#, in: delegate) == 2)
     }
 
+    /// **[[T-8453]], [[T-8302]]'s fourth check: a drop whose WRITE IS REFUSED does not spring back.**
+    /// A refusal is a save failure and nothing on screen forces one, so it is read here in two
+    /// halves. The write's half is `aRefusedDropAnswersFalseAndLeavesTheTaskWhereItWas`: the commit
+    /// answers `false` and leaves the task at its old day and minute. This is the delegate's half:
+    /// what `performDrop` tells UIKit cannot depend on that answer. It accepts a release that carries
+    /// a text item and refuses only one that carries none; the write runs later, inside the
+    /// payload's async load, and its Bool is discarded. Answering with the commit's result -- the
+    /// shape `.dropDestination`'s closure had before [[T-8142]] -- is what animated a refused drop
+    /// back to where it was lifted from.
+    ///
+    /// `DropInfo` has no public initializer and the iOS views do not compile in this macOS-built
+    /// target, so the delegate cannot be called here; the reading is of its source.
+    @Test func aRefusedWriteCannotTurnAnAcceptedReleaseIntoASpringBack() throws {
+        let code = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(timelineFile))
+        let delegate = try #require(
+            CadenceSourceScan.declarationBody("private struct iOSTimelineTaskDropDelegate: DropDelegate", in: code)
+        )
+        let perform = try #require(
+            CadenceSourceScan.declarationBody("func performDrop(info: DropInfo) -> Bool", in: delegate)
+        )
+        #expect(perform.count > 400, "non-vacuity: performDrop read as \(perform.count) characters")
+        // The one refusal is a release with no text item at all, decided before any write.
+        #expect(CadenceSourceScan.matchCount(#"return false"#, in: perform) == 1)
+        #expect(
+            CadenceSourceScan.matchCount(#"guard let provider = info\.itemProviders\(for: \[UTType\.text\]\)\.first else \{ return false \}"#, in: perform) == 1,
+            "performDrop refuses some release other than one carrying no text item"
+        )
+        // Everything else is accepted, as the body's last statement, unconditionally.
+        #expect(CadenceSourceScan.matchCount(#"return true"#, in: perform) == 1,
+                "performDrop no longer accepts the release")
+        #expect(CadenceSourceScan.matchCount(#"\breturn\b"#, in: perform) == 3,
+                "performDrop grew a return beyond the guard, the accept, and the load closure's bail-out")
+        // The write's answer goes nowhere: discarded, inside the load, and never returned.
+        #expect(CadenceSourceScan.matchCount(#"_ = onDrop\(id, minute\)"#, in: perform) == 1)
+        #expect(CadenceSourceScan.matchCount(#"return\s+onDrop\("#, in: perform) == 0,
+                "performDrop answers UIKit with the write's result, so a refused write springs back")
+        let load = try #require(perform.range(of: "provider.loadObject(ofClass: NSString.self)"))
+        let write = try #require(perform.range(of: "_ = onDrop(id, minute)"))
+        #expect(load.lowerBound < write.lowerBound, "the write moved out of the payload's async load")
+        let accept = try #require(perform.range(of: "return true"))
+        #expect(write.upperBound < accept.lowerBound,
+                "the accept is no longer the last word, after the write has been handed off")
+    }
+
     /// **Both hosts pass a real action.** [[T-8091]] is this wiring one host short: a drop target
     /// whose action is absent still accepts the drop and still springs the card back.
     @Test func bothGridHostsWireTheDropToTheSharedCommit() throws {
