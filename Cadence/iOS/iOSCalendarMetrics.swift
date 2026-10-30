@@ -529,6 +529,29 @@ nonisolated enum iOSCalendarTimelineBlockLayout {
         )
     }
 
+    /// The rectangle the draft EDITOR hangs off ([[T-8502]]): the pressed range, **whatever the
+    /// all-day flag says**, so it takes no `isAllDay` to get wrong.
+    ///
+    /// **The all-day editor ran off the top of the iPad screen because its anchor was the first
+    /// hour, not because UIKit chose the wrong edge.** `draftFrame` draws an all-day draft at
+    /// minute 0, and the popover used to hang off the drawn block — so toggling All day on a 7:30
+    /// AM draft moved the anchor to midnight, 435pt above the pressed slot and off the top of the
+    /// pane. The measured panel fits that and nothing else: midnight's block bottom at -222pt on a
+    /// pane where 7:30 AM sits at y=159, a ~611pt panel hung BELOW it ends at ~y=396, the bottom
+    /// `draftseen1430` drew. At 12 PM the same anchor is so far above that no below-placement shows
+    /// anything, UIKit falls back to a side and clamps — the "whole at 12 PM" control.
+    ///
+    /// The Mac's `TimelineDraftPopoverAnchor` already does this: its anchor reads the selection's
+    /// pressed range and the All day toggle inside the popover never moves it. Same app, same rule.
+    static func draftEditorAnchorFrame(
+        startMin: Int,
+        endMin: Int,
+        columnWidth: CGFloat,
+        hourHeight: CGFloat
+    ) -> CGRect {
+        draftFrame(startMin: startMin, endMin: endMin, isAllDay: false, columnWidth: columnWidth, hourHeight: hourHeight)
+    }
+
     // MARK: - Draw order
 
     /// Everything the column draws *over* its blocks — the in-place draft and the now-line. Blocks

@@ -1883,13 +1883,32 @@ private struct iOSCalendarTimelineDayColumn: View {
                 columnWidth: colWidth,
                 hourHeight: hourHeight
             )
+            let anchor = iOSCalendarTimelineBlockLayout.draftEditorAnchorFrame(
+                startMin: current.startMin,
+                endMin: current.endMin,
+                columnWidth: colWidth,
+                hourHeight: hourHeight
+            )
             iOSTimelineDraftBlock(
                 draft: draftBinding(fallingBackTo: current),
                 hourHeight: hourHeight,
                 onAdjusted: restoreDraftEditorAfterAdjustment
             )
             .frame(width: frame.width, height: frame.height)
-            // **The popover is attached to the block's own frame and the block is then placed by
+            .position(x: frame.midX, y: frame.midY)
+
+            // **The editor hangs off the PRESSED range, not off the drawn block** ([[T-8502]]).
+            // An all-day draft is drawn in the first hour, and while the popover was attached to
+            // the block the All day toggle moved its anchor to midnight -- off the top of the pane
+            // at a 7:30 AM press, so the panel hung below an off-screen rect and lost its top 215pt.
+            // A timed draft's anchor IS its block (the two rects are equal), so nothing else moved.
+            // The anchor is a bare `Color.clear`, which SwiftUI does not hit-test, so every touch
+            // on the canvas still reaches the block and its handles underneath -- the Mac's
+            // anchor is the same view for the same reason. (No `.allowsHitTesting(false)`: the
+            // popover's content is presented from this view, and nothing may switch it off.)
+            Color.clear
+                .frame(width: anchor.width, height: anchor.height)
+            // **The popover is attached to the anchor's own frame and the anchor is then placed by
             // `.position`, never `.offset`** ([[T-8477]]). `.offset` moves the drawing and not the
             // layout frame, and the popover's anchor reads the layout frame: the editor used to
             // open at the column's top whatever minute was pressed. Same order as the Mac's
@@ -1939,7 +1958,7 @@ private struct iOSCalendarTimelineDayColumn: View {
                 // a different presentation, not another flag or another binding on this one.
                 .presentationBackgroundInteraction(.enabled)
             }
-            .position(x: frame.midX, y: frame.midY)
+            .position(x: anchor.midX, y: anchor.midY)
         }
     }
 

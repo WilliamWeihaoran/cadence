@@ -906,15 +906,79 @@ struct iOSCalendarMetricsTests {
         #expect(layer.contains("iOSTimelineDraftBlock("), "non-vacuity: the body read is not the draft layer")
         let popover = try #require(layer.range(of: ".popover(isPresented: $isDraftEditorPresented"),
                                    "the draft editor's popover is not presented from the draft layer")
-        let positioned = try #require(layer.range(of: ".position(x: frame.midX, y: frame.midY)"),
-                                      "the draft is not placed at its frame's centre by `.position`")
+        #expect(layer.contains(".position(x: frame.midX, y: frame.midY)"),
+                "the draft is not placed at its frame's centre by `.position`")
+        let positioned = try #require(layer.range(of: ".position(x: anchor.midX, y: anchor.midY)"),
+                                      "the editor's anchor is not placed at its frame's centre by `.position`")
         #expect(popover.lowerBound < positioned.lowerBound,
-                "the draft is positioned before the popover is attached, so the anchor is not the placed frame")
+                "the anchor is positioned before the popover is attached, so the anchor is not the placed frame")
         #expect(CadenceSourceScan.matchCount(#"iOSCalendarTimelineBlockLayout\.draftFrame\("#, in: layer) == 1,
                 "the draft layer does not read its rectangle from the tested seam")
         #expect(CadenceSourceScan.matchCount(#"\.offset\("#, in: layer) == 0,
                 "the draft is moved by `.offset`, which leaves the popover anchored to the un-moved frame")
         #expect(CadenceSourceScan.matchCount(#"arrowEdge:\s*\.[a-z]"#, in: layer) == 0,
                 "the draft editor names an arrow edge, which forbids UIKit's flip")
+    }
+
+    // MARK: - The all-day draft's editor anchor ([[T-8502]])
+
+    /// **An all-day draft's editor hangs off the slot that was pressed, not off the first hour.**
+    /// The block of an all-day draft is drawn at minute 0, and the editor used to hang off the
+    /// drawn block: toggling All day on a 7:30 AM draft moved the anchor 435pt up to midnight, off
+    /// the top of the iPad pane, and the panel hung below an off-screen rect with its kind switch,
+    /// title and toggle above y=0 (`draftseen1430`, measured). The anchor is the pressed range
+    /// whatever the flag says, so the edge UIKit picks is picked against an on-screen rect.
+    ///
+    /// Relations only: the anchor equals the TIMED frame at the pressed minute, sits that many
+    /// minutes of canvas below the drawn all-day block, and the drawn block is still the first
+    /// hour -- so the test fails if the anchor follows the drawing again, or if the drawing is
+    /// quietly moved to make this pass.
+    ///
+    /// **Failing-first:** returning `draftFrame(... isAllDay: true ...)` from
+    /// `draftEditorAnchorFrame` fails the first two expectations.
+    @Test func theAllDayDraftsEditorHangsOffThePressedSlotNotTheFirstHour() {
+        let hour = iOSCalendarTimelineMetrics.hourHeight
+        let width: CGFloat = 500
+        let start = 7 * 60 + 30
+        let anchor = iOSCalendarTimelineBlockLayout.draftEditorAnchorFrame(
+            startMin: start, endMin: start + 60, columnWidth: width, hourHeight: hour
+        )
+        let timed = iOSCalendarTimelineBlockLayout.draftFrame(
+            startMin: start, endMin: start + 60, isAllDay: false, columnWidth: width, hourHeight: hour
+        )
+        let drawnAllDay = iOSCalendarTimelineBlockLayout.draftFrame(
+            startMin: start, endMin: start + 60, isAllDay: true, columnWidth: width, hourHeight: hour
+        )
+        #expect(anchor == timed, "the editor's anchor is not the pressed slot")
+        #expect(abs((anchor.minY - drawnAllDay.minY) - CGFloat(start) / 60 * hour) < 0.001,
+                "an all-day draft's editor anchor followed its drawing up to the first hour")
+        #expect(drawnAllDay.minY == 0, "non-vacuity: the all-day block is no longer drawn in the first hour")
+    }
+
+    /// The other half: the popover is attached to a view framed from `draftEditorAnchorFrame`,
+    /// not to the drawn block. `iOSTimelineDraftBlock(` must come BEFORE the popover's anchor
+    /// view and the popover must sit between the anchor's frame and its `.position`.
+    ///
+    /// **Failing-first:** moving the `.popover` back onto the block (before the block's
+    /// `.position(x: frame.midX ...)`) fails the order expectation.
+    @Test func theDraftEditorIsAttachedToTheAnchorAndNotToTheDrawnBlock() throws {
+        let path = "Cadence/iOS/iOSCalendarTimelineViews.swift"
+        let code = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(path))
+        let layer = try #require(
+            CadenceSourceScan.declarationBody("private var draftLayer: some View", in: code),
+            "draftLayer was not found in \(path)"
+        )
+        #expect(CadenceSourceScan.matchCount(#"iOSCalendarTimelineBlockLayout\.draftEditorAnchorFrame\("#, in: layer) == 1,
+                "the draft layer does not read the editor's anchor from the tested seam")
+        let blockPlaced = try #require(layer.range(of: ".position(x: frame.midX, y: frame.midY)"))
+        let anchorFramed = try #require(layer.range(of: ".frame(width: anchor.width, height: anchor.height)"))
+        let popover = try #require(layer.range(of: ".popover(isPresented: $isDraftEditorPresented"))
+        let anchorPlaced = try #require(layer.range(of: ".position(x: anchor.midX, y: anchor.midY)"))
+        #expect(blockPlaced.lowerBound < anchorFramed.lowerBound
+                    && anchorFramed.lowerBound < popover.lowerBound
+                    && popover.lowerBound < anchorPlaced.lowerBound,
+                "the draft editor is not attached to the anchor view between its frame and its position")
+        #expect(CadenceSourceScan.matchCount(#"\.popover\("#, in: layer) == 1,
+                "the draft layer presents more than one popover")
     }
 }
