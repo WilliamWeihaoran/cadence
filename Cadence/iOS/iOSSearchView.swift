@@ -138,26 +138,12 @@ struct iOSSearchView: View {
             return rankedTaskResults
         }
 
-        // Due date, then the user's manual order, then identity (T-498). `order` is per-list, so
-        // two tasks due the same day in two different lists tie on both legs routinely — and a tie
-        // at the eighth row decides *membership*, not only arrangement.
-        let today = DateFormatters.todayKey()
-        let suggested = CadenceSearchSuggestionWindow.take(
-            searchableTasks.filter {
-                !$0.isCancelled &&
-                !$0.isDone &&
-                ($0.scheduledDate == today || $0.dueDate <= today && !$0.dueDate.isEmpty)
-            },
-            limit: 8,
-            identity: { CadenceSearchIdentity.task($0.id) },
-            orderedBefore: { lhs, rhs in
-                if lhs.dueDate != rhs.dueDate {
-                    if lhs.dueDate.isEmpty { return false }
-                    if rhs.dueDate.isEmpty { return true }
-                    return lhs.dueDate < rhs.dueDate
-                }
-                return lhs.order < rhs.order
-            }
+        // The idle rule is shared with Cmd+K ([[T-8764]]): today's and overdue open work, due date
+        // then manual order then identity (T-498).
+        let suggested = CadenceSearchIdleSuggestions.tasks(
+            searchableTasks,
+            today: DateFormatters.todayKey(),
+            limit: CadenceSearchIdleSuggestions.limit
         )
 
         return suggested.map { taskResult($0, score: 0) }
@@ -215,10 +201,7 @@ struct iOSSearchView: View {
     }
 
     private var noteResults: [iOSSearchResult] {
-        let searchableNotes = notes.filter {
-            !$0.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
-            !$0.displayTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        }
+        let searchableNotes = notes.filter(CadenceSearchIdleSuggestions.hasVisibleText)
         // Task embeds are matched and excerpted under the task's live title, not the copy cached in
         // the note text — see `MarkdownTaskEmbedTitleCache`. Built once per pass, not per note.
         let taskTitles = MarkdownTaskEmbedTitleCache.titles(for: tasks)
@@ -238,14 +221,11 @@ struct iOSSearchView: View {
             })
         }
 
-        // Most recently edited first, ties broken by identity (T-498). Two notes share an
-        // `updatedAt` whenever one write touched both — a migration pass, an import, a bulk tag
-        // edit — which is exactly when eight suggestions get cut out of a partial order.
-        return CadenceSearchSuggestionWindow.take(
+        // Most recently edited first, ties broken by identity (T-498) -- the rule Cmd+K shares
+        // ([[T-8764]]).
+        return CadenceSearchIdleSuggestions.notes(
             searchableNotes,
-            limit: 8,
-            identity: { CadenceSearchIdentity.note($0.id) },
-            orderedBefore: { $0.updatedAt > $1.updatedAt }
+            limit: CadenceSearchIdleSuggestions.limit
         ).map { noteResult($0, score: 0, taskTitles: taskTitles) }
     }
 

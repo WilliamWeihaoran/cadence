@@ -837,8 +837,12 @@ struct CadenceSearchCandidateSupportTests {
         }
         #expect(!stripped.contains("private var progressResults"))
 
-        // Three idle branches, three windows.
-        #expect(CadenceSourceScan.matchCount("CadenceSearchSuggestionWindow\\.take\\(", in: stripped) == 3)
+        // Three idle branches, three windows: the lists window here, and the task and note windows
+        // through `CadenceSearchIdleSuggestions`, which cuts them with the same helper and is the
+        // rule Cmd+K shares ([[T-8764]]).
+        #expect(CadenceSourceScan.matchCount("CadenceSearchSuggestionWindow\\.take\\(", in: stripped) == 1)
+        #expect(CadenceSourceScan.matchCount("CadenceSearchIdleSuggestions\\.tasks\\(", in: stripped) == 1)
+        #expect(CadenceSourceScan.matchCount("CadenceSearchIdleSuggestions\\.notes\\(", in: stripped) == 1)
 
         // And the bare cuts they replaced are gone. `pageResults` takes its five off a static
         // catalog and `eventResults` its eight off `CadenceCalendarEventSearchSupport.precedes`,
@@ -851,12 +855,15 @@ struct CadenceSearchCandidateSupportTests {
         #expect(CadenceSourceScan.matchCount("\\.prefix\\(8\\)", in: "  return notes.prefix(8)\n") == 1)
 
         // Each window's identity leg is the shared spelling, not a tenth inline one.
+        #expect(stripped.contains("identity: \\.identity"), "the lists window ties on something else")
+        let shared = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/Shared/CadenceSearchCandidateSupport.swift")
+        )
         for identity in [
             "identity: { CadenceSearchIdentity.task($0.id) }",
-            "identity: { CadenceSearchIdentity.note($0.id) }",
-            "identity: \\.identity"
+            "identity: { CadenceSearchIdentity.note($0.id) }"
         ] {
-            #expect(stripped.contains(identity), "an idle window ties on something else: \(identity)")
+            #expect(shared.contains(identity), "a shared idle window ties on something else: \(identity)")
         }
         // `identity: { $0.result.id }` was the fourth — the Goals-and-Habits window's, which tied
         // on the merged row's own id because the two tables shared one section. It went with the

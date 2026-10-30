@@ -252,39 +252,52 @@ enum GlobalSearchIndexSupport {
     /// (`CadencePreferenceKeys.searchIncludesCompletedTasks`), not a second inclusion policy:
     /// which tasks are searchable *at all* stays `CadenceTaskSearchSupport`'s to say, and
     /// cancelled work is never searchable either way.
+    ///
+    /// **An empty query suggests rather than ranks** ([[T-8764]]): today's and overdue open work in
+    /// `CadenceSearchIdleSuggestions` order, the rule iOS Search reads. Ranking an empty query scores
+    /// every task alike and breaks the tie on title, which listed the first ten tasks A to Z.
     static func taskResults(
         tasks: [AppTask],
         query: String,
-        includingCompleted: Bool = false
+        includingCompleted: Bool = false,
+        today: String = DateFormatters.todayKey()
     ) -> [GlobalSearchResult] {
-        let preparedQuery = CadenceSearchMatcher.PreparedQuery(query)
         let base = tasks
             .filter { CadenceTaskSearchSupport.isSearchable($0, includingCompleted: includingCompleted) }
 
+        guard CadenceListSearchSupport.isSearching(query) else {
+            return CadenceSearchIdleSuggestions.tasks(base, today: today).map { taskResult(for: $0) }
+        }
+
+        let preparedQuery = CadenceSearchMatcher.PreparedQuery(query)
         return rankedResults(base.compactMap { task in
-            let container = CadenceTaskSearchSupport.containerLabel(for: task)
             guard matches(query: preparedQuery, fields: CadenceTaskSearchSupport.searchFields(for: task)) else { return nil }
-
-            let tags = task.sortedTags
-
-            let meta: [String] = [
-                container,
-                tags.isEmpty ? nil : tags.map(\.name).joined(separator: ", "),
-                task.scheduledDate.isEmpty ? nil : "Do \(DateFormatters.relativeDate(from: task.scheduledDate))",
-                task.dueDate.isEmpty ? nil : "Due \(DateFormatters.relativeDate(from: task.dueDate))",
-                task.isDone ? "Completed" : "Active"
-            ].compactMap { $0 }
-
-            return GlobalSearchResult(
-                id: CadenceSearchIdentity.task(task.id),
-                category: .tasks,
-                title: TaskTitleSupport.displayTitle(task.title),
-                subtitle: meta.joined(separator: " • "),
-                icon: taskIcon(for: CadenceTaskSearchSupport.glyph(for: task)),
-                tintHex: task.containerColor,
-                destination: .task(task.id)
-            )
+            return taskResult(for: task)
         }, query: query, preparedQuery: preparedQuery)
+    }
+
+    /// One palette task row.
+    static func taskResult(for task: AppTask) -> GlobalSearchResult {
+        let container = CadenceTaskSearchSupport.containerLabel(for: task)
+        let tags = task.sortedTags
+
+        let meta: [String] = [
+            container,
+            tags.isEmpty ? nil : tags.map(\.name).joined(separator: ", "),
+            task.scheduledDate.isEmpty ? nil : "Do \(DateFormatters.relativeDate(from: task.scheduledDate))",
+            task.dueDate.isEmpty ? nil : "Due \(DateFormatters.relativeDate(from: task.dueDate))",
+            task.isDone ? "Completed" : "Active"
+        ].compactMap { $0 }
+
+        return GlobalSearchResult(
+            id: CadenceSearchIdentity.task(task.id),
+            category: .tasks,
+            title: TaskTitleSupport.displayTitle(task.title),
+            subtitle: meta.joined(separator: " • "),
+            icon: taskIcon(for: CadenceTaskSearchSupport.glyph(for: task)),
+            tintHex: task.containerColor,
+            destination: .task(task.id)
+        )
     }
 
     /// How many tasks the query matches that the Completed filter is holding back ([[T-6971]]).
@@ -393,12 +406,14 @@ enum GlobalSearchIndexSupport {
         relativeTo referenceDate: Date = Date()
     ) -> [GlobalSearchResult] {
         let preparedQuery = CadenceSearchMatcher.PreparedQuery(query)
-        let sorted = notes.filter { $0.kind == .meeting }.sorted {
-            if $0.updatedAt != $1.updatedAt { return $0.updatedAt > $1.updatedAt }
-            return $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending
-        }
+        // Idle, the section is the most recently edited event notes, unranked ([[T-8764]]): ranking
+        // an empty query ties every row and breaks the tie on title, which read A to Z. Searching,
+        // `rankedResults` is a total order, so the input order does not matter.
+        let isSearching = CadenceListSearchSupport.isSearching(query)
+        let meetingNotes = notes.filter { $0.kind == .meeting }
+        let ordered = isSearching ? meetingNotes : CadenceSearchIdleSuggestions.notes(meetingNotes)
 
-        return rankedResults(sorted.compactMap { note in
+        let rows: [GlobalSearchResult] = ordered.compactMap { note in
             let title = note.displayTitle
             let dateLabel: String
             if let date = DateFormatters.date(from: note.eventDateKey) {
@@ -422,7 +437,9 @@ enum GlobalSearchIndexSupport {
                 tintHex: Theme.purpleHex,
                 destination: .eventNote(note.id)
             )
-        }, query: query, preparedQuery: preparedQuery)
+        }
+        guard isSearching else { return rows }
+        return rankedResults(rows, query: query, preparedQuery: preparedQuery)
     }
 
     /// **Every note kind the Notes page or a list's Documents tab can open** (T-3084).
@@ -432,7 +449,17 @@ enum GlobalSearchIndexSupport {
     /// same thing, and the one a reader reached first said nothing about why. There is one gate
     /// now: `noteSubtitle(for:)` returns `nil` for exactly the notes this section does not draw,
     /// so adding a `NoteKind` makes that switch non-exhaustive instead of silently dropping it.
+    ///
+    /// **An empty query suggests the most recently edited notes** ([[T-8764]]), in
+    /// `CadenceSearchIdleSuggestions` order as iOS Search does, rather than ranking every note alike
+    /// and listing them A to Z.
     static func noteResults(notes: [Note], query: String, taskTitles: [UUID: String]) -> [GlobalSearchResult] {
+        guard CadenceListSearchSupport.isSearching(query) else {
+            return CadenceSearchIdleSuggestions.notes(notes.filter { noteSubtitle(for: $0) != nil })
+                .compactMap { note in
+                    noteSubtitle(for: note).map { noteResult(note, subtitle: $0) }
+                }
+        }
         let preparedQuery = CadenceSearchMatcher.PreparedQuery(query)
         return rankedResults(notes.compactMap { note -> GlobalSearchResult? in
             guard let subtitle = noteSubtitle(for: note) else { return nil }
@@ -441,12 +468,17 @@ enum GlobalSearchIndexSupport {
             let tags = CadenceSearchTagSupport.text(for: note.sortedTags)
             let fields = [title, content, subtitle, tags] + NoteReferencePanelSupport.searchKeyFields(note)
             guard matches(query: preparedQuery, fields: fields) else { return nil }
-            return GlobalSearchResult(
-                id: CadenceSearchIdentity.note(note.id), category: .notes,
-                title: title, subtitle: subtitle, icon: "doc.text",
-                tintHex: Theme.purpleHex, destination: .note(note.id)
-            )
+            return noteResult(note, subtitle: subtitle)
         }, query: query, preparedQuery: preparedQuery)
+    }
+
+    /// One Notes row; `subtitle` is `noteSubtitle(for:)`'s, which is also the gate.
+    static func noteResult(_ note: Note, subtitle: String) -> GlobalSearchResult {
+        GlobalSearchResult(
+            id: CadenceSearchIdentity.note(note.id), category: .notes,
+            title: NoteReferencePanelSupport.searchTitle(note), subtitle: subtitle, icon: "doc.text",
+            tintHex: Theme.purpleHex, destination: .note(note.id)
+        )
     }
 
     /// The Notes row's subtitle, **and the section's whole candidate gate**: `nil` means this

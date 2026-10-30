@@ -422,3 +422,66 @@ nonisolated enum CadenceSearchSuggestionWindow {
             .map(\.item)
     }
 }
+
+/// **What an empty search field suggests for tasks and notes, on both surfaces** ([[T-8764]]).
+///
+/// iOS Search already answered "what is on today's plate" and "what was I just writing"; Cmd+K had
+/// no idle branch for either section, so an empty query scored every row the same and
+/// `CadenceSearchMatcher.rank` broke the tie on title — the palette suggested the first ten tasks and
+/// first eight notes **A to Z**. The Mac's events section had already been given an idle branch for
+/// that exact reason; this is the same fix for the other two, and one rule rather than a copy.
+///
+/// Membership and order live here. **How many rows a surface draws stays the surface's**: iOS cuts
+/// `limit` rows, the palette returns the whole ordered list and lets `resultCap` and its continuation
+/// row decide (T-1473), so "show more" reveals the *next* suggestions in the same order.
+nonisolated enum CadenceSearchIdleSuggestions {
+    /// iOS Search's idle window for each section.
+    static let limit = 8
+
+    /// Open work on today's plate: scheduled for `today`, or due on or before it. Cancelled and
+    /// completed work is never suggested, whatever the Completed filter says — the filter widens a
+    /// *search*, and a suggestion list of finished work answers nothing.
+    static func isSuggested(_ task: AppTask, today: String) -> Bool {
+        !task.isCancelled &&
+            !task.isDone &&
+            (task.scheduledDate == today || !task.dueDate.isEmpty && task.dueDate <= today)
+    }
+
+    /// Due date (undated last), then the user's manual order, then identity (T-498). `order` is
+    /// per-list, so two tasks due the same day in two lists tie on both legs routinely — and a tie at
+    /// the last row that fits decides *membership*, not only arrangement.
+    static func tasks(_ tasks: [AppTask], today: String, limit: Int = .max) -> [AppTask] {
+        CadenceSearchSuggestionWindow.take(
+            tasks.filter { isSuggested($0, today: today) },
+            limit: limit,
+            identity: { CadenceSearchIdentity.task($0.id) },
+            orderedBefore: { lhs, rhs in
+                if lhs.dueDate != rhs.dueDate {
+                    if lhs.dueDate.isEmpty { return false }
+                    if rhs.dueDate.isEmpty { return true }
+                    return lhs.dueDate < rhs.dueDate
+                }
+                return lhs.order < rhs.order
+            }
+        )
+    }
+
+    /// A note with neither a title nor any text has nothing to show in a row or to be found by.
+    static func hasVisibleText(_ note: Note) -> Bool {
+        !note.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+            !note.displayTitle.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    /// Most recently edited first, ties broken by identity (T-498). Two notes share an `updatedAt`
+    /// whenever one write touched both — a migration pass, an import, a bulk tag edit — which is
+    /// exactly when a window gets cut out of a partial order. Which *kinds* a section draws stays the
+    /// caller's (the palette gives event notes their own section); this only orders what it is given.
+    static func notes(_ notes: [Note], limit: Int = .max) -> [Note] {
+        CadenceSearchSuggestionWindow.take(
+            notes.filter(hasVisibleText),
+            limit: limit,
+            identity: { CadenceSearchIdentity.note($0.id) },
+            orderedBefore: { $0.updatedAt > $1.updatedAt }
+        )
+    }
+}
