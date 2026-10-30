@@ -50,6 +50,64 @@ enum CadenceTimeRollerModel {
         value == pmValue ? "PM" : "AM"
     }
 
+    // MARK: Column widths ([[T-8471]])
+
+    /// The roller's three wheels, named here rather than inside the view so the width each one is
+    /// owed can be asked of the model — the test target cannot lay out a SwiftUI body.
+    enum Column: Hashable, CaseIterable {
+        case hour
+        case minute
+        case meridiem
+    }
+
+    /// The AM/PM wheel's floor, unchanged from the literal the view used to pass.
+    static let meridiemColumnMinimumWidth: CGFloat = 48
+
+    /// A digit's advance as a fraction of its point size. SF's tabular digits — the column draws
+    /// `.monospacedDigit()` — run at about 0.6em; the extra hundredths cover the semibold the
+    /// centred row is drawn in.
+    static let digitAdvanceRatio: CGFloat = 0.62
+
+    /// Clear space either side of the digits: the centre band is inset 4pt from the well's edge,
+    /// and the digits need room inside the band as well as inside the well.
+    static let digitColumnHorizontalInset: CGFloat = 12
+
+    /// How wide a column must stay to draw its widest label in full.
+    ///
+    /// **[[T-8471]].** The view used to pass `48` for the meridiem wheel and `nil` for the other
+    /// two, so when the popover was handed less than its ideal width — on iPad,
+    /// `iOSTimelineDraftPanelHost`'s editor gives the nested roller popover ~112pt — the hour and
+    /// minute columns were the ones that gave way, and the minute wheel was cut to a sliver drawing
+    /// ellipses where `00`/`05`/`10` should be. A column that carries digits now has a floor sized
+    /// from them, so the squeeze lands on the popover's width rather than on the glyphs. Not a
+    /// platform branch: the same floor holds on macOS, where the popover simply reports a slightly
+    /// larger ideal width.
+    static func minimumColumnWidth(
+        for column: Column,
+        usesTwentyFourHourClock: Bool,
+        at dynamicTypeSize: DynamicTypeSize,
+        scaling: CadenceTypographyScaling
+    ) -> CGFloat {
+        let labels: [String]
+        switch column {
+        case .meridiem:
+            return meridiemColumnMinimumWidth
+        case .hour:
+            labels = hourValues(usesTwentyFourHourClock: usesTwentyFourHourClock)
+                .map { hourLabel($0, usesTwentyFourHourClock: usesTwentyFourHourClock) }
+        case .minute:
+            labels = minuteValues.map(minuteLabel)
+        }
+        let widestLabel = CGFloat(labels.map(\.count).max() ?? 2)
+        let pointSize = CadenceTypeScale.size(
+            .controlLabel,
+            base: CadenceRollerMetrics.rowLabelSize,
+            at: dynamicTypeSize,
+            scaling: scaling
+        )
+        return (widestLabel * pointSize * digitAdvanceRatio).rounded(.up) + digitColumnHorizontalInset * 2
+    }
+
     /// A minute-of-day split into the three columns.
     ///
     /// The minute is **floored** to a step the column actually carries, never rounded up: a stored
@@ -114,11 +172,7 @@ struct CadenceTimeRoller: View {
     var usesTwentyFourHourClock: Bool = TimeFormatters.usesTwentyFourHourClock()
     var onSubmit: () -> Void = {}
 
-    private enum Column: Hashable {
-        case hour
-        case minute
-        case meridiem
-    }
+    private typealias Column = CadenceTimeRollerModel.Column
 
     @State private var hour = 9
     @State private var minute = 0
@@ -198,7 +252,15 @@ struct CadenceTimeRoller: View {
             // dropped. `EstimateRollerCommitGate` exists because that picker's committing form can
             // be told no.
             reportScrollPhase: { _ in },
-            minimumWidth: id == .meridiem ? 48 : nil
+            // Every column gets a floor, not only the meridiem one: under a squeezed popover a
+            // column with no floor is the one that gives way ([[T-8471]]). `.enabled` because the
+            // body declares `.cadenceScaledTypography()`, the scope the column's rows draw under.
+            minimumWidth: CadenceTimeRollerModel.minimumColumnWidth(
+                for: id,
+                usesTwentyFourHourClock: usesTwentyFourHourClock,
+                at: dynamicTypeSize,
+                scaling: .enabled
+            )
         )
         .focusable()
         .focusEffectDisabled()

@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 import Testing
 @testable import Cadence
 
@@ -140,6 +141,71 @@ struct CadenceTimeRollerModelTests {
         #expect(CadenceTimeRollerModel.meridiemLabel(CadenceTimeRollerModel.amValue) == "AM")
         #expect(CadenceTimeRollerModel.meridiemLabel(CadenceTimeRollerModel.pmValue) == "PM")
     }
+
+    // MARK: Column widths ([[T-8471]])
+
+    /// Every column has a floor wide enough for its widest label, on both faces.
+    ///
+    /// The view used to give a floor to the meridiem wheel alone, so on iPad — where
+    /// `iOSTimelineDraftPanelHost` hands the nested roller popover ~112pt — the minute wheel was
+    /// the column that gave way and drew ellipses instead of `00`/`05`/`10`. Asserted as a
+    /// RELATION to the glyphs it has to hold (two tabular digits at the row's size, plus the centre
+    /// band's 4pt inset each side), not as a pinned figure.
+    @Test("Every roller column keeps room for its widest label")
+    func everyColumnKeepsRoomForItsWidestLabel() {
+        let rowSize = CadenceRollerMetrics.rowLabelSize
+        let twoDigits = 2 * rowSize * 0.6 + 2 * 4
+        for usesTwentyFourHourClock in [false, true] {
+            for column in [CadenceTimeRollerModel.Column.hour, .minute] {
+                let width = CadenceTimeRollerModel.minimumColumnWidth(
+                    for: column,
+                    usesTwentyFourHourClock: usesTwentyFourHourClock,
+                    at: .large,
+                    scaling: .enabled
+                )
+                #expect(
+                    width >= twoDigits,
+                    "\(column) column floor \(width) < \(twoDigits) on a \(usesTwentyFourHourClock ? "24" : "12")-hour face"
+                )
+            }
+        }
+        #expect(
+            CadenceTimeRollerModel.minimumColumnWidth(
+                for: .meridiem,
+                usesTwentyFourHourClock: false,
+                at: .large,
+                scaling: .enabled
+            ) == CadenceTimeRollerModel.meridiemColumnMinimumWidth
+        )
+    }
+
+    /// A digit column's floor follows the reader's text: it is sized from the glyphs, so a larger
+    /// size never gets a narrower well.
+    @Test("A digit column's floor grows with the reader's text")
+    func digitColumnFloorGrowsWithText() {
+        let atDefault = CadenceTimeRollerModel.minimumColumnWidth(
+            for: .minute, usesTwentyFourHourClock: false, at: .large, scaling: .enabled
+        )
+        let atLarge = CadenceTimeRollerModel.minimumColumnWidth(
+            for: .minute, usesTwentyFourHourClock: false, at: .accessibility1, scaling: .enabled
+        )
+        #expect(atLarge > atDefault)
+    }
+
+    /// The floors stay a compact control: all three columns, their spacing and the panel padding
+    /// fit inside the estimate panel's own default width, so the macOS popover widens a little
+    /// rather than becoming a different shape.
+    @Test("The three floors together stay narrower than the estimate panel")
+    func floorsStayCompact() {
+        let total = CadenceTimeRollerModel.Column.allCases
+            .map {
+                CadenceTimeRollerModel.minimumColumnWidth(
+                    for: $0, usesTwentyFourHourClock: false, at: .large, scaling: .enabled
+                )
+            }
+            .reduce(0, +) + 2 * 6 + 2 * CadenceRollerMetrics.panelPadding
+        #expect(total < CadenceRollerMetrics.panelWidth)
+    }
 }
 
 /// The roller **column** is one component now, not two ([[T-3169]]).
@@ -179,6 +245,16 @@ struct CadenceRollerColumnExtractionTests {
         // appears here, which is the whole claim.
         #expect(!roller.contains("ScrollView(.vertical)"))
         #expect(!roller.contains("ScrollTargetBehavior"))
+    }
+
+    /// The model's floors only help if the view passes them. [[T-8471]]: the view passed a floor
+    /// for the meridiem wheel and `nil` for the two digit columns.
+    @Test("The time roller passes every column its model floor")
+    func timeRollerPassesEveryColumnItsFloor() {
+        let roller = source("Cadence/Shared/Components/CadenceTimeRoller.swift")
+        #expect(!roller.isEmpty)
+        #expect(roller.contains("minimumWidth: CadenceTimeRollerModel.minimumColumnWidth("))
+        #expect(!roller.contains("minimumWidth: id == .meridiem"))
     }
 
     /// The geometry did not move. It stayed in `EstimateRollerMetrics`, where
