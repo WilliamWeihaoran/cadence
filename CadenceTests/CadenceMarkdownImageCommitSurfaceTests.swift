@@ -538,7 +538,10 @@ struct CadenceMarkdownImageCommitSurfaceTests {
         // [[T-6231]] makes it 80 again: the Mac inspector's Cancel/Restore moved into
         // `TaskDetailActionsSection` and shares that row's one notice, so the status row's own
         // bare notice went with `TaskInspectorStatusActionsRow.swift` ([[T-6571]]).
-        #expect(total == 80, "the inline notice has \(total) call sites, not the 80 this test was written over")
+        // [[T-8762]] makes it 81, and bare: `iOSNoteEditorCover` names a refused Move Note above
+        // its editor, since the menu that asked has already closed. The retry is the same menu,
+        // and the next move that lands clears it.
+        #expect(total == 81, "the inline notice has \(total) call sites, not the 81 this test was written over")
         #expect(withDismissal == 9, "\(withDismissal) call sites offer a dismissal, not 9")
 
         // And each of the nine is named, so one swapping places with another is still a failure.

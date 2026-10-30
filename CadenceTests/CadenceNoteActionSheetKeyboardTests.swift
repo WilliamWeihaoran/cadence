@@ -71,11 +71,16 @@ struct CadenceNoteActionSheetKeyboardTests {
         let areas = try Self.compactBody("private var areaDestinations: some View", in: Self.menuPath)
         let projects = try Self.compactBody("private var projectDestinations: some View", in: Self.menuPath)
 
-        #expect(areas.contains(
-            "title:CadenceTitleNormalization.display(area.name,fallback:CadenceTitleNormalization.defaultAreaName)"
+        // [[T-8762]]: the rows name a list through the helper iOS's Move Note menu reads too, so
+        // the fallback lives once, in `CadenceNoteMoveDestinations`.
+        #expect(areas.contains("title:CadenceNoteMoveDestinations.title(for:area)"))
+        #expect(projects.contains("title:CadenceNoteMoveDestinations.title(for:project)"))
+        let shared = try Self.compactBody("enum CadenceNoteMoveDestinations", in: "Cadence/Shared/CadenceNoteMoveSupport.swift")
+        #expect(shared.contains(
+            "CadenceTitleNormalization.display(area.name,fallback:CadenceTitleNormalization.defaultAreaName)"
         ))
-        #expect(projects.contains(
-            "title:CadenceTitleNormalization.display(project.name,fallback:CadenceTitleNormalization.defaultProjectName)"
+        #expect(shared.contains(
+            "CadenceTitleNormalization.display(project.name,fallback:CadenceTitleNormalization.defaultProjectName)"
         ))
         #expect(!areas.contains("title:area.name,"))
         #expect(!projects.contains("title:project.name,"))
@@ -84,10 +89,14 @@ struct CadenceNoteActionSheetKeyboardTests {
     /// The fallback the rows now call is the one that turns a blank name into the Untitled noun —
     /// pinned on behaviour, so the source pin above cannot be satisfied by a helper that returns
     /// the raw string.
-    @Test func theFallbackTheRowsUseReadsUntitled() {
+    @MainActor @Test func theFallbackTheRowsUseReadsUntitled() {
         #expect(CadenceTitleNormalization.display("", fallback: CadenceTitleNormalization.defaultAreaName) == "Untitled Area")
         #expect(CadenceTitleNormalization.display("   ", fallback: CadenceTitleNormalization.defaultProjectName) == "Untitled Project")
         #expect(CadenceTitleNormalization.display("Home", fallback: CadenceTitleNormalization.defaultAreaName) == "Home")
+        // And the shared helper the rows now call ([[T-8762]]).
+        #expect(CadenceNoteMoveDestinations.title(for: Area(name: "")) == "Untitled Area")
+        #expect(CadenceNoteMoveDestinations.title(for: Project(name: "  ")) == "Untitled Project")
+        #expect(CadenceNoteMoveDestinations.title(for: Area(name: "Home")) == "Home")
     }
 
     @Test func moveDestinationRowSaysWhichListIsSelected() throws {

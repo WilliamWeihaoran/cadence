@@ -38,6 +38,8 @@ struct CadenceNoteMoveCommitTests {
     }
 
     private static let path = "Cadence/macOS/Views/AIActionsSupportViews.swift"
+    /// [[T-8762]]: the two helpers moved here, verbatim, so iOS can call them too.
+    private static let helperPath = "Cadence/Shared/CadenceNoteMoveSupport.swift"
 
     // MARK: - Behavioural: the move itself
 
@@ -134,7 +136,7 @@ struct CadenceNoteMoveCommitTests {
     /// sites already pass a non-optional `@Environment` context, so the optionality only ever
     /// bought a silent no-op.
     @Test func neitherNoteMoveHelperSwallowsItsCommit() throws {
-        let source = try CadenceCommitSurfaceScan.scanned(Self.path)
+        let source = try CadenceCommitSurfaceScan.scanned(Self.helperPath)
 
         #expect(CadenceSourceScan.matchCount(#"try\?\s*modelContext"#, in: source) == 0)
         #expect(
@@ -147,10 +149,15 @@ struct CadenceNoteMoveCommitTests {
         #expect(source.contains("modelContext: ModelContext,"), "the context is no longer optional")
         #expect(!source.contains("modelContext: ModelContext?"))
 
-        // The stripper's own discrimination, pinned on a literal: the file's `#if os(macOS)` is
-        // code and survives, so a reader that had quietly blanked everything cannot pass the
-        // assertions above by returning nothing.
-        #expect(source.contains("#if os(macOS)"))
+        // The stripper's own discrimination, pinned on a literal: the declaration is code and
+        // survives, so a reader that had quietly blanked everything cannot pass the assertions
+        // above by returning nothing.
+        #expect(source.contains("enum NoteActionSupport {"))
+
+        // And the Mac file kept no second copy beside the shared one ([[T-8762]]).
+        let mac = try CadenceCommitSurfaceScan.scanned(Self.path)
+        #expect(mac.contains("extension NoteActionSupport {"))
+        #expect(CadenceSourceScan.matchCount(#"static func move\("#, in: mac) == 0)
     }
 
     // MARK: - Source shape: the three destination rows

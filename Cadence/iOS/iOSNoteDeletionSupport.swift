@@ -19,14 +19,24 @@ extension View {
     /// `Note?` rather than a wrapper target — `iOSListDeletionTarget` exists because a list delete
     /// has three kinds and the sheet needs each one's name, icon and colour; a note delete has one
     /// kind, and the note is its own identity.
-    func iOSNoteDeletion(note: Binding<Note?>) -> some View {
-        modifier(iOSNoteDeletionModifier(note: note))
+    ///
+    /// `onDeleted` runs once the confirmation has finished closing over a committed delete, and
+    /// never after a Cancel or a refusal ([[T-8762]]). It is how an editor that deleted its *own*
+    /// note gets out of the way: called from `onDismiss` rather than from the confirm, so the
+    /// editor's dismissal never races the confirmation's: it fires from the sheet's own
+    /// `onDisappear`, so the presenter keeps the `.sheet(item:) { note in iOSHeldNoteSheet` shape
+    /// `CadenceHeldNoteSheetGuardTests` sweeps for.
+    func iOSNoteDeletion(note: Binding<Note?>, onDeleted: (() -> Void)? = nil) -> some View {
+        modifier(iOSNoteDeletionModifier(note: note, onDeleted: onDeleted))
     }
 }
 
 private struct iOSNoteDeletionModifier: ViewModifier {
     @Binding var note: Note?
+    var onDeleted: (() -> Void)?
     @Environment(\.modelContext) private var modelContext
+    /// Set by a committed delete, read and cleared when the confirmation has closed.
+    @State private var didDelete = false
 
     func body(content: Content) -> some View {
         // [[T-7540]]: behind the held-note guard like every other note presenter. A note deleted
@@ -41,6 +51,10 @@ private struct iOSNoteDeletionModifier: ViewModifier {
                     try perform(note)
                 }
             }
+            // On the wrapper, not the confirmation inside it: once the note is gone the wrapper
+            // swaps the confirmation for `Color.clear`, so the inner view disappears while the
+            // sheet is still up. The wrapper disappears only when the sheet has.
+            .onDisappear(perform: reportDeletion)
         }
     }
 
@@ -55,6 +69,13 @@ private struct iOSNoteDeletionModifier: ViewModifier {
     private func perform(_ note: Note) throws {
         modelContext.deleteNote(note)
         try CadencePendingChangePersistence.commitDelete(in: modelContext)
+        didDelete = true
+    }
+
+    private func reportDeletion() {
+        guard didDelete else { return }
+        didDelete = false
+        onDeleted?()
     }
 }
 

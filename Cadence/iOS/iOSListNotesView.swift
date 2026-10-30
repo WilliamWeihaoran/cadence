@@ -194,7 +194,8 @@ struct iOSListNotesView: View {
                     templateKind: .list,
                     title: note.displayTitle,
                     embeddedTaskArea: area,
-                    embeddedTaskProject: project
+                    embeddedTaskProject: project,
+                    allowsDelete: true
                 )
             }
         }
@@ -228,6 +229,14 @@ struct iOSListNotesView: View {
                 }
                 iOSNoteAIActionsMenu(note: note, area: note.area, project: note.project)
                 iOSNoteExportMenu(note: note, flush: editorFlush)
+                // [[T-8762]]: Move Note and Delete Note for the open note, as the Mac's list Notes
+                // tab carries them in the Actions popover. A refused move is drawn in the column,
+                // where the folder move's refusal already is.
+                iOSNoteManageMenu(
+                    note: note,
+                    moveFailureNotice: $moveFailureNotice,
+                    onDelete: { noteToDelete = $0 }
+                )
             }
 
             newNoteMenu

@@ -255,7 +255,8 @@ struct iOSNotesView: View {
                 iOSNoteEditorCover(
                     note: note,
                     templateKind: activeTab.coreTab?.noteKind,
-                    title: coverTitle(for: note)
+                    title: coverTitle(for: note),
+                    allowsDelete: activeTab == .notepad
                 )
             }
         }
@@ -275,7 +276,9 @@ struct iOSNotesView: View {
             referenceNotes: allNotes,
             referenceTasks: allTasks
         )
-        .iOSNoteDeletion(note: $noteToDelete)
+        // Deleting the note the inline pane is showing puts the index back, rather than letting
+        // selection normalisation open some other note nobody tapped (T-1277's rule).
+        .iOSNoteDeletion(note: $noteToDelete, onDeleted: closeInlineEditor)
     }
 
     /// One header, every host.
@@ -339,6 +342,11 @@ struct iOSNotesView: View {
             // note can always be written out, there is nothing to opt into.
             if showsHeaderTemplateMenu || isShowingInlineEditor, let note = selectedNote {
                 iOSNoteExportMenu(note: note, flush: editorFlush)
+            }
+            // [[T-8762]]: Delete Note for the open notepad note, as the Mac's Notepad editor offers
+            // it — the same gate the row menu uses. No move: nothing this tab lists is a list note.
+            if showsHeaderTemplateMenu || isShowingInlineEditor, activeTab == .notepad, let note = selectedNote {
+                iOSNoteManageMenu(note: note, onDelete: { noteToDelete = $0 })
             }
         }
         .frame(height: useStandardHeaderHeight ? iOSNotesHeaderStandardHeight : nil, alignment: .top)
@@ -841,6 +849,9 @@ struct iOSNoteEditorCover: View {
     /// note, so `[[task:` capture from a project's note files into that project.
     var embeddedTaskArea: Area?
     var embeddedTaskProject: Project?
+    /// Whether this host offers Delete Note for the note — the Mac's rule, host by host: the
+    /// Notepad tab and a list's Notes tab do, the dated tabs do not ([[T-8762]]).
+    var allowsDelete = false
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
@@ -851,8 +862,37 @@ struct iOSNoteEditorCover: View {
     @State private var editorFlush = iOSMarkdownEditorFlush()
     @State private var selectedReferenceNote: Note?
     @State private var selectedReferenceTask: AppTask?
+    /// The delete this cover requested. The confirmation is the cover's own, because a sheet
+    /// cannot be presented from the host while the host is presenting this cover.
+    @State private var noteToDelete: Note?
+    /// A refused Move Note, drawn above the editor — see `iOSNoteManageMenu.moveFailureNotice`.
+    @State private var moveFailureNotice: String?
 
     var body: some View {
+        // [[T-8762]]: this cover can now delete its own note, so it can be asked to draw once more
+        // after the note is gone — while its confirmation closes, and before `onDeleted` takes the
+        // cover down. The held-note wrapper every presenter uses answers that redraw with nothing
+        // instead of an editor reading a deleted model. Its `close` does nothing here: the
+        // deletion's `onDeleted` below is what dismisses, once the confirmation has gone, and a
+        // note deleted from elsewhere is the host's wrapper's to close. The sheets stay attached
+        // outside the wrapper, or the confirmation would go with the editor.
+        iOSHeldNoteSheet(note: note) {} content: { _ in
+            editor
+        }
+        .iOSMarkdownReferenceSheets(
+            selectedNote: $selectedReferenceNote,
+            selectedTask: $selectedReferenceTask,
+            referenceNotes: allNotes,
+            referenceTasks: allTasks
+        )
+        .iOSNoteDeletion(note: $noteToDelete) {
+            isEditorFocused = false
+            dismiss()
+        }
+        .preferredColorScheme(.dark)
+    }
+
+    private var editor: some View {
         NavigationStack {
             iOSMarkdownEditingSurface(
                 text: Binding(
@@ -872,6 +912,13 @@ struct iOSNoteEditorCover: View {
                 flush: editorFlush
             )
             .id(note.id)
+            .safeAreaInset(edge: .top, spacing: 0) {
+                if let moveFailureNotice {
+                    CadenceInlineFailureNotice(text: moveFailureNotice)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 8)
+                }
+            }
             .background(Theme.surface.ignoresSafeArea())
             .navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)
@@ -897,15 +944,18 @@ struct iOSNoteEditorCover: View {
                 ToolbarItem(placement: .primaryAction) {
                     iOSNoteExportMenu(note: note, flush: editorFlush)
                 }
+
+                // [[T-8762]]: Move Note (a list note) and Delete Note (where the host offers one),
+                // which the Mac's Actions popover carries above the same note.
+                ToolbarItem(placement: .primaryAction) {
+                    iOSNoteManageMenu(
+                        note: note,
+                        moveFailureNotice: $moveFailureNotice,
+                        onDelete: allowsDelete ? { noteToDelete = $0 } : nil
+                    )
+                }
             }
         }
-        .iOSMarkdownReferenceSheets(
-            selectedNote: $selectedReferenceNote,
-            selectedTask: $selectedReferenceTask,
-            referenceNotes: allNotes,
-            referenceTasks: allTasks
-        )
-        .preferredColorScheme(.dark)
     }
 
     /// Same focus-drop rule as `iOSNotesView.apply(_:to:)`; see the note there.

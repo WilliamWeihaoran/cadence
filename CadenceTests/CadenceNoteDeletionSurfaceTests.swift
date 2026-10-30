@@ -406,16 +406,20 @@ struct CadenceNoteDeletionSurfaceTests {
             "Cadence/iOS/iOSNotesView.swift": 0
         ])
 
+        // iOSNotesView twice since [[T-8762]]: the Notes tab, and `iOSNoteEditorCover`, which
+        // confirms its own note's delete because a host cannot present a sheet over the cover.
         try expectCallSites(of: ".iOSNoteDeletion", at: [
             "Cadence/iOS/iOSListNotesView.swift": 1,
-            "Cadence/iOS/iOSNotesView.swift": 1
+            "Cadence/iOS/iOSNotesView.swift": 2
         ])
 
         // The list-detail Notes column and the Notes tab's notepad rows — the two places macOS
-        // offers a note delete from.
+        // offers a note delete from — and, since [[T-8762]], the editor chrome's note menu, which
+        // both hosts' editors share.
         try expectCallSites(of: "iOSNoteDeleteMenuButton", at: [
             "Cadence/iOS/iOSListNotesView.swift": 1,
             "Cadence/iOS/iOSNotesView.swift": 1,
+            "Cadence/iOS/iOSNoteManageMenu.swift": 1,
             "Cadence/iOS/iOSNoteDeletionSupport.swift": 0
         ])
 

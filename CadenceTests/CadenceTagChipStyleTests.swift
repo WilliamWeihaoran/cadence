@@ -480,6 +480,9 @@ struct CadenceTagChipScaleTests {
             "Cadence/iOS/iOSListSupportViews.swift",
             "Cadence/iOS/iOSMarkdownAccessoryViews.swift",
             "Cadence/iOS/iOSNoteExportMenu.swift",
+            // [[T-8762]]: the editor chrome's Move/Delete menu draws the same quiet `iOSIconTile`
+            // as the export menu beside it, and reads its host's scope as that one does.
+            "Cadence/iOS/iOSNoteManageMenu.swift",
             "Cadence/iOS/iOSNotesView.swift",
             "Cadence/iOS/iOSNotificationsSettingsSection.swift",
             "Cadence/iOS/iOSRemindersSettingsSection.swift",

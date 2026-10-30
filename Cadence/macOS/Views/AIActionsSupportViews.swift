@@ -17,7 +17,9 @@ private enum AIReviewPayload: Identifiable {
     }
 }
 
-enum NoteActionSupport {
+/// The macOS half of `NoteActionSupport`. The two `move` helpers are shared now and live in
+/// `Cadence/Shared/CadenceNoteMoveSupport.swift`, because iOS moves a list note too ([[T-8762]]).
+extension NoteActionSupport {
     /// Forwards to `CadenceAINoteSummary`, which is where the heading and the separator rule live
     /// now that iOS files a summary into a note too. Kept as a name because this menu's call sites
     /// read better through it.
@@ -32,65 +34,6 @@ enum NoteActionSupport {
     /// the *format* is the half that can drift. See `CadenceNoteClipboard`.
     static func copyMarkdownLink(to note: Note) {
         CadenceNoteClipboard.copyMarkdownLink(to: note)
-    }
-
-    /// Files a note under an area, or under nothing.
-    ///
-    /// **Throwing, and taking a non-optional context, for the reason `appendSummary` above is
-    /// (T-630).** This used to repoint the note and run `try? modelContext?.save()`, and the row
-    /// that called it had already closed the picker — so the popover shutting was the user's only
-    /// success signal and it shut either way. A refused commit left the note repointed in the app's
-    /// single `ModelContext`, waiting for the next unrelated `save()` to finish it or the next
-    /// `rollback()` to throw it away, with nothing left on screen to disagree.
-    ///
-    /// The undo is a field snapshot rather than `modelContext.rollback()`, for the reason
-    /// `CadencePendingChangePersistence.commitEdit` documents: one context app-wide, so a refused
-    /// move must not take the note somebody is editing behind the popover with it.
-    ///
-    /// The optionality went with the `try?`. Both call sites pass an `@Environment(\.modelContext)`
-    /// value, which is never nil; all `ModelContext?` ever bought was a second silent no-op beside
-    /// the swallowed one.
-    static func move(
-        _ note: Note,
-        toArea area: Area?,
-        modelContext: ModelContext,
-        commit: (ModelContext) throws -> Void = { try $0.save() }
-    ) throws {
-        let previousArea = note.area
-        let previousProject = note.project
-        let previousUpdatedAt = note.updatedAt
-        note.area = area
-        note.project = nil
-        note.updatedAt = Date()
-        try CadencePendingChangePersistence.commitEdit(in: modelContext, commit: commit) {
-            note.area = previousArea
-            note.project = previousProject
-            note.updatedAt = previousUpdatedAt
-        }
-    }
-
-    /// The project half of `move(_:toArea:modelContext:commit:)`, undoing the same three fields.
-    ///
-    /// Written out rather than routed through a shared private helper: a third declaration named
-    /// `move` in this file would make every `declarationBody(named: "move")` reader ambiguous, and
-    /// the saving is four lines.
-    static func move(
-        _ note: Note,
-        toProject project: Project?,
-        modelContext: ModelContext,
-        commit: (ModelContext) throws -> Void = { try $0.save() }
-    ) throws {
-        let previousArea = note.area
-        let previousProject = note.project
-        let previousUpdatedAt = note.updatedAt
-        note.area = nil
-        note.project = project
-        note.updatedAt = Date()
-        try CadencePendingChangePersistence.commitEdit(in: modelContext, commit: commit) {
-            note.area = previousArea
-            note.project = previousProject
-            note.updatedAt = previousUpdatedAt
-        }
     }
 }
 
@@ -131,7 +74,7 @@ struct NoteActionMenu: View {
     @State private var moveFailureNotice: String?
 
     private var showsMoveDestinationSection: Bool {
-        note.kind == .list && (!areas.isEmpty || !projects.isEmpty)
+        CadenceNoteMoveDestinations.offersMove(kind: note.kind, hasAreas: !areas.isEmpty, hasProjects: !projects.isEmpty)
     }
 
     private var canRunAI: Bool {
@@ -274,9 +217,9 @@ struct NoteActionMenu: View {
 
     private var noListDestination: some View {
         NoteActionDestinationRow(
-            title: "No List",
-            subtitle: "Keep it loose in notes",
-            isSelected: note.area == nil && note.project == nil
+            title: CadenceNoteMoveDestinations.noListTitle,
+            subtitle: CadenceNoteMoveDestinations.noListSubtitle,
+            isSelected: CadenceNoteMoveDestinations.isUnfiled(note)
         ) {
             moveNote { try NoteActionSupport.move(note, toArea: nil, modelContext: modelContext) }
         }
@@ -289,7 +232,7 @@ struct NoteActionMenu: View {
             ForEach(areas) { area in
                 // Blank names read "Untitled Area", as the sidebar and Cmd+K read them (T-7288).
                 NoteActionDestinationRow(
-                    title: CadenceTitleNormalization.display(area.name, fallback: CadenceTitleNormalization.defaultAreaName),
+                    title: CadenceNoteMoveDestinations.title(for: area),
                     subtitle: "Area",
                     isSelected: note.area?.id == area.id
                 ) {
@@ -305,7 +248,7 @@ struct NoteActionMenu: View {
             NoteActionSubsectionLabel(title: "Projects")
             ForEach(projects) { project in
                 NoteActionDestinationRow(
-                    title: CadenceTitleNormalization.display(project.name, fallback: CadenceTitleNormalization.defaultProjectName),
+                    title: CadenceNoteMoveDestinations.title(for: project),
                     subtitle: "Project",
                     isSelected: note.project?.id == project.id
                 ) {
