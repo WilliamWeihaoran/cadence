@@ -126,6 +126,30 @@ struct CadenceRowSubjectAccessibilityTests {
         #expect(TaskTitleSupport.displayTitle("   ", fallback: TaskTitleSupport.defaultCompactDisplayTitle) == "Untitled")
     }
 
+    // MARK: - The iOS task row's listed subtask ([[T-8592]])
+
+    private static let iOSTaskRowActionViewsPath = "Cadence/iOS/iOSTaskRowActionViews.swift"
+
+    /// **The subtasks listed under an iOS task row and board card were the last subtask circle
+    /// still naming the raw title.** Its label was `"Complete subtask \(subtask.title)"` while the
+    /// row drew `displayTitle`, so a blank subtask was announced "Complete subtask" over a row
+    /// reading "Untitled". It names itself the way the sheet's `iOSSubtaskRow` does now: the
+    /// action as the label, the normalised title as the value.
+    @Test func iOSTaskRowSubtaskRowNamesTheSubtaskItDraws() throws {
+        let source = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(Self.iOSTaskRowActionViewsPath))
+        let body = try #require(CadenceSourceScan.declarationBody("struct iOSTaskRowSubtaskRow: View", in: source))
+
+        #expect(body.contains("private var displayTitle: String {"))
+        #expect(body.contains(
+            "TaskTitleSupport.displayTitle(subtask.title, fallback: TaskTitleSupport.defaultCompactDisplayTitle)"
+        ))
+        #expect(body.contains("Text(displayTitle)"), "the row draws a different title from the one it announces")
+        #expect(body.contains(#".accessibilityLabel("Complete subtask")"#))
+        #expect(CadenceSourceScan.matchCount(#"\.accessibilityValue\(displayTitle\)"#, in: body) == 1)
+        // The raw title reaches no accessibility modifier.
+        #expect(CadenceSourceScan.matchCount(#"accessibility\w*\([^)]*subtask\.title"#, in: body) == 0)
+    }
+
     // **Site 8 left with [[T-2079]] and its file with [[T-5002]].**
     // `habitToggleCircleReadsTheSharedCompletionStateLabelAndNamesTheHabit` was one half of
     // [[T-673]]'s "two completion circles tick one" pair: `HabitListCard`'s circle read the shared

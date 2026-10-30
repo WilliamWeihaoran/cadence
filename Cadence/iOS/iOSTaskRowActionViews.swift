@@ -435,14 +435,21 @@ struct iOSTaskRowSubtaskRow: View {
     let subtask: Subtask
     @Environment(\.modelContext) private var modelContext
 
+    /// [[T-8592]]: the subject the button announces, the same normalised title the row draws —
+    /// so a blank subtask reads "Untitled" to VoiceOver as it does on screen, the way the sheet's
+    /// `iOSSubtaskRow` ([[T-7011]]) and macOS's `SubtaskRow` (T-673) name theirs.
+    private var displayTitle: String {
+        TaskTitleSupport.displayTitle(subtask.title, fallback: TaskTitleSupport.defaultCompactDisplayTitle)
+    }
+
     var body: some View {
         Button {
-            subtask.isDone = true
-            try? modelContext.save()
+            // [[T-8592]]: committed, with the refusal undone; see `completeSubtask`.
+            CadenceTaskInspectorSupport.completeSubtask(subtask, in: modelContext)
         } label: {
             HStack(spacing: 8) {
                 CadenceTaskCompletionCircle(isDone: false, tint: Theme.dim, diameter: CadenceTypeScale.size(.metadata, at: dynamicTypeSize, scaling: scaling))
-                Text(TaskTitleSupport.displayTitle(subtask.title, fallback: TaskTitleSupport.defaultCompactDisplayTitle))
+                Text(displayTitle)
                     .cadenceFont(.metadata)
                     .foregroundStyle(Theme.muted)
                     .lineLimit(iOSTaskPageTypographyMetrics.stacksControls(at: dynamicTypeSize, scaling: scaling) ? nil : 1)
@@ -455,7 +462,8 @@ struct iOSTaskRowSubtaskRow: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.iosPressable)
-        .accessibilityLabel("Complete subtask \(subtask.title)")
+        .accessibilityLabel("Complete subtask")
+        .accessibilityValue(displayTitle)
     }
 }
 

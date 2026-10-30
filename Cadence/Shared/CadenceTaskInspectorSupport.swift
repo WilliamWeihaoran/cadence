@@ -98,6 +98,30 @@ enum CadenceTaskInspectorSupport {
             : CadencePendingChangePersistence.editFailureNotice
     }
 
+    /// The tick a task row's listed subtask takes ([[T-8592]]): finish it, committed, and leave a
+    /// subtask that is already done alone.
+    ///
+    /// `iOSTaskRowSubtaskRow` — the unfinished subtasks under an iOS task row and board card —
+    /// wrote `subtask.isDone = true; try? modelContext.save()`, the last subtask circle on the
+    /// swallowed write after [[T-4970]] and [[T-7013]]. It goes through the same
+    /// `CadenceNoteTaskEmbedEditing.toggleSubtask`, whose one-field undo puts the subtask back on
+    /// a refusal; that row has no notice surface, so the subtask reappearing in the list is the
+    /// report, as on macOS's `SubtaskRow`. Unlike the sheet's circle this is not a toggle: the row
+    /// lists only unfinished subtasks, so a second tap landing before the row redraws must not
+    /// reopen what the first one finished.
+    ///
+    /// - Returns: `false` when the commit was refused and the subtask put back.
+    /// - Parameter commit: See `CadenceNoteTaskEmbedEditing.toggleSubtask(_:in:commit:)`.
+    @discardableResult
+    static func completeSubtask(
+        _ subtask: Subtask,
+        in modelContext: ModelContext,
+        commit: (ModelContext) throws -> Void = { try $0.save() }
+    ) -> Bool {
+        guard !subtask.isDone else { return true }
+        return CadenceNoteTaskEmbedEditing.toggleSubtask(subtask, in: modelContext, commit: commit)
+    }
+
     // MARK: - Status actions
 
     /// The status transition that is not completion.

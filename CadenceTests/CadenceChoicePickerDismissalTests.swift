@@ -311,28 +311,22 @@ struct CadenceChoicePickerDismissalTests {
         #expect(minute.contains("draft.moveStart(toMinute: $0)"), "the roller writes somewhere other than the draft")
     }
 
-    /// **What is left in the file, exactly and by name.** Two swallowed saves were removed and
-    /// **one** stays: `iOSTaskRowSubtaskRow` ticks a subtask done and reports nothing, which is the
-    /// case the rule allows — an in-place field edit whose only witness is the row that redraws.
-    ///
-    /// An exact count rather than "fewer than before": the population here is one this batch
-    /// shrank, and a floor over a shrinking population cannot tell a site that was fixed from one
-    /// that was added.
-    @Test func exactlyOneSwallowedSaveIsLeftInTheTaskRowActionsAndItReportsNothing() throws {
+    /// **What is left in the file, exactly: nothing.** Two swallowed saves were removed by this
+    /// batch and the third, `iOSTaskRowSubtaskRow`'s tick, left with [[T-8592]] — it commits
+    /// through `CadenceTaskInspectorSupport.completeSubtask` now, whose undo puts a refused tick
+    /// back. An exact count: a floor over a population that shrank to zero cannot tell a site
+    /// that was fixed from one that was added.
+    @Test func noSwallowedSaveIsLeftInTheTaskRowActions() throws {
         let source = try CadenceCommitSurfaceScan.scanned(Self.rowActionsPath)
         #expect(
-            CadenceSourceScan.matchCount(#"try\? modelContext\.save\(\)"#, in: source) == 1,
-            "the set of swallowed saves in the task-row actions moved"
-        )
-        let subtaskRow = try #require(source.range(of: "struct iOSTaskRowSubtaskRow: View {"))
-        let swallow = try #require(source.range(of: "try? modelContext.save()"))
-        #expect(
-            swallow.lowerBound > subtaskRow.upperBound,
-            "the one remaining swallow is not the subtask row's"
+            CadenceSourceScan.matchCount(#"try\? modelContext\.save\(\)"#, in: source) == 0,
+            "a swallowed save is back in the task-row actions"
         )
         // Non-vacuity for the needle: the file is full of the committing spellings too.
         #expect(CadenceSourceScan.matchCount(#"modelContext"#, in: source) > 5)
+        #expect(source.contains("struct iOSTaskRowSubtaskRow: View {"))
         #expect(source.contains("struct iOSTaskRowContainerChip: View"))
+        #expect(CadenceSourceScan.matchCount(#"try\? modelContext\.save\(\)"#, in: "x\ntry? modelContext.save()\n") == 1)
     }
 
     // MARK: - Detector internals

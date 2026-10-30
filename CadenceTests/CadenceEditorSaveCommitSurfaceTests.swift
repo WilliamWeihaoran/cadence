@@ -1009,6 +1009,57 @@ struct CadenceEditorSaveCommitSurfaceTests {
         #expect(try ModelContext(modelContainer).fetch(FetchDescriptor<Subtask>()).map(\.isDone) == [false])
     }
 
+    /// **Behavioural ([[T-8592]]).** The iOS task row's listed subtask commits its tick: it is in
+    /// the store, not pending in the context for some later save to settle.
+    @Test func acommittedTaskRowSubtaskTickIsInTheStore() throws {
+        let modelContainer = try container()
+        let modelContext = ModelContext(modelContainer)
+        let subtask = Subtask(title: "Book flight")
+        modelContext.insert(subtask)
+        try modelContext.save()
+
+        #expect(CadenceTaskInspectorSupport.completeSubtask(subtask, in: modelContext))
+
+        #expect(subtask.isDone)
+        #expect(!modelContext.hasChanges, "the tick is still pending")
+        #expect(try ModelContext(modelContainer).fetch(FetchDescriptor<Subtask>()).map(\.isDone) == [true])
+    }
+
+    /// **Behavioural ([[T-8592]]).** A refused tick puts the subtask back — the row has no notice
+    /// surface, so its reappearing is the report — and leaves unrelated pending work alone.
+    @Test func arefusedTaskRowSubtaskTickPutsTheSubtaskBack() throws {
+        let modelContainer = try container()
+        let modelContext = ModelContext(modelContainer)
+        let subtask = Subtask(title: "Book flight")
+        modelContext.insert(subtask)
+        try modelContext.save()
+        let bystander = try pendingBystander(in: modelContext)
+
+        #expect(!CadenceTaskInspectorSupport.completeSubtask(
+            subtask, in: modelContext, commit: { _ in throw CommitRefused() }
+        ))
+
+        #expect(!subtask.isDone, "the refused tick left the subtask done")
+        #expect(bystander.name == "Home, being typed", "the refused tick discarded unrelated pending work")
+        #expect(try ModelContext(modelContainer).fetch(FetchDescriptor<Subtask>()).map(\.isDone) == [false])
+    }
+
+    /// **Behavioural ([[T-8592]]).** The row's tick finishes; it does not toggle. A second tap that
+    /// lands before the row leaves the list must not reopen the subtask the first one finished.
+    @Test func aTaskRowSubtaskTickOnADoneSubtaskLeavesItDone() throws {
+        let modelContainer = try container()
+        let modelContext = ModelContext(modelContainer)
+        let subtask = Subtask(title: "Book flight")
+        subtask.isDone = true
+        modelContext.insert(subtask)
+        try modelContext.save()
+
+        #expect(CadenceTaskInspectorSupport.completeSubtask(subtask, in: modelContext))
+
+        #expect(subtask.isDone, "a second tick reopened the subtask")
+        #expect(try ModelContext(modelContainer).fetch(FetchDescriptor<Subtask>()).map(\.isDone) == [true])
+    }
+
     /// **Behavioural.** A task dropped on a timeline minute is in the store at its new slot.
     @Test func acommittedTimelineMinuteDropIsInTheStore() throws {
         let modelContainer = try container()
@@ -1150,6 +1201,17 @@ struct CadenceEditorSaveCommitSurfaceTests {
         #expect(toggle.contains(
             "subtaskFailureNotice = CadenceTaskInspectorSupport.toggleSubtaskCommitting(subtask, in: modelContext)"
         ))
+    }
+
+    /// [[T-8592]]'s call site: the iOS task row's (and board card's) listed subtask ticks through
+    /// the committing helper, and its swallowed `isDone = true; try? save()` is gone.
+    @Test func theT8592IOSTaskRowSubtaskTickReachesTheCommittingHelper() throws {
+        let source = try scanned("Cadence/iOS/iOSTaskRowActionViews.swift")
+        let rowBody = try #require(CadenceSourceScan.declarationBody("struct iOSTaskRowSubtaskRow: View", in: source))
+        #expect(rowBody.contains("CadenceTaskInspectorSupport.completeSubtask(subtask, in: modelContext)"))
+        #expect(CadenceSourceScan.matchCount(#"subtask\.isDone\s*="#, in: rowBody) == 0)
+        #expect(CadenceSourceScan.matchCount(#"\.save\(\)"#, in: rowBody) == 0)
+        #expect(rowBody.contains("Button {"), "non-vacuity: wrong body read")
     }
     #endif
 
