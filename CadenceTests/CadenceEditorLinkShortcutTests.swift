@@ -98,5 +98,40 @@ struct CadenceiPadSearchKeyCommandTests {
         #expect(!editor.contains("input: \"k\", modifierFlags: .command"))
         #expect(!editor.contains("input: \"k\", modifierFlags: [.command]"))
     }
+
+    // MARK: - [[T-8791]] Cmd+K raises the field, by request
+
+    @MainActor @Test func aFocusRequestIsHonouredOnceAndNothingIsHonouredUnasked() {
+        let request = CadenceSearchFocusRequest()
+        // Search reached without Cmd+K: nothing to honour.
+        #expect(!request.take())
+        request.request()
+        #expect(request.generation == 1)
+        #expect(request.take())
+        // A later appearance (a sidebar tap after the Cmd+K one) does not focus again.
+        #expect(!request.take())
+        // A second Cmd+K while Search is up is a new, observable request.
+        request.request()
+        #expect(request.generation == 2)
+        #expect(request.take())
+        #expect(!request.take())
+    }
+
+    @Test func commandKRequestsFocusAndSearchHonoursOnlyTheRequest() throws {
+        let root = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile("Cadence/iOS/iOSRootView.swift"))
+        let openSearch = try #require(root.range(of: "func openSearch() {").map { String(root[$0.upperBound...].prefix(400)) })
+        #expect(openSearch.contains("searchFocusRequest.request()"))
+        // Only Cmd+K asks: one call in the whole root.
+        #expect(root.components(separatedBy: "searchFocusRequest.request()").count - 1 == 1)
+        #expect(root.contains(".environment(searchFocusRequest)"))
+
+        let search = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile("Cadence/iOS/iOSSearchView.swift"))
+        #expect(search.contains(".searchFocused($isSearchFieldFocused)"))
+        let honour = try #require(CadenceSourceScan.functionBody(named: "honourSearchFocusRequest", in: search))
+        #expect(honour.contains("searchFocusRequest?.take() == true"))
+        #expect(honour.contains("isSearchFieldFocused = true"))
+        // The field is raised in exactly one place, the request's; never unconditionally on appear.
+        #expect(search.components(separatedBy: "isSearchFieldFocused = true").count - 1 == 1)
+    }
 }
 #endif

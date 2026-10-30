@@ -21,6 +21,13 @@ struct iOSSearchView: View {
     @AppStorage(CadencePreferenceKeys.sidebarTabColors) private var sidebarTabColorsRaw = CadencePreferenceKeys.emptySidebarPreference
 
     @State private var query = ""
+    /// [[T-8791]]. Optional because a host that never asks (a preview, a future surface) need not
+    /// provide one; `iOSRootView` does, and only its Cmd+K calls `request()`.
+    @Environment(CadenceSearchFocusRequest.self) private var searchFocusRequest: CadenceSearchFocusRequest?
+    @FocusState private var isSearchFieldFocused: Bool
+    /// A request is honoured only by a Search that is on screen, so one kept alive on a hidden tab
+    /// cannot consume it.
+    @State private var isOnScreen = false
     @State private var selectedTask: AppTask?
     @State private var selectedNote: Note?
     @State private var selectedEvent: iOSCalendarEventSelection?
@@ -349,6 +356,15 @@ struct iOSSearchView: View {
         }
         .navigationTitle("Search")
         .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: "Tasks, lists, notes, events")
+        .searchFocused($isSearchFieldFocused)
+        .onAppear {
+            isOnScreen = true
+            honourSearchFocusRequest()
+        }
+        .onDisappear { isOnScreen = false }
+        .onChange(of: searchFocusRequest?.generation) { _, _ in
+            honourSearchFocusRequest()
+        }
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
         .background(Theme.bg)
@@ -407,6 +423,13 @@ struct iOSSearchView: View {
             iOSCalendarEventEditSheet(event: selection.event)
                 .cadenceFixedTypography()
         }
+    }
+
+    /// Raise the field if Cmd+K asked for it ([[T-8791]]). Deferred a turn, as the other focus
+    /// requests here are: set synchronously in `onAppear`, the search bar is not on screen yet.
+    private func honourSearchFocusRequest() {
+        guard isOnScreen, searchFocusRequest?.take() == true else { return }
+        DispatchQueue.main.async { isSearchFieldFocused = true }
     }
 
     @ViewBuilder

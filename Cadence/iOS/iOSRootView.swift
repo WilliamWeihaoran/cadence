@@ -47,6 +47,9 @@ struct iOSRootView: View {
     /// be replaced and counted but never read back. Only the size-class bridge consults it; see
     /// `iOSCompactRootShell.onFeatureDestinationAppear`.
     @State private var compactPushedFeature: [CadenceCompactTab: CadenceFeatureDestination] = [:]
+    /// [[T-8791]]: Cmd+K asks Search to raise its field; a sidebar or More-list tap does not. Shared
+    /// with both shells through the environment, since the compact shell builds its own Search.
+    @State private var searchFocusRequest = CadenceSearchFocusRequest()
 
     private var selectedTab: CadenceCompactTab {
         CadenceCompactTab.resolved(selectedTabRaw)
@@ -87,6 +90,7 @@ struct iOSRootView: View {
         // Both shells, one call. A banner that only appeared on the iPad sidebar shell would
         // recreate the macOS/iOS asymmetry it exists to close, one level down.
         .cadenceStartupIssueBanner(PersistenceController.startupIssue)
+        .environment(searchFocusRequest)
         // T-636, and `macOSRootView` says the same thing in the same place for the same reason:
         // the completion control is reached from six surfaces here and owned by none of them, so
         // a refused settle is named once at the shell rather than six times badly. Both shells,
@@ -310,6 +314,9 @@ private extension iOSRootView {
         let destination = CadenceFeatureDestination.search
         selection = destination.item
         apply(destination.compactRoute)
+        // [[T-8791]]: the key means "I am about to type", so the field is raised -- by request,
+        // never on appear, so reaching Search any other way leaves the keyboard down.
+        searchFocusRequest.request()
     }
 
     /// Show the Focus screen on whichever shell is up, without disturbing a Focus screen already
