@@ -63,7 +63,27 @@ struct CadenceDatePicker: View {
             .overlay(RoundedRectangle(cornerRadius: Theme.radiusControlCompact).strokeBorder(Theme.borderSubtle))
         }
         .buttonStyle(.cadencePlain)
-        .popover(isPresented: $isOpen, arrowEdge: .bottom) {
+        // **`arrowEdge: nil`, so the platform may put the panel on a side that can hold it**
+        // ([[T-8476]], the same reading [[T-8473]] measured on the duration editor).
+        //
+        // A named `arrowEdge:` is not a preference: on iOS it reaches UIKit's PERMITTED arrow
+        // directions with exactly ONE direction in it, so the flip is forbidden, and a panel that
+        // cannot give ground is compressed in place instead. The edge names the popover's own
+        // edge, so `.bottom` could only hang this panel ABOVE its chip.
+        //
+        // **This panel cannot give ground.** `MonthCalendarPanel` is a hard
+        // `.frame(height: viewportHeight ?? 294)` — a scroll viewport is a cap, not a text
+        // container, as `quickViewportHeight`'s own note says — and the quick-action row above it
+        // is intrinsic, with no `ScrollView` anywhere around the panel. A short placement can only
+        // take content.
+        //
+        // Measured on `Cadence-iPadPro11` 834x1210 portrait, at the Starts chip of the timeline
+        // draft editor's event schedule: chip top y=252, so 252pt of room above a panel wanting
+        // ~342. With `arrowEdge: .bottom` the drawn chrome was ~201pt tall and had lost the
+        // Today / Tomorrow / This Weekend row, the divider and the weekday-name header, with
+        // "October 2026" spilling out over the panel's own top edge. `nil` is not a free choice
+        // of side: there were 934pt below the same chip, and the panel opens whole beside it now.
+        .popover(isPresented: $isOpen, arrowEdge: nil) {
             CadenceQuickDatePopover(
                 selection: $selection,
                 viewMonth: $viewMonth,

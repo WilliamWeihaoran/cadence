@@ -618,6 +618,95 @@ struct CadenceQuickDateGridScaleTests {
             ) == cellSide, "the pinned cell moved at \(size)")
         }
     }
+
+    /// **[[T-8476]] — the date picker does not pin the side its popover opens on.**
+    ///
+    /// The same reading [[T-8473]] measured on the duration editor, at the other shared picker and
+    /// on the other axis. A named `arrowEdge:` is not a preference: on iOS it reaches UIKit's
+    /// PERMITTED arrow directions with exactly ONE direction in it, so the flip is forbidden, and
+    /// a panel that can neither scroll nor shrink is compressed in place instead.
+    /// `arrowEdge: .bottom` meant this panel could hang only ABOVE its chip.
+    ///
+    /// **Why this panel cannot give ground.** `MonthCalendarPanel` is a hard
+    /// `.frame(height: viewportHeight ?? 294)` — a scroll viewport is a cap, not a text container,
+    /// as `quickViewportHeight`'s own note says — and the quick-action row above it is intrinsic.
+    /// There is no `ScrollView` wrapping the panel, so the only thing a short placement can take
+    /// is content.
+    ///
+    /// **The sighting**, on `Cadence-iPadPro11` 834x1210 portrait, at the Starts chip of the
+    /// timeline draft editor's event schedule: chip top y=252, so 252pt of room above it. The
+    /// drawn chrome was ~201pt tall and had lost the Today / Tomorrow / This Weekend row, the
+    /// divider and the weekday-name header, with "October 2026" spilling out over the panel's own
+    /// top edge — the same compression, and the same spill into the chrome, that T-8473 read as a
+    /// sliced heading. With `arrowEdge: nil` the same chip opened the panel whole on its leading
+    /// side: pills, weekday header, the October grid and the start of November.
+    ///
+    /// **Two halves, because either alone is weak.** The first is the shipped spelling, with no
+    /// named edge left anywhere in the file, so a panel that quietly gets one back stops reading
+    /// as a panel that may choose. The second is the arithmetic off the panel's own metrics,
+    /// saying a pinned-above panel could not have been drawn whole at the measured anchor while a
+    /// free one had somewhere to go — read from `CadenceDateSelectionMetrics` rather than off the
+    /// screenshot.
+    ///
+    /// **Failing-first:** putting `arrowEdge: .bottom` back fails the first half; shrinking
+    /// `quickViewportHeight`'s 294 to the 180 this panel already uses at accessibility sizes makes
+    /// the panel fit the room above the measured anchor and fails the second.
+    @Test("The date picker lets its popover choose a side that can hold it")
+    func theDatePickerDoesNotPinTheSideItsPopoverOpensOn() throws {
+        let read = CadenceSourceScan.strippedSourceReader()
+        let source = try read(path)
+        #expect(source.contains("arrowEdge: nil"),
+                "the date picker pins the side its popover opens on again")
+        #expect(CadenceSourceScan.matchCount(#"arrowEdge:\s*\.[a-z]"#, in: source) == 0,
+                "a named arrow edge is permittedArrowDirections with one direction in it")
+
+        // The panel is a VStack of three intrinsic bands over one hard-framed viewport. The
+        // paddings are the file's own, and asserted to still be there so the sum cannot go stale.
+        #expect(source.contains(".padding(.top, 10)"))
+        #expect(source.contains(".padding(.bottom, 8)"))
+        let chrome: CGFloat = 10 + 8 + 1
+
+        // As points on `Cadence-iPadPro11` in portrait: the Starts chip's top edge, and the room
+        // on each side of it. `arrowEdge: .bottom` puts the panel ABOVE the anchor — see the
+        // measurement in `CadenceDatePicker`'s own note and in [[T-8473]].
+        let screenHeight: CGFloat = 1210
+        let anchorTop: CGFloat = 252
+        let anchorBottom: CGFloat = 276
+        let roomAbove = anchorTop
+        let roomBelow = screenHeight - anchorBottom
+        #expect(roomAbove > 0)
+
+        func panelHeight(at size: DynamicTypeSize) -> CGFloat {
+            CadenceDateSelectionMetrics.quickActionHeight(at: size)
+                + chrome
+                + CadenceDateSelectionMetrics.quickViewportHeight(at: size, inlineStyle: false)
+        }
+
+        #expect(panelHeight(at: .large) > roomAbove,
+                "the panel is \(panelHeight(at: .large)) and fits the \(roomAbove) above the anchor, so the sighting needs re-arguing")
+        // And the grid ALONE already exceeds that room, so the loss is not the pills' alone.
+        #expect(CadenceDateSelectionMetrics.quickViewportHeight(at: .large, inlineStyle: false) > roomAbove)
+
+        // `nil` is not a free choice of side: there was somewhere for it to go.
+        #expect(panelHeight(at: .large) < roomBelow,
+                "nothing on the other side could hold it either, so the fix is not this one")
+
+        // It is not one text size. At every ordinary size the viewport is the same 294 and the
+        // pills only grow, so a pinned-above placement is short of room at that anchor whatever
+        // the reader has chosen.
+        let ordinarySizes = DynamicTypeSize.allCases.filter { !CadenceTypeScale.isAccessibilitySize($0) }
+        #expect(ordinarySizes.count > 1, "the filter kept nothing, so the loop below asserts nothing")
+        for size in ordinarySizes {
+            #expect(panelHeight(at: size) > roomAbove,
+                    "a pinned-above panel would have fitted at \(size)")
+        }
+
+        // **Said rather than asserted at accessibility sizes.** The viewport drops to 180 there
+        // and the pills grow, so whether the sum clears 252 is a near thing and not the argument:
+        // the defect was sighted at the default size, and a panel that happens to fit one anchor
+        // at one text size is still a panel forbidden to move.
+        #expect(CadenceDateSelectionMetrics.quickViewportHeight(at: .accessibility5, inlineStyle: false) == 180)
+    }
 }
 
 /// **T-1412: the third panel, and the one whose pin was a dependency rather than an argument.**
