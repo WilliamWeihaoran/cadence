@@ -966,4 +966,71 @@ private func strippingSwiftComments(_ source: String) -> String {
     return CadenceSourceScan.strippingComments(source)
 }
 
+/// [[T-8641]] and [[T-8642]]: what VoiceOver hears in the iPad sidebar.
+///
+/// An area/project row draws its open-task count and, for a project, a due-date flag, and both are
+/// hidden from VoiceOver — `CadenceSidebarCountLabel` always, the iPad's read-only flag by its own
+/// modifier — so the row's label is the only place either can be heard. It was the bare name. The
+/// header's mark and wordmark now carry the Mac's `SidebarAppHeader` treatment: the mark hidden,
+/// the wordmark a header.
+struct CadenceIPadSidebarVoiceOverTests {
+    @Test func aListRowLabelNamesItsCountAndItsDueDate() {
+        let reference = Date()
+        let key = DateFormatters.dateKey(from: reference)
+        let day = DateFormatters.relativeDate(from: key, relativeTo: reference)
+        let count = CadenceSidebarLayout.listCount(openTaskCount: 3)
+
+        #expect(
+            CadenceSidebarLayout.listRowAccessibilityLabel(
+                "Work", openTaskCount: 3, dueDateKey: key, relativeTo: reference
+            ) == "\(CadenceSidebarLayout.rowAccessibilityLabel("Work", count: count)), \(CadenceTaskControlAccessibility.dueDate), \(day)"
+        )
+        // The count half is the nav rows' own rule, not a second spelling of it.
+        #expect(
+            CadenceSidebarLayout.listRowAccessibilityLabel("Work", openTaskCount: 3, dueDateKey: nil)
+                == CadenceSidebarLayout.rowAccessibilityLabel("Work", count: count)
+        )
+        #expect(CadenceSidebarLayout.listRowAccessibilityLabel("Work", openTaskCount: 3, dueDateKey: nil) != "Work")
+    }
+
+    @Test func aListRowWithNothingToCountOrDateIsJustItsName() {
+        #expect(CadenceSidebarLayout.listRowAccessibilityLabel("Work", openTaskCount: 0, dueDateKey: nil) == "Work")
+        #expect(CadenceSidebarLayout.listRowAccessibilityLabel("Work", openTaskCount: 0, dueDateKey: "") == "Work")
+    }
+
+    @Test func theIPadListRowSpeaksTheSharedLabel() throws {
+        let file = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/iOS/iOSRootSidebar.swift")
+        )
+        let row = try #require(
+            CadenceSourceScan.declarationBody("struct iOSSidebarListRow: View", in: file),
+            "non-vacuity: wrong file"
+        )
+        #expect(
+            row.contains("CadenceSidebarLayout.listRowAccessibilityLabel("),
+            "the iPad's list row is back to announcing the bare list name"
+        )
+        #expect(!row.contains(".accessibilityLabel(displayName)"), "the bare-name label came back")
+    }
+
+    @Test func theIPadSidebarHeaderHidesTheMarkAndHeadsTheColumn() throws {
+        let file = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/iOS/iOSRootSidebar.swift")
+        )
+        let header = try #require(
+            CadenceSourceScan.declarationBody("struct iOSSidebarHeader: View", in: file),
+            "non-vacuity: wrong file"
+        )
+        #expect(header.contains("iOSIconTile("), "non-vacuity: the header no longer draws its mark")
+        #expect(
+            CadenceSourceScan.matchCount("\\.accessibilityHidden\\(true\\)", in: header) == 1,
+            "the header's mark is exposed to VoiceOver again"
+        )
+        #expect(
+            header.contains(".accessibilityAddTraits(.isHeader)"),
+            "the iPad's wordmark lost the header trait the Mac's carries"
+        )
+    }
+}
+
 #endif

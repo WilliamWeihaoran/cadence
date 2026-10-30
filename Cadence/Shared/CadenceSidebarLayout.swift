@@ -301,6 +301,26 @@ extension CadenceSidebarLayout {
         return "\(label), \(count.description)"
     }
 
+    /// An area/project row's VoiceOver label: the name, its open-task tally, its due date
+    /// ([[T-8641]]).
+    ///
+    /// The row draws all three, but the count is `CadenceSidebarCountLabel`, which is
+    /// `accessibilityHidden`, and the iPad row hides its read-only flag too, so the row's label is
+    /// the only place either can be heard — the nav rows' T-1445 argument, one row type down. The
+    /// due-date half is the Mac row's own pair, `CadenceTaskControlAccessibility.dueDate` and the
+    /// relative day, in the order VoiceOver reads that pair there.
+    static func listRowAccessibilityLabel(
+        _ name: String,
+        openTaskCount: Int,
+        dueDateKey: String?,
+        relativeTo referenceDate: Date = Date()
+    ) -> String {
+        let label = rowAccessibilityLabel(name, count: listCount(openTaskCount: openTaskCount))
+        guard let dueDateKey, !dueDateKey.isEmpty else { return label }
+        let day = DateFormatters.relativeDate(from: dueDateKey, relativeTo: referenceDate)
+        return "\(label), \(CadenceTaskControlAccessibility.dueDate), \(day)"
+    }
+
     /// The count for one area/project row. Always neutral — a list is a place, not a deadline.
     static func listCount(openTaskCount: Int) -> CadenceSidebarCount? {
         badge(openTaskCount, singular: "open task", plural: "open tasks")

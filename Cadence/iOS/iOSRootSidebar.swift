@@ -360,8 +360,8 @@ struct iOSSidebar: View {
                 .padding(.horizontal, iOSSidebarMetrics.columnHorizontalPadding)
 
             // Settings and Focus collapse to one row of two glyphs, and since T-3073 there is
-            // no labelled row left down here at all — Goals and Habits are nav rows in the group
-            // at the top, and Lists is the region above rather than a row below it.
+            // no labelled row left down here at all — Goals and Habits left the navigation with
+            // T-2076, and Lists is the region above rather than a row below it.
             //
             // The emptiness is guarded rather than assumed, exactly as `SidebarView.bottomGroup`
             // guards it: `navGroup` of nothing is still a padded stack, so an unguarded call
@@ -523,9 +523,9 @@ struct iOSSidebar: View {
 /// It was pinned under a row reading "Lists", which the owner read as a heading over the rows it
 /// sat on: *"there shouldnt be a section called just lists cuz we're gonna show all the lists there
 /// anyways"*. It is the standing page-header rule at sidebar scale, and the macOS column already
-/// heads its own list region with nothing. The Lists *destination* is still a row — it is the first
-/// of the secondary nav rows below the region now, because it is the only door to the one surface
-/// that can make a *project*. See `iOSSidebar.secondaryRowDestinations`.
+/// heads its own list region with nothing. The Lists *destination* has no row at all since T-3073:
+/// the create door it guarded moved into this region's context headers. See
+/// `iOSSidebar.secondaryRowDestinations`.
 ///
 /// The context headers inside the region stay: those name something the rows under them do not say,
 /// which is the difference between a heading and a label.
@@ -906,13 +906,17 @@ struct iOSSidebarHeader: View {
 
     var body: some View {
         HStack(spacing: 8) {
+            // [[T-8642]]: decoration and a heading, as `SidebarAppHeader` has them on the Mac. The
+            // tile was left exposed to VoiceOver, and the wordmark carried no header trait.
             iOSIconTile(systemImage: "circle.hexagongrid.fill", color: Theme.blue, size: 28, iconSize: 14)
+                .accessibilityHidden(true)
 
             Text("Cadence")
                 .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(Theme.text)
                 .lineLimit(1)
                 .minimumScaleFactor(0.8)
+                .accessibilityAddTraits(.isHeader)
 
             Spacer(minLength: 2)
 
@@ -1163,7 +1167,15 @@ struct iOSSidebarListRow: View {
                 Label("Edit \(item.kind == .area ? "Area" : "Project")", systemImage: "pencil")
             }
         }
-        .accessibilityLabel(displayName)
+        // [[T-8641]]: the count and the flag below are both hidden from VoiceOver, so the row's
+        // label is the only place either is heard. It was the bare name.
+        .accessibilityLabel(
+            CadenceSidebarLayout.listRowAccessibilityLabel(
+                displayName,
+                openTaskCount: item.openTaskCount,
+                dueDateKey: item.dueDateKey
+            )
+        )
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
