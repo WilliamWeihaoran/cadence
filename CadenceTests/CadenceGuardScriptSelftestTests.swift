@@ -627,6 +627,10 @@ struct CadenceGuardScriptSelftestTests {
     /// panel's permanent `simctl spawn <udid> log stream` is subtracted from the live-op count, so
     /// an expired claim under an attached panel is reclaimable again -- while the same panel beside
     /// an install still keeps it, and a blind or moving observer reading is still "cannot tell".
+    ///
+    /// `boot-target-ipad` is [[T-8503]]'s: `boot ipad` resolves the standing iPad (else a stock
+    /// iPad past the deny list) and boots it beside a booted iPhone, while a bare `boot` still
+    /// picks only an iPhone and still refuses on a non-empty fleet.
     static let simulatorClaimProperties = [
         "ordering",
         "killed-waiter",
@@ -634,6 +638,7 @@ struct CadenceGuardScriptSelftestTests {
         "cannot-tell-keeps-claim",
         "observer-not-busy",
         "observer-cannot-tell-keeps-claim",
+        "boot-target-ipad",
     ]
 
     /// **Empty, as of [[T-1382]], and the emptiness is the finding.** `ordering` was tolerated

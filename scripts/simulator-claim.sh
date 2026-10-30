@@ -82,7 +82,7 @@
 #   ./scripts/simulator-claim.sh                       # status; changes nothing
 #   ./scripts/simulator-claim.sh claim  <id> [timeout]  # blocks; prints UDID=...
 #   ./scripts/simulator-claim.sh env    <id>            # eval-able exports
-#   ./scripts/simulator-claim.sh boot           [--apply]
+#   ./scripts/simulator-claim.sh boot   [iphone|ipad] [--apply]   # bare = one stock iPhone
 #   ./scripts/simulator-claim.sh install <id> <app.app> [--apply]
 #   ./scripts/simulator-claim.sh launch  <id>           [--apply] [--relaunch]
 #   ./scripts/simulator-claim.sh renew   <id>
@@ -202,11 +202,22 @@ cadence_standing_udid() {
 # standing devices (their names contain "cadence") and left the owner's held iPhone 17 Pro simulator
 # as the first match, so `boot --apply` booted exactly the device the claim loop and
 # the explicit-UDID path refuse -- measured 2026-10-12 by agent `plusrepro`.
+#
+# `$1` is the shape (T-8503): `iphone` (the default, and what a bare `boot` asks for) or `ipad`.
+# The iPad goes through the SAME rule -- its standing device first, then the first stock iPad,
+# every candidate through the deny list (which is what keeps the blind 53EC6A90 iPad, a stock
+# name, from ever being picked). Before this the candidate list was built from the iPhone alone,
+# so an iPad request could never resolve and agents reached past the script to `simctl boot`.
 boot_target() {
-  local avail u
+  local avail u shape="${1:-iphone}" stock
+  case "$shape" in
+    iphone|iPhone|phone) shape=iphone; stock='^ +iPhone [0-9]' ;;
+    ipad|iPad|pad)       shape=ipad;   stock='^ +iPad' ;;
+    *) return 2 ;;
+  esac
   avail=$(${=SIMCTL} list devices available 2>/dev/null)
-  for u in $(cadence_standing_udid iphone) $(print -r -- "$avail" \
-      | grep -E '^ +iPhone [0-9]' | grep -viE 'agent|cadence' \
+  for u in $(cadence_standing_udid "$shape") $(print -r -- "$avail" \
+      | grep -E "$stock" | grep -viE 'agent|cadence' \
       | sed -n 's/.*(\([0-9A-Fa-f-]\{8\}-[0-9A-Fa-f-]*\)).*/\1/p'); do
     [[ "$avail" == *"($u)"* ]] || continue
     (( ${CADENCE_SIM_DENY_UDIDS[(Ie)$u]} )) && continue
@@ -666,15 +677,29 @@ case "$CMD" in
       sleep 5; (( waited += 5 )); (( waited > 300 )) && { say "boot lock stuck"; exit 5 }
     done
     date +%s > "$BOOTLOCK/since"
+    # Optional shape (T-8503): `boot ipad` / `boot iphone`. A BARE `boot` is unchanged -- it
+    # starts ONE stock iPhone and refuses while anything is booted, because an empty fleet is
+    # the only case it was written for. A NAMED shape asks for that device specifically, so the
+    # only refusal is "that device is already up": the standing pair is kept booted together
+    # (header), and refusing the iPad because the iPhone is up is what sent agents to raw simctl.
+    SHAPE="${POS[1]:-}"
+    case "$SHAPE" in
+      ''|iphone|iPhone|phone|ipad|iPad|pad) ;;
+      *) say "usage: $SELF boot [iphone|ipad] [--apply]"; rm -rf "$BOOTLOCK"; exit 2 ;;
+    esac
     typeset -a booted; booted=($(booted_udids))
-    if (( ${#booted} > 0 )); then
+    if [[ -z "$SHAPE" ]] && (( ${#booted} > 0 )); then
       say "already booted: $(device_name ${booted[1]}) (${booted[1]}) -- not booting a second device."
       rm -rf "$BOOTLOCK"; exit 0
     fi
-    # The standing iPhone, else a STOCK device chosen by name from what is already in
-    # the pool, never a denied one (T-3151). Never `simctl create`.
-    target=$(boot_target)
-    [[ -n "$target" ]] || { say "no stock iPhone available"; rm -rf "$BOOTLOCK"; exit 5 }
+    # The standing device of that shape, else a STOCK one chosen by name from what is already
+    # in the pool, never a denied one (T-3151). Never `simctl create`.
+    target=$(boot_target "${SHAPE:-iphone}")
+    [[ -n "$target" ]] || { say "no stock ${SHAPE:-iphone} available"; rm -rf "$BOOTLOCK"; exit 5 }
+    if (( ${booted[(Ie)$target]} )); then
+      say "already booted: $(device_name $target) ($target) -- nothing to do."
+      rm -rf "$BOOTLOCK"; exit 0
+    fi
     say "== boot =="
     say "  target: $target"
     run_or_report "${SIMCTL} boot $target && ${SIMCTL} bootstatus $target -b"
@@ -745,6 +770,10 @@ case "$CMD" in
     # is indistinguishable from "take the first free device" -- which is exactly how T-1780's
     # selector shipped broken and how my own probe of it passed.
     FAKE_SECOND_UDID="77777777-6666-5555-4444-333333333333"
+    # A stock iPad for `boot ipad` to fall back to (T-8503). The blind 53EC6A90 iPad, a stock name
+    # on the REAL deny list, is listed ahead of it in `available`, so the fallback has a wrong
+    # answer to give.
+    FAKE_IPAD_UDID="55555555-4444-3333-2222-111111111111"
     cat > "$root/fake-simctl" <<FAKESIMCTL
 #!/bin/zsh
 if [[ "\$1 \$2 \$3" == "list devices booted" ]]; then
@@ -752,12 +781,16 @@ if [[ "\$1 \$2 \$3" == "list devices booted" ]]; then
   print -r -- "    iPhone SelftestOwner (${FAKE_DENIED_UDID}) (Booted)"
   print -r -- "    iPhone SelftestFake (${FAKE_UDID}) (Booted)"
   print -r -- "    iPad SelftestSecond (${FAKE_SECOND_UDID}) (Booted)"
+  [[ -n "\${SELFTEST_IPAD_BOOTED:-}" ]] && print -r -- "    Cadence-iPadPro11 (630EA883-AA8E-4290-9E37-C616B58D40BD) (Booted)"
 fi
 if [[ "\$1 \$2 \$3" == "list devices available" ]]; then
   print -r -- "-- iOS 18.0 --"
   print -r -- "    iPhone 17 Pro (${FAKE_DENIED_UDID}) (Shutdown)"
   [[ -n "\${SELFTEST_STANDING:-}" ]] && print -r -- "    Cadence-iPhone15 (CAD0F62C-5A83-4FE5-BEBB-5F567FD456B0) (Shutdown)"
   print -r -- "    iPhone 16 (${FAKE_SECOND_UDID}) (Shutdown)"
+  print -r -- "    iPad Pro 11-inch (M4) (53EC6A90-D767-45DE-8EAC-53B8E1673B1D) (Shutdown)"
+  [[ -n "\${SELFTEST_STANDING_IPAD:-}" ]] && print -r -- "    Cadence-iPadPro11 (630EA883-AA8E-4290-9E37-C616B58D40BD) (Shutdown)"
+  print -r -- "    iPad Air 11-inch (M2) (${FAKE_IPAD_UDID}) (Shutdown)"
 fi
 exit 0
 FAKESIMCTL
@@ -907,6 +940,31 @@ FAKESIMCTL
         print -r -- "PASS boot-target-denied: the denied device leads the available list and boot picked $bt_stock; with the standing iPhone present it picked $bt_standing"
       else
         print -r -- "FAIL boot-target-denied: stock pick '${bt_stock:-<nothing>}' (wanted $FAKE_SECOND_UDID, NOT $FAKE_DENIED_UDID); standing pick '${bt_standing:-<nothing>}' (wanted CAD0F62C-5A83-4FE5-BEBB-5F567FD456B0)"; (( fails++ ))
+      fi
+    }
+
+    # 2d. `boot ipad` BOOTS THE STANDING iPAD (T-8503), by the iPhone's rule: standing first, then
+    #     the first stock iPad, never a denied one; a bare `boot` still never picks an iPad and still
+    #     refuses while anything is booted; a named shape refuses only when ITS device is already up.
+    #     The fake booted list always holds an iPhone, so the pre-T-8503 `boot ipad` -- which ignored
+    #     the shape and refused on any booted device -- answers "already booted" here and fails.
+    trial_bootipad() {
+      local pad=630EA883-AA8E-4290-9E37-C616B58D40BD phone=CAD0F62C-5A83-4FE5-BEBB-5F567FD456B0
+      bi_stock=$(SIMCTL="/bin/zsh $root/fake-simctl"; boot_target ipad)
+      bi_standing=$(SIMCTL="/bin/zsh $root/fake-simctl"; SELFTEST_STANDING_IPAD=1; export SELFTEST_STANDING_IPAD; boot_target ipad)
+      bi_bare=$(SIMCTL="/bin/zsh $root/fake-simctl"; SELFTEST_STANDING=1 SELFTEST_STANDING_IPAD=1; export SELFTEST_STANDING SELFTEST_STANDING_IPAD; boot_target)
+      bi_cmd=$(SELFTEST_STANDING_IPAD=1 "$SELF" boot ipad 2>&1)
+      bi_cmdbare=$(SELFTEST_STANDING_IPAD=1 "$SELF" boot 2>&1)
+      bi_cmdup=$(SELFTEST_STANDING_IPAD=1 SELFTEST_IPAD_BOOTED=1 "$SELF" boot ipad 2>&1)
+      "$SELF" boot watch >/dev/null 2>&1; bi_badrc=$?
+      bi_ok_cmd=0;  [[ "$bi_cmd" == *"target: $pad"* && "$bi_cmd" == *"would run"* && "$bi_cmd" != *"already booted"* ]] && bi_ok_cmd=1
+      bi_ok_bare=0; [[ "$bi_cmdbare" == *"already booted"* && "$bi_cmdbare" != *"target:"* ]] && bi_ok_bare=1
+      bi_ok_up=0;   [[ "$bi_cmdup" == *"already booted"*"$pad"* && "$bi_cmdup" != *"would run"* ]] && bi_ok_up=1
+      if [[ "$bi_stock" == "$FAKE_IPAD_UDID" && "$bi_standing" == "$pad" && "$bi_bare" == "$phone" ]] \
+          && (( bi_ok_cmd && bi_ok_bare && bi_ok_up && bi_badrc == 2 )); then
+        print -r -- "PASS boot-target-ipad: boot ipad picked the standing iPad $bi_standing, else the stock $bi_stock past the denied blind iPad; a bare pick stayed $bi_bare; boot ipad beside a booted iPhone targets the iPad, a bare boot still refuses, an iPad already up is not rebooted, an unknown shape exits 2"
+      else
+        print -r -- "FAIL boot-target-ipad: stock '${bi_stock:-<nothing>}' (wanted $FAKE_IPAD_UDID), standing '${bi_standing:-<nothing>}' (wanted $pad), bare '${bi_bare:-<nothing>}' (wanted $phone); cmd=$bi_ok_cmd bare=$bi_ok_bare up=$bi_ok_up badrc=$bi_badrc (wanted 1 1 1 2)"; (( fails++ ))
       fi
     }
 
@@ -1136,7 +1194,7 @@ exit 0' > "$root/panelmovingpgrep"
     started=$EPOCHREALTIME
     # `trial`, never `t`: trial_keepsqueue loops `for t in "$QUEUE"/*`, and in this subshell the
     # name it clobbered was the one the count file is written under.
-    for trial in ordering killedwaiter denylist keepsqueue keepsclaim keepsobserver keepsobserverrace; do
+    for trial in ordering killedwaiter denylist bootipad keepsqueue keepsclaim keepsobserver keepsobserverrace; do
       ( troot="$root/trial-$trial"
         trial_env "$troot" || { print -r -- "selftest: could not set up trial $trial"; exit 2 }
         fails=0; kids=()
