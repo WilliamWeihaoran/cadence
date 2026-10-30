@@ -100,9 +100,17 @@ nonisolated enum MarkdownReferenceCompletionSupport {
     /// The notes a `[[` completion offers: most recently edited first, then title.
     ///
     /// `updatedAt` is a `Date` and `id` is unique, so this pair is already total.
+    ///
+    /// [[T-8585]]: a query matches the title a row DRAWS (`searchTitle`, `Oct 30` for an untitled
+    /// daily note) as well as `displayTitle` (the key `[[2026-10-30` still finds it) — the picker
+    /// names the note by its day, so the day is what a reader types.
     nonisolated static func candidateNotes(from notes: [Note], query: String) -> [Note] {
         notes
-            .filter { matches($0.displayTitle, query: query) || matches($0.content, query: query) }
+            .filter {
+                matches($0.displayTitle, query: query)
+                    || matches(NoteReferencePanelSupport.searchTitle($0), query: query)
+                    || matches($0.content, query: query)
+            }
             .sorted { lhs, rhs in
                 if lhs.updatedAt != rhs.updatedAt { return lhs.updatedAt > rhs.updatedAt }
                 let titleComparison = lhs.displayTitle.localizedCaseInsensitiveCompare(rhs.displayTitle)

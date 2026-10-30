@@ -12,19 +12,34 @@ struct MarkdownReferenceTarget: Hashable {
 struct MarkdownReferenceSuggestion: Identifiable, Hashable {
     let kind: MarkdownReferenceKind
     let targetID: UUID
+    /// What the picker draws. For a note, `searchTitle` ([[T-8585]]): an untitled daily note reads
+    /// `Oct 30`, not its storage key.
     let title: String
+    /// What a typed query is also matched against: the note's `displayTitle`, so `[[2026-10-30`
+    /// still finds the note whose row now says `Oct 30`. Equal to `title` for a task.
+    let matchTitle: String
     let subtitle: String
+    /// Written into the text. Built from `displayTitle`, never from `title`.
     let markdown: String
 
     var id: String {
         "\(kind)-\(targetID.uuidString)"
     }
 
+    /// Whether the `[[` picker offers this row for `query` (already trimmed). Empty matches all.
+    func matches(query: String) -> Bool {
+        query.isEmpty
+            || title.localizedCaseInsensitiveContains(query)
+            || matchTitle.localizedCaseInsensitiveContains(query)
+            || subtitle.localizedCaseInsensitiveContains(query)
+    }
+
     static func note(_ note: Note) -> MarkdownReferenceSuggestion {
         MarkdownReferenceSuggestion(
             kind: .note,
             targetID: note.id,
-            title: note.displayTitle,
+            title: NoteReferencePanelSupport.searchTitle(note),
+            matchTitle: note.displayTitle,
             subtitle: note.kind.rawValue.capitalized,
             markdown: NoteReferenceParser.noteReferenceMarkdown(for: note)
         )
@@ -35,6 +50,7 @@ struct MarkdownReferenceSuggestion: Identifiable, Hashable {
             kind: .task,
             targetID: task.id,
             title: TaskTitleSupport.displayTitle(task.title),
+            matchTitle: TaskTitleSupport.displayTitle(task.title),
             subtitle: task.containerName.isEmpty ? task.status.rawValue.capitalized : task.containerName,
             markdown: NoteReferenceParser.taskReferenceMarkdown(for: task)
         )

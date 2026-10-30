@@ -448,7 +448,9 @@ struct iOSMarkdownEditingSurface: View {
                 .map { note in
                     iOSMarkdownReferenceCompletionChoice(
                         id: "note-\(note.id.uuidString)",
-                        title: note.displayTitle,
+                        // Drawn and spoken by its day ([[T-8585]]); the markdown below still
+                        // writes `displayTitle`, which title-only resolution matches.
+                        title: NoteReferencePanelSupport.searchTitle(note),
                         subtitle: NoteReferencePanelSupport.noteKindLabel(note.kind),
                         systemImage: "doc.text",
                         tint: Theme.blue,

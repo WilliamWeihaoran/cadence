@@ -240,7 +240,8 @@ private struct iOSMarkdownNoteReferenceRow: View {
             iOSIconTile(systemImage: "doc.text", color: Theme.blue)
 
             VStack(alignment: .leading, spacing: 4) {
-                Text(note.displayTitle)
+                // By its day, as Search draws it ([[T-8585]]); the inserted markdown is untouched.
+                Text(NoteReferencePanelSupport.searchTitle(note))
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(Theme.text)
                     .lineLimit(1)
@@ -814,7 +815,7 @@ struct iOSNoteReferencePanel: View {
     private func notePills(_ notes: [Note], section: NoteReferencePanelSection) -> some View {
         ForEach(notes, id: \.id) { note in
             iOSMarkdownSuggestionPill(
-                title: note.displayTitle,
+                title: NoteReferencePanelSupport.searchTitle(note),
                 subtitle: NoteReferencePanelSupport.noteKindLabel(note.kind),
                 action: { openNote(note) }
             ) {

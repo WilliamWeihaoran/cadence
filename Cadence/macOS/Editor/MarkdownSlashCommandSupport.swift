@@ -328,11 +328,7 @@ final class MarkdownReferencePickerController {
         let query = context.query.trimmingCharacters(in: .whitespacesAndNewlines)
         let filtered = allSuggestions
             .filter { $0.kind == context.kind }
-            .filter {
-                query.isEmpty ||
-                    $0.title.localizedCaseInsensitiveContains(query) ||
-                    $0.subtitle.localizedCaseInsensitiveContains(query)
-            }
+            .filter { $0.matches(query: query) }
             .prefix(8)
 
         let matches = Array(filtered)

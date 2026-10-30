@@ -33,7 +33,7 @@ struct NoteReferenceStrip: View {
                             } label: {
                                 ReferenceChip(
                                 icon: NoteReferencePanelSection.linkedNotes.systemImage,
-                                title: linked.displayTitle,
+                                title: NoteReferencePanelSupport.searchTitle(linked),
                                 tint: Theme.blue
                             )
                             }
@@ -69,7 +69,7 @@ struct NoteReferenceStrip: View {
                             } label: {
                                 ReferenceChip(
                                 icon: NoteReferencePanelSection.backlinks.systemImage,
-                                title: backlink.displayTitle,
+                                title: NoteReferencePanelSupport.searchTitle(backlink),
                                 tint: Theme.amber
                             )
                             }

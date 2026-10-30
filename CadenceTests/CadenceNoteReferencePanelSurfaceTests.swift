@@ -830,6 +830,81 @@ private extension String {
     }
 }
 
+/// [[T-8585]]: an untitled daily or weekly note is DRAWN by its day — `searchTitle`, as Search and
+/// the linked-note sheet already did ([[T-8523]]) — on every reference surface: the reference chips
+/// on both platforms, the `[[` suggestions on both platforms, and the Insert Note Link sheet. What
+/// is WRITTEN is untouched: the inserted `[[note:UUID|...]]` still carries `displayTitle`, and a
+/// title-only `[[2026-10-30]]` still resolves, because `displayTitle` is what resolution matches.
+@MainActor
+struct CadenceNoteReferenceDisplayTitleTests {
+    private static func untitledDaily() -> Note {
+        Note(kind: .daily, title: "2026-10-30", dateKey: "2026-10-30")
+    }
+
+    @Test func theCompletionQueryMatchesTheDrawnDayAndStillTheKey() {
+        let daily = Self.untitledDaily()
+        let other = Note(kind: .permanent, title: "Plans")
+        let drawn = NoteReferencePanelSupport.searchTitle(daily)
+        #expect(drawn != daily.displayTitle, "non-vacuity: the fixture must read differently from its key")
+
+        let byDay = MarkdownReferenceCompletionSupport.candidateNotes(from: [daily, other], query: drawn)
+        #expect(byDay.map(\.id) == [daily.id])
+        let byKey = MarkdownReferenceCompletionSupport.candidateNotes(from: [daily, other], query: "2026-10-30")
+        #expect(byKey.map(\.id) == [daily.id])
+        #expect(MarkdownReferenceCompletionSupport.candidateNotes(from: [daily, other], query: "zzqx").isEmpty)
+    }
+
+    @Test func theInsertedLinkStillWritesAndResolvesByDisplayTitle() {
+        let daily = Self.untitledDaily()
+        let markdown = NoteReferenceParser.noteReferenceMarkdown(for: daily)
+        #expect(markdown == "[[note:\(daily.id.uuidString)|2026-10-30]]")
+        let source = Note(kind: .permanent, title: "Source", content: "see [[2026-10-30]]")
+        #expect(NoteReferenceResolver.linkedNotes(for: source, in: [source, daily]).map(\.id) == [daily.id])
+    }
+
+    @Test func theMacSuggestionDrawsTheDayAndInsertsTheKey() {
+        #if os(macOS)
+        let daily = Self.untitledDaily()
+        let suggestion = MarkdownReferenceSuggestion.note(daily)
+        #expect(suggestion.title == NoteReferencePanelSupport.searchTitle(daily))
+        #expect(suggestion.title != daily.displayTitle)
+        #expect(suggestion.markdown == NoteReferenceParser.noteReferenceMarkdown(for: daily))
+        #expect(suggestion.matches(query: "2026-10-30"))
+        #expect(suggestion.matches(query: suggestion.title))
+        #expect(suggestion.matches(query: ""))
+        #expect(!suggestion.matches(query: "zzqx"))
+
+        let typed = MarkdownReferenceSuggestion.note(Note(kind: .daily, title: "Offsite day", dateKey: "2026-10-30"))
+        #expect(typed.title == "Offsite day")
+        #endif
+    }
+
+    /// The Mac chips and picker filter, and the three iOS views, are checked in source: `Cadence/iOS/`
+    /// is invisible to this macOS target, and the Mac strip is a view with no seam to call.
+    @Test func everyReferenceSurfaceDrawsSearchTitle() throws {
+        let strip = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile("Cadence/macOS/Views/NoteReferenceSupportViews.swift"))
+        #expect(strip.contains("title: NoteReferencePanelSupport.searchTitle(linked),"))
+        #expect(strip.contains("title: NoteReferencePanelSupport.searchTitle(backlink),"))
+        #expect(!strip.contains("linked.displayTitle"))
+        #expect(!strip.contains("backlink.displayTitle"))
+
+        let picker = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile("Cadence/macOS/Editor/MarkdownSlashCommandSupport.swift"))
+        #expect(picker.contains(".filter { $0.matches(query: query) }"))
+
+        let accessories = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile("Cadence/iOS/iOSMarkdownAccessoryViews.swift"))
+        #expect(accessories.contains("Text(NoteReferencePanelSupport.searchTitle(note))"))
+        #expect(accessories.contains("title: NoteReferencePanelSupport.searchTitle(note),"))
+        #expect(!accessories.contains("note.displayTitle"))
+        #expect(accessories.contains("insert(NoteReferenceParser.noteReferenceMarkdown(for: note))"))
+
+        let surface = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile("Cadence/iOS/iOSMarkdownEditingSurface.swift"))
+        let choices = try CadenceCommitSurfaceScan.declarationBody(named: "referenceCompletionChoices", in: surface)
+        #expect(choices.contains("title: NoteReferencePanelSupport.searchTitle(note),"))
+        #expect(!choices.contains("note.displayTitle"))
+        #expect(choices.contains("markdown: NoteReferenceParser.noteReferenceMarkdown(for: note)"))
+    }
+}
+
 /// Fails unless `text` occurs exactly `count` times as live code in each listed file.
 private func expectOccurrences(
     of text: String,
