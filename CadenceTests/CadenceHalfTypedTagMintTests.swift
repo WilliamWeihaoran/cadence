@@ -145,6 +145,88 @@ struct CadenceHalfTypedTagMintTests {
         #expect(try store.storedTagNames() == ["other", "pro"])
     }
 
+    // MARK: - T-7931
+
+    /// The launch sweep's run over a store, at `now`, as the iPhone/iPad app's launch and the MCP
+    /// server's (`CadenceModelContainerFactory.prepare`) both call it.
+    private func launchSweep(_ store: Store, now: Date = Date()) throws -> CadenceMaintenancePassOutcome {
+        let outcome = TagSupport.syncAllNoteTagsFromMarkdown(in: store.editing, saveChanges: false, now: now)
+        try store.editing.save()
+        return outcome
+    }
+
+    /// A note as the Mac's ceiling commit leaves it: the body saved, its tags not synced.
+    private func ceilingSaved(_ store: Store, _ content: String, writtenAt: Date) throws -> Note {
+        let note = Note(kind: .list, title: "Note", content: content, updatedAt: writtenAt)
+        store.editing.insert(note)
+        try store.editing.save()
+        return note
+    }
+
+    /// **[[T-7931]].** The sweep runs in another process with no caret, so it must not mint the
+    /// half-word a ceiling commit saved; the Mac's finished-word commit then leaves only `project`.
+    @Test func aLaunchSweepDoesNotMintTheHalfTypedTagACeilingCommitJustSaved() throws {
+        let store = try Store()
+        let now = Date()
+        let note = try ceilingSaved(store, "x #pro", writtenAt: now.addingTimeInterval(-10))
+
+        #expect(try launchSweep(store, now: now) == .nothingToDo)
+        #expect(try store.storedTagNames().isEmpty, "the sweep minted the half-typed `pro`")
+        #expect((note.tags ?? []).isEmpty)
+
+        paneCommit(note, "x #project", in: store.editing)
+        #expect(try store.storedTagNames() == ["project"], "`pro` outlived the finished word's commit")
+    }
+
+    /// Another device's clock may run ahead: a body written "in the future" is as fresh as one
+    /// written a moment ago.
+    @Test func aBodyStampedByAClockAheadOfThisOneIsStillFresh() throws {
+        let store = try Store()
+        let now = Date()
+        _ = try ceilingSaved(store, "x #pro", writtenAt: now.addingTimeInterval(20))
+
+        _ = try launchSweep(store, now: now)
+        #expect(try store.storedTagNames().isEmpty, "a future-stamped half-typed body was minted")
+    }
+
+    /// A body that still reads `#pro` after the quiet period is the user's word, and is minted.
+    @Test func aBodyStillForTheQuietPeriodIsMintedByTheSweep() throws {
+        let store = try Store()
+        let now = Date()
+        let note = try ceilingSaved(
+            store,
+            "x #pro",
+            writtenAt: now.addingTimeInterval(-(TagSupport.sweepInlineMintQuietPeriod + 1))
+        )
+
+        #expect(try launchSweep(store, now: now) == .changed)
+        #expect(try store.storedTagNames() == ["pro"])
+        #expect(note.tags?.map(\.name) == ["pro"])
+    }
+
+    /// Only a NEW row is withheld: a fresh note whose inline tags all exist is swept as before.
+    @Test func aFreshNoteWhoseInlineTagsAllExistIsStillSwept() throws {
+        let store = try Store()
+        let now = Date()
+        store.editing.insert(Cadence.Tag(name: "work", slug: "work", order: 0))
+        let note = try ceilingSaved(store, "x #work", writtenAt: now)
+
+        #expect(try launchSweep(store, now: now) == .changed)
+        #expect(note.tags?.map(\.name) == ["work"])
+        #expect(try store.storedTagNames() == ["work"])
+    }
+
+    /// The frontmatter `tags:` line is Cadence's own writing, never a caret mid-word: a fresh note
+    /// that names a new tag there is minted as before.
+    @Test func aFreshFrontmatterTagIsStillMintedByTheSweep() throws {
+        let store = try Store()
+        let now = Date()
+        let note = try ceilingSaved(store, "---\ntags: [alpha]\n---\nBody", writtenAt: now)
+
+        #expect(try launchSweep(store, now: now) == .changed)
+        #expect(note.tags?.map(\.name) == ["alpha"])
+    }
+
     // MARK: - T-7901
 
     /// Every `NoteEditorPane` in the app is torn down on a note switch rather than re-pointed, so

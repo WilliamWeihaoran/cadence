@@ -326,6 +326,7 @@ nonisolated enum TagSupport {
     static func syncAllNoteTagsFromMarkdown(
         in context: ModelContext,
         saveChanges: Bool = true,
+        now: Date = Date(),
         makingTagIndex: (ModelContext) -> TagSlugIndex? = TagSupport.makeTagIndex(in:)
     ) -> CadenceMaintenancePassOutcome {
         var changed = false
@@ -337,13 +338,38 @@ nonisolated enum TagSupport {
         // A tag table that cannot be read is the same refusal it was per note: resolution answered
         // `nil` for every note and nothing was written. It is answered once now instead of K times.
         guard let index = makingTagIndex(context) else { return .couldNotRead }
-        for note in notes {
+        for note in notes where !sweepDefersInlineMint(for: note, index: index, now: now) {
             changed = syncNoteTagsFromMarkdown(note, in: context, index: index) || changed
         }
         if saveChanges && context.hasChanges {
             try? context.save()
         }
         return changed ? .changed : .nothingToDo
+    }
+
+    /// **[[T-7931]].** How recently a note's body must have been written for the launch sweep to
+    /// leave a brand-new inline `#tag` in it to the note's editor.
+    static let sweepInlineMintQuietPeriod: TimeInterval = 5 * 60
+
+    /// **[[T-7931]].** Whether the launch sweep skips this note: its body was written within
+    /// `sweepInlineMintQuietPeriod` of `now` (either side, for another device's clock) and an inline
+    /// `#name` in it matches no existing tag.
+    ///
+    /// The macOS editor's 15 s ceiling commit saves a body mid-word, `x #pro` of `#project`, and
+    /// defers that note's tag sync to its next flush ([[T-7891]]). The sweep has no editor and no
+    /// caret, and it runs in another process -- the iPhone/iPad app's launch, or the MCP server's
+    /// (`CadenceModelContainerFactory.prepare`) -- so it minted `pro`, and [[T-7882]]'s cleanup
+    /// could not remove it: that provisional set lives in memory in the process that minted, and
+    /// the finished word's commit is the Mac's. Not minting it is the fix that works across
+    /// processes and devices without a model field. Nothing is lost: the editor's next flush mints
+    /// whatever the body then says, and a body that still reads `#pro` after the quiet period is
+    /// the user's, so the next launch's sweep mints it. A note whose inline tags all exist already,
+    /// and every frontmatter-only note, is swept as before -- this only withholds a NEW row, and it
+    /// skips the whole note so nothing writes a partial tag set.
+    static func sweepDefersInlineMint(for note: Note, index: TagSlugIndex, now: Date) -> Bool {
+        guard abs(now.timeIntervalSince(note.updatedAt)) < sweepInlineMintQuietPeriod else { return false }
+        return normalizedTagNames(MarkdownMetadataParser.inlineTagNames(in: note.content))
+            .contains { index.tag(forSlug: slug(for: $0)) == nil }
     }
 
     /// Renames a tag **and the frontmatter `tags:` line of every note that carries it** (T-6251),
