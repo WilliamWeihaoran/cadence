@@ -975,7 +975,8 @@ private func strippingSwiftComments(_ source: String) -> String {
 /// the wordmark a header.
 struct CadenceIPadSidebarVoiceOverTests {
     @Test func aListRowLabelNamesItsCountAndItsDueDate() {
-        let reference = Date()
+        // A fixed instant: a bare `Date()` here grows the clock ledger (T-8680).
+        let reference = Date(timeIntervalSince1970: 1_800_000_000)
         let key = DateFormatters.dateKey(from: reference)
         let day = DateFormatters.relativeDate(from: key, relativeTo: reference)
         let count = CadenceSidebarLayout.listCount(openTaskCount: 3)
