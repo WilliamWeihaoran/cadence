@@ -68,6 +68,22 @@ nonisolated struct MarkdownSlashCommand: Identifiable {
         }
     }
 
+    /// The commands a `/query` offers, in menu order: **every** match, never a shortlist.
+    ///
+    /// **[[T-8581]].** iOS's `/` strip took `.prefix(8)` of this filter, so a bare `/` offered
+    /// Heading 1 through Quote and nothing after them. Code Block, Image, Bold, Italic,
+    /// Strikethrough, Highlight, Divider, Table, Note Link and Task Reference could be reached only
+    /// by already knowing their names, and `/table` is the only way either platform has to insert a
+    /// table. The strip scrolls sideways and the Mac's picker scrolls its rows ([[T-7233]]), so the
+    /// cap was never a screen limit; one function now answers "what does this query offer" for both.
+    static func matching(_ commands: [MarkdownSlashCommand], query: String) -> [MarkdownSlashCommand] {
+        commands.filter { command in
+            query.isEmpty ||
+                command.id.localizedCaseInsensitiveContains(query) ||
+                command.title.localizedCaseInsensitiveContains(query)
+        }
+    }
+
     /// Note templates as `/` commands — one of the three places templates live now that they no
     /// longer take a row above every note.
     ///

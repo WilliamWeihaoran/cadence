@@ -84,6 +84,19 @@ nonisolated enum MarkdownReferenceCompletionSupport {
         return value.localizedCaseInsensitiveContains(trimmed)
     }
 
+    /// The notes a note may link to: `notes` without the one being edited.
+    ///
+    /// **[[T-8582]].** Every iOS note host hands its editor the whole `@Query`, so the `[[` strip
+    /// and the Insert Note Link sheet offered the note you were typing in. The link that made was
+    /// dead weight on every surface that reads it — `NoteReferenceResolver.linkedNotes` drops a
+    /// self-reference, so the reference panel never listed it — and a tap on it opened a second
+    /// editor over the same note. The Mac's note editor already filters it (`NoteEditorPane`'s
+    /// `relatedNotes.filter { $0.id != note.id }`). Order-preserving; `nil` excludes nothing.
+    nonisolated static func linkableNotes(_ notes: [Note], excludingNoteID noteID: UUID?) -> [Note] {
+        guard let noteID else { return notes }
+        return notes.filter { $0.id != noteID }
+    }
+
     /// The notes a `[[` completion offers: most recently edited first, then title.
     ///
     /// `updatedAt` is a `Date` and `id` is unique, so this pair is already total.

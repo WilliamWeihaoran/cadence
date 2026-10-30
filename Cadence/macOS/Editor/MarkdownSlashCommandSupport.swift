@@ -184,9 +184,7 @@ final class MarkdownSlashCommandPickerController {
             return
         }
 
-        let filtered = allCommands.filter {
-            context.query.isEmpty || $0.id.localizedCaseInsensitiveContains(context.query) || $0.title.localizedCaseInsensitiveContains(context.query)
-        }
+        let filtered = MarkdownSlashCommand.matching(allCommands, query: context.query)
 
         guard !filtered.isEmpty else {
             close()

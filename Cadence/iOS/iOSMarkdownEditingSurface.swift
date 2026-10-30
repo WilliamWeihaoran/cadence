@@ -126,7 +126,7 @@ struct iOSMarkdownEditingSurface: View {
         .sheet(item: $referencePickerKind) { kind in
             iOSMarkdownReferencePickerSheet(
                 kind: kind,
-                notes: referenceNotes,
+                notes: linkableNotes,
                 tasks: referenceTasks
             ) { markdown in
                 insertReferenceMarkdown(markdown)
@@ -432,11 +432,18 @@ struct iOSMarkdownEditingSurface: View {
         return MarkdownSlashCommandTokenSupport.context(in: draftText, selection: selectedRange)
     }
 
+    /// What a `[[` may complete to and the Insert Note Link sheet may offer: every reference note
+    /// but the one being edited ([[T-8582]]). `referenceNotes` itself stays whole — the reference
+    /// panel and the unlinked-mention scan need this note's peers, and resolve against all of them.
+    private var linkableNotes: [Note] {
+        MarkdownReferenceCompletionSupport.linkableNotes(referenceNotes, excludingNoteID: editingNote?.id)
+    }
+
     private func referenceCompletionChoices(for context: MarkdownReferenceCompletionContext) -> [iOSMarkdownReferenceCompletionChoice] {
         switch context.kind {
         case .note:
             return MarkdownReferenceCompletionSupport
-                .candidateNotes(from: referenceNotes, query: context.query)
+                .candidateNotes(from: linkableNotes, query: context.query)
                 .prefix(6)
                 .map { note in
                     iOSMarkdownReferenceCompletionChoice(
@@ -485,14 +492,9 @@ struct iOSMarkdownEditingSurface: View {
         let offered = allowsImageInsertion
             ? MarkdownSlashCommand.all
             : MarkdownSlashCommand.refusingImageInsertion(MarkdownSlashCommand.all)
-        return offered
-            .filter { command in
-                context.query.isEmpty ||
-                    command.id.localizedCaseInsensitiveContains(context.query) ||
-                    command.title.localizedCaseInsensitiveContains(context.query)
-            }
-            .prefix(8)
-            .map { $0 }
+        // Every match, not the first eight ([[T-8581]]): the strip scrolls sideways, and a cap
+        // here left Table, Highlight and eight more commands out of a bare `/`.
+        return MarkdownSlashCommand.matching(offered, query: context.query)
     }
 
     private func applySlashCommand(_ command: MarkdownSlashCommand, context: MarkdownSlashCommandContext) {
@@ -798,7 +800,7 @@ struct iOSMarkdownEditingSurface: View {
 
     private func applyToolbarCommand(_ command: MarkdownFormatCommand) {
         switch command {
-        case .noteLink where !referenceNotes.isEmpty:
+        case .noteLink where !linkableNotes.isEmpty:
             commitDraftImmediately()
             isFocused = false
             referencePickerKind = .note
