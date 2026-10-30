@@ -1875,17 +1875,35 @@ private struct iOSCalendarTimelineDayColumn: View {
     @ViewBuilder
     private var draftLayer: some View {
         if drawsDraftBlocks, let current = draft, current.startDateKey == DateFormatters.dateKey(from: date) {
+            let frame = iOSCalendarTimelineBlockLayout.draftFrame(
+                startMin: current.startMin,
+                endMin: current.endMin,
+                isAllDay: current.isAllDay,
+                columnWidth: colWidth,
+                hourHeight: hourHeight
+            )
             iOSTimelineDraftBlock(
                 draft: draftBinding(fallingBackTo: current),
                 hourHeight: hourHeight,
                 onAdjusted: restoreDraftEditorAfterAdjustment
             )
-            .frame(
-                width: colWidth - 18,
-                height: blockHeight(start: current.startMin, end: current.isAllDay ? current.startMin + 60 : current.endMin)
-            )
-            .offset(x: 9, y: yOffset(for: current.isAllDay ? CadenceScheduleSupport.calendarStartHour * 60 : current.startMin))
-            .popover(isPresented: $isDraftEditorPresented, arrowEdge: .trailing) {
+            .frame(width: frame.width, height: frame.height)
+            // **The popover is attached to the block's own frame and the block is then placed by
+            // `.position`, never `.offset`** ([[T-8477]]). `.offset` moves the drawing and not the
+            // layout frame, and the popover's anchor reads the layout frame: the editor used to
+            // open at the column's top whatever minute was pressed. Same order as the Mac's
+            // `TimelineDraftPopoverAnchor` — frame, popover, position.
+            //
+            // **`arrowEdge: nil`, so UIKit may put the panel on a side that can hold it** (the
+            // reading [[T-8473]] and [[T-8476]] measured). A named edge on iOS is the ONE permitted
+            // arrow direction, so the flip is forbidden: `.trailing` hung the Task variant 372pt
+            // wide off a block whose trailing edge is near the pane's, and Cancel and Add were
+            // drawn off-screen in portrait. `nil` was measured worse once, with its TOP clipped —
+            // but that was with the anchor at the column's top, scrolled off above the screen, so
+            // the panel hung above an off-screen rect. With the anchor on the pressed block it
+            // has the room above and below the block to choose from. (The Mac keeps `.trailing`:
+            // AppKit takes the edge as a preference and flips anyway, T-1722 / T-1740.)
+            .popover(isPresented: $isDraftEditorPresented, arrowEdge: nil) {
                 iOSTimelineDraftPanelHost(
                     draft: draftBinding(fallingBackTo: current),
                     onCancel: finishDraftCreation,
@@ -1920,6 +1938,7 @@ private struct iOSCalendarTimelineDayColumn: View {
                 // a different presentation, not another flag or another binding on this one.
                 .presentationBackgroundInteraction(.enabled)
             }
+            .position(x: frame.midX, y: frame.midY)
         }
     }
 
@@ -2198,11 +2217,11 @@ private struct iOSCalendarTimelineDayColumn: View {
     }
 
     private func yOffset(for minute: CGFloat) -> CGFloat {
-        (minute - CGFloat(CadenceScheduleSupport.calendarStartHour * 60)) / 60.0 * hourHeight
+        iOSCalendarTimelineBlockLayout.blockTop(forMinute: minute, hourHeight: hourHeight)
     }
 
     private func blockHeight(start: Int, end: Int) -> CGFloat {
-        max(24, CGFloat(end - start) / 60.0 * hourHeight - 4)
+        iOSCalendarTimelineBlockLayout.blockHeight(start: start, end: end, hourHeight: hourHeight)
     }
 
     /// Read, not re-typed: `CadenceCaptureDropSlotRule` resolves a *dropped* `+` against the same

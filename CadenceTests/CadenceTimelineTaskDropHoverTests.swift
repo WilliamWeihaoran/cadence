@@ -414,8 +414,10 @@ struct CadenceTimelineTaskDropHoverTests {
     private var plateTitleFontSize: CGFloat { 12 }
     private var plateTimeFontSize: CGFloat { 11 }
 
+    /// Not mirrored any more: the column's `blockHeight` reads this nonisolated seam ([[T-8477]]),
+    /// so the plate is measured with the very function that draws it.
     private func plateHeight(forMinutes minutes: Int) -> CGFloat {
-        max(24, CGFloat(minutes) / 60.0 * hourHeight - 4)
+        iOSCalendarTimelineBlockLayout.blockHeight(start: 0, end: minutes, hourHeight: hourHeight)
     }
 
     private func plateLabelLayout(forMinutes minutes: Int) -> CadenceTimelineTaskDropHover.LabelLayout {
@@ -440,8 +442,11 @@ struct CadenceTimelineTaskDropHoverTests {
             CadenceSourceScan.declarationBody("private func blockHeight(start: Int, end: Int) -> CGFloat", in: column)
         )
         #expect(
-            CadenceSourceScan.matchCount(#"max\(24, CGFloat\(end - start\) / 60\.0 \* hourHeight - 4\)"#, in: height) == 1,
-            "the column's block height is no longer the arithmetic this suite measures the plate with"
+            CadenceSourceScan.matchCount(
+                #"iOSCalendarTimelineBlockLayout\.blockHeight\(start: start, end: end, hourHeight: hourHeight\)"#,
+                in: height
+            ) == 1,
+            "the column's block height no longer reads the seam this suite measures the plate with"
         )
         let layer = try #require(
             CadenceSourceScan.declarationBody("private var taskDropHoverLayer: some View", in: column)

@@ -855,4 +855,66 @@ struct iOSCalendarMetricsTests {
             "today's cell wash was removed along with the selection's"
         )
     }
+
+    // MARK: - The in-place draft's anchor ([[T-8477]])
+
+    /// The draft editor's popover hangs off this rectangle, so two drafts pressed at different
+    /// minutes must get rectangles that differ by exactly that many minutes of canvas. The editor
+    /// used to open in the identical place for presses 366pt apart, because the block was moved by
+    /// `.offset` and the anchor read the un-moved frame.
+    @Test func theDraftsFrameMovesWithThePressedMinuteAndKeepsTheBlockInset() {
+        let hour = iOSCalendarTimelineMetrics.hourHeight
+        let width: CGFloat = 500
+        let early = iOSCalendarTimelineBlockLayout.draftFrame(
+            startMin: 16 * 60, endMin: 17 * 60, isAllDay: false, columnWidth: width, hourHeight: hour
+        )
+        let late = iOSCalendarTimelineBlockLayout.draftFrame(
+            startMin: 22 * 60 + 15, endMin: 23 * 60 + 15, isAllDay: false, columnWidth: width, hourHeight: hour
+        )
+        #expect(abs((late.minY - early.minY) - CGFloat(6 * 60 + 15) / 60 * hour) < 0.001,
+                "two drafts 375 minutes apart are not 375 minutes of canvas apart")
+        #expect(early.minY > 0, "a 4 PM draft sits at the column's top edge")
+        #expect(early.height == late.height, "two one-hour drafts are drawn at different heights")
+        #expect(early.minY == iOSCalendarTimelineBlockLayout.blockTop(forMinute: 16 * 60, hourHeight: hour),
+                "the draft is not placed by the formula every other block is")
+        let inset = iOSCalendarTimelineBlockLayout.Kind.task.inset
+        #expect(early.minX == inset && early.maxX == width - inset,
+                "the draft does not keep the block strip's inset on both sides")
+        let allDay = iOSCalendarTimelineBlockLayout.draftFrame(
+            startMin: 16 * 60, endMin: 16 * 60, isAllDay: true, columnWidth: width, hourHeight: hour
+        )
+        #expect(allDay.minY == 0 && allDay.height == early.height,
+                "an all-day draft is not the first hour, an hour tall")
+    }
+
+    /// The other half: the column draws the draft AT that rectangle by layout. Frame, popover,
+    /// then `.position` — the Mac's `TimelineDraftPopoverAnchor` order — and no `.offset`, which
+    /// moves the drawing and leaves the popover's anchor at the column's top-leading corner. And
+    /// no named `arrowEdge`: on iOS that is the one permitted arrow direction, which forbade the
+    /// flip and drew Cancel and Add off the pane's trailing edge.
+    ///
+    /// **Failing-first:** putting `.offset(x: frame.minX, y: frame.minY)` back in place of the
+    /// `.position` fails the `.position` requirement and the `.offset` count; `arrowEdge: .trailing`
+    /// fails the arrow-edge count.
+    @Test func theDraftIsPlacedByLayoutSoItsEditorHangsOffTheBlock() throws {
+        let path = "Cadence/iOS/iOSCalendarTimelineViews.swift"
+        let code = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(path))
+        let layer = try #require(
+            CadenceSourceScan.declarationBody("private var draftLayer: some View", in: code),
+            "draftLayer was not found in \(path)"
+        )
+        #expect(layer.contains("iOSTimelineDraftBlock("), "non-vacuity: the body read is not the draft layer")
+        let popover = try #require(layer.range(of: ".popover(isPresented: $isDraftEditorPresented"),
+                                   "the draft editor's popover is not presented from the draft layer")
+        let positioned = try #require(layer.range(of: ".position(x: frame.midX, y: frame.midY)"),
+                                      "the draft is not placed at its frame's centre by `.position`")
+        #expect(popover.lowerBound < positioned.lowerBound,
+                "the draft is positioned before the popover is attached, so the anchor is not the placed frame")
+        #expect(CadenceSourceScan.matchCount(#"iOSCalendarTimelineBlockLayout\.draftFrame\("#, in: layer) == 1,
+                "the draft layer does not read its rectangle from the tested seam")
+        #expect(CadenceSourceScan.matchCount(#"\.offset\("#, in: layer) == 0,
+                "the draft is moved by `.offset`, which leaves the popover anchored to the un-moved frame")
+        #expect(CadenceSourceScan.matchCount(#"arrowEdge:\s*\.[a-z]"#, in: layer) == 0,
+                "the draft editor names an arrow edge, which forbids UIKit's flip")
+    }
 }

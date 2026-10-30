@@ -485,6 +485,50 @@ nonisolated enum iOSCalendarTimelineBlockLayout {
         )
     }
 
+    // MARK: - Vertical placement
+
+    /// Top edge, in a day column's own coordinates, of a block starting at `minute`. The one
+    /// formula every block in the column is placed by, the draft included.
+    static func blockTop(forMinute minute: CGFloat, hourHeight: CGFloat) -> CGFloat {
+        (minute - CGFloat(CadenceScheduleSupport.calendarStartHour * 60)) / 60.0 * hourHeight
+    }
+
+    /// Drawn height of a block spanning `start..<end`, floored to a tappable 24pt and drawn 4pt
+    /// short so two back-to-back blocks do not touch.
+    static func blockHeight(start: Int, end: Int, hourHeight: CGFloat) -> CGFloat {
+        max(24, CGFloat(end - start) / 60.0 * hourHeight - 4)
+    }
+
+    // MARK: - The in-place draft
+
+    /// The draft block's rectangle in its day column's own coordinates ([[T-8477]]).
+    ///
+    /// **This is the rectangle the draft editor's popover hangs off, so it has to be a LAYOUT
+    /// frame.** The column used to size the draft and then move it with `.offset`, which moves the
+    /// drawing and leaves the layout frame where it was — at the column's top-leading corner — and
+    /// a popover's `.rect(.bounds)` anchor reads the layout frame. Two drafts 366pt apart put the
+    /// editor in the identical place on `Cadence-iPadPro11`. The column now places the draft at
+    /// this rectangle's centre with `.position`, the mechanism the Mac's
+    /// `TimelineDraftPopoverAnchor` uses for its own draft, so the anchor is where the block is.
+    ///
+    /// An all-day draft sits in the first hour, an hour tall, as it always has.
+    static func draftFrame(
+        startMin: Int,
+        endMin: Int,
+        isAllDay: Bool,
+        columnWidth: CGFloat,
+        hourHeight: CGFloat
+    ) -> CGRect {
+        let inset = Kind.task.inset
+        let topMinute = isAllDay ? CadenceScheduleSupport.calendarStartHour * 60 : startMin
+        return CGRect(
+            x: inset,
+            y: blockTop(forMinute: CGFloat(topMinute), hourHeight: hourHeight),
+            width: max(0, columnWidth - inset * 2),
+            height: blockHeight(start: startMin, end: isAllDay ? startMin + 60 : endMin, hourHeight: hourHeight)
+        )
+    }
+
     // MARK: - Draw order
 
     /// Everything the column draws *over* its blocks — the in-place draft and the now-line. Blocks

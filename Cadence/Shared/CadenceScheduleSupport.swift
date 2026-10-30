@@ -14,7 +14,9 @@ enum CadenceScheduleSupport {
     /// (macOS calendar page) are now aliases of these two, so there is one number to change and
     /// `CalendarTimelineRangeTests.everyTimelineOnEveryPlatformDrawsTheSameHours` fails if a
     /// fourth spelling appears.
-    static let calendarStartHour = 0
+    /// `nonisolated` so the timed-grid geometry in `iOSCalendarTimelineBlockLayout`, which is a
+    /// nonisolated decision the macOS test target reads, can place a block by it ([[T-8477]]).
+    nonisolated static let calendarStartHour = 0
     static let calendarEndHour = 24
 
     /// The hour rows a day canvas draws, in order — `ForEach(CadenceScheduleSupport.calendarHours)`
