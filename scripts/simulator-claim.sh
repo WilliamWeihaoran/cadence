@@ -735,7 +735,8 @@ case "$CMD" in
     # may have sibling agents on it while this is worth running.
     root=$(mktemp -d "${TMPDIR:-/tmp}/cadence-sim-claim-selftest.XXXXXX") || exit 2
     FAKE_UDID="11111111-2222-3333-4444-555555555555"
-    # A SECOND fake, listed FIRST, standing in for the owner's device (T-1780). The bug was
+    # A SECOND fake, listed FIRST, standing in for the owner's held iPhone 17 Pro
+    # simulator, not their phone (T-1780, T-8515). The bug was
     # that `booted_udids` returned simctl's own order and the forbidden device leads it, so a
     # fixture with one device cannot reproduce it -- the allocator never had a choice to get
     # wrong. Listing the denied one first is the whole fixture.
@@ -867,7 +868,8 @@ FAKESIMCTL
     }
 
     # 2b. THE DENY LIST IS ENFORCED, NOT JUST DOCUMENTED (T-1780). The header has named the
-    #     owner's device since this file existed and the allocator never read it: `booted_udids`
+    #     owner's held iPhone 17 Pro simulator (not their phone) since this file existed and
+    #     the allocator never read it: `booted_udids`
     #     returned simctl's order and that device is first, so `claim` handed out precisely what
     #     the prose forbade. Two polarities, because either alone is satisfiable by a broken
     #     allocator -- one that returns nothing passes the refusal half, and one that ignores the
@@ -894,8 +896,9 @@ FAKESIMCTL
       fi
 
       # 2c. `boot` NEVER PICKS A DENIED DEVICE (T-3151). The denied fake is a stock-named
-      #     iPhone listed FIRST, which is what the owner's device looks like to the name
-      #     filter; the old picker returned it. In-process, with SIMCTL repointed inside
+      #     iPhone listed FIRST, which is what the owner's held iPhone 17 Pro simulator
+      #     (not their phone) looks like to the name filter; the old picker returned it.
+      #     In-process, with SIMCTL repointed inside
       #     the substitution only -- this process's SIMCTL still names the real one, and its
       #     deny list was built before CADENCE_SIM_DENY_EXTRA was exported, so append it there.
       bt_stock=$(SIMCTL="/bin/zsh $root/fake-simctl"; CADENCE_SIM_DENY_UDIDS+=($FAKE_DENIED_UDID); boot_target)
