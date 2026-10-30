@@ -602,5 +602,39 @@ struct CadenceMacPageAccessibilityAuditTests {
         #expect(inner.contains(".accessibilityAction{onOpen()}"))
         #expect(inner.contains(".accessibilityAction(named:Self.renameActionName){isEditingTitle=true}"))
     }
+
+    // MARK: - T-8643: the Mac sidebar's list row speaks its open-task count
+
+    /// The count is `CadenceSidebarCountLabel`, `accessibilityHidden`, so the row's label is the
+    /// only place it can be heard -- the iPad row's [[T-8641]] fix, one platform over. Measured
+    /// before the fix: one AXButton labelled "Launch", value the relative day, actions
+    /// ["Edit Project", "Due date"] -- the nested date button is NOT its own element, SwiftUI folds
+    /// it into this one. So the label adds the count alone; the date keeps its value and action.
+    @Test func theMacSidebarListRowSpeaksItsCountAndKeepsItsDueDateAction() {
+        func row(_ kind: SidebarListRow.Kind, openTasks: Int, dueDateKey: String?) -> [Node] {
+            allNodes(in: SidebarListRow(
+                item: .project(UUID()),
+                label: "Launch",
+                kind: kind,
+                count: CadenceSidebarLayout.listCount(openTaskCount: openTasks),
+                dueDateKey: dueDateKey,
+                onSetDueDate: dueDateKey == nil ? nil : { _ in },
+                selection: .constant(nil),
+                onEdit: {}
+            ).environment(HoveredEditableManager.shared).frame(width: 260), size: NSSize(width: 300, height: 60))
+        }
+
+        let project = row(.project, openTasks: 3, dueDateKey: "2026-11-02")
+        let buttons = project.filter { $0.role == Self.buttonRole }
+        #expect(buttons.count == 1, "the date button became its own element; re-decide the label: \(project)")
+        let button = buttons.first
+        #expect(button?.label == "Launch, 3 open tasks", "\(project)")
+        #expect(button?.actions.contains("Due date") == true, "the due-date popover is unreachable: \(project)")
+        #expect(button?.actions.contains("Edit Project") == true, "\(project)")
+        #expect(button?.value.isEmpty == false, "the relative due day is no longer heard: \(project)")
+
+        let area = row(.area, openTasks: 0, dueDateKey: nil).filter { $0.role == Self.buttonRole }
+        #expect(area.map(\.label) == ["Launch"], "an empty area should read its name alone: \(area)")
+    }
 }
 #endif

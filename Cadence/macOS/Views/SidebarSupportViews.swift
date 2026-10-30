@@ -368,6 +368,11 @@ struct SidebarListRow: View {
             // hit-test rule, one place to get it wrong.
             RightClickActionTrigger(action: onEdit)
         }
+        // [[T-8643]]: the count is `accessibilityHidden`, so the label is the only place it can be
+        // heard. The name and count only -- not `listRowAccessibilityLabel`'s due date: SwiftUI
+        // already folds the nested date button into this element as its value and a "Due date"
+        // action (measured on the AX tree), so naming the date here would say it twice.
+        .accessibilityLabel(CadenceSidebarLayout.rowAccessibilityLabel(Self.displayLabel(label), count: count))
         .accessibilityIdentifier("sidebar.list.\(kind.accessibilityFragment).\(accessibilitySlug(label))")
         // [[T-7202]]: the edit sheet was reachable only by a right-click or by Cmd+E over a hovered
         // row, neither of which VoiceOver can perform. Named for the sheet it opens.
