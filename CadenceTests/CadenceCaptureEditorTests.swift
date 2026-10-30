@@ -84,6 +84,9 @@ struct CadenceCaptureEditorTests {
                 host.contains(".interactiveDismissDisabled(draft != openedDraft || notesFlush.hasPendingEdit)")
                     || (host.contains(".interactiveDismissDisabled(hasUnsavedWork)")
                         && host.contains("notesHavePendingEdit: notesFlush.hasPendingEdit"))
+                    // [[T-8572]]: the event sheet ignores committed notes, through the shared rule.
+                    || (host.contains("CadenceEventEditDismissGuard.blocksSwipe(")
+                        && host.contains("notesHavePendingEdit: notesFlush.hasPendingEdit"))
             )
             #expect(!host.contains("NavigationStack {"))
         }

@@ -115,10 +115,19 @@ struct iOSCalendarEventEditSheet: View {
         CadenceEventNoteSupport.eventDateMetadata(from: event)
     }
 
+    /// The event's title as the store holds it -- never `draft.title`, which is what the user may be
+    /// halfway through retyping ([[T-8571]]). The note's lookup, the note a first keystroke mints
+    /// and the full editor's eyebrow all read this, as macOS's popover reads `item.title`: the draft
+    /// title minted a note under an unsaved (or then cancelled) name, and its title fallback could
+    /// miss the note the lookup had found and create a second one beside it.
+    private var savedEventTitle: String {
+        iOSCalendarEventSupport.title(for: event)
+    }
+
     private var linkedEventNote: Note? {
         CadenceEventNoteSupport.note(
             for: eventNoteID,
-            eventTitle: iOSCalendarEventSupport.title(for: event),
+            eventTitle: savedEventTitle,
             calendarID: event.calendar?.calendarIdentifier ?? draft.calendarID,
             eventDateKey: eventMetadata.dateKey,
             eventStartMin: eventMetadata.startMin,
@@ -233,15 +242,22 @@ struct iOSCalendarEventEditSheet: View {
         }
         .sheet(item: $presentedEventNote) { note in
             iOSHeldNoteSheet(note: note) { presentedEventNote = nil } content: { note in
-                iOSEventNoteEditorSheet(note: note, eventTitle: draft.title, event: event)
+                iOSEventNoteEditorSheet(note: note, eventTitle: savedEventTitle, event: event)
             }
             .cadenceFixedTypography()
         }
         .presentationBackground(.clear)
         .presentationDragIndicator(.hidden)
         .presentationDetents([.height(cardHeight)])
-        // `hasPendingEdit`: notes typed in the well's last 2.5 s are not in `draft` yet ([[T-5170]]).
-        .interactiveDismissDisabled(draft != openedDraft || notesFlush.hasPendingEdit)
+        // `hasPendingEdit`: notes typed in the well's last 2.5 s are not committed yet ([[T-5170]]).
+        // [[T-8572]]: committed notes are not an unsaved edit, so the guard ignores `draft.notes`.
+        .interactiveDismissDisabled(
+            CadenceEventEditDismissGuard.blocksSwipe(
+                opened: openedDraft,
+                current: draft,
+                notesHavePendingEdit: notesFlush.hasPendingEdit
+            )
+        )
         .iOSMarkdownReferenceSheets(
             selectedNote: $selectedReferenceNote,
             selectedTask: $selectedReferenceTask,
@@ -430,7 +446,7 @@ struct iOSCalendarEventEditSheet: View {
         var inserted: [any PersistentModel] = []
         guard let note = CadenceEventNoteSupport.noteForEditing(
             calendarEventID: eventNoteID,
-            eventTitle: draft.title,
+            eventTitle: savedEventTitle,
             calendarID: event.calendar?.calendarIdentifier ?? draft.calendarID,
             eventDateKey: eventMetadata.dateKey,
             eventStartMin: eventMetadata.startMin,

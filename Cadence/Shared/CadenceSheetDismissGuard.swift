@@ -29,6 +29,28 @@ nonisolated enum CadenceSheetDismissGuard {
     }
 }
 
+/// [[T-8572]]: the swipe guard for the iOS **event** editor, where `draft.notes` is not an edit.
+///
+/// Since [[T-8161]] the sheet's one Notes field is the Cadence event note, committed as it is typed,
+/// and Save writes `EKEvent.notes` from that note -- never from `draft.notes`, which no field draws.
+/// But [[T-5171]]'s store-change reload still copies `EKEvent.notes` into `draft.notes`, and the
+/// sheet's own mirror write is a store change, so typing a few words of notes (already saved) left
+/// `draft != openedDraft` and the sheet refused every swipe-down until Cancel was tapped. Only the
+/// fields Save writes from the draft count; notes still in the well's debounce count through
+/// `notesHavePendingEdit` ([[T-5170]]).
+enum CadenceEventEditDismissGuard {
+    static func blocksSwipe(
+        opened: CadenceScheduleDraft,
+        current: CadenceScheduleDraft,
+        notesHavePendingEdit: Bool
+    ) -> Bool {
+        if notesHavePendingEdit { return true }
+        var schedule = current
+        schedule.notes = opened.notes
+        return schedule != opened
+    }
+}
+
 /// Every field `iOSListEditorSheet.save()` writes back, as the sheet holds it.
 ///
 /// A column's completed/archived flags are deliberately absent: `applyColumnWindDown` and

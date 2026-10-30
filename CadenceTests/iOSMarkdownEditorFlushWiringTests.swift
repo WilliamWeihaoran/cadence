@@ -42,6 +42,9 @@ struct iOSMarkdownEditorFlushWiringTests {
             source.contains("interactiveDismissDisabled(draft != openedDraft || notesFlush.hasPendingEdit)")
                 || (source.contains("interactiveDismissDisabled(hasUnsavedWork)")
                     && source.contains("notesHavePendingEdit: notesFlush.hasPendingEdit"))
+                // [[T-8572]]: the event sheet ignores committed notes, through the shared rule.
+                || (source.contains("CadenceEventEditDismissGuard.blocksSwipe(")
+                    && source.contains("notesHavePendingEdit: notesFlush.hasPendingEdit"))
         )
     }
 
