@@ -15,9 +15,10 @@
 #
 # Both match the target devices in docs/TODO.md's table. They are kept booted on purpose.
 #
-# NEVER touch iPhone 17 Pro, 7B642065-86FC-4987-8674-22066D32878C -- that is the owner's own
-# device, and a build aimed at it was refused by the permission classifier with "Interfere With
-# Workloads", which is the correct refusal.
+# NEVER touch iPhone 17 Pro, 7B642065-86FC-4987-8674-22066D32878C -- that is a SIMULATOR held
+# for the owner (NOT their phone; their handset is an iPhone 15, which Cadence-iPhone15 already
+# simulates -- docs/AGENT_BRIEF.md Safety, T-8515), and a build aimed at it was refused by the
+# permission classifier with "Interfere With Workloads", which is the correct refusal.
 #
 # Why this paragraph exists: on 2026-09-29 two agents were briefed to create a device per task and
 # delete it when done. They did, correctly. The owner was then left staring at simulator panels
@@ -159,9 +160,9 @@ say() { print -r -- "$@" }
 # Devices this script will NEVER hand out, however booted they are (T-1780).
 #
 # The header above has said "never erase, boot or shut down a simulator you did not
-# create" since this file existed, and named the owner's iPhone 17 Pro. It was a
+# create" since this file existed, and named the owner's held iPhone 17 Pro simulator. It was a
 # sentence to READ, not a rule the allocator applied: `booted_udids` returned every
-# booted device in simctl's own order, and the owner's device is FIRST in that order,
+# booted device in simctl's own order, and the held simulator is FIRST in that order,
 # so `claim` handed out exactly the device the header forbids. Measured twice on
 # 2026-09-30: `claim padwidth 2700` answered `DEVICE=iPhone 17 Pro`. An agent that
 # obeyed the header then had no way to get a device at all, which is how it was found.
@@ -169,11 +170,11 @@ say() { print -r -- "$@" }
 # A prose rule that the code does not enforce is the shape this repository keeps
 # re-finding. This is the enforcement.
 CADENCE_SIM_DENY_UDIDS=(
-  7B642065-86FC-4987-8674-22066D32878C   # the owner's iPhone 17 Pro -- never
+  7B642065-86FC-4987-8674-22066D32878C   # iPhone 17 Pro simulator held for the owner -- never
   53EC6A90-D767-45DE-8EAC-53B8E1673B1D   # booted but blind, T-1882 -- replaced by Cadence-iPadPro11
 )
 # ADDITIVE only, and deliberately so: the selftest needs a denied device it can invent,
-# but a hook that could REMOVE an entry would be a way to hand out the owner's device by
+# but a hook that could REMOVE an entry would be a way to hand out the owner's held simulator by
 # setting an environment variable. Appending can only ever make this stricter.
 CADENCE_SIM_DENY_UDIDS+=(${=CADENCE_SIM_DENY_EXTRA:-})
 
@@ -198,7 +199,7 @@ cadence_standing_udid() {
 }
 # What `boot` boots (T-3151). The standing iPhone first, then the first stock iPhone,
 # and EVERY candidate through the deny list. The name filter alone excluded both
-# standing devices (their names contain "cadence") and left the owner's iPhone 17 Pro
+# standing devices (their names contain "cadence") and left the owner's held iPhone 17 Pro simulator
 # as the first match, so `boot --apply` booted exactly the device the claim loop and
 # the explicit-UDID path refuse -- measured 2026-10-12 by agent `plusrepro`.
 boot_target() {
