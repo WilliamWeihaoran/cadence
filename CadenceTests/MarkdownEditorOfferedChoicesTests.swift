@@ -68,6 +68,49 @@ struct MarkdownEditorOfferedChoicesTests {
         #expect(MarkdownReferenceCompletionSupport.linkableNotes(notes, excludingNoteID: nil).map(\.id) == notes.map(\.id))
     }
 
+    // MARK: - T-8583, the Mac hosts
+
+    /// **The Mac's core-notes panel offered the note being typed in as a `[[` target** — the
+    /// T-8582 residual one platform over. `NoteEditorPane` already filtered itself out; `NotePanel`
+    /// handed the editor its whole `@Query`. It hands the shared linkable set now, while the
+    /// reference it opens still resolves against every note.
+    @Test func theMacNotePanelOffersTheLinkableNotesNotTheWholeQuery() throws {
+        let code = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile("Cadence/macOS/Views/NotePanel.swift"))
+        let editor = try #require(
+            CadenceSourceScan.functionBody(named: "noteEditor", in: code),
+            "noteEditor(for:) could not be read"
+        )
+        #expect(editor.contains("MarkdownEditor("), "non-vacuity: wrong body read")
+        #expect(editor.contains(
+            "referenceNotes: MarkdownReferenceCompletionSupport.linkableNotes(referenceNotes, excludingNoteID: note.id),"
+        ))
+        #expect(!editor.contains("referenceNotes: referenceNotes,"), "the panel offers the edited note again")
+        // Opening a reference still reads the whole set.
+        #expect(code.contains("TaskNoteLinkRouting.note(id: id, title: title, in: referenceNotes)"))
+    }
+
+    /// **Why filtering the editor's `referenceNotes` cannot thin out anything but the `[[` menu.**
+    /// The Mac editor reads the array in exactly one place — the completion source. The reference
+    /// strip and backlinks are each host's own, computed from the full set.
+    @Test func theMacEditorReadsItsReferenceNotesOnlyForCompletion() throws {
+        let code = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile("Cadence/macOS/Editor/MarkdownEditorView.swift"))
+        #expect(code.contains("var referenceNotes: [Note] = []"), "non-vacuity: wrong file read")
+        #expect(CadenceSourceScan.matchCount(#"\breferenceNotes\b"#, in: code) == 2)
+        #expect(code.contains("MarkdownReferenceCompletionSupport.candidateNotes(from: referenceNotes, query: \"\")"))
+    }
+
+    /// **`TaskNoteEditorPane` (`ListNotesSupportViews`) has no note of its own to exclude.** It
+    /// edits a task's `notes` string, not a `Note`, so every `Note` in `relatedNotes` is a fair
+    /// link target and the T-8583 hypothesis about it does not hold. Pinned so a future host
+    /// that starts editing a `Note` there has to revisit it.
+    @Test func theMacTaskNotesEditorEditsATaskAndNotANote() throws {
+        let code = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile("Cadence/macOS/Views/ListNotesSupportViews.swift"))
+        let pane = try #require(CadenceSourceScan.declarationBody("struct TaskNoteEditorPane: View", in: code))
+        #expect(pane.contains("@Bindable var task: AppTask"))
+        #expect(pane.contains("get: { loadedTaskID == task.id ? editorContent : task.notes },"))
+        #expect(CadenceSourceScan.matchCount(#"(?:var|let) \w+: Note\??\s"#, in: pane) == 0, "the pane holds a Note of its own now")
+    }
+
     @Test func theIOSLinkOffersReadTheLinkableNotesNotTheWholeQuery() throws {
         let code = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(Self.surfacePath))
         #expect(code.contains(

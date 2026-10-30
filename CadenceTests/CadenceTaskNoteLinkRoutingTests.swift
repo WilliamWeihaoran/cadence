@@ -327,7 +327,8 @@ struct CadenceTaskNoteLinkRoutingTests {
         let panel = try #require(CadenceSourceScan.declarationBody("struct NotePanel", in: source))
         #expect(panel.contains("@Query(sort: \\Note.updatedAt, order: .reverse) private var referenceNotes: [Note]"))
         let editor = try Self.arguments(ofFirst: "MarkdownEditor(", in: panel)
-        #expect(editor.contains("referenceNotes: referenceNotes"))
+        // [[T-8583]]: the completion source is the query less the note being edited.
+        #expect(editor.contains("referenceNotes: MarkdownReferenceCompletionSupport.linkableNotes(referenceNotes, excludingNoteID: note.id)"))
         #expect(editor.contains("onOpenNoteReference: openNoteReference"))
 
         let handler = try #require(CadenceSourceScan.functionBody(named: "openNoteReference", in: panel))

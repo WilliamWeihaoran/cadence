@@ -198,7 +198,9 @@ struct NotePanel: View {
         )
         MarkdownEditor(
             text: coreNoteContentBinding(for: note),
-            referenceNotes: referenceNotes,
+            // [[T-8583]]: the `[[` completion offers every note but this one, as `NoteEditorPane`
+            // and iOS ([[T-8582]]) do. `openNoteReference` still resolves against the whole query.
+            referenceNotes: MarkdownReferenceCompletionSupport.linkableNotes(referenceNotes, excludingNoteID: note.id),
             referenceTasks: allTasks,
             onOpenNoteReference: openNoteReference,
             onOpenTaskReference: embedCallbacks.openTaskReference,
