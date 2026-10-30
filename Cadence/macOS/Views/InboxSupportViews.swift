@@ -106,9 +106,8 @@ private struct AppleReminderTaskRow: View {
                     .font(.system(size: 11))
                     .foregroundStyle(Theme.red)
                     .lineLimit(2)
-                    // Aligned under the title rather than under the priority strip: 8 + 3 for the
-                    // strip and its inset, 8 + 18 + 8 for the completion button and its padding.
-                    .padding(.leading, 45)
+                    // Aligned under the title: the completion circle and its inset either side.
+                    .padding(.leading, Self.completionCircleDiameter + 2 * Self.completionCircleInset)
                     .padding(.trailing, 6)
             }
         }
@@ -132,24 +131,17 @@ private struct AppleReminderTaskRow: View {
 
     private var row: some View {
         HStack(spacing: 0) {
-            RoundedRectangle(cornerRadius: 1.5)
-                .fill(priorityColor)
-                .frame(width: 3)
-                .padding(.leading, 8)
-                .padding(.vertical, 3)
-
+            // [[T-8735]]: priority rides on the shared completion circle, as on every other macOS
+            // task row and on `iOSInboxReminderRow` — the 3pt vertical bar and the hand-drawn grey
+            // circle beside it were the last of [[T-2084]]'s retired bars.
             Button(action: complete) {
-                ZStack {
-                    Circle()
-                        .strokeBorder(rowState.isCompleting ? Theme.green : Theme.muted, lineWidth: 1.8)
-                    if rowState.isCompleting {
-                        Circle().fill(Theme.green)
-                        Image(systemName: "checkmark")
-                            .font(.system(size: 8, weight: .bold))
-                            .foregroundStyle(Theme.bg)
-                    }
-                }
-                .frame(width: 18, height: 18)
+                CadenceTaskCompletionCircle(
+                    glyph: .binary(
+                        isDone: rowState.isCompleting,
+                        tint: AppleReminderRowPresentation.priorityTint(reminder.priority)
+                    ),
+                    diameter: Self.completionCircleDiameter
+                )
                 .contentShape(Circle())
             }
             .buttonStyle(.cadencePlain)
@@ -159,7 +151,7 @@ private struct AppleReminderTaskRow: View {
             // is not announced as able to complete anything.
             .accessibilityLabel(completionControlLabel)
             .help(completionControlLabel)
-            .padding(.horizontal, 8)
+            .padding(.horizontal, Self.completionCircleInset)
 
             Text(CadenceTitleNormalization.display(reminder.title, fallback: CadenceTitleNormalization.defaultReminderTitle))
                 .font(.system(size: 15))
@@ -182,10 +174,8 @@ private struct AppleReminderTaskRow: View {
                         .lineLimit(1)
                 }
                 .foregroundStyle(Theme.purple)
-                .padding(.horizontal, 7)
-                .padding(.vertical, 4)
-                .background(Theme.purple.opacity(0.1))
-                .clipShape(RoundedRectangle(cornerRadius: 5))
+                .padding(.horizontal, CadenceTaskChipPadding.desktopHorizontal)
+                .padding(.vertical, CadenceTaskChipPadding.desktopVertical)
                 .padding(.leading, 6)
                 .padding(.trailing, 6)
             }
@@ -196,15 +186,14 @@ private struct AppleReminderTaskRow: View {
         AppleReminderRowPresentation.completionControlLabel(allowsCompletion: reminder.allowsCompletion)
     }
 
-    /// Both tints are `AppleReminderRowPresentation`'s rather than this row's own. They were
-    /// written out here — an inverted 1...4 / 5 / 6...9 ramp and a three-stop date rule — and iOS
-    /// growing its own reminders row (T-163) is exactly the moment a private ramp becomes two
-    /// ramps. The values are unchanged: the priority stops resolve through `Theme.priorityColor`,
-    /// which is red / amber / blue / dim.
-    private var priorityColor: Color {
-        AppleReminderRowPresentation.priorityTint(reminder.priority)
-    }
+    /// [[T-8735]]: `MacTaskRow`'s circle diameter, on the same 15pt title line.
+    private static let completionCircleDiameter: CGFloat = 18
+    private static let completionCircleInset: CGFloat = 8
 
+    /// The due date and the list are labels, not controls: unfilled, one colour for glyph and text,
+    /// at `MacTaskRow`'s chip padding — which is what the Mac task row draws for its own dates and
+    /// what `iOSTaskMetaLabel` draws for these same two facts on iOS ([[T-8735]]). Both tints are
+    /// `AppleReminderRowPresentation`'s.
     private func reminderDueDateBadge(_ date: Date) -> some View {
         let dateKey = DateFormatters.dateKey(from: date)
         let color = AppleReminderRowPresentation.dueTint(
@@ -218,10 +207,8 @@ private struct AppleReminderTaskRow: View {
                 .font(.system(size: 10, weight: .medium))
         }
         .foregroundStyle(color)
-        .padding(.horizontal, 7)
-        .padding(.vertical, 4)
-        .background(color.opacity(0.09))
-        .clipShape(RoundedRectangle(cornerRadius: 5))
+        .padding(.horizontal, CadenceTaskChipPadding.desktopHorizontal)
+        .padding(.vertical, CadenceTaskChipPadding.desktopVertical)
     }
 
     /// The tick leads the write and the write answers: the circle settles first, because the row is
