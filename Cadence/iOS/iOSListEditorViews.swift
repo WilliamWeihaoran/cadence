@@ -92,8 +92,22 @@ struct iOSListEditorSheet: View {
         CadenceContextPickerSupport.selectionTitle(
             from: contexts,
             selectedID: selectedContext?.id,
-            noneTitle: "None"
+            noneTitle: Self.contextNoneTitle
         )
+    }
+
+    /// [[T-8561]]: macOS's `ListEditorContextRow.noneTitle`, word for word. This row and its
+    /// popover said "None" while the Mac's list editors, its context picker and this sheet's own
+    /// doc comment on `seededContext` all say "No context" — the same field reading two ways on
+    /// one app ([[T-8201]]).
+    static let contextNoneTitle = "No context"
+
+    /// [[T-8561]]: the sheet names the kind of list it edits, as macOS's `EditAreaSheet` /
+    /// `EditProjectSheet` do and as the "Edit Area" / "Edit Project" menu row that opens it
+    /// already does. It said "Edit List" under a menu that had just said "Edit Area".
+    private var sheetTitle: String {
+        guard isEditing else { return "New List" }
+        return isProjectMode ? "Edit Project" : "Edit Area"
     }
 
     /// The same rule as `contextTitle`, one row down, and for the same reason (T-488): this used to
@@ -188,7 +202,7 @@ struct iOSListEditorSheet: View {
                                 rows: CadenceContextPickerSupport.items(
                                     from: contexts,
                                     selectedID: selectedContext?.id,
-                                    noneTitle: "None"
+                                    noneTitle: Self.contextNoneTitle
                                 ).map { item in
                                     iOSChoiceRow(
                                         value: item.id?.uuidString ?? "none",
@@ -293,7 +307,7 @@ struct iOSListEditorSheet: View {
             .scrollContentBackground(.hidden)
             .background(Theme.bg)
             .tint(Theme.blue)
-            .navigationTitle(isEditing ? "Edit List" : "New List")
+            .navigationTitle(sheetTitle)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
