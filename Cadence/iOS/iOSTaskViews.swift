@@ -762,9 +762,12 @@ struct iOSEmptyPanel: View {
     let systemImage: String
     let title: String
     let subtitle: String
+    /// `EmptyStateView`'s own opt-out, passed through ([[T-8532]]): off only for a panel that is
+    /// not a view of the store, such as a "Select a note" prompt.
+    var statesColdImport: Bool = true
 
     var body: some View {
-        EmptyStateView(message: title, subtitle: subtitle, icon: systemImage)
+        EmptyStateView(message: title, subtitle: subtitle, icon: systemImage, statesColdImport: statesColdImport)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .padding(.vertical, 24)
     }

@@ -1234,4 +1234,35 @@ struct CadenceColdImportNoticeTests {
         #expect(source.contains("TimelineView(.periodic("))
         #expect(source.contains("now: context.date"), "the notice reads a frozen clock and cannot retire")
     }
+
+    /// **[[T-8532]] — a panel that is not a view of the store does not say the store is filling
+    /// in.** The iPad "Select a note" prompts sit beside the note column they prompt for; when that
+    /// column is empty they are the ONLY two empty states on screen, so during a cold import the
+    /// sentence printed twice side by side. The AI task-draft sheet is a model's answer about one
+    /// note, which no import can change. The column's own empty states keep the line.
+    @Test func onlyTheStoreViewsSayAColdImportIsLanding() throws {
+        func code(_ path: String) throws -> String {
+            CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(path))
+        }
+        // The pass-through exists and is wired, or every `false` below is a dead argument.
+        let panel = try code("Cadence/iOS/iOSTaskViews.swift")
+        #expect(panel.contains("var statesColdImport: Bool = true"))
+        #expect(panel.contains("EmptyStateView(message: title, subtitle: subtitle, icon: systemImage, statesColdImport: statesColdImport)"))
+
+        let notes = try code("Cadence/iOS/iOSNotesView.swift")
+        #expect(notes.contains("iOSEmptyPanel(systemImage: \"doc.text\", title: placeholderTitle, subtitle: \"\", statesColdImport: false)"))
+        let listNotes = try code("Cadence/iOS/iOSListNotesView.swift")
+        #expect(listNotes.contains("title: CadenceEmptyStateCopy.selectNoteTitle,\n                subtitle: \"\",\n                statesColdImport: false"))
+        for path in ["Cadence/iOS/iOSAINoteActionsViews.swift", "Cadence/macOS/Views/NoteActionReviewSheets.swift"] {
+            let sheet = try code(path)
+            let start = try #require(sheet.range(of: "subtitle: CadenceEmptyStateCopy.noteActionTasksSubtitle,"), "\(path)")
+            #expect(sheet[start.upperBound...].prefix(300).contains("statesColdImport: false"), "\(path)")
+        }
+
+        // Exactly those: the opt-out is spent nowhere else in these files, so the columns' own
+        // empty states — the store views — still say it.
+        #expect(notes.components(separatedBy: "statesColdImport: false").count - 1 == 1)
+        #expect(listNotes.components(separatedBy: "statesColdImport: false").count - 1 == 1)
+        #expect(notes.contains("title: emptyStateTitle,\n                    subtitle: emptyStateSubtitle\n                )"))
+    }
 }

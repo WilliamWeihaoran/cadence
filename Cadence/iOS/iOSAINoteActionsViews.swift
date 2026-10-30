@@ -316,7 +316,10 @@ struct iOSAITaskDraftReviewSheet: View {
             EmptyStateView(
                 message: CadenceEmptyStateCopy.noteActionTasksTitle,
                 subtitle: CadenceEmptyStateCopy.noteActionTasksSubtitle,
-                icon: "sparkles"
+                icon: "sparkles",
+                // [[T-8532]]: a model's answer about one note, not a view of the store, so an iCloud
+                // import in flight cannot be why it came back empty.
+                statesColdImport: false
             )
             .padding(.vertical, 24)
         } else {

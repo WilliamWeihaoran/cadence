@@ -419,9 +419,11 @@ struct CadenceNoteDeletionSurfaceTests {
             "Cadence/iOS/iOSNoteDeletionSupport.swift": 0
         ])
 
-        // Copy Note Link was macOS-only too, and lands where macOS has it: the list-note row menu.
+        // Copy Note Link was macOS-only too, and lands where macOS has it: the list-note row menu,
+        // and the Notepad row menu ([[T-5806]] on the Mac, [[T-8531]] here).
         try expectCallSites(of: "iOSNoteCopyLinkButton", at: [
             "Cadence/iOS/iOSListNotesView.swift": 1,
+            "Cadence/iOS/iOSNotesView.swift": 1,
             "Cadence/iOS/iOSNoteDeletionSupport.swift": 0
         ])
 
@@ -433,6 +435,23 @@ struct CadenceNoteDeletionSurfaceTests {
                 "\(path) deletes a note directly instead of going through iOSNoteDeletion"
             )
         }
+    }
+
+    /// **[[T-8531]]: the iOS Notepad row's long-press menu is the Mac Notepad row's right-click
+    /// menu** -- Copy Note Link, then Delete -- and the dated tabs still get none. It offered Delete
+    /// alone, so a notepad note's link could be copied on iOS only from a list's Notes tab.
+    @Test func theIOSNotepadRowMenuMatchesTheMacNotepadRowMenu() throws {
+        let code = try strippingComments(sourceFile("Cadence/iOS/iOSNotesView.swift"))
+        let rowStart = try #require(code.range(of: "private func sidebarRow(for note: Note) -> some View {"))
+        let row = String(code[rowStart.upperBound...].prefix(1200))
+        let gate = try #require(row.range(of: "if activeTab == .notepad {"))
+        let menu = String(row[gate.upperBound...])
+        let copy = try #require(menu.range(of: "iOSNoteCopyLinkButton(note: note)"))
+        let delete = try #require(menu.range(of: "iOSNoteDeleteMenuButton(note: note)"))
+        #expect(copy.lowerBound < delete.lowerBound, "the Mac menu reads Copy Note Link, then Delete")
+        let elseArm = try #require(menu.range(of: "} else {"))
+        #expect(delete.upperBound < elseArm.lowerBound, "both items sit inside the Notepad arm")
+        #expect(menu.contains("row.contextMenu {"))
     }
 
     /// Without this, every zero and every absence above could be passing because the reader

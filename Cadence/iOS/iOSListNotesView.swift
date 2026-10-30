@@ -498,8 +498,14 @@ struct iOSListNotesView: View {
             .id(note.id)
         } else {
             // Title only, and the shared wording rather than a second copy of it (T-548) — a
-            // "nothing selected" state, not an empty list.
-            iOSEmptyPanel(systemImage: "doc.text", title: CadenceEmptyStateCopy.selectNoteTitle, subtitle: "")
+            // "nothing selected" state, not an empty list. [[T-8532]]: so it carries no cold-import
+            // line either; the empty column beside it says that once.
+            iOSEmptyPanel(
+                systemImage: "doc.text",
+                title: CadenceEmptyStateCopy.selectNoteTitle,
+                subtitle: "",
+                statesColdImport: false
+            )
         }
     }
 

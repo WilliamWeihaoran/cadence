@@ -439,7 +439,11 @@ struct iOSNotesView: View {
         .buttonStyle(.iosPressable)
 
         if activeTab == .notepad {
+            // [[T-8531]]: Copy Note Link first, then Delete — the Mac Notepad row's menu ([[T-5806]])
+            // item for item. A long-press is the touch spelling of the right-click, not a reason to
+            // offer less.
             row.contextMenu {
+                iOSNoteCopyLinkButton(note: note)
                 iOSNoteDeleteMenuButton(note: note) { noteToDelete = $0 }
             }
         } else {
@@ -502,7 +506,11 @@ struct iOSNotesView: View {
             // `NotesEditorPlaceholder` on macOS carries no subtitle for the same reason, and when
             // the column beside it is *also* empty a subtitle here just prints the list's own
             // empty-state line twice.
-            iOSEmptyPanel(systemImage: "doc.text", title: placeholderTitle, subtitle: "")
+            //
+            // [[T-8532]]: and no cold-import line. A selection prompt is not a view of the store, and
+            // beside an empty column — the only time both draw — the column already says it, so
+            // the sentence printed twice side by side. macOS's `NotesEditorPlaceholder` has none.
+            iOSEmptyPanel(systemImage: "doc.text", title: placeholderTitle, subtitle: "", statesColdImport: false)
         }
     }
 
