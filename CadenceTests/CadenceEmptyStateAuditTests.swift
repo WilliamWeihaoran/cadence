@@ -1097,10 +1097,48 @@ struct CadenceEmptyStateAuditTests {
             try CadenceSourceScan.sourceFile("Cadence/macOS/Views/FocusPickerSupportViews.swift")
         )
         #expect(mac.contains("private var emptyState: some View"), "non-vacuity: wrong file")
-        #expect(mac.contains(#"Text(isSearching ? "No matching tasks" : CadenceEmptyStateCopy.focusTitle)"#))
+        #expect(mac.contains(#"Text(isSearching ? CadenceEmptyStateCopy.focusSearchTitle : CadenceEmptyStateCopy.focusTitle)"#))
         #expect(mac.contains("CadenceEmptyStateCopy.focusSubtitle"))
         #expect(!mac.contains("Nothing ready right now"))
         #expect(!mac.contains("When a task is ready, it will appear here."))
+    }
+
+    /// **[[T-8733]]: both Focus pickers search, through one filter and one set of words.** The
+    /// Mac's "Pick a task" card had a "Search tasks" field and a searching empty state; the iOS
+    /// picker always passed `query: ""` and had neither.
+    @Test func bothFocusPickersSearchTheirReadyTasksThroughTheSharedFilter() throws {
+        // The shared filter really narrows on what is typed, and leaves iOS's uncapped list whole.
+        let ready = [AppTask(title: "Write report"), AppTask(title: "Call dentist")]
+        let narrowed = CadenceFocusPickItem.filtered(tasks: ready, query: "  report ", todayKey: "2099-06-10", limit: nil)
+        #expect(narrowed.map(\.target) == [CadenceFocusTarget.task(ready[0].id)])
+        #expect(CadenceFocusPickItem.filtered(tasks: ready, query: "", todayKey: "2099-06-10", limit: nil).count == 2)
+
+        #expect(CadenceFocusSupport.pickSearchPrompt == "Search tasks")
+        #expect(CadenceEmptyStateCopy.focusSearchTitle == "No matching tasks")
+        #expect(CadenceEmptyStateCopy.focusSearchSubtitle == "Try a project, task title, priority, or date.")
+
+        let ios = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile("Cadence/iOS/iOSFocusView.swift"))
+        let macCard = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/macOS/Views/FocusPickerSupportViews.swift")
+        )
+        let macPage = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile("Cadence/macOS/Views/FocusView.swift"))
+
+        // Each platform types into a field and hands that same text to the shared filter.
+        #expect(CadenceSourceScan.matchCount(#"TextField\(CadenceFocusSupport\.pickSearchPrompt,\s*text:\s*\$pickSearchText\)"#, in: ios) == 1)
+        #expect(CadenceSourceScan.matchCount(#"CadenceFocusPickItem\.filtered\(\s*tasks:\s*readyTasks,\s*query:\s*pickSearchText,"#, in: ios) == 1)
+        #expect(CadenceSourceScan.matchCount(#"ForEach\(listedPickItems\)"#, in: ios) == 1, "the iOS list does not draw the filtered rows")
+        #expect(CadenceSourceScan.matchCount(#"count:\s*listedPickItems\.count"#, in: ios) == 1, "the iOS header counts the unfiltered rows")
+        #expect(CadenceSourceScan.matchCount(#"TextField\(CadenceFocusSupport\.pickSearchPrompt,\s*text:\s*\$searchText\)"#, in: macCard) == 1)
+        #expect(CadenceSourceScan.matchCount(#"(Cadence)?FocusPickItem\.filtered\([^)]*query:\s*idleSearchText"#, in: macPage) == 1)
+
+        // Both searching empty states read the shared words, and neither spells them itself.
+        for (name, code) in [("iOS", ios), ("macOS", macCard)] {
+            #expect(code.contains("CadenceEmptyStateCopy.focusSearchTitle"), "\(name) has no searching empty state")
+            #expect(code.contains("CadenceEmptyStateCopy.focusSearchSubtitle"), "\(name) has no searching empty state")
+            for literal in ["\"No matching tasks\"", "\"Try a project, task title, priority, or date.\"", "\"Search tasks\""] {
+                #expect(!code.contains(literal), "\(name) spells \(literal) itself")
+            }
+        }
     }
 
     // MARK: T-519 — the Focus detail pane, against the pane beside it

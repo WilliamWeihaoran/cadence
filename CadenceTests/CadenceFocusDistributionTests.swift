@@ -100,8 +100,7 @@ struct CadenceFocusDistributionTests {
     // MARK: - The picker cap
 
     /// macOS caps its unfiltered list at 18 on the understanding that you can type past the cap;
-    /// iOS's picker has no search field, so it passes `nil` rather than hiding the nineteenth ready
-    /// task with no way to reach it.
+    /// iOS's picker passes `nil` and lists every ready task, with or without a query ([[T-8733]]).
     @Test func theunfilteredCapIsOptionalSoASurfaceWithNoSearchFieldCanShowEverything() {
         let ready = (0..<25).map { AppTask(title: "Ready \($0)") }
 

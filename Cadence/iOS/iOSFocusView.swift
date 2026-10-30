@@ -26,6 +26,9 @@ struct iOSFocusView: View {
     /// sentence that says why. Bare, not dismissable: the retry is the same tap, and the next
     /// write that lands clears it -- as does switching to another task, whose note it is not.
     @State private var noteFailureNotice: String?
+    /// What is typed in the picker's search field ([[T-8733]]), the Mac card's `searchText`.
+    @State private var pickSearchText = ""
+    @FocusState private var isPickSearchFocused: Bool
 
     private var todayKey: String { DateFormatters.todayKey() }
 
@@ -34,11 +37,11 @@ struct iOSFocusView: View {
     }
 
     /// The ready tasks, in one list, ordered by the one rule both platforms use
-    /// (`CadenceFocusPickItem`).
+    /// (`CadenceFocusPickItem`). Unfiltered: the session's default subject and the target lookup
+    /// read this, so typing in the search field never re-points the clock.
     ///
-    /// `limit: nil` because this picker has no search field: macOS caps its unfiltered list at 18
-    /// on the understanding that you can type past the cap, and applying that here would just hide
-    /// the nineteenth ready task with no way to reach it.
+    /// `limit: nil`: macOS caps its unfiltered list at 18 on the understanding that you can type
+    /// past the cap. iOS keeps every ready task listed, search field or not ([[T-8733]]).
     private var pickItems: [CadenceFocusPickItem] {
         CadenceFocusPickItem.filtered(
             tasks: readyTasks,
@@ -46,6 +49,21 @@ struct iOSFocusView: View {
             todayKey: todayKey,
             limit: nil
         )
+    }
+
+    /// The rows the picker lists: `pickItems` narrowed by the search field through the Mac card's
+    /// own filter ([[T-8733]]).
+    private var listedPickItems: [CadenceFocusPickItem] {
+        CadenceFocusPickItem.filtered(
+            tasks: readyTasks,
+            query: pickSearchText,
+            todayKey: todayKey,
+            limit: nil
+        )
+    }
+
+    private var isSearchingPickList: Bool {
+        !pickSearchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     /// The row the session is running against. An explicitly chosen subject wins even after it
@@ -310,19 +328,32 @@ struct iOSFocusView: View {
 
     private var taskListPane: some View {
         VStack(alignment: .leading, spacing: 0) {
-            iOSPanelHeader(eyebrow: CadenceFocusSupport.pickListEyebrow, title: CadenceFocusSupport.pickListTitle, count: pickItems.count)
+            iOSPanelHeader(eyebrow: CadenceFocusSupport.pickListEyebrow, title: CadenceFocusSupport.pickListTitle, count: listedPickItems.count)
             Divider().background(Theme.borderSubtle)
 
-            if pickItems.isEmpty {
-                iOSEmptyPanel(
-                    systemImage: "timer",
-                    title: CadenceEmptyStateCopy.focusTitle,
-                    subtitle: CadenceEmptyStateCopy.focusSubtitle
-                )
+            if !pickItems.isEmpty {
+                pickSearchField
+            }
+
+            if listedPickItems.isEmpty {
+                if isSearchingPickList {
+                    iOSEmptyPanel(
+                        systemImage: "magnifyingglass",
+                        title: CadenceEmptyStateCopy.focusSearchTitle,
+                        subtitle: CadenceEmptyStateCopy.focusSearchSubtitle,
+                        statesColdImport: false
+                    )
+                } else {
+                    iOSEmptyPanel(
+                        systemImage: "timer",
+                        title: CadenceEmptyStateCopy.focusTitle,
+                        subtitle: CadenceEmptyStateCopy.focusSubtitle
+                    )
+                }
             } else {
                 ScrollView {
                     LazyVStack(spacing: 8) {
-                        ForEach(pickItems) { item in
+                        ForEach(listedPickItems) { item in
                             pickRow(item)
                         }
                     }
@@ -332,6 +363,27 @@ struct iOSFocusView: View {
             }
         }
         .background(Theme.surface)
+    }
+
+    /// The Mac "Pick a task" card's search field, in the iOS field idiom `iOSListNotesView` uses
+    /// ([[T-8733]]). Shown only when there is something to search.
+    private var pickSearchField: some View {
+        CadenceSearchFieldRow(query: $pickSearchText, focus: $isPickSearchFocused) {
+            TextField(CadenceFocusSupport.pickSearchPrompt, text: $pickSearchText)
+                .textFieldStyle(.plain)
+                .font(.system(size: 15))
+                .foregroundStyle(Theme.text)
+                .focused($isPickSearchFocused)
+                .submitLabel(.search)
+                .autocorrectionDisabled()
+        }
+        .frame(minHeight: 44)
+        .background(
+            RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous)
+                .fill(Theme.surfaceElevated)
+        )
+        .padding(.horizontal, 14)
+        .padding(.top, 14)
     }
 
     /// One row struct for every session: the tint and the leading glyph are parameters, not a

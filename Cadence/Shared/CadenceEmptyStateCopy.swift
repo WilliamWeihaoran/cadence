@@ -32,6 +32,11 @@ nonisolated enum CadenceEmptyStateCopy {
     static let focusTitle = "No open tasks"
     static let focusSubtitle = "Add a task to focus on it here."
 
+    /// The Focus picker's empty state **while a query is typed**, on both platforms ([[T-8733]]).
+    /// Not a page's empty state ([[T-123]]): the store has tasks, the query matched none of them.
+    static let focusSearchTitle = "No matching tasks"
+    static let focusSearchSubtitle = "Try a project, task title, priority, or date."
+
     /// A list, project or area detail page with nothing in it — the Mac's `ListTasksView` and the
     /// phone's `iOSListDetailView`, which are the same page at two widths.
     ///

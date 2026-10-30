@@ -90,7 +90,7 @@ struct FocusPickSessionCard: View {
             Image(systemName: "magnifyingglass")
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(searchFieldFocused ? Theme.blue : Theme.dim)
-            TextField("Search tasks", text: $searchText)
+            TextField(CadenceFocusSupport.pickSearchPrompt, text: $searchText)
                 .textFieldStyle(.plain)
                 .font(.system(size: 14))
                 .foregroundStyle(Theme.text)
@@ -113,11 +113,11 @@ struct FocusPickSessionCard: View {
                 .font(.system(size: 18, weight: .semibold))
                 .foregroundStyle(isSearching ? Theme.dim : Theme.green)
 
-            Text(isSearching ? "No matching tasks" : CadenceEmptyStateCopy.focusTitle)
+            Text(isSearching ? CadenceEmptyStateCopy.focusSearchTitle : CadenceEmptyStateCopy.focusTitle)
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(Theme.text)
 
-            Text(isSearching ? "Try a project, task title, priority, or date." : CadenceEmptyStateCopy.focusSubtitle)
+            Text(isSearching ? CadenceEmptyStateCopy.focusSearchSubtitle : CadenceEmptyStateCopy.focusSubtitle)
                 .font(.system(size: 11))
                 .foregroundStyle(Theme.dim)
                 .lineLimit(2)

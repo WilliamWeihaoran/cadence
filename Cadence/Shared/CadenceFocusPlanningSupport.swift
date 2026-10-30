@@ -271,6 +271,10 @@ enum CadenceFocusSupport {
     /// so every row is a task again and the Mac's words are the true ones.
     static let pickListTitle = "Pick a task"
 
+    /// The placeholder in both platforms' Focus picker search field ([[T-8733]]). Each field
+    /// passes what is typed to `CadenceFocusPickItem.filtered(query:)`.
+    static let pickSearchPrompt = "Search tasks"
+
     /// The Focus picker row's detail line, as segments so the row can tint an overdue due date
     /// red through `CadenceTaskDetailLineLabel`. iOS printed `sidebarDetail`'s flat string in one
     /// colour with the sidebar's fallback, so a week-late task read the same as one due next month.
