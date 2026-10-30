@@ -127,6 +127,19 @@ struct iOSRootView: View {
         // `ForEach(bundles)`, so the panel's own Save tore it down exactly when a re-date or a
         // re-time succeeded. [[T-3170]] removed every iOS Block surface, so there is no card, no
         // panel and no host — `iOSBundleInspectorHost.swift` is deleted with this line.
+        // [[T-8766]]: Cmd+K opens Search from any page, as it does on the Mac (where the root key
+        // monitor owns it). The hardware keyboard is the constraint: an iPad with one gets the
+        // Mac's key, listed in the Cmd-hold overlay under the button's title. A zero-size,
+        // transparent button rather than `.hidden()`, which can drop a button's shortcut. The
+        // note editor's text view binds Cmd+Shift+K, never plain Cmd+K ([[T-5882]]), so a key
+        // typed while editing reaches this through the responder chain.
+        .background {
+            Button("Search", action: openSearch)
+                .keyboardShortcut("k", modifiers: .command)
+                .opacity(0)
+                .frame(width: 0, height: 0)
+                .accessibilityHidden(true)
+        }
         .background(Theme.bg)
         .preferredColorScheme(.dark)
         .statusBarHidden(horizontalSizeClass == .regular)
@@ -286,6 +299,15 @@ private extension iOSRootView {
             for: deepLink,
             modelContext: modelContext
         )
+        selection = destination.item
+        apply(destination.compactRoute)
+    }
+
+    /// Cmd+K ([[T-8766]]). Both shells, one route, like a deep link: the sidebar's Search item for
+    /// the regular shell, and Search's compact route (More, pushed) for the compact one -- the same
+    /// two places the sidebar header's Search button and the More list reach.
+    func openSearch() {
+        let destination = CadenceFeatureDestination.search
         selection = destination.item
         apply(destination.compactRoute)
     }

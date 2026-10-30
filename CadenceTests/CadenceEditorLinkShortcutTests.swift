@@ -66,4 +66,37 @@ struct CadenceEditorLinkShortcutTests {
         )
     }
 }
+
+/// [[T-8766]]. **On iPad, Cmd+K opens Search, as it does on the Mac.** `Cadence/iOS/` is invisible
+/// to this macOS target and a hardware key cannot be pressed from it, so the wiring is read from
+/// source: the root shell binds plain Cmd+K to a button that routes both shells to Search, and the
+/// note editor's text view (the one iOS responder with its own key table) leaves plain Cmd+K
+/// unbound, so the root's binding is reachable while typing.
+@Suite
+struct CadenceiPadSearchKeyCommandTests {
+    @Test func theRootShellBindsCommandKToOpenSearch() throws {
+        let root = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile("Cadence/iOS/iOSRootView.swift"))
+        #expect(root.components(separatedBy: ".keyboardShortcut(\"k\", modifiers: .command)").count - 1 == 1)
+        #expect(root.contains("Button(\"Search\", action: openSearch)\n                .keyboardShortcut(\"k\", modifiers: .command)"))
+        // Hidden with opacity, not `.hidden()`, which can take the shortcut with it.
+        #expect(!root.contains(".keyboardShortcut(\"k\", modifiers: .command)\n                .hidden()"))
+
+        let body = try #require(root.range(of: "func openSearch() {").map { String(root[$0.upperBound...].prefix(200)) })
+        #expect(body.contains("let destination = CadenceFeatureDestination.search"))
+        #expect(body.contains("selection = destination.item"))
+        #expect(body.contains("apply(destination.compactRoute)"))
+    }
+
+    @Test func theCompactRouteItTakesPushesSearch() {
+        #expect(CadenceFeatureDestination.search.compactRoute.pushedDestination == .search)
+    }
+
+    @Test func theNoteEditorLeavesPlainCommandKUnbound() throws {
+        let editor = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile("Cadence/iOS/iOSMarkdownTextView.swift"))
+        #expect(editor.contains("command(\"k\", [.command, .shift],"))
+        #expect(!editor.contains("command(\"k\", [.command],"))
+        #expect(!editor.contains("input: \"k\", modifierFlags: .command"))
+        #expect(!editor.contains("input: \"k\", modifierFlags: [.command]"))
+    }
+}
 #endif
