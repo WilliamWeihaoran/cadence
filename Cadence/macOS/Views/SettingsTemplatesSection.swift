@@ -156,7 +156,7 @@ struct SettingsTemplatesSection: View {
                     Spacer(minLength: 0)
 
                     SettingsActionButton(tone: .tinted(Theme.dim), action: resetSelectedTemplate) {
-                        Label("Reset", systemImage: "arrow.counterclockwise")
+                        Label(NoteTemplateLibrary.resetTemplateTitle, systemImage: "arrow.counterclockwise")
                     }
                     .disabled(!NoteTemplateLibrary.isCustomized(selectedTemplate, overridesRaw: templateOverridesRaw))
                     .opacity(NoteTemplateLibrary.isCustomized(selectedTemplate, overridesRaw: templateOverridesRaw) ? 1 : 0.45)

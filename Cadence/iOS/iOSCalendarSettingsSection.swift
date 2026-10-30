@@ -360,7 +360,7 @@ private struct iOSMissingCalendarLinkRow: View {
             if calendars.isEmpty {
                 Text(CadenceCalendarLinkHealth.noRelinkTargetsLabel)
             } else {
-                Section("Link To") {
+                Section(CadenceCalendarLinkHealth.relinkSectionTitle) {
                     ForEach(calendars, id: \.calendarIdentifier) { calendar in
                         Button(calendar.title) {
                             onRelink(calendar.calendarIdentifier)
@@ -368,6 +368,8 @@ private struct iOSMissingCalendarLinkRow: View {
                     }
                 }
             }
+
+            Divider()
 
             Button(CadenceCalendarLinkHealth.removeLinkLabel, role: .destructive, action: onUnlink)
         } label: {
@@ -383,7 +385,7 @@ private struct iOSMissingCalendarLinkRow: View {
                 )
                 .contentShape(Rectangle())
         }
-        .accessibilityLabel("Fix broken calendar link")
+        .accessibilityLabel(CadenceCalendarLinkHealth.repairControlLabel)
     }
 }
 

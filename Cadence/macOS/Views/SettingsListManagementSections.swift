@@ -362,9 +362,11 @@ private struct SettingsMissingCalendarLinkRow: View {
             if calendars.isEmpty {
                 Text(CadenceCalendarLinkHealth.noRelinkTargetsLabel)
             } else {
-                ForEach(calendars, id: \.calendarIdentifier) { calendar in
-                    Button(calendar.title) {
-                        onRelink(calendar.calendarIdentifier)
+                Section(CadenceCalendarLinkHealth.relinkSectionTitle) {
+                    ForEach(calendars, id: \.calendarIdentifier) { calendar in
+                        Button(calendar.title) {
+                            onRelink(calendar.calendarIdentifier)
+                        }
                     }
                 }
             }
@@ -379,7 +381,7 @@ private struct SettingsMissingCalendarLinkRow: View {
         }
         .menuStyle(.borderlessButton)
         .fixedSize()
-        .accessibilityLabel("Fix calendar link")
+        .accessibilityLabel(CadenceCalendarLinkHealth.repairControlLabel)
         .help("Link this list to a calendar that exists, or remove the link")
     }
 }

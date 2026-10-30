@@ -200,7 +200,7 @@ struct iOSTemplatesSettingsSection: View {
                     Spacer()
 
                     iOSActionButton(
-                        title: "Reset Template",
+                        title: NoteTemplateLibrary.resetTemplateTitle,
                         systemImage: "arrow.counterclockwise",
                         role: .ghost,
                         size: .compact,

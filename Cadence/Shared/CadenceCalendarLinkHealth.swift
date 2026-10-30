@@ -103,6 +103,15 @@ nonisolated enum CadenceCalendarLinkHealth {
     /// the reader to make one, which is not something Cadence can do for them.
     static let noRelinkTargetsLabel = "No Apple calendars available"
 
+    /// The broken row's repair menu's VoiceOver name, on both platforms ([[T-8739]]). The Mac said
+    /// "Fix calendar link" and iOS "Fix broken calendar link"; the visible label may follow width
+    /// (a word on the Mac, a wrench on iOS), the spoken name may not ([[T-8201]]).
+    static let repairControlLabel = "Fix broken calendar link"
+
+    /// The heading over the calendars that menu offers, on both platforms ([[T-8739]]). Only iOS
+    /// drew it; the Mac listed the calendars bare.
+    static let relinkSectionTitle = "Link To"
+
     /// Every active list whose calendar link is dead, areas first, each group in the order given.
     ///
     /// - Parameter liveCalendarIDs: identifiers of **every** calendar EventKit has, including the

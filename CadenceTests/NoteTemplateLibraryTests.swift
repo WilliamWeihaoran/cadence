@@ -310,4 +310,22 @@ struct NoteTemplateLibraryTests {
         #expect(source.contains("for: templateID,"))
         #expect(!source.contains("set: { updateSelectedTemplate(body: $0) }"))
     }
+
+    /// **[[T-8739]]: the template reset button has one name.** The Mac said "Reset" beside its
+    /// "Customized" badge and iOS "Reset Template", for the same action under the same enablement.
+    @Test func bothSettingsSurfacesNameTheTemplateResetOnce() throws {
+        #expect(NoteTemplateLibrary.resetTemplateTitle == "Reset Template")
+        let sites: [(path: String, pattern: String)] = [
+            ("Cadence/macOS/Views/SettingsTemplatesSection.swift", #"Label\(NoteTemplateLibrary\.resetTemplateTitle,\s*systemImage:\s*"arrow\.counterclockwise"\)"#),
+            ("Cadence/iOS/iOSSettingsTemplateAndListSections.swift", #"iOSActionButton\(\s*title:\s*NoteTemplateLibrary\.resetTemplateTitle,\s*systemImage:\s*"arrow\.counterclockwise""#),
+        ]
+        for site in sites {
+            let code = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(site.path))
+            #expect(CadenceSourceScan.matchCount(site.pattern, in: code) == 1, "\(site.path) names its template reset itself")
+            #expect(code.contains("NoteTemplateLibrary.isCustomized(selectedTemplate, overridesRaw: templateOverridesRaw)"), "non-vacuity: \(site.path)")
+            for literal in [#"Label("Reset","#, #"title: "Reset Template""#, #""Reset Template""#] {
+                #expect(!code.contains(literal), "\(site.path) spells \(literal) itself")
+            }
+        }
+    }
 }

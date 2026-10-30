@@ -642,4 +642,33 @@ struct CadenceCalendarLinkHealthTests {
         #expect(notice.contains("read-only calendar"))
         #expect(!notice.contains("Read Only"))
     }
+
+    /// **[[T-8739]]: the broken row's repair menu is one control on both platforms.** The Mac
+    /// named it "Fix calendar link" and listed the calendars bare; iOS named it "Fix broken calendar
+    /// link" and headed them "Link To" with no divider before Remove Link. The label's word-versus-
+    /// wrench may follow width; the spoken name and the menu's sections may not ([[T-8201]]).
+    @Test func bothRepairMenusShareOneNameAndOneLayout() throws {
+        #expect(CadenceCalendarLinkHealth.repairControlLabel == "Fix broken calendar link")
+        #expect(CadenceCalendarLinkHealth.relinkSectionTitle == "Link To")
+
+        let menuShape = #"Menu\s*\{\s*if calendars\.isEmpty \{\s*Text\(CadenceCalendarLinkHealth\.noRelinkTargetsLabel\)\s*\} else \{\s*Section\(CadenceCalendarLinkHealth\.relinkSectionTitle\)\s*\{\s*ForEach\(calendars,[^}]*\}\s*\}\s*\}\s*\}\s*Divider\(\)\s*Button\(CadenceCalendarLinkHealth\.removeLinkLabel, role: \.destructive, action: onUnlink\)"#
+        for path in [
+            "Cadence/macOS/Views/SettingsListManagementSections.swift",
+            "Cadence/iOS/iOSCalendarSettingsSection.swift",
+        ] {
+            let code = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(path))
+            let menu = try #require(
+                CadenceSourceScan.declarationBody("private var repickMenu: some View", in: code),
+                "\(path): repickMenu not found"
+            )
+            #expect(
+                menu.contains(".accessibilityLabel(CadenceCalendarLinkHealth.repairControlLabel)"),
+                "\(path) names its repair menu itself"
+            )
+            #expect(CadenceSourceScan.matchCount(menuShape, in: menu) == 1, "\(path)'s repair menu lays out its own sections")
+            for literal in ["\"Fix calendar link\"", "\"Fix broken calendar link\"", "\"Link To\""] {
+                #expect(!code.contains(literal), "\(path) spells \(literal) itself")
+            }
+        }
+    }
 }

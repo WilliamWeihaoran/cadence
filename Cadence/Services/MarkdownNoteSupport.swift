@@ -154,6 +154,10 @@ nonisolated enum NoteTemplateLibrary {
         return rawOverrides(from: overrides)
     }
 
+    /// The button that clears a template's override, on both platforms' Settings ([[T-8739]]). The
+    /// Mac said "Reset" beside its "Customized" badge and iOS "Reset Template"; one action, one name.
+    static let resetTemplateTitle = "Reset Template"
+
     static func isCustomized(_ template: NoteTemplate, overridesRaw: String) -> Bool {
         overrides(from: overridesRaw)[template.id] != nil
     }
