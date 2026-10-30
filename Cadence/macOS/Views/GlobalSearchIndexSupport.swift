@@ -355,9 +355,15 @@ enum GlobalSearchIndexSupport {
         // All-day events reach this list now that `searchEvents` stopped dropping them, and
         // `CalendarEventItem` clamps one to 00:00 + 1440 minutes — which reads as
         // "12:00 AM – 12:00 AM". iOS already says "All day" here; so does this.
+        // A timed row names the whole event, not its start day ([[T-8752]]): `item` is clipped to
+        // the start day, which printed a 10 PM -> 2 AM event as "10 PM – 12 AM". Same rule as
+        // iOS Search's row (`iOSCalendarEventSupport.timeRangeLabel(for:)`, [[T-8574]]).
         let timeRange = event.isAllDay
             ? "All day"
-            : TimeFormatters.timeRange(startMin: item.startMin, endMin: item.startMin + item.durationMinutes)
+            : CadenceScheduleSupport.eventListTimeRangeLabel(
+                from: startDate,
+                to: event.endDate ?? startDate.addingTimeInterval(30 * 60)
+            )
         let subtitle = [
             item.calendarTitle,
             timeLabel,

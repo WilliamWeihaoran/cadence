@@ -166,6 +166,38 @@ struct GlobalSearchEventResultsTests {
         #expect(CadenceEventNoteSupport.matches(standup, identifier: identifier))
     }
 
+    // MARK: - Whole-event range (T-8752)
+
+    /// A 10 PM -> 2 AM event read "10 PM – 12 AM" in Cmd+K: the row printed the start-day clip
+    /// of `CalendarEventItem`. It now names the true end and its day, as iOS Search does.
+    @Test func aMidnightCrossingEventNamesItsTrueEndAndItsDay() {
+        let late = event(title: "Launch watch", start: localDay(2027, 10, 28, hour: 22))  // Thu
+        late.endDate = localDay(2027, 10, 29, hour: 2)
+        let twoDay = event(title: "Offsite", start: localDay(2027, 10, 25, hour: 9))  // Mon
+        twoDay.endDate = localDay(2027, 10, 26, hour: 17)
+
+        let lateResult = GlobalSearchIndexSupport.eventResult(for: late, relativeTo: localDay(2027, 10, 25))
+        let twoDayResult = GlobalSearchIndexSupport.eventResult(for: twoDay, relativeTo: localDay(2027, 10, 25))
+
+        #expect(lateResult.subtitle.hasSuffix(" Fri"))
+        #expect(twoDayResult.subtitle.hasSuffix(" Tue"))
+        #expect(lateResult.subtitle.hasSuffix(
+            CadenceScheduleSupport.eventListTimeRangeLabel(from: late.startDate, to: late.endDate)
+        ))
+        #expect(!lateResult.subtitle.contains("12:00 AM"))
+        #expect(!twoDayResult.subtitle.contains("12:00 AM"))
+    }
+
+    @Test func aSameDayEventNamesNoEndDay() {
+        let standup = event(title: "Standup", start: localDay(2027, 10, 28, hour: 9))
+        let result = GlobalSearchIndexSupport.eventResult(for: standup, relativeTo: localDay(2027, 10, 25))
+
+        #expect(result.subtitle.hasSuffix(
+            CadenceScheduleSupport.eventListTimeRangeLabel(from: standup.startDate, to: standup.endDate)
+        ))
+        #expect(!result.subtitle.hasSuffix(" Thu"))
+    }
+
     // MARK: - Year in the day label (T-6252)
 
     /// Local noon on a day, so the year compared is the one the reader's calendar shows.
