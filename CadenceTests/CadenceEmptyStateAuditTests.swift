@@ -1125,7 +1125,10 @@ struct CadenceEmptyStateAuditTests {
 
         // Each platform types into a field and hands that same text to the shared filter.
         #expect(CadenceSourceScan.matchCount(#"TextField\(CadenceFocusSupport\.pickSearchPrompt,\s*text:\s*\$pickSearchText\)"#, in: ios) == 1)
-        #expect(CadenceSourceScan.matchCount(#"CadenceFocusPickItem\.filtered\(\s*tasks:\s*readyTasks,\s*query:\s*pickSearchText,"#, in: ios) == 1)
+        // iOS reaches the filter through its one `pickItems(matching:)` call (the distribution
+        // census pins one call), so the field's text is what the listed rows are matched against.
+        #expect(CadenceSourceScan.matchCount(#"CadenceFocusPickItem\.filtered\(\s*tasks:\s*readyTasks,\s*query:\s*query,"#, in: ios) == 1)
+        #expect(CadenceSourceScan.matchCount(#"listedPickItems:[^{]*\{\s*pickItems\(matching:\s*pickSearchText\)"#, in: ios) == 1)
         #expect(CadenceSourceScan.matchCount(#"ForEach\(listedPickItems\)"#, in: ios) == 1, "the iOS list does not draw the filtered rows")
         #expect(CadenceSourceScan.matchCount(#"count:\s*listedPickItems\.count"#, in: ios) == 1, "the iOS header counts the unfiltered rows")
         #expect(CadenceSourceScan.matchCount(#"TextField\(CadenceFocusSupport\.pickSearchPrompt,\s*text:\s*\$searchText\)"#, in: macCard) == 1)
