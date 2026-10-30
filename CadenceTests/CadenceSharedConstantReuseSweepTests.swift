@@ -80,6 +80,17 @@ let cadenceSharedLiteralExemptions: [CadenceSharedLiteralExemption] = [
         make renaming a tab silently rename a picker.
         """
     ),
+    CadenceSharedLiteralExemption(
+        "No matching tasks",
+        path: "Cadence/iOS/iOSMarkdownAccessoryViews.swift",
+        why: """
+        `CadenceEmptyStateCopy.focusSearchTitle` ([[T-8733]]) is the Focus picker's search \
+        coming up empty over ready tasks, beside a subtitle about projects and priorities. \
+        `iOSMarkdownReferenceCompletionStrip.emptyText` is the `[[` link strip over every task, \
+        paired with its own "No matching notes". Same English, two pickers: reading the Focus \
+        constant here would make rewording Focus silently reword the link strip.
+        """
+    ),
 ]
 
 /// A call site the widened harvest newly reaches, deferred rather than forgiven.
@@ -1178,10 +1189,13 @@ struct CadenceSharedConstantReuseSweepTests {
         // collision the first exemption described. An exemption that stops describing the tree is
         // removed rather than kept, because everySharedLiteralExemptionIsStillLoadBearing fails on
         // it and because a dead exemption can only ever cover the next offender.
-        #expect(cadenceSharedLiteralExemptions.count == 1,
+        // Back to two at [[T-8733]]: `focusSearchTitle` ("No matching tasks") was one new needle
+        // with one hit, the `[[` link strip, and that hit is a collision of ordinary English, not a
+        // true positive. Same shape as "No notes yet".
+        #expect(cadenceSharedLiteralExemptions.count == 2,
                 "the exemption list changed size; re-measure the precision claim above it")
         #expect(cadenceSharedLiteralExemptions.first?.literal == "No notes yet")
-        #expect(cadenceSharedLiteralExemptions.last?.literal == "No notes yet")
+        #expect(cadenceSharedLiteralExemptions.last?.literal == "No matching tasks")
     }
 }
 

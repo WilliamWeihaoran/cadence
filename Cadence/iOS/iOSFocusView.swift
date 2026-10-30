@@ -43,20 +43,20 @@ struct iOSFocusView: View {
     /// `limit: nil`: macOS caps its unfiltered list at 18 on the understanding that you can type
     /// past the cap. iOS keeps every ready task listed, search field or not ([[T-8733]]).
     private var pickItems: [CadenceFocusPickItem] {
-        CadenceFocusPickItem.filtered(
-            tasks: readyTasks,
-            query: "",
-            todayKey: todayKey,
-            limit: nil
-        )
+        pickItems(matching: "")
     }
 
     /// The rows the picker lists: `pickItems` narrowed by the search field through the Mac card's
     /// own filter ([[T-8733]]).
     private var listedPickItems: [CadenceFocusPickItem] {
+        pickItems(matching: pickSearchText)
+    }
+
+    /// The one call into the shared filter, so both lists above are the same distribution.
+    private func pickItems(matching query: String) -> [CadenceFocusPickItem] {
         CadenceFocusPickItem.filtered(
             tasks: readyTasks,
-            query: pickSearchText,
+            query: query,
             todayKey: todayKey,
             limit: nil
         )
