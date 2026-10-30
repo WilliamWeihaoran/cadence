@@ -715,15 +715,11 @@ struct iOSSearchView: View {
             destination: .note(note),
             title: NoteReferencePanelSupport.searchTitle(note),
             subtitle: noteSubtitle(note),
-            detail: excerpt(MarkdownTaskEmbedTitleCache.resolving(note.content, titles: taskTitles)),
+            detail: CadenceSearchNoteExcerpt.text(for: note, taskTitles: taskTitles),
             icon: "doc.text",
             color: Theme.purple,
             score: score
         )
-    }
-
-    private func excerpt(_ value: String) -> String {
-        CadenceMarkdownPresentationSupport.plainPreviewText(from: value, limit: 120)
     }
 
 }

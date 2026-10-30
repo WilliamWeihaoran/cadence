@@ -90,18 +90,4 @@ enum CadenceScheduleDraftChoices {
         guard area != nil || project != nil else { return [] }
         return CadenceTaskMutationSupport.sectionNames(forArea: area, project: project)
     }
-
-    /// The section name a list change leaves behind: the chosen one where the new list has it,
-    /// that list's first otherwise.
-    static func normalizedSectionName(
-        for draft: CadenceScheduleDraft,
-        areas: [Area],
-        projects: [Project]
-    ) -> String {
-        CadenceTaskMutationSupport.normalizedSectionName(
-            draft.sectionName,
-            area: area(for: draft, in: areas),
-            project: project(for: draft, in: projects)
-        )
-    }
 }

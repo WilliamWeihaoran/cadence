@@ -211,6 +211,9 @@ struct GlobalSearchResult: Identifiable, Hashable {
     let icon: String
     let tintHex: String
     let destination: GlobalSearchDestination
+    /// A third line under the subtitle, empty for every kind but a note, which carries
+    /// `CadenceSearchNoteExcerpt`'s body excerpt as an iOS Search note row does ([[T-8763]]).
+    var detail: String = ""
 
     var tint: Color { Color(hex: tintHex) }
 }
@@ -573,6 +576,14 @@ struct GlobalSearchResultRow: View {
                                 .clipShape(Capsule())
                                 .layoutPriority(1)
                         }
+                    }
+
+                    if !result.detail.isEmpty {
+                        Text(result.detail)
+                            .font(.system(size: 12))
+                            .foregroundStyle(Theme.dim)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
                     }
                 }
 

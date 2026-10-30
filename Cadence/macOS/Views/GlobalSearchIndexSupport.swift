@@ -457,7 +457,7 @@ enum GlobalSearchIndexSupport {
         guard CadenceListSearchSupport.isSearching(query) else {
             return CadenceSearchIdleSuggestions.notes(notes.filter { noteSubtitle(for: $0) != nil })
                 .compactMap { note in
-                    noteSubtitle(for: note).map { noteResult(note, subtitle: $0) }
+                    noteSubtitle(for: note).map { noteResult(note, subtitle: $0, taskTitles: taskTitles) }
                 }
         }
         let preparedQuery = CadenceSearchMatcher.PreparedQuery(query)
@@ -468,16 +468,18 @@ enum GlobalSearchIndexSupport {
             let tags = CadenceSearchTagSupport.text(for: note.sortedTags)
             let fields = [title, content, subtitle, tags] + NoteReferencePanelSupport.searchKeyFields(note)
             guard matches(query: preparedQuery, fields: fields) else { return nil }
-            return noteResult(note, subtitle: subtitle)
+            return noteResult(note, subtitle: subtitle, taskTitles: taskTitles)
         }, query: query, preparedQuery: preparedQuery)
     }
 
-    /// One Notes row; `subtitle` is `noteSubtitle(for:)`'s, which is also the gate.
-    static func noteResult(_ note: Note, subtitle: String) -> GlobalSearchResult {
+    /// One Notes row; `subtitle` is `noteSubtitle(for:)`'s, which is also the gate. `detail` is
+    /// the body excerpt iOS Search shows under the same note, from the one shared rule ([[T-8763]]).
+    static func noteResult(_ note: Note, subtitle: String, taskTitles: [UUID: String]) -> GlobalSearchResult {
         GlobalSearchResult(
             id: CadenceSearchIdentity.note(note.id), category: .notes,
             title: NoteReferencePanelSupport.searchTitle(note), subtitle: subtitle, icon: "doc.text",
-            tintHex: Theme.purpleHex, destination: .note(note.id)
+            tintHex: Theme.purpleHex, destination: .note(note.id),
+            detail: CadenceSearchNoteExcerpt.text(for: note, taskTitles: taskTitles)
         )
     }
 

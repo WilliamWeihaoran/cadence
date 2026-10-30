@@ -872,14 +872,14 @@ struct CadenceQuickCreateTaskInspectorTests {
         )
         // A list change re-resolves the section rather than leaving the old list's name behind: a
         // name the new list has survives, one it does not have falls back to that list's first.
-        inProject.sectionName = "Ship"
+        // This is the call `CadenceSchedulePanel` makes on a list change (T-8591, T-8651).
+        let choices = CadenceScheduleDraftChoices.sectionChoices(for: inProject, areas: [live], projects: [shipping])
         #expect(
-            CadenceScheduleDraftChoices.normalizedSectionName(for: inProject, areas: [live], projects: [shipping]) == "Ship",
+            CadenceTaskMutationSupport.normalizedSectionName("Ship", among: choices) == "Ship",
             "a section the chosen list really has was re-resolved away"
         )
-        inProject.sectionName = "Nowhere"
         #expect(
-            CadenceScheduleDraftChoices.normalizedSectionName(for: inProject, areas: [live], projects: [shipping])
+            CadenceTaskMutationSupport.normalizedSectionName("Nowhere", among: choices)
                 == TaskSectionDefaults.defaultName,
             "a section the chosen list does not have survived the list change"
         )
