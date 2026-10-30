@@ -105,7 +105,8 @@ struct iOSCreateTaskSheet: View {
             // fires again when the sheet comes back from a pushed picker.
             if openedDraft == nil { openedDraft = currentDraft }
         }
-        .onChange(of: draft.listToken) { _, _ in normalizeSection() }
+        // A picked list re-resolves the section inside the panel ([[T-8591]], [[T-8601]]); the
+        // calls to `normalizeSection()` below are for the sheet's own programmatic list changes.
         .onChange(of: containerStillExists) { _, _ in reconcileContainer() }
         .onChange(of: draft.kind) { _, _ in
             actionError = nil

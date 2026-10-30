@@ -89,18 +89,51 @@ struct CadenceRowSubjectAccessibilityTests {
     }
 
     /// **The other half of this struct: the completion circle "still spelled its own state"**
-    /// rather than reading `CadenceTaskCompletionState.accessibilityActionLabel`, the shared answer
-    /// `TaskCompletionButton` (macOS's task row) and `iOSTaskViews`' circle already read theirs
-    /// from (T-594, pointed at iOS in T-611). A `Subtask` has only two states — done or not — so
-    /// this maps straight to `.done` / `.todo` rather than needing the mid-fill states a full
-    /// `AppTask` can be in.
-    @Test func subtaskRowCompletionCircleReadsTheSharedCompletionStateLabel() throws {
+    /// (T-673), and then read the *task* row's name for it. T-673 pointed it at
+    /// `CadenceTaskCompletionState.accessibilityActionLabel`, so VoiceOver on a Mac subtask said
+    /// "Complete task, Book flight" while both iOS subtask circles said "Complete subtask"
+    /// ([[T-8610]]). One app, two platforms, no hardware reason: every subtask circle now reads
+    /// `CadenceSubtaskAccessibility.completionActionLabel(isDone:)`, keyed on the two states a
+    /// `Subtask` has.
+    @Test func subtaskRowCompletionCircleReadsTheSharedSubtaskLabel() throws {
         let source = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(Self.tasksPanelSupportPath))
         let body = try #require(CadenceSourceScan.declarationBody("struct SubtaskRow: View", in: source))
 
-        #expect(body.contains("private var completionState: CadenceTaskCompletionState {"))
-        #expect(body.contains("subtask.isDone ? .done : .todo"))
-        #expect(body.contains(".accessibilityLabel(completionState.accessibilityActionLabel)"))
+        #expect(body.contains(".accessibilityValue(displayTitle)"), "non-vacuity: wrong body read")
+        #expect(body.contains(".accessibilityLabel(CadenceSubtaskAccessibility.completionActionLabel(isDone: subtask.isDone))"))
+        // The task row's name reaches no subtask circle.
+        #expect(!body.contains("accessibilityActionLabel"))
+    }
+
+    /// The words themselves ([[T-8610]]): the iOS wording won, so the Mac took "subtask", and a done
+    /// subtask's circle names the undo rather than repeating "Complete".
+    @Test func theSharedSubtaskCompletionLabelNamesASubtask() {
+        #expect(CadenceSubtaskAccessibility.completionActionLabel(isDone: false) == "Complete subtask")
+        #expect(CadenceSubtaskAccessibility.completionActionLabel(isDone: true) == "Mark subtask todo")
+        // Never the task row's names, which is the drift this closed.
+        for isDone in [false, true] {
+            let label = CadenceSubtaskAccessibility.completionActionLabel(isDone: isDone)
+            #expect(!CadenceTaskCompletionState.allCases.map(\.accessibilityActionLabel).contains(label))
+        }
+    }
+
+    /// No subtask circle spells its name as a literal any more: the three hosts read the rule.
+    @Test func everySubtaskCircleReadsTheOneSubtaskRule() throws {
+        let sites: [(path: String, declaration: String)] = [
+            (Self.tasksPanelSupportPath, "struct SubtaskRow: View"),
+            (Self.iOSTaskDetailComponentsPath, "struct iOSSubtaskRow: View"),
+            (Self.iOSTaskRowActionViewsPath, "struct iOSTaskRowSubtaskRow: View"),
+        ]
+        for site in sites {
+            let source = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(site.path))
+            let body = try #require(CadenceSourceScan.declarationBody(site.declaration, in: source), "\(site.declaration)")
+            #expect(
+                CadenceSourceScan.matchCount(#"\.accessibilityLabel\(CadenceSubtaskAccessibility\.completionActionLabel\(isDone: "#, in: body) == 1,
+                "\(site.declaration) does not read the shared subtask label"
+            )
+            #expect(!body.contains(#""Complete subtask""#), "\(site.declaration) spells the label itself")
+            #expect(!body.contains(#""Mark subtask todo""#), "\(site.declaration) spells the label itself")
+        }
     }
 
     // MARK: - The iOS twin of sites 6 and 7: the task sheet's subtask row ([[T-7011]])
@@ -144,7 +177,7 @@ struct CadenceRowSubjectAccessibilityTests {
             "TaskTitleSupport.displayTitle(subtask.title, fallback: TaskTitleSupport.defaultCompactDisplayTitle)"
         ))
         #expect(body.contains("Text(displayTitle)"), "the row draws a different title from the one it announces")
-        #expect(body.contains(#".accessibilityLabel("Complete subtask")"#))
+        #expect(body.contains(".accessibilityLabel(CadenceSubtaskAccessibility.completionActionLabel(isDone: false))"))
         #expect(CadenceSourceScan.matchCount(#"\.accessibilityValue\(displayTitle\)"#, in: body) == 1)
         // The raw title reaches no accessibility modifier.
         #expect(CadenceSourceScan.matchCount(#"accessibility\w*\([^)]*subtask\.title"#, in: body) == 0)

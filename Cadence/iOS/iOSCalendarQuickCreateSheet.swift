@@ -121,7 +121,7 @@ struct iOSCalendarQuickCreateSheet: View {
         .interactiveDismissDisabled(
             CadenceSheetDismissGuard.blocksSwipe(opened: openedDraft, current: currentDraft)
         )
-        .onChange(of: draft.listToken) { _, _ in normalizeSection() }
+        // The Section row follows the List row inside the panel ([[T-8591]], [[T-8601]]).
         .onChange(of: draft.kind) { _, _ in normalizeCalendarSelection() }
         .onChange(of: calendarManager.writableCalendars.map(\.calendarIdentifier)) { _, _ in normalizeCalendarSelection() }
         .onAppear {
@@ -183,10 +183,6 @@ struct iOSCalendarQuickCreateSheet: View {
         }
         if failure == nil { dismiss() }
         return failure
-    }
-
-    private func normalizeSection() {
-        draft.sectionName = CadenceScheduleDraftChoices.normalizedSectionName(for: draft, areas: areas, projects: projects)
     }
 
     private func normalizeCalendarSelection() {

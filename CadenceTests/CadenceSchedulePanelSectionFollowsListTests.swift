@@ -82,4 +82,45 @@ struct CadenceSchedulePanelSectionFollowsListTests {
             )
         }
     }
+
+    // MARK: The single owner ([[T-8601]])
+
+    /// **The panel is the only place the Section row is reconciled on a list change.** Four hosts
+    /// -- the Mac inspector's schedule editor, the Mac quick-create popover, `iOSCreateTaskSheet`
+    /// and `iOSCalendarQuickCreateSheet` -- each carried their own `.onChange(of: draft.listToken)`
+    /// after [[T-8591]] moved the rule into the panel; that duplicated rule is what the iOS sheet
+    /// drifted from. Counted over every app file's code (comments stripped), so a fifth host that
+    /// re-spells it fails here rather than drifting quietly.
+    @Test func noHostReconcilesTheSectionOnAListChangeBesideThePanel() throws {
+        let files = try CadenceSourceScan.swiftFiles(under: "Cadence")
+        #expect(files.count > 400, "the walk found \(files.count) files, not the app")
+        #expect(files.contains("Cadence/Shared/Components/CadenceSchedulePanel.swift"), "non-vacuity: the owner was not walked")
+        var owners: [String] = []
+        for path in files {
+            let code = CadenceSourceScan.codeOnly(source(path))
+            if CadenceSourceScan.matchCount(#"\.onChange\(of:\s*draft\.listToken\)"#, in: code) > 0 {
+                owners.append(path)
+            }
+        }
+        #expect(owners == ["Cadence/Shared/Components/CadenceSchedulePanel.swift"], "\(owners.sorted())")
+    }
+
+    /// The four former hosts still hand the panel the choices it reconciles over -- the removal is
+    /// only safe because each passes the same list its own copy normalized against.
+    @Test func theFormerHostsHandThePanelTheDraftsSectionChoices() {
+        let byDraft = "CadenceScheduleDraftChoices.sectionChoices(for: draft, areas: areas, projects: projects)"
+        let hosts: [(path: String, needle: String)] = [
+            ("Cadence/macOS/Views/QuickCreateChoicePopover.swift", byDraft),
+            ("Cadence/iOS/iOSCreateTaskSheet.swift", byDraft),
+            ("Cadence/iOS/iOSCalendarQuickCreateSheet.swift", byDraft),
+            ("Cadence/macOS/Views/TaskInspectorContentSupportViews.swift",
+             "sectionChoices: CadenceTaskMutationSupport.sectionNames(forArea: selectedArea, project: selectedProject)"),
+        ]
+        for host in hosts {
+            let code = CadenceSourceScan.codeOnly(source(host.path))
+            #expect(!code.isEmpty, "\(host.path) was not read")
+            #expect(code.contains("CadenceSchedulePanel("), "\(host.path) no longer hosts the panel")
+            #expect(code.contains(host.needle), "\(host.path)")
+        }
+    }
 }

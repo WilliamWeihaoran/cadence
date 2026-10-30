@@ -709,11 +709,8 @@ struct TaskInspectorScheduleEditor<Content: View>: View {
         // repaired when the task is opened, and only then. A coherent count is not written.
         .onAppear { CadenceTaskRecurrenceWorkflowSupport.repairEndCountOnOpen(task, in: modelContext) }
         .onChange(of: task.statusRaw) { _, _ in draft.isDone = task.isDone }
-        .onChange(of: draft.listToken) { _, _ in
-            draft.sectionName = CadenceScheduleDraftChoices.normalizedSectionName(
-                for: draft, areas: areas, projects: projects
-            )
-        }
+        // No `.onChange(of: draft.listToken)` here: the panel reconciles the Section row itself,
+        // over the `sectionChoices` above ([[T-8591]], host copy removed under [[T-8601]]).
     }
 
     private func save() -> String? {

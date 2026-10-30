@@ -114,13 +114,6 @@ struct SubtaskRow: View {
         TaskTitleSupport.displayTitle(subtask.title, fallback: TaskTitleSupport.defaultCompactDisplayTitle)
     }
 
-    // T-673: macOS's subtask circle used to spell no state at all; a `Subtask` has only the two
-    // states `CadenceTaskCompletionGlyph.binary(isDone:)` models, so read the same completion
-    // state iOS's row and macOS's task-row circle already read theirs from.
-    private var completionState: CadenceTaskCompletionState {
-        subtask.isDone ? .done : .todo
-    }
-
     var body: some View {
         HStack(spacing: 8) {
             Button { Self.toggleCompletion(of: subtask, in: modelContext) } label: {
@@ -129,7 +122,9 @@ struct SubtaskRow: View {
                     .foregroundStyle(subtask.isDone ? Theme.green : Theme.dim.opacity(0.6))
             }
             .buttonStyle(.cadencePlain)
-            .accessibilityLabel(completionState.accessibilityActionLabel)
+            // T-673 gave the circle a name; [[T-8610]] made it the subtask name iOS's subtask
+            // circles read, rather than the task row's "Complete task".
+            .accessibilityLabel(CadenceSubtaskAccessibility.completionActionLabel(isDone: subtask.isDone))
             .accessibilityValue(displayTitle)
 
             Text(displayTitle)

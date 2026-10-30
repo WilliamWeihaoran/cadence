@@ -588,7 +588,7 @@ struct iOSSubtaskRow: View {
                     .iOSExpandedHitArea(12)
             }
             .buttonStyle(.iosPressable)
-            .accessibilityLabel(subtask.isDone ? "Mark subtask todo" : "Complete subtask")
+            .accessibilityLabel(CadenceSubtaskAccessibility.completionActionLabel(isDone: subtask.isDone))
             .accessibilityValue(displayTitle)
 
             TextField("Subtask", text: $subtask.title, axis: .vertical)

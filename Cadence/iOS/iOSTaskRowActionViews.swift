@@ -462,7 +462,8 @@ struct iOSTaskRowSubtaskRow: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.iosPressable)
-        .accessibilityLabel("Complete subtask")
+        // The row lists open subtasks only and its tap only completes, so the open-state name.
+        .accessibilityLabel(CadenceSubtaskAccessibility.completionActionLabel(isDone: false))
         .accessibilityValue(displayTitle)
     }
 }

@@ -355,6 +355,19 @@ extension CadenceTaskCompletionState {
     }
 }
 
+/// What a **subtask's** completion circle is called, on every platform ([[T-8610]]).
+///
+/// A subtask's circle is not a task's: it has only the two states `isDone` models, and its name
+/// says "subtask" so a VoiceOver user inside a task's subtask block hears which kind of item the
+/// tick acts on. macOS's `SubtaskRow` read the task-level `accessibilityActionLabel` ("Complete
+/// task") while iOS's `iOSSubtaskRow` and `iOSTaskRowSubtaskRow` spelled "Complete subtask" as
+/// literals -- one control, two announcements, no hardware reason. Every subtask circle reads this.
+nonisolated enum CadenceSubtaskAccessibility: Sendable {
+    static func completionActionLabel(isDone: Bool) -> String {
+        isDone ? "Mark subtask todo" : "Complete subtask"
+    }
+}
+
 enum CadenceTaskPresentationSupport {
     /// The task row's notes excerpt: the shared search reader, but **cut the way a row reads** —
     /// at a word boundary, with an ellipsis whenever anything was dropped ([[T-3222]]).

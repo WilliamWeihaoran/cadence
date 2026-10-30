@@ -112,7 +112,7 @@ struct MacTaskRowInlineDetailTests {
         )
         let presses = elements.filter { element in
             string(element, "accessibilityValue") == target
-                && string(element, "accessibilityLabel") == CadenceTaskCompletionState.todo.accessibilityActionLabel
+                && string(element, "accessibilityLabel") == CadenceSubtaskAccessibility.completionActionLabel(isDone: false)
         }
         #expect(presses.count == 1, "expected one checkbox for \(target), found \(presses.count)")
         let checkbox = try #require(presses.first)

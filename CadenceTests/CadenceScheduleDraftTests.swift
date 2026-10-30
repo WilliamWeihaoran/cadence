@@ -1503,8 +1503,11 @@ struct CadenceQuickCreatePanelAdoptionTests {
     /// out, as the sheet's always did.
     @Test("A list change re-resolves the section and the Inbox offers none")
     func aListChangeReResolvesTheSection() throws {
+        // [[T-8601]]: the sheet's own `.onChange(of: draft.listToken)` went; the panel it hosts
+        // re-resolves the section (`CadenceSchedulePanelSectionFollowsListTests`), over the
+        // choices the sheet hands it here.
         let sheet = try code("Cadence/iOS/iOSCalendarQuickCreateSheet.swift")
-        #expect(sheet.contains(".onChange(of: draft.listToken) { _, _ in normalizeSection() }"))
+        #expect(sheet.contains("sectionChoices: CadenceScheduleDraftChoices.sectionChoices(for: draft, areas: areas, projects: projects)"))
         let creation = try code("Cadence/Shared/CadenceScheduleDraftChoices.swift")
         let sections = try #require(CadenceSourceScan.functionBody(named: "sectionChoices", in: creation))
         #expect(sections.contains("guard area != nil || project != nil else { return [] }"))

@@ -331,13 +331,8 @@ struct QuickCreateChoicePopover: View {
             carryNotes(leaving: previousKind, entering: newKind)
             resolveCalendarSelection()
         }
-        .onChange(of: draft.listToken) { _, _ in
-            draft.sectionName = CadenceScheduleDraftChoices.normalizedSectionName(
-                for: draft,
-                areas: areas,
-                projects: projects
-            )
-        }
+        // The Section row follows the List row inside the panel ([[T-8591]]); this host's own
+        // copy of that rule went with [[T-8601]].
     }
 
     // MARK: - What the host can carry
