@@ -94,8 +94,10 @@ struct CadenceMacCalendarTaskTitleFallbackTests {
                 "Text\\(TaskTitleSupport\\.displayTitle\\(task\\.title", in: source
             )
         }
-        // Two month-grid chips plus the timeline block's tall and short layouts.
-        #expect(fallbackSites == 4)
+        // Two month-grid chips, the timeline block's tall and short layouts, and the
+        // dragged plate's own title ([[T-8456]]) -- the plate draws the task being moved,
+        // so it reads a title like any other surface here and must fall back like one.
+        #expect(fallbackSites == 5)
     }
 
     @Test func theCompactFallbackIsUntitledForABlankTitle() {
