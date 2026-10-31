@@ -485,7 +485,8 @@ struct CadenceSchedulePanel<NotesField: View>: View {
                         isOpen: .constant(true),
                         showsClear: true,
                         onClear: { draft.dueDateKey = "" },
-                        inlineStyle: true
+                        inlineStyle: true,
+                        hasSelection: !draft.dueDateKey.isEmpty
                     )
                 }
             }

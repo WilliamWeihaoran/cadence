@@ -261,7 +261,8 @@ struct iOSTaskRowDateChip: View {
                 viewMonth: $viewMonth,
                 isOpen: $isOpen,
                 showsClear: !dateKey.isEmpty,
-                onClear: clearDate
+                onClear: clearDate,
+                hasSelection: !dateKey.isEmpty
             )
             .background(Theme.surfaceElevated)
             .presentationCompactAdaptation(.popover)

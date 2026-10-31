@@ -263,7 +263,9 @@ struct TaskDateChip: View {
             MonthCalendarPanel(
                 selection: Binding(get: { date }, set: { date = $0; isOn = true; showPicker = false }),
                 viewMonth: $viewMonth,
-                isOpen: $showPicker
+                isOpen: $showPicker,
+                // [[T-9211]]: an unset chip's `date` is only where the grid opens.
+                hasSelection: isOn
             )
 
             if isOn {

@@ -91,7 +91,9 @@ struct CadenceDatePicker: View {
                 showsClear: showsClear && onClear != nil,
                 onClear: onClear,
                 markedDay: markedDay,
-                markedDayCaption: markedDayCaption
+                markedDayCaption: markedDayCaption,
+                // [[T-9211]]: a field showing its placeholder has no date, so the panel lights none.
+                hasSelection: placeholder == nil
             )
             // Stays an anchored popover on iPhone. Without this, compact width promotes it to a
             // full-height sheet around a 256×294 calendar — most of the screen empty — while every
@@ -161,6 +163,25 @@ nonisolated enum CadenceDateSelectionMetrics {
     }
 }
 
+// MARK: - Selection state
+
+/// **What the date panels draw as picked** ([[T-9211]]).
+///
+/// A field with no date still has to hand the panel a `Date` to open on, and every caller hands it
+/// today. The pills and the grid read that seed as the selection, so "Set due date" on an undated
+/// task opened with **Today** filled blue, today's cell filled blue and a red "Clear date" under
+/// them, for a date the task did not have. `hasSelection` is the caller saying which it is.
+nonisolated enum CadenceDateSelectionState {
+    static func isSelected(_ day: Date, selection: Date, hasSelection: Bool, calendar: Calendar = .current) -> Bool {
+        hasSelection && calendar.isDate(day, inSameDayAs: selection)
+    }
+
+    /// Clear is offered only over a date there is to clear.
+    static func drawsClear(showsClear: Bool, hasSelection: Bool) -> Bool {
+        showsClear && hasSelection
+    }
+}
+
 // MARK: - Month Calendar Panel
 
 struct MonthCalendarPanel: View {
@@ -183,6 +204,9 @@ struct MonthCalendarPanel: View {
     /// The word inside the marked cell. Three marks say it, not one: an amber ring, the numeral in
     /// amber, and this caption. A ring alone reads as "some other state" rather than as a deadline.
     var markedDayCaption: String = "DUE"
+    /// `false` when the field has no date yet and `selection` is only where the grid opens
+    /// ([[T-9211]]). See `CadenceDateSelectionState`.
+    var hasSelection: Bool = true
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     private let cal = Calendar.current
@@ -246,7 +270,7 @@ struct MonthCalendarPanel: View {
                                     LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 2), count: 7), spacing: 2) {
                                         ForEach(days.indices, id: \.self) { i in
                                             if let d = days[i] {
-                                                let isSelected = cal.isDate(d, inSameDayAs: selection)
+                                                let isSelected = CadenceDateSelectionState.isSelected(d, selection: selection, hasSelection: hasSelection, calendar: cal)
                                                 let isToday = cal.isDateInToday(d)
                                                 let isMarked = isMarkedDay(d) && !isSelected
                                                 Button {
@@ -328,7 +352,7 @@ struct MonthCalendarPanel: View {
     /// become two and a word here, which is the same three statements in a layout that can hold
     /// them.
     private func dateRow(_ day: Date) -> some View {
-        let isSelected = cal.isDate(day, inSameDayAs: selection)
+        let isSelected = CadenceDateSelectionState.isSelected(day, selection: selection, hasSelection: hasSelection, calendar: cal)
         let isToday = cal.isDateInToday(day)
         let isMarked = isMarkedDay(day) && !isSelected
         return Button {
@@ -408,6 +432,10 @@ struct CadenceQuickDatePopover: View {
     /// Forwarded to `MonthCalendarPanel`; see its note. Defaulted, so no existing caller moved.
     var markedDay: Date? = nil
     var markedDayCaption: String = "DUE"
+    /// `false` when the field being edited has no date: `selection` is then only the day the grid
+    /// opens on (every caller seeds it with today), so no pill and no cell may read as picked and
+    /// there is nothing for Clear to clear ([[T-9211]]).
+    var hasSelection: Bool = true
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     private let cal = Calendar.current
@@ -445,10 +473,11 @@ struct CadenceQuickDatePopover: View {
                 inlineStyle: true,
                 viewportHeight: CadenceDateSelectionMetrics.quickViewportHeight(at: dynamicTypeSize, inlineStyle: inlineStyle),
                 markedDay: markedDay,
-                markedDayCaption: markedDayCaption
+                markedDayCaption: markedDayCaption,
+                hasSelection: hasSelection
             )
 
-            if showsClear {
+            if CadenceDateSelectionState.drawsClear(showsClear: showsClear, hasSelection: hasSelection) {
                 Divider().background(Theme.borderSubtle)
                 Button("Clear date") {
                     onClear?()
@@ -512,7 +541,7 @@ struct CadenceQuickDatePopover: View {
 
     @ViewBuilder
     private func quickPill(_ label: String, target: Date) -> some View {
-        let isSelected = cal.isDate(selection, inSameDayAs: target)
+        let isSelected = CadenceDateSelectionState.isSelected(target, selection: selection, hasSelection: hasSelection, calendar: cal)
         Button {
             selection = target
             isOpen = false

@@ -486,7 +486,8 @@ struct KanbanSectionDueDatePickerPopover: View {
             viewMonth: $viewMonth,
             isOpen: $isPresented,
             showsClear: !dueDateKey.isEmpty,
-            onClear: onClear
+            onClear: onClear,
+            hasSelection: !dueDateKey.isEmpty
         )
     }
 }

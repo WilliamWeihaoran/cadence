@@ -603,7 +603,8 @@ struct MacTaskRow: View {
             showsClear: true,
             onClear: {
                 CadenceTaskDateEditing.clearDueDate(task, in: modelContext)
-            }
+            },
+            hasSelection: !task.dueDate.isEmpty
         )
     }
 
@@ -625,7 +626,8 @@ struct MacTaskRow: View {
             showsClear: true,
             onClear: {
                 CadenceTaskDateEditing.clearScheduledDate(task, in: modelContext)
-            }
+            },
+            hasSelection: !task.scheduledDate.isEmpty
         )
     }
 

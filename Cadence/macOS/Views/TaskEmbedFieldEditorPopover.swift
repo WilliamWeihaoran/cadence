@@ -148,7 +148,8 @@ struct TaskEmbedFieldEditorPopover: View {
                     onClear: {
                         commit { CadenceTaskDateEditing.clearScheduledDate(task, in: modelContext) }
                     },
-                    inlineStyle: true
+                    inlineStyle: true,
+                    hasSelection: !task.scheduledDate.isEmpty
                 )
                 Divider().background(Theme.borderSubtle)
                 scheduledTimeControls
@@ -176,7 +177,8 @@ struct TaskEmbedFieldEditorPopover: View {
                 onClear: {
                     commit { CadenceTaskDateEditing.clearDueDate(task, in: modelContext) }
                 },
-                inlineStyle: true
+                inlineStyle: true,
+                hasSelection: !task.dueDate.isEmpty
             )
         case .estimate:
             // The same roller every other estimate surface opens, not a stepper of its own.

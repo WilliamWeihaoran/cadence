@@ -536,7 +536,9 @@ struct TaskInspectorDateControl: View {
                     }
                 ),
                 viewMonth: $viewMonth,
-                isOpen: $showPicker
+                isOpen: $showPicker,
+                // [[T-9211]]: an unset field's `date` is only where the grid opens.
+                hasSelection: isOn
             )
 
             if isOn {
