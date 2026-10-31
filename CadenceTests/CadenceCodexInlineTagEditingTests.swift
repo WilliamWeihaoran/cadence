@@ -169,4 +169,29 @@ struct CadenceCodexInlineTagEditingTests {
             #expect(slugs == (confirmed ? ["job"] : ["job", "work"]))
         }
     }
+
+    /// [[T-9135]]: the phone's Settings → Tags draws one row per slug, as the Mac's does. Two
+    /// `work` rows (what CloudKit delivers when two devices each made one) used to list twice on
+    /// iOS and once on macOS.
+    @Test func mobileTagCatalogsListOneRowPerSlugAsTheMacPaneDoes() throws {
+        let first = Cadence.Tag(name: "Work", order: 0)
+        let syncedTwin = Cadence.Tag(name: "Work", order: 1)
+        let home = Cadence.Tag(name: "Home", order: 2)
+        let archived = Cadence.Tag(name: "Old", order: 3, isArchived: true)
+        let archivedTwin = Cadence.Tag(name: "Old", order: 4, isArchived: true)
+        let all = [syncedTwin, home, archived, first, archivedTwin]
+
+        let active = iOSTagSettingsEdit.catalog(of: all, archived: false)
+        let archivedRows = iOSTagSettingsEdit.catalog(of: all, archived: true)
+        #expect(active.map(\.slug) == ["work", "home"])
+        #expect(archivedRows.map(\.slug) == ["old"])
+        // Exactly the Mac pane's expression, so the two screens cannot pick different survivors.
+        #expect(active.map(\.id) == TagSupport.uniqueBySlug(all.filter { !$0.isArchived }).map(\.id))
+        #expect(archivedRows.map(\.id) == TagSupport.uniqueBySlug(all.filter(\.isArchived)).map(\.id))
+
+        let source = CadenceSourceScan.codeOnly(
+            try CadenceSourceScan.sourceFile("Cadence/iOS/iOSSettingsTagsSection.swift"))
+        #expect(source.contains("iOSTagSettingsEdit.catalog(of: tags, archived: false)"))
+        #expect(source.contains("iOSTagSettingsEdit.catalog(of: tags, archived: true)"))
+    }
 }

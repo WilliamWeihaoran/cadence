@@ -3,6 +3,16 @@ import SwiftData
 
 /// The mobile inline editor's validation and atomic field edit, available to unit tests.
 enum iOSTagSettingsEdit {
+    /// [[T-9135]]: one of this screen's two catalogs, **one row per slug** — the list macOS's
+    /// `SettingsTagsSection` draws for the same table (`TagSupport.uniqueBySlug`). It was
+    /// `TagSupport.sorted`, which keeps every row, so two `work` tags that CloudKit delivered from
+    /// two devices read as one `#work` row on the Mac and two on the phone. Nothing merges them
+    /// unprompted (`deduplicateTags` runs only under "Add Defaults"), so the pair could stand for
+    /// good. Which row wins is `uniqueBySlug`'s rule on both platforms, not this screen's.
+    static func catalog(of tags: [Tag], archived: Bool) -> [Tag] {
+        TagSupport.uniqueBySlug(tags.filter { $0.isArchived == archived })
+    }
+
     static func hasDuplicate(name: String, tag: Tag, allTags: [Tag]) -> Bool {
         let slug = TagSupport.slug(for: name)
         return allTags.contains { $0.id != tag.id && $0.slug == slug }
@@ -60,11 +70,11 @@ struct iOSTagsSettingsSection: View {
     @State private var seedFailureNotice: String?
 
     private var activeTags: [Tag] {
-        TagSupport.sorted(tags.filter { !$0.isArchived })
+        iOSTagSettingsEdit.catalog(of: tags, archived: false)
     }
 
     private var archivedTags: [Tag] {
-        TagSupport.sorted(tags.filter(\.isArchived))
+        iOSTagSettingsEdit.catalog(of: tags, archived: true)
     }
 
     /// The create rule, asked rather than computed. `TagSupport.creationDecision(for:in:)` is the
