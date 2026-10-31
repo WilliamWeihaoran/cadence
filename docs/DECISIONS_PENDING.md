@@ -43,6 +43,12 @@ Ranked by how often you would meet it, 11-inch iPad first, then the Mac.
    `DateFormatters`, "No results" on both, add "notes"** to the idle line. [T-7205] Code checked
    (`GlobalSearchIndexSupport.swift:456-457`, `GlobalSearchSupportViews.swift:502,514`,
    `iOSSearchView.swift:345`).
+7a. **A task search result reads differently per platform**: the Mac's Cmd+K row shows list,
+   tags, Do, Due and Active/Completed; iOS Search uses its own shorter subtitle. Note rows
+   already match. (a) one shared task subtitle on both, (b) leave. **(a)** -- per T-8201 no
+   input or hardware forces the difference. [T-8763] Code checked (added 2026-10-30 by keeper
+   `keeper2208`; Mac `GlobalSearchIndexSupport.swift:284-290`, iOS
+   `CadenceSearchCandidateSupport.swift:66`).
 8. **Mac `/` picker in a note has no height cap** -- a bare `/` lists ~22 rows (~580pt), more than
    a 13-inch MacBook fits beside the caret. Cap it (~10 rows, scrolling with the highlight) or
    leave. **Cap it** -- the keyboard highlight can walk off screen today. [T-7233] Code checked
