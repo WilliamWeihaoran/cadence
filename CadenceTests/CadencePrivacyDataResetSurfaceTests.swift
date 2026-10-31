@@ -1023,6 +1023,9 @@ struct CadencePrivacyDataResetSurfaceTests {
             // T-1100: the store files a failed rollback retained are store data, and a reset that
             // left them behind would leave a copy of the database inside the emptied container.
             "StoreBackupManager.deleteRetainedUnrestoredOriginals()",
+            // T-1840 (owner decision 2026-10-22): the recovery stores and the earlier store
+            // locations. Driven over temp folders in `CadenceDataResetStoreFolderTests`.
+            "StoreBackupManager.deleteUnusedStoreFoldersForDataReset()",
         ] {
             #expect(
                 live.contains(step),
@@ -1085,7 +1088,8 @@ struct CadencePrivacyDataResetSurfaceTests {
 
         let bothRefused = PrivacyDataResetService.removeStoredBackups(
             deletingBackups: { throw refusal },
-            deletingRetainedOriginals: { throw refusal }
+            deletingRetainedOriginals: { throw refusal },
+            deletingUnusedStoreFolders: { throw refusal }
         )
         #expect(bothRefused.removedBackupCount == 0)
         let reason = bothRefused.retainedBackupReason
@@ -1098,7 +1102,8 @@ struct CadencePrivacyDataResetSurfaceTests {
         var retainedRan = false
         let firstRefused = PrivacyDataResetService.removeStoredBackups(
             deletingBackups: { throw refusal },
-            deletingRetainedOriginals: { retainedRan = true; return 1 }
+            deletingRetainedOriginals: { retainedRan = true; return 1 },
+            deletingUnusedStoreFolders: { 0 }
         )
         #expect(retainedRan, "a refused backup delete skipped the retained originals (T-1100)")
         #expect(firstRefused.removedBackupCount == 0)
@@ -1107,7 +1112,8 @@ struct CadencePrivacyDataResetSurfaceTests {
         // And a sweep that worked says nothing at all, so the ordinary sentence is unchanged.
         let clean = PrivacyDataResetService.removeStoredBackups(
             deletingBackups: { 3 },
-            deletingRetainedOriginals: { 0 }
+            deletingRetainedOriginals: { 0 },
+            deletingUnusedStoreFolders: { 0 }
         )
         #expect(clean.removedBackupCount == 3)
         #expect(clean.retainedBackupReason == nil)
@@ -1124,7 +1130,7 @@ struct CadencePrivacyDataResetSurfaceTests {
         #expect(outcome.accountAndDataStatusMessage.hasPrefix("Cadence account and data were deleted."))
         #expect(outcome.dataOnlyStatusMessage.hasPrefix("Cadence data was deleted."))
         for message in [outcome.accountAndDataStatusMessage, outcome.dataOnlyStatusMessage] {
-            #expect(message.contains("Local store backups were not removed and are still inside Cadence"))
+            #expect(message.contains("Local store backups or store folders were not removed and are still inside Cadence"))
             #expect(message.contains("You don’t have permission to save the file"))
             #expect(!message.lowercased().contains("could not delete"))
         }

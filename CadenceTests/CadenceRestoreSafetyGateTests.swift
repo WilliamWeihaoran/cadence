@@ -231,7 +231,10 @@ struct CadenceRestoreSafetyGateTests {
                     },
                     deletingRetainedOriginals: {
                         try StoreBackupManager.deleteRetainedUnrestoredOriginals(storeDirectoryURL: root)
-                    }
+                    },
+                    // T-1840's step reads the signed-in person's legacy paths by default; it is
+                    // driven over temp folders in `CadenceDataResetStoreFolderTests`.
+                    deletingUnusedStoreFolders: { 0 }
                 )
 
                 #expect(outcome.retainedBackupReason == nil, "\(staging): \(outcome.retainedBackupReason ?? "")")

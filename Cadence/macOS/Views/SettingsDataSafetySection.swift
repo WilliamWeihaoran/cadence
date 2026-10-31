@@ -233,8 +233,8 @@ struct SettingsDataSafetySection: View {
             //
             // Reveal only, for T-1532's reason and one more: a recovery store is opened with
             // CloudKit off, so anything typed during that degraded session synced nowhere and this
-            // folder is its only copy. Whether the reset should take it is T-1840, and it is the
-            // owner's call, not a button this row can grow.
+            // folder is its only copy. T-1840: the owner decided the reset takes it, behind the
+            // typed-phrase gate — still not a button this row can grow.
             if !unmanagedStoreDirectories.isEmpty {
                 VStack(alignment: .leading, spacing: CadenceSectionLabelMetrics.labelToNamedBlock) {
                     SettingsSectionLabel(text: CadenceUnmanagedStoreCopy.sectionTitle)
@@ -513,11 +513,11 @@ private struct SettingsDataResetCard: View {
                         .foregroundStyle(Theme.text)
                     // **T-1680 — the second clause is the one that was missing.** The sentence
                     // named five things and stopped, and a reader takes a list that specific as
-                    // exhaustive. It is not: the reset reaches the live store directory only, so a
-                    // `Recovery/` store inside that very directory, and every earlier store
-                    // location, survive it. Naming the exception here rather than only in the
-                    // modal means the screen is honest before anyone presses anything.
-                    Text("Delete the local Cadence account profile, Cadence data from this store, local Cadence backups, pending restores, and the saved OpenAI key. \(CadenceUnmanagedStoreCopy.resetLeavesThem)")
+                    // exhaustive. T-1840 (owner decision 2026-10-22) made the reset take the
+                    // `Recovery/` store and every earlier store location too, so the clause now
+                    // names that deletion here as well as in the modal, before anyone presses
+                    // anything.
+                    Text("Delete the local Cadence account profile, Cadence data from this store, local Cadence backups, pending restores, and the saved OpenAI key. \(CadenceUnmanagedStoreCopy.resetDeletesThem)")
                         .font(.system(size: 12))
                         .foregroundStyle(Theme.dim)
                         .fixedSize(horizontal: false, vertical: true)
@@ -588,7 +588,9 @@ private struct SettingsDataResetConfirmationSheet: View {
                                 // sentence so one string can serve both platforms without either
                                 // depending on what precedes it. [[T-7207]]: the sync sentence
                                 // is the phone gate's, so both say the deletions leave this Mac.
-                                Text("This permanently deletes the local Cadence account profile, Cadence tasks, lists, notes, documents, tags, saved links, retained legacy records, local Cadence backups, pending restores, and the saved OpenAI key. \(CadenceDataResetCopy.deletionsReachOtherDevices) Apple Calendar events that already exist in Calendar are not deleted. \(CadenceUnmanagedStoreCopy.resetGateLeavesThem)")
+                                // T-1840: the trailing claim names the recovery store before the
+                                // button is live, and not the one this launch is running on.
+                                Text("This permanently deletes the local Cadence account profile, Cadence tasks, lists, notes, documents, tags, saved links, retained legacy records, local Cadence backups, pending restores, and the saved OpenAI key. \(CadenceDataResetCopy.deletionsReachOtherDevices) Apple Calendar events that already exist in Calendar are not deleted. \(CadenceUnmanagedStoreCopy.resetGateDeletesThem(runningOnRecoveryStore: PersistenceController.startupIssue?.kind == .recoveryStore))")
                                     .font(.system(size: 12))
                                     .foregroundStyle(Theme.dim)
                                     .fixedSize(horizontal: false, vertical: true)

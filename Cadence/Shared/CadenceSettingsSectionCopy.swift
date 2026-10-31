@@ -429,8 +429,8 @@ nonisolated enum CadenceDataResetCopy {
 /// **[[T-1841]], and the shape [[T-1782]] names.** [[T-1532]] and [[T-1680]] gave macOS two
 /// lists and taught its two reset sentences to stop implying totality; iOS said the older thing
 /// and had no screen to point at. The fix is not a second copy of the sentences — the part that
-/// must not drift is the *claim*: the reset leaves these behind, and here is the section that
-/// says where they are. Spelled once, so a later edit to one platform's wording cannot leave the
+/// must not drift is the *claim*: what the reset does with these ([[T-1840]]: it deletes their store
+/// files), and here is the section that says where they are. Spelled once, so a later edit to one platform's wording cannot leave the
 /// other promising a section name that no longer exists.
 ///
 /// **What is deliberately NOT shared is where to go and remove them.** macOS can open Finder on the
@@ -453,23 +453,35 @@ nonisolated enum CadenceUnmanagedStoreCopy {
         + "a recovery store Cadence wrote when it could not open your main one, or a location an "
         + "earlier version kept the store in."
 
-    /// The half the reset is answerable for. "deleting all Cadence data does not delete them" is
-    /// the sentence [[T-1680]] added to stop the enumeration reading as exhaustive, and it has to
-    /// be the same sentence the reset's own copy points at.
+    /// The half the reset is answerable for. [[T-1680]] added "deleting all Cadence data does not
+    /// delete them" to stop the reset's enumeration reading as exhaustive; [[T-1840]] (owner
+    /// decision 2026-10-22) made the reset take them, so the sentence now says that instead —
+    /// and it is still the same claim the reset's own copy makes.
     static let whatCadenceDoesNotDo =
-        "Cadence does not sync them, back them up, or read them on a normal launch, and deleting "
-        + "all Cadence data does not delete them."
+        "Cadence does not sync them, back them up, or read them on a normal launch. Deleting all "
+        + "Cadence data deletes the store files in them too."
 
-    /// Appended to the reset card's own sentence, which enumerates what the reset *does* take.
-    /// Without it that enumeration reads as exhaustive, which is what it was before [[T-1680]].
-    static let resetLeavesThem =
-        "Store folders Cadence is not using are left alone and listed further down this page."
+    /// Appended to the reset card's own sentence, which enumerates what the reset takes. Without it
+    /// that enumeration would leave out the one deletion that has no copy anywhere else.
+    static let resetDeletesThem =
+        "It also deletes the store files in the folders Cadence is not using, listed further down this page."
 
-    /// The typed-phrase gate's version: it is the last thing a reader sees before an irreversible
-    /// button, so it names the two kinds rather than deferring to a section they have not scrolled
-    /// to yet, and then names the section.
-    static let resetGateLeavesThem =
-        "The store folders Cadence is not using are not deleted either — a recovery store from a "
-        + "failed launch, or a location an earlier version kept the store in. Data Safety lists "
-        + "those under \(sectionTitle) with their full paths."
+    /// The typed-phrase gate's version ([[T-1840]] (2)): it is the last thing a reader sees before
+    /// an irreversible button, so it names the recovery store outright and says why deleting it is
+    /// different — a recovery store opens with CloudKit off, so anything typed while Cadence ran on
+    /// it synced nowhere and this is its only copy — and then names the section with the paths.
+    ///
+    /// A function of one fact, because the reset skips the recovery store **this launch is running
+    /// on**, and the gate must not promise a deletion the reset will not perform.
+    static func resetGateDeletesThem(runningOnRecoveryStore: Bool) -> String {
+        let recovery = runningOnRecoveryStore
+            ? "It does not delete the recovery store Cadence is running on right now, because it "
+                + "created that store when it could not open your main one and has it open; it does "
+                + "delete any location an earlier version kept the store in."
+            : "It also deletes any recovery store Cadence created when it could not open your main "
+                + "one, and any location an earlier version kept the store in. A recovery store never "
+                + "syncs, so anything typed while Cadence was running on it exists nowhere else and "
+                + "is deleted for good."
+        return recovery + " Data Safety lists those under \(sectionTitle) with their full paths."
+    }
 }

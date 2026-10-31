@@ -465,14 +465,14 @@ struct CadenceUnmanagedStoreDirectoryTests {
         #expect(row.contains("directory.url.path"), "the row does not show the folder's path")
     }
 
-    /// **The reset enumerates what it takes, so it has to name what it leaves.**
+    /// **The reset enumerates what it takes, so it has to name the store folders it now takes.**
     ///
-    /// The card and the typed-phrase gate both list what is about to be deleted, item by item, and
-    /// a list that specific reads as exhaustive. It is not: `deleteCadenceDataAndLocalArtifacts`
-    /// resolves the live store directory only, so a `Recovery/` folder *inside* that very
-    /// directory survives the press. Until [[T-1840]] decides whether it should, saying so is the
-    /// whole of the honesty.
-    @Test func theResetCopyNamesTheStoreFoldersItDoesNotDelete() throws {
+    /// The card and the typed-phrase gate both list what is about to be deleted, item by item.
+    /// [[T-1680]] made them name the `Recovery/` folder the reset left behind; [[T-1840]] (owner
+    /// decision 2026-10-22) made the reset delete it, and its constraint (2) is that the gate names
+    /// the recovery store **before the button is live** — it is opened with CloudKit off, so this
+    /// is the only copy of anything typed while Cadence ran on it.
+    @Test func theResetCopyNamesTheStoreFoldersItDeletes() throws {
         let source = try CadenceSourceScan.sourceFile("Cadence/macOS/Views/SettingsDataSafetySection.swift")
 
         let card = try #require(
@@ -480,8 +480,8 @@ struct CadenceUnmanagedStoreDirectoryTests {
             "SettingsDataResetCard did not read as itself"
         )
         #expect(
-            card.contains("CadenceUnmanagedStoreCopy.resetLeavesThem"),
-            "the reset card still lists five things it deletes and nothing it does not"
+            card.contains("CadenceUnmanagedStoreCopy.resetDeletesThem"),
+            "the reset card does not say it also deletes the store folders Cadence is not using"
         )
 
         let sheet = try #require(
@@ -489,20 +489,33 @@ struct CadenceUnmanagedStoreDirectoryTests {
             "SettingsDataResetConfirmationSheet did not read as itself"
         )
         #expect(
-            sheet.contains("CadenceUnmanagedStoreCopy.resetGateLeavesThem"),
-            "the last gate before an irreversible delete does not mention the store folder it leaves behind"
+            sheet.contains("CadenceUnmanagedStoreCopy.resetGateDeletesThem(runningOnRecoveryStore: PersistenceController.startupIssue?.kind == .recoveryStore)"),
+            "the last gate before an irreversible delete does not name the recovery store it deletes"
         )
         // ...and the two claims the shared sentence is carrying on its behalf. Asserting only
         // that the view names the constant would pass over a constant emptied of its meaning,
         // which is this repository's recurring hollow-instrument shape.
+        let deleting = CadenceUnmanagedStoreCopy.resetGateDeletesThem(runningOnRecoveryStore: false)
         #expect(
-            CadenceUnmanagedStoreCopy.resetGateLeavesThem.contains("recovery store"),
-            "the shared gate sentence no longer names the folder it is leaving behind"
+            deleting.contains("deletes any recovery store Cadence created when it could not open your main one"),
+            "the shared gate sentence does not name the recovery store it deletes (T-1840 (2))"
         )
         #expect(
-            CadenceUnmanagedStoreCopy.resetGateLeavesThem.contains(CadenceUnmanagedStoreCopy.sectionTitle),
-            "the gate does not say where to find the folders it is leaving"
+            deleting.contains("exists nowhere else"),
+            "the gate does not say the recovery store is the only copy of what it holds"
         )
+        #expect(deleting.contains("earlier version kept the store in"))
+        // On a launch running on the recovery store the reset skips it (T-1840 (1)), so the gate
+        // must not promise that deletion.
+        let skipping = CadenceUnmanagedStoreCopy.resetGateDeletesThem(runningOnRecoveryStore: true)
+        #expect(skipping.contains("does not delete the recovery store Cadence is running on right now"))
+        #expect(!skipping.contains("deleted for good"))
+        for sentence in [deleting, skipping] {
+            #expect(
+                sentence.contains(CadenceUnmanagedStoreCopy.sectionTitle),
+                "the gate does not say where to find the folders it deletes"
+            )
+        }
     }
 
     // MARK: - T-1841: the phone says the same thing, and now has a screen to say it on
@@ -524,17 +537,18 @@ struct CadenceUnmanagedStoreDirectoryTests {
         let iOSReset = try CadenceSourceScan.sourceFile("Cadence/iOS/iOSDataResetSettingsSection.swift")
         #expect(iOSReset.contains("struct iOSDataResetSettingsSection: View {"), "the file did not read as itself")
         #expect(
-            iOSReset.contains("CadenceUnmanagedStoreCopy.resetLeavesThem"),
+            iOSReset.contains("CadenceUnmanagedStoreCopy.resetDeletesThem"),
             "the iOS reset card still lists five things it deletes and nothing it does not (T-1841)"
         )
         #expect(
-            iOSReset.contains("CadenceUnmanagedStoreCopy.resetGateLeavesThem"),
+            iOSReset.contains("CadenceUnmanagedStoreCopy.resetGateDeletesThem(runningOnRecoveryStore: PersistenceController.startupIssue?.kind == .recoveryStore)"),
             "the iOS typed-phrase gate does not name the store folders it leaves behind (T-1841)"
         )
 
         // The shared sentences are not empty of the claims the two views are delegating to them.
-        #expect(CadenceUnmanagedStoreCopy.resetLeavesThem.contains("left alone"))
-        #expect(CadenceUnmanagedStoreCopy.whatCadenceDoesNotDo.contains("deleting all Cadence data does not delete them"))
+        #expect(CadenceUnmanagedStoreCopy.resetDeletesThem.contains("also deletes the store files"))
+        #expect(CadenceUnmanagedStoreCopy.whatCadenceDoesNotDo.contains("Deleting all Cadence data deletes the store files in them too"))
+        #expect(!CadenceUnmanagedStoreCopy.whatCadenceDoesNotDo.contains("does not delete them"))
         #expect(CadenceUnmanagedStoreCopy.whatTheyAre.contains("recovery store"))
 
         // One spelling of the section name. It is named in four places — two section labels and

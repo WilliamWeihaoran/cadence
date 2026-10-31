@@ -50,11 +50,12 @@ struct iOSDataResetSettingsSection: View {
                                 .foregroundStyle(Theme.text)
 
                             // The enumeration used to end here, at five things, which a reader
-                            // takes as exhaustive — and it is not (T-1680 on the Mac, T-1841
-                            // here). The clause is `CadenceUnmanagedStoreCopy`'s rather than a
-                            // second copy of macOS's, so the two cannot drift into promising
-                            // different things about the same reset.
-                            Text("Removes every task, list, note, tag, saved link, and retained legacy record Cadence holds in this store, along with local Cadence backups, pending restores, and the saved OpenAI key. \(CadenceUnmanagedStoreCopy.resetLeavesThem)")
+                            // takes as exhaustive (T-1680 on the Mac, T-1841 here). Since T-1840
+                            // the reset also takes the store folders Cadence is not using, and the
+                            // clause is `CadenceUnmanagedStoreCopy`'s rather than a second copy of
+                            // macOS's, so the two cannot drift into promising different things
+                            // about the same reset.
+                            Text("Removes every task, list, note, tag, saved link, and retained legacy record Cadence holds in this store, along with local Cadence backups, pending restores, and the saved OpenAI key. \(CadenceUnmanagedStoreCopy.resetDeletesThem)")
                                 .cadenceFont(.metadata, base: 12, weight: .regular)
                                 .foregroundStyle(Theme.subdued)
                                 .fixedSize(horizontal: false, vertical: true)
@@ -145,8 +146,10 @@ private struct iOSDataResetConfirmationSheet: View {
                                     // Same correction as the card above, in the stronger place:
                                     // this is the last thing read before an irreversible button,
                                     // so it names the two kinds outright and then names the
-                                    // section that gives their full paths (T-1841).
-                                    Text("Cadence permanently deletes your tasks, lists, notes, tags, saved links, focus history, and retained legacy records from this store, plus local Cadence backups, any pending restore, and the saved OpenAI key. \(CadenceUnmanagedStoreCopy.resetGateLeavesThem)")
+                                    // section that gives their full paths (T-1841). T-1840: it
+                                    // names the recovery store before the button is live, and
+                                    // keeps quiet about deleting the one this launch runs on.
+                                    Text("Cadence permanently deletes your tasks, lists, notes, tags, saved links, focus history, and retained legacy records from this store, plus local Cadence backups, any pending restore, and the saved OpenAI key. \(CadenceUnmanagedStoreCopy.resetGateDeletesThem(runningOnRecoveryStore: PersistenceController.startupIssue?.kind == .recoveryStore))")
                                         .cadenceFont(.metadata, base: 12, weight: .regular)
                                         .foregroundStyle(Theme.subdued)
                                         .fixedSize(horizontal: false, vertical: true)

@@ -279,7 +279,7 @@ struct CadenceCodexTrackingUIRetirementTests {
         for path in sourcePaths {
             let source = try CadenceSourceScan.sourceFile(path)
             #expect(source.contains("retained legacy record"))
-            #expect(source.contains("CadenceUnmanagedStoreCopy.resetGateLeavesThem"))
+            #expect(source.contains("CadenceUnmanagedStoreCopy.resetGateDeletesThem("))
         }
         for copy in [
             CadenceNotificationSettingsCopy.remindersToggleDetail,

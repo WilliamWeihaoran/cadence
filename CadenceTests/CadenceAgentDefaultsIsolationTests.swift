@@ -603,7 +603,10 @@ struct CadenceAgentDefaultsIsolationTests {
         // first number went back to 9 and the second is 3 (two calls and the declaration). The
         // **sum** is what must not fall: twelve spellings, one resolver each. [[T-3045]] (2) added
         // a third listing, `retainedUnrestoredOriginalDirectories()`, on the non-creating form for
-        // the same reason — 4 and 13.
+        // the same reason — 4 and 13. [[T-1840]] added the privacy reset's store-folder sweep,
+        // `deleteUnusedStoreFoldersForDataReset()`, on the non-creating form too: it wants the live
+        // directory only to **exclude** it, and it deletes inside other folders, never that one —
+        // 5 and 14.
         //
         // Over the stripped source, because T-1532 also wrote the name into a doc comment — and a
         // tripwire that a paragraph can trip is one that gets edited until it stops complaining.
@@ -611,10 +614,10 @@ struct CadenceAgentDefaultsIsolationTests {
         let creating = CadenceSourceScan.matchCount("defaultStoreDirectoryURL\\(\\)", in: code)
         let locating = CadenceSourceScan.matchCount("defaultStoreDirectoryLocation\\(\\)", in: code)
         #expect(creating == 9, "\(creating) spellings of defaultStoreDirectoryURL(), not the 9 measured for T-1852")
-        #expect(locating == 4, "\(locating) spellings of defaultStoreDirectoryLocation(), not the 4 measured for T-3045")
+        #expect(locating == 5, "\(locating) spellings of defaultStoreDirectoryLocation(), not the 5 measured for T-1840")
         #expect(
-            creating + locating == 13,
-            "\(creating + locating) no-argument store-directory resolutions, not the 13 measured for T-3045"
+            creating + locating == 14,
+            "\(creating + locating) no-argument store-directory resolutions, not the 14 measured for T-1840"
         )
 
         // The two that moved are the two listings, named — a count alone cannot tell "the listing

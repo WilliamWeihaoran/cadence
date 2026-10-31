@@ -1537,10 +1537,11 @@ struct UnmanagedBackupDirectory: Identifiable, Hashable {
 ///
 /// **It carries no delete, for the reason `UnmanagedBackupDirectory` carries none and one more.**
 /// A recovery store is the only copy of anything typed during a degraded session — it is opened
-/// with `cloudKitDatabase: .none`, so nothing in it ever synced — and whether **Delete Account &
-/// Data** should take it is a product decision the owner has not made ([[T-1840]]). Until it is
-/// made, the honest thing is to say where the folder is and say that the reset leaves it, which is
-/// what this type and its row do.
+/// with `cloudKitDatabase: .none`, so nothing in it ever synced. The owner decided on 2026-10-22
+/// that **Delete Account & Data** takes these folders' store files ([[T-1840]]) — through
+/// `StoreBackupManager.deleteUnusedStoreFoldersForDataReset`, behind the typed-phrase gate that
+/// names the recovery store first — and that the delete still does not belong on this row, which
+/// stays `directory` and `onReveal` and nothing else.
 struct UnmanagedStoreDirectory: Identifiable, Hashable {
     enum Kind: String, Hashable {
         /// Written by `PersistenceController.makeRecoveryContainer` after a failed store open.
@@ -2122,6 +2123,94 @@ enum StoreBackupManager {
             return directorySize(url, fileManager: fileManager)
         }
         return Int64(values?.totalFileAllocatedSize ?? values?.fileAllocatedSize ?? 0)
+    }
+
+    // MARK: - The privacy reset takes them too ([[T-1840]])
+
+    /// Delete the store files in every folder `unmanagedStoreDirectories` lists — the recovery
+    /// stores and the earlier store locations — for **Delete Account & Data**.
+    ///
+    /// **Owner decision 2026-10-22: yes.** A recovery store is not the last copy of anything that
+    /// exists elsewhere (`makeRecoveryContainer` opens an empty store, it does not copy the failed
+    /// one), and leaving store data on disk after "delete my data" is the reset claiming more than
+    /// it did — `deleteRetainedUnrestoredOriginals`'s reasoning, applied verbatim. The earlier store
+    /// locations were a separate call and the owner made it the same way.
+    ///
+    /// Four things this keeps true:
+    ///
+    /// - **The store this launch is running on is never touched.** When the launch is on the
+    ///   recovery store (`startupIssue?.kind == .recoveryStore`), every `.recovery` folder is
+    ///   skipped: removing files under an open `ModelContainer` is a different and worse bug. The
+    ///   live store directory itself is excluded by `unmanagedStoreDirectories`, which this reuses
+    ///   rather than re-deriving, so the list the user was shown and the list deleted are one.
+    /// - **Only store files go.** The items are `storeItems(in:)`'s exact-name matches, so a
+    ///   `Cadence Store Backups` folder or anything else a person keeps beside an old store is left
+    ///   where it is. The folders themselves stay too.
+    /// - **A test or agent launch cannot reach a real folder.** Every target passes the same gate
+    ///   the backup writers do (`CadenceUITestStoreDirectory.mayWriteBackups`, [[T-3045]] (3)), per
+    ///   folder: under a redirect only folders inside the process's temporary directory are
+    ///   deleted, so the default legacy candidates — which name the signed-in person's home — are
+    ///   refused even if a test called this by mistake.
+    /// - **`migrateLegacyStoreIfNeeded` still works afterwards.** It skips a candidate with no
+    ///   store items and returns `nil`, which is exactly what an emptied earlier location reads as.
+    ///
+    /// Every folder is attempted even when one fails; the first failure is thrown once all have
+    /// been tried, for the reason `removeStoredBackups` runs both of its steps.
+    ///
+    /// - Returns: how many folders were emptied.
+    @discardableResult
+    static func deleteUnusedStoreFoldersForDataReset() throws -> Int {
+        try deleteUnusedStoreFoldersForDataReset(
+            liveStoreDirectoryURL: defaultStoreDirectoryLocation(),
+            recoveryStoreDirectories: PersistenceController.recoveryStoreDirectoryCandidates(
+                in: ProcessInfo.processInfo.environment
+            ),
+            runningOnRecoveryStore: PersistenceController.startupIssue?.kind == .recoveryStore
+        )
+    }
+
+    @discardableResult
+    static func deleteUnusedStoreFoldersForDataReset(
+        liveStoreDirectoryURL: URL?,
+        recoveryStoreDirectories: [URL],
+        legacyStoreDirectories: [URL] = CadenceStoreSupport.legacyStoreCandidateDirectories(),
+        runningOnRecoveryStore: Bool,
+        fileManager: FileManager = .default,
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        temporaryDirectory: URL = FileManager.default.temporaryDirectory
+    ) throws -> Int {
+        let targets = unmanagedStoreDirectories(
+            liveStoreDirectoryURL: liveStoreDirectoryURL,
+            recoveryStoreDirectories: recoveryStoreDirectories,
+            legacyStoreDirectories: legacyStoreDirectories,
+            fileManager: fileManager
+        )
+        .filter { !(runningOnRecoveryStore && $0.kind == .recovery) }
+
+        var emptiedCount = 0
+        var firstError: Error?
+        for target in targets {
+            guard CadenceUITestStoreDirectory.mayWriteBackups(
+                inStoreDirectory: target.url,
+                environment: environment,
+                temporaryDirectory: temporaryDirectory
+            ) else {
+                firstError = firstError ?? BackupWriteRefusal(storeDirectoryPath: target.url.path)
+                continue
+            }
+            var emptied = true
+            for item in storeItems(in: target.url, fileManager: fileManager) {
+                do {
+                    try fileManager.removeItem(at: item)
+                } catch {
+                    emptied = false
+                    firstError = firstError ?? error
+                }
+            }
+            if emptied { emptiedCount += 1 }
+        }
+        if let firstError { throw firstError }
+        return emptiedCount
     }
 
     /// Whether a sweep must spare this backup — the **one** statement of the

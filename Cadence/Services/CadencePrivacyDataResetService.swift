@@ -123,7 +123,7 @@ struct PrivacyDataResetOutcome: Equatable, Sendable {
         let cause = trimmed.isEmpty ? "the files could not be removed" : trimmed
 
         return deleted
-            + " Local store backups were not removed and are still inside Cadence (\(cause))."
+            + " Local store backups or store folders were not removed and are still inside Cadence (\(cause))."
             + (retry ?? "")
     }
 }
@@ -346,11 +346,12 @@ enum PrivacyDataResetService {
     /// default argument is not inside its own function's isolation, and `StoreBackupManager`'s two
     /// entry points are main-actor isolated.
     ///
-    /// **Both steps run even when the first fails.** They are different artifact families —
+    /// **Every step runs even when an earlier one fails.** They are different artifact families —
     /// `deleteAllBackups` takes the backups directory, `deleteRetainedUnrestoredOriginals` takes
     /// the store files a failed restore rollback could not put back (T-1100), which are store data
-    /// and which a reset that left them would leave sitting inside the container it just emptied.
-    /// Stopping at the first failure would leave *more* behind, not less, exactly as stopping at a
+    /// and which a reset that left them would leave sitting inside the container it just emptied,
+    /// and `deleteUnusedStoreFoldersForDataReset` takes the recovery stores and earlier store
+    /// locations ([[T-1840]]). Stopping at the first failure would leave *more* behind, not less, exactly as stopping at a
     /// refused Keychain deletion would.
     ///
     /// - Returns: how many backups were removed, and — when something was left behind — the
@@ -362,6 +363,9 @@ enum PrivacyDataResetService {
         deletingBackups: @MainActor () throws -> Int = { try StoreBackupManager.deleteAllBackupsForDataReset() },
         deletingRetainedOriginals: @MainActor () throws -> Int = {
             try StoreBackupManager.deleteRetainedUnrestoredOriginals()
+        },
+        deletingUnusedStoreFolders: @MainActor () throws -> Int = {
+            try StoreBackupManager.deleteUnusedStoreFoldersForDataReset()
         }
     ) -> (removedBackupCount: Int, retainedBackupReason: String?) {
         var removedBackupCount = 0
@@ -374,6 +378,15 @@ enum PrivacyDataResetService {
         }
         do {
             _ = try deletingRetainedOriginals()
+        } catch {
+            reasons.append(error.localizedDescription)
+        }
+        // [[T-1840]]: the recovery stores and the earlier store locations — the folders Data
+        // Safety lists under "Other Cadence Data Folders". The owner decided the reset takes them;
+        // the step skips the recovery store this launch is running on, and the typed-phrase gate
+        // names the recovery store before the button is live.
+        do {
+            _ = try deletingUnusedStoreFolders()
         } catch {
             reasons.append(error.localizedDescription)
         }
