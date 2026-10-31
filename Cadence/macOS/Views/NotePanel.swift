@@ -218,6 +218,32 @@ struct NotePanel: View {
         .onAppear {
             loadEditorStateIfNeeded(for: note)
         }
+        // T-9171: an outside write to this note (sync, MCP, another editor) reaches the buffer.
+        .onChange(of: note.content) { priorContent, storeContent in
+            adoptStoreContentIfIdle(storeContent, priorStoreContent: priorContent, for: note)
+        }
+    }
+
+    /// [[T-9171]]: adopt an outside change to `note.content` unless typing is still pending —
+    /// `MarkdownEditorStoreAdoption` holds the rule. A commit still armed when this adopts carries
+    /// nothing the store lacked (see `commitHoldsTyping`), and its captured text is the pre-change
+    /// body, so it is cancelled; a tag sync a ceiling commit deferred ([[T-7891]]) stays owed and is
+    /// re-armed against the adopted body.
+    private func adoptStoreContentIfIdle(_ storeContent: String, priorStoreContent: String, for note: Note) {
+        guard let adopted = MarkdownEditorStoreAdoption.adoptedBuffer(
+            storeText: storeContent,
+            buffer: editorContent,
+            bufferIsLoaded: loadedNoteID == note.id,
+            commitIsPending: MarkdownEditorStoreAdoption.commitHoldsTyping(
+                commitIsPending: pendingFallbackContentSyncTask != nil,
+                buffer: editorContent,
+                priorStoreText: priorStoreContent
+            )
+        ) else { return }
+        pendingFallbackContentSyncTask?.cancel()
+        pendingFallbackContentSyncTask = nil
+        editorContent = adopted
+        if tagSyncDeferredNoteID == note.id { scheduleFallbackContentSync(for: adopted, noteID: note.id) }
     }
 
     private func loadOrCreate() {

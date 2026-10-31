@@ -383,5 +383,73 @@ struct MarkdownEditorFallbackCommitTests {
             #expect(adopt.contains("editorContent = adopted"), "\(editor.path)")
         }
     }
+
+    // MARK: - T-9171: the Note editors
+
+    /// Replays the window T-7891 opens: a ceiling commit wrote "Draft #pro" and armed a second,
+    /// tag-sync-only commit; the user stopped typing; another writer stored "Synced". That armed
+    /// commit holds no typing, so the buffer adopts instead of writing "Draft #pro" back.
+    @Test func aTagSyncOnlyCommitHoldsNoTypingSoAnOutsideChangeIsAdopted() {
+        let buffer = "Draft #pro"
+        let holdsTyping = MarkdownEditorStoreAdoption.commitHoldsTyping(
+            commitIsPending: true, buffer: buffer, priorStoreText: "Draft #pro"
+        )
+        #expect(!holdsTyping)
+        #expect(MarkdownEditorStoreAdoption.adoptedBuffer(
+            storeText: "Synced", buffer: buffer, bufferIsLoaded: true, commitIsPending: holdsTyping
+        ) == "Synced")
+    }
+
+    @Test func aCommitHoldsTypingOnlyWhenArmedOverTextTheStoreLacked() {
+        #expect(MarkdownEditorStoreAdoption.commitHoldsTyping(
+            commitIsPending: true, buffer: "Draft typed", priorStoreText: "Draft"
+        ))
+        #expect(!MarkdownEditorStoreAdoption.commitHoldsTyping(
+            commitIsPending: false, buffer: "Draft typed", priorStoreText: "Draft"
+        ))
+        #expect(!MarkdownEditorStoreAdoption.commitHoldsTyping(
+            commitIsPending: false, buffer: "Draft", priorStoreText: "Draft"
+        ))
+    }
+
+    private static let noteEditors: [(path: String, declaration: String, deferredRearm: String)] = [
+        ("Cadence/macOS/Views/NotePanel.swift", "struct NotePanel: View",
+         "if tagSyncDeferredNoteID == note.id { scheduleFallbackContentSync(for: adopted, noteID: note.id) }"),
+        ("Cadence/macOS/Views/NoteEditorPane.swift", "struct NoteEditorPane: View",
+         "if tagSyncDeferredNoteID == note.id { scheduleFallbackContentSync(for: adopted) }"),
+    ]
+
+    @Test func everyNoteEditorAdoptsAnOutsideContentChangeThroughTheSharedRule() throws {
+        for editor in Self.noteEditors {
+            let source = CadenceSourceScan.codeOnly(try cadenceTestSource(editor.path))
+            let body = try #require(
+                CadenceSourceScan.declarationBody(editor.declaration, in: source),
+                "\(editor.path): \(editor.declaration) not found"
+            )
+            let observer = try #require(
+                body.range(of: ".onChange(of: note.content) { priorContent, storeContent in"),
+                "\(editor.path) does not observe note.content"
+            )
+            #expect(
+                String(body[observer.upperBound...].prefix(160)).contains("adoptStoreContentIfIdle(storeContent, priorStoreContent: priorContent"),
+                "\(editor.path)"
+            )
+            let adopt = try #require(
+                CadenceSourceScan.functionBody(named: "adoptStoreContentIfIdle", in: body),
+                "\(editor.path): no adoptStoreContentIfIdle"
+            )
+            #expect(adopt.contains("MarkdownEditorStoreAdoption.adoptedBuffer("), "\(editor.path)")
+            #expect(adopt.contains("buffer: editorContent"), "\(editor.path)")
+            #expect(adopt.contains("bufferIsLoaded: loadedNoteID == note.id"), "\(editor.path)")
+            #expect(adopt.contains("commitIsPending: MarkdownEditorStoreAdoption.commitHoldsTyping("), "\(editor.path)")
+            #expect(adopt.contains("commitIsPending: pendingFallbackContentSyncTask != nil"), "\(editor.path)")
+            #expect(adopt.contains("priorStoreText: priorStoreContent"), "\(editor.path)")
+            // The armed commit's captured text is the pre-change body: it must not fire after this.
+            let cancel = try #require(adopt.range(of: "pendingFallbackContentSyncTask = nil"), "\(editor.path): commit not cancelled")
+            let assign = try #require(adopt.range(of: "editorContent = adopted"), "\(editor.path)")
+            #expect(cancel.lowerBound < assign.lowerBound, "\(editor.path)")
+            #expect(adopt.contains(editor.deferredRearm), "\(editor.path): a deferred tag sync is not re-armed")
+        }
+    }
 }
 #endif

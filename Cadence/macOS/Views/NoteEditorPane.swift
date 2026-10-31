@@ -359,6 +359,11 @@ struct NoteEditorPane: View {
         .onChange(of: note.id) { _, _ in
             loadEditorStateIfNeeded(force: true)
         }
+        // T-9171: an outside write to this note's body (sync, MCP, another editor) reaches the
+        // buffer. The title needs no counterpart: `titleBinding` types straight into `note.title`.
+        .onChange(of: note.content) { priorContent, storeContent in
+            adoptStoreContentIfIdle(storeContent, priorStoreContent: priorContent)
+        }
         .onDisappear {
             flushPendingEditorContent()
             MarkdownEditorTerminationFlush.shared.unregister(terminationFlushID)
@@ -379,6 +384,32 @@ struct NoteEditorPane: View {
         loadedNoteID = note.id
         editorContent = note.content
         refreshDerivedState(for: note.content)
+    }
+
+    /// [[T-9171]]: adopt an outside change to `note.content` unless typing is still pending —
+    /// `MarkdownEditorStoreAdoption` holds the rule. A commit still armed when this adopts carries
+    /// nothing the store lacked (see `commitHoldsTyping`), and its captured text is the pre-change
+    /// body, so it is cancelled; a tag sync a ceiling commit deferred ([[T-7891]]) stays owed and is
+    /// re-armed against the adopted body. Nothing is persisted here, so `onPersistContent` and the
+    /// `# H1` title rule stay the outside writer's.
+    private func adoptStoreContentIfIdle(_ storeContent: String, priorStoreContent: String) {
+        guard let adopted = MarkdownEditorStoreAdoption.adoptedBuffer(
+            storeText: storeContent,
+            buffer: editorContent,
+            bufferIsLoaded: loadedNoteID == note.id,
+            commitIsPending: MarkdownEditorStoreAdoption.commitHoldsTyping(
+                commitIsPending: pendingFallbackContentSyncTask != nil,
+                buffer: editorContent,
+                priorStoreText: priorStoreContent
+            )
+        ) else { return }
+        pendingDerivedStateTask?.cancel()
+        pendingDerivedStateTask = nil
+        pendingFallbackContentSyncTask?.cancel()
+        pendingFallbackContentSyncTask = nil
+        editorContent = adopted
+        refreshDerivedState(for: adopted)
+        if tagSyncDeferredNoteID == note.id { scheduleFallbackContentSync(for: adopted) }
     }
 
     private func updateEditorContent(_ content: String) {
