@@ -898,6 +898,29 @@ struct SettingsSevenPaneVocabularyTests {
         #expect(CadenceSourceScan.matchCount("\\.lineLimit\\(1\\)\\.fixedSize\\(\\)", in: flat) == 3,
                 "the status capsule or a button can be squeezed into wrapping again")
     }
+
+    /// [[T-9291]]: the archived context row is [[T-6972]]'s row's sibling — the same Restore/Delete
+    /// pair under Settings → Contexts — and it had none of that fix, so a long context name wrapped
+    /// and squeezed both buttons. The name truncates on one line and the two buttons hold their
+    /// width; the active context row's name is one line too.
+    @Test func theContextRowsTruncateTheNameAndHoldTheirControls() throws {
+        let source = CadenceSourceScan.strippingComments(try t20SourceFile("Cadence/macOS/Views/SettingsSupportViews.swift"))
+        let archived = t286RemovingWhitespace(
+            try #require(CadenceSourceScan.declarationBody("struct ArchivedContextRow: View", in: source))
+        )
+        #expect(archived.contains("Text(context.name).font(.system(size:13)).foregroundStyle(Theme.muted).lineLimit(1).truncationMode(.tail)"),
+                "the archived context's name can wrap again")
+        #expect(archived.contains("Button(\"Restore\",action:onRestore).buttonStyle(.cadencePlain).font(.system(size:11,weight:.semibold)).foregroundStyle(Theme.text).lineLimit(1).fixedSize()"),
+                "Restore can be squeezed into wrapping again")
+        #expect(archived.contains("Button(\"Delete\",action:onDelete).buttonStyle(.cadencePlain).font(.system(size:11,weight:.semibold)).foregroundStyle(Theme.onColor(for:Theme.red)).lineLimit(1).fixedSize()"),
+                "Delete can be squeezed into wrapping again")
+
+        let active = t286RemovingWhitespace(
+            try #require(CadenceSourceScan.declarationBody("struct ContextSettingsRow: View", in: source))
+        )
+        #expect(active.contains(".font(.system(size:13)).foregroundStyle(Theme.text).lineLimit(1).truncationMode(.tail)"),
+                "the active context's name can wrap again")
+    }
 }
 
 /// Removes every whitespace character, so a modifier chain reads the same however it is wrapped.

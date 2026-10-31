@@ -64,9 +64,13 @@ struct ContextSettingsRow: View {
                             .foregroundStyle(Color(hex: isEditing ? editColor : context.colorHex))
                     }
 
+                // [[T-9291]]: one line, as the archived row below and `ListLifecycleRow` are, so a
+                // long name does not wrap when the hover actions take their width.
                 Text(isEditing ? (editName.isEmpty ? context.name : editName) : context.name)
                     .font(.system(size: 13))
                     .foregroundStyle(Theme.text)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
 
                 Spacer()
 
@@ -265,21 +269,29 @@ struct ArchivedContextRow: View {
                         .foregroundStyle(Color(hex: context.colorHex).opacity(0.5))
                 }
 
+            // [[T-9291]]: [[T-6972]]'s rule for `ListLifecycleRow`, which this row sits beside under
+            // the same Restore/Delete pair and had not been given. A long context name wrapped over
+            // several lines and squeezed "Restore" and "Delete" until they broke inside their fills;
+            // the name now truncates on one line and the buttons keep their natural width.
             VStack(alignment: .leading, spacing: 2) {
                 Text(context.name)
                     .font(.system(size: 13))
                     .foregroundStyle(Theme.muted)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
                 Text("Archived")
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(Theme.amber)
             }
 
-            Spacer()
+            Spacer(minLength: 8)
 
             Button("Restore", action: onRestore)
                 .buttonStyle(.cadencePlain)
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(Theme.text)
+                .lineLimit(1)
+                .fixedSize()
                 .padding(.horizontal, 10)
                 .padding(.vertical, 7)
                 .background(Theme.surfaceElevated)
@@ -289,6 +301,8 @@ struct ArchivedContextRow: View {
                 .buttonStyle(.cadencePlain)
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(Theme.onColor(for: Theme.red))
+                .lineLimit(1)
+                .fixedSize()
                 .padding(.horizontal, 10)
                 .padding(.vertical, 7)
                 .background(Theme.red)
