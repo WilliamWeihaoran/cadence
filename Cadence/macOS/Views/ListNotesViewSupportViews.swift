@@ -17,12 +17,21 @@ struct ListNotesHeaderView: View {
                 Button("New Note", action: onNewNote)
                 Button("New Note in Folder…", action: onNewNoteInFolder)
             } label: {
+                // [[T-9531]]: a 28x26 target with one hover plate. The label was the bare 12pt
+                // glyph under `.menuStyle(.borderlessButton)`, measured on the accessibility tree
+                // at 33x14pt (glyph plus indicator) -- that style builds an AppKit pop-up button
+                // that ignores the label's frame, so a frame alone does nothing. `.button` with
+                // `.plain` draws the SwiftUI label as it is, frame and content shape included.
                 Image(systemName: "plus")
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(Theme.blue)
+                    .frame(width: 28, height: 26)
+                    .contentShape(RoundedRectangle(cornerRadius: Theme.radiusControlCompact))
             }
-            .menuStyle(.borderlessButton)
+            .menuStyle(.button)
+            .buttonStyle(.plain)
             .fixedSize()
+            .cadenceHoverHighlight(cornerRadius: Theme.radiusControlCompact, fillColor: Theme.blue.opacity(0.08), strokeColor: Theme.blue.opacity(0.16))
             .cadenceControlLabel("New note")
         }
         .padding(.horizontal, 12)

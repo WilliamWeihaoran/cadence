@@ -67,35 +67,28 @@ struct NoteFolderSheet: View {
                     .clipShape(RoundedRectangle(cornerRadius: 8))
             }
 
-            // T-7268: Escape cancels and Return confirms; Return is gated by the same `.disabled`
+            // T-7268: Escape cancels and Return confirms; Return is gated by the same `isDisabled`
             // as the click, so a folder path that normalizes to nothing does nothing.
+            // [[T-9532]]: the shared action button, so the hit area and the hover wash are the
+            // plate. Both buttons were padded and filled BEFORE `.buttonStyle(.cadencePlain)`,
+            // which put the plate outside the button: its rim was dead to a click and hover lit
+            // a smaller rectangle round the bare word ([[T-9351]]'s shape, modifiers reversed).
             HStack {
                 Spacer()
-                Button("Cancel") {
+                CadenceActionButton(title: "Cancel", role: .ghost, size: .compact, shortcut: .cancelAction) {
                     dismiss()
                 }
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(Theme.dim)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .background(Theme.surfaceElevated.opacity(0.8))
-                .clipShape(RoundedRectangle(cornerRadius: 8))
-                .buttonStyle(.cadencePlain)
-                .keyboardShortcut(.cancelAction)
 
-                Button(request.actionTitle) {
+                CadenceActionButton(
+                    title: request.actionTitle,
+                    role: .primary,
+                    size: .compact,
+                    isDisabled: normalizedFolderPath.isEmpty,
+                    shortcut: .defaultAction
+                ) {
                     onSave(folderPath)
                     dismiss()
                 }
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(Theme.text)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .background(Theme.blue.opacity(normalizedFolderPath.isEmpty ? 0.35 : 0.95))
-                .clipShape(RoundedRectangle(cornerRadius: 8))
-                .buttonStyle(.cadencePlain)
-                .keyboardShortcut(.defaultAction)
-                .disabled(normalizedFolderPath.isEmpty)
             }
         }
         .padding(18)

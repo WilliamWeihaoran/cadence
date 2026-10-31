@@ -10,12 +10,14 @@ import Testing
 /// embed's Clear time were each the size of a 13pt glyph.
 @Suite struct CadenceMacBareGlyphButtonTests {
     /// Every `Button` whose label is only a glyph and its paint, closed by `}` right before the
-    /// `.buttonStyle(...)` line.
+    /// `.buttonStyle(...)` line -- and, since [[T-9531]], every `Menu` whose `label:` closure is
+    /// closed the same way right before `.menuStyle(...)`. A `Menu` takes no `.buttonStyle`, so
+    /// the list Notes tab's bare "+" menu was invisible to the first form of this scan.
     static func bareGlyphButtons(in source: String) -> [Int] {
         let lines = source.components(separatedBy: "\n")
         func indent(_ line: String) -> Int { line.prefix { $0 == " " }.count }
         var found: [Int] = []
-        for (index, line) in lines.enumerated() where line.contains(".buttonStyle(") {
+        for (index, line) in lines.enumerated() where line.contains(".buttonStyle(") || line.contains(".menuStyle(") {
             var close = index - 1
             while close > 0, lines[close].trimmingCharacters(in: .whitespaces).isEmpty { close -= 1 }
             guard close > 0, lines[close].trimmingCharacters(in: .whitespaces) == "}" else { continue }
@@ -66,7 +68,28 @@ import Testing
             }
             .buttonStyle(.cadencePlain)
         """
+        let bareMenu = """
+            Menu {
+                Button("New Note", action: onNewNote)
+            } label: {
+                Image(systemName: "plus")
+                    .font(.system(size: 12, weight: .semibold))
+            }
+            .menuStyle(.borderlessButton)
+        """
+        let framedMenu = """
+            Menu {
+                Button("New Note", action: onNewNote)
+            } label: {
+                Image(systemName: "plus")
+                    .font(.system(size: 12, weight: .semibold))
+                    .frame(width: 28, height: 26)
+            }
+            .menuStyle(.borderlessButton)
+        """
         #expect(Self.bareGlyphButtons(in: bare) == [5])
         #expect(Self.bareGlyphButtons(in: framed).isEmpty)
+        #expect(Self.bareGlyphButtons(in: bareMenu) == [7])
+        #expect(Self.bareGlyphButtons(in: framedMenu).isEmpty)
     }
 }

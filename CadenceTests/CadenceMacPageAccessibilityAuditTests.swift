@@ -371,6 +371,49 @@ struct CadenceMacPageAccessibilityAuditTests {
         #expect(section.contains(#"CadenceActionButton(title: "Delete Account…""#), "Delete Account is not the shared action button")
     }
 
+    /// **[[T-9532]].** [[T-9351]]'s shape with the modifiers in the other order, on the list
+    /// Notes tab's folder sheet: Cancel and Create Note / Move padded and filled BEFORE
+    /// `.buttonStyle(.cadencePlain)`, so the plate sat outside the button and the button was the
+    /// bare word. Measured the same way, as each footer button's own frame on the tree.
+    @Test func theNoteFolderSheetsFooterButtonsAreTheirWholePlate() {
+        for request in [NoteFolderSheetRequest(mode: .newNote), NoteFolderSheetRequest(mode: .moveNote(UUID()))] {
+            let nodes = allNodes(in: NoteFolderSheet(request: request, onSave: { _ in }), size: NSSize(width: 340, height: 200))
+            let footer = ["Cancel", request.actionTitle]
+            let buttons = nodes.filter { $0.role == Self.buttonRole && footer.contains($0.label) }
+            #expect(
+                Set(buttons.map(\.label)) == Set(footer),
+                "non-vacuity: the folder sheet's footer buttons are not on the tree: \(nodes)"
+            )
+            for button in buttons {
+                #expect(
+                    button.frame.height >= CadenceActionButtonSize.compact.minHeight,
+                    "\(button.label) is \(button.frame.height)pt tall, smaller than its \(CadenceActionButtonSize.compact.minHeight)pt plate"
+                )
+            }
+        }
+    }
+
+    /// **[[T-9531]].** The list Notes tab's "New note" menu labelled a bare 12pt glyph, so the
+    /// control was the size of the glyph's ink box -- measured 33x14pt under
+    /// `.menuStyle(.borderlessButton)`, which ignores a frame on the label. It must be at least a
+    /// 28x26pt target.
+    @Test func theListNotesNewNoteMenuIsARealTarget() {
+        let nodes = allNodes(
+            in: ListNotesHeaderView(onNewNote: {}, onNewNoteInFolder: {}),
+            size: NSSize(width: 300, height: 80)
+        )
+        // Found by role, not by name: the tree names this menu button "add", the glyph's own
+        // name, not the `.cadenceControlLabel("New note")` on it -- that is [[T-9533]].
+        let menu = nodes.filter { $0.role == NSAccessibility.Role.menuButton.rawValue }
+        #expect(menu.count == 1, "non-vacuity: the New note menu is not on the tree: \(nodes)")
+        for node in menu {
+            #expect(
+                node.frame.height >= 26 && node.frame.width >= 28,
+                "the New note menu is \(node.frame.width)x\(node.frame.height)pt, smaller than a 28x26pt target"
+            )
+        }
+    }
+
     // MARK: - T-7068: the Notes page's note rows
 
     /// Every note list on the Mac Notes page drew `…NoteListRow(...).onTapGesture { select }`: one

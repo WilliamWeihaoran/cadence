@@ -45,15 +45,20 @@ struct CadenceListEditorSheetKeyboardTests {
         )
         let compact = sheet.filter { !$0.isWhitespace }
 
+        // [[T-9532]]: both footer buttons are the shared `CadenceActionButton`, so the keys
+        // ride on its `shortcut:` argument rather than a bare `.keyboardShortcut(` modifier.
         #expect(
-            compact.contains(".buttonStyle(.cadencePlain).keyboardShortcut(.cancelAction)Button(request.actionTitle){"),
+            compact.contains(#"CadenceActionButton(title:"Cancel",role:.ghost,size:.compact,shortcut:.cancelAction){dismiss()}"#),
             "Escape must close the Mac note folder sheet, from its Cancel button"
         )
         #expect(
-            compact.contains(".keyboardShortcut(.defaultAction).disabled(normalizedFolderPath.isEmpty)"),
-            "Return must confirm the Mac note folder sheet, gated by the same disabled as the click"
+            compact.contains("isDisabled:normalizedFolderPath.isEmpty,shortcut:.defaultAction)"),
+            "Return must confirm the Mac note folder sheet, gated by the same isDisabled as the click"
         )
-        #expect(compact.components(separatedBy: ".keyboardShortcut(").count - 1 == 2)
+        #expect(
+            (compact.components(separatedBy: ".keyboardShortcut(").count - 1)
+                + (compact.components(separatedBy: "shortcut:.").count - 1) == 2
+        )
     }
 
     @Test func tagEditSheetCancelTakesEscapeSaveTakesReturnArchiveTakesNeither() throws {
