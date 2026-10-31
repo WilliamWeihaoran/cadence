@@ -1106,6 +1106,40 @@ struct CadenceTodayUnificationTests {
         #expect(!section.contains("hiddenCount"), "the completed section takes a remainder again")
     }
 
+    /// **[[T-9633]]: the Completed fold is a finger's 44pt, not its eyebrow's ~18.** The label is
+    /// `iOSTaskSectionHeader.topPadding` over one line of the 10pt eyebrow, and the button took
+    /// exactly that as its hit area -- on the one control that unfolds finished work on Inbox, All
+    /// Tasks, Today and a list's Tasks tab. It grows by an inset on every edge without moving
+    /// anything, and two relations hold it: the inset reaches the 44pt floor, and it stays inside
+    /// the `groupSpacing` gap above, so it cannot take taps from the last row of the group over it.
+    @Test func theTouchCompletedFoldIsAFingerTallWithoutReachingTheRowAboveIt() throws {
+        let section = try declarationBody(of: "iOSCompletedTasksSection", in: "Cadence/iOS/iOSTaskGroupSection.swift")
+        #expect(section.contains("private var disclosure: some View"), "non-vacuity: wrong declaration read")
+        let disclosureStart = try #require(section.range(of: "private var disclosure: some View"))
+        let rowsStart = try #require(section.range(of: "private var rows: some View"))
+        let disclosure = String(section[disclosureStart.upperBound..<rowsStart.lowerBound])
+        let label = try #require(disclosure.range(of: "CadenceTaskGroupHeading(title: title, tint: tint)"))
+        let hitArea = try #require(
+            disclosure.range(of: ".iOSExpandedHitArea(Self.hitAreaInset)"),
+            "the Completed fold's hit area is its drawn eyebrow again"
+        )
+        let style = try #require(disclosure.range(of: ".buttonStyle(.iosPressable)"))
+        #expect(label.upperBound < hitArea.lowerBound && hitArea.upperBound < style.lowerBound,
+                "the hit area is no longer on the button's label")
+
+        let inset = try #require(
+            statedFigure("static let hitAreaInset: CGFloat = ", in: section),
+            "the inset is no longer a stated figure"
+        )
+        let views = try strippingComments(sourceFile("Cadence/iOS/iOSTaskViews.swift"))
+        let topPadding = try #require(statedFigure("static let topPadding: CGFloat = ", in: views))
+        // One line of the eyebrow, taken at a 1.2 line height.
+        let labelHeight = topPadding + Double(SectionEyebrowLabel.fontSize) * 1.2
+        #expect(2 * inset + labelHeight >= 44, "the fold is under the 44pt touch floor again")
+        #expect(inset < Double(iOSTaskCollectionMetrics.groupSpacing),
+                "the fold's hit area reaches the row above it")
+    }
+
     /// **Folded is the default, and the default is one stored bit.** `isExpanded` is bound to the
     /// host's `@AppStorage`, which is `false`. It was shared with the options bar's "Completed"
     /// chip so that two controls for one disclosure could not disagree about whether the section
@@ -2127,6 +2161,13 @@ private func declarationBody(of name: String, in path: String) throws -> String 
     let nextPattern = "(?m)^(?:public |private |internal |fileprivate |final |nonisolated )*(?:struct|enum|class|extension)\\s"
     let end = rest.range(of: nextPattern, options: .regularExpression)?.lowerBound ?? rest.endIndex
     return String(rest[..<end])
+}
+
+/// The number literal written directly after `prefix`, e.g. `static let x: CGFloat = 13`.
+private func statedFigure(_ prefix: String, in source: String) -> Double? {
+    guard let start = source.range(of: prefix) else { return nil }
+    let digits = source[start.upperBound...].prefix { $0.isNumber || $0 == "." }
+    return Double(digits)
 }
 
 private func repositoryRoot() -> URL {

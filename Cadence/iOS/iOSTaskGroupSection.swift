@@ -179,6 +179,12 @@ struct iOSCompletedTasksSection: View {
     let accessibilityNoun: String
     @Binding var isExpanded: Bool
 
+    /// How far the disclosure's hit area reaches past its drawn label on every edge ([[T-9633]]).
+    /// Twice this plus the ~18pt label (6pt inset, one line of the 10pt eyebrow) is the 44pt
+    /// touch floor; it must stay under the 22pt `groupSpacing` above the heading, or the fold
+    /// would take taps from the last row over it.
+    static let hitAreaInset: CGFloat = 13
+
     var body: some View {
         // Nothing finished is not "a closed section with nothing in it" — it is no section. The
         // same predicate `iOSTaskGroupSection.isVisible` applied to this group before, because
@@ -216,6 +222,14 @@ struct iOSCompletedTasksSection: View {
             // heading sits where every other heading on the page does.
             .padding(.top, iOSTaskSectionHeader.topPadding)
             .contentShape(Rectangle())
+            // [[T-9633]]: a finger's 44pt, not the eyebrow's ~18. The label is the 6pt inset over
+            // one line of the 10pt eyebrow, so the only control that unfolds finished work on
+            // Inbox, All Tasks, Today and a list's Tasks tab was a strip a thumb could land just
+            // above and miss. The hit area grows by 13 on each edge without moving anything:
+            // upward it stays inside the 22pt `groupSpacing` gap every host stacks this at, and
+            // downward the rows are later siblings, so the 4pt it reaches into the first row's top
+            // still goes to the row.
+            .iOSExpandedHitArea(Self.hitAreaInset)
         }
         .buttonStyle(.iosPressable)
         .accessibilityLabel(title)

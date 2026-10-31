@@ -904,6 +904,30 @@ struct SettingsSevenPaneVocabularyTests {
                 "Delete can be squeezed into wrapping again")
     }
 
+    /// [[T-9631]]: the phone's inactive-list row puts its two buttons under the name when the one
+    /// line does not fit. On a 393pt iPhone the card hands the row ~329pt and the one-line row's
+    /// fixed parts take ~246 of it, leaving ~83 for the name and its ~76pt status chip -- so every
+    /// row truncated its name or its buttons. One line where it fits (the iPad's card), and the
+    /// `iOSInboxRemindersSection.accessRow` shape -- actions under the text -- where it does not.
+    @Test func thePhoneListLifecycleRowDropsItsButtonsUnderTheNameWhenTheLineDoesNotFit() throws {
+        let source = CadenceSourceScan.strippingComments(try t20SourceFile("Cadence/iOS/iOSSettingsTemplateAndListSections.swift"))
+        let row = try #require(CadenceSourceScan.declarationBody("private struct iOSListLifecycleSettingsRow: View", in: source))
+        let flat = t286RemovingWhitespace(row)
+        #expect(flat.contains("iOSMetaChip(label:statusLabel,color:statusTint)"), "non-vacuity: still the lifecycle row")
+
+        let fits = try #require(flat.range(of: "ViewThatFits(in:.horizontal){"),
+                                "the row is one line at every width again")
+        let oneLine = "HStack(alignment:.center,spacing:iOSSettingsMetrics.glyphLabelSpacing){iconTilelabelsSpacer(minLength:10)primaryButtondeleteButton}"
+        let twoLine = "HStack(alignment:.top,spacing:iOSSettingsMetrics.glyphLabelSpacing){iconTileVStack(alignment:.leading,spacing:8){labelsHStack(spacing:10){primaryButtondeleteButton}}Spacer(minLength:0)}"
+        let first = try #require(flat.range(of: oneLine), "the one-line arrangement is gone")
+        let second = try #require(flat.range(of: twoLine), "the buttons no longer drop under the name")
+        // `ViewThatFits` takes the first child that fits, so the one line must be asked first.
+        #expect(fits.upperBound <= first.lowerBound && first.upperBound <= second.lowerBound,
+                "the fallback is tried before the one-line row")
+        // Each button is drawn once per arrangement, from one declaration, so the two cannot drift.
+        #expect(flat.components(separatedBy: "iOSActionButton(").count - 1 == 2)
+    }
+
     /// [[T-9291]]: the archived context row is [[T-6972]]'s row's sibling — the same Restore/Delete
     /// pair under Settings → Contexts — and it had none of that fix, so a long context name wrapped
     /// and squeezed both buttons. The name truncates on one line and the two buttons hold their

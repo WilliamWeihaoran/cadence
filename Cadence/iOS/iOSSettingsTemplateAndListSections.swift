@@ -703,50 +703,92 @@ private struct iOSListLifecycleSettingsRow: View {
     }
 
     var body: some View {
-        let layout = CadenceSettingsTypographyLayout.stacks(at: dynamicTypeSize, scaling: scaling)
-            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 12))
-            : AnyLayout(HStackLayout(alignment: .center, spacing: iOSSettingsMetrics.glyphLabelSpacing))
-        layout {
-            iOSIconTile(
-                systemImage: icon,
-                color: color,
-                size: iOSSettingsMetrics.glyphSlot,
-                iconSize: 15
-            )
-
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 7) {
-                    Text(title)
-                        .cadenceFont(.rowTitle, base: 15, weight: .semibold)
-                        .foregroundStyle(Theme.text)
-                        .lineLimit(CadenceSettingsTypographyLayout.stacks(at: dynamicTypeSize, scaling: scaling) ? nil : 1)
-
-                    iOSMetaChip(label: statusLabel, color: statusTint)
+        Group {
+            if CadenceSettingsTypographyLayout.stacks(at: dynamicTypeSize, scaling: scaling) {
+                VStack(alignment: .leading, spacing: 12) {
+                    iconTile
+                    labels
+                    Spacer(minLength: 10)
+                    primaryButton
+                    deleteButton
                 }
+            } else {
+                // [[T-9631]]: one line where it fits, and the buttons under the name where it does
+                // not. On a 393pt iPhone this card hands the row ~329pt, and the one-line row's
+                // fixed parts alone -- tile, four 12pt gaps, the spacer, "Unarchive"/"Reopen" and
+                // "Delete" -- come to ~246, leaving ~83 for the name AND its ~76pt status chip. So
+                // every name truncated to nothing, or the buttons did, on every inactive list. The
+                // fallback is the shape `iOSInboxRemindersSection.accessRow` already draws: the
+                // actions under the text they act on. The iPad's wider card keeps the one line.
+                ViewThatFits(in: .horizontal) {
+                    HStack(alignment: .center, spacing: iOSSettingsMetrics.glyphLabelSpacing) {
+                        iconTile
+                        labels
+                        Spacer(minLength: 10)
+                        primaryButton
+                        deleteButton
+                    }
 
-                Text(subtitle)
-                    .cadenceFont(.metadata, base: 12, weight: .regular)
-                    .foregroundStyle(Theme.subdued)
-                    .lineLimit(CadenceSettingsTypographyLayout.stacks(at: dynamicTypeSize, scaling: scaling) ? nil : 1)
+                    HStack(alignment: .top, spacing: iOSSettingsMetrics.glyphLabelSpacing) {
+                        iconTile
+                        VStack(alignment: .leading, spacing: 8) {
+                            labels
+                            HStack(spacing: 10) {
+                                primaryButton
+                                deleteButton
+                            }
+                        }
+                        Spacer(minLength: 0)
+                    }
+                }
             }
-
-            Spacer(minLength: 10)
-
-            iOSActionButton(
-                title: primaryLabel,
-                role: .secondary,
-                size: .compact,
-                action: primaryAction
-            )
-
-            iOSActionButton(
-                title: "Delete",
-                role: .destructive,
-                size: .compact,
-                action: deleteAction
-            )
         }
         .padding(.vertical, 6)
+    }
+
+    private var iconTile: some View {
+        iOSIconTile(
+            systemImage: icon,
+            color: color,
+            size: iOSSettingsMetrics.glyphSlot,
+            iconSize: 15
+        )
+    }
+
+    private var labels: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 7) {
+                Text(title)
+                    .cadenceFont(.rowTitle, base: 15, weight: .semibold)
+                    .foregroundStyle(Theme.text)
+                    .lineLimit(CadenceSettingsTypographyLayout.stacks(at: dynamicTypeSize, scaling: scaling) ? nil : 1)
+
+                iOSMetaChip(label: statusLabel, color: statusTint)
+            }
+
+            Text(subtitle)
+                .cadenceFont(.metadata, base: 12, weight: .regular)
+                .foregroundStyle(Theme.subdued)
+                .lineLimit(CadenceSettingsTypographyLayout.stacks(at: dynamicTypeSize, scaling: scaling) ? nil : 1)
+        }
+    }
+
+    private var primaryButton: some View {
+        iOSActionButton(
+            title: primaryLabel,
+            role: .secondary,
+            size: .compact,
+            action: primaryAction
+        )
+    }
+
+    private var deleteButton: some View {
+        iOSActionButton(
+            title: "Delete",
+            role: .destructive,
+            size: .compact,
+            action: deleteAction
+        )
     }
 }
 
