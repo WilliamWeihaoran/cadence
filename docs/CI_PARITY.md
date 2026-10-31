@@ -142,6 +142,13 @@ removed the trigger; [[T-3218]] is the durable fix and is **OPEN**. **Live? Yes.
 `push-attribution` are runnable here — see the list below. Three of the 35 reds in this window were
 `ledger-lag`, a pure repo-process gate.
 
+**G. The hosted accessibility tree is the RUNTIME's, not the SDK's ([[T-9533]]).** CI's tests run on
+the runner's own macOS -- 26.6.2 (25G83) on run 41247660990, read from the xcresult's device -- and
+this Mac runs 27. A SwiftUI `Menu` under `.menuStyle(.button)` files its `.accessibilityLabel` as
+`accessibilityTitle` on 27 and leaves the title unanswered on 26.6, so a tree test pinned to one
+attribute went red on CI only. **Live? Yes. No local check** (one OS here). Assert the element's
+accessible name (title, else label), never one attribute, and print both in the message.
+
 **F. `.github/` encodes an unpinned runner.** `ci.yml` pins no image while `assert-toolchain.sh`
 refuses any major but 26, so the day `macos-latest` moves to a macOS 27 image, CI goes red for a
 reason not in this repository. Filed as [[T-3273]]; not fired.

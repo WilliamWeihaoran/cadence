@@ -30,7 +30,8 @@ struct CadenceMacPageAccessibilityAuditTests {
         /// The element's screen frame ([[T-9351]]), read by key like `isSelected`; `.zero` where unanswered.
         var frame: NSRect = .zero
         /// `accessibilityTitle` as plain text ([[T-9533]]). A SwiftUI `Menu`'s `.accessibilityLabel`
-        /// lands here, as an attributed string, not in `accessibilityLabel`.
+        /// lands here on macOS 27, as an attributed string, not in `accessibilityLabel`; CI's macOS 26
+        /// leaves it unanswered (run 41247660990).
         var title: String = ""
         var description: String {
             "[\(role) label:'\(label)' value:'\(value)'\(isSelected ? " selected" : "")\(actions.isEmpty ? "" : " actions:\(actions)")]"
@@ -461,7 +462,16 @@ struct CadenceMacPageAccessibilityAuditTests {
                     menu.frame.width >= menuCase.width && menu.frame.height >= menuCase.height,
                     "the \(menuCase.name) menu is \(menu.frame.width)x\(menu.frame.height)pt, smaller than its \(menuCase.width)x\(menuCase.height) label"
                 )
-                #expect(menu.title == menuCase.name, "the \(menuCase.name) menu is titled '\(menu.title)'")
+                // The stated name is the menu's accessible name: AXTitle where the runtime files it
+                // there, else AXDescription. Which one is OS-dependent, measured both ways: on this
+                // Mac (macOS 27) the title is the stated name and the label is empty; on CI's
+                // macos-26 runner (run 41247660990, Xcode 26.0.1) the title is unanswered for all
+                // three menus. The glyph's name ("add", "link") is refused in both, below.
+                let name = menu.title.isEmpty ? menu.label : menu.title
+                #expect(
+                    name == menuCase.name,
+                    "the \(menuCase.name) menu is named '\(name)' (title '\(menu.title)', label '\(menu.label)')"
+                )
                 #expect(
                     menu.label.isEmpty || menu.label == menuCase.name,
                     "the \(menuCase.name) menu also answers its glyph's name '\(menu.label)'"
