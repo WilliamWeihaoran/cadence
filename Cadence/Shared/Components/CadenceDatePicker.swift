@@ -436,6 +436,11 @@ struct CadenceQuickDatePopover: View {
     /// opens on (every caller seeds it with today), so no pill and no cell may read as picked and
     /// there is nothing for Clear to clear ([[T-9211]]).
     var hasSelection: Bool = true
+    /// The selected quick pill's fill. Every caller but the Mac's two field-tinted date controls
+    /// (`TaskDateChip`, `TaskInspectorDateControl`) keeps the blue default; those pass their own
+    /// `activeColor`, which is all that differed once their private copies of this popover went
+    /// ([[T-9212]]).
+    var tint: Color = Theme.blue
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     private let cal = Calendar.current
@@ -548,10 +553,10 @@ struct CadenceQuickDatePopover: View {
         } label: {
             Text(label)
                 .cadenceFont(.controlLabel, base: 11, weight: .medium)
-                .foregroundStyle(isSelected ? Theme.onColor(for: Theme.blue) : Theme.muted)
+                .foregroundStyle(isSelected ? Theme.onColor(for: tint) : Theme.muted)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 6)
-                .background(isSelected ? Theme.blue : Theme.surface)
+                .background(isSelected ? tint : Theme.surface)
                 .clipShape(Capsule())
         }
         .buttonStyle(.cadencePlain)

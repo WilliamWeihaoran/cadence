@@ -246,67 +246,19 @@ struct TaskDateChip: View {
         }
     }
 
-    @ViewBuilder
+    /// The shared quick-date popover, tinted with this chip's accent ([[T-9212]]). Picking a pill
+    /// or a day turns the chip on; Clear turns it off. An unset chip's `date` is only where the
+    /// grid opens, so nothing reads as picked and there is nothing to clear ([[T-9211]]).
     private var pickerPopover: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: 6) {
-                quickPill("Today", offset: 0)
-                quickPill("Tomorrow", offset: 1)
-                quickPill("This Weekend", weekend: true)
-            }
-            .padding(.horizontal, 12)
-            .padding(.top, 10)
-            .padding(.bottom, 8)
-
-            Divider().background(Theme.borderSubtle)
-
-            MonthCalendarPanel(
-                selection: Binding(get: { date }, set: { date = $0; isOn = true; showPicker = false }),
-                viewMonth: $viewMonth,
-                isOpen: $showPicker,
-                // [[T-9211]]: an unset chip's `date` is only where the grid opens.
-                hasSelection: isOn
-            )
-
-            if isOn {
-                Button("Clear date") { isOn = false; showPicker = false }
-                    .buttonStyle(.cadencePlain)
-                    .font(.system(size: 11))
-                    .foregroundStyle(Theme.red)
-                    .padding(.bottom, 10)
-            }
-        }
-        .background(Theme.surfaceElevated)
-    }
-
-    @ViewBuilder
-    private func quickPill(_ label: String, offset: Int = 0, weekend: Bool = false) -> some View {
-        let target: Date = {
-            let today = cal.startOfDay(for: Date())
-            if weekend {
-                let todayWeekday = cal.component(.weekday, from: today)
-                if todayWeekday == 7 || todayWeekday == 1 { return today }
-                let daysUntilSaturday = (7 - todayWeekday + 7) % 7
-                return cal.date(byAdding: .day, value: daysUntilSaturday, to: today) ?? today
-            }
-            return cal.date(byAdding: .day, value: offset, to: today) ?? today
-        }()
-        let isSelected = isOn && cal.isDate(date, inSameDayAs: target)
-        Button {
-            date = target
-            isOn = true
-            showPicker = false
-        } label: {
-            Text(label)
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(isSelected ? Theme.onColor(for: Theme.blue) : Theme.muted)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 5)
-                .background(isSelected ? Theme.blue : Theme.surface)
-                .clipShape(Capsule())
-        }
-        .buttonStyle(.cadencePlain)
-        .modifier(CreateTaskPickerHover(cornerRadius: 999))
+        CadenceQuickDatePopover(
+            selection: Binding(get: { date }, set: { date = $0; isOn = true }),
+            viewMonth: $viewMonth,
+            isOpen: $showPicker,
+            showsClear: isOn,
+            onClear: { isOn = false },
+            hasSelection: isOn,
+            tint: activeColor
+        )
     }
 }
 
