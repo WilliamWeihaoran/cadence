@@ -333,6 +333,9 @@ struct iOSMarkdownEditingSurface: View {
             } label: {
                 Label("Outline", systemImage: "list.bullet.indent")
                     .frame(minHeight: 44)
+                    // [[T-9511]]: `.plain` adds no hit shape, so the 44pt row took a tap only on
+                    // the 12pt words; above or below them the tap fell through to the page.
+                    .contentShape(Rectangle())
             }
             .accessibilityIdentifier("note.outline")
             Button {
@@ -342,6 +345,9 @@ struct iOSMarkdownEditingSurface: View {
             } label: {
                 Label("Unlinked mentions", systemImage: "link.badge.plus")
                     .frame(minHeight: 44)
+                    // [[T-9511]]: `.plain` adds no hit shape, so the 44pt row took a tap only on
+                    // the 12pt words; above or below them the tap fell through to the page.
+                    .contentShape(Rectangle())
             }
             .accessibilityIdentifier("note.unlinkedMentions")
             Spacer(minLength: 0)

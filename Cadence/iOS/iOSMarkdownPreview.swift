@@ -376,6 +376,11 @@ private struct iOSMarkdownPreviewTaskEmbedBlock: View {
                                     .font(.system(size: 13, weight: .semibold))
                                     .foregroundStyle(subtask.isDone ? Theme.green : Theme.dim)
                                     .frame(width: 22, height: 22)
+                                    // [[T-9485]]: without a shape only the 13pt glyph took the
+                                    // tap and a near-miss fell through to the card's open-task
+                                    // tap. 3pt is half the 6pt row spacing: the target grows to
+                                    // the 28pt row pitch without overlapping the next circle.
+                                    .iOSExpandedHitArea(3)
                             }
                             .buttonStyle(.plain)
                             .disabled(onToggleSubtask == nil || task.isMissing)
