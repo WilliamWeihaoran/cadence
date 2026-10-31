@@ -4347,3 +4347,62 @@ The design states the boundary as a rule instead: *a view that pins its own widt
 its typography scaling.*
 
 No answer is needed to this request. Start when you have read the protocol.
+
+## R67 — Implement four decided parity fixes
+
+**The lease rule first, because a retroactive grant costs far more than a refusal.** Work in your
+own worktree, on a branch named `codex/<topic>` based on `origin/main` — **rebase onto
+`origin/main` before you start**, and re-read `docs/CODEX_WORKTREE.md` and R66 above before your
+first branch. **Commit with plain `git commit`; never run `scripts/agent-commit.sh`.** **Never
+touch `docs/TODO.md` or `docs/TODO_DONE.md`** — file your ticket entries into
+`docs/CODEX_LEDGER_INBOX.md`, newest last, from your reserved range **T-4100..T-4129**. **Stay
+inside the fenced ```lease block in `docs/CODEX_WORKTREE.md`**: a path outside it is one another
+writer may hold, and that collision does not announce itself. If a path you need is not fenced,
+**stop and say so** rather than widening it yourself. Run
+`./scripts/codex-land.sh review codex/<topic>` **yourself** before you hand anything over.
+
+**All four items below are already DECIDED by the owner. You implement them; you do not
+re-litigate the design.** Each one has a ticket id, and **every inbox entry must cite the id of the
+item it implements.** Where an item leaves you a genuine choice, it says so explicitly — item 1 is
+the only one that does.
+
+**1. [[T-8553]] — one canonical list-kind icon in every chooser, both platforms.** The Inbox, an
+area and a project must each have ONE icon, used by every chooser on macOS and iOS. Three sets
+disagree today: `CadenceScheduleDraftChoices.listChoices`
+(`Cadence/Shared/CadenceScheduleDraftChoices.swift`) uses Inbox `tray.fill`, area `folder.fill`,
+project `square.stack.3d.up.fill`; `CadenceSchedulePanelChoice.editableTaskListChoices`
+(`Cadence/Shared/Components/CadenceTaskInlinePanel.swift:177`) gives Inbox AND area the SAME
+`tray.full.fill` and the project `checklist`; and the iOS `~` suggestions in
+`Cadence/iOS/iOSCreateTaskSheetSupportViews.swift` are a third set. **You pick the canonical set
+and say why** — that choice is yours, the fact that there must be exactly one is not.
+
+**2. [[T-8738]] — one set of Settings group headings across the two rails.** The macOS rail
+(`SettingsCategoryGroup.all`, `Cadence/macOS/Views/SettingsViewSupport.swift:70-100`) and the iOS
+list / iPad rail (`CadenceMobileSettingsLayout.groups`,
+`Cadence/Shared/CadenceSettingsPresentationSupport.swift`) must name the same groups. The word
+"App" currently heads two different groups; that goes away with the merge.
+
+**3. [[T-8644]] — the iPad sidebar header uses the SHIPPED APP ICON.** Match
+`SidebarAppHeader.appMark` on the Mac (`Cadence/macOS/Views/SidebarSupportViews.swift`), which
+already prefers the shipped icon and falls back to a tile only when the icon cannot be resolved.
+Replace the `circle.hexagongrid.fill` `iOSIconTile` stand-in in `iOSSidebarHeader`
+(`Cadence/iOS/iOSRootSidebar.swift:911`). **Note:**
+`CadenceTests/CadenceSidebarCountMetricsTests.swift:1017`
+(`theIPadSidebarHeaderHidesTheMarkAndHeadsTheColumn`) is a SOURCE-TEXT census over that
+declaration asserting exactly one `.accessibilityHidden(true)`; it will red if the structure
+changes. **Keep the annotation** and update the census honestly if the shape moves — do NOT delete
+the accessibility modifier. The standing stance is on [[T-8924]]: accessibility annotations are
+kept, never stripped to make a census pass.
+
+**4. [[T-8702]] — fix the binding only; the compact capture-card look is deliberately KEPT.** In
+`Cadence/Shared/Components/CadenceScheduleCaptureCard.swift` (`case .repeatRule` /
+`customRepeat`), the Ends mode list binds `$draft.seriesEndMode` raw with an `.onChange` seed, and
+the After stepper binds `$draft.seriesEndCount` over a flat `1...999`. Route both through
+`draft.selectSeriesEnd(_:)` and the real `draft.seriesEndCountRange`, the way the standard panel
+does (`Cadence/Shared/Components/CadenceSchedulePanel.swift:754-760`). **Do not restyle the card.**
+
+**House rules, restated because they have cost CI time.** `-only-testing:` takes
+`CadenceTests/<SuiteName>` — a **filename runs zero tests and exits 0**, and so does a nonexistent
+suite. Read the real `XCODEBUILD_EXIT=` line from `xcb.sh`'s result block, never `$?` after a pipe.
+Warning baseline is **zero**. Never a bare `xcodebuild`. Items 1, 3 and 4 touch iOS, so the iOS leg
+is mandatory for them — a macOS build compiles no `#if os(iOS)` code.
