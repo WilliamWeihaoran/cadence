@@ -190,12 +190,15 @@ private struct iOSDateJumpPopover: View {
                         .cadenceFont(.metadata, base: 12, weight: .semibold)
                         .foregroundStyle(Theme.blue)
                         .frame(maxWidth: .infinity, minHeight: 34)
+                        // The padding sits inside the label, before the content shape, so the
+                        // whole 48pt row takes the tap; outside `.iosPressable` it was 14pt of
+                        // dead space around a 34pt target (T-9513). Nothing drawn moves.
+                        .padding(.horizontal, 10)
+                        .padding(.top, 8)
+                        .padding(.bottom, 6)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.iosPressable)
-                .padding(.horizontal, 10)
-                .padding(.top, 8)
-                .padding(.bottom, 6)
 
                 Divider().background(Theme.borderSubtle)
             }

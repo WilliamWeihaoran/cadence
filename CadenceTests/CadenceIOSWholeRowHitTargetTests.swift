@@ -77,3 +77,22 @@ struct CadenceIOSNoteNavigationLinkHitTests {
         #expect(CadenceSourceScan.matchCount(framed, in: body) == 2, "a link takes a tap only on its words")
     }
 }
+
+/// [[T-9513]]: the date-jump popover's Today/Now row takes a tap across its padded row, not only
+/// the 34pt frame inside it -- the padding is inside the label, before the content shape.
+struct CadenceIOSDateJumpNowRowHitTests {
+    @Test func theNowRowIsItsWholePaddedRow() throws {
+        let source = try CadenceSourceScan.sourceFile("Cadence/iOS/iOSDateJumpTitle.swift")
+        let popover = try #require(CadenceSourceScan.declarationBody("private struct iOSDateJumpPopover: View", in: source))
+        let body = CadenceSourceScan.strippingComments(popover)
+        let start = try #require(body.range(of: "onNow()"), "non-vacuity: the slice holds the return-to-now button")
+        let tail = String(body[start.upperBound...])
+        let label = try #require(tail.components(separatedBy: ".buttonStyle(.iosPressable)").first)
+        #expect(label.contains("Text(nowTitle)"), "non-vacuity: the slice holds the now label")
+        let padded = #"minHeight: 34\)\s*\.padding\(\.horizontal, 10\)\s*\.padding\(\.top, 8\)\s*\.padding\(\.bottom, 6\)\s*\.contentShape\(Rectangle\(\)\)"#
+        #expect(CadenceSourceScan.matchCount(padded, in: label) == 1, "the now row's padding is outside its hit shape")
+        let after = try #require(tail.components(separatedBy: ".buttonStyle(.iosPressable)").dropFirst().first)
+        let beforeDivider = try #require(after.components(separatedBy: "Divider()").first)
+        #expect(!beforeDivider.contains(".padding("), "padding outside the button style is dead space around the target")
+    }
+}
