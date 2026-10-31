@@ -310,7 +310,6 @@ private struct iOSCalendarBoardDayColumn: View {
             header
             addTaskButton
             content
-            completedFooter
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 10)
@@ -375,24 +374,31 @@ private struct iOSCalendarBoardDayColumn: View {
         )
     }
 
+    /// **The "Completed" footer scrolls with the cards above it** ([[T-9611]]). It used to be a
+    /// fixed sibling UNDER this scroll view, so expanding it on a busy day squeezed the active
+    /// cards into whatever height was left, and a day with more finished work than the column is
+    /// tall drew the rest off the bottom of the screen with nothing that could reach it -- on a day
+    /// with no open work there was no scroll view at all. macOS's `CalendarBoardDayColumn` has
+    /// always put `completedFooter` inside `KanbanColumnScroll`, after the cards; nothing about a
+    /// finger asks for the opposite ([[T-8201]]).
     @ViewBuilder
     private var content: some View {
-        if activeItems.isEmpty {
+        if activeItems.isEmpty && completedTasks.isEmpty {
             // One line, next to the ghost add row that is already there. The day inspector's
             // version of this — icon tile, heading, a three-line explanation of what a planned
             // task, a time block and an Apple Calendar event are, and a button repeating the ghost
             // row — took roughly 40% of the phone screen to report that a day is empty. T-601(a)
             // put the inspector on this same pair of views, so the sentence moved to
             // `CadenceEmptyStateCopy` rather than being spelled in both files.
-            if completedTasks.isEmpty {
-                CadenceInlineEmpty(text: emptyDayText, surface: .touch)
-            }
+            CadenceInlineEmpty(text: emptyDayText, surface: .touch)
         } else {
             ScrollView(.vertical) {
                 VStack(alignment: .leading, spacing: 10) {
                     ForEach(activeItems) { item in
                         columnItemView(item)
                     }
+                    completedFooter
+                        .padding(.top, activeItems.isEmpty ? 0 : 2)
                 }
                 .padding(.bottom, 4)
             }

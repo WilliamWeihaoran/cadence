@@ -126,6 +126,76 @@ struct CadenceSharedBoardChromeTests {
         }
     }
 
+    // MARK: - T-9611: the Completed footer scrolls with the column
+
+    /// **Both Calendar Board day columns put their "Completed" footer inside the column's scroll
+    /// container, after the cards.** iOS had it as a fixed sibling under the scroll view, so an
+    /// expanded footer squeezed the open cards and a long finished list ran off the screen with
+    /// nothing that could reach it. macOS's `KanbanColumnScroll { content; completedFooter }` is the
+    /// shape both now have ([[T-8201]]).
+    @Test func bothCalendarBoardDayColumnsScrollTheirCompletedFooterWithTheCards() throws {
+        let sites = [
+            (
+                "Cadence/macOS/Views/CalendarBoardDayColumnSupportViews.swift",
+                "struct CalendarBoardDayColumn: View {",
+                "KanbanColumnScroll("
+            ),
+            (
+                "Cadence/iOS/iOSCalendarBoardView.swift",
+                "struct iOSCalendarBoardDayColumn: View {",
+                "ScrollView(.vertical)"
+            )
+        ]
+
+        for (path, declaration, scrollOpener) in sites {
+            let stripped = try strippingComments(sourceFile(path))
+            guard let start = stripped.range(of: declaration) else {
+                Issue.record("non-vacuity: \(path) no longer declares \(declaration)")
+                continue
+            }
+            let column = String(stripped[start.upperBound...])
+            // The column's own body, up to the first property after it.
+            guard let bodyStart = column.range(of: "var body: some View {"),
+                  let bodyEnd = column.range(of: "private var header", range: bodyStart.upperBound..<column.endIndex)
+            else {
+                Issue.record("non-vacuity: \(path) column body not found")
+                continue
+            }
+            let body = String(column[bodyStart.upperBound..<bodyEnd.lowerBound])
+            #expect(body.contains("header"), "non-vacuity: \(path) body slice does not draw the header")
+
+            // Wherever the footer is named — the body itself (macOS) or the `content` it draws
+            // (iOS) — it must come after the scroll container opens, never as a sibling of it.
+            let host: String
+            if body.contains(scrollOpener) {
+                host = body
+            } else {
+                guard let contentStart = column.range(of: "private var content: some View {"),
+                      let contentEnd = column.range(
+                          of: "private var completedFooter",
+                          range: contentStart.upperBound..<column.endIndex
+                      )
+                else {
+                    Issue.record("non-vacuity: \(path) has no content property to host the scroll")
+                    continue
+                }
+                host = String(column[contentStart.upperBound..<contentEnd.lowerBound])
+                #expect(
+                    !body.contains("completedFooter"),
+                    "\(path) draws its Completed footer as a fixed sibling under the scroll view again (T-9611)"
+                )
+            }
+            guard let scroll = host.range(of: scrollOpener) else {
+                Issue.record("\(path) has no \(scrollOpener) for its cards")
+                continue
+            }
+            #expect(
+                host[scroll.upperBound...].contains("completedFooter"),
+                "\(path) no longer scrolls its Completed footer with the cards (T-9611)"
+            )
+        }
+    }
+
     // MARK: - T-572: what VoiceOver calls a Board day column
 
     /// The label's words and its plural, as a value.
