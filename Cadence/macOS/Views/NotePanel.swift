@@ -170,9 +170,8 @@ struct NotePanel: View {
     private func noteLoadFailureView(for tab: CadenceCoreNoteTab) -> some View {
         VStack(spacing: 10) {
             CadenceInlineFailureNotice(text: "Couldn't load this note.")
-            Button("Try Again") { loadOrCreate() }
-                .buttonStyle(.cadencePlain)
-                .font(.system(size: 12, weight: .semibold))
+            // [[T-9453]]: the shared action button, not a bare label whose hover wash is the word.
+            CadenceActionButton(title: "Try Again", role: .secondary, size: .compact) { loadOrCreate() }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding(.horizontal, 24)

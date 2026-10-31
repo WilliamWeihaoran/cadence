@@ -39,6 +39,17 @@ struct CadenceEventNoteSheetEscapeTests {
         )
     }
 
+    /// **[[T-9453]].** Done was a bare label under `.cadencePlain`, so its hit area and hover wash
+    /// were the word itself -- a glyph-tight wash beside the padded Actions pill. It is the shared
+    /// action button now, which pads the plate inside the style. Not hostable (EventKit, a live
+    /// editor), so read from the sheet's body like the pins above.
+    @Test func theSheetsDoneIsTheSharedActionButton() throws {
+        let sheet = try Self.compactBody("struct EventNoteEditorSheet: View", in: Self.sheetPath)
+
+        #expect(sheet.contains(#"CadenceActionButton(title:"Done",role:.secondary,size:.compact){dismiss()}"#))
+        #expect(!sheet.contains(#"Button("Done")"#), "a bare Done label is the T-9453 shape")
+    }
+
     /// The host gets Escape LAST: after the three pickers and the inline task panel, and never
     /// during an IME composition. The table-cell and inline-title field editors answer to their own
     /// delegate and never reach this method.

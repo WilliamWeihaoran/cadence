@@ -103,12 +103,12 @@ struct EventNoteEditorSheet: View {
                 summaryHeaderAccessory: { appendSummary in AnyView(
                     HStack(spacing: 10) {
                         NoteActionMenu(note: note, onAppendSummary: appendSummary)
-                        Button("Done") {
+                        // [[T-9453]]: the shared action button. A bare label under
+                        // `.cadencePlain` made the hit area and the hover wash the word itself, a
+                        // glyph-tight wash beside the padded Actions pill.
+                        CadenceActionButton(title: "Done", role: .secondary, size: .compact) {
                             dismiss()
                         }
-                        .buttonStyle(.cadencePlain)
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(Theme.blue)
                     }
                 ) },
                 // **[[T-7336]].** Escape closes the sheet the way Done does, and through the same

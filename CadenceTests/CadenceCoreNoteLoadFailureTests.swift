@@ -98,7 +98,10 @@ struct CadenceCoreNoteLoadFailureTests {
         // rather than stranding the tab.
         #expect(source.contains("func noteLoadFailureView"))
         #expect(source.contains("CadenceInlineFailureNotice"))
-        #expect(source.contains("Button(\"Try Again\") { loadOrCreate() }"))
+        // [[T-9453]]: the shared action button, so the retry's hit area and hover wash are a
+        // padded plate rather than the bare word under `.cadencePlain`.
+        #expect(source.contains("CadenceActionButton(title: \"Try Again\", role: .secondary, size: .compact) { loadOrCreate() }"))
+        #expect(!source.contains("Button(\"Try Again\")"))
     }
 }
 
