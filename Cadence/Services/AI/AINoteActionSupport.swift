@@ -198,6 +198,43 @@ struct CadenceAIDraftReview: Equatable, Sendable {
         return result
     }
 
+    /// **T-9082.** The priority segment a draft's card lights, on both cards. `nil` when the model's
+    /// answer is not one of the four priorities, so no segment lights up — rather than "None"
+    /// lighting up and disagreeing with the error line `validation` writes for the same string.
+    static func resolvedPriority(for draft: AITaskDraft) -> TaskPriority? {
+        TaskPriority(rawValue: draft.priority.trimmingCharacters(in: .whitespacesAndNewlines).lowercased())
+    }
+
+    /// **T-9082.** What a draft card's Do or Due picker shows, on both cards. A date the model got
+    /// wrong is shown **verbatim** in the trigger rather than as "No due date":
+    /// `AIActionService.normalizedDate` would drop it on the way to `TaskCreationDraft`, so hiding
+    /// it would mean the card silently disagreeing with the error line below it.
+    struct DateField: Equatable, Sendable {
+        /// The draft's value, trimmed.
+        let raw: String
+        /// The day the picker selects, or `nil` when `raw` is empty or does not parse.
+        let parsed: Date?
+        /// What the trigger says instead of a date: the empty-state text, or the unparseable value
+        /// itself. `nil` exactly when there is a date to show.
+        let placeholder: String?
+
+        /// The caption goes red: there is a value and it is not a date.
+        var isInvalid: Bool { !raw.isEmpty && parsed == nil }
+        /// Anything at all can be cleared — including a value that does not parse, which is the
+        /// one a user most needs to get rid of.
+        var showsClear: Bool { !raw.isEmpty }
+    }
+
+    static func dateField(_ value: String, emptyPlaceholder: String) -> DateField {
+        let raw = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        let parsed = raw.isEmpty ? nil : DateFormatters.date(from: raw)
+        return DateField(
+            raw: raw,
+            parsed: parsed,
+            placeholder: parsed == nil ? (raw.isEmpty ? emptyPlaceholder : raw) : nil
+        )
+    }
+
     func isSelected(_ draft: AITaskDraft) -> Bool {
         selectedIDs.contains(draft.id)
     }

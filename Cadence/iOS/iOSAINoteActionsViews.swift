@@ -378,9 +378,10 @@ private struct iOSAITaskDraftCard: View {
     let validation: AITaskDraftValidation
 
     /// `nil` when the model's answer is not one of the four priorities — so no segment lights up,
-    /// rather than "None" lighting up and disagreeing with the error underneath.
+    /// rather than "None" lighting up and disagreeing with the error underneath. Shared with the
+    /// Mac card (T-9082).
     private var resolvedPriority: TaskPriority? {
-        TaskPriority(rawValue: draft.priority.trimmingCharacters(in: .whitespacesAndNewlines).lowercased())
+        CadenceAIDraftReview.resolvedPriority(for: draft)
     }
 
     var body: some View {
@@ -498,31 +499,29 @@ private struct iOSAITaskDraftCard: View {
         .padding(.vertical, 4)
     }
 
-    /// A date the model got wrong is shown **verbatim** in the trigger rather than as "No due date".
-    /// `AIActionService.normalizedDate` would drop it on the way to `TaskCreationDraft`, so hiding it
-    /// here would mean the card silently disagreeing with the error line below it.
+    /// A date the model got wrong is shown **verbatim** in the trigger rather than as "No due date";
+    /// `CadenceAIDraftReview.dateField` owns that rule for this card and the Mac's (T-9082).
     private func dateRow(
         label: String,
         systemImage: String,
         emptyPlaceholder: String,
         keyPath: WritableKeyPath<AITaskDraft, String>
     ) -> some View {
-        let raw = draft[keyPath: keyPath].trimmingCharacters(in: .whitespacesAndNewlines)
-        let parsed = DateFormatters.date(from: raw)
+        let field = CadenceAIDraftReview.dateField(draft[keyPath: keyPath], emptyPlaceholder: emptyPlaceholder)
 
         return iOSEditorFieldRow(
             label: label,
             systemImage: systemImage,
-            color: raw.isEmpty || parsed != nil ? Theme.dim : Theme.red
+            color: field.isInvalid ? Theme.red : Theme.dim
         ) {
             CadenceDatePicker(
                 selection: Binding(
-                    get: { parsed ?? Date() },
+                    get: { field.parsed ?? Date() },
                     set: { draft[keyPath: keyPath] = DateFormatters.dateKey(from: $0) }
                 ),
-                placeholder: parsed == nil ? (raw.isEmpty ? emptyPlaceholder : raw) : nil,
+                placeholder: field.placeholder,
                 minHeight: 44,
-                showsClear: !raw.isEmpty,
+                showsClear: field.showsClear,
                 onClear: { draft[keyPath: keyPath] = "" }
             )
         }

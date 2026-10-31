@@ -238,11 +238,23 @@ private struct AITaskDraftRow: View {
 
             // T-9061: every field carries a visible label, so a filled card no longer reads as two
             // unlabelled dates side by side. Do before Due, the order iOS's card states them in.
+            // T-9082: priority is the same four-way choice and the dates the same picker iOS's
+            // card uses, rather than free text and typed `yyyy-MM-dd` strings.
             HStack(alignment: .top, spacing: 12) {
-                AITaskDraftLabelledField(label: "Priority", placeholder: "none", text: $draft.priority, width: 80)
-                AITaskDraftLabelledField(label: "Do", placeholder: "yyyy-MM-dd", text: $draft.scheduledDate, width: 110, isDate: true)
-                AITaskDraftLabelledField(label: "Due", placeholder: "yyyy-MM-dd", text: $draft.dueDate, width: 110, isDate: true)
-                AITaskDraftLabelledField(label: "Section", placeholder: TaskSectionDefaults.defaultName, text: $draft.sectionName, width: 120)
+                AITaskDraftCaptioned(label: "Priority") { priorityChoice }
+                AITaskDraftCaptioned(label: "Section") {
+                    TextField(TaskSectionDefaults.defaultName, text: $draft.sectionName)
+                        .textFieldStyle(.plain)
+                        .font(.system(size: 12))
+                        .foregroundStyle(Theme.text)
+                        .frame(minHeight: 26)
+                        .accessibilityLabel("Section")
+                }
+                .frame(width: 140, alignment: .leading)
+            }
+            HStack(alignment: .top, spacing: 12) {
+                dateField(label: "Do", emptyPlaceholder: "No do date", keyPath: \.scheduledDate)
+                dateField(label: "Due", emptyPlaceholder: "No due date", keyPath: \.dueDate)
             }
 
             // The start time and estimate this draft would write, drawn from the same shared chips
@@ -288,35 +300,79 @@ private struct AITaskDraftRow: View {
                 .strokeBorder(validation.isValid ? Theme.borderSubtle : Theme.red.opacity(0.45), lineWidth: 1)
         }
     }
-}
 
-/// One of the draft card's short fields with its name drawn above it (T-9061). The placeholder
-/// vanishes as soon as the field has text, so it can never be the only label. A date the model got
-/// wrong turns its label red, matching iOS's date row, so the error line has a field to point at.
-private struct AITaskDraftLabelledField: View {
-    let label: String
-    let placeholder: String
-    @Binding var text: String
-    let width: CGFloat
-    var isDate: Bool = false
-
-    private var isInvalidDate: Bool {
-        let raw = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        return isDate && !raw.isEmpty && DateFormatters.date(from: raw) == nil
+    /// iOS's four segments. Its pill group is iOS-only and its selection non-optional; a model
+    /// answer that is not a priority has to read as no segment selected, so the selection comes from
+    /// `CadenceAIDraftReview.resolvedPriority(for:)`, the rule iOS's card reads too.
+    private var priorityChoice: some View {
+        let resolved = CadenceAIDraftReview.resolvedPriority(for: draft)
+        return HStack(spacing: 2) {
+            ForEach(TaskPriority.allCases, id: \.self) { priority in
+                let isSelected = resolved == priority
+                let tint = priority == .none ? Theme.muted : Theme.priorityColor(priority)
+                Button {
+                    draft.priority = priority.rawValue
+                } label: {
+                    Text(priority.label)
+                        .font(.system(size: 11, weight: isSelected ? .semibold : .medium))
+                        .foregroundStyle(isSelected ? tint : Theme.dim)
+                        .padding(.horizontal, 9)
+                        .frame(minHeight: 22)
+                        .background(
+                            RoundedRectangle(cornerRadius: Theme.radiusControlCompact - 2)
+                                .fill(isSelected ? tint.opacity(0.16) : Color.clear)
+                        )
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.cadencePlain)
+                .accessibilityLabel("Priority \(priority.label)")
+                .accessibilityAddTraits(isSelected ? .isSelected : [])
+            }
+        }
+        .padding(2)
+        .background(Theme.surfaceElevated)
+        .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControlCompact))
+        .overlay(RoundedRectangle(cornerRadius: Theme.radiusControlCompact).strokeBorder(Theme.borderSubtle))
     }
 
+    /// iOS's date row: the shared picker with a clear button, and a value the model got wrong shown
+    /// verbatim with a red caption (`CadenceAIDraftReview.dateField`), so the card never reads
+    /// "No due date" above an error line about that date.
+    private func dateField(
+        label: String,
+        emptyPlaceholder: String,
+        keyPath: WritableKeyPath<AITaskDraft, String>
+    ) -> some View {
+        let field = CadenceAIDraftReview.dateField(draft[keyPath: keyPath], emptyPlaceholder: emptyPlaceholder)
+        return AITaskDraftCaptioned(label: label, isInvalid: field.isInvalid) {
+            CadenceDatePicker(
+                selection: Binding(
+                    get: { field.parsed ?? Date() },
+                    set: { draft[keyPath: keyPath] = DateFormatters.dateKey(from: $0) }
+                ),
+                placeholder: field.placeholder,
+                showsClear: field.showsClear,
+                onClear: { draft[keyPath: keyPath] = "" }
+            )
+        }
+    }
+}
+
+/// One of the draft card's fields with its name drawn above it (T-9061). A placeholder vanishes as
+/// soon as the field has text, so it can never be the only label. A date the model got wrong turns
+/// its caption red, matching iOS's date row, so the error line has a field to point at.
+private struct AITaskDraftCaptioned<Content: View>: View {
+    let label: String
+    var isInvalid: Bool = false
+    @ViewBuilder let content: Content
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: 3) {
             Text(label)
                 .font(.system(size: 10, weight: .semibold))
-                .foregroundStyle(isInvalidDate ? Theme.red : Theme.dim)
-            TextField(placeholder, text: $text)
-                .textFieldStyle(.plain)
-                .font(.system(size: 11))
-                .foregroundStyle(Theme.text)
-                .accessibilityLabel(label)
+                .foregroundStyle(isInvalid ? Theme.red : Theme.dim)
+            content
         }
-        .frame(width: width, alignment: .leading)
     }
 }
 #endif

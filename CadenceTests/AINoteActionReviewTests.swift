@@ -766,18 +766,94 @@ struct AINoteActionReviewTests {
             Issue.record("non-vacuity: AITaskDraftRow moved")
             return
         }
-        #expect(row.contains(#"AITaskDraftLabelledField(label: "Do", placeholder: "yyyy-MM-dd", text: $draft.scheduledDate"#))
-        #expect(row.contains(#"AITaskDraftLabelledField(label: "Due", placeholder: "yyyy-MM-dd", text: $draft.dueDate"#))
+        #expect(row.contains(#"dateField(label: "Do", emptyPlaceholder: "No do date", keyPath: \.scheduledDate)"#))
+        #expect(row.contains(#"dateField(label: "Due", emptyPlaceholder: "No due date", keyPath: \.dueDate)"#))
         #expect(row.contains("chip.clear(&draft)"))
         #expect(row.contains(".accessibilityLabel(chip.accessibilityLabel)"))
         // The placeholder-only spellings are gone.
         #expect(!mac.contains(#"TextField("Due yyyy-MM-dd""#))
         #expect(!mac.contains(#"TextField("Do yyyy-MM-dd""#))
-        guard let field = CadenceSourceScan.declarationBody("private struct AITaskDraftLabelledField: View", in: mac) else {
-            Issue.record("non-vacuity: AITaskDraftLabelledField moved")
+        guard let field = CadenceSourceScan.declarationBody("private struct AITaskDraftCaptioned<Content: View>: View", in: mac) else {
+            Issue.record("non-vacuity: AITaskDraftCaptioned moved")
             return
         }
         #expect(field.contains("Text(label)"))
+    }
+
+    // MARK: - T-9082: the Mac card's dates and priority are iOS's pickers, on one shared rule
+
+    /// The card's priority segment and date trigger must never disagree with the error line under
+    /// them: an answer `validation` refuses selects no segment and shows the bad date verbatim in a
+    /// red-captioned trigger, never "None" or "No due date".
+    @Test func draftCardPickersAgreeWithValidation() {
+        // Priority: exactly the strings validation accepts select a segment, and the one it names.
+        for raw in ["none", "low", "medium", "high", " High ", "MEDIUM"] {
+            let d = draft(priority: raw)
+            #expect(AIActionService.validation(for: d).isValid, "\(raw)")
+            #expect(CadenceAIDraftReview.resolvedPriority(for: d)?.rawValue == raw.trimmingCharacters(in: .whitespaces).lowercased())
+        }
+        for raw in ["urgent", "", "p1", "highest"] {
+            let d = draft(priority: raw)
+            #expect(!AIActionService.validation(for: d).isValid, "\(raw)")
+            #expect(CadenceAIDraftReview.resolvedPriority(for: d) == nil, "\(raw) lit a segment")
+        }
+
+        // Empty: the empty-state text, nothing to clear, not red.
+        let empty = CadenceAIDraftReview.dateField("", emptyPlaceholder: "No due date")
+        #expect(empty.parsed == nil)
+        #expect(empty.placeholder == "No due date")
+        #expect(!empty.isInvalid)
+        #expect(!empty.showsClear)
+        #expect(CadenceAIDraftReview.dateField("   ", emptyPlaceholder: "No due date") == empty)
+
+        // A real date: the picker shows the day itself, and it can be cleared.
+        let good = CadenceAIDraftReview.dateField("2026-11-02", emptyPlaceholder: "No due date")
+        #expect(good.parsed.map(DateFormatters.dateKey(from:)) == "2026-11-02")
+        #expect(good.placeholder == nil)
+        #expect(!good.isInvalid)
+        #expect(good.showsClear)
+
+        // The model's wrong answer is shown verbatim, red, and clearable — never as empty.
+        let bad = CadenceAIDraftReview.dateField("next Tuesday", emptyPlaceholder: "No due date")
+        #expect(bad.parsed == nil)
+        #expect(bad.placeholder == "next Tuesday")
+        #expect(bad.isInvalid)
+        #expect(bad.showsClear)
+
+        // And the red caption is exactly validation's date error, on either field.
+        for raw in ["", "2026-11-02", "next Tuesday", "2026-13-01"] {
+            for d in [draft(dueDate: raw), draft(scheduledDate: raw)] {
+                let field = CadenceAIDraftReview.dateField(raw, emptyPlaceholder: "x")
+                #expect(field.isInvalid == !AIActionService.validation(for: d).isValid, "\(raw)")
+            }
+        }
+    }
+
+    /// Both cards read those two rules from the shared helper, and the Mac card no longer types
+    /// its dates or its priority as text.
+    @Test func bothDraftCardsDrawTheSharedPriorityAndDatePickers() throws {
+        try expectOccurrences(of: "CadenceAIDraftReview.resolvedPriority(for: draft)", at: [
+            Self.iosActionsView: 1,
+            Self.macReviewSheet: 1,
+        ])
+        try expectOccurrences(of: "CadenceAIDraftReview.dateField(draft[keyPath: keyPath], emptyPlaceholder: emptyPlaceholder)", at: [
+            Self.iosActionsView: 1,
+            Self.macReviewSheet: 1,
+        ])
+        let mac = try strippingComments(sourceFile(Self.macReviewSheet))
+        guard let row = CadenceSourceScan.declarationBody("private struct AITaskDraftRow: View", in: mac) else {
+            Issue.record("non-vacuity: AITaskDraftRow moved")
+            return
+        }
+        #expect(row.contains("CadenceDatePicker("))
+        #expect(row.contains("placeholder: field.placeholder"))
+        #expect(row.contains("showsClear: field.showsClear"))
+        #expect(row.contains(#"onClear: { draft[keyPath: keyPath] = "" }"#))
+        #expect(row.contains("ForEach(TaskPriority.allCases"))
+        #expect(row.contains("draft.priority = priority.rawValue"))
+        #expect(!row.contains("$draft.priority"), "priority is still a text field")
+        #expect(!row.contains("$draft.scheduledDate"), "the do date is still a text field")
+        #expect(!row.contains("$draft.dueDate"), "the due date is still a text field")
     }
 }
 
