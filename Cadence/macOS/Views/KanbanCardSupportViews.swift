@@ -121,46 +121,6 @@ struct KanbanCompletionButton: View {
     }
 }
 
-struct KanbanPriorityPickerPopover: View {
-    @Binding var priority: TaskPriority
-    @Binding var isPresented: Bool
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            ForEach(TaskPriority.allCases, id: \.self) { value in
-                Button {
-                    priority = value
-                    isPresented = false
-                    } label: {
-                        HStack(spacing: 8) {
-                        Text(TaskTitleSupport.priorityMark(for: value))
-                            .font(.system(size: 13, weight: .bold))
-                            .foregroundStyle(value == .none ? Theme.dim : Theme.priorityColor(value))
-                            .frame(width: 24, alignment: .leading)
-                        Text(value.label)
-                            .font(.system(size: 13))
-                            .foregroundStyle(Theme.text)
-                        Spacer()
-                        if priority == value {
-                            Image(systemName: "checkmark")
-                                .font(.system(size: 11, weight: .semibold))
-                                .foregroundStyle(Theme.blue)
-                        }
-                    }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 7)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.cadencePlain)
-            }
-        }
-        .padding(.vertical, 6)
-        .frame(minWidth: 150)
-        .background(Theme.surfaceElevated)
-    }
-}
-
 /// Apply an accessibility identifier **only when there is one**.
 ///
 /// `accessibilityIdentifier(_:)` takes a non-optional `String`, and passing `""` is a real

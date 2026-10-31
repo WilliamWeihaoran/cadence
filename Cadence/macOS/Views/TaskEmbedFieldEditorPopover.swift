@@ -92,20 +92,13 @@ struct TaskEmbedFieldEditorPopover: View {
                 }
             }
         case .priority:
-            KanbanPriorityPickerPopover(
-                priority: Binding(
-                    get: { task.priority },
-                    set: { priority in
-                        commit { task.priority = priority }
-                    }
-                ),
-                isPresented: Binding(
-                    get: { true },
-                    set: { isPresented in
-                        if !isPresented { dismiss() }
-                    }
-                )
-            )
+            // [[T-9292]]: the New Task sheet's priority menu, not a copy of it. The close waits on
+            // the commit, as the status rows' does: a refused write keeps the popover open with
+            // the notice under the rows instead of closing over it.
+            TaskPriorityChoiceList(selection: task.priority) { priority in
+                guard commit({ task.priority = priority }) else { return }
+                dismiss()
+            }
         case .container:
             VStack(alignment: .leading, spacing: 10) {
                 fieldLabel("List")

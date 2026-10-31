@@ -39,6 +39,7 @@ struct CadenceQuickCreateTaskInspectorTests {
     private static let monthGridPath = "Cadence/macOS/Views/CalendarPageMonthSupportViews.swift"
     private static let schedulingPath = "Cadence/macOS/Services/SchedulingService.swift"
     private static let calendarManagerPath = "Cadence/macOS/Services/CalendarManager.swift"
+    private static let embedPopoverPath = "Cadence/macOS/Views/TaskEmbedFieldEditorPopover.swift"
 
     private func code(_ path: String) throws -> String {
         let raw = try cadenceTestSource(path)
@@ -820,6 +821,46 @@ struct CadenceQuickCreateTaskInspectorTests {
                 in: try code(Self.createSheetSupportPath)
             ) == 1,
             "the priority field invents its own wording instead of reading the shared one"
+        )
+    }
+
+    /// **[[T-9292]].** The note embed card's Priority field drew KanbanPriorityPickerPopover, a
+    /// copy of this menu that had lost the selected-row fill, the clip and the hover plate. One
+    /// declaration of the rows now, presented by both triggers, and the copy is gone.
+    @Test func theNoteEmbedPriorityFieldPresentsTheCreateSheetsPriorityMenu() throws {
+        let read = CadenceSourceScan.strippedSourceReader()
+        var declarations: [String] = []
+        var copies: [String] = []
+        var callers: [String: Int] = [:]
+        for path in try CadenceSourceScan.swiftFiles(under: "Cadence") {
+            let source = CadenceSourceScan.codeOnly(try read(path))
+            if source.contains("struct TaskPriorityChoiceList: View") { declarations.append(path) }
+            if source.contains("KanbanPriorityPickerPopover") { copies.append(path) }
+            let calls = CadenceSourceScan.matchCount(#"TaskPriorityChoiceList\("#, in: source)
+            if calls > 0 { callers[path] = calls }
+        }
+        #expect(declarations == [Self.createSheetSupportPath], "the priority menu is declared \(declarations)")
+        #expect(copies.isEmpty, "the embed card's private priority copy is back in \(copies)")
+        #expect(
+            callers == [Self.createSheetSupportPath: 1, Self.embedPopoverPath: 1],
+            "the priority menu's triggers moved: \(callers)"
+        )
+
+        // The rows the copy had lost are drawn by the one declaration both triggers present.
+        let support = try code(Self.createSheetSupportPath)
+        let start = try #require(support.range(of: "struct TaskPriorityChoiceList: View"))
+        let rest = support[start.upperBound...]
+        let list = String(rest[..<(rest.range(of: "\nstruct ")?.lowerBound ?? rest.endIndex)])
+        #expect(list.contains(".background(selection == p ? Theme.blue.opacity(0.08) : Color.clear)"),
+                "the current priority has no selected-row fill")
+        #expect(list.contains(".clipShape(RoundedRectangle(cornerRadius: 6))"), "the row fill is not clipped")
+        #expect(list.contains(".modifier(CreateTaskPickerHover())"), "the rows do not light under the pointer")
+
+        // The embed's close waits on its commit, as the status rows' does.
+        let embed = try code(Self.embedPopoverPath)
+        #expect(
+            embed.contains("guard commit({ task.priority = priority }) else { return }"),
+            "the embed's priority menu closes over a refused write"
         )
     }
 

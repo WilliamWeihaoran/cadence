@@ -96,11 +96,31 @@ struct TaskPriorityPicker: View {
     }
 
     private var choices: some View {
+        TaskPriorityChoiceList(selection: selection) { p in
+            selection = p
+            isOpen = false
+        }
+    }
+}
+
+/// **The one macOS priority menu** -- every `TaskPriority` with its mark, its name, a checkmark and
+/// a blue fill on the current one, and `CreateTaskPickerHover`'s plate under the pointer.
+///
+/// **[[T-9292]].** `TaskPriorityPicker` drew these rows inline, and the note embed card's Priority
+/// field drew KanbanPriorityPickerPopover, a line-for-line copy that had lost the selected-row
+/// fill, the clip and the hover plate -- so the same field lit under the pointer in the New Task
+/// sheet and stayed dark on a note's task card. The rows live here now and both triggers present
+/// this one declaration; `onPick` is the trigger's business (a binding plus a close for the
+/// picker, a guarded commit for the embed card), the rows are not.
+struct TaskPriorityChoiceList: View {
+    let selection: TaskPriority
+    let onPick: (TaskPriority) -> Void
+
+    var body: some View {
         VStack(alignment: .leading, spacing: 2) {
             ForEach(TaskPriority.allCases, id: \.self) { p in
                 Button {
-                    selection = p
-                    isOpen = false
+                    onPick(p)
                 } label: {
                     HStack(spacing: 8) {
                         Text(TaskTitleSupport.priorityMark(for: p))
