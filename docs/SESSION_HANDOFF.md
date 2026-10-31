@@ -95,14 +95,15 @@ source and wait for someone who can.
 
 | Ticket | What it is |
 |---|---|
-| `T-8182`, `T-8183`, `T-8187` | iPad board: long-press menu; list-kanban drag; stale comment — in flight (`T-8270`). |
-| `T-8142`, `T-8143` | iOS timeline drop feedback; unreachable Calendar-page drop — in flight (`T-8300`). |
-| `T-8203` | Port the completion animation to iOS; held until `iOSTaskViews.swift` is free. |
-| `T-8184`, `T-8185`, `T-8186` | iOS list-kanban has no add affordance; slot token not a picker; re-measure clearance. |
-| `T-8188`, `T-7710` | `simulator-claim.sh` cannot reclaim under an attached panel; three uncovered census shapes. |
-| `T-8200`, `T-8180`, `T-8160` | Id reservations still OPEN: close each naming every id USED or RELEASED UNUSED. |
-| `T-7170` | `xcb.sh export-archive` never run with `release-testing`/ad-hoc. |
+| `T-8186` | Re-measure the board list-picker clearance; needs a `CadenceUITests` run, so the owner's go-ahead. |
+| `T-7170` | `xcb.sh export-archive` never run with `release-testing`/ad-hoc; needs an ad-hoc profile from the portal (owner's). |
 | `T-4900`, `T-3260` | Stale `core.hooksPath` (owner-run config); 337 view-body pins. |
+
+Rechecked 2026-10-30 by keeper `keeper0007` at `c8e2323c`: every other row this table carried
+(`T-8142`, `T-8143`, `T-8160`, `T-8180`, `T-8184`, `T-8185`, `T-8187`, `T-8188`, `T-8200`,
+`T-8203`, `T-7710`) is CLOSED, and `T-8182`/`T-8183` are PARTIALs whose remainder is an on-screen
+check. `T-8851` (iOS all-day draft block jumps to the first hour) is an owner call under `T-8201`.
+Almost all of the 190-odd active entries are owner calls or attended-simulator sightings.
 
 The rest of the active list is SHIP-NOTE PARTIALs whose remainder is parked past the RC, or
 long-lived owner questions; `ledger-view.sh head` says which.
