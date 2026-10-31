@@ -363,10 +363,13 @@ struct iOSMarkdownEditingSurface: View {
                         Button {
                             jumpToHeading(item)
                         } label: {
+                            // [[T-9482]]: `.iosPressable` adds no hit shape, so without this
+                            // only the heading's own letters took the tap, not the row it fills.
                             Text(item.title)
                                 .padding(.leading, CGFloat(item.level - 1) * 12)
                                 .foregroundStyle(Theme.text)
                                 .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                                .contentShape(Rectangle())
                         }
                         .buttonStyle(.iosPressable)
                     }
@@ -404,9 +407,11 @@ struct iOSMarkdownEditingSurface: View {
                         Button {
                             linkMention(note)
                         } label: {
+                            // [[T-9482]]: the whole row, as the outline row above.
                             Label(note.displayTitle, systemImage: "link.badge.plus")
                                 .foregroundStyle(Theme.text)
                                 .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                                .contentShape(Rectangle())
                         }
                         .buttonStyle(.iosPressable)
                         .accessibilityLabel(NoteUnlinkedMentionCopy.linkControlLabel(noteTitle: note.displayTitle))

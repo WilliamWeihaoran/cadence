@@ -296,7 +296,10 @@ struct iOSListEditorSheet: View {
                                 .font(.system(size: 14, weight: .semibold))
                                 .foregroundStyle(Theme.text)
                         }
-                        .frame(minHeight: 44)
+                        // [[T-9483]]: the whole form row. Under `.plain` a row without a hit
+                        // shape took a tap only on the glyph and the two words.
+                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                        .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
                 } header: {

@@ -227,13 +227,11 @@ struct iOSFocusView: View {
             ScrollView {
                 VStack(spacing: 12) {
                     HStack(spacing: 8) {
+                        // [[T-9481]]: the shared back control, the one `compactLayout`'s header
+                        // draws in portrait. A private chevron here was black where portrait's is
+                        // blue, and only its glyph took a tap under `.plain`.
                         if isCompact {
-                            Button { dismiss() } label: {
-                                Image(systemName: "chevron.left")
-                                    .frame(width: 44, height: 44)
-                            }
-                            .buttonStyle(.plain)
-                            .accessibilityLabel("Back")
+                            iOSHeaderBackButton(action: { dismiss() })
                         }
                         VStack(alignment: .leading, spacing: 4) {
                             Text(selectedItem.map(title(of:)) ?? "Focus")
