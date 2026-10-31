@@ -854,7 +854,7 @@ struct CadenceQuickCreateTaskInspectorTests {
         #expect(list.contains(".background(selection == p ? Theme.blue.opacity(0.08) : Color.clear)"),
                 "the current priority has no selected-row fill")
         #expect(list.contains(".clipShape(RoundedRectangle(cornerRadius: 6))"), "the row fill is not clipped")
-        #expect(list.contains(".modifier(CreateTaskPickerHover())"), "the rows do not light under the pointer")
+        #expect(list.contains(".buttonStyle(.cadenceMenuRow)"), "the rows do not light under the pointer")
 
         // The embed's close waits on its commit, as the status rows' does.
         let embed = try code(Self.embedPopoverPath)

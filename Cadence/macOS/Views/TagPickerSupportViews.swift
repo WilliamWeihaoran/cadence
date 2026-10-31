@@ -235,8 +235,8 @@ struct TagPickerPlaceholderRow: View {
                     .padding(.vertical, 8)
                     .contentShape(Rectangle())
                 }
-                .buttonStyle(.cadencePlain)
-                .cadenceHoverHighlight(cornerRadius: 6)
+                // [[T-9465]]: the row style is the one hover plate.
+                .buttonStyle(.cadenceMenuRow)
                 .accessibilityLabel("Add Default Tags")
                 .help("Add Cadence's starter tags")
 

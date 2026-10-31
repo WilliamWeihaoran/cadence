@@ -474,7 +474,9 @@ struct MacTaskRow: View {
             .background(isDoDateHovered ? Theme.surfaceElevated.opacity(0.55) : .clear)
             .clipShape(RoundedRectangle(cornerRadius: 4))
         }
-        .buttonStyle(.cadencePlain)
+        // `.plain`: the underline and the 4pt wash above are this chip's hover; `.cadencePlain`
+        // lit a third, 10pt blue layer around them ([[T-9465]]).
+        .buttonStyle(.plain)
         // The pill announced a bare "Tomorrow" with nothing saying which of the row's two dates it
         // set — and the due-date pill beside it announced another bare "Tomorrow" (T-594).
         .accessibilityLabel(CadenceTaskControlAccessibility.doDate)
@@ -514,7 +516,9 @@ struct MacTaskRow: View {
             .background(isDueDateHovered ? Theme.surfaceElevated.opacity(0.55) : .clear)
             .clipShape(RoundedRectangle(cornerRadius: 4))
         }
-        .buttonStyle(.cadencePlain)
+        // `.plain`: the underline and the 4pt wash above are this chip's hover; `.cadencePlain`
+        // lit a third, 10pt blue layer around them ([[T-9465]]).
+        .buttonStyle(.plain)
         .padding(.trailing, metrics.contentSpacing)
         .accessibilityLabel(CadenceTaskControlAccessibility.dueDate)
         .accessibilityValue(DateFormatters.relativeDate(from: task.dueDate))
@@ -562,7 +566,9 @@ struct MacTaskRow: View {
             .background(isRepeatChipHovered ? Theme.surfaceElevated.opacity(0.55) : .clear)
             .clipShape(RoundedRectangle(cornerRadius: 4))
         }
-        .buttonStyle(.cadencePlain)
+        // `.plain`: the underline and the 4pt wash above are this chip's hover; `.cadencePlain`
+        // lit a third, 10pt blue layer around them ([[T-9465]]).
+        .buttonStyle(.plain)
         .padding(.leading, metrics.badgeSpacing)
         // Named and valued apart for the reason T-594 gives about the two date pills: the label
         // says which field this sets, the value says what it is set to.

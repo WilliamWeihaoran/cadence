@@ -194,6 +194,9 @@ struct CreateTaskSheet: View {
                 Image(systemName: "xmark")
                     .font(.system(size: 9))
                     .foregroundStyle(Theme.dim.opacity(0.5))
+                    // [[T-9501]]: the bare 9pt glyph was the whole hit area and hover wash.
+                    .frame(minWidth: 18, minHeight: 16)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.cadencePlain)
             // T-673: the glyph says "remove"; VoiceOver still needs to know remove *what* — a

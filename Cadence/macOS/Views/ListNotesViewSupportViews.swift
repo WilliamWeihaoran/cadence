@@ -88,7 +88,8 @@ struct CollapsibleNoteSection<Content: View>: View {
                 .padding(.vertical, 6)
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.cadencePlain)
+            // `.plain`: the highlight below is the one hover layer ([[T-9465]]).
+            .buttonStyle(.plain)
             .cadenceHoverHighlight(
                 cornerRadius: Theme.radiusControlCompact,
                 fillColor: Theme.surfaceElevated.opacity(0.55),

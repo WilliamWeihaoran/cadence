@@ -38,6 +38,9 @@ struct LinksView: View {
                 } label: {
                     Image(systemName: addForm.headerSymbol)
                         .foregroundStyle(Theme.blue)
+                        // [[T-9501]]: the bare glyph was the whole hit area and hover wash.
+                        .frame(minWidth: 22, minHeight: 22)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.cadencePlain)
                 .cadenceControlLabel(addForm.headerLabel)
@@ -285,6 +288,9 @@ private struct LinkRow: View {
                     Image(systemName: "arrow.up.right.square")
                         .font(.system(size: 13))
                         .foregroundStyle(Theme.blue)
+                        // [[T-9501]]: the bare glyph was the whole hit area and hover wash.
+                        .frame(minWidth: 22, minHeight: 22)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.cadencePlain)
                 .cadenceControlLabel(MacSavedLinkRowActions.openActionName)
@@ -293,6 +299,9 @@ private struct LinkRow: View {
                     Image(systemName: "trash")
                         .font(.system(size: 13))
                         .foregroundStyle(Theme.red)
+                        // [[T-9501]]: the bare glyph was the whole hit area and hover wash.
+                        .frame(minWidth: 22, minHeight: 22)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.cadencePlain)
                 .cadenceControlLabel(MacSavedLinkRowActions.deleteActionName)

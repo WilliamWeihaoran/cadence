@@ -120,6 +120,9 @@ struct SubtaskRow: View {
                 Image(systemName: subtask.isDone ? "checkmark.circle.fill" : "circle")
                     .font(.system(size: 14))
                     .foregroundStyle(subtask.isDone ? Theme.green : Theme.dim.opacity(0.6))
+                    // [[T-9501]]: the bare glyph was the whole hit area and hover wash.
+                    .frame(minWidth: 18, minHeight: 16)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.cadencePlain)
             // T-673 gave the circle a name; [[T-8610]] made it the subtask name iOS's subtask
@@ -140,6 +143,9 @@ struct SubtaskRow: View {
                     Image(systemName: "xmark")
                         .font(.system(size: 9))
                         .foregroundStyle(Theme.dim.opacity(0.5))
+                        // [[T-9501]]: the bare 9pt glyph was the whole hit area and hover wash.
+                        .frame(minWidth: 18, minHeight: 16)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.cadencePlain)
                 .accessibilityLabel("Remove")
@@ -471,19 +477,6 @@ private struct SectionPickerRow: View {
     }
 }
 
-struct TaskPickerRowHover: ViewModifier {
-    @State private var isHovered = false
-
-    func body(content: Content) -> some View {
-        content
-            .background(
-                RoundedRectangle(cornerRadius: 6)
-                    .fill(isHovered ? Theme.blue.opacity(0.06) : Color.clear)
-            )
-            .onHover { isHovered = $0 }
-    }
-}
-
 // `CollapsibleTaskGroupHeader` and `CompletedSectionHeader` were here.
 //
 // `CollapsibleTaskGroupHeader` was the chevron-plus-counts row with the deliberately colourless
@@ -608,10 +601,9 @@ struct CadenceEnumPickerBadge<T: CaseIterable & RawRepresentable & Identifiable>
                         .background(selection.id == value.id ? Theme.blue.opacity(0.08) : .clear)
                         .clipShape(RoundedRectangle(cornerRadius: 6))
                     }
-                    .buttonStyle(.cadencePlain)
-                    // [[T-9312]]: the Sort and Group menus' rows lit nothing under the
-                    // pointer, where the section picker beside it and every other Mac choice menu do.
-                    .modifier(TaskPickerRowHover())
+                    // [[T-9312]] wanted these rows lit under the pointer; [[T-9465]]: the row
+                    // style is that one plate, where `.cadencePlain` plus a modifier drew two.
+                    .buttonStyle(.cadenceMenuRow)
                 }
             }
             .padding(.vertical, 6)

@@ -310,6 +310,9 @@ struct TaskEmbedFieldEditorPopover: View {
                     Image(systemName: "xmark.circle.fill")
                         .font(.system(size: 13, weight: .semibold))
                         .foregroundStyle(Theme.dim)
+                        // [[T-9501]]: the bare glyph was the whole hit area and hover wash.
+                        .frame(minWidth: 22, minHeight: 22)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.cadencePlain)
                 .cadenceControlLabel("Clear time")
@@ -372,10 +375,9 @@ struct TaskEmbedFieldEditorPopover: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
         }
-        // `.plain`, not `.cadencePlain`: `TaskPickerRowHover` below is the one hover layer, and
-        // cadencePlain's radius-10 fill would nest a second one at a different radius.
-        .buttonStyle(.plain)
-        .modifier(TaskPickerRowHover())
+        // The shared row style is the one hover layer ([[T-9465]]); `.cadencePlain`'s radius-10
+        // wash would nest a second one at a different radius.
+        .buttonStyle(.cadenceMenuRow)
     }
 
     private func setStatus(_ status: TaskStatus) -> Bool {

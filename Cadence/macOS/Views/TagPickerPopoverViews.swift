@@ -96,8 +96,7 @@ struct TagPickerPopover: View {
                             .padding(.vertical, 8)
                             .contentShape(Rectangle())
                         }
-                        .buttonStyle(.cadencePlain)
-                        .cadenceHoverHighlight(cornerRadius: 6)
+                        .buttonStyle(.cadenceMenuRow)
                     } else if canCreate {
                         Button {
                             createQueriedTagIfNeeded()
@@ -115,8 +114,7 @@ struct TagPickerPopover: View {
                             .padding(.vertical, 8)
                             .contentShape(Rectangle())
                         }
-                        .buttonStyle(.cadencePlain)
-                        .cadenceHoverHighlight(cornerRadius: 6)
+                        .buttonStyle(.cadenceMenuRow)
                     }
 
                     TagPickerPlaceholderRow(
@@ -196,12 +194,12 @@ struct TagPickerPopover: View {
                 .padding(.vertical, 7)
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.cadencePlain)
+            // [[T-9465]]: the row style is the one hover plate, at the selected fill's radius.
+            .buttonStyle(.cadenceMenuRow)
             // T-7334: the tint and checkmark draw which tags the item carries; this says it.
             .accessibilityAddTraits(selected ? .isSelected : [])
             .background(selected ? Theme.blue.opacity(0.08) : Color.clear)
             .clipShape(RoundedRectangle(cornerRadius: 6))
-            .cadenceHoverHighlight(cornerRadius: 6)
 
             Button {
                 beginEditing(tag)
@@ -212,8 +210,7 @@ struct TagPickerPopover: View {
                     .frame(width: 24, height: 24)
                     .contentShape(Rectangle())
             }
-            .buttonStyle(.cadencePlain)
-            .cadenceHoverHighlight(cornerRadius: 6)
+            .buttonStyle(.cadenceMenuRow)
             // T-7337: one "Edit tag" per row named none of them.
             .cadenceControlLabel(CadenceTagChipStyle.editControlLabel(for: tag))
         }

@@ -7,7 +7,7 @@ import SwiftUI
 //
 // It is not convergeable as written. `CadenceContextPickerList` is keyboard-first — `onMoveCommand`
 // (macOS/tvOS only), a focused search field that takes focus on appear, a highlight index driven by
-// arrow keys, an `onSubmit` that commits it — and `ContextPickerRowHover` is a hover wash. On iOS
+// arrow keys, an `onSubmit` that commits it — and `.cadenceMenuRow` is a hover wash. On iOS
 // none of that fires, and what would be left is a list with a keyboard permanently up. The two iOS
 // call sites already route through the shared `iOSChoiceRow` / `iOSChoicePopoverList` idiom, which
 // is the touch answer to the same question.
@@ -217,8 +217,8 @@ struct CadenceContextPickerList: View {
             .clipShape(RoundedRectangle(cornerRadius: 6))
             .contentShape(RoundedRectangle(cornerRadius: 6))
         }
-        .buttonStyle(.cadencePlain)
-        .modifier(ContextPickerRowHover())
+        // [[T-9465]]: the row style is the one hover plate.
+        .buttonStyle(.cadenceMenuRow)
         .padding(.horizontal, 4)
     }
 
@@ -258,16 +258,4 @@ enum CadenceContextPickerStyle {
     var cornerRadius: CGFloat { self == .compact ? 7 : 8 }
 }
 
-private struct ContextPickerRowHover: ViewModifier {
-    @State private var isHovered = false
-
-    func body(content: Content) -> some View {
-        content
-            .background(
-                RoundedRectangle(cornerRadius: 6)
-                    .fill(isHovered ? Theme.blue.opacity(0.06) : Color.clear)
-            )
-            .onHover { isHovered = $0 }
-    }
-}
 #endif

@@ -55,6 +55,52 @@ private struct CadencePlainButtonBody: View {
     }
 }
 
+/// **[[T-9465]].** The one hover plate a Mac choice-menu row draws: a fill at
+/// `CadenceMenuRowButtonStyle.cornerRadius` behind the whole row, and nothing else.
+///
+/// The rows used to take `.cadencePlain` *and* add their own plate (`CreateTaskPickerHover`,
+/// `TaskPickerRowHover`, `CalendarPickerRowHover`, `ContextPickerRowHover`, a hand-rolled
+/// `isHovered` fill, or `.cadenceHoverHighlight(cornerRadius: 6)`), so one pointer lit two layers at
+/// two radii -- the style's 10pt wash and stroke around the row's 6pt fill -- against AGENTS.md's
+/// one-hover-layer-at-one-radius rule. The rows' selected / keyboard-highlighted fills stay on
+/// the label at this same radius, so selection and hover share one shape.
+struct CadenceMenuRowButtonStyle: ButtonStyle {
+    static let cornerRadius: CGFloat = 6
+    static let hoverOpacity: Double = 0.06
+    static let pressedOpacity: Double = 0.12
+
+    func makeBody(configuration: Configuration) -> some View {
+        CadenceMenuRowButtonBody(configuration: configuration)
+    }
+}
+
+private struct CadenceMenuRowButtonBody: View {
+    let configuration: ButtonStyle.Configuration
+    @State private var isHovered = false
+
+    private var fillOpacity: Double {
+        if configuration.isPressed { return CadenceMenuRowButtonStyle.pressedOpacity }
+        if isHovered { return CadenceMenuRowButtonStyle.hoverOpacity }
+        return 0
+    }
+
+    var body: some View {
+        #if os(macOS)
+        configuration.label
+            .contentShape(Rectangle())
+            .background(
+                RoundedRectangle(cornerRadius: CadenceMenuRowButtonStyle.cornerRadius)
+                    .fill(Theme.blue.opacity(fillOpacity))
+            )
+            .animation(.easeOut(duration: 0.12), value: isHovered)
+            .modifier(CadenceHoverTracking(isHovered: $isHovered))
+        #else
+        iOSPressableButtonStyle().makeBody(configuration: configuration)
+            .contentShape(Rectangle())
+        #endif
+    }
+}
+
 struct CadenceHoverHighlight: ViewModifier {
     var cornerRadius: CGFloat = 8
     var fillColor: Color = Theme.blue.opacity(0.06)
@@ -91,6 +137,10 @@ private struct CadenceHoverTracking: ViewModifier {
 
 extension ButtonStyle where Self == CadencePlainButtonStyle {
     static var cadencePlain: CadencePlainButtonStyle { CadencePlainButtonStyle() }
+}
+
+extension ButtonStyle where Self == CadenceMenuRowButtonStyle {
+    static var cadenceMenuRow: CadenceMenuRowButtonStyle { CadenceMenuRowButtonStyle() }
 }
 
 extension View {

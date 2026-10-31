@@ -35,7 +35,7 @@ struct CadenceTagPickerAccessibilityTests {
     @Test func macPopoverTagRowSaysWhichTagsAreOn() throws {
         let row = try Self.compactBody("private func tagRow(_ tag: Tag) -> some View", in: Self.macPopoverPath)
         #expect(
-            row.contains(".buttonStyle(.cadencePlain).accessibilityAddTraits(selected?.isSelected:[])"),
+            row.contains(".buttonStyle(.cadenceMenuRow).accessibilityAddTraits(selected?.isSelected:[])"),
             "VoiceOver must hear which tags the Mac tag picker has on, on the row's own button"
         )
     }
@@ -97,7 +97,7 @@ struct CadenceTagPickerAccessibilityTests {
     @Test func macInlinePickerRowSaysWhichTagsAreOn() throws {
         let row = try Self.compactBody("private struct InlineTagPickerRow: View", in: Self.macInlinePath)
         #expect(
-            row.contains(".buttonStyle(.cadencePlain).accessibilityAddTraits(isSelected?.isSelected:[])"),
+            row.contains(".buttonStyle(.cadenceMenuRow).accessibilityAddTraits(isSelected?.isSelected:[])"),
             "VoiceOver must hear which tags the title's inline # picker has on"
         )
     }

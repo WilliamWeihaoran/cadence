@@ -167,8 +167,8 @@ struct CadenceCalendarPickerList: View {
             .clipShape(RoundedRectangle(cornerRadius: 6))
             .contentShape(RoundedRectangle(cornerRadius: 6))
         }
-        .buttonStyle(.cadencePlain)
-        .modifier(CalendarPickerRowHover())
+        // [[T-9465]]: the row style is the one hover plate.
+        .buttonStyle(.cadenceMenuRow)
         .padding(.horizontal, 4)
     }
 
@@ -322,16 +322,4 @@ enum CadenceCalendarPickerStyle {
     var cornerRadius: CGFloat { self == .compact ? 7 : 8 }
 }
 
-private struct CalendarPickerRowHover: ViewModifier {
-    @State private var isHovered = false
-
-    func body(content: Content) -> some View {
-        content
-            .background(
-                RoundedRectangle(cornerRadius: 6)
-                    .fill(isHovered ? Theme.blue.opacity(0.06) : Color.clear)
-            )
-            .onHover { isHovered = $0 }
-    }
-}
 #endif

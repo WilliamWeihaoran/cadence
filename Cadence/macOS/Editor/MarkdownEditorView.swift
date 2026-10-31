@@ -430,7 +430,8 @@ private struct MarkdownReferenceMenuButton: View {
                 .contentShape(RoundedRectangle(cornerRadius: Theme.radiusControlCompact))
         }
         .menuStyle(.borderlessButton)
-        .buttonStyle(.cadencePlain)
+        // `.plain`: the highlight below is the one hover layer ([[T-9465]]).
+        .buttonStyle(.plain)
         .background(Theme.bg.opacity(0.001))
         .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControlCompact))
         .cadenceHoverHighlight(cornerRadius: Theme.radiusControlCompact, fillColor: Theme.blue.opacity(0.08), strokeColor: Theme.blue.opacity(0.16))
@@ -452,7 +453,8 @@ private struct MarkdownToolbarButton: View {
                 .frame(width: 28, height: 26)
                 .contentShape(RoundedRectangle(cornerRadius: Theme.radiusControlCompact))
         }
-        .buttonStyle(.cadencePlain)
+        // `.plain`: the highlight below is the one hover layer ([[T-9465]]).
+        .buttonStyle(.plain)
         .background(Theme.bg.opacity(0.001))
         .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControlCompact))
         .cadenceHoverHighlight(cornerRadius: Theme.radiusControlCompact, fillColor: Theme.blue.opacity(0.08), strokeColor: Theme.blue.opacity(0.16))
@@ -477,7 +479,8 @@ private struct MarkdownToolbarTextButton: View {
                 .frame(width: 30, height: 26)
                 .contentShape(RoundedRectangle(cornerRadius: Theme.radiusControlCompact))
         }
-        .buttonStyle(.cadencePlain)
+        // `.plain`: the highlight below is the one hover layer ([[T-9465]]).
+        .buttonStyle(.plain)
         .background(Theme.bg.opacity(0.001))
         .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControlCompact))
         .cadenceHoverHighlight(cornerRadius: Theme.radiusControlCompact, fillColor: Theme.blue.opacity(0.08), strokeColor: Theme.blue.opacity(0.16))

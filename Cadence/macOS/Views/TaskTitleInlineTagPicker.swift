@@ -112,8 +112,8 @@ struct TaskTitleInlineTagPicker: View {
             .background(isHighlighted ? Theme.blue.opacity(0.08) : .clear)
             .clipShape(RoundedRectangle(cornerRadius: 6))
         }
-        .buttonStyle(.cadencePlain)
-        .cadenceHoverHighlight(cornerRadius: 6)
+        // [[T-9465]]: the row style is the one hover plate.
+        .buttonStyle(.cadenceMenuRow)
     }
 
     private var optionCount: Int {
@@ -135,8 +135,6 @@ private struct InlineTagPickerRow: View {
     let isSelected: Bool
     let action: () -> Void
 
-    @State private var isHovered = false
-
     var body: some View {
         Button(action: action) {
             HStack(spacing: 8) {
@@ -151,19 +149,13 @@ private struct InlineTagPickerRow: View {
             .padding(.horizontal, 10)
             .padding(.vertical, 7)
             .contentShape(Rectangle())
-            .background(rowBackground)
+            .background(isHighlighted ? Theme.blue.opacity(0.08) : Color.clear)
             .clipShape(RoundedRectangle(cornerRadius: 6))
         }
-        .buttonStyle(.cadencePlain)
+        // [[T-9465]]: the row style is the one hover plate.
+        .buttonStyle(.cadenceMenuRow)
         // T-7334: the checkmark says which tags the title already carries; this says it aloud.
         .accessibilityAddTraits(isSelected ? .isSelected : [])
-        .onHover { isHovered = $0 }
-    }
-
-    private var rowBackground: Color {
-        if isHighlighted { return Theme.blue.opacity(0.08) }
-        if isHovered { return Theme.blue.opacity(0.06) }
-        return .clear
     }
 }
 #endif

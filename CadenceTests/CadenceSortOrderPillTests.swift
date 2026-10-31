@@ -67,9 +67,9 @@ struct CadenceSortOrderPillTests {
         ))
         let menu = try #require(badge.range(of: "private var menuBadge: some View {"))
         let rows = String(badge[menu.upperBound...])
-        let row = try #require(rows.range(of: ".buttonStyle(.cadencePlain)"))
-        let hover = try #require(rows.range(of: ".modifier(TaskPickerRowHover())"), "the menu rows have no hover plate")
-        #expect(row.upperBound <= hover.lowerBound, "the hover plate is not on the menu's row buttons")
+        // [[T-9465]]: the row style is the hover plate, so it is the only one.
+        #expect(rows.contains(".buttonStyle(.cadenceMenuRow)"), "the menu rows have no hover plate")
+        #expect(!rows.contains(".buttonStyle(.cadencePlain)"), "the menu rows light a second, 10pt hover layer")
         #expect(rows.contains(".background(selection.id == value.id ? Theme.blue.opacity(0.08) : .clear)"))
     }
 

@@ -104,7 +104,7 @@ struct TaskPriorityPicker: View {
 }
 
 /// **The one macOS priority menu** -- every `TaskPriority` with its mark, its name, a checkmark and
-/// a blue fill on the current one, and `CreateTaskPickerHover`'s plate under the pointer.
+/// a blue fill on the current one, and `.cadenceMenuRow`'s plate under the pointer ([[T-9465]]).
 ///
 /// **[[T-9292]].** `TaskPriorityPicker` drew these rows inline, and the note embed card's Priority
 /// field drew KanbanPriorityPickerPopover, a line-for-line copy that had lost the selected-row
@@ -141,8 +141,8 @@ struct TaskPriorityChoiceList: View {
                     .background(selection == p ? Theme.blue.opacity(0.08) : Color.clear)
                     .clipShape(RoundedRectangle(cornerRadius: 6))
                 }
-                .buttonStyle(.cadencePlain)
-                .modifier(CreateTaskPickerHover())
+                // [[T-9465]]: the row style is the one hover plate.
+                .buttonStyle(.cadenceMenuRow)
             }
         }
         .padding(.vertical, 6).frame(minWidth: 140).background(Theme.surfaceElevated)
@@ -156,7 +156,6 @@ struct TildeContainerPickerRow: View {
     let isHighlighted: Bool
     let isSelected: Bool
     let action: () -> Void
-    @State private var isHovered = false
 
     var body: some View {
         Button(action: action) {
@@ -170,17 +169,11 @@ struct TildeContainerPickerRow: View {
             }
             .padding(.horizontal, 12).padding(.vertical, 7)
             .frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
-            .background(rowBackground)
+            .background(isHighlighted ? Theme.blue.opacity(0.08) : Color.clear)
             .clipShape(RoundedRectangle(cornerRadius: 6))
         }
-        .buttonStyle(.cadencePlain)
-        .onHover { isHovered = $0 }
-    }
-
-    private var rowBackground: Color {
-        if isHighlighted { return Theme.blue.opacity(0.08) }
-        if isHovered { return Theme.blue.opacity(0.06) }
-        return .clear
+        // [[T-9465]]: the row style is the one hover plate.
+        .buttonStyle(.cadenceMenuRow)
     }
 }
 
@@ -282,18 +275,4 @@ struct TaskDateChip: View {
     }
 }
 
-struct CreateTaskPickerHover: ViewModifier {
-    var cornerRadius: CGFloat = 6
-    @State private var isHovered = false
-
-    func body(content: Content) -> some View {
-        content
-            .background(
-                RoundedRectangle(cornerRadius: cornerRadius)
-                    .fill(isHovered ? Theme.blue.opacity(0.06) : Color.clear)
-            )
-            .contentShape(RoundedRectangle(cornerRadius: cornerRadius))
-            .onHover { isHovered = $0 }
-    }
-}
 #endif
