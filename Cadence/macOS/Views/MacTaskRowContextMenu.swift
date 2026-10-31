@@ -301,6 +301,45 @@ struct MacTaskRowContextMenu: View {
         return landed ? .settled : .refused(.recurrence(CadenceTaskFieldEditCommit.saveFailureNotice))
     }
 
+    /// The second half of `selectRecurrenceRule`: a series member's rule, once the scope dialog has
+    /// been answered. `iOSTaskRowRecurrenceScopeDialogModifier.applyPendingRecurrenceRule`'s unit,
+    /// on the Mac: the series is fetched only for "this and future", a failed fetch is not quietly
+    /// downgraded to a one-occurrence edit, and the commit's undo reaches every occurrence the edit
+    /// wrote. `static` and shared for the reason `selectRecurrenceRule` is: the row's dialog and
+    /// the note embed card's dialog are two places to answer the scope question, and [[T-9122]]
+    /// found them answering it through two writers.
+    static func applyRecurrenceRule(
+        _ rule: TaskRecurrenceRule,
+        scope: CadenceTaskRecurrenceEditScope,
+        for task: AppTask,
+        modelContext: ModelContext,
+        commit: (ModelContext) throws -> Void = { try $0.save() }
+    ) -> ActionOutcome {
+        var allTasks: [AppTask] = []
+        if scope == .thisAndFuture {
+            do {
+                allTasks = try modelContext.fetch(FetchDescriptor<AppTask>(sortBy: [SortDescriptor(\.order)]))
+            } catch {
+                return .refused(.recurrence(CadenceRecurrenceScopeCopy.taskScopeLookupFailureNotice))
+            }
+        }
+
+        let targets = CadenceTaskRecurrenceWorkflowSupport.recurrenceTargets(
+            from: task,
+            allTasks: allTasks,
+            scope: scope
+        )
+        let landed = CadenceTaskFieldEditCommit.commit(task, alsoRestoring: targets, in: modelContext, commit: commit) {
+            CadenceTaskRecurrenceWorkflowSupport.applyRecurrenceRule(
+                rule,
+                to: task,
+                allTasks: allTasks,
+                scope: scope
+            )
+        }
+        return landed ? .settled : .refused(.recurrence(CadencePendingChangePersistence.editFailureNotice))
+    }
+
     /// The shared helper's own `try? save()` is an in-place field edit the save rule permits, and
     /// it reports nothing, so there is nothing here to refuse.
     static func moveSection(_ section: String, task: AppTask, modelContext: ModelContext) -> ActionOutcome {
@@ -441,38 +480,18 @@ struct MacTaskRowMenuOutcomeModifier: ViewModifier {
             }
     }
 
-    /// `iOSTaskRowRecurrenceScopeDialogModifier.applyPendingRecurrenceRule`'s unit, on the Mac: the
-    /// series is fetched only for "this and future", a failed fetch is not quietly downgraded to a
-    /// one-occurrence edit, and the commit's undo reaches every occurrence the edit wrote.
+    /// The scope dialog's answer, written by `MacTaskRowContextMenu.applyRecurrenceRule` -- the
+    /// one Mac series writer, shared with the note embed card's Repeat field ([[T-9122]]).
     private func applyPendingRecurrenceRule(scope: CadenceTaskRecurrenceEditScope) {
         guard let rule = pendingRecurrenceRule else { return }
         pendingRecurrenceRule = nil
-
-        var allTasks: [AppTask] = []
-        if scope == .thisAndFuture {
-            do {
-                allTasks = try modelContext.fetch(FetchDescriptor<AppTask>(sortBy: [SortDescriptor(\.order)]))
-            } catch {
-                failure = .recurrence(CadenceRecurrenceScopeCopy.taskScopeLookupFailureNotice)
-                return
-            }
-        }
-
-        let targets = CadenceTaskRecurrenceWorkflowSupport.recurrenceTargets(
-            from: task,
-            allTasks: allTasks,
-            scope: scope
-        )
-        let landed = CadenceTaskFieldEditCommit.commit(task, alsoRestoring: targets, in: modelContext) {
-            CadenceTaskRecurrenceWorkflowSupport.applyRecurrenceRule(
-                rule,
-                to: task,
-                allTasks: allTasks,
-                scope: scope
-            )
-        }
-        if !landed {
-            failure = .recurrence(CadencePendingChangePersistence.editFailureNotice)
+        if case .refused(let refusal) = MacTaskRowContextMenu.applyRecurrenceRule(
+            rule,
+            scope: scope,
+            for: task,
+            modelContext: modelContext
+        ) {
+            failure = refusal
         }
     }
 }

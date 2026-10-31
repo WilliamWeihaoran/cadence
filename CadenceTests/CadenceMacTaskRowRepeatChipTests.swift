@@ -158,5 +158,40 @@ struct CadenceMacTaskRowRepeatChipTests {
         #expect(MacTaskRowRepeatPickerPopover.failureNotice(for: outcome) == nil)
         #expect(task.recurrenceRule == .weekly, "the rule changed before the scope was answered")
     }
+
+    // MARK: - [[T-9122]]: the note embed card's Repeat field is the same picker
+
+    private static let embedPath = "Cadence/macOS/Views/TaskEmbedFieldEditorPopover.swift"
+
+    /// **The embed card's Repeat field draws the row chip's list and writes through its writer.**
+    /// It drew a private option list -- a "Repeat" caption, a blue dot where the rule glyph goes, a
+    /// 6pt corner -- and its own series branch, so one Mac field had two looks and two writers.
+    @Test func theEmbedRepeatFieldDrawsTheSharedListAndWritesOnlyThroughTheRowsWriters() throws {
+        let source = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile(Self.embedPath))
+        #expect(source.contains("CadenceChoicePopoverList("), "the embed Repeat field draws its own list")
+        #expect(source.contains("systemImage: rule.systemImage"), "the embed rows lost the rule glyph")
+        #expect(source.contains("TaskRecurrenceRule.allCases"), "the embed field does not offer every rule")
+        #expect(source.contains("MacTaskRowContextMenu.selectRecurrenceRule("), "the pick bypasses the row's writer")
+        #expect(source.contains("MacTaskRowContextMenu.applyRecurrenceRule("), "the scope answer bypasses the row's writer")
+        for retired in ["func optionList", "func optionButton", "TaskWorkflowService.applyRecurrenceRule(",
+                        "CadenceTaskRecurrenceWorkflowSupport.applyRecurrenceRule(", "task.recurrenceRule ="] {
+            #expect(!source.contains(retired), "the embed popover still holds its own \(retired)")
+        }
+    }
+
+    /// **Only a settled write closes the embed list** -- unlike the row chip, which also closes on a
+    /// scope question, because there the row hosts the dialog. Here the dialog hangs off the popover
+    /// itself, so closing would dismiss the question with it; a refusal stays open as everywhere.
+    @Test func theEmbedListClosesOnlyOnASettledWrite() {
+        #expect(TaskEmbedFieldEditorPopover.recurrenceClosesPopover(for: .settled))
+        #expect(
+            TaskEmbedFieldEditorPopover.recurrenceClosesPopover(for: .needsRecurrenceScope(.weekly)) == false,
+            "the embed list closed over its own scope dialog"
+        )
+        #expect(
+            TaskEmbedFieldEditorPopover.recurrenceClosesPopover(for: .refused(.recurrence("nope"))) == false,
+            "the embed list closed over a refused write"
+        )
+    }
 }
 #endif

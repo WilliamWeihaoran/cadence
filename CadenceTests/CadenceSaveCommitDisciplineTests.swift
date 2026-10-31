@@ -3305,9 +3305,11 @@ enum CadenceSaveCommitRule {
         // [[T-636]](c) left too: `iOSFocusView.complete` guards its reset and its advance on
         // `completeFocusSession`'s answer, so the stopwatch is cleared only once the store has the
         // session it measured.
-        // [[T-636]](a) from the note editor's task embed: `content` answers `true` to the popover
-        // over `setStatus`, which reaches the recurrence insert.
-        "Cadence/macOS/Views/TaskEmbedFieldEditorPopover.swift": ["content"],
+        // [[T-636]](a) from the note editor's task embed left with [[T-9122]]: `content`'s Repeat
+        // field now hands the list the answer of `MacTaskRowContextMenu.selectRecurrenceRule`
+        // (the committing `CadenceChoicePopoverList`), so nothing in it reports over a swallow.
+        // The list is empty now; the half and its instrument stay to keep it so.
+        :
     ]
 
     static func indirectReportInstrument(swallowing index: SwallowingIndex) throws -> CadenceScanInstrument {

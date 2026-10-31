@@ -24,7 +24,7 @@ struct TaskEmbedFieldEditorPopover: View {
     @State private var dateViewMonth = Date()
     @State private var pendingRecurrenceRule: TaskRecurrenceRule?
     /// Set when the commit was refused. The popover stays open holding it and the note editor is
-    /// never told to repaint the card — see `commit(alsoRestoring:_:)`.
+    /// never told to repaint the card — see `commit(_:)`.
     @State private var failureNotice: String?
 
     var body: some View {
@@ -32,7 +32,8 @@ struct TaskEmbedFieldEditorPopover: View {
             content
                 .padding(popoverPadding)
 
-            if let failureNotice {
+            // The Repeat list draws its own notice under its rows, as the row chip's does.
+            if let failureNotice, initialField != .recurrence {
                 CadenceInlineFailureNotice(text: failureNotice)
                     .padding(.horizontal, 12)
                     .padding(.bottom, 10)
@@ -202,18 +203,28 @@ struct TaskEmbedFieldEditorPopover: View {
                 }
             }
         case .recurrence:
-            optionList(title: "Repeat") {
-                ForEach(TaskRecurrenceRule.allCases, id: \.self) { rule in
-                    optionButton(rule.label, isSelected: task.recurrenceRule == rule) {
-                        selectRecurrenceRule(rule)
-                    }
-                }
-            }
+            // [[T-9122]]: the same list, and the same writer, as the task row's repeat chip
+            // (`MacTaskRowRepeatPickerPopover`). This field drew a private option list with its
+            // own rule-glyph-less rows and its own series branch; one field on one platform had
+            // two looks and two writers, and no hardware constraint answered the difference.
+            CadenceChoicePopoverList(
+                rows: TaskRecurrenceRule.allCases.map { rule in
+                    CadenceChoiceRow(value: rule, title: rule.label, systemImage: rule.systemImage, color: Theme.dim)
+                },
+                selection: task.recurrenceRule,
+                isPresented: popoverOpenBinding,
+                failureNotice: failureNotice,
+                select: { rule in selectRecurrenceRule(rule) }
+            )
         }
     }
 
-    private var popoverWidth: CGFloat {
+    /// `nil` leaves the width to the content: the Repeat list is `CadenceFittedPopover`, which
+    /// sizes (and type-scales) its own frame, and a fixed width here would squeeze it.
+    private var popoverWidth: CGFloat? {
         switch initialField {
+        case .recurrence:
+            return nil
         case .scheduledDate, .dueDate:
             return 270
         case .container, .section:
@@ -228,7 +239,7 @@ struct TaskEmbedFieldEditorPopover: View {
 
     private var popoverPadding: CGFloat {
         switch initialField {
-        case .scheduledDate, .dueDate, .priority:
+        case .scheduledDate, .dueDate, .priority, .recurrence:
             return 0
         default:
             return 10
@@ -383,38 +394,59 @@ struct TaskEmbedFieldEditorPopover: View {
         return finishCommittedEdit()
     }
 
-    private func selectRecurrenceRule(_ rule: TaskRecurrenceRule) {
-        guard task.recurrenceRule != rule else {
-            dismiss()
-            return
+    /// The row chip's writer, `MacTaskRowContextMenu.selectRecurrenceRule`, and nothing else
+    /// ([[T-9122]]). The answer is whether the list may close; see `recurrenceClosesPopover`.
+    private func selectRecurrenceRule(_ rule: TaskRecurrenceRule) -> Bool {
+        let changes = task.recurrenceRule != rule
+        let outcome = MacTaskRowContextMenu.selectRecurrenceRule(
+            rule,
+            for: task,
+            allTasks: allTasks,
+            modelContext: modelContext
+        )
+        switch outcome {
+        case .settled:
+            failureNotice = nil
+            if changes { _ = finishCommittedEdit() }
+        case .needsRecurrenceScope(let pending):
+            failureNotice = nil
+            pendingRecurrenceRule = pending
+        case .refused(let refusal):
+            failureNotice = refusal.message
         }
+        return Self.recurrenceClosesPopover(for: outcome)
+    }
 
-        if task.isRecurrenceSeriesMember {
-            pendingRecurrenceRule = rule
-        } else {
-            guard applyRecurrenceRule(rule, scope: .thisTask) else { return }
-            dismiss()
+    /// **Where this differs from the row chip, and why.** The chip closes on "needs a scope answer"
+    /// because the row owns the scope dialog and a popover left open beneath it is a stacked
+    /// presentation. Here the dialog is attached to *this* popover — the note card has no row to
+    /// host it — so closing would take the question down with it. Only a settled write closes; a
+    /// refusal stays open with the notice under the rows ([[T-656]]'s committing form).
+    static func recurrenceClosesPopover(for outcome: MacTaskRowContextMenu.ActionOutcome) -> Bool {
+        switch outcome {
+        case .settled: return true
+        case .needsRecurrenceScope, .refused: return false
         }
     }
 
+    /// The scope dialog's answer, through the row dialog's own writer
+    /// (`MacTaskRowContextMenu.applyRecurrenceRule`): series fetched only for "this and future",
+    /// every occurrence it wrote handed to the commit's undo.
     private func applyPendingRecurrenceRule(scope: CadenceTaskRecurrenceEditScope) {
         guard let pendingRecurrenceRule else { return }
-        guard applyRecurrenceRule(pendingRecurrenceRule, scope: scope) else { return }
-        self.pendingRecurrenceRule = nil
-        dismiss()
-    }
-
-    /// `.thisAndFuture` writes the rule to every later occurrence in the series, so those tasks
-    /// are handed to the commit as well — the same list the edit itself walks, asked for once.
-    private func applyRecurrenceRule(_ rule: TaskRecurrenceRule, scope: CadenceTaskRecurrenceEditScope) -> Bool {
-        let targets = CadenceTaskRecurrenceWorkflowSupport.recurrenceTargets(
-            from: task,
-            allTasks: allTasks,
-            scope: scope
+        let outcome = MacTaskRowContextMenu.applyRecurrenceRule(
+            pendingRecurrenceRule,
+            scope: scope,
+            for: task,
+            modelContext: modelContext
         )
-        return commit(alsoRestoring: targets) {
-            TaskWorkflowService.applyRecurrenceRule(rule, to: task, allTasks: allTasks, scope: scope)
+        self.pendingRecurrenceRule = nil
+        if case .refused(let refusal) = outcome {
+            failureNotice = refusal.message
+            return
         }
+        _ = finishCommittedEdit()
+        dismiss()
     }
 
     /// Field edits commit here; status changes use the shared status commit. Both refresh only
@@ -426,10 +458,9 @@ struct TaskEmbedFieldEditorPopover: View {
     /// is refreshed exactly when the change is in the store, and a refusal leaves the task as it
     /// was found with the popover open holding the reason.
     @discardableResult
-    private func commit(alsoRestoring others: [AppTask] = [], _ apply: () -> Void) -> Bool {
+    private func commit(_ apply: () -> Void) -> Bool {
         guard CadenceTaskFieldEditCommit.commit(
             task,
-            alsoRestoring: others,
             in: modelContext,
             apply: apply
         ) else {
@@ -455,46 +486,6 @@ struct TaskEmbedFieldEditorPopover: View {
             .font(.system(size: 11, weight: .semibold))
             .foregroundStyle(Theme.dim)
     }
-
-    private func optionList<Content: View>(title: String, @ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            fieldLabel(title)
-            VStack(spacing: 2) { content() }
-        }
-    }
-
-    private func optionButton(
-        _ label: String,
-        isSelected: Bool,
-        color: Color = Theme.blue,
-        action: @escaping () -> Void
-    ) -> some View {
-        Button(action: action) {
-            HStack(spacing: 8) {
-                Circle()
-                    .fill(color)
-                    .frame(width: 7, height: 7)
-                Text(label)
-                    .font(.system(size: 13, weight: isSelected ? .semibold : .regular))
-                    .foregroundStyle(isSelected ? Theme.text : Theme.muted)
-                Spacer()
-                if isSelected {
-                    Image(systemName: "checkmark")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(Theme.blue)
-                }
-            }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 7)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(isSelected ? Theme.blue.opacity(0.08) : Color.clear)
-            .clipShape(RoundedRectangle(cornerRadius: 6))
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.cadencePlain)
-        .modifier(TaskPickerRowHover())
-    }
-
 }
 
 #endif

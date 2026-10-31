@@ -144,6 +144,9 @@ struct CadenceChoicePickerDismissalTests {
             // close is the success report and a refusal keeps the popover open with the notice
             // under the rows.
             "Cadence/macOS/Views/MacTaskRowRepeatPickerPopover.swift": (1, 1),
+            // [[T-9122]]: the note embed card's Repeat field, the row chip's list with the row
+            // chip's writer. Committing for the same reason: the write reaches the store.
+            "Cadence/macOS/Views/TaskEmbedFieldEditorPopover.swift": (1, 1),
         ]
 
         let read = CadenceSourceScan.strippedSourceReader()
@@ -192,8 +195,9 @@ struct CadenceChoicePickerDismissalTests {
         // store from a row rather than a draft a Save commits later.
         // [[T-6901]] adds the standard panel's Ends picker: 33, still 3 committing.
         // [[T-8593]] makes the iOS task sheet's occurrence count the panel's Stepper: 32, still 3.
-        #expect(found.values.map(\.calls).reduce(0, +) == 32)
-        #expect(found.values.map(\.committing).reduce(0, +) == 3)
+        // [[T-9122]] draws the embed card's Repeat field through the committing list: 33 and 4.
+        #expect(found.values.map(\.calls).reduce(0, +) == 33)
+        #expect(found.values.map(\.committing).reduce(0, +) == 4)
     }
 
     /// **The defect itself, as a detector rather than a list.**

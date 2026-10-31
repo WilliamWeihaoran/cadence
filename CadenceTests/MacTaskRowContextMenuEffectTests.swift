@@ -351,6 +351,77 @@ struct MacTaskRowContextMenuEffectTests {
         #expect(commits == 0)
     }
 
+    // MARK: - The series writer behind both Mac scope dialogs ([[T-9122]])
+
+    /// A three-occurrence series: `first` spawned `second`, which spawned `third`.
+    private func series(in context: ModelContext) throws -> [AppTask] {
+        let seriesID = UUID()
+        let tasks = (0..<3).map { index -> AppTask in
+            let task = AppTask(title: "Occurrence \(index)")
+            task.recurrenceRule = .daily
+            task.recurrenceSeriesIDRaw = seriesID.uuidString
+            task.recurrenceOccurrenceIndex = index
+            task.scheduledDate = "2026-05-0\(index + 1)"
+            context.insert(task)
+            return task
+        }
+        tasks[0].recurrenceSpawnedTaskID = tasks[1].id
+        tasks[1].recurrenceSpawnedTaskID = tasks[2].id
+        try context.save()
+        return tasks
+    }
+
+    /// "This and future" fetches the series itself and commits the rule on every occurrence it
+    /// reaches -- read back through a second context, so it is the store, not the pending edit.
+    @Test func theScopeWriterCommitsThisAndFutureOnEveryLaterOccurrence() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let tasks = try series(in: context)
+        var commits = 0
+
+        let outcome = MacTaskRowContextMenu.applyRecurrenceRule(
+            .weekly, scope: .thisAndFuture, for: tasks[0], modelContext: context,
+            commit: { commits += 1; try $0.save() }
+        )
+
+        #expect(outcome == .settled)
+        #expect(commits == 1)
+        let stored = try ModelContext(container).fetch(FetchDescriptor<AppTask>())
+        #expect(stored.count == 3)
+        #expect(stored.allSatisfy { $0.recurrenceRule == .weekly }, "a later occurrence kept the old rule")
+    }
+
+    /// "This one" writes only the occurrence it was asked about.
+    @Test func theScopeWriterLeavesLaterOccurrencesAloneForThisTask() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let tasks = try series(in: context)
+
+        let outcome = MacTaskRowContextMenu.applyRecurrenceRule(
+            .weekly, scope: .thisTask, for: tasks[1], modelContext: context
+        )
+
+        #expect(outcome == .settled)
+        #expect(tasks[1].recurrenceRule == .weekly)
+        #expect(tasks[2].recurrenceRule == .daily, "a this-task edit reached a later occurrence")
+    }
+
+    /// A refused series edit is named, and puts back every occurrence it wrote -- not only the one
+    /// the dialog was raised from.
+    @Test func aRefusedScopeWriteIsReportedAndUndoneAcrossTheSeries() throws {
+        let container = try CadenceModelContainerFactory.makeInMemoryContainer()
+        let context = ModelContext(container)
+        let tasks = try series(in: context)
+
+        let outcome = MacTaskRowContextMenu.applyRecurrenceRule(
+            .weekly, scope: .thisAndFuture, for: tasks[0], modelContext: context,
+            commit: { _ in throw CommitRefused() }
+        )
+
+        #expect(outcome == .refused(.recurrence(CadencePendingChangePersistence.editFailureNotice)))
+        #expect(tasks.allSatisfy { $0.recurrenceRule == .daily }, "a refused series edit left an occurrence rewritten")
+    }
+
     // MARK: - The last hop: each menu item calls its own action
 
     /// The effect tests above hold the actions; this holds that each submenu's buttons reach the

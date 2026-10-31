@@ -1580,19 +1580,24 @@ struct CadenceEditorSaveCommitSurfaceTests {
         )
         #expect(popover.contains("CadenceTaskFieldEditCommit.commit("))
 
-        for guarded in [
-            "guard setStatus(action.target(from: task.status)) else { return }",
-            "guard applyRecurrenceRule(rule, scope: .thisTask) else { return }",
-            "guard applyRecurrenceRule(pendingRecurrenceRule, scope: scope) else { return }"
-        ] {
-            #expect(popover.contains(guarded), "the popover closes over a refused edit: \(guarded)")
-        }
+        #expect(
+            popover.contains("guard setStatus(action.target(from: task.status)) else { return }"),
+            "the popover closes over a refused status edit"
+        )
 
-        // The series edit hands the later occurrences to the commit rather than leaving them
-        // written to and unrestorable.
-        let apply = try #require(CadenceSourceScan.functionBody(named: "applyRecurrenceRule", in: popover))
-        #expect(apply.contains("CadenceTaskRecurrenceWorkflowSupport.recurrenceTargets("))
-        #expect(apply.contains("commit(alsoRestoring: targets)"))
+        // [[T-9122]]: the Repeat field writes through the row's two shared writers, which commit
+        // (and restore every occurrence a series edit wrote) themselves -- held by effect in
+        // `MacTaskRowContextMenuEffectTests`. What stays here is that the popover answers them:
+        // a refusal is shown, and the close and the repaint happen only past one.
+        let pick = try #require(CadenceSourceScan.functionBody(named: "selectRecurrenceRule", in: popover))
+        #expect(pick.contains("MacTaskRowContextMenu.selectRecurrenceRule("))
+        #expect(pick.contains("case .refused(let refusal):"))
+        #expect(pick.contains("return Self.recurrenceClosesPopover(for: outcome)"))
+        let apply = try #require(CadenceSourceScan.functionBody(named: "applyPendingRecurrenceRule", in: popover))
+        #expect(apply.contains("MacTaskRowContextMenu.applyRecurrenceRule("))
+        let refusal = try #require(apply.range(of: "if case .refused(let refusal) = outcome {"))
+        let close = try #require(apply.range(of: "dismiss()"))
+        #expect(refusal.lowerBound < close.lowerBound, "the scope answer closes before it reads the refusal")
     }
 
     /// **The note for whoever adds the fourth `rollback()`, made into a guard (T-402).**
