@@ -73,8 +73,13 @@ struct NoteActionMenu: View {
     /// still open because the row no longer closes it before the store has answered.
     @State private var moveFailureNotice: String?
 
+    /// Active lists plus the note's current one, never the unfiltered `@Query` ([[T-9062]]).
+    private var moveDestinations: CadenceNoteMoveDestinations.Destinations {
+        CadenceNoteMoveDestinations.destinations(for: note, areas: areas, projects: projects)
+    }
+
     private var showsMoveDestinationSection: Bool {
-        CadenceNoteMoveDestinations.offersMove(kind: note.kind, hasAreas: !areas.isEmpty, hasProjects: !projects.isEmpty)
+        CadenceNoteMoveDestinations.offersMove(kind: note.kind, destinations: moveDestinations)
     }
 
     private var canRunAI: Bool {
@@ -227,6 +232,7 @@ struct NoteActionMenu: View {
 
     @ViewBuilder
     private var areaDestinations: some View {
+        let areas = moveDestinations.areas
         if !areas.isEmpty {
             NoteActionSubsectionLabel(title: "Areas")
             ForEach(areas) { area in
@@ -244,6 +250,7 @@ struct NoteActionMenu: View {
 
     @ViewBuilder
     private var projectDestinations: some View {
+        let projects = moveDestinations.projects
         if !projects.isEmpty {
             NoteActionSubsectionLabel(title: "Projects")
             ForEach(projects) { project in

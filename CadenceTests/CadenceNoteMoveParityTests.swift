@@ -30,6 +30,79 @@ struct CadenceNoteMoveParityTests {
         }
     }
 
+    // MARK: - Destinations: active lists plus the current one (T-9062)
+
+    /// Move Note offers only active lists, as a task's Move to List does, and keeps the note's
+    /// own list when that list is inactive so its checked row still reads.
+    @Test func moveNoteDestinationsAreActiveListsPlusTheNotesCurrentOne() throws {
+        let live = Area(name: "Live")
+        let doneArea = Area(name: "Done Area")
+        doneArea.status = .done
+        let archivedArea = Area(name: "Archived Area")
+        archivedArea.status = .archived
+        let activeProject = Project(name: "Active")
+        var retired: [Project] = []
+        for status in ProjectStatus.allCases where status != .active {
+            let project = Project(name: status.rawValue)
+            project.status = status
+            retired.append(project)
+        }
+        #expect(retired.count == 4, "paused, done, archived and cancelled")
+        let areas = [live, doneArea, archivedArea]
+        let projects = [activeProject] + retired
+
+        let unfiled = Note(kind: .list, title: "Loose")
+        let loose = CadenceNoteMoveDestinations.destinations(for: unfiled, areas: areas, projects: projects)
+        #expect(loose.areas.map(\.name) == ["Live"])
+        #expect(loose.projects.map(\.name) == ["Active"])
+
+        let filed = Note(kind: .list, title: "Filed")
+        filed.area = archivedArea
+        let fromArchived = CadenceNoteMoveDestinations.destinations(for: filed, areas: areas, projects: projects)
+        #expect(Set(fromArchived.areas.map(\.name)) == ["Live", "Archived Area"])
+        #expect(fromArchived.projects.map(\.name) == ["Active"])
+
+        let inPaused = Note(kind: .list, title: "Paused")
+        let paused = try #require(retired.first { $0.status == .paused })
+        inPaused.project = paused
+        let fromPaused = CadenceNoteMoveDestinations.destinations(for: inPaused, areas: areas, projects: projects)
+        #expect(Set(fromPaused.projects.map(\.name)) == ["Active", "paused"])
+        #expect(fromPaused.areas.map(\.name) == ["Live"])
+    }
+
+    /// A store whose only lists are retired offers no Move page: the offer reads the filtered
+    /// lists, not the raw query.
+    @Test func moveNoteIsNotOfferedWhenEveryListIsRetired() {
+        let archived = Area(name: "Old")
+        archived.status = .archived
+        let done = Project(name: "Shipped")
+        done.status = .done
+        let note = Note(kind: .list, title: "Plan")
+        let destinations = CadenceNoteMoveDestinations.destinations(for: note, areas: [archived], projects: [done])
+        #expect(destinations.areas.isEmpty && destinations.projects.isEmpty)
+        #expect(!CadenceNoteMoveDestinations.offersMove(kind: .list, destinations: destinations))
+
+        let live = Area(name: "Live")
+        let withLive = CadenceNoteMoveDestinations.destinations(for: note, areas: [archived, live], projects: [done])
+        #expect(CadenceNoteMoveDestinations.offersMove(kind: .list, destinations: withLive))
+    }
+
+    /// Both menus draw from the filtered destinations, not their raw `@Query`.
+    @Test func bothNoteMenusReadTheFilteredMoveDestinations() throws {
+        let mac = try CadenceCommitSurfaceScan.scanned("Cadence/macOS/Views/AIActionsSupportViews.swift")
+        let iOS = try CadenceCommitSurfaceScan.scanned("Cadence/iOS/iOSNoteManageMenu.swift")
+        let call = "CadenceNoteMoveDestinations.destinations(for: note, areas: areas, projects: projects)"
+        #expect(mac.contains(call))
+        #expect(iOS.contains(call))
+        #expect(mac.contains("let areas = moveDestinations.areas"))
+        #expect(mac.contains("let projects = moveDestinations.projects"))
+        #expect(iOS.contains("let areas = destinations.areas"))
+        #expect(iOS.contains("let projects = destinations.projects"))
+        for (name, source) in [("macOS", mac), ("iOS", iOS)] {
+            #expect(!source.contains("hasAreas: !areas.isEmpty"), "\(name) gates the offer on the raw query")
+        }
+    }
+
     // MARK: - The shared move, behaviourally
 
     /// The path the iOS menu now calls: a list note filed under a project lands there **in the

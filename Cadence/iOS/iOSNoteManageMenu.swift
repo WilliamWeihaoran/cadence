@@ -30,13 +30,14 @@ struct iOSNoteManageMenu: View {
     @Query(sort: \Area.order) private var areas: [Area]
     @Query(sort: \Project.order) private var projects: [Project]
 
+    /// Active lists plus the note's current one, never the unfiltered `@Query` ([[T-9062]]).
+    private var destinations: CadenceNoteMoveDestinations.Destinations {
+        CadenceNoteMoveDestinations.destinations(for: note, areas: areas, projects: projects)
+    }
+
     private var offersMove: Bool {
         moveFailureNotice != nil
-            && CadenceNoteMoveDestinations.offersMove(
-                kind: note.kind,
-                hasAreas: !areas.isEmpty,
-                hasProjects: !projects.isEmpty
-            )
+            && CadenceNoteMoveDestinations.offersMove(kind: note.kind, destinations: destinations)
     }
 
     var body: some View {
@@ -59,7 +60,9 @@ struct iOSNoteManageMenu: View {
     /// The Mac's Move page, destination for destination: No List, then the areas, then the
     /// projects, the current one checked.
     private var moveMenu: some View {
-        Menu {
+        let areas = destinations.areas
+        let projects = destinations.projects
+        return Menu {
             destinationButton(
                 title: CadenceNoteMoveDestinations.noListTitle,
                 isCurrent: CadenceNoteMoveDestinations.isUnfiled(note)

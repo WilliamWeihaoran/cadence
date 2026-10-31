@@ -78,6 +78,31 @@ enum CadenceNoteMoveDestinations {
         kind == .list && (hasAreas || hasProjects)
     }
 
+    /// The lists a note's Move Note page offers ([[T-9062]]).
+    ///
+    /// Both menus used to iterate the unfiltered `@Query`, so archived, done, paused and cancelled
+    /// lists sat among the live ones and a note could be filed into a list the sidebar no longer
+    /// shows. This is the rule every task list picker already reads
+    /// (`CadenceTaskComposerSupport.pickableAreas` / `pickableProjects`): active lists, sorted,
+    /// plus the note's **current** list even when it is inactive, so its checked row still reads.
+    struct Destinations {
+        let areas: [Area]
+        let projects: [Project]
+    }
+
+    static func destinations(for note: Note, areas: [Area], projects: [Project]) -> Destinations {
+        Destinations(
+            areas: CadenceTaskComposerSupport.pickableAreas(areas, selectedID: note.area?.id),
+            projects: CadenceTaskComposerSupport.pickableProjects(projects, selectedID: note.project?.id)
+        )
+    }
+
+    /// `offersMove(kind:hasAreas:hasProjects:)` over the **filtered** lists, so a store whose only
+    /// lists are archived does not offer a Move page with nowhere on it to go.
+    static func offersMove(kind: NoteKind, destinations: Destinations) -> Bool {
+        offersMove(kind: kind, hasAreas: !destinations.areas.isEmpty, hasProjects: !destinations.projects.isEmpty)
+    }
+
     static let noListTitle = "No List"
     static let noListSubtitle = "Keep it loose in notes"
 
