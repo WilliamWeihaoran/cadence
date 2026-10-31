@@ -236,19 +236,43 @@ private struct AITaskDraftRow: View {
                 .font(.system(size: 12))
                 .foregroundStyle(Theme.dim)
 
-            HStack(spacing: 8) {
-                TextField("Priority", text: $draft.priority)
-                    .frame(width: 90)
-                TextField("Due yyyy-MM-dd", text: $draft.dueDate)
-                    .frame(width: 120)
-                TextField("Do yyyy-MM-dd", text: $draft.scheduledDate)
-                    .frame(width: 120)
-                TextField("Section", text: $draft.sectionName)
-                    .frame(width: 110)
+            // T-9061: every field carries a visible label, so a filled card no longer reads as two
+            // unlabelled dates side by side. Do before Due, the order iOS's card states them in.
+            HStack(alignment: .top, spacing: 12) {
+                AITaskDraftLabelledField(label: "Priority", placeholder: "none", text: $draft.priority, width: 80)
+                AITaskDraftLabelledField(label: "Do", placeholder: "yyyy-MM-dd", text: $draft.scheduledDate, width: 110, isDate: true)
+                AITaskDraftLabelledField(label: "Due", placeholder: "yyyy-MM-dd", text: $draft.dueDate, width: 110, isDate: true)
+                AITaskDraftLabelledField(label: "Section", placeholder: TaskSectionDefaults.defaultName, text: $draft.sectionName, width: 120)
             }
-            .textFieldStyle(.plain)
-            .font(.system(size: 11))
-            .foregroundStyle(Theme.text)
+
+            // The start time and estimate this draft would write, drawn from the same shared chips
+            // iOS's card uses. There is no other control for either, so clicking one clears it —
+            // the only way to correct an out-of-range value short of unticking the draft.
+            let chips = CadenceAIDraftReview.numericChips(for: draft)
+            if !chips.isEmpty {
+                HStack(spacing: 8) {
+                    ForEach(Array(chips.enumerated()), id: \.offset) { _, chip in
+                        Button {
+                            chip.clear(&draft)
+                        } label: {
+                            HStack(spacing: 5) {
+                                Text(chip.label)
+                                Image(systemName: "xmark")
+                                    .font(.system(size: 8, weight: .bold))
+                            }
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(chip.isValid ? Theme.muted : Theme.red)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 3)
+                            .background(Capsule().fill((chip.isValid ? Theme.muted : Theme.red).opacity(0.12)))
+                            .contentShape(Capsule())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(chip.accessibilityLabel)
+                        .help(chip.accessibilityLabel)
+                    }
+                }
+            }
 
             if !validation.isValid {
                 Text(validation.errors.joined(separator: " "))
@@ -263,6 +287,36 @@ private struct AITaskDraftRow: View {
             RoundedRectangle(cornerRadius: 12)
                 .strokeBorder(validation.isValid ? Theme.borderSubtle : Theme.red.opacity(0.45), lineWidth: 1)
         }
+    }
+}
+
+/// One of the draft card's short fields with its name drawn above it (T-9061). The placeholder
+/// vanishes as soon as the field has text, so it can never be the only label. A date the model got
+/// wrong turns its label red, matching iOS's date row, so the error line has a field to point at.
+private struct AITaskDraftLabelledField: View {
+    let label: String
+    let placeholder: String
+    @Binding var text: String
+    let width: CGFloat
+    var isDate: Bool = false
+
+    private var isInvalidDate: Bool {
+        let raw = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return isDate && !raw.isEmpty && DateFormatters.date(from: raw) == nil
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(label)
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(isInvalidDate ? Theme.red : Theme.dim)
+            TextField(placeholder, text: $text)
+                .textFieldStyle(.plain)
+                .font(.system(size: 11))
+                .foregroundStyle(Theme.text)
+                .accessibilityLabel(label)
+        }
+        .frame(width: width, alignment: .leading)
     }
 }
 #endif

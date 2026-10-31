@@ -539,24 +539,12 @@ private struct iOSAITaskDraftCard: View {
     }
 
     /// The two numeric fields, stated so the user can see what would be written — and tappable to
-    /// clear, because there is no other way to correct an out-of-range one.
+    /// clear, because there is no other way to correct an out-of-range one. Derived by the shared
+    /// `CadenceAIDraftReview.numericChips(for:)`, which the Mac card draws too (T-9061).
     private var chips: [(label: String, isValid: Bool, clear: () -> Void)] {
-        var result: [(String, Bool, () -> Void)] = []
-        if let startMin = draft.scheduledStartMin {
-            result.append((
-                TimeFormatters.timeString(from: max(0, min(1439, startMin))),
-                (0...1439).contains(startMin) && !draft.scheduledDate.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-                { draft.scheduledStartMin = nil }
-            ))
+        CadenceAIDraftReview.numericChips(for: draft).map { chip in
+            (chip.label, chip.isValid, { chip.clear(&draft) })
         }
-        if let estimate = draft.estimatedMinutes {
-            result.append((
-                CadenceTaskPresentationSupport.estimateLabel(minutes: estimate),
-                (1...1440).contains(estimate),
-                { draft.estimatedMinutes = nil }
-            ))
-        }
-        return result
     }
 
     private var chipRow: some View {

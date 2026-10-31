@@ -155,6 +155,49 @@ struct CadenceAIDraftReview: Equatable, Sendable {
         isApproved ? "Leaves this draft out of the tasks to create" : "Adds this draft to the tasks to create"
     }
 
+    /// **T-9061.** One of a draft's two numeric fields, stated so the user can see what would be
+    /// written and clear it. There is no other control for either value on either card, so a chip
+    /// is the only way to correct an out-of-range one; both cards draw it from here so the Mac and
+    /// iPhone/iPad never disagree on what a draft carries.
+    struct NumericChip: Equatable, Sendable {
+        enum Field: Equatable, Sendable { case scheduledStart, estimate }
+        let field: Field
+        let label: String
+        let isValid: Bool
+
+        var accessibilityLabel: String { "Clear \(label)" }
+
+        func clear(_ draft: inout AITaskDraft) {
+            switch field {
+            case .scheduledStart: draft.scheduledStartMin = nil
+            case .estimate: draft.estimatedMinutes = nil
+            }
+        }
+    }
+
+    /// The start-time and estimate chips for `draft`, in that order, omitting whichever is unset.
+    /// Validity follows `AIActionService.validation`'s rules for the same two fields: a start time
+    /// needs to be a minute of the day and to have a do date to sit on.
+    static func numericChips(for draft: AITaskDraft) -> [NumericChip] {
+        var result: [NumericChip] = []
+        if let startMin = draft.scheduledStartMin {
+            result.append(NumericChip(
+                field: .scheduledStart,
+                label: TimeFormatters.timeString(from: max(0, min(1439, startMin))),
+                isValid: (0...1439).contains(startMin)
+                    && !draft.scheduledDate.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            ))
+        }
+        if let estimate = draft.estimatedMinutes {
+            result.append(NumericChip(
+                field: .estimate,
+                label: CadenceTaskPresentationSupport.estimateLabel(minutes: estimate),
+                isValid: (1...1440).contains(estimate)
+            ))
+        }
+        return result
+    }
+
     func isSelected(_ draft: AITaskDraft) -> Bool {
         selectedIDs.contains(draft.id)
     }

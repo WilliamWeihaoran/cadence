@@ -709,6 +709,76 @@ struct AINoteActionReviewTests {
         #expect(!service.contains("selection = .area("))
         #expect(service.contains("let selection = container(area: area, project: project).selection"))
     }
+
+    // MARK: - T-9061: both draft cards state and clear the start time and estimate
+
+    /// The chips are the only control either card has for these two fields, so their validity has
+    /// to agree with the writer's: a chip that looks fine on a draft `validation` refuses is the
+    /// stuck card this ticket found, with nothing red to click.
+    @Test func numericChipsAgreeWithValidationAndClearTheirOwnField() {
+        let fine = draft(scheduledDate: "2026-11-02", scheduledStartMin: 540, estimatedMinutes: 30)
+        let fineChips = CadenceAIDraftReview.numericChips(for: fine)
+        #expect(fineChips.map(\.field) == [.scheduledStart, .estimate])
+        #expect(fineChips.allSatisfy { $0.isValid })
+        #expect(fineChips[0].label == TimeFormatters.timeString(from: 540))
+        #expect(fineChips[1].label == CadenceTaskPresentationSupport.estimateLabel(minutes: 30))
+        #expect(fineChips[1].accessibilityLabel == "Clear \(fineChips[1].label)")
+
+        #expect(CadenceAIDraftReview.numericChips(for: draft()).isEmpty)
+
+        // Each way `validation` refuses one of these fields lights exactly that chip red.
+        let cases: [(AITaskDraft, CadenceAIDraftReview.NumericChip.Field)] = [
+            (draft(scheduledDate: "2026-11-02", scheduledStartMin: 1440), .scheduledStart),
+            (draft(scheduledStartMin: 540), .scheduledStart),
+            (draft(estimatedMinutes: 0), .estimate),
+            (draft(estimatedMinutes: 1441), .estimate),
+        ]
+        for (broken, field) in cases {
+            #expect(!AIActionService.validation(for: broken).isValid)
+            let chips = CadenceAIDraftReview.numericChips(for: broken)
+            #expect(chips.count == 1)
+            #expect(chips.first?.field == field)
+            #expect(chips.first?.isValid == false)
+
+            // And clicking it is the fix: the cleared draft validates.
+            var cleared = broken
+            chips.first?.clear(&cleared)
+            #expect(AIActionService.validation(for: cleared).isValid)
+            #expect(CadenceAIDraftReview.numericChips(for: cleared).isEmpty)
+        }
+
+        // Clearing one leaves the other alone.
+        var onlyEstimate = fine
+        fineChips[0].clear(&onlyEstimate)
+        #expect(onlyEstimate.scheduledStartMin == nil)
+        #expect(onlyEstimate.estimatedMinutes == 30)
+    }
+
+    /// Both cards draw those chips from the one helper, and the Mac card names each date field
+    /// with a visible label rather than a placeholder that vanishes once the field is filled.
+    @Test func bothDraftCardsDrawTheSharedChipsAndTheMacCardLabelsItsDates() throws {
+        try expectOccurrences(of: "CadenceAIDraftReview.numericChips(for: draft)", at: [
+            Self.iosActionsView: 1,
+            Self.macReviewSheet: 1,
+        ])
+        let mac = try strippingComments(sourceFile(Self.macReviewSheet))
+        guard let row = CadenceSourceScan.declarationBody("private struct AITaskDraftRow: View", in: mac) else {
+            Issue.record("non-vacuity: AITaskDraftRow moved")
+            return
+        }
+        #expect(row.contains(#"AITaskDraftLabelledField(label: "Do", placeholder: "yyyy-MM-dd", text: $draft.scheduledDate"#))
+        #expect(row.contains(#"AITaskDraftLabelledField(label: "Due", placeholder: "yyyy-MM-dd", text: $draft.dueDate"#))
+        #expect(row.contains("chip.clear(&draft)"))
+        #expect(row.contains(".accessibilityLabel(chip.accessibilityLabel)"))
+        // The placeholder-only spellings are gone.
+        #expect(!mac.contains(#"TextField("Due yyyy-MM-dd""#))
+        #expect(!mac.contains(#"TextField("Do yyyy-MM-dd""#))
+        guard let field = CadenceSourceScan.declarationBody("private struct AITaskDraftLabelledField: View", in: mac) else {
+            Issue.record("non-vacuity: AITaskDraftLabelledField moved")
+            return
+        }
+        #expect(field.contains("Text(label)"))
+    }
 }
 
 // MARK: - Source-reading helpers
