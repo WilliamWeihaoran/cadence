@@ -80,30 +80,22 @@ struct LogSessionPopover: View {
 
             Divider().background(Theme.borderSubtle)
 
+            // [[T-9351]]: the shared action button, so the hit area and the hover wash are the
+            // plate. Both buttons used to pad and fill OUTSIDE `.buttonStyle(.cadencePlain)`: the
+            // style's contentShape and wash wrapped only the label text, so the plate's rim was
+            // dead to a click and hover lit a smaller rectangle inside the drawn plate.
             HStack(spacing: 8) {
-                Button("Discard") { onDiscard() }
-                    .buttonStyle(.cadencePlain)
-                    .font(.system(size: 12))
-                    .foregroundStyle(Theme.muted)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 7)
-                    .background(Theme.surfaceElevated)
-                    .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
+                CadenceActionButton(title: "Discard", role: .ghost, size: .compact) { onDiscard() }
 
                 Spacer()
 
-                Button {
+                CadenceActionButton(
+                    title: FocusSessionSupport.logButtonTitle(hours: logHours, minutes: logMinutes),
+                    role: .primary,
+                    size: .compact
+                ) {
                     onLog(logHours, logMinutes, markComplete)
-                } label: {
-                    Text(FocusSessionSupport.logButtonTitle(hours: logHours, minutes: logMinutes))
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(Theme.onColor(for: Theme.blue))
                 }
-                .buttonStyle(.cadencePlain)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 7)
-                .background(Theme.blue)
-                .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 12)

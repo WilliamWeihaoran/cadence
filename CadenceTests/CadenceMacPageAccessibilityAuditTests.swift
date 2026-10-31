@@ -27,6 +27,8 @@ struct CadenceMacPageAccessibilityAuditTests {
         let isSelected: Bool
         /// Named accessibility actions ([[T-7092]]), read as `accessibilityCustomActions` names.
         var actions: [String] = []
+        /// The element's screen frame ([[T-9351]]), read by key like `isSelected`; `.zero` where unanswered.
+        var frame: NSRect = .zero
         var description: String {
             "[\(role) label:'\(label)' value:'\(value)'\(isSelected ? " selected" : "")\(actions.isEmpty ? "" : " actions:\(actions)")]"
         }
@@ -74,6 +76,11 @@ struct CadenceMacPageAccessibilityAuditTests {
                   node.responds(to: NSSelectorFromString("isAccessibilitySelected")) else { return false }
             return (node.value(forKey: "accessibilitySelected") as? NSNumber)?.boolValue ?? false
         }
+        func frame(_ object: AnyObject) -> NSRect {
+            guard let node = object as? NSObject,
+                  node.responds(to: NSSelectorFromString("accessibilityFrame")) else { return .zero }
+            return (node.value(forKey: "accessibilityFrame") as? NSValue)?.rectValue ?? .zero
+        }
         var performed = false
         func customActionNames(_ object: AnyObject) -> [String] {
             let selector = NSSelectorFromString("accessibilityCustomActions")
@@ -98,7 +105,8 @@ struct CadenceMacPageAccessibilityAuditTests {
                 label: string(object, "accessibilityLabel"),
                 value: string(object, "accessibilityValue"),
                 isSelected: isSelected(object),
-                actions: customActionNames(object)
+                actions: customActionNames(object),
+                frame: frame(object)
             ))
             let childrenSelector = NSSelectorFromString("accessibilityChildren")
             guard object.responds(to: childrenSelector),
@@ -247,6 +255,26 @@ struct CadenceMacPageAccessibilityAuditTests {
             nodes.contains { $0.value == TaskTitleSupport.defaultDisplayTitle },
             "the popover does not name an untitled task \"\(TaskTitleSupport.defaultDisplayTitle)\": \(nodes)"
         )
+    }
+
+    /// **[[T-9351]].** Both footer buttons padded and filled their plate OUTSIDE
+    /// `.buttonStyle(.cadencePlain)`, so the button -- its hit area, and the style's hover wash --
+    /// was the bare label text inside a larger drawn plate. Measured as the button's own frame on
+    /// the tree: each must be at least the shared compact control height, which a bare 12pt label
+    /// is not.
+    @Test func theLogSessionPopoversButtonsAreTheirWholePlate() {
+        let nodes = allNodes(
+            in: LogSessionPopover(task: AppTask(title: "Write report"), elapsedSeconds: 1500, onLog: { _, _, _ in }, onDiscard: {}),
+            size: NSSize(width: 280, height: 260)
+        )
+        let buttons = nodes.filter { $0.role == Self.buttonRole && ($0.label == "Discard" || $0.label.hasPrefix("Log")) }
+        #expect(buttons.count == 2, "non-vacuity: the two footer buttons are not on the tree: \(nodes)")
+        for button in buttons {
+            #expect(
+                button.frame.height >= CadenceActionButtonSize.compact.minHeight,
+                "\(button.label) is \(button.frame.height)pt tall, smaller than its \(CadenceActionButtonSize.compact.minHeight)pt plate"
+            )
+        }
     }
 
     // MARK: - T-7068: the Notes page's note rows
