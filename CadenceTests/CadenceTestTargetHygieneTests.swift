@@ -1733,6 +1733,7 @@ struct CadenceTestTargetHygieneTests {
     static let deliberatelyIOSOnlyTestFiles: Set<String> = [
         "CadenceTests/iOSMarkdownEditorFlushTests.swift",
         "CadenceTests/iOSMarkdownInlineTaskPanelEffectTests.swift",
+        "CadenceTests/iOSMarkdownTaskEmbedSubtaskOverflowTests.swift",
         "CadenceTests/iOSTaskRecurrenceSelectionEffectTests.swift",
     ]
 

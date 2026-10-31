@@ -68,7 +68,7 @@ struct iOSMarkdownTaskEmbedLayoutInfo {
         guard task.hasSubtasks else { return nil }
         return CadenceTaskEmbedSubtaskRow.checkboxHit(
             at: point,
-            in: subtaskRow(width: width).items,
+            in: subtaskRow(width: width).row.items,
             slopX: Self.subtaskTouchSlopX,
             slopY: Self.subtaskTouchSlopY
         )
@@ -81,19 +81,31 @@ struct iOSMarkdownTaskEmbedLayoutInfo {
     static let subtaskRowMinX: CGFloat = 44 + 38
     static let subtaskRowY: CGFloat = 66
     static let subtaskRowHeight: CGFloat = 16
+    /// The `+N` chip's drawn width.
+    static let subtaskOverflowWidth: CGFloat = 34
 
     /// The shared row geometry (`CadenceTaskEmbedSubtaskRow`), measured in this card's 10pt font.
-    func subtaskRow(width: CGFloat) -> CadenceTaskEmbedSubtaskRowLayout {
-        CadenceTaskEmbedSubtaskRow.layout(
+    /// [[T-9331]]: laid out with the `+N` chip's room reserved, as the Mac card is since
+    /// [[T-9322]] — a full row gives its last item up to the chip rather than hiding the count, and
+    /// drawing and touch hit-testing both read this one layout, so a dropped item is not tappable.
+    func subtaskRow(width: CGFloat) -> (row: CadenceTaskEmbedSubtaskRowLayout, overflow: (count: Int, full: CGRect)?) {
+        CadenceTaskEmbedSubtaskRow.layoutWithOverflow(
             task.visibleSubtasks,
+            totalCount: task.subtaskTotalCount,
             fallbackTitle: TaskTitleSupport.defaultCompactDisplayTitle,
             minX: Self.subtaskRowMinX,
             maxX: width - 12,
             rowY: Self.subtaskRowY,
-            rowHeight: Self.subtaskRowHeight
+            rowHeight: Self.subtaskRowHeight,
+            overflowWidth: { _ in Self.subtaskOverflowWidth }
         ) { title, _ in
             ceil(NSString(string: title).size(withAttributes: smallTextAttributes).width)
         }
+    }
+
+    /// The card's width for an editor `maxWidth`, as `renderedBlock` draws it.
+    func cardWidth(maxWidth: CGFloat) -> CGFloat {
+        renderedWidth(maxWidth: maxWidth)
     }
 
     private var borderColor: UIColor {
@@ -183,20 +195,16 @@ struct iOSMarkdownTaskEmbedLayoutInfo {
         let summary = "\(task.completedSubtaskCount)/\(task.subtaskTotalCount)"
         drawSmallText(summary, color: UIColor(Theme.dim), rect: CGRect(x: 44, y: Self.subtaskRowY, width: 34, height: 16))
 
-        let row = subtaskRow(width: width)
-        for item in row.items {
+        let layout = subtaskRow(width: width)
+        for item in layout.row.items {
             drawSubtaskMark(in: item.checkbox, isDone: item.isDone)
             drawSubtaskTitle(item.label, isDone: item.isDone, rect: item.text)
         }
         // Counts what the row could not place as well as what was never offered to it: on a
         // 393pt phone the third subtask often does not fit, and leaving it uncounted lost it.
-        let unplaced = task.subtaskTotalCount - row.items.count
-        if unplaced > 0, width - row.trailingX > 34 {
-            drawSmallText(
-                "+\(unplaced)",
-                color: UIColor(Theme.dim),
-                rect: CGRect(x: row.trailingX, y: Self.subtaskRowY, width: 34, height: 16)
-            )
+        // [[T-9331]]: the layout reserved the chip's room, so a full row still says so.
+        if let overflow = layout.overflow {
+            drawSmallText("+\(overflow.count)", color: UIColor(Theme.dim), rect: overflow.full)
         }
     }
 

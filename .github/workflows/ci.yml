@@ -635,6 +635,7 @@ jobs:
             CODE_SIGN_ENTITLEMENTS=.github/ci.entitlements \
             -only-testing:CadenceTests/iOSMarkdownEditorFlushTests \
             -only-testing:CadenceTests/iOSMarkdownInlineTaskPanelEffectTests \
+            -only-testing:CadenceTests/iOSMarkdownTaskEmbedSubtaskOverflowTests \
             -only-testing:CadenceTests/iOSTaskRecurrenceSelectionEffectTests \
             test-without-building
           echo "SIM-TEST-SECONDS=$(( SECONDS - test_start ))"

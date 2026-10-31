@@ -22,7 +22,7 @@ diverges, not an outage.
 | tree under test | `actions/checkout` of the pushed tip of `main` | a worktree or `git archive` at *your* base |
 | test scope | all of `CadenceTests`, serial, every push | usually `-only-testing:` a few suites |
 | UI tests | never (T-531) | local only |
-| iOS simulator tests | the three `deliberatelyIOSOnlyTestFiles` suites, 22 tests, on an iPhone 17 / iOS 26.5 simulator under the newest image Xcode that lists one (picked each run: 26.6 in [[T-6821]]'s runs, 26.4.1 in run 40650042891) -- [[T-6821]] | any suite, on `Cadence-iPhone15` |
+| iOS simulator tests | the four `deliberatelyIOSOnlyTestFiles` suites, 24 tests ([[T-9331]] added the fourth), on an iPhone 17 / iOS 26.5 simulator under the newest image Xcode that lists one (picked each run: 26.6 in [[T-6821]]'s runs, 26.4.1 in run 40650042891) -- [[T-6821]] | any suite, on `Cadence-iPhone15` |
 
 Two details people get wrong. The image carries `Xcode_26.0.1` *through* `Xcode_26.6` and defaults
 to 26.6; `.github/scripts/assert-toolchain.sh` pins the exact minor **26.0** since [[T-4742]] (it

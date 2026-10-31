@@ -156,7 +156,7 @@ struct CadenceTaskEmbedSubtaskRowTests {
         let source = CadenceSourceScan.strippingComments(
             try CadenceSourceScan.sourceFile("Cadence/iOS/iOSMarkdownTaskEmbedLayoutInfo.swift")
         )
-        #expect(source.contains("CadenceTaskEmbedSubtaskRow.layout("))
+        #expect(source.contains("CadenceTaskEmbedSubtaskRow.layoutWithOverflow("))
         #expect(source.contains("CadenceTaskEmbedSubtaskRow.checkboxHit("))
         #expect(!source.contains("\"[x] \""))
         #expect(!source.contains("\"[ ] \""))
