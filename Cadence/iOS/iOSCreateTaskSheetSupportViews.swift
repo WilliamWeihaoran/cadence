@@ -28,6 +28,9 @@ struct iOSTaskComposerMarkerSuggestions: View {
     let onPickContainer: (TaskContainerSelection) -> Void
     let onPickTag: (Tag) -> Void
     let onCreateTag: (String) -> Void
+    /// Seeds the default tag set. Only ever run from the strip's button — see
+    /// `CadenceFirstLaunchEmptyStoreTests.noUnpromptedCodePathSeedsTheDefaultTags`.
+    var onAddDefaultTags: () -> Void = {}
 
     /// Read out of the environment here, unlike in the sheet: the strip is *inside*
     /// `.cadenceScaledTypography()`, so it sees what the sheet installed. Anywhere else it is
@@ -51,8 +54,7 @@ struct iOSTaskComposerMarkerSuggestions: View {
     }
 
     private var matchingTags: [Tag] {
-        TagSupport.uniqueBySlug(allTags.filter { !$0.isArchived })
-            .filter { CadenceTaskComposerSupport.matchesQuery($0.name.isEmpty ? $0.slug : $0.name, query: shortcut.query) }
+        CadenceTaskComposerSupport.tagSuggestions(from: allTags, query: shortcut.query)
     }
 
     private var showsInbox: Bool {
@@ -60,8 +62,15 @@ struct iOSTaskComposerMarkerSuggestions: View {
     }
 
     private var canCreateTag: Bool {
-        guard kind == .tag, !trimmedQuery.isEmpty else { return false }
-        return !matchingTags.contains { ($0.name.isEmpty ? $0.slug : $0.name).caseInsensitiveCompare(trimmedQuery) == .orderedSame }
+        kind == .tag && CadenceTaskComposerSupport.canCreateSuggestedTag(query: shortcut.query, matches: matchingTags)
+    }
+
+    /// [[T-9231]]: what to draw when there is no row — asked of the shared rule the Mac's `#`
+    /// picker reads, which tells an empty catalogue from a narrow query. This strip used to key off
+    /// the filtered list alone, so a store with no tags answered a bare `#` with
+    /// `No tag matches “”`.
+    private var tagPlaceholder: TagPickerPlaceholder {
+        CadenceTaskComposerSupport.tagSuggestionPlaceholder(allTags: allTags, query: shortcut.query)
     }
 
     var body: some View {
@@ -126,7 +135,7 @@ struct iOSTaskComposerMarkerSuggestions: View {
 
         ForEach(matchingTags) { tag in
             suggestion(
-                title: tag.name.isEmpty ? tag.slug : tag.name,
+                title: CadenceTaskComposerSupport.suggestionTitle(for: tag),
                 systemImage: "number",
                 tint: Color(hex: tag.colorHex)
             ) {
@@ -134,7 +143,16 @@ struct iOSTaskComposerMarkerSuggestions: View {
             }
         }
 
-        if !canCreateTag && matchingTags.isEmpty {
+        switch tagPlaceholder {
+        case .none:
+            EmptyView()
+        case .offerDefaultTags:
+            // The same offer the Mac's `#` picker and this platform's own tag popover make on an
+            // empty catalogue, as a chip because this strip is a row of chips.
+            suggestion(title: "Add Default Tags", systemImage: "tag.fill", tint: Theme.blue) {
+                onAddDefaultTags()
+            }
+        case .noMatches:
             emptyHint("No tag matches “\(trimmedQuery)”")
         }
     }

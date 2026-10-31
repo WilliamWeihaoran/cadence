@@ -545,6 +545,8 @@ struct CadenceFirstLaunchEmptyStoreTests {
         let callers = try paths.filter { !Self.seedCallOffsets(in: try read($0)).isEmpty }.sorted()
         #expect(
             callers == [
+                // [[T-9231]]: the capture sheet's `#` strip, from its Add Default Tags chip.
+                "Cadence/iOS/iOSCreateTaskSheet.swift",
                 "Cadence/iOS/iOSSettingsTagsSection.swift",
                 "Cadence/iOS/iOSTaskDetailComponents.swift",
                 "Cadence/macOS/Views/SettingsTagsSection.swift",
@@ -642,6 +644,45 @@ struct CadenceFirstLaunchEmptyStoreTests {
         )
     }
 
+    /// **[[T-9231]] — the iOS capture sheet's `#` strip asks the same question.** It used to spell
+    /// its own condition off the *filtered* list (`!canCreate && matches.isEmpty`), so on a store
+    /// with no tags a bare `#` drew `No tag matches “”` — an empty query quoted back — where the
+    /// Mac's title field offers Add Default Tags. Driven by a real store, through the exact helpers
+    /// the strip calls.
+    @Test func theCaptureStripOffersTheDefaultSetOnAnEmptyCatalogueRatherThanAnEmptyNoMatch() throws {
+        let context = try Self.makeEmptyContext()
+        func tags() throws -> [Cadence.Tag] { try context.fetch(FetchDescriptor<Cadence.Tag>()) }
+
+        // A fresh store, `#` just typed.
+        #expect(try CadenceTaskComposerSupport.tagSuggestionPlaceholder(allTags: tags(), query: "") == .offerDefaultTags)
+        // Something typed on a fresh store gets the create chip, not an offer beside it.
+        #expect(try CadenceTaskComposerSupport.tagSuggestionPlaceholder(allTags: tags(), query: "wo") == .none)
+        #expect(try CadenceTaskComposerSupport.canCreateSuggestedTag(
+            query: "wo",
+            matches: CadenceTaskComposerSupport.tagSuggestions(from: tags(), query: "wo")
+        ))
+
+        // What the chip's action runs, then the strip has rows of its own to draw.
+        try TagSupport.seedDefaultTagsCommitting(in: context)
+        let seeded = try tags()
+        #expect(!seeded.isEmpty, "non-vacuity: the seed produced no tags")
+        #expect(CadenceTaskComposerSupport.tagSuggestions(from: seeded, query: "").count == seeded.count)
+        #expect(CadenceTaskComposerSupport.tagSuggestionPlaceholder(allTags: seeded, query: "") == .none)
+
+        // An archived-only catalogue is still an empty one to a picker of unarchived tags.
+        for tag in seeded { tag.isArchived = true }
+        #expect(CadenceTaskComposerSupport.tagSuggestionPlaceholder(allTags: seeded, query: "") == .offerDefaultTags)
+
+        // A name the strip already draws is picked, not created again.
+        for tag in seeded { tag.isArchived = false }
+        let first = try #require(seeded.first)
+        let exact = CadenceTaskComposerSupport.suggestionTitle(for: first)
+        #expect(!CadenceTaskComposerSupport.canCreateSuggestedTag(
+            query: exact.uppercased(),
+            matches: CadenceTaskComposerSupport.tagSuggestions(from: seeded, query: exact)
+        ))
+    }
+
     /// Both macOS pickers go through the one placeholder, and neither keeps its own copy of the
     /// sentence. The bare `"No tags"` was already two spellings that had to stay in step.
     ///
@@ -673,7 +714,10 @@ struct CadenceFirstLaunchEmptyStoreTests {
         // The offer, and the seed call it owns, live in exactly one place.
         let host = try read("Cadence/macOS/Views/TagPickerSupportViews.swift")
         #expect(host.contains("struct TagPickerPlaceholderRow: View"))
-        #expect(host.contains("case offerDefaultTags"))
+        // [[T-9231]] moved the decision itself to `Shared/` so the iOS `#` strip can ask it.
+        #expect(host.contains("case .offerDefaultTags"))
+        let decision = try read("Cadence/Shared/CadenceTagPickerPlaceholder.swift")
+        #expect(decision.contains("case offerDefaultTags"))
         #expect(host.contains("Text(\"Add Default Tags\")"))
         #expect(
             Self.seedCallOffsets(in: host).count == 1,

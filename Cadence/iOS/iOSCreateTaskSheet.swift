@@ -144,7 +144,9 @@ struct iOSCreateTaskSheet: View {
                     if createTag(name) == nil {
                         draft.title = CadenceTaskComposerSupport.title(removingShortcut: shortcut)
                     }
-                }
+                },
+                // The `#` stays in the title: the strip then lists the new tags to pick from.
+                onAddDefaultTags: addDefaultTags
             )
         }
     }
@@ -183,6 +185,17 @@ struct iOSCreateTaskSheet: View {
         normalizeSection()
         actionError = CadenceTaskComposerSupport.missingContainerNotice
         return false
+    }
+
+    /// [[T-9231]]: the strip's Add Default Tags chip, the same committing seed the tag popover and
+    /// the Mac's placeholder row run. A refusal rolls the whole seed back and says so.
+    private func addDefaultTags() {
+        do {
+            try TagSupport.seedDefaultTagsCommitting(in: modelContext)
+            actionError = nil
+        } catch {
+            actionError = CadencePendingChangePersistence.editFailureNotice
+        }
     }
 
     private func createTag(_ name: String) -> String? {
