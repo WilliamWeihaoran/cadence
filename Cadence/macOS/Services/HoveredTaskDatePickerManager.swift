@@ -29,6 +29,33 @@ final class HoveredTaskDatePickerManager {
         let task: AppTask
         let kind: DateKind
         var selectedDate: Date
+        /// Whether the field had a date when the panel opened. `selectedDate` is seeded with today
+        /// on an undated field, which is honest for the grid -- it is what Apply writes -- but there
+        /// is nothing for Clear to clear ([[T-9256]]).
+        var fieldHasDate: Bool = true
+
+        /// Clear is drawn only over a date the task has, by the rule every other Mac date panel
+        /// draws from ([[T-9211]]'s `CadenceDateSelectionState`).
+        var showsClear: Bool {
+            CadenceDateSelectionState.drawsClear(showsClear: true, hasSelection: fieldHasDate)
+        }
+    }
+
+    /// The request `present` raises for `task`'s `kind` field.
+    static func request(for task: AppTask, kind: DateKind, now: Date = Date()) -> Request {
+        let dateKey = switch kind {
+        case .doDate:
+            task.scheduledDate
+        case .dueDate:
+            task.dueDate
+        }
+        let fieldDate = DateFormatters.date(from: dateKey)
+        return Request(
+            task: task,
+            kind: kind,
+            selectedDate: fieldDate ?? now,
+            fieldHasDate: fieldDate != nil
+        )
     }
 
     static let shared = HoveredTaskDatePickerManager()
@@ -38,18 +65,7 @@ final class HoveredTaskDatePickerManager {
     private init() {}
 
     func present(for task: AppTask, kind: DateKind) {
-        let dateKey = switch kind {
-        case .doDate:
-            task.scheduledDate
-        case .dueDate:
-            task.dueDate
-        }
-
-        request = Request(
-            task: task,
-            kind: kind,
-            selectedDate: DateFormatters.date(from: dateKey) ?? Date()
-        )
+        request = Self.request(for: task, kind: kind)
     }
 
     /// Takes the context rather than owning one: this is a `shared` singleton installed at app

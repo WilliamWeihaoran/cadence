@@ -16,6 +16,13 @@ struct TaskInspectorRecurrenceControl: View {
     /// [[T-7201]]: the name of the series' "After N times" count field, which draws no title.
     static let endCountFieldAccessibilityLabel = "Number of times"
 
+    /// [[T-9255]]: the word after the After count field. It was a literal "times", so a series
+    /// set to end after one occurrence read "After 1 times". Read off the field's text as typed,
+    /// the same digits `commitCount` parses, so the word follows the number the user sees.
+    static func endCountUnit(forCountText text: String) -> String {
+        Int(text.filter(\.isNumber)) == 1 ? "time" : "times"
+    }
+
     @Bindable var task: AppTask
     /// Where the recurrence panel opens relative to this row. Same rule as the Do/Due rows above
     /// it, and for the same reason: the panel is narrower than the inspector's content column, so
@@ -461,7 +468,7 @@ private struct TaskRecurrencePickerPanel: View {
                             }
                         }
 
-                    Text("times")
+                    Text(TaskInspectorRecurrenceControl.endCountUnit(forCountText: countText))
                         .font(.system(size: 11))
                         .foregroundStyle(Theme.dim)
                 }

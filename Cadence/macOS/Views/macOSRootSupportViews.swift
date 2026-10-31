@@ -626,13 +626,17 @@ struct HoveredTaskDatePickerOverlay: View {
                 Divider().background(Theme.borderSubtle)
 
                 HStack(spacing: 10) {
-                    CadenceActionButton(
-                        title: "Clear",
-                        role: .destructive,
-                        size: .regular,
-                        minWidth: 74
-                    ) {
-                        onClear()
+                    // [[T-9256]]: absent on an undated field -- it cleared a date the task did
+                    // not have.
+                    if request.showsClear {
+                        CadenceActionButton(
+                            title: "Clear",
+                            role: .destructive,
+                            size: .regular,
+                            minWidth: 74
+                        ) {
+                            onClear()
+                        }
                     }
 
                     Spacer()
