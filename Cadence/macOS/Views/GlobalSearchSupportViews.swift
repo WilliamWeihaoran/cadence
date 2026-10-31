@@ -525,6 +525,15 @@ struct GlobalSearchEmptyState: View {
     }
 }
 
+/// One palette result.
+///
+/// **[[T-9621]]: the highlight is the only hover layer, so the button is `.plain`.** A hover moves
+/// the highlight here ([[T-8092]]'s gate aside), and the highlight paints the row's own tint at
+/// 0.09 under a 0.18 hairline. The row also sat on `.cadencePlain(cornerRadius: 12)`, whose blue
+/// 0.08 wash and 0.18 stroke lit on the same hover -- two fills and two outlines in two colours on
+/// one row -- and, once the arrow keys moved the highlight away, stayed lit on the row still under
+/// the pointer, so two rows read as selected. The editor's slash-command menu, the other
+/// keyboard-highlighted list, uses `.plain` with one plate (`MarkdownSlashCommandSupport.swift`).
 struct GlobalSearchResultRow: View {
     let result: GlobalSearchResult
     let isHighlighted: Bool
@@ -600,7 +609,7 @@ struct GlobalSearchResultRow: View {
             .clipShape(RoundedRectangle(cornerRadius: 12))
             .contentShape(RoundedRectangle(cornerRadius: 12))
         }
-        .buttonStyle(.cadencePlain(cornerRadius: 12))
+        .buttonStyle(.plain)
         .padding(.horizontal, 6)
         .onHover { hovering in
             if hovering { onHover() }

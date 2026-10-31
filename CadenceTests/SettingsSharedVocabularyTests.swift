@@ -958,4 +958,93 @@ private func t286RemovingWhitespace(_ source: String) -> String {
     source.filter { !$0.isWhitespace }
 }
 
+
+/// **[[T-9622]].** A Mac Settings card's hairline starts where its rows' text does.
+///
+/// `CadenceRowDivider` takes a leading inset "so it starts at the text rather than cutting across a
+/// leading glyph", and every Settings card typed that inset as a literal: 42 under four row shapes
+/// whose text starts at 40, 42 and 46, 44 under calendar rows whose name starts at 24 (20pt into
+/// the text; Reminders' identical rows one pane over drew 24) and at 32. Each row now names its
+/// leading geometry, lays itself out from those names, and the card reads the row's sum.
+@MainActor
+struct SettingsRowDividerInsetTests {
+    private static let rowLayouts: [(path: String, declaration: String, needles: [String])] = [
+        ("Cadence/macOS/Views/SettingsSupportViews.swift", "struct ContextSettingsRow: View",
+         ["HStack(spacing: Self.glyphLabelSpacing)", ".frame(width: Self.glyphSide, height: Self.glyphSide)", ".padding(.horizontal, Self.horizontalPadding)"]),
+        ("Cadence/macOS/Views/SettingsSupportViews.swift", "struct ArchivedContextRow: View",
+         ["HStack(spacing: Self.glyphLabelSpacing)", ".frame(width: Self.glyphSide, height: Self.glyphSide)"]),
+        ("Cadence/macOS/Views/SettingsSupportViews.swift", "struct SidebarTabSettingsRow: View",
+         ["HStack(spacing: Self.glyphLabelSpacing)", ".frame(width: Self.glyphSide, height: Self.glyphSide)", ".padding(.horizontal, Self.horizontalPadding)"]),
+        ("Cadence/macOS/Views/SettingsSupportViews.swift", "struct ListLifecycleRow: View",
+         ["HStack(spacing: Self.glyphLabelSpacing)", ".frame(width: Self.glyphSide, height: Self.glyphSide)"]),
+        ("Cadence/macOS/Views/SettingsListManagementSections.swift", "struct SettingsCalendarRow: View",
+         ["HStack(alignment: .top, spacing: Self.dotLabelSpacing)", ".frame(width: Self.dotSide, height: Self.dotSide)"]),
+        ("Cadence/macOS/Views/SettingsListManagementSections.swift", "struct SettingsMissingCalendarLinkRow: View",
+         ["spacing: SettingsCalendarLinkRowMetrics.glyphLabelSpacing", ".frame(width: SettingsCalendarLinkRowMetrics.glyphColumnWidth)"]),
+        ("Cadence/macOS/Views/SettingsListManagementSections.swift", "struct SettingsDormantCalendarLinkRow: View",
+         ["spacing: SettingsCalendarLinkRowMetrics.glyphLabelSpacing", ".frame(width: SettingsCalendarLinkRowMetrics.glyphColumnWidth)"]),
+        ("Cadence/macOS/Views/SettingsRemindersSection.swift", "struct SettingsRemindersListRow: View",
+         ["HStack(spacing: Self.dotLabelSpacing)", ".frame(width: Self.dotSide, height: Self.dotSide)"]),
+    ] + [
+        "struct UnmanagedBackupDirectoryRow: View",
+        "struct UnmanagedStoreDirectoryRow: View",
+        "struct RetainedUnrestoredOriginalsRow: View",
+        "struct StoreBackupRow: View",
+    ].map { declaration in
+        ("Cadence/macOS/Views/SettingsDataSafetySection.swift", declaration, [
+            "HStack(spacing: SettingsStoreDirectoryRowMetrics.glyphLabelSpacing)",
+            ".frame(width: SettingsStoreDirectoryRowMetrics.glyphSide, height: SettingsStoreDirectoryRowMetrics.glyphSide)",
+            ".padding(.horizontal, SettingsStoreDirectoryRowMetrics.horizontalPadding)",
+        ])
+    }
+
+    /// No Settings pane types a hairline inset; each reads the inset its rows declare.
+    @Test func noSettingsHairlineTypesItsInset() throws {
+        var named = 0
+        var literal: [String] = []
+        for path in try CadenceSourceScan.swiftFiles(under: "Cadence/macOS/Views")
+        where (path as NSString).lastPathComponent.hasPrefix("Settings") {
+            let code = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(path))
+            named += CadenceSourceScan.matchCount("CadenceRowDivider\\(leadingInset: [A-Za-z][A-Za-z]*\\.dividerLeadingInset\\)", in: code)
+            if CadenceSourceScan.matchCount("CadenceRowDivider\\(leadingInset: [0-9]", in: code) > 0 {
+                literal.append(path)
+            }
+        }
+        #expect(named >= 13, "non-vacuity: only \(named) named hairline insets in the Settings panes")
+        #expect(literal.isEmpty, "a Settings hairline types its inset again: \(literal)")
+    }
+
+    /// Each row lays itself out from the names its inset is summed from, so the two cannot part.
+    @Test func eachRowLaysOutFromTheNamesItsInsetSums() throws {
+        for layout in Self.rowLayouts {
+            let source = try CadenceSourceScan.sourceFile(layout.path)
+            let body = try #require(
+                CadenceSourceScan.declarationBody(layout.declaration, in: source),
+                "\(layout.declaration) moved out of \(layout.path)"
+            )
+            for needle in layout.needles {
+                #expect(body.contains(needle), "\(layout.declaration) lays out with a literal instead of `\(needle)`")
+            }
+        }
+    }
+
+    /// The sums themselves, read off the real types where they are visible to this target.
+    @Test func theInsetsAreTheRowsOwnLeadingGeometry() {
+        #expect(ContextSettingsRow.dividerLeadingInset
+                == ContextSettingsRow.horizontalPadding + ContextSettingsRow.glyphSide + ContextSettingsRow.glyphLabelSpacing)
+        #expect(SidebarTabSettingsRow.dividerLeadingInset
+                == SidebarTabSettingsRow.horizontalPadding + SidebarTabSettingsRow.glyphSide + SidebarTabSettingsRow.glyphLabelSpacing)
+        #expect(ArchivedContextRow.dividerLeadingInset == ArchivedContextRow.glyphSide + ArchivedContextRow.glyphLabelSpacing)
+        #expect(ListLifecycleRow.dividerLeadingInset == ListLifecycleRow.glyphSide + ListLifecycleRow.glyphLabelSpacing)
+        #expect(SettingsStoreDirectoryRowMetrics.dividerLeadingInset
+                == SettingsStoreDirectoryRowMetrics.horizontalPadding + SettingsStoreDirectoryRowMetrics.glyphSide
+                    + SettingsStoreDirectoryRowMetrics.glyphLabelSpacing)
+        #expect(SettingsCalendarLinkRowMetrics.dividerLeadingInset
+                == SettingsCalendarLinkRowMetrics.glyphColumnWidth + SettingsCalendarLinkRowMetrics.glyphLabelSpacing)
+        // The relation the defect broke: the sidebar row's larger glyph and wider spacing put its
+        // text further in than the contexts row whose inset it borrowed.
+        #expect(SidebarTabSettingsRow.dividerLeadingInset > ContextSettingsRow.dividerLeadingInset)
+    }
+}
+
 #endif

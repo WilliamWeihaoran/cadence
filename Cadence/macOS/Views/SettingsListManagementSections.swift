@@ -133,7 +133,7 @@ struct SettingsCalendarSection: View {
                     )
 
                     if index < links.count - 1 {
-                        CadenceRowDivider(leadingInset: 44)
+                        CadenceRowDivider(leadingInset: SettingsCalendarLinkRowMetrics.dividerLeadingInset)
                     }
                 }
             }
@@ -160,7 +160,7 @@ struct SettingsCalendarSection: View {
                     )
 
                     if index < links.count - 1 {
-                        CadenceRowDivider(leadingInset: 44)
+                        CadenceRowDivider(leadingInset: SettingsCalendarLinkRowMetrics.dividerLeadingInset)
                     }
                 }
             }
@@ -196,7 +196,7 @@ struct SettingsCalendarSection: View {
                         )
 
                         if index < calendars.count - 1 {
-                            CadenceRowDivider(leadingInset: 44)
+                            CadenceRowDivider(leadingInset: SettingsCalendarRow.dividerLeadingInset)
                         }
                     }
                 }
@@ -311,6 +311,15 @@ struct SettingsCalendarSection: View {
 }
 
 /// One dead list-to-calendar link, with the two ways out of it.
+/// [[T-9622]]: the leading geometry the missing- and dormant-link rows share, named so their
+/// cards' hairlines start at the list name. The cards drew `leadingInset: 44` under rows whose name
+/// starts at 20 + 12.
+enum SettingsCalendarLinkRowMetrics {
+    static let glyphColumnWidth: CGFloat = 20
+    static let glyphLabelSpacing: CGFloat = 12
+    static var dividerLeadingInset: CGFloat { glyphColumnWidth + glyphLabelSpacing }
+}
+
 private struct SettingsMissingCalendarLinkRow: View {
     let link: CadenceMissingCalendarLink
     let calendars: [EKCalendar]
@@ -318,11 +327,11 @@ private struct SettingsMissingCalendarLinkRow: View {
     let onUnlink: () -> Void
 
     var body: some View {
-        HStack(alignment: .top, spacing: 12) {
+        HStack(alignment: .top, spacing: SettingsCalendarLinkRowMetrics.glyphLabelSpacing) {
             Image(systemName: link.icon)
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(Color(hex: link.colorHex))
-                .frame(width: 20)
+                .frame(width: SettingsCalendarLinkRowMetrics.glyphColumnWidth)
                 .padding(.top, 2)
 
             VStack(alignment: .leading, spacing: 4) {
@@ -397,11 +406,11 @@ private struct SettingsDormantCalendarLinkRow: View {
     let onDisconnect: () -> Void
 
     var body: some View {
-        HStack(alignment: .top, spacing: 12) {
+        HStack(alignment: .top, spacing: SettingsCalendarLinkRowMetrics.glyphLabelSpacing) {
             Image(systemName: link.icon)
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(Color(hex: link.colorHex))
-                .frame(width: 20)
+                .frame(width: SettingsCalendarLinkRowMetrics.glyphColumnWidth)
                 .padding(.top, 2)
 
             VStack(alignment: .leading, spacing: 4) {
@@ -506,11 +515,18 @@ private struct SettingsCalendarRow: View {
     let onToggleArea: (Area) -> Void
     let onToggleProject: (Project) -> Void
 
+    /// [[T-9622]]: where the calendar's name starts, so the card's hairline can start there too.
+    /// It drew `leadingInset: 44` under a name at 12 + 12 -- 20pt into the text -- while
+    /// Reminders' list rows one pane over, the same dot and spacing, drew 24.
+    static let dotSide: CGFloat = 12
+    static let dotLabelSpacing: CGFloat = 12
+    static var dividerLeadingInset: CGFloat { dotSide + dotLabelSpacing }
+
     var body: some View {
-        HStack(alignment: .top, spacing: 12) {
+        HStack(alignment: .top, spacing: Self.dotLabelSpacing) {
             Circle()
                 .fill(calendarColor)
-                .frame(width: 12, height: 12)
+                .frame(width: Self.dotSide, height: Self.dotSide)
                 .padding(.top, 15)
 
             VStack(alignment: .leading, spacing: 6) {
@@ -651,7 +667,7 @@ struct SettingsContextsSection: View {
                                     onDelete: { onDeleteContext(context) },
                                     contexts: activeContexts
                                 )
-                                CadenceRowDivider(leadingInset: 42)
+                                CadenceRowDivider(leadingInset: ContextSettingsRow.dividerLeadingInset)
                             }
                         }
 
@@ -685,7 +701,7 @@ struct SettingsContextsSection: View {
                                     onDelete: { onDeleteContext(context) }
                                 )
                                 if index < archivedContexts.count - 1 {
-                                    CadenceRowDivider(leadingInset: 42)
+                                    CadenceRowDivider(leadingInset: ArchivedContextRow.dividerLeadingInset)
                                 }
                             }
                         }
@@ -797,7 +813,7 @@ struct SettingsListsSection: View {
                         onDelete: { onDeleteArea(area) }
                     )
                     if index < areas.count - 1 || !projects.isEmpty {
-                        CadenceRowDivider(leadingInset: 42)
+                        CadenceRowDivider(leadingInset: ListLifecycleRow.dividerLeadingInset)
                     }
                 }
 
@@ -829,7 +845,7 @@ struct SettingsListsSection: View {
                         onDelete: { onDeleteProject(project) }
                     )
                     if index < projects.count - 1 {
-                        CadenceRowDivider(leadingInset: 42)
+                        CadenceRowDivider(leadingInset: ListLifecycleRow.dividerLeadingInset)
                     }
                 }
             }

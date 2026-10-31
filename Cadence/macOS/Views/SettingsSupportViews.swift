@@ -52,12 +52,18 @@ struct ContextSettingsRow: View {
     @State private var editIcon = ""
     @State private var renameFailureNotice: String?
 
+    /// [[T-9622]]: where the label starts, so the card's hairline can start there too.
+    static let horizontalPadding: CGFloat = 2
+    static let glyphSide: CGFloat = 28
+    static let glyphLabelSpacing: CGFloat = 12
+    static var dividerLeadingInset: CGFloat { horizontalPadding + glyphSide + glyphLabelSpacing }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 12) {
+            HStack(spacing: Self.glyphLabelSpacing) {
                 RoundedRectangle(cornerRadius: 6)
                     .fill(Color(hex: isEditing ? editColor : context.colorHex).opacity(0.18))
-                    .frame(width: 28, height: 28)
+                    .frame(width: Self.glyphSide, height: Self.glyphSide)
                     .overlay {
                         Image(systemName: isEditing ? editIcon : context.icon)
                             .font(.system(size: 13, weight: .semibold))
@@ -98,7 +104,7 @@ struct ContextSettingsRow: View {
                 }
             }
             .padding(.vertical, 10)
-            .padding(.horizontal, 2)
+            .padding(.horizontal, Self.horizontalPadding)
             .contentShape(Rectangle())
             .background(
                 RoundedRectangle(cornerRadius: Theme.radiusControl)
@@ -258,11 +264,16 @@ struct ArchivedContextRow: View {
     let onRestore: () -> Void
     let onDelete: () -> Void
 
+    /// [[T-9622]]: no horizontal padding, so the label starts at 28 + 12, not the active row's 42.
+    static let glyphSide: CGFloat = 28
+    static let glyphLabelSpacing: CGFloat = 12
+    static var dividerLeadingInset: CGFloat { glyphSide + glyphLabelSpacing }
+
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: Self.glyphLabelSpacing) {
             RoundedRectangle(cornerRadius: 6)
                 .fill(Color(hex: context.colorHex).opacity(0.12))
-                .frame(width: 28, height: 28)
+                .frame(width: Self.glyphSide, height: Self.glyphSide)
                 .overlay {
                     Image(systemName: context.icon)
                         .font(.system(size: 13, weight: .semibold))
@@ -309,6 +320,14 @@ struct SidebarTabSettingsRow: View {
 
     @State private var isDropTarget = false
 
+    /// [[T-9622]]: the row's leading geometry, named so the card's hairline can start where the
+    /// label does. The section drew `CadenceRowDivider(leadingInset: 42)`, `ContextSettingsRow`'s
+    /// number (2 + 28 + 12), under a row whose label starts at 2 + 30 + 14.
+    static let horizontalPadding: CGFloat = 2
+    static let glyphSide: CGFloat = 30
+    static let glyphLabelSpacing: CGFloat = 14
+    static var dividerLeadingInset: CGFloat { horizontalPadding + glyphSide + glyphLabelSpacing }
+
     /// Whether this row gets the grip and the `.draggable` — `CadenceSidebarLayout.isOrderable`,
     /// asked of the shared destination rather than answered again here (T-1287).
     ///
@@ -343,10 +362,10 @@ struct SidebarTabSettingsRow: View {
     }
 
     private var row: some View {
-        HStack(spacing: 14) {
+        HStack(spacing: Self.glyphLabelSpacing) {
             RoundedRectangle(cornerRadius: Theme.radiusControlCompact)
                 .fill(Color(hex: tintHex).opacity(0.15))
-                .frame(width: 30, height: 30)
+                .frame(width: Self.glyphSide, height: Self.glyphSide)
                 .overlay {
                     Image(systemName: destination.icon)
                         .font(.system(size: 13, weight: .semibold))
@@ -367,14 +386,18 @@ struct SidebarTabSettingsRow: View {
             // [[T-9461]]: the shared action button, as `ArchivedContextRow`'s pair above.
             CadenceActionButton(title: "Edit", role: .secondary, size: .compact, tint: Theme.text, action: onEdit)
 
-            if isOrderable {
-                Image(systemName: "line.3.horizontal")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(Theme.dim)
-            }
+            // [[T-9623]]: an unorderable row (Focus) still lays the grip out, undrawn, so its Edit
+            // button sits in the same column as every other row's. Dropping the glyph from the
+            // layout ([[T-1287]]'s first spelling) slid that one Edit right by the grip's width
+            // plus the row's spacing. Hidden from VoiceOver as well as the eye.
+            Image(systemName: "line.3.horizontal")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(Theme.dim)
+                .opacity(isOrderable ? 1 : 0)
+                .accessibilityHidden(!isOrderable)
         }
         .padding(.vertical, 10)
-        .padding(.horizontal, 2)
+        .padding(.horizontal, Self.horizontalPadding)
         .background(
             RoundedRectangle(cornerRadius: Theme.radiusControl)
                 .fill(isDropTarget ? Theme.blue.opacity(0.10) : Color.clear)
@@ -493,11 +516,16 @@ struct ListLifecycleRow: View {
     let onPrimary: () -> Void
     let onDelete: () -> Void
 
+    /// [[T-9622]]: where the label starts, so the card's hairline can start there too.
+    static let glyphSide: CGFloat = 28
+    static let glyphLabelSpacing: CGFloat = 12
+    static var dividerLeadingInset: CGFloat { glyphSide + glyphLabelSpacing }
+
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: Self.glyphLabelSpacing) {
             RoundedRectangle(cornerRadius: 6)
                 .fill(color.opacity(0.18))
-                .frame(width: 28, height: 28)
+                .frame(width: Self.glyphSide, height: Self.glyphSide)
                 .overlay {
                     Image(systemName: icon)
                         .font(.system(size: 13, weight: .semibold))

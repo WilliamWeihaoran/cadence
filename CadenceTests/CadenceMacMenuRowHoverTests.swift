@@ -93,4 +93,21 @@ import Testing
                     "the \(chip) chip lights .cadencePlain's wash around its own")
         }
     }
+
+    /// **[[T-9621]].** A Cmd+K row's highlight IS its hover layer -- a hover moves it -- so the
+    /// row's button lights nothing of its own. On `.cadencePlain(cornerRadius: 12)` a hovered row
+    /// drew the style's blue wash and stroke on top of its tinted highlight, and once the arrow keys
+    /// moved the highlight on, the row still under the pointer kept the blue wash: two rows lit.
+    @Test func theCommandPaletteRowsLightOnlyTheirHighlight() throws {
+        let source = try Self.code("Cadence/macOS/Views/GlobalSearchSupportViews.swift")
+        for row in ["struct GlobalSearchResultRow: View"] {
+            let body = try #require(CadenceSourceScan.declarationBody(row, in: source), "\(row) moved")
+            // Non-vacuity: the highlight is still drawn on the label and a hover still reaches it.
+            #expect(body.contains("isHighlighted ?"), "\(row) no longer draws its highlight")
+            #expect(body.contains("onHover()"), "\(row) no longer hands its hover to the highlight")
+            #expect(CadenceSourceScan.matchCount("\\.buttonStyle\\(", in: body) == 1, "\(row) has more or fewer than one button style")
+            #expect(body.contains(".buttonStyle(.plain)"), "\(row) lights a button-style hover wash beside its highlight")
+            #expect(!body.contains("cadencePlain"), "\(row) is back on .cadencePlain")
+        }
+    }
 }

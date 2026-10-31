@@ -142,7 +142,7 @@ struct SettingsDataSafetySection: View {
                                     onRestore: { pendingRestore = backup }
                                 )
                                 if index < min(backups.count, CadenceStoreBackupPresentation.listedBackupLimit) - 1 {
-                                    CadenceRowDivider(leadingInset: 42)
+                                    CadenceRowDivider(leadingInset: SettingsStoreDirectoryRowMetrics.dividerLeadingInset)
                                 }
                             }
                         }
@@ -179,7 +179,7 @@ struct SettingsDataSafetySection: View {
                                     onReveal: { NSWorkspace.shared.activateFileViewerSelecting([directory.url]) }
                                 )
                                 if index < unmanagedBackupDirectories.count - 1 {
-                                    CadenceRowDivider(leadingInset: 42)
+                                    CadenceRowDivider(leadingInset: SettingsStoreDirectoryRowMetrics.dividerLeadingInset)
                                 }
                             }
                         }
@@ -214,7 +214,7 @@ struct SettingsDataSafetySection: View {
                                     onReveal: { NSWorkspace.shared.activateFileViewerSelecting([directoryURL]) }
                                 )
                                 if index < retainedUnrestoredDirectories.count - 1 {
-                                    CadenceRowDivider(leadingInset: 42)
+                                    CadenceRowDivider(leadingInset: SettingsStoreDirectoryRowMetrics.dividerLeadingInset)
                                 }
                             }
                         }
@@ -255,7 +255,7 @@ struct SettingsDataSafetySection: View {
                                     onReveal: { NSWorkspace.shared.activateFileViewerSelecting([directory.url]) }
                                 )
                                 if index < unmanagedStoreDirectories.count - 1 {
-                                    CadenceRowDivider(leadingInset: 42)
+                                    CadenceRowDivider(leadingInset: SettingsStoreDirectoryRowMetrics.dividerLeadingInset)
                                 }
                             }
                         }
@@ -648,15 +648,25 @@ private struct SettingsDataResetConfirmationSheet: View {
 /// destructive tone: `UnmanagedBackupDirectory` says why, and the shape of this view is where that
 /// rule is actually enforced — a row that cannot be handed a delete action cannot grow one by
 /// accident.
+/// [[T-9622]]: the leading geometry the four store-directory rows below share, named so their
+/// cards' hairlines start where the row's text does. The cards drew `leadingInset: 42` -- the
+/// contexts row's 2 + 28 + 12 -- under rows whose 32pt glyph puts the text at 2 + 32 + 12.
+enum SettingsStoreDirectoryRowMetrics {
+    static let horizontalPadding: CGFloat = 2
+    static let glyphSide: CGFloat = 32
+    static let glyphLabelSpacing: CGFloat = 12
+    static var dividerLeadingInset: CGFloat { horizontalPadding + glyphSide + glyphLabelSpacing }
+}
+
 private struct UnmanagedBackupDirectoryRow: View {
     let directory: UnmanagedBackupDirectory
     let onReveal: () -> Void
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: SettingsStoreDirectoryRowMetrics.glyphLabelSpacing) {
             RoundedRectangle(cornerRadius: Theme.radiusControl)
                 .fill(Theme.dim.opacity(0.14))
-                .frame(width: 32, height: 32)
+                .frame(width: SettingsStoreDirectoryRowMetrics.glyphSide, height: SettingsStoreDirectoryRowMetrics.glyphSide)
                 .overlay {
                     Image(systemName: "folder.badge.questionmark")
                         .font(.system(size: 13, weight: .semibold))
@@ -683,7 +693,7 @@ private struct UnmanagedBackupDirectoryRow: View {
             }
         }
         .padding(.vertical, 10)
-        .padding(.horizontal, 2)
+        .padding(.horizontal, SettingsStoreDirectoryRowMetrics.horizontalPadding)
     }
 }
 
@@ -699,10 +709,10 @@ private struct UnmanagedStoreDirectoryRow: View {
     let onReveal: () -> Void
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: SettingsStoreDirectoryRowMetrics.glyphLabelSpacing) {
             RoundedRectangle(cornerRadius: Theme.radiusControl)
                 .fill(Theme.dim.opacity(0.14))
-                .frame(width: 32, height: 32)
+                .frame(width: SettingsStoreDirectoryRowMetrics.glyphSide, height: SettingsStoreDirectoryRowMetrics.glyphSide)
                 .overlay {
                     Image(systemName: "internaldrive")
                         .font(.system(size: 13, weight: .semibold))
@@ -729,7 +739,7 @@ private struct UnmanagedStoreDirectoryRow: View {
             }
         }
         .padding(.vertical, 10)
-        .padding(.horizontal, 2)
+        .padding(.horizontal, SettingsStoreDirectoryRowMetrics.horizontalPadding)
     }
 }
 
@@ -744,10 +754,10 @@ private struct RetainedUnrestoredOriginalsRow: View {
     let onReveal: () -> Void
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: SettingsStoreDirectoryRowMetrics.glyphLabelSpacing) {
             RoundedRectangle(cornerRadius: Theme.radiusControl)
                 .fill(Theme.amber.opacity(0.14))
-                .frame(width: 32, height: 32)
+                .frame(width: SettingsStoreDirectoryRowMetrics.glyphSide, height: SettingsStoreDirectoryRowMetrics.glyphSide)
                 .overlay {
                     Image(systemName: "exclamationmark.triangle")
                         .font(.system(size: 13, weight: .semibold))
@@ -774,7 +784,7 @@ private struct RetainedUnrestoredOriginalsRow: View {
             }
         }
         .padding(.vertical, 10)
-        .padding(.horizontal, 2)
+        .padding(.horizontal, SettingsStoreDirectoryRowMetrics.horizontalPadding)
     }
 }
 
@@ -784,10 +794,10 @@ private struct StoreBackupRow: View {
     let onRestore: () -> Void
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: SettingsStoreDirectoryRowMetrics.glyphLabelSpacing) {
             RoundedRectangle(cornerRadius: Theme.radiusControl)
                 .fill(Theme.amber.opacity(0.14))
-                .frame(width: 32, height: 32)
+                .frame(width: SettingsStoreDirectoryRowMetrics.glyphSide, height: SettingsStoreDirectoryRowMetrics.glyphSide)
                 .overlay {
                     Image(systemName: "externaldrive.fill")
                         .font(.system(size: 13, weight: .semibold))
@@ -813,7 +823,7 @@ private struct StoreBackupRow: View {
             }
         }
         .padding(.vertical, 10)
-        .padding(.horizontal, 2)
+        .padding(.horizontal, SettingsStoreDirectoryRowMetrics.horizontalPadding)
     }
 }
 #endif

@@ -709,9 +709,19 @@ struct SidebarStaticDestinationBridgeTests {
                 "the drag moved back onto the unconditional path, so Focus can be dragged again")
 
         // The grip itself is gated too — a row that cannot be dragged must not draw the affordance
-        // for dragging.
-        #expect(row.contains("if isOrderable {"))
+        // for dragging. [[T-9623]]: gated by DRAWING, not by layout. The glyph keeps its slot,
+        // invisible and hidden from VoiceOver, so the Focus row's Edit button stays in the column
+        // every other row's sits in; an `if isOrderable { grip }` slid it right by the grip's width.
         #expect(CadenceSourceScan.matchCount("line\\.3\\.horizontal", in: row) == 1)
+        let grip = try #require(row.range(of: "Image(systemName: \"line.3.horizontal\")"))
+        let afterGrip = String(row[grip.upperBound...])
+        #expect(afterGrip.contains(".opacity(isOrderable ? 1 : 0)"), "the unorderable row draws its grip")
+        #expect(afterGrip.contains(".accessibilityHidden(!isOrderable)"), "VoiceOver reads a grip the row does not draw")
+        let beforeGrip = String(row[..<grip.lowerBound])
+        let lastLine = beforeGrip.split(separator: "\n")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .last { !$0.isEmpty } ?? ""
+        #expect(!lastLine.hasPrefix("if isOrderable"), "the grip left the layout on unorderable rows again, so their Edit button moves")
     }
 
     /// Every row the sidebar draws must resolve to a selection, or it is a button that navigates

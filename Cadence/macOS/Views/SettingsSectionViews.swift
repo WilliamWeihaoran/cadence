@@ -446,7 +446,7 @@ struct SettingsSidebarSection: View {
                             onDropBefore: { onDropBefore($0, destination) }
                         )
                         if index < orderedSidebarTabs.count - 1 {
-                            CadenceRowDivider(leadingInset: 42)
+                            CadenceRowDivider(leadingInset: SidebarTabSettingsRow.dividerLeadingInset)
                         }
                     }
                 }

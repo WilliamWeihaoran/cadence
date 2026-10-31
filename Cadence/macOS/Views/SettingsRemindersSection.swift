@@ -99,7 +99,7 @@ struct SettingsRemindersSection: View {
                 // Was a two-line `Divider().background(Theme.borderSubtle)`, which is how it
                 // outlived the sweep written for the one-line spelling (T-286).
                 if index < rows.count - 1 {
-                    CadenceRowDivider(leadingInset: 24)
+                    CadenceRowDivider(leadingInset: SettingsRemindersListRow.dividerLeadingInset)
                 }
             }
         }
@@ -126,11 +126,16 @@ struct SettingsRemindersSection: View {
 private struct SettingsRemindersListRow: View {
     let row: RemindersListSummaryRow
 
+    /// [[T-9622]]: where the list name starts, read by the card's hairline.
+    static let dotSide: CGFloat = 12
+    static let dotLabelSpacing: CGFloat = 12
+    static var dividerLeadingInset: CGFloat { dotSide + dotLabelSpacing }
+
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: Self.dotLabelSpacing) {
             Circle()
                 .fill(Theme.purple)
-                .frame(width: 12, height: 12)
+                .frame(width: Self.dotSide, height: Self.dotSide)
 
             Text(row.displayTitle)
                 .font(.system(size: 13, weight: .semibold))
