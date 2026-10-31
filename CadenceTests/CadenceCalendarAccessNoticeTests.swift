@@ -63,6 +63,9 @@ struct CadenceCalendarAccessNoticeTests {
     @Test func nothingThisMonthIsSaidOnlyWhenEventsCouldHaveBeenRead() {
         let readable = CadenceCalendarAccessNotice.monthAgendaEmptyCopy(notice: nil)
         #expect(readable.message == "Nothing this month")
+        // T-9203: Blocks are gone ([[T-3170]]), so the empty month promises only what it can draw.
+        #expect(readable.subtitle == "Days with events or tasks show up here.")
+        #expect(!readable.subtitle.localizedCaseInsensitiveContains("block"))
 
         for notice in [CadenceCalendarAccessNotice.connectOffer, .denied] {
             let copy = CadenceCalendarAccessNotice.monthAgendaEmptyCopy(notice: notice)

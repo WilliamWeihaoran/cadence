@@ -43,6 +43,22 @@ struct FocusSessionSeedTests {
         }
     }
 
+    /// T-9201: the iOS focus clock's hint names what finishing will bank in the same spelling, so
+    /// a 90-minute session reads "Logs 1h 30m when you finish", never "Logs 90m".
+    @Test func focusClockLogHintNamesTheTotalInTheSharedDurationSpelling() {
+        #expect(CadenceFocusSupport.logHint(elapsedSeconds: 0) == "Nothing to log yet")
+        #expect(CadenceFocusSupport.logHint(elapsedSeconds: 25 * 60) == "Logs 25m when you finish")
+        #expect(CadenceFocusSupport.logHint(elapsedSeconds: 90 * 60) == "Logs 1h\u{00A0}30m when you finish")
+        #expect(CadenceFocusSupport.logHint(elapsedSeconds: 120 * 60) == "Logs 2h when you finish")
+        for seconds in [61, 59 * 60 + 40, 3 * 3600 + 5 * 60] {
+            let minutes = CadenceFocusSupport.minutes(fromElapsedSeconds: seconds)
+            #expect(
+                CadenceFocusSupport.logHint(elapsedSeconds: seconds)
+                    == "Logs \(TimeFormatters.durationLabel(minutes: minutes, emptyPlaceholder: "")) when you finish"
+            )
+        }
+    }
+
     /// Every seed must agree with `CadenceFocusSupport.minutes(fromElapsedSeconds:)`, which is the
     /// one definition of "how many minutes is this stopwatch worth".
     @Test func logFieldSeedTotalAlwaysMatchesTheSharedMinuteConversion() {

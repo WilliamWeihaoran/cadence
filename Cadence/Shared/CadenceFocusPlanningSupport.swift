@@ -329,6 +329,18 @@ enum CadenceFocusSupport {
         max(0, Int((Double(seconds) / 60.0).rounded()))
     }
 
+    /// The line under the iOS focus clock that says what finishing will bank (T-9201).
+    ///
+    /// It echoed the raw minute count -- "Logs 90m when you finish" -- while the 90 minutes it
+    /// banks read "1h 30m" on every chip, the inspector and the timeline, the same drift [[T-9121]]
+    /// fixed in the Mac Log Session button. It now spells the total through
+    /// `TimeFormatters.durationLabel(minutes:emptyPlaceholder:)`, the app's one duration spelling.
+    static func logHint(elapsedSeconds seconds: Int) -> String {
+        let minutes = minutes(fromElapsedSeconds: seconds)
+        guard minutes > 0 else { return "Nothing to log yet" }
+        return "Logs \(TimeFormatters.durationLabel(minutes: minutes, emptyPlaceholder: "")) when you finish"
+    }
+
     /// The pending, non-committing write `complete(_:elapsedSeconds:modelContext:commit:)` below
     /// needs — banking and settling have to land as one commit, so this cannot save on its own.
     ///

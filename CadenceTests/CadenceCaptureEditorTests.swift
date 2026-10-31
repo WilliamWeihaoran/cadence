@@ -32,6 +32,22 @@ struct CadenceCaptureEditorTests {
         #expect(CadenceCaptureFieldInventory.fields(for: .event).contains(.repeatRule))
     }
 
+    /// T-9202: the estimate's own chip spells its length the way the do-date chip beside it does.
+    @Test func theEstimateChipSpellsItsLengthInTheSharedDurationSpelling() {
+        var draft = CadenceScheduleDraft(dateKey: "2026-10-19", startMin: 600, kind: .task)
+        draft.setEstimate(90)
+        #expect(CadenceCaptureFieldInventory.estimateChipTitle(for: draft) == "1h\u{00A0}30m")
+        draft.setEstimate(45)
+        #expect(CadenceCaptureFieldInventory.estimateChipTitle(for: draft) == "45m")
+        for minutes in [15, 60, 125] {
+            draft.setEstimate(minutes)
+            #expect(
+                CadenceCaptureFieldInventory.estimateChipTitle(for: draft)
+                    == CadenceTaskPresentationSupport.estimateLabel(minutes: draft.estimateMinutes)
+            )
+        }
+    }
+
     @Test func clearingAnEditedEstimateMeansNoneWithoutRewritingTheTitle() {
         var draft = CadenceScheduleDraft(dateKey: "2026-10-19", startMin: 600, kind: .task)
         draft.subject = .editingTask(UUID())
@@ -223,7 +239,10 @@ struct CadenceCaptureEditorTests {
         #expect(priority.contains("TaskPriorityMarkControl(priority: CadenceCaptureFieldInventory.priority(for: draft))"))
         #expect(!priority.contains("Text("))
         let chipTitle = try #require(CadenceSourceScan.functionBody(named: "chipTitle", in: cardSource))
-        #expect(chipTitle.contains("CadenceTaskPresentationSupport.estimateLabel(minutes: draft.estimateMinutes)"))
+        // T-9202: the riding duration and the estimate's own chip read one helper, so the same
+        // estimate cannot be "1h 30m" on the do-date chip and "90 min" once the date is cleared.
+        #expect(chipTitle.components(separatedBy: "CadenceCaptureFieldInventory.estimateChipTitle(for: draft)").count == 3)
+        #expect(!chipTitle.contains(" min\""))
         #expect(chipTitle.contains("\\(doDayText) \u{00B7} \\(draft.doTimeLabel)"))
         let carries = try #require(CadenceSourceScan.functionBody(named: "restCarriesChip", in: card))
         #expect(carries.contains("case .doDate, .dueDate, .tags, .priority: return false"))

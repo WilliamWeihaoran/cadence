@@ -104,6 +104,15 @@ enum CadenceCaptureFieldInventory {
         return !options.tagChoices.isEmpty || options.createTag != nil
     }
 
+    /// What the estimate says on the card, in the app's one duration spelling (T-9202).
+    ///
+    /// The estimate's own chip -- drawn only when there is no do date for it to ride -- read
+    /// `"\(minutes) min"`, so 90 minutes was "90 min" there and "Oct 19 · 1h 30m" on the do-date
+    /// chip of the same card a tap later. Both now read this.
+    static func estimateChipTitle(for draft: CadenceScheduleDraft) -> String {
+        CadenceTaskPresentationSupport.estimateLabel(minutes: draft.estimateMinutes)
+    }
+
     static func clear(_ field: CadenceCaptureField, draft: inout CadenceScheduleDraft) {
         switch field {
         case .doDate: draft.clearDoDate()
@@ -605,7 +614,7 @@ struct CadenceScheduleCaptureCard<NotesField: View>: View {
             // estimate that nobody chose and an all-day task has no length to state.
             guard draft.scheduledStartMin >= 0 else {
                 guard isSet(.estimate) else { return doDayText }
-                return "\(doDayText) · \(CadenceTaskPresentationSupport.estimateLabel(minutes: draft.estimateMinutes))"
+                return "\(doDayText) · \(CadenceCaptureFieldInventory.estimateChipTitle(for: draft))"
             }
             return "\(doDayText) · \(draft.doTimeLabel)"
         case .dueDate:
@@ -622,7 +631,7 @@ struct CadenceScheduleCaptureCard<NotesField: View>: View {
         case .repeatRule:
             return draft.captureRepeatSummary
         case .priority: return "\(CadenceCaptureFieldInventory.priority(for: draft).label) priority"
-        case .estimate: return "\(draft.estimateMinutes) min"
+        case .estimate: return CadenceCaptureFieldInventory.estimateChipTitle(for: draft)
         case .calendar: return calendarChoices.first { $0.id == draft.calendarID }?.name ?? "Calendar"
         case .location: return draft.location
         }

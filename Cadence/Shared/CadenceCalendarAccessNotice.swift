@@ -90,11 +90,15 @@ nonisolated enum CadenceCalendarAccessNotice: Equatable {
 
     /// The month agenda's empty state. With a notice up, an empty month is only empty of what
     /// Cadence holds, so it may not say "Nothing this month".
+    ///
+    /// The subtitle names only what a month agenda can hold (T-9203). It said "events, blocks or
+    /// tasks", the last owner-visible mention of a Block after [[T-3170]] removed every Block
+    /// surface, promising a third kind of row that nothing draws any more.
     static func monthAgendaEmptyCopy(
         notice: CadenceCalendarAccessNotice?
     ) -> (message: String, subtitle: String) {
         guard notice != nil else {
-            return ("Nothing this month", "Days with events, blocks or tasks show up here.")
+            return ("Nothing this month", "Days with events or tasks show up here.")
         }
         return ("No tasks this month", notConnectedSentence)
     }

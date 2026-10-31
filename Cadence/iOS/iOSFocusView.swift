@@ -553,7 +553,7 @@ struct iOSFocusView: View {
                     .lineLimit(1)
                     .minimumScaleFactor(0.68)
                     .contentTransition(.numericText())
-                Text(logHint(elapsedSeconds: seconds))
+                Text(CadenceFocusSupport.logHint(elapsedSeconds: seconds))
                     .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(Theme.subdued)
             }
@@ -564,12 +564,6 @@ struct iOSFocusView: View {
     private func estimateLabel(for task: AppTask) -> String? {
         let label = TimeFormatters.durationLabel(actual: task.actualMinutes, estimated: task.estimatedMinutes)
         return label == "-/-" ? nil : label
-    }
-
-    private func logHint(elapsedSeconds seconds: Int) -> String {
-        let minutes = CadenceFocusSupport.minutes(fromElapsedSeconds: seconds)
-        guard minutes > 0 else { return "Nothing to log yet" }
-        return "Logs \(minutes)m when you finish"
     }
 
     private func focusControls(for task: AppTask) -> some View {
