@@ -100,7 +100,7 @@ import Testing
     /// moved the highlight on, the row still under the pointer kept the blue wash: two rows lit.
     @Test func theCommandPaletteRowsLightOnlyTheirHighlight() throws {
         let source = try Self.code("Cadence/macOS/Views/GlobalSearchSupportViews.swift")
-        for row in ["struct GlobalSearchResultRow: View"] {
+        for row in ["struct GlobalSearchResultRow: View", "struct GlobalSearchMoreResultsRow: View"] {
             let body = try #require(CadenceSourceScan.declarationBody(row, in: source), "\(row) moved")
             // Non-vacuity: the highlight is still drawn on the label and a hover still reaches it.
             #expect(body.contains("isHighlighted ?"), "\(row) no longer draws its highlight")

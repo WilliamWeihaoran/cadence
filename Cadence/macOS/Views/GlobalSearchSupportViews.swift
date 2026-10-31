@@ -398,6 +398,9 @@ struct GlobalSearchHeader: View {
 /// the arrow-key path after its section's last result, it draws the highlight when it holds it,
 /// and Return on it reveals rather than selects. The highlight is neutral (`Theme.dim`) for the
 /// same reason the row takes no tint.
+///
+/// **`.plain`, as `GlobalSearchResultRow` is ([[T-9621]]).** The highlight is this list's hover
+/// layer -- a hover moves it -- so `.cadencePlain`'s blue wash would be a second one.
 struct GlobalSearchMoreResultsRow: View {
     let continuation: GlobalSearchResultContinuation
     let isHighlighted: Bool
@@ -429,7 +432,7 @@ struct GlobalSearchMoreResultsRow: View {
             .clipShape(RoundedRectangle(cornerRadius: 12))
             .contentShape(RoundedRectangle(cornerRadius: 12))
         }
-        .buttonStyle(.cadencePlain(cornerRadius: 12))
+        .buttonStyle(.plain)
         .padding(.horizontal, 6)
         .onHover { hovering in
             if hovering { onHover() }
