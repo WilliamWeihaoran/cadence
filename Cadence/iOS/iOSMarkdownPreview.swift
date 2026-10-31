@@ -192,6 +192,12 @@ private struct iOSMarkdownPreviewTableBlock: View {
             .cadenceCard(background: Theme.surfaceElevated.opacity(0.38), cornerRadius: Theme.radiusCard, shadowRadius: 8, shadowY: 3)
         }
         .scrollIndicators(.hidden)
+        // [[T-9541]]: a scroll view clips to its own frame, and that frame is the card's -- so the
+        // card's 8pt shadow (3pt down) was sliced flat along its leading edge and its bottom, the
+        // one table in the app drawn with a hard line where every other card fades. The preview
+        // around it is itself a clipped scroll view inside a clipped card, so lifting the clip here
+        // lets the shadow into the 18pt reading margin and no further.
+        .scrollClipDisabled()
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
