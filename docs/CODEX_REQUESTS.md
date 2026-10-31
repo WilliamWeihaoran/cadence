@@ -4361,6 +4361,9 @@ writer may hold, and that collision does not announce itself. If a path you need
 **stop and say so** rather than widening it yourself. Run
 `./scripts/codex-land.sh review codex/<topic>` **yourself** before you hand anything over.
 
+**Your branch is `codex/r67-parity`.** The paths this request needs are fenced and granted for
+exactly that name, so a branch under any other name is not covered by those grant rows.
+
 **All four items below are already DECIDED by the owner. You implement them; you do not
 re-litigate the design.** Each one has a ticket id, and **every inbox entry must cite the id of the
 item it implements.** Where an item leaves you a genuine choice, it says so explicitly — item 1 is
