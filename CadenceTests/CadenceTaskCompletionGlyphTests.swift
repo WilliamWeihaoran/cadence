@@ -160,53 +160,88 @@ struct CadenceTaskCompletionGlyphTests {
         #expect(ticked.isFilled)
     }
 
-    // MARK: - T-8202: the window the control is drawing
+    // MARK: - T-8202 / T-9401: the window the control is drawing
 
-    /// **The owner's ruling, as two numbers and the sentence that ties them together.**
+    /// **The owner's ruling, as the one number that is left.**
     ///
-    /// "1.2s total with the check mark at halfway." These are not cosmetic: `animationDuration`
-    /// gates the `.done` write itself, so it is the undo window a mis-tap can be withdrawn inside,
-    /// and `confirmationThreshold` is the fraction of it after which the control admits what it is
-    /// about to do. The old pair, 2.5 and 0.7, put the confirmation 1.75s in — which is the part
-    /// that read as slow — so both move or neither does.
-    @Test func theCompletionWindowIsTwelveHundredMillisecondsWithConfirmationAtItsMidpoint() {
+    /// "1.2s total" is not cosmetic: `animationDuration` gates the `.done` write itself, so it is
+    /// the undo window a mis-tap can be withdrawn inside. The ruling it came from also put a check
+    /// mark at halfway; on 2026-10-31 the owner removed the mark and kept the window ([[T-9401]]),
+    /// so the threshold, the derived delay and the showsConfirmation helper went with it.
+    /// What stays pinned here is the window, and that the type says nothing else.
+    @Test func theCompletionWindowIsTwelveHundredMillisecondsAndIsTheOnlyTimingStated() throws {
         #expect(CadenceTaskCompletionTiming.animationDuration == 1.2)
-        #expect(CadenceTaskCompletionTiming.confirmationThreshold == 0.5)
 
-        // Derived, not restated: the delay is what the two numbers mean together.
-        #expect(abs(CadenceTaskCompletionTiming.confirmationDelay - 0.6) < 0.000_001)
-        #expect(CadenceTaskCompletionTiming.confirmationDelay < CadenceTaskCompletionTiming.animationDuration)
+        // The removed members are removed, not merely uncalled: a constant describing a mark that
+        // never appears is exactly what [[T-9401]] was spent clearing, so a reinstated one must
+        // red here rather than sit unread. Source-scanned because a reference to a deleted member
+        // would not compile, so this cannot be written as an expression.
+        let raw = try CadenceSourceScan.sourceFile("Cadence/Shared/CadenceTaskCompletionTiming.swift")
+        let code = CadenceSourceScan.codeOnly(raw)
+        #expect(code.contains("enum CadenceTaskCompletionTiming"), "the scan did not read the timing file")
+        #expect(code != raw, "nothing was stripped, so the scan is reading prose as code")
+        #expect(code.count == raw.count, "the stripper changed the length, so offsets no longer hold")
+        #expect(code.contains("static let animationDuration"), "the window itself is gone")
+        for gone in ["confirmationThreshold", "confirmationDelay", "showsConfirmation"] {
+            #expect(!code.contains(gone), "`\(gone)` is back: a mark that never appears has an API again")
+        }
     }
 
-    /// Halfway means *at* halfway. A strict `>` would hold the mark back to the first frame past
-    /// the midpoint, which is a different rule from the one the owner stated even though it looks
-    /// the same written down.
-    @Test func theConfirmationMarkAppearsFromTheMidpointOnwardAndNotBefore() {
-        #expect(CadenceTaskCompletionTiming.showsConfirmation(at: 0.5))
-        #expect(CadenceTaskCompletionTiming.showsConfirmation(at: 0.5000001))
-        #expect(CadenceTaskCompletionTiming.showsConfirmation(at: 1))
-        #expect(!CadenceTaskCompletionTiming.showsConfirmation(at: 0.4999))
-        #expect(!CadenceTaskCompletionTiming.showsConfirmation(at: 0))
+    /// **A filling ring never shows a mark, at any progress ([[T-9401]]).**
+    ///
+    /// The old rule was "from the midpoint onward"; the owner watched it and ruled the mark out
+    /// altogether, ring and window untouched. The readings below are the ones that separated the
+    /// two previous rules — 0.4999 against 0.5, and 0.6 against 0.7 — plus the ends and the raw
+    /// out-of-range values a caller's `elapsed / animationDuration` can hand over. Every one of
+    /// them is now the same answer, which is the point.
+    @Test func aFillingRingShowsNoMarkAtAnyProgress() {
+        func filling(_ progress: Double, cancelling: Bool = false) -> CadenceTaskCompletionCircleFace {
+            .resolve(
+                glyph: .resolve(
+                    status: .todo,
+                    priority: .high,
+                    isPendingCompletion: !cancelling,
+                    isPendingCancellation: cancelling
+                ),
+                progress: progress
+            )
+        }
 
-        // The old threshold must no longer be the one in force: progress of 0.6 is past halfway
-        // and short of 0.7, so this single reading separates the two rules.
-        #expect(CadenceTaskCompletionTiming.showsConfirmation(at: 0.6))
+        for progress in [-3, 0, 0.4999, 0.5, 0.5000001, 0.6, 0.7, 1, 4.2] as [Double] {
+            #expect(!filling(progress).showsMark, "the fill marked itself at \(progress)")
+            #expect(!filling(progress, cancelling: true).showsMark, "the cancellation marked itself at \(progress)")
+        }
 
-        // Callers hand it raw `elapsed / duration`, which runs past 1 and can arrive negative from
-        // a clock that moved; clamping is the helper's job so no call site has to remember it.
-        #expect(CadenceTaskCompletionTiming.showsConfirmation(at: 4.2))
-        #expect(!CadenceTaskCompletionTiming.showsConfirmation(at: -3))
+        // Still a fill, though: the ring it is drawing is unchanged, clamped as before, and it
+        // still knows which mark it would be — the face just does not draw one.
+        #expect(filling(0.25).ring == .filling(0.25))
+        #expect(filling(4.2).ring == .filling(1))
+        #expect(filling(-3).ring == .filling(0))
+        #expect(filling(0.5).mark == .checkmark)
+        #expect(filling(0.5, cancelling: true).mark == .cross)
+
+        // And the distinction survives: a resting face still marks. Both halves in one test so a
+        // blanket `showsMark = false` cannot pass by making everything silent.
+        let settled = CadenceTaskCompletionCircleFace.resolve(
+            glyph: .resolve(status: .done, priority: .high, isPendingCompletion: false, isPendingCancellation: false),
+            progress: nil
+        )
+        #expect(settled.showsMark)
+        #expect(settled.mark == .checkmark)
     }
 
     // MARK: - T-8411: one drawn circle for both platforms
 
-    /// **The drawing reads the shared threshold; it does not keep one of its own ([[T-8202]]).**
+    /// **The drawing keeps no threshold of its own, and no longer asks for one ([[T-9401]]).**
     /// Moved here from `TaskCompletionAnimationManagerTests` with the circle it reads ([[T-8411]]).
     ///
-    /// The confirmation mark's cue is a *fraction of the window*, so a literal in the view is a
-    /// number that silently stops meaning "halfway" the next time the window moves — which is
-    /// exactly how a 2.5s fill ended up confirming at 1.75s.
-    @Test func theCompletionGlyphAsksTheSharedTimingWhenToShowItsMark() throws {
+    /// Until 2026-10-31 this pinned the opposite: that the view asked the shared timing when to
+    /// mark, because a literal here silently stopped meaning "halfway" whenever the window moved.
+    /// The owner then removed the mid-fill mark entirely, so the pin becomes its mirror — the
+    /// filling arm resolves `showsMark: false` flat, the resting arm still resolves `true`, and no
+    /// numeric cue reappears in between. Written over the source because the two arms are literal
+    /// arguments inside `resolve`, which no expression test can tell apart from its result alone.
+    @Test func theFillingRingResolvesNoMarkAndSpellsNoThresholdOfItsOwn() throws {
         let raw = try CadenceSourceScan.sourceFile("Cadence/Shared/Components/CadenceTaskCompletionCircle.swift")
         let code = CadenceSourceScan.codeOnly(raw)
 
@@ -216,8 +251,16 @@ struct CadenceTaskCompletionGlyphTests {
         #expect(code.count == raw.count, "the stripper changed the length, so offsets no longer hold")
 
         #expect(
-            CadenceSourceScan.matchCount(#"CadenceTaskCompletionTiming\.showsConfirmation\(at: fill\)"#, in: code) == 1,
-            "the circle no longer asks the shared timing when to show its mark"
+            CadenceSourceScan.matchCount(#"showsMark: false"#, in: code) == 1,
+            "the filling face no longer resolves `showsMark: false`, so a fill can mark itself again"
+        )
+        #expect(
+            CadenceSourceScan.matchCount(#"showsMark: true"#, in: code) == 1,
+            "the resting face no longer resolves `showsMark: true`, so a settled disc lost its mark"
+        )
+        #expect(
+            !code.contains("showsConfirmation"),
+            "the circle asks for a confirmation mark again"
         )
         let comparison = #"\b(fill|progress)\s*[<>]=?\s*[0-9.]+"#
         #expect(CadenceSourceScan.matchCount(comparison, in: code) == 0, "the circle spells its own threshold again")
@@ -240,12 +283,12 @@ struct CadenceTaskCompletionGlyphTests {
         #expect(Face.resolve(glyph: glyph(.todo, completing: true), progress: nil) == Face(ring: .open, mark: .dot, showsMark: true))
         #expect(Face.resolve(glyph: glyph(.todo, cancelling: true), progress: nil) == Face(ring: .open, mark: .cross, showsMark: true))
 
-        // Filling: the ring sweeps, and the mark lands at the shared midpoint.
+        // Filling: the ring sweeps and says nothing while it does ([[T-9401]]).
         #expect(Face.resolve(glyph: glyph(.todo, completing: true), progress: 0.25) == Face(ring: .filling(0.25), mark: .checkmark, showsMark: false))
-        #expect(Face.resolve(glyph: glyph(.todo, completing: true), progress: 0.5) == Face(ring: .filling(0.5), mark: .checkmark, showsMark: true))
-        #expect(Face.resolve(glyph: glyph(.todo, cancelling: true), progress: 0.75) == Face(ring: .filling(0.75), mark: .cross, showsMark: true))
+        #expect(Face.resolve(glyph: glyph(.todo, completing: true), progress: 0.5) == Face(ring: .filling(0.5), mark: .checkmark, showsMark: false))
+        #expect(Face.resolve(glyph: glyph(.todo, cancelling: true), progress: 0.75) == Face(ring: .filling(0.75), mark: .cross, showsMark: false))
         // Clamped, so a raw `elapsed / duration` cannot draw past a full ring.
-        #expect(Face.resolve(glyph: glyph(.todo, completing: true), progress: 3) == Face(ring: .filling(1), mark: .checkmark, showsMark: true))
+        #expect(Face.resolve(glyph: glyph(.todo, completing: true), progress: 3) == Face(ring: .filling(1), mark: .checkmark, showsMark: false))
 
         // A settled or open glyph ignores a progress reading: only a pending one fills.
         #expect(Face.resolve(glyph: glyph(.done), progress: 0.3) == Face(ring: .filled, mark: .checkmark, showsMark: true))

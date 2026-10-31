@@ -19,7 +19,12 @@ nonisolated struct CadenceTaskCompletionCircleFace: Equatable {
 
     let ring: Ring
     let mark: CadenceTaskCompletionGlyph.Mark
-    /// Only a filling ring hides its mark: it lands when `CadenceTaskCompletionTiming` says so.
+    /// Whether this face draws its mark at all, and the one gate the view reads for it.
+    ///
+    /// A **filling** ring never does: the owner removed the mid-fill confirmation on 2026-10-31
+    /// ([[T-9401]]), so a running fill is ring and nothing else until it settles. Every **resting**
+    /// face does — a settled disc shows its check or cross, and a pending glyph handed no progress
+    /// (Reduce Motion, [[T-8412]]) still shows its own dot or cross.
     let showsMark: Bool
 
     static func resolve(glyph: CadenceTaskCompletionGlyph, progress: Double?) -> Self {
@@ -29,7 +34,7 @@ nonisolated struct CadenceTaskCompletionCircleFace: Equatable {
             return Self(
                 ring: .filling(fill),
                 mark: glyph.state == .pendingCancellation ? .cross : .checkmark,
-                showsMark: CadenceTaskCompletionTiming.showsConfirmation(at: fill)
+                showsMark: false
             )
         }
         return Self(ring: glyph.isFilled ? .filled : .open, mark: glyph.mark, showsMark: true)
@@ -86,21 +91,21 @@ struct CadenceTaskCompletionCircle: View {
             case .open:
                 Circle()
                     .strokeBorder(glyph.tint, lineWidth: Self.lineWidth)
-                markView(face.mark)
             case .filled:
                 Circle()
                     .fill(glyph.tint)
-                markView(face.mark)
             case .filling(let fill):
                 Circle()
                     .strokeBorder(glyph.tint.opacity(0.18), lineWidth: Self.lineWidth)
                 Circle()
                     .strokeBorder(glyph.tint, lineWidth: Self.lineWidth)
                     .mask(CadenceTaskCompletionWedge(fraction: fill))
+            }
+            // One gate for the mark on every face, drawn last as it always was. The fading,
+            // springing arrival this used to carry existed only so a mark could land mid-fill
+            // ([[T-9401]]); nothing arrives mid-fill now, and a resting face never animated it.
+            if face.showsMark {
                 markView(face.mark)
-                    .opacity(face.showsMark ? 1 : 0)
-                    .scaleEffect(face.showsMark ? 1 : 0.65)
-                    .animation(.spring(response: 0.22, dampingFraction: 0.75), value: face.showsMark)
             }
         }
         .frame(width: diameter, height: diameter)

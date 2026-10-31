@@ -486,14 +486,18 @@ struct TaskCompletionAnimationManagerTests {
 
     // MARK: - T-8202: where the fill is at a given moment
 
-    /// **The fill reaches its confirmation point at half the window, measured not slept.**
+    /// **The fill is where the clock says it is, measured not slept.**
     ///
-    /// [[T-268]] rules out driving this delay with a sleep: a margin over `animationDuration`
-    /// failed here under parallel load, and the clock it was reading was the distorted one, not
-    /// the product's. `progress(for:now:)` takes the moment as an argument, so the whole question
-    /// — is the ring half full when the owner says the check should appear — is answerable with
-    /// arithmetic against the start the manager actually recorded.
-    @Test func theCompletionFillIsHalfwayWhenTheConfirmationMarkIsDue() throws {
+    /// [[T-268]] rules out driving this with a sleep: a margin over `animationDuration` failed
+    /// here under parallel load, and the clock it was reading was the distorted one, not the
+    /// product's. `progress(for:now:)` takes the moment as an argument, so the whole question —
+    /// how full is the ring at a given instant — is answerable with arithmetic against the start
+    /// the manager actually recorded.
+    ///
+    /// This used to ask where the *confirmation mark* was due. [[T-9401]] removed that mark, so
+    /// the halfway reading is now only the fill's own: the ring is half full at half the window,
+    /// and it is still drawing nothing there.
+    @Test func theCompletionFillIsHalfFullAtHalfTheWindowAndStillSaysNothing() throws {
         let manager = TaskCompletionAnimationManager.shared
         let task = AppTask(title: "a")
         defer { manager.cancelPending(for: task.id) }
@@ -501,13 +505,16 @@ struct TaskCompletionAnimationManagerTests {
         manager.toggleCompletion(for: task)
         let start = try #require(manager.pendingStartTimes[task.id], "the tap recorded no start time")
 
-        let due = manager.progress(for: task, now: start.addingTimeInterval(CadenceTaskCompletionTiming.confirmationDelay))
+        let half = CadenceTaskCompletionTiming.animationDuration / 2
+        let due = manager.progress(for: task, now: start.addingTimeInterval(half))
         #expect(abs(due - 0.5) < 0.000_001)
-        #expect(CadenceTaskCompletionTiming.showsConfirmation(at: due))
 
-        // A tenth of a second earlier it is still only a ring.
-        let early = manager.progress(for: task, now: start.addingTimeInterval(CadenceTaskCompletionTiming.confirmationDelay - 0.1))
-        #expect(!CadenceTaskCompletionTiming.showsConfirmation(at: early))
+        // A tenth of a second earlier it is less full, and neither reading marks: the midpoint
+        // carries no meaning of its own any more ([[T-9401]]).
+        let early = manager.progress(for: task, now: start.addingTimeInterval(half - 0.1))
+        #expect(early < due)
+        #expect(!CadenceTaskCompletionCircleFace.resolve(glyph: manager.glyph(for: task), progress: due).showsMark)
+        #expect(!CadenceTaskCompletionCircleFace.resolve(glyph: manager.glyph(for: task), progress: early).showsMark)
 
         // And the fill is still short of full right up to the end, then clamps.
         //
@@ -535,7 +542,7 @@ struct TaskCompletionAnimationManagerTests {
         manager.toggleCompletion(for: section, getCurrent: { section }, save: { _ in })
         let start = try #require(manager.pendingStartTimes[section.id], "the column control recorded no start time")
 
-        let due = manager.progress(for: section, now: start.addingTimeInterval(CadenceTaskCompletionTiming.confirmationDelay))
+        let due = manager.progress(for: section, now: start.addingTimeInterval(CadenceTaskCompletionTiming.animationDuration / 2))
         #expect(abs(due - 0.5) < 0.000_001)
         #expect(manager.progress(for: section, now: start.addingTimeInterval(CadenceTaskCompletionTiming.animationDuration - 0.01)) < 1)
         #expect(manager.progress(for: section, now: start.addingTimeInterval(CadenceTaskCompletionTiming.animationDuration + 0.05)) == 1)
@@ -563,8 +570,10 @@ struct TaskCompletionAnimationManagerTests {
         #expect(!section.isCompleted)
     }
 
-    // `theCompletionGlyphAsksTheSharedTimingWhenToShowItsMark` moved to
-    // `CadenceTaskCompletionGlyphTests` with the circle it reads ([[T-8411]]).
+    // `theFillingRingResolvesNoMarkAndSpellsNoThresholdOfItsOwn` moved to
+    // `CadenceTaskCompletionGlyphTests` with the circle it reads ([[T-8411]]); it was
+    // named theCompletionGlyphAsksTheSharedTimingWhenToShowItsMark (no backticks: that name is
+    // gone) until [[T-9401]] removed the mark it asked about and the pin became its mirror.
 
     // MARK: - T-8203: the same deferred completion on iOS
 
@@ -689,7 +698,7 @@ struct TaskCompletionAnimationManagerTests {
 
     /// The iOS wiring, which no macOS test host can run: the three surfaces in scope start the
     /// shared fill rather than writing synchronously, the root settles it on leaving active, and the
-    /// circle draws the fill only while one runs and asks the shared timing when to show its mark.
+    /// circle draws the fill only while one runs — and draws no mark while it does ([[T-9401]]).
     @Test func theIOSRowCardSwipeAndRootAreWiredToTheSharedDeferredCompletion() throws {
         let row = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile("Cadence/iOS/iOSTaskViews.swift"))
         let card = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile("Cadence/iOS/iOSBoardCards.swift"))
@@ -724,7 +733,12 @@ struct TaskCompletionAnimationManagerTests {
 
         // Hazard 5: the display-link redraw exists only for a pending glyph, and Reduce Motion stops it.
         #expect(circle.contains("!reduceMotion && (glyph.state == .pendingCompletion || glyph.state == .pendingCancellation)"))
-        #expect(drawing.contains("CadenceTaskCompletionTiming.showsConfirmation(at: fill)"))
+        // [[T-9401]]: the owner removed the mid-fill mark, so the pin is that the filling arm
+        // resolves `showsMark: false` flat while the resting arm still resolves `true`, and that
+        // neither a call back to the deleted helper nor a threshold of the view's own returns.
+        #expect(CadenceSourceScan.matchCount(#"showsMark: false"#, in: drawing) == 1, "a fill can mark itself again")
+        #expect(CadenceSourceScan.matchCount(#"showsMark: true"#, in: drawing) == 1, "a settled disc lost its mark")
+        #expect(!drawing.contains("showsConfirmation"), "the circle asks for a confirmation mark again")
         let comparison = #"\bfill\s*[<>]=?\s*[0-9.]+"#
         #expect(CadenceSourceScan.matchCount(comparison, in: drawing) == 0, "the circle spells its own confirmation threshold")
         #expect(CadenceSourceScan.matchCount(comparison, in: "let shown = fill > 0.7") == 1)
