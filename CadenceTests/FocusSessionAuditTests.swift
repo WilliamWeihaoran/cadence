@@ -27,6 +27,22 @@ struct FocusSessionSeedTests {
         #expect(seed(0) == [0, 0])
     }
 
+    /// T-9121: the Log button names the total it banks in the app's one duration spelling, so 90
+    /// typed into the minutes field reads "Log 1h 30m" as the logged time will everywhere else.
+    @Test func logButtonTitleNamesTheTotalInTheSharedDurationSpelling() {
+        #expect(FocusSessionSupport.logButtonTitle(hours: 0, minutes: 0) == "Log")
+        #expect(FocusSessionSupport.logButtonTitle(hours: 0, minutes: 25) == "Log 25m")
+        #expect(FocusSessionSupport.logButtonTitle(hours: 2, minutes: 0) == "Log 2h")
+        #expect(FocusSessionSupport.logButtonTitle(hours: 0, minutes: 90) == "Log 1h\u{00A0}30m")
+        #expect(FocusSessionSupport.logButtonTitle(hours: 1, minutes: 75) == "Log 2h\u{00A0}15m")
+        for (h, m) in [(0, 90), (1, 75), (3, 5), (0, 60)] {
+            #expect(
+                FocusSessionSupport.logButtonTitle(hours: h, minutes: m)
+                    == "Log " + TimeFormatters.durationLabel(minutes: h * 60 + m, emptyPlaceholder: "")
+            )
+        }
+    }
+
     /// Every seed must agree with `CadenceFocusSupport.minutes(fromElapsedSeconds:)`, which is the
     /// one definition of "how many minutes is this stopwatch worth".
     @Test func logFieldSeedTotalAlwaysMatchesTheSharedMinuteConversion() {

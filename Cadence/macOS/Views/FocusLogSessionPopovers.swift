@@ -27,8 +27,6 @@ struct LogSessionPopover: View {
         FocusSessionSupport.logFieldValues(hoursText: logHoursText, minutesText: logMinutesText)
     }
 
-    private var totalMinutes: Int { logHours * 60 + logMinutes }
-
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 3) {
@@ -97,7 +95,7 @@ struct LogSessionPopover: View {
                 Button {
                     onLog(logHours, logMinutes, markComplete)
                 } label: {
-                    Text(totalMinutes > 0 ? "Log \(formatTotal())" : "Log")
+                    Text(FocusSessionSupport.logButtonTitle(hours: logHours, minutes: logMinutes))
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(Theme.onColor(for: Theme.blue))
                 }
@@ -131,12 +129,6 @@ struct LogSessionPopover: View {
                 .font(.system(size: 11))
                 .foregroundStyle(Theme.dim)
         }
-    }
-
-    private func formatTotal() -> String {
-        if logHours > 0 && logMinutes > 0 { return "\(logHours)h \(logMinutes)m" }
-        if logHours > 0 { return "\(logHours)h" }
-        return "\(logMinutes)m"
     }
 }
 

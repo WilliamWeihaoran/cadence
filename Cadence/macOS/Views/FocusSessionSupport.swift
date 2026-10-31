@@ -45,6 +45,19 @@ enum FocusSessionSupport {
         return (parse(hoursText), parse(minutesText))
     }
 
+    /// **[[T-9121]].** The Log Session popover's confirm label: "Log" with nothing to log, else
+    /// "Log " and the TOTAL in the app's one duration spelling, `TimeFormatters.durationLabel`.
+    ///
+    /// The popover used to print its two fields back as typed, so 90 in the minutes field read
+    /// "Log 90m" and 1 h + 75 min read "Log 1h 75m" — while the same 90 minutes, once logged, reads
+    /// "1h 30m" on every chip, the inspector and the timeline. The button names what it will bank,
+    /// which is `hours * 60 + minutes`, so it is formatted from that sum.
+    static func logButtonTitle(hours: Int, minutes: Int) -> String {
+        let total = hours * 60 + minutes
+        guard total > 0 else { return "Log" }
+        return "Log \(TimeFormatters.durationLabel(minutes: total, emptyPlaceholder: ""))"
+    }
+
     /// **Throws and takes `commit:` now (T-654).** It used to bank through
     /// `CadenceFocusLedger.bank` — a pending insert since T-621 — and, when `complete` was ticked,
     /// finish the task through `TaskWorkflowService.markDone` directly: neither ever reached a
