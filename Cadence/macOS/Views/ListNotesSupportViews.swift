@@ -166,6 +166,10 @@ struct TaskNoteEditorPane: View {
         .onChange(of: task.id) { _, _ in
             loadEditorStateIfNeeded(force: true)
         }
+        // T-9123: an outside write to these notes (sync, MCP, another editor) reaches the buffer.
+        .onChange(of: task.notes) { _, storeNotes in
+            adoptStoreNotesIfIdle(storeNotes)
+        }
         .onDisappear {
             flushPendingEditorContent()
             MarkdownEditorTerminationFlush.shared.unregister(terminationFlushID)
@@ -185,6 +189,19 @@ struct TaskNoteEditorPane: View {
         loadedTaskID = task.id
         editorContent = task.notes
         refreshDerivedState(for: task.notes)
+    }
+
+    /// [[T-9123]]: adopt an outside change to `task.notes` unless typing is still pending —
+    /// `MarkdownEditorStoreAdoption` holds the rule.
+    private func adoptStoreNotesIfIdle(_ storeNotes: String) {
+        guard let adopted = MarkdownEditorStoreAdoption.adoptedBuffer(
+            storeText: storeNotes,
+            buffer: editorContent,
+            bufferIsLoaded: loadedTaskID == task.id,
+            commitIsPending: pendingFallbackContentSyncTask != nil
+        ) else { return }
+        editorContent = adopted
+        refreshDerivedState(for: adopted)
     }
 
     private func updateEditorContent(_ content: String) {

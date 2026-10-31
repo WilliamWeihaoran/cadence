@@ -134,3 +134,32 @@ enum MarkdownInlineTagCaret {
         return false
     }
 }
+
+/// **[[T-9123]].** What a buffered markdown editor does when the text it observes in the store
+/// changes underneath it — a CloudKit import, an MCP write, another editor or panel on the same
+/// record.
+///
+/// The macOS task-notes editors (`FocusNotesPanel`, `TaskDetailNotesSection`, `TaskNoteEditorPane`)
+/// hold the typed text in a buffer and commit it on a fallback timer, focus loss, switch or quit.
+/// They used to reload the buffer only on appear and on a record switch, so an outside change was
+/// never drawn, and the next keystroke — or merely leaving the editor — wrote the stale buffer back
+/// over it.
+///
+/// The rule:
+/// - **Nothing pending** (no fallback commit armed): the buffer holds nothing the store lacks, so
+///   it adopts the store's text. Returns that text, or `nil` when the buffer already matches.
+/// - **A commit pending**: the buffer holds typing the store has not seen. It is kept, and the
+///   pending commit writes it over the outside change when it fires — last writer wins, as before
+///   this rule. Merging the two would need a three-way base the editors do not keep.
+/// - **Buffer not loaded for this record**: the editor already draws the store's text; `nil`.
+enum MarkdownEditorStoreAdoption {
+    static func adoptedBuffer(
+        storeText: String,
+        buffer: String,
+        bufferIsLoaded: Bool,
+        commitIsPending: Bool
+    ) -> String? {
+        guard bufferIsLoaded, !commitIsPending, storeText != buffer else { return nil }
+        return storeText
+    }
+}

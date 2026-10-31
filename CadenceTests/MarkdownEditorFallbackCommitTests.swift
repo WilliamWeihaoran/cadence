@@ -323,5 +323,65 @@ struct MarkdownEditorFallbackCommitTests {
         let notePanel = CadenceSourceScan.codeOnly(try cadenceTestSource("Cadence/macOS/Views/NotePanel.swift"))
         #expect(!notePanel.contains("CoreNoteSyncTiming"))
     }
+
+    // MARK: - T-9123: an outside change to the observed text
+
+    /// Replays the reported loss: the editor loaded "Draft", another writer stored "Synced", then the
+    /// user types "!" and the buffer commits. Before T-9123 the buffer never left "Draft", so the
+    /// commit wrote "Draft!" over the synced text.
+    @Test func anIdleBufferAdoptsAnOutsideChangeSoTheNextCommitKeepsIt() {
+        var buffer = "Draft"
+        let store = "Synced"
+        if let adopted = MarkdownEditorStoreAdoption.adoptedBuffer(
+            storeText: store, buffer: buffer, bufferIsLoaded: true, commitIsPending: false
+        ) {
+            buffer = adopted
+        }
+        buffer += "!"
+        #expect(buffer == "Synced!")
+    }
+
+    @Test func aBufferWithTypingPendingKeepsItsTextAndTheOutsideChangeLoses() {
+        // Last writer wins while a commit is armed: the buffer holds keystrokes the store lacks.
+        #expect(MarkdownEditorStoreAdoption.adoptedBuffer(
+            storeText: "Synced", buffer: "Draft typed", bufferIsLoaded: true, commitIsPending: true
+        ) == nil)
+    }
+
+    @Test func anUnloadedOrMatchingBufferAdoptsNothing() {
+        #expect(MarkdownEditorStoreAdoption.adoptedBuffer(
+            storeText: "Synced", buffer: "Other task", bufferIsLoaded: false, commitIsPending: false
+        ) == nil)
+        #expect(MarkdownEditorStoreAdoption.adoptedBuffer(
+            storeText: "Same", buffer: "Same", bufferIsLoaded: true, commitIsPending: false
+        ) == nil)
+    }
+
+    private static let taskNotesEditors: [(path: String, declaration: String)] = [
+        ("Cadence/macOS/Views/ListNotesSupportViews.swift", "struct TaskNoteEditorPane: View"),
+        ("Cadence/macOS/Views/FocusNotesPanel.swift", "struct FocusNotesPanel: View"),
+        ("Cadence/macOS/Views/TaskInspectorContentSupportViews.swift", "struct TaskDetailNotesSection: View"),
+    ]
+
+    @Test func everyTaskNotesEditorAdoptsAnOutsideNotesChangeThroughTheSharedRule() throws {
+        for editor in Self.taskNotesEditors {
+            let source = CadenceSourceScan.codeOnly(try cadenceTestSource(editor.path))
+            let body = try #require(
+                CadenceSourceScan.declarationBody(editor.declaration, in: source),
+                "\(editor.path): \(editor.declaration) not found"
+            )
+            let observer = try #require(body.range(of: ".onChange(of: task.notes) {"), "\(editor.path) does not observe task.notes")
+            #expect(String(body[observer.upperBound...].prefix(120)).contains("adoptStoreNotesIfIdle("), "\(editor.path)")
+            let adopt = try #require(
+                CadenceSourceScan.functionBody(named: "adoptStoreNotesIfIdle", in: body),
+                "\(editor.path): no adoptStoreNotesIfIdle"
+            )
+            #expect(adopt.contains("MarkdownEditorStoreAdoption.adoptedBuffer("), "\(editor.path)")
+            #expect(adopt.contains("buffer: editorContent"), "\(editor.path)")
+            #expect(adopt.contains("bufferIsLoaded: loadedTaskID == task.id"), "\(editor.path)")
+            #expect(adopt.contains("commitIsPending: pendingFallbackContentSyncTask != nil"), "\(editor.path)")
+            #expect(adopt.contains("editorContent = adopted"), "\(editor.path)")
+        }
+    }
 }
 #endif
