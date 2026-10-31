@@ -63,9 +63,15 @@ struct iOSMarkdownImageLayoutInfo {
             drawResizeHandle(in: layout.handleRect)
 
             guard !caption.isEmpty else { return }
+            // [[T-9320]]: the caption box is one 17pt line. Without a truncating style a long
+            // caption word-wrapped and its second line was clipped away, so it stopped mid-sentence
+            // at a word boundary with nothing to say it went on.
+            let paragraph = NSMutableParagraphStyle()
+            paragraph.lineBreakMode = .byTruncatingTail
             let attributes: [NSAttributedString.Key: Any] = [
                 .font: UIFont.systemFont(ofSize: 11, weight: .medium),
-                .foregroundColor: UIColor(Theme.dim)
+                .foregroundColor: UIColor(Theme.dim),
+                .paragraphStyle: paragraph
             ]
             NSString(string: caption).draw(in: layout.captionRect, withAttributes: attributes)
         }

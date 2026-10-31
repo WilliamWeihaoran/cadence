@@ -433,20 +433,20 @@ enum MarkdownTaskEmbedDrawing {
         let contentMaxX = cardRect.maxX - 12
         let rowY = cardRect.minY + 70
         let rowHeight: CGFloat = 18
-        var x = contentMinX
-        var rects: [MarkdownTaskEmbedSubtaskHitRect] = []
-
-        for subtask in task.visibleSubtasks {
-            let title = TaskTitleSupport.displayTitle(subtask.title, fallback: "Untitled subtask")
-            let titleWidth = title.size(withAttributes: subtaskAttributes(done: subtask.isDone)).width
-            let width = min(max(58, titleWidth + 28), 150)
-            guard x + width <= contentMaxX else { break }
-
-            let full = NSRect(x: x, y: rowY, width: width, height: rowHeight)
-            let checkbox = NSRect(x: full.minX + 3, y: full.midY - 5, width: 10, height: 10)
-            let text = NSRect(x: checkbox.maxX + 5, y: full.minY + 1, width: max(16, full.width - 21), height: rowHeight - 2)
-            rects.append(.subtask(id: subtask.id, checkbox: checkbox, text: text, full: full))
-            x = full.maxX + 6
+        // [[T-9273]]: the row's geometry is shared with the iOS card.
+        let row = CadenceTaskEmbedSubtaskRow.layout(
+            task.visibleSubtasks,
+            fallbackTitle: "Untitled subtask",
+            minX: contentMinX,
+            maxX: contentMaxX,
+            rowY: rowY,
+            rowHeight: rowHeight
+        ) { title, isDone in
+            title.size(withAttributes: subtaskAttributes(done: isDone)).width
+        }
+        let x = row.trailingX
+        var rects: [MarkdownTaskEmbedSubtaskHitRect] = row.items.map {
+            .subtask(id: $0.subtaskID, checkbox: $0.checkbox, text: $0.text, full: $0.full)
         }
 
         if task.hiddenSubtaskCount > 0 {
@@ -513,9 +513,9 @@ enum MarkdownTaskEmbedDrawing {
             check.lineWidth = 1.35
             check.lineCapStyle = .round
             check.lineJoinStyle = .round
-            check.move(to: NSPoint(x: checkboxRect.minX + 2.4, y: checkboxRect.midY + 0.4))
-            check.line(to: NSPoint(x: checkboxRect.minX + 4.7, y: checkboxRect.maxY - 3))
-            check.line(to: NSPoint(x: checkboxRect.maxX - 2.2, y: checkboxRect.minY + 3))
+            let points = CadenceTaskEmbedSubtaskRow.checkPoints(in: checkboxRect)
+            check.move(to: points[0])
+            points.dropFirst().forEach { check.line(to: $0) }
             check.stroke()
         }
 

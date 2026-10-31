@@ -66,29 +66,34 @@ struct iOSMarkdownTaskEmbedLayoutInfo {
 
     private func subtaskCheckboxHit(at point: CGPoint, width: CGFloat) -> UUID? {
         guard task.hasSubtasks else { return nil }
-        var x: CGFloat = 44 + 38
-        let y: CGFloat = 66
+        return CadenceTaskEmbedSubtaskRow.checkboxHit(
+            at: point,
+            in: subtaskRow(width: width).items,
+            slopX: Self.subtaskTouchSlopX,
+            slopY: Self.subtaskTouchSlopY
+        )
+    }
 
-        for subtask in task.visibleSubtasks {
-            let title = TaskTitleSupport.displayTitle(subtask.title, fallback: TaskTitleSupport.defaultCompactDisplayTitle)
-            let prefix = subtask.isDone ? "[x] " : "[ ] "
-            let text = prefix + title
-            let available = max(0, width - x - 12)
-            guard available > 54 else { break }
+    /// [[T-9273]]: a fingertip on a 10pt glyph. The target is the glyph grown to a 32pt-tall,
+    /// 26pt-wide touch box — the title beside it stays the card's (it opens the task).
+    static let subtaskTouchSlopX: CGFloat = 8
+    static let subtaskTouchSlopY: CGFloat = 11
+    static let subtaskRowMinX: CGFloat = 44 + 38
+    static let subtaskRowY: CGFloat = 66
+    static let subtaskRowHeight: CGFloat = 16
 
-            let itemWidth = min(160, max(54, ceil(text.size(withAttributes: smallTextAttributes).width) + 6))
-            let checkboxRect = CGRect(
-                x: x - 4,
-                y: y - 8,
-                width: min(34, max(0, available)),
-                height: 32
-            )
-            if checkboxRect.contains(point) {
-                return subtask.id
-            }
-            x += itemWidth + 7
+    /// The shared row geometry (`CadenceTaskEmbedSubtaskRow`), measured in this card's 10pt font.
+    func subtaskRow(width: CGFloat) -> CadenceTaskEmbedSubtaskRowLayout {
+        CadenceTaskEmbedSubtaskRow.layout(
+            task.visibleSubtasks,
+            fallbackTitle: TaskTitleSupport.defaultCompactDisplayTitle,
+            minX: Self.subtaskRowMinX,
+            maxX: width - 12,
+            rowY: Self.subtaskRowY,
+            rowHeight: Self.subtaskRowHeight
+        ) { title, _ in
+            ceil(NSString(string: title).size(withAttributes: smallTextAttributes).width)
         }
-        return nil
     }
 
     private var borderColor: UIColor {
@@ -118,9 +123,12 @@ struct iOSMarkdownTaskEmbedLayoutInfo {
     }
 
     private func drawTitle(in rect: CGRect) {
+        // [[T-9320]]: one 22pt line, truncated as the Mac card's title is — not word-wrapped
+        // with the second line clipped away.
         let attributes: [NSAttributedString.Key: Any] = [
             .font: UIFont.systemFont(ofSize: 14, weight: .semibold),
-            .foregroundColor: task.isDone ? UIColor(Theme.dim) : UIColor(Theme.text)
+            .foregroundColor: task.isDone ? UIColor(Theme.dim) : UIColor(Theme.text),
+            .paragraphStyle: Self.truncatingParagraph
         ]
         NSString(string: task.title).draw(in: rect, withAttributes: attributes)
     }
@@ -163,6 +171,7 @@ struct iOSMarkdownTaskEmbedLayoutInfo {
 
         var attributes = chipAttributes
         attributes[.foregroundColor] = tint
+        attributes[.paragraphStyle] = Self.truncatingParagraph
         NSString(string: title).draw(
             in: rect.insetBy(dx: 8, dy: 2),
             withAttributes: attributes
@@ -171,29 +180,65 @@ struct iOSMarkdownTaskEmbedLayoutInfo {
 
     private func drawSubtasks(width: CGFloat) {
         guard task.hasSubtasks else { return }
-        var x: CGFloat = 44
-        let y: CGFloat = 66
         let summary = "\(task.completedSubtaskCount)/\(task.subtaskTotalCount)"
-        drawSmallText(summary, color: UIColor(Theme.dim), rect: CGRect(x: x, y: y, width: 34, height: 16))
-        x += 38
+        drawSmallText(summary, color: UIColor(Theme.dim), rect: CGRect(x: 44, y: Self.subtaskRowY, width: 34, height: 16))
 
-        for subtask in task.visibleSubtasks {
-            let title = TaskTitleSupport.displayTitle(subtask.title, fallback: TaskTitleSupport.defaultCompactDisplayTitle)
-            let prefix = subtask.isDone ? "[x] " : "[ ] "
-            let text = prefix + title
-            let available = max(0, width - x - 12)
-            guard available > 54 else { break }
-            let itemWidth = min(160, max(54, ceil(text.size(withAttributes: smallTextAttributes).width) + 6))
+        let row = subtaskRow(width: width)
+        for item in row.items {
+            drawSubtaskMark(in: item.checkbox, isDone: item.isDone)
+            drawSubtaskTitle(item.label, isDone: item.isDone, rect: item.text)
+        }
+        // Counts what the row could not place as well as what was never offered to it: on a
+        // 393pt phone the third subtask often does not fit, and leaving it uncounted lost it.
+        let unplaced = task.subtaskTotalCount - row.items.count
+        if unplaced > 0, width - row.trailingX > 34 {
             drawSmallText(
-                text,
-                color: subtask.isDone ? UIColor(Theme.green) : UIColor(Theme.muted),
-                rect: CGRect(x: x, y: y, width: min(itemWidth, available), height: 16)
+                "+\(unplaced)",
+                color: UIColor(Theme.dim),
+                rect: CGRect(x: row.trailingX, y: Self.subtaskRowY, width: 34, height: 16)
             )
-            x += itemWidth + 7
         }
-        if task.hiddenSubtaskCount > 0, width - x > 34 {
-            drawSmallText("+\(task.hiddenSubtaskCount)", color: UIColor(Theme.dim), rect: CGRect(x: x, y: y, width: 34, height: 16))
+    }
+
+    /// `drawStatusMark`'s vocabulary at subtask size, drawn as the Focus copy of this card draws
+    /// it (`circle` / `checkmark.circle.fill`): an open subtask is a dim ring, a done one a filled
+    /// green disc with the tick knocked out.
+    private func drawSubtaskMark(in rect: CGRect, isDone: Bool) {
+        let circle = UIBezierPath(ovalIn: rect)
+        if isDone {
+            UIColor(Theme.green).setFill()
+            circle.fill()
+            let points = CadenceTaskEmbedSubtaskRow.checkPoints(in: rect)
+            let check = UIBezierPath()
+            check.move(to: points[0])
+            points.dropFirst().forEach { check.addLine(to: $0) }
+            UIColor(Theme.bg).setStroke()
+            check.lineWidth = 1.35
+            check.lineCapStyle = .round
+            check.lineJoinStyle = .round
+            check.stroke()
+        } else {
+            UIColor(Theme.dim).withAlphaComponent(0.84).setStroke()
+            circle.lineWidth = 1.2
+            circle.stroke()
         }
+    }
+
+    private static var truncatingParagraph: NSParagraphStyle {
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.lineBreakMode = .byTruncatingTail
+        return paragraph
+    }
+
+    private func drawSubtaskTitle(_ title: String, isDone: Bool, rect: CGRect) {
+        var attributes = smallTextAttributes
+        attributes[.foregroundColor] = isDone ? UIColor(Theme.dim) : UIColor(Theme.muted)
+        attributes[.paragraphStyle] = Self.truncatingParagraph
+        if isDone {
+            attributes[.strikethroughStyle] = NSUnderlineStyle.single.rawValue
+            attributes[.strikethroughColor] = UIColor(Theme.dim)
+        }
+        NSString(string: title).draw(in: rect, withAttributes: attributes)
     }
 
     private var smallTextAttributes: [NSAttributedString.Key: Any] {
