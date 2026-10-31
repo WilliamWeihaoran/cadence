@@ -33,6 +33,10 @@ Read [AGENTS.md](../AGENTS.md) for the directory map and the non-negotiable UI p
 - **Read the result block.** The real `XCODEBUILD_EXIT=` line, never `$?` after a pipe. Confirm
   `swift compile tasks:` is non-vacuous. Heed `PARTIAL-SCOPE-UNRUN` — it means you tested a
   fraction. Heed `tree changed during this run` — the result may describe a half-edited tree.
+- **Redirect xcb output to a file named for YOUR id** (`scratchpad/xcb-<id>.out`), never a generic
+  `build.log`: subagents share the session scratchpad, and two runs into one file splice — one
+  run's preflight banner over another's result block (T-8922). The banner and result must name
+  the same id.
 - **Warning baseline is zero on both legs**, counting `\.swift:N:C: warning:` and
   `macro expansion <name>:N:C: warning:` (T-1516).
 - **The iOS leg is mandatory for any iOS change** — a macOS build compiles no `#if os(iOS)` code.
