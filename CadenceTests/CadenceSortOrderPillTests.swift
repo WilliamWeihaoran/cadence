@@ -69,7 +69,7 @@ struct CadenceSortOrderPillTests {
         let rows = String(badge[menu.upperBound...])
         // [[T-9465]]: the row style is the hover plate, so it is the only one.
         #expect(rows.contains(".buttonStyle(.cadenceMenuRow)"), "the menu rows have no hover plate")
-        #expect(!rows.contains(".buttonStyle(.cadencePlain)"), "the menu rows light a second, 10pt hover layer")
+        #expect(!rows.contains(".buttonStyle(.cadencePlain"), "the menu rows light a second, 10pt hover layer")
         #expect(rows.contains(".background(selection.id == value.id ? Theme.blue.opacity(0.08) : .clear)"))
     }
 

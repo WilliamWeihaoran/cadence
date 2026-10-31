@@ -347,7 +347,7 @@ private struct TemplateSettingsRow: View {
                     .strokeBorder(isSelected ? Theme.blue.opacity(0.42) : Theme.borderSubtle.opacity(0.65), lineWidth: 1)
             }
         }
-        .buttonStyle(.cadencePlain)
+        .buttonStyle(.cadencePlain(cornerRadius: 12))
     }
 }
 #endif

@@ -250,7 +250,7 @@ private struct TypeButton: View {
                     .strokeBorder(isSelected ? Theme.blue.opacity(0.5) : Theme.borderSubtle)
             )
         }
-        .buttonStyle(.cadencePlain)
+        .buttonStyle(.cadencePlain(cornerRadius: 8))
         // T-7267: the blue fill says which type is chosen; VoiceOver heard two identical buttons.
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }

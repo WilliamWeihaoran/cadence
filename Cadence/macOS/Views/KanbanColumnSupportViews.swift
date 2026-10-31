@@ -225,7 +225,7 @@ struct KanbanCompletedTasksToggle: View {
             }
             .contentShape(RoundedRectangle(cornerRadius: kanbanCardCornerRadius, style: .continuous))
         }
-        .buttonStyle(.cadencePlain)
+        .buttonStyle(.cadencePlain(cornerRadius: kanbanCardCornerRadius))
         // T-7081: the list's own "Completed" heading states Expanded/Collapsed (T-7008) and so
         // does iOS's; this disclosure stated nothing, on both boards that draw it.
         .accessibilityValue(TaskListGroupHeaderAccessibility.value(isCollapsed: !isExpanded))
@@ -465,7 +465,7 @@ struct KanbanColumnAddTaskRow: View {
             }
             .contentShape(RoundedRectangle(cornerRadius: kanbanCardCornerRadius, style: .continuous))
         }
-        .buttonStyle(.cadencePlain)
+        .buttonStyle(.cadencePlain(cornerRadius: kanbanCardCornerRadius))
         .opacity(isColumnHovered || isHovered ? 1 : 0.45)
         .animation(.easeInOut(duration: 0.14), value: isColumnHovered)
         .animation(.easeInOut(duration: 0.14), value: isHovered)
@@ -636,7 +636,7 @@ struct KanbanSectionEditorPopover: View {
                     .background(Theme.surfaceElevated)
                     .clipShape(RoundedRectangle(cornerRadius: 8))
                 }
-                .buttonStyle(.cadencePlain)
+                .buttonStyle(.cadencePlain(cornerRadius: 8))
 
                 Button(action: onToggleArchive) {
                     HStack(spacing: 8) {
@@ -652,7 +652,7 @@ struct KanbanSectionEditorPopover: View {
                     .background(Theme.surfaceElevated)
                     .clipShape(RoundedRectangle(cornerRadius: 8))
                 }
-                .buttonStyle(.cadencePlain)
+                .buttonStyle(.cadencePlain(cornerRadius: 8))
 
                 Button(action: onDelete) {
                     HStack(spacing: 8) {
@@ -668,7 +668,7 @@ struct KanbanSectionEditorPopover: View {
                     .background(Theme.red.opacity(0.12))
                     .clipShape(RoundedRectangle(cornerRadius: 8))
                 }
-                .buttonStyle(.cadencePlain)
+                .buttonStyle(.cadencePlain(cornerRadius: 8))
             }
 
             if let failureNotice {

@@ -86,7 +86,7 @@ struct TaskDetailNotesSection: View {
                         .clipShape(RoundedRectangle(cornerRadius: 6))
                         .contentShape(Rectangle())
                 }
-                .buttonStyle(.cadencePlain)
+                .buttonStyle(.cadencePlain(cornerRadius: 6))
                 .cadenceControlLabel("Open task notes")
                 .padding(6)
                 .frame(maxWidth: .infinity, alignment: .topTrailing)
@@ -246,7 +246,7 @@ struct TaskNotesExpandedEditorSheet: View {
                         .background(Theme.surfaceElevated.opacity(0.9))
                         .clipShape(RoundedRectangle(cornerRadius: 8))
                 }
-                .buttonStyle(.cadencePlain)
+                .buttonStyle(.cadencePlain(cornerRadius: 8))
                 .cadenceControlLabel("Close")
             ),
             showsExpandButton: false
@@ -513,7 +513,7 @@ struct TaskDetailActionsSection: View {
                     .clipShape(RoundedRectangle(cornerRadius: Self.cornerRadius))
                     .contentShape(Rectangle())
                 }
-                .buttonStyle(.cadencePlain)
+                .buttonStyle(.cadencePlain(cornerRadius: Self.cornerRadius))
                 .accessibilityLabel(CadenceTaskCompletionState.resolve(status: task.status).accessibilityActionLabel)
                 .help(CadenceTaskCompletionState.resolve(status: task.status).accessibilityActionLabel)
             } else {
@@ -651,7 +651,7 @@ struct TaskDetailActionsSection: View {
                 .clipShape(RoundedRectangle(cornerRadius: Self.cornerRadius))
                 .contentShape(Rectangle())
         }
-        .buttonStyle(.cadencePlain)
+        .buttonStyle(.cadencePlain(cornerRadius: Self.cornerRadius))
         .cadenceControlLabel(accessibilityLabel)
     }
 }

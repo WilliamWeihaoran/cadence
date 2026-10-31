@@ -429,7 +429,7 @@ struct GlobalSearchMoreResultsRow: View {
             .clipShape(RoundedRectangle(cornerRadius: 12))
             .contentShape(RoundedRectangle(cornerRadius: 12))
         }
-        .buttonStyle(.cadencePlain)
+        .buttonStyle(.cadencePlain(cornerRadius: 12))
         .padding(.horizontal, 6)
         .onHover { hovering in
             if hovering { onHover() }
@@ -600,7 +600,7 @@ struct GlobalSearchResultRow: View {
             .clipShape(RoundedRectangle(cornerRadius: 12))
             .contentShape(RoundedRectangle(cornerRadius: 12))
         }
-        .buttonStyle(.cadencePlain)
+        .buttonStyle(.cadencePlain(cornerRadius: 12))
         .padding(.horizontal, 6)
         .onHover { hovering in
             if hovering { onHover() }

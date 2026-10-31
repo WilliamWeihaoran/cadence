@@ -62,7 +62,7 @@ struct CadenceDatePicker: View {
             .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControlCompact))
             .overlay(RoundedRectangle(cornerRadius: Theme.radiusControlCompact).strokeBorder(Theme.borderSubtle))
         }
-        .buttonStyle(.cadencePlain)
+        .buttonStyle(.cadencePlain(cornerRadius: Theme.radiusControlCompact))
         // **`arrowEdge: nil`, so the platform may put the panel on a side that can hold it**
         // ([[T-8476]], the same reading [[T-8473]] measured on the duration editor).
         //
@@ -385,7 +385,7 @@ struct MonthCalendarPanel: View {
             .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControlCompact))
             .contentShape(Rectangle())
         }
-        .buttonStyle(.cadencePlain)
+        .buttonStyle(.cadencePlain(cornerRadius: Theme.radiusControlCompact))
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 

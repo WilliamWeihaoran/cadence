@@ -21,7 +21,7 @@ struct SettingsActionButton<Label: View>: View {
                 .background(backgroundColor)
                 .clipShape(RoundedRectangle(cornerRadius: 8))
         }
-        .buttonStyle(.cadencePlain)
+        .buttonStyle(.cadencePlain(cornerRadius: 8))
     }
 
     private var foregroundColor: Color {

@@ -847,7 +847,7 @@ struct CadenceSchedulePanel<NotesField: View>: View {
                         .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControlCompact, style: .continuous))
                         .contentShape(Rectangle())
                 }
-                .buttonStyle(.cadencePlain)
+                .buttonStyle(.cadencePlain(cornerRadius: Theme.radiusControlCompact))
             }
 
             Spacer(minLength: 0)
@@ -864,7 +864,7 @@ struct CadenceSchedulePanel<NotesField: View>: View {
                     .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControlCompact, style: .continuous))
                     .contentShape(Rectangle())
             }
-            .buttonStyle(.cadencePlain)
+            .buttonStyle(.cadencePlain(cornerRadius: Theme.radiusControlCompact))
 
             if !isReadOnly {
                 Button(action: commit) {
@@ -877,7 +877,7 @@ struct CadenceSchedulePanel<NotesField: View>: View {
                         .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControlCompact, style: .continuous))
                         .contentShape(Rectangle())
                 }
-                .buttonStyle(.cadencePlain)
+                .buttonStyle(.cadencePlain(cornerRadius: Theme.radiusControlCompact))
                 .disabled(!isCommitEnabled)
             }
         }
@@ -1075,7 +1075,7 @@ struct CadenceScheduleKindSwitch: View {
                         .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControlCompact, style: .continuous))
                         .contentShape(Rectangle())
                 }
-                .buttonStyle(.cadencePlain)
+                .buttonStyle(.cadencePlain(cornerRadius: Theme.radiusControlCompact))
                 .accessibilityAddTraits(isSelected ? .isSelected : [])
                 .accessibilityIdentifier("\(identifierPrefix)-\(kind.rawValue)")
             }

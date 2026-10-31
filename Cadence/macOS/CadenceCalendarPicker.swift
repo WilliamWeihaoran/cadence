@@ -290,7 +290,7 @@ struct CadenceCalendarPickerButton: View {
             .background(Theme.surfaceElevated)
             .clipShape(RoundedRectangle(cornerRadius: style.cornerRadius))
         }
-        .buttonStyle(.cadencePlain)
+        .buttonStyle(.cadencePlain(cornerRadius: style.cornerRadius))
         .popover(isPresented: $showPicker, arrowEdge: .bottom) {
             ScrollView {
                 CadenceCalendarPickerList(

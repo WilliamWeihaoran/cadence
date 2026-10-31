@@ -98,7 +98,7 @@ struct TaskNoteEditorPane: View {
                             .background(Theme.surfaceElevated.opacity(0.85))
                             .clipShape(RoundedRectangle(cornerRadius: 8))
                     }
-                    .buttonStyle(.cadencePlain)
+                    .buttonStyle(.cadencePlain(cornerRadius: 8))
                     .cadenceControlLabel("Open task notes")
                 }
 

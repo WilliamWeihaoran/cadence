@@ -44,7 +44,7 @@ struct TagPickerControl: View {
                 .background(Theme.surfaceElevated)
                 .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControlCompact))
             }
-            .buttonStyle(.cadencePlain)
+            .buttonStyle(.cadencePlain(cornerRadius: Theme.radiusControlCompact))
             .cadenceControlLabel("Edit tags")
             .popover(isPresented: $isPresented, arrowEdge: .bottom) {
                 TagPickerPopover(

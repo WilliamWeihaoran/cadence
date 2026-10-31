@@ -309,7 +309,7 @@ private struct ContainerPickerRow: View {
             .background(rowBackground)
             .clipShape(RoundedRectangle(cornerRadius: 6))
         }
-        .buttonStyle(.cadencePlain)
+        .buttonStyle(.cadencePlain(cornerRadius: 6))
         .onHover { isHovered = $0 }
     }
 

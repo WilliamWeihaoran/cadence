@@ -36,7 +36,7 @@ import Testing
             let lines = try Self.code(path).components(separatedBy: "\n")
                 .map { $0.trimmingCharacters(in: .whitespaces) }
                 .filter { !$0.isEmpty }
-            for (index, line) in lines.enumerated() where line.contains(".buttonStyle(.cadencePlain)") {
+            for (index, line) in lines.enumerated() where line.contains(".buttonStyle(.cadencePlain") {
                 scanned += 1
                 for next in lines[(index + 1)..<min(index + 5, lines.count)]
                 where next.contains(".cadenceHoverHighlight(") || next.contains("Hover())") {

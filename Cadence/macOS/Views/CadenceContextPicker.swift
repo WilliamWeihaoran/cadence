@@ -58,7 +58,7 @@ struct CadenceContextPickerButton: View {
             .clipShape(RoundedRectangle(cornerRadius: style.cornerRadius))
             .overlay(RoundedRectangle(cornerRadius: style.cornerRadius).strokeBorder(Theme.borderSubtle))
         }
-        .buttonStyle(.cadencePlain)
+        .buttonStyle(.cadencePlain(cornerRadius: style.cornerRadius))
         .popover(isPresented: $showPicker, arrowEdge: .bottom) {
             ScrollView {
                 CadenceContextPickerList(

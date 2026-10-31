@@ -95,7 +95,7 @@ struct SettingsAccountSection: View {
                                 .background(appleAccountManager.isAuthorizing ? Theme.dim : Theme.appleSignInFill)
                                 .clipShape(RoundedRectangle(cornerRadius: 8))
                             }
-                            .buttonStyle(.cadencePlain)
+                            .buttonStyle(.cadencePlain(cornerRadius: 8))
                             .disabled(appleAccountManager.isAuthorizing)
                         }
                     }

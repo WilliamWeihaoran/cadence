@@ -294,7 +294,7 @@ struct CreateTaskSheet: View {
                     .background(Theme.blue)
                     .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControlCompact, style: .continuous))
             }
-            .buttonStyle(.cadencePlain)
+            .buttonStyle(.cadencePlain(cornerRadius: Theme.radiusControlCompact))
             .disabled(trimmedTitle.isEmpty)
             .opacity(trimmedTitle.isEmpty ? 0.5 : 1)
             .keyboardShortcut(.return, modifiers: [.command])

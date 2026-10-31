@@ -1,13 +1,22 @@
 import SwiftUI
 
+/// **[[T-9535]].** `cornerRadius` is the radius the hover wash, its stroke and the hit shape are
+/// drawn at. It defaults to `Theme.radiusControl` for a label with no plate of its own; a label
+/// that paints its own plate at another radius passes that radius
+/// (`.cadencePlain(cornerRadius: 8)`), so the pointer lights one outline whose corners meet the
+/// plate's -- AGENTS.md's one-hover-layer-at-one-radius rule. Before this the wash was always
+/// 10pt, and ~40 Mac plates (7, 8, 12, 14...) drew a second outline that disagreed at the corners.
 struct CadencePlainButtonStyle: ButtonStyle {
+    var cornerRadius: CGFloat = Theme.radiusControl
+
     func makeBody(configuration: Configuration) -> some View {
-        CadencePlainButtonBody(configuration: configuration)
+        CadencePlainButtonBody(configuration: configuration, cornerRadius: cornerRadius)
     }
 }
 
 private struct CadencePlainButtonBody: View {
     let configuration: ButtonStyle.Configuration
+    let cornerRadius: CGFloat
     @State private var isHovered = false
 
     private var backgroundOpacity: Double {
@@ -25,13 +34,13 @@ private struct CadencePlainButtonBody: View {
     var body: some View {
         #if os(macOS)
         configuration.label
-            .contentShape(RoundedRectangle(cornerRadius: Theme.radiusControl))
+            .contentShape(RoundedRectangle(cornerRadius: cornerRadius))
             .background(
-                RoundedRectangle(cornerRadius: Theme.radiusControl)
+                RoundedRectangle(cornerRadius: cornerRadius)
                     .fill(Theme.blue.opacity(backgroundOpacity))
             )
             .overlay {
-                RoundedRectangle(cornerRadius: Theme.radiusControl)
+                RoundedRectangle(cornerRadius: cornerRadius)
                     .strokeBorder(Theme.blue.opacity(strokeOpacity))
             }
             .animation(.easeOut(duration: 0.12), value: isHovered)
@@ -50,7 +59,7 @@ private struct CadencePlainButtonBody: View {
         // of macOS's `.cadencePlain` hover wash", and this is that sentence made executable.
         // `contentShape` is kept so the hit area does not change with the paint.
         iOSPressableButtonStyle().makeBody(configuration: configuration)
-            .contentShape(RoundedRectangle(cornerRadius: Theme.radiusControl))
+            .contentShape(RoundedRectangle(cornerRadius: cornerRadius))
         #endif
     }
 }
@@ -137,6 +146,11 @@ private struct CadenceHoverTracking: ViewModifier {
 
 extension ButtonStyle where Self == CadencePlainButtonStyle {
     static var cadencePlain: CadencePlainButtonStyle { CadencePlainButtonStyle() }
+
+    /// The plain style around a label that paints its own plate at `cornerRadius` ([[T-9535]]).
+    static func cadencePlain(cornerRadius: CGFloat) -> CadencePlainButtonStyle {
+        CadencePlainButtonStyle(cornerRadius: cornerRadius)
+    }
 }
 
 extension ButtonStyle where Self == CadenceMenuRowButtonStyle {

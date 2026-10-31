@@ -455,8 +455,9 @@ struct CadenceRadiusControlSweepTests {
     func namedControlRadiusConversionsReadTheToken() throws {
         let sites: [(file: String, pattern: String)] = [
             (
+                // [[T-9535]]: the style draws at its own `cornerRadius`, which defaults to the token.
                 "Cadence/Shared/CadenceHoverStyles.swift",
-                "RoundedRectangle\\(cornerRadius: Theme\\.radiusControl\\)"
+                "var cornerRadius: CGFloat = Theme\\.radiusControl\\b"
             ),
             // The Goals roadmap's entry left with [[T-5002]], which deleted the file.
         ]

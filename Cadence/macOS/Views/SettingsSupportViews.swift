@@ -180,7 +180,7 @@ struct ContextSettingsRow: View {
                 .background(Theme.surfaceElevated)
                 .clipShape(RoundedRectangle(cornerRadius: 6))
         }
-        .buttonStyle(.cadencePlain)
+        .buttonStyle(.cadencePlain(cornerRadius: 6))
         .cadenceControlLabel(accessibilityLabel)
     }
 

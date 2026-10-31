@@ -217,7 +217,7 @@ struct CadenceActionButton: View {
             .overlay(shape.strokeBorder(border, lineWidth: 1))
             .contentShape(shape)
         }
-        .buttonStyle(.cadencePlain)
+        .buttonStyle(.cadencePlain(cornerRadius: size.cornerRadius))
         .keyboardShortcut(shortcut)
         .disabled(isDisabled)
         .opacity(isDisabled ? 0.52 : 1)

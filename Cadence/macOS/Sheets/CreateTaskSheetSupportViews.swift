@@ -247,7 +247,7 @@ struct TaskDateChip: View {
                 )
                 .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControlCompact))
             }
-            .buttonStyle(.cadencePlain)
+            .buttonStyle(.cadencePlain(cornerRadius: Theme.radiusControlCompact))
             .onHover { isHovered = $0 }
             .popover(isPresented: $showPicker, arrowEdge: .top) { pickerPopover }
         }

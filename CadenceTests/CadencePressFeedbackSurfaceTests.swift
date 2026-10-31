@@ -98,7 +98,8 @@ struct CadencePressFeedbackSurfaceTests {
         // The finger draws nothing of its own. It delegates, and the only thing it adds back is the
         // hit area, which is shape rather than paint.
         #expect(touchBranch.contains("iOSPressableButtonStyle().makeBody(configuration: configuration)"))
-        let shapeLine = ".contentShape(RoundedRectangle(cornerRadius: Theme.radiusControl))"
+        // [[T-9535]]: the radius is the style's own `cornerRadius` (default `Theme.radiusControl`).
+        let shapeLine = ".contentShape(RoundedRectangle(cornerRadius: cornerRadius))"
         #expect(touchBranch.contains(shapeLine))
         // T-754 moved the hit area's radius onto `Theme.radiusControl`, so the branch legitimately
         // reads `Theme.` once now — the shape line just pinned above. Strip exactly that pinned
@@ -117,7 +118,7 @@ struct CadencePressFeedbackSurfaceTests {
         // One level up: `makeBody` hands the configuration straight to the body above, so a wash
         // cannot be reintroduced on the wrapper instead.
         let makeBody = try cadenceFunctionBody("func makeBody(configuration: Configuration) -> some View", in: code)
-        #expect(makeBody.contains("CadencePlainButtonBody(configuration: configuration)"))
+        #expect(makeBody.contains("CadencePlainButtonBody(configuration: configuration, cornerRadius: cornerRadius)"))
         #expect(makeBody.contains("#if") == false)
         #expect(makeBody.contains("Theme.") == false)
 
@@ -148,7 +149,7 @@ struct CadencePressFeedbackSurfaceTests {
         ]
         for path in sharedStraight + desktopStraight {
             let code = try pressFeedbackStrippingComments(pressFeedbackSourceFile(path))
-            #expect(code.contains(".buttonStyle(.cadencePlain)"), "\(path)")
+            #expect(code.contains(".buttonStyle(.cadencePlain"), "\(path)")
             #expect(!code.contains("iosPressable"), "\(path) re-spells the platform split")
         }
 
@@ -167,7 +168,7 @@ struct CadencePressFeedbackSurfaceTests {
         for path in try pressFeedbackSwiftFiles(under: "Cadence/Shared") {
             scanned += 1
             let code = try pressFeedbackStrippingComments(pressFeedbackSourceFile(path))
-            if code.contains(".buttonStyle(.cadencePlain)") { spelling.insert(path) }
+            if code.contains(".buttonStyle(.cadencePlain") { spelling.insert(path) }
         }
         // Non-vacuity: the folder held 117 files when this was written.
         #expect(scanned > 90, "scanned only \(scanned) files under Cadence/Shared")

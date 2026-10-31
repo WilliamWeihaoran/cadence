@@ -181,7 +181,7 @@ private struct FocusPickItemRow: View {
                     .strokeBorder(isHovered ? tint.opacity(0.2) : Theme.borderSubtle.opacity(0.35), lineWidth: 1)
             }
         }
-        .buttonStyle(.cadencePlain)
+        .buttonStyle(.cadencePlain(cornerRadius: 8))
         .help(helpText)
         .onHover { isHovered = $0 }
     }

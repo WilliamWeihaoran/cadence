@@ -448,7 +448,7 @@ struct SidebarAddFirstListButton: View {
                     .fill(Theme.surfaceElevated.opacity(0.55))
             )
         }
-        .buttonStyle(.cadencePlain)
+        .buttonStyle(.cadencePlain(cornerRadius: SidebarMetrics.listRowCornerRadius))
     }
 }
 

@@ -403,7 +403,7 @@ private struct SettingsTagRow: View {
                 .background(Theme.surfaceElevated)
                 .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControlCompact))
         }
-        .buttonStyle(.cadencePlain)
+        .buttonStyle(.cadencePlain(cornerRadius: Theme.radiusControlCompact))
         .cadenceControlLabel(accessibilityLabel)
     }
 

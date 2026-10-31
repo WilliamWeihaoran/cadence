@@ -308,7 +308,7 @@ private struct AITaskDraftRow: View {
                         )
                         .contentShape(Rectangle())
                 }
-                .buttonStyle(.cadencePlain)
+                .buttonStyle(.cadencePlain(cornerRadius: Theme.radiusControlCompact - 2))
                 .accessibilityLabel("Priority \(priority.label)")
                 .accessibilityAddTraits(isSelected ? .isSelected : [])
             }
