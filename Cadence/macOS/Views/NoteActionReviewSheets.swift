@@ -35,30 +35,20 @@ struct AISummaryReviewSheet: View {
                     .foregroundStyle(Theme.red)
             }
 
+            // [[T-9451]]: the shared action button, so the hit area and the hover wash are the
+            // plate. Both buttons padded (and Append filled) OUTSIDE `.buttonStyle(.cadencePlain)`,
+            // so the style's contentShape and wash wrapped only the label text -- the plate's rim
+            // was dead to a click, and hover lit a smaller rectangle inside it ([[T-9351]]'s shape).
             HStack {
                 Spacer()
-                Button("Close") {
+                // T-7289: Escape closes and Return appends; neither key did anything.
+                CadenceActionButton(title: "Close", role: .ghost, size: .compact, shortcut: .cancelAction) {
                     dismiss()
                 }
-                .buttonStyle(.cadencePlain)
-                // T-7289: Escape closes and Return appends; neither key did anything.
-                .keyboardShortcut(.cancelAction)
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(Theme.dim)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
 
-                Button("Append to Note") {
+                CadenceActionButton(title: "Append to Note", role: .primary, size: .compact, shortcut: .defaultAction) {
                     append()
                 }
-                .buttonStyle(.cadencePlain)
-                .keyboardShortcut(.defaultAction)
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(Theme.onColor(for: Theme.blue))
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .background(Theme.blue)
-                .clipShape(RoundedRectangle(cornerRadius: 8))
             }
         }
         .padding(20)
@@ -161,25 +151,19 @@ struct AITaskDraftReviewSheet: View {
                 // T-7289: Escape cancels. Return is deliberately NOT bound to Create Selected:
                 // this sheet is a stack of editable fields, and T-7290 asks the owner whether a
                 // Return typed in one should create every approved task.
-                Button("Cancel") { dismiss() }
-                    .buttonStyle(.cadencePlain)
-                    .keyboardShortcut(.cancelAction)
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(Theme.dim)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
+                // [[T-9451]]: the shared action button, as in the summary sheet above.
+                CadenceActionButton(title: "Cancel", role: .ghost, size: .compact, shortcut: .cancelAction) {
+                    dismiss()
+                }
 
-                Button("Create Selected") {
+                CadenceActionButton(
+                    title: "Create Selected",
+                    role: .primary,
+                    size: .compact,
+                    isDisabled: !review.canCreate
+                ) {
                     createSelected()
                 }
-                .buttonStyle(.cadencePlain)
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(Theme.onColor(for: Theme.blue))
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .background(review.canCreate ? Theme.blue : Theme.dim)
-                .clipShape(RoundedRectangle(cornerRadius: 8))
-                .disabled(!review.canCreate)
             }
         }
         .padding(20)
@@ -188,7 +172,7 @@ struct AITaskDraftReviewSheet: View {
     }
 
     /// Through the review, not around it. `applyApproved` refuses on its own account, so a future
-    /// edit that loses the `disabled(!review.canCreate)` above cannot write anything.
+    /// edit that loses the `isDisabled: !review.canCreate` above cannot write anything.
     private func createSelected() {
         do {
             let created = try review.applyApproved(

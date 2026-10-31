@@ -36,19 +36,22 @@ struct CadenceNoteActionSheetKeyboardTests {
         return body.filter { !$0.isWhitespace }
     }
 
+    /// Both spellings: a bare `.keyboardShortcut(` modifier, or `CadenceActionButton`'s
+    /// `shortcut:` argument, which the footers use since [[T-9451]].
     private static func shortcutCount(_ compact: String) -> Int {
-        compact.components(separatedBy: ".keyboardShortcut(").count - 1
+        (compact.components(separatedBy: ".keyboardShortcut(").count - 1)
+            + (compact.components(separatedBy: "shortcut:.").count - 1)
     }
 
     @Test func summarySheetCloseTakesEscapeAndAppendTakesReturn() throws {
         let sheet = try Self.compactBody("struct AISummaryReviewSheet: View", in: Self.sheetsPath)
 
         #expect(
-            sheet.contains(#"Button("Close"){dismiss()}.buttonStyle(.cadencePlain).keyboardShortcut(.cancelAction)"#),
+            sheet.contains(#"CadenceActionButton(title:"Close",role:.ghost,size:.compact,shortcut:.cancelAction){dismiss()}"#),
             "Escape must close the Mac AI summary sheet"
         )
         #expect(
-            sheet.contains(#"Button("AppendtoNote"){append()}.buttonStyle(.cadencePlain).keyboardShortcut(.defaultAction)"#),
+            sheet.contains(#"CadenceActionButton(title:"AppendtoNote",role:.primary,size:.compact,shortcut:.defaultAction){append()}"#),
             "Return must append the summary, through the same append() as the click"
         )
         #expect(Self.shortcutCount(sheet) == 2)
@@ -58,7 +61,7 @@ struct CadenceNoteActionSheetKeyboardTests {
         let sheet = try Self.compactBody("struct AITaskDraftReviewSheet: View", in: Self.sheetsPath)
 
         #expect(
-            sheet.contains(#"Button("Cancel"){dismiss()}.buttonStyle(.cadencePlain).keyboardShortcut(.cancelAction)"#),
+            sheet.contains(#"CadenceActionButton(title:"Cancel",role:.ghost,size:.compact,shortcut:.cancelAction){dismiss()}"#),
             "Escape must cancel the Mac AI task draft sheet"
         )
         #expect(

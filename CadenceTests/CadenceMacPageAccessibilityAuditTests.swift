@@ -277,6 +277,42 @@ struct CadenceMacPageAccessibilityAuditTests {
         }
     }
 
+    /// **[[T-9451]].** [[T-9351]]'s shape on the two Mac note AI review sheets: Close / Append to
+    /// Note and Cancel / Create Selected padded (and the primary one filled) OUTSIDE
+    /// `.buttonStyle(.cadencePlain)`, so each button's hit area and hover wash was the bare label.
+    /// Measured the same way, as each footer button's own frame on the tree.
+    @Test func theNoteAIReviewSheetsFooterButtonsAreTheirWholePlate() throws {
+        let summary = allNodes(
+            in: AISummaryReviewSheet(markdown: "- One point", onAppend: {}),
+            size: NSSize(width: 580, height: 540)
+        )
+        let container = try CadenceTestStore.container()
+        let drafts = allNodes(
+            in: AITaskDraftReviewSheet(
+                initialDrafts: [],
+                area: nil,
+                project: nil,
+                areas: [],
+                projects: [],
+                modelContext: ModelContext(container)
+            )
+            .retainingModelContainerForProcessLifetime(container),
+            size: NSSize(width: 740, height: 640)
+        )
+        let footer = ["Close", "Append to Note", "Cancel", "Create Selected"]
+        let buttons = (summary + drafts).filter { $0.role == Self.buttonRole && footer.contains($0.label) }
+        #expect(
+            Set(buttons.map(\.label)) == Set(footer),
+            "non-vacuity: the four footer buttons are not on the tree: \(summary + drafts)"
+        )
+        for button in buttons {
+            #expect(
+                button.frame.height >= CadenceActionButtonSize.compact.minHeight,
+                "\(button.label) is \(button.frame.height)pt tall, smaller than its \(CadenceActionButtonSize.compact.minHeight)pt plate"
+            )
+        }
+    }
+
     // MARK: - T-7068: the Notes page's note rows
 
     /// Every note list on the Mac Notes page drew `…NoteListRow(...).onTapGesture { select }`: one
