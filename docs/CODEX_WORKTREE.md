@@ -223,6 +223,12 @@ CadenceTests/CadenceTaskContextInheritanceTests.swift
 CadenceTests/CadenceTestTargetHygieneTests.swift
 CadenceTests/iOSEditorSheetMetricsTests.swift
 Cadence/iOS/iOSTaskDetailComponents.swift
+Cadence/Shared/CadenceScheduleDraftChoices.swift
+Cadence/Shared/Components/CadenceTaskInlinePanel.swift
+Cadence/macOS/Views/SettingsViewSupport.swift
+Cadence/iOS/iOSRootSidebar.swift
+CadenceTests/CadenceSidebarCountMetricsTests.swift
+CadenceTests/SettingsCategoryReachTests.swift
 ```
 
 Each pattern above has one row below naming the branch its grant was made for, the date it
@@ -231,6 +237,10 @@ released it. `codex-land.sh` refuses when the two blocks disagree in either dire
 cannot be fenced without recording who holds it. Ask `./scripts/codex-land.sh held <path>` rather
 than reading either block by eye: *listed* and *held* are different questions, and [[T-6400]]
 below is what it cost to keep answering the first one.
+
+A pattern re-granted after its first grant was spent keeps its superseded row directly above the
+live one, commented out with `#`: `read_grants` skips `#` rows, and two live rows for one pattern
+are refused as `TWO-ROWS-ONE-PATTERN`, so the block holds exactly one current row per pattern.
 
 ```lease-grants
 Cadence/iOS/iOSList*.swift                                       branch=-                           granted=2026-09-27  grant=dec37fea  spent=b537dd50
@@ -317,7 +327,8 @@ CadenceTests/CadenceOutlineParserRegexTests.swift                branch=-       
 CadenceUITests/CadenceIOSCalendarAndNoteParityUITests.swift      branch=-                           granted=2026-10-17  grant=288f86d1  spent=b537dd50
 Cadence/iOS/iOSCalendarView.swift                                branch=-                           granted=2026-10-17  grant=8171fff2  spent=b537dd50
 Cadence/iOS/iOSCreateTaskSheet.swift                             branch=-                           granted=2026-10-17  grant=d2d86efb  spent=b537dd50
-Cadence/iOS/iOSCreateTaskSheetSupportViews.swift                 branch=-                           granted=2026-10-17  grant=d2d86efb  spent=b537dd50
+# Cadence/iOS/iOSCreateTaskSheetSupportViews.swift                 branch=-                           granted=2026-10-17  grant=d2d86efb  spent=b537dd50
+Cadence/iOS/iOSCreateTaskSheetSupportViews.swift                 branch=codex/r67-parity            granted=2026-10-31  grant=3352a903
 Cadence/macOS/Views/KanbanListColumnView.swift                   branch=-                           granted=2026-10-17  grant=d2d86efb  spent=b537dd50
 Cadence/macOS/Views/KanbanColumnSupportViews.swift               branch=-                           granted=2026-10-17  grant=d2d86efb  spent=b537dd50
 Cadence/macOS/Views/KanbanSupportViews.swift                     branch=-                           granted=2026-10-17  grant=d2d86efb  spent=b537dd50
@@ -327,7 +338,8 @@ Cadence/Shared/CadenceSectionConfigMerge.swift                   branch=-       
 Cadence/macOS/Views/ListDetailComponents.swift                   branch=-                           granted=2026-10-17  grant=4fca5348  spent=b537dd50
 Cadence/Shared/Components/CadenceSectionCreationRow.swift        branch=-                           granted=2026-10-17  grant=4fca5348  spent=b537dd50
 Cadence/Shared/Components/CadenceSchedulePanel.swift             branch=-                           granted=2026-10-17  grant=4fca5348  spent=b537dd50
-Cadence/Shared/Components/CadenceScheduleCaptureCard.swift       branch=-                           granted=2026-10-17  grant=4fca5348  spent=b537dd50
+# Cadence/Shared/Components/CadenceScheduleCaptureCard.swift       branch=-                           granted=2026-10-17  grant=4fca5348  spent=b537dd50
+Cadence/Shared/Components/CadenceScheduleCaptureCard.swift       branch=codex/r67-parity            granted=2026-10-31  grant=3352a903
 Cadence/Services/TaskCreationService.swift                       branch=-                           granted=2026-10-17  grant=4fca5348  spent=b537dd50
 Cadence/iOS/iOSTimelineDraftCreate.swift                         branch=-                           granted=2026-10-17  grant=e78488b7  spent=b537dd50
 Cadence/Shared/Components/EstimatePickerControl.swift            branch=-                           granted=2026-10-17  grant=fac1bee9  spent=b537dd50
@@ -341,7 +353,8 @@ Cadence/macOS/Views/TimelineDayCanvasStateSupport.swift          branch=codex/bl
 Cadence/macOS/Services/SchedulingService.swift                   branch=codex/block-removal-finish  granted=2026-10-20  grant=25e925dc  spent=6803ddda
 Cadence/Shared/CadenceTaskFieldEditCommit.swift                  branch=codex/block-removal-finish  granted=2026-10-20  grant=25e925dc  spent=6803ddda
 CadenceTests/CadenceCommentSymbolClaimTests.swift                branch=codex/block-removal-finish  granted=2026-10-20  grant=25e925dc  spent=6803ddda
-Cadence/Shared/CadenceSettingsPresentationSupport.swift          branch=codex/text-scale-finish     granted=2026-10-20  grant=e711077c  spent=e711077c
+# Cadence/Shared/CadenceSettingsPresentationSupport.swift          branch=codex/text-scale-finish     granted=2026-10-20  grant=e711077c  spent=e711077c
+Cadence/Shared/CadenceSettingsPresentationSupport.swift          branch=codex/r67-parity            granted=2026-10-31  grant=3352a903
 Cadence/Shared/Components/CadenceAccentPalettePicker.swift       branch=codex/text-scale-finish     granted=2026-10-20  grant=e711077c  spent=e711077c
 Cadence/Shared/Components/CadenceFieldRows.swift                 branch=codex/text-scale-finish     granted=2026-10-20  grant=e711077c  spent=e711077c
 Cadence/iOS/iOSArchiveImportSettingsSection.swift                branch=codex/text-scale-finish     granted=2026-10-20  grant=e711077c  spent=e711077c
@@ -408,6 +421,12 @@ CadenceTests/CadenceTaskContextInheritanceTests.swift            branch=codex/su
 CadenceTests/CadenceTestTargetHygieneTests.swift                 branch=codex/subtasks-inspector    granted=2026-10-23  grant=78e5e26e  spent=21834d4c
 CadenceTests/iOSEditorSheetMetricsTests.swift                    branch=codex/subtasks-inspector    granted=2026-10-23  grant=78e5e26e  spent=21834d4c
 Cadence/iOS/iOSTaskDetailComponents.swift                        branch=codex/ios-inline-tags       granted=2026-10-24  grant=f487409b  spent=2a834d88
+Cadence/Shared/CadenceScheduleDraftChoices.swift                 branch=codex/r67-parity            granted=2026-10-31  grant=3352a903
+Cadence/Shared/Components/CadenceTaskInlinePanel.swift           branch=codex/r67-parity            granted=2026-10-31  grant=3352a903
+Cadence/macOS/Views/SettingsViewSupport.swift                    branch=codex/r67-parity            granted=2026-10-31  grant=3352a903
+Cadence/iOS/iOSRootSidebar.swift                                 branch=codex/r67-parity            granted=2026-10-31  grant=3352a903
+CadenceTests/CadenceSidebarCountMetricsTests.swift               branch=codex/r67-parity            granted=2026-10-31  grant=3352a903
+CadenceTests/SettingsCategoryReachTests.swift                    branch=codex/r67-parity            granted=2026-10-31  grant=3352a903
 ```
 
 ### 2026-10-25 — [[T-6400]]: what the fence actually HOLDS, path by path, and the field that makes it expire
