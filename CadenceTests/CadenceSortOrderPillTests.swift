@@ -58,6 +58,21 @@ struct CadenceSortOrderPillTests {
         #expect(total == expected.count, "found \(total) Order pills; every one needs an honorsDirection gate")
     }
 
+    /// **[[T-9312]].** The pill's menu rows light under the pointer, as the section picker's and
+    /// the New Task sheet's priority menu's do; they had the selected-row fill and no hover plate.
+    @Test func thePillMenuRowsLightUnderThePointer() throws {
+        let source = try CadenceSourceScan.sourceFile("Cadence/macOS/Views/TasksPanelSupportViews.swift")
+        let badge = try #require(CadenceSourceScan.declarationBody(
+            "struct CadenceEnumPickerBadge<", in: source
+        ))
+        let menu = try #require(badge.range(of: "private var menuBadge: some View {"))
+        let rows = String(badge[menu.upperBound...])
+        let row = try #require(rows.range(of: ".buttonStyle(.cadencePlain)"))
+        let hover = try #require(rows.range(of: ".modifier(TaskPickerRowHover())"), "the menu rows have no hover plate")
+        #expect(row.upperBound <= hover.lowerBound, "the hover plate is not on the menu's row buttons")
+        #expect(rows.contains(".background(selection.id == value.id ? Theme.blue.opacity(0.08) : .clear)"))
+    }
+
     private func distinctKeyTasks() -> [AppTask] {
         let base = Date(timeIntervalSinceReferenceDate: 800_000_000)
         let rows: [(String, String, TaskPriority)] = [

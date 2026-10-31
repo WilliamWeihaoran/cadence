@@ -609,6 +609,9 @@ struct CadenceEnumPickerBadge<T: CaseIterable & RawRepresentable & Identifiable>
                         .clipShape(RoundedRectangle(cornerRadius: 6))
                     }
                     .buttonStyle(.cadencePlain)
+                    // [[T-9312]]: the Sort and Group menus' rows lit nothing under the
+                    // pointer, where the section picker beside it and every other Mac choice menu do.
+                    .modifier(TaskPickerRowHover())
                 }
             }
             .padding(.vertical, 6)
