@@ -894,9 +894,14 @@ struct SettingsSevenPaneVocabularyTests {
         #expect(flat.contains("Text(subtitle).font(.system(size:11)).foregroundStyle(Theme.dim).lineLimit(1)"),
                 "the subtitle can wrap again")
         #expect(flat.contains("Text(statusLabel).font(.system(size:10,weight:.semibold))") , "non-vacuity: still the status capsule")
-        // The capsule and the two buttons: three fixed sizes, each behind a one-line limit.
-        #expect(CadenceSourceScan.matchCount("\\.lineLimit\\(1\\)\\.fixedSize\\(\\)", in: flat) == 3,
-                "the status capsule or a button can be squeezed into wrapping again")
+        // The capsule: a fixed size behind a one-line limit. The two buttons ([[T-9461]]) are the
+        // shared `CadenceActionButton`, whose label is one line already, each held at its width.
+        #expect(CadenceSourceScan.matchCount("\\.lineLimit\\(1\\)\\.fixedSize\\(\\)", in: flat) == 1,
+                "the status capsule can be squeezed into wrapping again")
+        #expect(flat.contains("CadenceActionButton(title:primaryLabel,role:.secondary,size:.compact,tint:Theme.text,action:onPrimary).fixedSize()"),
+                "the primary button can be squeezed into wrapping again")
+        #expect(flat.contains("CadenceActionButton(title:\"Delete\",role:.primary,size:.compact,tint:Theme.red,action:onDelete).fixedSize()"),
+                "Delete can be squeezed into wrapping again")
     }
 
     /// [[T-9291]]: the archived context row is [[T-6972]]'s row's sibling — the same Restore/Delete
@@ -910,9 +915,10 @@ struct SettingsSevenPaneVocabularyTests {
         )
         #expect(archived.contains("Text(context.name).font(.system(size:13)).foregroundStyle(Theme.muted).lineLimit(1).truncationMode(.tail)"),
                 "the archived context's name can wrap again")
-        #expect(archived.contains("Button(\"Restore\",action:onRestore).buttonStyle(.cadencePlain).font(.system(size:11,weight:.semibold)).foregroundStyle(Theme.text).lineLimit(1).fixedSize()"),
+        // [[T-9461]]: the shared action button (its label is one line), held at its width.
+        #expect(archived.contains("CadenceActionButton(title:\"Restore\",role:.secondary,size:.compact,tint:Theme.text,action:onRestore).fixedSize()"),
                 "Restore can be squeezed into wrapping again")
-        #expect(archived.contains("Button(\"Delete\",action:onDelete).buttonStyle(.cadencePlain).font(.system(size:11,weight:.semibold)).foregroundStyle(Theme.onColor(for:Theme.red)).lineLimit(1).fixedSize()"),
+        #expect(archived.contains("CadenceActionButton(title:\"Delete\",role:.primary,size:.compact,tint:Theme.red,action:onDelete).fixedSize()"),
                 "Delete can be squeezed into wrapping again")
 
         let active = t286RemovingWhitespace(

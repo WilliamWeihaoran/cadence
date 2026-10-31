@@ -313,6 +313,64 @@ struct CadenceMacPageAccessibilityAuditTests {
         }
     }
 
+    /// **[[T-9461]].** [[T-9351]]'s shape on Mac Settings: the AI pane's Save / Test Connection /
+    /// Remove, the Apple Account pane's Sign Out / Delete Account, and the Restore / Edit / Delete
+    /// buttons on the archived-context, sidebar-tab and archived-list rows all padded and filled
+    /// OUTSIDE `.buttonStyle(.cadencePlain)`, so each button's hit area and hover wash was the
+    /// bare label inside a larger drawn plate. Measured the same way, as each button's own frame
+    /// on the tree. (The Apple Account pane needs the live `AppleAccountManager`, so its two are
+    /// pinned in source by the same `CadenceActionButton` spelling, not hosted.)
+    @Test func theSettingsPanesActionButtonsAreTheirWholePlate() throws {
+        final class StubSecretStore: AISecretStore {
+            func loadSecret(account: String) throws -> String? { "sk-test" }
+            func saveSecret(_ secret: String, account: String) throws {}
+            func deleteSecret(account: String) throws {}
+        }
+        try withTemporaryDefaults("CadenceTests.settingsPlates") { defaults in
+            let ai = AISettingsManager(secretStore: StubSecretStore(), defaults: defaults)
+            #expect(ai.hasAPIKey, "non-vacuity: the Remove button is drawn only with a stored key")
+            let pane = allNodes(
+                in: SettingsAISection(aiSettingsManager: ai, aiAPIKeyDraft: .constant("sk-new")),
+                size: NSSize(width: 720, height: 520)
+            )
+            let rows = allNodes(in: VStack(spacing: 0) {
+                ArchivedContextRow(context: Context(name: "Work"), onRestore: {}, onDelete: {})
+                SidebarTabSettingsRow(destination: .today, tintHex: "#4a9eff", isVisible: true, onEdit: {}, onDropBefore: { _ in })
+                ListLifecycleRow(
+                    icon: "list.bullet",
+                    title: "Errands",
+                    subtitle: "",
+                    color: Theme.blue,
+                    statusLabel: "Archived",
+                    primaryLabel: "Unarchive",
+                    onPrimary: {},
+                    onDelete: {}
+                )
+            }, size: NSSize(width: 720, height: 260))
+            let paneTitles = [
+                CadenceAISettingsCopy.saveAPIKeyAction,
+                CadenceAISettingsCopy.testConnectionAction,
+                CadenceAISettingsCopy.deleteAPIKeyAction,
+            ]
+            let paneButtons = pane.filter { $0.role == Self.buttonRole && paneTitles.contains($0.label) }
+            let rowButtons = rows.filter {
+                $0.role == Self.buttonRole && ["Restore", "Edit", "Unarchive", "Delete"].contains($0.label)
+            }
+            #expect(Set(paneButtons.map(\.label)) == Set(paneTitles), "non-vacuity: the AI pane's buttons are not on the tree: \(pane)")
+            #expect(rowButtons.count == 5, "non-vacuity: the rows' five buttons are not on the tree: \(rows)")
+            for button in paneButtons + rowButtons {
+                #expect(
+                    button.frame.height >= CadenceActionButtonSize.compact.minHeight,
+                    "\(button.label) is \(button.frame.height)pt tall, smaller than its \(CadenceActionButtonSize.compact.minHeight)pt plate"
+                )
+            }
+        }
+        let account = try CadenceSourceScan.sourceFile("Cadence/macOS/Views/SettingsSectionViews.swift")
+        let section = try #require(CadenceSourceScan.declarationBody("struct SettingsAccountSection: View", in: account))
+        #expect(section.contains(#"CadenceActionButton(title: "Sign Out""#), "Sign Out is not the shared action button")
+        #expect(section.contains(#"CadenceActionButton(title: "Delete Account…""#), "Delete Account is not the shared action button")
+    }
+
     // MARK: - T-7068: the Notes page's note rows
 
     /// Every note list on the Mac Notes page drew `…NoteListRow(...).onTapGesture { select }`: one

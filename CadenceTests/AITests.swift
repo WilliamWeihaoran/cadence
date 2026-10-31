@@ -290,7 +290,8 @@ struct AIAPIKeySaveGuardTests {
     @Test func neitherPlatformOffersALiveSaveButtonOnABlankDraft() throws {
         let expectations = [
             "Cadence/macOS/Views/SettingsSectionViews.swift": [
-                ".disabled(isAPIKeyDraftEmpty)",
+                // [[T-9461]]: the shared `CadenceActionButton`'s own disabled argument.
+                "isDisabled:isAPIKeyDraftEmpty",
                 "aiAPIKeyDraft.trimmingCharacters(in:.whitespacesAndNewlines).isEmpty",
             ],
             "Cadence/iOS/iOSSettingsTemplateAndListSections.swift": [

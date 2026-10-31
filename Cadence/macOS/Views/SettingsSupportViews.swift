@@ -286,27 +286,15 @@ struct ArchivedContextRow: View {
 
             Spacer(minLength: 8)
 
-            Button("Restore", action: onRestore)
-                .buttonStyle(.cadencePlain)
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(Theme.text)
-                .lineLimit(1)
+            // [[T-9461]]: the shared action button, so the hit area and the hover wash are the
+            // plate -- these padded and filled OUTSIDE `.buttonStyle(.cadencePlain)`, so each
+            // plate's rim was dead to a click ([[T-9351]]'s shape). `.fixedSize()` keeps
+            // [[T-9291]]'s natural width.
+            CadenceActionButton(title: "Restore", role: .secondary, size: .compact, tint: Theme.text, action: onRestore)
                 .fixedSize()
-                .padding(.horizontal, 10)
-                .padding(.vertical, 7)
-                .background(Theme.surfaceElevated)
-                .clipShape(RoundedRectangle(cornerRadius: 8))
 
-            Button("Delete", action: onDelete)
-                .buttonStyle(.cadencePlain)
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(Theme.onColor(for: Theme.red))
-                .lineLimit(1)
+            CadenceActionButton(title: "Delete", role: .primary, size: .compact, tint: Theme.red, action: onDelete)
                 .fixedSize()
-                .padding(.horizontal, 10)
-                .padding(.vertical, 7)
-                .background(Theme.red)
-                .clipShape(RoundedRectangle(cornerRadius: 8))
         }
         .padding(.vertical, 10)
     }
@@ -376,14 +364,8 @@ struct SidebarTabSettingsRow: View {
 
             Spacer()
 
-            Button("Edit", action: onEdit)
-                .buttonStyle(.cadencePlain)
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(Theme.text)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 7)
-                .background(Theme.surfaceElevated)
-                .clipShape(RoundedRectangle(cornerRadius: 8))
+            // [[T-9461]]: the shared action button, as `ArchivedContextRow`'s pair above.
+            CadenceActionButton(title: "Edit", role: .secondary, size: .compact, tint: Theme.text, action: onEdit)
 
             if isOrderable {
                 Image(systemName: "line.3.horizontal")
@@ -555,27 +537,13 @@ struct ListLifecycleRow: View {
 
             Spacer(minLength: 8)
 
-            Button(primaryLabel, action: onPrimary)
-                .buttonStyle(.cadencePlain)
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(Theme.text)
-                .lineLimit(1)
+            // [[T-9461]]: the shared action button, as `ArchivedContextRow`'s pair above;
+            // `.fixedSize()` keeps [[T-6972]]'s natural width.
+            CadenceActionButton(title: primaryLabel, role: .secondary, size: .compact, tint: Theme.text, action: onPrimary)
                 .fixedSize()
-                .padding(.horizontal, 10)
-                .padding(.vertical, 7)
-                .background(Theme.surfaceElevated)
-                .clipShape(RoundedRectangle(cornerRadius: 8))
 
-            Button("Delete", action: onDelete)
-                .buttonStyle(.cadencePlain)
-                .font(.system(size: 11, weight: .semibold))
-                .foregroundStyle(Theme.onColor(for: Theme.red))
-                .lineLimit(1)
+            CadenceActionButton(title: "Delete", role: .primary, size: .compact, tint: Theme.red, action: onDelete)
                 .fixedSize()
-                .padding(.horizontal, 10)
-                .padding(.vertical, 7)
-                .background(Theme.red)
-                .clipShape(RoundedRectangle(cornerRadius: 8))
         }
         .padding(.vertical, 10)
     }

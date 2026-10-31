@@ -62,28 +62,18 @@ struct SettingsAccountSection: View {
                         Spacer()
 
                         if appleAccountManager.isSignedIn {
+                            // [[T-9461]]: the shared action button, so the hit area and the hover wash
+                            // are the plate. Both padded and filled OUTSIDE `.buttonStyle(.cadencePlain)`,
+                            // so the rim of each plate was dead to a click and hover lit only the
+                            // label ([[T-9351]]'s shape).
                             HStack(spacing: 10) {
-                                Button("Sign Out") {
+                                CadenceActionButton(title: "Sign Out", role: .destructive, size: .compact) {
                                     appleAccountManager.signOut()
                                 }
-                                .buttonStyle(.cadencePlain)
-                                .font(.system(size: 12, weight: .semibold))
-                                .foregroundStyle(Theme.red)
-                                .padding(.horizontal, 12)
-                                .padding(.vertical, 7)
-                                .background(Theme.red.opacity(0.12))
-                                .clipShape(RoundedRectangle(cornerRadius: 8))
 
-                                Button("Delete Account…") {
+                                CadenceActionButton(title: "Delete Account…", role: .primary, size: .compact, tint: Theme.red) {
                                     onDeleteAccount()
                                 }
-                                .buttonStyle(.cadencePlain)
-                                .font(.system(size: 12, weight: .semibold))
-                                .foregroundStyle(Theme.onColor(for: Theme.red))
-                                .padding(.horizontal, 12)
-                                .padding(.vertical, 7)
-                                .background(Theme.red)
-                                .clipShape(RoundedRectangle(cornerRadius: 8))
                             }
                         } else {
                             Button {
@@ -233,7 +223,13 @@ struct SettingsAISection: View {
                         // The field above is empty whenever a key is saved — its placeholder is
                         // "Saved in Keychain" — so a live Save here meant the pane's *resting*
                         // state deleted the credential on one press (T-574).
-                        Button(CadenceAISettingsCopy.saveAPIKeyAction) {
+                        // [[T-9461]]: the shared action button, as the account buttons above.
+                        CadenceActionButton(
+                            title: CadenceAISettingsCopy.saveAPIKeyAction,
+                            role: .primary,
+                            size: .compact,
+                            isDisabled: isAPIKeyDraftEmpty
+                        ) {
                             do {
                                 try aiSettingsManager.saveAPIKey(aiAPIKeyDraft)
                                 aiAPIKeyDraft = ""
@@ -241,43 +237,24 @@ struct SettingsAISection: View {
                                 aiSettingsManager.statusMessage = AIErrorPresenter.message(for: error)
                             }
                         }
-                        .buttonStyle(.cadencePlain)
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(Theme.onColor(for: Theme.blue))
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
-                        .background(Theme.blue)
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
-                        .opacity(isAPIKeyDraftEmpty ? 0.52 : 1)
-                        .disabled(isAPIKeyDraftEmpty)
 
-                        Button(aiSettingsManager.isTestingConnection ? CadenceAISettingsCopy.testingConnectionStatus : CadenceAISettingsCopy.testConnectionAction) {
+                        CadenceActionButton(
+                            title: aiSettingsManager.isTestingConnection ? CadenceAISettingsCopy.testingConnectionStatus : CadenceAISettingsCopy.testConnectionAction,
+                            role: .secondary,
+                            size: .compact,
+                            isDisabled: !aiSettingsManager.hasAPIKey || aiSettingsManager.isTestingConnection
+                        ) {
                             Task { await aiSettingsManager.testConnection() }
                         }
-                        .buttonStyle(.cadencePlain)
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(aiSettingsManager.hasAPIKey ? Theme.blue : Theme.dim)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
-                        .background((aiSettingsManager.hasAPIKey ? Theme.blue : Theme.dim).opacity(0.12))
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
-                        .disabled(!aiSettingsManager.hasAPIKey || aiSettingsManager.isTestingConnection)
 
                         if aiSettingsManager.hasAPIKey {
-                            Button(CadenceAISettingsCopy.deleteAPIKeyAction) {
+                            CadenceActionButton(title: CadenceAISettingsCopy.deleteAPIKeyAction, role: .destructive, size: .compact) {
                                 do {
                                     try aiSettingsManager.removeAPIKey()
                                 } catch {
                                     aiSettingsManager.statusMessage = AIErrorPresenter.message(for: error)
                                 }
                             }
-                            .buttonStyle(.cadencePlain)
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundStyle(Theme.red)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 8)
-                            .background(Theme.red.opacity(0.12))
-                            .clipShape(RoundedRectangle(cornerRadius: 8))
                         }
                     }
                 }
