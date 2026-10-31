@@ -909,32 +909,51 @@ struct iOSListIconStrip: View {
     @Binding var selected: String
     let colorHex: String
 
+    /// **The selection is scrolled into view** ([[T-8902]]). The strip is about seven plates wide
+    /// on a 393 pt phone and the palette is over forty, so a list whose icon sat past the seventh
+    /// -- or a stored icon outside the palette, which `offeredIcons(for:)` appends last -- opened
+    /// on a row of unselected grey glyphs, with only the preview card saying what was set. The
+    /// same `ScrollViewReader` pattern `iOSListDetailPagePicker` keeps its selected tab centred
+    /// with: no animation on appear, so the sheet opens already scrolled rather than visibly
+    /// sliding, and an animated follow when the selection moves. The Mac draws the palette as a
+    /// full `IconGrid`, so there is nothing scrolled out of view to bring back ([[T-8201]]).
     var body: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 6) {
-                ForEach(CadenceIconPalette.offeredIcons(for: selected), id: \.self) { icon in
-                    let isSelected = icon == selected
-                    Button {
-                        selected = icon
-                    } label: {
-                        Image(systemName: icon)
-                            .font(.system(size: 15, weight: .semibold))
-                            .foregroundStyle(isSelected ? Color(hex: colorHex) : Theme.dim)
-                            .frame(width: 44, height: 44)
-                            .background(
-                                RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous)
-                                    .fill(isSelected ? Theme.surfaceHighlight : Color.clear)
-                            )
-                            .contentShape(
-                                RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous)
-                            )
+        ScrollViewReader { proxy in
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) {
+                    ForEach(CadenceIconPalette.offeredIcons(for: selected), id: \.self) { icon in
+                        iconButton(icon)
+                            .id(icon)
                     }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel(CadenceIconPalette.accessibilityName(for: icon))
-                    .accessibilityAddTraits(isSelected ? .isSelected : [])
                 }
             }
+            .onAppear { proxy.scrollTo(selected, anchor: .center) }
+            .onChange(of: selected) { _, newIcon in
+                withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo(newIcon, anchor: .center) }
+            }
         }
+    }
+
+    private func iconButton(_ icon: String) -> some View {
+        let isSelected = icon == selected
+        return Button {
+            selected = icon
+        } label: {
+            Image(systemName: icon)
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(isSelected ? Color(hex: colorHex) : Theme.dim)
+                .frame(width: 44, height: 44)
+                .background(
+                    RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous)
+                        .fill(isSelected ? Theme.surfaceHighlight : Color.clear)
+                )
+                .contentShape(
+                    RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous)
+                )
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(CadenceIconPalette.accessibilityName(for: icon))
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 }
 

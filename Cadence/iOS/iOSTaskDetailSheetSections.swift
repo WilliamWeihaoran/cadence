@@ -135,17 +135,11 @@ struct iOSTaskFieldListSection: View {
         }
     }
 
-    /// The panel's After stepper: the same bounds (`seriesEndCountRange`, floored at the
-    /// occurrence already reached and never capping a larger stored count) and the same label.
+    /// The panel's After stepper row itself: the same bounds (`seriesEndCountRange`, floored at
+    /// the occurrence already reached and never capping a larger stored count), the same label,
+    /// and the same `CadenceFieldRow` metrics as the Ends row above it ([[T-8901]]).
     private var endCountRow: some View {
-        Stepper(value: endCountSelection, in: draft.seriesEndCountRange) {
-            iOSEditorInlineLabel(
-                label: CadenceTaskRecurrenceEndPresentation.endCountStepperLabel(draft.seriesEndCount),
-                systemImage: "number",
-                color: Theme.purple
-            )
-        }
-        .frame(minHeight: 44)
+        CadenceSeriesEndCountRow(count: endCountSelection, in: draft.seriesEndCountRange)
     }
 
     private var endModeSelection: Binding<TaskRecurrenceEndMode> {

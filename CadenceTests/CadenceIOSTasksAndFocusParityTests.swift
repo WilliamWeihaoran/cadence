@@ -284,4 +284,19 @@ struct CadenceIOSContextEditorIconPickerTests {
         let strip = try #require(CadenceSourceScan.declarationBody("struct iOSListIconStrip: View", in: editors))
         #expect(strip.contains("CadenceIconPalette.offeredIcons(for: selected)"))
     }
+
+    /// [[T-8902]]: the strip scrolls its selection into view. It is seven plates wide on a phone
+    /// and the palette is over forty, so an icon late in it opened with nothing visibly selected.
+    /// The offset is not reachable from a unit test, so this pins the mechanism: the scroller is
+    /// inside a `ScrollViewReader`, every plate carries its icon as its scroll id, and the strip
+    /// scrolls to the selection on appear (unanimated) and follows it when it changes.
+    @Test func theIconStripScrollsItsSelectionIntoView() throws {
+        let editors = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile("Cadence/iOS/iOSListEditorViews.swift"))
+        let strip = try #require(CadenceSourceScan.declarationBody("struct iOSListIconStrip: View", in: editors))
+        let compact = strip.filter { !$0.isWhitespace }
+        #expect(compact.contains("ScrollViewReader{proxyinScrollView(.horizontal"), "the strip's scroller has no reader")
+        #expect(compact.contains(".id(icon)"), "the plates carry no scroll id, so scrollTo finds nothing")
+        #expect(compact.contains(".onAppear{proxy.scrollTo(selected,anchor:.center)}"), "the strip opens at offset zero again")
+        #expect(compact.contains("proxy.scrollTo(newIcon,anchor:.center)"), "the strip stops following its selection")
+    }
 }

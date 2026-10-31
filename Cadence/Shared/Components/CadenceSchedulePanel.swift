@@ -750,14 +750,7 @@ struct CadenceSchedulePanel<NotesField: View>: View {
                     CadenceDatePicker(selection: seriesEndDateBinding, minHeight: 36)
                 }
             case .count:
-                Stepper(value: seriesEndCountBinding, in: draft.seriesEndCountRange) {
-                    CadenceInlineFieldLabel(
-                        label: CadenceTaskRecurrenceEndPresentation.endCountStepperLabel(draft.seriesEndCount),
-                        systemImage: "number",
-                        color: Theme.purple
-                    )
-                }
-                .frame(minHeight: 36)
+                CadenceSeriesEndCountRow(count: seriesEndCountBinding, in: draft.seriesEndCountRange)
             }
         }
     }
@@ -1137,6 +1130,39 @@ enum CadenceSchedulePanelMetrics {
     /// The panel's width where its host gives it none — a popover has no container to be a fraction
     /// of. A sheet or an inspector column overrides it with its own frame.
     static let preferredWidth: CGFloat = 372
+}
+
+/// **The series' After count, drawn on the same row primitive as the Ends row above it** ([[T-8901]]).
+///
+/// It was a bare `Stepper` wrapping the inline label, floored by hand with `.frame(minHeight:)` --
+/// 44 on the iOS task sheet, 36 in this panel, where every `CadenceFieldRow` beside it reads
+/// `CadenceSettingsRowMetrics.rowHeight` (34 on the Mac). It is a `CadenceFieldRow` now, so the one
+/// row metric is the one both rows read on both platforms, and no copy can carry its own figure.
+/// The stepper keeps its label for VoiceOver and hides it, because the row's own label says it.
+///
+/// (The iPhone sighting that opened T-8901 read 67 pt from the Ends/After hairline to the next
+/// hairline. Hosted, the old iOS row resolved to 44 pt, the same as the Ends row: the After row is
+/// the section's last row, so the next hairline is the subtasks section's top rule, and 67 is the
+/// divider's 1 + 6 pt, the 44 pt row and `iOSTaskInspectorMetrics.sectionSpacing`'s 16.)
+///
+/// One row for both platforms ([[T-8201]]): the iOS task sheet's `endCountRow` and this panel's
+/// `seriesEndRows` both draw it.
+struct CadenceSeriesEndCountRow: View {
+    @Binding var count: Int
+    let range: ClosedRange<Int>
+
+    init(count: Binding<Int>, in range: ClosedRange<Int>) {
+        _count = count
+        self.range = range
+    }
+
+    var body: some View {
+        let label = CadenceTaskRecurrenceEndPresentation.endCountStepperLabel(count)
+        CadenceFieldRow(label: label, systemImage: "number", color: Theme.purple) {
+            Stepper(label, value: $count, in: range)
+                .labelsHidden()
+        }
+    }
 }
 
 /// The standard panel's Ends row, as draft writes ([[T-6901]]).

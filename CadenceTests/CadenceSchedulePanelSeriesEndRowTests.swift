@@ -1,5 +1,6 @@
 import Foundation
 import SwiftData
+import SwiftUI
 import Testing
 @testable import Cadence
 
@@ -191,8 +192,9 @@ struct CadenceSchedulePanelSeriesEndRowTests {
                 "the iOS task sheet assigns draft.\(field) itself"
             )
         }
-        // One look: the series rows take the panel's purple, not the sheet's old grey.
-        #expect(CadenceSourceScan.matchCount(#"color: Theme\.purple"#, in: sheet) == 6)
+        // One look: the series rows take the panel's purple, not the sheet's old grey. Five here
+        // and one in `CadenceSeriesEndCountRow`, which the After row draws since [[T-8901]].
+        #expect(CadenceSourceScan.matchCount(#"color: Theme\.purple"#, in: sheet) == 5)
     }
 
     // MARK: Wiring
@@ -214,5 +216,64 @@ struct CadenceSchedulePanelSeriesEndRowTests {
         #expect(panel.contains("set: { draft.selectSeriesEnd($0) }"))
         #expect(panel.contains("set: { draft.setSeriesEndDate($0) }"))
         #expect(panel.contains("set: { draft.setSeriesEndCount($0) }"))
+    }
+}
+
+/// **The After stepper row is on the Ends row's rhythm** ([[T-8901]]).
+///
+/// The row was a bare `Stepper` floored by hand with `.frame(minHeight:)` -- 36 in the Mac panel,
+/// beside 34 pt field rows, and 44 on the iOS sheet. It is a `CadenceFieldRow` now. The first test
+/// measures the RELATION -- the After row and an Ends-shaped field row resolve to the same height
+/// on this platform -- by hosting both, never a point figure (T-1279). On the Mac it kills the old
+/// 36 pt floor; on iOS the old 44 pt shape measured the same as the field row, so there the second
+/// test, which pins that both sheets draw the one row, is what holds the line.
+@MainActor
+struct CadenceSeriesEndCountRowRhythmTests {
+    /// The width a phone's sheet gives its rows; wide enough that no label wraps.
+    private static let width: CGFloat = 345
+
+    private static func fittedHeight<V: View>(_ view: V) -> CGFloat {
+        let root = view.frame(width: width).fixedSize(horizontal: false, vertical: true)
+        let proposal = CGSize(width: width, height: 1_000)
+        #if os(iOS)
+        return UIHostingController(rootView: root).sizeThatFits(in: proposal).height
+        #else
+        return NSHostingController(rootView: root).sizeThatFits(in: proposal).height
+        #endif
+    }
+
+    @Test func theAfterStepperRowIsAsTallAsTheEndsRowAboveIt() {
+        var count = 10
+        let countBinding = Binding(get: { count }, set: { count = $0 })
+        let after = Self.fittedHeight(CadenceSeriesEndCountRow(count: countBinding, in: 1...999))
+        let ends = Self.fittedHeight(
+            CadenceFieldRow(label: "Ends", systemImage: "number", color: Theme.purple) {
+                CadenceChoiceValueButton(title: "After 10 times") {}
+            }
+        )
+        // Non-vacuous: a host that measured nothing would make the two equal at zero.
+        #expect(ends >= CadenceSettingsRowMetrics.rowHeight, "the Ends-shaped row measured \(ends)")
+        #expect(after == ends, "the After stepper row is \(after) pt where the Ends row is \(ends) pt")
+    }
+
+    @Test func bothSheetsDrawTheOneAfterRowAndNoHandFlooredStepper() throws {
+        let panel = CadenceSourceScan.codeOnly(
+            try CadenceSourceScan.sourceFile("Cadence/Shared/Components/CadenceSchedulePanel.swift")
+        )
+        let sheet = CadenceSourceScan.codeOnly(
+            try CadenceSourceScan.sourceFile("Cadence/iOS/iOSTaskDetailSheetSections.swift")
+        )
+        let rows = try #require(CadenceSourceScan.declarationBody("private var seriesEndRows: some View", in: panel))
+        #expect(rows.contains("CadenceSeriesEndCountRow(count: seriesEndCountBinding, in: draft.seriesEndCountRange)"))
+        let endCount = try #require(CadenceSourceScan.declarationBody("private var endCountRow: some View", in: sheet))
+        #expect(endCount.contains("CadenceSeriesEndCountRow(count: endCountSelection, in: draft.seriesEndCountRange)"))
+        for (name, source) in [("the panel's Ends rows", rows), ("the iOS sheet", sheet)] {
+            #expect(!source.contains("Stepper("), "\(name) draws its own Stepper again")
+        }
+
+        let row = try #require(CadenceSourceScan.declarationBody("struct CadenceSeriesEndCountRow: View", in: panel))
+        #expect(row.contains("CadenceFieldRow(label: label"), "the After row is not a CadenceFieldRow")
+        #expect(row.contains(".labelsHidden()"), "the stepper draws a second label beside the row's")
+        #expect(!row.contains("minHeight"), "the After row floors its own height again")
     }
 }
