@@ -137,41 +137,12 @@ struct iOSMarkdownTaskEmbedLayoutInfo {
         }
     }
 
+    /// [[T-9271]]: the row is `CadenceTaskEmbedTouchChips`', shared with Focus's read-only copy of
+    /// this card; only the measuring is this file's.
     private var chips: [(title: String, tint: UIColor, width: CGFloat)] {
-        var values: [(String, UIColor)] = []
-        let status = TaskStatus(rawValue: task.statusRaw) ?? (task.isDone ? .done : .todo)
-        values.append((task.isMissing ? "Missing" : status.label, task.isDone ? UIColor(Theme.green) : UIColor(Theme.blue)))
-
-        if let priority = TaskPriority(rawValue: task.priorityRaw), priority != .none {
-            values.append((priority.label, priorityTint(priority)))
-        }
-        if task.estimatedMinutes > 0 {
-            values.append((TimeFormatters.durationLabel(actual: task.actualMinutes, estimated: task.estimatedMinutes), UIColor(Theme.amber)))
-        }
-        if !task.scheduledDate.isEmpty {
-            let date = DateFormatters.relativeDate(from: task.scheduledDate)
-            let time = task.scheduledStartMin >= 0 ? " \(TimeFormatters.timeString(from: task.scheduledStartMin))" : ""
-            values.append(("Do \(date)\(time)", UIColor(Theme.blue)))
-        }
-        if !task.dueDate.isEmpty {
-            values.append(("Due \(DateFormatters.relativeDate(from: task.dueDate))", UIColor(Theme.red)))
-        }
-        if !task.containerName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            values.append((task.containerName, UIColor(Theme.muted)))
-        }
-
-        return values.map { title, tint in
-            let width = min(150, max(44, ceil(title.size(withAttributes: chipAttributes).width) + 16))
-            return (title, tint, width)
-        }
-    }
-
-    private func priorityTint(_ priority: TaskPriority) -> UIColor {
-        switch priority {
-        case .high: return UIColor(Theme.red)
-        case .medium: return UIColor(Theme.amber)
-        case .low: return UIColor(Theme.green)
-        case .none: return UIColor(Theme.dim)
+        CadenceTaskEmbedTouchChips.chips(for: task).map { chip in
+            let width = min(150, max(44, ceil(chip.title.size(withAttributes: chipAttributes).width) + 16))
+            return (chip.title, UIColor(chip.tint), width)
         }
     }
 

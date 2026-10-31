@@ -451,57 +451,14 @@ private struct iOSMarkdownPreviewTaskEmbedBlock: View {
         return Theme.borderSubtle.opacity(0.52)
     }
 
-    private var chips: [iOSMarkdownPreviewTaskChipModel] {
-        var output: [iOSMarkdownPreviewTaskChipModel] = []
-        let status = TaskStatus(rawValue: task.statusRaw) ?? (task.isDone ? .done : .todo)
-        output.append(
-            iOSMarkdownPreviewTaskChipModel(
-                title: task.isMissing ? "Missing" : status.label,
-                tint: task.isDone ? Theme.green : Theme.blue
-            )
-        )
-
-        if let priority = TaskPriority(rawValue: task.priorityRaw), priority != .none {
-            output.append(.init(title: priority.label, tint: priorityTint(priority)))
-        }
-        if task.estimatedMinutes > 0 {
-            output.append(
-                .init(
-                    title: TimeFormatters.durationLabel(actual: task.actualMinutes, estimated: task.estimatedMinutes),
-                    tint: Theme.amber
-                )
-            )
-        }
-        if !task.scheduledDate.isEmpty {
-            let time = task.scheduledStartMin >= 0 ? " \(TimeFormatters.timeString(from: task.scheduledStartMin))" : ""
-            output.append(.init(title: "Do \(DateFormatters.relativeDate(from: task.scheduledDate))\(time)", tint: Theme.blue))
-        }
-        if !task.dueDate.isEmpty {
-            output.append(.init(title: "Due \(DateFormatters.relativeDate(from: task.dueDate))", tint: Theme.red))
-        }
-        if !task.containerName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            output.append(.init(title: task.containerName, tint: Theme.muted))
-        }
-        return output
+    /// [[T-9271]]: the shared builder, the one the note editor's drawn card reads too.
+    private var chips: [CadenceTaskEmbedTouchChip] {
+        CadenceTaskEmbedTouchChips.chips(for: task)
     }
-
-    private func priorityTint(_ priority: TaskPriority) -> Color {
-        switch priority {
-        case .high: return Theme.red
-        case .medium: return Theme.amber
-        case .low: return Theme.green
-        case .none: return Theme.dim
-        }
-    }
-}
-
-private struct iOSMarkdownPreviewTaskChipModel {
-    let title: String
-    let tint: Color
 }
 
 private struct iOSMarkdownPreviewTaskChip: View {
-    let chip: iOSMarkdownPreviewTaskChipModel
+    let chip: CadenceTaskEmbedTouchChip
 
     var body: some View {
         Text(chip.title)
