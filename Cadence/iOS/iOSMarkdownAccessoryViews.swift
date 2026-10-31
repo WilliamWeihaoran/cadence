@@ -567,6 +567,13 @@ struct iOSMarkdownFormatToolbar: View {
     /// extra control costs it nothing.
     var templateKind: NoteKind? = nil
     var applyTemplate: ((NoteTemplate) -> Void)? = nil
+    /// **[[T-8761]].** Set to put the note's tag control in this row, on the template menu's gate
+    /// and for its reason: where the page header has no room, this scroller does.
+    var tagNote: Note? = nil
+    /// The editor's focus, which `iOSNoteTagControl` drops before it writes the note's tags.
+    var isEditorFocused: Binding<Bool> = .constant(false)
+    /// Where the tag control's refusals go; the surface draws them under this row.
+    var onTagFailure: ((String?) -> Void)? = nil
 
     /// One touch target plus the row's own padding.
     static let height: CGFloat = iOSMarkdownChromeMetrics.touchTarget + 12
@@ -645,7 +652,7 @@ struct iOSMarkdownFormatToolbar: View {
                 // The rule closes the format items off from whatever follows. With no image
                 // button, no template menu and no overflow, nothing follows and a trailing hairline
                 // would rule off empty space.
-                if chooseImages != nil || (templateKind != nil && applyTemplate != nil) || isCompact {
+                if chooseImages != nil || (templateKind != nil && applyTemplate != nil) || tagNote != nil || isCompact {
                     separator
                 }
 
@@ -662,6 +669,15 @@ struct iOSMarkdownFormatToolbar: View {
 
                 if let templateKind, let applyTemplate {
                     iOSNoteTemplateMenu(kind: templateKind, compact: true, apply: applyTemplate)
+                }
+
+                if let tagNote {
+                    iOSNoteTagControl(
+                        note: tagNote,
+                        isEditorFocused: isEditorFocused,
+                        placement: .formatRow,
+                        onFailure: onTagFailure ?? { _ in }
+                    )
                 }
 
                 if isCompact {

@@ -332,8 +332,9 @@ struct iOSTaskTagPickerPopover: View {
     /// Set when the store refused the tag the field just tried to create. See `addTag()`.
     @State private var tagFailureNotice: String?
 
+    /// [[T-8761]]: the one choice list, shared with macOS's `TagPickerPopover`.
     private var availableTags: [Tag] {
-        TagSupport.uniqueBySlug(allTags.filter { !$0.isArchived })
+        TagSupport.pickerChoices(from: allTags)
     }
 
     private var trimmedNewTagName: String {

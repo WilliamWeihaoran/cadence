@@ -315,6 +315,11 @@ struct iOSNotesView: View {
                     apply(template, to: note)
                 }
             }
+            // [[T-8761]]: the note's tags, on the template menu's gate and for its reason — at
+            // compact width they ride in the editor's format row instead.
+            if showsHeaderTemplateMenu, let note = selectedNote {
+                iOSNoteTagControl(note: note, isEditorFocused: $isEditorFocused)
+            }
             // AI note actions, gated on the same rule and for the same reason: this row already
             // holds a back control, a date title and four tabs at 390pt. In the *compact*
             // one-column form the editor is a cover with its own navigation bar, and the control
@@ -502,6 +507,7 @@ struct iOSNotesView: View {
                     onOpenReference: openMarkdownReference,
                     templateKind: showsHeaderTemplateMenu ? nil : activeTab.coreTab?.noteKind,
                     applyTemplate: showsHeaderTemplateMenu ? nil : { apply($0, to: note) },
+                    tagNote: showsHeaderTemplateMenu ? nil : note,
                     flush: editorFlush
                 )
                 .id(note.id)
@@ -909,6 +915,8 @@ struct iOSNoteEditorCover: View {
                 embeddedTaskProject: embeddedTaskProject,
                 templateKind: templateKind,
                 applyTemplate: templateKind == nil ? nil : { apply($0) },
+                // [[T-8761]]: this cover is the one-column form, whose header has no room.
+                tagNote: note,
                 flush: editorFlush
             )
             .id(note.id)

@@ -26,8 +26,9 @@ struct TagPickerPopover: View {
     @State private var inlineMentionPrompt: CadenceTagRenameInlineMentions.Prompt?
     @FocusState private var isSearchFocused: Bool
 
+    /// [[T-8761]]: the one choice list, shared with the iOS popover the note chrome presents.
     private var activeTags: [Tag] {
-        TagSupport.uniqueBySlug(allTags.filter { !$0.isArchived })
+        TagSupport.pickerChoices(from: allTags)
     }
 
     private var filteredTags: [Tag] {

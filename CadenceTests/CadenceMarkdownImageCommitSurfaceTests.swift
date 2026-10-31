@@ -541,7 +541,10 @@ struct CadenceMarkdownImageCommitSurfaceTests {
         // [[T-8762]] makes it 81, and bare: `iOSNoteEditorCover` names a refused Move Note above
         // its editor, since the menu that asked has already closed. The retry is the same menu,
         // and the next move that lands clears it.
-        #expect(total == 81, "the inline notice has \(total) call sites, not the 81 this test was written over")
+        // [[T-8761]] makes it 83, both bare: `iOSNoteTagControl` names a refused tag write under
+        // itself in a header, or hands it to `iOSMarkdownEditingSurface` to draw under the format
+        // row. The retry is the same control, and the next write that lands clears it.
+        #expect(total == 83, "the inline notice has \(total) call sites, not the 83 this test was written over")
         #expect(withDismissal == 9, "\(withDismissal) call sites offer a dismissal, not 9")
 
         // And each of the nine is named, so one swapping places with another is still a failure.

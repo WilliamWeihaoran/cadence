@@ -54,6 +54,9 @@ struct iOSMarkdownEditingSurface: View {
     /// template menu belongs in the format row rather than a page header.
     var templateKind: NoteKind? = nil
     var applyTemplate: ((NoteTemplate) -> Void)? = nil
+    /// **[[T-8761]].** The note whose tag control rides in the format row — set by the hosts that
+    /// also hand this row the template menu, and nil where the page header carries both.
+    var tagNote: Note? = nil
     /// **[[T-5170]].** The host's handle on the typing this editor is still holding back. Pass one
     /// and the host can `flush()` it before it commits, and read `hasPendingEdit` in its dirty
     /// guard; leave it nil and the editor keeps its own, which nobody outside can reach.
@@ -85,6 +88,8 @@ struct iOSMarkdownEditingSurface: View {
     /// slot rather than `imageFailureNotice`'s: the two name different acts, and a picked image
     /// that failed must not be relabelled by a subtask that failed after it.
     @State private var embeddedTaskFailureNotice: String?
+    /// [[T-8761]]: a refused tag write from the format row's tag control, drawn under the row.
+    @State private var tagFailureNotice: String?
     @State private var recentEmbeddedTasks: [UUID: AppTask] = [:]
     @State private var selectedEmbeddedTask: AppTask?
     /// Held rather than computed in `body`. Backlinks run a regex over *every* other note's content,
@@ -212,8 +217,18 @@ struct iOSMarkdownEditingSurface: View {
                 apply: { command in applyToolbarCommand(command) },
                 chooseImages: chooseImagesAction,
                 templateKind: templateKind,
-                applyTemplate: applyTemplate
+                applyTemplate: applyTemplate,
+                tagNote: tagNote,
+                isEditorFocused: $isFocused,
+                onTagFailure: { tagFailureNotice = $0 }
             )
+
+            // Bare: the retry is the same control, and the next tag write that lands clears it.
+            if let tagFailureNotice {
+                CadenceInlineFailureNotice(text: tagFailureNotice)
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 6)
+            }
 
             if let imageFailureNotice {
                 CadenceInlineFailureNotice(text: imageFailureNotice) { self.imageFailureNotice = nil }
