@@ -1152,7 +1152,8 @@ interactive_skip_report() {
   local n
   for n in "${names[@]}"; do [[ -n "$n" ]] && say "     $n"; done
   if (( interactive > 0 )); then
-    say "   Turn them on for a run, then turn them off again -- they take over the pointer:"
+    say "   Turn them on for a run, then turn them off again -- they take over the pointer. The"
+    say "   marker counts only for 60 minutes after its last touch (T-8926), so touch it right before:"
     say "     touch '$INTERACTIVE_SKIP_MARKER'"
     say "     rm    '$INTERACTIVE_SKIP_MARKER'"
     say "   (CADENCE_RUN_INTERACTIVE_UI_TESTS=1 is honoured too and CANNOT be delivered to the"

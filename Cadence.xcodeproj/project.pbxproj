@@ -245,6 +245,7 @@
 		D20370372FCE000000000001 /* Exceptions for "CadenceTests" folder in "CadenceUITests" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
+				CadenceInteractiveOptInMarker.swift,
 				CadenceSeededSidebarArrivalVerdict.swift,
 			);
 			target = 8850FF392F75C94C00A80F43 /* CadenceUITests */;

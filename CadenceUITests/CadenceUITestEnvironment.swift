@@ -73,10 +73,18 @@ enum CadenceUITestEnvironment {
     /// `touch` is the whole interface; nothing writes it from here, and the skip below prints the
     /// resolved path so a reader of a skipped run never has to reconstruct it from this comment.
     ///
+    /// **The marker expires ([[T-8926]]).** It is honoured only within
+    /// `CadenceInteractiveOptInMarker.maximumAge` of its last `touch`, because nothing removes it
+    /// and it was once found armed 29 days after it was set. Re-`touch` it right before the run.
+    ///
     /// The environment variable is still honoured first, so a scheme or test plan that manages to
     /// set it keeps working and no existing invocation changes meaning.
     static var interactiveOptInMarkerPath: String {
-        (NSTemporaryDirectory() as NSString).appendingPathComponent("cadence-run-interactive-ui-tests")
+        (NSTemporaryDirectory() as NSString).appendingPathComponent(CadenceInteractiveOptInMarker.fileName)
+    }
+
+    static var interactiveOptInMarkerVerdict: CadenceInteractiveOptInMarker.Verdict {
+        CadenceInteractiveOptInMarker.verdict(atPath: interactiveOptInMarkerPath, now: Date())
     }
 
     static var interactiveTestsAreEnabled: Bool {
@@ -86,17 +94,26 @@ enum CadenceUITestEnvironment {
         // stripped on the platforms where they are delivered at all, and reading both costs a
         // dictionary lookup.
         if environment["TEST_RUNNER_CADENCE_RUN_INTERACTIVE_UI_TESTS"] == "1" { return true }
-        return FileManager.default.fileExists(atPath: interactiveOptInMarkerPath)
+        return interactiveOptInMarkerVerdict == .fresh
     }
 
     /// The skip that tells the reader **how to turn it on**, which the old per-test copies of this
     /// message did not — they named an environment variable that could not be set.
     static func requireInteractiveUITests() throws {
         guard !interactiveTestsAreEnabled else { return }
+        let window = Int(CadenceInteractiveOptInMarker.maximumAge / 60)
+        var stale = ""
+        if case .stale(let age) = interactiveOptInMarkerVerdict {
+            stale = """
+             The marker IS present but is \(CadenceInteractiveOptInMarker.describe(age: age)), \
+            outside the \(window)-minute window it is honoured for (T-8926), so it was ignored.
+            """
+        }
         throw XCTSkip(
             """
             Interactive UI tests are opt-in: they take over the pointer and the keyboard of whatever \
-            Mac they run on. Turn them on with `touch \(interactiveOptInMarkerPath)` before the run \
+            Mac they run on. Turn them on with `touch \(interactiveOptInMarkerPath)` right before the \
+            run; the marker counts for \(window) minutes after its last touch.\(stale) \
             (CADENCE_RUN_INTERACTIVE_UI_TESTS=1 is also honoured, but does not reach the macOS \
             UI-test process from a shell or from a TEST_RUNNER_ build setting — measured 2026-09-05).
             """
