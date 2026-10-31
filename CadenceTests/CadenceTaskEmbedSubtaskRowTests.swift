@@ -107,6 +107,50 @@ struct CadenceTaskEmbedSubtaskRowTests {
         #expect(points[1].y > points[2].y)
     }
 
+    /// [[T-9322]]: the overflow count is every subtask the row did not draw, and the chip has
+    /// room — a placed item gives its slot up rather than the count going undrawn.
+    @Test func theOverflowCountsEverySubtaskNotDrawnAndReservesRoomForItsChip() throws {
+        func run(maxX: CGFloat, total: Int) -> (row: CadenceTaskEmbedSubtaskRowLayout, overflow: (count: Int, full: CGRect)?) {
+            CadenceTaskEmbedSubtaskRow.layoutWithOverflow(
+                subtasks(),
+                totalCount: total,
+                fallbackTitle: "Untitled",
+                minX: 0,
+                maxX: maxX,
+                rowY: 66,
+                rowHeight: 16,
+                overflowWidth: { _ in 40 }
+            ) { title, _ in CGFloat(title.count * 6) }
+        }
+
+        // Every item 76 wide, 6 apart: all three end at 240, so a 300 row has nothing left over.
+        let roomy = run(maxX: 300, total: 3)
+        #expect(roomy.row.items.count == 3)
+        #expect(roomy.overflow == nil)
+
+        // Two fit (0...76, 82...158) and the chip after them (164 + 40 = 204) does too: +1.
+        let twoFit = try #require(run(maxX: 210, total: 3).overflow)
+        #expect(twoFit.count == 1)
+        #expect(twoFit.full.minX == 164)
+
+        // Two fit at 160 but the chip does not: the second gives way and the chip reads +2.
+        let squeezed = run(maxX: 160, total: 3)
+        let chip = try #require(squeezed.overflow)
+        #expect(squeezed.row.items.count == 1)
+        #expect(chip.count == 2)
+        #expect(chip.full.minX == squeezed.row.items[0].full.maxX + CadenceTaskEmbedSubtaskRow.itemSpacing)
+        #expect(chip.full.maxX <= 160)
+
+        // Subtasks past those offered are counted alongside those the row dropped.
+        let more = run(maxX: 160, total: 7)
+        #expect(more.row.items.count + (more.overflow?.count ?? 0) == 7)
+
+        // Not even the chip fits: nothing is drawn, rather than a chip crossing the edge.
+        let tiny = run(maxX: 30, total: 3)
+        #expect(tiny.row.items.isEmpty)
+        #expect(tiny.overflow == nil)
+    }
+
     /// The iOS card paints the shared row and no longer spells `[ ] ` / `[x] ` into its image.
     @Test func theIOSCardDrawsTheSharedRowAndNoBracketedCheckbox() throws {
         let source = CadenceSourceScan.strippingComments(

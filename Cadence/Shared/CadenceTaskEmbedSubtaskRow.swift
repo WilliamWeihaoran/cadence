@@ -85,6 +85,48 @@ nonisolated enum CadenceTaskEmbedSubtaskRow {
         return CadenceTaskEmbedSubtaskRowLayout(items: items, trailingX: x)
     }
 
+    /// [[T-9322]]: `layout` plus the `+N` overflow chip, counted against every subtask the task
+    /// has (`totalCount`), not only those never offered to the row. When the chip does not fit
+    /// after the placed items, the last placed item gives up its room and joins the count — a
+    /// subtask is either drawn or counted, never silently lost. `overflowWidth(count)` is the
+    /// chip's drawn width for that count. `overflow` is nil when nothing is left over, or when
+    /// not even the chip fits on an empty row.
+    static func layoutWithOverflow(
+        _ subtasks: [MarkdownTaskEmbedSubtaskRenderInfo],
+        totalCount: Int,
+        fallbackTitle: String,
+        minX: CGFloat,
+        maxX: CGFloat,
+        rowY: CGFloat,
+        rowHeight: CGFloat,
+        overflowWidth: (Int) -> CGFloat,
+        measure: (String, Bool) -> CGFloat
+    ) -> (row: CadenceTaskEmbedSubtaskRowLayout, overflow: (count: Int, full: CGRect)?) {
+        let row = layout(
+            subtasks,
+            fallbackTitle: fallbackTitle,
+            minX: minX,
+            maxX: maxX,
+            rowY: rowY,
+            rowHeight: rowHeight,
+            measure: measure
+        )
+        var items = row.items
+        var trailingX = row.trailingX
+        while totalCount - items.count > 0 {
+            let count = totalCount - items.count
+            let width = overflowWidth(count)
+            if trailingX + width <= maxX {
+                let full = CGRect(x: trailingX, y: rowY, width: width, height: rowHeight)
+                return (CadenceTaskEmbedSubtaskRowLayout(items: items, trailingX: trailingX), (count, full))
+            }
+            guard !items.isEmpty else { break }
+            items.removeLast()
+            trailingX = items.last.map { $0.full.maxX + itemSpacing } ?? minX
+        }
+        return (CadenceTaskEmbedSubtaskRowLayout(items: items, trailingX: trailingX), nil)
+    }
+
     /// The tick inside a done subtask's glyph, y-down: short stroke down-right, long stroke up.
     static func checkPoints(in rect: CGRect) -> [CGPoint] {
         [

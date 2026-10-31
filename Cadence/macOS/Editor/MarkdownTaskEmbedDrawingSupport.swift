@@ -419,45 +419,52 @@ enum MarkdownTaskEmbedDrawing {
             drawSubtask(subtask, checkboxRect: rect.checkbox ?? .zero, textRect: rect.text, isHovered: isHovered)
         }
 
-        if task.hiddenSubtaskCount > 0, let overflowRect = rects.first(where: { $0.subtaskID == nil }) {
-            drawOverflowChip(count: task.hiddenSubtaskCount, rect: overflowRect.full)
+        if let overflow = subtaskRow(task: task, cardRect: cardRect).overflow {
+            drawOverflowChip(count: overflow.count, rect: overflow.full)
         }
     }
 
-    private static func subtaskRects(
+    /// [[T-9322]]: the `+N` chip counts every subtask the row did not draw — past the third, and
+    /// any of the first three the card was too narrow for — as the iOS card has since [[T-9273]].
+    /// Nil when every subtask is on the row.
+    static func subtaskOverflowCount(task: MarkdownTaskEmbedRenderInfo, cardRect: NSRect) -> Int? {
+        subtaskRow(task: task, cardRect: cardRect).overflow?.count
+    }
+
+    private static func subtaskRow(
+        task: MarkdownTaskEmbedRenderInfo,
+        cardRect: NSRect
+    ) -> (row: CadenceTaskEmbedSubtaskRowLayout, overflow: (count: Int, full: CGRect)?) {
+        // [[T-9273]]: the row's geometry is shared with the iOS card.
+        CadenceTaskEmbedSubtaskRow.layoutWithOverflow(
+            task.visibleSubtasks,
+            totalCount: task.subtaskTotalCount,
+            fallbackTitle: "Untitled subtask",
+            minX: cardRect.minX + 59,
+            maxX: cardRect.maxX - 12,
+            rowY: cardRect.minY + 70,
+            rowHeight: 18,
+            overflowWidth: { count in
+                let label = CadenceTaskSurfaceOptions.moreLabel(hidden: count)
+                return min(max(48, label.size(withAttributes: subtaskMetaAttributes).width + 16), 84)
+            }
+        ) { title, isDone in
+            title.size(withAttributes: subtaskAttributes(done: isDone)).width
+        }
+    }
+
+    static func subtaskRects(
         task: MarkdownTaskEmbedRenderInfo,
         cardRect: NSRect
     ) -> [MarkdownTaskEmbedSubtaskHitRect] {
         guard task.hasSubtasks else { return [] }
-        let contentMinX = cardRect.minX + 59
-        let contentMaxX = cardRect.maxX - 12
-        let rowY = cardRect.minY + 70
-        let rowHeight: CGFloat = 18
-        // [[T-9273]]: the row's geometry is shared with the iOS card.
-        let row = CadenceTaskEmbedSubtaskRow.layout(
-            task.visibleSubtasks,
-            fallbackTitle: "Untitled subtask",
-            minX: contentMinX,
-            maxX: contentMaxX,
-            rowY: rowY,
-            rowHeight: rowHeight
-        ) { title, isDone in
-            title.size(withAttributes: subtaskAttributes(done: isDone)).width
-        }
-        let x = row.trailingX
-        var rects: [MarkdownTaskEmbedSubtaskHitRect] = row.items.map {
+        let layout = subtaskRow(task: task, cardRect: cardRect)
+        var rects: [MarkdownTaskEmbedSubtaskHitRect] = layout.row.items.map {
             .subtask(id: $0.subtaskID, checkbox: $0.checkbox, text: $0.text, full: $0.full)
         }
-
-        if task.hiddenSubtaskCount > 0 {
-            let label = CadenceTaskSurfaceOptions.moreLabel(hidden: task.hiddenSubtaskCount)
-            let width = min(max(48, label.size(withAttributes: subtaskMetaAttributes).width + 16), 84)
-            if x + width <= contentMaxX {
-                let full = NSRect(x: x, y: rowY, width: width, height: rowHeight)
-                rects.append(.overflow(text: full.insetBy(dx: 6, dy: 2), full: full))
-            }
+        if let overflow = layout.overflow {
+            rects.append(.overflow(text: overflow.full.insetBy(dx: 6, dy: 2), full: overflow.full))
         }
-
         return rects
     }
 

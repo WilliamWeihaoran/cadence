@@ -43,6 +43,45 @@ struct MarkdownTaskEmbedChipLayoutTests {
         )
     }
 
+    /// [[T-9322]]: on a card too narrow for its first three subtasks, the `+N` chip counts the
+    /// ones the row dropped as well as those past the third — it used to read only the latter,
+    /// so a third subtask that did not fit vanished with nothing to say it was there.
+    @Test func theSubtaskOverflowChipCountsSubtasksTheNarrowRowCouldNotPlace() throws {
+        func task(subtaskTitles: [String]) -> MarkdownTaskEmbedRenderInfo {
+            let base = renderInfo()
+            return MarkdownTaskEmbedRenderInfo(
+                id: base.id, title: base.title, statusRaw: base.statusRaw, priorityRaw: base.priorityRaw,
+                sectionName: base.sectionName, containerName: base.containerName,
+                containerColorHex: base.containerColorHex, dueDate: base.dueDate,
+                scheduledDate: base.scheduledDate, scheduledStartMin: base.scheduledStartMin,
+                estimatedMinutes: base.estimatedMinutes, actualMinutes: base.actualMinutes,
+                recurrenceRaw: base.recurrenceRaw, isDone: false, isCancelled: false, isMissing: false,
+                subtasks: subtaskTitles.enumerated().map {
+                    MarkdownTaskEmbedSubtaskRenderInfo(id: UUID(), title: $1, isDone: false, order: $0)
+                }
+            )
+        }
+        let long = String(repeating: "Reconcile the vendor invoices ", count: 2)
+        let three = task(subtaskTitles: [long, long, long])
+        #expect(three.hiddenSubtaskCount == 0, "non-vacuity: no subtask is past the third")
+
+        let narrow = NSRect(x: 0, y: 0, width: 320, height: three.cardHeight)
+        let count = try #require(
+            MarkdownTaskEmbedDrawing.subtaskOverflowCount(task: three, cardRect: narrow),
+            "a subtask the narrow row dropped is not counted"
+        )
+        let placed = Set(MarkdownTaskEmbedDrawing.subtaskRects(task: three, cardRect: narrow)
+            .compactMap(\.subtaskID))
+        #expect(placed.count < 3, "non-vacuity: the narrow card dropped a subtask")
+        #expect(placed.count + count == three.subtaskTotalCount)
+
+        let wide = NSRect(x: 0, y: 0, width: MarkdownTaskEmbedRenderInfo.maxCardWidth, height: three.cardHeight)
+        let short = task(subtaskTitles: ["Milk", "Eggs", "Bread"])
+        #expect(MarkdownTaskEmbedDrawing.subtaskOverflowCount(task: short, cardRect: wide) == nil)
+        let five = task(subtaskTitles: ["Milk", "Eggs", "Bread", "Jam", "Tea"])
+        #expect(MarkdownTaskEmbedDrawing.subtaskOverflowCount(task: five, cardRect: wide) == 2)
+    }
+
     private func fields(for task: MarkdownTaskEmbedRenderInfo, textContainerWidth: CGFloat) -> [MarkdownTaskEmbedField] {
         let cardRect = MarkdownTaskEmbedDrawing.cardRect(
             forLineRect: NSRect(x: 0, y: 0, width: textContainerWidth, height: task.cardHeight + 12),
