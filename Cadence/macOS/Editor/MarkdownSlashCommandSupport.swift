@@ -39,6 +39,22 @@ private func markdownPickerCaretAnchorRect(for textView: NSTextView, at characte
     )
 }
 
+/// **[[T-9463]] — one row plate for the three editor completion popovers** (`/` commands, `[[`
+/// references, `#` tags): the keyboard highlight's fill, and the hit shape. Each row drew only the
+/// fill, `Color.clear` on every row but the highlighted one, and nothing gave the row a content
+/// shape -- so a click on an unhighlighted row's padding or the empty `Spacer` run beside its title
+/// landed on nothing, and only the glyphs themselves (or the one highlighted row) took the click.
+private struct MarkdownPickerRowPlate: ViewModifier {
+    let isHighlighted: Bool
+
+    func body(content: Content) -> some View {
+        let shape = RoundedRectangle(cornerRadius: Theme.radiusControlCompact, style: .continuous)
+        content
+            .background(shape.fill(isHighlighted ? Color(nsColor: MarkdownStylist.blueColor).opacity(0.16) : Color.clear))
+            .contentShape(shape)
+    }
+}
+
 private struct MarkdownSlashCommandPickerView: View {
     let commands: [MarkdownSlashCommand]
     let highlightedIndex: Int
@@ -90,10 +106,7 @@ private struct MarkdownSlashCommandPickerView: View {
                     }
                     .padding(.horizontal, 8)
                     .frame(height: MarkdownSlashCommandPickerMetrics.rowHeight)
-                    .background(
-                        RoundedRectangle(cornerRadius: Theme.radiusControlCompact, style: .continuous)
-                            .fill(index == highlightedIndex ? Color(nsColor: MarkdownStylist.blueColor).opacity(0.16) : Color.clear)
-                    )
+                    .modifier(MarkdownPickerRowPlate(isHighlighted: index == highlightedIndex))
                 }
                 .buttonStyle(.plain)
                 .id(command.id)
@@ -282,10 +295,7 @@ private struct MarkdownReferencePickerView: View {
                     }
                     .padding(.horizontal, 8)
                     .padding(.vertical, 6)
-                    .background(
-                        RoundedRectangle(cornerRadius: Theme.radiusControlCompact, style: .continuous)
-                            .fill(index == highlightedIndex ? Color(nsColor: MarkdownStylist.blueColor).opacity(0.16) : Color.clear)
-                    )
+                    .modifier(MarkdownPickerRowPlate(isHighlighted: index == highlightedIndex))
                 }
                 .buttonStyle(.plain)
             }
@@ -459,7 +469,7 @@ private struct MarkdownTagPickerView: View {
             }
             .padding(.horizontal, 8)
             .padding(.vertical, 6)
-            .background(rowBackground(isHighlighted))
+            .modifier(MarkdownPickerRowPlate(isHighlighted: isHighlighted))
             .opacity(tag.isArchived ? 0.75 : 1)
         case .create(let name):
             HStack(spacing: 8) {
@@ -481,14 +491,10 @@ private struct MarkdownTagPickerView: View {
             }
             .padding(.horizontal, 8)
             .padding(.vertical, 6)
-            .background(rowBackground(isHighlighted))
+            .modifier(MarkdownPickerRowPlate(isHighlighted: isHighlighted))
         }
     }
 
-    private func rowBackground(_ isHighlighted: Bool) -> some View {
-        RoundedRectangle(cornerRadius: Theme.radiusControlCompact, style: .continuous)
-            .fill(isHighlighted ? Color(nsColor: MarkdownStylist.blueColor).opacity(0.16) : Color.clear)
-    }
 }
 
 final class MarkdownTagPickerController {

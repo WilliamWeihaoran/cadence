@@ -107,5 +107,32 @@ struct MarkdownSlashCommandPickerMetricsTests {
         #expect(compact.contains("proxy.scrollTo(commands[highlightedIndex].id)"))
         #expect(compact.contains(".id(command.id)"), "scrollTo needs each row tagged with the id it scrolls to")
     }
+
+    /// **[[T-9463]].** The `/`, `[[` and `#` popovers' rows filled `Color.clear` everywhere but the
+    /// highlighted row and gave the row no content shape, so a click on an unhighlighted row's
+    /// padding or the empty run beside its title hit nothing. Every row now wears the one shared
+    /// plate, and the plate is the hit shape. (Source-read: SwiftUI's hit testing is not
+    /// observable from a hosted view here; not seen on screen.)
+    @Test func everyCompletionPopoverRowIsHitAcrossItsWholePlate() throws {
+        let source = CadenceSourceScan.strippingComments(
+            try CadenceSourceScan.sourceFile("Cadence/macOS/Editor/MarkdownSlashCommandSupport.swift"))
+        let plate = try #require(CadenceSourceScan.declarationBody(
+            "private struct MarkdownPickerRowPlate: ViewModifier", in: source)).filter { !$0.isWhitespace }
+        #expect(plate.contains(".background(shape.fill("), "non-vacuity: the plate draws the highlight fill")
+        #expect(plate.contains(".contentShape(shape)"), "the row plate is not the row's hit shape")
+        let pickers = [
+            ("private struct MarkdownSlashCommandPickerView: View", 1),
+            ("private struct MarkdownReferencePickerView: View", 1),
+            ("private struct MarkdownTagPickerView: View", 2),
+        ]
+        for (declaration, rows) in pickers {
+            let body = try #require(CadenceSourceScan.declarationBody(declaration, in: source))
+            #expect(
+                body.components(separatedBy: ".modifier(MarkdownPickerRowPlate(isHighlighted:").count - 1 == rows,
+                "\(declaration) does not draw its \(rows) row kind(s) on the shared plate"
+            )
+            #expect(!body.contains(": Color.clear"), "\(declaration) paints its own clear row fill again")
+        }
+    }
 }
 #endif
