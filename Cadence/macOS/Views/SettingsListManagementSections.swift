@@ -437,6 +437,66 @@ private struct SettingsDormantCalendarLinkRow: View {
     }
 }
 
+/// The calendar row's "Connect to areas and projects" menu, a plated `link` glyph. Its own view,
+/// internal, so `CadenceMacPageAccessibilityAuditTests` can host it without an `EKCalendar`
+/// ([[T-9533]]); the row passes its calendar's identifier.
+struct SettingsCalendarConnectionMenu: View {
+    let calendarIdentifier: String
+    let areas: [Area]
+    let projects: [Project]
+    let onToggleArea: (Area) -> Void
+    let onToggleProject: (Project) -> Void
+
+    var body: some View {
+        Menu {
+            if areas.isEmpty && projects.isEmpty {
+                Text(CadenceCalendarSettingsCopy.noConnectableListsLabel)
+            } else {
+                if !areas.isEmpty {
+                    Section("Areas") {
+                        ForEach(areas) { area in
+                            Button {
+                                onToggleArea(area)
+                            } label: {
+                                Label(CadenceCalendarSettingsCopy.areaDisplayName(area.name), systemImage: area.linkedCalendarID == calendarIdentifier ? "checkmark" : area.icon)
+                            }
+                        }
+                    }
+                }
+
+                if !projects.isEmpty {
+                    Section("Projects") {
+                        ForEach(projects) { project in
+                            Button {
+                                onToggleProject(project)
+                            } label: {
+                                Label(CadenceCalendarSettingsCopy.projectDisplayName(project.name), systemImage: project.linkedCalendarID == calendarIdentifier ? "checkmark" : project.icon)
+                            }
+                        }
+                    }
+                }
+            }
+        } label: {
+            Image(systemName: "link")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(Theme.text)
+                .frame(width: 28, height: 28)
+                .background(Theme.surfaceElevated)
+                .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControlCompact))
+                .overlay(RoundedRectangle(cornerRadius: Theme.radiusControlCompact).strokeBorder(Theme.borderSubtle))
+        }
+        // [[T-9533]]: `.button` + `.plain`, not `.borderlessButton`. The borderless style is an
+        // AppKit pop-up button that ignores the label's frame and plate (measured 36x17pt on the
+        // accessibility tree for this 28x28 plate) and names itself after the glyph ("link");
+        // `.button` draws the plate as it is, as [[T-9531]] found for the list Notes "+" menu.
+        // Mac-only: `.borderlessButton` is an AppKit pop-up style iOS does not have.
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .fixedSize()
+        .cadenceControlLabel(CadenceCalendarSettingsCopy.connectMenuLabel)
+    }
+}
+
 private struct SettingsCalendarRow: View {
     let calendar: EKCalendar
     let areas: [Area]
@@ -503,46 +563,13 @@ private struct SettingsCalendarRow: View {
     }
 
     private var connectionMenu: some View {
-        Menu {
-            if areas.isEmpty && projects.isEmpty {
-                Text(CadenceCalendarSettingsCopy.noConnectableListsLabel)
-            } else {
-                if !areas.isEmpty {
-                    Section("Areas") {
-                        ForEach(areas) { area in
-                            Button {
-                                onToggleArea(area)
-                            } label: {
-                                Label(CadenceCalendarSettingsCopy.areaDisplayName(area.name), systemImage: area.linkedCalendarID == calendar.calendarIdentifier ? "checkmark" : area.icon)
-                            }
-                        }
-                    }
-                }
-
-                if !projects.isEmpty {
-                    Section("Projects") {
-                        ForEach(projects) { project in
-                            Button {
-                                onToggleProject(project)
-                            } label: {
-                                Label(CadenceCalendarSettingsCopy.projectDisplayName(project.name), systemImage: project.linkedCalendarID == calendar.calendarIdentifier ? "checkmark" : project.icon)
-                            }
-                        }
-                    }
-                }
-            }
-        } label: {
-            Image(systemName: "link")
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(Theme.text)
-                .frame(width: 28, height: 28)
-                .background(Theme.surfaceElevated)
-                .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControlCompact))
-                .overlay(RoundedRectangle(cornerRadius: Theme.radiusControlCompact).strokeBorder(Theme.borderSubtle))
-        }
-        .menuStyle(.borderlessButton)
-        .fixedSize()
-        .cadenceControlLabel(CadenceCalendarSettingsCopy.connectMenuLabel)
+        SettingsCalendarConnectionMenu(
+            calendarIdentifier: calendar.calendarIdentifier,
+            areas: areas,
+            projects: projects,
+            onToggleArea: onToggleArea,
+            onToggleProject: onToggleProject
+        )
     }
 
     private var calendarColor: Color {

@@ -39,6 +39,69 @@ import Testing
         return found
     }
 
+    /// [[T-9533]]: every `.menuStyle(.borderlessButton)` whose `label:` gives itself a frame or a
+    /// plate. That style is an AppKit pop-up button that ignores both (measured on the
+    /// accessibility tree by `CadenceMacPageAccessibilityAuditTests/everyMacIconMenuIsItsLabelsSizeAndName`),
+    /// so a framed label belongs under `.menuStyle(.button)` + `.buttonStyle(.plain)`.
+    static func framedBorderlessMenus(in source: String) -> [Int] {
+        let lines = source.components(separatedBy: "\n")
+        func indent(_ line: String) -> Int { line.prefix { $0 == " " }.count }
+        var found: [Int] = []
+        for (index, line) in lines.enumerated() where line.contains(".menuStyle(.borderlessButton)") {
+            var close = index - 1
+            while close > 0, lines[close].trimmingCharacters(in: .whitespaces).isEmpty
+                || lines[close].trimmingCharacters(in: .whitespaces).hasPrefix("//") { close -= 1 }
+            guard close > 0, lines[close].trimmingCharacters(in: .whitespaces) == "}" else { continue }
+            let depth = indent(lines[close])
+            var cursor = close - 1
+            var framed = false
+            while cursor > 0 {
+                let candidate = lines[cursor]
+                let trimmed = candidate.trimmingCharacters(in: .whitespaces)
+                if !trimmed.isEmpty && indent(candidate) <= depth { break }
+                if trimmed.hasPrefix(".frame") || trimmed.hasPrefix(".background") { framed = true }
+                cursor -= 1
+            }
+            if framed { found.append(index + 1) }
+        }
+        return found
+    }
+
+    @Test func noMacMenuDrawsAFramedLabelUnderTheBorderlessStyle() throws {
+        var offenders: [String] = []
+        var menus = 0
+        for path in try CadenceSourceScan.swiftFiles(under: "Cadence/macOS") {
+            let source = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(path))
+            menus += source.components(separatedBy: ".menuStyle(").count - 1
+            offenders += Self.framedBorderlessMenus(in: source).map { "\(path):\($0)" }
+        }
+        #expect(menus >= 3, "non-vacuity: only \(menus) menu styles under Cadence/macOS")
+        #expect(offenders.isEmpty, "a framed or plated Mac menu label under .borderlessButton, which ignores both: \(offenders)")
+
+        let framed = """
+            Menu {
+                Button("Connect", action: connect)
+            } label: {
+                Image(systemName: "link")
+                    .frame(width: 28, height: 28)
+                    .background(Theme.surfaceElevated)
+            }
+            .menuStyle(.borderlessButton)
+        """
+        let text = """
+            Menu {
+                Button("Relink", action: relink)
+            } label: {
+                Text("Fix")
+                    .font(.system(size: 11, weight: .semibold))
+            }
+            .menuStyle(.borderlessButton)
+        """
+        #expect(Self.framedBorderlessMenus(in: framed) == [8])
+        #expect(Self.framedBorderlessMenus(in: text).isEmpty)
+        #expect(Self.framedBorderlessMenus(in: framed.replacingOccurrences(of: ".borderlessButton", with: ".button")).isEmpty)
+    }
+
     @Test func noMacButtonIsItsBareGlyph() throws {
         var offenders: [String] = []
         var scanned = 0

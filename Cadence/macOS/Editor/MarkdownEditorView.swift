@@ -399,7 +399,9 @@ private struct MarkdownEditorToolbar: View {
 /// stored property, which is why it is named for the accessible name rather than for the tooltip —
 /// a `help:` that was only a tooltip is what T-472 found on all three of these views, and
 /// `CadenceIconButton` had the paired shape all along.
-private struct MarkdownReferenceMenuButton: View {
+///
+/// Internal rather than `private` so `CadenceMacPageAccessibilityAuditTests` can host it ([[T-9533]]).
+struct MarkdownReferenceMenuButton: View {
     let systemName: String
     let accessibilityLabel: String
     let emptyTitle: String
@@ -429,7 +431,12 @@ private struct MarkdownReferenceMenuButton: View {
                 .frame(width: 28, height: 26)
                 .contentShape(RoundedRectangle(cornerRadius: Theme.radiusControlCompact))
         }
-        .menuStyle(.borderlessButton)
+        // [[T-9533]]: `.button`, not `.borderlessButton`. The borderless style is an AppKit pop-up
+        // button that ignores the label's frame (measured 33x14pt on the accessibility tree for
+        // this 28x26 label) and names itself after the glyph; `.button` draws the label as it is,
+        // the same form [[T-9531]] gave the list Notes "+" menu. Mac-only: `.borderlessButton` is
+        // an AppKit pop-up style iOS does not have, so this converges on how iOS draws a label.
+        .menuStyle(.button)
         // `.plain`: the highlight below is the one hover layer ([[T-9465]]).
         .buttonStyle(.plain)
         .background(Theme.bg.opacity(0.001))

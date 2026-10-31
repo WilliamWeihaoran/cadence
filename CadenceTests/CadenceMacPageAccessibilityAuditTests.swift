@@ -29,6 +29,9 @@ struct CadenceMacPageAccessibilityAuditTests {
         var actions: [String] = []
         /// The element's screen frame ([[T-9351]]), read by key like `isSelected`; `.zero` where unanswered.
         var frame: NSRect = .zero
+        /// `accessibilityTitle` as plain text ([[T-9533]]). A SwiftUI `Menu`'s `.accessibilityLabel`
+        /// lands here, as an attributed string, not in `accessibilityLabel`.
+        var title: String = ""
         var description: String {
             "[\(role) label:'\(label)' value:'\(value)'\(isSelected ? " selected" : "")\(actions.isEmpty ? "" : " actions:\(actions)")]"
         }
@@ -76,6 +79,13 @@ struct CadenceMacPageAccessibilityAuditTests {
                   node.responds(to: NSSelectorFromString("isAccessibilitySelected")) else { return false }
             return (node.value(forKey: "accessibilitySelected") as? NSNumber)?.boolValue ?? false
         }
+        func title(_ object: AnyObject) -> String {
+            let selector = NSSelectorFromString("accessibilityTitle")
+            guard object.responds(to: selector), let result = object.perform(selector)?.takeUnretainedValue() else {
+                return ""
+            }
+            return (result as? NSAttributedString)?.string ?? "\(result)"
+        }
         func frame(_ object: AnyObject) -> NSRect {
             guard let node = object as? NSObject,
                   node.responds(to: NSSelectorFromString("accessibilityFrame")) else { return .zero }
@@ -106,7 +116,8 @@ struct CadenceMacPageAccessibilityAuditTests {
                 value: string(object, "accessibilityValue"),
                 isSelected: isSelected(object),
                 actions: customActionNames(object),
-                frame: frame(object)
+                frame: frame(object),
+                title: title(object)
             ))
             let childrenSelector = NSSelectorFromString("accessibilityChildren")
             guard object.responds(to: childrenSelector),
@@ -402,8 +413,7 @@ struct CadenceMacPageAccessibilityAuditTests {
             in: ListNotesHeaderView(onNewNote: {}, onNewNoteInFolder: {}),
             size: NSSize(width: 300, height: 80)
         )
-        // Found by role, not by name: the tree names this menu button "add", the glyph's own
-        // name, not the `.cadenceControlLabel("New note")` on it -- that is [[T-9533]].
+        // Found by role; its name is [[T-9533]]'s test below.
         let menu = nodes.filter { $0.role == NSAccessibility.Role.menuButton.rawValue }
         #expect(menu.count == 1, "non-vacuity: the New note menu is not on the tree: \(nodes)")
         for node in menu {
@@ -411,6 +421,52 @@ struct CadenceMacPageAccessibilityAuditTests {
                 node.frame.height >= 26 && node.frame.width >= 28,
                 "the New note menu is \(node.frame.width)x\(node.frame.height)pt, smaller than a 28x26pt target"
             )
+        }
+    }
+
+    /// **[[T-9533]].** Every Mac icon-only `Menu` is the size of its label and is named by its
+    /// stated label, not its glyph. Under `.menuStyle(.borderlessButton)` SwiftUI builds an AppKit
+    /// pop-up button that ignores the label's frame and plate -- measured here at 33x14pt for a
+    /// 28x26 label and 36x17pt for a 28x28 plate -- and answers `accessibilityLabel` with the SF
+    /// Symbol's own name ("add", "link") beside the `.accessibilityLabel` the code states, which it
+    /// files as the title. Under `.menuStyle(.button)` the label is drawn as it is and the stated
+    /// name is the only one. Hosts the three real views; this is the tree SwiftUI hands AppKit, not
+    /// what VoiceOver speaks.
+    @Test func everyMacIconMenuIsItsLabelsSizeAndName() {
+        let noteLink = MarkdownFormatCommandTitle.sentenceCase(for: .noteLink)
+        let cases: [(name: String, width: CGFloat, height: CGFloat, view: AnyView)] = [
+            ("New note", 28, 26, AnyView(ListNotesHeaderView(onNewNote: {}, onNewNoteInFolder: {}))),
+            (noteLink, 28, 26, AnyView(MarkdownReferenceMenuButton(
+                systemName: "text.badge.plus",
+                accessibilityLabel: noteLink,
+                emptyTitle: "Blank Note Link",
+                suggestions: [],
+                blankAction: {},
+                selectAction: { _ in }
+            ))),
+            (CadenceCalendarSettingsCopy.connectMenuLabel, 28, 28, AnyView(SettingsCalendarConnectionMenu(
+                calendarIdentifier: "calendar",
+                areas: [],
+                projects: [],
+                onToggleArea: { _ in },
+                onToggleProject: { _ in }
+            ))),
+        ]
+        for menuCase in cases {
+            let nodes = allNodes(in: menuCase.view, size: NSSize(width: 300, height: 80))
+            let menus = nodes.filter { $0.role == NSAccessibility.Role.menuButton.rawValue }
+            #expect(menus.count == 1, "non-vacuity: the \(menuCase.name) menu is not on the tree: \(nodes)")
+            for menu in menus {
+                #expect(
+                    menu.frame.width >= menuCase.width && menu.frame.height >= menuCase.height,
+                    "the \(menuCase.name) menu is \(menu.frame.width)x\(menu.frame.height)pt, smaller than its \(menuCase.width)x\(menuCase.height) label"
+                )
+                #expect(menu.title == menuCase.name, "the \(menuCase.name) menu is titled '\(menu.title)'")
+                #expect(
+                    menu.label.isEmpty || menu.label == menuCase.name,
+                    "the \(menuCase.name) menu also answers its glyph's name '\(menu.label)'"
+                )
+            }
         }
     }
 

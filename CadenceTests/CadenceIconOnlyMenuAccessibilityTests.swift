@@ -21,6 +21,11 @@ import Testing
 /// (`Cadence/macOS/Views/ListNotesViewSupportViews.swift`) and the row overflow menu in
 /// `Cadence/iOS/iOSCalendarBundleDetailSheet.swift`, both fixed alongside this suite — the second
 /// of those went with its file in [[T-3170]].
+///
+/// **This is the spelling, not the tree ([[T-9533]]).** On the Mac a stated name only names a
+/// `Menu` under `.menuStyle(.button)`: under `.borderlessButton` the accessibility tree also
+/// answers the glyph's own name ("add"). What the tree says is measured by
+/// `CadenceMacPageAccessibilityAuditTests/everyMacIconMenuIsItsLabelsSizeAndName`.
 struct CadenceIconOnlyMenuAccessibilityTests {
 
     private func detector() throws -> CadenceScanInstrument {
