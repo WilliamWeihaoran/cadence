@@ -164,12 +164,14 @@ enum MarkdownEditorStoreAdoption {
     }
 
     /// **[[T-9171]].** Whether an armed fallback commit holds typing the store lacks — the
-    /// `commitIsPending` the `Note` editors (`NotePanel`, `NoteEditorPane`) pass above.
+    /// `commitIsPending` the `Note` editors (`NotePanel`, `NoteEditorPane`) and, since [[T-9191]],
+    /// the task-notes editors pass above.
     ///
     /// An armed commit is not proof of typing there. After a ceiling commit writes the body and
     /// defers its tag sync ([[T-7891]]) those editors arm a second commit that carries nothing new:
     /// the buffer already equals the store's text. Typing undone back to the stored text is the same
-    /// shape. Keeping the buffer over an outside change then would write the pre-change body back
+    /// shape, and the only one the task-notes editors (no deferred tag sync) can reach.
+    /// Keeping the buffer over an outside change then would write the pre-change body back
     /// with no keystroke behind it, so such a commit does not count: the editor adopts, cancels the
     /// commit (its captured text is the pre-change body) and re-arms any owed tag sync against the
     /// adopted text. `priorStoreText` is the store's text before the outside change

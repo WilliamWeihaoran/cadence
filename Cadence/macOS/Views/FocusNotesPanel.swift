@@ -98,8 +98,8 @@ struct FocusNotesPanel: View {
             loadEditorStateIfNeeded(force: true)
         }
         // T-9123: an outside write to these notes (sync, MCP, another editor) reaches the buffer.
-        .onChange(of: task.notes) { _, storeNotes in
-            adoptStoreNotesIfIdle(storeNotes)
+        .onChange(of: task.notes) { priorNotes, storeNotes in
+            adoptStoreNotesIfIdle(storeNotes, priorStoreNotes: priorNotes)
         }
         .onDisappear {
             flushPendingEditorContent()
@@ -125,14 +125,22 @@ struct FocusNotesPanel: View {
     }
 
     /// [[T-9123]]: adopt an outside change to `task.notes` unless typing is still pending —
-    /// `MarkdownEditorStoreAdoption` holds the rule.
-    private func adoptStoreNotesIfIdle(_ storeNotes: String) {
+    /// `MarkdownEditorStoreAdoption` holds the rule. [[T-9191]]: a commit still armed when this
+    /// adopts carries nothing the store lacked (typing undone back to the stored text, see
+    /// `commitHoldsTyping`), and its captured text is the pre-change notes, so it is cancelled.
+    private func adoptStoreNotesIfIdle(_ storeNotes: String, priorStoreNotes: String) {
         guard let adopted = MarkdownEditorStoreAdoption.adoptedBuffer(
             storeText: storeNotes,
             buffer: editorContent,
             bufferIsLoaded: loadedTaskID == task.id,
-            commitIsPending: pendingFallbackContentSyncTask != nil
+            commitIsPending: MarkdownEditorStoreAdoption.commitHoldsTyping(
+                commitIsPending: pendingFallbackContentSyncTask != nil,
+                buffer: editorContent,
+                priorStoreText: priorStoreNotes
+            )
         ) else { return }
+        pendingFallbackContentSyncTask?.cancel()
+        pendingFallbackContentSyncTask = nil
         editorContent = adopted
     }
 

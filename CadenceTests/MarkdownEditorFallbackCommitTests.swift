@@ -370,8 +370,14 @@ struct MarkdownEditorFallbackCommitTests {
                 CadenceSourceScan.declarationBody(editor.declaration, in: source),
                 "\(editor.path): \(editor.declaration) not found"
             )
-            let observer = try #require(body.range(of: ".onChange(of: task.notes) {"), "\(editor.path) does not observe task.notes")
-            #expect(String(body[observer.upperBound...].prefix(120)).contains("adoptStoreNotesIfIdle("), "\(editor.path)")
+            let observer = try #require(
+                body.range(of: ".onChange(of: task.notes) { priorNotes, storeNotes in"),
+                "\(editor.path) does not observe task.notes"
+            )
+            #expect(
+                String(body[observer.upperBound...].prefix(120)).contains("adoptStoreNotesIfIdle(storeNotes, priorStoreNotes: priorNotes)"),
+                "\(editor.path)"
+            )
             let adopt = try #require(
                 CadenceSourceScan.functionBody(named: "adoptStoreNotesIfIdle", in: body),
                 "\(editor.path): no adoptStoreNotesIfIdle"
@@ -379,9 +385,30 @@ struct MarkdownEditorFallbackCommitTests {
             #expect(adopt.contains("MarkdownEditorStoreAdoption.adoptedBuffer("), "\(editor.path)")
             #expect(adopt.contains("buffer: editorContent"), "\(editor.path)")
             #expect(adopt.contains("bufferIsLoaded: loadedTaskID == task.id"), "\(editor.path)")
+            // T-9191: an armed commit counts as typing only over text the store lacked.
+            #expect(adopt.contains("commitIsPending: MarkdownEditorStoreAdoption.commitHoldsTyping("), "\(editor.path)")
             #expect(adopt.contains("commitIsPending: pendingFallbackContentSyncTask != nil"), "\(editor.path)")
-            #expect(adopt.contains("editorContent = adopted"), "\(editor.path)")
+            #expect(adopt.contains("priorStoreText: priorStoreNotes"), "\(editor.path)")
+            // The armed commit's captured text is the pre-change notes: it must not fire after this.
+            let cancel = try #require(adopt.range(of: "pendingFallbackContentSyncTask = nil"), "\(editor.path): commit not cancelled")
+            let assign = try #require(adopt.range(of: "editorContent = adopted"), "\(editor.path)")
+            #expect(cancel.lowerBound < assign.lowerBound, "\(editor.path)")
         }
+    }
+
+    /// [[T-9191]]: replays the task editors' one armed-without-typing window. The editor loaded
+    /// "Draft", the user typed "Draft!" and deleted the "!" inside the idle window, so a commit is
+    /// armed over a buffer equal to the stored text; another writer then stored "Synced". That commit
+    /// holds no typing, so the buffer adopts "Synced" instead of writing "Draft" back over it.
+    @Test func typingUndoneToTheStoredTextHoldsNoTypingSoATaskEditorAdopts() {
+        let buffer = "Draft"
+        let holdsTyping = MarkdownEditorStoreAdoption.commitHoldsTyping(
+            commitIsPending: true, buffer: buffer, priorStoreText: "Draft"
+        )
+        #expect(!holdsTyping)
+        #expect(MarkdownEditorStoreAdoption.adoptedBuffer(
+            storeText: "Synced", buffer: buffer, bufferIsLoaded: true, commitIsPending: holdsTyping
+        ) == "Synced")
     }
 
     // MARK: - T-9171: the Note editors
