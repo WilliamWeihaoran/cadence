@@ -35,9 +35,14 @@ struct iOSNoteTagControl: View {
     let note: Note
     @Binding var isEditorFocused: Bool
     var placement: Placement = .header
-    /// Where a refusal is said. `nil` draws it under the control, which a header row has room
-    /// for; the format row is a fixed-height strip, so the surface draws it under the strip.
-    var onFailure: ((String?) -> Void)? = nil
+    /// Where a refusal is said — always the host's, never this control's own (T-9542). The row
+    /// below is `.fixedSize()` so a chip never truncates, and a fixed-size container proposes no
+    /// width: a sentence drawn inside it took its one-line ideal width, about 300pt, and in an iPad
+    /// header that block shoved the date title aside. Every host draws the sentence on a full-width
+    /// line under the strip that holds this control, where it wraps: the format row's surface
+    /// under the format row, `iOSNotesView` under its header, `iOSListNotesView` under its
+    /// control row.
+    let onFailure: (String?) -> Void
 
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
@@ -45,7 +50,6 @@ struct iOSNoteTagControl: View {
     @Query(sort: \Tag.order) private var allTags: [Tag]
     @State private var isPickerPresented = false
     @State private var newTagName = ""
-    @State private var failureNotice: String?
     /// The popover writes its binding and *then* asks `onCommit` whether the store took it; this
     /// carries the setter's answer across that gap.
     @State private var lastWrite = iOSNoteTagWriteOutcome()
@@ -61,17 +65,12 @@ struct iOSNoteTagControl: View {
     }
 
     var body: some View {
-        VStack(alignment: placement == .header ? .trailing : .leading, spacing: 3) {
-            HStack(spacing: CadenceTagChipStyle.editableStripSpacing(
-                for: .regular, at: dynamicTypeSize, scaling: typographyScaling
-            )) {
-                if placement == .formatRow { trigger }
-                chips
-                if placement == .header { trigger }
-            }
-            if onFailure == nil, let failureNotice {
-                CadenceInlineFailureNotice(text: failureNotice)
-            }
+        HStack(spacing: CadenceTagChipStyle.editableStripSpacing(
+            for: .regular, at: dynamicTypeSize, scaling: typographyScaling
+        )) {
+            if placement == .formatRow { trigger }
+            chips
+            if placement == .header { trigger }
         }
         .fixedSize()
         .onChange(of: note.id) { _, _ in report(nil) }
@@ -145,11 +144,7 @@ struct iOSNoteTagControl: View {
     }
 
     private func report(_ notice: String?) {
-        if let onFailure {
-            onFailure(notice)
-        } else {
-            failureNotice = notice
-        }
+        onFailure(notice)
     }
 }
 

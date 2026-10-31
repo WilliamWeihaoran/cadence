@@ -121,6 +121,11 @@ struct iOSNotesView: View {
     /// **T-1071:** the one thing the Notepad `+` can fail at, said above the column the note would
     /// have appeared in — the same place `iOSListNotesView` puts its own (T-497).
     @State private var createFailureNotice: String?
+    /// [[T-9542]]: a refused tag write from the header's `iOSNoteTagControl`, drawn on its own
+    /// full-width line under the header so it wraps, rather than inside the header row, where the
+    /// control's fixed size drew it unwrapped and pushed the date title aside. The retry is the
+    /// same control, and the next write that lands clears it.
+    @State private var tagFailureNotice: String?
     // Deliberately `@State`, not `@FocusState`. The editor's first responder is a `UITextView`
     // inside a `UIViewRepresentable`; nothing here is ever attached with `.focused(...)`, so a
     // `@FocusState` had no view to move focus to and could not report focus back either. The
@@ -202,6 +207,15 @@ struct iOSNotesView: View {
         VStack(spacing: 0) {
             notesHeader
 
+            // Only while the header carries the control that raised it: a width change that
+            // moves tags into the format row, or a closed note, takes the sentence with it.
+            if showsHeaderTemplateMenu, selectedNote != nil, let tagFailureNotice {
+                CadenceInlineFailureNotice(text: tagFailureNotice)
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 6)
+                    .background(Theme.surface)
+            }
+
             Divider().background(Theme.borderSubtle)
 
             content
@@ -246,9 +260,11 @@ struct iOSNotesView: View {
         .onChange(of: listedNotes.map(\.id)) { _, _ in
             normalizeSelection()
         }
-        // [[T-5804]]: a notice belongs to the note whose commit it describes.
+        // [[T-5804]]: a notice belongs to the note whose commit it describes. [[T-9542]]: so does
+        // a refused tag write, which the control clears itself only while it stays on screen.
         .onChange(of: selectedNoteID) { _, _ in
             eventNoteCommitNotice = nil
+            tagFailureNotice = nil
         }
         .fullScreenCover(item: $presentedNote) { note in
             iOSHeldNoteSheet(note: note) { presentedNote = nil } content: { note in
@@ -318,7 +334,7 @@ struct iOSNotesView: View {
             // [[T-8761]]: the note's tags, on the template menu's gate and for its reason — at
             // compact width they ride in the editor's format row instead.
             if showsHeaderTemplateMenu, let note = selectedNote {
-                iOSNoteTagControl(note: note, isEditorFocused: $isEditorFocused)
+                iOSNoteTagControl(note: note, isEditorFocused: $isEditorFocused) { tagFailureNotice = $0 }
             }
             // AI note actions, gated on the same rule and for the same reason: this row already
             // holds a back control, a date title and four tabs at 390pt. In the *compact*

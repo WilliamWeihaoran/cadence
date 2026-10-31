@@ -180,4 +180,63 @@ struct CadenceNoteTagEditingTests {
         #expect(CadenceSourceScan.matchCount(#"placement: \.formatRow"#, in: toolbar) == 1)
         #expect(CadenceSourceScan.matchCount(#"tagNote: tagNote,\s*isEditorFocused: \$isFocused,"#, in: surface) == 1)
     }
+
+    /// **[[T-9542]] — a refused tag write is never drawn inside the control.** The chip row is
+    /// `.fixedSize()` so a chip never truncates, and a fixed-size container proposes no width: a
+    /// sentence inside it took its one-line ideal width (about 300pt) and, in an iPad header,
+    /// shoved the date title aside. So the control draws no notice and holds no notice state; it
+    /// hands every refusal to its host, and each header host draws it on a full-width line under
+    /// the strip — outside the header — where `CadenceInlineNotice` wraps.
+    @Test func theIOSNoteTagControlHandsItsRefusalToALineUnderItsHostsStrip() throws {
+        let control = CadenceSourceScan.codeOnly(
+            try CadenceSourceScan.sourceFile("Cadence/iOS/iOSNoteTagControl.swift")
+        )
+        let controlBody = try #require(
+            CadenceSourceScan.declarationBody("struct iOSNoteTagControl: View", in: control)
+        )
+        #expect(controlBody.contains("var body: some View"), "non-vacuity: wrong declaration read")
+
+        // The control: no notice of its own, a required hand-off, and the fixed size on the chip
+        // row alone.
+        #expect(CadenceSourceScan.matchCount(#"CadenceInlineFailureNotice|CadenceInlineNotice"#, in: controlBody) == 0,
+                "the control draws a notice inside its own fixed-size frame again")
+        #expect(CadenceSourceScan.matchCount(#"@State private var failureNotice"#, in: controlBody) == 0)
+        #expect(CadenceSourceScan.matchCount(#"let onFailure: \(String\?\) -> Void\n"#, in: controlBody) == 1,
+                "onFailure must be required, so no host can fall back to an in-control notice")
+        #expect(CadenceSourceScan.matchCount(#"\.fixedSize\("#, in: controlBody) == 1)
+        let body = try #require(CadenceSourceScan.declarationBody("var body: some View", in: controlBody))
+        #expect(CadenceSourceScan.matchCount(#"(?m)^\s*HStack\(spacing:"#, in: body) == 1,
+                "the fixed-size chip row is the body's root")
+        #expect(CadenceSourceScan.matchCount(#"VStack"#, in: body) == 0,
+                "a stack around the chip row is where the unwrapped notice lived")
+
+        // Each header host hands the control a setter and draws the sentence between its header
+        // and the divider under it -- a sibling of the header, so the row's width is not its own.
+        for (path, structName, strip, rule) in [
+            ("Cadence/iOS/iOSNotesView.swift", "struct iOSNotesView: View", "notesHeader", #"Divider\(\)"#),
+            ("Cadence/iOS/iOSListNotesView.swift", "struct iOSListNotesView: View", "controlRow", #"iOSListHairline\(\)"#)
+        ] {
+            let source = CadenceSourceScan.codeOnly(try CadenceSourceScan.sourceFile(path))
+            let host = try #require(CadenceSourceScan.declarationBody(structName, in: source), "\(path)")
+            #expect(
+                CadenceSourceScan.matchCount(
+                    #"iOSNoteTagControl\(note: note, isEditorFocused: \$isEditorFocused\) \{ tagFailureNotice = \$0 \}"#,
+                    in: host
+                ) == 1,
+                "\(path) does not hand the header control's refusal to its own line"
+            )
+            let hostBody = try #require(CadenceSourceScan.declarationBody("var body: some View", in: host), "\(path)")
+            #expect(
+                CadenceSourceScan.matchCount(
+                    #"VStack\(spacing: 0\) \{\s*"# + strip
+                        + #"\s*if [^{]*let tagFailureNotice \{\s*CadenceInlineFailureNotice\(text: tagFailureNotice\)[^}]*\}\s*"#
+                        + rule,
+                    in: hostBody
+                ) == 1,
+                "\(path) does not draw the tag refusal on its own line between \(strip) and its rule"
+            )
+            #expect(CadenceSourceScan.matchCount(#"tagFailureNotice = nil"#, in: hostBody) == 1,
+                    "\(path) keeps a refusal across a note change")
+        }
+    }
 }

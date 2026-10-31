@@ -73,6 +73,11 @@ struct iOSListNotesView: View {
     /// rather than `createFailureNotice`'s, because the two failures are reachable from different
     /// controls and one clearing the other would blank a sentence the user has not answered yet.
     @State private var moveFailureNotice: String?
+    /// [[T-9542]]: a refused tag write from the control row's `iOSNoteTagControl`, on its own
+    /// full-width line under the row so it wraps, rather than inside the row, where the control's
+    /// fixed size drew it unwrapped. The retry is the same control, and the next write that lands
+    /// clears it.
+    @State private var tagFailureNotice: String?
 
     /// The size class only. Every *layout* question goes through `layout`.
     private var isCompactWidth: Bool {
@@ -154,6 +159,13 @@ struct iOSListNotesView: View {
         VStack(spacing: 0) {
             controlRow
 
+            // Only while the row carries the control that raised it (two columns, a note open).
+            if layout == .twoColumn, selectedNote != nil, let tagFailureNotice {
+                CadenceInlineFailureNotice(text: tagFailureNotice)
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 8)
+            }
+
             iOSListHairline()
 
             content
@@ -161,6 +173,11 @@ struct iOSListNotesView: View {
         // Measured rather than wrapped, the same call `iOSNotesView` makes: a `GeometryReader`
         // around this stack reads the same width but also becomes the layout container, and this
         // stack holds an editor and a scrolling column that size themselves from what is left.
+        // [[T-9542]]: a refused tag write belongs to the note it was for; the control clears it
+        // itself only while it stays on screen.
+        .onChange(of: selectedNoteID) { _, _ in
+            tagFailureNotice = nil
+        }
         .onGeometryChange(for: CGFloat.self) { proxy in
             proxy.size.width
         } action: { newWidth in
@@ -229,7 +246,7 @@ struct iOSListNotesView: View {
                 }
                 // [[T-8761]]: the note's tags, on the template menu's gate; the cover's format
                 // row carries them in the one-column form.
-                iOSNoteTagControl(note: note, isEditorFocused: $isEditorFocused)
+                iOSNoteTagControl(note: note, isEditorFocused: $isEditorFocused) { tagFailureNotice = $0 }
                 iOSNoteAIActionsMenu(note: note, area: note.area, project: note.project)
                 iOSNoteExportMenu(note: note, flush: editorFlush)
                 // [[T-8762]]: Move Note and Delete Note for the open note, as the Mac's list Notes

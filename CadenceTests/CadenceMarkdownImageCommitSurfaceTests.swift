@@ -544,7 +544,11 @@ struct CadenceMarkdownImageCommitSurfaceTests {
         // [[T-8761]] makes it 83, both bare: `iOSNoteTagControl` names a refused tag write under
         // itself in a header, or hands it to `iOSMarkdownEditingSurface` to draw under the format
         // row. The retry is the same control, and the next write that lands clears it.
-        #expect(total == 83, "the inline notice has \(total) call sites, not the 83 this test was written over")
+        // [[T-9542]] makes it 84, all bare: the control's own notice drew unwrapped inside its
+        // fixed-size frame and shoved the iPad header, so it went, and `iOSNotesView` and
+        // `iOSListNotesView` each draw the refusal on a full-width line under their header row.
+        // Same retry, same clearing.
+        #expect(total == 84, "the inline notice has \(total) call sites, not the 84 this test was written over")
         #expect(withDismissal == 9, "\(withDismissal) call sites offer a dismissal, not 9")
 
         // And each of the nine is named, so one swapping places with another is still a failure.
