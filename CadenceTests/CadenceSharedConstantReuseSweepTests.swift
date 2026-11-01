@@ -1728,7 +1728,16 @@ struct CadenceNotesTabVocabularyReuseTests {
             including: "Cadence/Shared/CadenceNotePlanningSupport.swift",
             read: read
         )
-        #expect(sharedHits == ["Cadence/Shared/CadenceNotePlanningSupport.swift"])
+        // `CadenceSearchSection` joined `Shared/` with [[T-8765]] and types "Event Notes" as one
+        // of its raw values. It is the **search** taxonomy, which the renderer sweep below already
+        // carves out as "independently named" — the phrase is the same word, not the same
+        // vocabulary, and a search section heading has no business reading a Notes *tab* label.
+        // The Mac palette typed it too, in `macOS/Views/GlobalSearchSupportViews.swift`, where
+        // this sweep never walked; what changed is where the one declaration lives, not how many.
+        #expect(sharedHits == [
+            "Cadence/Shared/CadenceNotePlanningSupport.swift",
+            "Cadence/Shared/CadenceSearchSection.swift"
+        ])
 
         // Notes vocabulary renderers, not the independently named search taxonomy.
         let rendererPaths = [

@@ -1,16 +1,11 @@
 #if os(macOS)
 import SwiftUI
 
-enum GlobalSearchCategory: String, CaseIterable {
-    case commands = "Commands"
-    case pages = "Pages"
-    case areas = "Areas"
-    case projects = "Projects"
-    case tasks = "Tasks"
-    case events = "Calendar Events"
-    case meetingNotes = "Event Notes"
-    case notes = "Notes"
-}
+/// The palette's section vocabulary is `CadenceSearchSection`, shared with iOS Search
+/// ([[T-8765]]). It used to be eight cases written out here, while the phone passed five string
+/// literals of its own into its section builder; see that type for which vocabulary won and why
+/// `.commands` is the one section a touch surface does not draw.
+typealias GlobalSearchCategory = CadenceSearchSection
 
 enum GlobalSearchDestination: Hashable {
     case command(GlobalSearchCommand)

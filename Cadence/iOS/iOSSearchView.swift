@@ -69,29 +69,22 @@ struct iOSSearchView: View {
         tasks.filter { CadenceTaskSearchSupport.isSearchable($0, includingCompleted: includeCompletedTasks) }
     }
 
+    /// The sections this scope narrows to, in the one shared display order ([[T-8765]]).
+    ///
+    /// The chips are the filter and the sections are the vocabulary, and they are deliberately
+    /// not the same list: **Lists** covers Areas and Projects, **Notes** covers Event Notes and
+    /// Notes. `iOSSearchScope.sections` owns that mapping so the body below can iterate the
+    /// shared order rather than spelling five `if shows…` gates of its own.
+    private var visibleSections: [CadenceSearchSection] {
+        scope.sections
+    }
+
     private var showsTasks: Bool {
-        scope == .all || scope == .tasks
-    }
-
-    private var showsLists: Bool {
-        scope == .all || scope == .lists
-    }
-
-    private var showsNotes: Bool {
-        scope == .all || scope == .notes
+        scope.shows(.tasks)
     }
 
     private var showsEvents: Bool {
-        scope == .all || scope == .events
-    }
-
-    /// The **More** chip's scope. It gated two sections — Pages, and the "Goals and Habits" one
-    /// that merged `Goal` and `Habit` behind a destination apiece — and T-2076 took the second
-    /// away with the two destinations. The chip stays, because Pages is what a reader looking for
-    /// a *screen* rather than a row is searching for, and it is the one section nothing else
-    /// shows.
-    private var showsProgress: Bool {
-        scope == .all || scope == .progress
+        scope.shows(.events)
     }
 
     /// Everything that changes which results a section holds. Narrower than
@@ -160,7 +153,7 @@ struct iOSSearchView: View {
     /// the T-378 rule and the evidence for it are recorded there. This screen used to pre-filter
     /// to `isActive`, so a completed or archived list was findable on the Mac and invisible here
     /// even though tapping one would have opened its detail page perfectly well.
-    private var listResults: [iOSSearchResult] {
+    private var listResults: [CadenceSearchSection: [iOSSearchResult]] {
         let listItems = areas.filter { CadenceListSearchSupport.isSearchable($0, query: trimmedQuery) }.map { area in
             let count = CadenceTaskQuerySupport.openTaskCount(for: area)
             return iOSSearchListCandidate(
@@ -188,27 +181,56 @@ struct iOSSearchView: View {
         }
 
         if isSearching {
-            return iOSSearchIndexSupport.rankedResults(listItems.compactMap { candidate in
+            let matched = listItems.compactMap { candidate -> (CadenceSearchSection, iOSSearchResult)? in
                 guard let score = CadenceSearchMatcher.matchScore(query: trimmedQuery, fields: candidate.fields) else {
                     return nil
                 }
-                return candidate.result(score: score)
-            })
+                return (candidate.section, candidate.result(score: score))
+            }
+            return [.areas, .projects].reduce(into: [:]) { out, section in
+                out[section] = iOSSearchIndexSupport.rankedResults(
+                    matched.filter { $0.0 == section }.map(\.1)
+                )
+            }
         }
 
         // Areas then projects, each in the user's arrangement, ties broken by identity (T-498).
         // `Area.order` and `Project.order` both default to 0, so the `@Query` sort this used to
         // prefix straight off is partial for every list made outside the reorder UI.
-        return CadenceSearchSuggestionWindow.take(
+        //
+        // **One window of eight across both kinds, split afterwards** ([[T-8765]]). The two are
+        // separate sections now, but a window apiece would have doubled the idle suggestions on a
+        // screen that shows five other sections under them; the rows a reader sees idle are the
+        // same rows as before, under two headings instead of one.
+        let suggested = CadenceSearchSuggestionWindow.take(
             listItems,
             limit: 8,
             identity: \.identity,
             orderedBefore: { $0.suggestionRank < $1.suggestionRank }
-        ).map { $0.result(score: 0) }
+        )
+        return [.areas, .projects].reduce(into: [:]) { out, section in
+            out[section] = suggested.filter { $0.section == section }.map { $0.result(score: 0) }
+        }
     }
 
+    /// **Event notes have their own section** ([[T-8765]]). They used to be mixed into Notes here
+    /// while the Mac palette drew them apart, so one note read "Notes" on the phone and "Event
+    /// Notes" on the Mac. The split is `Note.kind == .meeting`, which is the Mac's gate
+    /// (`GlobalSearchIndexSupport.eventNoteResults`), not a second rule.
+    private var eventNoteResults: [iOSSearchResult] {
+        noteSectionResults(matching: { $0.kind == .meeting })
+    }
+
+    /// The **Notes** section proper: everything that is not an event note.
     private var noteResults: [iOSSearchResult] {
-        let searchableNotes = notes.filter(CadenceSearchIdleSuggestions.hasVisibleText)
+        noteSectionResults(matching: { $0.kind != .meeting })
+    }
+
+    /// One builder for both note sections. **An idle window apiece**, as the Mac caps
+    /// `.meetingNotes` and `.notes` separately: the two sections answer different questions, and
+    /// a shared window would have let a busy week of event notes crowd out every ordinary one.
+    private func noteSectionResults(matching isMember: (Note) -> Bool) -> [iOSSearchResult] {
+        let searchableNotes = notes.filter { CadenceSearchIdleSuggestions.hasVisibleText($0) && isMember($0) }
         // Task embeds are matched and excerpted under the task's live title, not the copy cached in
         // the note text — see `MarkdownTaskEmbedTitleCache`. Built once per pass, not per note.
         let taskTitles = MarkdownTaskEmbedTitleCache.titles(for: tasks)
@@ -234,6 +256,26 @@ struct iOSSearchView: View {
             searchableNotes,
             limit: CadenceSearchIdleSuggestions.limit
         ).map { noteResult($0, score: 0, taskTitles: taskTitles) }
+    }
+
+    /// **One lookup from section to rows**, so the body above can iterate the shared order
+    /// instead of spelling a gate per section ([[T-8765]]).
+    ///
+    /// `.commands` answers an empty array rather than being left out of the `switch`: it is a
+    /// real case of the shared vocabulary that this platform does not draw, and saying so here is
+    /// what makes `CadenceSearchSection.touchSections` the single place that decision lives. The
+    /// body never asks for it, because `iOSSearchScope.sections` is cut from `touchSections`.
+    private func results(for section: CadenceSearchSection) -> [iOSSearchResult] {
+        switch section {
+        case .commands: return []
+        case .pages: return pageResults
+        case .areas: return listResults[.areas] ?? []
+        case .projects: return listResults[.projects] ?? []
+        case .tasks: return taskResults
+        case .events: return eventResults
+        case .meetingNotes: return eventNoteResults
+        case .notes: return noteResults
+        }
     }
 
     private var eventResults: [iOSSearchResult] {
@@ -303,21 +345,19 @@ struct iOSSearchView: View {
             .listRowBackground(Color.clear)
             .listRowSeparator(.hidden)
 
-            if showsProgress {
-                resultSection("Pages", results: pageResults)
-            }
-            if showsTasks {
-                resultSection("Tasks", results: taskResults)
-            }
-            if showsLists {
-                resultSection("Lists", results: listResults)
-            }
-            if showsNotes {
-                resultSection("Notes", results: noteResults)
-            }
-            if showsEvents {
-                calendarAccessSection
-                resultSection("Calendar Events", results: eventResults)
+            // **The shared section vocabulary and the shared order** ([[T-8765]]). This was five
+            // `if shows…` blocks over five string literals — "Pages", "Tasks", "Lists", "Notes",
+            // "Calendar Events" — in an order of their own. Both the names and the order are
+            // `CadenceSearchSection`'s now, so the phone and the Mac palette name a found thing
+            // the same way; the chips above stay iOS-only, which is the owner's call and the
+            // reason this iterates `scope.sections` rather than every case.
+            ForEach(visibleSections) { section in
+                // Immediately above Calendar Events, where it was: the card explains why that one
+                // section is empty, so it has to arrive before the heading it is about.
+                if section == .events {
+                    calendarAccessSection
+                }
+                resultSection(section.title, results: results(for: section))
             }
 
             if isSearching && visibleResultsAreEmpty && !calendarAccessCardReplacesNoResults {
@@ -536,11 +576,7 @@ struct iOSSearchView: View {
     }
 
     private var visibleResultsAreEmpty: Bool {
-        (!showsTasks || taskResults.isEmpty) &&
-        (!showsLists || listResults.isEmpty) &&
-        (!showsNotes || noteResults.isEmpty) &&
-        (!showsEvents || eventResults.isEmpty) &&
-        (!showsProgress || pageResults.isEmpty)
+        visibleSections.allSatisfy { results(for: $0).isEmpty }
     }
 
     private var searchableFeatureDestinations: [CadenceFeatureDestination] {

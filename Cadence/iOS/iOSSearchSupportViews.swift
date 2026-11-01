@@ -40,6 +40,38 @@ enum iOSSearchScope: String, CaseIterable, Identifiable {
         }
     }
 
+    /// **Which of the shared sections this chip narrows to** ([[T-8765]]), in the one display
+    /// order both platforms draw.
+    ///
+    /// The chips stay iOS-only — the owner's 2026-10-31 call under [[T-8201]], justified by
+    /// narrow screens — but the sections under them are now `CadenceSearchSection`, so the phone
+    /// and the Mac name a found thing the same way. Two chips cover two sections apiece:
+    /// **Lists** is Areas and Projects, which the phone used to merge into one "Lists" heading,
+    /// and **Notes** is Event Notes and Notes, which it used to merge into one "Notes" heading.
+    ///
+    /// **More** is the odd one. It gated two sections — Pages, and the "Goals and Habits" one
+    /// that merged `Goal` and `Habit` behind a destination apiece — and T-2076 took the second
+    /// away with the two destinations. The chip stays, because Pages is what a reader looking for
+    /// a *screen* rather than a row is searching for, and it is the one section nothing else
+    /// shows.
+    ///
+    /// `.commands` is in no chip's list: it is the Mac palette's keyboard idiom and iOS draws no
+    /// such section, which is why `CadenceSearchSection.touchSections` leaves it out.
+    var sections: [CadenceSearchSection] {
+        switch self {
+        case .all: return CadenceSearchSection.touchSections
+        case .tasks: return [.tasks]
+        case .lists: return [.areas, .projects]
+        case .notes: return [.meetingNotes, .notes]
+        case .events: return [.events]
+        case .progress: return [.pages]
+        }
+    }
+
+    func shows(_ section: CadenceSearchSection) -> Bool {
+        sections.contains(section)
+    }
+
     var icon: String {
         switch self {
         case .all: return "square.grid.2x2"
@@ -64,8 +96,9 @@ struct iOSSearchListCandidate {
     let suggestionOrder: Int
     let fields: [String]
 
-    /// Areas and projects are one section here, so the identity has to carry which table the row
-    /// came from — `CadenceSearchIdentity`'s prefix is exactly that.
+    /// Areas and projects are drawn as two sections since [[T-8765]], but they are still cut from
+    /// one idle suggestion window, so the identity has to carry which table the row came from —
+    /// `CadenceSearchIdentity`'s prefix is exactly that.
     var identity: String {
         switch route {
         case .area(let id): CadenceSearchIdentity.area(id)
@@ -80,6 +113,16 @@ struct iOSSearchListCandidate {
         switch route {
         case .area: CadenceSearchSuggestionRank(table: 0, order: suggestionOrder)
         case .project: CadenceSearchSuggestionRank(table: 1, order: suggestionOrder)
+        }
+    }
+
+    /// Which of the two shared list sections this row is drawn under ([[T-8765]]). The phone used
+    /// to merge both into one "Lists" heading while the Mac palette named Areas and Projects
+    /// apart; `CadenceSearchSection` says why the splitting vocabulary won.
+    var section: CadenceSearchSection {
+        switch route {
+        case .area: .areas
+        case .project: .projects
         }
     }
 

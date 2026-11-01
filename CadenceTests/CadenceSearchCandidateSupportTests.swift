@@ -672,10 +672,15 @@ struct CadenceSearchCandidateSupportTests {
     /// builds for macOS, so nothing here calls `iOSSearchIndexSupport.rankedResults`; the claim is
     /// that **every** scored section reaches it and that none of them still sorts on score alone.
     ///
-    /// Five sections, not six, since T-2076 took the "Goals and Habits" section (`progressResults`)
-    /// off this screen with the two destinations it merged. The count is re-derived rather than
-    /// loosened: it is still "one call per scored section", and the removed section's call went
-    /// with it.
+    /// Five **builders**, seven sections since [[T-8765]]. T-2076 took the "Goals and Habits"
+    /// section (`progressResults`) off this screen with the two destinations it merged; [[T-8765]]
+    /// then split Lists into Areas and Projects and Notes into Event Notes and Notes, to match the
+    /// Mac palette's vocabulary. Both splits are cut from one builder apiece — `listResults`
+    /// returns the two list sections keyed by `CadenceSearchSection`, and `noteResults` and
+    /// `eventNoteResults` share `noteSectionResults(matching:)` — so the funnel count is still
+    /// five, and it is still "one call per scoring pass". What is re-derived rather than loosened
+    /// is the claim: a sixth `rankedResults` call would be a section scoring itself outside the
+    /// funnel, which is what this pins.
     @Test func everyScoredIOSSearchSectionRanksThroughTheOneFunnel() throws {
         let raw = try CadenceSourceScan.sourceFile(Self.iOSSearchViewPath)
         let stripped = CadenceSourceScan.strippingComments(raw)
@@ -823,7 +828,9 @@ struct CadenceSearchCandidateSupportTests {
     /// that the two sections the ticket exempts are untouched.
     ///
     /// Three idle branches since T-2076, not four: the "Goals and Habits" section was one of them,
-    /// and it left with the two destinations it merged.
+    /// and it left with the two destinations it merged. [[T-8765]] added no fourth — Areas and
+    /// Projects are still cut from **one** window of eight and split afterwards, so the rows a
+    /// reader sees idle are the same rows under two headings.
     @Test func everyIdleIOSSearchSectionCutsItsWindowFromATotalOrder() throws {
         let raw = try CadenceSourceScan.sourceFile(Self.iOSSearchViewPath)
         let stripped = CadenceSourceScan.strippingComments(raw)
