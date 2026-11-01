@@ -27,12 +27,15 @@ import Testing
         #expect(!row.contains("RoundedRectangle(cornerRadius: 8)"), "the reminder row's hover is back at 8pt")
     }
 
-    /// [[T-9822]]: a Settings action button fades itself when it cannot be pressed.
+    #if os(macOS)
+    /// [[T-9822]]: a Settings action button fades itself when it cannot be pressed. The metrics
+    /// live in a macOS-only view file, so the iOS test target cannot see them.
     @Test func aDisabledSettingsActionButtonFades() {
         #expect(SettingsActionButtonMetrics.opacity(isEnabled: true) == 1)
         #expect(SettingsActionButtonMetrics.opacity(isEnabled: false) == SettingsActionButtonMetrics.disabledOpacity)
         #expect(SettingsActionButtonMetrics.opacity(isEnabled: false) < SettingsActionButtonMetrics.opacity(isEnabled: true))
     }
+    #endif
 
     /// [[T-9822]]'s wiring: the fade is read from the environment `.disabled` sets, so "Refresh"
     /// and "Check iCloud Status" fade while their fetch runs, and no caller re-spells the fade (which
