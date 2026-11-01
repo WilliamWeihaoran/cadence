@@ -16,8 +16,23 @@ import Foundation
 nonisolated enum TaskSortField: String, CaseIterable, Identifiable, Sendable {
     case custom = "Custom"
     case date = "Date"
+    case dueDate = "Due Date"
     case priority = "Priority"
+    case newest = "Newest"
     var id: String { rawValue }
+
+    /// What this field is **called on screen**, which is not always what it is stored as.
+    ///
+    /// The raw values above are the persisted preference strings, so renaming one orphans every
+    /// saved setting -- the note at the top of this file. "Date" is therefore stuck as the stored
+    /// spelling of the do-date field. It cannot also be the label: "Date" sitting beside "Due Date"
+    /// in one menu says nothing about *which* date, on a page whose whole vocabulary is do-date vs
+    /// due-date. The app already has the word -- CadenceTaskSortMode.doDate's title is "Do Date",
+    /// and `.date` is exactly that mode -- so the label moves and the raw value stays put.
+    ///
+    /// Every other case labels itself: the two added with the owner's 2026-11-01 decision were
+    /// given raw values that are already the labels, because nothing had ever stored them.
+    var pickerLabel: String { self == .date ? "Do Date" : rawValue }
 
     /// Whether `TaskSortDirection` changes anything under this field ([[T-7006]]).
     ///
@@ -26,6 +41,16 @@ nonisolated enum TaskSortField: String, CaseIterable, Identifiable, Sendable {
     /// direction. An "Order: Descending" pill beside "Sort: Custom" was a control that did nothing,
     /// and Custom is the Inbox's default. Every Order control asks this before drawing — the macOS
     /// pills in `TasksPageView`, and since [[T-8731]] the touch chip in `iOSTaskSortGroupBar` too.
+    ///
+    /// **`.newest` honours one too, and that is deliberate.** The name states a direction, so a
+    /// Descending pill beside it looks like the do-nothing control T-7006 removed — but it is not
+    /// one: reversing it is oldest-first, a different list. The rule here is measured, not
+    /// asserted — `CadenceSortOrderPillTests.honorsDirectionIsTrueExactlyWhenTheDirectionReordersTasks`
+    /// requires this property to equal "reversing the direction reorders a fixture whose keys all
+    /// differ" — so a field whose direction does something must say so. It reads the way
+    /// `.priority` + `.ascending` already does: the named mode picks the direction it ships with
+    /// (`CadenceTaskSortMode.newest.macOSSortPair` is Descending), and the other one stays
+    /// reachable for the rare person who wants it.
     var honorsDirection: Bool { self != .custom }
 }
 
@@ -164,11 +189,34 @@ nonisolated enum TaskOrdering {
             }
 
             return .tie
+        case .dueDate:
+            // The *due* date, which is a different column from `.date`'s `scheduledDate` and is
+            // sorted by a different rule: undated work goes last in **both** directions rather
+            // than through `noDateSortKey`. That is not a new judgement — it is the rule
+            // `CadenceTaskQuerySupport.sortKeyOrder` has applied to its `.dueDate` mode since it
+            // was written, and this branch is where that mode now reads it from, so widening the
+            // vocabulary moved the rule rather than forking it. It is also the shape `.date`
+            // already has one rung down, where timed work leads untimed work either way round.
+            if lhs.dueDate != rhs.dueDate {
+                if lhs.dueDate.isEmpty { return .after }
+                if rhs.dueDate.isEmpty { return .before }
+                return .ordered(direction == .ascending ? lhs.dueDate < rhs.dueDate : lhs.dueDate > rhs.dueDate)
+            }
+            return .tie
         case .priority:
             let lhsRank = lhs.priority.rank
             let rhsRank = rhs.priority.rank
             if lhsRank != rhsRank {
                 return .ordered(direction == .ascending ? lhsRank < rhsRank : lhsRank > rhsRank)
+            }
+            return .tie
+        case .newest:
+            // `createdAt` ascending is oldest-first; the mode called "Newest" is this field
+            // *descending*, exactly as the mode called "Priority" is `.priority` descending.
+            if lhs.createdAt != rhs.createdAt {
+                return .ordered(
+                    direction == .ascending ? lhs.createdAt < rhs.createdAt : lhs.createdAt > rhs.createdAt
+                )
             }
             return .tie
         }

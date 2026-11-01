@@ -514,21 +514,10 @@ extension TaskSortDirection: CadenceToggleablePickerValue {
     }
 }
 
-/// A picker enum whose raw value is a **storage key**, not a label.
-///
-/// `CadenceEnumPickerBadge` prints `rawValue`, which is right for the enums written for these
-/// chips — `TaskSortField` is `"Custom"` / `"Date"`, `TaskGroupingMode` is `"By Date"` — and wrong
-/// for `CadenceTaskSortMode`, whose raw values are `listOrder` / `doDate` because iOS persists
-/// them under `ios.today.sortMode`. Conforming keeps the persisted spelling and the printed one
-/// apart, so adopting iOS's vocabulary on macOS (T-606) did not mean either changing a persisted
-/// raw value or drawing `doDate` in a chip.
-protocol CadenceLabelledPickerValue {
-    var pickerLabel: String { get }
-}
-
-extension CadenceTaskSortMode: CadenceLabelledPickerValue {
-    var pickerLabel: String { title }
-}
+// `CadenceLabelledPickerValue` — the "my raw value is a storage key, not a label" protocol the
+// badge below asks — was declared here while macOS was the only platform drawing these chips. It
+// is in `Shared/CadenceTaskPlanningSupport.swift` now, with the vocabularies that conform to it,
+// because the iOS chip asks it too and `Cadence/iOS/` cannot see a file under `macOS/`.
 
 struct CadenceEnumPickerBadge<T: CaseIterable & RawRepresentable & Identifiable>: View where T.RawValue == String {
     let title: String

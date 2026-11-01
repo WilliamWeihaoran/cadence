@@ -15,12 +15,16 @@ import Testing
 ///
 /// **Which vocabulary won, and why.** The Mac's, wholesale: `TaskSortField` + `TaskSortDirection`
 /// + `TaskGroupingMode`, with `TaskGroupingMode` moved out of `macOS/Views/` into `Shared/` so
-/// `Cadence/iOS/` can see it. `CadenceTaskSortMode`'s two extra modes, `.dueDate` and `.newest`,
-/// have no field in that vocabulary and are projected onto Date + Ascending — which is not a new
-/// rule but the one `CadenceLookPreferenceStore` has applied to these same two preferences since
-/// the look record landed, because the Mac's three fields were already the smaller vocabulary a
-/// synced phone choice was drawn as. Those two modes survive on Today and a list's Tasks tab,
-/// which keep the single chip and are outside the owner's decision.
+/// `Cadence/iOS/` can see it.
+///
+/// **And the Mac's vocabulary then grew, which is [[T-9742]].** Adopting it cost the iOS Inbox and
+/// All Tasks two modes: `CadenceTaskSortMode.dueDate` and `.newest` had no field, and
+/// `macOSSortPair` flattened both onto Date + Ascending — the same projection
+/// `CadenceLookPreferenceStore` had applied to these preferences since the look record landed,
+/// because the Mac's three fields were already the smaller vocabulary a synced phone choice was
+/// drawn as. The owner ruled on 2026-11-01 that the loss was not to be accepted: `TaskSortField`
+/// gained `.dueDate` and `.newest`, both platforms now offer five fields, and the projection below
+/// is a one-to-one correspondence rather than a flattening.
 ///
 /// `Cadence/iOS/` is behind `#if os(iOS)` and this target builds for macOS, so the iOS half is a
 /// source reading and the shared half is run.
@@ -30,6 +34,16 @@ struct CadenceTaskSortGroupParityTests {
     private static let allTasksPath = "Cadence/iOS/iOSTaskCollectionViews.swift"
     private static let barPath = "Cadence/iOS/iOSTaskViews.swift"
     private static let macPagePath = "Cadence/macOS/Views/macOSRootSupportViews.swift"
+
+    /// Raw source with comments blanked, which is **not** `code(_:)`: `codeOnly` blanks the
+    /// contents of a string literal too, so a control title a user reads — `"Sort"` — is not in the
+    /// text it returns. Use this when the needle is a literal, that one when it is code.
+    private func literalBearingCode(_ path: String) throws -> String {
+        let raw = try CadenceSourceScan.sourceFile(path)
+        let code = CadenceSourceScan.strippingComments(raw)
+        #expect(code != raw, "non-vacuity: comments were not stripped in \(path)")
+        return code
+    }
 
     private func code(_ path: String) throws -> String {
         let raw = try CadenceSourceScan.sourceFile(path)
@@ -237,28 +251,167 @@ struct CadenceTaskSortGroupParityTests {
 
     // MARK: - The retired phone preference
 
-    /// The projection, case by case. Three modes have an exact twin and must round-trip; the two
-    /// that do not are stated rather than left to inspection.
+    /// The projection, case by case, and **every one of the five now has an exact twin**
+    /// ([[T-9742]]). This used to pin `.dueDate` and `.newest` onto `(.date, .ascending)`; that was
+    /// the loss, not an invariant, and it is replaced with the new truth rather than relaxed.
+    ///
+    /// The direction each of the two carries is the one its branch in
+    /// `CadenceTaskQuerySupport.sortKeyOrder` used to hard-code, so no list re-sorts: `.dueDate`
+    /// was `lhs.dueDate < rhs.dueDate`, which is Ascending; `.newest` was
+    /// `lhs.createdAt > rhs.createdAt`, which is Descending.
     @Test func everySortModeProjectsOntoTheSharedFieldPair() {
         #expect(CadenceTaskSortMode.listOrder.macOSSortPair == (.custom, .ascending))
         #expect(CadenceTaskSortMode.priority.macOSSortPair == (.priority, .descending))
         #expect(CadenceTaskSortMode.doDate.macOSSortPair == (.date, .ascending))
-        #expect(CadenceTaskSortMode.dueDate.macOSSortPair == (.date, .ascending))
-        #expect(CadenceTaskSortMode.newest.macOSSortPair == (.date, .ascending))
+        #expect(CadenceTaskSortMode.dueDate.macOSSortPair == (.dueDate, .ascending))
+        #expect(CadenceTaskSortMode.newest.macOSSortPair == (.newest, .descending))
 
-        // The three with a twin round-trip through the mapping that already existed, so the two
-        // directions of one correspondence cannot drift apart.
-        for mode in [CadenceTaskSortMode.listOrder, .priority, .doDate] {
+        // **All five round-trip now**, so the two directions of one correspondence cannot drift
+        // apart — and so that nothing can quietly re-flatten two modes onto a third's field: a
+        // projection that collides is exactly what fails this loop.
+        for mode in CadenceTaskSortMode.allCases {
             #expect(
                 CadenceTaskSortMode.migratedFromMacOSTodaySortField(mode.macOSSortPair.field.rawValue) == mode,
                 "\(mode.rawValue)"
             )
         }
+        #expect(Set(CadenceTaskSortMode.allCases.map(\.macOSSortPair.field)).count
+                    == CadenceTaskSortMode.allCases.count)
         // And it is the record's own projection, not a second rule.
         for mode in CadenceTaskSortMode.allCases {
             #expect(
                 CadenceLookPreferenceStore.mirrorValue(fromRecord: mode.rawValue, codec: .macOSSortField)
                     == mode.macOSSortPair.field.rawValue,
+                "\(mode.rawValue)"
+            )
+        }
+    }
+
+    // MARK: - The two fields the owner's 2026-11-01 decision added ([[T-9742]])
+
+    /// **Both platforms offer all five fields, and neither control filters the set.**
+    ///
+    /// The Mac's Sort pill and the touch Sort chip are both generic over `T.allCases`, so widening
+    /// the enum widens both — unless a call site passes `excluded:`, which is the one way a field
+    /// could exist in the vocabulary and be unreachable on screen. None does, and this is what
+    /// says so. Counted over every Sort control rather than spot-checked, because the failure is a
+    /// control quietly offering fewer options than the comparator supports.
+    @Test func everySortControlOffersTheWholeVocabulary() throws {
+        #expect(TaskSortField.allCases.count == 5)
+
+        for path in [Self.macPagePath, "Cadence/macOS/Views/ListDetailView.swift"] {
+            let page = try literalBearingCode(path)
+            let sortBadges = page.components(separatedBy: "CadenceEnumPickerBadge(title: \"Sort\"").count - 1
+            #expect(sortBadges >= 1, "\(path) lost its Sort pill")
+            #expect(!page.contains("excluded:"), "\(path) filters a picker's cases")
+        }
+
+        let bar = try #require(CadenceSourceScan.declarationBody(
+            "struct iOSTaskSortGroupBar: View", in: try literalBearingCode(Self.barPath)
+        ))
+        #expect(bar.contains("iOSEnumChoiceChip(title: \"Sort\", glyph: \"arrow.up.arrow.down\", selection: $sortField)"))
+    }
+
+    /// **Both controls print the field's label, not its stored spelling.**
+    ///
+    /// `TaskSortField.date` is stored as `"Date"` and has to stay stored that way — the raw values
+    /// *are* the preference strings, so renaming one orphans every saved sort. It is drawn as
+    /// "Do Date", because "Date" beside "Due Date" names no date at all. The two controls ask the
+    /// same protocol for that, so one of them cannot start printing `rawValue` again on its own.
+    @Test func bothSortControlsPrintTheLabelRatherThanTheStoredRawValue() throws {
+        #expect((TaskSortField.date as CadenceLabelledPickerValue).pickerLabel == "Do Date")
+        #expect(TaskSortField.date.rawValue == "Date")
+
+        let chip = try #require(CadenceSourceScan.declarationBody(
+            "struct iOSEnumChoiceChip<", in: try code(Self.barPath)
+        ))
+        #expect(chip.contains("(value as? CadenceLabelledPickerValue)?.pickerLabel ?? value.rawValue"))
+        // Non-vacuity, and the regression: the chip drew `selection.rawValue` in all three places
+        // before [[T-9742]], and a single one left behind would show "Date" beside "Due Date".
+        #expect(!chip.contains("selection.rawValue"))
+        #expect(chip.components(separatedBy: "label(for:").count - 1 == 3)
+    }
+
+    /// **A build that does not know these raw values must fall back, not break** — the part most
+    /// likely to bite in the wild, because a device on the previous build reads the same
+    /// `UserDefaults` and the same look record.
+    ///
+    /// Every decode site is `TaskSortField(rawValue:)` behind a `guard`/`if let`, so the question
+    /// is what the fallback *is*, not whether one exists. Measured from the other side: a value
+    /// this build has never heard of stands in for what "Due Date" looks like to the old build,
+    /// and it lands on the surface's own default rather than on a different field.
+    @Test func aSortFieldThisBuildCannotNameFallsBackRatherThanPickingAnotherField() {
+        for unknown in ["", "Due date", "dueDate", "Start Date", "\u{1F600}"] {
+            #expect(TaskSortField(rawValue: unknown) == nil, "\(unknown) decoded")
+            #expect(
+                CadenceTaskSortMode.migratedFromMacOSTodaySortField(unknown) == .macOSTodayDefault,
+                "\(unknown) did not fall back"
+            )
+        }
+        #expect(CadenceTaskSortMode.migratedFromMacOSTodaySortField(nil) == .macOSTodayDefault)
+
+        // The two new spellings decode on *this* build, which is the other half of the same claim:
+        // the fallback above is reached by an unknown value, not by every value.
+        #expect(TaskSortField(rawValue: "Due Date") == .dueDate)
+        #expect(TaskSortField(rawValue: "Newest") == .newest)
+
+        // And the record needs no migration, because the record's vocabulary was always the larger
+        // one: `dueDate` and `newest` have been legal `allTasks.mode` values since it landed, and
+        // an older build reading one still draws `Date` — the behaviour it had before this change,
+        // not a new one.
+        #expect(CadenceLookPreferenceStore.mirrorValue(fromRecord: "dueDate", codec: .macOSSortField)
+                    == TaskSortField.dueDate.rawValue)
+        #expect(CadenceLookPreferenceStore.mirrorValue(fromRecord: "newest", codec: .macOSSortField)
+                    == TaskSortField.newest.rawValue)
+        #expect(CadenceLookPreferenceStore.mirrorValue(fromRecord: "quarterlyReview", codec: .macOSSortField) == nil)
+    }
+
+    /// **The two fields sort by their own columns**, which is the behaviour the projection used to
+    /// throw away: before this, choosing Due Date on a phone drew do-date order on both devices.
+    ///
+    /// Stated as the orders themselves rather than as a pair of mappings, so a branch that
+    /// compiled but read the wrong column would fail here.
+    @Test func dueDateAndNewestOrderByTheirOwnColumns() {
+        let base = Date(timeIntervalSince1970: 1_700_000_000)
+        let rows: [(String, String, String, Double)] = [
+            // title, scheduledDate (do date), dueDate, createdAt offset
+            ("soonest", "2026-06-03", "2026-06-01", 0),
+            ("middle", "2026-06-02", "2026-06-02", 60),
+            ("latest", "2026-06-01", "2026-06-03", 120),
+            ("undated", "2026-06-04", "", 180)
+        ]
+        let tasks: [AppTask] = rows.enumerated().map { index, row in
+            let task = AppTask(title: row.0)
+            task.scheduledDate = row.1
+            task.dueDate = row.2
+            task.order = index
+            task.createdAt = base.addingTimeInterval(row.3)
+            return task
+        }
+
+        // Due Date reads `dueDate`, not `scheduledDate` — the two run in opposite orders here, so
+        // a branch that read the do date would produce the reverse of this.
+        #expect(tasks.taskSorted(by: .dueDate, direction: .ascending).map(\.title)
+                    == ["soonest", "middle", "latest", "undated"])
+        // Undated work stays at the bottom when the direction flips. Only the dated rows reverse.
+        #expect(tasks.taskSorted(by: .dueDate, direction: .descending).map(\.title)
+                    == ["latest", "middle", "soonest", "undated"])
+        // Newest reads `createdAt`, most recent first, and Ascending is the oldest-first list that
+        // makes the Order chip beside it a real control rather than a decoration.
+        #expect(tasks.taskSorted(by: .newest, direction: .descending).map(\.title)
+                    == ["undated", "latest", "middle", "soonest"])
+        #expect(tasks.taskSorted(by: .newest, direction: .ascending).map(\.title)
+                    == ["soonest", "middle", "latest", "undated"])
+
+        // And each is exactly what the phone's own mode answers, which is what "no list re-sorts"
+        // means: the mode delegates to this field now instead of carrying a second key.
+        for (mode, field, direction) in [
+            (CadenceTaskSortMode.dueDate, TaskSortField.dueDate, TaskSortDirection.ascending),
+            (CadenceTaskSortMode.newest, TaskSortField.newest, TaskSortDirection.descending)
+        ] {
+            #expect(
+                tasks.sorted { CadenceTaskQuerySupport.sortTasks($0, $1, sortMode: mode) }.map(\.title)
+                    == tasks.taskSorted(by: field, direction: direction).map(\.title),
                 "\(mode.rawValue)"
             )
         }
@@ -280,7 +433,12 @@ struct CadenceTaskSortGroupParityTests {
             ])
             #expect(defaults.string(forKey: CadencePreferenceKeys.inboxSortField) == TaskSortField.priority.rawValue)
             #expect(defaults.string(forKey: CadencePreferenceKeys.inboxSortDirection) == TaskSortDirection.descending.rawValue)
-            #expect(defaults.string(forKey: CadencePreferenceKeys.allTasksSortField) == TaskSortField.date.rawValue)
+            // **Due Date now survives the migration as Due Date** ([[T-9742]]). This asserted
+            // `.date` until the owner's 2026-11-01 decision, because the projection had nowhere
+            // else to put it: a phone that had chosen Due Date came out of the migration sorting
+            // by do date. The new line is the point of the change, not a relaxation of the old one.
+            #expect(defaults.string(forKey: CadencePreferenceKeys.allTasksSortField) == TaskSortField.dueDate.rawValue)
+            #expect(defaults.string(forKey: CadencePreferenceKeys.allTasksSortDirection) == TaskSortDirection.ascending.rawValue)
 
             // Idempotent: a second pass writes nothing and changes nothing.
             #expect(CadenceTaskPresentationPreferences.migrateLegacyIOSSortModes(in: defaults).isEmpty)

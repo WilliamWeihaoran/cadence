@@ -27,6 +27,10 @@ struct CadenceSortOrderPillTests {
         }
         #expect(!TaskSortField.custom.honorsDirection, "Custom grew a direction pill again")
         #expect(TaskSortField.date.honorsDirection && TaskSortField.priority.honorsDirection)
+        // [[T-9742]]: the two fields the owner's 2026-11-01 decision added. `.newest` names a
+        // direction, which is what makes it the one worth stating — reversing it is oldest-first,
+        // a real list, so the pill is not the do-nothing control T-7006 removed.
+        #expect(TaskSortField.dueDate.honorsDirection && TaskSortField.newest.honorsDirection)
     }
 
     /// Every macOS Order pill sits inside an `honorsDirection` gate. Counted per file so a new
@@ -73,17 +77,22 @@ struct CadenceSortOrderPillTests {
         #expect(rows.contains(".background(selection.id == value.id ? Theme.blue.opacity(0.08) : .clear)"))
     }
 
+    /// Every key this comparator has, all distinct, so the test above measures a reversal rather
+    /// than a tie. `dueDate` is set and non-empty on every row for that reason: a fixture that
+    /// left it blank would tie every pair under `.dueDate` and quietly demand
+    /// `honorsDirection == false` for a field whose direction works perfectly well.
     private func distinctKeyTasks() -> [AppTask] {
         let base = Date(timeIntervalSinceReferenceDate: 800_000_000)
-        let rows: [(String, String, TaskPriority)] = [
-            ("a", "2026-10-01", .high),
-            ("b", "2026-10-02", .medium),
-            ("c", "2026-10-03", .low),
+        let rows: [(String, String, String, TaskPriority)] = [
+            ("a", "2026-10-01", "2026-11-03", .high),
+            ("b", "2026-10-02", "2026-11-02", .medium),
+            ("c", "2026-10-03", "2026-11-01", .low),
         ]
         return rows.enumerated().map { index, row in
             let task = AppTask(title: row.0)
             task.scheduledDate = row.1
-            task.priority = row.2
+            task.dueDate = row.2
+            task.priority = row.3
             task.order = index
             task.createdAt = base.addingTimeInterval(Double(index))
             return task

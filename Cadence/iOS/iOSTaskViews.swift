@@ -743,6 +743,14 @@ struct iOSEnumChoiceChip<T: CaseIterable & RawRepresentable & Identifiable & Has
     @Binding var selection: T
     @State private var showPicker = false
 
+    /// What a value is *called*. `rawValue` unless the type says otherwise — the same question
+    /// macOS's `CadenceEnumPickerBadge.label(for:)` asks, through the same protocol, so the two
+    /// controls cannot print a vocabulary differently. `TaskSortField.date` is the case that needs
+    /// it: it is stored as `"Date"` and drawn as "Do Date" ([[T-9742]]).
+    private func label(for value: T) -> String {
+        (value as? CadenceLabelledPickerValue)?.pickerLabel ?? value.rawValue
+    }
+
     var body: some View {
         let stacks = iOSTaskPageTypographyMetrics.stacksControls(at: dynamicTypeSize, scaling: scaling)
         let height = CadenceTypeScale.height(
@@ -755,7 +763,7 @@ struct iOSEnumChoiceChip<T: CaseIterable & RawRepresentable & Identifiable & Has
         Button {
             showPicker = true
         } label: {
-            Label(selection.rawValue, systemImage: glyph)
+            Label(label(for: selection), systemImage: glyph)
                 .cadenceFont(.controlLabel, base: iOSTaskChipMetrics.fontSize)
                 .foregroundStyle(Theme.text)
                 .padding(.horizontal, iOSTaskChipMetrics.horizontalPadding)
@@ -766,11 +774,11 @@ struct iOSEnumChoiceChip<T: CaseIterable & RawRepresentable & Identifiable & Has
         }
         .buttonStyle(.iosPressable)
         .accessibilityLabel(title)
-        .accessibilityValue(selection.rawValue)
+        .accessibilityValue(label(for: selection))
         .popover(isPresented: $showPicker) {
             iOSChoicePopoverList(
                 rows: Array(T.allCases).map { value in
-                    iOSChoiceRow(value: value, title: value.rawValue, color: Theme.blue)
+                    iOSChoiceRow(value: value, title: label(for: value), color: Theme.blue)
                 },
                 selection: $selection,
                 isPresented: $showPicker

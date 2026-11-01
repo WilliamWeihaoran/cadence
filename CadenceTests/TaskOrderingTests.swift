@@ -255,6 +255,12 @@ struct TaskOrderingTests {
     /// Pair-by-pair rather than list-by-list on purpose: two comparators can agree on the sorted
     /// output of one input permutation and still disagree on a pair, because `sorted(by:)` does not
     /// ask every pair.
+    ///
+    /// **It covers all five modes since [[T-9742]].** Two of them were unmeasurable here until the
+    /// owner's 2026-11-01 decision, because `TaskSortField` had no field to compare them against:
+    /// `.dueDate` and `.newest` were projected onto `Date` + `Ascending`, which is the loss that
+    /// decision reversed. Both now delegate to this comparator, so this test is what keeps the two
+    /// halves of that delegation from drifting back apart.
     @Test func everyMigratedMacOSTodaySortModeAgreesWithItsRetiredComparator() {
         let tasks = tieHeavySet()
 
@@ -265,13 +271,22 @@ struct TaskOrderingTests {
         #expect(tasks.contains { $0.scheduledDate == "2026-05-11" && $0.scheduledStartMin >= 0 })
         #expect(tasks.contains { $0.scheduledDate == "2026-05-11" && $0.scheduledStartMin < 0 })
         #expect(Set(tasks.map(\.priority)).count > 1)
+        // And in the terms of the two fields [[T-9742]] added: an undated row for `.dueDate`'s
+        // empty-last rung, a shared due date for the tie under it, and two creation times for
+        // `.newest` to separate.
+        #expect(tasks.contains { $0.dueDate.isEmpty })
+        #expect(Set(tasks.filter { !$0.dueDate.isEmpty }.map(\.dueDate)).count > 1)
+        #expect(Set(tasks.map(\.createdAt)).count > 1)
 
-        // The three mappings `migratedFromMacOSTodaySortField` makes, each with the direction the
-        // doc comment calls exact.
+        // **All five mappings**, each with the direction the doc comment calls exact. It was three
+        // until the owner's 2026-11-01 decision on [[T-9742]]: `.dueDate` and `.newest` had no
+        // field and were projected onto `Date`, so there was nothing here to compare them against.
         let mappings: [(TaskSortField, TaskSortDirection, CadenceTaskSortMode)] = [
             (.custom, .ascending, .listOrder),
             (.date, .ascending, .doDate),
-            (.priority, .descending, .priority)
+            (.dueDate, .ascending, .dueDate),
+            (.priority, .descending, .priority),
+            (.newest, .descending, .newest)
         ]
 
         var comparedPairs = 0
@@ -289,8 +304,8 @@ struct TaskOrderingTests {
             }
         }
 
-        // Every ordered pair of seven distinct tasks, three times over.
-        #expect(comparedPairs == 3 * 7 * 6)
+        // Every ordered pair of seven distinct tasks, five times over.
+        #expect(comparedPairs == 5 * 7 * 6)
     }
 
     /// The sentinel is one `static let`, and the count is one.
@@ -342,15 +357,20 @@ struct TaskOrderingTests {
 
     /// Deliberate ties at every rung: duplicate dates, duplicate start minutes, duplicate
     /// priorities, duplicate `order`, duplicate `createdAt`, and one duplicated title.
+    /// Seven tasks that tie on nearly everything, so the tie-breaks below them are what decides.
+    ///
+    /// `dueDate` joined the set when [[T-9742]] gave `TaskSortField` a `.dueDate` field: two rows
+    /// share a due date, two more share a different one, and three are undated, which is what
+    /// makes the "empty sorts last in both directions" rung and the tie beneath it reachable.
     private func tieHeavySet() -> [AppTask] {
         let base = Date(timeIntervalSince1970: 1_700_000_000)
         return [
-            task(title: "alpha", scheduledDate: "2026-05-11", startMin: 540, priority: .high, order: 3, createdAt: base),
-            task(title: "beta", scheduledDate: "2026-05-11", startMin: 540, priority: .high, order: 3, createdAt: base),
-            task(title: "gamma", scheduledDate: "2026-05-11", priority: .high, order: 3, createdAt: base),
+            task(title: "alpha", scheduledDate: "2026-05-11", dueDate: "2026-05-20", startMin: 540, priority: .high, order: 3, createdAt: base),
+            task(title: "beta", scheduledDate: "2026-05-11", dueDate: "2026-05-20", startMin: 540, priority: .high, order: 3, createdAt: base),
+            task(title: "gamma", scheduledDate: "2026-05-11", dueDate: "2026-05-18", priority: .high, order: 3, createdAt: base),
             task(title: "delta", scheduledDate: "", priority: .none, order: 3, createdAt: base),
             task(title: "delta", scheduledDate: "", priority: .none, order: 3, createdAt: base),
-            task(title: "epsilon", scheduledDate: "2026-05-12", priority: .low, order: 3, createdAt: base),
+            task(title: "epsilon", scheduledDate: "2026-05-12", dueDate: "2026-05-18", priority: .low, order: 3, createdAt: base),
             task(title: "zeta", scheduledDate: "2026-05-12", priority: .low, order: 3, createdAt: base.addingTimeInterval(30))
         ]
     }
@@ -367,6 +387,7 @@ struct TaskOrderingTests {
     private func task(
         title: String,
         scheduledDate: String = "",
+        dueDate: String = "",
         startMin: Int = -1,
         priority: TaskPriority = .none,
         order: Int,
@@ -374,6 +395,7 @@ struct TaskOrderingTests {
     ) -> AppTask {
         let task = AppTask(title: title)
         task.scheduledDate = scheduledDate
+        task.dueDate = dueDate
         task.scheduledStartMin = startMin
         task.priority = priority
         task.order = order

@@ -36,13 +36,20 @@ import SwiftData
 /// devices can express it and the remainder is preserved rather than reset.
 ///
 /// The other direction is the dangerous one and is handled by
-/// ``publishedPairs(currentMirrors:stored:on:)``. A Mac shown a stored `.dueDate` has no field for
-/// it and projects it onto `Date` — the nearest of its three — so the two devices very nearly
-/// agree. If the Mac then wrote that projection back it would silently destroy the phone's choice,
-/// which is precisely the failure this ticket was warned about. It does not: a mirror whose value
-/// is *already the projection of what is stored* is treated as unchanged and the stored mode is
-/// left alone. The Mac overwrites a mode only when the user has actually moved the chip somewhere
-/// other than where it was drawn.
+/// ``publishedPairs(currentMirrors:stored:on:)``. A Mac shown a stored `.dueDate` used to have no
+/// field for it and projected it onto `Date` — the nearest of its three — so the two devices very
+/// nearly agreed. If the Mac then wrote that projection back it would silently destroy the phone's
+/// choice, which is precisely the failure this ticket was warned about. It does not: a mirror
+/// whose value is *already the projection of what is stored* is treated as unchanged and the
+/// stored mode is left alone. The Mac overwrites a mode only when the user has actually moved the
+/// chip somewhere other than where it was drawn.
+///
+/// **That guard is now a round-trip check rather than a loss guard**, and it is kept for the
+/// reason it would be needed again. The owner's 2026-11-01 decision ([[T-9742]]) gave
+/// `TaskSortField` Due Date and Newest, so every mode in the record has an exact field and the
+/// projection loses nothing — a Mac redrawing a stored `.dueDate` now draws Due Date and publishes
+/// `dueDate` straight back. The next setting one platform can express and the other cannot will
+/// arrive with the guard already in place.
 ///
 /// Unknown pairs survive the same way, and more cheaply: a publish starts from the stored map and
 /// overrides only the keys this platform owns, so `allTasks.showCompleted` — an iOS key with no
@@ -310,25 +317,22 @@ enum CadenceLookPreferenceStore {
     /// A record value as this mirror spells it, or `nil` when the record holds something the
     /// mirror's own vocabulary cannot name at all.
     ///
-    /// `.dueDate` and `.newest` have no `TaskSortField`, and they **project onto `Date`** rather
-    /// than answering `nil`: a device drawing the nearest of the three shared fields very nearly
-    /// agrees with one that stored a mode, and refusing the value would leave the two showing
-    /// unrelated orders with nothing on screen saying why. Since [[T-8731]] the Inbox and All
-    /// Tasks draw those three fields on *both* platforms, so this projection is what the record
-    /// hands either of them; `CadenceTaskSortMode.macOSSortPair` is the same rule applied once, to
-    /// a phone's retired local value, and the two are deliberately the same answer. The projection is safe to draw only
-    /// because `publishedPairs` refuses to write it back — see this type's note.
+    /// **It is `CadenceTaskSortMode.macOSSortPair`, asked rather than restated.** It used to be a
+    /// `switch` of its own that happened to give the same answers, with `.dueDate` and `.newest`
+    /// flattened onto `Date` because the Mac had no field for either. The owner's 2026-11-01
+    /// decision ([[T-9742]]) gave it both, so the projection is now a one-to-one correspondence and
+    /// there is nothing left for a second spelling to disagree about: this reads the one mapping.
+    ///
+    /// `nil` is still reachable, and still means what it meant — a record written by some later
+    /// build, naming a mode neither vocabulary has. The mirror then keeps whatever this device
+    /// holds rather than guessing.
     static func mirrorValue(fromRecord value: String, codec: Codec) -> String? {
         switch codec {
         case .verbatim:
             return value
         case .macOSSortField:
             guard let mode = CadenceTaskSortMode(rawValue: value) else { return nil }
-            switch mode {
-            case .listOrder: return TaskSortField.custom.rawValue
-            case .priority: return TaskSortField.priority.rawValue
-            case .doDate, .dueDate, .newest: return TaskSortField.date.rawValue
-            }
+            return mode.macOSSortPair.field.rawValue
         }
     }
 

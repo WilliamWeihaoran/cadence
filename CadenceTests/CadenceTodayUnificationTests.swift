@@ -1845,12 +1845,28 @@ struct CadenceTodaySortVocabularyTests {
 
     /// Every retiring `TaskSortField`, mapped — and mapped **exhaustively**, so a field added later
     /// cannot fall through to the default unnoticed.
+    ///
+    /// Two were added later, by the owner's 2026-11-01 decision on [[T-9742]], and this is the
+    /// test that would have caught them falling through: both now have a named mode of their own
+    /// instead of landing on `.doDate`. The raw values are pinned in order because they are the
+    /// on-disk spelling of three live preference keys and the order is the Mac menu's.
     @Test func everyRetiredMacOSSortFieldMapsOntoANamedMode() {
         let mapped = TaskSortField.allCases.map {
             CadenceTaskSortMode.migratedFromMacOSTodaySortField($0.rawValue)
         }
-        #expect(mapped == [.listOrder, .doDate, .priority])
-        #expect(TaskSortField.allCases.map(\.rawValue) == ["Custom", "Date", "Priority"])
+        #expect(mapped == [.listOrder, .doDate, .dueDate, .priority, .newest])
+        #expect(
+            TaskSortField.allCases.map(\.rawValue)
+                == ["Custom", "Date", "Due Date", "Priority", "Newest"]
+        )
+        // The do-date field keeps the raw value every Mac has on disk and is *drawn* as "Do Date":
+        // "Date" beside "Due Date" names no date at all. Changing the raw value instead would
+        // orphan every saved sort preference.
+        #expect(TaskSortField.date.pickerLabel == "Do Date")
+        #expect(TaskSortField.date.rawValue == "Date")
+        for field in TaskSortField.allCases where field != .date {
+            #expect(field.pickerLabel == field.rawValue, "\(field.rawValue)")
+        }
     }
 
     /// **The fallback, which is the whole point of the ticket.** Nil, empty, the *other*
@@ -1864,7 +1880,8 @@ struct CadenceTodaySortVocabularyTests {
             "",
             "date",                       // right vocabulary, wrong case
             "doDate",                     // the *new* vocabulary in the *old* key
-            "Newest",                     // a mode macOS never had
+            "newest",                     // the right vocabulary since [[T-9742]], wrong case
+            "Due date",                   // likewise: the label's spelling, miscapitalised
             "Ascending",                  // the Order chip's value in the Sort key
             "\u{1F600}"
         ]
@@ -2015,7 +2032,8 @@ struct CadenceTodaySortVocabularyTests {
             let code = try strippingComments(sourceFile(path))
             #expect(code.contains("\"Order\""), "\(path) lost its Order chip")
         }
-        #expect(TaskSortField.allCases.count == 3)
+        // Five since [[T-9742]] gave the Mac the two fields iOS kept — Due Date and Newest.
+        #expect(TaskSortField.allCases.count == 5)
         #expect(TaskSortDirection.allCases.count == 2)
     }
 

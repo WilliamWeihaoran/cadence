@@ -75,17 +75,25 @@ struct CadenceLookPreferenceTests {
         }
     }
 
-    /// `.dueDate` and `.newest` have no `TaskSortField` at all. They project onto `Date`, the
-    /// nearest of the Mac's three, rather than answering `nil`: a Mac drawing the nearest thing
-    /// very nearly agrees with the phone, where a Mac refusing the value would show an unrelated
-    /// order with nothing on screen saying why. The projection is only safe because a projected
-    /// value is never published back — the next test.
-    @Test func aModeTheMacCannotNameProjectsOntoItsNearestField() {
+    /// **Every mode the record can carry now has a field of its own** ([[T-9742]]).
+    ///
+    /// `.dueDate` and `.newest` used to have none and were projected onto `Date`, the nearest of
+    /// the Mac's three: a Mac drawing the nearest thing very nearly agrees with the phone, where a
+    /// Mac refusing the value would show an unrelated order with nothing on screen saying why.
+    /// That was a loss, and the owner's 2026-11-01 decision reversed it by widening
+    /// `TaskSortField` instead. The record itself needed no migration — it was always the larger
+    /// vocabulary, so these five raw values are the five it already stored.
+    @Test func everyRecordedModeNamesAFieldOfItsOwn() {
         #expect(Store.mirrorValue(fromRecord: "listOrder", codec: .macOSSortField) == TaskSortField.custom.rawValue)
         #expect(Store.mirrorValue(fromRecord: "priority", codec: .macOSSortField) == TaskSortField.priority.rawValue)
         #expect(Store.mirrorValue(fromRecord: "doDate", codec: .macOSSortField) == TaskSortField.date.rawValue)
-        #expect(Store.mirrorValue(fromRecord: "dueDate", codec: .macOSSortField) == TaskSortField.date.rawValue)
-        #expect(Store.mirrorValue(fromRecord: "newest", codec: .macOSSortField) == TaskSortField.date.rawValue)
+        #expect(Store.mirrorValue(fromRecord: "dueDate", codec: .macOSSortField) == TaskSortField.dueDate.rawValue)
+        #expect(Store.mirrorValue(fromRecord: "newest", codec: .macOSSortField) == TaskSortField.newest.rawValue)
+        // Distinct, which is the half that says nothing was flattened: two modes sharing a field
+        // is exactly the state this ticket ended.
+        let drawn = ["listOrder", "priority", "doDate", "dueDate", "newest"]
+            .compactMap { Store.mirrorValue(fromRecord: $0, codec: .macOSSortField) }
+        #expect(Set(drawn).count == drawn.count)
         // A mode neither vocabulary knows is refused rather than guessed at, so the mirror keeps
         // whatever the person set on this device.
         #expect(Store.mirrorValue(fromRecord: "quarterlyReview", codec: .macOSSortField) == nil)
@@ -93,23 +101,46 @@ struct CadenceLookPreferenceTests {
 
     // MARK: - The failure this ticket was warned about
 
-    /// **A Mac drawing a projection does not write the projection back.**
+    /// **A Mac redrawing what is stored does not rewrite it**, for every mode in the record.
     ///
-    /// The phone chose Due Date. The Mac has no such field, so it draws `Date`. If publishing then
-    /// treated `Date` as a change it would store `doDate` and silently destroy a setting the Mac
-    /// never had a control for — one platform overwriting a setting the other cannot express,
-    /// which is the whole hazard. A mirror already holding the projection of what is stored counts
-    /// as unchanged.
-    @Test func aMacRedrawingAModeItCannotExpressLeavesTheStoredModeAlone() {
-        let stored = ["allTasks.mode": "dueDate"]
-        let asDrawn = ["allTasksSortField": TaskSortField.date.rawValue]
-
-        let published = Store.publishedPairs(currentMirrors: asDrawn, stored: stored, on: .macOS)
-        #expect(published["allTasks.mode"] == "dueDate", "the Mac overwrote a mode it cannot name")
+    /// This used to be the narrower claim that a Mac shown `.dueDate` drew `Date` and did not
+    /// publish `doDate` back, destroying a setting it had no control for. Since [[T-9742]] the Mac
+    /// *has* the control, so the premise is gone and what remains is the stronger property the
+    /// guard really provides: round-tripping the record through this device's mirrors is the
+    /// identity, so merely opening a page never bumps anyone's stored sort. Asserted over all five
+    /// modes rather than the one that used to be lossy — a future field that collides with another
+    /// would fail here.
+    @Test func redrawingEveryStoredModeLeavesTheRecordByteIdentical() {
+        for mode in CadenceTaskSortMode.allCases {
+            let stored = ["allTasks.mode": mode.rawValue]
+            let asDrawn = Store.mirrorValue(fromRecord: mode.rawValue, codec: .macOSSortField)
+            #expect(asDrawn != nil, "\(mode.rawValue) has no field to draw")
+            let published = Store.publishedPairs(
+                currentMirrors: ["allTasksSortField": asDrawn ?? ""],
+                stored: stored,
+                on: .macOS
+            )
+            #expect(published["allTasks.mode"] == mode.rawValue, "redrawing \(mode.rawValue) rewrote it")
+        }
 
         // And the moment the person actually moves the chip somewhere else, it *is* a change.
         let moved = ["allTasksSortField": TaskSortField.priority.rawValue]
-        #expect(Store.publishedPairs(currentMirrors: moved, stored: stored, on: .macOS)["allTasks.mode"] == "priority")
+        #expect(
+            Store.publishedPairs(
+                currentMirrors: moved,
+                stored: ["allTasks.mode": "dueDate"],
+                on: .macOS
+            )["allTasks.mode"] == "priority"
+        )
+        // Including onto one of the two fields this build just gained: a Mac choosing Due Date
+        // now reaches the phone as Due Date rather than as the do-date order it used to flatten to.
+        #expect(
+            Store.publishedPairs(
+                currentMirrors: ["allTasksSortField": TaskSortField.dueDate.rawValue],
+                stored: ["allTasks.mode": "doDate"],
+                on: .macOS
+            )["allTasks.mode"] == "dueDate"
+        )
     }
 
     /// A pair this platform has no mirror for rides through its write untouched — an iOS

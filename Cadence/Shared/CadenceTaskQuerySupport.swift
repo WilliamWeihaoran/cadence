@@ -576,9 +576,21 @@ enum CadenceTaskQuerySupport {
     /// same reason (T-1077): `.tie` is precisely when the rows on screen are in `order`, so it is
     /// precisely when a dragged row lands where it was dropped.
     ///
-    /// The two modes `TaskOrdering` already spells delegate rather than restate, exactly as
-    /// `sortTasks` did before the split — the mapping is `migratedFromMacOSTodaySortField`'s and
+    /// **Every mode but `.listOrder` delegates rather than restates**, exactly as `sortTasks` did
+    /// before the split — the mapping is `migratedFromMacOSTodaySortField`'s and
     /// `MobileTaskSortStabilityTests` measures it pair-by-pair.
+    ///
+    /// Two of them only started delegating on 2026-11-01. `.dueDate` and `.newest` had no
+    /// `TaskSortField` to delegate *to*, so they carried their own keys here and the Mac projected
+    /// both onto `Date`; the owner's decision was to widen the shared vocabulary instead of
+    /// accepting that loss, and the keys moved into `TaskOrdering` with the cases. The pair each
+    /// one passes is its own `macOSSortPair` direction, which is what makes that projection a
+    /// one-to-one correspondence rather than a flattening: `.dueDate` ships Ascending (soonest
+    /// first), `.newest` ships Descending (most recent first).
+    ///
+    /// `.listOrder` is the one that cannot delegate: its section rank is a property of the
+    /// *container* the list is drawn in, which `TaskSortField.custom` — a pure `.tie` — has no
+    /// argument for.
     static func sortKeyOrder(
         _ lhs: AppTask,
         _ rhs: AppTask,
@@ -596,15 +608,9 @@ enum CadenceTaskQuerySupport {
         case .doDate:
             return TaskOrdering.sortKeyOrder(lhs, rhs, field: .date, direction: .ascending)
         case .dueDate:
-            if lhs.dueDate != rhs.dueDate {
-                if lhs.dueDate.isEmpty { return .after }
-                if rhs.dueDate.isEmpty { return .before }
-                return .ordered(lhs.dueDate < rhs.dueDate)
-            }
-            return .tie
+            return TaskOrdering.sortKeyOrder(lhs, rhs, field: .dueDate, direction: .ascending)
         case .newest:
-            if lhs.createdAt != rhs.createdAt { return .ordered(lhs.createdAt > rhs.createdAt) }
-            return .tie
+            return TaskOrdering.sortKeyOrder(lhs, rhs, field: .newest, direction: .descending)
         }
     }
 

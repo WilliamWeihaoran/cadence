@@ -114,7 +114,9 @@ extension CadenceTaskSortMode {
         switch field {
         case .custom: return .listOrder
         case .date: return .doDate
+        case .dueDate: return .dueDate
         case .priority: return .priority
+        case .newest: return .newest
         }
     }
 
@@ -134,21 +136,53 @@ extension CadenceTaskSortMode {
     /// inert — `TaskSortField.honorsDirection`), `.doDate` is Date + Ascending, `.priority` is
     /// Priority + Descending.
     ///
-    /// **`.dueDate` and `.newest` have no twin and are projected onto Date + Ascending**, which
-    /// is the nearest field the shared vocabulary has: both are "soonest/most recent first" over a
-    /// date the Mac does not sort by. That loss is real and is tracked as its own entry rather
-    /// than buried here — the fix is to give the shared vocabulary those two fields, which is a
-    /// change to the comparator the widgets and the MCP server compile, not to these two pages.
+    /// **Since 2026-11-01 all five round-trip, and that is [[T-9742]].** `.dueDate` and `.newest`
+    /// used to have no twin and were projected onto Date + Ascending, which is what cost the iOS
+    /// Inbox and All Tasks those two modes when [[T-8731]] gave them this vocabulary. The owner's
+    /// ruling was not to accept the loss: `TaskSortField` gained `.dueDate` and `.newest`, so this
+    /// is now a one-to-one correspondence in both directions and
+    /// `migratedFromMacOSTodaySortField(macOSSortPair.field.rawValue)` is the identity on every
+    /// mode. The direction each one ships with is the one its old branch in
+    /// `CadenceTaskQuerySupport.sortKeyOrder` hard-coded: Ascending is soonest-due first,
+    /// Descending is most-recently-created first.
     var macOSSortPair: (field: TaskSortField, direction: TaskSortDirection) {
         switch self {
         case .listOrder: return (.custom, .ascending)
         case .priority: return (.priority, .descending)
         case .doDate: return (.date, .ascending)
-        case .dueDate: return (.date, .ascending)
-        case .newest: return (.date, .ascending)
+        case .dueDate: return (.dueDate, .ascending)
+        case .newest: return (.newest, .descending)
         }
     }
 }
+
+// MARK: - A picker value whose raw value is not its label
+
+/// A picker enum whose raw value is a **storage key**, not a label.
+///
+/// `CadenceEnumPickerBadge` and `iOSEnumChoiceChip` print `rawValue`, which is right for
+/// `TaskSortDirection` and `TaskGroupingMode` — enums written for those chips, whose raw values
+/// read as English — and wrong for two types here. `CadenceTaskSortMode`'s raw values are
+/// `listOrder` / `doDate`, because iOS persists them under `ios.today.sortMode`.
+/// `TaskSortField.date`'s is `"Date"`, because every Mac has it on disk — and since the owner's
+/// 2026-11-01 decision gave the Mac a Due Date field, "Date" beside "Due Date" no longer says
+/// which date it means. Conforming keeps the persisted spelling and the printed one apart, so
+/// neither widening the vocabulary (T-9742) nor adopting iOS's (T-606) meant resetting a saved
+/// preference.
+///
+/// Here rather than beside either control: both platforms draw these vocabularies now, and
+/// `Cadence/iOS/` cannot see a file under `macOS/`. It lived in `macOS/Views/TasksPanelSupportViews.swift`
+/// while the Mac was the only one that needed it.
+protocol CadenceLabelledPickerValue {
+    var pickerLabel: String { get }
+}
+
+extension CadenceTaskSortMode: CadenceLabelledPickerValue {
+    var pickerLabel: String { title }
+}
+
+/// `TaskSortField` declares `pickerLabel` itself, beside the raw values it has to differ from.
+extension TaskSortField: CadenceLabelledPickerValue {}
 
 /// The four date buckets Today **used** to be grouped into, kept only as the vocabulary a dropped
 /// `+` speaks: `CadenceTaskDropSupport.dropKey(forGroup:)` still names them to say what each kind
