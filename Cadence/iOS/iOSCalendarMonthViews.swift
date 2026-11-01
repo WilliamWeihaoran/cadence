@@ -22,6 +22,10 @@ struct iOSCalendarMonthGrid: View {
     let todayKey: String
 
     private let calendar = Calendar.current
+    /// The event a chip opened, while its editor is up ([[T-8725]]). The month agenda beside this
+    /// grid owns its editor the same way; a cell cannot, because a cell is rebuilt the moment the
+    /// grid's query moves and would take its own sheet down with it.
+    @State private var selectedEvent: iOSCalendarEventSelection?
     /// The band was 36 here and 22 in `iOSCalendarMonthStack`, for the same row of the same grid.
     /// One figure now; the reasoning for which of the two survived is on the constant.
     private var weekdayHeaderHeight: CGFloat { CadenceCalendarWeekdayHeaderMetrics.bandHeight + iOSCalendarTypographyMetrics.lineGain(CadenceCalendarWeekdayHeaderMetrics.labelSize, at: dynamicTypeSize, scaling: scaling) }
@@ -46,13 +50,18 @@ struct iOSCalendarMonthGrid: View {
                     tasks: CadenceScheduleSupport.items(on: key, in: monthTasksByDate),
                     events: CadenceScheduleSupport.items(on: key, in: eventsByDate),
                     todayKey: todayKey,
-                    minHeight: rowHeight
+                    minHeight: rowHeight,
+                    onOpenEvent: { selectedEvent = iOSCalendarEventSelection(event: $0) }
                 ) {
                     selectedDate = date
                 }
             }
         }
         .background(Theme.bg)
+        // A chip opens its event here, in the grid, for the reason `selectedEvent` records.
+        .sheet(item: $selectedEvent) { selection in
+            iOSCalendarEventEditSheet(event: selection.event)
+        }
     }
 }
 
@@ -310,6 +319,28 @@ struct iOSCalendarMonthScrollingGrid<Cell: View>: View {
     }
 }
 
+/// What a Month-grid chip does when it is drawn in a band that opens its items ([[T-8725]]).
+///
+/// The Week band's `iOSCalendarAllDayChipOpen` is the same four modifiers for the same reason, and
+/// is private to its own file and pinned there verbatim by a source census; this is deliberately
+/// not a rename of it. `nil` leaves the chip exactly as it was — which is what the reserved,
+/// hidden copy inside the select-the-day `Button` wants.
+private struct iOSCalendarMonthChipOpen: ViewModifier {
+    let onOpen: (() -> Void)?
+
+    func body(content: Content) -> some View {
+        if let onOpen {
+            content
+                .contentShape(Rectangle())
+                .onTapGesture { onOpen() }
+                .accessibilityAddTraits(.isButton)
+                .accessibilityAction { onOpen() }
+        } else {
+            content
+        }
+    }
+}
+
 private struct iOSCalendarMonthDayCell: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.cadenceTypographyScaling) private var scaling
@@ -321,7 +352,16 @@ private struct iOSCalendarMonthDayCell: View {
     /// The grid's observed day ([[T-5010]]) — the cell's today badge and wash compare against it.
     let todayKey: String
     let minHeight: CGFloat
+    /// Opens a chip's event in the grid's one editor ([[T-8725]]). **Declared before `action`**,
+    /// because the grid hands `action` as a trailing closure and that binds to whichever parameter
+    /// the memberwise initialiser puts last — the same ordering rule
+    /// `iOSCalendarTimelineDayHeader` records for its own opener.
+    let onOpenEvent: (EKEvent) -> Void
     let action: () -> Void
+    // T-201's rule: the page's `iOSTaskInspectorHost` presents, this cell does not. A cell in a
+    // scrolling month grid is rebuilt whenever the day's tasks move, so a sheet it owned would go
+    // down with it the first time the panel completed the task.
+    @Environment(\.iOSTaskInspector) private var taskInspector
 
     private let calendar = Calendar.current
     private var isToday: Bool { DateFormatters.dateKey(from: date) == todayKey }
@@ -412,74 +452,16 @@ private struct iOSCalendarMonthDayCell: View {
     var body: some View {
         Button(action: action) {
             VStack(alignment: .leading, spacing: 5) {
-                // No month abbreviation beside the 1st. The toolbar heading names the month, and
-                // now that it is derived from the middle of the visible window rather than from the
-                // top row it names the month the grid is actually showing — so a cell repeating it
-                // was the second answer to a question already answered, in the one place with the
-                // least room for it. (macOS keeps its abbreviation, for a reason that does not
-                // apply here: its grid tiles discrete month blocks, so a day can be drawn on
-                // another month's page and needs to say so. These rows are one continuous run.)
-                HStack(spacing: 6) {
-                    Text(DateFormatters.dayNumber.string(from: date))
-                        .cadenceFont(.metadata, base: 12, weight: dateLabelWeight)
-                        .foregroundStyle(dateLabelColor)
-                        .frame(width: 25 + iOSCalendarTypographyMetrics.lineGain(12, at: dynamicTypeSize, scaling: scaling), height: 25 + iOSCalendarTypographyMetrics.lineGain(12, at: dynamicTypeSize, scaling: scaling))
-                        .background(dateBadgeFill)
-                        .clipShape(Circle())
-                        .overlay {
-                            // Today, when it is also the selected day. Both take the solid fill, so
-                            // without this the "today" marker disappears the moment you tap it.
-                            if badge.showsTodayRing {
-                                Circle()
-                                    .strokeBorder(Theme.blue, lineWidth: 1.5)
-                                    .padding(-2.5)
-                            }
-                        }
-
-                    Spacer(minLength: 0)
-
-                    // The same `itemCount` the accessibility label reads, so the capsule and the
-                    // announcement cannot state two numbers.
-                    if itemCount > 0 {
-                        Text("\(itemCount)")
-                            .cadenceFont(.metadata, base: 9, weight: .bold)
-                            .foregroundStyle(Theme.dim)
-                            .monospacedDigit()
-                            .padding(.horizontal, 6)
-                            .frame(height: 18 + iOSCalendarTypographyMetrics.lineGain(9, at: dynamicTypeSize, scaling: scaling))
-                            .background(Theme.surfaceElevated.opacity(0.52))
-                            .clipShape(Capsule())
-                    }
-                }
-                .padding(.top, 6)
-                .padding(.horizontal, 7)
-
-                VStack(alignment: .leading, spacing: 3) {
-                    ForEach(visibleEvents, id: \.calendarItemIdentifier) { event in
-                        iOSCalendarMiniChip(
-                            title: iOSCalendarEventSupport.title(for: event),
-                            icon: event.isAllDay ? "calendar" : "calendar.badge.clock",
-                            color: iOSCalendarEventSupport.color(for: event.calendar),
-                            isEvent: true,
-                            timeLabel: Self.timeLabel(for: event, on: date)
-                        )
-                    }
-                    ForEach(visibleTasks) { task in
-                        iOSCalendarMiniChip(
-                            title: TaskTitleSupport.displayTitle(task.title, fallback: TaskTitleSupport.defaultCompactDisplayTitle),
-                            icon: "circle.fill",
-                            color: Color(hex: task.containerColor),
-                            completion: .resolve(task: task)
-                        )
-                    }
-                    if overflow > 0 {
-                        Text(CadenceTaskSurfaceOptions.moreLabel(hidden: overflow))
-                            .cadenceFont(.metadata, base: 9, weight: .semibold)
-                            .foregroundStyle(Theme.subdued)
-                            .padding(.horizontal, 5)
-                    }
-                }
-                .padding(.horizontal, 6)
+                dateHeaderRow
+                // **Reserved, not drawn** ([[T-8725]]). The chips a person sees are the ones in
+                // `chipBand` below, which is drawn OVER this Button rather than inside its label:
+                // a tap inside a button's label is arbitrated against the button's own gesture and
+                // may lose, while a chip drawn over it is simply the topmost hit-testable thing at
+                // that point. That is how the Week band's header already opens its chips, and this
+                // placeholder is the same two subviews in the same order at the same spacing, so
+                // the two stacks cannot drift apart into two layouts.
+                chipStack(opens: false)
+                    .hidden()
 
                 Spacer(minLength: 0)
             }
@@ -503,6 +485,7 @@ private struct iOSCalendarMonthDayCell: View {
             }
         }
         .buttonStyle(.iosPressable)
+        .overlay(alignment: .topLeading) { chipBand }
         // The count capsule this cell draws, and the selection its blue border draws. Neither
         // reached VoiceOver: the sibling agenda cell had the trait and this one did not, in the
         // same grid, off the same tap (T-573).
@@ -510,6 +493,119 @@ private struct iOSCalendarMonthDayCell: View {
             CadenceCalendarDayAccessibility.countedDayLabel(date: date, isToday: isToday, itemCount: itemCount)
         )
         .accessibilityAddTraits(isSelected ? [.isSelected] : [])
+        // `.contain`, not `.combine`: the select-the-day button and each openable chip are
+        // separate elements, and a combined cell would fold them into one that VoiceOver can only
+        // select the day from. The Week band's day header is `.contain` for the same reason.
+        .accessibilityElement(children: .contain)
+    }
+
+    /// The day number and the count capsule — the one row of the cell a chip is never drawn over.
+    private var dateHeaderRow: some View {
+        // No month abbreviation beside the 1st. The toolbar heading names the month, and
+        // now that it is derived from the middle of the visible window rather than from the
+        // top row it names the month the grid is actually showing — so a cell repeating it
+        // was the second answer to a question already answered, in the one place with the
+        // least room for it. (macOS keeps its abbreviation, for a reason that does not
+        // apply here: its grid tiles discrete month blocks, so a day can be drawn on
+        // another month's page and needs to say so. These rows are one continuous run.)
+        HStack(spacing: 6) {
+            Text(DateFormatters.dayNumber.string(from: date))
+                .cadenceFont(.metadata, base: 12, weight: dateLabelWeight)
+                .foregroundStyle(dateLabelColor)
+                .frame(width: 25 + iOSCalendarTypographyMetrics.lineGain(12, at: dynamicTypeSize, scaling: scaling), height: 25 + iOSCalendarTypographyMetrics.lineGain(12, at: dynamicTypeSize, scaling: scaling))
+                .background(dateBadgeFill)
+                .clipShape(Circle())
+                .overlay {
+                    // Today, when it is also the selected day. Both take the solid fill, so
+                    // without this the "today" marker disappears the moment you tap it.
+                    if badge.showsTodayRing {
+                        Circle()
+                            .strokeBorder(Theme.blue, lineWidth: 1.5)
+                            .padding(-2.5)
+                    }
+                }
+
+            Spacer(minLength: 0)
+
+            // The same `itemCount` the accessibility label reads, so the capsule and the
+            // announcement cannot state two numbers.
+            if itemCount > 0 {
+                Text("\(itemCount)")
+                    .cadenceFont(.metadata, base: 9, weight: .bold)
+                    .foregroundStyle(Theme.dim)
+                    .monospacedDigit()
+                    .padding(.horizontal, 6)
+                    .frame(height: 18 + iOSCalendarTypographyMetrics.lineGain(9, at: dynamicTypeSize, scaling: scaling))
+                    .background(Theme.surfaceElevated.opacity(0.52))
+                    .clipShape(Capsule())
+            }
+        }
+        .padding(.top, 6)
+        .padding(.horizontal, 7)
+    }
+
+    /// The chips a person sees and taps, drawn ABOVE the select-the-day `Button` ([[T-8725]]).
+    ///
+    /// It reproduces the Button's own stack exactly — the same `dateHeaderRow`, the same
+    /// `chipStack`, the same 5pt spacing and the same frame — with the half it does not own
+    /// hidden, so the chips land precisely on the space reserved for them whatever the text size
+    /// does to the day badge. There is no second layout and no offset figure to keep in step.
+    private var chipBand: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            // The day number's space. A tap on the day number belongs to the Button underneath,
+            // and a hidden view is not hit-tested, so this reserves the height and takes nothing.
+            dateHeaderRow
+                .hidden()
+
+            chipStack(opens: true)
+
+            Spacer(minLength: 0)
+        }
+        .frame(maxWidth: .infinity, minHeight: minHeight, alignment: .topLeading)
+    }
+
+    /// The day's chips, events first, then the overflow line.
+    ///
+    /// **`opens` is the whole difference between the two copies**: the reserved one inside the
+    /// Button draws the same shapes and takes no taps (it is `.hidden()` anyway), and the one in
+    /// `chipBand` opens its item. A chip that opens is the Mac's Month behaviour
+    /// (`calendarTaskChipInteractions`, `calendarEventChipEditor`) and iOS's own Week band's; this
+    /// cell wrapped everything in one select-the-day `Button`, so tapping "Dentist" selected the
+    /// date and opened nothing ([[T-8725]], under [[T-8201]]).
+    private func chipStack(opens: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            ForEach(visibleEvents, id: \.calendarItemIdentifier) { event in
+                iOSCalendarMiniChip(
+                    title: iOSCalendarEventSupport.title(for: event),
+                    icon: event.isAllDay ? "calendar" : "calendar.badge.clock",
+                    color: iOSCalendarEventSupport.color(for: event.calendar),
+                    isEvent: true,
+                    timeLabel: Self.timeLabel(for: event, on: date)
+                )
+                .modifier(iOSCalendarMonthChipOpen(onOpen: opens ? { onOpenEvent(event) } : nil))
+            }
+            ForEach(visibleTasks) { task in
+                iOSCalendarMiniChip(
+                    title: TaskTitleSupport.displayTitle(task.title, fallback: TaskTitleSupport.defaultCompactDisplayTitle),
+                    icon: "circle.fill",
+                    color: Color(hex: task.containerColor),
+                    completion: .resolve(task: task)
+                )
+                .modifier(iOSCalendarMonthChipOpen(onOpen: opens ? { taskInspector(task) } : nil))
+            }
+            if overflow > 0 {
+                // **The one line in the band that still selects the day.** It names no item, so
+                // there is nothing for it to open; the hidden items are read in the month detail
+                // pane, which is the path this cell has always offered for them. Taking no hit
+                // lets the tap reach the Button underneath, exactly as it did before.
+                Text(CadenceTaskSurfaceOptions.moreLabel(hidden: overflow))
+                    .cadenceFont(.metadata, base: 9, weight: .semibold)
+                    .foregroundStyle(Theme.subdued)
+                    .padding(.horizontal, 5)
+                    .allowsHitTesting(false)
+            }
+        }
+        .padding(.horizontal, 6)
     }
 
     /// Exactly what the count capsule shows — one number, read once.
