@@ -159,7 +159,6 @@ struct SettingsTemplatesSection: View {
                         Label(NoteTemplateLibrary.resetTemplateTitle, systemImage: "arrow.counterclockwise")
                     }
                     .disabled(!NoteTemplateLibrary.isCustomized(selectedTemplate, overridesRaw: templateOverridesRaw))
-                    .opacity(NoteTemplateLibrary.isCustomized(selectedTemplate, overridesRaw: templateOverridesRaw) ? 1 : 0.45)
                 }
 
                 // `TemplateEditorField` used to sit at the bottom of this file: an eyebrow over an

@@ -182,7 +182,10 @@ struct TildeContainerPicker: View {
             Divider().background(Theme.borderSubtle)
 
             if items.isEmpty {
-                Text("No results")
+                // [[T-9823]]: the house sentence for a list narrowed to nothing, as the context and
+                // calendar pickers beside it say "No matching contexts" / "No matching calendars".
+                // Inbox always matches an empty query, so this only draws once something is typed.
+                Text(CadenceEmptyStateCopy.listsTitle(isNarrowed: true))
                     .font(.system(size: 13))
                     .foregroundStyle(Theme.dim)
                     .padding(.horizontal, 12)

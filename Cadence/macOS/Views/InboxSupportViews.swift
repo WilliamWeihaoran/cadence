@@ -113,13 +113,17 @@ private struct AppleReminderTaskRow: View {
         }
         .padding(.vertical, 8)
         .contentShape(Rectangle())
+        // [[T-9821]]: the task row's hover, at the task row's radius. This row sits in the Inbox
+        // list between `MacTaskRow`s and lit a purple 8pt wash and rim where they light
+        // `TaskHoverVisuals`' neutral one at `Theme.radiusCard` -- the one hover in the list that
+        // took a hue, against that type's "every task row hovers the same" rule.
         .background(
-            RoundedRectangle(cornerRadius: 8)
-                .fill(isHovered ? Theme.purple.opacity(0.06) : Color.clear)
+            RoundedRectangle(cornerRadius: Theme.radiusCard)
+                .fill(TaskHoverVisuals.hoverFill(isHovered: isHovered))
         )
         .overlay {
-            RoundedRectangle(cornerRadius: 8)
-                .strokeBorder(isHovered ? Theme.purple.opacity(0.18) : Color.clear, lineWidth: 1)
+            RoundedRectangle(cornerRadius: Theme.radiusCard)
+                .strokeBorder(TaskHoverVisuals.borderColor(isHovered: isHovered), lineWidth: 1)
         }
         .overlay(alignment: .bottom) {
             Rectangle().fill(Theme.borderSubtle.opacity(0.22)).frame(height: 0.5)

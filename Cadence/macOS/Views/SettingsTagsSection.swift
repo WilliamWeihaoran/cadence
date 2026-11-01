@@ -65,7 +65,6 @@ struct SettingsTagsSection: View {
                                     Label("Create Tag", systemImage: "plus")
                                 }
                                 .disabled(!canCreateTag)
-                                .opacity(canCreateTag ? 1 : 0.45)
                             }
                         }
                     }
@@ -381,7 +380,6 @@ private struct SettingsTagRow: View {
                     Text("Save")
                 }
                 .disabled(!canSave)
-                .opacity(canSave ? 1 : 0.45)
             }
         }
     }
