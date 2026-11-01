@@ -144,16 +144,21 @@ private struct CalendarBoardWindowNavigationControl: View {
 
     var body: some View {
         HStack(spacing: 6) {
-            CalendarIconGhostButton(systemImage: "chevron.left", isEnabled: canMoveBack) {
+            // [[T-9672]]: the name and the tooltip go IN, not on top. They were stacked over the
+            // button's own generic "Previous"/"Next" label and tooltip, so which one a hover or
+            // VoiceOver got was whichever nested modifier SwiftUI honours.
+            CalendarIconGhostButton(
+                systemImage: "chevron.left",
+                accessibilityLabel: "Previous 7 days",
+                help: canMoveBack ? nil : "Board starts at today",
+                isEnabled: canMoveBack
+            ) {
                 moveWindow(-1)
             }
-            .accessibilityLabel("Previous 7 days")
-            .help(canMoveBack ? "Previous 7 days" : "Board starts at today")
 
-            CalendarIconGhostButton(systemImage: "chevron.right", isEnabled: true) {
+            CalendarIconGhostButton(systemImage: "chevron.right", accessibilityLabel: "Next 7 days", isEnabled: true) {
                 moveWindow(1)
             }
-            .cadenceControlLabel("Next 7 days")
         }
         .padding(.horizontal, 5)
         .padding(.vertical, 3)
@@ -176,6 +181,7 @@ private struct CalendarToolbarZoomControl: View {
         HStack(spacing: 6) {
             CalendarIconGhostButton(
                 systemImage: "minus",
+                accessibilityLabel: "Zoom out",
                 isEnabled: zoomLevel > range.lowerBound
             ) {
                 if zoomLevel > range.lowerBound { zoomLevel -= 1 }
@@ -188,6 +194,7 @@ private struct CalendarToolbarZoomControl: View {
 
             CalendarIconGhostButton(
                 systemImage: "plus",
+                accessibilityLabel: "Zoom in",
                 isEnabled: zoomLevel < range.upperBound
             ) {
                 if zoomLevel < range.upperBound { zoomLevel += 1 }
@@ -208,6 +215,10 @@ private struct CalendarToolbarZoomControl: View {
 
 private struct CalendarIconGhostButton: View {
     let systemImage: String
+    /// Stated by the caller rather than guessed from the glyph ([[T-9672]]): a chevron does not
+    /// know it moves seven days.
+    let accessibilityLabel: String
+    var help: String? = nil
     let isEnabled: Bool
     let action: () -> Void
 
@@ -219,18 +230,9 @@ private struct CalendarIconGhostButton: View {
             isEnabled: isEnabled,
             size: 24,
             iconSize: 10,
+            help: help,
             action: action
         )
-    }
-
-    private var accessibilityLabel: String {
-        switch systemImage {
-        case "minus": return "Zoom out"
-        case "plus": return "Zoom in"
-        case "chevron.left": return "Previous"
-        case "chevron.right": return "Next"
-        default: return "Calendar action"
-        }
     }
 }
 

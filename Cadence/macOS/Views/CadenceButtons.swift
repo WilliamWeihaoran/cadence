@@ -88,6 +88,10 @@ struct CadenceIconButton: View {
     var isEnabled = true
     var size: CGFloat = CadenceDesktopMetrics.compactControlHeight
     var iconSize: CGFloat = 11
+    /// The tooltip, when it should say more than the name ([[T-9672]]): a disabled control can
+    /// say why it is disabled. `nil` is the name. A second `.help` stacked on this button by the
+    /// caller is not the way to say it -- which of two nested modifiers wins is SwiftUI's call.
+    var help: String? = nil
     let action: () -> Void
 
     @State private var isHovered = false
@@ -107,7 +111,7 @@ struct CadenceIconButton: View {
         .buttonStyle(.plain)
         .disabled(!isEnabled)
         .accessibilityLabel(accessibilityLabel)
-        .help(accessibilityLabel)
+        .help(help ?? accessibilityLabel)
         .onHover { isHovered = $0 }
         .animation(.easeOut(duration: 0.12), value: isHovered)
     }

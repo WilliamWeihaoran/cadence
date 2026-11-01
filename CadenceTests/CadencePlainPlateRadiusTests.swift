@@ -49,7 +49,8 @@ import Testing
                 guard let start = Self.buttonStart(above: index, in: lines) else { continue }
                 scanned += 1
                 let label = Array(lines[start..<index])
-                guard let radius = Self.plateRadius(of: label, declarations: Array(lines[max(0, start - 4)..<start])) else {
+                guard let radius = Self.plateRadius(of: label, declarations: Array(lines[max(0, start - 4)..<start]))
+                    ?? Self.forwardedPlateRadius(of: label, buttonStart: start, in: lines) else {
                     continue
                 }
                 if radius == "Theme.radiusControl" || radius == "10" {
@@ -99,6 +100,74 @@ import Testing
         }
         guard let range = text.range(of: needle, options: .backwards) else { return nil }
         return argument(after: range.upperBound, in: text)
+    }
+
+    /// **[[T-9671]].** The plate of a label that is a bare property name -- `label: { trigger }` --
+    /// read off that property's own `var <name>: some View {` body in the same file: the nearest
+    /// such declaration above the button, else the first below it. The scan above read only the
+    /// label closure, so the Calendar Board's event card (`label`) and the task composer's list and
+    /// section badges (`trigger`) kept a 10pt wash around their 7pt plates after T-9535.
+    static func forwardedPlateRadius(of label: [String], buttonStart: Int, in lines: [String]) -> String? {
+        let names = label.compactMap { line -> String? in
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            return trimmed.range(of: #"^[A-Za-z_][A-Za-z0-9_]*$"#, options: .regularExpression) != nil ? trimmed : nil
+        }
+        for name in names {
+            let pattern = #"^\s*(private |fileprivate )?var "# + name + #": some View \{"#
+            let isDeclaration = { (line: String) in line.range(of: pattern, options: .regularExpression) != nil }
+            let above = (0..<buttonStart).reversed().first { isDeclaration(lines[$0]) }
+            guard let declaration = above ?? (buttonStart..<lines.count).first(where: { isDeclaration(lines[$0]) }) else {
+                continue
+            }
+            var depth = 0
+            var body: [String] = []
+            for line in lines[declaration...] {
+                body.append(line)
+                depth += line.filter { $0 == "{" }.count - line.filter { $0 == "}" }.count
+                if depth <= 0, body.count > 1 { break }
+            }
+            if let radius = plateRadius(of: body, declarations: []) { return radius }
+        }
+        return nil
+    }
+
+    /// The forwarded read finds a plate behind a bare property name, above or below the button,
+    /// and finds nothing behind a name that declares no plate.
+    @Test func aForwardedLabelIsReadThroughItsDeclaration() {
+        let below = [
+            "        Button { open() } label: {",
+            "            label",
+            "        }",
+            "        .buttonStyle(.cadencePlain)",
+            "    }",
+            "    private var label: some View {",
+            "        Text(\"x\")",
+            "            .clipShape(RoundedRectangle(cornerRadius: kanbanCardCornerRadius, style: .continuous))",
+            "    }",
+        ]
+        #expect(Self.forwardedPlateRadius(of: Array(below[0..<3]), buttonStart: 0, in: below) == "kanbanCardCornerRadius")
+
+        let above = [
+            "    private var trigger: some View {",
+            "        Text(\"x\").clipShape(RoundedRectangle(cornerRadius: Theme.radiusControlCompact))",
+            "    }",
+            "    var body: some View {",
+            "        Button { toggle() } label: {",
+            "            trigger",
+            "        }",
+            "        .buttonStyle(.cadencePlain)",
+        ]
+        #expect(Self.forwardedPlateRadius(of: Array(above[4..<7]), buttonStart: 4, in: above) == "Theme.radiusControlCompact")
+
+        let unplated = [
+            "    private var glyph: some View {",
+            "        Image(systemName: \"plus\")",
+            "    }",
+            "        Button { add() } label: {",
+            "            glyph",
+            "        }",
+        ]
+        #expect(Self.forwardedPlateRadius(of: Array(unplated[3..<6]), buttonStart: 3, in: unplated) == nil)
     }
 
     /// The expression from `start` up to the first `,` or unmatched `)` at its own depth.

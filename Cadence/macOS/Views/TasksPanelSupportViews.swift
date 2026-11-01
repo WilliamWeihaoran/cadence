@@ -288,7 +288,7 @@ struct ContainerPickerBadge: View {
         Button { showPicker.toggle() } label: {
             trigger
         }
-        .buttonStyle(.cadencePlain)
+        .buttonStyle(.cadencePlain(cornerRadius: compact ? 6 : 7))
         // On the badge itself rather than on the task row that hosts it, so every surface that
         // draws this chip — the row, the composer — is named by fixing it once. It announced only
         // the container's name, so a row read "…, Inbox, button" with nothing saying Inbox was the
@@ -379,7 +379,7 @@ struct TaskSectionPickerBadge: View {
         Button { showPicker.toggle() } label: {
             trigger
         }
-        .buttonStyle(.cadencePlain)
+        .buttonStyle(.cadencePlain(cornerRadius: Theme.radiusControlCompact))
         .popover(isPresented: $showPicker) {
             VStack(alignment: .leading, spacing: 0) {
                 CadenceSearchFieldRow(query: $searchQuery, focus: $isSearchFocused) {

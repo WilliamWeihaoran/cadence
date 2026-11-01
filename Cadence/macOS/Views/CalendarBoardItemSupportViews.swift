@@ -21,12 +21,14 @@ struct CalendarBoardEventCard: View {
         } label: {
             label
         }
-        .buttonStyle(.cadencePlain)
+        // [[T-9671]]: the wash at the card's own radius, as [[T-9535]] did for the board's other
+        // plated rows; the label is a property, which is why that census did not see this one.
+        .buttonStyle(.cadencePlain(cornerRadius: kanbanCardCornerRadius))
         .contentShape(RoundedRectangle(cornerRadius: kanbanCardCornerRadius, style: .continuous))
         .onHover { isHovered = $0 }
         // T-1843: the card is its own popover's `.rect(.bounds)` anchor, so a test reading where
         // that popover lands needs the card's box and the content inside it. Same `.contain`
-        // reasoning, and the same pair of modifiers, as `CalendarBoardBundleCard` above.
+        // reasoning, and the same pair of modifiers, as `KanbanCard`.
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier(CadenceAccessibilityIdentifiers.boardEventCard(title: item.title))
         .popover(isPresented: $showPopover, attachmentAnchor: .rect(.bounds), arrowEdge: .trailing) {
