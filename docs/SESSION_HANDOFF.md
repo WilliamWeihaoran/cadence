@@ -56,23 +56,76 @@ path outside `docs/audits/` and `docs/TODO.md` is stale — and the shared check
 `./scripts/ledger-view.sh brief` is the live list (139 active entries at `e5a1da4b`); an entry's
 own lead token is the only authority, read with `head T-NNNN`. Grouped by who can move it:
 
-**Owner calls — wording, look, scope or behaviour.** Each waits on the owner's yes/no, not on code.
+**Owner calls.** Rebuilt 2026-10-31 by `ownercalls2221` at `06d7bd13`; today's and a sample of older
+citations re-read on HEAD, none yet fixed. Each line: the question, then what an agent applies on "yes".
 
-| Ticket | What it is |
-|---|---|
-| `T-8044` | Should a timed task's Month chip show its start time and sort before untimed, both platforms? |
-| `T-8243`, `T-8107`, `T-8104` | iOS chips lack due tint/marker; row menu hides dates; New Task date-chip glyphs. |
-| `T-8101`, `T-8012`, `T-7985` | Mac list-picker checkmark; Focus "Best matches / 18"; Inbox Group: By List. |
-| `T-7981`, `T-7941`, `T-7943` | Rollover banner traps tasks; iCloud card developer copy; iPad Lists double empty state. |
-| `T-8162`, `T-8163`, `T-8164` | Event-notes merge: read-only re-append; Apple edits never win; embedded-task flag. |
-| `T-7874`, `T-7931`, `T-8103`(b) | iOS Save forms drop drafts on kill; half-typed `#tag` sync window; scrim tap dismiss. |
-| `T-7290`, `T-7291` | AI draft sheet: should Return create; Mac and iOS AI sheets use different words. |
-| `T-7210`, `T-7209`(b) | AI disclosure row wording; Delete Account copy under-lists what goes. |
-| `T-7085`, `T-6984`, `T-7074` | Kanban "Column" vs "Section"; iOS Search "More" vs "Pages"; split Calendar setting. |
-| `T-7257`, `T-7259`, `T-7260` | Links tab header; links not editable or reorderable; list order is Mac-only. |
-| `T-7203`, `T-7182`(a) | Mac View-menu grouping and Cmd+O; the bundle-retirement slot hazard. |
-| `T-1840`, `T-3226`, `T-1424`, `T-16` | Delete-account scope; restore-string measurement; ASC privacy answers; logo artwork. |
-| `T-7751`, `T-7681` | Agent Mac disk 95%+ full (owner frees space); App Review screenshot device choice. |
+*Wording*
+- `T-9571` Title Case in-panel headings? Yes: "Task Notes", "Edit Tag", "Unlinked Mentions" (the last needs a `CadenceUITests` run).
+- `T-9572` Missing-access alert reuses the Settings card's per-platform sentence? Yes: one string, from `CadenceCalendarAccessNotice.detail(on:)`.
+- `T-9627` Drop "Set this tab's color and visibility." from the sidebar tab editor? Yes: the header is glyph + name.
+- `T-7210` Retitle the AI row "Selected note content"? Yes: "The note you run it on" + one shared detail, both platforms.
+- `T-7209`(b) Delete Account copy lists everything it deletes? Yes: full list, both platforms.
+- `T-7291` One word set for the AI review sheets? Yes: the Mac's ("Close", "Append to Note", "AI Task Drafts").
+- `T-7085` A board's new column is "New Column"? Yes: "New Column"/"Add column" on Kanban; "section" stays on Tasks.
+- `T-6984` iOS Search's "More" chip becomes "Pages"? Yes: chip matches its section.
+- `T-7941` Replace the iCloud card's developer copy? Yes: two plain sentences in `CadenceSyncHealth.resolve`.
+- `T-8012` Focus picker drops "Best matches / 18"? Yes: real count; "Best matches" only while searching.
+- `T-8534` Note row menus say "Delete Note"? Yes: one shared label.
+- `T-8563` One spelling for each of the five list-surface word pairs? Yes: the Mac's, as shared constants.
+- `T-8586` One empty-note placeholder? Yes: one sentence (verbs may differ by input), template row on iOS too.
+- `T-8723` Month event chips spell time the Mac's way ("9 AM", "ends 5 PM")? Yes: one shared helper.
+- `T-8645` Retire the iPhone More "Progress" eyebrow over a lone Focus row? Yes: drop single-row eyebrows.
+- `T-8542` Show a template's description in the iOS new-note menu? Yes: subtitle there; no: placeholder "Short description".
+- `T-8526`, `T-8763` One list subtitle and one task subtitle in Search and Cmd+K? Yes: the Mac's fact sets via one helper.
+
+*Look*
+- `T-9601` `.cadencePlain` takes the plate's shape (circle/capsule) on ~9 round plates? Yes: shaped wash; no: those go `.plain`.
+- `T-9603`, `T-9626` Plates that brighten themselves drop the blue wash (Focus picker/sidebar, add-card row, Cmd+K Completed)? Yes: `.plain`, own hover.
+- `T-9625` One Mac Settings switch style? Yes: regular size, system accent (drop `.small`/`Theme.blue` in the tab editor).
+- `T-8243` iOS calendar chips get the Mac's due tint and `CalendarChipDueMarker`? Yes: port both.
+- `T-8104` Unset New Task date chips show words, Do uses the sun? Yes: worded chips; flag stays on Priority.
+- `T-8044` Timed Month task chips show start time and sort first? Yes: event-chip time slot, both platforms.
+- `T-8001` Mac Today all-day band aligns to the block column? Yes: band follows the blocks.
+- `T-8941` Mac Today keeps its Timeline at the minimum window? Yes: lower a pane minimum by 4pt.
+- `T-8535` A list's Task Notes row draws the Mac's anatomy on iOS? Yes: one row.
+- `T-8587` Linked-note sheet uses a generic bar title? Yes: "Note", Done trailing.
+- `T-7257` Mac Links tab swaps "Saved Links" for iOS's "Add Link" button? Yes.
+- `T-7943` First-run iPad Lists shows one empty state? Yes: the chooser's; detail column blank.
+- `T-7421`(3) XL widget columns truncate a name above a minimum width instead of dropping it? Yes.
+
+*Behaviour or scope*
+- `T-9613` iOS Week all-day task chip opens the task, like the event chip, the Mac and `T-8725`'s ruling? Yes: opens the inspector.
+- `T-8395` Note and Focus embed circles join the 1.2s deferred completion? Yes: both platforms.
+- `T-8101` Mac list picker checks the task's current list? Yes: check and highlight open on it.
+- `T-8107` Row-menu Do/Due submenus show the current date? Yes: "Due Date: Fri, Oct 31" + checked row.
+- `T-7985` Drop Group: By List from the Mac Inbox? Yes: None / Date / Priority only.
+- `T-7981` Rollover banner gets "Not now"? Yes: dismiss for today, rows return to their groups.
+- `T-7874` iOS Save forms keep a draft across background-kill? Yes: per-sheet draft offered back; no: keep as is.
+- `T-8103`(b) Mac New Task scrim click keeps the draft? Yes: keep, as quick capture does.
+- `T-7290` Cmd+Return creates in the Mac AI draft sheet? Yes: bind Cmd+Return (plain Return stays in fields).
+- `T-7259` Saved links editable? Yes: edit via the prefilled add form; reorder waits.
+- `T-7260` A Mac list drop onto another context re-files it? Yes: re-file; no: refuse the drop.
+- `T-7074` iOS Settings shows one Week / Month / Board "Calendar view" row? Yes.
+- `T-7203` Adopt View-menu option (a), keep Cmd+O for the sidebar? Yes.
+- `T-7182`(a) Bundle-retirement hazard: leave a member alone if its schedule changed since joining? Yes.
+- `T-8981` Delete Account also deletes `Cadence Store Backups`? Yes: delete them too.
+- `T-8564` iOS column swipe-delete confirms like the Mac? Yes.
+- `T-8565` iOS list Kanban gets Show Archived? Yes.
+- `T-8562`, `T-8584` One list-editor field set; one note toolbar and `/` command set? Yes: one shared list each.
+
+*Needs the owner present (a look, an account, or hardware)*
+- `T-8724` Month-grid cell anatomy: held for a side-by-side owner look at both grids.
+- `T-9614` iOS board card lift: square corners? Yes: add a `.contextMenuPreview` rounded shape; no: close.
+- `T-8186`, `T-9571`(c), `T-2020` Go-ahead for `CadenceUITests` runs that drive the screen?
+- `T-7681` App Review screenshots: which 6.9-inch iPhone / 13-inch iPad device?
+- `T-3226`, `T-1117`, `T-1163` Test-account restore; one calendar id across devices; Mac 24-hour time.
+- `T-1424`, `T-7170`, `T-4900`, `T-16` ASC privacy answers; ad-hoc profile; `core.hooksPath`; logo art.
+
+Parked past the RC with an owner ruling or an owner-only remainder (`head` each): `T-3297`(D),
+`T-3118`, `T-3152`, `T-1920`, `T-2049`, `T-5523`, `T-1469`, `T-122`, `T-4501`. Decided 2026-10-31,
+now agent work: `T-8162`-`T-8164`, `T-8553`, `T-8573`, `T-8644`, `T-8701`, `T-8702`, `T-8725`,
+`T-8731`, `T-8732`, `T-8734`, `T-8736`-`T-8738`, `T-8765`, `T-8851`. Parked as accessibility-only: `T-7090`, `T-8646`, `T-8647`,
+`T-8741`, `T-8924`. Closed: `T-1840`, `T-7751`, `T-7931`.
 
 **On-screen checks that need an ATTENDED session.** Scheduled runs cannot drive the simulator,
 and no run can show a macOS frame while the owner's Cadence runs (`T-3259`), so these landed from
