@@ -133,7 +133,9 @@ struct CadenceChoicePickerDismissalTests {
             // panel's Stepper, so the third (Occurrences) is no longer a popover list.
             "Cadence/iOS/iOSTaskDetailSheetSections.swift": (2, 0),
             "Cadence/iOS/iOSTaskRowActionViews.swift": (2, 2),
-            "Cadence/iOS/iOSTaskViews.swift": (1, 0),
+            // Two since [[T-8731]]: the Today/list sort chip, and the generic
+            // `iOSEnumChoiceChip` the Inbox and All Tasks bar draws three of.
+            "Cadence/iOS/iOSTaskViews.swift": (2, 0),
             "Cadence/iOS/iOSTrackingEditorComponents.swift": (2, 0),
             "Cadence/macOS/Views/SettingsArchiveImportCard.swift": (1, 0),
             "Cadence/macOS/Views/SettingsCalendarWorkHoursSection.swift": (1, 0),
@@ -196,7 +198,10 @@ struct CadenceChoicePickerDismissalTests {
         // [[T-6901]] adds the standard panel's Ends picker: 33, still 3 committing.
         // [[T-8593]] makes the iOS task sheet's occurrence count the panel's Stepper: 32, still 3.
         // [[T-9122]] draws the embed card's Repeat field through the committing list: 33 and 4.
-        #expect(found.values.map(\.calls).reduce(0, +) == 33)
+        // [[T-8731]] adds `iOSEnumChoiceChip`, the one chip the Inbox and All Tasks sort/order/
+        // group bar draws three of: 34, still 4 -- a chip that writes a view preference commits
+        // nothing to the store.
+        #expect(found.values.map(\.calls).reduce(0, +) == 34)
         #expect(found.values.map(\.committing).reduce(0, +) == 4)
     }
 

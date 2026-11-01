@@ -381,10 +381,14 @@ struct iPadTodayHeaderEyebrowBudgetTests {
 
     // MARK: - The restated figures
 
-    /// `iOSTaskViewOptionsBar.fontSize`. Private, and behind `#if os(iOS)`, so this target cannot
-    /// read it; `theRestatedOptionsBarFiguresStillMatchTheSource` is what stops the copy drifting.
+    /// `iOSTaskChipMetrics.fontSize`. Behind `#if os(iOS)`, so this target cannot read it;
+    /// `theRestatedOptionsBarFiguresStillMatchTheSource` is what stops the copy drifting. It was
+    /// iOSTaskViewOptionsBar's own fontSize -- spelled without backticks because [[T-8731]] moved
+    /// it, and the comment census reads a backticked name that resolves to nothing as a finding --
+    /// until a second and third chip joined the Inbox's row and the two figures moved to one place
+    /// both controls read.
     private static let optionsChipFontSize: CGFloat = 13
-    /// `iOSTaskViewOptionsBar.horizontalPadding`, per side.
+    /// `iOSTaskChipMetrics.horizontalPadding`, per side.
     private static let optionsChipHorizontalPadding: CGFloat = 12
     /// The gap SwiftUI's own `Label` leaves between its icon and its title. Not a Cadence figure
     /// and not readable from one, so it is an allowance — deliberately generous, since overstating
@@ -674,14 +678,17 @@ struct iPadTodayHeaderEyebrowBudgetTests {
     func theRestatedOptionsBarFiguresStillMatchTheSource() throws {
         let source = try CadenceSourceScan.sourceFile("Cadence/iOS/iOSTaskViews.swift")
         #expect(source.contains("struct iOSTaskViewOptionsBar: View {"), "non-vacuity: wrong file read")
+        #expect(source.contains("enum iOSTaskChipMetrics {"), "non-vacuity: the shared figures moved")
         #expect(
-            source.contains("private static let fontSize: CGFloat = \(Int(Self.optionsChipFontSize))"),
-            "iOSTaskViewOptionsBar.fontSize moved off \(Self.optionsChipFontSize)"
+            source.contains("static let fontSize: CGFloat = \(Int(Self.optionsChipFontSize))"),
+            "iOSTaskChipMetrics.fontSize moved off \(Self.optionsChipFontSize)"
         )
         #expect(
-            source.contains("private static let horizontalPadding: CGFloat = \(Int(Self.optionsChipHorizontalPadding))"),
-            "iOSTaskViewOptionsBar.horizontalPadding moved off \(Self.optionsChipHorizontalPadding)"
+            source.contains("static let horizontalPadding: CGFloat = \(Int(Self.optionsChipHorizontalPadding))"),
+            "iOSTaskChipMetrics.horizontalPadding moved off \(Self.optionsChipHorizontalPadding)"
         )
+        // The bar reads them rather than declaring its own, which is the drift this now guards.
+        #expect(!source.contains("private static let fontSize: CGFloat"))
         // And that the second chip really is gone, which is what makes the width above one chip
         // rather than two (T-2090).
         #expect(

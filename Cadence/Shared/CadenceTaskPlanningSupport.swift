@@ -21,6 +21,31 @@ enum CadenceTaskSortMode: String, CaseIterable, Hashable, Identifiable {
     }
 }
 
+/// **How a task list is divided into sections** — the third of the three controls the Inbox and
+/// All Tasks draw, on both platforms since [[T-8731]].
+///
+/// It was declared in `macOS/Views/TasksPanelSupport.swift`, whose comment said grouping was "a
+/// macOS list-surface concern ... no other target has a grouped task list". The owner's
+/// 2026-10-31 decision under [[T-8201]] made the second half false: the iPhone and iPad draw Sort
+/// + Order + Group too, and `Cadence/iOS/` cannot see a file under `macOS/`. So it is here, with
+/// the sort vocabulary, rather than copied.
+///
+/// Here rather than in `Models/` beside `TaskSortField`: grouping has no comparator behind it and
+/// no other **target** needs it — `CadenceWidgets` and `CadenceMCPServer` order tasks and do not
+/// section them — so `Shared/`, which both platforms compile and neither extension does, is the
+/// narrowest home that reaches every surface that draws a group.
+///
+/// The raw values are persisted (`CadencePreferenceKeys.inboxGroupingMode`,
+/// `allTasksGroupingMode`, and the `*.grouping` keys in `CadenceLookPreferenceStore`'s record).
+/// Renaming a case is fine; changing a raw value silently resets every saved preference.
+enum TaskGroupingMode: String, CaseIterable, Identifiable, Sendable {
+    case none = "None"
+    case byDate = "By Date"
+    case byList = "By List"
+    case byPriority = "By Priority"
+    var id: String { rawValue }
+}
+
 // MARK: - A stored raw value as a sort mode (T-3156, T-3158)
 
 /// The stored raw value read and written as a sort mode, so a page's `sortModeBinding` can be a
@@ -90,6 +115,37 @@ extension CadenceTaskSortMode {
         case .custom: return .listOrder
         case .date: return .doDate
         case .priority: return .priority
+        }
+    }
+
+    /// **The projection the other way** — this mode as the Sort + Order pair the Inbox and All
+    /// Tasks now draw on both platforms ([[T-8731]]).
+    ///
+    /// It is not a new rule. `CadenceLookPreferenceStore.mirrorValue(fromRecord:codec:)` has been
+    /// performing exactly this projection on exactly these preferences since the look record
+    /// landed, because the Mac's three fields were the smaller vocabulary: a phone's choice
+    /// arriving on a Mac was already drawn as the nearest of Custom / Date / Priority. What
+    /// [[T-8731]] changes is which surfaces read it, not what it answers.
+    ///
+    /// Three modes round-trip exactly, and the pairs are the ones
+    /// ``migratedFromMacOSTodaySortField`` documents and
+    /// `TaskOrderingTests.everyMigratedMacOSTodaySortModeAgreesWithItsRetiredComparator`
+    /// measures: `.listOrder` is Custom (whose comparison *is* the fallback, so the direction is
+    /// inert — `TaskSortField.honorsDirection`), `.doDate` is Date + Ascending, `.priority` is
+    /// Priority + Descending.
+    ///
+    /// **`.dueDate` and `.newest` have no twin and are projected onto Date + Ascending**, which
+    /// is the nearest field the shared vocabulary has: both are "soonest/most recent first" over a
+    /// date the Mac does not sort by. That loss is real and is tracked as its own entry rather
+    /// than buried here — the fix is to give the shared vocabulary those two fields, which is a
+    /// change to the comparator the widgets and the MCP server compile, not to these two pages.
+    var macOSSortPair: (field: TaskSortField, direction: TaskSortDirection) {
+        switch self {
+        case .listOrder: return (.custom, .ascending)
+        case .priority: return (.priority, .descending)
+        case .doDate: return (.date, .ascending)
+        case .dueDate: return (.date, .ascending)
+        case .newest: return (.date, .ascending)
         }
     }
 }

@@ -1,4 +1,5 @@
 #if os(iOS)
+import SwiftData
 import SwiftUI
 
 /// **The** All Tasks / Inbox page, at every width.
@@ -39,11 +40,26 @@ struct iOSTaskCollectionPage: View {
     var showsHeader = true
     let activeTasks: [AppTask]
     let completedTasks: [AppTask]
-    @Binding var sortMode: CadenceTaskSortMode
+    /// **The Mac's three controls, on the phone and iPad too** ([[T-8731]]). This was one
+    /// `CadenceTaskSortMode` chip with no direction and no grouping; the owner's 2026-10-31
+    /// decision under [[T-8201]] was that iOS takes the Mac's model, the deciding fact being that
+    /// iOS could not reverse a sort or group at all. The vocabulary, the stored keys and the
+    /// comparator are all the Mac's — see `CadenceTaskPresentationPreferences` for what happens to
+    /// a phone's retired `ios.*.sortMode`.
+    @Binding var sortField: TaskSortField
+    @Binding var sortDirection: TaskSortDirection
+    @Binding var groupingMode: TaskGroupingMode
     @Binding var showCompleted: Bool
     // No `@Environment(\.dismiss)` (T-3155) — see `header` and `iOSCompactBackActionReader`.
     @Environment(\.horizontalSizeClass) private var horizontalSizeClass
     @Environment(RemindersManager.self) private var remindersManager
+    /// Read for `TaskGroupingMode.byList`, whose group order is the sidebar's
+    /// (`CadenceTaskQuerySupport.listGroupOrder`), exactly as macOS's `TasksListView` reads it.
+    @Query(sort: \Context.order) private var contexts: [Context]
+    /// `TaskGroupingMode.byDate`'s buckets are measured against today, so this page depends on the
+    /// day and is re-run at midnight by `.cadenceTracksDayChanges` rather than whenever something
+    /// else happens to — the pattern macOS's `TasksPanel` and iOS's Calendar page both use.
+    @State private var observedDay = CadenceObservedDay()
     // T-2088: read here as well as in `iOSTaskCollectionSections`, because the scroll is the
     // scroll *view's* to make and the sections live inside it.
     @Environment(CadenceDeepLinkManager.self) private var deepLinkManager
@@ -74,6 +90,10 @@ struct iOSTaskCollectionPage: View {
         ScrollViewReader { proxy in
             scrollBody(proxy: proxy)
         }
+        // Group: By Date buckets against today, so the page must redraw when the day turns. On the
+        // body rather than inside `scrollBody`, which is where every other adopter installs it and
+        // where `CadenceDayChangeAdoptionTests` reads it from.
+        .cadenceTracksDayChanges($observedDay)
     }
 
     /// **T-2088: a deep link to long-finished work scrolls the row it reveals into view.**
@@ -109,6 +129,13 @@ struct iOSTaskCollectionPage: View {
                 iOSTaskCollectionSections(
                     collection: collection,
                     activeTasks: activeTasks,
+                    activeGroups: CadenceTaskQuerySupport.displayGroups(
+                        from: activeTasks,
+                        mode: groupingMode,
+                        todayKey: observedDay.todayKey,
+                        contexts: contexts
+                    ),
+                    groupingMode: groupingMode,
                     completedTasks: completedTasks,
                     showsCompleted: $showCompleted,
                     metrics: metrics,
@@ -140,7 +167,7 @@ struct iOSTaskCollectionPage: View {
             scrollToRevealedRow(proxy: proxy)
         }
         // **The panel is a destination too, not only the rows and headers in it** (T-1276). The
-        // identity is the one the "Active" header and the empty state already take, so all three
+        // identity is the one the ungrouped header and the empty state already take, so all three
         // promise the same thing and the narrower two keep winning on area: Inbox's region offers
         // "Inbox", and All Tasks' `.completion` resolves to no key, so that page registers no
         // region at all — a status is not a placement, whatever size the frame is.
@@ -215,7 +242,7 @@ struct iOSTaskCollectionPage: View {
     /// floating `+` open the full composer from every one of these screens, so a title-only field a
     /// thumb's width away was a second, weaker affordance for one action.
     ///
-    /// **Sort is the only thing left on it (T-2090).** The bar also carried "Completed N", and the
+    /// **Sort, Order and Group since [[T-8731]]; before that, Sort alone (T-2090).** The bar also carried "Completed N", and the
     /// two of them are what made this page spend a whole row on chrome: measured on a 393pt iPhone,
     /// the page header's 361pt holds the back control, "All Tasks", the `All | Inbox` switcher and
     /// neither chip, so the bar could not join the header and the bar's own row could not go. The
@@ -227,8 +254,12 @@ struct iOSTaskCollectionPage: View {
     private var optionsBar: some View {
         let options = CadenceTaskSurfaceOptions.options(for: collection.surface)
         if options.showsSort {
-            iOSTaskViewOptionsBar(sortMode: $sortMode)
-                .padding(.vertical, 2)
+            iOSTaskSortGroupBar(
+                sortField: $sortField,
+                sortDirection: $sortDirection,
+                groupingMode: $groupingMode
+            )
+            .padding(.vertical, 2)
         }
     }
 }
@@ -242,6 +273,13 @@ struct iOSTaskCollectionPage: View {
 struct iOSTaskCollectionSections: View {
     let collection: CadenceTaskCollection
     let activeTasks: [AppTask]
+    /// `activeTasks` divided by the Group control ([[T-8731]]), from
+    /// `CadenceTaskQuerySupport.displayGroups` — the same function macOS's `TasksListView` asks,
+    /// so the two platforms cannot disagree about which groups exist, what they are called or in
+    /// what order they come. Empty under `.none`, where the single section is drawn from
+    /// `activeTasks` directly; see `groupStack`.
+    var activeGroups: [CadenceTaskDisplayGroup] = []
+    var groupingMode: TaskGroupingMode = .none
     let completedTasks: [AppTask]
     /// The Completed section's fold, which is the host's stored `ios.<surface>.showCompleted` bit
     /// — the one the deleted "Completed N" chip used to write. See `iOSCompletedTasksSection`.
@@ -308,17 +346,42 @@ struct iOSTaskCollectionSections: View {
         let showsContainer = CadenceTaskSurfaceOptions.showsContainerChip(on: collection.surface)
 
         return VStack(alignment: .leading, spacing: metrics.groupSpacing) {
-            // No `if !activeTasks.isEmpty` guard: `iOSTaskGroupSection.isVisible` decides, from the
-            // identity. Inbox's "Active" is a placement, so it survives emptying and stays a drop
-            // target at the moment that is most useful; All Tasks' is completion status, so it goes.
-            // See `CadenceTaskCollection.activeGroupIdentity`.
-            iOSTaskGroupSection(
-                title: "Active",
-                color: Theme.blue,
-                tasks: activeTasks,
-                showsContainer: showsContainer,
-                dropIdentity: collection.activeGroupIdentity
-            )
+            // **Ungrouped is still one section with a drop identity; grouped is the shared
+            // groups** ([[T-8731]]).
+            //
+            // The `.none` arm is unchanged apart from its heading: no `if !activeTasks.isEmpty`
+            // guard, because `iOSTaskGroupSection.isVisible` decides from the identity. Inbox's
+            // ungrouped heading is a placement, so it survives emptying and stays a drop target at
+            // the moment that is most useful; All Tasks' is completion status, so it goes. See
+            // `CadenceTaskCollection.activeGroupIdentity`. It is drawn from `activeTasks` rather
+            // than from `activeGroups` for exactly that reason — the shared function answers an
+            // empty array for no tasks, which is right for a heading nothing can be dropped on and
+            // wrong for this one.
+            //
+            // The heading reads "Tasks" rather than "Active" now, which is the Mac's word for the
+            // same section; `CadenceTaskQuerySupport.ungroupedGroupTitle` carries the argument.
+            //
+            // The grouped arm passes no drop identity: a date, list or priority bucket on this
+            // surface is a reading of the rows, and `CadenceTaskQuerySupport.displayGroups` has
+            // already dropped the empty ones, so there is nothing for `showsWhenEmpty` to keep.
+            if groupingMode == .none {
+                iOSTaskGroupSection(
+                    title: CadenceTaskQuerySupport.ungroupedGroupTitle,
+                    color: Theme.blue,
+                    tasks: activeTasks,
+                    showsContainer: showsContainer,
+                    dropIdentity: collection.activeGroupIdentity
+                )
+            } else {
+                ForEach(activeGroups) { group in
+                    iOSTaskGroupSection(
+                        title: group.title,
+                        color: group.accent,
+                        tasks: group.tasks,
+                        showsContainer: showsContainer
+                    )
+                }
+            }
 
             if showsRemindersSection {
                 iOSInboxRemindersSection(remindersManager: remindersManager)

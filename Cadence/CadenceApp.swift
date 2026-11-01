@@ -62,6 +62,12 @@ struct CadenceApp: App {
         // stored selection is a key nobody reads. Clearing it is idempotent and touches no model
         // state — see `CadenceNotesEditorPreferences`.
         CadenceNotesEditorPreferences.purgeRetiredKeys()
+        // [[T-8731]]: the Inbox and All Tasks read one Sort / Order / Group preference on both
+        // platforms now, so a phone's retired one-chip `ios.*.sortMode` is projected onto the
+        // shared keys once, at launch, before any page reads them. Idempotent, non-destructive
+        // and a no-op on a device that has never stored the old value — see
+        // `CadenceTaskPresentationPreferences`.
+        CadenceTaskPresentationPreferences.migrateLegacyIOSSortModes()
         // The same shape as the line above, one layer further out: a retired feature's leftovers
         // cleared on every cold launch, idempotently. The difference is where they live — these
         // are not this app's `UserDefaults` but the *operating system's* pending-notification

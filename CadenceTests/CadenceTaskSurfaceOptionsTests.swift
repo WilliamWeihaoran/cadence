@@ -639,8 +639,12 @@ struct CadenceTouchRowStackLazinessTests {
         // chevron row above it would print "Completed Today" twice. The laziness this test exists
         // for therefore has to be asserted of `iOSCompletedTasksSection` directly, below; an eager
         // stack there is the whole day's logbook built the moment the page is.
+        // **The collection page's count is 2 since [[T-8731]]**, and the second is not a second
+        // group: the Group control gave it two arms over the same rows — one section under Group:
+        // None, which keeps the drop identity, and a `ForEach` over the shared display groups
+        // otherwise. Both reach the same lazy component, which is what this measures.
         for (path, expected) in [
-            ("Cadence/iOS/iOSTaskCollectionPage.swift", 1),
+            ("Cadence/iOS/iOSTaskCollectionPage.swift", 2),
             ("Cadence/iOS/iOSTodayTaskSections.swift", 1),
         ] {
             let groupStack = try cadenceFunctionBody("private var groupStack: some View", in: try code(path))
@@ -871,14 +875,26 @@ struct iOSCompletedDisclosureTests {
         #expect(!bar.contains("showCompleted"))
         #expect(!bar.contains("completedCount"))
 
-        for path in [
-            "Cadence/iOS/iOSTaskCollectionPage.swift",
-            "Cadence/iOS/iOSListDetailView.swift",
-            "Cadence/iOS/iOSTodayCompactViews.swift",
-            "Cadence/iOS/iPadTodaySupportViews.swift",
+        // [[T-8731]] gave the Inbox and All Tasks three chips of their own, so the page that
+        // hosts them draws `iOSTaskSortGroupBar`; the other three surfaces keep the one-chip bar.
+        // The claim is per surface — "whatever bar this page draws, it has no Completed chip" —
+        // so the bar's name is a parameter rather than one literal for all four.
+        let sortBar = try #require(CadenceSourceScan.declarationBody(
+            "struct iOSTaskSortGroupBar: View",
+            in: try CadenceSourceScan.sourceFile("Cadence/iOS/iOSTaskViews.swift")
+        ))
+        #expect(sortBar.contains("groupingMode"), "non-vacuity: wrong declaration read")
+        #expect(!sortBar.contains("showCompleted"))
+        #expect(!sortBar.contains("completedCount"))
+
+        for (path, barName) in [
+            ("Cadence/iOS/iOSTaskCollectionPage.swift", "iOSTaskSortGroupBar("),
+            ("Cadence/iOS/iOSListDetailView.swift", "iOSTaskViewOptionsBar("),
+            ("Cadence/iOS/iOSTodayCompactViews.swift", "iOSTaskViewOptionsBar("),
+            ("Cadence/iOS/iPadTodaySupportViews.swift", "iOSTaskViewOptionsBar("),
         ] {
             let source = CadenceSourceScan.strippingComments(try CadenceSourceScan.sourceFile(path))
-            #expect(source.contains("iOSTaskViewOptionsBar("), "non-vacuity: \(path)")
+            #expect(source.contains(barName), "non-vacuity: \(path)")
             #expect(!source.contains("completedCount:"), "\(path)")
             #expect(!source.contains("showsCompletedControl"), "\(path)")
         }

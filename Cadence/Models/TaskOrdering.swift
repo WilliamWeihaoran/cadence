@@ -24,7 +24,8 @@ nonisolated enum TaskSortField: String, CaseIterable, Identifiable, Sendable {
     /// `.custom` is the user's own drag order: `TaskOrdering.sortKeyOrder` answers `.tie` for it
     /// in both directions, so every pair falls through to `fallbackPrecedes`, which never reads a
     /// direction. An "Order: Descending" pill beside "Sort: Custom" was a control that did nothing,
-    /// and Custom is the Inbox's default. Every macOS Order pill asks this before drawing.
+    /// and Custom is the Inbox's default. Every Order control asks this before drawing — the macOS
+    /// pills in `TasksPageView`, and since [[T-8731]] the touch chip in `iOSTaskSortGroupBar` too.
     var honorsDirection: Bool { self != .custom }
 }
 

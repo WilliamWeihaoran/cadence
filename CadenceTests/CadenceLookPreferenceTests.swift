@@ -142,27 +142,44 @@ struct CadenceLookPreferenceTests {
         #expect(fromThePhone["allTasks.showCompleted"] == "false")
     }
 
-    /// The direction half of the same rule, stated as the owner would ask it: what does a phone do
-    /// with a direction it has no control for? **Nothing.** It is not in the phone's mirror table,
-    /// so the phone never reads it and never writes it, and a Mac that chose low-priority-first
-    /// still has it after the phone re-sorts All Tasks.
-    @Test func aPhoneNeverTouchesTheDirectionItHasNoControlFor() {
-        #expect(Store.mirrors(on: .iOS).contains { $0.recordKey.hasSuffix(".direction") } == false)
-        #expect(Store.mirrors(on: .macOS).contains { $0.recordKey == "allTasks.direction" })
+    /// **The phone has the direction now, and that is [[T-8731]].**
+    ///
+    /// This test used to ask "what does a phone do with a direction it has no control for?" and
+    /// answer "nothing": `allTasks.direction` was absent from the phone's mirror table, so a Mac
+    /// that chose low-priority-first kept it after the phone re-sorted All Tasks. The owner's
+    /// 2026-10-31 decision under [[T-8201]] brought the Mac's Sort + Order + Group to the iOS
+    /// Inbox and All Tasks, so the premise is gone: both platforms mirror the same six keys, and
+    /// what has to be true instead is that the *round trip* preserves the pair.
+    ///
+    /// The rule the old test was really about — a device never erases a key it has no control for
+    /// — is unchanged and is still measured by the halves above, over the record keys spelled
+    /// quarterly.review and listDetail (bare, not backticked: they are record keys rather than
+    /// symbols, and the comment census reads a backticked root that resolves to nothing as a
+    /// finding).
+    @Test func thePhoneAndTheMacMirrorTheSameSortDirection() {
+        for platform in [Store.Platform.iOS, .macOS] {
+            #expect(Store.mirrors(on: platform).contains { $0.recordKey == "allTasks.direction" })
+            #expect(Store.mirrors(on: platform).contains { $0.recordKey == "inbox.grouping" })
+        }
 
+        // The phone re-sorts All Tasks descending; the record carries both halves.
         let stored = ["allTasks.mode": "priority", "allTasks.direction": "Ascending"]
         let afterThePhoneResorted = Store.publishedPairs(
-            currentMirrors: ["ios.allTasks.sortMode": "dueDate"],
+            currentMirrors: [
+                "allTasksSortField": TaskSortField.date.rawValue,
+                "allTasksSortDirection": "Descending"
+            ],
             stored: stored,
             on: .iOS
         )
-        #expect(afterThePhoneResorted["allTasks.direction"] == "Ascending")
-        #expect(afterThePhoneResorted["allTasks.mode"] == "dueDate")
+        #expect(afterThePhoneResorted["allTasks.direction"] == "Descending")
+        #expect(afterThePhoneResorted["allTasks.mode"] == "doDate")
 
-        // And the Mac, redrawing that, shows Date — its nearest field — still Ascending.
+        // And the Mac, redrawing that, shows the same field and the same direction — the pair
+        // survives the round trip through the record's `CadenceTaskSortMode` spelling.
         let mirrors = Store.mirrorWrites(forTaskPresentation: Store.raw(from: afterThePhoneResorted), on: .macOS)
         #expect(mirrors["allTasksSortField"] == TaskSortField.date.rawValue)
-        #expect(mirrors["allTasksSortDirection"] == "Ascending")
+        #expect(mirrors["allTasksSortDirection"] == "Descending")
     }
 
     // MARK: - Adopting

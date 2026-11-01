@@ -201,11 +201,13 @@ struct iOSTaskCollectionMetricsTests {
         #expect(CadenceTaskCollection.allCases.count == 2)
     }
 
-    /// Both pages head their live rows "Active", and the two headings mean different things. On
-    /// Inbox every row under it is in the Inbox by construction, so the header is a placement a
-    /// dropped `+` can inherit; on All Tasks the rows span every list, so it is completion status
-    /// and there is nothing to inherit. This is the only difference between the two pages that is
-    /// not a word, and flattening it would light a header up that then seeds nothing.
+    /// Both pages head their ungrouped live rows with the same word, and the two headings mean
+    /// different things. On Inbox every row under it is in the Inbox by construction, so the header
+    /// is a placement a dropped `+` can inherit; on All Tasks the rows span every list, so it is
+    /// completion status and there is nothing to inherit. This is the only difference between the
+    /// two pages that is not a word, and flattening it would light a header up that then seeds
+    /// nothing. Since [[T-8731]] the word is "Tasks" and the heading exists under Group: None
+    /// alone; the identity below is unchanged.
     @Test func onlyInboxsActiveHeadingIsAPlacement() {
         #expect(
             CadenceTaskDropSupport.dropKey(forGroup: CadenceTaskCollection.inbox.activeGroupIdentity)

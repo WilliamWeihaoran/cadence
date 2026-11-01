@@ -213,9 +213,29 @@ enum CadenceTaskQuerySupport {
     }
 
     static func activeInboxTasks(from tasks: [AppTask], sortMode: CadenceTaskSortMode) -> [AppTask] {
-        tasks
-            .filter { $0.area == nil && $0.project == nil && !$0.isDone && !$0.isCancelled }
-            .sorted { sortTasks($0, $1, sortMode: sortMode) }
+        openInboxTasks(from: tasks).sorted { sortTasks($0, $1, sortMode: sortMode) }
+    }
+
+    /// The Inbox's open rows under the **Sort + Order** pair both platforms now draw
+    /// ([[T-8731]]), sorted through `TaskOrdering` — the one comparator macOS's `TasksListView`
+    /// has always used for this page, rather than a touch-only second ordering.
+    ///
+    /// Beside the `sortMode:` form rather than replacing it: Today and a list's Tasks tab keep
+    /// the single `CadenceTaskSortMode` chip, and those surfaces are outside the owner's
+    /// decision. The membership predicate is shared by both forms and is the thing that must not
+    /// be written twice.
+    static func activeInboxTasks(
+        from tasks: [AppTask],
+        sortField: TaskSortField,
+        sortDirection: TaskSortDirection
+    ) -> [AppTask] {
+        openInboxTasks(from: tasks).taskSorted(by: sortField, direction: sortDirection)
+    }
+
+    /// What makes a task an **open inbox** task: no list, not settled. One predicate, read by both
+    /// `activeInboxTasks` forms.
+    static func openInboxTasks(from tasks: [AppTask]) -> [AppTask] {
+        tasks.filter { $0.area == nil && $0.project == nil && !$0.isDone && !$0.isCancelled }
     }
 
     static func completedInboxTasks(from tasks: [AppTask]) -> [AppTask] {
@@ -232,6 +252,16 @@ enum CadenceTaskQuerySupport {
         tasks
             .filter { !$0.isDone && !$0.isCancelled }
             .sorted { sortTasks($0, $1, sortMode: sortMode, sectionNames: sectionNames) }
+    }
+
+    /// All Tasks' open rows under the **Sort + Order** pair ([[T-8731]]). The `sortMode:` form
+    /// above is still Today's and a list's; see `activeInboxTasks(from:sortField:sortDirection:)`.
+    static func activeTasks(
+        from tasks: [AppTask],
+        sortField: TaskSortField,
+        sortDirection: TaskSortDirection
+    ) -> [AppTask] {
+        openTasks(from: tasks).taskSorted(by: sortField, direction: sortDirection)
     }
 
     static func completedTasks(from tasks: [AppTask]) -> [AppTask] {
@@ -298,6 +328,68 @@ enum CadenceTaskQuerySupport {
             $0.title.caseInsensitiveCompare(TaskSectionDefaults.defaultName) != .orderedSame
         }
     }
+
+    /// **The one place a `TaskGroupingMode` becomes sections** ([[T-8731]]).
+    ///
+    /// The three builders below were already shared; what was not was the `switch` over them,
+    /// which lived inside macOS's `TasksListView.sections(from:)` where `Cadence/iOS/` cannot see
+    /// it. With the owner's decision to draw Sort + Order + Group on the phone and iPad too, that
+    /// `switch` would have been written a second time — which is the shape this repository has
+    /// paid for before. macOS still wraps the answer in its own `TasksListSection` (its headers
+    /// are drop targets and its By List header draws a context glyph), but *which groups exist,
+    /// what they are called and in what order* is this function's answer on both platforms.
+    ///
+    /// `.byList` reads `todayListGroups`, which is the same `listGroupKey` / `listGroupOrder` pair
+    /// `TasksPanelSupport.listGroups` reads, so the Mac's By List and the phone's cannot bucket a
+    /// task differently or order the lists differently.
+    ///
+    /// Empty groups are dropped by each builder, and `.none` answers an empty array for no tasks
+    /// rather than a heading over nothing — the macOS `.filter { !$0.tasks.isEmpty }` this
+    /// replaces.
+    static func displayGroups(
+        from tasks: [AppTask],
+        mode: TaskGroupingMode,
+        todayKey: String,
+        contexts: [Context]
+    ) -> [CadenceTaskDisplayGroup] {
+        switch mode {
+        case .none:
+            guard !tasks.isEmpty else { return [] }
+            return [
+                CadenceTaskDisplayGroup(
+                    id: "tasks",
+                    title: ungroupedGroupTitle,
+                    accent: Theme.blue,
+                    tasks: tasks
+                )
+            ]
+        case .byDate:
+            return dateDisplayGroups(from: tasks, todayKey: todayKey)
+        case .byPriority:
+            return priorityDisplayGroups(from: tasks)
+        case .byList:
+            return todayListGroups(from: tasks, contexts: contexts).map { group in
+                CadenceTaskDisplayGroup(
+                    id: group.id,
+                    title: group.title,
+                    accent: group.accent,
+                    tasks: group.tasks,
+                    dropKey: "list:\(group.listKey)"
+                )
+            }
+        }
+    }
+
+    /// What the single ungrouped section is called, on both platforms.
+    ///
+    /// **The Mac's word won.** It headed its ungrouped rows "Tasks" where iOS said "Active", which
+    /// [[T-7019]] looked at and left alone on the stated ground that "iOS does not have" the
+    /// grouping control — so the two headings were answering different questions. They are not any
+    /// more: this is one option of a Group control both platforms draw, and the other three options
+    /// name what the section *is* (a day, a list, a priority) rather than the status of the rows in
+    /// it. "Active" is a status, and the page already separates finished work into its own folded
+    /// "Completed" section below.
+    static let ungroupedGroupTitle = "Tasks"
 
     static func dateDisplayGroups(
         from tasks: [AppTask],

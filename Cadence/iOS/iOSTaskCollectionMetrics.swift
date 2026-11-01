@@ -3,11 +3,15 @@ import CoreGraphics
 /// One of the two flat task collections — every task, or the unfiled ones — and everything that
 /// tells them apart.
 ///
-/// All Tasks and Inbox are the same screen: a page header, the sort/completed bar, an "Active"
-/// group and a "Completed" group. They were rendered two ways, and the two ways disagreed about
+/// All Tasks and Inbox are the same screen: a page header, the Sort / Order / Group bar, the open
+/// work, and a "Completed" group. They were rendered two ways, and the two ways disagreed about
 /// more than they agreed on. What *genuinely* differs between the two collections is here — the
 /// words, the glyph, and the one real behavioural difference, which is what their identically
-/// titled "Active" group means.
+/// titled ungrouped group means.
+///
+/// Since [[T-8731]] that heading reads "Tasks" rather than "Active", and only under Group: None —
+/// the other three options head each section with the day, list or priority it holds. See
+/// `CadenceTaskQuerySupport.ungroupedGroupTitle`.
 ///
 /// Deliberately **outside** `#if os(iOS)`, like `CadencePageHeaderMetrics` and for the same reason: the
 /// macOS-built test target cannot see `Cadence/iOS/`, and the part worth pinning is the decisions,
@@ -76,14 +80,17 @@ nonisolated enum CadenceTaskCollection: String, CaseIterable, Sendable {
         }
     }
 
-    /// What the "Active" heading *is*, so a dropped `+` knows what it can inherit from it.
+    /// What the ungrouped heading *is*, so a dropped `+` knows what it can inherit from it.
     ///
     /// **The one difference between these two pages that is not a word.** Both head their live rows
-    /// "Active", and the headings mean different things: on Inbox every row under it is in the Inbox
-    /// by construction, so the header is a real placement and takes a dropped `+`; on All Tasks the
-    /// rows span every list, so the heading is completion status and shares nothing a new task could
-    /// start from. `CadenceTaskDropSupport.showsWhenEmpty(_:)` reads the same value, which is also
-    /// why Inbox's "Active" survives emptying and All Tasks' does not.
+    /// with the same word, and the headings mean different things: on Inbox every row under it is in
+    /// the Inbox by construction, so the header is a real placement and takes a dropped `+`; on All
+    /// Tasks the rows span every list, so the heading is completion status and shares nothing a new
+    /// task could start from. `CadenceTaskDropSupport.showsWhenEmpty(_:)` reads the same value,
+    /// which is also why Inbox's ungrouped heading survives emptying and All Tasks' does not.
+    ///
+    /// It is the **Group: None** heading only ([[T-8731]]). A date, list or priority section is a
+    /// reading of the rows rather than a placement, so those carry no identity at all.
     var activeGroupIdentity: CadenceTaskGroupDropIdentity {
         switch self {
         case .allTasks: return .completion

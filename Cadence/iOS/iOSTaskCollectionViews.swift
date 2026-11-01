@@ -2,7 +2,8 @@
 import SwiftData
 import SwiftUI
 
-/// All Tasks: the query, the two stored preferences, and `iOSTaskCollectionPage`.
+/// All Tasks: the query, the stored Sort / Order / Group / show-completed preferences, and
+/// `iOSTaskCollectionPage`.
 ///
 /// There is no `horizontalSizeClass` branch left in here. This view used to pick between
 /// `iOSCompactAllTasksView` and a `List`-based `allTasksPanel` defined below it — one screen with
@@ -13,30 +14,29 @@ struct iOSAllTasksView: View {
     /// for the reasoning. Still on when All Tasks is reached as a pushed screen.
     var showsCompactHeader = true
     @Query(sort: \AppTask.order) private var allTasks: [AppTask]
-    @AppStorage(CadencePreferenceKeys.iosAllTasksSortMode) private var sortModeRaw = CadenceTaskSortMode.listOrder.rawValue
+    /// **The Mac's three keys, not a second set** ([[T-8731]]) — see `iOSInboxView`, which carries
+    /// the argument and the migration. The defaults are macOS All Tasks': date-first, ascending,
+    /// grouped by date, which is the page this one now matches.
+    ///
+    /// These replace the `String` + `sortModeFallingBackTo` projection that was here. That
+    /// projection existed for one measured reason (T-3156): a `Binding(get:set:)` is a binding
+    /// SwiftUI cannot compare, so `iOSTaskCollectionPage` was re-run with `_sortMode changed` four
+    /// times per New task sheet round trip while this view itself ran 0 times, and 0 times once
+    /// the binding became a comparable key path. `$sortField` on an `@AppStorage` of the enum is
+    /// a comparable location for the same reason, so the property that fixed it is preserved
+    /// rather than reverted — it is the same `@AppStorage` projection `TasksPageView` hands its
+    /// three badges on the Mac.
+    @AppStorage(CadencePreferenceKeys.allTasksSortField) private var sortField: TaskSortField = .date
+    @AppStorage(CadencePreferenceKeys.allTasksSortDirection) private var sortDirection: TaskSortDirection = .ascending
+    @AppStorage(CadencePreferenceKeys.allTasksGroupingMode) private var groupingMode: TaskGroupingMode = .byDate
     @AppStorage(CadencePreferenceKeys.iosAllTasksShowCompleted) private var showCompleted = false
     @Environment(CadenceDeepLinkManager.self) private var deepLinkManager
-
-    private var sortMode: CadenceTaskSortMode {
-        CadenceTaskSortMode(rawValue: sortModeRaw) ?? .listOrder
-    }
-
-    /// A key-path projection of the stored preference, **not** `Binding(get:set:)` (T-3156).
-    ///
-    /// A closure-backed binding is one SwiftUI cannot compare, so `iOSTaskCollectionPage` was
-    /// re-run with `_sortMode changed` four times per New task sheet round trip on All Tasks — at
-    /// 0, 300 and 3,000 tasks, while this view itself ran 0 times — and 0 times once the binding
-    /// was this projection of `$sortModeRaw`, whose location SwiftUI can compare. Measured with
-    /// scratch `Self._printChanges()` probes on the standing iPhone simulator. Inbox and Today
-    /// project their own preference through the same subscript (T-3158).
-    private var sortModeBinding: Binding<CadenceTaskSortMode> {
-        $sortModeRaw[sortModeFallingBackTo: .listOrder]
-    }
 
     private var activeTasks: [AppTask] {
         CadenceTaskQuerySupport.activeTasks(
             from: allTasks,
-            sortMode: sortMode
+            sortField: sortField,
+            sortDirection: sortDirection
         )
     }
 
@@ -50,7 +50,9 @@ struct iOSAllTasksView: View {
             showsHeader: showsCompactHeader,
             activeTasks: activeTasks,
             completedTasks: completedTasks,
-            sortMode: sortModeBinding,
+            sortField: $sortField,
+            sortDirection: $sortDirection,
+            groupingMode: $groupingMode,
             showCompleted: $showCompleted
         )
         // **T-375.** A deep link for work finished elsewhere routes to this page, and this page

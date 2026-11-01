@@ -258,9 +258,18 @@ enum CadenceLookPreferenceStore {
             return [
                 MirroredSetting("today.mode", CadencePreferenceKeys.iosTodaySortMode),
                 MirroredSetting("today.showCompleted", CadencePreferenceKeys.iosTodayShowCompleted, kind: .bool),
-                MirroredSetting("allTasks.mode", CadencePreferenceKeys.iosAllTasksSortMode),
+                // [[T-8731]]: All Tasks and Inbox read the Mac's three keys on this platform too,
+                // so these six rows are the macOS ones verbatim. `ios.allTasks.sortMode` and
+                // `ios.inbox.sortMode` are no longer mirrored because nothing reads them any
+                // more — `CadenceTaskPresentationPreferences` projects each onto the shared keys
+                // once, at launch, and leaves the old value on disk.
+                MirroredSetting("allTasks.mode", CadencePreferenceKeys.allTasksSortField, codec: .macOSSortField),
+                MirroredSetting("allTasks.direction", CadencePreferenceKeys.allTasksSortDirection),
+                MirroredSetting("allTasks.grouping", CadencePreferenceKeys.allTasksGroupingMode),
                 MirroredSetting("allTasks.showCompleted", CadencePreferenceKeys.iosAllTasksShowCompleted, kind: .bool),
-                MirroredSetting("inbox.mode", CadencePreferenceKeys.iosInboxSortMode),
+                MirroredSetting("inbox.mode", CadencePreferenceKeys.inboxSortField, codec: .macOSSortField),
+                MirroredSetting("inbox.direction", CadencePreferenceKeys.inboxSortDirection),
+                MirroredSetting("inbox.grouping", CadencePreferenceKeys.inboxGroupingMode),
                 MirroredSetting("inbox.showCompleted", CadencePreferenceKeys.iosInboxShowCompleted, kind: .bool),
                 MirroredSetting("listDetail.mode", CadencePreferenceKeys.iosListDetailSortMode),
                 MirroredSetting("listDetail.showCompleted", CadencePreferenceKeys.iosListDetailShowCompleted, kind: .bool),
@@ -302,9 +311,12 @@ enum CadenceLookPreferenceStore {
     /// mirror's own vocabulary cannot name at all.
     ///
     /// `.dueDate` and `.newest` have no `TaskSortField`, and they **project onto `Date`** rather
-    /// than answering `nil`: a Mac drawing the nearest of its three modes is a Mac that very nearly
-    /// agrees with the phone, and a Mac that refused the value would leave the two devices showing
-    /// unrelated orders with nothing on screen saying why. The projection is safe to draw only
+    /// than answering `nil`: a device drawing the nearest of the three shared fields very nearly
+    /// agrees with one that stored a mode, and refusing the value would leave the two showing
+    /// unrelated orders with nothing on screen saying why. Since [[T-8731]] the Inbox and All
+    /// Tasks draw those three fields on *both* platforms, so this projection is what the record
+    /// hands either of them; `CadenceTaskSortMode.macOSSortPair` is the same rule applied once, to
+    /// a phone's retired local value, and the two are deliberately the same answer. The projection is safe to draw only
     /// because `publishedPairs` refuses to write it back — see this type's note.
     static func mirrorValue(fromRecord value: String, codec: Codec) -> String? {
         switch codec {

@@ -2,7 +2,8 @@
 import SwiftData
 import SwiftUI
 
-/// Inbox: the query, the two stored preferences, and `iOSTaskCollectionPage`.
+/// Inbox: the query, the stored Sort / Order / Group / show-completed preferences, and
+/// `iOSTaskCollectionPage`.
 ///
 /// **One full-width column, at every width.** The iPad layout was once an `HStack` of the list and
 /// an "Overview" pane, which spent about a third of the screen on "0 ACTIVE", "0 DONE" and an
@@ -19,25 +20,29 @@ struct iOSInboxView: View {
     /// `iOSTodayView.showsCompactHeader`. Still on when Inbox is reached as a pushed screen.
     var showsCompactHeader = true
     @Query(sort: \AppTask.order) private var allTasks: [AppTask]
-    @AppStorage(CadencePreferenceKeys.iosInboxSortMode) private var sortModeRaw = CadenceTaskSortMode.listOrder.rawValue
+    /// **The Mac's three keys, not a second set** ([[T-8731]]). This was one
+    /// `ios.inbox.sortMode`; the owner's 2026-10-31 decision under [[T-8201]] brought the Mac's
+    /// Sort + Order + Group model here, and the ticket's last named consequence was that the two
+    /// platforms stored the choice under different keys, "so the choice cannot follow the owner
+    /// between devices". The retired key is projected onto these once at launch by
+    /// `CadenceTaskPresentationPreferences`; the defaults below are the Mac Inbox's, which is the
+    /// surface this page now matches.
+    ///
+    /// `@AppStorage` over a `RawRepresentable` rather than the `String` + subscript projection the
+    /// sort chip used (T-3156, T-3158): that projection existed so the binding handed down was a
+    /// comparable key path rather than a `Binding(get:set:)` closure pair, and `$sortField` on an
+    /// `@AppStorage` of the enum itself is a comparable location too — the same property wrapper
+    /// `TasksPageView` passes to its three badges.
+    @AppStorage(CadencePreferenceKeys.inboxSortField) private var sortField: TaskSortField = .custom
+    @AppStorage(CadencePreferenceKeys.inboxSortDirection) private var sortDirection: TaskSortDirection = .ascending
+    @AppStorage(CadencePreferenceKeys.inboxGroupingMode) private var groupingMode: TaskGroupingMode = .none
     @AppStorage(CadencePreferenceKeys.iosInboxShowCompleted) private var showCompleted = false
-
-    private var sortMode: CadenceTaskSortMode {
-        CadenceTaskSortMode(rawValue: sortModeRaw) ?? .listOrder
-    }
-
-    /// A key-path projection of the stored preference, **not** `Binding(get:set:)` (T-3158). The
-    /// closure pair is a binding SwiftUI cannot compare, so `iOSTaskCollectionPage` and its options
-    /// bar re-ran with `_sortMode changed` on every New task sheet presented over the Inbox, while
-    /// this view itself did not run — the shape T-3156 measured and fixed on All Tasks.
-    private var sortModeBinding: Binding<CadenceTaskSortMode> {
-        $sortModeRaw[sortModeFallingBackTo: .listOrder]
-    }
 
     private var inboxTasks: [AppTask] {
         CadenceTaskQuerySupport.activeInboxTasks(
             from: allTasks,
-            sortMode: sortMode
+            sortField: sortField,
+            sortDirection: sortDirection
         )
     }
 
@@ -51,7 +56,9 @@ struct iOSInboxView: View {
             showsHeader: showsCompactHeader,
             activeTasks: inboxTasks,
             completedTasks: completedInboxTasks,
-            sortMode: sortModeBinding,
+            sortField: $sortField,
+            sortDirection: $sortDirection,
+            groupingMode: $groupingMode,
             showCompleted: $showCompleted
         )
         // No seed: the Inbox is where a task goes when it has no list yet, so seeding one would

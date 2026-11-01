@@ -220,28 +220,30 @@ struct TasksListView: View {
 
     // MARK: - Sections
 
+    /// **Which groups exist is `CadenceTaskQuerySupport.displayGroups`' answer, not this view's**
+    /// ([[T-8731]]). The `switch` used to be here, which is where iOS could not reach it; the
+    /// phone and iPad draw the same Group control now, so the three date / priority / none arms
+    /// are one shared function and this method is the macOS *wrapping* of its answer — the drop
+    /// keys its headers accept, and the `TodayTaskGroup` its By List header draws a context glyph
+    /// from.
+    ///
+    /// `.byList` keeps `TasksPanelSupport.listGroups` for that second reason alone: `listGroup`
+    /// carries the context icon and colour this surface draws beside a list name and the touch
+    /// surface does not. Both bucket through `CadenceTaskQuerySupport.listGroupKey` and order
+    /// through `listGroupOrder`, so they cannot disagree about which list a task is under.
     private func sections(from tasks: [AppTask]) -> [TasksListSection] {
         switch groupingMode {
-        case .none:
-            return [
-                TasksListSection(id: "tasks", title: "Tasks", dropKey: nil, tasks: tasks, listGroup: nil)
-            ].filter { !$0.tasks.isEmpty }
-        case .byDate:
-            return CadenceTaskQuerySupport.dateDisplayGroups(from: tasks, todayKey: todayKey).map { group in
+        case .none, .byDate, .byPriority:
+            return CadenceTaskQuerySupport.displayGroups(
+                from: tasks,
+                mode: groupingMode,
+                todayKey: todayKey,
+                contexts: contexts
+            ).map { group in
                 TasksListSection(
                     id: group.id,
                     title: group.title,
-                    dropKey: Self.dateDropKey(forGroupID: group.id),
-                    tasks: group.tasks,
-                    listGroup: nil
-                )
-            }
-        case .byPriority:
-            return CadenceTaskQuerySupport.priorityDisplayGroups(from: tasks).map { group in
-                TasksListSection(
-                    id: group.id,
-                    title: group.title,
-                    dropKey: group.dropKey,
+                    dropKey: group.dropKey ?? Self.dateDropKey(forGroupID: group.id),
                     tasks: group.tasks,
                     listGroup: nil
                 )

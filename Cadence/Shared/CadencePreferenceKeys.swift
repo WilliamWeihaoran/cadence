@@ -41,13 +41,16 @@ enum CadencePreferenceKeys {
     // **The raw strings cannot change.** They are on disk on the owner's three devices, and a
     // renamed key does not migrate — it silently resets that preference to its default.
 
-    /// macOS All Tasks: `TaskSortField`, `TaskSortDirection` and `TaskGroupingMode` raw values.
+    /// All Tasks' Sort, Order and Group: `TaskSortField`, `TaskSortDirection` and
+    /// `TaskGroupingMode` raw values. **Read by both platforms since [[T-8731]]** — the page used
+    /// to store a `CadenceTaskSortMode` of its own on iOS under `ios.allTasks.sortMode`, so the
+    /// same choice could not follow the owner between devices.
     static let allTasksSortField = "allTasksSortField"
     static let allTasksSortDirection = "allTasksSortDirection"
     static let allTasksGroupingMode = "allTasksGroupingMode"
 
-    /// macOS Inbox. Separate from All Tasks' keys on purpose: Inbox is a hand-ordered capture list
-    /// where `.custom` is the point, and All Tasks is date-first.
+    /// Inbox, on both platforms. Separate from All Tasks' keys on purpose: Inbox is a hand-ordered
+    /// capture list where `.custom` is the point, and All Tasks is date-first.
     static let inboxSortField = "inboxSortField"
     static let inboxSortDirection = "inboxSortDirection"
     static let inboxGroupingMode = "inboxGroupingMode"
@@ -57,8 +60,14 @@ enum CadencePreferenceKeys {
     /// `sortModeDefaultsKey`, which is this constant.
     static let todaySortMode = "todaySortMode"
 
-    /// iOS's four task surfaces. Each stores one `CadenceTaskSortMode` and one show-completed
-    /// `Bool`; iOS has never had a direction control or a grouping one.
+    /// iOS's task surfaces. Each stores one show-completed `Bool`, and Today and a list's Tasks
+    /// tab each store one `CadenceTaskSortMode` for their single sort chip.
+    ///
+    /// **`ios.allTasks.sortMode` and `ios.inbox.sortMode` are retired and still read once**
+    /// ([[T-8731]]): those two pages draw the Mac's Sort + Order + Group now and store it under the
+    /// keys above. `CadenceTaskPresentationPreferences` projects whatever the phone had onto them
+    /// at launch and leaves the old value on disk, the same policy
+    /// `TasksPanel.legacySortFieldDefaultsKey` states for macOS Today's retired chips.
     static let iosTodaySortMode = "ios.today.sortMode"
     static let iosTodayShowCompleted = "ios.today.showCompleted"
     static let iosAllTasksSortMode = "ios.allTasks.sortMode"

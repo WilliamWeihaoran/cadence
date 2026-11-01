@@ -48,6 +48,9 @@ struct CadenceDayChangeAdoptionTests {
         ("Cadence/iOS/iOSListNotesView.swift", "struct iOSListNotesView: View"),
         // [[T-7983]]: Mac Today's Notes pane, whose Today and This Week tabs are day-keyed notes.
         ("Cadence/macOS/Views/NotePanel.swift", "struct NotePanel: View"),
+        // [[T-8731]]: the touch Inbox and All Tasks took the Mac's Group control, and its By Date
+        // buckets are measured against today — the same reason `TasksListView` above observes it.
+        ("Cadence/iOS/iOSTaskCollectionPage.swift", "struct iOSTaskCollectionPage: View"),
     ]
 
     private static let install = ".cadenceTracksDayChanges($observedDay)"

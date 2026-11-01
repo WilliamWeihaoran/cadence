@@ -18,16 +18,14 @@ import SwiftData
 
 // `TaskSortField` and `TaskSortDirection` live in `Cadence/Models/TaskOrdering.swift`, next to
 // the comparator that reads them, so `CadenceWidgets` and `CadenceMCPServer` can reach both.
-// `TaskGroupingMode` stays here: grouping is a macOS list-surface concern with no comparator
-// behind it, and no other target has a grouped task list.
-
-enum TaskGroupingMode: String, CaseIterable, Identifiable {
-    case none = "None"
-    case byDate = "By Date"
-    case byList = "By List"
-    case byPriority = "By Priority"
-    var id: String { rawValue }
-}
+//
+// `TaskGroupingMode` was declared here, under a comment saying grouping was "a macOS list-surface
+// concern with no comparator behind it, and no other target has a grouped task list". The second
+// half stopped being true with [[T-8731]]: the owner chose the Mac's Sort + Order + Group model
+// for the iPhone and iPad too, and `Cadence/iOS/` cannot see this file. It lives in
+// `Shared/CadenceTaskPlanningSupport.swift` now, beside the other shared task-presentation
+// vocabulary, and `CadenceTaskQuerySupport.displayGroups(from:mode:todayKey:contexts:)` is the one
+// place a mode is turned into groups.
 
 // `TodayOverdueListSummary` and `TodayOverdueSectionSummary` were declared here, and derived in
 // `TasksPanelDerivedState.init`, until T-195 moved them to `Shared/`. Today no longer draws

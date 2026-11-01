@@ -180,10 +180,10 @@ struct CadenceTaskGroupDropSupportTests {
         #expect(!CadenceTaskDropSupport.showsWhenEmpty(nil))
     }
 
-    /// Inbox's "Active" and All Tasks' "Active" carry the same word and are not the same group:
+    /// Inbox's ungrouped heading and All Tasks' carry the same word and are not the same group:
     /// every row under the first is in the Inbox by construction, while the second spans every
     /// list. The identity decides, not the title — so one survives emptying and the other does not.
-    @Test func twoGroupsTitledActiveResolveDifferently() {
+    @Test func twoGroupsTitledTheSameResolveDifferently() {
         #expect(CadenceTaskDropSupport.dropKey(forGroup: .list(key: "inbox", name: "Inbox")) != nil)
         #expect(CadenceTaskDropSupport.dropKey(forGroup: .completion) == nil)
     }

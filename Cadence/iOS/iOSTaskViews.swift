@@ -661,6 +661,124 @@ struct iOSTaskSectionHeader: View {
     }
 }
 
+/// **The two figures every task-page chip is drawn at**, in one place since [[T-8731]] put three
+/// of them on a row.
+///
+/// **One size, at every width.** These were 13pt/12pt-padded on a regular width and 12pt/10pt on a
+/// compact one, which is a chip that looks different on a phone than on a tablet for no stated
+/// reason — and `iOSTaskViewOptionsBar` is a *guest* on iPad Today's header, so the same control
+/// changed size depending on which of two screens you had it open on. The app's chip vocabulary is
+/// already width-invariant: `iOSTaskAttributeChipSize` is 11pt in a row and 13pt in a strip on
+/// both. 13 is the size that matches `.standard`, which is what these are — a chip you tap, on a
+/// row of its own — and the phone is the harder touch target of the two, not the easier.
+///
+/// `iPadTodayHeaderEyebrowBudgetTests` restates both and pins them against this declaration: the
+/// iPad Today header's width budget is computed from them and this target cannot read a figure
+/// behind `#if os(iOS)`.
+enum iOSTaskChipMetrics {
+    static let fontSize: CGFloat = 13
+    /// Per side.
+    static let horizontalPadding: CGFloat = 12
+}
+
+/// **The Inbox and All Tasks sort-and-group bar: Sort, Order, Group** ([[T-8731]]).
+///
+/// The owner's 2026-10-31 decision under [[T-8201]] was that iOS takes the Mac's model — three
+/// controls rather than one chip — the deciding fact being that iOS could not reverse a sort or
+/// group at all. So this is `DesktopControlBar`'s trio of `CadenceEnumPickerBadge`s
+/// (`TasksPageView`) in the touch idiom: the same three vocabularies, the same gate on the Order
+/// control, in the same order.
+///
+/// **Order is drawn only when the field honours one**, which is `TaskSortField.honorsDirection` —
+/// the Mac's own rule, not a second copy: `.custom` is the drag order, whose comparison *is*
+/// `TaskOrdering.fallbackPrecedes`, so an "Order: Descending" pill beside "Sort: Custom" would be
+/// a control that does nothing. Custom is the Inbox's default, so this is the common case.
+///
+/// `iOSTaskViewOptionsBar` is still the control on Today and a list's Tasks tab, which keep the
+/// single `CadenceTaskSortMode` chip: the ticket's scope is the Inbox and All Tasks, and those two
+/// surfaces are the ones the owner's decision names.
+struct iOSTaskSortGroupBar: View {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.cadenceTypographyScaling) private var scaling
+    @Binding var sortField: TaskSortField
+    @Binding var sortDirection: TaskSortDirection
+    @Binding var groupingMode: TaskGroupingMode
+
+    var body: some View {
+        let stacks = iOSTaskPageTypographyMetrics.stacksControls(at: dynamicTypeSize, scaling: scaling)
+        let layout = stacks
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 10))
+            : AnyLayout(HStackLayout(spacing: 10))
+        layout {
+            iOSEnumChoiceChip(title: "Sort", glyph: "arrow.up.arrow.down", selection: $sortField)
+            // The Mac asks the same question before drawing its Order pill (T-7006).
+            if sortField.honorsDirection {
+                iOSEnumChoiceChip(title: "Order", glyph: "arrow.up.arrow.down.square", selection: $sortDirection)
+            }
+            iOSEnumChoiceChip(title: "Group", glyph: "rectangle.3.group", selection: $groupingMode)
+
+            if !stacks {
+                Spacer()
+            }
+        }
+        .tint(Theme.blue)
+    }
+}
+
+/// One chip of the bar above: the touch spelling of macOS's `CadenceEnumPickerBadge`.
+///
+/// Generic over the vocabulary for the same reason that type is — there are three of them and
+/// they differ only in their cases. The metrics are `iOSTaskViewOptionsBar`'s, unchanged, so the
+/// Sort chip is the same control it was before it gained two neighbours.
+///
+/// The accessibility pair is the one T-7088 settled for the sort chip and the one the Mac badge
+/// already says: the control is named for what it *is* and the value is the choice, so VoiceOver
+/// reads "Group, By Date" rather than announcing "By Date, button" with nothing saying what it
+/// does.
+struct iOSEnumChoiceChip<T: CaseIterable & RawRepresentable & Identifiable & Hashable>: View where T.RawValue == String {
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.cadenceTypographyScaling) private var scaling
+    let title: String
+    let glyph: String
+    @Binding var selection: T
+    @State private var showPicker = false
+
+    var body: some View {
+        let stacks = iOSTaskPageTypographyMetrics.stacksControls(at: dynamicTypeSize, scaling: scaling)
+        let height = CadenceTypeScale.height(
+            44,
+            holding: .controlLabel,
+            textBase: iOSTaskChipMetrics.fontSize,
+            at: dynamicTypeSize,
+            scaling: scaling
+        )
+        Button {
+            showPicker = true
+        } label: {
+            Label(selection.rawValue, systemImage: glyph)
+                .cadenceFont(.controlLabel, base: iOSTaskChipMetrics.fontSize)
+                .foregroundStyle(Theme.text)
+                .padding(.horizontal, iOSTaskChipMetrics.horizontalPadding)
+                .fixedSize(horizontal: false, vertical: stacks)
+                .frame(minHeight: height)
+                .background(Theme.surfaceElevated.opacity(0.72))
+                .clipShape(RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
+        }
+        .buttonStyle(.iosPressable)
+        .accessibilityLabel(title)
+        .accessibilityValue(selection.rawValue)
+        .popover(isPresented: $showPicker) {
+            iOSChoicePopoverList(
+                rows: Array(T.allCases).map { value in
+                    iOSChoiceRow(value: value, title: value.rawValue, color: Theme.blue)
+                },
+                selection: $selection,
+                isPresented: $showPicker
+            )
+        }
+    }
+}
+
 struct iOSTaskViewOptionsBar: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.cadenceTypographyScaling) private var scaling
@@ -672,15 +790,8 @@ struct iOSTaskViewOptionsBar: View {
     var spreads = true
     @State private var showSortPicker = false
 
-    /// **One size, at every width.** These two were 13pt/12pt-padded on a regular width and
-    /// 12pt/10pt on a compact one, which is a chip that looks different on a phone than on a tablet
-    /// for no stated reason — and this bar is a *guest* on iPad Today's header, so the same control
-    /// changed size depending on which of two screens you had it open on. The app's chip vocabulary
-    /// is already width-invariant: `iOSTaskAttributeChipSize` is 11pt in a row and 13pt in a strip
-    /// on both. 13 is the size that matches `.standard`, which is what these are — a chip you tap,
-    /// on a row of its own — and the phone is the harder touch target of the two, not the easier.
-    private static let fontSize: CGFloat = 13
-    private static let horizontalPadding: CGFloat = 12
+    /// The two figures are `iOSTaskChipMetrics`', shared with `iOSEnumChoiceChip` since
+    /// [[T-8731]] gave the Inbox and All Tasks three chips of their own.
 
     /// **One chip, since T-2090.** The bar carried a second, "Completed N", which gated the
     /// completed rows behind a lit/unlit toggle; the owner's answer to the phone's two-row Tasks
@@ -694,15 +805,15 @@ struct iOSTaskViewOptionsBar: View {
     var body: some View {
         let stacks = iOSTaskPageTypographyMetrics.stacksControls(at: dynamicTypeSize, scaling: scaling)
         let layout = stacks ? AnyLayout(VStackLayout(alignment: .leading, spacing: 10)) : AnyLayout(HStackLayout(spacing: 10))
-        let height = CadenceTypeScale.height(44, holding: .controlLabel, textBase: Self.fontSize, at: dynamicTypeSize, scaling: scaling)
+        let height = CadenceTypeScale.height(44, holding: .controlLabel, textBase: iOSTaskChipMetrics.fontSize, at: dynamicTypeSize, scaling: scaling)
         layout {
             Button {
                 showSortPicker = true
             } label: {
                 Label(sortMode.title, systemImage: "arrow.up.arrow.down")
-                    .cadenceFont(.controlLabel, base: Self.fontSize)
+                    .cadenceFont(.controlLabel, base: iOSTaskChipMetrics.fontSize)
                     .foregroundStyle(Theme.text)
-                    .padding(.horizontal, Self.horizontalPadding)
+                    .padding(.horizontal, iOSTaskChipMetrics.horizontalPadding)
                     .fixedSize(horizontal: false, vertical: stacks)
                     .frame(minHeight: height)
                     .background(Theme.surfaceElevated.opacity(0.72))
