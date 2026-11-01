@@ -315,7 +315,7 @@ struct iOSSettingsCategoryList: View {
             ForEach(iOSSettingsCategory.groups) { group in
                 VStack(alignment: .leading, spacing: 8) {
                     SectionEyebrowLabel(text: group.title)
-                        .padding(.horizontal, 4)
+                        .padding(.horizontal, SectionEyebrowLabel.cardListInset)
 
                     iOSSettingsCard {
                         VStack(spacing: 0) {

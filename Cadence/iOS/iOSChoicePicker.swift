@@ -154,9 +154,16 @@ struct iOSContainerChoicePopover: View {
         }
     }
 
+    /// The row's inset from the popover's edge, and the group heading's too (T-9791). The heading
+    /// used to sit at a hand-typed 2pt while the rows' glyphs sat at 10, so AREAS and PROJECTS hung
+    /// 8pt left of the column they name. macOS's `ContainerPickerBadge` and the shared
+    /// `CadenceChoicePopoverList` both inset the heading by exactly the row's padding; nothing
+    /// about touch asks for a different edge here ([[T-8201]]).
+    static let rowHorizontalPadding: CGFloat = 10
+
     private func groupLabel(_ text: String) -> some View {
         SectionEyebrowLabel(text: text, size: .compact)
-            .padding(.horizontal, 2)
+            .padding(.horizontal, Self.rowHorizontalPadding)
     }
 
     private func choiceRow(title: String, tag: String, systemImage: String, color: Color) -> some View {
@@ -179,7 +186,7 @@ struct iOSContainerChoicePopover: View {
                         .foregroundStyle(Theme.blue)
                 }
             }
-            .padding(.horizontal, 10)
+            .padding(.horizontal, Self.rowHorizontalPadding)
             .padding(.vertical, 8)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(tag == selection ? Theme.blue.opacity(0.12) : Color.clear)

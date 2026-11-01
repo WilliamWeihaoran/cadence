@@ -29,7 +29,7 @@ struct iOSMoreTabView: View {
                 ForEach(CadenceFeatureDestination.compactMoreSections) { section in
                     VStack(alignment: .leading, spacing: 8) {
                         SectionEyebrowLabel(text: section.title)
-                            .padding(.horizontal, 2)
+                            .padding(.horizontal, SectionEyebrowLabel.cardListInset)
 
                         VStack(spacing: 8) {
                             ForEach(section.destinations) { destination in

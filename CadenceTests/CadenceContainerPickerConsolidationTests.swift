@@ -797,3 +797,41 @@ struct CadenceContainerPickerConsolidationTests {
         #expect(hits.isEmpty)
     }
 }
+
+/// **T-9791: the iPhone container popover's AREAS / PROJECTS headings start where its rows do.**
+/// The heading was padded by a hand-typed 2pt while each row's glyph sat 10pt in, so the eyebrow
+/// hung 8pt left of the column it names. macOS's `ContainerPickerBadge` and the shared
+/// `CadenceChoicePopoverList` inset the heading by exactly the row padding, and touch asks for
+/// nothing different ([[T-8201]]). This asserts the relation: the heading and the row read one
+/// name, and neither types a literal.
+struct CadenceContainerChoicePopoverHeadingInsetTests {
+    @Test func theGroupHeadingAndTheRowShareOneHorizontalInset() throws {
+        let picker = try CadenceSourceScan.strippingComments(
+            CadenceSourceScan.sourceFile("Cadence/iOS/iOSChoicePicker.swift")
+        )
+
+        #expect(picker.contains("struct iOSContainerChoicePopover"), "the scan is reading some other file")
+        #expect(CadenceSourceScan.matchCount(#"static let rowHorizontalPadding: CGFloat = "#, in: picker) == 1)
+        #expect(
+            CadenceSourceScan.matchCount(
+                #"SectionEyebrowLabel\(text: text, size: \.compact\)\s*\.padding\(\.horizontal, Self\.rowHorizontalPadding\)"#,
+                in: picker
+            ) == 1,
+            "the group heading no longer insets by the row's own padding"
+        )
+        #expect(
+            CadenceSourceScan.matchCount(
+                #"HStack\(spacing: 8\) \{[\s\S]*?\}\s*\.padding\(\.horizontal, Self\.rowHorizontalPadding\)\s*\.padding\(\.vertical, 8\)"#,
+                in: picker
+            ) == 1,
+            "the choice row no longer insets by the shared row padding"
+        )
+        #expect(
+            CadenceSourceScan.matchCount(
+                #"SectionEyebrowLabel\(text: text, size: \.compact\)\s*\.padding\(\.horizontal, [0-9]"#,
+                in: picker
+            ) == 0,
+            "the group heading types its own inset again"
+        )
+    }
+}

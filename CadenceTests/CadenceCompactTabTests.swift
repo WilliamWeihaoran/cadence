@@ -451,6 +451,52 @@ struct CadenceMoreTabGroupingSurfaceTests {
     }
 }
 
+/// **T-9774: the More tab's eyebrows sit in the same column as every other iOS card-list eyebrow.**
+/// The More tab padded its eyebrows by a hand-typed 2 while the Settings category list and the iPad
+/// Lists pane typed 4, so moving from More into Settings shifted the eyebrow column by two points.
+/// The inset is now one name, `SectionEyebrowLabel.cardListInset`, and this asserts the relation
+/// rather than the number: each site pads its card-list eyebrow by that name, and none of them by
+/// a literal. A site typing `2` again — or `4` — reds the count below.
+struct CadenceCardListEyebrowInsetSurfaceTests {
+    private static let sites: [(path: String, eyebrow: String)] = [
+        ("Cadence/iOS/iOSMoreTabView.swift", "SectionEyebrowLabel(text: section.title)"),
+        ("Cadence/iOS/iOSSettingsComponents.swift", "SectionEyebrowLabel(text: group.title)"),
+        ("Cadence/iOS/iOSListsRegularPane.swift", "SectionEyebrowLabel(text: title)"),
+    ]
+
+    @Test func everyCardListEyebrowReadsTheOneNamedInset() throws {
+        for site in Self.sites {
+            let source = try strippingComments(sourceFile(site.path))
+            let eyebrow = NSRegularExpression.escapedPattern(for: site.eyebrow)
+            #expect(
+                CadenceSourceScan.matchCount(
+                    eyebrow + #"\s*\.padding\(\.horizontal, SectionEyebrowLabel\.cardListInset\)"#,
+                    in: source
+                ) >= 1,
+                "\(site.path) no longer pads its card-list eyebrow by SectionEyebrowLabel.cardListInset"
+            )
+            #expect(
+                CadenceSourceScan.matchCount(
+                    eyebrow + #"\s*\.padding\(\.horizontal, [0-9]"#,
+                    in: source
+                ) == 0,
+                "\(site.path) pads a card-list eyebrow by a hand-typed literal again"
+            )
+        }
+    }
+
+    /// Anti-vacuity: the three files are really read, and the inset is really declared once.
+    @Test func theInsetScanReadsRealSource() throws {
+        for site in Self.sites {
+            let source = try sourceFile(site.path)
+            #expect(source.count > 1_000, "\(site.path) read nothing")
+            #expect(source.contains(site.eyebrow), "\(site.path) no longer draws the eyebrow this scan looks for")
+        }
+        let label = try strippingComments(sourceFile("Cadence/Shared/Components/SectionEyebrowLabel.swift"))
+        #expect(CadenceSourceScan.matchCount(#"static let cardListInset: CGFloat = "#, in: label) == 1)
+    }
+}
+
 // MARK: - Source-reading helpers
 
 private func repositoryRoot() -> URL {

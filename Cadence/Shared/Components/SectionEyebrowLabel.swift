@@ -85,6 +85,13 @@ struct SectionEyebrowLabel: View {
     /// two tiers back on two independently editable numbers, which is the whole defect.
     nonisolated static let kerningRatio: CGFloat = 0.08
 
+    /// How far an eyebrow that heads a card list sits in from the cards' own left edge, inside the
+    /// page gutter (T-9774). The iPhone More tab, the Settings category list and the iPad Lists pane
+    /// each typed this by hand, and the More tab typed 2 where the others typed 4, so moving
+    /// between More and Settings shifted the eyebrow column by two points. One number now, read at
+    /// each site, so the column cannot drift again.
+    nonisolated static let cardListInset: CGFloat = 4
+
     let text: String
     var size: Size = .standard
     var tint: Color = Theme.dim
